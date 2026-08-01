@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [],
+  "linked": [
+    [
+      "@agentix-e/aiops-kinetic-core",
+      "@agentix-e/aiops-kinetic-tree",
+      "@agentix-e/aiops-kinetic-cutting",
+      "@agentix-e/aiops-kinetic-noise",
+      "@agentix-e/aiops-kinetic-scaling",
+      "@agentix-e/aiops-kinetic-wave",
+      "@agentix-e/aiops-kinetic"
+    ]
+  ],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

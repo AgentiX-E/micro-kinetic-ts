@@ -1,0 +1,49 @@
+{
+  "name": "@agentix-e/aiops-kinetic-root",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nx run-many --target=build --all",
+    "build:core": "nx build @agentix-e/aiops-kinetic-core",
+    "build:tree": "nx build @agentix-e/aiops-kinetic-tree",
+    "build:cutting": "nx build @agentix-e/aiops-kinetic-cutting",
+    "build:noise": "nx build @agentix-e/aiops-kinetic-noise",
+    "build:scaling": "nx build @agentix-e/aiops-kinetic-scaling",
+    "build:wave": "nx build @agentix-e/aiops-kinetic-wave",
+    "build:kinetic": "nx build @agentix-e/aiops-kinetic",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:integration": "vitest run --config integration-tests/vitest.config.ts",
+    "test:all": "pnpm test && pnpm test:integration",
+    "coverage": "vitest run --coverage",
+    "typecheck": "nx run-many --target=typecheck --all",
+    "lint": "oxlint --config oxlintrc.json packages/*/src/ benchmarks/src/ integration-tests/src/",
+    "lint:eslint": "eslint packages/*/src/ benchmarks/src/ integration-tests/src/",
+    "format": "prettier --write 'packages/*/src/**/*.ts' 'benchmarks/src/**/*.ts' 'integration-tests/src/**/*.ts'",
+    "format:check": "prettier --check 'packages/*/src/**/*.ts' 'benchmarks/src/**/*.ts' 'integration-tests/src/**/*.ts'",
+    "clean": "nx run-many --target=clean --all",
+    "benchmark": "tsx benchmarks/src/run-all.ts",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset publish",
+    "version": "changeset version"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@types/node": "^22.0.0",
+    "fast-check": "^3.20.0",
+    "nx": "^20.0.0",
+    "oxlint": "^0.15.0",
+    "prettier": "^3.4.0",
+    "prettier-plugin-organize-imports": "^4.1.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "@vitest/coverage-v8": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

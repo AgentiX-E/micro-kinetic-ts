@@ -1,0 +1,288 @@
+import { describe, it, expect } from 'vitest';
+import { TreePruner } from '@agentix-e/micro-kinetic-tree';
+import type {
+  ServiceCallGraph,
+  ServiceNode,
+  CallEdge,
+  TimeSeries,
+  MetricMap,
+} from '@agentix-e/micro-kinetic-core';
+import {
+  GraphCycleError,
+} from '@agentix-e/micro-kinetic-core';
+
+function makeNode(id: string): ServiceNode {
+  return {
+    id,
+    name: id,
+    namespace: 'default',
+    labels: {},
+  };
+}
+
+function makeEdge(from: string, to: string): CallEdge {
+  return {
+    from,
+    to,
+    type: 'REST',
+    callRate: 100,
+    p99Latency: 50,
+    errorRate: 0.01,
+  };
+}
+
+function makeCallGraph(
+  nodeIds: string[],
+  edgePairs: [string, string][],
+  systemLoad = 0.3,
+): ServiceCallGraph {
+  const nodes = new Map<string, ServiceNode>();
+  for (const id of nodeIds) {
+    nodes.set(id, makeNode(id));
+  }
+  const edges = edgePairs.map(([f, t]) => makeEdge(f, t));
+  return { nodes, edges, systemLoad };
+}
+
+function makeTimeSeries(label: string, values: number[]): TimeSeries {
+  const timestamps = values.map((_, i) => i * 60000);
+  return { label, timestamps, values: new Float64Array(values), unit: 'count' };
+}
+
+function makeMetrics(nodeData: Record<string, number[]>): MetricMap {
+  const map = new Map<string, readonly TimeSeries[]>();
+  for (const [nodeId, vals] of Object.entries(nodeData)) {
+    map.set(nodeId, [makeTimeSeries('cpu_usage', vals)]);
+  }
+  return map;
+}
+
+describe('TreePruner', () => {
+  describe('constructor', () => {
+    it('creates with default options', () => {
+      const pruner = new TreePruner();
+      expect(pruner.pruneEpsilon).toBe(0.001);
+    });
+
+    it('accepts custom pruneEpsilon', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 0.1 });
+      expect(pruner.pruneEpsilon).toBe(0.1);
+    });
+
+    it('rejects invalid pruneEpsilon', () => {
+      expect(() => new TreePruner({ pruneEpsilon: -0.1 })).toThrow();
+      expect(() => new TreePruner({ pruneEpsilon: 1.5 })).toThrow();
+    });
+
+    it('rejects invalid criticalLoadThreshold', () => {
+      expect(() => new TreePruner({ criticalLoadThreshold: -0.1 })).toThrow();
+    });
+
+    it('rejects invalid defaultTopK', () => {
+      expect(() => new TreePruner({ defaultTopK: -1 })).toThrow();
+    });
+  });
+
+  describe('buildFaultGraph', () => {
+    it('builds graph with nodes and edges', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 10],
+        B: [10, 10, 10, 10, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.callGraph).toBe(callGraph);
+      expect(graph.propagationWeights.length).toBe(1);
+      expect(graph.anomalyScores.has('A')).toBe(true);
+      expect(graph.anomalyScores.has('B')).toBe(true);
+      expect(graph.pruneThreshold).toBeGreaterThan(0);
+    });
+
+    it('builds graph with high-anomaly scores producing high weights', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      // High anomaly values for both → high propagation weight
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 100],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const aScore = graph.anomalyScores.get('A') ?? 0;
+      const bScore = graph.anomalyScores.get('B') ?? 0;
+      expect(aScore).toBeGreaterThan(0.7);
+      expect(bScore).toBeGreaterThan(0.7);
+      expect(graph.propagationWeights[0]).toBe(0.9);
+    });
+
+    it('detects cycles in cyclic graphs', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10],
+        B: [10, 10, 10],
+        C: [10, 10, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.detectedCycles.length).toBeGreaterThan(0);
+      expect(graph.totalCycleContribution).toBeGreaterThanOrEqual(0);
+    });
+
+    it('has no cycles in DAG', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B'], ['B', 'C']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10],
+        B: [10, 10, 10],
+        C: [10, 10, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.detectedCycles.length).toBe(0);
+      expect(graph.totalCycleContribution).toBe(0);
+    });
+
+    it('throws on empty call graph nodes', () => {
+      const pruner = new TreePruner();
+      const callGraph: ServiceCallGraph = {
+        nodes: new Map(),
+        edges: [],
+        systemLoad: 0.3,
+      };
+      expect(() => pruner.buildFaultGraph(callGraph, new Map())).toThrow();
+    });
+
+    it('throws on call graph with no edges', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(['A'], []);
+      const metrics = makeMetrics({ A: [10, 10] });
+      expect(() => pruner.buildFaultGraph(callGraph, metrics)).toThrow();
+    });
+
+    it('throws on empty metrics', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      expect(() => pruner.buildFaultGraph(callGraph, new Map())).toThrow();
+    });
+
+    it('uses 2-hop decay when configured', () => {
+      const pruner = new TreePruner({ useTwoHopDecay: true });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 100],
+        C: [10, 10, 10, 10, 100],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.detectedCycles.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('analyze', () => {
+    it('analyzes DAG and returns ranked results', () => {
+      const pruner = new TreePruner({ defaultTopK: 5 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C', 'D'],
+        [['A', 'B'], ['A', 'C'], ['B', 'D']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 50],
+        C: [10, 10, 10, 10, 10],
+        D: [10, 10, 10, 10, 80],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 3);
+      expect(results.length).toBeLessThanOrEqual(3);
+      expect(results.length).toBeGreaterThan(0);
+      for (const r of results) {
+        expect(r.serviceId).toBeTruthy();
+        expect(r.confidence).toBeGreaterThanOrEqual(0);
+        expect(r.confidence).toBeLessThanOrEqual(1);
+        expect(r.rank).toBeGreaterThanOrEqual(1);
+      }
+    });
+
+    it('throws GraphCycleError on significant cycles', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 0.0, useTwoHopDecay: true });
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B'], ['B', 'A']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 100],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(() => pruner.analyze(graph)).toThrow(GraphCycleError);
+    });
+
+    it('uses default topK when not provided', () => {
+      const pruner = new TreePruner({ defaultTopK: 2 });
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 50],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph);
+      expect(results.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  describe('getCycleContributionBound', () => {
+    it('computes bound below critical load', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 0.01, criticalLoadThreshold: 0.7 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']], 0.3);
+      const metrics = makeMetrics({ A: [10, 10, 10], B: [10, 10, 10] });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const bound = pruner.getCycleContributionBound(graph);
+      // bound = (0.3/0.7) * 0.01 * (1 + 0.3) ≈ 0.00557
+      expect(bound).toBeGreaterThan(0);
+      expect(bound).toBeLessThan(0.1);
+    });
+
+    it('computes bound above critical load', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 0.01, criticalLoadThreshold: 0.5 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']], 0.8);
+      const metrics = makeMetrics({ A: [10, 10, 10], B: [10, 10, 10] });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const bound = pruner.getCycleContributionBound(graph);
+      // above critical: load * eps * 2 = 0.8 * 0.01 * 2 = 0.016
+      expect(bound).toBeGreaterThan(0);
+    });
+
+    it('returns 0 for zero-load graph', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']], 0);
+      const metrics = makeMetrics({ A: [10, 10, 10], B: [10, 10, 10] });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const bound = pruner.getCycleContributionBound(graph);
+      expect(bound).toBe(0);
+    });
+  });
+
+  describe('pruneEpsilon getter', () => {
+    it('returns configured epsilon', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 0.05 });
+      expect(pruner.pruneEpsilon).toBeCloseTo(0.05);
+    });
+  });
+});

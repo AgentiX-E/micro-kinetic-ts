@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.tsup/
+*.tsbuildinfo
+.cache/
+benchmark-results/
