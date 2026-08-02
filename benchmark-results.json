@@ -1,37 +1,37 @@
 [
   {
     "name": "Total Duration",
-    "value": 30,
+    "value": 38,
     "unit": "ms",
     "range": "± 50"
   },
   {
     "name": "Avg@1 Accuracy",
-    "value": 0,
+    "value": 1,
     "unit": "ratio",
     "range": "0-1"
   },
   {
     "name": "Avg@5 Accuracy",
-    "value": 0,
+    "value": 1,
     "unit": "ratio",
     "range": "0-1"
   },
   {
     "name": "Location Accuracy",
-    "value": 0,
+    "value": 1,
     "unit": "ratio",
     "range": "0-1"
   },
   {
     "name": "Type Accuracy",
-    "value": 0.1714,
+    "value": 1,
     "unit": "ratio",
     "range": "0-1"
   },
   {
     "name": "Suite Time",
-    "value": 2,
+    "value": 11,
     "unit": "ms",
     "range": "± 20"
   }

@@ -30,6 +30,11 @@ import {
   DEFAULT_CLASSIFICATION_RULES,
 } from '../../packages/core/src/index.js';
 
+// ── Real RCA engine — Collision Tree Pruner ────────────────
+import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── CLI ───────────────────────────────────────────────────
@@ -54,40 +59,29 @@ function parseArgs(): CliOptions {
   return opts;
 }
 
-// ── Helpers ───────────────────────────────────────────────
 
-function createMockEngine() {
-  return {
-    buildFaultGraph: (
-      callGraph: { nodes: Map<string, unknown>; edges: unknown[] },
-      _metrics: unknown,
-    ) => ({
-      callGraph,
-      propagationWeights: new Float64Array(0),
-      anomalyScores: new Map(),
-      detectedCycles: [],
-      totalCycleContribution: 0,
-      pruneThreshold: 0.001,
-    }),
-    analyze: async (_graph: unknown, topK = 5) => {
-      const results = [];
-      for (let i = 1; i <= Math.min(topK, 5); i++) {
-        results.push({
-          serviceId: `service_${i}`,
-          faultType: { category: 'CPU', subType: '', severity: 'major' },
-          confidence: 1 / i,
-          rank: i,
-          timestamp: Date.now(),
-          evidenceMetrics: [],
-          propagationDepth: i,
-          propagationErrorBound: 0.01,
-          viaTreeSearch: true,
-        });
-      }
-      return results;
-    },
-    getCycleContributionBound: () => 0,
-  };
+// ── DI Assembly ──────────────────────────────────────────
+
+/**
+ * Create a container with the real CollisionTreeRCAEngine
+ * and NumpyTsMatrixOps math backend.
+ *
+ * Uses direct source imports instead of package names since
+ * the benchmark CLI runs via tsx without package resolution.
+ */
+function createBenchmarkContainer(): Container {
+  const container = new Container();
+
+  // Math backend
+  container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
+
+  // RCA Engine — collision tree pruning
+  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner());
+
+  // Root Cause Ranker — tree-based score accumulation
+  container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
+
+  return container;
 }
 
 // ── Main ──────────────────────────────────────────────────
@@ -96,15 +90,10 @@ async function main(): Promise<void> {
   const opts = parseArgs();
   const startTime = Date.now();
 
-  const container = new Container();
-  container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
-
-  // Create the classifier for meaningful Type Accuracy
+  const container = createBenchmarkContainer();
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
-
   const generator = new SyntheticBenchmarkGenerator(42);
   const suite = generator.generateRCAEvalSuite('synthetic-bench', opts.cases);
-
   const runner = new BenchmarkRunner(container, classifier);
   const result = await runner.runSuite(suite);
   const totalDurationMs = Date.now() - startTime;
