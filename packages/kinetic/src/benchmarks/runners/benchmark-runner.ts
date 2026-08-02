@@ -17,7 +17,11 @@ import {
   type IContainer,
   type IRCAEngine,
   type RootCauseResult,
+  type IFaultClassifier,
+  bestHypothesisToFaultType,
 } from '@agentix-e/micro-kinetic-core';
+
+import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
 
 import type { BenchmarkSuite } from '../loaders/types.js';
 
@@ -115,9 +119,18 @@ export interface CompleteBenchmarkReport {
  */
 export class BenchmarkRunner {
   private readonly container: IContainer;
+  private readonly classifier: IFaultClassifier | undefined;
 
-  constructor(container: IContainer) {
+  /**
+   * @param container - DI container with at least RCA_ENGINE registered.
+   * @param classifier - Optional fault type classifier. When provided, the runner
+   *                     enriches each engine prediction with a classifier-generated
+   *                     faultType based on per-service metric data, enabling
+   *                     meaningful Type Accuracy (TA) computation.
+   */
+  constructor(container: IContainer, classifier?: IFaultClassifier) {
     this.container = container;
+    this.classifier = classifier;
   }
 
   /**
@@ -146,9 +159,17 @@ export class BenchmarkRunner {
         const results = await engine.analyze(faultGraph, topK);
         const topResult = results[0];
 
+        // ── Enrich predictions with classifier-generated fault types ──
+        const enrichedResults = this.classifier
+          ? results.map((r) =>
+              this.enrichPrediction(r, benchCase.metrics),
+            )
+          : results;
+        const enrichedTop = enrichedResults[0];
+
         // Track prediction
         predictions.push(
-          topResult ?? {
+          enrichedTop ?? {
             serviceId: '',
             faultType: { category: 'UNKNOWN', subType: '', severity: 'info' },
             confidence: 0,
@@ -175,14 +196,14 @@ export class BenchmarkRunner {
         const predictedIds = results.slice(0, topK).map((r) => r.serviceId);
         if (predictedIds.includes(benchCase.groundTruth.serviceId)) {
           tracker.correct++;
-        } else if (topResult) {
+        } else if (enrichedTop) {
           failures.push({
             caseId: benchCase.id,
             expectedService: benchCase.groundTruth.serviceId,
             expectedFaultType: benchCase.groundTruth.faultType,
-            actualTop: topResult.serviceId,
-            actualFaultType: formatFaultType(topResult.faultType),
-            reason: `Top prediction "${topResult.serviceId}" does not match ground truth "${benchCase.groundTruth.serviceId}"`,
+            actualTop: enrichedTop.serviceId,
+            actualFaultType: formatFaultType(enrichedTop.faultType),
+            reason: `Top prediction "${enrichedTop.serviceId}" does not match ground truth "${benchCase.groundTruth.serviceId}"`,
           });
         } else {
           failures.push({
@@ -524,6 +545,53 @@ export class BenchmarkRunner {
   ${suiteRows}
 </body>
 </html>`;
+  }
+
+  // ── Classifier Integration ──────────────────────────────
+
+  /**
+   * Enrich an engine prediction with a classifier-generated fault type.
+   *
+   * Uses the service's metric data from the benchmark case to run the
+   * fault classifier (Layer 1 regex + Layer 2 statistical). The resulting
+   * FaultType replaces the engine's default fault type, enabling meaningful
+   * Type Accuracy computation.
+   *
+   * Falls back to the original prediction's faultType if no classifier
+   * is configured or if metric data is unavailable.
+   *
+   * @param prediction - The engine-generated prediction.
+   * @param metrics - All per-service metrics from the benchmark case.
+   * @returns A new prediction with classifier-enriched faultType.
+   */
+  private enrichPrediction(
+    prediction: RootCauseResult,
+    metrics: ReadonlyMap<string, readonly TimeSeries[]>,
+  ): RootCauseResult {
+    if (!this.classifier) return prediction;
+
+    // Look up the predicted service's metric data
+    const serviceMetrics = metrics.get(prediction.serviceId);
+    if (!serviceMetrics || serviceMetrics.length === 0) return prediction;
+
+    // Run classifier
+    const hypotheses = this.classifier.classify(serviceMetrics, {
+      serviceId: prediction.serviceId,
+      metricNames: serviceMetrics.map((s) => s.label),
+    });
+
+    // Convert best hypothesis to FaultType
+    const classifiedFaultType = bestHypothesisToFaultType(hypotheses);
+
+    // Only override if classifier produced a non-UNKNOWN result
+    if (classifiedFaultType.category !== 'UNKNOWN') {
+      return {
+        ...prediction,
+        faultType: classifiedFaultType,
+      };
+    }
+
+    return prediction;
   }
 }
 

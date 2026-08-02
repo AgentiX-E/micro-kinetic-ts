@@ -25,6 +25,10 @@ import { fileURLToPath } from 'node:url';
 import { Container, DI_TOKENS } from '../../packages/core/src/index.js';
 import { BenchmarkRunner } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import { SyntheticBenchmarkGenerator } from '../../packages/kinetic/src/benchmarks/synthetic/data-generator.js';
+import {
+  RegexFaultClassifier,
+  DEFAULT_CLASSIFICATION_RULES,
+} from '../../packages/core/src/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -95,10 +99,13 @@ async function main(): Promise<void> {
   const container = new Container();
   container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
 
+  // Create the classifier for meaningful Type Accuracy
+  const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
+
   const generator = new SyntheticBenchmarkGenerator(42);
   const suite = generator.generateRCAEvalSuite('synthetic-bench', opts.cases);
 
-  const runner = new BenchmarkRunner(container);
+  const runner = new BenchmarkRunner(container, classifier);
   const result = await runner.runSuite(suite);
   const totalDurationMs = Date.now() - startTime;
 
