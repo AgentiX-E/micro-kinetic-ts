@@ -38,22 +38,17 @@
  */
 
 import {
+  type CallEdge,
+  type FaultType,
   type PrunedTree,
   type RootCauseResult,
   type ServiceId,
-  type FaultType,
-  type PrunedEdgeRecord,
-  type CallEdge,
-  type RCAEngineOptions,
-  DEFAULT_RCA_OPTIONS,
   invariant,
-  invariantRange,
-  invariantNonEmpty,
   invariantPositiveInt,
-  KineticValidationError,
+  invariantRange,
 } from '@agentix-e/micro-kinetic-core';
 
-import { estimateErrorBound, boundToConfidence } from './confidence.js';
+import { boundToConfidence, estimateErrorBound } from './confidence.js';
 
 /**
  * Options for TreeRCAEngine.
@@ -141,10 +136,7 @@ export class TreeRCAEngine {
     invariantPositiveInt(k, 'topK');
 
     // Step 1: Build graph structure
-    const { reverseAdj, forwardAdj, inDegree } = buildTreeStructure(
-      tree.edges,
-      tree.nodes,
-    );
+    const { reverseAdj, forwardAdj, inDegree } = buildTreeStructure(tree.edges, tree.nodes);
 
     // Step 2: Topological sort (leaves → root)
     const topoOrder = topologicalSort(forwardAdj, reverseAdj, inDegree);
@@ -203,12 +195,7 @@ export class TreeRCAEngine {
     }
 
     // Step 4: Rank and produce results
-    return rankAndProduceResults(
-      accumulators,
-      tree,
-      k,
-      this.options,
-    );
+    return rankAndProduceResults(accumulators, tree, k, this.options);
   }
 
   /**
@@ -225,8 +212,9 @@ export class TreeRCAEngine {
     invariantPositiveInt(k, 'k');
 
     const ranked = new Map<ServiceId, number>();
-    const entries = Array.from(accumulators.entries())
-      .sort((a, b) => b[1].totalScore - a[1].totalScore);
+    const entries = Array.from(accumulators.entries()).sort(
+      (a, b) => b[1].totalScore - a[1].totalScore,
+    );
 
     for (let i = 0; i < Math.min(k, entries.length); i++) {
       const [nodeId, acc] = entries[i]!;
@@ -242,10 +230,7 @@ export class TreeRCAEngine {
  *
  * @internal
  */
-function buildTreeStructure(
-  edges: readonly CallEdge[],
-  nodes: ReadonlyMap<string, unknown>,
-) {
+function buildTreeStructure(edges: readonly CallEdge[], nodes: ReadonlyMap<string, unknown>) {
   const reverseAdj = new Map<ServiceId, string[]>();
   const forwardAdj = new Map<ServiceId, string[]>();
   const inDegree = new Map<ServiceId, number>();
@@ -323,11 +308,7 @@ function topologicalSort(
  *
  * @internal
  */
-function getAvgLatency(
-  from: ServiceId,
-  to: ServiceId,
-  edges: readonly CallEdge[],
-): number {
+function getAvgLatency(from: ServiceId, to: ServiceId, edges: readonly CallEdge[]): number {
   const edge = edges.find((e) => e.from === from && e.to === to);
   return edge!.p99Latency;
 }
@@ -343,8 +324,9 @@ function rankAndProduceResults(
   topK: number,
   options: TreeRCAOptions,
 ): RootCauseResult[] {
-  const entries = Array.from(accumulators.entries())
-    .sort((a, b) => b[1].totalScore - a[1].totalScore);
+  const entries = Array.from(accumulators.entries()).sort(
+    (a, b) => b[1].totalScore - a[1].totalScore,
+  );
 
   const results: RootCauseResult[] = [];
 

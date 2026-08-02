@@ -30,13 +30,12 @@
  */
 
 import {
-  type DetectedCycle,
-  type ServiceId,
   type CallEdge,
+  type DetectedCycle,
   invariant,
-  invariantRange,
   invariantNonEmpty,
-  KineticValidationError,
+  invariantRange,
+  type ServiceId,
 } from '@agentix-e/micro-kinetic-core';
 import { cycleKey } from '../graph/cycle-detector.js';
 
@@ -95,11 +94,7 @@ export function buildEdgeWeightMap(
  *
  * @internal
  */
-function edgeWeight(
-  weightMap: EdgeWeightMap,
-  u: ServiceId,
-  v: ServiceId,
-): number {
+function edgeWeight(weightMap: EdgeWeightMap, u: ServiceId, v: ServiceId): number {
   return weightMap.get(`${u}→${v}`) ?? 0;
 }
 
@@ -234,9 +229,7 @@ export class CollisionContributionAnalyzer {
    * @param cycles - Detected cycles
    * @returns Map from cycle key to contribution weight
    */
-  computeAllContributions(
-    cycles: readonly DetectedCycle[],
-  ): ReadonlyMap<string, number> {
+  computeAllContributions(cycles: readonly DetectedCycle[]): ReadonlyMap<string, number> {
     const result = new Map<string, number>();
     for (const cycle of cycles) {
       const key = cycleKey(cycle.nodePath);
@@ -248,9 +241,7 @@ export class CollisionContributionAnalyzer {
   /**
    * Compute contributions for all cycles using the 2-hop model.
    */
-  computeAllTwoHopContributions(
-    cycles: readonly DetectedCycle[],
-  ): ReadonlyMap<string, number> {
+  computeAllTwoHopContributions(cycles: readonly DetectedCycle[]): ReadonlyMap<string, number> {
     const result = new Map<string, number>();
     for (const cycle of cycles) {
       const key = cycleKey(cycle.nodePath);

@@ -7,7 +7,11 @@
  * @module cli/formatters/table
  */
 
-import type { RootCauseResult, DenoiseResult, BenchmarkResult } from '@agentix-e/micro-kinetic-core';
+import type {
+  BenchmarkResult,
+  DenoiseResult,
+  RootCauseResult,
+} from '@agentix-e/micro-kinetic-core';
 
 /** Column definition for table formatting. */
 interface ColumnDef {
@@ -85,7 +89,8 @@ export function formatDenoiseTable(result: DenoiseResult): string {
     { key: 'pct', header: 'Percent', width: 10, align: 'right' },
   ];
 
-  const total = result.trueAlarms.length + result.coincidentalAlarms.length + result.groupedAlarms.length;
+  const total =
+    result.trueAlarms.length + result.coincidentalAlarms.length + result.groupedAlarms.length;
 
   const rows: Record<string, string>[] = [
     {

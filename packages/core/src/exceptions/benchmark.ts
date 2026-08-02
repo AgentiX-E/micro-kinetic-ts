@@ -20,10 +20,7 @@ export class BenchmarkLoadError extends KineticError {
 /** Thrown when benchmark data format is invalid. */
 export class BenchmarkFormatError extends KineticError {
   constructor(datasetId: string, details: string) {
-    super(
-      `Invalid benchmark format in ${datasetId}: ${details}`,
-      'BENCHMARK_FORMAT_ERROR',
-    );
+    super(`Invalid benchmark format in ${datasetId}: ${details}`, 'BENCHMARK_FORMAT_ERROR');
     this.name = 'BenchmarkFormatError';
   }
 }

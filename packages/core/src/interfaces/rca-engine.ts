@@ -13,15 +13,8 @@
  * @module interfaces/rca-engine
  */
 
-import type {
-  FaultPropagationGraph,
-  ServiceCallGraph,
-} from '../types/graph.js';
-import type {
-  MetricMap,
-  RCAEngineOptions,
-  RootCauseResult,
-} from '../types/faults.js';
+import type { MetricMap, RootCauseResult } from '../types/faults.js';
+import type { FaultPropagationGraph, ServiceCallGraph } from '../types/graph.js';
 
 /**
  * Core RCA engine interface.
@@ -37,10 +30,7 @@ export interface IRCAEngine {
    * and time-series metrics. This annotates edges with propagation
    * probabilities derived from metric anomaly correlations.
    */
-  buildFaultGraph(
-    callGraph: ServiceCallGraph,
-    metrics: MetricMap,
-  ): FaultPropagationGraph;
+  buildFaultGraph(callGraph: ServiceCallGraph, metrics: MetricMap): FaultPropagationGraph;
 
   /**
    * Perform root cause analysis on the fault propagation graph.
@@ -52,10 +42,7 @@ export interface IRCAEngine {
    * 3. Prune cycles with w(C) < ε
    * 4. Perform tree-based RCA on the pruned acyclic graph
    */
-  analyze(
-    graph: FaultPropagationGraph,
-    topK?: number,
-  ): Promise<readonly RootCauseResult[]>;
+  analyze(graph: FaultPropagationGraph, topK?: number): Promise<readonly RootCauseResult[]>;
 
   /**
    * Compute the upper bound on total cycle contribution

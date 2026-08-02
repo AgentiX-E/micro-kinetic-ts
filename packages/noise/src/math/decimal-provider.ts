@@ -7,8 +7,8 @@
  * @module noise/math/decimal-provider
  */
 
-import { Decimal } from 'decimal.js';
 import type { IArbitraryPrecision } from '@agentix-e/micro-kinetic-core';
+import { Decimal } from 'decimal.js';
 
 /** Default precision: 50 significant digits. */
 const DEFAULT_PRECISION = 50;

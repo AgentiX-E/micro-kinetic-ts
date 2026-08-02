@@ -35,16 +35,12 @@
 import * as np from 'numpy-ts';
 
 import type {
-  TimeSeries,
+  ChronicFaultIndicator,
   CuttingWindow,
+  LocalErrorBound,
+  TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import type { LocalErrorBound } from '@agentix-e/micro-kinetic-core';
-import type { ChronicFaultIndicator } from '@agentix-e/micro-kinetic-core';
-import {
-  invariant,
-  invariantFinite,
-  invariantNonEmpty,
-} from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantFinite, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 
 /** Degradation types affecting error estimation. */
 export enum DegradationType {
@@ -96,15 +92,11 @@ export class LocalErrorEstimator {
    * @param metric - Metric label
    * @returns Array of LocalErrorBound, one per window
    */
-  estimateLocalBounds(
-    windows: readonly CuttingWindow[],
-    metric: string,
-  ): LocalErrorBound[] {
+  estimateLocalBounds(windows: readonly CuttingWindow[], metric: string): LocalErrorBound[] {
     invariantNonEmpty(windows, 'windows');
 
     return windows.map((window, idx) => {
-      const { degradationRate: rate, errorBound, indicators } =
-        this.estimateWindow(window);
+      const { degradationRate: rate, errorBound, indicators } = this.estimateWindow(window);
 
       return {
         windowIndex: idx,
@@ -146,15 +138,17 @@ export class LocalErrorEstimator {
         errorBound = computeLinearErrorBound(safeRate, durationHours);
     }
 
-    const indicators: ChronicFaultIndicator[] = [{
-      metric: window.slice.label,
-      degradationRate: safeRate,
-      temporalCorrelation: computeTemporalCorrelation(
-        [...window.slice.timestamps],
-        [...window.slice.values],
-      ),
-      isMonotonic: isMonotonic([...window.slice.values]),
-    }];
+    const indicators: ChronicFaultIndicator[] = [
+      {
+        metric: window.slice.label,
+        degradationRate: safeRate,
+        temporalCorrelation: computeTemporalCorrelation(
+          [...window.slice.timestamps],
+          [...window.slice.values],
+        ),
+        isMonotonic: isMonotonic([...window.slice.values]),
+      },
+    ];
 
     return { degradationRate: safeRate, errorBound, indicators };
   }
@@ -169,9 +163,7 @@ export class LocalErrorEstimator {
     const n = slice.timestamps.length;
     if (n < 5) return DegradationType.LINEAR;
 
-    const tRel = slice.timestamps.map(
-      (t) => (t - slice.timestamps[0]!) / 3_600_000,
-    );
+    const tRel = slice.timestamps.map((t) => (t - slice.timestamps[0]!) / 3_600_000);
     const values = [...slice.values];
 
     const tArr = np.array(tRel);
@@ -197,9 +189,7 @@ export class LocalErrorEstimator {
 
     // Try power-law fit via log-log linear regression
     let powResidual = Infinity;
-    const posIndices = values
-      .map((v, i) => (v > 0 && tRel[i]! > 0 ? i : -1))
-      .filter((i) => i >= 0);
+    const posIndices = values.map((v, i) => (v > 0 && tRel[i]! > 0 ? i : -1)).filter((i) => i >= 0);
     if (posIndices.length >= 3) {
       const logT = posIndices.map((i) => Math.log(tRel[i]!));
       const logV = posIndices.map((i) => Math.log(values[i]!));
@@ -208,11 +198,14 @@ export class LocalErrorEstimator {
       const powCoeffs = np.polyfit(logTArr, logVArr, 1);
       const powPred = np.polyval(powCoeffs, logTArr);
       const powPredList = (powPred.tolist() as number[]).map(Math.exp);
-      powResidual = computeMSE(posIndices.map((i) => values[i]!), powPredList);
+      powResidual = computeMSE(
+        posIndices.map((i) => values[i]!),
+        powPredList,
+      );
     }
 
     // Select model with lowest residual (favor simpler models)
-    const LIN_BIAS = 0.95;   // Slight preference for linear
+    const LIN_BIAS = 0.95; // Slight preference for linear
     const EXP_BIAS = 1.0;
     const POW_BIAS = 1.0;
 
@@ -235,9 +228,7 @@ export class LocalErrorEstimator {
    * Compute degradation rate for a given type using numpy-ts polyfit.
    */
   private computeRate(slice: TimeSeries, type: DegradationType): number {
-    const tRel = slice.timestamps.map(
-      (t) => (t - slice.timestamps[0]!) / 3_600_000,
-    );
+    const tRel = slice.timestamps.map((t) => (t - slice.timestamps[0]!) / 3_600_000);
     const values = [...slice.values];
 
     if (values.length < 2) return 0;
@@ -289,11 +280,7 @@ export class LocalErrorEstimator {
  * Compute linear kinetic energy bound (Deng Yu, H-theorem):
  *   ε_j = C × r_j × δ_j² / 2
  */
-export function computeLinearErrorBound(
-  rate: number,
-  durationHours: number,
-  scale = 1.0,
-): number {
+export function computeLinearErrorBound(rate: number, durationHours: number, scale = 1.0): number {
   invariantFinite(rate, 'rate');
   invariantFinite(durationHours, 'durationHours');
   return (scale * rate * durationHours * durationHours) / 2;
@@ -325,12 +312,12 @@ export function computeExponentialErrorBound(
   if (Math.abs(x) < 0.01) {
     // exp(x) ≈ 1 + x + x²/2 + x³/6
     // exp(x) - x - 1 ≈ x²/2 + x³/6
-    const taylor = x * x / 2 + x * x * x / 6;
-    return scale * rate * taylor / (lambda * lambda);
+    const taylor = (x * x) / 2 + (x * x * x) / 6;
+    return (scale * rate * taylor) / (lambda * lambda);
   }
 
   const expTerm = Math.exp(x);
-  return scale * rate * (expTerm - x - 1) / (lambda * lambda);
+  return (scale * rate * (expTerm - x - 1)) / (lambda * lambda);
 }
 
 /**
@@ -354,7 +341,7 @@ export function computePowerLawErrorBound(
   invariant(alpha > 1, 'Power-law exponent must be > 1');
 
   const denominator = alpha * (alpha - 1);
-  return scale * rate * Math.pow(durationHours, alpha) / denominator;
+  return (scale * rate * Math.pow(durationHours, alpha)) / denominator;
 }
 
 /**
@@ -369,8 +356,7 @@ export function computeLogarithmicErrorBound(
   invariantFinite(rate, 'rate');
   invariantFinite(durationHours, 'durationHours');
 
-  return scale * rate * durationHours * durationHours *
-    Math.log(1 + durationHours) / 2;
+  return (scale * rate * durationHours * durationHours * Math.log(1 + durationHours)) / 2;
 }
 
 // ── Utility helpers ──────────────────────────────────────

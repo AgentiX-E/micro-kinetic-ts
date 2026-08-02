@@ -55,10 +55,7 @@ export class KineticPrecisionError extends KineticError {
   readonly actualPrecision: number;
 
   constructor(expected: number, actual: number) {
-    super(
-      `Precision loss: expected ${expected} digits, got ${actual}`,
-      'PRECISION_ERROR',
-    );
+    super(`Precision loss: expected ${expected} digits, got ${actual}`, 'PRECISION_ERROR');
     this.name = 'KineticPrecisionError';
     this.expectedPrecision = expected;
     this.actualPrecision = actual;

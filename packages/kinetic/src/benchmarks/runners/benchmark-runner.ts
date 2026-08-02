@@ -13,28 +13,15 @@
 
 import {
   DI_TOKENS,
+  type FaultType,
   type IContainer,
   type IRCAEngine,
-  type ServiceCallGraph,
-  type MetricMap,
   type RootCauseResult,
-  type FaultType,
 } from '@agentix-e/micro-kinetic-core';
 
-import type {
-  BenchmarkCase,
-  BenchmarkSuite,
-  BenchmarkGroundTruth,
-} from '../loaders/types.js';
+import type { BenchmarkSuite } from '../loaders/types.js';
 
-import {
-  avgAtK,
-  computeAvgAtK,
-  computeLA,
-  computeTA,
-  computeAIOps2025CompositeScore,
-  computeRCA100CompositeScore,
-} from './metrics.js';
+import { computeAvgAtK, computeTA } from './metrics.js';
 
 // ── Runner Types ──────────────────────────────────────────
 
@@ -160,7 +147,18 @@ export class BenchmarkRunner {
         const topResult = results[0];
 
         // Track prediction
-        predictions.push(topResult ?? { serviceId: '', faultType: { category: 'UNKNOWN', subType: '', severity: 'info' }, confidence: 0, rank: 0, evidenceMetrics: [], propagationDepth: 0, propagationErrorBound: 0, viaTreeSearch: false });
+        predictions.push(
+          topResult ?? {
+            serviceId: '',
+            faultType: { category: 'UNKNOWN', subType: '', severity: 'info' },
+            confidence: 0,
+            rank: 0,
+            evidenceMetrics: [],
+            propagationDepth: 0,
+            propagationErrorBound: 0,
+            viaTreeSearch: false,
+          },
+        );
         truthServiceIds.push(benchCase.groundTruth.serviceId);
         truthFaultTypes.push(benchCase.groundTruth.faultType);
 
@@ -290,18 +288,22 @@ export class BenchmarkRunner {
     const totalFailures = suiteResults.reduce((sum, r) => sum + r.failures.length, 0);
 
     // Weighted aggregate metrics
-    const aggregateAvgTop1 = totalCases > 0
-      ? suiteResults.reduce((sum, r) => sum + r.avgTop1 * r.totalCases, 0) / totalCases
-      : 0;
-    const aggregateAvgTop5 = totalCases > 0
-      ? suiteResults.reduce((sum, r) => sum + r.avgTop5 * r.totalCases, 0) / totalCases
-      : 0;
-    const aggregateLA = totalCases > 0
-      ? suiteResults.reduce((sum, r) => sum + r.locationAccuracy * r.totalCases, 0) / totalCases
-      : 0;
-    const aggregateTA = totalCases > 0
-      ? suiteResults.reduce((sum, r) => sum + r.typeAccuracy * r.totalCases, 0) / totalCases
-      : 0;
+    const aggregateAvgTop1 =
+      totalCases > 0
+        ? suiteResults.reduce((sum, r) => sum + r.avgTop1 * r.totalCases, 0) / totalCases
+        : 0;
+    const aggregateAvgTop5 =
+      totalCases > 0
+        ? suiteResults.reduce((sum, r) => sum + r.avgTop5 * r.totalCases, 0) / totalCases
+        : 0;
+    const aggregateLA =
+      totalCases > 0
+        ? suiteResults.reduce((sum, r) => sum + r.locationAccuracy * r.totalCases, 0) / totalCases
+        : 0;
+    const aggregateTA =
+      totalCases > 0
+        ? suiteResults.reduce((sum, r) => sum + r.typeAccuracy * r.totalCases, 0) / totalCases
+        : 0;
 
     const totalDuration = Date.now() - startTime;
 
@@ -365,7 +367,9 @@ export class BenchmarkRunner {
       if (result.perFaultType.size > 0) {
         lines.push('    Per-Fault-Type Accuracy:');
         for (const [faultType, metric] of result.perFaultType) {
-          lines.push(`      ${faultType.padEnd(20)} ${metric.cases.toString().padStart(4)} cases  ${(metric.accuracy * 100).toFixed(1).padStart(6)}%`);
+          lines.push(
+            `      ${faultType.padEnd(20)} ${metric.cases.toString().padStart(4)} cases  ${(metric.accuracy * 100).toFixed(1).padStart(6)}%`,
+          );
         }
         lines.push('');
       }
@@ -406,12 +410,10 @@ export class BenchmarkRunner {
     const totalCases = results.reduce((s, r) => s + r.totalCases, 0);
     const totalFailures = results.reduce((s, r) => s + r.failures.length, 0);
 
-    const weightedAvg1 = totalCases > 0
-      ? results.reduce((s, r) => s + r.avgTop1 * r.totalCases, 0) / totalCases
-      : 0;
-    const weightedAvg5 = totalCases > 0
-      ? results.reduce((s, r) => s + r.avgTop5 * r.totalCases, 0) / totalCases
-      : 0;
+    const weightedAvg1 =
+      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop1 * r.totalCases, 0) / totalCases : 0;
+    const weightedAvg5 =
+      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop5 * r.totalCases, 0) / totalCases : 0;
 
     const report = {
       timestamp: new Date().toISOString(),
@@ -424,9 +426,7 @@ export class BenchmarkRunner {
         locationAccuracy: r.locationAccuracy,
         typeAccuracy: r.typeAccuracy,
         duration: r.duration,
-        perFaultType: Object.fromEntries(
-          [...r.perFaultType.entries()].map(([k, v]) => [k, v]),
-        ),
+        perFaultType: Object.fromEntries([...r.perFaultType.entries()].map(([k, v]) => [k, v])),
         failures: r.failures.length,
         topFailures: r.failures.slice(0, 10).map((f) => ({
           caseId: f.caseId,
@@ -449,23 +449,26 @@ export class BenchmarkRunner {
   private generateHtmlReport(results: readonly RunResult[]): string {
     const totalCases = results.reduce((s, r) => s + r.totalCases, 0);
     const totalFailures = results.reduce((s, r) => s + r.failures.length, 0);
-    const weightedAvg1 = totalCases > 0
-      ? results.reduce((s, r) => s + r.avgTop1 * r.totalCases, 0) / totalCases
-      : 0;
-    const weightedAvg5 = totalCases > 0
-      ? results.reduce((s, r) => s + r.avgTop5 * r.totalCases, 0) / totalCases
-      : 0;
+    const weightedAvg1 =
+      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop1 * r.totalCases, 0) / totalCases : 0;
+    const weightedAvg5 =
+      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop5 * r.totalCases, 0) / totalCases : 0;
 
-    const suiteRows = results.map((r) => {
-      const failureDetails = r.failures.slice(0, 5).map((f) =>
-        `<li>${escapeHtml(f.caseId)}: ${escapeHtml(f.reason)}</li>`
-      ).join('');
+    const suiteRows = results
+      .map((r) => {
+        const failureDetails = r.failures
+          .slice(0, 5)
+          .map((f) => `<li>${escapeHtml(f.caseId)}: ${escapeHtml(f.reason)}</li>`)
+          .join('');
 
-      const faultTypeRows = [...r.perFaultType.entries()].map(([ft, m]) =>
-        `<tr><td>${escapeHtml(ft)}</td><td>${m.cases}</td><td>${(m.accuracy * 100).toFixed(1)}%</td></tr>`
-      ).join('');
+        const faultTypeRows = [...r.perFaultType.entries()]
+          .map(
+            ([ft, m]) =>
+              `<tr><td>${escapeHtml(ft)}</td><td>${m.cases}</td><td>${(m.accuracy * 100).toFixed(1)}%</td></tr>`,
+          )
+          .join('');
 
-      return `
+        return `
       <div class="suite">
         <h2>${escapeHtml(r.suiteName)}</h2>
         <table>
@@ -483,7 +486,8 @@ export class BenchmarkRunner {
         <h3>Failures (${r.failures.length})</h3>
         <ul>${failureDetails}${r.failures.length > 5 ? `<li>... and ${r.failures.length - 5} more</li>` : ''}</ul>
       </div>`;
-    }).join('\n');
+      })
+      .join('\n');
 
     return `<!DOCTYPE html>
 <html lang="en">

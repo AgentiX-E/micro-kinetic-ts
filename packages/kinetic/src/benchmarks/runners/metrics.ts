@@ -121,10 +121,7 @@ export function computeF1Score(precision: number, recall: number): number {
  * @param truth - Ground truth service ID.
  * @returns MRR value (0-1).
  */
-export function computeMRR(
-  predictions: ReadonlyArray<RootCauseResult>,
-  truth: string,
-): number {
+export function computeMRR(predictions: ReadonlyArray<RootCauseResult>, truth: string): number {
   for (let i = 0; i < predictions.length; i++) {
     if (predictions[i]!.serviceId === truth) {
       return 1 / (i + 1);

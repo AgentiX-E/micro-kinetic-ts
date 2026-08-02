@@ -32,29 +32,23 @@
  */
 
 import {
-  type ServiceCallGraph,
-  type FaultPropagationGraph,
-  type PrunedTree,
-  type RootCauseResult,
   type DetectedCycle,
-  type CallEdge,
+  type FaultPropagationGraph,
+  type MetricMap,
+  type PrunedEdgeRecord,
+  type PrunedTree,
+  type RCAEngineOptions,
+  type RootCauseResult,
+  type ServiceCallGraph,
   type ServiceId,
   type ServiceNode,
-  type TreeNodeScore,
-  type PrunedEdgeRecord,
-  type FaultType,
-  type MetricMap,
   type TimeSeries,
-  type RCAEngineOptions,
+  type TreeNodeScore,
   DEFAULT_RCA_OPTIONS,
-  invariant,
-  invariantRange,
-  invariantNonEmpty,
-  invariantPositiveInt,
   GraphCycleError,
-  PruningFailureError,
-  KineticValidationError,
-  EmptyGraphError,
+  invariant,
+  invariantPositiveInt,
+  invariantRange,
 } from '@agentix-e/micro-kinetic-core';
 
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
@@ -139,10 +133,7 @@ export class TreePruner {
    * @param metrics - Time series metrics keyed by service ID
    * @returns Fault propagation graph ready for analysis
    */
-  buildFaultGraph(
-    callGraph: ServiceCallGraph,
-    metrics: MetricMap,
-  ): FaultPropagationGraph {
+  buildFaultGraph(callGraph: ServiceCallGraph, metrics: MetricMap): FaultPropagationGraph {
     invariant(callGraph.nodes.size > 0, 'callGraph must have at least one node');
     invariant(callGraph.edges.length > 0, 'callGraph must have at least one edge');
     invariant(metrics.size > 0, 'metrics must be non-empty');
@@ -175,17 +166,14 @@ export class TreePruner {
     }
 
     // Detect cycles
-    const edgePairs = callGraph.edges.map(
-      (e) => [e.from, e.to] as readonly [ServiceId, ServiceId],
-    );
+    const edgePairs = callGraph.edges.map((e) => [e.from, e.to] as readonly [ServiceId, ServiceId]);
     const cycles = this.cycleDetector.detect(edgePairs);
 
     // Compute contributions
-    const analyzer = new CollisionContributionAnalyzer(
-      callGraph.edges,
-      propagationWeights,
-      { alpha: this.options.decayAlpha, beta: this.options.decayBeta },
-    );
+    const analyzer = new CollisionContributionAnalyzer(callGraph.edges, propagationWeights, {
+      alpha: this.options.decayAlpha,
+      beta: this.options.decayBeta,
+    });
 
     const contributions = this.options.useTwoHopDecay
       ? analyzer.computeAllTwoHopContributions(cycles)
@@ -249,10 +237,7 @@ export class TreePruner {
    * @param topK - Number of top results to return (default from options)
    * @returns Ranked root cause results
    */
-  analyze(
-    graph: FaultPropagationGraph,
-    topK?: number,
-  ): RootCauseResult[] {
+  analyze(graph: FaultPropagationGraph, topK?: number): RootCauseResult[] {
     const k = topK ?? this.options.defaultTopK;
     invariantPositiveInt(k, 'topK');
 
@@ -262,18 +247,14 @@ export class TreePruner {
 
     // Step 2: Check for significant cycles
     if (significantCycles.length > 0) {
-      const maxContribution = Math.max(
-        ...significantCycles.map((c) => c.contribution),
-      );
+      const maxContribution = Math.max(...significantCycles.map((c) => c.contribution));
       throw new GraphCycleError(significantCycles.length, maxContribution);
     }
 
     // Step 3: Prune insignificant cycles
     const prunedTree = pruneCycles(
       graph,
-      insignificantCycles.length > 0
-        ? insignificantCycles
-        : undefined,
+      insignificantCycles.length > 0 ? insignificantCycles : undefined,
     );
 
     // Step 4: Perform tree RCA on the pruned tree
@@ -425,15 +406,9 @@ function computeCorrelationWeight(
  * @returns Pruned tree structure
  * @internal
  */
-function pruneCycles(
-  graph: FaultPropagationGraph,
-  cycles?: readonly DetectedCycle[],
-): PrunedTree {
+function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCycle[]): PrunedTree {
   const targetCycles = cycles ?? graph.detectedCycles.filter((c) => !c.significant);
-  const weightMap = buildEdgeWeightMap(
-    graph.callGraph.edges,
-    graph.propagationWeights,
-  );
+  const weightMap = buildEdgeWeightMap(graph.callGraph.edges, graph.propagationWeights);
 
   // Track which edges are pruned
   const prunedEdgeSet = new Set<string>();
@@ -656,10 +631,7 @@ function performTreeRCA(
   const results: RootCauseResult[] = [];
   for (let i = 0; i < Math.min(topK, scoredNodes.length); i++) {
     const node = scoredNodes[i]!;
-    const errorBound = estimatePropagationError(
-      node.depth,
-      options.decayAlpha,
-    );
+    const errorBound = estimatePropagationError(node.depth, options.decayAlpha);
 
     results.push({
       serviceId: node.serviceId,
@@ -670,9 +642,7 @@ function performTreeRCA(
       },
       confidence: computeConfidence(node.score, node.depth, errorBound),
       rank: i + 1,
-      evidenceMetrics: [
-        { metric: 'rca_score', value: node.score, threshold: 0.3 },
-      ],
+      evidenceMetrics: [{ metric: 'rca_score', value: node.score, threshold: 0.3 }],
       propagationDepth: node.depth,
       propagationErrorBound: errorBound,
       viaTreeSearch: true,
@@ -707,11 +677,7 @@ function estimatePropagationError(depth: number, decayAlpha: number): number {
  *
  * @internal
  */
-function computeConfidence(
-  score: number,
-  depth: number,
-  errorBound: number,
-): number {
+function computeConfidence(score: number, depth: number, errorBound: number): number {
   const depthPenalty = depth > 0 ? 1 / (1 + Math.log(depth + 1)) : 1;
   return Math.max(0, Math.min(1, score * (1 - errorBound) * depthPenalty));
 }

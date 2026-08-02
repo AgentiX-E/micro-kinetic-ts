@@ -34,19 +34,12 @@
  * @module chronic/pattern-classifier
  */
 
-import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
-import type { FaultCategory } from '@agentix-e/micro-kinetic-core';
-import {
-  invariant,
-  invariantNonEmpty,
-} from '@agentix-e/micro-kinetic-core';
+import type { FaultCategory, TimeSeries } from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 
-import { MemoryLeakDetector } from './memory-leak.js';
 import { ConnectionPoolDetector } from './connection-pool.js';
-import {
-  DegradationCurveAnalyzer,
-  CurveModel,
-} from './degradation-curve.js';
+import { CurveModel, DegradationCurveAnalyzer } from './degradation-curve.js';
+import { MemoryLeakDetector } from './memory-leak.js';
 
 /** Recognized chronic fault pattern types. */
 export enum ChronicPattern {
@@ -142,21 +135,20 @@ export class PatternClassifier {
     const curveResult = this.curveAnalyzer.analyze(ts);
 
     switch (curveResult.bestModel) {
-        case CurveModel.POWER_LAW:
-          scores[ChronicPattern.DATA_SKEW] = curveResult.bestFit.adjustedRSquared;
-          break;
-        case CurveModel.EXPONENTIAL:
-          scores[ChronicPattern.CONNECTION_POOL_EXHAUSTION] = Math.max(
-            scores[ChronicPattern.CONNECTION_POOL_EXHAUSTION],
-            curveResult.bestFit.adjustedRSquared,
-          );
-          break;
-        case CurveModel.LINEAR:
-        case CurveModel.LOGARITHMIC:
-          scores[ChronicPattern.GRADUAL_DEGRADATION] =
-            curveResult.bestFit.adjustedRSquared;
-          break;
-      }
+      case CurveModel.POWER_LAW:
+        scores[ChronicPattern.DATA_SKEW] = curveResult.bestFit.adjustedRSquared;
+        break;
+      case CurveModel.EXPONENTIAL:
+        scores[ChronicPattern.CONNECTION_POOL_EXHAUSTION] = Math.max(
+          scores[ChronicPattern.CONNECTION_POOL_EXHAUSTION],
+          curveResult.bestFit.adjustedRSquared,
+        );
+        break;
+      case CurveModel.LINEAR:
+      case CurveModel.LOGARITHMIC:
+        scores[ChronicPattern.GRADUAL_DEGRADATION] = curveResult.bestFit.adjustedRSquared;
+        break;
+    }
 
     // Determine dominant pattern
     const dominant = this.selectPattern(scores);
@@ -189,10 +181,7 @@ export class PatternClassifier {
     metrics: Readonly<Record<string, TimeSeries>>,
     options?: Partial<PatternClassificationOptions>,
   ): PatternClassificationResult {
-    invariant(
-      Object.keys(metrics).length > 0,
-      'At least one metric required',
-    );
+    invariant(Object.keys(metrics).length > 0, 'At least one metric required');
 
     let bestResult: PatternClassificationResult | null = null;
 
@@ -213,10 +202,7 @@ export class PatternClassifier {
     let best: ChronicPattern = ChronicPattern.UNKNOWN;
     let bestScore = 0;
 
-    for (const [pattern, score] of Object.entries(scores) as [
-      ChronicPattern,
-      number,
-    ][]) {
+    for (const [pattern, score] of Object.entries(scores) as [ChronicPattern, number][]) {
       if (score > bestScore) {
         bestScore = score;
         best = pattern;
@@ -228,11 +214,8 @@ export class PatternClassifier {
 
   private validateInputs(ts: TimeSeries): void {
     invariantNonEmpty(ts.timestamps, 'TimeSeries.timestamps');
-    invariantNonEmpty((ts.values as unknown) as { length: number }, 'TimeSeries.values');
-    invariant(
-      ts.timestamps.length === ts.values.length,
-      'Timestamps and values must match',
-    );
+    invariantNonEmpty(ts.values as unknown as { length: number }, 'TimeSeries.values');
+    invariant(ts.timestamps.length === ts.values.length, 'Timestamps and values must match');
   }
 
   private buildReason(
@@ -246,9 +229,7 @@ export class PatternClassifier {
     switch (pattern) {
       case ChronicPattern.MEMORY_LEAK:
         parts.push('Monotonic memory increase detected');
-        parts.push(
-          `rate=${leakResult.degradationRateKBs.toFixed(3)} KB/s`,
-        );
+        parts.push(`rate=${leakResult.degradationRateKBs.toFixed(3)} KB/s`);
         parts.push(`correlation=${leakResult.temporalCorrelation.toFixed(3)}`);
         break;
 
@@ -257,9 +238,7 @@ export class PatternClassifier {
         parts.push(`λ=${poolResult.growthRate.toFixed(4)}`);
         parts.push(`utilization=${(poolResult.utilizationRatio * 100).toFixed(0)}%`);
         if (poolResult.hoursToExhaustion !== undefined) {
-          parts.push(
-            `exhaustion in ${poolResult.hoursToExhaustion.toFixed(1)}h`,
-          );
+          parts.push(`exhaustion in ${poolResult.hoursToExhaustion.toFixed(1)}h`);
         }
         break;
 
@@ -276,9 +255,7 @@ export class PatternClassifier {
 /**
  * Map a ChronicPattern to a FaultCategory.
  */
-function chronicPatternToFaultCategory(
-  pattern: ChronicPattern,
-): FaultCategory {
+function chronicPatternToFaultCategory(pattern: ChronicPattern): FaultCategory {
   if (pattern === ChronicPattern.MEMORY_LEAK) return 'MEMORY_LEAK';
   if (pattern === ChronicPattern.CONNECTION_POOL_EXHAUSTION) return 'CONNECTION_POOL';
   return 'MEMORY';

@@ -35,42 +35,43 @@
  * @module di/container
  */
 
-import {
-  Container,
-  DI_TOKENS,
-  type IContainer,
-  invariant,
-} from '@agentix-e/micro-kinetic-core';
+import { Container, DI_TOKENS, type IContainer } from '@agentix-e/micro-kinetic-core';
 
 // ── Tree package (collision tree RCA) ─────────────────────
-import { NumpyTsMatrixOps } from '@agentix-e/micro-kinetic-tree';
-import { UbiqueLinearAlgebra } from '@agentix-e/micro-kinetic-tree';
-import { TreePruner } from '@agentix-e/micro-kinetic-tree';
-import { TreeRCAEngine } from '@agentix-e/micro-kinetic-tree';
+import {
+  NumpyTsMatrixOps,
+  TreePruner,
+  TreeRCAEngine,
+  UbiqueLinearAlgebra,
+} from '@agentix-e/micro-kinetic-tree';
 
 // ── Cutting package (chronic fault detection) ─────────────
-import { AdaptiveWindowCutter } from '@agentix-e/micro-kinetic-cutting';
-import { InductionProver } from '@agentix-e/micro-kinetic-cutting';
+import { AdaptiveWindowCutter, InductionProver } from '@agentix-e/micro-kinetic-cutting';
 
 // ── Noise package (Stosszahlansatz denoising) ─────────────
-import { StossDenoiser } from '@agentix-e/micro-kinetic-noise';
-import { IndependenceChecker } from '@agentix-e/micro-kinetic-noise';
-import { DecimalProvider } from '@agentix-e/micro-kinetic-noise';
-import { StatisticsProvider } from '@agentix-e/micro-kinetic-noise';
-import { CouplingSparsityAnalyzer } from '@agentix-e/micro-kinetic-noise';
+import {
+  CouplingSparsityAnalyzer,
+  DecimalProvider,
+  IndependenceChecker,
+  StatisticsProvider,
+  StossDenoiser,
+} from '@agentix-e/micro-kinetic-noise';
 
 // ── Scaling package (BBGKY + Boltzmann-Grad) ─────────────
-import { HierarchyTruncator } from '@agentix-e/micro-kinetic-scaling';
-import { BoltzmannGradAnalyzer } from '@agentix-e/micro-kinetic-scaling';
-import { HierarchyBuilder } from '@agentix-e/micro-kinetic-scaling';
+import {
+  BoltzmannGradAnalyzer,
+  HierarchyBuilder,
+  HierarchyTruncator,
+} from '@agentix-e/micro-kinetic-scaling';
 
 // ── Wave package (cascade propagation) ────────────────────
-import { WaveCascadeModel } from '@agentix-e/micro-kinetic-wave';
-import { PropagationSimulator } from '@agentix-e/micro-kinetic-wave';
-import { CorrelationDecay } from '@agentix-e/micro-kinetic-wave';
+import {
+  CorrelationDecay,
+  PropagationSimulator,
+  WaveCascadeModel,
+} from '@agentix-e/micro-kinetic-wave';
 
 // ── Defaults ──────────────────────────────────────────────
-import { DEFAULTS } from './defaults.js';
 
 /**
  * Create the default DI container with all engine implementations
@@ -125,41 +126,33 @@ export function createDefaultContainer(): IContainer {
   // Independence Checker — Stosszahlansatz independence test (depends on STATISTICS)
   container.register(
     DI_TOKENS.INDEPENDENCE_CHECKER,
-    (c) => new IndependenceChecker(
-      c.resolve<StatisticsProvider>(DI_TOKENS.STATISTICS),
-    ),
+    (c) => new IndependenceChecker(c.resolve<StatisticsProvider>(DI_TOKENS.STATISTICS)),
   );
 
   // Denoise Engine — coupling sparsity-based alert denoising
   // (depends on IndependenceChecker and CouplingSparsityAnalyzer)
-  container.register(
-    DI_TOKENS.DENOISE_ENGINE,
-    (c) => {
-      const couplingAnalyzer = new CouplingSparsityAnalyzer(
-        c.resolve<StatisticsProvider>(DI_TOKENS.STATISTICS),
-      );
-      return new StossDenoiser(
-        couplingAnalyzer,
-        c.resolve<IndependenceChecker>(DI_TOKENS.INDEPENDENCE_CHECKER),
-      );
-    },
-  );
+  container.register(DI_TOKENS.DENOISE_ENGINE, (c) => {
+    const couplingAnalyzer = new CouplingSparsityAnalyzer(
+      c.resolve<StatisticsProvider>(DI_TOKENS.STATISTICS),
+    );
+    return new StossDenoiser(
+      couplingAnalyzer,
+      c.resolve<IndependenceChecker>(DI_TOKENS.INDEPENDENCE_CHECKER),
+    );
+  });
 
   // Hierarchy Truncator — BBGKY truncation order finder
   container.register(DI_TOKENS.HIERARCHY_TRUNCATOR, () => new HierarchyTruncator());
 
   // Scaling Analyzer — BBGKY + Boltzmann-Grad fault probability
   // (depends on HierarchyBuilder and HierarchyTruncator)
-  container.register(
-    DI_TOKENS.SCALING_ANALYZER,
-    (c) => {
-      const hierarchyBuilder = new HierarchyBuilder();
-      return new BoltzmannGradAnalyzer(
-        hierarchyBuilder,
-        c.resolve<HierarchyTruncator>(DI_TOKENS.HIERARCHY_TRUNCATOR),
-      );
-    },
-  );
+  container.register(DI_TOKENS.SCALING_ANALYZER, (c) => {
+    const hierarchyBuilder = new HierarchyBuilder();
+    return new BoltzmannGradAnalyzer(
+      hierarchyBuilder,
+      c.resolve<HierarchyTruncator>(DI_TOKENS.HIERARCHY_TRUNCATOR),
+    );
+  });
 
   // Wave Propagation Model — discretized WKE cascade simulator
   container.register(DI_TOKENS.WAVE_PROPAGATION_MODEL, () => new WaveCascadeModel());
@@ -168,9 +161,7 @@ export function createDefaultContainer(): IContainer {
   // (depends on WaveCascadeModel)
   container.register(
     DI_TOKENS.CASCADE_SIMULATOR,
-    (c) => new PropagationSimulator(
-      c.resolve<WaveCascadeModel>(DI_TOKENS.WAVE_PROPAGATION_MODEL),
-    ),
+    (c) => new PropagationSimulator(c.resolve<WaveCascadeModel>(DI_TOKENS.WAVE_PROPAGATION_MODEL)),
   );
 
   // Correlation Decay Estimator — spectral gap-based decay curve
@@ -181,16 +172,11 @@ export function createDefaultContainer(): IContainer {
   // CouplingSparsityAnalyzer — coupling matrix builder (internal dependency)
   container.register(
     Symbol.for('micro-kinetic:CouplingSparsityAnalyzer'),
-    (c) => new CouplingSparsityAnalyzer(
-      c.resolve<StatisticsProvider>(DI_TOKENS.STATISTICS),
-    ),
+    (c) => new CouplingSparsityAnalyzer(c.resolve<StatisticsProvider>(DI_TOKENS.STATISTICS)),
   );
 
   // HierarchyBuilder — BBGKY hierarchy builder (internal dependency)
-  container.register(
-    Symbol.for('micro-kinetic:HierarchyBuilder'),
-    () => new HierarchyBuilder(),
-  );
+  container.register(Symbol.for('micro-kinetic:HierarchyBuilder'), () => new HierarchyBuilder());
 
   return container;
 }

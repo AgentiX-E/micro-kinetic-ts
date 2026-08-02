@@ -35,55 +35,45 @@
  */
 
 // ── Segmentation engines ─────────────────────────────────
-export { AdaptiveWindowCutter } from './segmentation/adaptive-cutter.js';
+export { AdaptiveWindowCutter, computeKineticEnergyBound } from './segmentation/adaptive-cutter.js';
 export { FixedWindowCutter } from './segmentation/fixed-cutter.js';
-export { computeKineticEnergyBound } from './segmentation/adaptive-cutter.js';
 
 // ── Convergence analysis ─────────────────────────────────
 export {
-  LocalErrorEstimator,
+  DEFAULT_ERROR_ESTIMATOR_CONFIG,
   DegradationType,
-  computeLinearErrorBound,
+  LocalErrorEstimator,
   computeExponentialErrorBound,
-  computePowerLawErrorBound,
+  computeLinearErrorBound,
   computeLogarithmicErrorBound,
+  computePowerLawErrorBound,
 } from './convergence/local-estimator.js';
 export type { ErrorEstimatorConfig } from './convergence/local-estimator.js';
-export { DEFAULT_ERROR_ESTIMATOR_CONFIG } from './convergence/local-estimator.js';
 
 export { InductionProver } from './convergence/induction-prover.js';
 
 // ── Chronic fault detectors ──────────────────────────────
 export { MemoryLeakDetector } from './chronic/memory-leak.js';
-export type {
-  MemoryLeakResult,
-  MemoryLeakDetectionOptions,
-} from './chronic/memory-leak.js';
+export type { MemoryLeakDetectionOptions, MemoryLeakResult } from './chronic/memory-leak.js';
 
 export { ConnectionPoolDetector } from './chronic/connection-pool.js';
 export type {
-  ConnectionPoolResult,
   ConnectionPoolDetectionOptions,
+  ConnectionPoolResult,
 } from './chronic/connection-pool.js';
 
-export { DegradationCurveAnalyzer, CurveModel } from './chronic/degradation-curve.js';
+export { CurveModel, DegradationCurveAnalyzer } from './chronic/degradation-curve.js';
 export type {
+  CurveAnalysisOptions,
   CurveFitResult,
   DegradationAnalysisResult,
-  CurveAnalysisOptions,
 } from './chronic/degradation-curve.js';
 
-export {
-  PatternClassifier,
-  ChronicPattern,
-} from './chronic/pattern-classifier.js';
+export { ChronicPattern, PatternClassifier } from './chronic/pattern-classifier.js';
 export type {
-  PatternClassificationResult,
   PatternClassificationOptions,
+  PatternClassificationResult,
 } from './chronic/pattern-classifier.js';
 
 // ── DI Factory registrations ─────────────────────────────
-export {
-  registerCuttingFactories,
-  type CuttingFactoryContext,
-} from './di/factories.js';
+export { registerCuttingFactories, type CuttingFactoryContext } from './di/factories.js';

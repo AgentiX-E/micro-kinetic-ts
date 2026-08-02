@@ -53,10 +53,7 @@ export class HierarchyTruncator {
    * @param eta - Truncation threshold (default 0.01)
    * @returns Optimal truncation order (first insignificant k)
    */
-  public findTruncationOrder(
-    energies: readonly number[],
-    eta: number = 0.01,
-  ): number {
+  public findTruncationOrder(energies: readonly number[], eta: number = 0.01): number {
     invariant(energies.length >= 1, 'Must have at least E_1');
     invariantRange(eta, 0, 1, 'eta');
 
@@ -98,14 +95,8 @@ export class HierarchyTruncator {
    * @param truncationOrder - The chosen truncation point k
    * @returns Estimated truncation error
    */
-  public estimateTruncationError(
-    hierarchy: BBGKYHierarchy,
-    truncationOrder: number,
-  ): number {
-    invariant(
-      truncationOrder > 0,
-      `truncationOrder must be positive, got ${truncationOrder}`,
-    );
+  public estimateTruncationError(hierarchy: BBGKYHierarchy, truncationOrder: number): number {
+    invariant(truncationOrder > 0, `truncationOrder must be positive, got ${truncationOrder}`);
 
     if (truncationOrder >= hierarchy.states.length) {
       return 0; // No orders dropped

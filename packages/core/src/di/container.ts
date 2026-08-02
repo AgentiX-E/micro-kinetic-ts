@@ -80,10 +80,7 @@ export class Container implements IContainer {
 
   register<T>(token: symbol, factory: Factory<T>, singleton = true): void {
     if (this._registrations.has(token)) {
-      throw new ContainerResolutionError(
-        token as DIToken,
-        'token already registered',
-      );
+      throw new ContainerResolutionError(token as DIToken, 'token already registered');
     }
     this._registrations.set(token, { factory: factory as Factory<unknown>, singleton });
   }

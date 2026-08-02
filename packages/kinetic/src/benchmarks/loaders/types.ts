@@ -7,15 +7,7 @@
  * @module benchmarks/loaders/types
  */
 
-import type {
-  ServiceCallGraph,
-  ServiceNode,
-  CallEdge,
-  TimeSeries,
-  MetricMap,
-  RootCauseResult,
-  FaultType,
-} from '@agentix-e/micro-kinetic-core';
+import type { MetricMap, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
 
 // ── Common Benchmark Types ────────────────────────────────
 
@@ -138,11 +130,14 @@ export interface RCAEvalCase {
   /** Instance number. */
   readonly instance: number;
   /** Metrics data: service_name → [{timestamp, value, metric_name}]. */
-  readonly metrics: Record<string, ReadonlyArray<{
-    readonly timestamp: number;
-    readonly value: number;
-    readonly metric_name: string;
-  }>>;
+  readonly metrics: Record<
+    string,
+    ReadonlyArray<{
+      readonly timestamp: number;
+      readonly value: number;
+      readonly metric_name: string;
+    }>
+  >;
   /** Fault injection time as Unix timestamp (seconds). */
   readonly injectTime: number;
   /** Log entries (RE2/RE3 only). */

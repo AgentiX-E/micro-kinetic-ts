@@ -33,13 +33,13 @@
  */
 
 import type {
-  AlertRecord,
   AlertGroup,
+  AlertRecord,
   CouplingSparsityMatrix,
   DenoiseResult,
   ServiceCallGraph,
 } from '@agentix-e/micro-kinetic-core';
-import { DEFAULT_STOSS_PARAMS, invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 import { CouplingSparsityAnalyzer } from './coupling-analyzer.js';
 import { IndependenceChecker } from './independence-checker.js';
 
@@ -106,10 +106,7 @@ export class StossDenoiser {
    * @param coupling - Pre-computed coupling sparsity matrix
    * @returns DenoiseResult with classified alerts
    */
-  public denoise(
-    alerts: readonly AlertRecord[],
-    coupling: CouplingSparsityMatrix,
-  ): DenoiseResult {
+  public denoise(alerts: readonly AlertRecord[], coupling: CouplingSparsityMatrix): DenoiseResult {
     invariantNonEmpty(alerts, 'alerts');
     invariant(coupling.matrix.length > 0, 'Coupling matrix must not be empty');
 
@@ -133,7 +130,7 @@ export class StossDenoiser {
       }
 
       // Get unique services in this window
-      const serviceSet = new Set(windowAlerts.map(a => a.serviceId));
+      const serviceSet = new Set(windowAlerts.map((a) => a.serviceId));
       const services = Array.from(serviceSet);
 
       if (services.length === 1) {
@@ -151,8 +148,8 @@ export class StossDenoiser {
           const serviceIA = services[i]!;
           const serviceJB = services[j]!;
 
-          const alertsA = windowAlerts.filter(a => a.serviceId === serviceIA);
-          const alertsB = windowAlerts.filter(a => a.serviceId === serviceJB);
+          const alertsA = windowAlerts.filter((a) => a.serviceId === serviceIA);
+          const alertsB = windowAlerts.filter((a) => a.serviceId === serviceJB);
 
           // Map service IDs to coupling matrix indices
           const idxA = this.getServiceIndex(serviceIA, coupling, alerts);
@@ -189,7 +186,7 @@ export class StossDenoiser {
           // Mixed: group by cluster
           for (const cluster of serviceClusters) {
             const clusterServices = new Set(cluster);
-            const clusterAlerts = windowAlerts.filter(a => clusterServices.has(a.serviceId));
+            const clusterAlerts = windowAlerts.filter((a) => clusterServices.has(a.serviceId));
 
             if (cluster.length === 1) {
               // Singleton in mixed group: could be coincidental
@@ -197,7 +194,7 @@ export class StossDenoiser {
             } else {
               // Multi-service cluster: grouped alarms
               groupId++;
-              const timestamps = clusterAlerts.map(a => a.timestamp);
+              const timestamps = clusterAlerts.map((a) => a.timestamp);
               groupedAlarmsList.push({
                 id: `group_${groupId}`,
                 timeWindow: [Math.min(...timestamps), Math.max(...timestamps)],
@@ -213,9 +210,7 @@ export class StossDenoiser {
     // Step 4: Compute false positive reduction
     const totalAlerts = alerts.length;
     const coincidentalCount = coincidentalAlarmsList.length;
-    const falsePositiveReduction = totalAlerts > 0
-      ? coincidentalCount / totalAlerts
-      : 0;
+    const falsePositiveReduction = totalAlerts > 0 ? coincidentalCount / totalAlerts : 0;
 
     return {
       trueAlarms: trueAlarmsList,
@@ -278,7 +273,7 @@ export class StossDenoiser {
     // Hash the service ID to get a consistent index
     let hash = 0;
     for (let i = 0; i < serviceId.length; i++) {
-      hash = ((hash << 5) - hash) + serviceId.charCodeAt(i);
+      hash = (hash << 5) - hash + serviceId.charCodeAt(i);
       hash |= 0; // Convert to 32bit int
     }
     return Math.abs(hash) % coupling.dimension;
@@ -294,10 +289,7 @@ export class StossDenoiser {
    * @param dependentPairs - Pairs of indices that are dependent
    * @returns Clusters of service IDs
    */
-  private clusterServices(
-    services: string[],
-    dependentPairs: Array<[number, number]>,
-  ): string[][] {
+  private clusterServices(services: string[], dependentPairs: Array<[number, number]>): string[][] {
     const n = services.length;
     const parent = Array.from({ length: n }, (_, i) => i);
 
@@ -340,10 +332,7 @@ export class StossDenoiser {
    * @param coupling - Coupling sparsity matrix
    * @returns Maximum coupling strength
    */
-  private computeMaxCoupling(
-    cluster: string[],
-    coupling: CouplingSparsityMatrix,
-  ): number {
+  private computeMaxCoupling(cluster: string[], coupling: CouplingSparsityMatrix): number {
     const k = cluster.length;
     if (k <= 1) return 0;
 
@@ -374,7 +363,7 @@ export class StossDenoiser {
   private hashServiceId(id: string): number {
     let hash = 0;
     for (let i = 0; i < id.length; i++) {
-      hash = ((hash << 5) - hash) + id.charCodeAt(i);
+      hash = (hash << 5) - hash + id.charCodeAt(i);
       hash |= 0;
     }
     return Math.abs(hash);

@@ -32,7 +32,7 @@ import type {
   ServiceCallGraph,
   WaveParams,
 } from '@agentix-e/micro-kinetic-core';
-import { invariant, invariantNonEmpty, invariantPositiveInt, invariantRange } from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantNonEmpty, invariantPositiveInt } from '@agentix-e/micro-kinetic-core';
 import { WaveCascadeModel } from './cascade-model.js';
 
 /**
@@ -59,11 +59,7 @@ export class PropagationSimulator {
    * @param params - Wave propagation parameters
    * @returns Single cascade result
    */
-  public simulate(
-    source: string,
-    graph: ServiceCallGraph,
-    params: WaveParams,
-  ): CascadeResult {
+  public simulate(source: string, graph: ServiceCallGraph, params: WaveParams): CascadeResult {
     invariantNonEmpty(source, 'source');
     invariant(graph.nodes.has(source), `Source "${source}" not found in graph`);
 
@@ -97,7 +93,10 @@ export class PropagationSimulator {
   ): {
     readonly meanCascade: CascadeResult;
     readonly varianceField: ReadonlyMap<string, number>;
-    readonly confidenceIntervals: ReadonlyMap<string, { readonly lower: number; readonly upper: number }>;
+    readonly confidenceIntervals: ReadonlyMap<
+      string,
+      { readonly lower: number; readonly upper: number }
+    >;
   } {
     invariantNonEmpty(source, 'source');
     invariant(graph.nodes.has(source), `Source "${source}" not found in graph`);
@@ -123,10 +122,7 @@ export class PropagationSimulator {
     const varianceField = this.computeVarianceField(realizations);
 
     // Step 4: Compute confidence intervals
-    const confidenceIntervals = this.computeConfidenceIntervals(
-      realizations,
-      varianceField,
-    );
+    const confidenceIntervals = this.computeConfidenceIntervals(realizations, varianceField);
 
     return {
       meanCascade,
@@ -183,7 +179,7 @@ export class PropagationSimulator {
     // Divide by M
     const meanTrajectories = new Map<string, readonly AlertIntensity[]>();
     for (const [serviceId, acc] of accumulatedTrajectories) {
-      const mean = acc.map(a => ({
+      const mean = acc.map((a) => ({
         ...a,
         intensity: a.intensity / M,
       }));
@@ -194,7 +190,7 @@ export class PropagationSimulator {
     const avgPeak = realizations.reduce((s, r) => s + r.peakIntensity, 0) / M;
     const avgTimeToPeak = realizations.reduce((s, r) => s + r.timeToPeak, 0) / M;
     const avgPropDistance = realizations.reduce((s, r) => s + r.propagationDistance, 0) / M;
-    const dissipatedCount = realizations.filter(r => r.dissipated).length;
+    const dissipatedCount = realizations.filter((r) => r.dissipated).length;
 
     return {
       sourceServiceId: source,
@@ -203,9 +199,10 @@ export class PropagationSimulator {
       peakIntensity: avgPeak,
       timeToPeak: avgTimeToPeak,
       dissipated: dissipatedCount > M / 2, // majority vote
-      dissipationTime: realizations
-        .filter(r => r.dissipated && r.dissipationTime !== undefined)
-        .reduce((s, r) => s + r.dissipationTime!, 0) / Math.max(1, dissipatedCount),
+      dissipationTime:
+        realizations
+          .filter((r) => r.dissipated && r.dissipationTime !== undefined)
+          .reduce((s, r) => s + r.dissipationTime!, 0) / Math.max(1, dissipatedCount),
     };
   }
 
@@ -215,9 +212,7 @@ export class PropagationSimulator {
    * @param realizations - Cascade results
    * @returns Map from serviceId to variance
    */
-  private computeVarianceField(
-    realizations: CascadeResult[],
-  ): ReadonlyMap<string, number> {
+  private computeVarianceField(realizations: CascadeResult[]): ReadonlyMap<string, number> {
     const M = realizations.length;
 
     // Compute per-service peak intensity distributions
@@ -230,7 +225,7 @@ export class PropagationSimulator {
           peaks = [];
           servicePeaks.set(serviceId, peaks);
         }
-        const peak = Math.max(...trajectory.map(t => t.intensity));
+        const peak = Math.max(...trajectory.map((t) => t.intensity));
         peaks.push(peak);
       }
     }
@@ -273,7 +268,7 @@ export class PropagationSimulator {
       for (const r of realizations) {
         const trajectory = r.intensityTrajectories.get(serviceId);
         if (trajectory) {
-          peaks.push(Math.max(...trajectory.map(t => t.intensity)));
+          peaks.push(Math.max(...trajectory.map((t) => t.intensity)));
         }
       }
 
@@ -321,7 +316,7 @@ export class PropagationSimulator {
       10: 2.228,
       15: 2.131,
       20: 2.086,
-      25: 2.060,
+      25: 2.06,
       30: 2.042,
     };
 

@@ -30,10 +30,7 @@ export class PruningFailureError extends KineticError {
   readonly remainingCycles: number;
 
   constructor(remainingCycles: number) {
-    super(
-      `Pruning failed: ${remainingCycles} cycles remain in graph`,
-      'PRUNING_FAILURE',
-    );
+    super(`Pruning failed: ${remainingCycles} cycles remain in graph`, 'PRUNING_FAILURE');
     this.name = 'PruningFailureError';
     this.remainingCycles = remainingCycles;
   }

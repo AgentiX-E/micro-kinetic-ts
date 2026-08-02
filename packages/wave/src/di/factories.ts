@@ -7,8 +7,8 @@
  * @module wave/di/factories
  */
 
-import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import type { IContainer } from '@agentix-e/micro-kinetic-core';
+import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import { WaveCascadeModel } from '../cascade/cascade-model.js';
 import { PropagationSimulator } from '../cascade/propagation-simulator.js';
 import { ThresholdEstimator } from '../cascade/threshold-estimator.js';
@@ -21,23 +21,15 @@ import { CorrelationDecay } from '../correlation-decay.js';
  */
 export function registerWaveFactories(container: IContainer): void {
   // ── Cascade Components ────────────────────────────────
-  container.register(
-    DI_TOKENS.WAVE_PROPAGATION_MODEL,
-    () => new WaveCascadeModel(),
-  );
+  container.register(DI_TOKENS.WAVE_PROPAGATION_MODEL, () => new WaveCascadeModel());
 
   container.register(
     DI_TOKENS.CASCADE_SIMULATOR,
-    (c) => new PropagationSimulator(
-      c.resolve<WaveCascadeModel>(DI_TOKENS.WAVE_PROPAGATION_MODEL),
-    ),
+    (c) => new PropagationSimulator(c.resolve<WaveCascadeModel>(DI_TOKENS.WAVE_PROPAGATION_MODEL)),
   );
 
   // ── Correlation Decay ─────────────────────────────────
-  container.register(
-    DI_TOKENS.CORRELATION_DECAY_ESTIMATOR,
-    () => new CorrelationDecay(),
-  );
+  container.register(DI_TOKENS.CORRELATION_DECAY_ESTIMATOR, () => new CorrelationDecay());
 
   // ── Threshold Estimation ───────────────────────────────
   container.register(

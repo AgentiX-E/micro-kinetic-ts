@@ -32,82 +32,65 @@
  */
 
 // ── Types ────────────────────────────────────────────────
-export type * from './types/graph.js';
-export type * from './types/time-series.js';
-export type * from './types/faults.js';
 export type * from './types/alerts.js';
-export type * from './types/coupling.js';
 export type * from './types/benchmark.js';
+export type * from './types/coupling.js';
+export type * from './types/faults.js';
+export type * from './types/graph.js';
 export type * from './types/probability.js';
+export type * from './types/time-series.js';
 
 // ── Interfaces ───────────────────────────────────────────
-export type * from './interfaces/rca-engine.js';
 export type * from './interfaces/cutting-engine.js';
 export type * from './interfaces/denoise-engine.js';
+export type * from './interfaces/math-provider.js';
+export type * from './interfaces/rca-engine.js';
 export type * from './interfaces/scaling-engine.js';
 export type * from './interfaces/wave-engine.js';
-export type * from './interfaces/math-provider.js';
 
 // ── DI ───────────────────────────────────────────────────
-export {
-  DI_TOKENS,
-} from './di/tokens.js';
-export type { DIToken } from './di/tokens.js';
-export {
-  Container,
-  ContainerResolutionError,
-  CircularDependencyError,
-} from './di/container.js';
-export type {
-  IContainer,
-  Factory,
-} from './di/container.js';
+export { CircularDependencyError, Container, ContainerResolutionError } from './di/container.js';
+export type { Factory, IContainer } from './di/container.js';
 export type * from './di/registry.js';
+export { DI_TOKENS } from './di/tokens.js';
+export type { DIToken } from './di/tokens.js';
 
 // ── Exceptions ───────────────────────────────────────────
 export {
-  KineticError,
-  KineticValidationError,
   KineticConfigError,
-  KineticTimeoutError,
+  KineticError,
   KineticPrecisionError,
+  KineticTimeoutError,
+  KineticValidationError,
 } from './exceptions/base.js';
 export {
-  GraphCycleError,
-  PruningFailureError,
-  DisconnectedGraphError,
-  EmptyGraphError,
-} from './exceptions/graph.js';
+  BenchmarkFormatError,
+  BenchmarkLoadError,
+  BenchmarkValidationError,
+} from './exceptions/benchmark.js';
 export {
-  InductionError,
   ConvergenceTimeoutError,
+  InductionError,
   InvalidWindowError,
 } from './exceptions/convergence.js';
 export {
-  BenchmarkLoadError,
-  BenchmarkFormatError,
-  BenchmarkValidationError,
-} from './exceptions/benchmark.js';
+  DisconnectedGraphError,
+  EmptyGraphError,
+  GraphCycleError,
+  PruningFailureError,
+} from './exceptions/graph.js';
 
 // ── Utilities ────────────────────────────────────────────
 export {
   invariant,
   invariantFinite,
-  invariantRange,
   invariantNonEmpty,
   invariantPositiveInt,
+  invariantRange,
 } from './utils/invariant.js';
 
 // ── Constants ────────────────────────────────────────────
-export {
-  DEFAULT_RCA_OPTIONS,
-} from './types/faults.js';
-export {
-  DEFAULT_CUTTING_OPTIONS,
-} from './types/time-series.js';
-export {
-  DEFAULT_STOSS_PARAMS,
-} from './types/alerts.js';
-export {
-  DEFAULT_BBGKY_OPTIONS,
-} from './types/coupling.js';
+export { DEFAULT_STOSS_PARAMS } from './types/alerts.js';
+export { DEFAULT_BBGKY_OPTIONS } from './types/coupling.js';
+export { DEFAULT_RCA_OPTIONS } from './types/faults.js';
+export { DEFAULT_CUTTING_OPTIONS } from './types/time-series.js';

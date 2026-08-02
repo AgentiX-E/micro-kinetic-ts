@@ -13,13 +13,8 @@
  * @module interfaces/cutting-engine
  */
 
-import type {
-  TimeSeries,
-  CuttingWindow,
-  CuttingOptions,
-  CuttingSchedule,
-} from '../types/time-series.js';
 import type { ChronicFaultIndicator } from '../types/faults.js';
+import type { CuttingOptions, CuttingWindow, TimeSeries } from '../types/time-series.js';
 
 /** Local error bound for a single cutting window. */
 export interface LocalErrorBound {
@@ -87,10 +82,7 @@ export interface ICuttingEngine {
    * ε_j = C × r_j × δ_j² / 2
    * where r_j is the degradation rate and δ_j is the window duration.
    */
-  estimateLocalBounds(
-    windows: readonly CuttingWindow[],
-    metric: string,
-  ): LocalErrorBound[];
+  estimateLocalBounds(windows: readonly CuttingWindow[], metric: string): LocalErrorBound[];
 
   /**
    * Prove global convergence via induction over the cutting windows.
@@ -118,8 +110,5 @@ export interface IConvergenceProver {
    * @param globalTolerance - Global error tolerance ε_global
    * @returns Convergence result with proof steps
    */
-  prove(
-    errorSequence: readonly number[],
-    globalTolerance: number,
-  ): ConvergenceResult;
+  prove(errorSequence: readonly number[], globalTolerance: number): ConvergenceResult;
 }

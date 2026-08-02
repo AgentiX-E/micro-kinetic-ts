@@ -33,8 +33,6 @@ import {
   type ServiceId,
   invariant,
   invariantPositiveInt,
-  invariantNonEmpty,
-  KineticValidationError,
 } from '@agentix-e/micro-kinetic-core';
 
 /** Adjacency list representation. */
@@ -141,10 +139,7 @@ export function tarjanSCC(adjacency: AdjacencyList): ServiceId[][] {
  *
  * @internal
  */
-function buildSCCAdjacency(
-  adjacency: AdjacencyList,
-  sccNodes: ServiceId[],
-): AdjacencyList {
+function buildSCCAdjacency(adjacency: AdjacencyList, sccNodes: ServiceId[]): AdjacencyList {
   const sccSet = new Set(sccNodes);
   const subAdj: AdjacencyList = new Map();
   for (const u of sccNodes) {

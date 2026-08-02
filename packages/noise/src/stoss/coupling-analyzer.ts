@@ -34,7 +34,11 @@
  * @module noise/stoss/coupling-analyzer
  */
 
-import type { AlertRecord, CouplingSparsityMatrix, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
+import type {
+  AlertRecord,
+  CouplingSparsityMatrix,
+  ServiceCallGraph,
+} from '@agentix-e/micro-kinetic-core';
 import { DEFAULT_STOSS_PARAMS, invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 import { StatisticsProvider } from '../math/statistics-provider.js';
 
@@ -101,7 +105,7 @@ export class CouplingSparsityAnalyzer {
     const threshold = DEFAULT_STOSS_PARAMS.sparsityThreshold;
 
     // Step 2: Build time series for each service
-    const timeSeries: Float64Array[] = serviceIds.map(id => {
+    const timeSeries: Float64Array[] = serviceIds.map((id) => {
       const entry = alertsByService.get(id);
       if (!entry || entry.values.length === 0) {
         return new Float64Array([0]);
@@ -147,7 +151,7 @@ export class CouplingSparsityAnalyzer {
 
     // Step 4: Compute sparsity
     const totalPairs = N * N;
-    const sparsityScore = 1 - (nonzeroCount / totalPairs);
+    const sparsityScore = 1 - nonzeroCount / totalPairs;
 
     // Step 5: Identify independent groups
     const satisfies = sparsityScore >= threshold;
@@ -237,8 +241,6 @@ export class CouplingSparsityAnalyzer {
 
     // Note: independent groups are individual services that aren't
     // in any coupled group (singleton groups)
-    return Array.from(groups.values()).map(indices =>
-      indices.map(i => `service_${i}`),
-    );
+    return Array.from(groups.values()).map((indices) => indices.map((i) => `service_${i}`));
   }
 }

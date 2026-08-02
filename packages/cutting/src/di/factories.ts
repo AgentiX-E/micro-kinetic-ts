@@ -33,8 +33,8 @@
 import type { IContainer } from '@agentix-e/micro-kinetic-core';
 import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 
-import { AdaptiveWindowCutter } from '../segmentation/adaptive-cutter.js';
 import { InductionProver } from '../convergence/induction-prover.js';
+import { AdaptiveWindowCutter } from '../segmentation/adaptive-cutter.js';
 
 /**
  * Context for cutting factory registration.
@@ -62,16 +62,16 @@ export function registerCuttingFactories(
   context?: CuttingFactoryContext,
 ): void {
   // Register cutting engine (adaptive window cutter)
-  const cuttingFactory = context?.cuttingEngineFactory ??
-    ((c: IContainer) => new AdaptiveWindowCutter(c));
+  const cuttingFactory =
+    context?.cuttingEngineFactory ?? ((c: IContainer) => new AdaptiveWindowCutter(c));
 
   if (!container.has(DI_TOKENS.CUTTING_ENGINE)) {
     container.register(DI_TOKENS.CUTTING_ENGINE, cuttingFactory);
   }
 
   // Register convergence prover (induction-based)
-  const proverFactory = context?.convergenceProverFactory ??
-    ((c: IContainer) => new InductionProver(c));
+  const proverFactory =
+    context?.convergenceProverFactory ?? ((c: IContainer) => new InductionProver(c));
 
   if (!container.has(DI_TOKENS.CONVERGENCE_PROVER)) {
     container.register(DI_TOKENS.CONVERGENCE_PROVER, proverFactory);

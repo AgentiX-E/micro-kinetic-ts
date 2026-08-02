@@ -69,10 +69,7 @@ export class ThresholdEstimator {
    * @param dissipationRate - Alert dissipation rate γ (0-1)
    * @returns Estimated wave thresholds
    */
-  public estimate(
-    graph: ServiceCallGraph,
-    dissipationRate: number = 0.1,
-  ): WaveThresholds {
+  public estimate(graph: ServiceCallGraph, dissipationRate: number = 0.1): WaveThresholds {
     invariant(graph.nodes.size > 0, 'graph must contain nodes');
     invariantRange(dissipationRate, 0, 1, 'dissipationRate');
 
@@ -89,31 +86,24 @@ export class ThresholdEstimator {
     // Step 1: Generation threshold
     // T_gen = minimal intensity to overcome dissipation
     // T_gen ≈ dissipationRate / mean_coupling
-    const generationThreshold = avgCoupling > 1e-10
-      ? Math.min(1, dissipationRate / avgCoupling)
-      : 1.0;
+    const generationThreshold =
+      avgCoupling > 1e-10 ? Math.min(1, dissipationRate / avgCoupling) : 1.0;
 
     // Step 2: Propagation threshold
     // T_prop ≈ percolation threshold for the graph
     // For Erdős-Rényi: p_c ≈ 1/<k>, but we use a refined estimate
-    const percolationThreshold = avgDegree > 0
-      ? 1 / (avgDegree * avgCoupling)
-      : 1.0;
+    const percolationThreshold = avgDegree > 0 ? 1 / (avgDegree * avgCoupling) : 1.0;
 
     // The propagation requires both:
     // - Enough coupling to pass the percolation threshold
     // - Enough average degree for multi-hop propagation
-    const propagationThreshold = Math.max(
-      percolationThreshold,
-      N > 1 ? 1 / (N - 1) : 1.0,
-    );
+    const propagationThreshold = Math.max(percolationThreshold, N > 1 ? 1 / (N - 1) : 1.0);
 
     // Step 3: Extinction threshold
     // T_ext = intensity below which cascade dies
     // T_ext ≈ dissipationRate / spectralGap
-    const extinctionThreshold = spectralGap > 1e-10
-      ? Math.min(1, dissipationRate / spectralGap)
-      : 0.01;
+    const extinctionThreshold =
+      spectralGap > 1e-10 ? Math.min(1, dissipationRate / spectralGap) : 0.01;
 
     // Step 4: Cascade risk classification
     const cascadeRisk = this.classifyRisk(
@@ -143,10 +133,7 @@ export class ThresholdEstimator {
    * @param dissipationRate - Dissipation rate γ
    * @returns Generation threshold intensity value
    */
-  public generationThreshold(
-    graph: ServiceCallGraph,
-    dissipationRate: number = 0.1,
-  ): number {
+  public generationThreshold(graph: ServiceCallGraph, dissipationRate: number = 0.1): number {
     const thresholds = this.estimate(graph, dissipationRate);
     return thresholds.generationThreshold;
   }
@@ -175,10 +162,7 @@ export class ThresholdEstimator {
    * @param dissipationRate - Dissipation rate γ
    * @returns Extinction threshold intensity value
    */
-  public extinctionThreshold(
-    graph: ServiceCallGraph,
-    dissipationRate: number = 0.1,
-  ): number {
+  public extinctionThreshold(graph: ServiceCallGraph, dissipationRate: number = 0.1): number {
     const thresholds = this.estimate(graph, dissipationRate);
     return thresholds.extinctionThreshold;
   }
@@ -188,10 +172,7 @@ export class ThresholdEstimator {
   /**
    * Build adjacency matrix from the service call graph.
    */
-  private buildAdjacencyMatrix(
-    graph: ServiceCallGraph,
-    serviceIds: string[],
-  ): Float64Array {
+  private buildAdjacencyMatrix(graph: ServiceCallGraph, serviceIds: string[]): Float64Array {
     const N = serviceIds.length;
     const matrix = new Float64Array(N * N);
     const idToIdx = new Map(serviceIds.map((id, i) => [id, i]));
@@ -225,17 +206,17 @@ export class ThresholdEstimator {
     const degrees = new Map<string, number>();
 
     for (const edge of graph.edges) {
-      degrees.set(edge.from, (degrees.get(edge.from)!) + 1);
-      degrees.set(edge.to, (degrees.get(edge.to)!) + 1);
+      degrees.set(edge.from, degrees.get(edge.from)! + 1);
+      degrees.set(edge.to, degrees.get(edge.to)! + 1);
     }
 
-    const avgDegree = degrees.size > 0
-      ? Array.from(degrees.values()).reduce((s, d) => s + d, 0) / N
-      : 0;
+    const avgDegree =
+      degrees.size > 0 ? Array.from(degrees.values()).reduce((s, d) => s + d, 0) / N : 0;
 
-    const avgCoupling = graph.edges.length > 0
-      ? graph.edges.reduce((s, e) => s + e.callRate, 0) / graph.edges.length / 1000
-      : 0;
+    const avgCoupling =
+      graph.edges.length > 0
+        ? graph.edges.reduce((s, e) => s + e.callRate, 0) / graph.edges.length / 1000
+        : 0;
 
     return { avgDegree, avgCoupling };
   }
@@ -256,15 +237,16 @@ export class ThresholdEstimator {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (matrix[i * N + j]!) * (v[j]!);
+          sum += matrix[i * N + j]! * v[j]!;
         }
         next[i] = sum;
       }
 
-      let num = 0, den = 0;
+      let num = 0,
+        den = 0;
       for (let i = 0; i < N; i++) {
-        num += (v[i]!) * (next[i]!);
-        den += (v[i]!) * (v[i]!);
+        num += v[i]! * next[i]!;
+        den += v[i]! * v[i]!;
       }
       lambda1 = den > 1e-15 ? num / den : 0;
 
@@ -275,7 +257,7 @@ export class ThresholdEstimator {
     const deflated = new Float64Array(N * N);
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        deflated[i * N + j] = (matrix[i * N + j]!) - lambda1 * (v[i]!) * (v[j]!);
+        deflated[i * N + j] = matrix[i * N + j]! - lambda1 * v[i]! * v[j]!;
       }
     }
 
@@ -289,15 +271,16 @@ export class ThresholdEstimator {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (deflated[i * N + j]!) * (w[j]!);
+          sum += deflated[i * N + j]! * w[j]!;
         }
         next[i] = sum;
       }
 
-      let num = 0, den = 0;
+      let num = 0,
+        den = 0;
       for (let i = 0; i < N; i++) {
-        num += (w[i]!) * (next[i]!);
-        den += (w[i]!) * (w[i]!);
+        num += w[i]! * next[i]!;
+        den += w[i]! * w[i]!;
       }
       lambda2 = den > 1e-15 ? num / den : 0;
 
@@ -317,7 +300,7 @@ export class ThresholdEstimator {
     norm = Math.sqrt(norm);
     if (norm > 1e-15) {
       for (let i = 0; i < vec.length; i++) {
-        vec[i] = (vec[i]!) / norm;
+        vec[i] = vec[i]! / norm;
       }
     }
   }
@@ -342,7 +325,7 @@ export class ThresholdEstimator {
     const riskScore =
       (1 - generationThreshold) * 0.3 +
       (1 - propagationThreshold) * 0.3 +
-      (avgCoupling) * 0.2 +
+      avgCoupling * 0.2 +
       (1 - spectralGap / 10) * 0.2;
 
     if (riskScore < 0.3) return 'low';

@@ -39,16 +39,13 @@
 export {
   JohnsonCycleDetector,
   buildAdjacencyList,
-  tarjanSCC,
   cycleKey,
+  tarjanSCC,
 } from './graph/cycle-detector.js';
 export type { JohnsonCycleOptions } from './graph/cycle-detector.js';
 
 // Pruning
-export {
-  CollisionContributionAnalyzer,
-  buildEdgeWeightMap,
-} from './pruning/contribution.js';
+export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';
 export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 
 export { TreePruner } from './pruning/pruner.js';
@@ -58,11 +55,7 @@ export type { TreePrunerOptions } from './pruning/pruner.js';
 export { TreeRCAEngine } from './rca/tree-rca.js';
 export type { TreeRCAOptions } from './rca/tree-rca.js';
 
-export {
-  ConfidenceEstimator,
-  estimateErrorBound,
-  boundToConfidence,
-} from './rca/confidence.js';
+export { ConfidenceEstimator, boundToConfidence, estimateErrorBound } from './rca/confidence.js';
 export type { ConfidenceOptions } from './rca/confidence.js';
 
 // Math providers
@@ -71,10 +64,10 @@ export { UbiqueLinearAlgebra } from './math/ubique-provider.js';
 
 // DI factories
 export {
-  createTreePruner,
-  createTreeRCAEngine,
   createConfidenceEstimator,
   createNumpyTsMatrixOps,
+  createTreePruner,
+  createTreeRCAEngine,
   createUbiqueLinearAlgebra,
   registerTreeModule,
 } from './di/factories.js';

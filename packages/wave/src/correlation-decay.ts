@@ -30,7 +30,7 @@
  */
 
 import type { DecayCurve, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
-import { invariant, invariantRange } from '@agentix-e/micro-kinetic-core';
+import { invariant } from '@agentix-e/micro-kinetic-core';
 
 /** Default number of sample points for the decay curve. */
 const DEFAULT_NUM_POINTS = 200;
@@ -61,10 +61,7 @@ export class CorrelationDecay {
    * @param timeHorizon - Time horizon for the decay curve (ms)
    * @returns Correlation decay curve
    */
-  public estimateDecay(
-    graph: ServiceCallGraph,
-    timeHorizon: number,
-  ): DecayCurve {
+  public estimateDecay(graph: ServiceCallGraph, timeHorizon: number): DecayCurve {
     invariant(graph.nodes.size > 0, 'graph must contain nodes');
     invariant(timeHorizon > 0, 'timeHorizon must be positive');
 
@@ -115,10 +112,7 @@ export class CorrelationDecay {
    * @param correlationValues - Observed correlation values
    * @returns Fitted decay curve with R² quality
    */
-  public fitDecay(
-    timePoints: Float64Array,
-    correlationValues: Float64Array,
-  ): DecayCurve {
+  public fitDecay(timePoints: Float64Array, correlationValues: Float64Array): DecayCurve {
     invariant(
       timePoints.length === correlationValues.length,
       `timePoints and correlationValues must have same length, got ${timePoints.length} vs ${correlationValues.length}`,
@@ -132,7 +126,7 @@ export class CorrelationDecay {
     const validLog: number[] = [];
 
     for (let i = 0; i < n; i++) {
-      if ((correlationValues[i]!) > 1e-15) {
+      if (correlationValues[i]! > 1e-15) {
         validT.push(timePoints[i]!);
         validLog.push(Math.log(correlationValues[i]!));
       }
@@ -148,7 +142,7 @@ export class CorrelationDecay {
     const sumT = validT.reduce((s, v) => s + v, 0);
     const sumLog = validLog.reduce((s, v) => s + v, 0);
     const sumTT = validT.reduce((s, v) => s + v * v, 0);
-    const sumTLog = validT.reduce((s, t, i) => s + t * (validLog[i]!), 0);
+    const sumTLog = validT.reduce((s, t, i) => s + t * validLog[i]!, 0);
 
     const denom = m * sumTT - sumT * sumT;
     if (Math.abs(denom) < 1e-15) {
@@ -165,7 +159,7 @@ export class CorrelationDecay {
     const logMean = sumLog / m;
     const ssTot = validLog.reduce((s, v) => s + (v - logMean) ** 2, 0);
     const ssRes = validLog.reduce(
-      (s, logV, i) => s + (logV - (intercept + slope * (validT[i]!))) ** 2,
+      (s, logV, i) => s + (logV - (intercept + slope * validT[i]!)) ** 2,
       0,
     );
     const rSquared = ssTot > 0 ? 1 - ssRes / ssTot : 1;
@@ -190,10 +184,7 @@ export class CorrelationDecay {
   /**
    * Build adjacency matrix from service call graph.
    */
-  private buildAdjacencyMatrix(
-    graph: ServiceCallGraph,
-    serviceIds: string[],
-  ): Float64Array {
+  private buildAdjacencyMatrix(graph: ServiceCallGraph, serviceIds: string[]): Float64Array {
     const N = serviceIds.length;
     const matrix = new Float64Array(N * N);
     const idToIdx = new Map(serviceIds.map((id, i) => [id, i]));
@@ -231,15 +222,16 @@ export class CorrelationDecay {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (matrix[i * N + j]!) * (v[j]!);
+          sum += matrix[i * N + j]! * v[j]!;
         }
         next[i] = sum;
       }
 
-      let num = 0, den = 0;
+      let num = 0,
+        den = 0;
       for (let i = 0; i < N; i++) {
-        num += (v[i]!) * (next[i]!);
-        den += (v[i]!) * (v[i]!);
+        num += v[i]! * next[i]!;
+        den += v[i]! * v[i]!;
       }
       lambda1 = num / den;
 
@@ -251,7 +243,7 @@ export class CorrelationDecay {
     const deflated = new Float64Array(N * N);
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        deflated[i * N + j] = (matrix[i * N + j]!) - lambda1 * (v[i]!) * (v[j]!);
+        deflated[i * N + j] = matrix[i * N + j]! - lambda1 * v[i]! * v[j]!;
       }
     }
 
@@ -266,15 +258,16 @@ export class CorrelationDecay {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (deflated[i * N + j]!) * (w[j]!);
+          sum += deflated[i * N + j]! * w[j]!;
         }
         next[i] = sum;
       }
 
-      let num = 0, den = 0;
+      let num = 0,
+        den = 0;
       for (let i = 0; i < N; i++) {
-        num += (w[i]!) * (next[i]!);
-        den += (w[i]!) * (w[i]!);
+        num += w[i]! * next[i]!;
+        den += w[i]! * w[i]!;
       }
       lambda2 = num / den;
 
@@ -295,7 +288,7 @@ export class CorrelationDecay {
     norm = Math.sqrt(norm);
     if (norm > 1e-15) {
       for (let i = 0; i < vec.length; i++) {
-        vec[i] = (vec[i]!) / norm;
+        vec[i] = vec[i]! / norm;
       }
     }
   }
@@ -313,7 +306,7 @@ export class CorrelationDecay {
     const values = new Float64Array(n);
 
     for (let i = 0; i < n; i++) {
-      values[i] = Math.exp(-(timePoints[i]!) / defaultTau);
+      values[i] = Math.exp(-timePoints[i]! / defaultTau);
     }
 
     return {

@@ -38,11 +38,7 @@
 import * as np from 'numpy-ts';
 
 import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
-import {
-  invariant,
-  invariantFinite,
-  invariantNonEmpty,
-} from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 
 /** Supported degradation curve models. */
 export enum CurveModel {
@@ -119,16 +115,11 @@ export class DegradationCurveAnalyzer {
    * @param options - Analysis parameters
    * @returns Complete degradation analysis result
    */
-  analyze(
-    ts: TimeSeries,
-    options?: Partial<CurveAnalysisOptions>,
-  ): DegradationAnalysisResult {
+  analyze(ts: TimeSeries, options?: Partial<CurveAnalysisOptions>): DegradationAnalysisResult {
     const opts = { ...DEFAULT_CURVE_OPTIONS, ...options };
     this.validateInputs(ts);
 
-    const timeHours = ts.timestamps.map(
-      (t) => (t - ts.timestamps[0]!) / 3_600_000,
-    );
+    const timeHours = ts.timestamps.map((t) => (t - ts.timestamps[0]!) / 3_600_000);
     const values = [...ts.values];
 
     // Fit all models
@@ -152,8 +143,9 @@ export class DegradationCurveAnalyzer {
     const endRate = this.computeEndpointRate(bestModel, bestFit, timeHours);
 
     // Detect acceleration via 2nd derivative
-    const isAccelerating = bestModel === CurveModel.EXPONENTIAL ||
-      (bestModel === CurveModel.POWER_LAW && (bestFit.parameters[1]!) > 1);
+    const isAccelerating =
+      bestModel === CurveModel.EXPONENTIAL ||
+      (bestModel === CurveModel.POWER_LAW && bestFit.parameters[1]! > 1);
 
     // Time-to-threshold estimation
     let hoursToThreshold: number | undefined;
@@ -179,17 +171,14 @@ export class DegradationCurveAnalyzer {
   }
 
   /** Fit linear model: f(t) = a₀ + a₁ × t */
-  fitLinear(
-    t: readonly number[],
-    y: readonly number[],
-  ): CurveFitResult | null {
+  fitLinear(t: readonly number[], y: readonly number[]): CurveFitResult | null {
     if (t.length < 2) return null;
 
     const tArr = np.array([...t]);
     const yArr = np.array([...y]);
 
     const coeffs = np.polyfit(tArr, yArr, 1);
-    const params = (coeffs.tolist() as number[]);
+    const params = coeffs.tolist() as number[];
 
     const a1 = params[0]!;
     const a0 = params[1]!;
@@ -208,14 +197,9 @@ export class DegradationCurveAnalyzer {
   }
 
   /** Fit exponential model: f(t) = a₀ × exp(λ × t) via log transform */
-  fitExponential(
-    t: readonly number[],
-    y: readonly number[],
-  ): CurveFitResult | null {
+  fitExponential(t: readonly number[], y: readonly number[]): CurveFitResult | null {
     // Filter positive values for log transform
-    const posIndices = y
-      .map((v, i) => (v > 0 ? i : -1))
-      .filter((i) => i >= 0);
+    const posIndices = y.map((v, i) => (v > 0 ? i : -1)).filter((i) => i >= 0);
 
     if (posIndices.length < 3) return null;
 
@@ -226,7 +210,7 @@ export class DegradationCurveAnalyzer {
     const yArr = np.array(logY);
 
     const coeffs = np.polyfit(tArr, yArr, 1);
-    const params = (coeffs.tolist() as number[]);
+    const params = coeffs.tolist() as number[];
 
     const lambda = params[0]!;
     const logA = params[1]!;
@@ -247,10 +231,7 @@ export class DegradationCurveAnalyzer {
   }
 
   /** Fit logarithmic model: f(t) = a₀ + a₁ × ln(1 + t) */
-  fitLogarithmic(
-    t: readonly number[],
-    y: readonly number[],
-  ): CurveFitResult | null {
+  fitLogarithmic(t: readonly number[], y: readonly number[]): CurveFitResult | null {
     if (t.length < 2) return null;
 
     const logTValues = t.map((ti) => Math.log(1 + ti));
@@ -258,7 +239,7 @@ export class DegradationCurveAnalyzer {
     const yArr = np.array([...y]);
 
     const coeffs = np.polyfit(logTArr, yArr, 1);
-    const params = (coeffs.tolist() as number[]);
+    const params = coeffs.tolist() as number[];
 
     const a1 = params[0]!;
     const a0 = params[1]!;
@@ -278,13 +259,8 @@ export class DegradationCurveAnalyzer {
   }
 
   /** Fit power-law model: f(t) = a₀ × t^α via log-log transform */
-  fitPowerLaw(
-    t: readonly number[],
-    y: readonly number[],
-  ): CurveFitResult | null {
-    const posIndices = t
-      .map((ti, i) => (ti > 0 && y[i]! > 0 ? i : -1))
-      .filter((i) => i >= 0);
+  fitPowerLaw(t: readonly number[], y: readonly number[]): CurveFitResult | null {
+    const posIndices = t.map((ti, i) => (ti > 0 && y[i]! > 0 ? i : -1)).filter((i) => i >= 0);
 
     if (posIndices.length < 3) return null;
 
@@ -295,7 +271,7 @@ export class DegradationCurveAnalyzer {
     const yArr = np.array(logY);
 
     const coeffs = np.polyfit(tArr, yArr, 1);
-    const params = (coeffs.tolist() as number[]);
+    const params = coeffs.tolist() as number[];
 
     const alpha = params[0]!;
     const logA = params[1]!;
@@ -326,10 +302,7 @@ export class DegradationCurveAnalyzer {
     let bestModel: CurveModel = CurveModel.LINEAR;
     let bestScore = -Infinity;
 
-    for (const [model, fit] of Object.entries(allFits) as [
-      CurveModel,
-      CurveFitResult | null,
-    ][]) {
+    for (const [model, fit] of Object.entries(allFits) as [CurveModel, CurveFitResult | null][]) {
       if (fit && fit.adjustedRSquared > bestScore) {
         bestScore = fit.adjustedRSquared;
         bestModel = model;
@@ -349,11 +322,7 @@ export class DegradationCurveAnalyzer {
   /**
    * Compute the degradation rate at the last time point (derivative).
    */
-  computeEndpointRate(
-    model: CurveModel,
-    fit: CurveFitResult,
-    t: readonly number[],
-  ): number {
+  computeEndpointRate(model: CurveModel, fit: CurveFitResult, t: readonly number[]): number {
     const tEnd = t[t.length - 1]!;
     const params = fit.parameters;
 
@@ -423,15 +392,9 @@ export class DegradationCurveAnalyzer {
 
   private validateInputs(ts: TimeSeries): void {
     invariantNonEmpty(ts.timestamps, 'TimeSeries.timestamps');
-    invariantNonEmpty((ts.values as unknown) as { length: number }, 'TimeSeries.values');
-    invariant(
-      ts.timestamps.length === ts.values.length,
-      'Timestamps and values must match',
-    );
-    invariant(
-      ts.timestamps.length >= 3,
-      'Need at least 3 data points for curve analysis',
-    );
+    invariantNonEmpty(ts.values as unknown as { length: number }, 'TimeSeries.values');
+    invariant(ts.timestamps.length === ts.values.length, 'Timestamps and values must match');
+    invariant(ts.timestamps.length >= 3, 'Need at least 3 data points for curve analysis');
   }
 }
 

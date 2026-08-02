@@ -19,18 +19,18 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import type {
+  CallEdge,
+  MetricMap,
   ServiceCallGraph,
   ServiceNode,
-  CallEdge,
   TimeSeries,
-  MetricMap,
 } from '@agentix-e/micro-kinetic-core';
 
 import type {
   BenchmarkCase,
-  BenchmarkSuite,
   BenchmarkGroundTruth,
   BenchmarkLogEntry,
+  BenchmarkSuite,
   BenchmarkTraceSpan,
   RCAEvalCase,
   RCAEvalSuite,
@@ -97,9 +97,7 @@ export class RCAEvalLoader {
       .filter((e) => e.isDirectory())
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const cases = caseDirs.map((dir) =>
-      this.loadCase(path.join(suitePath, dir.name)),
-    );
+    const cases = caseDirs.map((dir) => this.loadCase(path.join(suitePath, dir.name)));
 
     return {
       suiteName,
@@ -125,7 +123,12 @@ export class RCAEvalLoader {
         const raw = JSON.parse(fs.readFileSync(gtPath, 'utf-8'));
         return {
           serviceId: raw.root_cause_service ?? raw.rootCauseService ?? raw.service,
-          faultType: raw.root_cause_metric ?? raw.rootCauseMetric ?? raw.faultType ?? parsed?.fault ?? 'unknown',
+          faultType:
+            raw.root_cause_metric ??
+            raw.rootCauseMetric ??
+            raw.faultType ??
+            parsed?.fault ??
+            'unknown',
           metric: raw.root_cause_metric ?? raw.rootCauseMetric,
         };
       } catch {
@@ -148,7 +151,11 @@ export class RCAEvalLoader {
    * @param callGraph - Service call graph for this benchmark system.
    * @returns Unified BenchmarkCase.
    */
-  toBenchmarkCase(rawCase: RCAEvalCase, callGraph: ServiceCallGraph, suiteName: 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3'): BenchmarkCase {
+  toBenchmarkCase(
+    rawCase: RCAEvalCase,
+    callGraph: ServiceCallGraph,
+    suiteName: 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3',
+  ): BenchmarkCase {
     const metricMap = this.buildMetricMap(rawCase.metrics);
 
     return {
@@ -170,7 +177,10 @@ export class RCAEvalLoader {
    * @param callGraphs - Service call graphs for each benchmark system.
    * @returns Unified BenchmarkSuite.
    */
-  toBenchmarkSuite(suite: RCAEvalSuite, callGraphs: Record<string, ServiceCallGraph>): BenchmarkSuite {
+  toBenchmarkSuite(
+    suite: RCAEvalSuite,
+    callGraphs: Record<string, ServiceCallGraph>,
+  ): BenchmarkSuite {
     const suiteNameMap: Record<string, 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3'> = {
       RE1: 'rcaeval-re1',
       RE2: 'rcaeval-re2',
@@ -195,7 +205,9 @@ export class RCAEvalLoader {
   private parseDirectoryName(dirName: string): ParsedDirName {
     const parts = dirName.split('_');
     if (parts.length < 4) {
-      throw new Error(`Invalid RCAEval directory name: ${dirName}. Expected {benchmark}_{service}_{fault}_{instance}`);
+      throw new Error(
+        `Invalid RCAEval directory name: ${dirName}. Expected {benchmark}_{service}_{fault}_{instance}`,
+      );
     }
     const instance = parseInt(parts[parts.length - 1]!, 10);
     const fault = parts[parts.length - 2]!;
@@ -252,7 +264,8 @@ export class RCAEvalLoader {
       const content = fs.readFileSync(tracesPath, 'utf-8');
       return this.parseCSV(content).map((row) => ({
         traceId: row.trace_id ?? 'unknown',
-        spanId: row.span_id ?? row.spanId ?? `${row.trace_id ?? 'unknown'}_${row.service ?? 'unknown'}`,
+        spanId:
+          row.span_id ?? row.spanId ?? `${row.trace_id ?? 'unknown'}_${row.service ?? 'unknown'}`,
         parentSpanId: row.parent_span ?? row.parentSpanId ?? undefined,
         service: row.service ?? 'unknown',
         operationName: row.operation ?? row.operationName ?? 'unknown',
@@ -284,9 +297,7 @@ export class RCAEvalLoader {
     return rows;
   }
 
-  private buildMetricMap(
-    rawMetrics: Record<string, ReadonlyArray<RCAEvalMetricPoint>>,
-  ): MetricMap {
+  private buildMetricMap(rawMetrics: Record<string, ReadonlyArray<RCAEvalMetricPoint>>): MetricMap {
     const map = new Map<string, readonly TimeSeries[]>();
 
     for (const [serviceName, points] of Object.entries(rawMetrics)) {

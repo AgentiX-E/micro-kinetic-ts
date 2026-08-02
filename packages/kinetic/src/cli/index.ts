@@ -31,21 +31,21 @@ import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import type {
+  AlertRecord,
+  BenchmarkResult,
+  DenoiseResult,
+  IDenoiseEngine,
+  MetricMap,
+  ServiceCallGraph,
+} from '@agentix-e/micro-kinetic-core';
+import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import { createDefaultContainer } from '../di/container.js';
 import { createPipeline, type PipelineScenario } from '../pipeline/pipeline-factory.js';
 import type { RCAPipelineResult } from '../pipeline/rca-pipeline.js';
-import type {
-  ServiceCallGraph,
-  MetricMap,
-  AlertRecord,
-  DenoiseResult,
-  BenchmarkResult,
-} from '@agentix-e/micro-kinetic-core';
-import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
-import type { IDenoiseEngine, IRCAEngine } from '@agentix-e/micro-kinetic-core';
 
-import { formatRCATable, formatDenoiseTable, formatBenchmarkTable } from './formatters/table.js';
 import { formatJson } from './formatters/json.js';
+import { formatBenchmarkTable, formatDenoiseTable, formatRCATable } from './formatters/table.js';
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -69,8 +69,8 @@ export function createProgram(): Command {
   program
     .name('micro-kinetic')
     .description(
-      'AIOps-Kinetic: Root cause analysis powered by Deng Yu\'s kinetic theory.\n' +
-      'Applies Fields Medal-winning mathematical results to microservice troubleshooting.',
+      "AIOps-Kinetic: Root cause analysis powered by Deng Yu's kinetic theory.\n" +
+        'Applies Fields Medal-winning mathematical results to microservice troubleshooting.',
     )
     .version('0.0.1');
 
@@ -97,7 +97,10 @@ export function createProgram(): Command {
   program
     .command('benchmark')
     .description('Run benchmark on standard RCA evaluation datasets')
-    .requiredOption('--dataset <id>', 'Dataset: rcaeval-re1, rcaeval-re2, rcaeval-re3, aiops2025, rca100')
+    .requiredOption(
+      '--dataset <id>',
+      'Dataset: rcaeval-re1, rcaeval-re2, rcaeval-re3, aiops2025, rca100',
+    )
     .option('-o, --output <format>', 'Output format: table or json', 'table')
     .option('-v, --verbose', 'Enable verbose output', false)
     .action(async (options: CliOptions & { dataset: string }) => {
@@ -149,7 +152,10 @@ async function runAnalyze(
   const callGraph = loadJsonFile<ServiceCallGraph>(graphFile);
   const metrics = loadJsonFile<MetricMap>(metricsFile);
 
-  logVerbose(options, `Loaded graph with ${callGraph.nodes.size} nodes, ${callGraph.edges.length} edges`);
+  logVerbose(
+    options,
+    `Loaded graph with ${callGraph.nodes.size} nodes, ${callGraph.edges.length} edges`,
+  );
 
   const container = createDefaultContainer();
   const scenario = options.scenario as PipelineScenario;
@@ -162,9 +168,7 @@ async function runAnalyze(
   outputAnalyzeResult(result, options);
 }
 
-async function runBenchmark(
-  options: CliOptions & { dataset: string },
-): Promise<void> {
+async function runBenchmark(options: CliOptions & { dataset: string }): Promise<void> {
   const { dataset } = options;
 
   logVerbose(options, `Running benchmark on dataset: ${dataset}`);
@@ -176,10 +180,7 @@ async function runBenchmark(
   outputBenchmarkResult(result, options);
 }
 
-async function runDenoise(
-  alertsFile: string,
-  options: CliOptions,
-): Promise<void> {
+async function runDenoise(alertsFile: string, options: CliOptions): Promise<void> {
   logVerbose(options, 'Loading alerts from:', alertsFile);
 
   const alerts = loadJsonFile<AlertRecord[]>(alertsFile);
@@ -190,10 +191,7 @@ async function runDenoise(
   const denoiseEngine = container.resolve<IDenoiseEngine>(DI_TOKENS.DENOISE_ENGINE);
 
   // Build a default coupling matrix from the alert set
-  const coupling = denoiseEngine.computeCouplingSparsity(
-    alerts,
-    createEmptyGraph(),
-  );
+  const coupling = denoiseEngine.computeCouplingSparsity(alerts, createEmptyGraph());
 
   const result = denoiseEngine.denoise(alerts, coupling);
 
@@ -202,23 +200,22 @@ async function runDenoise(
 
 // ── Output Helpers ────────────────────────────────────────
 
-function outputAnalyzeResult(
-  result: RCAPipelineResult,
-  options: CliOptions,
-): void {
+function outputAnalyzeResult(result: RCAPipelineResult, options: CliOptions): void {
   switch (options.output) {
     case 'json':
-      console.log(formatJson({
-        rootCauses: result.rootCauses,
-        chronicDetected: result.chronicDetected,
-        stages: result.stages.map((s) => ({
-          stage: s.stage,
-          success: s.success,
-          durationMs: s.durationMs,
-          error: s.error,
-        })),
-        totalDurationMs: result.totalDurationMs,
-      }));
+      console.log(
+        formatJson({
+          rootCauses: result.rootCauses,
+          chronicDetected: result.chronicDetected,
+          stages: result.stages.map((s) => ({
+            stage: s.stage,
+            success: s.success,
+            durationMs: s.durationMs,
+            error: s.error,
+          })),
+          totalDurationMs: result.totalDurationMs,
+        }),
+      );
       break;
 
     case 'table':
@@ -240,10 +237,7 @@ function outputAnalyzeResult(
   }
 }
 
-function outputBenchmarkResult(
-  result: BenchmarkResult,
-  options: CliOptions,
-): void {
+function outputBenchmarkResult(result: BenchmarkResult, options: CliOptions): void {
   switch (options.output) {
     case 'json':
       console.log(formatJson(result));
@@ -256,10 +250,7 @@ function outputBenchmarkResult(
   }
 }
 
-function outputDenoiseResult(
-  result: DenoiseResult,
-  options: CliOptions,
-): void {
+function outputDenoiseResult(result: DenoiseResult, options: CliOptions): void {
   switch (options.output) {
     case 'json':
       console.log(formatJson(result));

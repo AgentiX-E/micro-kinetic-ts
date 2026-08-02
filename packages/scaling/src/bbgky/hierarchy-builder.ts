@@ -36,10 +36,10 @@
  */
 
 import type {
-  MicroserviceState,
-  BBGKYState,
   BBGKYHierarchy,
   BBGKYOptions,
+  BBGKYState,
+  MicroserviceState,
   ServiceCallGraph,
 } from '@agentix-e/micro-kinetic-core';
 import {
@@ -98,13 +98,7 @@ export class HierarchyBuilder {
     for (let k = 2; k <= opts.maxOrder; k++) {
       const prevEnergy = states_result[k - 2]!.correlationEnergy;
 
-      const fkTensor = this.buildKServiceCorrelation(
-        k,
-        N,
-        states,
-        serviceGraph,
-        f1Tensor,
-      );
+      const fkTensor = this.buildKServiceCorrelation(k, N, states, serviceGraph, f1Tensor);
 
       const ek = this.computeNormSquared(fkTensor);
       const ratio = prevEnergy > 0 ? ek / prevEnergy : 0;
@@ -291,7 +285,8 @@ export class HierarchyBuilder {
 
       // Coupling strength = weighted combination of call metrics
       const callRateNorm = Math.tanh(edge.callRate / 1000); // normalize high rates
-      const latencySeverity = edge.p99Latency > 500 ? Math.min(1, edge.p99Latency / 2000) : edge.p99Latency / 2000;
+      const latencySeverity =
+        edge.p99Latency > 500 ? Math.min(1, edge.p99Latency / 2000) : edge.p99Latency / 2000;
       const coupling = 0.4 * callRateNorm + 0.3 * latencySeverity + 0.3 * (1 - edge.errorRate);
 
       matrix[fromIdx * N + toIdx] = Math.min(1, Math.max(0, coupling));
@@ -350,11 +345,7 @@ export class HierarchyBuilder {
    * @param indices - Service indices
    * @returns Average coupling strength
    */
-  private averagePairwiseCoupling(
-    coupling: Float64Array,
-    N: number,
-    indices: number[],
-  ): number {
+  private averagePairwiseCoupling(coupling: Float64Array, N: number, indices: number[]): number {
     if (indices.length <= 1) return 1.0;
 
     let sum = 0;

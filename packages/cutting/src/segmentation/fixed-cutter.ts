@@ -22,18 +22,16 @@
 
 import * as np from 'numpy-ts';
 
-import type { IContainer } from '@agentix-e/micro-kinetic-core';
 import type {
-  TimeSeries,
-  CuttingWindow,
+  ChronicFaultIndicator,
+  ConvergenceResult,
   CuttingOptions,
-} from '@agentix-e/micro-kinetic-core';
-import type {
+  CuttingWindow,
+  IContainer,
   ICuttingEngine,
   LocalErrorBound,
-  ConvergenceResult,
+  TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import type { ChronicFaultIndicator } from '@agentix-e/micro-kinetic-core';
 import {
   DEFAULT_CUTTING_OPTIONS,
   invariant,
@@ -42,8 +40,8 @@ import {
   invariantPositiveInt,
 } from '@agentix-e/micro-kinetic-core';
 
-import { computeKineticEnergyBound } from './adaptive-cutter.js';
 import { InductionProver } from '../convergence/induction-prover.js';
+import { computeKineticEnergyBound } from './adaptive-cutter.js';
 
 /** Minimum valid window duration (10 seconds). */
 const MIN_WINDOW_MS = 10_000;
@@ -76,9 +74,10 @@ export class FixedWindowCutter implements ICuttingEngine {
 
     for (let j = 0; j < opts.maxWindows; j++) {
       const startTime = ts.timestamps[0]! + j * delta;
-      const endTime = j === opts.maxWindows - 1
-        ? ts.timestamps[ts.timestamps.length - 1]!
-        : ts.timestamps[0]! + (j + 1) * delta;
+      const endTime =
+        j === opts.maxWindows - 1
+          ? ts.timestamps[ts.timestamps.length - 1]!
+          : ts.timestamps[0]! + (j + 1) * delta;
 
       const slice = this.extractSlice(ts, startTime, endTime);
       const degradationRate = this.computeDegradationRate(slice);
@@ -103,10 +102,7 @@ export class FixedWindowCutter implements ICuttingEngine {
   /**
    * Estimate local error bounds for fixed windows.
    */
-  estimateLocalBounds(
-    windows: readonly CuttingWindow[],
-    metric: string,
-  ): LocalErrorBound[] {
+  estimateLocalBounds(windows: readonly CuttingWindow[], metric: string): LocalErrorBound[] {
     invariant(windows.length > 0, 'Windows must not be empty');
 
     return windows.map((window, idx) => ({
@@ -138,25 +134,15 @@ export class FixedWindowCutter implements ICuttingEngine {
   private validateInputs(ts: TimeSeries, opts: CuttingOptions): void {
     invariantNonEmpty(ts.timestamps, 'TimeSeries.timestamps');
     invariantPositiveInt(opts.maxWindows, 'maxWindows');
-    invariant(
-      ts.timestamps.length >= 2,
-      'Time series must have at least 2 data points',
-    );
-    invariant(
-      ts.timestamps.length === ts.values.length,
-      'Timestamps and values must match',
-    );
+    invariant(ts.timestamps.length >= 2, 'Time series must have at least 2 data points');
+    invariant(ts.timestamps.length === ts.values.length, 'Timestamps and values must match');
   }
 
   private computeDuration(ts: TimeSeries): number {
     return ts.timestamps[ts.timestamps.length - 1]! - ts.timestamps[0]!;
   }
 
-  private extractSlice(
-    ts: TimeSeries,
-    startTime: number,
-    endTime: number,
-  ): TimeSeries {
+  private extractSlice(ts: TimeSeries, startTime: number, endTime: number): TimeSeries {
     const timestamps: number[] = [];
     const values: number[] = [];
 
@@ -202,9 +188,7 @@ export class FixedWindowCutter implements ICuttingEngine {
     const n = slice.timestamps.length;
     if (n < 2) return 0;
 
-    const tArr = np.array(
-      slice.timestamps.map((t) => (t - slice.timestamps[0]!) / 3_600_000),
-    );
+    const tArr = np.array(slice.timestamps.map((t) => (t - slice.timestamps[0]!) / 3_600_000));
     const vArr = np.array([...slice.values]);
 
     const coeffs = np.polyfit(tArr, vArr, 1);
@@ -213,10 +197,7 @@ export class FixedWindowCutter implements ICuttingEngine {
     return Math.abs(slope);
   }
 
-  private detectIndicators(
-    window: CuttingWindow,
-    metric: string,
-  ): ChronicFaultIndicator[] {
+  private detectIndicators(window: CuttingWindow, metric: string): ChronicFaultIndicator[] {
     if (window.degradationRate <= 0) return [];
 
     const values = [...window.slice.values];
@@ -225,16 +206,16 @@ export class FixedWindowCutter implements ICuttingEngine {
     const relativeTimes = absoluteTimestamps.map((t) => t - t0);
 
     const temporalCorrelation = computeCorrelation(relativeTimes, values);
-    const isMonotonic = values.every(
-      (v, i) => i === 0 || v >= values[i - 1]!,
-    );
+    const isMonotonic = values.every((v, i) => i === 0 || v >= values[i - 1]!);
 
-    return [{
-      metric,
-      degradationRate: window.degradationRate,
-      temporalCorrelation,
-      isMonotonic,
-    }];
+    return [
+      {
+        metric,
+        degradationRate: window.degradationRate,
+        temporalCorrelation,
+        isMonotonic,
+      },
+    ];
   }
 }
 

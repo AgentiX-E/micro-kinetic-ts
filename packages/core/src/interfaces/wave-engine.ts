@@ -87,11 +87,7 @@ export interface IWavePropagationModel {
    *
    * where T is the interaction kernel derived from graph topology.
    */
-  simulateCascade(
-    source: string,
-    graph: ServiceCallGraph,
-    params: WaveParams,
-  ): CascadeResult;
+  simulateCascade(source: string, graph: ServiceCallGraph, params: WaveParams): CascadeResult;
 }
 
 /**
@@ -101,11 +97,7 @@ export interface ICascadeSimulator {
   /**
    * Run a single cascade realization.
    */
-  simulate(
-    source: string,
-    graph: ServiceCallGraph,
-    params: WaveParams,
-  ): CascadeResult;
+  simulate(source: string, graph: ServiceCallGraph, params: WaveParams): CascadeResult;
 
   /**
    * Run multiple realizations and aggregate statistics.
@@ -118,7 +110,10 @@ export interface ICascadeSimulator {
   ): {
     readonly meanCascade: CascadeResult;
     readonly varianceField: ReadonlyMap<string, number>;
-    readonly confidenceIntervals: ReadonlyMap<string, { readonly lower: number; readonly upper: number }>;
+    readonly confidenceIntervals: ReadonlyMap<
+      string,
+      { readonly lower: number; readonly upper: number }
+    >;
   };
 }
 

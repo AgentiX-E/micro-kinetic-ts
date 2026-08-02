@@ -19,8 +19,8 @@
 
 import type { IContainer } from '@agentix-e/micro-kinetic-core';
 
-import { RCAPipeline, type RCAPipelineConfig } from './rca-pipeline.js';
 import { DEFAULTS } from '../di/defaults.js';
+import { RCAPipeline, type RCAPipelineConfig } from './rca-pipeline.js';
 
 /** Pipeline scenario presets. */
 export type PipelineScenario = 'acute' | 'chronic' | 'alert-storm' | 'full';

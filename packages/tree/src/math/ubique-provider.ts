@@ -24,15 +24,13 @@
  * @module math/ubique-provider
  */
 
-import * as ubique from 'ubique';
 import {
   type ILinearAlgebra,
   type LUResult,
   invariant,
-  invariantRange,
   invariantPositiveInt,
-  KineticValidationError,
 } from '@agentix-e/micro-kinetic-core';
+import * as ubique from 'ubique';
 
 /**
  * Ubique uses `number[][]` for matrices (JS arrays) and `number[]` for vectors.
@@ -138,7 +136,7 @@ export class UbiqueLinearAlgebra implements ILinearAlgebra {
 
     if (Array.isArray(solution[0])) {
       // Matrix result, extract first column
-      const firstCol: number[] = (solution as number[][]).map((row) => (row[0]!));
+      const firstCol: number[] = (solution as number[][]).map((row) => row[0]!);
       return vecToFlat(firstCol);
     }
     return vecToFlat(solution as number[]);

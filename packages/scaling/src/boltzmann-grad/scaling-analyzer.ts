@@ -39,10 +39,10 @@
  */
 
 import type {
-  BoltzmannGradResult,
   BBGKYHierarchy,
-  MicroserviceState,
   BBGKYOptions,
+  BoltzmannGradResult,
+  MicroserviceState,
   ServiceCallGraph,
 } from '@agentix-e/micro-kinetic-core';
 import { invariant, invariantPositiveInt, invariantRange } from '@agentix-e/micro-kinetic-core';
@@ -97,12 +97,9 @@ export class BoltzmannGradAnalyzer {
    * @param eta - Truncation threshold (default 0.01)
    * @returns Optimal truncation order k*
    */
-  public truncateHierarchy(
-    hierarchy: BBGKYHierarchy,
-    eta?: number,
-  ): number {
+  public truncateHierarchy(hierarchy: BBGKYHierarchy, eta?: number): number {
     const effectiveEta = eta ?? 0.01;
-    const energies = hierarchy.states.map(s => s.correlationEnergy);
+    const energies = hierarchy.states.map((s) => s.correlationEnergy);
     return this.truncator.findTruncationOrder(energies, effectiveEta);
   }
 
@@ -136,10 +133,7 @@ export class BoltzmannGradAnalyzer {
    * @param impactRadius - Fault impact radius d
    * @returns Boltzmann-Grad analysis result
    */
-  public estimateFaultProbability(
-    N: number,
-    impactRadius: number,
-  ): BoltzmannGradResult {
+  public estimateFaultProbability(N: number, impactRadius: number): BoltzmannGradResult {
     invariantPositiveInt(N, 'N');
     invariant(N >= 2, `System size N must be at least 2, got ${N}`);
     invariantRange(impactRadius, 0, 1, 'impactRadius');
@@ -171,8 +165,7 @@ export class BoltzmannGradAnalyzer {
 
     // Step 6: Check if we're in the Boltzmann-Grad regime
     // The regime holds when Nd² is O(1), i.e., between 0.05 and 2.0
-    const inBoltzmannGradRegime =
-      impactDensity >= 0.05 && impactDensity <= 2.0;
+    const inBoltzmannGradRegime = impactDensity >= 0.05 && impactDensity <= 2.0;
 
     return {
       serviceCount: N,
@@ -268,10 +261,7 @@ export class BoltzmannGradAnalyzer {
    * @param a - First-order coefficient
    * @param impactDensity - Nd²
    */
-  private computeSecondOrderCorrection(
-    a: number,
-    impactDensity: number,
-  ): number {
+  private computeSecondOrderCorrection(a: number, impactDensity: number): number {
     // Second-order correction: B = a * γ(ρ)
     // B is typically smaller than A, scaling with pair correlations
     const sign = Math.sign(a);

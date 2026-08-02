@@ -104,11 +104,7 @@ export class WaveCascadeModel {
 
     // Step 1: Build adjacency and interaction kernel
     const adjacency = this.buildAdjacencyMatrix(graph, serviceIds);
-    const interactionKernel = this.buildInteractionKernel(
-      adjacency,
-      N,
-      p.couplingStrength,
-    );
+    const interactionKernel = this.buildInteractionKernel(adjacency, N, p.couplingStrength);
 
     // Step 2: Time discretization
     const dt = Math.min(100, p.timeHorizon / 500); // at most 500 steps
@@ -126,7 +122,7 @@ export class WaveCascadeModel {
 
     // Set initial condition: I(source, 0) = 1, all others = 0
     for (let i = 0; i < N; i++) {
-      intensities[i]![0] = (i === sourceIdx) ? 1.0 : 0.0;
+      intensities[i]![0] = i === sourceIdx ? 1.0 : 0.0;
     }
 
     // Step 4: Time evolution — discretized WKE
@@ -233,10 +229,7 @@ export class WaveCascadeModel {
    * @param timeHorizon - Time horizon for the decay curve (ms)
    * @returns Correlation decay curve
    */
-  public computeDecayCurve(
-    graph: ServiceCallGraph,
-    timeHorizon: number,
-  ): DecayCurve {
+  public computeDecayCurve(graph: ServiceCallGraph, timeHorizon: number): DecayCurve {
     invariant(timeHorizon > 0, 'timeHorizon must be positive');
 
     const serviceIds = Array.from(graph.nodes.keys());
@@ -285,10 +278,7 @@ export class WaveCascadeModel {
    * @param serviceIds - Ordered service ID list
    * @returns Flattened N×N adjacency matrix (row-major)
    */
-  private buildAdjacencyMatrix(
-    graph: ServiceCallGraph,
-    serviceIds: string[],
-  ): Float64Array {
+  private buildAdjacencyMatrix(graph: ServiceCallGraph, serviceIds: string[]): Float64Array {
     const N = serviceIds.length;
     const matrix = new Float64Array(N * N);
     const idToIdx = new Map(serviceIds.map((id, i) => [id, i]));
@@ -388,7 +378,7 @@ export class WaveCascadeModel {
     const deflated = new Float64Array(N * N);
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        deflated[i * N + j] = (matrix[i * N + j]!) - lambda1 * (eigenvector[i]!) * (eigenvector[j]!);
+        deflated[i * N + j] = matrix[i * N + j]! - lambda1 * eigenvector[i]! * eigenvector[j]!;
       }
     }
 
@@ -415,8 +405,8 @@ export class WaveCascadeModel {
       let num = 0;
       let den = 0;
       for (let i = 0; i < N; i++) {
-        num += (vec[i]!) * (next[i]!);
-        den += (vec[i]!) * (vec[i]!);
+        num += vec[i]! * next[i]!;
+        den += vec[i]! * vec[i]!;
       }
       eigenvalue = den > 0 ? num / den : 0;
 
@@ -430,16 +420,12 @@ export class WaveCascadeModel {
   /**
    * Matrix-vector multiplication.
    */
-  private matrixVectorMultiply(
-    matrix: Float64Array,
-    N: number,
-    vec: Float64Array,
-  ): Float64Array {
+  private matrixVectorMultiply(matrix: Float64Array, N: number, vec: Float64Array): Float64Array {
     const result = new Float64Array(N);
     for (let i = 0; i < N; i++) {
       let sum = 0;
       for (let j = 0; j < N; j++) {
-        sum += (matrix[i * N + j]!) * (vec[j]!);
+        sum += matrix[i * N + j]! * vec[j]!;
       }
       result[i] = sum;
     }
@@ -455,7 +441,7 @@ export class WaveCascadeModel {
     norm = Math.sqrt(norm);
     if (norm > 1e-15) {
       for (let i = 0; i < vec.length; i++) {
-        vec[i] = (vec[i]!) / norm;
+        vec[i] = vec[i]! / norm;
       }
     }
   }

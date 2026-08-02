@@ -8,7 +8,8 @@
  */
 
 /** Identifier for a benchmark dataset. */
-export type BenchmarkDatasetId = 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100';
+export type BenchmarkDatasetId =
+  'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100';
 
 /** A single benchmark test case. */
 export interface BenchmarkCase {
@@ -29,11 +30,14 @@ export interface BenchmarkCase {
   /** Fault injection timestamp (Unix ms) */
   readonly injectTimestamp: number;
   /** Metrics data (service ID → time series) */
-  readonly metrics: Record<string, {
-    readonly timestamps: readonly number[];
-    readonly values: readonly number[];
-    readonly metricName: string;
-  }>;
+  readonly metrics: Record<
+    string,
+    {
+      readonly timestamps: readonly number[];
+      readonly values: readonly number[];
+      readonly metricName: string;
+    }
+  >;
   /** Log entries if available */
   readonly logs?: ReadonlyArray<{
     readonly timestamp: number;

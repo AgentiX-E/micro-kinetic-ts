@@ -21,11 +21,10 @@
  */
 
 import type {
-  MicroserviceState,
-  BBGKYState,
   BBGKYHierarchy,
-  BoltzmannGradResult,
   BBGKYOptions,
+  BoltzmannGradResult,
+  MicroserviceState,
 } from '../types/coupling.js';
 
 /**
@@ -53,10 +52,7 @@ export interface IScalingAnalyzer {
    *
    * @returns The optimal truncation order k* (first insignificant order)
    */
-  truncateHierarchy(
-    hierarchy: BBGKYHierarchy,
-    eta?: number,
-  ): number;
+  truncateHierarchy(hierarchy: BBGKYHierarchy, eta?: number): number;
 
   /**
    * Estimate fault probability under Boltzmann-Grad scaling.
@@ -67,10 +63,7 @@ export interface IScalingAnalyzer {
    * @param impactRadius - Fault impact radius d
    * @returns Boltzmann-Grad analysis result
    */
-  estimateFaultProbability(
-    N: number,
-    impactRadius: number,
-  ): BoltzmannGradResult;
+  estimateFaultProbability(N: number, impactRadius: number): BoltzmannGradResult;
 }
 
 /**
@@ -85,16 +78,10 @@ export interface IHierarchyTruncator {
    * 2. Compute energy ratio E_k/E_{k-1}
    * 3. First k where ratio < η → truncate to k-1
    */
-  findTruncationOrder(
-    energies: readonly number[],
-    eta: number,
-  ): number;
+  findTruncationOrder(energies: readonly number[], eta: number): number;
 
   /**
    * Estimate the truncation error from dropping order k and above.
    */
-  estimateTruncationError(
-    hierarchy: BBGKYHierarchy,
-    truncationOrder: number,
-  ): number;
+  estimateTruncationError(hierarchy: BBGKYHierarchy, truncationOrder: number): number;
 }

@@ -27,21 +27,13 @@
  * @module di/factories
  */
 
-import {
-  DI_TOKENS,
-  type IContainer,
-  type FactoryFn,
-  type IRCAEngine,
-  type IMatrixOps,
-  type ILinearAlgebra,
-  invariant,
-} from '@agentix-e/micro-kinetic-core';
+import { DI_TOKENS, type IContainer, invariant } from '@agentix-e/micro-kinetic-core';
 
-import { TreePruner } from '../pruning/pruner.js';
-import { TreeRCAEngine } from '../rca/tree-rca.js';
-import { ConfidenceEstimator } from '../rca/confidence.js';
 import { NumpyTsMatrixOps } from '../math/numpy-provider.js';
 import { UbiqueLinearAlgebra } from '../math/ubique-provider.js';
+import { TreePruner } from '../pruning/pruner.js';
+import { ConfidenceEstimator } from '../rca/confidence.js';
+import { TreeRCAEngine } from '../rca/tree-rca.js';
 
 /**
  * Factory: create a TreePruner (IRCAEngine implementation).

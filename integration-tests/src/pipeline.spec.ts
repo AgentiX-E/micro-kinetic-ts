@@ -1,32 +1,73 @@
 /**
  * Integration test: Full AIOps-Kinetic pipeline validation.
  */
-import { describe, it, expect } from 'vitest';
-import {
-  Container,
-  DI_TOKENS,
-} from '@agentix-e/micro-kinetic-core';
-import { registerTreeModule } from '@agentix-e/micro-kinetic-tree';
+import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import { registerCuttingFactories } from '@agentix-e/micro-kinetic-cutting';
 import { registerNoiseFactories } from '@agentix-e/micro-kinetic-noise';
 import { registerScalingFactories } from '@agentix-e/micro-kinetic-scaling';
+import { registerTreeModule } from '@agentix-e/micro-kinetic-tree';
 import { registerWaveFactories } from '@agentix-e/micro-kinetic-wave';
+import { describe, expect, it } from 'vitest';
 
 function createTestGraph() {
   return {
     nodes: new Map([
       ['gw', { id: 'gw', name: 'api-gateway', namespace: 'prod', labels: { tier: 'frontend' } }],
-      ['svc-a', { id: 'svc-a', name: 'service-a', namespace: 'prod', labels: { tier: 'business' } }],
-      ['svc-b', { id: 'svc-b', name: 'service-b', namespace: 'prod', labels: { tier: 'business' } }],
-      ['svc-c', { id: 'svc-c', name: 'service-c', namespace: 'prod', labels: { tier: 'business' } }],
+      [
+        'svc-a',
+        { id: 'svc-a', name: 'service-a', namespace: 'prod', labels: { tier: 'business' } },
+      ],
+      [
+        'svc-b',
+        { id: 'svc-b', name: 'service-b', namespace: 'prod', labels: { tier: 'business' } },
+      ],
+      [
+        'svc-c',
+        { id: 'svc-c', name: 'service-c', namespace: 'prod', labels: { tier: 'business' } },
+      ],
       ['db', { id: 'db', name: 'database', namespace: 'prod', labels: { tier: 'storage' } }],
     ]),
     edges: [
-      { from: 'gw', to: 'svc-a', type: 'REST' as const, callRate: 100, p99Latency: 10, errorRate: 0 },
-      { from: 'gw', to: 'svc-b', type: 'REST' as const, callRate: 80, p99Latency: 15, errorRate: 0 },
-      { from: 'svc-a', to: 'svc-c', type: 'gRPC' as const, callRate: 50, p99Latency: 5, errorRate: 0 },
-      { from: 'svc-c', to: 'svc-a', type: 'CALLBACK' as const, callRate: 10, p99Latency: 20, errorRate: 0.05 },
-      { from: 'svc-b', to: 'db', type: 'REST' as const, callRate: 200, p99Latency: 3, errorRate: 0.01 },
+      {
+        from: 'gw',
+        to: 'svc-a',
+        type: 'REST' as const,
+        callRate: 100,
+        p99Latency: 10,
+        errorRate: 0,
+      },
+      {
+        from: 'gw',
+        to: 'svc-b',
+        type: 'REST' as const,
+        callRate: 80,
+        p99Latency: 15,
+        errorRate: 0,
+      },
+      {
+        from: 'svc-a',
+        to: 'svc-c',
+        type: 'gRPC' as const,
+        callRate: 50,
+        p99Latency: 5,
+        errorRate: 0,
+      },
+      {
+        from: 'svc-c',
+        to: 'svc-a',
+        type: 'CALLBACK' as const,
+        callRate: 10,
+        p99Latency: 20,
+        errorRate: 0.05,
+      },
+      {
+        from: 'svc-b',
+        to: 'db',
+        type: 'REST' as const,
+        callRate: 200,
+        p99Latency: 3,
+        errorRate: 0.01,
+      },
       { from: 'svc-c', to: 'db', type: 'REST' as const, callRate: 30, p99Latency: 4, errorRate: 0 },
     ],
     systemLoad: 0.4,
@@ -36,11 +77,61 @@ function createTestGraph() {
 function createTestMetrics() {
   const times = [0, 60_000, 120_000, 180_000, 240_000, 300_000];
   return new Map([
-    ['gw', [{ label: 'cpu', timestamps: times, values: new Float64Array([10, 12, 12, 11, 13, 14]), unit: '%' }]],
-    ['svc-a', [{ label: 'cpu', timestamps: times, values: new Float64Array([30, 35, 40, 60, 80, 95]), unit: '%' }]],
-    ['svc-b', [{ label: 'cpu', timestamps: times, values: new Float64Array([20, 22, 25, 28, 30, 32]), unit: '%' }]],
-    ['svc-c', [{ label: 'cpu', timestamps: times, values: new Float64Array([15, 18, 20, 25, 30, 40]), unit: '%' }]],
-    ['db', [{ label: 'cpu', timestamps: times, values: new Float64Array([5, 5, 6, 6, 7, 8]), unit: '%' }]],
+    [
+      'gw',
+      [
+        {
+          label: 'cpu',
+          timestamps: times,
+          values: new Float64Array([10, 12, 12, 11, 13, 14]),
+          unit: '%',
+        },
+      ],
+    ],
+    [
+      'svc-a',
+      [
+        {
+          label: 'cpu',
+          timestamps: times,
+          values: new Float64Array([30, 35, 40, 60, 80, 95]),
+          unit: '%',
+        },
+      ],
+    ],
+    [
+      'svc-b',
+      [
+        {
+          label: 'cpu',
+          timestamps: times,
+          values: new Float64Array([20, 22, 25, 28, 30, 32]),
+          unit: '%',
+        },
+      ],
+    ],
+    [
+      'svc-c',
+      [
+        {
+          label: 'cpu',
+          timestamps: times,
+          values: new Float64Array([15, 18, 20, 25, 30, 40]),
+          unit: '%',
+        },
+      ],
+    ],
+    [
+      'db',
+      [
+        {
+          label: 'cpu',
+          timestamps: times,
+          values: new Float64Array([5, 5, 6, 6, 7, 8]),
+          unit: '%',
+        },
+      ],
+    ],
   ]);
 }
 
@@ -86,7 +177,7 @@ describe('Full Pipeline Integration', () => {
     // Use a DAG (no cycles) for deterministic tree RCA
     const dagGraph = {
       ...createTestGraph(),
-      edges: createTestGraph().edges.filter(e => !(e.from === 'svc-c' && e.to === 'svc-a')),
+      edges: createTestGraph().edges.filter((e) => !(e.from === 'svc-c' && e.to === 'svc-a')),
     };
     const metrics = createTestMetrics();
 
@@ -131,7 +222,11 @@ describe('Full Pipeline Integration', () => {
     }
 
     const ts = { label: 'mem_rss', timestamps, values, unit: 'MB' };
-    const windows = engine.segment(ts, { maxWindows: 5, minWindowDurationMs: 300000, adaptive: true });
+    const windows = engine.segment(ts, {
+      maxWindows: 5,
+      minWindowDurationMs: 300000,
+      adaptive: true,
+    });
 
     expect(windows.length).toBeGreaterThan(0);
     for (const w of windows) {
@@ -147,9 +242,36 @@ describe('Full Pipeline Integration', () => {
     const callGraph = createTestGraph();
 
     const history = [
-      { id: 'a1', serviceId: 'svc-a', severity: 'critical' as const, timestamp: 1000, metric: 'cpu', value: 95, threshold: 80, message: 'CPU high' },
-      { id: 'a2', serviceId: 'svc-b', severity: 'warning' as const, timestamp: 1100, metric: 'mem', value: 85, threshold: 80, message: 'Memory high' },
-      { id: 'a3', serviceId: 'svc-a', severity: 'critical' as const, timestamp: 2000, metric: 'cpu', value: 98, threshold: 80, message: 'CPU critical' },
+      {
+        id: 'a1',
+        serviceId: 'svc-a',
+        severity: 'critical' as const,
+        timestamp: 1000,
+        metric: 'cpu',
+        value: 95,
+        threshold: 80,
+        message: 'CPU high',
+      },
+      {
+        id: 'a2',
+        serviceId: 'svc-b',
+        severity: 'warning' as const,
+        timestamp: 1100,
+        metric: 'mem',
+        value: 85,
+        threshold: 80,
+        message: 'Memory high',
+      },
+      {
+        id: 'a3',
+        serviceId: 'svc-a',
+        severity: 'critical' as const,
+        timestamp: 2000,
+        metric: 'cpu',
+        value: 98,
+        threshold: 80,
+        message: 'CPU critical',
+      },
     ];
 
     const coupling = engine.computeCouplingSparsity(history, callGraph);
@@ -163,12 +285,33 @@ describe('Full Pipeline Integration', () => {
 
     const analyzer = container.resolve(DI_TOKENS.SCALING_ANALYZER);
     const states = [
-      { serviceId: 'svc-a', timestamp: 1000, faultProbability: 0.1, anomalyScore: 0.2, trafficRps: 100 },
-      { serviceId: 'svc-b', timestamp: 1000, faultProbability: 0.05, anomalyScore: 0.1, trafficRps: 80 },
-      { serviceId: 'svc-c', timestamp: 1000, faultProbability: 0.15, anomalyScore: 0.3, trafficRps: 50 },
+      {
+        serviceId: 'svc-a',
+        timestamp: 1000,
+        faultProbability: 0.1,
+        anomalyScore: 0.2,
+        trafficRps: 100,
+      },
+      {
+        serviceId: 'svc-b',
+        timestamp: 1000,
+        faultProbability: 0.05,
+        anomalyScore: 0.1,
+        trafficRps: 80,
+      },
+      {
+        serviceId: 'svc-c',
+        timestamp: 1000,
+        faultProbability: 0.15,
+        anomalyScore: 0.3,
+        trafficRps: 50,
+      },
     ];
 
-    const hierarchy = analyzer.computeBBGKYHierarchy(states, createTestGraph(), { maxOrder: 3, truncationEta: 0.01 });
+    const hierarchy = analyzer.computeBBGKYHierarchy(states, createTestGraph(), {
+      maxOrder: 3,
+      truncationEta: 0.01,
+    });
     expect(hierarchy.systemSize).toBe(5); // 5 services in test graph
     expect(hierarchy.truncationOrder).toBeGreaterThanOrEqual(1);
   });

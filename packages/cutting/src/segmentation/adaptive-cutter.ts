@@ -36,28 +36,21 @@
 
 import * as np from 'numpy-ts';
 
-import type { IContainer } from '@agentix-e/micro-kinetic-core';
 import type {
-  TimeSeries,
-  CuttingWindow,
+  ChronicFaultIndicator,
+  ConvergenceResult,
   CuttingOptions,
-  CuttingSchedule,
-  CuttingQualityMetrics,
-} from '@agentix-e/micro-kinetic-core';
-import type {
+  CuttingWindow,
+  IContainer,
   ICuttingEngine,
   LocalErrorBound,
-  ConvergenceResult,
+  TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import type { ChronicFaultIndicator } from '@agentix-e/micro-kinetic-core';
 import {
   DEFAULT_CUTTING_OPTIONS,
   InvalidWindowError,
-  InductionError,
-  ConvergenceTimeoutError,
   invariant,
   invariantFinite,
-  invariantRange,
   invariantNonEmpty,
   invariantPositiveInt,
 } from '@agentix-e/micro-kinetic-core';
@@ -125,10 +118,7 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
    * @param metric - Metric name for indicator generation
    * @returns LocalErrorBound for each window
    */
-  estimateLocalBounds(
-    windows: readonly CuttingWindow[],
-    metric: string,
-  ): LocalErrorBound[] {
+  estimateLocalBounds(windows: readonly CuttingWindow[], metric: string): LocalErrorBound[] {
     invariant(windows.length > 0, 'Windows array must not be empty');
 
     return windows.map((window, idx) => {
@@ -170,14 +160,14 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
 
   // ── Private helpers ────────────────────────────────────
 
-  private validateInputs(
-    ts: TimeSeries,
-    opts: CuttingOptions,
-  ): void {
+  private validateInputs(ts: TimeSeries, opts: CuttingOptions): void {
     invariantNonEmpty(ts.timestamps, 'TimeSeries.timestamps');
     invariantPositiveInt(opts.maxWindows, 'maxWindows');
     invariant(ts.timestamps.length >= 2, 'Time series must have at least 2 data points');
-    invariant(ts.timestamps.length === ts.values.length, 'Timestamps and values must have same length');
+    invariant(
+      ts.timestamps.length === ts.values.length,
+      'Timestamps and values must have same length',
+    );
     invariant(
       opts.maxWindows <= ts.timestamps.length - 1,
       `maxWindows (${opts.maxWindows}) must not exceed data points - 1 (${ts.timestamps.length - 1})`,
@@ -196,19 +186,16 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
   /**
    * Create N uniform cutting windows covering time span T.
    */
-  private createUniformWindows(
-    ts: TimeSeries,
-    N: number,
-    T: number,
-  ): CuttingWindow[] {
+  private createUniformWindows(ts: TimeSeries, N: number, T: number): CuttingWindow[] {
     const delta = T / N;
     const windows: CuttingWindow[] = [];
 
     for (let j = 0; j < N; j++) {
       const startTime = ts.timestamps[0]! + j * delta;
-      const endTime = j === N - 1
-        ? ts.timestamps[ts.timestamps.length - 1]!
-        : ts.timestamps[0]! + (j + 1) * delta;
+      const endTime =
+        j === N - 1
+          ? ts.timestamps[ts.timestamps.length - 1]!
+          : ts.timestamps[0]! + (j + 1) * delta;
 
       const slice = this.extractSlice(ts, startTime, endTime);
 
@@ -254,7 +241,8 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
       const prev = j > 0 ? initialWindows[j - 1] : undefined;
 
       // Check variance from previous window's error bound
-      const needsRefinement = prev !== undefined &&
+      const needsRefinement =
+        prev !== undefined &&
         win.localErrorBound > 0 &&
         prev.localErrorBound > 0 &&
         Math.abs(win.localErrorBound - prev.localErrorBound) /
@@ -307,11 +295,7 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
   /**
    * Extract a time series slice covering [startTime, endTime].
    */
-  private extractSlice(
-    ts: TimeSeries,
-    startTime: number,
-    endTime: number,
-  ): TimeSeries {
+  private extractSlice(ts: TimeSeries, startTime: number, endTime: number): TimeSeries {
     const timestamps: number[] = [];
     const values: number[] = [];
 
@@ -376,10 +360,7 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
   /**
    * Detect chronic fault indicators within a window.
    */
-  private detectFaultIndicators(
-    window: CuttingWindow,
-    metric: string,
-  ): ChronicFaultIndicator[] {
+  private detectFaultIndicators(window: CuttingWindow, metric: string): ChronicFaultIndicator[] {
     const indicators: ChronicFaultIndicator[] = [];
     const rate = window.degradationRate;
 

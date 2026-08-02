@@ -25,13 +25,7 @@
 import * as np from 'numpy-ts';
 
 import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
-import {
-  invariant,
-  invariantFinite,
-  invariantNonEmpty,
-  invariantPositiveInt,
-  KineticValidationError,
-} from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 
 /** Memory leak detection result. */
 export interface MemoryLeakResult {
@@ -86,17 +80,12 @@ export class MemoryLeakDetector {
    * @param options - Detection parameters
    * @returns MemoryLeakResult with detection status and predictions
    */
-  detect(
-    ts: TimeSeries,
-    options?: Partial<MemoryLeakDetectionOptions>,
-  ): MemoryLeakResult {
+  detect(ts: TimeSeries, options?: Partial<MemoryLeakDetectionOptions>): MemoryLeakResult {
     const opts = { ...DEFAULT_MEM_LEAK_OPTIONS, ...options };
     this.validateInputs(ts);
 
     const values = this.extractValues(ts, opts.windowPoints);
-    const timestamps = ts.timestamps.slice(
-      Math.max(0, ts.timestamps.length - values.length),
-    );
+    const timestamps = ts.timestamps.slice(Math.max(0, ts.timestamps.length - values.length));
 
     const degradationRate = this.computeDegradationRate(timestamps, values);
     const degradationRateKBs = degradationRate * 1000; // bytes/ms → KB/s
@@ -116,9 +105,7 @@ export class MemoryLeakDetector {
     );
 
     const detected =
-      isMonotonic &&
-      temporalCorrelation >= opts.minCorrelation &&
-      degradationRate > 0;
+      isMonotonic && temporalCorrelation >= opts.minCorrelation && degradationRate > 0;
 
     const currentMemory = values[values.length - 1]!;
 
@@ -151,10 +138,7 @@ export class MemoryLeakDetector {
    *
    * Maps to the kinetic energy rate r_j in Deng Yu's cutting algorithm.
    */
-  computeDegradationRate(
-    timestamps: readonly number[],
-    values: readonly number[],
-  ): number {
+  computeDegradationRate(timestamps: readonly number[], values: readonly number[]): number {
     if (values.length < 2) return 0;
 
     // Normalize time to hours
@@ -172,15 +156,9 @@ export class MemoryLeakDetector {
 
   private validateInputs(ts: TimeSeries): void {
     invariantNonEmpty(ts.timestamps, 'TimeSeries.timestamps');
-    invariantNonEmpty((ts.values as unknown) as { length: number }, 'TimeSeries.values');
-    invariant(
-      ts.timestamps.length === ts.values.length,
-      'Timestamps and values must match',
-    );
-    invariant(
-      ts.timestamps.length >= 2,
-      'Need at least 2 data points for memory leak detection',
-    );
+    invariantNonEmpty(ts.values as unknown as { length: number }, 'TimeSeries.values');
+    invariant(ts.timestamps.length === ts.values.length, 'Timestamps and values must match');
+    invariant(ts.timestamps.length >= 2, 'Need at least 2 data points for memory leak detection');
   }
 
   private extractValues(ts: TimeSeries, windowPoints: number): number[] {

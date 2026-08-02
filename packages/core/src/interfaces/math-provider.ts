@@ -96,13 +96,7 @@ export interface IMatrixOps {
    * General matrix multiplication: C = A × B.
    * A: m×k, B: k×n → C: m×n
    */
-  multiply(
-    a: Float64Array,
-    b: Float64Array,
-    m: number,
-    k: number,
-    n: number,
-  ): Float64Array;
+  multiply(a: Float64Array, b: Float64Array, m: number, k: number, n: number): Float64Array;
 
   /**
    * Compute eigenvalues of a symmetric matrix.
@@ -149,16 +143,15 @@ export interface IStatistics {
    * Compute the mutual information between two alert time series.
    * Used for coupling matrix construction in Stosszahlansatz denoising.
    */
-  mutualInformation(
-    x: Float64Array,
-    y: Float64Array,
-    params?: CouplingParams,
-  ): number;
+  mutualInformation(x: Float64Array, y: Float64Array, params?: CouplingParams): number;
 
   /**
    * Fit a linear regression y = β₀ + β₁x.
    */
-  linearRegression(x: Float64Array, y: Float64Array): {
+  linearRegression(
+    x: Float64Array,
+    y: Float64Array,
+  ): {
     readonly slope: number;
     readonly intercept: number;
     readonly rSquared: number;

@@ -50,21 +50,21 @@
 
 import {
   DI_TOKENS,
-  type IContainer,
-  type IRCAEngine,
-  type ICuttingEngine,
-  type IConvergenceProver,
-  type IDenoiseEngine,
-  type IScalingAnalyzer,
-  type IWavePropagationModel,
-  type ServiceCallGraph,
-  type MetricMap,
-  type RootCauseResult,
-  type DenoiseResult,
   type AlertRecord,
-  type MicroserviceState,
   type BoltzmannGradResult,
   type CascadeResult,
+  type DenoiseResult,
+  type IContainer,
+  type IConvergenceProver,
+  type ICuttingEngine,
+  type IDenoiseEngine,
+  type IRCAEngine,
+  type IScalingAnalyzer,
+  type IWavePropagationModel,
+  type MetricMap,
+  type MicroserviceState,
+  type RootCauseResult,
+  type ServiceCallGraph,
 } from '@agentix-e/micro-kinetic-core';
 
 import { DEFAULTS } from '../di/defaults.js';
@@ -158,10 +158,7 @@ export class RCAPipeline {
    * @param metrics - Time-series metrics per service
    * @returns Complete pipeline result with all stage outputs
    */
-  async execute(
-    callGraph: ServiceCallGraph,
-    metrics: MetricMap,
-  ): Promise<RCAPipelineResult> {
+  async execute(callGraph: ServiceCallGraph, metrics: MetricMap): Promise<RCAPipelineResult> {
     const startTime = Date.now();
     const stages: StageResult[] = [];
 
@@ -199,15 +196,14 @@ export class RCAPipeline {
               stages,
             );
 
-            const prover = this.container.resolve<IConvergenceProver>(
-              DI_TOKENS.CONVERGENCE_PROVER,
-            );
+            const prover = this.container.resolve<IConvergenceProver>(DI_TOKENS.CONVERGENCE_PROVER);
             const convergence = await this.runStage(
               'Convergence Proof',
-              () => prover.prove(
-                bounds.map((b) => b.errorBound),
-                this.config.pruneEpsilon,
-              ),
+              () =>
+                prover.prove(
+                  bounds.map((b) => b.errorBound),
+                  this.config.pruneEpsilon,
+                ),
               stages,
             );
 
@@ -240,9 +236,7 @@ export class RCAPipeline {
     // ── Stage 4: Scaling Analysis ────────────────────────
     let scalingResult: BoltzmannGradResult | undefined;
     if (this.config.enableScaling) {
-      const scalingAnalyzer = this.container.resolve<IScalingAnalyzer>(
-        DI_TOKENS.SCALING_ANALYZER,
-      );
+      const scalingAnalyzer = this.container.resolve<IScalingAnalyzer>(DI_TOKENS.SCALING_ANALYZER);
 
       scalingResult = await this.runStage(
         'BBGKY + Boltzmann-Grad Scaling',
@@ -330,10 +324,7 @@ export class RCAPipeline {
    * Build mock alert records from fault graph structure.
    * In production, real alert records would be passed in.
    */
-  private buildMockAlerts(
-    _faultGraph: unknown,
-    _metrics: MetricMap,
-  ): AlertRecord[] {
+  private buildMockAlerts(_faultGraph: unknown, _metrics: MetricMap): AlertRecord[] {
     return [];
   }
 
@@ -369,8 +360,5 @@ export class RCAPipeline {
  * @param container - DI container to register into
  */
 export function registerRCAPipeline(container: IContainer): void {
-  container.register(
-    DI_TOKENS.RCA_PIPELINE,
-    (c) => new RCAPipeline(c),
-  );
+  container.register(DI_TOKENS.RCA_PIPELINE, (c) => new RCAPipeline(c));
 }

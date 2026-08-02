@@ -30,11 +30,7 @@
 import * as np from 'numpy-ts';
 
 import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
-import {
-  invariant,
-  invariantFinite,
-  invariantNonEmpty,
-} from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 
 /** Connection pool detection result. */
 export interface ConnectionPoolResult {
@@ -95,10 +91,7 @@ export class ConnectionPoolDetector {
    * @param options - Detection parameters
    * @returns ConnectionPoolResult with detection status
    */
-  detect(
-    ts: TimeSeries,
-    options?: Partial<ConnectionPoolDetectionOptions>,
-  ): ConnectionPoolResult {
+  detect(ts: TimeSeries, options?: Partial<ConnectionPoolDetectionOptions>): ConnectionPoolResult {
     const opts = { ...DEFAULT_CP_OPTIONS, ...options };
     this.validateInputs(ts);
 
@@ -115,18 +108,15 @@ export class ConnectionPoolDetector {
 
     // Fit exponential decay: C(t) = C₀ × exp(-λ × t) + C_min
     // Through log transform: ln(C(t) - C_min) = ln(C₀) - λ × t
-    const { growthRate, initialAvailable, fitQuality } =
-      this.fitExponentialDecay(tRel, values);
+    const { growthRate, initialAvailable, fitQuality } = this.fitExponentialDecay(tRel, values);
 
     const currentAvailable = values[values.length - 1]!;
     const poolCap = opts.poolCapacity ?? this.estimatePoolCapacity(values);
-    const utilizationRatio = 1 - (currentAvailable / poolCap);
+    const utilizationRatio = 1 - currentAvailable / poolCap;
 
     // Detection logic
     const detected =
-      isMonotonic &&
-      growthRate >= opts.minGrowthRate &&
-      fitQuality >= opts.minFitQuality;
+      isMonotonic && growthRate >= opts.minGrowthRate && fitQuality >= opts.minFitQuality;
 
     // Exhaustion prediction: solve C(t) = threshold
     let exhaustionTimestamp: number | undefined;
@@ -134,13 +124,10 @@ export class ConnectionPoolDetector {
 
     if (detected && growthRate > 0) {
       const threshold = poolCap * opts.exhaustionThreshold;
-      const hoursToThreshold = Math.log(
-        Math.max(initialAvailable / threshold, 1.01),
-      ) / growthRate;
+      const hoursToThreshold = Math.log(Math.max(initialAvailable / threshold, 1.01)) / growthRate;
 
       if (Number.isFinite(hoursToThreshold) && hoursToThreshold > 0) {
-        exhaustionTimestamp =
-          (timestamps[timestamps.length - 1]! + hoursToThreshold * 3_600_000);
+        exhaustionTimestamp = timestamps[timestamps.length - 1]! + hoursToThreshold * 3_600_000;
         hoursToExhaustion = hoursToThreshold;
       }
     }
@@ -251,11 +238,8 @@ export class ConnectionPoolDetector {
 
   private validateInputs(ts: TimeSeries): void {
     invariantNonEmpty(ts.timestamps, 'TimeSeries.timestamps');
-    invariantNonEmpty((ts.values as unknown) as { length: number }, 'TimeSeries.values');
-    invariant(
-      ts.timestamps.length === ts.values.length,
-      'Timestamps and values must match',
-    );
+    invariantNonEmpty(ts.values as unknown as { length: number }, 'TimeSeries.values');
+    invariant(ts.timestamps.length === ts.values.length, 'Timestamps and values must match');
     invariant(
       ts.timestamps.length >= 3,
       'Need at least 3 data points for exponential curve fitting',

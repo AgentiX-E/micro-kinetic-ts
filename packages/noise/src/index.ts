@@ -33,8 +33,8 @@ export { StatisticsProvider } from './math/statistics-provider.js';
 
 // ── Stosszahlansatz Components ────────────────────────────
 export { CouplingSparsityAnalyzer } from './stoss/coupling-analyzer.js';
-export { IndependenceChecker } from './stoss/independence-checker.js';
 export { StossDenoiser } from './stoss/denoiser.js';
+export { IndependenceChecker } from './stoss/independence-checker.js';
 
 // ── DI ───────────────────────────────────────────────────
 export { registerNoiseFactories } from './di/factories.js';

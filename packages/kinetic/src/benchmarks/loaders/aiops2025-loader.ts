@@ -18,22 +18,22 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import type {
+  CallEdge,
+  MetricMap,
   ServiceCallGraph,
   ServiceNode,
-  CallEdge,
   TimeSeries,
-  MetricMap,
 } from '@agentix-e/micro-kinetic-core';
 
 import type {
+  AIOps2025Case,
+  AIOps2025LabelScores,
+  AIOps2025Suite,
   BenchmarkCase,
-  BenchmarkSuite,
   BenchmarkGroundTruth,
   BenchmarkLogEntry,
+  BenchmarkSuite,
   BenchmarkTraceSpan,
-  AIOps2025Case,
-  AIOps2025Suite,
-  AIOps2025LabelScores,
 } from './types.js';
 
 // ── AIOps2025 Loader ──────────────────────────────────────
@@ -96,9 +96,7 @@ export class AIOps2025Loader {
       .filter((e) => e.isDirectory() && !e.name.startsWith('_') && !e.name.startsWith('.'))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const cases = caseDirs.map((dir) =>
-      this.loadCase(path.join(suitePath, dir.name)),
-    );
+    const cases = caseDirs.map((dir) => this.loadCase(path.join(suitePath, dir.name)));
 
     return {
       cases,
@@ -226,15 +224,17 @@ export class AIOps2025Loader {
 
     // Check if it's an array of {timestamp, value, metric_name} objects (RCAEval format)
     if (typeof data[0] === 'object' && data[0] !== null && 'metric_name' in data[0]) {
-      return this.parseRCAEvalStyleMetrics(data as Array<{ timestamp: number; value: number; metric_name: string }>);
+      return this.parseRCAEvalStyleMetrics(
+        data as Array<{ timestamp: number; value: number; metric_name: string }>,
+      );
     }
 
     // Check if it's an array of {label, timestamps, values} objects
     if (typeof data[0] === 'object' && data[0] !== null && 'label' in data[0]) {
       return data.map((item: Record<string, unknown>) => ({
         label: String(item.label ?? 'unknown'),
-        timestamps: Array.isArray(item.timestamps) ? item.timestamps as number[] : [],
-        values: new Float64Array(Array.isArray(item.values) ? item.values as number[] : []),
+        timestamps: Array.isArray(item.timestamps) ? (item.timestamps as number[]) : [],
+        values: new Float64Array(Array.isArray(item.values) ? (item.values as number[]) : []),
         unit: String(item.unit ?? 'count'),
       }));
     }
@@ -316,7 +316,8 @@ export class AIOps2025Loader {
           return raw.map((span: Record<string, unknown>) => ({
             traceId: String(span.traceId ?? span.trace_id ?? 'unknown'),
             spanId: String(span.spanId ?? span.span_id ?? `${span.traceId}_${span.service}`),
-            parentSpanId: span.parentSpanId as string | undefined ?? span.parent_span as string | undefined,
+            parentSpanId:
+              (span.parentSpanId as string | undefined) ?? (span.parent_span as string | undefined),
             service: String(span.service ?? span.serviceId ?? 'unknown'),
             operationName: String(span.operationName ?? span.operation ?? 'unknown'),
             startTime: Number(span.startTime ?? span.start_time ?? 0),
@@ -352,10 +353,7 @@ export class AIOps2025Loader {
     return [];
   }
 
-  private loadCallGraph(
-    casePath: string,
-    metrics: MetricMap,
-  ): ServiceCallGraph {
+  private loadCallGraph(casePath: string, metrics: MetricMap): ServiceCallGraph {
     const graphPath = path.join(casePath, 'call_graph.json');
     if (fs.existsSync(graphPath)) {
       try {
@@ -417,8 +415,19 @@ export class AIOps2025Loader {
   // ── Utility Methods ─────────────────────────────────────
 
   private parseCallGraph(raw: Record<string, unknown>): ServiceCallGraph {
-    const nodeEntries = raw.nodes as Array<{ id: string; name?: string; namespace?: string; labels?: Record<string, string> }> | undefined;
-    const edgeEntries = raw.edges as Array<{ from: string; to: string; type?: string; callRate?: number; p99Latency?: number; errorRate?: number }> | undefined;
+    const nodeEntries = raw.nodes as
+      | Array<{ id: string; name?: string; namespace?: string; labels?: Record<string, string> }>
+      | undefined;
+    const edgeEntries = raw.edges as
+      | Array<{
+          from: string;
+          to: string;
+          type?: string;
+          callRate?: number;
+          p99Latency?: number;
+          errorRate?: number;
+        }>
+      | undefined;
 
     const nodes = new Map<string, ServiceNode>();
     if (nodeEntries) {
@@ -507,14 +516,20 @@ export class AIOps2025Loader {
   private normalizeLogLevel(level: string): BenchmarkLogEntry['level'] {
     const upper = level.toUpperCase();
     switch (upper) {
-      case 'DEBUG': return 'DEBUG';
-      case 'INFO': return 'INFO';
+      case 'DEBUG':
+        return 'DEBUG';
+      case 'INFO':
+        return 'INFO';
       case 'WARN':
-      case 'WARNING': return 'WARN';
-      case 'ERROR': return 'ERROR';
+      case 'WARNING':
+        return 'WARN';
+      case 'ERROR':
+        return 'ERROR';
       case 'FATAL':
-      case 'CRITICAL': return 'FATAL';
-      default: return 'INFO';
+      case 'CRITICAL':
+        return 'FATAL';
+      default:
+        return 'INFO';
     }
   }
 }

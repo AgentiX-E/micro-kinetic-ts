@@ -41,19 +41,17 @@
  * @module convergence/induction-prover
  */
 
-import type { IContainer } from '@agentix-e/micro-kinetic-core';
 import type {
-  IConvergenceProver,
   ConvergenceResult,
+  IContainer,
+  IConvergenceProver,
   ProofStep,
 } from '@agentix-e/micro-kinetic-core';
 import {
-  InductionError,
   ConvergenceTimeoutError,
   invariant,
   invariantFinite,
   invariantNonEmpty,
-  invariantPositiveInt,
 } from '@agentix-e/micro-kinetic-core';
 
 /**
@@ -108,19 +106,13 @@ export class InductionProver implements IConvergenceProver {
    * @param globalTolerance - Global error tolerance ε_global
    * @returns ConvergenceResult with proof steps and convergence status
    */
-  prove(
-    errorSequence: readonly number[],
-    globalTolerance: number,
-  ): ConvergenceResult {
+  prove(errorSequence: readonly number[], globalTolerance: number): ConvergenceResult {
     invariantNonEmpty(errorSequence, 'errorSequence');
     invariantFinite(globalTolerance, 'globalTolerance');
     invariant(globalTolerance > 0, 'Global tolerance must be positive');
 
     for (let i = 0; i < errorSequence.length; i++) {
-      invariantFinite(
-        errorSequence[i]!,
-        `errorSequence[${i}]`,
-      );
+      invariantFinite(errorSequence[i]!, `errorSequence[${i}]`);
     }
 
     const maxError = Math.max(...errorSequence);
@@ -155,8 +147,7 @@ export class InductionProver implements IConvergenceProver {
       } else {
         // Inductive step
         const epsilonPrev = errorSequence[j - 1]!;
-        const propagationBound =
-          this.couplingConstant * maxError * normDelta;
+        const propagationBound = this.couplingConstant * maxError * normDelta;
         const epsilonBound = epsilonPrev + propagationBound;
 
         // Verify the actual ε_j is within the predicted bound

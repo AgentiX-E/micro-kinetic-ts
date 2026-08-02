@@ -21,11 +21,11 @@
  */
 
 import type {
-  AlertRecord,
   AlertGroup,
+  AlertRecord,
   CouplingSparsityMatrix,
-  IndependenceResult,
   DenoiseResult,
+  IndependenceResult,
 } from '../types/alerts.js';
 import type { ServiceCallGraph } from '../types/graph.js';
 
@@ -57,10 +57,7 @@ export interface IDenoiseEngine {
    * Deng Yu's theorem guarantees:
    *   error ≤ K/N → 0 as N → ∞
    */
-  checkIndependence(
-    alertGroup: AlertGroup,
-    coupling: CouplingSparsityMatrix,
-  ): IndependenceResult;
+  checkIndependence(alertGroup: AlertGroup, coupling: CouplingSparsityMatrix): IndependenceResult;
 
   /**
    * Denoise a set of alerts using coupling sparsity analysis.
@@ -71,10 +68,7 @@ export interface IDenoiseEngine {
    *   can be safely suppressed
    * - Grouped alarms: clustered for correlation analysis
    */
-  denoise(
-    alerts: readonly AlertRecord[],
-    coupling: CouplingSparsityMatrix,
-  ): DenoiseResult;
+  denoise(alerts: readonly AlertRecord[], coupling: CouplingSparsityMatrix): DenoiseResult;
 }
 
 /**

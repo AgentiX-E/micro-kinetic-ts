@@ -33,9 +33,9 @@ export { HierarchyBuilder } from './bbgky/hierarchy-builder.js';
 export { HierarchyTruncator } from './bbgky/truncator.js';
 
 // ── Boltzmann-Grad Components ─────────────────────────────
-export { BoltzmannGradAnalyzer } from './boltzmann-grad/scaling-analyzer.js';
 export { FaultProbabilityAsymptotics } from './boltzmann-grad/fault-probability.js';
 export type { FaultProbabilityEstimate } from './boltzmann-grad/fault-probability.js';
+export { BoltzmannGradAnalyzer } from './boltzmann-grad/scaling-analyzer.js';
 
 // ── DI ───────────────────────────────────────────────────
 export { registerScalingFactories } from './di/factories.js';

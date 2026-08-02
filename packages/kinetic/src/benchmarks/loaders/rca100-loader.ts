@@ -20,24 +20,24 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import type {
+  CallEdge,
+  MetricMap,
   ServiceCallGraph,
   ServiceNode,
-  CallEdge,
   TimeSeries,
-  MetricMap,
 } from '@agentix-e/micro-kinetic-core';
 
 import type {
+  BenchmarkAlert,
   BenchmarkCase,
-  BenchmarkSuite,
+  BenchmarkEvent,
   BenchmarkGroundTruth,
   BenchmarkLogEntry,
+  BenchmarkSuite,
   BenchmarkTraceSpan,
-  BenchmarkEvent,
-  BenchmarkAlert,
   RCA100Case,
-  RCA100Suite,
   RCA100GroundTruthLayers,
+  RCA100Suite,
 } from './types.js';
 
 // ── RCA100 Loader ─────────────────────────────────────────
@@ -102,9 +102,7 @@ export class RCA100Loader {
       .filter((e) => e.isDirectory() && !e.name.startsWith('_') && !e.name.startsWith('.'))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const cases = caseDirs.map((dir) =>
-      this.loadCase(path.join(suitePath, dir.name)),
-    );
+    const cases = caseDirs.map((dir) => this.loadCase(path.join(suitePath, dir.name)));
 
     return {
       cases,
@@ -168,7 +166,8 @@ export class RCA100Loader {
           : undefined;
 
         return {
-          serviceId: layers?.targetEntity ?? raw.service ?? raw.target_entity ?? raw.serviceId ?? 'unknown',
+          serviceId:
+            layers?.targetEntity ?? raw.service ?? raw.target_entity ?? raw.serviceId ?? 'unknown',
           faultType: layers?.faultType ?? raw.fault_type ?? raw.faultType ?? 'unknown',
           metric: raw.metric ?? raw.root_cause_metric,
           rca100Layers: layers,
@@ -236,13 +235,15 @@ export class RCA100Loader {
       if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null) {
         const firstObj = data[0] as Record<string, unknown>;
         if ('metric_name' in firstObj) {
-          return this.parseRCAEvalStyleMetrics(data as Array<{ timestamp: number; value: number; metric_name: string }>);
+          return this.parseRCAEvalStyleMetrics(
+            data as Array<{ timestamp: number; value: number; metric_name: string }>,
+          );
         }
         if ('label' in firstObj) {
           return data.map((item: Record<string, unknown>) => ({
             label: String(item.label ?? 'unknown'),
-            timestamps: Array.isArray(item.timestamps) ? item.timestamps as number[] : [],
-            values: new Float64Array(Array.isArray(item.values) ? item.values as number[] : []),
+            timestamps: Array.isArray(item.timestamps) ? (item.timestamps as number[]) : [],
+            values: new Float64Array(Array.isArray(item.values) ? (item.values as number[]) : []),
             unit: String(item.unit ?? 'count'),
           }));
         }
@@ -315,7 +316,9 @@ export class RCA100Loader {
       casePath,
       'events.json',
       (item: Record<string, unknown>) => ({
-        eventId: String(item.eventId ?? item.event_id ?? item.id ?? `${item.timestamp}_${item.service}`),
+        eventId: String(
+          item.eventId ?? item.event_id ?? item.id ?? `${item.timestamp}_${item.service}`,
+        ),
         timestamp: Number(item.timestamp ?? 0),
         service: String(item.service ?? item.serviceId ?? 'unknown'),
         eventType: String(item.eventType ?? item.event_type ?? item.type ?? 'unknown'),
@@ -331,7 +334,9 @@ export class RCA100Loader {
       casePath,
       'alerts.json',
       (item: Record<string, unknown>) => ({
-        alertId: String(item.alertId ?? item.alert_id ?? item.id ?? `${item.timestamp}_${item.service}`),
+        alertId: String(
+          item.alertId ?? item.alert_id ?? item.id ?? `${item.timestamp}_${item.service}`,
+        ),
         timestamp: Number(item.timestamp ?? 0),
         service: String(item.service ?? item.serviceId ?? 'unknown'),
         alertName: String(item.alertName ?? item.alert_name ?? item.name ?? 'unknown'),
@@ -469,9 +474,7 @@ export class RCA100Loader {
     try {
       const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       if (Array.isArray(raw)) {
-        return raw.map((item: unknown) =>
-          mapper(item as Record<string, unknown>),
-        );
+        return raw.map((item: unknown) => mapper(item as Record<string, unknown>));
       }
     } catch {
       // Skip
@@ -493,14 +496,20 @@ export class RCA100Loader {
   private normalizeLogLevel(level: string): BenchmarkLogEntry['level'] {
     const upper = level.toUpperCase();
     switch (upper) {
-      case 'DEBUG': return 'DEBUG';
-      case 'INFO': return 'INFO';
+      case 'DEBUG':
+        return 'DEBUG';
+      case 'INFO':
+        return 'INFO';
       case 'WARN':
-      case 'WARNING': return 'WARN';
-      case 'ERROR': return 'ERROR';
+      case 'WARNING':
+        return 'WARN';
+      case 'ERROR':
+        return 'ERROR';
       case 'FATAL':
-      case 'CRITICAL': return 'FATAL';
-      default: return 'INFO';
+      case 'CRITICAL':
+        return 'FATAL';
+      default:
+        return 'INFO';
     }
   }
 

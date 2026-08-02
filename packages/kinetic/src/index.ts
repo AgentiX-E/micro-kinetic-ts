@@ -54,89 +54,82 @@ export { DEFAULTS } from './di/defaults.js';
 
 // ── Pipeline ──────────────────────────────────────────────
 
-export { RCAPipeline, registerRCAPipeline } from './pipeline/rca-pipeline.js';
-export type {
-  RCAPipelineResult,
-  RCAPipelineConfig,
-  StageResult,
+export {
+  DEFAULT_PIPELINE_CONFIG,
+  RCAPipeline,
+  registerRCAPipeline,
 } from './pipeline/rca-pipeline.js';
-export { DEFAULT_PIPELINE_CONFIG } from './pipeline/rca-pipeline.js';
+export type { RCAPipelineConfig, RCAPipelineResult, StageResult } from './pipeline/rca-pipeline.js';
 
 // ── Pipeline Factory ──────────────────────────────────────
 
 export {
-  createPipeline,
   createAcutePipeline,
-  createChronicPipeline,
   createAlertStormPipeline,
+  createChronicPipeline,
   createFullPipeline,
+  createPipeline,
 } from './pipeline/pipeline-factory.js';
-export type {
-  PipelineScenario,
-  PipelineFactoryResult,
-} from './pipeline/pipeline-factory.js';
+export type { PipelineFactoryResult, PipelineScenario } from './pipeline/pipeline-factory.js';
 
 // ── CLI ───────────────────────────────────────────────────
 
-export {
-  createProgram,
-  runCli,
-} from './cli/index.js';
+export { createProgram, runCli } from './cli/index.js';
 
 // ── Formatters ────────────────────────────────────────────
 
-export {
-  formatRCATable,
-  formatDenoiseTable,
-  formatBenchmarkTable,
-} from './cli/formatters/table.js';
 export { formatJson } from './cli/formatters/json.js';
+export {
+  formatBenchmarkTable,
+  formatDenoiseTable,
+  formatRCATable,
+} from './cli/formatters/table.js';
 
 // ── Benchmarks ─────────────────────────────────────────
 
 export {
+  AIOps2025Loader,
+  // Runner
+  BenchmarkRunner,
+  RCA100Loader,
   // Loaders
   RCAEvalLoader,
-  AIOps2025Loader,
-  RCA100Loader,
   // Synthetic Data
   SyntheticBenchmarkGenerator,
   // Metrics
   avgAtK,
-  computeAvgAtK,
-  computePrecisionAtK,
-  computeRecallAtK,
-  computeF1Score,
-  computeMRR,
-  computeAggregateMRR,
-  computeLA,
-  computeAggregateLA,
-  computeTA,
-  computeAggregateTA,
   computeAIOps2025CompositeScore,
+  computeAggregateLA,
+  computeAggregateMRR,
+  computeAggregateTA,
+  computeAvgAtK,
+  computeF1Score,
+  computeLA,
+  computeMRR,
+  computePrecisionAtK,
   computeRCA100CompositeScore,
-  // Runner
-  BenchmarkRunner,
+  computeRecallAtK,
+  computeTA,
 } from './benchmarks/index.js';
 
 export type {
+  AIOps2025Case,
+  AIOps2025LabelScores,
+  AIOps2025Suite,
+  BenchmarkAlert,
   BenchmarkCase,
-  BenchmarkSuite,
+  BenchmarkEvent,
   BenchmarkGroundTruth,
   BenchmarkLogEntry,
+  BenchmarkSuite,
   BenchmarkTraceSpan,
-  BenchmarkEvent,
-  BenchmarkAlert,
+  CompleteBenchmarkReport,
+  FailedCase,
+  FaultTypeMetric,
+  RCA100Case,
+  RCA100GroundTruthLayers,
+  RCA100Suite,
   RCAEvalCase,
   RCAEvalSuite,
-  AIOps2025Case,
-  AIOps2025Suite,
-  AIOps2025LabelScores,
-  RCA100Case,
-  RCA100Suite,
-  RCA100GroundTruthLayers,
-  FaultTypeMetric,
-  FailedCase,
   RunResult,
-  CompleteBenchmarkReport,
 } from './benchmarks/index.js';

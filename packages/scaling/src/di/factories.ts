@@ -7,12 +7,12 @@
  * @module scaling/di/factories
  */
 
-import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import type { IContainer } from '@agentix-e/micro-kinetic-core';
+import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import { HierarchyBuilder } from '../bbgky/hierarchy-builder.js';
 import { HierarchyTruncator } from '../bbgky/truncator.js';
-import { BoltzmannGradAnalyzer } from '../boltzmann-grad/scaling-analyzer.js';
 import { FaultProbabilityAsymptotics } from '../boltzmann-grad/fault-probability.js';
+import { BoltzmannGradAnalyzer } from '../boltzmann-grad/scaling-analyzer.js';
 
 /**
  * Register all scaling package components in the DI container.
@@ -21,23 +21,18 @@ import { FaultProbabilityAsymptotics } from '../boltzmann-grad/fault-probability
  */
 export function registerScalingFactories(container: IContainer): void {
   // ── BBGKY Components ──────────────────────────────────
-  container.register(
-    Symbol.for('micro-kinetic:HierarchyBuilder'),
-    () => new HierarchyBuilder(),
-  );
+  container.register(Symbol.for('micro-kinetic:HierarchyBuilder'), () => new HierarchyBuilder());
 
-  container.register(
-    DI_TOKENS.HIERARCHY_TRUNCATOR,
-    () => new HierarchyTruncator(),
-  );
+  container.register(DI_TOKENS.HIERARCHY_TRUNCATOR, () => new HierarchyTruncator());
 
   // ── Boltzmann-Grad Components ─────────────────────────
   container.register(
     DI_TOKENS.SCALING_ANALYZER,
-    (c) => new BoltzmannGradAnalyzer(
-      c.resolve<HierarchyBuilder>(Symbol.for('micro-kinetic:HierarchyBuilder')),
-      c.resolve<HierarchyTruncator>(DI_TOKENS.HIERARCHY_TRUNCATOR),
-    ),
+    (c) =>
+      new BoltzmannGradAnalyzer(
+        c.resolve<HierarchyBuilder>(Symbol.for('micro-kinetic:HierarchyBuilder')),
+        c.resolve<HierarchyTruncator>(DI_TOKENS.HIERARCHY_TRUNCATOR),
+      ),
   );
 
   // Register fault probability as a standalone service

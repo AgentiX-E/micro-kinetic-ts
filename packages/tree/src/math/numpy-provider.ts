@@ -16,17 +16,14 @@
  * @module math/numpy-provider
  */
 
-import * as np from 'numpy-ts';
 import {
-  type IMatrixOps,
-  type SVDResult,
   type GraphSpectrum,
+  type IMatrixOps,
   invariant,
-  invariantRange,
-  invariantNonEmpty,
   invariantPositiveInt,
-  KineticValidationError,
+  type SVDResult,
 } from '@agentix-e/micro-kinetic-core';
+import * as np from 'numpy-ts';
 
 /**
  * Convert a flattened Float64Array to a numpy-ts NDArray.
@@ -85,13 +82,7 @@ export class NumpyTsMatrixOps implements IMatrixOps {
    * @param n - Columns of B
    * @returns Flattened C matrix (column-major)
    */
-  multiply(
-    a: Float64Array,
-    b: Float64Array,
-    m: number,
-    k: number,
-    n: number,
-  ): Float64Array {
+  multiply(a: Float64Array, b: Float64Array, m: number, k: number, n: number): Float64Array {
     invariantPositiveInt(m, 'm');
     invariantPositiveInt(k, 'k');
     invariantPositiveInt(n, 'n');
@@ -193,7 +184,10 @@ export class NumpyTsMatrixOps implements IMatrixOps {
    */
   graphSpectrum(adjacency: Float64Array, n: number): GraphSpectrum {
     invariantPositiveInt(n, 'n');
-    invariant(adjacency.length === n * n, `adjacency length ${adjacency.length} must equal n*n = ${n * n}`);
+    invariant(
+      adjacency.length === n * n,
+      `adjacency length ${adjacency.length} must equal n*n = ${n * n}`,
+    );
 
     const eigvals = this.eigenvalues(adjacency, n);
 

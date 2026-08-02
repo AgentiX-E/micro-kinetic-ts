@@ -30,11 +30,7 @@
  * @module noise/stoss/independence-checker
  */
 
-import type {
-  AlertRecord,
-  CouplingSparsityMatrix,
-  IndependenceResult,
-} from '@agentix-e/micro-kinetic-core';
+import type { AlertRecord, IndependenceResult } from '@agentix-e/micro-kinetic-core';
 import { DEFAULT_STOSS_PARAMS, invariant, invariantNonEmpty } from '@agentix-e/micro-kinetic-core';
 import { StatisticsProvider } from '../math/statistics-provider.js';
 
@@ -100,8 +96,8 @@ export class IndependenceChecker {
     const minConfidence = DEFAULT_STOSS_PARAMS.minConfidenceLevel;
 
     // Step 1: Extract alert values as time series
-    const valuesA = new Float64Array(alertsA.map(a => this.alertValue(a)));
-    const valuesB = new Float64Array(alertsB.map(a => this.alertValue(a)));
+    const valuesA = new Float64Array(alertsA.map((a) => this.alertValue(a)));
+    const valuesB = new Float64Array(alertsB.map((a) => this.alertValue(a)));
 
     // Step 2: Align lengths for paired analysis
     const minLen = Math.min(valuesA.length, valuesB.length);
@@ -109,7 +105,11 @@ export class IndependenceChecker {
     const alignedB = valuesB.slice(0, minLen);
 
     // Step 3: Compute coupling strength from the coupling matrix
-    const couplingStrength = Math.abs(couplingMatrix[serviceIndexA * Math.round(Math.sqrt(couplingMatrix.length)) + serviceIndexB] ?? 0);
+    const couplingStrength = Math.abs(
+      couplingMatrix[
+        serviceIndexA * Math.round(Math.sqrt(couplingMatrix.length)) + serviceIndexB
+      ] ?? 0,
+    );
 
     // Step 4: Compute decomposition error
     // ε = sup|P(A,B) - P(A)P(B)| via empirical discretization
@@ -125,7 +125,7 @@ export class IndependenceChecker {
     // - Statistical test confirms independence
     const isIndependent =
       decompositionError < maxDecompositionError &&
-      couplingStrength < (1 - sparsityThreshold) &&
+      couplingStrength < 1 - sparsityThreshold &&
       test.significant === false; // fail to reject independence = likely independent
 
     // Confidence level: complement of decomposition error, capped
@@ -166,7 +166,9 @@ export class IndependenceChecker {
     // Compute marginal and joint histograms
     const histA = new Array<number>(bins).fill(0);
     const histB = new Array<number>(bins).fill(0);
-    const histJoint: number[][] = Array.from({ length: bins }, () => new Array<number>(bins).fill(0));
+    const histJoint: number[][] = Array.from({ length: bins }, () =>
+      new Array<number>(bins).fill(0),
+    );
 
     for (let i = 0; i < n; i++) {
       const ba = aBins[i]!;
@@ -177,8 +179,8 @@ export class IndependenceChecker {
     }
 
     // Compute probabilities
-    const pA = histA.map(c => c / n);
-    const pB = histB.map(c => c / n);
+    const pA = histA.map((c) => c / n);
+    const pB = histB.map((c) => c / n);
 
     // Find sup|P(A,B) - P(A)P(B)|
     let maxError = 0;

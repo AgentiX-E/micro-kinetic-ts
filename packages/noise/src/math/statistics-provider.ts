@@ -13,15 +13,15 @@
  * @module noise/math/statistics-provider
  */
 
-import * as ss from 'simple-statistics';
 import type {
-  IStatistics,
-  RollingStatsResult,
-  KDEResult,
-  TestResult,
   CouplingParams,
+  IStatistics,
+  KDEResult,
+  RollingStatsResult,
+  TestResult,
 } from '@agentix-e/micro-kinetic-core';
 import { invariant, invariantNonEmpty, invariantPositiveInt } from '@agentix-e/micro-kinetic-core';
+import * as ss from 'simple-statistics';
 
 /** Default mutual information parameters. */
 const DEFAULT_MI_PARAMS: CouplingParams = {
@@ -46,7 +46,10 @@ export class StatisticsProvider implements IStatistics {
    */
   public rollingStats(data: Float64Array, windowSize: number): RollingStatsResult {
     invariantPositiveInt(windowSize, 'windowSize');
-    invariant(data.length >= windowSize, `data length (${data.length}) must be >= windowSize (${windowSize})`);
+    invariant(
+      data.length >= windowSize,
+      `data length (${data.length}) must be >= windowSize (${windowSize})`,
+    );
 
     const n = data.length;
     const resultLen = n - windowSize + 1;
@@ -118,7 +121,10 @@ export class StatisticsProvider implements IStatistics {
    * @returns TestResult with p-value, statistic, and significance
    */
   public independenceTest(x: Float64Array, y: Float64Array): TestResult {
-    invariant(x.length === y.length, `x and y must have same length, got ${x.length} vs ${y.length}`);
+    invariant(
+      x.length === y.length,
+      `x and y must have same length, got ${x.length} vs ${y.length}`,
+    );
     invariantNonEmpty(x, 'x');
 
     const arrX = Array.from(x);
@@ -150,12 +156,11 @@ export class StatisticsProvider implements IStatistics {
    * Deng Yu Theorem: If coupling is sparse (S > τ), then
    * the joint distribution factorizes with error O(1/N).
    */
-  public mutualInformation(
-    x: Float64Array,
-    y: Float64Array,
-    params?: CouplingParams,
-  ): number {
-    invariant(x.length === y.length, `x and y must have same length, got ${x.length} vs ${y.length}`);
+  public mutualInformation(x: Float64Array, y: Float64Array, params?: CouplingParams): number {
+    invariant(
+      x.length === y.length,
+      `x and y must have same length, got ${x.length} vs ${y.length}`,
+    );
 
     const p = { ...DEFAULT_MI_PARAMS, ...params };
     const bins = Math.max(10, Math.floor(Math.sqrt(x.length)));
@@ -181,8 +186,8 @@ export class StatisticsProvider implements IStatistics {
     }
 
     // Convert to probabilities with Laplace smoothing
-    const px = hx.map(c => (c + smoothing) / (n + smoothing * bins));
-    const py = hy.map(c => (c + smoothing) / (n + smoothing * bins));
+    const px = hx.map((c) => (c + smoothing) / (n + smoothing * bins));
+    const py = hy.map((c) => (c + smoothing) / (n + smoothing * bins));
 
     // Compute entropy H(X), H(Y), H(X,Y)
     let hX = 0;
@@ -216,7 +221,10 @@ export class StatisticsProvider implements IStatistics {
    * Maps to: Linear trend detection in fading alert correlations
    * for chronic fault classification.
    */
-  public linearRegression(x: Float64Array, y: Float64Array): {
+  public linearRegression(
+    x: Float64Array,
+    y: Float64Array,
+  ): {
     readonly slope: number;
     readonly intercept: number;
     readonly rSquared: number;
@@ -232,7 +240,10 @@ export class StatisticsProvider implements IStatistics {
     return {
       slope: result.m,
       intercept: result.b,
-      rSquared: ss.rSquared(arrX.map((xi, i) => [xi, arrY[i]!]), rSquared),
+      rSquared: ss.rSquared(
+        arrX.map((xi, i) => [xi, arrY[i]!]),
+        rSquared,
+      ),
     };
   }
 
@@ -304,7 +315,9 @@ function computeHoeffdingD(x: number[], y: number[]): number {
   }
 
   // Compute D
-  let d1 = 0, d2 = 0, d3 = 0;
+  let d1 = 0,
+    d2 = 0,
+    d3 = 0;
 
   for (let i = 0; i < n; i++) {
     const qi = q[i]!;
@@ -335,7 +348,7 @@ function computeRanks(values: number[]): number[] {
     while (j < n && indexed[j]!.value === indexed[i]!.value) {
       j++;
     }
-    const avgRank = ((i + 1) + j) / 2; // 1-based average
+    const avgRank = (i + 1 + j) / 2; // 1-based average
     for (let k = i; k < j; k++) {
       ranks[indexed[k]!.index] = avgRank;
     }
@@ -376,7 +389,7 @@ function erf(x: number): number {
   const p = 0.3275911;
 
   const t = 1 / (1 + p * x);
-  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  const y = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
 
   return sign * y;
 }

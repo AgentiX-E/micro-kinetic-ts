@@ -19,20 +19,13 @@
  */
 
 import type {
+  CallEdge,
   ServiceCallGraph,
   ServiceNode,
-  CallEdge,
   TimeSeries,
-  MetricMap,
-  FaultType,
-  RootCauseResult,
 } from '@agentix-e/micro-kinetic-core';
 
-import type {
-  BenchmarkCase,
-  BenchmarkSuite,
-  BenchmarkGroundTruth,
-} from '../loaders/types.js';
+import type { BenchmarkCase, BenchmarkSuite } from '../loaders/types.js';
 
 // ── Math Helpers (numpy-ts-like) ─────────────────────────
 
@@ -115,10 +108,21 @@ function max(arr: Float64Array | number[]): number {
 
 /** Service names for synthetic benchmarks. */
 const SERVICE_NAMES = [
-  'frontend', 'cartservice', 'productcatalog', 'checkoutservice',
-  'paymentservice', 'shippingservice', 'emailservice', 'currencyservice',
-  'recommendationservice', 'adservice', 'redis-cache', 'rabbitmq',
-  'postgres', 'elasticsearch', 'kafka-broker',
+  'frontend',
+  'cartservice',
+  'productcatalog',
+  'checkoutservice',
+  'paymentservice',
+  'shippingservice',
+  'emailservice',
+  'currencyservice',
+  'recommendationservice',
+  'adservice',
+  'redis-cache',
+  'rabbitmq',
+  'postgres',
+  'elasticsearch',
+  'kafka-broker',
 ];
 
 /** Metric names per category. */
@@ -182,7 +186,10 @@ export class SyntheticBenchmarkGenerator {
     const metricMap = new Map<string, readonly TimeSeries[]>();
     for (const svc of allServices) {
       const isFaulty = svc === faultyService;
-      metricMap.set(svc, this.generateServiceMetrics(svc, timestamps, injectIndex, faultType, isFaulty));
+      metricMap.set(
+        svc,
+        this.generateServiceMetrics(svc, timestamps, injectIndex, faultType, isFaulty),
+      );
     }
 
     return {
@@ -401,7 +408,10 @@ export class SyntheticBenchmarkGenerator {
         const baseLoss = 0.05 + 0.15 * progress;
         // Oscillating packet loss pattern
         const oscillation = 0.02 * Math.sin(progress * 10 * Math.PI);
-        faultyLoss[i]! = Math.max(0, Math.min(1, baseLoss + oscillation + this.rng.normal(0, 0.02)));
+        faultyLoss[i]! = Math.max(
+          0,
+          Math.min(1, baseLoss + oscillation + this.rng.normal(0, 0.02)),
+        );
       }
     }
 

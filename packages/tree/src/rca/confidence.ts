@@ -20,11 +20,7 @@
  * @module rca/confidence
  */
 
-import {
-  invariant,
-  invariantRange,
-  invariantPositiveInt,
-} from '@agentix-e/micro-kinetic-core';
+import { invariant, invariantRange } from '@agentix-e/micro-kinetic-core';
 
 /**
  * Default one-hop propagation accuracy.
@@ -112,11 +108,7 @@ export class ConfidenceEstimator {
    * @param depth - Propagation depth
    * @returns Confidence in [0, 1]
    */
-  computeConfidence(
-    score: number,
-    errorBound: number,
-    depth: number,
-  ): number {
+  computeConfidence(score: number, errorBound: number, depth: number): number {
     invariantRange(score, 0, 1, 'score');
     invariantRange(errorBound, 0, 1, 'errorBound');
     invariant(depth >= 0, 'depth must be non-negative');
@@ -124,8 +116,7 @@ export class ConfidenceEstimator {
     let confidence = score * (1 - errorBound);
 
     if (this.options.applyDepthPenalty && depth > 0) {
-      const depthPenalty =
-        1 / (1 + this.options.depthPenaltyCoeff * Math.log(depth + 1));
+      const depthPenalty = 1 / (1 + this.options.depthPenaltyCoeff * Math.log(depth + 1));
       confidence *= depthPenalty;
     }
 
@@ -191,10 +182,7 @@ export class ConfidenceEstimator {
  * @param alpha - 1-hop propagation accuracy (default 0.85)
  * @returns Error bound in [0, 1]
  */
-export function estimateErrorBound(
-  depth: number,
-  alpha: number = DEFAULT_ALPHA,
-): number {
+export function estimateErrorBound(depth: number, alpha: number = DEFAULT_ALPHA): number {
   invariantRange(alpha, 0, 1, 'alpha');
   const estimator = new ConfidenceEstimator({ alpha });
   return estimator.estimateErrorBound(depth);
@@ -208,11 +196,7 @@ export function estimateErrorBound(
  * @param depth - Propagation depth
  * @returns Confidence in [0, 1]
  */
-export function boundToConfidence(
-  score: number,
-  errorBound: number,
-  depth: number,
-): number {
+export function boundToConfidence(score: number, errorBound: number, depth: number): number {
   const estimator = new ConfidenceEstimator();
   return estimator.computeConfidence(score, errorBound, depth);
 }
