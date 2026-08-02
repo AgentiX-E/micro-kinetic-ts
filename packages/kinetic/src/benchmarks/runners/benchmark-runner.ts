@@ -15,9 +15,9 @@ import {
   DI_TOKENS,
   type FaultType,
   type IContainer,
+  type IFaultClassifier,
   type IRCAEngine,
   type RootCauseResult,
-  type IFaultClassifier,
   bestHypothesisToFaultType,
 } from '@agentix-e/micro-kinetic-core';
 
@@ -161,9 +161,7 @@ export class BenchmarkRunner {
 
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
-          ? results.map((r) =>
-              this.enrichPrediction(r, benchCase.metrics),
-            )
+          ? results.map((r) => this.enrichPrediction(r, benchCase.metrics))
           : results;
         const enrichedTop = enrichedResults[0];
 
