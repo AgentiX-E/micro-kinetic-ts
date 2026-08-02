@@ -13,10 +13,13 @@ import type { TimeSeries } from './time-series.js';
 export type FaultCategory =
   | 'CPU'
   | 'MEMORY'
+  | 'MEM'
   | 'DISK'
   | 'NETWORK_DELAY'
   | 'NETWORK_LOSS'
   | 'SOCKET'
+  | 'DELAY'
+  | 'LOSS'
   | 'JVM_GC'
   | 'JVM_OOM'
   | 'CONNECTION_POOL'

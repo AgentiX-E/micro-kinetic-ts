@@ -89,6 +89,19 @@ export {
   invariantRange,
 } from './utils/invariant.js';
 
+// ── Fault Classifiers (Layer 1 & 2) ──────────────────────
+export type * from './interfaces/fault-classifier.js';
+export {
+  DEFAULT_CLASSIFICATION_RULES,
+  RegexFaultClassifier,
+  bestHypothesisToFaultType,
+  hypothesisToFaultType,
+} from './utils/classifiers/regex-classifier.js';
+export {
+  StatisticalAnalyzer,
+} from './utils/classifiers/statistical-analyzer.js';
+export type { StatisticalAnalyzerConfig } from './utils/classifiers/statistical-analyzer.js';
+
 // ── Constants ────────────────────────────────────────────
 export { DEFAULT_STOSS_PARAMS } from './types/alerts.js';
 export { DEFAULT_BBGKY_OPTIONS } from './types/coupling.js';
