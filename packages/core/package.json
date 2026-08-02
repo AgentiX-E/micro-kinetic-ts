@@ -1,6 +1,6 @@
 {
   "name": "@agentix-e/micro-kinetic-core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Core contracts, types, DI tokens, and exceptions for AIOps-Kinetic — applying Deng Yu's kinetic theory to AIOps microservice RCA",

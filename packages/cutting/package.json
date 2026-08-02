@@ -1,6 +1,6 @@
 {
   "name": "@agentix-e/micro-kinetic-cutting",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Cutting algorithm for chronic fault detection — segmenting long time windows with inductive convergence proofs",

@@ -1,6 +1,6 @@
 {
   "name": "@agentix-e/micro-kinetic",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "AIOps-Kinetic: Applying Deng Yu's Fields Medal-winning kinetic theory to microservice root cause analysis, alert denoising, and fault propagation modeling",

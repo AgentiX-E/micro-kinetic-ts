@@ -1,6 +1,6 @@
 {
   "name": "@agentix-e/micro-kinetic-wave",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Wave kinetic equation-based alert cascade propagation — applying Deng Yu's wave turbulence theory to AIOps alert propagation",

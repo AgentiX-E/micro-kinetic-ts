@@ -65,7 +65,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm nx test @agentix-e/aiops-kinetic-${{ matrix.package }} -- --coverage
+      - run: pnpm nx test @agentix-e/micro-kinetic-${{ matrix.package }} -- --coverage
       - uses: actions/upload-artifact@v4
         if: always()
         with:

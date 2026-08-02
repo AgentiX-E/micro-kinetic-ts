@@ -1,6 +1,6 @@
 {
   "name": "@agentix-e/micro-kinetic-scaling",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "BBGKY hierarchy and Boltzmann-Grad scaling analysis — applying Deng Yu's kinetic scaling theory to AIOps service scaling",

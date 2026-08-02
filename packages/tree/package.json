@@ -1,6 +1,6 @@
 {
   "name": "@agentix-e/micro-kinetic-tree",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": false,
   "type": "module",
   "description": "Collision Tree fault propagation pruning RCA engine — applying Deng Yu's collision tree model to microservice RCA",
