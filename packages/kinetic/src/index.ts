@@ -91,3 +91,52 @@ export {
   formatBenchmarkTable,
 } from './cli/formatters/table.js';
 export { formatJson } from './cli/formatters/json.js';
+
+// ── Benchmarks ─────────────────────────────────────────
+
+export {
+  // Loaders
+  RCAEvalLoader,
+  AIOps2025Loader,
+  RCA100Loader,
+  // Synthetic Data
+  SyntheticBenchmarkGenerator,
+  // Metrics
+  avgAtK,
+  computeAvgAtK,
+  computePrecisionAtK,
+  computeRecallAtK,
+  computeF1Score,
+  computeMRR,
+  computeAggregateMRR,
+  computeLA,
+  computeAggregateLA,
+  computeTA,
+  computeAggregateTA,
+  computeAIOps2025CompositeScore,
+  computeRCA100CompositeScore,
+  // Runner
+  BenchmarkRunner,
+} from './benchmarks/index.js';
+
+export type {
+  BenchmarkCase,
+  BenchmarkSuite,
+  BenchmarkGroundTruth,
+  BenchmarkLogEntry,
+  BenchmarkTraceSpan,
+  BenchmarkEvent,
+  BenchmarkAlert,
+  RCAEvalCase,
+  RCAEvalSuite,
+  AIOps2025Case,
+  AIOps2025Suite,
+  AIOps2025LabelScores,
+  RCA100Case,
+  RCA100Suite,
+  RCA100GroundTruthLayers,
+  FaultTypeMetric,
+  FailedCase,
+  RunResult,
+  CompleteBenchmarkReport,
+} from './benchmarks/index.js';
