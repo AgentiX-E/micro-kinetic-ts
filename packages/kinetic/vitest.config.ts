@@ -31,14 +31,14 @@ export default defineConfig({
         'src/benchmarks/loaders/**',
         'src/benchmarks/synthetic/**',
       ],
-      // Kinetic is an umbrella/integration package — unit coverage reflects DI wiring,
-      // CLI formatters, and pipeline. Benchmark and loader code is tested via full
-      // integration/benchmark pipelines, not per-function unit tests.
+      // Kinetic is an umbrella/integration package — covers DI wiring, CLI, pipeline,
+      // benchmark runner, and metrics. Benchmark loaders and synthetic generators are
+      // tested via full integration/benchmark pipelines rather than per-function unit tests.
       thresholds: {
-        statements: 75,
-        branches: 75,
-        functions: 75,
-        lines: 75,
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
       },
     },
   },

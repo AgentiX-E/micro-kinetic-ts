@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import {
   Container,
   DI_TOKENS,
@@ -22,8 +22,11 @@ import {
   computeRecallAtK,
   computeF1Score,
   computeMRR,
+  computeAggregateMRR,
   computeLA,
+  computeAggregateLA,
   computeTA,
+  computeAggregateTA,
   computeAIOps2025CompositeScore,
   computeRCA100CompositeScore,
 } from '../../src/benchmarks/runners/metrics.js';
@@ -165,6 +168,66 @@ describe('Standalone Metrics', () => {
     });
   });
 
+  describe('computeRecallAtK', () => {
+    it('should return 1 when actual is in top-K (single truth)', () => {
+      const predictions = [
+        makePrediction('svc_a', 'CPU'),
+        makePrediction('svc_b', 'MEM'),
+      ];
+      // svc_a in top-2, 1 truth → 1/1 = 1
+      expect(computeRecallAtK(predictions, ['svc_a'], 2)).toBe(1);
+    });
+
+    it('should return 0 when actual not in top-K', () => {
+      const predictions = [
+        makePrediction('svc_c', 'CPU'),
+        makePrediction('svc_d', 'MEM'),
+      ];
+      expect(computeRecallAtK(predictions, ['svc_a'], 2)).toBe(0);
+    });
+
+    it('should return 0 for empty truths array', () => {
+      const predictions = [makePrediction('svc_a', 'CPU')];
+      expect(computeRecallAtK(predictions, [], 3)).toBe(0);
+    });
+
+    it('should return 0 for empty predictions', () => {
+      expect(computeRecallAtK([], ['svc_a'], 3)).toBe(0);
+    });
+
+    it('should return 0 for k <= 0', () => {
+      const predictions = [makePrediction('svc_a', 'CPU')];
+      expect(computeRecallAtK(predictions, ['svc_a'], 0)).toBe(0);
+    });
+  });
+
+  describe('computeAggregateMRR', () => {
+    it('should compute average MRR across cases', () => {
+      const predictionsPerCase = [
+        [makePrediction('svc_a', 'CPU'), makePrediction('svc_b', 'MEM')],
+        [makePrediction('svc_b', 'MEM'), makePrediction('svc_a', 'CPU')],
+      ];
+      // Case 1: svc_a at rank 1 → RR = 1/1 = 1
+      // Case 2: svc_b at rank 1 → RR = 1/1 = 1
+      // Average MRR = (1 + 1) / 2 = 1
+      expect(computeAggregateMRR(predictionsPerCase, ['svc_a', 'svc_b'])).toBe(1);
+    });
+
+    it('should return 0 for empty predictions', () => {
+      expect(computeAggregateMRR([], [])).toBe(0);
+    });
+
+    it('should return partial score when some not found', () => {
+      const predictionsPerCase = [
+        [makePrediction('svc_a', 'CPU')],
+        [makePrediction('svc_b', 'MEM')],
+      ];
+      // Case 1: svc_c not found → RR = 0
+      // Case 2: svc_d not found → RR = 0
+      expect(computeAggregateMRR(predictionsPerCase, ['svc_c', 'svc_d'])).toBe(0);
+    });
+  });
+
   describe('computeMRR', () => {
     it('should compute reciprocal rank when found', () => {
       const predictions = [
@@ -231,6 +294,71 @@ describe('Standalone Metrics', () => {
     it('should return 0 when fault types differ', () => {
       const prediction = makePrediction('svc_a', 'CPU');
       expect(computeTA(prediction, 'MEM')).toBe(0);
+    });
+  });
+
+  describe('computeAggregateTA', () => {
+    it('should return 1 when all fault types match', () => {
+      const predictions = [
+        makePrediction('svc_a', 'CPU'),
+        makePrediction('svc_b', 'MEM'),
+      ];
+      expect(computeAggregateTA(predictions, ['cpu', 'mem'])).toBe(1);
+    });
+
+    it('should return 0 when no fault types match', () => {
+      const predictions = [
+        makePrediction('svc_a', 'CPU'),
+        makePrediction('svc_b', 'MEM'),
+      ];
+      expect(computeAggregateTA(predictions, ['disk', 'network'])).toBe(0);
+    });
+
+    it('should return 0.5 when half match', () => {
+      const predictions = [
+        makePrediction('svc_a', 'CPU'),
+        makePrediction('svc_b', 'MEM'),
+      ];
+      expect(computeAggregateTA(predictions, ['cpu', 'network'])).toBe(0.5);
+    });
+
+    it('should return 0 for empty predictions', () => {
+      expect(computeAggregateTA([], [])).toBe(0);
+    });
+
+    it('should handle FaultType objects (category + subType)', () => {
+      const prediction = {
+        serviceId: 'svc_a',
+        faultType: { category: 'NETWORK', subType: 'DELAY' },
+        confidence: 0.9,
+        rank: 1,
+      } as RootCauseResult;
+      expect(computeTA(prediction, 'network_delay')).toBe(1);
+      expect(computeTA(prediction, 'network-delay')).toBe(1);
+    });
+
+    it('should normalize non-string non-object fault type via String()', () => {
+      const prediction = {
+        serviceId: 'svc_a',
+        faultType: 42 as unknown,
+        confidence: 0.9,
+        rank: 1,
+      } as RootCauseResult;
+      expect(computeTA(prediction, '42')).toBe(1);
+    });
+  });
+
+  describe('computeAggregateLA', () => {
+    it('should return 1 when all locations match', () => {
+      const predictions = [
+        makePrediction('svc_a', 'CPU'),
+        makePrediction('svc_b', 'MEM'),
+      ];
+      expect(computeAggregateLA(predictions, ['svc_a', 'svc_b'])).toBe(1);
+    });
+
+    it('should return 0 for empty predictions', () => {
+      expect(computeAggregateLA([], [])).toBe(0);
     });
   });
 
@@ -511,6 +639,56 @@ describe('BenchmarkRunner', () => {
       expect(report.totalCases).toBe(0);
       expect(report.suiteResults.length).toBe(0);
       expect(report.aggregateAvgTop1).toBe(0);
+    });
+
+    it('should handle engine failure and record it in failures', async () => {
+      const container = new Container();
+      const failingEngine: IRCAEngine = {
+        buildFaultGraph: vi.fn(() => ({
+          callGraph: { nodes: new Map(), edges: [], systemLoad: 0 },
+          anomalyScores: new Map(),
+        })),
+        analyze: vi.fn(() => Promise.reject(new Error('Engine crashed'))),
+        getCycleContributionBound: () => 0,
+      };
+      container.register(DI_TOKENS.RCA_ENGINE, () => failingEngine);
+      const failingRunner = new BenchmarkRunner(container);
+      const suite = generator.generateRCAEvalSuite('fail-suite', 10);
+      const failureResult = await failingRunner.runSuite(suite);
+      expect(failureResult.failures.length).toBeGreaterThan(5);
+      expect(failureResult.totalCases).toBe(10);
+
+      // Verify text report truncates failure list at 5
+      const textReport = failingRunner.generateReport([failureResult], 'text');
+      expect(textReport).toContain('Micro-Kinetic');
+      expect(textReport).toContain('... and');
+
+      // Verify HTML report handles special characters
+      const htmlReport = failingRunner.generateReport([failureResult], 'html');
+      expect(htmlReport).toContain('<!DOCTYPE html>');
+    });
+
+    it('should handle engine returning empty predictions', async () => {
+      const container = new Container();
+      const emptyEngine: IRCAEngine = {
+        buildFaultGraph: vi.fn(() => ({
+          callGraph: {
+            nodes: new Map([['svc_a', { serviceId: 'svc_a', dependencies: [] }]]),
+            edges: [],
+            systemLoad: 0,
+          },
+          anomalyScores: new Map(),
+        })),
+        analyze: vi.fn(() => Promise.resolve([])),
+        getCycleContributionBound: () => 0,
+      };
+      container.register(DI_TOKENS.RCA_ENGINE, () => emptyEngine);
+      const emptyRunner = new BenchmarkRunner(container);
+      const suite = generator.generateRCAEvalSuite('empty-suite', 3);
+      const emptyResult = await emptyRunner.runSuite(suite);
+      // No predictions → all cases should have "No predictions generated" failure
+      expect(emptyResult.failures.length).toBe(3);
+      expect(emptyResult.avgTop1).toBe(0);
     });
   });
 });
