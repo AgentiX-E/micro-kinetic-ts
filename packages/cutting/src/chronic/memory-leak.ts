@@ -158,15 +158,13 @@ export class MemoryLeakDetector {
     if (values.length < 2) return 0;
 
     // Normalize time to hours
-    const t0 = timestamps[0] ?? 0;
+    const t0 = timestamps[0]!;
     const tRel = timestamps.map((t) => (t - t0) / 3_600_000);
     const tArr = np.array(tRel);
     const vArr = np.array([...values]);
 
     const coeffs = np.polyfit(tArr, vArr, 1);
-    const slope = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])[0] ?? 0
-      : Number(coeffs);
+    const slope = (coeffs.tolist() as number[])[0]!;
 
     // Convert from bytes/hour to bytes/ms for consistency
     return Math.max(0, slope / 3_600_000);

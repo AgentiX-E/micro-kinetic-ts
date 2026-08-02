@@ -96,7 +96,23 @@ describe('CorrelationDecay.estimateDecay', () => {
     });
   });
 
-  // ── Edge: Fully connected graph ───────────────────────────
+  // ── Edge: Graph with edges to non-existent services ───────
+
+  describe('graph with non-existent edge targets', () => {
+    const graph = makeServiceGraph(['svc-a', 'svc-b'], [
+      makeEdge('svc-a', 'svc-b', 100),
+    ]);
+    graph.edges.push(makeEdge('svc-b', 'svc-nope', 50));
+    const result = new CorrelationDecay().estimateDecay(graph, 60000);
+
+    it('should have decayConstant > 0', () => {
+      expect(result.decayConstant).toBeGreaterThan(0);
+    });
+
+    it('should have fitQuality = 1.0', () => {
+      expect(result.fitQuality).toBe(1);
+    });
+  });
 
   describe('fully connected graph', () => {
     const full = makeServiceGraph(['a', 'b', 'c'], [
@@ -200,5 +216,34 @@ describe('CorrelationDecay.fitDecay', () => {
     // Should not throw — falls back to default decay
     const result = new CorrelationDecay().fitDecay(timePoints, values);
     expect(result.fitQuality).toBe(0);
+  });
+
+  it('should handle mostly zero values (fewer than 2 valid)', () => {
+    const timePoints = new Float64Array([0, 1000, 2000, 3000, 4000]);
+    const values = new Float64Array([1.0, 0, 0, 0, 0]);
+    const result = new CorrelationDecay().fitDecay(timePoints, values);
+    expect(result.fitQuality).toBe(0);
+  });
+
+  it('should handle collinear time points (denom near zero)', () => {
+    const timePoints = new Float64Array([5, 5, 5, 5]);
+    const values = new Float64Array([1.0, 0.8, 0.6, 0.4]);
+    const result = new CorrelationDecay().fitDecay(timePoints, values);
+    expect(result.fitQuality).toBe(0);
+  });
+
+  it('should handle flat correlation values (slope zero)', () => {
+    const timePoints = new Float64Array([0, 1000, 2000, 3000]);
+    const values = new Float64Array([0.5, 0.5, 0.5, 0.5]);
+    const result = new CorrelationDecay().fitDecay(timePoints, values);
+    expect(result.decayConstant).toBeGreaterThan(0);
+    expect(result.fitQuality).toBeGreaterThanOrEqual(0);
+  });
+
+  it('should handle all-ones values (log zero, slope zero)', () => {
+    const timePoints = new Float64Array([0, 1000, 2000, 3000, 4000]);
+    const values = new Float64Array([1.0, 1.0, 1.0, 1.0, 1.0]);
+    const result = new CorrelationDecay().fitDecay(timePoints, values);
+    expect(result.decayConstant).toBeGreaterThan(0);
   });
 });

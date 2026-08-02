@@ -81,6 +81,12 @@ describe('MemoryLeakDetector', () => {
       expect(typeof result.detected).toBe('boolean');
     });
 
+    it('handles windowPoints=1 (triggers small sample path)', () => {
+      const ts = makeTS('mem_rss', [0, 3600000, 7200000, 10800000, 14400000], [100, 110, 120, 130, 140]);
+      const result = detector.detect(ts, { windowPoints: 1, minCorrelation: 0.1 });
+      expect(typeof result.degradationRate).toBe('number');
+    });
+
     it('throws on fewer than 2 data points', () => {
       const ts: TimeSeries = { label: 'mem', timestamps: [0], values: new Float64Array([100]), unit: 'bytes' };
       expect(() => detector.detect(ts)).toThrow();

@@ -103,6 +103,11 @@ describe('InductionProver', () => {
       expect(result.converged).toBe(true);
       expect(result.proofSteps.length).toBe(20);
     });
+
+    it('throws ConvergenceTimeoutError when exceeding maxProofSteps', () => {
+      const errors = Array(1001).fill(0.001);
+      expect(() => prover.prove(errors, 1.0)).toThrow(ConvergenceTimeoutError);
+    });
   });
 
   describe('result properties', () => {

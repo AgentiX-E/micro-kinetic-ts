@@ -154,6 +154,30 @@ describe('AdaptiveWindowCutter', () => {
       };
       expect(() => cutter.segment(ts, { maxWindows: 2, minWindowDurationMs: 10000 })).toThrow();
     });
+
+    it('handles single window covering all data (N=1)', () => {
+      const ts = linearDegradation(20);
+      const windows = cutter.segment(ts, { maxWindows: 1, minWindowDurationMs: 10000, adaptive: false });
+      expect(windows.length).toBe(1);
+      expect(windows[0]!.index).toBe(0);
+    });
+
+    it('handles extractSlice with narrow window (no points fallback)', () => {
+      // Create data where some windows may have very narrow ranges
+      const ts = linearDegradation(100);
+      const windows = cutter.segment(ts, { maxWindows: 3, minWindowDurationMs: 10000, adaptive: false });
+      expect(windows.length).toBeGreaterThan(0);
+      // Each window should still have a valid slice
+      for (const w of windows) {
+        expect(w.slice.values.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('handles peaky data with adaptive refinement', () => {
+      const ts = linearDegradation(80);
+      const windows = cutter.segment(ts, { maxWindows: 5, minWindowDurationMs: 5000, adaptive: true });
+      expect(windows.length).toBeGreaterThan(0);
+    });
   });
 
   describe('estimateLocalBounds', () => {

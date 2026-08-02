@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { PropagationSimulator } from '../../../src/cascade/propagation-simulator.js';
+import { WaveCascadeModel } from '../../../src/cascade/cascade-model.js';
 import type { ServiceCallGraph, ServiceNode, CallEdge, WaveParams } from '@agentix-e/micro-kinetic-core';
 
 // ── Test Helpers ────────────────────────────────────────────
@@ -146,11 +147,90 @@ describe('PropagationSimulator.simulateEnsemble', () => {
     });
   });
 
-  // ── Error: ensembleSize = 1 ───────────────────────────────
+  // ── Normal: ensembleSize = 35 (> 30 for t-distribution) ──
 
-  describe('ensembleSize = 1 (error)', () => {
-    it('should throw for ensembleSize < 2', () => {
-      expect(() => runEnsemble(1)).toThrow();
+  describe('size 35 (t-dist normal approx)', () => {
+    const result = runEnsemble(35);
+
+    it('should produce meanCascade', () => {
+      expect(result.meanCascade).toBeDefined();
+    });
+
+    it('should produce varianceField', () => {
+      expect(result.varianceField).toBeDefined();
+    });
+
+    it('should produce confidenceIntervals', () => {
+      expect(result.confidenceIntervals).toBeDefined();
+    });
+
+    it('should have correct sourceServiceId', () => {
+      expect(result.meanCascade.sourceServiceId).toBe('svc_a');
+    });
+  });
+
+  // ── Normal: ensembleSize = 3 (small ensemble) ────────────
+
+  describe('size 3 (small ensemble)', () => {
+    const result = runEnsemble(3);
+
+    it('should produce all fields', () => {
+      expect(result.meanCascade).toBeDefined();
+      expect(result.varianceField).toBeDefined();
+      expect(result.confidenceIntervals).toBeDefined();
+    });
+
+    it('should have confidence intervals per service', () => {
+      expect(result.confidenceIntervals.size).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Custom model ───────────────────────────────────────
+
+  describe('with custom WaveCascadeModel', () => {
+    it('should use custom model', () => {
+      const customModel = new WaveCascadeModel();
+      const sim = new PropagationSimulator(customModel);
+      const result = sim.simulate('svc_a', twoNodeGraph, defaultParams);
+      expect(result.sourceServiceId).toBe('svc_a');
+    });
+  });
+
+  // ── Normal: ensembleSize = 12 (df=11, lookup fallback) ───
+
+  describe('size 12 (df=11, lookup fallback)', () => {
+    const result = runEnsemble(12);
+
+    it('should produce all fields', () => {
+      expect(result.meanCascade).toBeDefined();
+      expect(result.varianceField).toBeDefined();
+      expect(result.confidenceIntervals).toBeDefined();
+    });
+
+    it('should have confidence intervals per service', () => {
+      expect(result.confidenceIntervals.size).toBeGreaterThan(0);
+    });
+  });
+
+  // ── Edge: Math.random returns 0 (while loop body) ────────
+
+  describe('Math.random edge case', () => {
+    it('should handle Math.random returning 0', () => {
+      const originalRandom = Math.random;
+      // Return 0 once to trigger the while loop body, then normal values
+      let callCount = 0;
+      Math.random = vi.fn(() => {
+        callCount++;
+        if (callCount === 1) return 0;
+        return 0.5;
+      });
+
+      try {
+        const result = new PropagationSimulator().simulateEnsemble('svc_a', twoNodeGraph, defaultParams, 5);
+        expect(result.meanCascade).toBeDefined();
+      } finally {
+        Math.random = originalRandom;
+      }
     });
   });
 

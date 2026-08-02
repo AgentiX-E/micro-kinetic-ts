@@ -285,4 +285,200 @@ describe('TreePruner', () => {
       expect(pruner.pruneEpsilon).toBeCloseTo(0.05);
     });
   });
+
+  describe('analyze with default topK', () => {
+    it('uses defaultTopK when topK is not provided', () => {
+      const pruner = new TreePruner({ defaultTopK: 1 });
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 50],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph);
+      expect(results.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('findEdgeWeight edge cases (internal)', () => {
+    it('returns 0 for edges not in the original edge list', () => {
+      const pruner = new TreePruner({ defaultTopK: 2 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B'], ['B', 'C']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 50],
+        C: [10, 10, 10, 10, 30],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 2);
+      expect(results.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('pruneCycles with provided cycles', () => {
+    it('analyzes graph with non-significant cycles', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 1.0 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 100],
+        C: [10, 10, 10, 10, 100],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 3);
+      expect(results.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('buildFaultGraph with partial metrics', () => {
+    it('handles services not present in metrics map (undefined metrics)', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = new Map<string, readonly TimeSeries[]>();
+      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      // B not in metrics
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.anomalyScores.get('B')).toBe(0);
+      expect(graph.anomalyScores.get('A')).toBeGreaterThan(0);
+    });
+
+    it('handles service with empty metrics array', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = new Map<string, readonly TimeSeries[]>();
+      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      metrics.set('B', []);
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.anomalyScores.get('B')).toBe(0);
+    });
+
+    it('handles time series with empty values', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = new Map<string, readonly TimeSeries[]>();
+      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      metrics.set('B', [makeTimeSeries('cpu', [])]);
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.anomalyScores.get('B')).toBe(0);
+    });
+
+    it('handles metrics with all negative values (mean <= 0)', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = new Map<string, readonly TimeSeries[]>();
+      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      metrics.set('B', [makeTimeSeries('cpu', [-10, -10, -10])]);
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.anomalyScores.get('B')).toBe(0);
+    });
+  });
+
+  describe('buildFaultGraph with correlation weight branches', () => {
+    it('computes medium correlation weight (scores >= 0.5)', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 60],
+        B: [10, 10, 10, 10, 60],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.propagationWeights[0]).toBeGreaterThanOrEqual(0.4);
+    });
+
+    it('computes low score correlation weight (one score >= 0.3)', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 35],
+        B: [10, 10, 10, 10, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.propagationWeights[0]).toBeGreaterThanOrEqual(0.1);
+    });
+
+    it('computes default low correlation weight (both low scores)', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 10],
+        B: [10, 10, 10, 10, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.propagationWeights[0]).toBe(0.1);
+    });
+  });
+
+  describe('three-level tree propagation', () => {
+    it('propagates scores through a 3-level branching tree', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 0.1, defaultTopK: 5 });
+      // Tree: Root → Mid1, Root → Mid2, Mid1 → Leaf
+      const callGraph = makeCallGraph(
+        ['Root', 'Mid1', 'Mid2', 'Leaf'],
+        [['Root', 'Mid1'], ['Root', 'Mid2'], ['Mid1', 'Leaf']],
+      );
+      const metrics = makeMetrics({
+        Root: [10, 10, 10, 10, 100],
+        Mid1: [10, 10, 10, 10, 60],
+        Mid2: [10, 10, 10, 10, 40],
+        Leaf: [10, 10, 10, 10, 80],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 4);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.length).toBeLessThanOrEqual(4);
+      // Root should accumulate scores from both mid-level nodes
+      const rootResult = results.find(r => r.serviceId === 'Root');
+      expect(rootResult).toBeDefined();
+    });
+  });
+
+  describe('DAG with multi-parent node', () => {
+    it('handles a DAG where a node has two parents', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 0.1, defaultTopK: 5 });
+      // Diamond DAG: Top → Left, Top → Right, Left → Bottom, Right → Bottom
+      const callGraph = makeCallGraph(
+        ['Top', 'Left', 'Right', 'Bottom'],
+        [['Top', 'Left'], ['Top', 'Right'], ['Left', 'Bottom'], ['Right', 'Bottom']],
+      );
+      const metrics = makeMetrics({
+        Top: [10, 10, 10, 10, 100],
+        Left: [10, 10, 10, 10, 60],
+        Right: [10, 10, 10, 10, 50],
+        Bottom: [10, 10, 10, 10, 30],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 4);
+      expect(results.length).toBeGreaterThan(0);
+    });
+  });
 });

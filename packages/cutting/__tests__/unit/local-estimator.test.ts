@@ -104,6 +104,30 @@ describe('LocalErrorEstimator', () => {
       const result = estimator.estimateWindow(win);
       expect(result.degradationRate).toBeGreaterThanOrEqual(0);
     });
+
+    it('estimates window with exponential-like data', () => {
+      const ts = makeTS('exp', [0, 3600000, 7200000, 10800000, 14400000, 18000000], [10, 14, 20, 30, 45, 70]);
+      const win: CuttingWindow = { index: 0, startTime: 0, endTime: 18000000, duration: 18000000, slice: ts, degradationRate: 0, localErrorBound: 0 };
+      const result = estimator.estimateWindow(win);
+      expect(typeof result.errorBound).toBe('number');
+      expect(result.errorBound).toBeGreaterThanOrEqual(0);
+    });
+
+    it('estimates window with power-law-like data', () => {
+      const ts = makeTS('pow', [0, 3600000, 7200000, 10800000, 14400000, 18000000], [1, 4, 9, 16, 25, 36]);
+      const win: CuttingWindow = { index: 0, startTime: 0, endTime: 18000000, duration: 18000000, slice: ts, degradationRate: 0, localErrorBound: 0 };
+      const result = estimator.estimateWindow(win);
+      expect(typeof result.errorBound).toBe('number');
+      expect(result.errorBound).toBeGreaterThanOrEqual(0);
+    });
+
+    it('estimates window with logarithmic-like data', () => {
+      const ts = makeTS('log', [0, 3600000, 7200000, 10800000, 14400000, 18000000], [5, 7, 8.5, 9.5, 10.3, 11]);
+      const win: CuttingWindow = { index: 0, startTime: 0, endTime: 18000000, duration: 18000000, slice: ts, degradationRate: 0, localErrorBound: 0 };
+      const result = estimator.estimateWindow(win);
+      expect(typeof result.errorBound).toBe('number');
+      expect(result.errorBound).toBeGreaterThanOrEqual(0);
+    });
   });
 
   describe('detectDegradationType', () => {
@@ -115,6 +139,46 @@ describe('LocalErrorEstimator', () => {
       const ts = makeTS('mem', [0, 1000, 2000, 3000, 4000, 5000, 6000], [100, 105, 110, 115, 120, 125, 130]);
       const type = estimator.detectDegradationType(ts);
       expect([DegradationType.LINEAR, DegradationType.EXPONENTIAL, DegradationType.POWER_LAW].includes(type)).toBe(true);
+    });
+
+    it('detects exponential for exponential-like data', () => {
+      const ts = makeTS('exp',
+        [0, 1000, 2000, 3000, 4000, 5000, 6000],
+        [1, 2, 4, 8, 16, 32, 64]);
+      const type = estimator.detectDegradationType(ts);
+      expect(type).toBe(DegradationType.EXPONENTIAL);
+    });
+
+    it('detects power-law for quadratic data', () => {
+      const ts = makeTS('pow',
+        [0, 1000, 2000, 3000, 4000, 5000, 6000],
+        [1, 4, 9, 16, 25, 36, 49]);
+      const type = estimator.detectDegradationType(ts);
+      expect(type).toBe(DegradationType.POWER_LAW);
+    });
+
+    it('estimates window with exponential type data', () => {
+      const ts = makeTS('exp',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [1, 2, 4, 8, 16, 32]);
+      const win: CuttingWindow = { index: 0, startTime: 0, endTime: 18000000, duration: 18000000, slice: ts, degradationRate: 0, localErrorBound: 0 };
+      const result = estimator.estimateWindow(win);
+      expect(typeof result.errorBound).toBe('number');
+    });
+
+    it('estimates window with power-law type data', () => {
+      const ts = makeTS('pow',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [1, 4, 9, 16, 25, 36]);
+      const win: CuttingWindow = { index: 0, startTime: 0, endTime: 18000000, duration: 18000000, slice: ts, degradationRate: 0, localErrorBound: 0 };
+      const result = estimator.estimateWindow(win);
+      expect(typeof result.errorBound).toBe('number');
+    });
+  });
+
+  describe('computeExponentialErrorBound edge cases', () => {
+    it('handles large durationHours for exponential bound', () => {
+      expect(computeExponentialErrorBound(1, 10, 0.5)).toBeGreaterThan(0);
     });
   });
 

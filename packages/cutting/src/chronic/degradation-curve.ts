@@ -153,7 +153,7 @@ export class DegradationCurveAnalyzer {
 
     // Detect acceleration via 2nd derivative
     const isAccelerating = bestModel === CurveModel.EXPONENTIAL ||
-      (bestModel === CurveModel.POWER_LAW && (bestFit.parameters[1] ?? 0) > 1);
+      (bestModel === CurveModel.POWER_LAW && (bestFit.parameters[1]!) > 1);
 
     // Time-to-threshold estimation
     let hoursToThreshold: number | undefined;
@@ -189,12 +189,10 @@ export class DegradationCurveAnalyzer {
     const yArr = np.array([...y]);
 
     const coeffs = np.polyfit(tArr, yArr, 1);
-    const params = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])
-      : [Number(coeffs)];
+    const params = (coeffs.tolist() as number[]);
 
-    const a1 = params[0] ?? 0;
-    const a0 = params[1] ?? 0;
+    const a1 = params[0]!;
+    const a0 = params[1]!;
     const predicted = t.map((ti) => a0 + a1 * ti);
     const residuals = y.map((yi, i) => yi - predicted[i]!);
 
@@ -228,12 +226,10 @@ export class DegradationCurveAnalyzer {
     const yArr = np.array(logY);
 
     const coeffs = np.polyfit(tArr, yArr, 1);
-    const params = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])
-      : [Number(coeffs)];
+    const params = (coeffs.tolist() as number[]);
 
-    const lambda = params[0] ?? 0;
-    const logA = params[1] ?? 0;
+    const lambda = params[0]!;
+    const logA = params[1]!;
     const a0 = Math.exp(logA);
 
     const predicted = t.map((ti) => a0 * Math.exp(lambda * ti));
@@ -262,12 +258,10 @@ export class DegradationCurveAnalyzer {
     const yArr = np.array([...y]);
 
     const coeffs = np.polyfit(logTArr, yArr, 1);
-    const params = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])
-      : [Number(coeffs)];
+    const params = (coeffs.tolist() as number[]);
 
-    const a1 = params[0] ?? 0;
-    const a0 = params[1] ?? 0;
+    const a1 = params[0]!;
+    const a0 = params[1]!;
 
     const predicted = logTValues.map((lt) => a0 + a1 * lt);
     const residuals = y.map((yi, i) => yi - predicted[i]!);
@@ -301,12 +295,10 @@ export class DegradationCurveAnalyzer {
     const yArr = np.array(logY);
 
     const coeffs = np.polyfit(tArr, yArr, 1);
-    const params = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])
-      : [Number(coeffs)];
+    const params = (coeffs.tolist() as number[]);
 
-    const alpha = params[0] ?? 0;
-    const logA = params[1] ?? 0;
+    const alpha = params[0]!;
+    const logA = params[1]!;
     const a0 = Math.exp(logA);
 
     const predicted = t.map((ti) => a0 * Math.pow(ti, alpha));
@@ -367,22 +359,22 @@ export class DegradationCurveAnalyzer {
 
     switch (model) {
       case CurveModel.LINEAR:
-        return Math.abs(params[0] ?? 0);
+        return Math.abs(params[0]!);
 
       case CurveModel.EXPONENTIAL: {
-        const a0 = params[0] ?? 0;
-        const lambda = params[1] ?? 0;
+        const a0 = params[0]!;
+        const lambda = params[1]!;
         return Math.abs(a0 * lambda * Math.exp(lambda * tEnd));
       }
 
       case CurveModel.LOGARITHMIC: {
-        const a1 = params[0] ?? 0;
+        const a1 = params[0]!;
         return Math.abs(a1 / (1 + tEnd));
       }
 
       case CurveModel.POWER_LAW: {
-        const a0 = params[0] ?? 0;
-        const alpha = params[1] ?? 0;
+        const a0 = params[0]!;
+        const alpha = params[1]!;
         return Math.abs(a0 * alpha * Math.pow(tEnd, alpha - 1));
       }
     }
@@ -399,37 +391,33 @@ export class DegradationCurveAnalyzer {
   ): number | undefined {
     const params = fit.parameters;
 
-    try {
-      switch (model) {
-        case CurveModel.LINEAR: {
-          const a1 = params[0] ?? 0;
-          const a0 = params[1] ?? 0;
-          if (Math.abs(a1) < 1e-10) return undefined;
-          const t = (threshold - a0) / a1;
-          return t > tEnd ? t - tEnd : undefined;
-        }
-
-        case CurveModel.EXPONENTIAL: {
-          const a0 = params[0] ?? 0;
-          const lambda = params[1] ?? 0;
-          if (Math.abs(lambda) < 1e-10 || a0 <= 0) return undefined;
-          const t = Math.log(threshold / a0) / lambda;
-          return t > tEnd ? t - tEnd : undefined;
-        }
-
-        case CurveModel.POWER_LAW: {
-          const a0 = params[0] ?? 0;
-          const alpha = params[1] ?? 0;
-          if (Math.abs(alpha) < 1e-10 || a0 <= 0) return undefined;
-          const t = Math.pow(threshold / a0, 1 / alpha);
-          return t > tEnd ? t - tEnd : undefined;
-        }
-
-        default:
-          return undefined;
+    switch (model) {
+      case CurveModel.LINEAR: {
+        const a1 = params[0]!;
+        const a0 = params[1]!;
+        if (Math.abs(a1) < 1e-10) return undefined;
+        const t = (threshold - a0) / a1;
+        return t > tEnd ? t - tEnd : undefined;
       }
-    } catch {
-      return undefined;
+
+      case CurveModel.EXPONENTIAL: {
+        const a0 = params[0]!;
+        const lambda = params[1]!;
+        if (Math.abs(lambda) < 1e-10 || a0 <= 0) return undefined;
+        const t = Math.log(threshold / a0) / lambda;
+        return t > tEnd ? t - tEnd : undefined;
+      }
+
+      case CurveModel.POWER_LAW: {
+        const a0 = params[0]!;
+        const alpha = params[1]!;
+        if (Math.abs(alpha) < 1e-10 || a0 <= 0) return undefined;
+        const t = Math.pow(threshold / a0, 1 / alpha);
+        return t > tEnd ? t - tEnd : undefined;
+      }
+
+      default:
+        return undefined;
     }
   }
 
@@ -451,7 +439,6 @@ export class DegradationCurveAnalyzer {
 
 function computeRSquared(actual: readonly number[], predicted: readonly number[]): number {
   const n = actual.length;
-  if (n === 0) return 0;
 
   const mean = actual.reduce((a, b) => a + b, 0) / n;
   let ssRes = 0;
@@ -478,7 +465,6 @@ function computeAdjustedRSquared(
 }
 
 function computeRMSE(residuals: readonly number[]): number {
-  if (residuals.length === 0) return Infinity;
   const mse = residuals.reduce((sum, r) => sum + r * r, 0) / residuals.length;
   return Math.sqrt(mse);
 }

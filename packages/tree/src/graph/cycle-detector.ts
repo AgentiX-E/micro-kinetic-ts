@@ -105,7 +105,7 @@ export function tarjanSCC(adjacency: AdjacencyList): ServiceId[][] {
     stack.push(v);
     onStack.add(v);
 
-    const neighbors = adjacency.get(v) ?? [];
+    const neighbors = adjacency.get(v)!;
     for (const w of neighbors) {
       if (!index.has(w)) {
         strongConnect(w);
@@ -148,7 +148,7 @@ function buildSCCAdjacency(
   const sccSet = new Set(sccNodes);
   const subAdj: AdjacencyList = new Map();
   for (const u of sccNodes) {
-    const neighbors = (adjacency.get(u) ?? []).filter((w) => sccSet.has(w));
+    const neighbors = adjacency.get(u)!.filter((w) => sccSet.has(w));
     subAdj.set(u, neighbors);
   }
   return subAdj;
@@ -216,10 +216,8 @@ function johnsonEnumerateCycles(
       stack.push(v);
       blocked.set(v, true);
 
-      const neighbors = sccAdj.get(v) ?? [];
+      const neighbors = sccAdj.get(v)!;
       for (const w of neighbors) {
-        if (!subgraphNodes.has(w)) continue;
-
         if (w === startNode && cycles.length < options.maxCycles) {
           // Found a cycle
           const cycle = [...stack];
@@ -238,7 +236,6 @@ function johnsonEnumerateCycles(
         unblock(v);
       } else {
         for (const w of neighbors) {
-          if (!subgraphNodes.has(w)) continue;
           const deps = blockDependencies.get(w);
           if (deps) {
             deps.add(v);

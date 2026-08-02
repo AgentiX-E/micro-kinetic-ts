@@ -540,16 +540,17 @@ function performTreeRCA(
     inDegree.set(nodeId, 0);
   }
 
-  for (const edge of tree.edges) {
+  for (let i = 0; i < tree.edges.length; i++) {
+    const edge = tree.edges[i]!;
     const childList = children.get(edge.from);
     if (childList) {
       childList.push({
         child: edge.to,
-        weight: findEdgeWeight(edge.from, edge.to, tree.edges, propagationWeights),
+        weight: propagationWeights[i]!,
       });
     }
     parent.set(edge.to, edge.from);
-    inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1);
+    inDegree.set(edge.to, inDegree.get(edge.to)! + 1);
   }
 
   // Topological sort: start with nodes that have no children (leaves)
@@ -601,11 +602,10 @@ function performTreeRCA(
     let maxChildDepth = 0;
 
     // Accumulate from outgoing children
-    const childList = children.get(node) ?? [];
+    const childList = children.get(node)!;
     for (const { child, weight } of childList) {
-      if (!processed.has(child)) continue;
-      const childScore = scores.get(child) ?? 0;
-      const childDepth = depths.get(child) ?? 0;
+      const childScore = scores.get(child)!;
+      const childDepth = depths.get(child)!;
       // Time-delay decay: each hop attenuates by α
       const latencyDecay = Math.pow(options.decayAlpha, 1);
       childContrib += childScore * weight * latencyDecay;
@@ -619,11 +619,11 @@ function performTreeRCA(
     depths.set(node, maxChildDepth);
 
     // Push parent nodes for processing
-    const parents = reverseAdj.get(node) ?? [];
+    const parents = reverseAdj.get(node)!;
     for (const p of parents) {
       if (!processed.has(p)) {
         // Check if all children of p have been processed
-        const pChildren = children.get(p) ?? [];
+        const pChildren = children.get(p)!;
         const allProcessed = pChildren.every((c) => processed.has(c.child));
         if (allProcessed && !processQueue.includes(p)) {
           processQueue.push(p);
@@ -640,8 +640,8 @@ function performTreeRCA(
   }> = [];
 
   for (const [nodeId] of allNodes) {
-    const score = scores.get(nodeId) ?? 0;
-    const depth = depths.get(nodeId) ?? 0;
+    const score = scores.get(nodeId)!;
+    const depth = depths.get(nodeId)!;
 
     // Only include nodes with significant scores
     if (score > 0) {
@@ -680,25 +680,6 @@ function performTreeRCA(
   }
 
   return results;
-}
-
-/**
- * Find the propagation weight for an edge by its from/to nodes.
- *
- * @internal
- */
-function findEdgeWeight(
-  from: ServiceId,
-  to: ServiceId,
-  edges: readonly CallEdge[],
-  weights: Float64Array,
-): number {
-  for (let i = 0; i < edges.length; i++) {
-    if (edges[i]!.from === from && edges[i]!.to === to) {
-      return weights[i]!;
-    }
-  }
-  return 0;
 }
 
 /**

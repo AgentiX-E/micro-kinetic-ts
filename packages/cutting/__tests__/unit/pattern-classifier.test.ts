@@ -157,5 +157,110 @@ describe('PatternClassifier', () => {
       const result = classifier.classify(ts);
       expect(typeof result.faultCategory).toBe('string');
     });
+
+    it('classifies strongly monotonic increasing data (memory leak pattern)', () => {
+      const ts = makeTS('mem_rss',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000, 21600000],
+        [100, 120, 140, 160, 180, 200, 220]);
+      const result = classifier.classify(ts);
+      expect(typeof result.reason).toBe('string');
+      expect(typeof result.faultCategory).toBe('string');
+    });
+
+    it('classifies strongly monotonic decreasing data (connection pool pattern)', () => {
+      const ts = makeTS('pool.available',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000, 21600000],
+        [200, 180, 160, 140, 120, 100, 80]);
+      const result = classifier.classify(ts);
+      expect(typeof result.reason).toBe('string');
+      expect(typeof result.faultCategory).toBe('string');
+    });
+
+    it('classifies stable flat data (unknown pattern)', () => {
+      const ts = makeTS('flat_metric',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [50, 50, 50, 50, 50, 50]);
+      const result = classifier.classify(ts);
+      expect(typeof result.pattern).toBe('string');
+      expect(typeof result.faultCategory).toBe('string');
+    });
+
+    it('classifies accelerating trend data', () => {
+      const ts = makeTS('accel_metric',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000, 21600000],
+        [10, 12, 16, 25, 40, 65, 100]);
+      const result = classifier.classify(ts);
+      expect(result.faultCategory).toBeDefined();
+    });
+
+    it('classifies exponential growth data', () => {
+      const ts = makeTS('exp_metric',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [1, 2, 4, 8, 16, 32]);
+      const result = classifier.classify(ts);
+      expect(typeof result.pattern).toBe('string');
+      expect(typeof result.reason).toBe('string');
+      expect(result.scores).toBeDefined();
+    });
+
+    it('classifies power-law (quadratic) data', () => {
+      const ts = makeTS('pow_metric',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [1, 4, 9, 16, 25, 36]);
+      const result = classifier.classify(ts);
+      expect(typeof result.pattern).toBe('string');
+      expect(typeof result.faultCategory).toBe('string');
+    });
+
+    it('returns reason for gradual degradation data', () => {
+      const ts = makeTS('gradual',
+        [0, 3600000, 7200000, 10800000, 14400000],
+        [100, 105, 110, 115, 120]);
+      const result = classifier.classify(ts);
+      expect(typeof result.reason).toBe('string');
+    });
+
+    it('classifies strongly decreasing pool data', () => {
+      const ts = makeTS('pool_avail',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [500, 400, 300, 200, 100, 50]);
+      const result = classifier.classify(ts);
+      expect(typeof result.pattern).toBe('string');
+      expect(typeof result.reason).toBe('string');
+    });
+
+    it('classifies power-law growth data', () => {
+      const ts = makeTS('pow',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [1, 4, 9, 16, 25, 36]);
+      const result = classifier.classify(ts);
+      expect(typeof result.reason).toBe('string');
+      expect(result.scores).toBeDefined();
+    });
+
+    it('classifies random oscillating data', () => {
+      const ts = makeTS('random',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [100, 95, 102, 88, 105, 92]);
+      const result = classifier.classify(ts);
+      expect(typeof result.reason).toBe('string');
+      expect(typeof result.faultCategory).toBe('string');
+    });
+
+    it('classifies very flat stable data', () => {
+      const ts = makeTS('flat',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [50, 50, 50, 50, 50, 50]);
+      const result = classifier.classify(ts);
+      expect(typeof result.reason).toBe('string');
+    });
+
+    it('classifies slow decay data', () => {
+      const ts = makeTS('decay',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000],
+        [200, 195, 190, 185, 180, 175]);
+      const result = classifier.classify(ts);
+      expect(typeof result.reason).toBe('string');
+    });
   });
 });

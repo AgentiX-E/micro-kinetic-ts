@@ -225,8 +225,8 @@ export class ThresholdEstimator {
     const degrees = new Map<string, number>();
 
     for (const edge of graph.edges) {
-      degrees.set(edge.from, (degrees.get(edge.from) ?? 0) + 1);
-      degrees.set(edge.to, (degrees.get(edge.to) ?? 0) + 1);
+      degrees.set(edge.from, (degrees.get(edge.from)!) + 1);
+      degrees.set(edge.to, (degrees.get(edge.to)!) + 1);
     }
 
     const avgDegree = degrees.size > 0
@@ -256,15 +256,15 @@ export class ThresholdEstimator {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (matrix[i * N + j] ?? 0) * (v[j] ?? 0);
+          sum += (matrix[i * N + j]!) * (v[j]!);
         }
         next[i] = sum;
       }
 
       let num = 0, den = 0;
       for (let i = 0; i < N; i++) {
-        num += (v[i] ?? 0) * (next[i] ?? 0);
-        den += (v[i] ?? 0) * (v[i] ?? 0);
+        num += (v[i]!) * (next[i]!);
+        den += (v[i]!) * (v[i]!);
       }
       lambda1 = den > 1e-15 ? num / den : 0;
 
@@ -275,7 +275,7 @@ export class ThresholdEstimator {
     const deflated = new Float64Array(N * N);
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        deflated[i * N + j] = (matrix[i * N + j] ?? 0) - lambda1 * (v[i] ?? 0) * (v[j] ?? 0);
+        deflated[i * N + j] = (matrix[i * N + j]!) - lambda1 * (v[i]!) * (v[j]!);
       }
     }
 
@@ -289,15 +289,15 @@ export class ThresholdEstimator {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (deflated[i * N + j] ?? 0) * (w[j] ?? 0);
+          sum += (deflated[i * N + j]!) * (w[j]!);
         }
         next[i] = sum;
       }
 
       let num = 0, den = 0;
       for (let i = 0; i < N; i++) {
-        num += (w[i] ?? 0) * (next[i] ?? 0);
-        den += (w[i] ?? 0) * (w[i] ?? 0);
+        num += (w[i]!) * (next[i]!);
+        den += (w[i]!) * (w[i]!);
       }
       lambda2 = den > 1e-15 ? num / den : 0;
 
@@ -317,7 +317,7 @@ export class ThresholdEstimator {
     norm = Math.sqrt(norm);
     if (norm > 1e-15) {
       for (let i = 0; i < vec.length; i++) {
-        vec[i] = (vec[i] ?? 0) / norm;
+        vec[i] = (vec[i]!) / norm;
       }
     }
   }

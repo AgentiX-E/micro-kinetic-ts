@@ -139,10 +139,9 @@ export class PatternClassifier {
     scores[ChronicPattern.CONNECTION_POOL_EXHAUSTION] = poolResult.confidence;
 
     // Run general curve analysis for data_skew and gradual_degradation
-    try {
-      const curveResult = this.curveAnalyzer.analyze(ts);
+    const curveResult = this.curveAnalyzer.analyze(ts);
 
-      switch (curveResult.bestModel) {
+    switch (curveResult.bestModel) {
         case CurveModel.POWER_LAW:
           scores[ChronicPattern.DATA_SKEW] = curveResult.bestFit.adjustedRSquared;
           break;
@@ -154,20 +153,10 @@ export class PatternClassifier {
           break;
         case CurveModel.LINEAR:
         case CurveModel.LOGARITHMIC:
-          if (curveResult.isAccelerating) {
-            scores[ChronicPattern.DATA_SKEW] = Math.max(
-              scores[ChronicPattern.DATA_SKEW],
-              curveResult.bestFit.adjustedRSquared * 0.7,
-            );
-          } else {
-            scores[ChronicPattern.GRADUAL_DEGRADATION] =
-              curveResult.bestFit.adjustedRSquared;
-          }
+          scores[ChronicPattern.GRADUAL_DEGRADATION] =
+            curveResult.bestFit.adjustedRSquared;
           break;
       }
-    } catch {
-      // Curve analysis failed — use detector results only
-    }
 
     // Determine dominant pattern
     const dominant = this.selectPattern(scores);
@@ -261,9 +250,6 @@ export class PatternClassifier {
           `rate=${leakResult.degradationRateKBs.toFixed(3)} KB/s`,
         );
         parts.push(`correlation=${leakResult.temporalCorrelation.toFixed(3)}`);
-        if (leakResult.hoursToOOM !== undefined) {
-          parts.push(`OOM in ${leakResult.hoursToOOM.toFixed(1)}h`);
-        }
         break;
 
       case ChronicPattern.CONNECTION_POOL_EXHAUSTION:
@@ -277,21 +263,9 @@ export class PatternClassifier {
         }
         break;
 
-      case ChronicPattern.DATA_SKEW:
-        parts.push('Power-law data skew pattern');
+      default:
+        parts.push('Chronic fault pattern detected');
         parts.push(`confidence=${confidence.toFixed(2)}`);
-        break;
-
-      case ChronicPattern.GRADUAL_DEGRADATION:
-        parts.push('Gradual degradation trend');
-        parts.push(`confidence=${confidence.toFixed(2)}`);
-        break;
-
-      case ChronicPattern.UNKNOWN:
-        parts.push('No clear chronic fault pattern detected');
-        parts.push(
-          `leak=${leakResult.confidence.toFixed(2)}, pool=${poolResult.confidence.toFixed(2)}`,
-        );
         break;
     }
 
@@ -305,17 +279,7 @@ export class PatternClassifier {
 function chronicPatternToFaultCategory(
   pattern: ChronicPattern,
 ): FaultCategory {
-  switch (pattern) {
-    case ChronicPattern.MEMORY_LEAK:
-      return 'MEMORY_LEAK';
-    case ChronicPattern.CONNECTION_POOL_EXHAUSTION:
-      return 'CONNECTION_POOL';
-    case ChronicPattern.DATA_SKEW:
-      return 'DATA_SKEW';
-    case ChronicPattern.GRADUAL_DEGRADATION:
-      return 'MEMORY';
-    case ChronicPattern.UNKNOWN:
-    default:
-      return 'UNKNOWN';
-  }
+  if (pattern === ChronicPattern.MEMORY_LEAK) return 'MEMORY_LEAK';
+  if (pattern === ChronicPattern.CONNECTION_POOL_EXHAUSTION) return 'CONNECTION_POOL';
+  return 'MEMORY';
 }

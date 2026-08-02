@@ -134,6 +134,36 @@ describe('JohnsonCycleDetector', () => {
     const result = detector.detectWithContributions(edges, contributions, 0.3);
     expect(result[0]!.significant).toBe(false);
   });
+
+  it('handles SCC with back-edges to earlier-indexed nodes', () => {
+    // 4-node cycle creates an SCC where later iterations
+    // have edges pointing to nodes already removed from consideration
+    const edges: Array<readonly [string, string]> = [
+      ['A', 'B'],
+      ['B', 'C'],
+      ['C', 'D'],
+      ['D', 'A'],
+    ];
+    const detector = new JohnsonCycleDetector();
+    const cycles = detector.detect(edges);
+    expect(cycles.length).toBeGreaterThanOrEqual(1);
+    // All cycles should contain valid service IDs
+    for (const c of cycles) {
+      expect(c.nodePath.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('detectWithContributions returns 0 when cycle key not in contributions map', () => {
+    const edges: Array<readonly [string, string]> = [
+      ['A', 'B'], ['B', 'A'],
+    ];
+    const contributions = new Map<string, number>();
+    // Empty contributions map → all cycles get contribution 0 via ?? 0
+    const result = detector.detectWithContributions(edges, contributions, 0.3);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.contribution).toBe(0);
+    expect(result[0]!.significant).toBe(false);
+  });
 });
 
 describe('buildAdjacencyList', () => {

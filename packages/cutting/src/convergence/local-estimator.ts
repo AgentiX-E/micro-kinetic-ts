@@ -142,14 +142,11 @@ export class LocalErrorEstimator {
       case DegradationType.POWER_LAW:
         errorBound = computePowerLawErrorBound(safeRate, durationHours);
         break;
-      case DegradationType.LOGARITHMIC:
-        errorBound = computeLogarithmicErrorBound(safeRate, durationHours);
-        break;
       default:
         errorBound = computeLinearErrorBound(safeRate, durationHours);
     }
 
-    const indicators: ChronicFaultIndicator[] = safeRate > 0 ? [{
+    const indicators: ChronicFaultIndicator[] = [{
       metric: window.slice.label,
       degradationRate: safeRate,
       temporalCorrelation: computeTemporalCorrelation(
@@ -157,7 +154,7 @@ export class LocalErrorEstimator {
         [...window.slice.values],
       ),
       isMonotonic: isMonotonic([...window.slice.values]),
-    }] : [];
+    }];
 
     return { degradationRate: safeRate, errorBound, indicators };
   }
@@ -182,56 +179,36 @@ export class LocalErrorEstimator {
     // Try linear fit
     const vArr = np.array(values);
     const linCoeffs = np.polyfit(tArr, vArr, 1);
-    const linPred = linCoeffs instanceof np.NDArray
-      ? np.polyval(linCoeffs, tArr)
-      : np.polyval(np.array([linCoeffs]), tArr);
-    const linResidual = computeMSE(values, linPred instanceof np.NDArray
-      ? (linPred.tolist() as number[])
-      : []);
+    const linPred = np.polyval(linCoeffs, tArr);
+    const linResidual = computeMSE(values, linPred.tolist() as number[]);
 
     // Try exponential fit via log-transformed linear regression
     let expResidual = Infinity;
-    try {
-      const logValues = values.filter((v) => v > 0).map(Math.log);
-      if (logValues.length >= 3) {
-        const logArr = np.array(logValues);
-        const tLogArr = np.array(tRel.slice(0, logValues.length));
-        const expCoeffs = np.polyfit(tLogArr, logArr, 1);
-        const expPred = expCoeffs instanceof np.NDArray
-          ? np.polyval(expCoeffs, tLogArr)
-          : np.polyval(np.array([expCoeffs]), tLogArr);
-        const expPredList = expPred instanceof np.NDArray
-          ? (expPred.tolist() as number[]).map(Math.exp)
-          : [];
-        const actualSliced = values.slice(0, logValues.length);
-        expResidual = computeMSE(actualSliced, expPredList);
-      }
-    } catch {
-      // Exponential fit failed — fall through
+    const logValues = values.filter((v) => v > 0).map(Math.log);
+    if (logValues.length >= 3) {
+      const logArr = np.array(logValues);
+      const tLogArr = np.array(tRel.slice(0, logValues.length));
+      const expCoeffs = np.polyfit(tLogArr, logArr, 1);
+      const expPred = np.polyval(expCoeffs, tLogArr);
+      const expPredList = (expPred.tolist() as number[]).map(Math.exp);
+      const actualSliced = values.slice(0, logValues.length);
+      expResidual = computeMSE(actualSliced, expPredList);
     }
 
     // Try power-law fit via log-log linear regression
     let powResidual = Infinity;
-    try {
-      const posIndices = values
-        .map((v, i) => (v > 0 && tRel[i]! > 0 ? i : -1))
-        .filter((i) => i >= 0);
-      if (posIndices.length >= 3) {
-        const logT = posIndices.map((i) => Math.log(tRel[i]!));
-        const logV = posIndices.map((i) => Math.log(values[i]!));
-        const logTArr = np.array(logT);
-        const logVArr = np.array(logV);
-        const powCoeffs = np.polyfit(logTArr, logVArr, 1);
-        const powPred = powCoeffs instanceof np.NDArray
-          ? np.polyval(powCoeffs, logTArr)
-          : np.polyval(np.array([powCoeffs]), logTArr);
-        const powPredList = powPred instanceof np.NDArray
-          ? (powPred.tolist() as number[]).map(Math.exp)
-          : [];
-        powResidual = computeMSE(posIndices.map((i) => values[i]!), powPredList);
-      }
-    } catch {
-      // Power law fit failed — fall through
+    const posIndices = values
+      .map((v, i) => (v > 0 && tRel[i]! > 0 ? i : -1))
+      .filter((i) => i >= 0);
+    if (posIndices.length >= 3) {
+      const logT = posIndices.map((i) => Math.log(tRel[i]!));
+      const logV = posIndices.map((i) => Math.log(values[i]!));
+      const logTArr = np.array(logT);
+      const logVArr = np.array(logV);
+      const powCoeffs = np.polyfit(logTArr, logVArr, 1);
+      const powPred = np.polyval(powCoeffs, logTArr);
+      const powPredList = (powPred.tolist() as number[]).map(Math.exp);
+      powResidual = computeMSE(posIndices.map((i) => values[i]!), powPredList);
     }
 
     // Select model with lowest residual (favor simpler models)
@@ -276,12 +253,10 @@ export class LocalErrorEstimator {
         const logArr = np.array(logValues);
         const tLogArr = np.array(tRel.slice(0, logValues.length));
         const coeffs = np.polyfit(tLogArr, logArr, 1);
-        slope = coeffs instanceof np.NDArray
-          ? (coeffs.tolist() as number[])[0] ?? 0
-          : Number(coeffs);
+        const slopePart = (coeffs.tolist() as number[])[0] ?? 0;
         // Convert log-slope to effective rate at window midpoint
         const lastVal = values[values.length - 1] ?? 1;
-        slope = Math.abs(slope * lastVal);
+        slope = Math.abs(slopePart * lastVal);
         break;
       }
       case DegradationType.POWER_LAW: {
@@ -294,18 +269,14 @@ export class LocalErrorEstimator {
         const logTArr = np.array(logT);
         const logVArr = np.array(logV);
         const coeffs = np.polyfit(logTArr, logVArr, 1);
-        const exponent = coeffs instanceof np.NDArray
-          ? (coeffs.tolist() as number[])[0] ?? 0
-          : Number(coeffs);
+        const exponent = (coeffs.tolist() as number[])[0] ?? 0;
         slope = Math.abs(exponent);
         break;
       }
       default: {
         const vArr = np.array(values);
         const coeffs = np.polyfit(tArr, vArr, 1);
-        slope = coeffs instanceof np.NDArray
-          ? (coeffs.tolist() as number[])[0] ?? 0
-          : Number(coeffs);
+        slope = (coeffs.tolist() as number[])[0]!;
         break;
       }
     }
@@ -405,8 +376,7 @@ export function computeLogarithmicErrorBound(
 // ── Utility helpers ──────────────────────────────────────
 
 function computeMSE(actual: number[], predicted: number[]): number {
-  const n = Math.min(actual.length, predicted.length);
-  if (n === 0) return Infinity;
+  const n = actual.length;
 
   let sumSq = 0;
   for (let i = 0; i < n; i++) {
@@ -438,8 +408,8 @@ function computeTemporalCorrelation(
     vVar += vd * vd;
   }
 
-  if (tVar === 0 || vVar === 0) return 0;
-  return Math.min(1, Math.max(0, Math.abs(cov / Math.sqrt(tVar * vVar))));
+  const minComponent = Math.min(1, Math.max(0, Math.abs(cov / Math.sqrt(tVar * vVar))));
+  return minComponent;
 }
 
 function isMonotonic(values: readonly number[]): boolean {

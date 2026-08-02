@@ -52,6 +52,12 @@ describe('FixedWindowCutter', () => {
       expect(windows.length).toBe(5);
     });
 
+    it('handles missing options (uses defaults)', () => {
+      const ts = makeTS('mem', 10);
+      const windows = cutter.segment(ts);
+      expect(windows.length).toBeGreaterThan(0);
+    });
+
     it('handles N=1 single window', () => {
       const ts = makeTS('mem', 10);
       const windows = cutter.segment(ts, { maxWindows: 1, minWindowDurationMs: 10000, adaptive: false });
@@ -92,6 +98,69 @@ describe('FixedWindowCutter', () => {
       const ts: TimeSeries = { label: 't', timestamps: [0, 1000], values: new Float64Array([1]), unit: 'x' };
       expect(() => cutter.segment(ts, { maxWindows: 1, minWindowDurationMs: 10000, adaptive: false })).toThrow();
     });
+
+    it('handles stable data (zero degradation rate)', () => {
+      const ts: TimeSeries = {
+        label: 'stable',
+        timestamps: [0, 60000, 120000, 180000, 240000, 300000, 360000],
+        values: new Float64Array([100, 100, 100, 100, 100, 100, 100]),
+        unit: 'count',
+      };
+      const windows = cutter.segment(ts, { maxWindows: 3, minWindowDurationMs: 10000, adaptive: false });
+      expect(windows.length).toBe(3);
+      for (const w of windows) {
+        expect(w.degradationRate).toBe(0);
+        expect(w.localErrorBound).toBe(0);
+      }
+    });
+
+    it('handles extractSlice with no data points in range', () => {
+      // Create data with gaps so windows contain few points
+      const ts: TimeSeries = {
+        label: 'sparse',
+        timestamps: [0, 10000, 20000, 30000, 40000, 50000, 60000],
+        values: new Float64Array([100, 200, 300, 400, 500, 600, 700]),
+        unit: 'count',
+      };
+      const windows = cutter.segment(ts, { maxWindows: 6, minWindowDurationMs: 10000, adaptive: false });
+      expect(windows.length).toBe(6);
+      for (const w of windows) {
+        expect(w.slice.values.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('triggers extractSlice fallback for empty window range', () => {
+      // Three points where middle window gap has no data points
+      // timestamps: [0, 50000, 200000], 3 windows
+      // Window 1 range: [66666, 133332] — 50000 is outside, fallback triggers
+      const ts: TimeSeries = {
+        label: 'gap',
+        timestamps: [0, 50000, 200000],
+        values: new Float64Array([10, 20, 30]),
+        unit: 'count',
+      };
+      const windows = cutter.segment(ts, { maxWindows: 3, minWindowDurationMs: 50000, adaptive: false });
+      expect(windows.length).toBe(3);
+      for (const w of windows) {
+        expect(w.slice.values.length).toBeGreaterThan(0);
+        expect(w.degradationRate).toBeGreaterThanOrEqual(0);
+        expect(w.localErrorBound).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('handles degenerate range where all data falls in last window', () => {
+      const ts: TimeSeries = {
+        label: 'edge',
+        timestamps: [0, 10000, 20000],
+        values: new Float64Array([10, 20, 30]),
+        unit: 'count',
+      };
+      const windows = cutter.segment(ts, { maxWindows: 3, minWindowDurationMs: 5000, adaptive: false });
+      expect(windows.length).toBe(3);
+      for (const w of windows) {
+        expect(w.degradationRate).toBeGreaterThanOrEqual(0);
+      }
+    });
   });
 
   describe('estimateLocalBounds', () => {
@@ -105,8 +174,40 @@ describe('FixedWindowCutter', () => {
       }
     });
 
+    it('returns correct window indices', () => {
+      const ts = makeTS('mem', 100);
+      const windows = cutter.segment(ts, { maxWindows: 5, minWindowDurationMs: 10000, adaptive: false });
+      const bounds = cutter.estimateLocalBounds(windows, 'mem_rss');
+      for (let i = 0; i < bounds.length; i++) {
+        expect(bounds[i]!.windowIndex).toBe(i);
+      }
+    });
+
+    it('returns indicators for positive degradation rate', () => {
+      const ts = makeTS('mem', 100);
+      const windows = cutter.segment(ts, { maxWindows: 3, minWindowDurationMs: 10000, adaptive: false });
+      const bounds = cutter.estimateLocalBounds(windows, 'mem_rss');
+      for (const b of bounds) {
+        expect(Array.isArray(b.indicators)).toBe(true);
+        expect(b.indicators.length).toBeGreaterThanOrEqual(0);
+      }
+    });
+
     it('throws on empty windows', () => {
       expect(() => cutter.estimateLocalBounds([], 'metric')).toThrow();
+    });
+
+    it('returns empty indicators for zero degradation rate', () => {
+      const ts: TimeSeries = {
+        label: 'stable',
+        timestamps: [0, 60000],
+        values: new Float64Array([100, 100]),
+        unit: 'count',
+      };
+      const windows = cutter.segment(ts, { maxWindows: 1, minWindowDurationMs: 10000, adaptive: false });
+      const bounds = cutter.estimateLocalBounds(windows, 'stable_metric');
+      expect(bounds.length).toBe(1);
+      expect(bounds[0]!.indicators).toEqual([]);
     });
   });
 

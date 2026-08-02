@@ -5,7 +5,7 @@ import { NumpyTsMatrixOps } from '@agentix-e/micro-kinetic-tree';
 vi.mock('numpy-ts', () => {
   class MockNDArray {
     data: Float64Array;
-    flags = { C_CONTIGUOUS: true };
+    flags = { C_CONTIGUOUS: false };
     _shape: number[];
 
     constructor(data: Float64Array | number[], shape?: number[]) {
@@ -29,12 +29,15 @@ vi.mock('numpy-ts', () => {
   function createMockNDArray(data: Float64Array, shape?: number[]) {
     const arr = new MockNDArray(data);
     if (shape) arr._shape = shape;
+    arr.flags = { C_CONTIGUOUS: false };
     return arr as any;
   }
 
   function array(data: Float64Array | number[]) {
     const d = data instanceof Float64Array ? data : new Float64Array(data);
-    return createMockNDArray(d, [d.length]);
+    const arr = new MockNDArray(d, [d.length]);
+    arr.flags = { C_CONTIGUOUS: true };
+    return arr as any;
   }
 
   function dot(a: any, b: any) {
@@ -166,7 +169,7 @@ vi.mock('numpy-ts', () => {
       for (let i = 0; i < cols; i++) vt[i + i * cols] = 1;
 
       return {
-        u: createMockNDArray(u, [rows, rows]),
+        u: (() => { const a = createMockNDArray(u, [rows, rows]); a.flags = { C_CONTIGUOUS: true }; return a; })(),
         s: createMockNDArray(new Float64Array(sigVals)),
         vt: createMockNDArray(vt, [cols, cols]),
       };
@@ -315,6 +318,14 @@ describe('NumpyTsMatrixOps', () => {
     it('throws on dimension mismatch', () => {
       const adj = new Float64Array([1, 2, 3]);
       expect(() => ops.graphSpectrum(adj, 2)).toThrow();
+    });
+    it('computes spectrum of 1×1 adjacency (covers nullish coalescing)', () => {
+      const adj = new Float64Array([5]); // n=1, single node with self-weight 5
+      const spectrum = ops.graphSpectrum(adj, 1);
+      expect(spectrum.eigenvalues.length).toBe(1);
+      expect(spectrum.spectralRadius).toBe(5);
+      expect(spectrum.spectralGap).toBe(5); // lambda1 - lambda2 = 5 - 0
+      expect(spectrum.algebraicConnectivity).toBe(0); // n < 2 → 0
     });
   });
 });

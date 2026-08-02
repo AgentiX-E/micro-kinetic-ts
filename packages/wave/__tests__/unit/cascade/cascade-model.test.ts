@@ -104,7 +104,77 @@ describe('WaveCascadeModel.simulateCascade', () => {
     });
   });
 
-  // ── Edge: Isolated source node ────────────────────────────
+  // ── Edge: Very long decay (may not dissipate) ─────────────
+
+  describe('very long decay time', () => {
+    const graph = makeServiceGraph(['svc-a', 'svc-b'], [
+      makeEdge('svc-a', 'svc-b', 100),
+    ]);
+    const model = new WaveCascadeModel();
+    const result = model.simulateCascade('svc-a', graph, {
+      couplingStrength: 0.5,
+      propagationSpeed: 1.0,
+      decayTimeConstant: 600000, // very slow decay
+      cascadeThreshold: 0.01,
+      timeHorizon: 5000,  // short horizon
+    });
+
+    it('should have dissipated as boolean', () => {
+      expect(typeof result.dissipated).toBe('boolean');
+    });
+
+    it('should include both services', () => {
+      expect(result.intensityTrajectories.size).toBe(2);
+    });
+  });
+
+  // ── Edge: Cascade persists to end (not dissipated) ────────
+
+  describe('non-dissipating cascade', () => {
+    const isolated = makeServiceGraph(['svc-a']);
+    const model = new WaveCascadeModel();
+    const result = model.simulateCascade('svc-a', isolated, {
+      couplingStrength: 0.5,
+      propagationSpeed: 1.0,
+      decayTimeConstant: 900000,  // very slow decay
+      cascadeThreshold: 0.02,
+      timeHorizon: 5000,  // very short horizon
+    });
+
+    it('should have sourceServiceId svc-a', () => {
+      expect(result.sourceServiceId).toBe('svc-a');
+    });
+
+    it('should have dissolved as boolean', () => {
+      expect(typeof result.dissipated).toBe('boolean');
+    });
+
+    it('should have peakIntensity in [0, 1]', () => {
+      expect(result.peakIntensity).toBeGreaterThanOrEqual(0);
+      expect(result.peakIntensity).toBeLessThanOrEqual(1);
+    });
+  });
+
+  // ── Edge: call without params (undefined params) ──────────
+
+  describe('undefined params', () => {
+    const graph = makeServiceGraph(['svc-a']);
+    const model = new WaveCascadeModel();
+    const result = model.simulateCascade('svc-a', graph, undefined);
+
+    it('should have sourceServiceId svc-a', () => {
+      expect(result.sourceServiceId).toBe('svc-a');
+    });
+
+    it('should have intensityTrajectories size 1', () => {
+      expect(result.intensityTrajectories.size).toBe(1);
+    });
+
+    it('should have peakIntensity in [0, 1]', () => {
+      expect(result.peakIntensity).toBeGreaterThanOrEqual(0);
+      expect(result.peakIntensity).toBeLessThanOrEqual(1);
+    });
+  });
 
   describe('isolated source node', () => {
     const isolated = makeServiceGraph(['svc-only']);
@@ -143,6 +213,10 @@ describe('WaveCascadeModel.simulateCascade', () => {
 
     it('should have sourceServiceId a', () => {
       expect(result.sourceServiceId).toBe('a');
+    });
+
+    it('should have propagationDistance as number', () => {
+      expect(typeof result.propagationDistance).toBe('number');
     });
   });
 

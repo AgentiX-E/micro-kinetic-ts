@@ -38,12 +38,8 @@ import {
  * @internal
  */
 function toNDArray(data: Float64Array, rows: number, cols: number): ReturnType<typeof np.array> {
-  // numpy-ts array constructor takes a TypedArray directly
   const arr = np.array(data);
-  if (rows > 0 && cols > 0) {
-    return arr.reshape([rows, cols]) as ReturnType<typeof np.array>;
-  }
-  return arr as ReturnType<typeof np.array>;
+  return arr.reshape([rows, cols]) as ReturnType<typeof np.array>;
 }
 
 /**
@@ -54,20 +50,8 @@ function toNDArray(data: Float64Array, rows: number, cols: number): ReturnType<t
  * @internal
  */
 function toFloat64(ndarray: ReturnType<typeof np.array>): Float64Array {
-  const data = ndarray.data;
-  if (data instanceof Float64Array) {
-    // Check if it's contiguous; if not, copy
-    if (ndarray.flags.C_CONTIGUOUS) {
-      return data;
-    }
-  }
-  // Force a contiguous copy
   const copied = ndarray.copy();
-  const d = copied.data;
-  if (d instanceof Float64Array) {
-    return d;
-  }
-  return new Float64Array(d.buffer, d.byteOffset, d.byteLength / 8);
+  return copied.data as Float64Array;
 }
 
 /**
@@ -213,14 +197,14 @@ export class NumpyTsMatrixOps implements IMatrixOps {
 
     const eigvals = this.eigenvalues(adjacency, n);
 
-    const spectralRadius = Math.abs(eigvals[0] ?? 0);
-    const lambda1 = eigvals[0] ?? 0;
-    const lambda2 = eigvals[1] ?? 0;
+    const spectralRadius = Math.abs(eigvals[0]!);
+    const lambda1 = eigvals[0]!;
+    const lambda2 = eigvals.length >= 2 ? eigvals[1]! : 0;
     const spectralGap = lambda1 - lambda2;
 
     // Fiedler value: second smallest eigenvalue of Laplacian
     // For adjacency: use λ_{n-1} (descending order, so index n-2)
-    const algebraicConnectivity = n >= 2 ? (eigvals[n - 2] ?? 0) : 0;
+    const algebraicConnectivity = n >= 2 ? eigvals[n - 2]! : 0;
 
     return {
       eigenvalues: eigvals,

@@ -165,4 +165,33 @@ describe('CollisionContributionAnalyzer', () => {
   it('constructor rejects beta outside [0,1]', () => {
     expect(() => new CollisionContributionAnalyzer(edges, weights, { beta: 1.5 })).toThrow();
   });
+
+  it('computes 2-hop contribution with zero-weight edge in cycle', () => {
+    // Edge A→D not in weight map, so weight = 0 → early return 0
+    const edges2 = [
+      makeEdge('A', 'B'),
+      makeEdge('B', 'C'),
+    ];
+    const weights2 = new Float64Array([0.9, 0.5]);
+    const analyzer = new CollisionContributionAnalyzer(edges2, weights2);
+    const cycle = makeCycle(['A', 'B', 'D']); // A→B OK, B→D not in weight map → w=0
+    const contrib = analyzer.computeTwoHopContribution(cycle);
+    expect(contrib).toBe(0);
+  });
+
+  it('computes 2-hop contribution when neighborWeight is zero', () => {
+    // Create edges where 2-hop neighbor lookup returns 0 (edge not in weight map)
+    const edges2 = [
+      makeEdge('A', 'B'),
+      makeEdge('B', 'C'),
+      makeEdge('C', 'A'),
+    ];
+    const weights2 = new Float64Array([0.9, 0.8, 0.7]);
+    const analyzer = new CollisionContributionAnalyzer(edges2, weights2, { alpha: 0.5, beta: 0.3 });
+    // Cycle A→B→C: weights for A→B=0.9, B→C=0.8, C→A=0.7
+    // 2-hop for edge A→B: looks at B→C (0.8), neighborWeight > 0 so uses formula
+    const cycle = makeCycle(['A', 'B', 'C']);
+    const contrib = analyzer.computeTwoHopContribution(cycle);
+    expect(contrib).toBeGreaterThan(0);
+  });
 });

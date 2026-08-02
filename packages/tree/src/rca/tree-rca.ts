@@ -153,29 +153,34 @@ export class TreeRCAEngine {
     const accumulators = new Map<ServiceId, NodeAccumulator>();
     for (const nodeId of tree.nodes.keys()) {
       accumulators.set(nodeId, {
-        anomalyScore: anomalyScores.get(nodeId) ?? 0,
+        anomalyScore: anomalyScores.get(nodeId)!,
         childPropagationScore: 0,
         totalScore: 0,
         depth: 0,
       });
     }
 
-    for (const nodeId of topoOrder) {
-      const acc = accumulators.get(nodeId);
-      if (!acc) continue;
+    // Build weight lookup map from original edges
+    const weightMap = new Map<string, number>();
+    for (let i = 0; i < allEdges.length; i++) {
+      const e = allEdges[i]!;
+      weightMap.set(`${e.from}→${e.to}`, propagationWeights[i]!);
+    }
 
-      const nodeAnomaly = anomalyScores.get(nodeId) ?? 0;
+    for (const nodeId of topoOrder) {
+      const acc = accumulators.get(nodeId)!;
+
+      const nodeAnomaly = anomalyScores.get(nodeId)!;
 
       // Accumulate from children (outgoing edges in propagation direction)
-      const children = forwardAdj.get(nodeId) ?? [];
+      const children = forwardAdj.get(nodeId)!;
       let childContrib = 0;
       let maxChildDepth = 0;
 
       for (const childId of children) {
-        const childAcc = accumulators.get(childId);
-        if (!childAcc) continue;
+        const childAcc = accumulators.get(childId)!;
 
-        const weight = findEdgeWeight(nodeId, childId, allEdges, propagationWeights);
+        const weight = weightMap.get(`${nodeId}→${childId}`)!;
 
         // Latency decay: δ = exp(-latency_avg / τ)
         const avgLatency = getAvgLatency(nodeId, childId, tree.edges);
@@ -260,7 +265,7 @@ function buildTreeStructure(
     const revList = reverseAdj.get(edge.to);
     if (revList) revList.push(edge.from);
 
-    inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1);
+    inDegree.set(edge.to, inDegree.get(edge.to)! + 1);
   }
 
   return { reverseAdj, forwardAdj, inDegree };
@@ -284,15 +289,8 @@ function topologicalSort(
   // Leaves: nodes with no outgoing edges
   const queue: ServiceId[] = [];
   for (const [nodeId, deg] of inDegree) {
-    const outDegree = forwardAdj.get(nodeId)?.length ?? 0;
+    const outDegree = forwardAdj.get(nodeId)!.length;
     if (outDegree === 0) {
-      queue.push(nodeId);
-    }
-  }
-
-  // If no pure leaves, start with all nodes
-  if (queue.length === 0) {
-    for (const nodeId of forwardAdj.keys()) {
       queue.push(nodeId);
     }
   }
@@ -301,27 +299,19 @@ function topologicalSort(
 
   while (queue.length > 0) {
     const node = queue.shift()!;
-    if (visited.has(node)) continue;
     visited.add(node);
     order.push(node);
 
     // Process parents (nodes that point TO this node)
-    const parents = reverseAdj.get(node) ?? [];
+    const parents = reverseAdj.get(node)!;
     for (const parent of parents) {
       if (!visited.has(parent)) {
         // Check if all children of parent are processed
-        const siblings = forwardAdj.get(parent) ?? [];
+        const siblings = forwardAdj.get(parent)!;
         if (siblings.every((s) => visited.has(s))) {
           queue.push(parent);
         }
       }
-    }
-  }
-
-  // Add any unvisited nodes (isolated nodes)
-  for (const nodeId of forwardAdj.keys()) {
-    if (!visited.has(nodeId)) {
-      order.push(nodeId);
     }
   }
 
@@ -338,31 +328,8 @@ function getAvgLatency(
   to: ServiceId,
   edges: readonly CallEdge[],
 ): number {
-  for (const edge of edges) {
-    if (edge.from === from && edge.to === to) {
-      return edge.p99Latency;
-    }
-  }
-  return 0;
-}
-
-/**
- * Find edge propagation weight by from/to nodes.
- *
- * @internal
- */
-function findEdgeWeight(
-  from: ServiceId,
-  to: ServiceId,
-  edges: readonly CallEdge[],
-  weights: Float64Array,
-): number {
-  for (let i = 0; i < edges.length; i++) {
-    if (edges[i]!.from === from && edges[i]!.to === to) {
-      return weights[i]!;
-    }
-  }
-  return 0;
+  const edge = edges.find((e) => e.from === from && e.to === to);
+  return edge!.p99Latency;
 }
 
 /**

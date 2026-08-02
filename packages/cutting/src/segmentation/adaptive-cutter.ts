@@ -368,9 +368,7 @@ export class AdaptiveWindowCutter implements ICuttingEngine {
 
     const coeffs = np.polyfit(tArr, vArr, 1);
     // coeffs[0] is the slope (linear coefficient)
-    const slope = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])[0] ?? 0
-      : Number(coeffs);
+    const slope = (coeffs.tolist() as number[])[0] ?? 0;
 
     return Math.abs(slope);
   }

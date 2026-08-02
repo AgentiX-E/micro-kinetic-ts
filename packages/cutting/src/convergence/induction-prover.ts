@@ -118,7 +118,7 @@ export class InductionProver implements IConvergenceProver {
 
     for (let i = 0; i < errorSequence.length; i++) {
       invariantFinite(
-        errorSequence[i] ?? NaN,
+        errorSequence[i]!,
         `errorSequence[${i}]`,
       );
     }

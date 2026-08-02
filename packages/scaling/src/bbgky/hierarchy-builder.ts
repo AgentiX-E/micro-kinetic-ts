@@ -214,8 +214,8 @@ export class HierarchyBuilder {
       // Direct computation for pairwise correlation
       for (let i = 0; i < N; i++) {
         for (let j = 0; j < N; j++) {
-          const coupling = (couplingMatrix[i * N + j] ?? 0);
-          result[i * N + j] = (f1[i] ?? 0) * (f1[j] ?? 0) * coupling;
+          const coupling = couplingMatrix[i * N + j]!;
+          result[i * N + j] = f1[i]! * f1[j]! * coupling;
         }
       }
       return result;
@@ -228,7 +228,7 @@ export class HierarchyBuilder {
           for (let m = 0; m < N; m++) {
             const coupling = this.averagePairwiseCoupling(couplingMatrix, N, [i, j, m]);
             const idx = i * N * N + j * N + m;
-            result[idx] = (f1[i] ?? 0) * (f1[j] ?? 0) * (f1[m] ?? 0) * coupling;
+            result[idx] = f1[i]! * f1[j]! * f1[m]! * coupling;
           }
         }
       }
@@ -241,14 +241,14 @@ export class HierarchyBuilder {
     const lowerSize = Math.pow(N, k - 1);
 
     for (let idx = 0; idx < lowerSize; idx++) {
-      const fkPrev = fkMinus1[idx] ?? 0;
+      const fkPrev = fkMinus1[idx]!;
       // Decode multi-index from flattened position
       const baseIndices = this.decodeMultiIndex(idx, N, k - 1);
 
       for (let ik = 0; ik < N; ik++) {
         const allIndices = [...baseIndices, ik];
         const coupling = this.averagePairwiseCoupling(couplingMatrix, N, allIndices);
-        result[idx * N + ik] = fkPrev * (f1[ik] ?? 0) * coupling;
+        result[idx * N + ik] = fkPrev * f1[ik]! * coupling;
       }
     }
 
@@ -364,7 +364,7 @@ export class HierarchyBuilder {
       for (let b = a + 1; b < indices.length; b++) {
         const i = indices[a]!;
         const j = indices[b]!;
-        sum += Math.abs(coupling[i * N + j] ?? 0);
+        sum += Math.abs(coupling[i * N + j]!);
         count++;
       }
     }
@@ -406,7 +406,7 @@ export class HierarchyBuilder {
   private findTruncationOrder(energyRatios: readonly number[], eta: number): number {
     // Truncation order = k where ratio < η, else max order
     for (let i = 0; i < energyRatios.length; i++) {
-      if ((energyRatios[i] ?? 0) < eta) {
+      if (energyRatios[i]! < eta) {
         return i + 1; // Orders are 2,3,... so i=0 means k=2 is first insignificant
       }
     }
@@ -430,7 +430,7 @@ export class HierarchyBuilder {
 
     // Use geometric series sum: E_total ≈ E_k* + E_k* × r + E_k* × r² + ...
     //                                = E_k* / (1 - r)
-    const firstDroppedRatio = energyRatios[lastIncludedOrder] ?? 0;
+    const firstDroppedRatio = energyRatios[lastIncludedOrder]!;
     if (firstDroppedRatio >= 1) return firstDroppedRatio;
 
     return firstDroppedRatio / (1 - firstDroppedRatio + 1e-10);

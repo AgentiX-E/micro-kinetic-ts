@@ -185,7 +185,7 @@ export class ConnectionPoolDetector {
   } {
     const n = values.length;
     if (n < 3) {
-      return { growthRate: 0, initialAvailable: values[0] ?? 0, fitQuality: 0 };
+      return { growthRate: 0, initialAvailable: values[0]!, fitQuality: 0 };
     }
 
     // Estimate baseline as the minimum value
@@ -206,7 +206,7 @@ export class ConnectionPoolDetector {
     }
 
     if (posIndices.length < 3) {
-      return { growthRate: 0, initialAvailable: values[0] ?? 0, fitQuality: 0 };
+      return { growthRate: 0, initialAvailable: values[0]!, fitQuality: 0 };
     }
 
     // Linear regression on log-transformed data
@@ -214,13 +214,9 @@ export class ConnectionPoolDetector {
     const vArr = np.array(logValues);
 
     const coeffs = np.polyfit(tArr, vArr, 1);
-    const slope = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])[0] ?? 0
-      : Number(coeffs);
-
-    const intercept = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])[1] ?? 0
-      : 0;
+    const params = coeffs.tolist() as number[];
+    const slope = params[0]!;
+    const intercept = params[1]!;
 
     // λ = -slope (growth rate, positive means depletion)
     const growthRate = Math.max(0, -slope);

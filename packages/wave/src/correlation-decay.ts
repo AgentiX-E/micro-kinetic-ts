@@ -80,9 +80,7 @@ export class CorrelationDecay {
     // Decay constant: τ = 1 / spectralGap
     // Clamp to a reasonable range
     const maxTau = timeHorizon * 2;
-    const tau = spectralGap > 1e-10
-      ? Math.min(maxTau, 1 / spectralGap)
-      : maxTau;
+    const tau = Math.min(maxTau, 1 / spectralGap);
 
     // Sample time points
     const numPoints = DEFAULT_NUM_POINTS;
@@ -134,7 +132,7 @@ export class CorrelationDecay {
     const validLog: number[] = [];
 
     for (let i = 0; i < n; i++) {
-      if ((correlationValues[i] ?? 0) > 1e-15) {
+      if ((correlationValues[i]!) > 1e-15) {
         validT.push(timePoints[i]!);
         validLog.push(Math.log(correlationValues[i]!));
       }
@@ -150,7 +148,7 @@ export class CorrelationDecay {
     const sumT = validT.reduce((s, v) => s + v, 0);
     const sumLog = validLog.reduce((s, v) => s + v, 0);
     const sumTT = validT.reduce((s, v) => s + v * v, 0);
-    const sumTLog = validT.reduce((s, t, i) => s + t * (validLog[i] ?? 0), 0);
+    const sumTLog = validT.reduce((s, t, i) => s + t * (validLog[i]!), 0);
 
     const denom = m * sumTT - sumT * sumT;
     if (Math.abs(denom) < 1e-15) {
@@ -167,7 +165,7 @@ export class CorrelationDecay {
     const logMean = sumLog / m;
     const ssTot = validLog.reduce((s, v) => s + (v - logMean) ** 2, 0);
     const ssRes = validLog.reduce(
-      (s, logV, i) => s + (logV - (intercept + slope * (validT[i] ?? 0))) ** 2,
+      (s, logV, i) => s + (logV - (intercept + slope * (validT[i]!))) ** 2,
       0,
     );
     const rSquared = ssTot > 0 ? 1 - ssRes / ssTot : 1;
@@ -233,17 +231,17 @@ export class CorrelationDecay {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (matrix[i * N + j] ?? 0) * (v[j] ?? 0);
+          sum += (matrix[i * N + j]!) * (v[j]!);
         }
         next[i] = sum;
       }
 
       let num = 0, den = 0;
       for (let i = 0; i < N; i++) {
-        num += (v[i] ?? 0) * (next[i] ?? 0);
-        den += (v[i] ?? 0) * (v[i] ?? 0);
+        num += (v[i]!) * (next[i]!);
+        den += (v[i]!) * (v[i]!);
       }
-      lambda1 = den > 1e-15 ? num / den : 0;
+      lambda1 = num / den;
 
       this.normalize(next);
       v.set(next);
@@ -253,7 +251,7 @@ export class CorrelationDecay {
     const deflated = new Float64Array(N * N);
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        deflated[i * N + j] = (matrix[i * N + j] ?? 0) - lambda1 * (v[i] ?? 0) * (v[j] ?? 0);
+        deflated[i * N + j] = (matrix[i * N + j]!) - lambda1 * (v[i]!) * (v[j]!);
       }
     }
 
@@ -268,17 +266,17 @@ export class CorrelationDecay {
       for (let i = 0; i < N; i++) {
         let sum = 0;
         for (let j = 0; j < N; j++) {
-          sum += (deflated[i * N + j] ?? 0) * (w[j] ?? 0);
+          sum += (deflated[i * N + j]!) * (w[j]!);
         }
         next[i] = sum;
       }
 
       let num = 0, den = 0;
       for (let i = 0; i < N; i++) {
-        num += (w[i] ?? 0) * (next[i] ?? 0);
-        den += (w[i] ?? 0) * (w[i] ?? 0);
+        num += (w[i]!) * (next[i]!);
+        den += (w[i]!) * (w[i]!);
       }
-      lambda2 = den > 1e-15 ? num / den : 0;
+      lambda2 = num / den;
 
       this.normalize(next);
       w.set(next);
@@ -297,7 +295,7 @@ export class CorrelationDecay {
     norm = Math.sqrt(norm);
     if (norm > 1e-15) {
       for (let i = 0; i < vec.length; i++) {
-        vec[i] = (vec[i] ?? 0) / norm;
+        vec[i] = (vec[i]!) / norm;
       }
     }
   }
@@ -310,12 +308,12 @@ export class CorrelationDecay {
     timePoints: Float64Array,
     _correlationValues: Float64Array,
   ): DecayCurve {
-    const maxT = timePoints[n - 1] ?? 1;
+    const maxT = timePoints[n - 1]!;
     const defaultTau = maxT / 3;
     const values = new Float64Array(n);
 
     for (let i = 0; i < n; i++) {
-      values[i] = Math.exp(-(timePoints[i] ?? 0) / defaultTau);
+      values[i] = Math.exp(-(timePoints[i]!) / defaultTau);
     }
 
     return {

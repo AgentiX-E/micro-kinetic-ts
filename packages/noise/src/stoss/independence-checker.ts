@@ -171,9 +171,9 @@ export class IndependenceChecker {
     for (let i = 0; i < n; i++) {
       const ba = aBins[i]!;
       const bb = bBins[i]!;
-      histA[ba] = (histA[ba] ?? 0) + 1;
-      histB[bb] = (histB[bb] ?? 0) + 1;
-      histJoint[ba]![bb] = (histJoint[ba]![bb] ?? 0) + 1;
+      histA[ba] = histA[ba]! + 1;
+      histB[bb] = histB[bb]! + 1;
+      histJoint[ba]![bb] = histJoint[ba]![bb]! + 1;
     }
 
     // Compute probabilities
@@ -184,8 +184,8 @@ export class IndependenceChecker {
     let maxError = 0;
     for (let i = 0; i < bins; i++) {
       for (let j = 0; j < bins; j++) {
-        const pJoint = (histJoint[i]![j] ?? 0) / n;
-        const pProduct = (pA[i] ?? 0) * (pB[j] ?? 0);
+        const pJoint = histJoint[i]![j]! / n;
+        const pProduct = pA[i]! * pB[j]!;
         const error = Math.abs(pJoint - pProduct);
         if (error > maxError) {
           maxError = error;

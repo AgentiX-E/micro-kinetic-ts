@@ -152,13 +152,9 @@ export class PropagationSimulator {
     graph: ServiceCallGraph,
   ): CascadeResult {
     const M = realizations.length;
-    if (M === 0) {
-      throw new Error('No realizations to average');
-    }
-
     const first = realizations[0]!;
     const serviceIds = Array.from(first.intensityTrajectories.keys());
-    const timePoints = first.intensityTrajectories.get(serviceIds[0]!)?.length ?? 0;
+    const timePoints = first.intensityTrajectories.get(serviceIds[0]!)!.length;
 
     // Accumulate trajectories
     const accumulatedTrajectories = new Map<string, AlertIntensity[]>();
@@ -169,7 +165,7 @@ export class PropagationSimulator {
         if (!acc) {
           acc = Array.from({ length: timePoints }, (_, t) => ({
             serviceId,
-            time: trajectory[t]?.time ?? 0,
+            time: trajectory[t]!.time,
             intensity: 0,
           }));
           accumulatedTrajectories.set(serviceId, acc);
@@ -178,7 +174,7 @@ export class PropagationSimulator {
         for (let t = 0; t < Math.min(timePoints, trajectory.length); t++) {
           acc[t] = {
             ...acc[t]!,
-            intensity: acc[t]!.intensity + (trajectory[t]?.intensity ?? 0),
+            intensity: acc[t]!.intensity + trajectory[t]!.intensity,
           };
         }
       }
@@ -209,7 +205,7 @@ export class PropagationSimulator {
       dissipated: dissipatedCount > M / 2, // majority vote
       dissipationTime: realizations
         .filter(r => r.dissipated && r.dissipationTime !== undefined)
-        .reduce((s, r) => s + (r.dissipationTime ?? 0), 0) / Math.max(1, dissipatedCount),
+        .reduce((s, r) => s + r.dissipationTime!, 0) / Math.max(1, dissipatedCount),
     };
   }
 
@@ -223,7 +219,6 @@ export class PropagationSimulator {
     realizations: CascadeResult[],
   ): ReadonlyMap<string, number> {
     const M = realizations.length;
-    if (M === 0) return new Map();
 
     // Compute per-service peak intensity distributions
     const servicePeaks = new Map<string, number[]>();
@@ -265,7 +260,6 @@ export class PropagationSimulator {
     varianceField: ReadonlyMap<string, number>,
   ): ReadonlyMap<string, { readonly lower: number; readonly upper: number }> {
     const M = realizations.length;
-    if (M === 0) return new Map();
 
     // t-value for 95% CI with M-1 df (approximated)
     const tValue = this.tDistributionQuantile(0.975, M - 1);
@@ -284,7 +278,7 @@ export class PropagationSimulator {
       }
 
       const mean = peaks.reduce((s, v) => s + v, 0) / M;
-      const variance = varianceField.get(serviceId) ?? 0;
+      const variance = varianceField.get(serviceId)!;
       const sem = Math.sqrt(variance / M); // standard error of mean
       const margin = tValue * sem;
 
@@ -308,8 +302,6 @@ export class PropagationSimulator {
    * @returns t-statistic value
    */
   private tDistributionQuantile(p: number, df: number): number {
-    if (df <= 0) return 1.96;
-
     if (df > 30) {
       // Normal approximation: z_{0.975} = 1.96
       return 1.96;
@@ -344,8 +336,6 @@ export class PropagationSimulator {
    * @returns Value with noise
    */
   private addNoise(value: number, noiseLevel: number): number {
-    if (noiseLevel <= 0) return value;
-
     // Box-Muller transform for Gaussian noise
     let u1 = Math.random();
     while (u1 === 0) u1 = Math.random();

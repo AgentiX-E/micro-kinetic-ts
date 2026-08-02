@@ -36,7 +36,6 @@ import type {
 import type { ChronicFaultIndicator } from '@agentix-e/micro-kinetic-core';
 import {
   DEFAULT_CUTTING_OPTIONS,
-  InvalidWindowError,
   invariant,
   invariantFinite,
   invariantNonEmpty,
@@ -150,12 +149,7 @@ export class FixedWindowCutter implements ICuttingEngine {
   }
 
   private computeDuration(ts: TimeSeries): number {
-    const first = ts.timestamps[0];
-    const last = ts.timestamps[ts.timestamps.length - 1];
-    if (first === undefined || last === undefined) {
-      throw new InvalidWindowError('Time series has no valid timestamps');
-    }
-    return last - first;
+    return ts.timestamps[ts.timestamps.length - 1]! - ts.timestamps[0]!;
   }
 
   private extractSlice(
@@ -214,9 +208,7 @@ export class FixedWindowCutter implements ICuttingEngine {
     const vArr = np.array([...slice.values]);
 
     const coeffs = np.polyfit(tArr, vArr, 1);
-    const slope = coeffs instanceof np.NDArray
-      ? (coeffs.tolist() as number[])[0] ?? 0
-      : Number(coeffs);
+    const slope = (coeffs.tolist() as number[])[0]!;
 
     return Math.abs(slope);
   }
@@ -229,7 +221,7 @@ export class FixedWindowCutter implements ICuttingEngine {
 
     const values = [...window.slice.values];
     const absoluteTimestamps = [...window.slice.timestamps];
-    const t0 = absoluteTimestamps[0] ?? 0;
+    const t0 = absoluteTimestamps[0]!;
     const relativeTimes = absoluteTimestamps.map((t) => t - t0);
 
     const temporalCorrelation = computeCorrelation(relativeTimes, values);

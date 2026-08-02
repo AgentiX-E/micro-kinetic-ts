@@ -175,9 +175,9 @@ export class StatisticsProvider implements IStatistics {
     for (let i = 0; i < n; i++) {
       const bx = xBins[i]!;
       const by = yBins[i]!;
-      hx[bx] = (hx[bx] ?? 0) + 1;
-      hy[by] = (hy[by] ?? 0) + 1;
-      hxy[bx]![by] = (hxy[bx]![by] ?? 0) + 1;
+      hx[bx] = hx[bx]! + 1;
+      hy[by] = hy[by]! + 1;
+      hxy[bx]![by] = hxy[bx]![by]! + 1;
     }
 
     // Convert to probabilities with Laplace smoothing
@@ -200,7 +200,7 @@ export class StatisticsProvider implements IStatistics {
       }
 
       for (let j = 0; j < bins; j++) {
-        const pxy = ((hxy[i]?.[j] ?? 0) + smoothing) / totalSmoothed;
+        const pxy = (hxy[i]![j]! + smoothing) / totalSmoothed;
         if (pxy > 1e-15) {
           hXY -= pxy * Math.log2(pxy);
         }

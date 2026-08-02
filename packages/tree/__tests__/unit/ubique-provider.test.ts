@@ -42,8 +42,8 @@ vi.mock('ubique', () => {
       const x1 = (A[0]![0]! * b[1]! - A[1]![0]! * b[0]!) / det;
       return [x0, x1];
     }
-    // Identity solve for identity matrix
-    return [...b];
+    // For 3x3 and larger, return as matrix (covering the Array.isArray branch)
+    return b.map((v) => [v]);
   }
 
   function inv(matrix: number[][]) {

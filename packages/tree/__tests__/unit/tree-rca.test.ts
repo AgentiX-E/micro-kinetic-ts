@@ -224,7 +224,7 @@ describe('TreeRCAEngine', () => {
       expect(Array.from(ranked.keys())).toEqual(['svc-b', 'svc-c']);
     });
 
-    it('limits to k results', () => {
+    it('limits to k even when accumulator count exceeds k', () => {
       const engine = new TreeRCAEngine();
       const accumulators = new Map<ServiceId, {
         anomalyScore: number;
@@ -237,6 +237,19 @@ describe('TreeRCAEngine', () => {
       accumulators.set('C', { anomalyScore: 0.6, childPropagationScore: 0, totalScore: 0.6, depth: 0 });
 
       const ranked = engine.rank(accumulators, 1);
+      expect(ranked.size).toBe(1);
+    });
+
+    it('handles k larger than accumulator count', () => {
+      const engine = new TreeRCAEngine();
+      const accumulators = new Map<ServiceId, {
+        anomalyScore: number;
+        childPropagationScore: number;
+        totalScore: number;
+        depth: number;
+      }>();
+      accumulators.set('S', { anomalyScore: 0.5, childPropagationScore: 0, totalScore: 0.5, depth: 0 });
+      const ranked = engine.rank(accumulators, 5);
       expect(ranked.size).toBe(1);
     });
 
@@ -279,5 +292,129 @@ describe('TreeRCAEngine', () => {
     expect(major.faultType.severity).toBe('major');
     expect(minor.faultType.severity).toBe('minor');
     expect(warning.faultType.severity).toBe('warning');
+  });
+
+  describe('findEdgeWeight with matching edges', () => {
+    it('finds weight for edge in original edge list', () => {
+      const engine = new TreeRCAEngine();
+      const anomalyScores = new Map<string, number>([
+        ['A', 0.5],
+        ['B', 0.3],
+      ]);
+      const tree = makePrunedTree(['A', 'B'], [['A', 'B']], anomalyScores);
+      const allEdges = [makeEdge('A', 'B')];
+      const propWeights = new Float64Array([0.5]);
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
+      expect(results.length).toBeLessThanOrEqual(2);
+    });
+  });
+
+  describe('getAvgLatency with valid edges', () => {
+    it('uses p99Latency from matched edge', () => {
+      const engine = new TreeRCAEngine({ decayAlpha: 1.0, tauMs: 500 });
+      const anomalyScores = new Map<string, number>([
+        ['X', 0.6],
+        ['Y', 0.4],
+      ]);
+      const allEdges = [makeEdge('X', 'Y')];
+      allEdges[0]!.p99Latency = 100;
+      const tree = makePrunedTree(['X', 'Y'], [['X', 'Y']], anomalyScores);
+      const propWeights = new Float64Array([0.7]);
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
+      const xResult = results.find(r => r.serviceId === 'X');
+      expect(xResult).toBeDefined();
+    });
+  });
+
+  it('handles propagation through multilevel tree with varying weights', () => {
+    const engine = new TreeRCAEngine({ decayAlpha: 0.9, tauMs: 1000 });
+    const anomalyScores = new Map<string, number>([
+      ['Root', 0.3],
+      ['Mid', 0.2],
+      ['Leaf', 0.1],
+    ]);
+    const tree = makePrunedTree(
+      ['Root', 'Mid', 'Leaf'],
+      [['Root', 'Mid'], ['Mid', 'Leaf']],
+      anomalyScores,
+    );
+    const allEdges = [makeEdge('Root', 'Mid'), makeEdge('Mid', 'Leaf')];
+    allEdges[0]!.p99Latency = 50;
+    allEdges[1]!.p99Latency = 100;
+    const propWeights = new Float64Array([0.5, 0.3]);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 3);
+    expect(results.length).toBeLessThanOrEqual(3);
+    const rootResult = results.find(r => r.serviceId === 'Root');
+    expect(rootResult).toBeDefined();
+  });
+
+  describe('fault type classification branches', () => {
+    it('classifies CPU at score >= 0.8', () => {
+      const engine = new TreeRCAEngine();
+      const anomalyScores = new Map<string, number>([['X', 0.85]]);
+      const tree = makePrunedTree(['X'], [], anomalyScores);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      expect(results[0]!.faultType.category).toBe('CPU');
+      expect(results[0]!.faultType.severity).toBe('critical');
+    });
+
+    it('classifies MEMORY at score >= 0.6', () => {
+      const engine = new TreeRCAEngine();
+      const anomalyScores = new Map<string, number>([['X', 0.65]]);
+      const tree = makePrunedTree(['X'], [], anomalyScores);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      expect(results[0]!.faultType.category).toBe('MEMORY');
+    });
+
+    it('classifies CODE_ERROR at score >= 0.4', () => {
+      const engine = new TreeRCAEngine();
+      const anomalyScores = new Map<string, number>([['X', 0.45]]);
+      const tree = makePrunedTree(['X'], [], anomalyScores);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      expect(results[0]!.faultType.category).toBe('CODE_ERROR');
+    });
+
+    it('classifies UNKNOWN at score < 0.4', () => {
+      const engine = new TreeRCAEngine();
+      const anomalyScores = new Map<string, number>([['X', 0.25]]);
+      const tree = makePrunedTree(['X'], [], anomalyScores);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      expect(results[0]!.faultType.category).toBe('UNKNOWN');
+    });
+  });
+
+  it('handles mid-level anomaly scores for fault types', () => {
+    const engine = new TreeRCAEngine();
+    const anomalyScores = new Map<string, number>([
+      ['M', 0.65],
+    ]);
+    const tree = makePrunedTree(['M'], [], anomalyScores);
+    const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+    expect(results[0]!.faultType.severity).toBe('major');
+  });
+
+  it('handles multilevel propagation with 3+ levels', () => {
+    const engine = new TreeRCAEngine({ decayAlpha: 0.8, tauMs: 1000 });
+    const anomalyScores = new Map<string, number>([
+      ['Top', 0.5],
+      ['Mid1', 0.3],
+      ['Mid2', 0.4],
+      ['Bottom', 0.2],
+    ]);
+    const tree = makePrunedTree(
+      ['Top', 'Mid1', 'Mid2', 'Bottom'],
+      [['Top', 'Mid1'], ['Top', 'Mid2'], ['Mid1', 'Bottom']],
+      anomalyScores,
+    );
+    const allEdges = [makeEdge('Top', 'Mid1'), makeEdge('Top', 'Mid2'), makeEdge('Mid1', 'Bottom')];
+    allEdges[0]!.p99Latency = 50;
+    allEdges[1]!.p99Latency = 30;
+    allEdges[2]!.p99Latency = 100;
+    const propWeights = new Float64Array([0.5, 0.4, 0.6]);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 4);
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    const topResult = results.find(r => r.serviceId === 'Top');
+    expect(topResult).toBeDefined();
+    expect(topResult!.propagationDepth).toBeGreaterThanOrEqual(1);
   });
 });

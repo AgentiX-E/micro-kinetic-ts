@@ -209,7 +209,7 @@ export class CouplingSparsityAnalyzer {
         parent[rb] = ra;
       } else {
         parent[rb] = ra;
-        rank[ra] = (rank[ra] ?? 0) + 1;
+        rank[ra] = rank[ra]! + 1;
       }
     }
 

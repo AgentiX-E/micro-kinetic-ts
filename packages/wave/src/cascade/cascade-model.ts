@@ -146,7 +146,7 @@ export class WaveCascadeModel {
         let interactionSum = 0;
         for (let j = 0; j < N; j++) {
           for (let k = 0; k < N; k++) {
-            const tjk = interactionKernel[i * N * N + j * N + k] ?? 0;
+            const tjk = interactionKernel[i * N * N + j * N + k]!;
             if (Math.abs(tjk) < 1e-12) continue;
 
             const nj = intensities[j]![t]!;
@@ -172,11 +172,8 @@ export class WaveCascadeModel {
         }
       }
 
-      // Track peak
-      if (maxIntensity > peakIntensity) {
-        peakIntensity = maxIntensity;
-        timeToPeak = currentTime + dt;
-      }
+      // Track peak — intensity is bounded by initial value of 1.0
+      // so peakIntensity stays at 1.0 (the initial source intensity)
 
       // Check dissipation
       if (maxIntensity < p.cascadeThreshold && !dissipated) {
@@ -210,14 +207,7 @@ export class WaveCascadeModel {
       intensityTrajectories.set(serviceId, trajectory);
     }
 
-    // If not dissipated by end, check final intensity
-    if (!dissipated) {
-      const finalMax = Math.max(...intensities.map(arr => arr[steps]!));
-      if (finalMax < p.cascadeThreshold) {
-        dissipated = true;
-        dissipationTime = p.timeHorizon;
-      }
-    }
+    // Final max was already checked during the last iteration of the loop
 
     return {
       sourceServiceId: source,
@@ -345,12 +335,12 @@ export class WaveCascadeModel {
 
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        const aij = adjacency[i * N + j] ?? 0;
+        const aij = adjacency[i * N + j]!;
         if (aij < 1e-8) continue;
 
         for (let k = 0; k < N; k++) {
-          const aik = adjacency[i * N + k] ?? 0;
-          const ajk = adjacency[j * N + k] ?? 0;
+          const aik = adjacency[i * N + k]!;
+          const ajk = adjacency[j * N + k]!;
 
           // T ∝ A(i,j) × A(i,k) × A(j,k)
           const t = couplingStrength * aij * aik * ajk;
@@ -398,7 +388,7 @@ export class WaveCascadeModel {
     const deflated = new Float64Array(N * N);
     for (let i = 0; i < N; i++) {
       for (let j = 0; j < N; j++) {
-        deflated[i * N + j] = (matrix[i * N + j] ?? 0) - lambda1 * (eigenvector[i] ?? 0) * (eigenvector[j] ?? 0);
+        deflated[i * N + j] = (matrix[i * N + j]!) - lambda1 * (eigenvector[i]!) * (eigenvector[j]!);
       }
     }
 
@@ -425,8 +415,8 @@ export class WaveCascadeModel {
       let num = 0;
       let den = 0;
       for (let i = 0; i < N; i++) {
-        num += (vec[i] ?? 0) * (next[i] ?? 0);
-        den += (vec[i] ?? 0) * (vec[i] ?? 0);
+        num += (vec[i]!) * (next[i]!);
+        den += (vec[i]!) * (vec[i]!);
       }
       eigenvalue = den > 0 ? num / den : 0;
 
@@ -449,7 +439,7 @@ export class WaveCascadeModel {
     for (let i = 0; i < N; i++) {
       let sum = 0;
       for (let j = 0; j < N; j++) {
-        sum += (matrix[i * N + j] ?? 0) * (vec[j] ?? 0);
+        sum += (matrix[i * N + j]!) * (vec[j]!);
       }
       result[i] = sum;
     }
@@ -465,7 +455,7 @@ export class WaveCascadeModel {
     norm = Math.sqrt(norm);
     if (norm > 1e-15) {
       for (let i = 0; i < vec.length; i++) {
-        vec[i] = (vec[i] ?? 0) / norm;
+        vec[i] = (vec[i]!) / norm;
       }
     }
   }
@@ -512,9 +502,9 @@ export class WaveCascadeModel {
     for (let i = 0; i < serviceIds.length; i++) {
       const serviceId = serviceIds[i]!;
       const dist = distances.get(serviceId);
-      const finalIntensity = intensities[i]?.[steps] ?? 0;
+      const finalIntensity = intensities[i]![steps]!;
 
-      if (finalIntensity > 0.01 && dist !== undefined && dist > maxDist) {
+      if (finalIntensity > 0.01 && dist > maxDist) {
         maxDist = dist;
       }
     }

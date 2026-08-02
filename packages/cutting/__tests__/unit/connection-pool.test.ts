@@ -116,5 +116,11 @@ describe('ConnectionPoolDetector', () => {
       expect(result.growthRate).toBe(0);
       expect(result.fitQuality).toBe(0);
     });
+
+    it('handles fewer than 3 positive values after baseline removal', () => {
+      // Values with many zeros: baseline = 0, only 2 positive values survive
+      const result = detector.fitExponentialDecay([0, 1, 2, 3], [0, 5, 8, 0]);
+      expect(result.growthRate).toBeGreaterThanOrEqual(0);
+    });
   });
 });

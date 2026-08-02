@@ -75,6 +75,13 @@ describe('DegradationCurveAnalyzer', () => {
       const ts: TimeSeries = { label: 'test', timestamps: [0, 1000, 2000], values: new Float64Array([10, 20]), unit: 'count' };
       expect(() => analyzer.analyze(ts)).toThrow();
     });
+
+    it('analyzes flat data (ssTot zero)', () => {
+      const ts = makeTS('flat', [0, 3600000, 7200000], [50, 50, 50]);
+      const result = analyzer.analyze(ts);
+      expect(result.bestModel).toBeDefined();
+      expect(result.bestFit).toBeDefined();
+    });
   });
 
   describe('fitLinear', () => {
@@ -99,6 +106,11 @@ describe('DegradationCurveAnalyzer', () => {
 
     it('returns null for insufficient data', () => {
       expect(analyzer.fitExponential([0, 1], [10, 20])).toBeNull();
+    });
+
+    it('handles mixed positive and non-positive values', () => {
+      const fit = analyzer.fitExponential([0, 1, 2, 3], [0, 10, 20, 30]);
+      expect(fit).toBeDefined();
     });
   });
 
@@ -153,6 +165,24 @@ describe('DegradationCurveAnalyzer', () => {
       const fit = { model: CurveModel.LINEAR, parameters: [2, 10] } as any;
       expect(analyzer.computeEndpointRate(CurveModel.LINEAR, fit, [0, 1, 2, 3])).toBe(2);
     });
+
+    it('computes rate for exponential', () => {
+      const fit = { model: CurveModel.EXPONENTIAL, parameters: [1, 0.5] } as any;
+      const rate = analyzer.computeEndpointRate(CurveModel.EXPONENTIAL, fit, [0, 1, 2, 3, 4]);
+      expect(rate).toBeGreaterThan(0);
+    });
+
+    it('computes rate for logarithmic', () => {
+      const fit = { model: CurveModel.LOGARITHMIC, parameters: [2, 10] } as any;
+      const rate = analyzer.computeEndpointRate(CurveModel.LOGARITHMIC, fit, [0, 1, 2, 3]);
+      expect(typeof rate).toBe('number');
+    });
+
+    it('computes rate for power-law', () => {
+      const fit = { model: CurveModel.POWER_LAW, parameters: [1, 2] } as any;
+      const rate = analyzer.computeEndpointRate(CurveModel.POWER_LAW, fit, [0, 1, 2, 3]);
+      expect(rate).toBeGreaterThan(0);
+    });
   });
 
   describe('estimateTimeToThreshold', () => {
@@ -164,6 +194,54 @@ describe('DegradationCurveAnalyzer', () => {
     it('returns undefined if already passed', () => {
       const fit = { model: CurveModel.LINEAR, parameters: [2, 10] } as any;
       expect(analyzer.estimateTimeToThreshold(CurveModel.LINEAR, fit, 10, 5)).toBeUndefined();
+    });
+
+    it('estimates exponential threshold', () => {
+      const fit = { model: CurveModel.EXPONENTIAL, parameters: [10, 0.5] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.EXPONENTIAL, fit, 50, 1);
+      expect(result).toBeDefined();
+    });
+
+    it('returns undefined for exponential within tEnd', () => {
+      const fit = { model: CurveModel.EXPONENTIAL, parameters: [10, 0.5] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.EXPONENTIAL, fit, 50, 10);
+      expect(result).toBeUndefined();
+    });
+
+    it('estimates power-law threshold', () => {
+      const fit = { model: CurveModel.POWER_LAW, parameters: [5, 2.0] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.POWER_LAW, fit, 50, 1);
+      expect(result).toBeDefined();
+    });
+
+    it('returns undefined for power-law within tEnd', () => {
+      const fit = { model: CurveModel.POWER_LAW, parameters: [1, 2.0] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.POWER_LAW, fit, 5, 10);
+      expect(result).toBeUndefined();
+    });
+
+    it('returns undefined for power-law with zero alpha', () => {
+      const fit = { model: CurveModel.POWER_LAW, parameters: [5, 0] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.POWER_LAW, fit, 50, 1);
+      expect(result).toBeUndefined();
+    });
+
+    it('returns undefined for logarithmic (default case)', () => {
+      const fit = { model: CurveModel.LOGARITHMIC, parameters: [2, 10] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.LOGARITHMIC, fit, 30, 5);
+      expect(result).toBeUndefined();
+    });
+
+    it('handles exponential with zero lambda', () => {
+      const fit = { model: CurveModel.EXPONENTIAL, parameters: [-1, 0] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.EXPONENTIAL, fit, 100, 1);
+      expect(result).toBeUndefined();
+    });
+
+    it('handles zero slope in linear model', () => {
+      const fit = { model: CurveModel.LINEAR, parameters: [0, 10] } as any;
+      const result = analyzer.estimateTimeToThreshold(CurveModel.LINEAR, fit, 30, 5);
+      expect(result).toBeUndefined();
     });
   });
 });
