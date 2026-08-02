@@ -102,12 +102,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Run benchmarks
+      - name: Run baseline benchmark
         run: |
           git checkout ${{ github.base_ref }}
-          pnpm benchmark --output baseline.json
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm exec tsx benchmarks/src/run-all.ts --output baseline.json --cases 30
+      - name: Run current benchmark
+        run: |
           git checkout ${{ github.head_ref }}
-          pnpm benchmark --output current.json
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm exec tsx benchmarks/src/run-all.ts --output current.json --cases 30
       - name: Comment benchmark diff
         uses: benchmark-action/github-action-benchmark@v1
         with:
