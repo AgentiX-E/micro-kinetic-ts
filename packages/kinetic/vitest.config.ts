@@ -30,6 +30,8 @@ export default defineConfig({
         // Benchmark loaders — tested via integration/benchmark pipelines, not unit tests
         'src/benchmarks/loaders/**',
         'src/benchmarks/synthetic/**',
+        // LLM classifier — requires DEEPSEEK_API_KEY, prompt builder tested via integration
+        'src/classifiers/llm-classifier.ts',
       ],
       // Kinetic is an umbrella/integration package — covers DI wiring, CLI, pipeline,
       // benchmark runner, and metrics. Benchmark loaders and synthetic generators are
