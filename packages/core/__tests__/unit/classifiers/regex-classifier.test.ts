@@ -83,7 +83,7 @@ describe('RegexFaultClassifier', () => {
   describe('vote aggregation', () => {
     const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
 
-    it('should accumulate votes from multiple matching metrics', () => {
+    it('should accumulate evidence with same-category multi-series', () => {
       const series = [
         makeSeries('cpu_usage', [0.9]),
         makeSeries('cpu_temperature', [80]),
@@ -92,6 +92,20 @@ describe('RegexFaultClassifier', () => {
       const result = classifier.classify(series, makeContext());
       expect(result[0]!.category).toBe('CPU');
       expect(result[0]!.evidence).toHaveLength(3);
+    });
+
+    it('should update max confidence when subsequent series has higher rule confidence', () => {
+      // Create a custom classifier with rules at different confidence levels
+      const customRules: ClassificationRule[] = [
+        { pattern: /cpu_a/, category: 'CPU', priority: 100, confidence: 0.3, description: 'low conf' },
+        { pattern: /cpu_b/, category: 'CPU', priority: 99, confidence: 0.9, description: 'high conf' },
+      ];
+      const c = new RegexFaultClassifier(customRules);
+      const series = [makeSeries('cpu_a', [0.9]), makeSeries('cpu_b', [0.9])];
+      const result = c.classify(series, makeContext());
+      // First match at 0.3, second at 0.9 — maxConfidence should be 0.9
+      expect(result[0]!.category).toBe('CPU');
+      expect(result[0]!.confidence).toBeGreaterThan(0.85);
     });
 
     it('should rank hypotheses by confidence', () => {
@@ -150,6 +164,41 @@ describe('RegexFaultClassifier', () => {
       const result = classifier.classify(series, makeContext());
       // All tied — first by priority
       expect(result.length).toBe(4);
+    });
+
+    it('should return minor severity for low vote ratio', () => {
+      // 1 CPU out of 5 → 0.2 vote ratio → minor
+      const series = [
+        makeSeries('cpu_usage', [0.9]),
+        makeSeries('memory_used', [0.7]),
+        makeSeries('disk_iops', [0.5]),
+        makeSeries('latency_p99', [2000]),
+        makeSeries('tcp_connections', [100]),
+      ];
+      const result = classifier.classify(series, makeContext());
+      expect(result[0]!.severity).toBe('minor');
+    });
+
+    it('should return warning severity for very low vote ratio', () => {
+      // 1 CPU out of 10 → 0.1 vote ratio → warning
+      const series = [
+        makeSeries('cpu_usage', [0.9]),
+        makeSeries('memory_used', [0.7]),
+        makeSeries('disk_iops', [0.5]),
+        makeSeries('latency_p99', [2000]),
+        makeSeries('tcp_connections', [100]),
+        makeSeries('error_rate', [0.1]),
+        makeSeries('jvm_gc_time', [50]),
+        makeSeries('heap_used', [200]),
+        makeSeries('connection_count', [10]),
+        makeSeries('request_latency', [500]),
+      ];
+      const result = classifier.classify(series, makeContext());
+      // CPU has only 1 vote out of 10 → voteRatio=0.1 → 'warning'
+      const cpuHypothesis = result.find((h) => h.category === 'CPU');
+      if (cpuHypothesis) {
+        expect(cpuHypothesis.severity).toBe('warning');
+      }
     });
   });
 

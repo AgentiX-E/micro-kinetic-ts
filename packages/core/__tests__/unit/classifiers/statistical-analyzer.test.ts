@@ -98,6 +98,14 @@ describe('StatisticalAnalyzer', () => {
       expect(f.autocorrelationLag1).toBe(0);
     });
 
+    it('should handle truly empty series (n=0)', () => {
+      const series = makeSeries('cpu', []);
+      const f = analyzer.extractFeatures(series);
+      expect(f.mean).toBe(0);
+      expect(f.stddev).toBe(0);
+      expect(f.isMonotonicIncreasing).toBe(false);
+    });
+
     it('should compute median for even-length series', () => {
       const series = makeSeries('cpu', [1, 3, 5, 7]);
       const f = analyzer.extractFeatures(series);
