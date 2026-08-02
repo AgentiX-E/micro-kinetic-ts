@@ -59,7 +59,15 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm nx test @agentix-e/micro-kinetic-${{ matrix.package }} -- --coverage
+      - name: Determine nx project name
+        id: pkg
+        run: |
+          if [ "${{ matrix.package }}" = "kinetic" ]; then
+            echo "name=@agentix-e/micro-kinetic" >> $GITHUB_OUTPUT
+          else
+            echo "name=@agentix-e/micro-kinetic-${{ matrix.package }}" >> $GITHUB_OUTPUT
+          fi
+      - run: pnpm nx test ${{ steps.pkg.outputs.name }} -- --coverage
       - uses: actions/upload-artifact@v4
         if: always()
         with:
