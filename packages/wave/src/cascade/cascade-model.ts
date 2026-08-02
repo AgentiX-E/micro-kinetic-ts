@@ -490,7 +490,7 @@ export class WaveCascadeModel {
       const dist = distances.get(serviceId);
       const finalIntensity = intensities[i]![steps]!;
 
-      if (finalIntensity > 0.01 && dist > maxDist) {
+      if (dist !== undefined && finalIntensity > 0.01 && dist > maxDist) {
         maxDist = dist;
       }
     }
