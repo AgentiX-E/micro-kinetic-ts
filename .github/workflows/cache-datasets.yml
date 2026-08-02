@@ -58,3 +58,13 @@ jobs:
         run: |
           echo "Cached cases: $(find ~/RCAEval-data -name 'inject_time.txt' 2>/dev/null | wc -l)"
           echo "Cache size: $(du -sh ~/RCAEval-data 2>/dev/null | cut -f1)"
+
+      - name: Report status
+        if: always()
+        run: |
+          echo "${{ job.status }}" > .cache-status
+          git config user.email "ci@agentix-e.dev"
+          git config user.name "CI Bot"
+          git add .cache-status
+          git diff --staged --quiet || git commit -m "ci: cache-datasets ${{ job.status }}"
+          git push

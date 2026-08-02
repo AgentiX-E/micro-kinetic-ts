@@ -99,3 +99,14 @@ jobs:
           echo '```json' >> $GITHUB_STEP_SUMMARY
           cat benchmark-results.json >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Report status commit
+        if: always()
+        run: |
+          cp benchmark-results.json .bench-results 2>/dev/null || echo '{"status":"${{ job.status }}"}' > .bench-results
+          echo "${{ job.status }}" > .bench-status
+          git config user.email "ci@agentix-e.dev"
+          git config user.name "CI Bot"
+          git add .bench-status .bench-results benchmark-results.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "ci: benchmark ${{ job.status }}"
+          git push
