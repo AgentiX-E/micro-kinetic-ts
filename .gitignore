@@ -6,5 +6,5 @@ coverage/
 .cache/
 benchmark-results/
 *.log
-pnpm-lock.yaml
+# pnpm-lock.yaml — committed for CI reproducibility
 .nx/
