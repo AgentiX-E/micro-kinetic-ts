@@ -44,6 +44,13 @@ export * from '@agentix-e/micro-kinetic-scaling';
 // Wave (cascade propagation + correlation decay)
 export * from '@agentix-e/micro-kinetic-wave';
 
+// ── Fault Classifiers ─────────────────────────────────────
+
+export { LLMFaultClassifier } from './classifiers/llm-classifier.js';
+export type { LLMClassifierConfig } from './classifiers/llm-classifier.js';
+export { PyramidFaultClassifier } from './classifiers/pyramid-classifier.js';
+export type { PyramidClassifierConfig } from './classifiers/pyramid-classifier.js';
+
 // ── DI Container ──────────────────────────────────────────
 
 export { createDefaultContainer } from './di/container.js';
