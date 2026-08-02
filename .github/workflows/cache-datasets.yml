@@ -9,12 +9,12 @@ on:
     - cron: '0 2 * * 0'  # Weekly refresh (Sunday 2am UTC)
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   cache:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -23,41 +23,36 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Cache key — dataset version identifier
-        id: cache-key
-        run: |
-          # Bump this version when datasets are updated
-          echo "DATASET_VERSION=v1" >> $GITHUB_ENV
-          echo "KEY=RCAEval-datasets-${{ env.DATASET_VERSION }}" >> $GITHUB_ENV
-
       - name: Restore cached datasets
         id: cache-restore
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-data
-          key: ${{ env.KEY }}
+          key: RCAEval-datasets-v2-pq
           restore-keys: |
             RCAEval-datasets-
 
-      - name: Download datasets (cache miss)
+      - name: Download datasets from Hugging Face (cache miss)
         if: steps.cache-restore.outputs.cache-hit != 'true'
         run: |
-          pip install RCAEval
+          pip install huggingface_hub
           mkdir -p ~/RCAEval-data
           python3 -c "
-          import os, sys
-          os.environ['RCAEVAL_DATA_DIR'] = os.path.expanduser('~/RCAEval-data')
-          from RCAEval.utility import download_re1_dataset, download_re2_dataset, download_re3_dataset
-          print('Downloading RE1 (375 cases, ~390MB)...')
-          download_re1_dataset()
-          print('Downloading RE2 (270 cases, ~4.2GB)...')
-          download_re2_dataset()
-          print('Downloading RE3 (90 cases, ~534MB)...')
-          download_re3_dataset()
-          print('All datasets cached at ~/RCAEval-data')
+          from huggingface_hub import snapshot_download
+          import os
+          data_dir = os.path.expanduser('~/RCAEval-data')
+          print(f'Downloading RCAEval datasets to {data_dir}...')
+          snapshot_download(
+              'phamquiluan/RCAEval',
+              repo_type='dataset',
+              local_dir=data_dir,
+              local_dir_use_symlinks=False,
+              resume_download=True,
+          )
+          print('Download complete.')
           "
 
       - name: Verify cache
         run: |
-          echo "Cached cases: $(find ~/RCAEval-data -name 'inject_time.txt' 2>/dev/null | wc -l)"
+          echo "Cached files: $(find ~/RCAEval-data -type f 2>/dev/null | wc -l)"
           echo "Cache size: $(du -sh ~/RCAEval-data 2>/dev/null | cut -f1)"
