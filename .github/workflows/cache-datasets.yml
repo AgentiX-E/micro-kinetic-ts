@@ -2,6 +2,9 @@ name: Cache Benchmark Datasets
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cache-datasets.yml'
   schedule:
     - cron: '0 2 * * 0'  # Weekly refresh (Sunday 2am UTC)
 
