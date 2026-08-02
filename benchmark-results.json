@@ -1,7 +1,7 @@
 [
   {
     "name": "Total Duration",
-    "value": 38,
+    "value": 40,
     "unit": "ms",
     "range": "± 50"
   },
@@ -28,11 +28,5 @@
     "value": 1,
     "unit": "ratio",
     "range": "0-1"
-  },
-  {
-    "name": "Suite Time",
-    "value": 11,
-    "unit": "ms",
-    "range": "± 20"
   }
 ]
