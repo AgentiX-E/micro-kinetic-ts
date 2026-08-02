@@ -1,0 +1,149 @@
+name: OpenRCA Evaluation — MicroKinetic (TypeScript)
+
+on:
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: 'Comma-separated shard keys to evaluate (default: all 6)'
+        required: false
+        default: 'telecom-early,telecom-late,bank-early,bank-late,market-cb1,market-cb2'
+  workflow_run:
+    workflows: [Prediction — MicroKinetic TypeScript]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # ── Setup Python ──
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install pandas gdown
+
+      # ── Create predictions directory ──
+      - name: Create predictions directory
+        run: mkdir -p predictions
+
+      # ── Download telecom-early predictions ──
+      - name: Download telecom-early predictions
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.OPENRCA_PAT }}
+          repo: AgentiX-E/openrca-telecom-dates-early
+          workflow: prediction-micro-kinetic-ts.yml
+          name: predictions-micro-kinetic-ts-telecom-early
+          path: predictions/telecom-early/
+          search_artifacts: true
+
+      # ── Download telecom-late predictions ──
+      - name: Download telecom-late predictions
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.OPENRCA_PAT }}
+          repo: AgentiX-E/openrca-telecom-dates-late
+          workflow: prediction-micro-kinetic-ts.yml
+          name: predictions-micro-kinetic-ts-telecom-late
+          path: predictions/telecom-late/
+          search_artifacts: true
+
+      # ── Download bank-early predictions ──
+      - name: Download bank-early predictions
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.OPENRCA_PAT }}
+          repo: AgentiX-E/openrca-bank-dates-early
+          workflow: prediction-micro-kinetic-ts.yml
+          name: predictions-micro-kinetic-ts-bank-early
+          path: predictions/bank-early/
+          search_artifacts: true
+
+      # ── Download bank-late predictions ──
+      - name: Download bank-late predictions
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.OPENRCA_PAT }}
+          repo: AgentiX-E/openrca-bank-dates-late
+          workflow: prediction-micro-kinetic-ts.yml
+          name: predictions-micro-kinetic-ts-bank-late
+          path: predictions/bank-late/
+          search_artifacts: true
+
+      # ── Download market-cb1 predictions ──
+      - name: Download market-cb1 predictions
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.OPENRCA_PAT }}
+          repo: AgentiX-E/openrca-market-cloudbed-1
+          workflow: prediction-micro-kinetic-ts.yml
+          name: predictions-micro-kinetic-ts-market-cb1
+          path: predictions/market-cb1/
+          search_artifacts: true
+
+      # ── Download market-cb2 predictions ──
+      - name: Download market-cb2 predictions
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.OPENRCA_PAT }}
+          repo: AgentiX-E/openrca-market-cloudbed-2
+          workflow: prediction-micro-kinetic-ts.yml
+          name: predictions-micro-kinetic-ts-market-cb2
+          path: predictions/market-cb2/
+          search_artifacts: true
+
+      # ── Verify downloaded artifacts ──
+      - name: Verify predictions
+        run: |
+          echo "=== Predictions directory structure ==="
+          find predictions/ -type f -name "*.csv" | sort
+          echo ""
+          total=$(find predictions/ -type f -name "*.csv" | wc -l)
+          echo "Total prediction CSV files: $total"
+          if [ "$total" -eq 0 ]; then
+            echo "[ERROR] No prediction CSVs downloaded!"
+            exit 1
+          fi
+
+      # ── Evaluate ──
+      - name: Run OpenRCA evaluation
+        run: |
+          python scripts/evaluate-openrca.py \
+            --project "MicroKinetic (TypeScript)" \
+            --agent "MK-TS Agent (micro-kinetic graph engine)" \
+            --repo "https://github.com/AgentiX-E/micro-kinetic-ts" \
+            --predictions-dir ./predictions \
+            --output evaluation-report.csv
+
+      # ── Upload evaluation report ──
+      - name: Upload evaluation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: openrca-evaluation-micro-kinetic-ts
+          path: |
+            evaluation-report.csv
+            leaderboard-submission.json
+          retention-days: 90
+
+      # ── Summary ──
+      - name: Print summary
+        if: always()
+        run: |
+          echo "=== Evaluation Summary ==="
+          if [ -f evaluation-report.csv ]; then
+            echo "Report: $(wc -l < evaluation-report.csv) lines"
+            head -3 evaluation-report.csv
+          fi
+          if [ -f leaderboard-submission.json ]; then
+            echo ""
+            echo "=== Leaderboard Submission ==="
+            python -m json.tool leaderboard-submission.json
+          fi
