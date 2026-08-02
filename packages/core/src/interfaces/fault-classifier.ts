@@ -14,9 +14,8 @@
  * @module interfaces/fault-classifier
  */
 
-import type { FaultType } from '../types/faults.js';
-import type { TimeSeries } from '../types/time-series.js';
 import type { ServiceCallGraph } from '../types/graph.js';
+import type { TimeSeries } from '../types/time-series.js';
 
 // ── Classification Rule ──────────────────────────────────
 
@@ -173,8 +172,17 @@ export interface ILLMFaultClassifier extends IFaultClassifier {
     metricSeries: readonly TimeSeries[],
     context: FaultClassifierContext,
     priorHypotheses: readonly FaultTypeHypothesis[],
-    logs?: ReadonlyArray<{ readonly message: string; readonly level: string; readonly timestamp: number }>,
-    traces?: ReadonlyArray<{ readonly service: string; readonly operationName: string; readonly duration: number; readonly status: string }>,
+    logs?: ReadonlyArray<{
+      readonly message: string;
+      readonly level: string;
+      readonly timestamp: number;
+    }>,
+    traces?: ReadonlyArray<{
+      readonly service: string;
+      readonly operationName: string;
+      readonly duration: number;
+      readonly status: string;
+    }>,
     topology?: ServiceCallGraph,
   ): Promise<FaultTypeHypothesis[]>;
 }

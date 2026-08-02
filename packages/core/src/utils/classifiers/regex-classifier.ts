@@ -176,9 +176,7 @@ export class RegexFaultClassifier implements IFaultClassifier {
    * Match a single time series against all rules.
    * Returns the first (highest-priority) match.
    */
-  private matchSeries(
-    series: TimeSeries,
-  ): { category: string; confidence: number } | null {
+  private matchSeries(series: TimeSeries): { category: string; confidence: number } | null {
     const lower = series.label.toLowerCase();
     for (const rule of this.sortedRules) {
       if (rule.pattern.test(lower)) {

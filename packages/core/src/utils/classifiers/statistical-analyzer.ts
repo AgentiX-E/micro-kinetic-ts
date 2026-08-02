@@ -77,7 +77,8 @@ export class StatisticalAnalyzer implements IStatisticalAnalyzer {
     const hasBurst = features.some((f) => f.hasBurst);
     const avgCV = features.reduce((s, f) => s + f.coefficientOfVariation, 0) / features.length;
     const avgAutoCorr = features.reduce((s, f) => s + f.autocorrelationLag1, 0) / features.length;
-    const trendStrength = features.reduce((s, f) => s + Math.abs(f.trendSlope), 0) / features.length;
+    const trendStrength =
+      features.reduce((s, f) => s + Math.abs(f.trendSlope), 0) / features.length;
 
     const hypotheses: FaultTypeHypothesis[] = [];
 
@@ -142,8 +143,11 @@ export class StatisticalAnalyzer implements IStatisticalAnalyzer {
       if (varianceSpikes > 0) {
         hypotheses.push({
           category: 'SOCKET',
-          confidence: Math.min(0.7, 0.3 + varianceSpikes / features.length * 0.4),
-          evidence: [`Variance spikes: ${varianceSpikes}/${features.length}`, `Avg CV: ${avgCV.toFixed(3)}`],
+          confidence: Math.min(0.7, 0.3 + (varianceSpikes / features.length) * 0.4),
+          evidence: [
+            `Variance spikes: ${varianceSpikes}/${features.length}`,
+            `Avg CV: ${avgCV.toFixed(3)}`,
+          ],
           method: 'statistical',
           severity: 'major',
         });
@@ -183,16 +187,18 @@ export class StatisticalAnalyzer implements IStatisticalAnalyzer {
 
     // ── Median ─────────────────────────────────────────────
     const sorted = new Float64Array(series.values).sort();
-    const median = n % 2 === 0
-      ? (sorted[n / 2 - 1]! + sorted[n / 2]!) / 2
-      : sorted[Math.floor(n / 2)]!;
+    const median =
+      n % 2 === 0 ? (sorted[n / 2 - 1]! + sorted[n / 2]!) / 2 : sorted[Math.floor(n / 2)]!;
 
     // ── Trend slope (linear regression on last half) ─────
     const halfStart = Math.floor(n / 2);
     const halfN = n - halfStart;
     if (halfN < 2) {
       return {
-        mean, stddev, variance, median,
+        mean,
+        stddev,
+        variance,
+        median,
         trendSlope: 0,
         coefficientOfVariation: mean !== 0 ? stddev / Math.abs(mean) : 0,
         isMonotonicIncreasing: false,
@@ -201,7 +207,10 @@ export class StatisticalAnalyzer implements IStatisticalAnalyzer {
       };
     }
 
-    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    let sx = 0,
+      sy = 0,
+      sxx = 0,
+      sxy = 0;
     for (let i = halfStart; i < n; i++) {
       const x = i - halfStart;
       const y = series.values[i]!;
@@ -263,9 +272,14 @@ export class StatisticalAnalyzer implements IStatisticalAnalyzer {
 
   private emptyFeatures(): TimeSeriesFeatures {
     return {
-      mean: 0, stddev: 0, variance: 0, median: 0,
-      trendSlope: 0, coefficientOfVariation: 0,
-      isMonotonicIncreasing: false, hasBurst: false,
+      mean: 0,
+      stddev: 0,
+      variance: 0,
+      median: 0,
+      trendSlope: 0,
+      coefficientOfVariation: 0,
+      isMonotonicIncreasing: false,
+      hasBurst: false,
       autocorrelationLag1: 0,
     };
   }

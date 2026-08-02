@@ -97,9 +97,7 @@ export {
   bestHypothesisToFaultType,
   hypothesisToFaultType,
 } from './utils/classifiers/regex-classifier.js';
-export {
-  StatisticalAnalyzer,
-} from './utils/classifiers/statistical-analyzer.js';
+export { StatisticalAnalyzer } from './utils/classifiers/statistical-analyzer.js';
 export type { StatisticalAnalyzerConfig } from './utils/classifiers/statistical-analyzer.js';
 
 // ── Constants ────────────────────────────────────────────

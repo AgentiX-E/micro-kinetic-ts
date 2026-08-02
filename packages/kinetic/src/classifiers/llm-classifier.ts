@@ -70,7 +70,7 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
     if (!key) {
       throw new Error(
         'DEEPSEEK_API_KEY environment variable is not set. ' +
-        'Create a .env file with DEEPSEEK_API_KEY=sk-... or export it in your shell.',
+          'Create a .env file with DEEPSEEK_API_KEY=sk-... or export it in your shell.',
       );
     }
     this.apiKey = key;
@@ -109,19 +109,24 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
     metricSeries: readonly TimeSeries[],
     context: FaultClassifierContext,
     priorHypotheses: readonly FaultTypeHypothesis[],
-    logs?: ReadonlyArray<{ readonly message: string; readonly level: string; readonly timestamp: number }>,
-    traces?: ReadonlyArray<{ readonly service: string; readonly operationName: string; readonly duration: number; readonly status: string }>,
-    topology?: { readonly nodes: ReadonlyMap<string, unknown>; readonly edges: ReadonlyArray<unknown> },
+    logs?: ReadonlyArray<{
+      readonly message: string;
+      readonly level: string;
+      readonly timestamp: number;
+    }>,
+    traces?: ReadonlyArray<{
+      readonly service: string;
+      readonly operationName: string;
+      readonly duration: number;
+      readonly status: string;
+    }>,
+    topology?: {
+      readonly nodes: ReadonlyMap<string, unknown>;
+      readonly edges: ReadonlyArray<unknown>;
+    },
   ): Promise<FaultTypeHypothesis[]> {
     // Build the prompt
-    const prompt = this.buildPrompt(
-      metricSeries,
-      context,
-      priorHypotheses,
-      logs,
-      traces,
-      topology,
-    );
+    const prompt = this.buildPrompt(metricSeries, context, priorHypotheses, logs, traces, topology);
 
     // Call DeepSeek API
     const response = await this.callAPI(prompt);
@@ -139,13 +144,27 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
     metricSeries: readonly TimeSeries[],
     context: FaultClassifierContext,
     priorHypotheses: readonly FaultTypeHypothesis[],
-    logs?: ReadonlyArray<{ readonly message: string; readonly level: string; readonly timestamp: number }>,
-    traces?: ReadonlyArray<{ readonly service: string; readonly operationName: string; readonly duration: number; readonly status: string }>,
-    topology?: { readonly nodes: ReadonlyMap<string, unknown>; readonly edges: ReadonlyArray<unknown> },
+    logs?: ReadonlyArray<{
+      readonly message: string;
+      readonly level: string;
+      readonly timestamp: number;
+    }>,
+    traces?: ReadonlyArray<{
+      readonly service: string;
+      readonly operationName: string;
+      readonly duration: number;
+      readonly status: string;
+    }>,
+    topology?: {
+      readonly nodes: ReadonlyMap<string, unknown>;
+      readonly edges: ReadonlyArray<unknown>;
+    },
   ): string {
     const parts: string[] = [];
 
-    parts.push('You are an AIOps fault classification expert. Analyze the following data and classify the most likely fault type.');
+    parts.push(
+      'You are an AIOps fault classification expert. Analyze the following data and classify the most likely fault type.',
+    );
     parts.push('');
     parts.push('## Service Context');
     parts.push(`- Service ID: ${context.serviceId}`);
@@ -160,7 +179,9 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
       for (const s of metricSeries.slice(0, 10)) {
         const mean = s.values.reduce((a, b) => a + b, 0) / s.values.length;
         const variance = s.values.reduce((s, v) => s + (v - mean) ** 2, 0) / s.values.length;
-        parts.push(`| ${s.label} | ${mean.toFixed(2)} | ${Math.sqrt(variance).toFixed(2)} | ${s.values.length} |`);
+        parts.push(
+          `| ${s.label} | ${mean.toFixed(2)} | ${Math.sqrt(variance).toFixed(2)} | ${s.values.length} |`,
+        );
       }
       if (metricSeries.length > 10) {
         parts.push(`| ... +${metricSeries.length - 10} more | | | |`);
@@ -172,7 +193,9 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
       parts.push('');
       parts.push('## Prior Analysis (Layers 1 & 2)');
       for (const h of priorHypotheses.slice(0, 3)) {
-        parts.push(`- ${h.category} (confidence: ${(h.confidence * 100).toFixed(1)}%, method: ${h.method})`);
+        parts.push(
+          `- ${h.category} (confidence: ${(h.confidence * 100).toFixed(1)}%, method: ${h.method})`,
+        );
         if (h.evidence.length > 0) parts.push(`  Evidence: ${h.evidence.join('; ')}`);
       }
     }
@@ -195,14 +218,19 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
       parts.push(`- Error spans: ${errorTraces}`);
       if (errorTraces > 0) {
         const firstError = traces.find((t) => t.status === 'ERROR');
-        if (firstError) parts.push(`- Example error: ${firstError.service}/${firstError.operationName} (${firstError.duration}ms)`);
+        if (firstError)
+          parts.push(
+            `- Example error: ${firstError.service}/${firstError.operationName} (${firstError.duration}ms)`,
+          );
       }
     }
 
     // Topology
     if (topology && topology.nodes.size > 0) {
       parts.push('');
-      parts.push(`## Service Topology (${topology.nodes.size} nodes, ${topology.edges.length} edges)`);
+      parts.push(
+        `## Service Topology (${topology.nodes.size} nodes, ${topology.edges.length} edges)`,
+      );
     }
 
     // Classification instruction
@@ -217,7 +245,9 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
     parts.push('- severity: "critical", "major", "minor", "warning", or "info"');
     parts.push('');
     parts.push('Example response:');
-    parts.push('[{"category":"MEM","confidence":0.85,"evidence":["Monotonic heap growth detected","No GC activity observed"],"severity":"major"}]');
+    parts.push(
+      '[{"category":"MEM","confidence":0.85,"evidence":["Monotonic heap growth detected","No GC activity observed"],"severity":"major"}]',
+    );
     parts.push('');
     parts.push('Respond ONLY with the JSON array, no other text.');
 
@@ -238,7 +268,7 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model: this.config.model,
@@ -316,9 +346,7 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
   /**
    * Fall back to prior hypotheses wrapped as LLM method.
    */
-  private fallbackToPrior(
-    prior: readonly FaultTypeHypothesis[],
-  ): FaultTypeHypothesis[] {
+  private fallbackToPrior(prior: readonly FaultTypeHypothesis[]): FaultTypeHypothesis[] {
     if (prior.length === 0) {
       return [
         {
@@ -336,9 +364,7 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
   /**
    * Normalize a severity string to the expected union type.
    */
-  private normalizeSeverity(
-    raw: string,
-  ): FaultTypeHypothesis['severity'] {
+  private normalizeSeverity(raw: string): FaultTypeHypothesis['severity'] {
     const lower = raw.toLowerCase();
     if (lower === 'critical') return 'critical';
     if (lower === 'major') return 'major';

@@ -24,8 +24,8 @@ import type {
   IFaultClassifier,
   ILLMFaultClassifier,
   IStatisticalAnalyzer,
+  TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
 
 // ── Configuration ─────────────────────────────────────────
 
