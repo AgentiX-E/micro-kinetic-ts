@@ -5,13 +5,13 @@
   "fixed": [],
   "linked": [
     [
-      "@agentix-e/aiops-kinetic-core",
-      "@agentix-e/aiops-kinetic-tree",
-      "@agentix-e/aiops-kinetic-cutting",
-      "@agentix-e/aiops-kinetic-noise",
-      "@agentix-e/aiops-kinetic-scaling",
-      "@agentix-e/aiops-kinetic-wave",
-      "@agentix-e/aiops-kinetic"
+      "@agentix-e/micro-kinetic-core",
+      "@agentix-e/micro-kinetic-tree",
+      "@agentix-e/micro-kinetic-cutting",
+      "@agentix-e/micro-kinetic-noise",
+      "@agentix-e/micro-kinetic-scaling",
+      "@agentix-e/micro-kinetic-wave",
+      "@agentix-e/micro-kinetic"
     ]
   ],
   "access": "public",

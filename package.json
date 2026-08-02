@@ -1,5 +1,5 @@
 {
-  "name": "@agentix-e/aiops-kinetic-root",
+  "name": "@agentix-e/micro-kinetic-root",
   "private": true,
   "type": "module",
   "scripts": {
