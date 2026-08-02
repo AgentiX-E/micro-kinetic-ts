@@ -1,65 +1,38 @@
-{
-  "benchmark": "Micro-Kinetic v0.1.0",
-  "date": "2026-08-02T05:39:05.689Z",
-  "summary": {
-    "totalCases": 175,
-    "faultTypes": 6,
-    "durationMs": 48,
-    "avgTop1": 1,
-    "avgTop5": 1,
-    "locationAccuracy": 1,
-    "targetAvgTop5": 0.85,
-    "targetMet": true
+[
+  {
+    "name": "Total Duration",
+    "value": 30,
+    "unit": "ms",
+    "range": "± 50"
   },
-  "note": "Type Accuracy (TA) is 0 because the RCA engine performs root-cause localization (which service), not fault-type classification. This is by design.",
-  "perFault": [
-    {
-      "fault": "CPU",
-      "cases": 30,
-      "avgTop1": 1,
-      "avgTop5": 1,
-      "LA": 1,
-      "ms": 0
-    },
-    {
-      "fault": "MEM",
-      "cases": 30,
-      "avgTop1": 1,
-      "avgTop5": 1,
-      "LA": 1,
-      "ms": 0
-    },
-    {
-      "fault": "DISK",
-      "cases": 30,
-      "avgTop1": 1,
-      "avgTop5": 1,
-      "LA": 1,
-      "ms": 0
-    },
-    {
-      "fault": "DELAY",
-      "cases": 30,
-      "avgTop1": 1,
-      "avgTop5": 1,
-      "LA": 1,
-      "ms": 0
-    },
-    {
-      "fault": "LOSS",
-      "cases": 30,
-      "avgTop1": 1,
-      "avgTop5": 1,
-      "LA": 1,
-      "ms": 0
-    },
-    {
-      "fault": "SOCKET",
-      "cases": 25,
-      "avgTop1": 1,
-      "avgTop5": 1,
-      "LA": 1,
-      "ms": 0
-    }
-  ]
-}
+  {
+    "name": "Avg@1 Accuracy",
+    "value": 0,
+    "unit": "ratio",
+    "range": "0-1"
+  },
+  {
+    "name": "Avg@5 Accuracy",
+    "value": 0,
+    "unit": "ratio",
+    "range": "0-1"
+  },
+  {
+    "name": "Location Accuracy",
+    "value": 0,
+    "unit": "ratio",
+    "range": "0-1"
+  },
+  {
+    "name": "Type Accuracy",
+    "value": 0.1714,
+    "unit": "ratio",
+    "range": "0-1"
+  },
+  {
+    "name": "Suite Time",
+    "value": 2,
+    "unit": "ms",
+    "range": "± 20"
+  }
+]

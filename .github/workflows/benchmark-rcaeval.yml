@@ -8,12 +8,12 @@ on:
       - 'packages/**/src/**'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -35,58 +35,27 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-data
-          key: RCAEval-datasets-v1
+          key: RCAEval-datasets-v2-pq
           restore-keys: |
             RCAEval-datasets-
 
       - name: Verify dataset availability
         run: |
-          CASES=$(find ~/RCAEval-data -name 'inject_time.txt' 2>/dev/null | wc -l)
-          echo "Cached cases: $CASES"
-          if [ "$CASES" -lt 100 ]; then
-            echo "::warning::Insufficient cached cases ($CASES). Run Cache Datasets workflow first."
+          TOTAL_FILES=$(find ~/RCAEval-data -type f 2>/dev/null | wc -l)
+          PARQUET_FILES=$(find ~/RCAEval-data -name '*.parquet' 2>/dev/null | wc -l)
+          echo "Total files: $TOTAL_FILES"
+          echo "Parquet files: $PARQUET_FILES"
+          if [ "$TOTAL_FILES" -lt 50 ]; then
+            echo "::warning::Insufficient cached files ($TOTAL_FILES). Run Cache Datasets workflow first."
           fi
+          # Check data dirs
+          find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | head -20
 
-      - name: Run Micro-Kinetic benchmark
+      - name: Run Micro-Kinetic benchmark (synthetic + classifier)
         run: |
-          node --max-old-space-size=4096 -e "
-          const { Container } = require('@agentix-e/micro-kinetic-core');
-          const { BenchmarkRunner } = require('@agentix-e/micro-kinetic');
-          const { SyntheticBenchmarkGenerator } = require('@agentix-e/micro-kinetic');
-          const { registerTreeModule, registerCuttingFactories } = require('@agentix-e/micro-kinetic');
-          const fs = require('fs');
-          
-          const container = new Container();
-          
-          // Run synthetic benchmark (fast, always works)
-          const gen = new SyntheticBenchmarkGenerator(42);
-          const synSuite = gen.generateRCAEvalSuite('Synthetic', 50);
-          
-          const runner = new BenchmarkRunner(container);
-          const result = runner.runSuite(synSuite);
-          
-          const report = {
-            benchmark: 'Micro-Kinetic v0.1.0',
-            synthetic: {
-              avgTop1: result.avgTop1,
-              avgTop5: result.avgTop5,
-              locationAccuracy: result.locationAccuracy,
-              typeAccuracy: result.typeAccuracy,
-              totalCases: result.totalCases,
-              durationMs: result.duration,
-            },
-            coverage: {
-              statements: '>=95%',
-              branches: '>=95%',
-              functions: '100%',
-              lines: '>=95%',
-              totalTests: 1251,
-            }
-          };
-          
-          fs.writeFileSync('benchmark-results.json', JSON.stringify(report, null, 2));
-          console.log(JSON.stringify(report, null, 2));
-          "
+          pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
+          echo "=== Synthetic benchmark complete ==="
+          cat benchmark-results.json
 
       - name: Upload results
         uses: actions/upload-artifact@v4

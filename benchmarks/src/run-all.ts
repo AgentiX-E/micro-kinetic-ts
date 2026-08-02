@@ -41,7 +41,7 @@ interface CliOptions {
 
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
-  const opts: CliOptions = { cases: 50 };
+  const opts: CliOptions = { cases: 175 };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--output' && i + 1 < args.length) {
