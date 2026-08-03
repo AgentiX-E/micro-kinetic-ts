@@ -84,24 +84,47 @@ jobs:
                   metrics_pq = case_src / 'metrics.parquet'
                   if metrics_pq.exists():
                       df = pd.read_parquet(metrics_pq)
-                      # Reconstruct service-keyed format: {svc: [{timestamp, value, metric_name}]}
                       metrics_out = {}
-                      # Try different column name conventions
-                      cols = df.columns.tolist()
-                      svc_col = next((c for c in cols if c in ('service', 'service_id', 'serviceId', 'svc_id')), cols[0])
-                      ts_col = next((c for c in cols if c in ('timestamp', 'time', 'ts')), None)
-                      val_col = next((c for c in cols if c in ('value', 'val')), None)
-                      metric_col = next((c for c in cols if c in ('metric_name', 'metric', 'name')), None)
 
-                      for _, row in df.iterrows():
-                          svc = str(row.get(svc_col, row.iloc[0] if len(cols) > 0 else ''))
-                          if svc not in metrics_out:
-                              metrics_out[svc] = []
-                          entry = {'timestamp': 0, 'value': 0.0, 'metric_name': ''}
-                          if ts_col and ts_col in row: entry['timestamp'] = int(row[ts_col])
-                          if val_col and val_col in row: entry['value'] = float(row[val_col])
-                          if metric_col and metric_col in row: entry['metric_name'] = str(row[metric_col])
-                          metrics_out[svc].append(entry)
+                      # Detect format: wide (time-indexed) vs long (tidy)
+                      #   Wide: rows=timestamps, cols=metric_labels like "svc_name::metric"
+                      #   Long: columns include 'service', 'timestamp', 'value', 'metric_name'
+                      first_col = str(df.columns[0]) if len(df.columns) > 0 else ''
+
+                      if 'service' in df.columns or 'service_id' in df.columns:
+                          # Long/tidy format
+                          svc_col = next((c for c in df.columns if c in ('service', 'service_id', 'serviceId')), df.columns[0])
+                          ts_col = next((c for c in df.columns if c in ('timestamp', 'time', 'ts')), None)
+                          val_col = next((c for c in df.columns if c in ('value', 'val')), None)
+                          metric_col = next((c for c in df.columns if c in ('metric_name', 'metric', 'name')), None)
+                          for _, row in df.iterrows():
+                              svc = str(row[svc_col])
+                              if svc not in metrics_out:
+                                  metrics_out[svc] = []
+                              metrics_out[svc].append({
+                                  'timestamp': int(row[ts_col]) if ts_col and ts_col in row else 0,
+                                  'value': float(row[val_col]) if val_col and val_col in row else 0.0,
+                                  'metric_name': str(row[metric_col]) if metric_col and metric_col in row else '',
+                              })
+                      else:
+                          # Wide format: melt into long form
+                          # Columns: {timestamp} | svc::metric | svc::metric | ...
+                          ts_vals = df.iloc[:, 0].tolist() if len(df.columns) > 0 else []
+                          for col in df.columns[1:]:
+                              col_str = str(col)
+                              # Parse "service::metric" or "service_metric" convention
+                              parts = col_str.split('::') if '::' in col_str else col_str.rsplit('_', 1)
+                              svc = parts[0] if len(parts) >= 1 else col_str
+                              metric = parts[1] if len(parts) >= 2 else col_str
+                              for idx, val in enumerate(df[col]):
+                                  ts = int(ts_vals[idx]) if idx < len(ts_vals) else 0
+                                  if svc not in metrics_out:
+                                      metrics_out[svc] = []
+                                  metrics_out[svc].append({
+                                      'timestamp': ts,
+                                      'value': float(val) if pd.notna(val) else 0.0,
+                                      'metric_name': metric,
+                                  })
                       with open(case_dst / 'metrics.json', 'w') as f:
                           json.dump(metrics_out, f)
 
