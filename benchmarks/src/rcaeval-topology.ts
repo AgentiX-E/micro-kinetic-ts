@@ -296,7 +296,6 @@ export function buildRCAEvalCallGraph(
       // This is already satisfied by the ring above
     }
   } else if (edges.length === 0 && serviceIds.length > 0) {
-    // No topology matches at all — fallback to ring
     edges.push({
       from: serviceIds[0]!,
       to: serviceIds[0]!,
@@ -305,6 +304,23 @@ export function buildRCAEvalCallGraph(
       p99Latency: 1,
       errorRate: 0,
     });
+  }
+
+  // ── Topology match diagnostics ─────────────────────────
+  // Store matching stats for service name alignment audit
+  const topologySvcNames = new Set<string>();
+  for (const [f, t] of edgeMap) { topologySvcNames.add(f); topologySvcNames.add(t); }
+  const matchedSvcCount = serviceIds.filter((s) => topologySvcNames.has(s)).length;
+
+  for (const node of nodes.values()) {
+    node.labels = {
+      ...node.labels,
+      '_diag_case': caseId,
+      '_diag_system': system ?? 'unknown',
+      '_diag_matched': String(matchedEdgeCount) + '/' + String(edgeMap.length),
+      '_diag_svc_matched': String(matchedSvcCount) + '/' + String(serviceIds.length),
+      '_diag_unconnected': String(unconnected.length),
+    };
   }
 
   return { nodes, edges, systemLoad: 0.5 };
