@@ -30,6 +30,7 @@ import {
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
+import { buildRCAEvalCallGraph } from './rcaeval-topology.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -140,13 +141,13 @@ async function main(): Promise<void> {
   for (const caseDir of caseDirs) {
     try {
       const rawCase = loader.loadCase(caseDir);
-      const callGraph = loader['buildFallbackCallGraph']?.(rawCase) ??
-        buildSimpleCallGraph(Object.keys(rawCase.metrics));
-      const benchCase = loader.toBenchmarkCase(
-        rawCase,
-        callGraph,
-        'rcaeval-re1' as const,
-      );
+      const serviceIds = Object.keys(rawCase.metrics);
+      const callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+      const suiteName: 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' =
+        rawCase.benchmark.startsWith('re1') ? 'rcaeval-re1'
+        : rawCase.benchmark.startsWith('re2') ? 'rcaeval-re2'
+        : 'rcaeval-re3';
+      const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
       loadedCases.push(benchCase);
     } catch (err) {
       loadErrors.push(`${caseDir}: ${err instanceof Error ? err.message : String(err)}`);
@@ -222,42 +223,6 @@ async function main(): Promise<void> {
   }
 
   console.log('═'.repeat(65));
-}
-
-// ── Helpers ───────────────────────────────────────────────
-
-function buildSimpleCallGraph(serviceIds: string[]): import('@agentix-e/micro-kinetic-core').ServiceCallGraph {
-  const nodes = new Map<string, import('@agentix-e/micro-kinetic-core').ServiceNode>();
-  for (const id of serviceIds) {
-    nodes.set(id, { id, name: id, namespace: 'rca-eval', labels: {} });
-  }
-  const edges: import('@agentix-e/micro-kinetic-core').CallEdge[] = [];
-  // Create a ring topology so every service has at least one edge.
-  // For single-service cases, create a self-call edge so the engine can still
-  // analyze anomaly propagation (even if trivially looped back to itself).
-  if (serviceIds.length === 1) {
-    edges.push({
-      from: serviceIds[0]!,
-      to: serviceIds[0]!,
-      type: 'INTERNAL',
-      callRate: 1,
-      p99Latency: 1,
-      errorRate: 0,
-    });
-  } else if (serviceIds.length >= 2) {
-    for (let i = 0; i < serviceIds.length; i++) {
-      const next = (i + 1) % serviceIds.length;
-      edges.push({
-        from: serviceIds[i]!,
-        to: serviceIds[next]!,
-        type: 'REST',
-        callRate: 100,
-        p99Latency: 50,
-        errorRate: 0.01,
-      });
-    }
-  }
-  return { nodes, edges, systemLoad: 0.5 };
 }
 
 main().catch((err) => {
