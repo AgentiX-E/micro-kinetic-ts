@@ -105,3 +105,17 @@ export { DEFAULT_STOSS_PARAMS } from './types/alerts.js';
 export { DEFAULT_BBGKY_OPTIONS } from './types/coupling.js';
 export { DEFAULT_RCA_OPTIONS } from './types/faults.js';
 export { DEFAULT_CUTTING_OPTIONS } from './types/time-series.js';
+
+// ── LLM Utilities ────────────────────────────────────────
+export {
+  buildTopologyPrompt,
+  calibrateLLMConfidence,
+  computeRetryDelay,
+  DEFAULT_RETRY_CONFIG,
+  TOPOLOGY_JSON_SCHEMA,
+  validateTopologyResponse,
+} from './utils/llm-validator.js';
+export type { LLMRetryConfig, TopologyValidationResult } from './utils/llm-validator.js';
+
+// ── Topology Provider Interface ───────────────────────────
+export type * from './interfaces/topology-provider.js';
