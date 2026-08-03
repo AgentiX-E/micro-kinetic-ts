@@ -51,35 +51,89 @@ jobs:
           # Check data dirs
           find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | head -20
 
-      - name: Convert Parquet to JSON (pandas bridge)
+      - name: Convert Parquet to RCAEval JSON (pandas bridge)
         if: steps.cache.outputs.cache-hit == 'true'
         run: |
           pip install pandas pyarrow 2>/dev/null || true
           python3 -c "
-          import os, json, glob
+          import os, json
           from pathlib import Path
+          import pandas as pd
 
           cache_dir = os.path.expanduser('~/RCAEval-data')
           out_dir = os.path.expanduser('~/RCAEval-json')
           os.makedirs(out_dir, exist_ok=True)
 
-          pq_files = list(Path(cache_dir).rglob('*.parquet'))
-          total = len(pq_files)
-          print(f'Found {total} Parquet files')
+          # Discover case directories (those containing metrics.parquet or inject_time.parquet)
+          case_dirs = set()
+          for pq in Path(cache_dir).rglob('*.parquet'):
+              rel = pq.relative_to(cache_dir)
+              # Case dir is the parent of the Parquet file
+              case_dirs.add(rel.parent)
 
-          # Use pandas to convert
-          import pandas as pd
+          print(f'Found {len(case_dirs)} case directories')
           converted = 0
-          for pq in pq_files:
+
+          for case_rel in sorted(case_dirs):
+              case_src = Path(cache_dir) / case_rel
+              case_dst = Path(out_dir) / case_rel
+              os.makedirs(case_dst, exist_ok=True)
+
               try:
-                  df = pd.read_parquet(pq)
-                  json_path = os.path.join(out_dir, pq.relative_to(cache_dir).with_suffix('.json'))
-                  os.makedirs(os.path.dirname(json_path), exist_ok=True)
-                  df.to_json(json_path, orient='records', date_format='iso')
+                  # ── Convert metrics.parquet → old-style nested JSON ──
+                  metrics_pq = case_src / 'metrics.parquet'
+                  if metrics_pq.exists():
+                      df = pd.read_parquet(metrics_pq)
+                      # Reconstruct service-keyed format: {svc: [{timestamp, value, metric_name}]}
+                      metrics_out = {}
+                      for _, row in df.iterrows():
+                          svc = str(row.get('service', row.get('service_id', '')))
+                          if svc not in metrics_out:
+                              metrics_out[svc] = []
+                          metrics_out[svc].append({
+                              'timestamp': int(row.get('timestamp', 0)),
+                              'value': float(row.get('value', 0)),
+                              'metric_name': str(row.get('metric_name', row.get('metric', ''))),
+                          })
+                      with open(case_dst / 'metrics.json', 'w') as f:
+                          json.dump(metrics_out, f)
+
+                  # ── Copy inject_time (may be parquet or txt) ──
+                  inject_pq = case_src / 'inject_time.parquet'
+                  inject_txt = case_src / 'inject_time.txt'
+                  if inject_pq.exists():
+                      df = pd.read_parquet(inject_pq)
+                      val = int(df.iloc[0, 0]) if len(df) > 0 else 0
+                      (case_dst / 'inject_time.txt').write_text(str(val))
+                  elif inject_txt.exists():
+                      import shutil
+                      shutil.copy(inject_txt, case_dst / 'inject_time.txt')
+
+                  # ── Copy ground_truth ──
+                  for gt_name in ['ground_truth.json', 'ground_truth.parquet']:
+                      gt_src = case_src / gt_name
+                      if gt_src.exists():
+                          if gt_src.suffix == '.parquet':
+                              df = pd.read_parquet(gt_src)
+                              gt_data = df.iloc[0].to_dict() if len(df) > 0 else {}
+                              with open(case_dst / 'ground_truth.json', 'w') as f:
+                                  json.dump(gt_data, f, default=str)
+                          else:
+                              import shutil
+                              shutil.copy(gt_src, case_dst / 'ground_truth.json')
+                          break
+
+                  # ── Copy logs/traces if present ──
+                  for aux_file in case_src.glob('*'):
+                      if aux_file.suffix in ['.csv', '.txt'] and aux_file.name not in ['metrics.parquet', 'inject_time.parquet']:
+                          import shutil
+                          shutil.copy(aux_file, case_dst / aux_file.name)
+
                   converted += 1
               except Exception as e:
-                  print(f'  Skip {pq.name}: {e}')
-          print(f'Converted {converted}/{total} Parquet files to JSON at {out_dir}')
+                  print(f'  Skip {case_rel}: {e}')
+
+          print(f'Converted {converted}/{len(case_dirs)} case directories to RCAEval JSON at {out_dir}')
           "
 
       - name: Verify converted JSON
@@ -95,11 +149,20 @@ jobs:
           echo "=== Synthetic benchmark complete ==="
           cat benchmark-results.json
 
+      - name: Run RCAEval real dataset benchmark
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: |
+          echo "=== RCAEval real dataset benchmark ==="
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --max-cases 50 2>&1 | tee rcaeval-results.txt
+          echo "=== RCAEval benchmark complete ==="
+
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
-          path: benchmark-results.json
+          path: |
+            benchmark-results.json
+            rcaeval-results.txt
 
       - name: Post summary
         run: |
