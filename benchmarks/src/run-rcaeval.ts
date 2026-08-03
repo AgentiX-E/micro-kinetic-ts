@@ -269,6 +269,13 @@ async function main(): Promise<void> {
       byFaultType.get(ft)!.push(c);
     }
 
+    // Print topology diagnostics
+    const diagNode = cases[0]?.callGraph.nodes.values().next().value;
+    if (diagNode?.labels?._diag_system) {
+      const l = diagNode.labels;
+      console.log(`  [] topo: ${l._diag_matched} edges, ${l._diag_svc_matched} svcs matched, ${l._diag_unconnected} unconnected`);
+    }
+
     // Run each fault type separately
     const results = new Map<string, RunResult>();
     for (const [ft, ftCases] of byFaultType) {
