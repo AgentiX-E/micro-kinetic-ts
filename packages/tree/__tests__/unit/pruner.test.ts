@@ -481,4 +481,51 @@ describe('TreePruner', () => {
       expect(results.length).toBeGreaterThan(0);
     });
   });
+
+  describe('depth-weighted ranking (Deng Yu propagation depth theorem)', () => {
+    it('should rank upstream root cause above downstream symptom when raw scores are similar', () => {
+      const pruner = new TreePruner();
+      // Linear chain: A → B → C → D
+      // Inject fault at A: A has moderate anomaly, B/C/D have cascading high anomalies
+      const callGraph = makeCallGraph(['A', 'B', 'C', 'D'], [
+        ['A', 'B'],
+        ['B', 'C'],
+        ['C', 'D'],
+      ]);
+      // D has the highest anomaly (cascading symptom), A has the root cause
+      const metrics = makeMetrics({
+        A: [2, 3, 8, 12, 15], // root cause: gradual increase
+        B: [1, 2, 5, 15, 25], // symptom: larger spike
+        C: [1, 2, 4, 18, 30], // deeper symptom: even larger
+        D: [1, 2, 3, 20, 35], // deepest symptom: largest spike
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 4);
+
+      expect(results.length).toBeGreaterThan(0);
+      // Depth bonus should rank A (depth=3) above D (depth=0)
+      // despite D having a higher raw anomaly score
+      const ranks = results.map((r) => r.serviceId);
+      expect(ranks.indexOf('A')).toBeLessThan(ranks.indexOf('D'));
+    });
+
+    it('should rank deeper propagation services higher', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(['Root', 'Mid', 'Leaf'], [
+        ['Root', 'Mid'],
+        ['Mid', 'Leaf'],
+      ]);
+      // All similar anomaly: depth should be the tiebreaker
+      const metrics = makeMetrics({
+        Root: [5, 10, 15, 20, 25],
+        Mid: [5, 10, 15, 20, 25],
+        Leaf: [5, 10, 15, 20, 25],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 3);
+
+      // Root should be ranked first (highest depth)
+      expect(results[0]!.serviceId).toBe('Root');
+    });
+  });
 });
