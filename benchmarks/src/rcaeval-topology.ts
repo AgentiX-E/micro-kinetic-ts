@@ -78,42 +78,128 @@ const SOCKSHOP_EDGES: ReadonlyArray<[string, string]> = [
 // ── TrainTicket (Fudan microservices benchmark) ───────────
 
 /**
- * TrainTicket call graph (subset of key services).
+ * TrainTicket call graph (41 microservices).
  *
  * Architecture: https://github.com/FudanSELab/train-ticket
  *
- * Key dependencies:
- *   ts-ui → ts-travel-service, ts-train-service, ts-route-service,
- *           ts-preserve-service, ts-order-service, ts-user-service,
- *           ts-price-service, ts-station-service
- *   ts-travel-service → ts-train-service, ts-route-service, ts-station-service
- *   ts-order-service → ts-travel-service, ts-user-service, ts-price-service
- *   ts-preserve-service → ts-train-service, ts-route-service, ts-travel-service
+ * The system is a train ticket booking platform with three layers:
+ *   UI Layer: ts-ui (web frontend)
+ *   Gateway Layer: ts-gateway (API gateway, auth, routing)
+ *   Business Layer: ~35 domain services + admin services
+ *
+ * Key dependency patterns:
+ *   ts-ui → ALL business services (via gateway)
+ *   ts-order-service → ts-travel-service, ts-price-service, etc.
+ *   ts-admin-* → ts-auth, ts-user-service (authorized access)
+ *   ts-preserve-service → ts-seat-service, ts-train-service
+ *   Infrastructure: ts-verification-code, ts-voucher, ts-consign, etc.
  */
 const TRAINTICKET_EDGES: ReadonlyArray<[string, string]> = [
+  // ── UI → Core business services ─────────────────────────
   ['ts-ui', 'ts-travel-service'],
   ['ts-ui', 'ts-train-service'],
   ['ts-ui', 'ts-route-service'],
-  ['ts-ui', 'ts-preserve-service'],
-  ['ts-ui', 'ts-order-service'],
-  ['ts-ui', 'ts-user-service'],
-  ['ts-ui', 'ts-price-service'],
   ['ts-ui', 'ts-station-service'],
   ['ts-ui', 'ts-seat-service'],
+  ['ts-ui', 'ts-order-service'],
+  ['ts-ui', 'ts-preserve-service'],
+  ['ts-ui', 'ts-user-service'],
+  ['ts-ui', 'ts-price-service'],
   ['ts-ui', 'ts-config-service'],
   ['ts-ui', 'ts-security-service'],
-  ['ts-travel-service', 'ts-train-service'],
-  ['ts-travel-service', 'ts-route-service'],
-  ['ts-travel-service', 'ts-station-service'],
+  ['ts-ui', 'ts-auth-service'],
+  ['ts-ui', 'ts-payment-service'],
+  ['ts-ui', 'ts-assurance-service'],
+  ['ts-ui', 'ts-contacts-service'],
+  ['ts-ui', 'ts-food-service'],
+  ['ts-ui', 'ts-consign-service'],
+  ['ts-ui', 'ts-voucher-service'],
+  ['ts-ui', 'ts-verification-code-service'],
+  ['ts-ui', 'ts-basic-service'],
+  ['ts-ui', 'ts-cancel-service'],
+  ['ts-ui', 'ts-rebook-service'],
+  ['ts-ui', 'ts-execute-service'],
+  ['ts-ui', 'ts-travel2-service'],
+  ['ts-ui', 'ts-route-plan-service'],
+  ['ts-ui', 'ts-travel-plan-service'],
+  ['ts-ui', 'ts-ticket-office-service'],
+  ['ts-ui', 'ts-inside-payment-service'],
+  ['ts-ui', 'ts-order-other-service'],
+  ['ts-ui', 'ts-wait-order-service'],
+  ['ts-ui', 'ts-food-map-service'],
+  ['ts-ui', 'ts-train-food-service'],
+  ['ts-ui', 'ts-station-food-service'],
+  ['ts-ui', 'ts-food-delivery-service'],
+  ['ts-ui', 'ts-consign-price-service'],
+  ['ts-ui', 'ts-delivery-service'],
+  // ── Admin services → auth + target ─────────────────────
+  ['ts-admin-basic-info-service', 'ts-auth-service'],
+  ['ts-admin-basic-info-service', 'ts-basic-service'],
+  ['ts-admin-order-service', 'ts-auth-service'],
+  ['ts-admin-order-service', 'ts-order-service'],
+  ['ts-admin-route-service', 'ts-auth-service'],
+  ['ts-admin-route-service', 'ts-route-service'],
+  ['ts-admin-travel-service', 'ts-auth-service'],
+  ['ts-admin-travel-service', 'ts-travel-service'],
+  ['ts-admin-user-service', 'ts-auth-service'],
+  ['ts-admin-user-service', 'ts-user-service'],
+  // ── Order flow ──────────────────────────────────────────
   ['ts-order-service', 'ts-travel-service'],
   ['ts-order-service', 'ts-user-service'],
   ['ts-order-service', 'ts-price-service'],
+  ['ts-order-service', 'ts-station-service'],
+  ['ts-order-service', 'ts-assurance-service'],
+  ['ts-order-service', 'ts-payment-service'],
+  // ── Preserve/booking flow ───────────────────────────────
   ['ts-preserve-service', 'ts-train-service'],
   ['ts-preserve-service', 'ts-route-service'],
   ['ts-preserve-service', 'ts-travel-service'],
   ['ts-preserve-service', 'ts-seat-service'],
+  ['ts-preserve-service', 'ts-station-service'],
+  ['ts-preserve-service', 'ts-price-service'],
+  // ── Travel/Train/Route interdependency ──────────────────
+  ['ts-travel-service', 'ts-train-service'],
+  ['ts-travel-service', 'ts-route-service'],
+  ['ts-travel-service', 'ts-station-service'],
   ['ts-train-service', 'ts-route-service'],
   ['ts-train-service', 'ts-station-service'],
+  ['ts-travel2-service', 'ts-train-service'],
+  ['ts-travel2-service', 'ts-route-service'],
+  ['ts-travel2-service', 'ts-station-service'],
+  // ── Food delivery chain ────────────────────────────────
+  ['ts-food-service', 'ts-station-food-service'],
+  ['ts-food-service', 'ts-train-food-service'],
+  ['ts-food-service', 'ts-food-delivery-service'],
+  ['ts-food-map-service', 'ts-station-food-service'],
+  ['ts-food-map-service', 'ts-train-food-service'],
+  // ── Consign/delivery chain ──────────────────────────────
+  ['ts-consign-service', 'ts-consign-price-service'],
+  ['ts-consign-service', 'ts-delivery-service'],
+  // ── Payment chain ───────────────────────────────────────
+  ['ts-payment-service', 'ts-inside-payment-service'],
+  ['ts-payment-service', 'ts-voucher-service'],
+  // ── Supporting services ─────────────────────────────────
+  ['ts-execute-service', 'ts-order-service'],
+  ['ts-cancel-service', 'ts-order-service'],
+  ['ts-cancel-service', 'ts-payment-service'],
+  ['ts-rebook-service', 'ts-order-service'],
+  ['ts-rebook-service', 'ts-travel-service'],
+  ['ts-route-plan-service', 'ts-route-service'],
+  ['ts-route-plan-service', 'ts-train-service'],
+  ['ts-travel-plan-service', 'ts-travel-service'],
+  ['ts-travel-plan-service', 'ts-train-service'],
+  ['ts-ticket-office-service', 'ts-order-service'],
+  ['ts-ticket-office-service', 'ts-seat-service'],
+  ['ts-order-other-service', 'ts-order-service'],
+  ['ts-wait-order-service', 'ts-order-service'],
+  ['ts-wait-order-service', 'ts-seat-service'],
+  // ── Infrastructure → auth, config ──────────────────────
+  ['ts-contacts-service', 'ts-user-service'],
+  ['ts-assurance-service', 'ts-order-service'],
+  ['ts-verification-code-service', 'ts-user-service'],
+  ['ts-voucher-service', 'ts-order-service'],
+  ['ts-basic-service', 'ts-config-service'],
+  ['ts-config-service', 'ts-station-service'],
 ];
 
 // ── Benchmark System Identification ───────────────────────
