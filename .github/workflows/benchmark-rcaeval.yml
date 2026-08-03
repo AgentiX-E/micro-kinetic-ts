@@ -196,7 +196,16 @@ jobs:
 
       - name: Post summary
         run: |
-          echo '## Micro-Kinetic Benchmark Results' >> $GITHUB_STEP_SUMMARY
+          echo '## Micro-Kinetic Synthetic Benchmark' >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           cat benchmark-results.json >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '## RCAEval Real Dataset Benchmark (per-system, per-dataset)' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ -f rcaeval-results.txt ]; then
+            cat rcaeval-results.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo 'No RCAEval results (cache miss)' >> $GITHUB_STEP_SUMMARY
+          fi
           echo '```' >> $GITHUB_STEP_SUMMARY
