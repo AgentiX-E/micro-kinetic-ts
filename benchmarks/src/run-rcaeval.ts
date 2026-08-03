@@ -203,7 +203,9 @@ async function main(): Promise<void> {
   if (result.failures.length > 0) {
     console.log(`  Top Failures (${Math.min(5, result.failures.length)}/${result.failures.length}):`);
     for (const f of result.failures.slice(0, 5)) {
-      console.log(`    - ${f.caseId}: ${f.reason.slice(0, 100)}`);
+      const reason = f.reason || '(empty reason)';
+      console.log(`    - ${f.caseId}`);
+      console.log(`      ${reason.slice(0, 200)}`);
     }
   }
 
@@ -218,11 +220,14 @@ function buildSimpleCallGraph(serviceIds: string[]): import('@agentix-e/micro-ki
     nodes.set(id, { id, name: id, namespace: 'rca-eval', labels: {} });
   }
   const edges: import('@agentix-e/micro-kinetic-core').CallEdge[] = [];
-  if (serviceIds.length > 1) {
-    for (let i = 1; i < serviceIds.length; i++) {
+  // Create a ring topology so every service has at least one edge
+  // This satisfies the TreePruner invariant: edges.length > 0
+  if (serviceIds.length >= 2) {
+    for (let i = 0; i < serviceIds.length; i++) {
+      const next = (i + 1) % serviceIds.length;
       edges.push({
-        from: serviceIds[i - 1]!,
-        to: serviceIds[i]!,
+        from: serviceIds[i]!,
+        to: serviceIds[next]!,
         type: 'REST',
         callRate: 100,
         p99Latency: 50,
