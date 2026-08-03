@@ -232,9 +232,19 @@ function buildSimpleCallGraph(serviceIds: string[]): import('@agentix-e/micro-ki
     nodes.set(id, { id, name: id, namespace: 'rca-eval', labels: {} });
   }
   const edges: import('@agentix-e/micro-kinetic-core').CallEdge[] = [];
-  // Create a ring topology so every service has at least one edge
-  // This satisfies the TreePruner invariant: edges.length > 0
-  if (serviceIds.length >= 2) {
+  // Create a ring topology so every service has at least one edge.
+  // For single-service cases, create a self-call edge so the engine can still
+  // analyze anomaly propagation (even if trivially looped back to itself).
+  if (serviceIds.length === 1) {
+    edges.push({
+      from: serviceIds[0]!,
+      to: serviceIds[0]!,
+      type: 'INTERNAL',
+      callRate: 1,
+      p99Latency: 1,
+      errorRate: 0,
+    });
+  } else if (serviceIds.length >= 2) {
     for (let i = 0; i < serviceIds.length; i++) {
       const next = (i + 1) % serviceIds.length;
       edges.push({

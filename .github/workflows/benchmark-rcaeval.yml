@@ -86,15 +86,22 @@ jobs:
                       df = pd.read_parquet(metrics_pq)
                       # Reconstruct service-keyed format: {svc: [{timestamp, value, metric_name}]}
                       metrics_out = {}
+                      # Try different column name conventions
+                      cols = df.columns.tolist()
+                      svc_col = next((c for c in cols if c in ('service', 'service_id', 'serviceId', 'svc_id')), cols[0])
+                      ts_col = next((c for c in cols if c in ('timestamp', 'time', 'ts')), None)
+                      val_col = next((c for c in cols if c in ('value', 'val')), None)
+                      metric_col = next((c for c in cols if c in ('metric_name', 'metric', 'name')), None)
+
                       for _, row in df.iterrows():
-                          svc = str(row.get('service', row.get('service_id', '')))
+                          svc = str(row.get(svc_col, row.iloc[0] if len(cols) > 0 else ''))
                           if svc not in metrics_out:
                               metrics_out[svc] = []
-                          metrics_out[svc].append({
-                              'timestamp': int(row.get('timestamp', 0)),
-                              'value': float(row.get('value', 0)),
-                              'metric_name': str(row.get('metric_name', row.get('metric', ''))),
-                          })
+                          entry = {'timestamp': 0, 'value': 0.0, 'metric_name': ''}
+                          if ts_col and ts_col in row: entry['timestamp'] = int(row[ts_col])
+                          if val_col and val_col in row: entry['value'] = float(row[val_col])
+                          if metric_col and metric_col in row: entry['metric_name'] = str(row[metric_col])
+                          metrics_out[svc].append(entry)
                       with open(case_dst / 'metrics.json', 'w') as f:
                           json.dump(metrics_out, f)
 
