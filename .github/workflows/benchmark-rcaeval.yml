@@ -179,11 +179,11 @@ jobs:
           echo "=== Synthetic benchmark complete ==="
           cat benchmark-results.json
 
-      - name: Run RCAEval real dataset benchmark
+      - name: Run RCAEval industry-standard benchmark (per-system, per-dataset)
         if: steps.cache.outputs.cache-hit == 'true'
         run: |
-          echo "=== RCAEval real dataset benchmark ==="
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --max-cases 50 2>&1 | tee rcaeval-results.txt
+          echo "=== RCAEval industry-standard benchmark ==="
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts 2>&1 | tee rcaeval-results.txt
           echo "=== RCAEval benchmark complete ==="
 
       - name: Upload results
