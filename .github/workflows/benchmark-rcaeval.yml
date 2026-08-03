@@ -6,9 +6,16 @@ on:
     paths:
       - '.github/workflows/benchmark-rcaeval.yml'
       - 'packages/**/src/**'
+      - 'benchmarks/src/**'
 
 permissions:
-  contents: read
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   benchmark:
@@ -48,7 +55,6 @@ jobs:
           if [ "$TOTAL_FILES" -lt 50 ]; then
             echo "::warning::Insufficient cached files ($TOTAL_FILES). Run Cache Datasets workflow first."
           fi
-          # Check data dirs
           find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | head -20
 
       - name: Convert Parquet to RCAEval JSON (pandas bridge)
@@ -64,12 +70,9 @@ jobs:
           out_dir = os.path.expanduser('~/RCAEval-json')
           os.makedirs(out_dir, exist_ok=True)
 
-          # Discover case directories (those containing metrics.parquet or inject_time.parquet)
           case_dirs = set()
           for pq in Path(cache_dir).rglob('*.parquet'):
-              rel = pq.relative_to(cache_dir)
-              # Case dir is the parent of the Parquet file
-              case_dirs.add(rel.parent)
+              case_dirs.add(pq.relative_to(cache_dir).parent)
 
           print(f'Found {len(case_dirs)} case directories')
           converted = 0
@@ -80,46 +83,35 @@ jobs:
               os.makedirs(case_dst, exist_ok=True)
 
               try:
-                  # ── Convert metrics.parquet → old-style nested JSON ──
                   metrics_pq = case_src / 'metrics.parquet'
                   if metrics_pq.exists():
                       df = pd.read_parquet(metrics_pq)
                       metrics_out = {}
-
-                      # Detect format: wide (time-indexed) vs long (tidy)
-                      #   Wide: rows=timestamps, cols=metric_labels like "svc_name::metric"
-                      #   Long: columns include 'service', 'timestamp', 'value', 'metric_name'
                       first_col = str(df.columns[0]) if len(df.columns) > 0 else ''
 
                       if 'service' in df.columns or 'service_id' in df.columns:
-                          # Long/tidy format
                           svc_col = next((c for c in df.columns if c in ('service', 'service_id', 'serviceId')), df.columns[0])
                           ts_col = next((c for c in df.columns if c in ('timestamp', 'time', 'ts')), None)
                           val_col = next((c for c in df.columns if c in ('value', 'val')), None)
                           metric_col = next((c for c in df.columns if c in ('metric_name', 'metric', 'name')), None)
                           for _, row in df.iterrows():
                               svc = str(row[svc_col])
-                              if svc not in metrics_out:
-                                  metrics_out[svc] = []
+                              if svc not in metrics_out: metrics_out[svc] = []
                               metrics_out[svc].append({
                                   'timestamp': int(row[ts_col]) if ts_col and ts_col in row else 0,
                                   'value': float(row[val_col]) if val_col and val_col in row else 0.0,
                                   'metric_name': str(row[metric_col]) if metric_col and metric_col in row else '',
                               })
                       else:
-                          # Wide format: melt into long form
-                          # Columns: {timestamp} | svc::metric | svc::metric | ...
                           ts_vals = df.iloc[:, 0].tolist() if len(df.columns) > 0 else []
                           for col in df.columns[1:]:
                               col_str = str(col)
-                              # Parse "service::metric" or "service_metric" convention
                               parts = col_str.split('::') if '::' in col_str else col_str.rsplit('_', 1)
                               svc = parts[0] if len(parts) >= 1 else col_str
                               metric = parts[1] if len(parts) >= 2 else col_str
                               for idx, val in enumerate(df[col]):
                                   ts = int(ts_vals[idx]) if idx < len(ts_vals) else 0
-                                  if svc not in metrics_out:
-                                      metrics_out[svc] = []
+                                  if svc not in metrics_out: metrics_out[svc] = []
                                   metrics_out[svc].append({
                                       'timestamp': ts,
                                       'value': float(val) if pd.notna(val) else 0.0,
@@ -128,7 +120,6 @@ jobs:
                       with open(case_dst / 'metrics.json', 'w') as f:
                           json.dump(metrics_out, f)
 
-                  # ── Copy inject_time (may be parquet or txt) ──
                   inject_pq = case_src / 'inject_time.parquet'
                   inject_txt = case_src / 'inject_time.txt'
                   if inject_pq.exists():
@@ -136,10 +127,8 @@ jobs:
                       val = int(df.iloc[0, 0]) if len(df) > 0 else 0
                       (case_dst / 'inject_time.txt').write_text(str(val))
                   elif inject_txt.exists():
-                      import shutil
-                      shutil.copy(inject_txt, case_dst / 'inject_time.txt')
+                      import shutil; shutil.copy(inject_txt, case_dst / 'inject_time.txt')
 
-                  # ── Copy ground_truth ──
                   for gt_name in ['ground_truth.json', 'ground_truth.parquet']:
                       gt_src = case_src / gt_name
                       if gt_src.exists():
@@ -149,21 +138,18 @@ jobs:
                               with open(case_dst / 'ground_truth.json', 'w') as f:
                                   json.dump(gt_data, f, default=str)
                           else:
-                              import shutil
-                              shutil.copy(gt_src, case_dst / 'ground_truth.json')
+                              import shutil; shutil.copy(gt_src, case_dst / 'ground_truth.json')
                           break
 
-                  # ── Copy logs/traces if present ──
                   for aux_file in case_src.glob('*'):
                       if aux_file.suffix in ['.csv', '.txt'] and aux_file.name not in ['metrics.parquet', 'inject_time.parquet']:
-                          import shutil
-                          shutil.copy(aux_file, case_dst / aux_file.name)
+                          import shutil; shutil.copy(aux_file, case_dst / aux_file.name)
 
                   converted += 1
               except Exception as e:
                   print(f'  Skip {case_rel}: {e}')
 
-          print(f'Converted {converted}/{len(case_dirs)} case directories to RCAEval JSON at {out_dir}')
+          print(f'Converted {converted}/{len(case_dirs)} case directories to JSON at {out_dir}')
           "
 
       - name: Verify converted JSON
@@ -176,23 +162,99 @@ jobs:
       - name: Run Micro-Kinetic benchmark (synthetic + classifier)
         run: |
           pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
-          echo "=== Synthetic benchmark complete ==="
-          cat benchmark-results.json
 
-      - name: Run RCAEval industry-standard benchmark (per-system, per-dataset)
+      - name: Run RCAEval industry-standard benchmark
         if: steps.cache.outputs.cache-hit == 'true'
         run: |
-          echo "=== RCAEval industry-standard benchmark ==="
           pnpm exec tsx benchmarks/src/run-rcaeval.ts 2>&1 | tee rcaeval-results.txt
-          echo "=== RCAEval benchmark complete ==="
 
-      - name: Upload results
+      - name: Generate HTML dashboard
+        run: |
+          python3 -c "
+          import json, os
+          from datetime import datetime, timezone
+
+          synthetic = json.load(open('benchmark-results.json'))
+          rcaeval_raw = open('rcaeval-results.txt').read() if os.path.exists('rcaeval-results.txt') else 'Not available (cache miss)'
+
+          now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+          sha = os.environ.get('GITHUB_SHA', 'unknown')[:8]
+          run_id = os.environ.get('GITHUB_RUN_ID', '?')
+
+          synthetic_rows = '\n'.join([
+              f'<tr><td>{m[\"name\"]}</td><td>{m[\"value\"]}</td><td>{m[\"unit\"]}</td></tr>'
+              for m in synthetic
+          ])
+
+          html = f'''<!DOCTYPE html>
+          <html lang=\"en\">
+          <head>
+          <meta charset=\"UTF-8\">
+          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+          <title>Micro-Kinetic Benchmark Dashboard</title>
+          <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.6; padding: 20px; }}
+            .container {{ max-width: 1400px; margin: 0 auto; }}
+            h1 {{ color: #58a6ff; font-size: 2em; border-bottom: 2px solid #30363d; padding-bottom: 12px; margin-bottom: 20px; }}
+            h2 {{ color: #f0883e; margin: 30px 0 15px; font-size: 1.5em; }}
+            h3 {{ color: #7ee787; margin: 20px 0 10px; }}
+            .meta {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px 20px; margin-bottom: 20px; font-size: 0.9em; }}
+            .meta span {{ color: #8b949e; }}
+            .meta strong {{ color: #58a6ff; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 10px 0 20px; background: #161b22; border-radius: 8px; overflow: hidden; }}
+            th, td {{ padding: 10px 14px; text-align: left; border: 1px solid #21262d; }}
+            th {{ background: #1f2937; color: #58a6ff; font-weight: 600; }}
+            tr:hover {{ background: #1c2129; }}
+            .score-100 {{ background: #0e4429; color: #7ee787; }}
+            .score-90 {{ background: #0e4429; color: #7ee787; }}
+            .score-80 {{ background: #1b3a1b; color: #56d364; }}
+            .score-60 {{ background: #5c3a00; color: #d29922; }}
+            .score-low {{ background: #490202; color: #f85149; }}
+            pre {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px; overflow-x: auto; font-size: 0.85em; }}
+            .pass {{ color: #7ee787; }} .fail {{ color: #f85149; }}
+            .grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+            @media (max-width: 900px) {{ .grid-2 {{ grid-template-columns: 1fr; }} }}
+          </style>
+          </head>
+          <body>
+          <div class=\"container\">
+          <h1> Micro-Kinetic Benchmark Dashboard</h1>
+          <div class=\"meta\">
+            <strong>Commit:</strong> {sha} &nbsp;|&nbsp;
+            <strong>Run:</strong> <a href=\"https://github.com/AgentiX-E/micro-kinetic-ts/actions/runs/{run_id}\" style=\"color:#58a6ff\">#{run_id}</a> &nbsp;|&nbsp;
+            <strong>Time:</strong> {now}
+          </div>
+
+          <h2> Synthetic Benchmark (175 cases, 6 fault types)</h2>
+          <table>
+            <tr><th>Metric</th><th>Value</th><th>Unit</th></tr>
+            {synthetic_rows}
+          </table>
+
+          <h2> RCAEval Real Dataset (per-system, per-dataset)</h2>
+          <pre>{rcaeval_raw}</pre>
+
+          <p style=\"text-align:center;color:#8b949e;margin-top:40px;font-size:0.8em\">
+            Powered by AgentiX-E Micro-Kinetic &middot; Deng Yu Kinetic Theory &middot; Auto-generated by CI
+          </p>
+          </div>
+          </body>
+          </html>'''
+
+          with open('index.html', 'w') as f:
+              f.write(html)
+          print('Dashboard generated: index.html')
+          "
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: |
             benchmark-results.json
             rcaeval-results.txt
+            index.html
 
       - name: Post summary
         run: |
@@ -210,34 +272,13 @@ jobs:
           fi
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Commit results to repo
-        if: github.event_name == 'workflow_dispatch' && steps.cache.outputs.cache-hit == 'true' && success()
-        run: |
-          if [ ! -f rcaeval-results.txt ]; then
-            echo "No RCAEval results to commit"
-            exit 0
-          fi
-          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          {
-            echo "# Micro-Kinetic RCAEval Benchmark"
-            echo ""
-            echo "**Date**: $TIMESTAMP"
-            echo "**Commit**: $GITHUB_SHA"
-            echo ""
-            cat rcaeval-results.txt
-          } > BENCHMARK.md
-          git config user.email "ci@agentix-e.dev"
-          git config user.name "CI Bot"
-          git add BENCHMARK.md
-          git diff --staged --quiet || git commit -m "ci: update benchmark results $TIMESTAMP"
-          git push origin main
-
-          # Write results to a JSON file for API access
-          if [ -f rcaeval-results.txt ]; then
-            python3 -c "
-import json, sys
-results = {'raw': open('rcaeval-results.txt').read()}
-with open('rcaeval-summary.json', 'w') as f:
-    json.dump(results, f)
-"
-          fi
+      - name: Deploy to GitHub Pages
+        if: success()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          publish_branch: gh-pages
+          force_orphan: true
+          enable_jekyll: false
+          destination_dir: benchmark
