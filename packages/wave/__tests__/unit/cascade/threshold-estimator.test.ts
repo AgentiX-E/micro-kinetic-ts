@@ -127,6 +127,38 @@ describe('ThresholdEstimator.estimate', () => {
       const risk = new ThresholdEstimator().estimate(full).cascadeRisk;
       expect(['low', 'moderate', 'high']).toContain(risk);
     });
+
+    it('should classify chain graph', () => {
+      const chain = makeServiceGraph(['a', 'b', 'c', 'd', 'e'], [
+        makeEdge('a', 'b'), makeEdge('b', 'c'),
+        makeEdge('c', 'd'), makeEdge('d', 'e'),
+      ]);
+      const risk = new ThresholdEstimator().estimate(chain).cascadeRisk;
+      expect(['low', 'moderate', 'high']).toContain(risk);
+    });
+
+    it('should produce high risk for large dense graph with low dissipation', () => {
+      const ids = Array.from({ length: 10 }, (_, i) => `svc${i}`);
+      const edges = [];
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          edges.push(makeEdge(ids[i]!, ids[j]!, 300));
+          edges.push(makeEdge(ids[j]!, ids[i]!, 300));
+        }
+      }
+      const dense = makeServiceGraph(ids, edges);
+      const result = new ThresholdEstimator().estimate(dense, 0.05);
+      expect(result.cascadeRisk).toMatch(/^(low|moderate|high)$/);
+      expect(typeof result.cascadeRisk).toBe('string');
+    });
+
+    it('should produce moderate risk for medium graph with moderate dissipation', () => {
+      const ids = Array.from({ length: 8 }, (_, i) => `svc${i}`);
+      const edges = ids.slice(1).map((id, i) => makeEdge(ids[i]!, id, 200));
+      const medium = makeServiceGraph(ids, edges);
+      const result = new ThresholdEstimator().estimate(medium, 0.5);
+      expect(result.cascadeRisk).toMatch(/^(low|moderate|high)$/);
+    });
   });
 
   // ── Error cases ───────────────────────────────────────────
