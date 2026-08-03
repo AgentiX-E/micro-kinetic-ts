@@ -165,6 +165,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Debug: print first case structure
+  const first = loadedCases[0]!;
+  console.log('');
+  console.log(`First case:  ${first.id}`);
+  console.log(`  Nodes:    ${first.callGraph.nodes.size}`);
+  console.log(`  Edges:    ${first.callGraph.edges.length}`);
+  console.log(`  Metrics:  ${[...first.metrics.keys()].join(', ').slice(0, 80)}`);
+  console.log(`  GT svc:   ${first.groundTruth?.serviceId ?? '?'}`);
+  console.log(`  GT type:  ${first.groundTruth?.faultType ?? '?'}`);
+
   const suite: BenchmarkSuite = {
     name: 'RCAEval Real',
     cases: loadedCases,
@@ -205,7 +215,9 @@ async function main(): Promise<void> {
     for (const f of result.failures.slice(0, 5)) {
       const reason = f.reason || '(empty reason)';
       console.log(`    - ${f.caseId}`);
-      console.log(`      ${reason.slice(0, 200)}`);
+      console.log(`      expected: ${f.expectedService}/${f.expectedFaultType}`);
+      console.log(`      actual:   ${f.actualTop ?? 'none'}/${f.actualFaultType ?? 'none'}`);
+      console.log(`      ${reason}`);
     }
   }
 
