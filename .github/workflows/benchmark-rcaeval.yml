@@ -51,6 +51,44 @@ jobs:
           # Check data dirs
           find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | head -20
 
+      - name: Convert Parquet to JSON (pandas bridge)
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: |
+          pip install pandas pyarrow 2>/dev/null || true
+          python3 -c "
+          import os, json, glob
+          from pathlib import Path
+
+          cache_dir = os.path.expanduser('~/RCAEval-data')
+          out_dir = os.path.expanduser('~/RCAEval-json')
+          os.makedirs(out_dir, exist_ok=True)
+
+          pq_files = list(Path(cache_dir).rglob('*.parquet'))
+          total = len(pq_files)
+          print(f'Found {total} Parquet files')
+
+          # Use pandas to convert
+          import pandas as pd
+          converted = 0
+          for pq in pq_files:
+              try:
+                  df = pd.read_parquet(pq)
+                  json_path = os.path.join(out_dir, pq.relative_to(cache_dir).with_suffix('.json'))
+                  os.makedirs(os.path.dirname(json_path), exist_ok=True)
+                  df.to_json(json_path, orient='records', date_format='iso')
+                  converted += 1
+              except Exception as e:
+                  print(f'  Skip {pq.name}: {e}')
+          print(f'Converted {converted}/{total} Parquet files to JSON at {out_dir}')
+          "
+
+      - name: Verify converted JSON
+        if: steps.cache.outputs.cache-hit == 'true'
+        run: |
+          JSON_COUNT=$(find ~/RCAEval-json -name '*.json' 2>/dev/null | wc -l)
+          echo "JSON files available: $JSON_COUNT"
+          find ~/RCAEval-json -maxdepth 3 -type d 2>/dev/null | head -20
+
       - name: Run Micro-Kinetic benchmark (synthetic + classifier)
         run: |
           pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
