@@ -309,4 +309,3 @@ export function buildRCAEvalCallGraph(
 
   return { nodes, edges, systemLoad: 0.5 };
 }
-// CI trigger Mon Aug  3 11:55:12 PM CST 2026

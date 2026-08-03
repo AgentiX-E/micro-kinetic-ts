@@ -211,7 +211,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Commit results to repo
-        if: steps.cache.outputs.cache-hit == 'true' && success()
+        if: github.event_name == 'workflow_dispatch' && steps.cache.outputs.cache-hit == 'true' && success()
         run: |
           if [ ! -f rcaeval-results.txt ]; then
             echo "No RCAEval results to commit"
