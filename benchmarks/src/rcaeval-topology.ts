@@ -247,6 +247,7 @@ export function buildRCAEvalCallGraph(
   const svcSet = new Set(serviceIds);
   const connectedSvcs = new Set<string>();
   const edges: CallEdge[] = [];
+  let matchedEdgeCount = 0;
 
   // Add known topology edges (only if both services are in the case)
   for (const [from, to] of edgeMap) {
@@ -261,6 +262,7 @@ export function buildRCAEvalCallGraph(
       });
       connectedSvcs.add(from);
       connectedSvcs.add(to);
+      matchedEdgeCount++;
     }
   }
 
