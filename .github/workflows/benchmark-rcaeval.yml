@@ -43,7 +43,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-data
-          key: RCAEval-datasets-v2-pq
+          key: RCAEval-datasets-v3-trlogs
           restore-keys: |
             RCAEval-datasets-
 
@@ -142,6 +142,18 @@ jobs:
                               import shutil; shutil.copy(gt_src, case_dst / 'ground_truth.json')
                           break
 
+                  # ── Convert traces.parquet → traces.csv (RE2/RE3) ──
+                  traces_pq = case_src / 'traces.parquet'
+                  if traces_pq.exists():
+                      df = pd.read_parquet(traces_pq)
+                      df.to_csv(case_dst / 'traces.csv', index=False)
+
+                  # ── Convert logs.parquet → logs.csv (RE2/RE3) ──
+                  logs_pq = case_src / 'logs.parquet'
+                  if logs_pq.exists():
+                      df = pd.read_parquet(logs_pq)
+                      df.to_csv(case_dst / 'logs.csv', index=False)
+
                   for aux_file in case_src.glob('*'):
                       if aux_file.suffix in ['.csv', '.txt'] and aux_file.name not in ['metrics.parquet', 'inject_time.parquet']:
                           import shutil; shutil.copy(aux_file, case_dst / aux_file.name)
@@ -157,7 +169,11 @@ jobs:
         if: steps.cache.outputs.cache-hit == 'true'
         run: |
           JSON_COUNT=$(find ~/RCAEval-json -name '*.json' 2>/dev/null | wc -l)
+          TRACE_COUNT=$(find ~/RCAEval-json -name 'traces.csv' 2>/dev/null | wc -l)
+          LOG_COUNT=$(find ~/RCAEval-json -name 'logs.csv' 2>/dev/null | wc -l)
           echo "JSON files available: $JSON_COUNT"
+          echo "Trace files available: $TRACE_COUNT"
+          echo "Log files available: $LOG_COUNT"
           find ~/RCAEval-json -maxdepth 3 -type d 2>/dev/null | head -20
 
       - name: Run Micro-Kinetic benchmark (synthetic + classifier)
