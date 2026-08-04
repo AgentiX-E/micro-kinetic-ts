@@ -33,6 +33,7 @@ import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { buildRCAEvalCallGraph } from './rcaeval-topology.js';
+import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -145,7 +146,23 @@ function loadCases(
     try {
       const rawCase = loader.loadCase(meta.dirPath);
       const serviceIds = Object.keys(rawCase.metrics);
-      const callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+      let callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+
+      // Trace-validated topology pruning for RE2/RE3
+      if (rawCase.traces && rawCase.traces.length > 0) {
+        const spans = rawCase.traces.map((t) => ({
+          traceId: t.traceId,
+          spanId: t.spanId,
+          parentSpanId: t.parentSpanId ?? '',
+          service: t.service,
+          operation: t.operationName,
+          duration: t.duration,
+          statusCode: t.status === 'ERROR' ? 500 : 200,
+          isError: t.status === 'ERROR',
+          startTime: t.startTime * 1000,
+        }));
+        callGraph = augmentTopologyWithTraces(callGraph, spans, { minCallFrequency: 1 });
+      }
       const suiteName = meta.suite === 'RE1' ? 'rcaeval-re1' as const
         : meta.suite === 'RE2' ? 'rcaeval-re2' as const
         : 'rcaeval-re3' as const;
