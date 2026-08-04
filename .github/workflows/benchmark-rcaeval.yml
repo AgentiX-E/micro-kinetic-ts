@@ -14,10 +14,6 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: benchmark-${{ github.run_id }}
-  cancel-in-progress: false
-
 jobs:
   benchmark:
     runs-on: ubuntu-latest
