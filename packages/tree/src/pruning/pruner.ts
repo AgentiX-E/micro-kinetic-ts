@@ -364,23 +364,30 @@ function computeAnomalyScore(
     const mean = sum / n;
     if (mean <= 0) continue;
 
-    // BARO-style robust deviation: |value - median| / IQR
-    // Median and IQR are distribution-free and outlier-resistant,
-    // the same approach BARO (FSE'24, avg@5=0.90) and NSigma use.
-    // Sort copy for median computation
-    const sorted = [...ts.values].sort((a, b) => a - b);
-    const median = n % 2 === 0
-      ? (sorted[n / 2 - 1]! + sorted[n / 2]!) / 2
-      : sorted[Math.floor(n / 2)]!;
-    if (median <= 0) continue;
+    // ── Simple change point detection ──────────────────────
+    // Find inflection point where cumulative deviation crosses 1.5σ.
+    // Pre-inflection data is the "normal period" for baseline computation,
+    // matching BARO's insight that root cause scoring should compare
+    // post-change behavior against a clean pre-change baseline.
+    const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+    const fullStd = Math.sqrt(fullVariance);
+    let changePt = n;
+    for (let i = 1; i < n; i++) {
+      if (ts.values[i]! > mean + 1.5 * fullStd) { changePt = i; break; }
+    }
 
-    const q1 = sorted[Math.floor(n * 0.25)]!;
-    const q3 = sorted[Math.floor(n * 0.75)]!;
-    const iqr = q3 - q1;
-    if (iqr <= 0) continue;
+    // Use pre-change baseline if change point detected
+    let baselineMean = mean;
+    if (changePt < n && changePt > 2) {
+      let bs = 0;
+      for (let i = 0; i < changePt; i++) bs += ts.values[i]!;
+      baselineMean = bs / changePt;
+      if (baselineMean <= 0) baselineMean = mean;
+    }
 
-    const deviation = Math.abs(max - median) / iqr;
-    if (deviation < 0.5) continue;
+    // Deviation: max value vs pre-change baseline (change-point-calibrated)
+    const deviation = Math.abs(max - baselineMean) / baselineMean;
+    if (deviation < 0.05) continue;
 
     // Trend slope (linear regression)
     let sx = 0, sy = 0, sxx = 0, sxy = 0;
@@ -415,8 +422,8 @@ function computeAnomalyScore(
       }
     }
 
-    // Feature-weighted score (BARO-style: all weights relative to IQR baseline)
-    let featureScore = Math.min(1, deviation / 3); // normalize to [0,1] with IQR baseline
+    // Feature-weighted score
+    let featureScore = deviation;
     if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.3;
     if (hasBurst) featureScore += deviation * 0.2;
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.15;
@@ -444,15 +451,11 @@ function computeAnomalyScoreAndOnset(
   if (serviceMetrics) {
     for (const ts of serviceMetrics) {
       if (ts.values.length < 2) continue;
-      const n = ts.values.length;
-      // BARO-style median/IQR for robust onset detection
-      const sorted = [...ts.values].sort((a, b) => a - b);
-      const median = n % 2 === 0 ? (sorted[n/2-1]! + sorted[n/2]!)/2 : sorted[Math.floor(n/2)]!;
-      const q1 = sorted[Math.floor(n*0.25)]!, q3 = sorted[Math.floor(n*0.75)]!;
-      const iqr = q3 - q1;
-      if (iqr <= 0) continue;
-      for (let i = 0; i < n; i++) {
-        if (Math.abs(ts.values[i]! - median) / iqr > 1.5) { onset = i; break; }
+      let sum = 0; for (let i = 0; i < ts.values.length; i++) sum += ts.values[i]!;
+      const mean = sum / ts.values.length;
+      if (mean <= 0) continue;
+      for (let i = 0; i < ts.values.length; i++) {
+        if (Math.abs(ts.values[i]! - mean) / mean > 0.3) { onset = i; break; }
       }
     }
   }
