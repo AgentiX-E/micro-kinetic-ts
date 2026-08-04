@@ -137,19 +137,22 @@ function loadCases(
   metas: CaseMeta[],
   loader: RCAEvalLoader,
   maxCases: number,
-): { cases: BenchmarkCase[]; errors: string[] } {
+): { cases: BenchmarkCase[]; errors: string[]; traceStats: { total: number; pruned: number; avgEdgesBefore: number; avgEdgesAfter: number } } {
   const loaded: BenchmarkCase[] = [];
   const errors: string[] = [];
   const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
+  let traceCount = 0, prunedCount = 0, edgesBeforeSum = 0, edgesAfterSum = 0;
 
   for (const meta of selected) {
     try {
       const rawCase = loader.loadCase(meta.dirPath);
       const serviceIds = Object.keys(rawCase.metrics);
       let callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+      const edgesBefore = callGraph.edges.length;
 
       // Trace-validated topology pruning for RE2/RE3
       if (rawCase.traces && rawCase.traces.length > 0) {
+        traceCount++;
         const spans = rawCase.traces.map((t) => ({
           traceId: t.traceId,
           spanId: t.spanId,
@@ -162,7 +165,10 @@ function loadCases(
           startTime: t.startTime * 1000,
         }));
         callGraph = augmentTopologyWithTraces(callGraph, spans, { minCallFrequency: 1 });
+        if (callGraph.edges.length < edgesBefore) prunedCount++;
       }
+      edgesBeforeSum += edgesBefore;
+      edgesAfterSum += callGraph.edges.length;
       const suiteName = meta.suite === 'RE1' ? 'rcaeval-re1' as const
         : meta.suite === 'RE2' ? 'rcaeval-re2' as const
         : 'rcaeval-re3' as const;
@@ -172,7 +178,7 @@ function loadCases(
     }
   }
 
-  return { cases: loaded, errors };
+  return { cases: loaded, errors, traceStats: { total: traceCount, pruned: prunedCount, avgEdgesBefore: edgesBeforeSum / Math.max(1, selected.length), avgEdgesAfter: edgesAfterSum / Math.max(1, selected.length) } };
 }
 
 // ── Output — Industry-Standard Table ──────────────────────
@@ -270,13 +276,18 @@ async function main(): Promise<void> {
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
-    const { cases, errors } = loadCases(metas, loader, caseLimit);
+    const { cases, errors, traceStats } = loadCases(metas, loader, caseLimit);
 
     if (errors.length > 0) {
       console.log(`\nLoad errors (${systemName}/${suiteName}):`);
       for (const e of errors.slice(0, 3)) console.log(`  - ${e}`);
     }
     if (cases.length === 0) continue;
+
+    // Trace pruning diagnostics
+    if (traceStats.total > 0) {
+      console.log(`  [trace] ${traceStats.total}/${cases.length} cases with traces, ${traceStats.pruned} pruned, avg edges: ${traceStats.avgEdgesBefore.toFixed(0)} → ${traceStats.avgEdgesAfter.toFixed(0)}`);
+    }
 
     // Split by fault type (matching paper's Table 6 format)
     const byFaultType = new Map<string, BenchmarkCase[]>();
