@@ -51,7 +51,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v1-trlogs
+          key: RCAEval-json-v2
           restore-keys: |
             RCAEval-datasets-
 
