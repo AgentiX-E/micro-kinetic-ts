@@ -39,13 +39,19 @@ jobs:
           pnpm build
 
       - name: Restore cached RCAEval datasets
-        id: cache
         uses: actions/cache@v4
         with:
-          path: |
-            ~/RCAEval-data
-            ~/RCAEval-json
-          key: RCAEval-datasets-v3-jsoncached
+          path: ~/RCAEval-data
+          key: RCAEval-datasets-v2-pq
+          restore-keys: |
+            RCAEval-datasets-
+
+      - name: Restore cached RCAEval JSON
+        id: jsonCache
+        uses: actions/cache@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v1-trlogs
           restore-keys: |
             RCAEval-datasets-
 
@@ -61,7 +67,7 @@ jobs:
           find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | head -20
 
       - name: Convert Parquet to RCAEval JSON (pandas bridge)
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.jsonCache.outputs.cache-hit != 'true'
         run: |
           pip install pandas pyarrow 2>/dev/null || true
           python3 -c "
@@ -168,7 +174,7 @@ jobs:
           "
 
       - name: Verify converted JSON
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.jsonCache.outputs.cache-hit != 'true'
         run: |
           JSON_COUNT=$(find ~/RCAEval-json -name '*.json' 2>/dev/null | wc -l)
           TRACE_COUNT=$(find ~/RCAEval-json -name 'traces.csv' 2>/dev/null | wc -l)
