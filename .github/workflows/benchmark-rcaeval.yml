@@ -15,8 +15,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: benchmark-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   benchmark:
