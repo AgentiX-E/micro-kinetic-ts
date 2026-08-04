@@ -43,7 +43,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-data
-          key: RCAEval-datasets-v3-traces
+          key: RCAEval-datasets-v2-pq
           restore-keys: |
             RCAEval-datasets-
 
