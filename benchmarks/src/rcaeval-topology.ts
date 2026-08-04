@@ -207,10 +207,11 @@ const TRAINTICKET_EDGES: ReadonlyArray<[string, string]> = [
 /** Map case ID prefix to benchmark system name. */
 function identifyBenchmarkSystem(caseId: string): 'OnlineBoutique' | 'SockShop' | 'TrainTicket' | null {
   const lower = caseId.toLowerCase();
-  // Case IDs: re1ob_, re2ss_ss_carts, re3tt_, etc.
-  if (lower.includes('_ob_') || lower.includes('ob_') && !lower.includes('_ss_') && !lower.includes('_tt_')) return 'OnlineBoutique';
-  if (lower.includes('_ss_') || lower.includes('ss_')) return 'SockShop';
-  if (lower.includes('_tt_') || lower.includes('tt_')) return 'TrainTicket';
+  // Case IDs from RCAEvalLoader: re1ob, re2ss, re3tt (benchmark prefix only)
+  // Also handle full dir names: re1ob_adservice_cpu_1, re2ss_carts_cpu_3, etc.
+  if (lower.startsWith('re1ob') || lower.includes('_ob_') || (lower.includes('ob') && !lower.includes('ss') && !lower.includes('tt'))) return 'OnlineBoutique';
+  if (lower.startsWith('re2ss') || lower.includes('_ss_') || (lower.includes('ss') && !lower.includes('ob') && !lower.includes('tt'))) return 'SockShop';
+  if (lower.startsWith('re3tt') || lower.includes('_tt_') || (lower.includes('tt') && !lower.includes('ob') && !lower.includes('ss'))) return 'TrainTicket';
   return null;
 }
 
