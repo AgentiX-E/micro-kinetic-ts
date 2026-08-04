@@ -55,6 +55,22 @@ export type { PyramidClassifierConfig } from './classifiers/pyramid-classifier.j
 
 export { createDefaultContainer } from './di/container.js';
 
+// ── Signals ──────────────────────────────────────────────
+
+export {
+  MultiSignalFusionEngine,
+} from './signals/fusion-engine.js';
+
+export {
+  TraceSignalProvider,
+} from './signals/trace-provider.js';
+
+export {
+  augmentTopologyWithTraces,
+  canValidateWithTraces,
+} from './signals/trace-topology.js';
+export type { TraceTopologyConfig } from './signals/trace-topology.js';
+
 // ── Defaults ──────────────────────────────────────────────
 
 export { DEFAULTS } from './di/defaults.js';

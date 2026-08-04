@@ -119,3 +119,18 @@ export type { LLMRetryConfig, TopologyValidationResult } from './utils/llm-valid
 
 // ── Topology Provider Interface ───────────────────────────
 export type * from './interfaces/topology-provider.js';
+
+// ── Multi-Signal Fusion ───────────────────────────────────
+export { DEFAULT_FUSION_WEIGHTS } from './interfaces/multi-signal-fusion.js';
+export type {
+  FusionMode,
+  FusionWeights,
+  ISignalProvider,
+  LearningEntry,
+  MultiSignalConfig,
+  SignalAnalysisContext,
+  SignalMetadata,
+  SignalQuality,
+  SignalResult,
+  TraceSpan,
+} from './interfaces/multi-signal-fusion.js';

@@ -203,7 +203,7 @@ export class MultiSignalFusionEngine {
       .sort((a, b) => b[1] - a[1])
       .map(([serviceId, score]) => ({
         serviceId,
-        faultType: { category: 'UNKNOWN' as const, subType: 'multi_signal_fusion', severity: score > 0.7 ? 'critical' : 'major' },
+        faultType: { category: 'UNKNOWN' as const, subType: 'fusion', severity: 'major' as const },
         confidence: Math.min(1, score),
         rank: 0,
         evidenceMetrics: [{ metric: 'fusion_score', value: score, threshold: 0.3 }],

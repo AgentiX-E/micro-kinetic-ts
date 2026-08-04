@@ -24,8 +24,6 @@ import type {
   TraceSpan,
 } from '@agentix-e/micro-kinetic-core';
 
-export { type TraceSpan };
-
 /**
  * Trace-based signal provider for root cause analysis.
  */
@@ -55,10 +53,10 @@ export class TraceSignalProvider implements ISignalProvider {
       .sort((a, b) => b[1] - a[1])
       .map(([serviceId, score]) => ({
         serviceId,
-        faultType: { category: 'UNKNOWN' as const, subType: 'trace_anomaly', severity: score > 0.7 ? 'critical' : score > 0.4 ? 'major' : 'minor' },
+        faultType: { category: 'UNKNOWN' as const, subType: 'trace_anomaly', severity: (score > 0.7 ? 'critical' : score > 0.4 ? 'major' : 'minor') as 'critical' | 'major' | 'minor' },
         confidence: Math.min(1, score),
         rank: 0,
-        evidenceMetrics: [{ metric: 'trace_anomaly_score', value: score, threshold: 0.3 }],
+        evidenceMetrics: [{ metric: 'trace_score', value: score, threshold: 0.3 }],
         propagationDepth: 0,
         propagationErrorBound: 0.1,
         viaTreeSearch: true,
