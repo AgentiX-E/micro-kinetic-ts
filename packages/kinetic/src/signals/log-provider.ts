@@ -18,6 +18,11 @@
  *
  * Reference: MicroRCA-Agent (CCF AIOps 2025), Drain (He et al., 2017)
  *
+ * TODO: Replace simplified tokenizer with @agentix-e/log-parser-core
+ * (drain-ts prefix-tree clustering, GA 0.991) once published to npm.
+ * The production parser supports SynLogRefiner, HITL calibration, and
+ * multi-language template extraction.
+ *
  * @module signals/log-provider
  */
 
