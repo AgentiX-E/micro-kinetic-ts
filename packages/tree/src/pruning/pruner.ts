@@ -314,12 +314,18 @@ export class TreePruner {
 }
 
 /**
- * Compute the anomaly score for a service from its time series metrics.
+ * Compute feature-enhanced anomaly score from service metrics.
  *
- * Score = max(0, min(1, max deviation from baseline))
+ * Upgraded from simple |max-mean|/mean to StatisticalAnalyzer-derived
+ * multi-feature analysis: trend slope (linear regression), burst detection
+ * (3-sigma rule), coefficient of variation, and monotonic tendency.
  *
- * For each metric, compute the ratio of max value to mean.
- * The anomaly score is the max of these ratios clamped to [0, 1].
+ * Each feature contributes to the final score based on diagnostic relevance:
+ * monotonic growth → cumulative faults (MEM/DISK), bursts → spike anomalies,
+ * high CV → overall instability.
+ *
+ * Final score = base_deviation + trend_bonus + burst_bonus + cv_bonus,
+ * clamped to [0, 1]. Scores > 0.3 are considered anomalous.
  *
  * @internal
  */
@@ -331,28 +337,71 @@ function computeAnomalyScore(
     return 0;
   }
 
-  let maxDeviation = 0;
+  let bestScore = 0;
 
   for (const ts of serviceMetrics) {
-    if (ts.values.length === 0) continue;
+    if (ts.values.length < 2) continue;
 
-    let sum = 0;
-    let max = -Infinity;
-    for (let i = 0; i < ts.values.length; i++) {
+    const n = ts.values.length;
+
+    // Basic statistics
+    let sum = 0, max = -Infinity;
+    for (let i = 0; i < n; i++) {
       const v = ts.values[i]!;
       sum += v;
       if (v > max) max = v;
     }
-    const mean = sum / ts.values.length;
+    const mean = sum / n;
     if (mean <= 0) continue;
 
+    // Base deviation (original metric)
     const deviation = Math.abs(max - mean) / mean;
-    if (deviation > maxDeviation) {
-      maxDeviation = deviation;
+    if (deviation < 0.05) continue;
+
+    // Trend slope (linear regression)
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let i = 0; i < n; i++) {
+      const v = ts.values[i]!;
+      sx += i; sy += v; sxx += i * i; sxy += i * v;
     }
+    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+    const trendStrength = mean > 0 ? Math.abs(slope * n / mean) : 0;
+
+    // Variance and CV
+    let variance = 0;
+    for (let i = 0; i < n; i++) {
+      const diff = ts.values[i]! - mean;
+      variance += diff * diff;
+    }
+    variance /= n;
+    const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
+
+    // Burst detection (3-sigma rule)
+    let hasBurst = false;
+    const threshold = mean + 3 * Math.sqrt(variance);
+    for (let i = 0; i < n && !hasBurst; i++) {
+      if (ts.values[i]! > threshold) hasBurst = true;
+    }
+
+    // Monotonic upward tendency
+    let isMonotonicUp = slope > 0;
+    if (isMonotonicUp) {
+      for (let i = 1; i < n; i++) {
+        if (ts.values[i]! < ts.values[i - 1]!) { isMonotonicUp = false; break; }
+      }
+    }
+
+    // Feature-weighted score
+    let featureScore = deviation;
+    if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.3;
+    if (hasBurst) featureScore += deviation * 0.2;
+    if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.15;
+
+    featureScore = Math.max(0, Math.min(1, featureScore));
+    if (featureScore > bestScore) bestScore = featureScore;
   }
 
-  return Math.max(0, Math.min(1, maxDeviation));
+  return bestScore;
 }
 
 /**
