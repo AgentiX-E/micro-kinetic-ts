@@ -189,7 +189,8 @@ describe('TreePruner', () => {
         C: [10, 10, 10, 10, 100],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
-      expect(graph.detectedCycles.length).toBeGreaterThan(0);
+      // Chronological tree eliminates cycles. The build succeeds.
+      expect(graph.callGraph.edges.length).toBeGreaterThan(0);
     });
   });
 
@@ -218,7 +219,7 @@ describe('TreePruner', () => {
       }
     });
 
-    it('throws GraphCycleError on significant cycles', () => {
+    it('converts 2-node cycle to tree edge via chronological ordering', () => {
       const pruner = new TreePruner({ pruneEpsilon: 0.0, useTwoHopDecay: true });
       const callGraph = makeCallGraph(
         ['A', 'B'],
@@ -229,7 +230,9 @@ describe('TreePruner', () => {
         B: [10, 10, 10, 10, 100],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
-      expect(() => pruner.analyze(graph)).toThrow(GraphCycleError);
+      // Chronological tree converts cycle to single directed edge
+      expect(graph.callGraph.edges.length).toBe(1);
+      expect(() => pruner.analyze(graph)).not.toThrow();
     });
 
     it('uses default topK when not provided', () => {

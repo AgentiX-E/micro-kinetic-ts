@@ -139,20 +139,29 @@ export class TreePruner {
     invariant(callGraph.edges.length > 0, 'callGraph must have at least one edge');
     invariant(metrics.size > 0, 'metrics must be non-empty');
 
-    // Compute anomaly scores
+    // Compute anomaly scores and onset times
     const anomalyScores = new Map<ServiceId, number>();
+    const anomalyOnsetTimes = new Map<ServiceId, number>();
     for (const [serviceId] of callGraph.nodes) {
       const serviceMetrics = metrics.get(serviceId);
-      const score = computeAnomalyScore(serviceId, serviceMetrics);
-      anomalyScores.set(serviceId, score);
+      const result = computeAnomalyScoreAndOnset(serviceId, serviceMetrics);
+      anomalyScores.set(serviceId, result.score);
+      anomalyOnsetTimes.set(serviceId, result.onsetIndex);
     }
 
+    // Build chronological propagation tree from anomaly onset times
+    const chronoTree = buildChronologicalPropagationTree(
+      callGraph,
+      anomalyOnsetTimes,
+      anomalyScores,
+    );
+
     // Compute propagation weights from anomaly correlations
-    const numEdges = callGraph.edges.length;
+    const numEdges = chronoTree.edges.length;
     const propagationWeights = new Float64Array(numEdges);
 
     for (let i = 0; i < numEdges; i++) {
-      const edge = callGraph.edges[i]!;
+      const edge = chronoTree.edges[i]!;
       const sourceMetrics = metrics.get(edge.from);
       const targetMetrics = metrics.get(edge.to);
 
@@ -167,11 +176,11 @@ export class TreePruner {
     }
 
     // Detect cycles
-    const edgePairs = callGraph.edges.map((e) => [e.from, e.to] as readonly [ServiceId, ServiceId]);
+    const edgePairs = chronoTree.edges.map((e) => [e.from, e.to] as readonly [ServiceId, ServiceId]);
     const cycles = this.cycleDetector.detect(edgePairs);
 
     // Compute contributions
-    const analyzer = new CollisionContributionAnalyzer(callGraph.edges, propagationWeights, {
+    const analyzer = new CollisionContributionAnalyzer(chronoTree.edges, propagationWeights, {
       alpha: this.options.decayAlpha,
       beta: this.options.decayBeta,
     });
@@ -199,17 +208,9 @@ export class TreePruner {
       });
     }
 
-    // Convert DAG to Maximum Spanning Tree based on propagation weights.
-    // This is the critical step that preserves Deng Yu's collision tree
-    // guarantee: the MST selects the strongest correlation paths while
-    // ensuring the topology is a tree, which is required for bottom-up
-    // accumulation. A star-graph DAG (e.g. frontend → 7 children) would
-    // violate the tree assumption and produce degraded RCA scores.
-    const { tree, filteredWeights } = toMaximumSpanningTree(callGraph, propagationWeights);
-
     return {
-      callGraph: tree,
-      propagationWeights: filteredWeights,
+      callGraph: chronoTree,
+      propagationWeights,
       anomalyScores,
       detectedCycles: classifiedCycles,
       totalCycleContribution,
@@ -414,92 +415,80 @@ function computeAnomalyScore(
 }
 
 /**
- * Convert a directed weighted graph into its Maximum Spanning Tree.
- *
- * Uses Kruskal's algorithm with Union-Find to select edges with the
- * highest propagation weights while avoiding cycles. The resulting
- * tree preserves the strongest correlation paths between services,
- * which is required by Deng Yu's collision tree theory: the bottom-up
- * accumulation assumes a tree structure where each node has exactly
- * one parent path to the root.
- *
- * Without this conversion, a star DAG (e.g. frontend → 7 children)
- * produces degraded RCA accuracy because multiple children contribute
- * to the same parent, violating the tree invariant.
- *
- * Complexity: O(E log E) where E is the number of edges.
- *
- * @param callGraph - Original call graph with all edges
- * @param weights - Propagation weight for each edge (same ordering)
- * @returns New call graph containing only the MST edges
+ * Anomaly result with onset timing for temporal causality.
  * @internal
  */
-function toMaximumSpanningTree(
-  callGraph: ServiceCallGraph,
-  weights: Float64Array,
-): { tree: ServiceCallGraph; filteredWeights: Float64Array } {
-  const n = callGraph.nodes.size;
-  if (n <= 1 || callGraph.edges.length === 0) return { tree: callGraph, filteredWeights: weights };
+interface AnomalyResult { score: number; onsetIndex: number; }
 
-  // Build edge list with weights
-  interface WeightedEdge { from: string; to: string; weight: number; index: number; }
-  const edges: WeightedEdge[] = [];
-  for (let i = 0; i < callGraph.edges.length; i++) {
-    const e = callGraph.edges[i]!;
-    edges.push({ from: e.from, to: e.to, weight: weights[i] ?? 1, index: i });
-  }
-
-  // Sort by weight descending (maximum spanning tree)
-  edges.sort((a, b) => b.weight - a.weight);
-
-  // Union-Find
-  const parent = new Map<string, string>();
-  const rank = new Map<string, number>();
-  for (const nodeId of callGraph.nodes.keys()) {
-    parent.set(nodeId, nodeId);
-    rank.set(nodeId, 0);
-  }
-
-  function find(x: string): string {
-    const p = parent.get(x)!;
-    if (p !== x) parent.set(x, find(p));
-    return parent.get(x)!;
-  }
-
-  function union(a: string, b: string): boolean {
-    let ra = find(a), rb = find(b);
-    if (ra === rb) return false;
-    const rankA = rank.get(ra)!, rankB = rank.get(rb)!;
-    if (rankA < rankB) [ra, rb] = [rb, ra];
-    parent.set(rb, ra);
-    if (rankA === rankB) rank.set(ra, rankA + 1);
-    return true;
-  }
-
-  // Select edges for MST and track weight indices
-  const selectedEdges: CallEdge[] = [];
-  const selectedIndices: number[] = [];
-  for (const e of edges) {
-    if (union(e.from, e.to)) {
-      selectedEdges.push(callGraph.edges[e.index]!);
-      selectedIndices.push(e.index);
+/** Compute anomaly score AND onset time. */
+function computeAnomalyScoreAndOnset(
+  serviceId: ServiceId,
+  serviceMetrics: readonly TimeSeries[] | undefined,
+): AnomalyResult {
+  const score = computeAnomalyScore(serviceId, serviceMetrics);
+  let onset = Number.MAX_SAFE_INTEGER;
+  if (serviceMetrics) {
+    for (const ts of serviceMetrics) {
+      if (ts.values.length < 2) continue;
+      let sum = 0; for (let i = 0; i < ts.values.length; i++) sum += ts.values[i]!;
+      const mean = sum / ts.values.length;
+      if (mean <= 0) continue;
+      for (let i = 0; i < ts.values.length; i++) {
+        if (Math.abs(ts.values[i]! - mean) / mean > 0.3) { onset = i; break; }
+      }
     }
-    if (selectedEdges.length === n - 1) break;
+  }
+  return { score, onsetIndex: onset };
+}
+
+/**
+ * Build chronological propagation tree from anomaly onset times.
+ *
+ * Temporal causality: root cause becomes anomalous FIRST, symptoms appear
+ * LATER. Tree edges point from earlier→later anomalous services.
+ *
+ * Algorithm: find root (earliest onset), then BFS outward connecting each
+ * service to its earliest-anomalous neighbor already in the tree.
+ */
+function buildChronologicalPropagationTree(
+  callGraph: ServiceCallGraph,
+  onsetTimes: ReadonlyMap<ServiceId, number>,
+  anomalyScores: ReadonlyMap<ServiceId, number>,
+): ServiceCallGraph {
+  const nodes = new Map(callGraph.nodes);
+  let rootId = '', rootOnset = Number.MAX_SAFE_INTEGER, rootScore = 0;
+  for (const [id] of nodes) {
+    const onset = onsetTimes.get(id) ?? Number.MAX_SAFE_INTEGER;
+    const score = anomalyScores.get(id) ?? 0;
+    if (onset < rootOnset || (onset === rootOnset && score > rootScore)) {
+      rootId = id; rootOnset = onset; rootScore = score;
+    }
+  }
+  if (!rootId || rootOnset === Number.MAX_SAFE_INTEGER) return callGraph;
+
+  const sorted = [...nodes.keys()].filter(id => id !== rootId)
+    .sort((a, b) => (onsetTimes.get(a) ?? 0) - (onsetTimes.get(b) ?? 0));
+
+  const neighbors = new Map<string, Set<string>>();
+  for (const [id] of nodes) neighbors.set(id, new Set());
+  for (const e of callGraph.edges) {
+    neighbors.get(e.from)?.add(e.to);
+    neighbors.get(e.to)?.add(e.from);
   }
 
-  const filteredWeights = new Float64Array(selectedIndices.length);
-  for (let i = 0; i < selectedIndices.length; i++) {
-    filteredWeights[i] = weights[selectedIndices[i]!]!;
+  const connected = new Set<string>([rootId]);
+  const treeEdges: CallEdge[] = [];
+  for (const sid of sorted) {
+    let bestN = rootId, bestOnset = rootOnset;
+    for (const n of (neighbors.get(sid) ?? new Set())) {
+      if (connected.has(n) && (onsetTimes.get(n) ?? Number.MAX_SAFE_INTEGER) < bestOnset) {
+        bestOnset = onsetTimes.get(n)!; bestN = n;
+      }
+    }
+    treeEdges.push({ from: bestN, to: sid, type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 });
+    connected.add(sid);
   }
-
-  return {
-    tree: {
-      nodes: callGraph.nodes,
-      edges: selectedEdges,
-      systemLoad: callGraph.systemLoad,
-    },
-    filteredWeights,
-  };
+  return { nodes, edges: treeEdges, systemLoad: callGraph.systemLoad };
 }
 
 /**
