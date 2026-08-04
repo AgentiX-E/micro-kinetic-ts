@@ -111,8 +111,8 @@ describe('TreePruner', () => {
       );
       // High anomaly values for both → high propagation weight
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 100],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 100],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const aScore = graph.anomalyScores.get('A') ?? 0;
@@ -184,9 +184,9 @@ describe('TreePruner', () => {
         [['A', 'B'], ['B', 'C'], ['C', 'A']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 100],
-        C: [10, 10, 10, 10, 100],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 100],
+        C: [10, 11, 12, 10, 100],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       // Chronological tree eliminates cycles. The build succeeds.
@@ -202,8 +202,8 @@ describe('TreePruner', () => {
         [['A', 'B'], ['A', 'C'], ['B', 'D']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 50],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
         C: [10, 10, 10, 10, 10],
         D: [10, 10, 10, 10, 80],
       });
@@ -226,8 +226,8 @@ describe('TreePruner', () => {
         [['A', 'B'], ['B', 'A']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 100],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 100],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       // Chronological tree converts cycle to single directed edge
@@ -242,8 +242,8 @@ describe('TreePruner', () => {
         [['A', 'B']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 50],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph);
@@ -298,8 +298,8 @@ describe('TreePruner', () => {
         [['A', 'B']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 50],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph);
@@ -315,9 +315,9 @@ describe('TreePruner', () => {
         [['A', 'B'], ['B', 'C']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 50],
-        C: [10, 10, 10, 10, 30],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
+        C: [10, 11, 12, 10, 30],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 2);
@@ -333,9 +333,9 @@ describe('TreePruner', () => {
         [['A', 'B'], ['B', 'C'], ['C', 'A']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 100],
-        B: [10, 10, 10, 10, 100],
-        C: [10, 10, 10, 10, 100],
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 100],
+        C: [10, 11, 12, 10, 100],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 3);
@@ -351,7 +351,7 @@ describe('TreePruner', () => {
         [['A', 'B']],
       );
       const metrics = new Map<string, readonly TimeSeries[]>();
-      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       // B not in metrics
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       expect(graph.anomalyScores.get('B')).toBe(0);
@@ -365,7 +365,7 @@ describe('TreePruner', () => {
         [['A', 'B']],
       );
       const metrics = new Map<string, readonly TimeSeries[]>();
-      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       metrics.set('B', []);
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       expect(graph.anomalyScores.get('B')).toBe(0);
@@ -378,7 +378,7 @@ describe('TreePruner', () => {
         [['A', 'B']],
       );
       const metrics = new Map<string, readonly TimeSeries[]>();
-      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       metrics.set('B', [makeTimeSeries('cpu', [])]);
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       expect(graph.anomalyScores.get('B')).toBe(0);
@@ -391,7 +391,7 @@ describe('TreePruner', () => {
         [['A', 'B']],
       );
       const metrics = new Map<string, readonly TimeSeries[]>();
-      metrics.set('A', [makeTimeSeries('cpu', [10, 10, 10, 10, 100])]);
+      metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       metrics.set('B', [makeTimeSeries('cpu', [-10, -10, -10])]);
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       expect(graph.anomalyScores.get('B')).toBe(0);
@@ -406,8 +406,8 @@ describe('TreePruner', () => {
         [['A', 'B']],
       );
       const metrics = makeMetrics({
-        A: [10, 10, 10, 10, 60],
-        B: [10, 10, 10, 10, 60],
+        A: [10, 11, 12, 10, 60],
+        B: [10, 11, 12, 10, 60],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       expect(graph.propagationWeights[0]).toBeGreaterThanOrEqual(0.4);
@@ -451,8 +451,8 @@ describe('TreePruner', () => {
         [['Root', 'Mid1'], ['Root', 'Mid2'], ['Mid1', 'Leaf']],
       );
       const metrics = makeMetrics({
-        Root: [10, 10, 10, 10, 100],
-        Mid1: [10, 10, 10, 10, 60],
+        Root: [10, 11, 12, 10, 100],
+        Mid1: [10, 11, 12, 10, 60],
         Mid2: [10, 10, 10, 10, 40],
         Leaf: [10, 10, 10, 10, 80],
       });
@@ -475,10 +475,10 @@ describe('TreePruner', () => {
         [['Top', 'Left'], ['Top', 'Right'], ['Left', 'Bottom'], ['Right', 'Bottom']],
       );
       const metrics = makeMetrics({
-        Top: [10, 10, 10, 10, 100],
-        Left: [10, 10, 10, 10, 60],
-        Right: [10, 10, 10, 10, 50],
-        Bottom: [10, 10, 10, 10, 30],
+        Top: [10, 11, 12, 10, 100],
+        Left: [10, 11, 12, 10, 60],
+        Right: [10, 11, 12, 10, 50],
+        Bottom: [10, 11, 12, 10, 30],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 4);
