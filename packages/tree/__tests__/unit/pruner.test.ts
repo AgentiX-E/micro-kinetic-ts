@@ -95,7 +95,8 @@ describe('TreePruner', () => {
         B: [10, 10, 10, 10, 10],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
-      expect(graph.callGraph).toBe(callGraph);
+      expect(graph.callGraph.edges.length).toBe(1); // MST preserves single-edge graphs
+      expect(graph.callGraph.nodes.size).toBe(2);
       expect(graph.propagationWeights.length).toBe(1);
       expect(graph.anomalyScores.has('A')).toBe(true);
       expect(graph.anomalyScores.has('B')).toBe(true);

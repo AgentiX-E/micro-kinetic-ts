@@ -32,6 +32,7 @@
  */
 
 import {
+  type CallEdge,
   type DetectedCycle,
   type FaultPropagationGraph,
   type MetricMap,
@@ -198,9 +199,17 @@ export class TreePruner {
       });
     }
 
+    // Convert DAG to Maximum Spanning Tree based on propagation weights.
+    // This is the critical step that preserves Deng Yu's collision tree
+    // guarantee: the MST selects the strongest correlation paths while
+    // ensuring the topology is a tree, which is required for bottom-up
+    // accumulation. A star-graph DAG (e.g. frontend → 7 children) would
+    // violate the tree assumption and produce degraded RCA scores.
+    const { tree, filteredWeights } = toMaximumSpanningTree(callGraph, propagationWeights);
+
     return {
-      callGraph,
-      propagationWeights,
+      callGraph: tree,
+      propagationWeights: filteredWeights,
       anomalyScores,
       detectedCycles: classifiedCycles,
       totalCycleContribution,
@@ -402,6 +411,95 @@ function computeAnomalyScore(
   }
 
   return bestScore;
+}
+
+/**
+ * Convert a directed weighted graph into its Maximum Spanning Tree.
+ *
+ * Uses Kruskal's algorithm with Union-Find to select edges with the
+ * highest propagation weights while avoiding cycles. The resulting
+ * tree preserves the strongest correlation paths between services,
+ * which is required by Deng Yu's collision tree theory: the bottom-up
+ * accumulation assumes a tree structure where each node has exactly
+ * one parent path to the root.
+ *
+ * Without this conversion, a star DAG (e.g. frontend → 7 children)
+ * produces degraded RCA accuracy because multiple children contribute
+ * to the same parent, violating the tree invariant.
+ *
+ * Complexity: O(E log E) where E is the number of edges.
+ *
+ * @param callGraph - Original call graph with all edges
+ * @param weights - Propagation weight for each edge (same ordering)
+ * @returns New call graph containing only the MST edges
+ * @internal
+ */
+function toMaximumSpanningTree(
+  callGraph: ServiceCallGraph,
+  weights: Float64Array,
+): { tree: ServiceCallGraph; filteredWeights: Float64Array } {
+  const n = callGraph.nodes.size;
+  if (n <= 1 || callGraph.edges.length === 0) return { tree: callGraph, filteredWeights: weights };
+
+  // Build edge list with weights
+  interface WeightedEdge { from: string; to: string; weight: number; index: number; }
+  const edges: WeightedEdge[] = [];
+  for (let i = 0; i < callGraph.edges.length; i++) {
+    const e = callGraph.edges[i]!;
+    edges.push({ from: e.from, to: e.to, weight: weights[i] ?? 1, index: i });
+  }
+
+  // Sort by weight descending (maximum spanning tree)
+  edges.sort((a, b) => b.weight - a.weight);
+
+  // Union-Find
+  const parent = new Map<string, string>();
+  const rank = new Map<string, number>();
+  for (const nodeId of callGraph.nodes.keys()) {
+    parent.set(nodeId, nodeId);
+    rank.set(nodeId, 0);
+  }
+
+  function find(x: string): string {
+    const p = parent.get(x)!;
+    if (p !== x) parent.set(x, find(p));
+    return parent.get(x)!;
+  }
+
+  function union(a: string, b: string): boolean {
+    let ra = find(a), rb = find(b);
+    if (ra === rb) return false;
+    const rankA = rank.get(ra)!, rankB = rank.get(rb)!;
+    if (rankA < rankB) [ra, rb] = [rb, ra];
+    parent.set(rb, ra);
+    if (rankA === rankB) rank.set(ra, rankA + 1);
+    return true;
+  }
+
+  // Select edges for MST and track weight indices
+  const selectedEdges: CallEdge[] = [];
+  const selectedIndices: number[] = [];
+  for (const e of edges) {
+    if (union(e.from, e.to)) {
+      selectedEdges.push(callGraph.edges[e.index]!);
+      selectedIndices.push(e.index);
+    }
+    if (selectedEdges.length === n - 1) break;
+  }
+
+  const filteredWeights = new Float64Array(selectedIndices.length);
+  for (let i = 0; i < selectedIndices.length; i++) {
+    filteredWeights[i] = weights[selectedIndices[i]!]!;
+  }
+
+  return {
+    tree: {
+      nodes: callGraph.nodes,
+      edges: selectedEdges,
+      systemLoad: callGraph.systemLoad,
+    },
+    filteredWeights,
+  };
 }
 
 /**
