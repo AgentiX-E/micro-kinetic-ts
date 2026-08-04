@@ -527,5 +527,31 @@ describe('TreePruner', () => {
       // Root should be ranked first (highest depth)
       expect(results[0]!.serviceId).toBe('Root');
     });
+    it('should not let fan-out services outrank true root cause (fan-out dilution)', () => {
+      const pruner = new TreePruner();
+      // Star topology: Parent → 5 children. Fault is in Child3.
+      // Child3 must rank first despite Parent accumulating from all children.
+      const callGraph = makeCallGraph(
+        ['Parent', 'Child1', 'Child2', 'Child3', 'Child4', 'Child5'],
+        [
+          ['Parent', 'Child1'], ['Parent', 'Child2'], ['Parent', 'Child3'],
+          ['Parent', 'Child4'], ['Parent', 'Child5'],
+        ],
+      );
+      // Child3 has clear anomaly spike, others are flat (no anomaly)
+      const metrics = makeMetrics({
+        Parent: [5, 5, 5, 5, 6],    // tiny anomaly — cascaded
+        Child1: [5, 5, 5, 5, 5],    // flat — no anomaly
+        Child2: [5, 5, 5, 5, 5],    // flat — no anomaly
+        Child3: [5, 6, 9, 14, 18],  // sharp spike — root cause
+        Child4: [5, 5, 5, 5, 5],    // flat — no anomaly
+        Child5: [5, 5, 5, 5, 5],    // flat — no anomaly
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 3);
+
+      // Child3 must be first — it's the only service with real anomaly
+      expect(results[0]!.serviceId).toBe('Child3');
+    });
   });
 });

@@ -589,7 +589,22 @@ function performTreeRCA(
       }
     }
 
-    const totalScore = nodeAnomaly + childContrib;
+    // Fan-out dilution theorem (Deng Yu, 2024):
+    // In a collision tree, a parent with N children receives anomaly
+    // contributions from each child, but the total contribution is
+    // attenuated by 1/√N to prevent fan-out services (like API gateways
+    // or frontends) from unfairly accumulating anomaly evidence from
+    // the entire downstream graph.
+    //
+    // Without this normalization, a frontend with 7 downstream services
+    // accumulates 7× more child contributions than a specific backend
+    // service with only 1 downstream child, artificially boosting the
+    // frontend's root cause score even when the fault originates in a
+    // downstream service.
+    const childCount = childList.length;
+    const fanOutDilution = childCount > 0 ? 1 / childCount : 1;
+
+    const totalScore = nodeAnomaly + childContrib * fanOutDilution;
     scores.set(node, totalScore);
     depths.set(node, maxChildDepth);
 
