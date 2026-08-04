@@ -7,6 +7,7 @@ on:
       - '.github/workflows/benchmark-rcaeval.yml'
       - 'packages/**/src/**'
       - 'benchmarks/src/**'
+      - 'benchmarks/src/**'
 
 permissions:
   contents: write
