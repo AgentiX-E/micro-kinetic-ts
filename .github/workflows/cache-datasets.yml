@@ -14,7 +14,7 @@ permissions:
 jobs:
   cache:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -69,3 +69,84 @@ jobs:
         run: |
           echo "Cached files: $(find ~/RCAEval-data -type f 2>/dev/null | wc -l)"
           echo "Cache size: $(du -sh ~/RCAEval-data 2>/dev/null | cut -f1)"
+
+      - name: Convert Parquet to RCAEval JSON (pre-cache)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: |
+          pip install pandas pyarrow
+          python3 -c "
+          import os, json
+          from pathlib import Path
+          import pandas as pd
+
+          cache_dir = os.path.expanduser('~/RCAEval-data')
+          out_dir = os.path.expanduser('~/RCAEval-json')
+          os.makedirs(out_dir, exist_ok=True)
+
+          case_dirs = set()
+          for pq in Path(cache_dir).rglob('*.parquet'):
+              case_dirs.add(pq.relative_to(cache_dir).parent)
+
+          print(f'Found {len(case_dirs)} case directories')
+          converted = 0
+          for case_rel in sorted(case_dirs):
+              case_src = Path(cache_dir) / case_rel
+              case_dst = Path(out_dir) / case_rel
+              os.makedirs(case_dst, exist_ok=True)
+              try:
+                  metrics_pq = case_src / 'metrics.parquet'
+                  if metrics_pq.exists():
+                      df = pd.read_parquet(metrics_pq)
+                      metrics_out = {}
+                      if 'service' in df.columns or 'service_id' in df.columns:
+                          svc_col = next((c for c in df.columns if c in ('service','service_id','serviceId')), df.columns[0])
+                          ts_col = next((c for c in df.columns if c in ('timestamp','time','ts')), None)
+                          val_col = next((c for c in df.columns if c in ('value','val')), None)
+                          metric_col = next((c for c in df.columns if c in ('metric_name','metric','name')), None)
+                          for _, row in df.iterrows():
+                              svc = str(row[svc_col])
+                              if svc not in metrics_out: metrics_out[svc] = []
+                              metrics_out[svc].append({'timestamp': int(row[ts_col]) if ts_col and ts_col in row else 0, 'value': float(row[val_col]) if val_col and val_col in row else 0.0, 'metric_name': str(row[metric_col]) if metric_col and metric_col in row else ''})
+                      else:
+                          ts_vals = df.iloc[:,0].tolist() if len(df.columns)>0 else []
+                          for col in df.columns[1:]:
+                              parts = str(col).split('::') if '::' in str(col) else str(col).rsplit('_',1)
+                              svc = parts[0] if len(parts)>=1 else str(col)
+                              metric = parts[1] if len(parts)>=2 else str(col)
+                              for idx, val in enumerate(df[col]):
+                                  ts = int(ts_vals[idx]) if idx<len(ts_vals) else 0
+                                  if svc not in metrics_out: metrics_out[svc] = []
+                                  metrics_out[svc].append({'timestamp':ts,'value':float(val) if pd.notna(val) else 0.0,'metric_name':metric})
+                      with open(case_dst/'metrics.json','w') as f: json.dump(metrics_out, f)
+
+                  for pq_name, csv_name in [('inject_time.parquet','inject_time.txt'), ('traces.parquet','traces.csv'), ('logs.parquet','logs.csv')]:
+                      pq = case_src / pq_name
+                      if pq.exists():
+                          df = pd.read_parquet(pq)
+                          if csv_name.endswith('.txt'):
+                              val = int(df.iloc[0,0]) if len(df)>0 else 0
+                              (case_dst/csv_name).write_text(str(val))
+                          else:
+                              df.to_csv(case_dst/csv_name, index=False)
+
+                  for gt_name in ['ground_truth.json','ground_truth.parquet']:
+                      gt_src = case_src / gt_name
+                      if gt_src.exists():
+                          if gt_src.suffix == '.parquet':
+                              df = pd.read_parquet(gt_src)
+                              with open(case_dst/'ground_truth.json','w') as f: json.dump(df.iloc[0].to_dict() if len(df)>0 else {}, f, default=str)
+                          else:
+                              import shutil; shutil.copy(gt_src, case_dst/'ground_truth.json')
+                          break
+                  converted += 1
+              except Exception as e:
+                  print(f'  Skip {case_rel}: {e}')
+          print(f'Pre-cached {converted}/{len(case_dirs)} case directories to JSON at {out_dir}')
+          "
+
+      - name: Cache converted JSON
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v2
