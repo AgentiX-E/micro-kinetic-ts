@@ -66,6 +66,11 @@ export {
 } from './signals/trace-provider.js';
 
 export {
+  LogSignalProvider,
+} from './signals/log-provider.js';
+export type { LogEntry, LogTemplate } from './signals/log-provider.js';
+
+export {
   augmentTopologyWithTraces,
   canValidateWithTraces,
 } from './signals/trace-topology.js';
