@@ -16,6 +16,7 @@ export { TraceTimingProvider } from './providers/trace-timing.js';
 export { LogTimingProvider } from './providers/log-timing.js';
 export { GrangerCausalityProvider } from './providers/granger-causality.js';
 export { StaticDirectionProvider } from './providers/static-direction.js';
+export { StaticTopologyProvider } from './providers/static-topology.js';
 
 // ── Orchestrators ────────────────────────────────────────
 export { CausalDirectionFusion } from './orchestrators/causal-direction-fusion.js';

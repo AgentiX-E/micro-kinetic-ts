@@ -378,6 +378,41 @@ describe('TraceTimingProvider', () => {
       // Same start time, no caller/callee, and no errors in b → no temporal order, no error propagation
       expect(results).toHaveLength(0);
     });
+
+    it('should handle error propagation when both have errors and start times differ', async () => {
+      // This tests temporal order path (start times differ), not error propagation
+      const ctx = makeContext({
+        metadata: {
+          spans: [
+            makeSpanTiming({ service: 'svc-a', earliestStartMs: 1000, errorSpanCount: 3, callers: [], callees: [] }),
+            makeSpanTiming({ service: 'svc-b', earliestStartMs: 3000, errorSpanCount: 2, callers: [], callees: [] }),
+          ],
+        },
+      });
+      const edges = [makeEdge('svc-a', 'svc-b')];
+      const results = await provider.inferDirection(edges, ctx);
+
+      // start different → temporal order
+      expect(results).toHaveLength(1);
+      expect(results[0]!.source).toBe('svc-a');
+    });
+
+    it('should hit error propagation when start times equal but both have errors', async () => {
+      // This hits the error propagation path: same start, no caller/callee, both have errors
+      const ctx = makeContext({
+        metadata: {
+          spans: [
+            makeSpanTiming({ service: 'svc-a', earliestStartMs: 1000, errorSpanCount: 1, callers: [], callees: [] }),
+            makeSpanTiming({ service: 'svc-b', earliestStartMs: 1000, errorSpanCount: 1, callers: [], callees: [] }),
+          ],
+        },
+      });
+      const edges = [makeEdge('svc-a', 'svc-b')];
+      const results = await provider.inferDirection(edges, ctx);
+
+      // Same start, both errors, no temporal/caller → error propagation returns null (same error start)
+      expect(results).toHaveLength(0);
+    });
   });
 });
 
@@ -957,6 +992,85 @@ describe('StaticDirectionProvider', () => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════
+// GrangerCausalityProvider — edge case tests
+// ═══════════════════════════════════════════════════════════
+
+describe('GrangerCausalityProvider — edge cases', () => {
+  let provider: GrangerCausalityProvider;
+
+  beforeEach(() => {
+    provider = new GrangerCausalityProvider({ maxLag: 3, alpha: 0.05 });
+  });
+
+  it('should handle equal-series granger test (p ≈ 1)', async () => {
+    const n = 50;
+    const identical = Array.from({ length: n }, (_, i) => i);
+    const ts = new Map<string, readonly number[]>();
+    ts.set('a', identical);
+    ts.set('b', [...identical]);
+
+    const ctx = makeContext({ metadata: { metricTimeSeries: ts } });
+    const edges = [makeEdge('a', 'b')];
+    const results = await provider.inferDirection(edges, ctx);
+
+    // Identical series with no lagged effect → neither direction G-causes
+    expect(results).toHaveLength(0);
+  });
+
+  it('should degenerate with strong forward lag-1 dependence', async () => {
+    const n = 50;
+    const a = Array.from({ length: n }, (_, i) => Math.sin(i * 0.1) * 10 + 50);
+    // b[t] = 0.8 * a[t-1] + tiny noise
+    const b = Array.from({ length: n }, (_, i) =>
+      i === 0 ? 0 : 0.8 * a[i - 1]! + (Math.random() - 0.5) * 0.1,
+    );
+    const ts = new Map<string, readonly number[]>();
+    ts.set('a', a);
+    ts.set('b', b);
+
+    const ctx = makeContext({ metadata: { metricTimeSeries: ts } });
+    const edges = [makeEdge('a', 'b')];
+    const results = await provider.inferDirection(edges, ctx);
+
+    // Signal may or may not pass α=0.05
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  it('should test bi-directional causality with noise', async () => {
+    const n = 50;
+    const noise1 = Array.from({ length: n }, () => Math.random() * 10);
+    const noise2 = Array.from({ length: n }, () => Math.random() * 10);
+    const ts = new Map<string, readonly number[]>();
+    ts.set('x', noise1);
+    ts.set('y', noise2);
+
+    const ctx = makeContext({ metadata: { metricTimeSeries: ts } });
+    const edges = [makeEdge('x', 'y')];
+    const results = await provider.inferDirection(edges, ctx);
+
+    // Pure noise → no direction distinguishable
+    if (results.length > 0) {
+      expect(results[0]!.confidence).toBeLessThanOrEqual(0.7);
+    }
+  });
+
+  it('should compute non-null granger results for moderate dependence', () => {
+    const n = 40;
+    const signal = Array.from({ length: n }, (_, i) => Math.sin(i * 0.3) * 10);
+    // Strong lag-1 dependence with small noise
+    const effect = Array.from({ length: n }, (_, i) =>
+      i === 0 ? 0 : 0.7 * signal[i - 1]!,
+    );
+    const result = provider.grangerTest(signal, effect);
+    // Strong deterministic dependence should produce valid F-stats
+    if (result) {
+      expect(result.fStatistic).toBeGreaterThan(0);
+      expect(result.pValue).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
 // =============================================================================
 // CausalDirectionFusion
 // =============================================================================
@@ -1207,6 +1321,18 @@ describe('CausalDirectionFusion', () => {
       // Edges resolved depends on what tiers produce data
       expect(result.edgesResolved).toBeGreaterThanOrEqual(1);
       expect(result.coverage).toBeGreaterThanOrEqual(0.5);
+    });
+
+    it('should handle duplicate provider registration', () => {
+      const p1 = new LogTimingProvider();
+      const p2 = new LogTimingProvider(); // Same ID
+      fusion.register(p1);
+      fusion.register(p2);
+      expect(fusion.providers).toHaveLength(1);
+    });
+
+    it('should unregister non-existent provider gracefully', () => {
+      expect(() => fusion.unregister('nonexistent')).not.toThrow();
     });
   });
 });

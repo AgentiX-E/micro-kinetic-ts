@@ -1,0 +1,121 @@
+# SockShop Service Topology
+# Source: https://microservices-demo.github.io/
+# Architecture: 12 services with REST communication, MongoDB-backed
+#
+# Key dependency patterns:
+#   front-end → catalogue, carts, orders, user (entry point)
+#   orders → payment, shipping, queue-master, carts (order orchestration)
+#   carts → catalogue (dependency)
+#   *-db services (catalogue-db, user-db, carts-db, orders-db) — data layer
+
+version: "1.0"
+system: SockShop
+description: "Weaveworks Sock Shop microservices-demo"
+source: "https://microservices-demo.github.io/"
+
+services:
+  - id: front-end
+    namespace: sock-shop
+    labels:
+      tier: web
+      language: nodejs
+      description: "User-facing web frontend"
+
+  - id: catalogue
+    namespace: sock-shop
+    labels:
+      tier: backend
+      language: go
+      description: "Sock catalogue service"
+
+  - id: carts
+    namespace: sock-shop
+    labels:
+      tier: backend
+      language: java
+      description: "Shopping cart management"
+
+  - id: orders
+    namespace: sock-shop
+    labels:
+      tier: backend
+      language: java
+      description: "Order processing and tracking"
+
+  - id: user
+    namespace: sock-shop
+    labels:
+      tier: backend
+      language: go
+      description: "User account management"
+
+  - id: payment
+    namespace: sock-shop
+    labels:
+      tier: backend
+      language: java
+      description: "Payment gateway integration"
+
+  - id: shipping
+    namespace: sock-shop
+    labels:
+      tier: backend
+      language: java
+      description: "Shipping label generation"
+
+  - id: queue-master
+    namespace: sock-shop
+    labels:
+      tier: infrastructure
+      language: java
+      description: "Async message queue (RabbitMQ bridge)"
+
+  - id: catalogue-db
+    namespace: sock-shop
+    labels:
+      tier: data
+      language: mysql
+      description: "Catalogue database"
+
+  - id: user-db
+    namespace: sock-shop
+    labels:
+      tier: data
+      language: mongodb
+      description: "User database"
+
+  - id: carts-db
+    namespace: sock-shop
+    labels:
+      tier: data
+      language: mongodb
+      description: "Cart database"
+
+  - id: orders-db
+    namespace: sock-shop
+    labels:
+      tier: data
+      language: mongodb
+      description: "Order database"
+
+edges:
+  # front-end → core backend
+  - { from: front-end, to: catalogue, type: REST, callRate: 300, p99Latency: 25, errorRate: 0.01 }
+  - { from: front-end, to: carts, type: REST, callRate: 500, p99Latency: 20, errorRate: 0.01 }
+  - { from: front-end, to: orders, type: REST, callRate: 100, p99Latency: 30, errorRate: 0.01 }
+  - { from: front-end, to: user, type: REST, callRate: 100, p99Latency: 25, errorRate: 0.01 }
+
+  # orders orchestration
+  - { from: orders, to: payment, type: REST, callRate: 100, p99Latency: 100, errorRate: 0.02 }
+  - { from: orders, to: shipping, type: REST, callRate: 100, p99Latency: 50, errorRate: 0.01 }
+  - { from: orders, to: queue-master, type: MQ, callRate: 200, p99Latency: 10, errorRate: 0.01 }
+  - { from: orders, to: carts, type: REST, callRate: 50, p99Latency: 15, errorRate: 0.01 }
+
+  # carts → catalogue
+  - { from: carts, to: catalogue, type: REST, callRate: 200, p99Latency: 15, errorRate: 0.01 }
+
+  # data layer
+  - { from: catalogue, to: catalogue-db, type: gRPC, callRate: 500, p99Latency: 10, errorRate: 0.01 }
+  - { from: user, to: user-db, type: gRPC, callRate: 200, p99Latency: 10, errorRate: 0.01 }
+  - { from: carts, to: carts-db, type: gRPC, callRate: 500, p99Latency: 10, errorRate: 0.01 }
+  - { from: orders, to: orders-db, type: gRPC, callRate: 300, p99Latency: 10, errorRate: 0.01 }
