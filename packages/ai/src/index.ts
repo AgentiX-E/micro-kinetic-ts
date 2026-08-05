@@ -30,6 +30,30 @@ export type {
   SemanticAlignmentConfig,
 } from './providers/semantic-alignment.js';
 
+export {
+  ApiEmbeddingProvider,
+} from './providers/api-embedding.js';
+
+export {
+  createApiEmbeddingFromEnv,
+} from './providers/env-embedding.js';
+
+export type {
+  ApiEmbeddingConfig,
+  ApiEmbeddingConfigInput,
+  EmbeddingApiFormat,
+  EmbeddingRetryConfig,
+} from './providers/api-embedding-config.js';
+
+export type {
+  EnvEmbeddingConfig,
+} from './providers/env-embedding.js';
+
+export {
+  resolveApiEmbeddingConfig,
+  DEFAULT_RETRY_CONFIG,
+} from './providers/api-embedding-config.js';
+
 // ── Utils ────────────────────────────────────────────────
 export {
   cosineSimilarity,
