@@ -24,6 +24,37 @@ import type { ServiceDescriptor } from './embedding-provider.js';
  */
 
 /**
+ * Candidate topology match for a single entity alignment request.
+ */
+export interface EntityAlignmentCandidate {
+  /** Topology service ID. */
+  readonly id: string;
+  /** Human-readable name. */
+  readonly name: string;
+  /** Optional namespace qualifier. */
+  readonly namespace?: string;
+  /** Semantic labels for enrichment. */
+  readonly labels: readonly string[];
+}
+
+/**
+ * Result from a single-entity LLM alignment call.
+ */
+export interface SingleEntityAlignmentResult {
+  /** Matched topology service ID, or null if no match. */
+  readonly topologyId: string | null;
+  /** Match confidence (0-1). */
+  readonly confidence: number;
+  /** LLM's reasoning for the match decision. */
+  readonly reasoning: string;
+  /** Token consumption statistics for cost tracking. */
+  readonly usage?: {
+    readonly promptTokens: number;
+    readonly completionTokens: number;
+  };
+}
+
+/**
  * Result from LLM-based semantic entity alignment.
  */
 export interface LlmAlignmentResult {
@@ -52,8 +83,24 @@ export interface LlmAlignmentResult {
 export interface ILLMProvider {
   /** Unique model identifier used in logs and metrics. */
   readonly modelId: string;
+
   /**
-   * Align span service names to topology service IDs.
+   * Align a single span service name to a topology service ID.
+   *
+   * Used by SemanticAlignmentProvider for per-entity LLM fallback with
+   * caching and cost control. Each call is tracked toward the daily budget.
+   *
+   * @param spanService - Unknown service name from trace spans.
+   * @param candidates - Known topology service candidates to match against.
+   * @returns Single alignment result with confidence and reasoning.
+   */
+  alignEntity(
+    spanService: string,
+    candidates: readonly EntityAlignmentCandidate[],
+  ): Promise<SingleEntityAlignmentResult>;
+
+  /**
+   * Align span service names to topology service IDs (batch mode).
    *
    * Takes a batch of unknown span service names and a list of known
    * topology service descriptors, returns mappings with confidence scores.

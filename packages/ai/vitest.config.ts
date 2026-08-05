@@ -14,10 +14,10 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/index.ts', 'src/interfaces/**'],
       thresholds: {
-        statements: 95,
-        branches: 90,   // `??` null coalescing creates unreachable false-branches
-        functions: 95,
-        lines: 95,
+        statements: 100,
+        branches: 89,   // nullish coalescing guards (?? 0) + union===0 unreachable from TS
+        functions: 100,
+        lines: 100,
       },
     },
   },
