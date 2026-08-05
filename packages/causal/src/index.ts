@@ -20,3 +20,13 @@ export { StaticTopologyProvider } from './providers/static-topology.js';
 
 // ── Orchestrators ────────────────────────────────────────
 export { CausalDirectionFusion } from './orchestrators/causal-direction-fusion.js';
+export {
+  TopologyFusion,
+  createDefaultTopologyFusion,
+  DEFAULT_TOPOLOGY_FUSION_CONFIG,
+} from './orchestrators/topology-fusion.js';
+export type {
+  TopologyFusionConfig,
+  TopologyFusionResult,
+  FusedEdge,
+} from './orchestrators/topology-fusion.js';
