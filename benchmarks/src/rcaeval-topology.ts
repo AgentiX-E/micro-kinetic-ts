@@ -204,14 +204,34 @@ const TRAINTICKET_EDGES: ReadonlyArray<[string, string]> = [
 
 // ── Benchmark System Identification ───────────────────────
 
-/** Map case ID prefix to benchmark system name. */
+/**
+ * Map case ID to benchmark system name.
+ *
+ * The system code (ob/ss/tt) is independent of the suite number (RE1/RE2/RE3).
+ * Each suite has cases from all three benchmark systems. The naming convention is:
+ *   re{suite_number}{system_code}_{service}_{fault}_{instance}
+ *
+ * We extract the system code from position: re{N}{SYS}...
+ */
 function identifyBenchmarkSystem(caseId: string): 'OnlineBoutique' | 'SockShop' | 'TrainTicket' | null {
   const lower = caseId.toLowerCase();
-  // Case IDs from RCAEvalLoader: re1ob, re2ss, re3tt (benchmark prefix only)
-  // Also handle full dir names: re1ob_adservice_cpu_1, re2ss_carts_cpu_3, etc.
-  if (lower.startsWith('re1ob') || lower.includes('_ob_') || (lower.includes('ob') && !lower.includes('ss') && !lower.includes('tt'))) return 'OnlineBoutique';
-  if (lower.startsWith('re2ss') || lower.includes('_ss_') || (lower.includes('ss') && !lower.includes('ob') && !lower.includes('tt'))) return 'SockShop';
-  if (lower.startsWith('re3tt') || lower.includes('_tt_') || (lower.includes('tt') && !lower.includes('ob') && !lower.includes('ss'))) return 'TrainTicket';
+  // Detect system code: after "re" + digit, the next 2 chars are the system code
+  // Pattern: re{1-3}{ob|ss|tt}...
+  const sysMatch = lower.match(/^re\d(ob|ss|tt)/);
+  if (sysMatch) {
+    const sysCode = sysMatch[1]!;
+    if (sysCode === 'ob') return 'OnlineBoutique';
+    if (sysCode === 'ss') return 'SockShop';
+    if (sysCode === 'tt') return 'TrainTicket';
+  }
+
+  // Fallback: look for embedded system markers (handle non-standard naming)
+  if (lower.includes('_ob_') || (lower.includes('ob') && !lower.includes('ss') && !lower.includes('tt')))
+    return 'OnlineBoutique';
+  if (lower.includes('_ss_') || (lower.includes('ss') && !lower.includes('ob') && !lower.includes('tt')))
+    return 'SockShop';
+  if (lower.includes('_tt_') || (lower.includes('tt') && !lower.includes('ob') && !lower.includes('ss')))
+    return 'TrainTicket';
   return null;
 }
 

@@ -104,6 +104,9 @@ export function augmentTopologyWithTraces(
       const [from, to] = key.split('→') as [string, string];
       if (!from || !to) continue;
 
+      // Respect minCallFrequency threshold — consistent with Step 2
+      if (count < cfg.minCallFrequency) continue;
+
       // Skip if edge already exists in validated set
       const exists = validatedEdges.some((e) => e.from === from && e.to === to);
       if (exists) continue;

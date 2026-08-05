@@ -48,6 +48,10 @@ export class RCAEvalLoader {
   /**
    * Load a single RCAEval case from a directory.
    *
+   * Uses defensive loading: if optional files are missing or malformed,
+   * the case is still loaded with degraded data. Only fails if both
+   * metrics.json and parseDirectoryName are unavailable (bare minimum).
+   *
    * @param casePath - Path to the case directory.
    * @returns Parsed RCAEvalCase structure.
    */
@@ -55,18 +59,17 @@ export class RCAEvalLoader {
     const dirName = path.basename(casePath);
     const parsed = this.parseDirectoryName(dirName);
 
-    // Load metrics JSON
+    // Load metrics JSON (required)
     const metricsPath = path.join(casePath, 'metrics.json');
     const metrics = this.loadMetricsJson(metricsPath);
 
-    // Load inject time
-    const injectTimePath = path.join(casePath, 'inject_time.txt');
-    const injectTime = this.loadInjectTime(injectTimePath);
+    // Load inject time (fall back to 0 if unavailable)
+    const injectTime = this.tryLoadInjectTime(casePath);
 
     // Load ground truth
     const groundTruth = this.getGroundTruth(casePath, parsed);
 
-    // Load optional multimodal data
+    // Load optional multimodal data (defensive — returns undefined on failure)
     const logs = this.tryLoadLogs(casePath);
     const traces = this.tryLoadTraces(casePath);
 
@@ -203,6 +206,23 @@ export class RCAEvalLoader {
   // ── Private Helpers ─────────────────────────────────────
 
   private parseDirectoryName(dirName: string): ParsedDirName {
+    // Attempt regex-based parsing first (handles underscores in service names).
+    // Pattern: re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
+    const regexMatch = dirName.match(
+      /^(re[123][a-z]{2})_(.+?)_(cpu|mem|disk|delay|loss|socket|network|error)_(\d+)$/i,
+    );
+    if (regexMatch) {
+      return {
+        benchmark: regexMatch[1]!,
+        service: regexMatch[2]!,
+        fault: regexMatch[3]!.toLowerCase(),
+        instance: parseInt(regexMatch[4]!, 10),
+      };
+    }
+
+    // Fallback: simple underscore splitting for standard naming
+    // Format: {benchmark}_{service}_{fault}_{instance}
+    // where benchmark may contain underscores (e.g. re1ob, re2_ss_re)
     const parts = dirName.split('_');
     if (parts.length < 4) {
       throw new Error(
@@ -210,6 +230,11 @@ export class RCAEvalLoader {
       );
     }
     const instance = parseInt(parts[parts.length - 1]!, 10);
+    if (isNaN(instance)) {
+      throw new Error(
+        `Invalid RCAEval directory name: ${dirName}. Instance is not a number: ${parts[parts.length - 1]}`,
+      );
+    }
     const fault = parts[parts.length - 2]!;
     const service = parts[parts.length - 3]!;
     const benchmark = parts.slice(0, parts.length - 3).join('_');
@@ -221,10 +246,34 @@ export class RCAEvalLoader {
     if (!fs.existsSync(metricsPath)) {
       throw new Error(`Metrics file not found: ${metricsPath}`);
     }
-    const raw: Record<string, ReadonlyArray<RCAEvalMetricPoint>> = JSON.parse(
-      fs.readFileSync(metricsPath, 'utf-8'),
-    );
-    return raw;
+    try {
+      const raw: Record<string, ReadonlyArray<RCAEvalMetricPoint>> = JSON.parse(
+        fs.readFileSync(metricsPath, 'utf-8'),
+      );
+      // Validate that the JSON has the expected structure (object with service keys)
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).length === 0) {
+        throw new Error(
+          `Metrics file ${metricsPath} is empty or has unexpected format`,
+        );
+      }
+      // Validate at least one service has metric points
+      const validServiceCount = Object.values(raw).filter(
+        (v) => Array.isArray(v) && v.length > 0,
+      ).length;
+      if (validServiceCount === 0) {
+        throw new Error(
+          `Metrics file ${metricsPath} has no valid service entries`,
+        );
+      }
+      return raw;
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new Error(
+          `Metrics file ${metricsPath} is not valid JSON: ${err.message}`,
+        );
+      }
+      throw err;
+    }
   }
 
   private loadInjectTime(injectTimePath: string): number {
@@ -237,6 +286,20 @@ export class RCAEvalLoader {
       throw new Error(`Invalid inject time: ${raw}`);
     }
     return time;
+  }
+
+  private tryLoadInjectTime(casePath: string): number {
+    const injectTimePath = path.join(casePath, 'inject_time.txt');
+    if (!fs.existsSync(injectTimePath)) return 0;
+
+    try {
+      const raw = fs.readFileSync(injectTimePath, 'utf-8').trim();
+      const time = parseInt(raw, 10);
+      if (isNaN(time)) return 0;
+      return time;
+    } catch {
+      return 0;
+    }
   }
 
   private tryLoadLogs(casePath: string): ReadonlyArray<BenchmarkLogEntry> | undefined {

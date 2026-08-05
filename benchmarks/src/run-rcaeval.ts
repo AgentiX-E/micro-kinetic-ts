@@ -23,7 +23,10 @@ import {
   BenchmarkRunner,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
-import type { BenchmarkCase, BenchmarkSuite } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import type {
+  BenchmarkCase,
+  BenchmarkSuite,
+} from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import type { RunResult } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import {
   RegexFaultClassifier,
@@ -48,11 +51,18 @@ interface CliOptions {
 
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
-  const opts: CliOptions = { dataDir: join(homedir(), 'RCAEval-json'), maxCases: 0, system: 'all' };
+  const opts: CliOptions = {
+    dataDir: join(homedir(), 'RCAEval-json'),
+    maxCases: 0,
+    system: 'all',
+  };
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
-    else if (args[i] === '--max-cases' && i + 1 < args.length) opts.maxCases = parseInt(args[++i]!, 10) || 0;
-    else if (args[i] === '--system' && i + 1 < args.length) opts.system = args[++i]!;
+    if (args[i] === '--data-dir' && i + 1 < args.length)
+      opts.dataDir = args[++i]!;
+    else if (args[i] === '--max-cases' && i + 1 < args.length)
+      opts.maxCases = parseInt(args[++i]!, 10) || 0;
+    else if (args[i] === '--system' && i + 1 < args.length)
+      opts.system = args[++i]!;
   }
   return opts;
 }
@@ -82,14 +92,21 @@ interface CaseMeta {
 function parseCaseDir(dirPath: string): CaseMeta | null {
   const name = basename(dirPath);
   // Pattern: re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
-  const match = name.match(/^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
+  const match = name.match(
+    /^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i,
+  );
   if (!match) return null;
 
   const suiteNum = match[1]!;
   const sysCode = match[2]!;
   return {
     suite: `RE${suiteNum}` as CaseMeta['suite'],
-    system: sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket',
+    system:
+      sysCode === 'ob'
+        ? 'OnlineBoutique'
+        : sysCode === 'ss'
+          ? 'SockShop'
+          : 'TrainTicket',
     service: match[3]!,
     faultType: match[4]!.toLowerCase(),
     instance: parseInt(match[5]!, 10),
@@ -113,7 +130,7 @@ function discoverAllCases(dataDir: string): CaseMeta[] {
     try {
       const entries = readdirSync(current, { withFileTypes: true });
       const hasMetrics = entries.some(
-        (e) => e.isFile() && (e.name === 'metrics.json' || e.name === 'inject_time.txt'),
+        (e) => e.isFile() && e.name === 'metrics.json',
       );
       if (hasMetrics) {
         const meta = parseCaseDir(current);
@@ -125,23 +142,41 @@ function discoverAllCases(dataDir: string): CaseMeta[] {
           queue.push(join(current, entry.name));
         }
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip inaccessible directories */
+    }
   }
 
   return cases;
 }
 
-// ── Loader ────────────────────────────────────────────────
+// ── Loader (with comprehensive error reporting) ───────────
+
+interface LoadStats {
+  cases: BenchmarkCase[];
+  errors: string[];
+  errorSamples: Map<string, number>; // error message → count
+  traceStats: {
+    total: number;
+    pruned: number;
+    avgEdgesBefore: number;
+    avgEdgesAfter: number;
+  };
+}
 
 function loadCases(
   metas: CaseMeta[],
   loader: RCAEvalLoader,
   maxCases: number,
-): { cases: BenchmarkCase[]; errors: string[]; traceStats: { total: number; pruned: number; avgEdgesBefore: number; avgEdgesAfter: number } } {
+): LoadStats {
   const loaded: BenchmarkCase[] = [];
   const errors: string[] = [];
+  const errorSamples = new Map<string, number>();
   const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
-  let traceCount = 0, prunedCount = 0, edgesBeforeSum = 0, edgesAfterSum = 0;
+  let traceCount = 0,
+    prunedCount = 0,
+    edgesBeforeSum = 0,
+    edgesAfterSum = 0;
 
   for (const meta of selected) {
     try {
@@ -164,21 +199,41 @@ function loadCases(
           isError: t.status === 'ERROR',
           startTime: t.startTime * 1000,
         }));
-        callGraph = augmentTopologyWithTraces(callGraph, spans, { minCallFrequency: 1 });
+        callGraph = augmentTopologyWithTraces(callGraph, spans, {
+          minCallFrequency: 1,
+        });
         if (callGraph.edges.length < edgesBefore) prunedCount++;
       }
       edgesBeforeSum += edgesBefore;
       edgesAfterSum += callGraph.edges.length;
-      const suiteName = meta.suite === 'RE1' ? 'rcaeval-re1' as const
-        : meta.suite === 'RE2' ? 'rcaeval-re2' as const
-        : 'rcaeval-re3' as const;
+      const suiteName =
+        meta.suite === 'RE1'
+          ? ('rcaeval-re1' as const)
+          : meta.suite === 'RE2'
+            ? ('rcaeval-re2' as const)
+            : ('rcaeval-re3' as const);
       loaded.push(loader.toBenchmarkCase(rawCase, callGraph, suiteName));
     } catch (err) {
-      errors.push(`${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      errors.push(`${meta.dirPath}: ${errMsg}`);
+      const shortMsg = errMsg.substring(0, 60); // deduplicate on prefix
+      errorSamples.set(shortMsg, (errorSamples.get(shortMsg) ?? 0) + 1);
     }
   }
 
-  return { cases: loaded, errors, traceStats: { total: traceCount, pruned: prunedCount, avgEdgesBefore: edgesBeforeSum / Math.max(1, selected.length), avgEdgesAfter: edgesAfterSum / Math.max(1, selected.length) } };
+  return {
+    cases: loaded,
+    errors,
+    errorSamples,
+    traceStats: {
+      total: traceCount,
+      pruned: prunedCount,
+      avgEdgesBefore:
+        edgesBeforeSum / Math.max(1, selected.length),
+      avgEdgesAfter:
+        edgesAfterSum / Math.max(1, selected.length),
+    },
+  };
 }
 
 // ── Output — Industry-Standard Table ──────────────────────
@@ -197,9 +252,15 @@ function printResultsTable(
 
   // Header
   console.log('');
-  console.log(`╔${'═'.repeat(80)}╗`);
-  console.log(`║  ${systemName.padEnd(30)} ${suiteName.padEnd(15)} ${'Micro-Kinetic'.padEnd(20)} ║`);
-  console.log(`╠${'═'.repeat(80)}╣`);
+  console.log(
+    `${'═'.repeat(80)}`,
+  );
+  console.log(
+    `║  ${systemName.padEnd(30)} ${suiteName.padEnd(15)} ${'Micro-Kinetic'.padEnd(20)} ║`,
+  );
+  console.log(
+    `${'═'.repeat(80)}`,
+  );
 
   // Column headers
   let header = '║ Method              | Metric |';
@@ -207,7 +268,9 @@ function printResultsTable(
   header += ' AVERAGE ║';
   console.log(header);
 
-  console.log(`╠${'═'.repeat(80)}╣`);
+  console.log(
+    `${'═'.repeat(80)}`,
+  );
 
   // Metric rows: AC@1, Avg@5, LA, TA
   const metrics: Array<{ key: keyof RunResult; label: string }> = [
@@ -231,12 +294,88 @@ function printResultsTable(
         row += `   N/A |`;
       }
     }
-    const avg = averages.length > 0 ? averages.reduce((s, v) => s + v, 0) / averages.length : 0;
+    const avg =
+      averages.length > 0
+        ? averages.reduce((s, v) => s + v, 0) / averages.length
+        : 0;
     row += ` ${avg.toFixed(1).padStart(5)}% ║`;
     console.log(row);
   }
 
-  console.log(`╚${'═'.repeat(80)}╝`);
+  console.log(
+    `${'═'.repeat(80)}`,
+  );
+}
+
+/**
+ * Log comprehensive error statistics for a group's load failures.
+ * Shows both deduplicated error patterns and individual samples.
+ */
+function reportLoadErrors(
+  systemName: string,
+  suiteName: string,
+  stats: LoadStats,
+): void {
+  const { errors, errorSamples } = stats;
+  if (errors.length === 0) return;
+
+  console.log(
+    `\n┌── Load Errors: ${systemName}/${suiteName} (${errors.length} total)`,
+  );
+
+  // Deduplicated error patterns (sorted by frequency)
+  const sorted = [...errorSamples.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [pattern, count] of sorted) {
+    const pct = ((count / errors.length) * 100).toFixed(0);
+    console.log(`│  [${count}x, ${pct}%] ${pattern}`);
+  }
+
+  // Show first few individual errors for diagnosis
+  if (errors.length > 0) {
+    console.log(`│  --- Samples ---`);
+    for (const e of errors.slice(0, 5)) {
+      const parts = e.split(': ');
+      const dirName =
+        parts.length > 1 ? basename(parts[0]!) : parts[0]!;
+      const msg = parts.slice(1).join(': ');
+      console.log(`│  ${dirName}: ${msg}`);
+    }
+    if (errors.length > 5) {
+      console.log(`│  ... and ${errors.length - 5} more`);
+    }
+  }
+
+  console.log(`└${'─'.repeat(50)}`);
+}
+
+/**
+ * Log trace topology pruning diagnostics.
+ */
+function reportTraceDiagnostics(
+  systemName: string,
+  suiteName: string,
+  stats: LoadStats,
+): void {
+  if (stats.traceStats.total > 0) {
+    const { total, pruned, avgEdgesBefore, avgEdgesAfter } =
+      stats.traceStats;
+    const reduction =
+      avgEdgesBefore > 0
+        ? (
+            ((avgEdgesBefore - avgEdgesAfter) / avgEdgesBefore) *
+            100
+          ).toFixed(0)
+        : '0';
+    console.log(
+      `  [trace] ${total}/${stats.cases.length} cases with traces, ` +
+        `${pruned} pruned, avg edges: ${avgEdgesBefore.toFixed(0)} → ${avgEdgesAfter.toFixed(0)} ` +
+        `(${reduction}% reduction)`,
+    );
+  } else if (stats.cases.length > 0) {
+    console.log(
+      `  [trace] No trace data available for ${stats.cases.length} cases`,
+    );
+  }
 }
 
 // ── Main ──────────────────────────────────────────────────
@@ -248,16 +387,41 @@ async function main(): Promise<void> {
   console.log('Micro-Kinetic — RCAEval Industry-Standard Benchmark');
   console.log('═'.repeat(65));
   console.log(`Data:  ${opts.dataDir}`);
-  console.log(`Filter: ${opts.system}${opts.maxCases > 0 ? ` (max ${opts.maxCases} cases)` : ''}`);
+  console.log(
+    `Filter: ${opts.system}${opts.maxCases > 0 ? ` (max ${opts.maxCases} cases)` : ''}`,
+  );
 
   const allCases = discoverAllCases(opts.dataDir);
   console.log(`Cases discovered: ${allCases.length}`);
 
+  if (allCases.length === 0) {
+    console.log(
+      'No cases found. Ensure cache-datasets workflow has been run.',
+    );
+    return;
+  }
+
+  // ── Discovery diagnostics ───────────────────────────────
+  const discoveryStats = new Map<string, number>();
+  for (const c of allCases) {
+    const key = `${c.system}:${c.suite}`;
+    discoveryStats.set(key, (discoveryStats.get(key) ?? 0) + 1);
+  }
+  console.log('Case distribution:');
+  for (const [key, count] of [...discoveryStats.entries()].sort()) {
+    console.log(`  ${key}: ${count} cases`);
+  }
+
   // Group by system + suite
   const groups = new Map<string, CaseMeta[]>();
   for (const c of allCases) {
-    if (opts.system !== 'all' && c.system !== 'OnlineBoutique' && c.system !== 'SockShop' && c.system !== 'TrainTicket') continue;
-    // TODO: filter by system code
+    if (
+      opts.system !== 'all' &&
+      c.system !== 'OnlineBoutique' &&
+      c.system !== 'SockShop' &&
+      c.system !== 'TrainTicket'
+    )
+      continue;
     const groupKey = `${c.system}:${c.suite}`;
     if (!groups.has(groupKey)) groups.set(groupKey, []);
     groups.get(groupKey)!.push(c);
@@ -268,40 +432,56 @@ async function main(): Promise<void> {
     return;
   }
 
+  console.log(`\nGroups to evaluate: ${groups.size}`);
+  console.log('═'.repeat(65));
+
   const container = createContainer();
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(container, classifier);
   const loader = new RCAEvalLoader();
 
   for (const [groupKey, metas] of groups) {
-    const [systemName, suiteName] = groupKey.split(':') as [string, string];
-    const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
-    const { cases, errors, traceStats } = loadCases(metas, loader, caseLimit);
+    const [systemName, suiteName] = groupKey.split(':') as [
+      string,
+      string,
+    ];
+    const caseLimit =
+      opts.maxCases > 0
+        ? Math.min(opts.maxCases, metas.length)
+        : 0;
+    const stats = loadCases(metas, loader, caseLimit);
 
-    if (errors.length > 0) {
-      console.log(`\nLoad errors (${systemName}/${suiteName}):`);
-      for (const e of errors.slice(0, 3)) console.log(`  - ${e}`);
-    }
-    if (cases.length === 0) continue;
+    // ── Report load errors with comprehensive diagnostics ──
+    reportLoadErrors(systemName, suiteName, stats);
 
-    // Trace pruning diagnostics
-    if (traceStats.total > 0) {
-      console.log(`  [trace] ${traceStats.total}/${cases.length} cases with traces, ${traceStats.pruned} pruned, avg edges: ${traceStats.avgEdgesBefore.toFixed(0)} → ${traceStats.avgEdgesAfter.toFixed(0)}`);
+    if (stats.cases.length === 0) {
+      console.log(
+        `  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`,
+      );
+      continue;
     }
+
+    // ── Trace pruning diagnostics ─────────────────────────
+    reportTraceDiagnostics(systemName, suiteName, stats);
 
     // Split by fault type (matching paper's Table 6 format)
     const byFaultType = new Map<string, BenchmarkCase[]>();
-    for (const c of cases) {
-      const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
+    for (const c of stats.cases) {
+      const ft =
+        c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
       if (!byFaultType.has(ft)) byFaultType.set(ft, []);
       byFaultType.get(ft)!.push(c);
     }
 
     // Print topology diagnostics
-    const diagNode = cases[0]?.callGraph.nodes.values().next().value;
+    const diagNode = stats.cases[0]?.callGraph.nodes
+      .values()
+      .next().value;
     if (diagNode?.labels?._diag_system) {
       const l = diagNode.labels;
-      console.log(`  [] topo: ${l._diag_matched} edges, ${l._diag_svc_matched} svcs matched, ${l._diag_unconnected} unconnected`);
+      console.log(
+        `  [topo] system=${l._diag_system}, edges=${l._diag_matched}, svcs=${l._diag_svc_matched}, unconnected=${l._diag_unconnected}`,
+      );
     }
 
     // Run each fault type separately
