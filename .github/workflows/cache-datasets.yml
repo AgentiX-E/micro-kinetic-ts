@@ -5,11 +5,13 @@ on:
   push:
     paths:
       - '.github/workflows/cache-datasets.yml'
+      - 'scripts/convert-parquet-to-json.py'
   schedule:
     - cron: '0 2 * * 0'  # Weekly refresh (Sunday 2am UTC)
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   cache:
@@ -23,8 +25,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Restore cached datasets
-        id: cache-restore
+      # ── Layer 1: Raw Parquet from Hugging Face ──
+      - name: Restore cached Parquet datasets
+        id: cacheParquet
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-data
@@ -32,14 +35,14 @@ jobs:
           restore-keys: |
             RCAEval-datasets-
 
-      - name: Download datasets from Hugging Face (cache miss)
-        if: steps.cache-restore.outputs.cache-hit != 'true'
+      - name: Download datasets from Hugging Face
+        if: steps.cacheParquet.outputs.cache-hit != 'true'
         run: |
           pip install huggingface_hub
           mkdir -p ~/RCAEval-data
           python3 -c "
           from huggingface_hub import snapshot_download
-          import os, time
+          import os, time, sys
 
           data_dir = os.path.expanduser('~/RCAEval-data')
           print(f'Downloading RCAEval datasets to {data_dir}...')
@@ -52,101 +55,83 @@ jobs:
                       local_dir=data_dir,
                       local_dir_use_symlinks=False,
                       resume_download=True,
-                      max_workers=2,  # reduce concurrency to avoid 429
+                      max_workers=2,
                   )
                   print('Download complete.')
                   break
               except Exception as e:
-                  if attempt < max_retries and '429' in str(e):
-                      wait = 2 ** attempt * 15  # 30s, 60s, 120s, 240s
-                      print(f'Rate limited (429), retrying in {wait}s (attempt {attempt}/{max_retries})...')
+                  err_msg = str(e)
+                  if attempt < max_retries and ('429' in err_msg or '503' in err_msg):
+                      wait = 2 ** attempt * 15
+                      print(f'Rate limited ({err_msg[:50]}), retrying in {wait}s (attempt {attempt}/{max_retries})...')
                       time.sleep(wait)
                   else:
-                      raise
+                      print(f'Fatal error after {attempt} attempts: {e}', file=sys.stderr)
+                      sys.exit(1)
+
+          total_files = sum(1 for _ in __import__('pathlib').Path(data_dir).rglob('*') if _.is_file())
+          total_size = sum(_.stat().st_size for _ in __import__('pathlib').Path(data_dir).rglob('*') if _.is_file())
+          print(f'Downloaded {total_files} files, {total_size / (1024**3):.1f} GB')
           "
 
-      - name: Verify cache
+      - name: Verify Parquet cache
         run: |
-          echo "Cached files: $(find ~/RCAEval-data -type f 2>/dev/null | wc -l)"
-          echo "Cache size: $(du -sh ~/RCAEval-data 2>/dev/null | cut -f1)"
+          echo "=== Parquet Cache ==="
+          echo "Files: $(find ~/RCAEval-data -type f 2>/dev/null | wc -l)"
+          echo "Parquet: $(find ~/RCAEval-data -name '*.parquet' 2>/dev/null | wc -l)"
+          echo "Size: $(du -sh ~/RCAEval-data 2>/dev/null | cut -f1)"
+          echo "Dirs: $(find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | wc -l)"
 
-      - name: Convert Parquet to RCAEval JSON (pre-cache)
-        if: steps.cache-restore.outputs.cache-hit != 'true'
-        run: |
-          pip install pandas pyarrow
-          python3 -c "
-          import os, json
-          from pathlib import Path
-          import pandas as pd
-
-          cache_dir = os.path.expanduser('~/RCAEval-data')
-          out_dir = os.path.expanduser('~/RCAEval-json')
-          os.makedirs(out_dir, exist_ok=True)
-
-          case_dirs = set()
-          for pq in Path(cache_dir).rglob('*.parquet'):
-              case_dirs.add(pq.relative_to(cache_dir).parent)
-
-          print(f'Found {len(case_dirs)} case directories')
-          converted = 0
-          for case_rel in sorted(case_dirs):
-              case_src = Path(cache_dir) / case_rel
-              case_dst = Path(out_dir) / case_rel
-              os.makedirs(case_dst, exist_ok=True)
-              try:
-                  metrics_pq = case_src / 'metrics.parquet'
-                  if metrics_pq.exists():
-                      df = pd.read_parquet(metrics_pq)
-                      metrics_out = {}
-                      if 'service' in df.columns or 'service_id' in df.columns:
-                          svc_col = next((c for c in df.columns if c in ('service','service_id','serviceId')), df.columns[0])
-                          ts_col = next((c for c in df.columns if c in ('timestamp','time','ts')), None)
-                          val_col = next((c for c in df.columns if c in ('value','val')), None)
-                          metric_col = next((c for c in df.columns if c in ('metric_name','metric','name')), None)
-                          for _, row in df.iterrows():
-                              svc = str(row[svc_col])
-                              if svc not in metrics_out: metrics_out[svc] = []
-                              metrics_out[svc].append({'timestamp': int(row[ts_col]) if ts_col and ts_col in row else 0, 'value': float(row[val_col]) if val_col and val_col in row else 0.0, 'metric_name': str(row[metric_col]) if metric_col and metric_col in row else ''})
-                      else:
-                          ts_vals = df.iloc[:,0].tolist() if len(df.columns)>0 else []
-                          for col in df.columns[1:]:
-                              parts = str(col).split('::') if '::' in str(col) else str(col).rsplit('_',1)
-                              svc = parts[0] if len(parts)>=1 else str(col)
-                              metric = parts[1] if len(parts)>=2 else str(col)
-                              for idx, val in enumerate(df[col]):
-                                  ts = int(ts_vals[idx]) if idx<len(ts_vals) else 0
-                                  if svc not in metrics_out: metrics_out[svc] = []
-                                  metrics_out[svc].append({'timestamp':ts,'value':float(val) if pd.notna(val) else 0.0,'metric_name':metric})
-                      with open(case_dst/'metrics.json','w') as f: json.dump(metrics_out, f)
-
-                  for pq_name, csv_name in [('inject_time.parquet','inject_time.txt'), ('traces.parquet','traces.csv'), ('logs.parquet','logs.csv')]:
-                      pq = case_src / pq_name
-                      if pq.exists():
-                          df = pd.read_parquet(pq)
-                          if csv_name.endswith('.txt'):
-                              val = int(df.iloc[0,0]) if len(df)>0 else 0
-                              (case_dst/csv_name).write_text(str(val))
-                          else:
-                              df.to_csv(case_dst/csv_name, index=False)
-
-                  for gt_name in ['ground_truth.json','ground_truth.parquet']:
-                      gt_src = case_src / gt_name
-                      if gt_src.exists():
-                          if gt_src.suffix == '.parquet':
-                              df = pd.read_parquet(gt_src)
-                              with open(case_dst/'ground_truth.json','w') as f: json.dump(df.iloc[0].to_dict() if len(df)>0 else {}, f, default=str)
-                          else:
-                              import shutil; shutil.copy(gt_src, case_dst/'ground_truth.json')
-                          break
-                  converted += 1
-              except Exception as e:
-                  print(f'  Skip {case_rel}: {e}')
-          print(f'Pre-cached {converted}/{len(case_dirs)} case directories to JSON at {out_dir}')
-          "
-
-      - name: Cache converted JSON
-        if: steps.cache-restore.outputs.cache-hit != 'true'
+      # ── Layer 2: Converted JSON/CSV ──
+      - name: Restore cached JSON
+        id: cacheJson
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-json
           key: RCAEval-json-v2
+          restore-keys: |
+            RCAEval-json-
+
+      - name: Convert Parquet to JSON
+        if: steps.cacheJson.outputs.cache-hit != 'true'
+        run: |
+          echo "JSON cache miss — running conversion..."
+          pip install pandas pyarrow
+          python3 scripts/convert-parquet-to-json.py
+
+      - name: Verify JSON cache
+        run: |
+          echo "=== JSON Cache ==="
+          if [ -d ~/RCAEval-json ]; then
+            echo "Case dirs: $(find ~/RCAEval-json -maxdepth 3 -type d 2>/dev/null | wc -l)"
+            echo "JSON files: $(find ~/RCAEval-json -name '*.json' 2>/dev/null | wc -l)"
+            echo "CSV files: $(find ~/RCAEval-json -name '*.csv' 2>/dev/null | wc -l)"
+            echo "Size: $(du -sh ~/RCAEval-json 2>/dev/null | cut -f1)"
+          else
+            echo "JSON cache directory not created!"
+          fi
+
+      - name: Cache converted JSON
+        if: steps.cacheJson.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v2
+
+  # ── Trigger benchmark after successful cache refresh ──
+  trigger-benchmark:
+    needs: cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger benchmark workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'benchmark-rcaeval.yml',
+              ref: 'main'
+            });
+            console.log('Benchmark workflow triggered');

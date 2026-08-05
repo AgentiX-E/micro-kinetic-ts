@@ -5,9 +5,11 @@ on:
   push:
     paths:
       - '.github/workflows/benchmark-rcaeval.yml'
-      - 'packages/**/src/**'
+      - 'scripts/convert-parquet-to-json.py'
       - 'benchmarks/src/**'
-      - 'benchmarks/src/**'
+  workflow_run:
+    workflows: [Cache Benchmark Datasets]
+    types: [completed]
 
 permissions:
   contents: write
@@ -15,9 +17,10 @@ permissions:
   id-token: write
 
 jobs:
-  benchmark:
+  # ── Synthetic benchmark: fast, no external data needed ──
+  synthetic:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -34,159 +37,125 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
-      - name: Restore cached RCAEval datasets
-        uses: actions/cache@v4
+      - name: Run synthetic benchmark (175 cases)
+        run: |
+          pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
+
+      - name: Upload synthetic results
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-results
+          path: benchmark-results.json
+
+  # ── RCAEval benchmark: requires cached datasets ──
+  rcaeval:
+    needs: synthetic
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Restore cached RCAEval JSON
+        id: jsonCache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v2
+          restore-keys: |
+            RCAEval-json-
+
+      - name: Restore cached RCAEval Parquet (fallback)
+        if: steps.jsonCache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-data
           key: RCAEval-datasets-v2-pq
           restore-keys: |
             RCAEval-datasets-
 
-      - name: Restore cached RCAEval JSON
-        id: jsonCache
-        uses: actions/cache@v4
-        with:
-          path: ~/RCAEval-json
-          key: RCAEval-json-v2
-          restore-keys: |
-            RCAEval-datasets-
-
-      - name: Verify dataset availability
+      - name: Check data directory
+        id: checkData
         run: |
-          TOTAL_FILES=$(find ~/RCAEval-data -type f 2>/dev/null | wc -l)
-          PARQUET_FILES=$(find ~/RCAEval-data -name '*.parquet' 2>/dev/null | wc -l)
-          echo "Total files: $TOTAL_FILES"
-          echo "Parquet files: $PARQUET_FILES"
-          if [ "$TOTAL_FILES" -lt 50 ]; then
-            echo "::warning::Insufficient cached files ($TOTAL_FILES). Run Cache Datasets workflow first."
+          if [ -d ~/RCAEval-json ]; then
+            JSON_COUNT=$(find ~/RCAEval-json -type d -mindepth 1 2>/dev/null | wc -l)
+            echo "JSON case dirs: $JSON_COUNT"
+          else
+            echo "JSON cache not available"
+            JSON_COUNT=0
           fi
-          find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | head -20
 
-      - name: Convert Parquet to RCAEval JSON (pandas bridge)
-        if: steps.jsonCache.outputs.cache-hit != 'true'
+          if [ -d ~/RCAEval-data ]; then
+            PQ_COUNT=$(find ~/RCAEval-data -name '*.parquet' 2>/dev/null | wc -l)
+            echo "Parquet files: $PQ_COUNT"
+          else
+            echo "Parquet cache not available"
+            PQ_COUNT=0
+          fi
+
+          echo "json_count=$JSON_COUNT" >> $GITHUB_OUTPUT
+          echo "pq_count=$PQ_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Convert Parquet to JSON (on-the-fly)
+        if: steps.checkData.outputs.json_count == '0' && steps.checkData.outputs.pq_count != '0'
         run: |
-          pip install pandas pyarrow 2>/dev/null || true
-          python3 -c "
-          import os, json
-          from pathlib import Path
-          import pandas as pd
+          echo "JSON cache miss — converting Parquet to JSON..."
+          pip install pandas pyarrow
+          python3 scripts/convert-parquet-to-json.py
 
-          cache_dir = os.path.expanduser('~/RCAEval-data')
-          out_dir = os.path.expanduser('~/RCAEval-json')
-          os.makedirs(out_dir, exist_ok=True)
-
-          case_dirs = set()
-          for pq in Path(cache_dir).rglob('*.parquet'):
-              case_dirs.add(pq.relative_to(cache_dir).parent)
-
-          print(f'Found {len(case_dirs)} case directories')
-          converted = 0
-
-          for case_rel in sorted(case_dirs):
-              case_src = Path(cache_dir) / case_rel
-              case_dst = Path(out_dir) / case_rel
-              os.makedirs(case_dst, exist_ok=True)
-
-              try:
-                  metrics_pq = case_src / 'metrics.parquet'
-                  if metrics_pq.exists():
-                      df = pd.read_parquet(metrics_pq)
-                      metrics_out = {}
-                      first_col = str(df.columns[0]) if len(df.columns) > 0 else ''
-
-                      if 'service' in df.columns or 'service_id' in df.columns:
-                          svc_col = next((c for c in df.columns if c in ('service', 'service_id', 'serviceId')), df.columns[0])
-                          ts_col = next((c for c in df.columns if c in ('timestamp', 'time', 'ts')), None)
-                          val_col = next((c for c in df.columns if c in ('value', 'val')), None)
-                          metric_col = next((c for c in df.columns if c in ('metric_name', 'metric', 'name')), None)
-                          for _, row in df.iterrows():
-                              svc = str(row[svc_col])
-                              if svc not in metrics_out: metrics_out[svc] = []
-                              metrics_out[svc].append({
-                                  'timestamp': int(row[ts_col]) if ts_col and ts_col in row else 0,
-                                  'value': float(row[val_col]) if val_col and val_col in row else 0.0,
-                                  'metric_name': str(row[metric_col]) if metric_col and metric_col in row else '',
-                              })
-                      else:
-                          ts_vals = df.iloc[:, 0].tolist() if len(df.columns) > 0 else []
-                          for col in df.columns[1:]:
-                              col_str = str(col)
-                              parts = col_str.split('::') if '::' in col_str else col_str.rsplit('_', 1)
-                              svc = parts[0] if len(parts) >= 1 else col_str
-                              metric = parts[1] if len(parts) >= 2 else col_str
-                              for idx, val in enumerate(df[col]):
-                                  ts = int(ts_vals[idx]) if idx < len(ts_vals) else 0
-                                  if svc not in metrics_out: metrics_out[svc] = []
-                                  metrics_out[svc].append({
-                                      'timestamp': ts,
-                                      'value': float(val) if pd.notna(val) else 0.0,
-                                      'metric_name': metric,
-                                  })
-                      with open(case_dst / 'metrics.json', 'w') as f:
-                          json.dump(metrics_out, f)
-
-                  inject_pq = case_src / 'inject_time.parquet'
-                  inject_txt = case_src / 'inject_time.txt'
-                  if inject_pq.exists():
-                      df = pd.read_parquet(inject_pq)
-                      val = int(df.iloc[0, 0]) if len(df) > 0 else 0
-                      (case_dst / 'inject_time.txt').write_text(str(val))
-                  elif inject_txt.exists():
-                      import shutil; shutil.copy(inject_txt, case_dst / 'inject_time.txt')
-
-                  for gt_name in ['ground_truth.json', 'ground_truth.parquet']:
-                      gt_src = case_src / gt_name
-                      if gt_src.exists():
-                          if gt_src.suffix == '.parquet':
-                              df = pd.read_parquet(gt_src)
-                              gt_data = df.iloc[0].to_dict() if len(df) > 0 else {}
-                              with open(case_dst / 'ground_truth.json', 'w') as f:
-                                  json.dump(gt_data, f, default=str)
-                          else:
-                              import shutil; shutil.copy(gt_src, case_dst / 'ground_truth.json')
-                          break
-
-                  # ── Convert traces.parquet → traces.csv (RE2/RE3) ──
-                  traces_pq = case_src / 'traces.parquet'
-                  if traces_pq.exists():
-                      df = pd.read_parquet(traces_pq)
-                      df.to_csv(case_dst / 'traces.csv', index=False)
-
-                  # ── Convert logs.parquet → logs.csv (RE2/RE3) ──
-                  logs_pq = case_src / 'logs.parquet'
-                  if logs_pq.exists():
-                      df = pd.read_parquet(logs_pq)
-                      df.to_csv(case_dst / 'logs.csv', index=False)
-
-                  for aux_file in case_src.glob('*'):
-                      if aux_file.suffix in ['.csv', '.txt'] and aux_file.name not in ['metrics.parquet', 'inject_time.parquet']:
-                          import shutil; shutil.copy(aux_file, case_dst / aux_file.name)
-
-                  converted += 1
-              except Exception as e:
-                  print(f'  Skip {case_rel}: {e}')
-
-          print(f'Converted {converted}/{len(case_dirs)} case directories to JSON at {out_dir}')
-          "
-
-      - name: Verify converted JSON
-        if: steps.jsonCache.outputs.cache-hit != 'true'
-        run: |
-          JSON_COUNT=$(find ~/RCAEval-json -name '*.json' 2>/dev/null | wc -l)
-          TRACE_COUNT=$(find ~/RCAEval-json -name 'traces.csv' 2>/dev/null | wc -l)
-          LOG_COUNT=$(find ~/RCAEval-json -name 'logs.csv' 2>/dev/null | wc -l)
-          echo "JSON files available: $JSON_COUNT"
-          echo "Trace files available: $TRACE_COUNT"
-          echo "Log files available: $LOG_COUNT"
-          find ~/RCAEval-json -maxdepth 3 -type d 2>/dev/null | head -20
-
-      - name: Run Micro-Kinetic benchmark (synthetic + classifier)
-        run: |
-          pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
-
-      - name: Run RCAEval industry-standard benchmark
+      - name: Run RCAEval benchmark
+        if: steps.checkData.outputs.json_count != '0' || steps.checkData.outputs.pq_count != '0'
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts 2>&1 | tee rcaeval-results.txt
+
+      - name: Report data missing
+        if: steps.checkData.outputs.json_count == '0' && steps.checkData.outputs.pq_count == '0'
+        run: |
+          echo "No RCAEval data available. Run 'Cache Benchmark Datasets' workflow first." > rcaeval-results.txt
+          echo "::warning::RCAEval datasets not cached. Skipping real-dataset benchmark."
+
+      - name: Upload RCAEval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-results
+          path: |
+            rcaeval-results.txt
+
+  # ── Dashboard: combine results and deploy ──
+  dashboard:
+    needs: [synthetic, rcaeval]
+    if: always() && (needs.synthetic.result == 'success' || needs.synthetic.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download synthetic results
+        uses: actions/download-artifact@v4
+        with:
+          name: synthetic-results
+          path: artifacts/
+
+      - name: Download RCAEval results
+        uses: actions/download-artifact@v4
+        with:
+          name: rcaeval-results
+          path: artifacts/
+        continue-on-error: true
 
       - name: Generate HTML dashboard
         run: |
@@ -194,8 +163,11 @@ jobs:
           import json, os
           from datetime import datetime, timezone
 
-          synthetic = json.load(open('benchmark-results.json'))
-          rcaeval_raw = open('rcaeval-results.txt').read() if os.path.exists('rcaeval-results.txt') else 'Not available (cache miss)'
+          synthetic_file = 'artifacts/benchmark-results.json'
+          rcaeval_file = 'artifacts/rcaeval-results.txt'
+
+          synthetic = json.load(open(synthetic_file)) if os.path.exists(synthetic_file) else [{'name':'N/A','value':'Data not found','unit':''}]
+          rcaeval_raw = open(rcaeval_file).read() if os.path.exists(rcaeval_file) else 'Not available (data cache miss)'
 
           now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
           sha = os.environ.get('GITHUB_SHA', 'unknown')[:8]
@@ -218,7 +190,6 @@ jobs:
             .container {{ max-width: 1400px; margin: 0 auto; }}
             h1 {{ color: #58a6ff; font-size: 2em; border-bottom: 2px solid #30363d; padding-bottom: 12px; margin-bottom: 20px; }}
             h2 {{ color: #f0883e; margin: 30px 0 15px; font-size: 1.5em; }}
-            h3 {{ color: #7ee787; margin: 20px 0 10px; }}
             .meta {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px 20px; margin-bottom: 20px; font-size: 0.9em; }}
             .meta span {{ color: #8b949e; }}
             .meta strong {{ color: #58a6ff; }}
@@ -226,15 +197,7 @@ jobs:
             th, td {{ padding: 10px 14px; text-align: left; border: 1px solid #21262d; }}
             th {{ background: #1f2937; color: #58a6ff; font-weight: 600; }}
             tr:hover {{ background: #1c2129; }}
-            .score-100 {{ background: #0e4429; color: #7ee787; }}
-            .score-90 {{ background: #0e4429; color: #7ee787; }}
-            .score-80 {{ background: #1b3a1b; color: #56d364; }}
-            .score-60 {{ background: #5c3a00; color: #d29922; }}
-            .score-low {{ background: #490202; color: #f85149; }}
             pre {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px; overflow-x: auto; font-size: 0.85em; }}
-            .pass {{ color: #7ee787; }} .fail {{ color: #f85149; }}
-            .grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
-            @media (max-width: 900px) {{ .grid-2 {{ grid-template-columns: 1fr; }} }}
           </style>
           </head>
           <body>
@@ -252,7 +215,7 @@ jobs:
             {synthetic_rows}
           </table>
 
-          <h2> RCAEval Real Dataset (per-system, per-dataset)</h2>
+          <h2> RCAEval Real Dataset</h2>
           <pre>{rcaeval_raw}</pre>
 
           <p style=\"text-align:center;color:#8b949e;margin-top:40px;font-size:0.8em\">
@@ -267,28 +230,33 @@ jobs:
           print('Dashboard generated: index.html')
           "
 
-      - name: Upload artifacts
+      - name: Upload dashboard artifact
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results
+          name: benchmark-dashboard
           path: |
-            benchmark-results.json
-            rcaeval-results.txt
             index.html
+            artifacts/benchmark-results.json
+            artifacts/rcaeval-results.txt
 
       - name: Post summary
+        if: always()
         run: |
           echo '## Micro-Kinetic Synthetic Benchmark' >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
-          cat benchmark-results.json >> $GITHUB_STEP_SUMMARY
+          if [ -f artifacts/benchmark-results.json ]; then
+            cat artifacts/benchmark-results.json >> $GITHUB_STEP_SUMMARY
+          else
+            echo 'No synthetic results available' >> $GITHUB_STEP_SUMMARY
+          fi
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
-          echo '## RCAEval Real Dataset Benchmark (per-system, per-dataset)' >> $GITHUB_STEP_SUMMARY
+          echo '## RCAEval Real Dataset Benchmark' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          if [ -f rcaeval-results.txt ]; then
-            cat rcaeval-results.txt >> $GITHUB_STEP_SUMMARY
+          if [ -f artifacts/rcaeval-results.txt ]; then
+            cat artifacts/rcaeval-results.txt >> $GITHUB_STEP_SUMMARY
           else
-            echo 'No RCAEval results (cache miss)' >> $GITHUB_STEP_SUMMARY
+            echo 'No RCAEval results (data cache miss)' >> $GITHUB_STEP_SUMMARY
           fi
           echo '```' >> $GITHUB_STEP_SUMMARY
 
