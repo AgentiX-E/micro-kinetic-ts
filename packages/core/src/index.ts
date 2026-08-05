@@ -120,6 +120,20 @@ export type { LLMRetryConfig, TopologyValidationResult } from './utils/llm-valid
 // ── Topology Provider Interface ───────────────────────────
 export type * from './interfaces/topology-provider.js';
 
+// ── Timing / Causal Direction ─────────────────────────────
+export { DEFAULT_CAUSAL_DIRECTION_CONFIG } from './interfaces/timing-provider.js';
+export type {
+  BatchCausalDirection,
+  CausalDirection,
+  CausalDirectionConfig,
+  ConfidenceTier,
+  ITimingProvider,
+  ITimingProviderRegistry,
+  ServiceTiming,
+  TemporalContext,
+  TimingProviderMeta,
+} from './interfaces/timing-provider.js';
+
 // ── Multi-Signal Fusion ───────────────────────────────────
 export { DEFAULT_FUSION_WEIGHTS } from './interfaces/multi-signal-fusion.js';
 export type {

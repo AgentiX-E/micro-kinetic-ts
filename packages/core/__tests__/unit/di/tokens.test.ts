@@ -36,7 +36,7 @@ describe('DI_TOKENS', () => {
   it('should have expected number of tokens', () => {
     const keys = Object.keys(DI_TOKENS);
     // MATH: 4 + ENGINES: 11 + DATA: 1 + PIPELINE: 1 = 17
-    expect(keys.length).toBe(17);
+    expect(keys.length).toBe(23);
   });
 
   it('should have all Symbol.for tokens with micro-kinetic prefix', () => {
@@ -63,7 +63,7 @@ describe('DI_TOKENS', () => {
       expect(typeof token).toBe('symbol');
       count++;
     });
-    expect(count).toBe(17);
+    expect(count).toBe(23);
   });
 
   it('should verify token names', () => {

@@ -65,6 +65,25 @@ export const DI_TOKENS = {
   // ── Pipeline ───────────────────────────────────────────
   /** Full RCA pipeline */
   RCA_PIPELINE: Symbol.for('micro-kinetic:RCAPipeline'),
+
+  // ── Timing / Causal Direction ──────────────────────────
+  /** ITimingProviderRegistry — ordered provider chain */
+  TIMING_REGISTRY: Symbol.for('micro-kinetic:TimingRegistry'),
+
+  /** ITimingProvider — trace-based temporal direction */
+  TRACE_TIMING_PROVIDER: Symbol.for('micro-kinetic:TraceTiming'),
+
+  /** ITimingProvider — log-based temporal direction */
+  LOG_TIMING_PROVIDER: Symbol.for('micro-kinetic:LogTiming'),
+
+  /** ITimingProvider — Granger causality direction */
+  GRANGER_CAUSALITY_PROVIDER: Symbol.for('micro-kinetic:GrangerCausality'),
+
+  /** ITimingProvider — static config direction */
+  STATIC_DIRECTION_PROVIDER: Symbol.for('micro-kinetic:StaticDirection'),
+
+  /** ISignalProvider — multi-signal fusion */
+  SIGNAL_PROVIDER: Symbol.for('micro-kinetic:SignalProvider'),
 } as const;
 
 /** Type helper: extracts the Symbol type from DI_TOKENS values. */

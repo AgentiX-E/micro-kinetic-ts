@@ -1,0 +1,38 @@
+{
+  "name": "@agentix-e/micro-kinetic-causal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Causal direction detection and timing provider chain for AgentiX-E micro-kinetic",
+  "license": "Proprietary",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentix-e/micro-kinetic-core": "workspace:^"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  }
+}
