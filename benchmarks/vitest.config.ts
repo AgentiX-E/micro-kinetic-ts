@@ -10,6 +10,7 @@ export default defineConfig({
       '@agentix-e/micro-kinetic': resolve(__dirname, '../packages/kinetic/src/index.ts'),
       '@agentix-e/micro-kinetic-core': resolve(__dirname, '../packages/core/src/index.ts'),
       '@agentix-e/micro-kinetic-tree': resolve(__dirname, '../packages/tree/src/index.ts'),
+      '@agentix-e/micro-kinetic-causal': resolve(__dirname, '../packages/causal/src/index.ts'),
       '@agentix-e/micro-kinetic-cutting': resolve(__dirname, '../packages/cutting/src/index.ts'),
       '@agentix-e/micro-kinetic-noise': resolve(__dirname, '../packages/noise/src/index.ts'),
       '@agentix-e/micro-kinetic-scaling': resolve(__dirname, '../packages/scaling/src/index.ts'),

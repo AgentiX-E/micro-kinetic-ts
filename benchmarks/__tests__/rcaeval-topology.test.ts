@@ -10,8 +10,18 @@
  * @module benchmarks/__tests__/rcaeval-topology.test
  */
 
-import { describe, it, expect } from 'vitest';
-import { buildRCAEvalCallGraph } from '../src/rcaeval-topology.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import {
+  buildRCAEvalCallGraph,
+  initRCAEvalTopology,
+  identifyBenchmarkSystem,
+} from '../src/rcaeval-topology.js';
+
+// ── Initialize YAML topology registry once before all tests ──
+
+beforeAll(async () => {
+  await initRCAEvalTopology();
+});
 
 // ── System Identification (full 3×3 matrix) ──────────────
 

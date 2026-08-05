@@ -18,7 +18,7 @@ import { RegexFaultClassifier, DEFAULT_CLASSIFICATION_RULES } from '../../packag
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import { buildRCAEvalCallGraph } from './rcaeval-topology.js';
+import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
 import type { ServiceCallGraph, ServiceNode, TimeSeries, MetricMap } from '../../packages/core/src/index.js';
 
 // ── Per-benchmark service name lists ─────────────────────
@@ -153,6 +153,9 @@ function createContainer(): Container {
 async function main(): Promise<void> {
   console.log('Micro-Kinetic — Local Full RCAEval Benchmark (Real Topology)');
   console.log('═'.repeat(70));
+
+  // ── Init YAML-driven topology registry ──────────────────
+  await initRCAEvalTopology();
 
   const container = createContainer();
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);

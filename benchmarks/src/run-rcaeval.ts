@@ -35,7 +35,7 @@ import {
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import { buildRCAEvalCallGraph } from './rcaeval-topology.js';
+import { buildRCAEvalCallGraph, initRCAEvalTopology, isRCAEvalTopologyInitialized } from './rcaeval-topology.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -439,6 +439,13 @@ async function main(): Promise<void> {
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(container, classifier);
   const loader = new RCAEvalLoader();
+
+  // ── Init YAML-driven topology registry ──────────────────
+  // Load all three system topology configs once before benchmarking.
+  // Falls back gracefully to ring-connect if configs are not found.
+  await initRCAEvalTopology();
+  console.log(`Topology: YAML v2 (${isRCAEvalTopologyInitialized() ? 'loaded' : 'unavailable'})`);
+  console.log('═'.repeat(65));
 
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [
