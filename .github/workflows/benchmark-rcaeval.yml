@@ -1,5 +1,7 @@
 name: Benchmark — RCAEval Full Dataset
 
+# Trigger: workflow_dispatch (manual), push to benchmark sources,
+# or after Cache Benchmark Datasets workflow completes successfully.
 on:
   workflow_dispatch:
   push:
