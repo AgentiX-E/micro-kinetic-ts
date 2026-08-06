@@ -18,6 +18,7 @@
  * @module benchmarks/rcaeval-topology
  */
 
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -185,9 +186,6 @@ export async function initRCAEvalTopology(
  */
 function collectServiceIds(configDir: string, system: string): string[] {
   try {
-    const { readFileSync, existsSync, readdirSync } = require('node:fs') as typeof import('node:fs');
-    const { join } = require('node:path') as typeof import('node:path');
-
     if (!existsSync(configDir)) return [];
 
     const files = readdirSync(configDir).filter(
