@@ -109,17 +109,37 @@ export interface CompleteBenchmarkReport {
  * Uses the DI container to resolve the RCA engine and runs
  * benchmark cases, tracking accuracy metrics and generating reports.
  *
+ * When `pcValidation` is enabled, the runner first validates the
+ * service call graph using the PC causal discovery algorithm before
+ * passing it to buildFaultGraph(), pruning non-causal edges and
+ * discovering missing causal links.
+ *
  * @example
  * ```typescript
  * const container = createDefaultContainer();
  * const runner = new BenchmarkRunner(container);
  * const result = runner.runSuite(mySuite);
  * const report = runner.generateReport([result], 'json');
+ *
+ * // With PC causal validation:
+ * const runnerPC = new BenchmarkRunner(container, undefined, {
+ *   pcValidation: true,
+ *   pcPruneNonCausal: true,
+ * });
  * ```
  */
 export class BenchmarkRunner {
   private readonly container: IContainer;
   private readonly classifier: IFaultClassifier | undefined;
+
+  /** PC causal discovery validation options (I8-P4b). */
+  private readonly pcOptions?: {
+    readonly enabled: boolean;
+    readonly pruneNonCausal: boolean;
+    readonly discoverNewEdges: boolean;
+    readonly alpha?: number;
+    readonly maxConditioningSetSize?: number;
+  };
 
   /**
    * @param container - DI container with at least RCA_ENGINE registered.
@@ -127,10 +147,30 @@ export class BenchmarkRunner {
    *                     enriches each engine prediction with a classifier-generated
    *                     faultType based on per-service metric data, enabling
    *                     meaningful Type Accuracy (TA) computation.
+   * @param pcValidation - Optional PC causal discovery validation. When enabled
+   *                       (pcValidation: true), the runner pre-validates each case's
+   *                       call graph using the PC algorithm before RCA analysis.
    */
-  constructor(container: IContainer, classifier?: IFaultClassifier) {
+  constructor(
+    container: IContainer,
+    classifier?: IFaultClassifier,
+    pcValidation?: {
+      enabled: boolean;
+      pruneNonCausal?: boolean;
+      discoverNewEdges?: boolean;
+      alpha?: number;
+      maxConditioningSetSize?: number;
+    },
+  ) {
     this.container = container;
     this.classifier = classifier;
+    this.pcOptions = pcValidation?.enabled ? {
+      enabled: true,
+      pruneNonCausal: pcValidation.pruneNonCausal ?? false,
+      discoverNewEdges: pcValidation.discoverNewEdges ?? true,
+      alpha: pcValidation.alpha,
+      maxConditioningSetSize: pcValidation.maxConditioningSetSize,
+    } : undefined;
   }
 
   /**
@@ -155,7 +195,28 @@ export class BenchmarkRunner {
 
     for (const benchCase of suite.cases) {
       try {
-        const faultGraph = engine.buildFaultGraph(benchCase.callGraph, benchCase.metrics);
+        // ── PC Causal Discovery Validation (I8-P4b) ──
+        let effectiveCallGraph = benchCase.callGraph;
+        if (this.pcOptions?.enabled) {
+          const { validateTopologyWithPC } = await import(
+            '../../signals/pc-validator.js'
+          );
+          const validationResult = validateTopologyWithPC(
+            benchCase.callGraph,
+            benchCase.metrics,
+            {
+              pruneNonCausal: this.pcOptions.pruneNonCausal,
+              discoverNewEdges: this.pcOptions.discoverNewEdges,
+              pcConfig: {
+                alpha: this.pcOptions.alpha,
+                maxConditioningSetSize: this.pcOptions.maxConditioningSetSize,
+              },
+            },
+          );
+          effectiveCallGraph = validationResult.refinedGraph;
+        }
+
+        const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics);
         const results = await engine.analyze(faultGraph, topK);
         const topResult = results[0];
 

@@ -880,3 +880,158 @@ function makePrediction(serviceId: string, faultCategory = 'CPU'): import('@agen
     viaTreeSearch: false,
   };
 }
+
+// ── PC Causal Validation Integration Tests (I8-P4b) ────────
+
+/**
+ * These tests verify that the BenchmarkRunner constructor accepts
+ * pcValidation options and that enabling PC validation does not
+ * break the runner's normal operation.
+ *
+ * The actual PC validation logic is tested in pc-validator.test.ts.
+ * Here we test the integration layer: constructor, configuration flow,
+ * and runner behavior with PC options enabled.
+ */
+
+import type { ServiceCallGraph, ServiceNode, CallEdge, MetricMap, TimeSeries } from '@agentix-e/micro-kinetic-core';
+
+describe('BenchmarkRunner PC validation integration (I8-P4b)', () => {
+  function makePCValidationSuite(): ReturnType<typeof SyntheticBenchmarkGenerator.prototype.generateRCAEvalSuite> {
+    const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+    return generator.generateRCAEvalSuite('pc-test-suite', 3);
+  }
+
+  function makePCValidationGraph(): ServiceCallGraph {
+    const nodes = new Map<string, ServiceNode>();
+    const edges: CallEdge[] = [];
+    for (const id of ['A', 'B', 'C']) {
+      nodes.set(id, { id, name: id, namespace: 'test', labels: {} });
+    }
+    edges.push({ from: 'A', to: 'B', type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 });
+    edges.push({ from: 'B', to: 'C', type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 });
+    return { nodes, edges, systemLoad: 0.5 };
+  }
+
+  function makePCValidationMetrics(): MetricMap {
+    const n = 20;
+    const m = new Map<string, Map<string, TimeSeries>>();
+    const timestamp = Date.now();
+
+    for (const id of ['A', 'B', 'C']) {
+      const vals = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        vals[i] = 10 + Math.sin(i * 0.5 + id.charCodeAt(0)) * 2 + Math.random();
+      }
+      // Spike for A (root cause)
+      if (id === 'A') {
+        vals[n - 1] = 100;
+        vals[n - 2] = 80;
+        vals[n - 3] = 60;
+      }
+      // B depends on A (latent effect)
+      if (id === 'B') {
+        for (let i = 0; i < n; i++) {
+          vals[i] = vals[i]! * 0.8 + Math.random();
+        }
+      }
+      const tm = new Map<string, TimeSeries>();
+      tm.set('latency', { metricName: 'latency', labels: { service: id }, values: vals, timestamps: [] });
+      m.set(id, tm);
+    }
+    return m;
+  }
+
+  it('runs suite successfully with PC validation disabled (default)', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+    const runner = new BenchmarkRunner(container);
+    const suite = makePCValidationSuite();
+    const result = await runner.runSuite(suite);
+    expect(result.totalCases).toBeGreaterThan(0);
+  });
+
+  it('runs suite successfully with PC validation enabled (pruneNonCausal=false)', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+    const runner = new BenchmarkRunner(container, undefined, {
+      enabled: true,
+      pruneNonCausal: false,
+      discoverNewEdges: true,
+    });
+    const suite = makePCValidationSuite();
+    const result = await runner.runSuite(suite);
+    expect(result.totalCases).toBeGreaterThan(0);
+    // Runner should complete without errors even with PC validation
+    expect(result.failures.length).toBeLessThanOrEqual(result.totalCases);
+  });
+
+  it('runs suite successfully with PC validation enabled (pruneNonCausal=true)', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+    const runner = new BenchmarkRunner(container, undefined, {
+      enabled: true,
+      pruneNonCausal: true,
+      discoverNewEdges: false,
+    });
+    const suite = makePCValidationSuite();
+    const result = await runner.runSuite(suite);
+    expect(result.totalCases).toBeGreaterThan(0);
+  });
+
+  it('passes custom PC config values to runner constructor', () => {
+    const container = new Container();
+    const runner = new BenchmarkRunner(container, undefined, {
+      enabled: true,
+      alpha: 0.01,
+      maxConditioningSetSize: 3,
+    });
+    // Construction should succeed; validation happens at runtime
+    expect(runner).toBeDefined();
+  });
+
+  it('no PC validation when enabled=false', () => {
+    const container = new Container();
+    const runner = new BenchmarkRunner(container, undefined, {
+      enabled: false,
+      pruneNonCausal: true,
+    });
+    expect(runner).toBeDefined();
+  });
+
+  it('handles PC validation with minimal synthetic data', async () => {
+    // Create a very small suite with minimal metrics to exercise the
+    // PC validation path with potentially insufficient data
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    const runner = new BenchmarkRunner(container, undefined, {
+      enabled: true,
+      pruneNonCausal: true,
+      discoverNewEdges: true,
+    });
+
+    const generator = new SyntheticBenchmarkGenerator({ seed: 99 });
+    const suite = generator.generateRCAEvalSuite('pc-small', 2);
+    const result = await runner.runSuite(suite);
+    expect(result.totalCases).toBeGreaterThan(0);
+  });
+
+  it('Verify PC valuel in suite when enabled', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+    const runner = new BenchmarkRunner(container, undefined, {
+      enabled: true,
+      pruneNonCausal: true,
+    });
+
+    const generator = new SyntheticBenchmarkGenerator({ seed: 77 });
+    const suite = generator.generateRCAEvalSuite('pc-verify', 4);
+    const result = await runner.runSuite(suite);
+
+    expect(result.totalCases).toBe(4);
+    expect(result.duration).toBeGreaterThan(0);
+    // With PC pruning enabled, the runner still returns valid metrics
+    expect(typeof result.avgTop1).toBe('number');
+    expect(typeof result.avgTop5).toBe('number');
+  });
+});

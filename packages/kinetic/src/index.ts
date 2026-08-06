@@ -76,6 +76,30 @@ export {
 } from './signals/trace-topology.js';
 export type { TraceTopologyConfig } from './signals/trace-topology.js';
 
+export {
+  runPCAlgorithm,
+  buildCorrelationMatrix,
+  pearsonCorrelation,
+  partialCorrelation,
+  fisherZ,
+  testConditionalIndependence,
+} from './signals/pc-causal-discovery.js';
+export type {
+  CausalEdge,
+  DirectedCausalEdge,
+  PCConfig,
+  PCResult,
+} from './signals/pc-causal-discovery.js';
+
+export {
+  validateTopologyWithPC,
+  canValidateWithPC,
+} from './signals/pc-validator.js';
+export type {
+  PCValidationResult,
+  PCValidatorConfig,
+} from './signals/pc-validator.js';
+
 // ── Defaults ──────────────────────────────────────────────
 
 export { DEFAULTS } from './di/defaults.js';
