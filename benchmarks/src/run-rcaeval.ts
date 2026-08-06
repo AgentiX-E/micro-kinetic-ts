@@ -45,8 +45,7 @@ import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/tr
  * Hand-rolled to avoid external dependency — .env is gitignored.
  */
 function loadEnvFile(): void {
-  const { existsSync, readFileSync } = require('node:fs');
-  const envPath = resolve(__dirname, '..', '..', '.env');
+  const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env');
   if (!existsSync(envPath)) return;
   const content = readFileSync(envPath, 'utf-8');
   for (const line of content.split('\n')) {
