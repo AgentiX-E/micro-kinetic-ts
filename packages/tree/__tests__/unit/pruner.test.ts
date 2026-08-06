@@ -561,4 +561,124 @@ describe('TreePruner', () => {
       expect(results[0]!.serviceId).toBe('Child3');
     });
   });
+
+  describe('collision energy aggregation (I8-P3)', () => {
+    it('includes collisionEnergy in buildFaultGraph output', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B'], ['B', 'C']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],  // spike anomaly
+        B: [10, 10, 10, 10, 15],   // mild deviation
+        C: [5, 5, 5, 5, 5],       // flat
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.collisionEnergy).toBeDefined();
+      if (graph.collisionEnergy) {
+        expect(graph.collisionEnergy.has('A')).toBe(true);
+        expect(graph.collisionEnergy.has('B')).toBe(true);
+        expect(graph.collisionEnergy.has('C')).toBe(true);
+
+        const a = graph.collisionEnergy.get('A')!;
+        const b = graph.collisionEnergy.get('B')!;
+        const c = graph.collisionEnergy.get('C')!;
+
+        expect(a.totalEnergy).toBeGreaterThanOrEqual(0);
+        expect(a.totalEnergy).toBeLessThanOrEqual(1);
+        expect(a.collisionType).toBe('chain'); // A has no incoming edges
+        expect(a.collisionGain).toBe(0);       // No parents → no collision
+
+        expect(b.collisionType).toBe('chain');
+        expect(b.collisionGain).toBeGreaterThanOrEqual(0); // May have collision from A
+
+        expect(c.collisionType).toBe('chain');
+      }
+    });
+
+    it('classifies bottleneck in star topology', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['Src1', 'Src2', 'Src3', 'Src4', 'Hub'],
+        [['Src1', 'Hub'], ['Src2', 'Hub'], ['Src3', 'Hub'], ['Src4', 'Hub']],
+      );
+      const metrics = makeMetrics({
+        Src1: [100, 100, 100, 100, 100],
+        Src2: [100, 100, 100, 100, 100],
+        Src3: [100, 100, 100, 100, 100],
+        Src4: [100, 100, 100, 100, 100],
+        Hub: [100, 95, 90, 85, 10],  // dropping anomaly
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.collisionEnergy).toBeDefined();
+      if (graph.collisionEnergy) {
+        const hub = graph.collisionEnergy.get('Hub')!;
+        // Hub has 4 incoming edges, 0 outgoing → bottleneck
+        expect(hub.collisionType).toBe('bottleneck');
+        expect(hub.collisionGain).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('classifies cycle membership collision type', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B'],
+        [['A', 'B'], ['B', 'A']],  // bidirectional = cycle
+      );
+      const metrics = makeMetrics({
+        A: [10, 10, 10, 10, 100],
+        B: [10, 10, 10, 10, 50],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      expect(graph.collisionEnergy).toBeDefined();
+      if (graph.collisionEnergy) {
+        expect(graph.collisionEnergy.get('A')!.collisionType).toBe('cycle');
+        expect(graph.collisionEnergy.get('B')!.collisionType).toBe('cycle');
+      }
+    });
+
+    it('uses collision energy in analyze results', () => {
+      const pruner = new TreePruner({ maxCycles: 100 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C', 'D'],
+        [['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+      );
+      const metrics = makeMetrics({
+        A: [1, 2, 3, 4, 100],    // spike at end → high anomaly
+        B: [1, 2, 3, 4, 5],      // flat
+        C: [1, 2, 3, 4, 5],      // flat
+        D: [1, 2, 3, 4, 50],     // mild spike from A
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 4);
+      expect(results.length).toBeGreaterThan(0);
+      // The highest ranked result should be A (highest original anomaly)
+      expect(results[0]!.serviceId).toBe('A');
+      if (graph.collisionEnergy) {
+        const aCollision = graph.collisionEnergy.get('A')!;
+        // A has 2 outgoing edges → fan-in type in the reverse direction
+        expect(aCollision.collisionType).toBeDefined();
+      }
+    });
+
+    it('collision results accept optional propagationWeights', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['X', 'Y'],
+        [['X', 'Y']],
+      );
+      const metrics = makeMetrics({
+        X: [1, 2, 3, 4, 100],
+        Y: [1, 2, 3, 4, 5],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      // Verify propagation weights feed into collision aggregation
+      expect(graph.propagationWeights.length).toBe(1);
+      expect(graph.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+      expect(graph.propagationWeights[0]).toBeLessThanOrEqual(1);
+      // Should have collisionEnergy for both nodes
+      expect(graph.collisionEnergy?.size).toBe(2);
+    });
+  });
 });

@@ -58,6 +58,7 @@ import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { computeAutoSensitivity, type AutoSensitivityConfig } from '../../../kinetic/src/signals/auto-sensitivity.js';
 import { computeMADThreshold, type MADThresholdConfig } from '../../../kinetic/src/signals/mad-threshold.js';
 import { computePropagationVelocity, type PropagationVelocityConfig } from '../causal/propagation-velocity.js';
+import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
 
 /**
  * Options for TreePruner construction.
@@ -189,6 +190,33 @@ export class TreePruner {
       });
     }
 
+    // ── Collision Node Fault Aggregation (Deng Yu Boltzmann Q(f,f)) ──────────
+    // Build cycle membership map for collision type classification
+    const cycleMembership = new Map<ServiceId, number>();
+    for (const cycle of cycles) {
+      for (const nodeId of cycle.nodePath) {
+        cycleMembership.set(nodeId, (cycleMembership.get(nodeId) ?? 0) + 1);
+      }
+    }
+
+    // Convert call graph edges to FaultGraphEdge format for aggregator
+    const faultEdges: FaultGraphEdge[] = topologyGraph.edges.map((e, i) => ({
+      from: e.from,
+      to: e.to,
+      weight: propagationWeights[i] ?? 0.5,
+    }));
+
+    const collisionEnergy = aggregateFaultEnergy(
+      faultEdges,
+      anomalyScores,
+      cycleMembership,
+      {
+        alpha: 0.4,
+        bottleneckCapacity: 0.5,
+        fanInThreshold: 3,
+      },
+    );
+
     return {
       callGraph: topologyGraph,
       propagationWeights,
@@ -196,6 +224,11 @@ export class TreePruner {
       detectedCycles: classifiedCycles,
       totalCycleContribution,
       pruneThreshold: this.options.pruneEpsilon,
+      collisionEnergy: new Map(
+        Array.from(collisionEnergy.entries()).map(
+          ([id, r]) => [id, { totalEnergy: r.totalEnergy, collisionType: r.collisionType, collisionGain: r.collisionGain }],
+        ),
+      ),
     };
   }
 
@@ -248,7 +281,7 @@ export class TreePruner {
       insignificantCycles.length > 0 ? insignificantCycles : undefined,
     );
 
-    // Step 4: Perform tree RCA on the pruned tree
+    // Step 4: Perform tree RCA on the pruned tree with collision energy
     const results = performTreeRCA(
       prunedTree,
       graph.anomalyScores,
@@ -256,6 +289,7 @@ export class TreePruner {
       graph.propagationWeights,
       k,
       this.options,
+      graph.collisionEnergy,
     );
 
     return results;
@@ -657,6 +691,10 @@ function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCyc
 /**
  * Perform RCA on the pruned tree using bottom-up anomaly score accumulation.
  *
+ * When collisionEnergy is provided, the Boltzmann Q(f,f) collision energy
+ * replaces raw anomaly scores as the primary ranking signal, and collision
+ * type classification (chain/fan-in/bottleneck/cycle) adjusts depth bonuses.
+ *
  * Algorithm:
  * 1. Build adjacency from remaining edges
  * 2. Compute in-degree for each node
@@ -675,6 +713,7 @@ function performTreeRCA(
   propagationWeights: Float64Array,
   topK: number,
   options: TreePrunerOptions,
+  collisionEnergy?: ReadonlyMap<ServiceId, { totalEnergy: number; collisionType: string; collisionGain: number }>,
 ): RootCauseResult[] {
   // Build adjacency and in-degree from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -715,9 +754,11 @@ function performTreeRCA(
   // Queue for bottom-up processing: process nodes when all parents processed
   // Actually, we process from leaf → root: initialize leaves, then propagate upward
 
-  // Initialize all scores with anomaly
+  // Initialize all scores with collision energy when available,
+  // falling back to raw anomaly scores otherwise.
   for (const [nodeId] of allNodes) {
-    scores.set(nodeId, anomalyScores.get(nodeId) ?? 0);
+    const collisionResult = collisionEnergy?.get(nodeId);
+    scores.set(nodeId, collisionResult?.totalEnergy ?? (anomalyScores.get(nodeId) ?? 0));
     depths.set(nodeId, 0);
   }
 
@@ -810,7 +851,7 @@ function performTreeRCA(
     }
   }
 
-  // Sort by propagation-weighted score.
+  // Sort by propagation-weighted score with collision type amplification.
   //
   // Deng Yu propagation depth theorem (2024):
   // The confidence that a service is the root cause is proportional to
@@ -818,37 +859,62 @@ function performTreeRCA(
   // Services deeper in the propagation tree have accumulated anomaly
   // evidence across more layers, indicating they are closer to the source.
   //
-  // Final score = raw_score × (1 + depth × DEPTH_BONUS)
-  // where DEPTH_BONUS is data-adaptive: derived from the spread of
-  // anomaly scores vs. depths across the tree. Higher variance → lower
-  // bonus (anomalies are already well-separated); lower variance →
-  // higher bonus (need depth to discriminate root cause).
+  // Final score = raw_score × (1 + depth × DEPTH_BONUS × Φ_collision)
+  // where:
+  //   DEPTH_BONUS is data-adaptive: derived from the spread of anomaly scores
+  //   Φ_collision is the collision type amplification factor:
+  //     cycle→1.8, bottleneck→1.5, fan-in→1.2, chain→1.0
+  // This rewards nodes that are both deep AND positioned at fault convergence
+  // points (collision nodes), per Deng Yu's kinetic wave amplification theory.
   const scoreSpread = scoredNodes.length > 1
     ? Math.max(...scoredNodes.map(n => n.score)) - Math.min(...scoredNodes.map(n => n.score))
     : 0.2;
   const DEPTH_BONUS = Math.max(0.1, Math.min(0.5, 0.5 - scoreSpread));
+
+  // Collision type amplification factors
+  const collisionAmps: Record<string, number> = {
+    cycle: 1.8, bottleneck: 1.5, 'fan-in': 1.2, chain: 1.0,
+  };
+
   scoredNodes.sort(
-    (a, b) =>
-      b.score * (1 + b.depth * DEPTH_BONUS) -
-      a.score * (1 + a.depth * DEPTH_BONUS),
+    (a, b) => {
+      const aCollision = collisionEnergy?.get(a.serviceId);
+      const bCollision = collisionEnergy?.get(b.serviceId);
+      const aPhi = aCollision ? (collisionAmps[aCollision.collisionType] ?? 1.0) : 1.0;
+      const bPhi = bCollision ? (collisionAmps[bCollision.collisionType] ?? 1.0) : 1.0;
+      return (
+        b.score * (1 + b.depth * DEPTH_BONUS * bPhi) -
+        a.score * (1 + a.depth * DEPTH_BONUS * aPhi)
+      );
+    },
   );
 
-  // Top-K results
+  // Top-K results with collision type awareness
   const results: RootCauseResult[] = [];
   for (let i = 0; i < Math.min(topK, scoredNodes.length); i++) {
     const node = scoredNodes[i]!;
     const errorBound = estimatePropagationError(node.depth, options.decayAlpha);
+    const cResult = collisionEnergy?.get(node.serviceId);
+    const collisionType = cResult?.collisionType ?? 'chain';
+
+    // Collision-enhanced severity: non-chain types suggest systemic impact
+    let severityLabel = node.score > 0.7 ? 'critical' : node.score > 0.4 ? 'major' : 'minor';
+    if (collisionType === 'cycle') severityLabel = 'critical';
+    else if (collisionType === 'bottleneck' && severityLabel !== 'critical') severityLabel = 'major';
 
     results.push({
       serviceId: node.serviceId,
       faultType: {
         category: 'UNKNOWN',
-        subType: 'anomaly_propagation',
-        severity: node.score > 0.7 ? 'critical' : node.score > 0.4 ? 'major' : 'minor',
+        subType: `anomaly_propagation_${collisionType}`,
+        severity: severityLabel as 'critical' | 'major' | 'minor',
       },
       confidence: computeConfidence(node.score, node.depth, errorBound),
       rank: i + 1,
-      evidenceMetrics: [{ metric: 'rca_score', value: node.score, threshold: Math.max(0.1, scoreSpread * 0.5) }],
+      evidenceMetrics: [
+        { metric: 'rca_score', value: node.score, threshold: Math.max(0.1, scoreSpread * 0.5) },
+        ...(cResult ? [{ metric: 'collision_gain', value: cResult.collisionGain, threshold: 0.3 }] : []),
+      ],
       propagationDepth: node.depth,
       propagationErrorBound: errorBound,
       viaTreeSearch: true,

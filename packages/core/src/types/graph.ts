@@ -86,6 +86,25 @@ export interface FaultPropagationGraph {
   readonly totalCycleContribution: number;
   /** Threshold ε below which cycle contributions are pruned */
   readonly pruneThreshold: number;
+  /**
+   * Collision-enhanced fault energy per service (Boltzmann Q(f,f) aggregation).
+   *
+   * Each entry maps to a collision result containing:
+   * - totalEnergy: combined local + collision gain ∈ [0, 1]
+   * - collisionType: chain | fan-in | bottleneck | cycle
+   * - collisionGain: Boltzmann Q(f,f) value ∈ [0, 1]
+   *
+   * When present, this replaces raw anomalyScores as the primary energy
+   * source for root cause ranking.
+   */
+  readonly collisionEnergy?: ReadonlyMap<
+    ServiceId,
+    {
+      readonly totalEnergy: number;
+      readonly collisionType: string;
+      readonly collisionGain: number;
+    }
+  >;
 }
 
 /** A pruned edge record — documents why an edge was removed. */
