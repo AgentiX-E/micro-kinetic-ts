@@ -35,8 +35,66 @@ import {
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import { buildRCAEvalCallGraph, initRCAEvalTopology, isRCAEvalTopologyInitialized } from './rcaeval-topology.js';
+import { buildRCAEvalCallGraph, initRCAEvalTopology, enhanceRCAEvalCallGraph, isRCAEvalTopologyInitialized } from './rcaeval-topology.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
+
+// ── Semantic Enhancement (optional, requires .env) ────────
+
+/**
+ * Load .env file if it exists (for API keys).
+ * Hand-rolled to avoid external dependency — .env is gitignored.
+ */
+function loadEnvFile(): void {
+  const { existsSync, readFileSync } = require('node:fs');
+  const envPath = resolve(__dirname, '..', '..', '.env');
+  if (!existsSync(envPath)) return;
+  const content = readFileSync(envPath, 'utf-8');
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.substring(0, eqIdx).trim();
+    const value = trimmed.substring(eqIdx + 1).trim();
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
+
+/**
+ * Environment-driven semantic enhancer configuration.
+ *
+ * Reads ZHIPU_API_KEY and DEEPSEEK_API_KEY from env. If neither is
+ * available, semantic enhancement is disabled and buildRCAEvalCallGraph
+ * (exact match only) is used.
+ *
+ * NEVER contains API keys — only env variable names.
+ */
+async function createSemanticConfig() {
+  const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-ai');
+  const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
+
+  // Prefer real API embedding; fall back to TF-IDF for local-only runs
+  const zhipuKey = process.env['ZHIPU_API_KEY'];
+  const embeddingProvider = zhipuKey
+    ? createApiEmbeddingFromEnv({
+        vendorPrefix: 'ZHIPU',
+        endpoint: 'https://open.bigmodel.cn/api/paas/v4/embeddings',
+        model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
+        dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
+      })
+    : new TfIdfEmbeddingProvider();
+
+  return {
+    embeddingProvider,
+    llmProvider: null, // LLM fallback not needed for embedding-based matching
+    alignmentConfig: {
+      embeddingThreshold: 0.6,
+      llmThreshold: 0.5,
+    },
+  };
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -162,13 +220,28 @@ interface LoadStats {
     avgEdgesBefore: number;
     avgEdgesAfter: number;
   };
+  /** Semantic enhancement statistics (only when enhancer is configured). */
+  semanticStats: {
+    totalServices: number;
+    semanticallyResolved: number;
+    embeddingResolved: number;
+    llmResolved: number;
+    exactMatched: number;
+  };
 }
 
-function loadCases(
+/**
+ * Load and build benchmark cases, with optional semantic enhancement.
+ *
+ * When ZHIPU_API_KEY is in the environment, uses real embedding-based
+ * semantic alignment; falls back to exact match + ring-connect otherwise.
+ */
+async function loadCases(
   metas: CaseMeta[],
   loader: RCAEvalLoader,
   maxCases: number,
-): LoadStats {
+  semanticConfig?: { embeddingProvider: any; llmProvider: any; alignmentConfig: any },
+): Promise<LoadStats> {
   const loaded: BenchmarkCase[] = [];
   const errors: string[] = [];
   const errorSamples = new Map<string, number>();
@@ -177,12 +250,37 @@ function loadCases(
     prunedCount = 0,
     edgesBeforeSum = 0,
     edgesAfterSum = 0;
+  let semTotalServices = 0,
+    semResolved = 0,
+    semEmbedding = 0,
+    semLLM = 0,
+    semExact = 0;
 
   for (const meta of selected) {
     try {
       const rawCase = loader.loadCase(meta.dirPath);
       const serviceIds = Object.keys(rawCase.metrics);
-      let callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+
+      // Use semantic-enhanced call graph when available
+      let callGraph;
+      if (semanticConfig?.embeddingProvider && isRCAEvalTopologyInitialized()) {
+        callGraph = await enhanceRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+        // Extract semantic stats from diagnostic labels
+        const firstNode = callGraph.nodes.values().next().value;
+        if (firstNode?.labels._diag_semantic) {
+          const resolved = parseInt(firstNode.labels._diag_semantic, 10) || 0;
+          const emb = parseInt(firstNode.labels._diag_embedding, 10) || 0;
+          const llm = parseInt(firstNode.labels._diag_llm, 10) || 0;
+          semTotalServices += serviceIds.length;
+          semResolved += resolved;
+          semEmbedding += emb;
+          semLLM += llm;
+          semExact += serviceIds.length - resolved;
+        }
+      } else {
+        callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+      }
+
       const edgesBefore = callGraph.edges.length;
 
       // Trace-validated topology pruning for RE2/RE3
@@ -232,6 +330,13 @@ function loadCases(
         edgesBeforeSum / Math.max(1, selected.length),
       avgEdgesAfter:
         edgesAfterSum / Math.max(1, selected.length),
+    },
+    semanticStats: {
+      totalServices: semTotalServices,
+      semanticallyResolved: semResolved,
+      embeddingResolved: semEmbedding,
+      llmResolved: semLLM,
+      exactMatched: semExact,
     },
   };
 }
@@ -443,8 +548,17 @@ async function main(): Promise<void> {
   // ── Init YAML-driven topology registry ──────────────────
   // Load all three system topology configs once before benchmarking.
   // Falls back gracefully to ring-connect if configs are not found.
-  await initRCAEvalTopology();
-  console.log(`Topology: YAML v2 (${isRCAEvalTopologyInitialized() ? 'loaded' : 'unavailable'})`);
+  //
+  // Semantic enhancement: when ZHIPU_API_KEY is available, real embedding-based
+  // alignment is used; otherwise falls back to TF-IDF (local, zero-cost).
+  loadEnvFile();
+  const semanticConfig = await createSemanticConfig();
+  await initRCAEvalTopology(undefined, semanticConfig);
+  const useSemantic = Boolean(semanticConfig.embeddingProvider);
+  console.log(
+    `Topology: YAML v2 (${isRCAEvalTopologyInitialized() ? 'loaded' : 'unavailable'})` +
+    (useSemantic ? ' + semantic enhancement (Zhipu embedding-3)' : ''),
+  );
   console.log('═'.repeat(65));
 
   for (const [groupKey, metas] of groups) {
@@ -456,7 +570,7 @@ async function main(): Promise<void> {
       opts.maxCases > 0
         ? Math.min(opts.maxCases, metas.length)
         : 0;
-    const stats = loadCases(metas, loader, caseLimit);
+    const stats = await loadCases(metas, loader, caseLimit, semanticConfig);
 
     // ── Report load errors with comprehensive diagnostics ──
     reportLoadErrors(systemName, suiteName, stats);
@@ -466,6 +580,18 @@ async function main(): Promise<void> {
         `  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`,
       );
       continue;
+    }
+
+    // ── Semantic enhancement diagnostics ──────────────────
+    if (useSemantic) {
+      const sem = stats.semanticStats;
+      const pct = sem.totalServices > 0
+        ? (sem.semanticallyResolved / sem.totalServices * 100).toFixed(1)
+        : '0.0';
+      console.log(
+        `  [semantic] ${sem.semanticallyResolved}/${sem.totalServices} services` +
+        ` resolved (${pct}%) — embedding=${sem.embeddingResolved}, llm=${sem.llmResolved}, exact=${sem.exactMatched}`,
+      );
     }
 
     // ── Trace pruning diagnostics ─────────────────────────

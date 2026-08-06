@@ -21,9 +21,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    setupFiles: ['__tests__/setup.ts'],
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.spec.ts'],
     coverage: {
       include: ['src/rcaeval-topology.ts', 'src/rcaeval-semantic.ts'],
+      exclude: ['__tests__/integration/**'],
       thresholds: {
         // rcaeval-semantic.ts hits 99%+, rcaeval-topology.ts is ~76%
         // due to YAML file-loading / BFS discovery functions that are
