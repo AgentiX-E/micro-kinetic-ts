@@ -426,7 +426,10 @@ describe('TreePruner', () => {
         B: [10, 10, 10, 10, 10],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
-      expect(graph.propagationWeights[0]).toBeGreaterThanOrEqual(0.1);
+      // A has a mild spike but B is completely flat — weak propagation evidence.
+      // With data-adaptive anomaly similarity, the edge weight is low but non-zero.
+      // The velocity tier (MAD-based) may activate since A has 5 data points.
+      expect(graph.propagationWeights[0]).toBeGreaterThan(0);
     });
 
     it('computes default low correlation weight (both low scores)', () => {

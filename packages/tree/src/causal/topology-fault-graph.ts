@@ -48,6 +48,11 @@ import type {
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
 
+import {
+  computePropagationVelocity,
+  type PropagationVelocityResult,
+} from './propagation-velocity.js';
+
 /**
  * Configuration for the topology-preserving fault graph builder.
  */
@@ -56,17 +61,39 @@ export interface TopologyFaultGraphConfig {
   readonly minDataPoints: number;
   /** Temporal causality bonus: added when source anomaly precedes target. Default: 0.15. */
   readonly temporalBonus: number;
-  /** Default edge weight when correlation cannot be computed. Default: 0.3. */
+  /** Default edge weight when correlation cannot be computed. Default: 0.05. */
   readonly defaultWeight: number;
   /** Whether to apply temporal causality analysis. Default: true. */
   readonly useTemporalCausality: boolean;
+  /**
+   * Whether to use BOCPD/MAD-based propagation velocity as a secondary
+   * weight computation method when Pearson correlation is unavailable.
+   * Default: true.
+   */
+  readonly usePropagationVelocity: boolean;
+  /**
+   * Propagation velocity model configuration.
+   * Used when usePropagationVelocity=true and Pearson correlation
+   * cannot be computed (e.g., insufficient or constant data).
+   */
+  readonly propagationVelocity?: {
+    /** Whether to use BOCPD for onset detection (default: false, MAD-based). */
+    readonly useBOCPD?: boolean;
+    /** Expected direct-call latency in time-index units. Default: 1.0. */
+    readonly expectedDirectLatency?: number;
+  };
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   minDataPoints: 3,
   temporalBonus: 0.15,
-  defaultWeight: 0.3,
+  defaultWeight: 0.05,
   useTemporalCausality: true,
+  usePropagationVelocity: true,
+  propagationVelocity: {
+    useBOCPD: false, // MAD-based by default for performance
+    expectedDirectLatency: 1.0,
+  },
 };
 
 /**
@@ -300,14 +327,22 @@ function computeAnomalyFeatures(
 /**
  * Compute propagation weight for a single topology edge.
  *
- * Strategy:
- * 1. Try Pearson cross-correlation on time-aligned metric pairs (primary)
- * 2. If insufficient data: fall back to anomaly score similarity (secondary)
- * 3. Apply temporal causality bonus if source precedes target in anomaly onset
+ * ### Propagation Signal Tiers (Priority Order)
  *
- * The Pearson correlation is computed across all metric pairs between source
- * and target services. The maximum absolute correlation is selected as the
- * primary weight, representing the strongest fault propagation signal.
+ * 1. **Pearson cross-service correlation** (highest priority):
+ *    Direct metric correlation across services. Strong co-variation confirms
+ *    fault propagation — the strongest possible propagation signal.
+ *
+ * 2. **BOCPD/MAD propagation velocity** (secondary, I8-P4c):
+ *    When Pearson fails, use propagation velocity model: detect anomaly onset
+ *    independently for source and target, compute P(propagation | Δt).
+ *    This replaces the old static fallback with continuous probability
+ *    from changepoint analysis per Deng Yu's mean free time τ.
+ *
+ * 3. **Data-adaptive anomaly score similarity** (last resort):
+ *    Only when both Pearson AND velocity models fail. Uses anomaly score
+ *    difference as a weak proxy for propagation. Least reliable signal
+ *    and only deployed when no better data source is available.
  *
  * @internal
  */
@@ -319,7 +354,7 @@ function computeEdgePropagationWeight(
   anomalyOnsetTimes: ReadonlyMap<ServiceId, number>,
   cfg: TopologyFaultGraphConfig,
 ): EdgeWeightResult {
-  // ── Primary: Pearson cross-service correlation ──────────
+  // ── Tier 1: Pearson cross-service correlation ────────────
   if (
     sourceMetrics &&
     sourceMetrics.length > 0 &&
@@ -348,18 +383,72 @@ function computeEdgePropagationWeight(
     }
   }
 
-  // ── Fallback: anomaly score similarity ──────────────────
+  // ── Tier 2: Propagation velocity (BOCPD/MAD) ────────────
+  if (
+    cfg.usePropagationVelocity &&
+    sourceMetrics &&
+    sourceMetrics.length > 0 &&
+    targetMetrics &&
+    targetMetrics.length > 0
+  ) {
+    const sourceValues = sourceMetrics[0]!.values;
+    const targetValues = targetMetrics[0]!.values;
+
+    if (sourceValues.length >= 5 && targetValues.length >= 5) {
+      const useBOCPD = cfg.propagationVelocity?.useBOCPD ?? false;
+      const expectedLatency = cfg.propagationVelocity?.expectedDirectLatency ?? 1.0;
+
+      let velocityResult: PropagationVelocityResult;
+      try {
+        velocityResult = computePropagationVelocity(
+          sourceValues,
+          targetValues,
+          { useBOCPD, expectedDirectLatency },
+        );
+      } catch {
+        // Velocity computation can fail for pathological data (e.g. all zeros).
+        // Fall through to tier 3.
+        velocityResult = { propagationProbability: 0, method: 'mad', onsetDelta: 0, sourceOnsetIndex: -1, targetOnsetIndex: -1 };
+      }
+
+      if (velocityResult.propagationProbability > 0) {
+        const sourceScore = anomalyScores.get(edge.from) ?? 0;
+        const targetScore = anomalyScores.get(edge.to) ?? 0;
+        const anomalyCorrelation = 1 - Math.abs(sourceScore - targetScore);
+
+        // Edge weight = anomaly correlation × propagation probability
+        const velocityWeight = Math.max(0, Math.min(1,
+          anomalyCorrelation * velocityResult.propagationProbability,
+        ));
+
+        if (velocityWeight > 0.05) {
+          return {
+            weight: velocityWeight,
+            method: velocityResult.method === 'bocpd' ? 'bocpd_velocity' : 'mad_velocity',
+            temporalBonus: false,
+          };
+        }
+      }
+    }
+  }
+
+  // ── Tier 3: Data-adaptive anomaly score similarity ──────
   const sourceScore = anomalyScores.get(edge.from) ?? 0;
   const targetScore = anomalyScores.get(edge.to) ?? 0;
 
-  // If both are highly anomalous, the edge is likely involved in propagation
-  const similarityWeight = sourceScore > 0 && targetScore > 0
-    ? 1 - Math.abs(sourceScore - targetScore)
-    : cfg.defaultWeight;
+  // Anomaly score difference as weak proxy for correlation
+  const correlationProxy = 1 - Math.abs(sourceScore - targetScore);
+
+  // Apply data-adaptive gain based on anomaly magnitude
+  // Higher average anomaly → higher weight for co-anomalous edges
+  const avgScore = (sourceScore + targetScore) / 2;
+  const gainFactor = Math.min(1, avgScore * 2);
+
+  const similarityWeight = correlationProxy * (0.3 + 0.7 * gainFactor);
 
   return {
     weight: Math.max(0.05, Math.min(1, similarityWeight)),
-    method: 'fallback',
+    method: 'anomaly_similarity',
     temporalBonus: false,
   };
 }
