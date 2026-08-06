@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@agentix-e/micro-kinetic-core": "workspace:^",
+    "@agentix-e/micro-kinetic-ai": "workspace:^",
     "@agentix-e/micro-kinetic-causal": "workspace:^",
     "@agentix-e/micro-kinetic-tree": "workspace:^",
     "@agentix-e/micro-kinetic-cutting": "workspace:^",

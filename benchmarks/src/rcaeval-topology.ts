@@ -9,7 +9,8 @@
  * Architecture:
  *   1. initRCAEvalTopology() — loads all YAML configs once (async)
  *   2. buildRCAEvalCallGraph() — sync lookup into pre-loaded registry
- *   3. Fallback: ring-connect for unmatched services ensures engine completeness
+ *   3. Semantic enhancement — embedding/LLM alignment for unmatched services
+ *   4. Fallback: ring-connect for services unresolved after semantics
  *
  * The topology registry is globally cached after initialization so each
  * benchmark call is a fast O(1) map lookup — no file I/O on the hot path.
@@ -26,6 +27,14 @@ import type {
   ServiceId,
 } from '@agentix-e/micro-kinetic-core';
 import { StaticTopologyProvider } from '@agentix-e/micro-kinetic-causal';
+import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
+import type { ILLMProvider } from '@agentix-e/micro-kinetic-ai';
+import {
+  RCAEvalSemanticEnhancer,
+} from './rcaeval-semantic.js';
+import type {
+  SemanticEnhancerConfig,
+} from './rcaeval-semantic.js';
 
 // ── Topology Registry ─────────────────────────────────────
 
@@ -39,11 +48,17 @@ import { StaticTopologyProvider } from '@agentix-e/micro-kinetic-causal';
 interface TopologyRegistry {
   /** System name → pre-loaded topology edges (full set, unfiltered by case). */
   readonly edgeMaps: ReadonlyMap<string, readonly CallEdge[]>;
+  /** System name → set of all service IDs in the topology. */
+  readonly serviceIdSets: ReadonlyMap<string, readonly string[]>;
+  /** Semantic enhancer (null if no embedding provider configured). */
+  readonly semanticEnhancer: RCAEvalSemanticEnhancer | null;
   readonly initialized: boolean;
 }
 
 let _registry: TopologyRegistry = {
   edgeMaps: new Map(),
+  serviceIdSets: new Map(),
+  semanticEnhancer: null,
   initialized: false,
 };
 
@@ -128,6 +143,7 @@ export function identifyBenchmarkSystem(
  */
 export async function initRCAEvalTopology(
   configDir: string = TOPOLOGY_CONFIG_DIR,
+  semanticConfig?: SemanticEnhancerConfig,
 ): Promise<void> {
   if (_registry.initialized) return;
 
@@ -136,35 +152,29 @@ export async function initRCAEvalTopology(
   const configPath = resolve(__sourceDir, '..', '..', configDir);
   const provider = new StaticTopologyProvider(configPath);
 
-  // Load all three system configs
-  // We need to pre-load the full edge set. StaticTopologyProvider.discover()
-  // filters edges by knownServiceIds, so we must pass a comprehensive list.
-  // Strategy: discover with namespace=system + a large sentinel list of all
-  // possible service IDs. The provider matches by case-insensitive overlap.
-  // For benchmark usage, the YAML service IDs ARE the service names used in
-  // cases (same naming convention). So we pass ALL service IDs from the YAML
-  // and get back the full topology.
-
-  // Actually, simpler: just read the YAML edges directly and bypass filtering.
-  // We use the provider only for its YAML parsing; we cache the full edge arrays
-  // independently so buildRCAEvalCallGraph can filter at case-level.
-
   const systems = ['OnlineBoutique', 'SockShop', 'TrainTicket'] as const;
   const edgeMaps = new Map<string, readonly CallEdge[]>();
+  const serviceIdSets = new Map<string, readonly string[]>();
 
   for (const system of systems) {
     try {
-      // Collect all service names from the YAML config for this system
       const allServiceIds = collectServiceIds(configPath, system);
       const context = { knownServiceIds: allServiceIds, namespace: system };
       const graph = await provider.discover(context);
       edgeMaps.set(system, graph.edges);
+      serviceIdSets.set(system, allServiceIds);
     } catch {
       edgeMaps.set(system, []);
+      serviceIdSets.set(system, []);
     }
   }
 
-  _registry = { edgeMaps, initialized: true };
+  // Initialize semantic enhancer if embedding provider is available
+  const enhancer = semanticConfig?.embeddingProvider
+    ? new RCAEvalSemanticEnhancer(semanticConfig)
+    : null;
+
+  _registry = { edgeMaps, serviceIdSets, semanticEnhancer: enhancer, initialized: true };
 }
 
 /**
@@ -231,9 +241,9 @@ export function isRCAEvalTopologyInitialized(): boolean {
  * Falls back to ring-connect for services not in the known topology,
  * ensuring the collision tree engine always has at least one edge per service.
  *
- * This is the V2 replacement for the old hardcoded edge arrays.
- * The old function is kept as `buildRCAEvalCallGraphLegacy()` for backward
- * compatibility during migration.
+ * This is the synchronous (exact match + ring-connect) path.
+ * For semantic enhancement of unmatched services, use `enhanceRCAEvalCallGraph()`
+ * which resolves services via embedding/LLM before falling back to ring-connect.
  *
  * @param caseId - RCAEval case identifier (e.g., re1ob_adservice_cpu_1)
  * @param serviceIds - Service IDs found in the case metrics
@@ -252,6 +262,89 @@ export function buildRCAEvalCallGraph(
 
   // Fallback: pure ring-connect (registry not initialized)
   return buildRingConnectOnly(system ?? 'rca-eval', caseId, serviceIds);
+}
+
+/**
+ * Build and semantically enhance a call graph for a benchmark case.
+ *
+ * Extends `buildRCAEvalCallGraph()` with SemanticAlignmentProvider resolution
+ * for services that didn't match any YAML topology entry by exact name.
+ *
+ * Workflow:
+ *   1. Exact match (sync) — same as buildRCAEvalCallGraph()
+ *   2. Semantic match (async) — embedding cosine similarity + LLM fallback
+ *   3. Ring-connect only remaining unmatched services
+ *
+ * If no semantic enhancer is configured (no embedding provider passed to
+ * initRCAEvalTopology()), this is a no-op wrapper around buildRCAEvalCallGraph().
+ *
+ * @param caseId - RCAEval case identifier
+ * @param serviceIds - Service IDs found in the case metrics
+ * @returns ServiceCallGraph with semantic enhancement applied where available
+ */
+export async function enhanceRCAEvalCallGraph(
+  caseId: string,
+  serviceIds: readonly string[],
+): Promise<ServiceCallGraph> {
+  const system = identifyBenchmarkSystem(caseId);
+
+  // No semantic enhancer configured → delegate to sync path
+  if (!_registry.semanticEnhancer || !_registry.initialized || !system) {
+    return buildRCAEvalCallGraph(caseId, serviceIds);
+  }
+
+  // Step 1: Exact match (sync)
+  const baseGraph = buildFromRegistry(system, caseId, serviceIds);
+
+  // Step 2: Find which services were NOT matched by exact YAML lookups
+  // (i.e., they were ring-connected)
+  const yamlServiceIds = _registry.serviceIdSets.get(system) ?? [];
+  const yamlServiceSet = new Set(yamlServiceIds);
+  const unmatchedServiceIds = serviceIds.filter((s) => !yamlServiceSet.has(s));
+
+  if (unmatchedServiceIds.length === 0) {
+    // All matched — annotation already handled by buildFromRegistry
+    return baseGraph;
+  }
+
+  const yamlEdges = _registry.edgeMaps.get(system) ?? [];
+
+  // Step 3: Semantic enhancement
+  const result = await _registry.semanticEnhancer.enhance({
+    unmatchedCaseServiceIds: unmatchedServiceIds,
+    yamlTopologyEdges: yamlEdges,
+    yamlServiceIds,
+    system,
+  });
+
+  if (result.edges.length === 0) {
+    // No semantic matches found — base graph already has ring-connect
+    return annotateWithSemanticStats(baseGraph, caseId, system, result, serviceIds.length);
+  }
+
+  // Step 4: Replace ring-connect edges for resolved services with semantic edges
+  const resolvedSet = new Set(result.resolvedServiceIds);
+  const enhancedEdges = baseGraph.edges.filter((edge) => {
+    // Keep non-ring-connect edges (exact YAML matches)
+    if (!isRingConnectEdge(edge)) return true;
+    // Keep ring-connect edges only for still-unmatched services
+    if (resolvedSet.has(edge.from) || resolvedSet.has(edge.to)) {
+      return false;
+    }
+    return true;
+  });
+
+  // Add semantic edges
+  for (const semEdge of result.edges) {
+    enhancedEdges.push(semEdge);
+  }
+
+  const enhancedGraph: ServiceCallGraph = {
+    ...baseGraph,
+    edges: enhancedEdges,
+  };
+
+  return annotateWithSemanticStats(enhancedGraph, caseId, system, result, serviceIds.length);
 }
 
 // ── Internal Builders ─────────────────────────────────────
@@ -403,6 +496,9 @@ function annotateNodes(
   topologyEdgeCount: number,
   serviceCount: number,
   unconnectedCount: number,
+  semanticResolved = 0,
+  embeddingResolved = 0,
+  llmResolved = 0,
 ): void {
   for (const node of nodes.values()) {
     node.labels = {
@@ -413,6 +509,56 @@ function annotateNodes(
       '_diag_svc_total': String(serviceCount),
       '_diag_unconnected': String(unconnectedCount),
       '_diag_source': _registry.initialized ? 'yaml-v2' : 'ring-connect-legacy',
+      '_diag_semantic': String(semanticResolved),
+      '_diag_embedding': String(embeddingResolved),
+      '_diag_llm': String(llmResolved),
     };
   }
+}
+
+/**
+ * Annotate an enhanced graph with semantic alignment statistics.
+ */
+function annotateWithSemanticStats(
+  graph: ServiceCallGraph,
+  caseId: string,
+  system: string,
+  result: import('./rcaeval-semantic.js').SemanticEnhancementOutput,
+  serviceCount: number,
+): ServiceCallGraph {
+  const exactMatchEdgeCount = graph.edges.filter(
+    (e) => !isRingConnectEdge(e) && !isEdgeFromSource(e, 'semantic-embedding') && !isEdgeFromSource(e, 'semantic-llm'),
+  ).length;
+
+  for (const node of graph.nodes.values()) {
+    node.labels = {
+      ...node.labels,
+      '_diag_case': caseId,
+      '_diag_system': system,
+      '_diag_matched': `${exactMatchEdgeCount} exact + ${result.embeddingResolvedCount} emb + ${result.llmResolvedCount} llm`,
+      '_diag_svc_total': String(serviceCount),
+      '_diag_unconnected': String(result.stillUnmatchedCount),
+      '_diag_source': 'yaml-v2+semantic',
+      '_diag_semantic': `${result.resolvedServiceIds.length}`,
+      '_diag_embedding': `${result.embeddingResolvedCount}`,
+      '_diag_llm': `${result.llmResolvedCount}`,
+    };
+  }
+
+  return graph;
+}
+
+/**
+ * Check if an edge is a ring-connect fallback (type INTERNAL + zero confidence signal).
+ */
+function isRingConnectEdge(edge: CallEdge): boolean {
+  return edge.type === 'INTERNAL' && edge.p99Latency <= 1 && edge.errorRate === 0;
+}
+
+/**
+ * Check if an edge comes from a specific source (for SemanticCallEdge via duck-typing).
+ */
+function isEdgeFromSource(edge: CallEdge, source: string): boolean {
+  const semEdge = edge as CallEdge & { source?: string };
+  return semEdge.source === source;
 }

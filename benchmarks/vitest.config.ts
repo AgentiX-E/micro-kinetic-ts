@@ -15,11 +15,26 @@ export default defineConfig({
       '@agentix-e/micro-kinetic-noise': resolve(__dirname, '../packages/noise/src/index.ts'),
       '@agentix-e/micro-kinetic-scaling': resolve(__dirname, '../packages/scaling/src/index.ts'),
       '@agentix-e/micro-kinetic-wave': resolve(__dirname, '../packages/wave/src/index.ts'),
+      '@agentix-e/micro-kinetic-ai': resolve(__dirname, '../packages/ai/src/index.ts'),
     },
   },
   test: {
     globals: true,
     environment: 'node',
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.spec.ts'],
+    coverage: {
+      include: ['src/rcaeval-topology.ts', 'src/rcaeval-semantic.ts'],
+      thresholds: {
+        // rcaeval-semantic.ts hits 99%+, rcaeval-topology.ts is ~76%
+        // due to YAML file-loading / BFS discovery functions that are
+        // tested indirectly through integration (buildRCAEvalCallGraph
+        // exercises them via exact-match and ring-connect paths).
+        // Semantic enhancement paths are fully covered.
+        statements: 83,
+        branches: 77,
+        functions: 80,
+        lines: 83,
+      },
+    },
   },
 });
