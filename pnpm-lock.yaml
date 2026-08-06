@@ -47,6 +47,12 @@ importers:
 
   benchmarks:
     dependencies:
+      '@agentix-e/micro-kinetic-ai':
+        specifier: workspace:^
+        version: link:../packages/ai
+      '@agentix-e/micro-kinetic-causal':
+        specifier: workspace:^
+        version: link:../packages/causal
       '@agentix-e/micro-kinetic-core':
         specifier: workspace:^
         version: link:../packages/core
@@ -1548,6 +1554,7 @@ packages:
 
   glob@10.5.0:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   global-agent@4.1.3:
