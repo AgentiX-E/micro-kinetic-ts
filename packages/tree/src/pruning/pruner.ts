@@ -54,6 +54,7 @@ import {
 
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
+import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 
 /**
  * Options for TreePruner construction.
@@ -139,48 +140,25 @@ export class TreePruner {
     invariant(callGraph.edges.length > 0, 'callGraph must have at least one edge');
     invariant(metrics.size > 0, 'metrics must be non-empty');
 
-    // Compute anomaly scores and onset times
-    const anomalyScores = new Map<ServiceId, number>();
-    const anomalyOnsetTimes = new Map<ServiceId, number>();
-    for (const [serviceId] of callGraph.nodes) {
-      const serviceMetrics = metrics.get(serviceId);
-      const result = computeAnomalyScoreAndOnset(serviceId, serviceMetrics);
-      anomalyScores.set(serviceId, result.score);
-      anomalyOnsetTimes.set(serviceId, result.onsetIndex);
-    }
+    // Build topology-preserving fault graph with Pearson cross-service correlation.
+    // Unlike the legacy chronological propagation tree, this preserves the YAML
+    // topology edges and computes real cross-service correlation for edge weights.
+    const topoResult = buildTopologyFaultGraph(callGraph, metrics);
+    const { anomalyScores, anomalyOnsetTimes, propagationWeights } = topoResult;
 
-    // Build chronological propagation tree from anomaly onset times
-    const chronoTree = buildChronologicalPropagationTree(
-      callGraph,
-      anomalyOnsetTimes,
-      anomalyScores,
+    // Use the original call graph (topology-preserving), not a synthetic star-tree.
+    // The call graph's edges reflect the actual service dependency topology from
+    // YAML configs + semantic enhancement.
+    const topologyGraph = callGraph;
+
+    // Detect cycles using topology edges
+    const edgePairs = topologyGraph.edges.map(
+      (e) => [e.from, e.to] as readonly [ServiceId, ServiceId],
     );
-
-    // Compute propagation weights from anomaly correlations
-    const numEdges = chronoTree.edges.length;
-    const propagationWeights = new Float64Array(numEdges);
-
-    for (let i = 0; i < numEdges; i++) {
-      const edge = chronoTree.edges[i]!;
-      const sourceMetrics = metrics.get(edge.from);
-      const targetMetrics = metrics.get(edge.to);
-
-      const weight = computeCorrelationWeight(
-        edge.from,
-        edge.to,
-        sourceMetrics,
-        targetMetrics,
-        anomalyScores,
-      );
-      propagationWeights[i] = weight;
-    }
-
-    // Detect cycles
-    const edgePairs = chronoTree.edges.map((e) => [e.from, e.to] as readonly [ServiceId, ServiceId]);
     const cycles = this.cycleDetector.detect(edgePairs);
 
-    // Compute contributions
-    const analyzer = new CollisionContributionAnalyzer(chronoTree.edges, propagationWeights, {
+    // Compute cycle contributions
+    const analyzer = new CollisionContributionAnalyzer(topologyGraph.edges, propagationWeights, {
       alpha: this.options.decayAlpha,
       beta: this.options.decayBeta,
     });
@@ -209,7 +187,7 @@ export class TreePruner {
     }
 
     return {
-      callGraph: chronoTree,
+      callGraph: topologyGraph,
       propagationWeights,
       anomalyScores,
       detectedCycles: classifiedCycles,

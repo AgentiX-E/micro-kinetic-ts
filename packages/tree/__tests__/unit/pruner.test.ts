@@ -109,7 +109,7 @@ describe('TreePruner', () => {
         ['A', 'B'],
         [['A', 'B']],
       );
-      // High anomaly values for both → high propagation weight
+      // High anomaly values for both → high propagation weight via Pearson correlation
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
         B: [10, 11, 12, 10, 100],
@@ -119,7 +119,8 @@ describe('TreePruner', () => {
       const bScore = graph.anomalyScores.get('B') ?? 0;
       expect(aScore).toBeGreaterThan(0.7);
       expect(bScore).toBeGreaterThan(0.7);
-      expect(graph.propagationWeights[0]).toBe(0.9);
+      // Pearson r=1.0 for identical metrics → weight ≥ 0.99
+      expect(graph.propagationWeights[0]).toBeGreaterThanOrEqual(0.99);
     });
 
     it('detects cycles in cyclic graphs', () => {
@@ -219,8 +220,8 @@ describe('TreePruner', () => {
       }
     });
 
-    it('converts 2-node cycle to tree edge via chronological ordering', () => {
-      const pruner = new TreePruner({ pruneEpsilon: 0.0, useTwoHopDecay: true });
+    it('preserves topology edges and detects cycles for pruning', () => {
+      const pruner = new TreePruner({ pruneEpsilon: 1.0, useTwoHopDecay: true });
       const callGraph = makeCallGraph(
         ['A', 'B'],
         [['A', 'B'], ['B', 'A']],
@@ -230,8 +231,9 @@ describe('TreePruner', () => {
         B: [10, 11, 12, 10, 100],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
-      // Chronological tree converts cycle to single directed edge
-      expect(graph.callGraph.edges.length).toBe(1);
+      // Topology-preserving: all original edges are kept.
+      // pruneEpsilon=1.0 means no cycle is significant → pruneCycles handles them.
+      expect(graph.callGraph.edges.length).toBe(2);
       expect(() => pruner.analyze(graph)).not.toThrow();
     });
 
@@ -438,7 +440,8 @@ describe('TreePruner', () => {
         B: [10, 10, 10, 10, 10],
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
-      expect(graph.propagationWeights[0]).toBe(0.1);
+      // Identical values → zero variance → Pearson=null → fallback default=0.3
+      expect(graph.propagationWeights[0]).toBe(0.3);
     });
   });
 
