@@ -117,6 +117,8 @@ jobs:
 
       - name: Run RCAEval benchmark
         if: steps.checkData.outputs.json_count != '0' || steps.checkData.outputs.pq_count != '0'
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts 2>&1 | tee rcaeval-results.txt
 
