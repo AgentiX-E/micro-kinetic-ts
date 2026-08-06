@@ -1,6 +1,10 @@
 /**
  * Real RCAEval benchmark — industry-standard per-system, per-dataset evaluation.
  *
+ * I8: Topology-preserving fault graph with Pearson cross-service correlation
+ * now integrated into TreePruner.buildFaultGraph() via buildTopologyFaultGraph().
+ * RE2+RE3 cases with trace data benefit from augmentTopologyWithTraces().
+ *
  * Follows the RCAEval paper (arXiv:2412.17015) methodology:
  * - Cases grouped by benchmark system (OnlineBoutique/SockShop/TrainTicket)
  * - Cases grouped by dataset suite (RE1/RE2/RE3)
