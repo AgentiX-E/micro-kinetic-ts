@@ -72,7 +72,6 @@ export type { LogEntry, LogTemplate } from './signals/log-provider.js';
 
 export {
   augmentTopologyWithTraces,
-  canValidateWithTraces,
 } from './signals/trace-topology.js';
 export type { TraceTopologyConfig } from './signals/trace-topology.js';
 
@@ -99,6 +98,17 @@ export type {
   PCValidationResult,
   PCValidatorConfig,
 } from './signals/pc-validator.js';
+
+// ── Trace Topology ────────────────────────────────────────
+
+export {
+  validateTopologyWithTraces,
+  canValidateWithTraces,
+} from './signals/trace-validator.js';
+export type {
+  TraceValidationConfig,
+  TraceValidationResult,
+} from './signals/trace-validator.js';
 
 // ── Defaults ──────────────────────────────────────────────
 

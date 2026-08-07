@@ -21,7 +21,7 @@ import {
   bestHypothesisToFaultType,
 } from '@agentix-e/micro-kinetic-core';
 
-import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import type { TimeSeries, TraceSpan } from '@agentix-e/micro-kinetic-core';
 
 import type { BenchmarkSuite } from '../loaders/types.js';
 
@@ -128,6 +128,27 @@ export interface CompleteBenchmarkReport {
  * });
  * ```
  */
+/**
+ * Trace topology validation options for BenchmarkRunner (I9).
+ */
+export interface TraceValidationOptions {
+  /** Enable trace-based topology validation. Default: false. */
+  enabled: boolean;
+  /** Prune edges not observed in any trace span. Default: true. */
+  pruneUnobserved?: boolean;
+  /** Discover new edges from trace parent→child patterns. Default: true. */
+  discoverNewEdges?: boolean;
+  /**
+   * When true, trace-discovered edges are co-verified with PC algorithm
+   * for causal direction. Runs PC validation internally. Default: false.
+   */
+  pcVerifyDiscovered?: boolean;
+  /** Minimum call frequency to keep an edge. Default: 1. */
+  minCallFrequency?: number;
+  /** Trace spans from the anomaly period. */
+  spans: readonly TraceSpan[];
+}
+
 export class BenchmarkRunner {
   private readonly container: IContainer;
   private readonly classifier: IFaultClassifier | undefined;
@@ -141,6 +162,16 @@ export class BenchmarkRunner {
     readonly maxConditioningSetSize?: number;
   };
 
+  /** Trace topology validation options (I9). */
+  private readonly traceOptions?: {
+    readonly enabled: boolean;
+    readonly pruneUnobserved: boolean;
+    readonly discoverNewEdges: boolean;
+    readonly pcVerifyDiscovered: boolean;
+    readonly minCallFrequency: number;
+    readonly spans: readonly TraceSpan[];
+  };
+
   /**
    * @param container - DI container with at least RCA_ENGINE registered.
    * @param classifier - Optional fault type classifier. When provided, the runner
@@ -150,6 +181,10 @@ export class BenchmarkRunner {
    * @param pcValidation - Optional PC causal discovery validation. When enabled
    *                       (pcValidation: true), the runner pre-validates each case's
    *                       call graph using the PC algorithm before RCA analysis.
+   * @param traceValidation - Optional trace topology validation (I9). When enabled,
+   *                          the runner first augments the call graph using distributed
+   *                          trace span data to prune noise edges and discover missing
+   *                          causal links.
    */
   constructor(
     container: IContainer,
@@ -161,6 +196,7 @@ export class BenchmarkRunner {
       alpha?: number;
       maxConditioningSetSize?: number;
     },
+    traceValidation?: TraceValidationOptions,
   ) {
     this.container = container;
     this.classifier = classifier;
@@ -170,6 +206,14 @@ export class BenchmarkRunner {
       discoverNewEdges: pcValidation.discoverNewEdges ?? true,
       alpha: pcValidation.alpha,
       maxConditioningSetSize: pcValidation.maxConditioningSetSize,
+    } : undefined;
+    this.traceOptions = traceValidation?.enabled ? {
+      enabled: true,
+      pruneUnobserved: traceValidation.pruneUnobserved ?? true,
+      discoverNewEdges: traceValidation.discoverNewEdges ?? true,
+      pcVerifyDiscovered: traceValidation.pcVerifyDiscovered ?? false,
+      minCallFrequency: traceValidation.minCallFrequency ?? 1,
+      spans: traceValidation.spans,
     } : undefined;
   }
 
@@ -195,8 +239,27 @@ export class BenchmarkRunner {
 
     for (const benchCase of suite.cases) {
       try {
-        // ── PC Causal Discovery Validation (I8-P4b) ──
+        // ── Trace Topology Validation (I9) ──
         let effectiveCallGraph = benchCase.callGraph;
+        if (this.traceOptions?.enabled) {
+          const { validateTopologyWithTraces } = await import(
+            '../../signals/trace-validator.js'
+          );
+          const traceResult = validateTopologyWithTraces(
+            benchCase.callGraph,
+            this.traceOptions.spans,
+            benchCase.metrics,
+            {
+              minCallFrequency: this.traceOptions.minCallFrequency,
+              discoverNewEdges: this.traceOptions.discoverNewEdges,
+              pruneUnobserved: this.traceOptions.pruneUnobserved,
+              pcVerify: this.traceOptions.pcVerifyDiscovered,
+            },
+          );
+          effectiveCallGraph = traceResult.refinedGraph;
+        }
+
+        // ── PC Causal Discovery Validation (I8-P4b) ──
         if (this.pcOptions?.enabled) {
           const { validateTopologyWithPC } = await import(
             '../../signals/pc-validator.js'

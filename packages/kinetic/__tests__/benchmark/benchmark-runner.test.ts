@@ -1035,3 +1035,143 @@ describe('BenchmarkRunner PC validation integration (I8-P4b)', () => {
     expect(typeof result.avgTop5).toBe('number');
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// Trace Topology Validation Integration Tests (I9)
+// ═══════════════════════════════════════════════════════════
+
+describe('BenchmarkRunner trace topology validation (I9)', () => {
+  function makeTraceSpan(
+    traceId: string,
+    spanId: string,
+    parentSpanId: string,
+    service: string,
+  ): import('@agentix-e/micro-kinetic-core').TraceSpan {
+    return {
+      traceId, spanId, parentSpanId, service,
+      operation: `GET /${service}`,
+      duration: 10,
+      statusCode: 200,
+      isError: false,
+      startTime: 1000,
+    };
+  }
+
+  it('constructs with traceValidation disabled (default)', () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    const runner = new BenchmarkRunner(container);
+    expect(runner).toBeDefined();
+  });
+
+  it('constructs with traceValidation enabled', () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    const runner = new BenchmarkRunner(container, undefined, undefined, {
+      enabled: true,
+      spans: [],
+    });
+    expect(runner).toBeDefined();
+  });
+
+  it('runs suite successfully with trace validation enabled', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    const spans = [
+      makeTraceSpan('t1', 's0', '', 'svc-a'),
+      makeTraceSpan('t1', 's1', 's0', 'svc-b'),
+      ...Array.from({ length: 8 }, (_, i) =>
+        makeTraceSpan('t1', `s${i + 2}`, `s${i + 1}`, `svc-${String.fromCodePoint(99 + i)}`),
+      ),
+    ];
+
+    const runner = new BenchmarkRunner(container, undefined, undefined, {
+      enabled: true,
+      spans,
+      pruneUnobserved: true,
+      discoverNewEdges: true,
+    });
+
+    const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+    const suite = generator.generateRCAEvalSuite('trace-suite', 2);
+    const result = await runner.runSuite(suite);
+
+    expect(result.totalCases).toBe(2);
+    expect(result.duration).toBeGreaterThan(0);
+  });
+
+  it('runs suite with trace + PC co-verification', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    const spans = [
+      makeTraceSpan('t1', 's0', '', 'svc-a'),
+      makeTraceSpan('t1', 's1', 's0', 'svc-b'),
+      ...Array.from({ length: 8 }, (_, i) =>
+        makeTraceSpan('t1', `s${i + 2}`, `s${i + 1}`, `svc-${String.fromCodePoint(99 + i)}`),
+      ),
+    ];
+
+    const runner = new BenchmarkRunner(container, undefined, undefined, {
+      enabled: true,
+      spans,
+      pruneUnobserved: true,
+      pcVerifyDiscovered: true,
+    });
+
+    const generator = new SyntheticBenchmarkGenerator({ seed: 55 });
+    const suite = generator.generateRCAEvalSuite('trace-pc-suite', 2);
+    const result = await runner.runSuite(suite);
+
+    expect(result.totalCases).toBe(2);
+    expect(result.duration).toBeGreaterThan(0);
+  });
+
+  it('runs suite with trace disabled (enabled=false)', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    const runner = new BenchmarkRunner(container, undefined, undefined, {
+      enabled: false,
+      spans: [],
+    });
+
+    const generator = new SyntheticBenchmarkGenerator({ seed: 33 });
+    const suite = generator.generateRCAEvalSuite('no-trace', 2);
+    const result = await runner.runSuite(suite);
+
+    expect(result.totalCases).toBe(2);
+  });
+
+  it('runs suite with trace validation and PC together', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    const spans = [
+      makeTraceSpan('t1', 's0', '', 'svc-a'),
+      makeTraceSpan('t1', 's1', 's0', 'svc-b'),
+      ...Array.from({ length: 8 }, (_, i) =>
+        makeTraceSpan('t1', `s${i + 2}`, `s${i + 1}`, `svc-${String.fromCodePoint(99 + i)}`),
+      ),
+    ];
+
+    // Both trace + PC enabled: trace runs first (prune/discover),
+    // then PC refines (causal direction)
+    const runner = new BenchmarkRunner(
+      container,
+      undefined,
+      { enabled: true, pruneNonCausal: false, discoverNewEdges: true },
+      { enabled: true, spans, pruneUnobserved: true },
+    );
+
+    const generator = new SyntheticBenchmarkGenerator({ seed: 66 });
+    const suite = generator.generateRCAEvalSuite('trace+pc', 2);
+    const result = await runner.runSuite(suite);
+
+    expect(result.totalCases).toBe(2);
+    expect(result.duration).toBeGreaterThan(0);
+  });
+});
