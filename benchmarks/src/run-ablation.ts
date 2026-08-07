@@ -213,7 +213,8 @@ async function main(): Promise<void> {
   };
 
   const zhipuKey = process.env['ZHIPU_API_KEY'];
-  if (zhipuKey) {
+  const disableRemote = process.env['SEMANTIC_DISABLE_REMOTE'] === '1';
+  if (zhipuKey && !disableRemote) {
     try {
       const { TfIdfEmbeddingProvider, createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
       semanticConfig.embeddingProvider = createApiEmbeddingFromEnv({
