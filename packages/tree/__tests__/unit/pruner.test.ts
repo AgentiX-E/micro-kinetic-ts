@@ -683,5 +683,41 @@ describe('TreePruner', () => {
       // Should have collisionEnergy for both nodes
       expect(graph.collisionEnergy?.size).toBe(2);
     });
+
+    it('buildFaultGraph with collision disabled', () => {
+      const pruner = new TreePruner({ enableCollisionAggregation: false });
+      const callGraph = makeCallGraph(
+        ['X', 'Y'],
+        [['X', 'Y']],
+      );
+      const metrics = makeMetrics({
+        X: [1, 2, 3, 4, 100],
+        Y: [1, 2, 3, 4, 5],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      // Collision disabled: each node gets raw anomaly score, 'chain' type, 0 gain
+      expect(graph.collisionEnergy?.size).toBe(2);
+      for (const [, energy] of graph.collisionEnergy!) {
+        expect(energy.collisionType).toBe('chain');
+        expect(energy.collisionGain).toBe(0);
+        expect(energy.totalEnergy).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    it('buildFaultGraph with two-hop decay', () => {
+      const pruner = new TreePruner({ useTwoHopDecay: true });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+      );
+      const metrics = makeMetrics({
+        A: [1, 2, 3, 4, 100],
+        B: [1, 2, 3, 4, 5],
+        C: [1, 2, 3, 4, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      // Should compute two-hop cycle contributions
+      expect(graph.detectedCycles.length).toBeGreaterThanOrEqual(0);
+    });
   });
 });

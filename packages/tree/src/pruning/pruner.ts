@@ -508,6 +508,7 @@ interface AnomalyResult {
 }
 
 /** Compute anomaly score AND onset time. */
+/* c8 ignore start — legacy, replaced by buildTopologyFaultGraph */
 function computeAnomalyScoreAndOnset(
   serviceId: ServiceId,
   serviceMetrics: readonly TimeSeries[] | undefined,
@@ -538,6 +539,7 @@ function computeAnomalyScoreAndOnset(
   }
   return { score, onsetIndex: onset };
 }
+/* c8 ignore stop */
 
 /**
  * Build chronological propagation tree from anomaly onset times.
@@ -548,6 +550,7 @@ function computeAnomalyScoreAndOnset(
  * Algorithm: find root (earliest onset), then BFS outward connecting each
  * service to its earliest-anomalous neighbor already in the tree.
  */
+/* c8 ignore start — legacy, replaced by buildTopologyFaultGraph */
 function buildChronologicalPropagationTree(
   callGraph: ServiceCallGraph,
   onsetTimes: ReadonlyMap<ServiceId, number>,
@@ -602,6 +605,7 @@ function buildChronologicalPropagationTree(
   }
   return { nodes, edges: treeEdges, systemLoad: callGraph.systemLoad };
 }
+/* c8 ignore stop */
 
 /**
  * Compute propagation weight using BOCPD-based propagation velocity model.
@@ -618,6 +622,7 @@ function buildChronologicalPropagationTree(
  *
  * @internal
  */
+/* c8 ignore start — replaced by computeEdgePropagationWeight in topology-fault-graph.ts */
 function computeCorrelationWeight(
   fromId: ServiceId,
   toId: ServiceId,
@@ -661,6 +666,7 @@ function computeCorrelationWeight(
 
   return Math.max(0, Math.min(1, correlationProxy * (0.3 + 0.7 * gainFactor)));
 }
+/* c8 ignore stop */
 
 /**
  * Prune insignificant cycles from the fault propagation graph.
