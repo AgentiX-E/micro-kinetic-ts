@@ -12,7 +12,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      id-token: write
     env:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
@@ -26,7 +25,7 @@ jobs:
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - run: CI=false pnpm build
       - run: pnpm test:all
       - name: Create Release Pull Request or Publish
         if: env.NPM_TOKEN
