@@ -12,7 +12,7 @@
  * - Results directly comparable with published baselines
  *
  * Usage:
- *   pnpm exec tsx benchmarks/src/run-rcaeval.ts [--data-dir <path>] [--system ob|ss|tt] [--max-cases <n>]
+ *   pnpm exec tsx benchmarks/src/run-rcaeval.ts [--data-dir <path>] [--suite re1|re2|re3] [--system ob|ss|tt] [--max-cases <n>]
  *
  * @module benchmarks/run-rcaeval
  */
@@ -108,6 +108,8 @@ interface CliOptions {
   maxCases: number;
   /** Filter to specific system: 'ob', 'ss', 'tt', or 'all' */
   system: string;
+  /** Filter to specific suite: 're1', 're2', 're3', or 'all' */
+  suite: string;
 }
 
 function parseArgs(): CliOptions {
@@ -116,6 +118,7 @@ function parseArgs(): CliOptions {
     dataDir: join(homedir(), 'RCAEval-json'),
     maxCases: 0,
     system: 'all',
+    suite: 'all',
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length)
@@ -124,6 +127,8 @@ function parseArgs(): CliOptions {
       opts.maxCases = parseInt(args[++i]!, 10) || 0;
     else if (args[i] === '--system' && i + 1 < args.length)
       opts.system = args[++i]!;
+    else if (args[i] === '--suite' && i + 1 < args.length)
+      opts.suite = args[++i]!;
   }
   return opts;
 }
@@ -496,7 +501,7 @@ async function main(): Promise<void> {
   console.log('═'.repeat(65));
   console.log(`Data:  ${opts.dataDir}`);
   console.log(
-    `Filter: ${opts.system}${opts.maxCases > 0 ? ` (max ${opts.maxCases} cases)` : ''}`,
+    `Filter: system=${opts.system}, suite=${opts.suite}${opts.maxCases > 0 ? ` (max ${opts.maxCases} cases)` : ''}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -529,6 +534,9 @@ async function main(): Promise<void> {
       c.system !== 'SockShop' &&
       c.system !== 'TrainTicket'
     )
+      continue;
+    // Suite filter
+    if (opts.suite !== 'all' && c.suite !== `RE${opts.suite.replace(/^re/i, '')}`)
       continue;
     const groupKey = `${c.system}:${c.suite}`;
     if (!groups.has(groupKey)) groups.set(groupKey, []);

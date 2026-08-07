@@ -165,11 +165,13 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   let dataDir = join(homedir(), 'RCAEval-json');
   let systemFilter = 'all';
+  let suiteFilter = 'all';
   let maxCases = 0;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) dataDir = args[++i]!;
     else if (args[i] === '--system' && i + 1 < args.length) systemFilter = args[++i]!;
+    else if (args[i] === '--suite' && i + 1 < args.length) suiteFilter = args[++i]!;
     else if (args[i] === '--max-cases' && i + 1 < args.length) maxCases = parseInt(args[++i]!, 10) || 0;
   }
 
@@ -177,7 +179,7 @@ async function main(): Promise<void> {
   console.log('Micro-Kinetic — Feature Ablation Study');
   console.log('═'.repeat(80));
   console.log(`Data:       ${dataDir}`);
-  console.log(`Filter:     ${systemFilter}`);
+  console.log(`Filter:     system=${systemFilter}, suite=${suiteFilter}`);
   console.log(`Configs:    ${CONFIGS.length}`);
   console.log(`Repetitions: ${REPETITIONS}`);
   console.log('═'.repeat(80));
@@ -191,6 +193,8 @@ async function main(): Promise<void> {
   const systemGroups = new Map<string, CaseMeta[]>();
   for (const c of allCases) {
     if (systemFilter !== 'all' && !c.system.toLowerCase().includes(systemFilter.toLowerCase())) continue;
+    // Suite filter: 're1' matches RE1, 're2' matches RE2, etc.
+    if (suiteFilter !== 'all' && c.suite !== `RE${suiteFilter.replace(/^re/i, '')}`) continue;
     const key = c.system;
     if (!systemGroups.has(key)) systemGroups.set(key, []);
     systemGroups.get(key)!.push(c);

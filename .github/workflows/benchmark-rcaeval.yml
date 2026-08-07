@@ -1,7 +1,5 @@
 name: Benchmark — RCAEval Full Dataset
 
-# Trigger: workflow_dispatch (manual), push to benchmark sources,
-# or after Cache Benchmark Datasets workflow completes successfully.
 on:
   workflow_dispatch:
   push:
@@ -19,147 +17,80 @@ permissions:
   id-token: write
 
 jobs:
-  # ── Synthetic benchmark: fast, no external data needed ──
+  # ── Synthetic: fast, no external data ──
   synthetic:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install and build
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-
       - name: Run synthetic benchmark (175 cases)
         run: |
           pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
-
       - name: Upload synthetic results
         uses: actions/upload-artifact@v4
         with:
           name: synthetic-results
           path: benchmark-results.json
 
-  # ── RCAEval benchmark: requires cached datasets ──
-  rcaeval:
+  # ── RCAEval: 3 parallel runners (RE1 / RE2 / RE3) ──
+  rcaeval-re1:
     needs: synthetic
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install and build
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-
       - name: Restore cached RCAEval JSON
-        id: jsonCache
         uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-json
           key: RCAEval-json-v2
           restore-keys: |
             RCAEval-json-
-
-      - name: Restore cached RCAEval Parquet (fallback)
-        if: steps.jsonCache.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/RCAEval-data
-          key: RCAEval-datasets-v2-pq
-          restore-keys: |
-            RCAEval-datasets-
-
-      - name: Check data directory
-        id: checkData
-        run: |
-          if [ -d ~/RCAEval-json ]; then
-            JSON_COUNT=$(find ~/RCAEval-json -type d -mindepth 1 2>/dev/null | wc -l)
-            echo "JSON case dirs: $JSON_COUNT"
-          else
-            echo "JSON cache not available"
-            JSON_COUNT=0
-          fi
-
-          if [ -d ~/RCAEval-data ]; then
-            PQ_COUNT=$(find ~/RCAEval-data -name '*.parquet' 2>/dev/null | wc -l)
-            echo "Parquet files: $PQ_COUNT"
-          else
-            echo "Parquet cache not available"
-            PQ_COUNT=0
-          fi
-
-          echo "json_count=$JSON_COUNT" >> $GITHUB_OUTPUT
-          echo "pq_count=$PQ_COUNT" >> $GITHUB_OUTPUT
-
-      - name: Convert Parquet to JSON (on-the-fly)
-        if: steps.checkData.outputs.json_count == '0' && steps.checkData.outputs.pq_count != '0'
-        run: |
-          echo "JSON cache miss — converting Parquet to JSON..."
-          pip install pandas pyarrow
-          python3 scripts/convert-parquet-to-json.py
-
-      - name: Run RCAEval benchmark
-        if: steps.checkData.outputs.json_count != '0' || steps.checkData.outputs.pq_count != '0'
+      - name: Run RCAEval — RE1 only
         env:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts 2>&1 | tee rcaeval-results.txt
-
-      - name: Report data missing
-        if: steps.checkData.outputs.json_count == '0' && steps.checkData.outputs.pq_count == '0'
-        run: |
-          echo "No RCAEval data available. Run 'Cache Benchmark Datasets' workflow first." > rcaeval-results.txt
-          echo "::warning::RCAEval datasets not cached. Skipping real-dataset benchmark."
-
-      - name: Upload RCAEval results
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 2>&1 | tee rcaeval-re1-results.txt
+      - name: Upload RE1 results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rcaeval-results
-          path: |
-            rcaeval-results.txt
+          name: rcaeval-re1-results
+          path: rcaeval-re1-results.txt
 
-  # ── Ablation: measure each feature's marginal contribution ──
-  ablation:
-    needs: rcaeval
-    if: needs.rcaeval.result == 'success'
+  rcaeval-re2:
+    needs: synthetic
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install and build
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-
       - name: Restore cached RCAEval JSON
         uses: actions/cache/restore@v4
         with:
@@ -167,29 +98,170 @@ jobs:
           key: RCAEval-json-v2
           restore-keys: |
             RCAEval-json-
-
-      - name: Run ablation study (10 configs × 3 repetitions)
+      - name: Run RCAEval — RE2 only
         env:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
-          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json 2>&1 | tee ablation-results.txt
-
-      - name: Upload ablation results
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 2>&1 | tee rcaeval-re2-results.txt
+      - name: Upload RE2 results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ablation-results
+          name: rcaeval-re2-results
+          path: rcaeval-re2-results.txt
+
+  rcaeval-re3:
+    needs: synthetic
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v2
+          restore-keys: |
+            RCAEval-json-
+      - name: Run RCAEval — RE3 only
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+        run: |
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 2>&1 | tee rcaeval-re3-results.txt
+      - name: Upload RE3 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re3-results
+          path: rcaeval-re3-results.txt
+
+  # ── Ablation: 3 parallel runners (RE1 / RE2 / RE3) ──
+  ablation-re1:
+    needs: rcaeval-re1
+    if: needs.rcaeval-re1.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v2
+          restore-keys: |
+            RCAEval-json-
+      - name: Run ablation — RE1 only
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+        run: |
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re1 2>&1 | tee ablation-re1-results.txt
+      - name: Upload ablation RE1 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ablation-re1-results
           path: |
-            ablation-results.txt
+            ablation-re1-results.txt
             ablation-results.json
 
-  # ── Dashboard: combine results and deploy ──
+  ablation-re2:
+    needs: rcaeval-re2
+    if: needs.rcaeval-re2.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v2
+          restore-keys: |
+            RCAEval-json-
+      - name: Run ablation — RE2 only
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+        run: |
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 2>&1 | tee ablation-re2-results.txt
+      - name: Upload ablation RE2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ablation-re2-results
+          path: |
+            ablation-re2-results.txt
+            ablation-results.json
+
+  ablation-re3:
+    needs: rcaeval-re3
+    if: needs.rcaeval-re3.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEval-json-v2
+          restore-keys: |
+            RCAEval-json-
+      - name: Run ablation — RE3 only
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+        run: |
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re3 2>&1 | tee ablation-re3-results.txt
+      - name: Upload ablation RE3 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ablation-re3-results
+          path: |
+            ablation-re3-results.txt
+            ablation-results.json
+
+  # ── Dashboard: combine all results, deploy to gh-pages ──
   dashboard:
-    needs: [synthetic, rcaeval, ablation]
-    if: always() && (needs.synthetic.result == 'success' || needs.synthetic.result == 'skipped')
+    needs: [synthetic, rcaeval-re1, rcaeval-re2, rcaeval-re3, ablation-re1, ablation-re2, ablation-re3]
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
       - uses: actions/checkout@v4
 
@@ -202,16 +274,38 @@ jobs:
       - name: Download RCAEval results
         uses: actions/download-artifact@v4
         with:
-          name: rcaeval-results
+          pattern: rcaeval-re[1-3]-results
           path: artifacts/
         continue-on-error: true
 
       - name: Download ablation results
         uses: actions/download-artifact@v4
         with:
-          name: ablation-results
+          pattern: ablation-re[1-3]-results
           path: artifacts/
         continue-on-error: true
+
+      - name: Merge RCAEval results
+        run: |
+          echo "=== RCAEval RE1 ===" > artifacts/rcaeval-results.txt
+          cat artifacts/rcaeval-re1-results/rcaeval-re1-results.txt 2>/dev/null >> artifacts/rcaeval-results.txt || echo "(not available)" >> artifacts/rcaeval-results.txt
+          echo "" >> artifacts/rcaeval-results.txt
+          echo "=== RCAEval RE2 ===" >> artifacts/rcaeval-results.txt
+          cat artifacts/rcaeval-re2-results/rcaeval-re2-results.txt 2>/dev/null >> artifacts/rcaeval-results.txt || echo "(not available)" >> artifacts/rcaeval-results.txt
+          echo "" >> artifacts/rcaeval-results.txt
+          echo "=== RCAEval RE3 ===" >> artifacts/rcaeval-results.txt
+          cat artifacts/rcaeval-re3-results/rcaeval-re3-results.txt 2>/dev/null >> artifacts/rcaeval-results.txt || echo "(not available)" >> artifacts/rcaeval-results.txt
+
+      - name: Merge ablation results
+        run: |
+          echo "=== Ablation RE1 ===" > artifacts/ablation-results.txt
+          cat artifacts/ablation-re1-results/ablation-re1-results.txt 2>/dev/null >> artifacts/ablation-results.txt || echo "(not available)" >> artifacts/ablation-results.txt
+          echo "" >> artifacts/ablation-results.txt
+          echo "=== Ablation RE2 ===" >> artifacts/ablation-results.txt
+          cat artifacts/ablation-re2-results/ablation-re2-results.txt 2>/dev/null >> artifacts/ablation-results.txt || echo "(not available)" >> artifacts/ablation-results.txt
+          echo "" >> artifacts/ablation-results.txt
+          echo "=== Ablation RE3 ===" >> artifacts/ablation-results.txt
+          cat artifacts/ablation-re3-results/ablation-re3-results.txt 2>/dev/null >> artifacts/ablation-results.txt || echo "(not available)" >> artifacts/ablation-results.txt
 
       - name: Generate HTML dashboard
         run: |
@@ -219,20 +313,21 @@ jobs:
           import json, os
           from datetime import datetime, timezone
 
-          synthetic_file = 'artifacts/benchmark-results.json'
+          synthetic_file = 'artifacts/synthetic-results/benchmark-results.json'
           rcaeval_file = 'artifacts/rcaeval-results.txt'
           ablation_file = 'artifacts/ablation-results.txt'
 
-          synthetic = json.load(open(synthetic_file)) if os.path.exists(synthetic_file) else [{'name':'N/A','value':'N/A','unit':''}]
+          synthetic_list = json.load(open(synthetic_file)) if os.path.exists(synthetic_file) else []
+          synthetic = synthetic_list if isinstance(synthetic_list, list) else [{'name':'N/A','value':'N/A','unit':''}]
           rcaeval_raw = open(rcaeval_file).read() if os.path.exists(rcaeval_file) else 'RCAEval results not available (data cache miss or benchmark failed)'
-          ablation_raw = open(ablation_file).read() if os.path.exists(ablation_file) else 'Ablation study not available (requires successful RCAEval run)'
+          ablation_raw = open(ablation_file).read() if os.path.exists(ablation_file) else 'Ablation study not available (requires successful RCAEval)'
 
           now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
           sha = os.environ.get('GITHUB_SHA', 'unknown')[:8]
           run_id = os.environ.get('GITHUB_RUN_ID', '?')
 
           synthetic_rows = '\n'.join([
-              f'<tr><td>{m[\"name\"]}</td><td>{m[\"value\"]}</td><td>{m[\"unit\"]}</td></tr>'
+              f'<tr><td>{m.get(\"name\",\"?\")}</td><td>{m.get(\"value\",\"?\")}</td><td>{m.get(\"unit\",\"\")}</td></tr>'
               for m in synthetic
           ])
 
@@ -260,27 +355,27 @@ jobs:
           </head>
           <body>
           <div class=\"container\">
-          <h1> Micro-Kinetic Benchmark Dashboard</h1>
+          <h1>⚡ Micro-Kinetic Benchmark Dashboard</h1>
           <div class=\"meta\">
             <strong>Commit:</strong> {sha} &nbsp;|&nbsp;
             <strong>Run:</strong> <a href=\"https://github.com/AgentiX-E/micro-kinetic-ts/actions/runs/{run_id}\" style=\"color:#58a6ff\">#{run_id}</a> &nbsp;|&nbsp;
             <strong>Time:</strong> {now}
           </div>
 
-          <h2> Synthetic Benchmark (175 cases, 6 fault types)</h2>
+          <h2>📊 Synthetic Benchmark (175 cases, 6 fault types)</h2>
           <table>
             <tr><th>Metric</th><th>Value</th><th>Unit</th></tr>
             {synthetic_rows}
           </table>
 
-          <h2> RCAEval Real Dataset (735 cases)</h2>
+          <h2>🎯 RCAEval Real Dataset (RE1/RE2/RE3 — parallel)</h2>
           <pre>{rcaeval_raw}</pre>
 
-          <h2> Feature Ablation Study (10 configs, 3 reps each)</h2>
+          <h2>🔬 Feature Ablation Study (10 configs × 3 reps, per suite)</h2>
           <pre>{ablation_raw}</pre>
 
           <p style=\"text-align:center;color:#8b949e;margin-top:40px;font-size:0.8em\">
-            Powered by AgentiX-E Micro-Kinetic &middot; Deng Yu Kinetic Theory &middot; Auto-generated by CI
+            Powered by AgentiX-E Micro-Kinetic &middot; Deng Yu Kinetic Theory &middot; Parallel runners (RE1/RE2/RE3) &middot; Auto-generated by CI
           </p>
           </div>
           </body>
@@ -297,29 +392,28 @@ jobs:
           name: benchmark-dashboard
           path: |
             index.html
-            artifacts/benchmark-results.json
+            artifacts/synthetic-results/benchmark-results.json
             artifacts/rcaeval-results.txt
             artifacts/ablation-results.txt
-            artifacts/ablation-results.json
 
       - name: Post summary
         if: always()
         run: |
           echo '## Micro-Kinetic Synthetic Benchmark' >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
-          if [ -f artifacts/benchmark-results.json ]; then
-            cat artifacts/benchmark-results.json >> $GITHUB_STEP_SUMMARY
+          if [ -f artifacts/synthetic-results/benchmark-results.json ]; then
+            cat artifacts/synthetic-results/benchmark-results.json >> $GITHUB_STEP_SUMMARY
           else
             echo 'No synthetic results available' >> $GITHUB_STEP_SUMMARY
           fi
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
-          echo '## RCAEval Real Dataset Benchmark' >> $GITHUB_STEP_SUMMARY
+          echo '## RCAEval Real Dataset Benchmark (Parallel RE1/RE2/RE3)' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           if [ -f artifacts/rcaeval-results.txt ]; then
             cat artifacts/rcaeval-results.txt >> $GITHUB_STEP_SUMMARY
           else
-            echo 'No RCAEval results (data cache miss)' >> $GITHUB_STEP_SUMMARY
+            echo 'No RCAEval results' >> $GITHUB_STEP_SUMMARY
           fi
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
@@ -328,7 +422,7 @@ jobs:
           if [ -f artifacts/ablation-results.txt ]; then
             cat artifacts/ablation-results.txt >> $GITHUB_STEP_SUMMARY
           else
-            echo 'No ablation results (requires successful RCAEval benchmark)' >> $GITHUB_STEP_SUMMARY
+            echo 'No ablation results' >> $GITHUB_STEP_SUMMARY
           fi
           echo '```' >> $GITHUB_STEP_SUMMARY
 
