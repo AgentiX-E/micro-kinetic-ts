@@ -57,30 +57,22 @@ export { createDefaultContainer } from './di/container.js';
 
 // ── Signals ──────────────────────────────────────────────
 
-export {
-  MultiSignalFusionEngine,
-} from './signals/fusion-engine.js';
+export { MultiSignalFusionEngine } from './signals/fusion-engine.js';
 
-export {
-  TraceSignalProvider,
-} from './signals/trace-provider.js';
+export { TraceSignalProvider } from './signals/trace-provider.js';
 
-export {
-  LogSignalProvider,
-} from './signals/log-provider.js';
+export { LogSignalProvider } from './signals/log-provider.js';
 export type { LogEntry, LogTemplate } from './signals/log-provider.js';
 
-export {
-  augmentTopologyWithTraces,
-} from './signals/trace-topology.js';
+export { augmentTopologyWithTraces } from './signals/trace-topology.js';
 export type { TraceTopologyConfig } from './signals/trace-topology.js';
 
 export {
-  runPCAlgorithm,
   buildCorrelationMatrix,
-  pearsonCorrelation,
-  partialCorrelation,
   fisherZ,
+  partialCorrelation,
+  pearsonCorrelation,
+  runPCAlgorithm,
   testConditionalIndependence,
 } from './signals/pc-causal-discovery.js';
 export type {
@@ -90,20 +82,17 @@ export type {
   PCResult,
 } from './signals/pc-causal-discovery.js';
 
-export {
-  validateTopologyWithPC,
-  canValidateWithPC,
-} from './signals/pc-validator.js';
-export type {
-  PCValidationResult,
-  PCValidatorConfig,
-} from './signals/pc-validator.js';
+export { canValidateWithPC, validateTopologyWithPC } from './signals/pc-validator.js';
+export type { PCValidationResult, PCValidatorConfig } from './signals/pc-validator.js';
 
 // ── Trace Topology ────────────────────────────────────────
 
 // ── Weight Calibrator (Self-Evolving) ─────────────────────
 
 export {
+  DEFAULT_CALIBRATOR_CONFIG,
+  DEFAULT_COLLISION_BOOSTS,
+  DEFAULT_FUSION_WEIGHTS,
   WeightCalibrator,
 } from './signals/weight-calibrator.js';
 export type {
@@ -111,20 +100,9 @@ export type {
   TrainingExample,
   WeightCalibratorConfig,
 } from './signals/weight-calibrator.js';
-export {
-  DEFAULT_FUSION_WEIGHTS,
-  DEFAULT_COLLISION_BOOSTS,
-  DEFAULT_CALIBRATOR_CONFIG,
-} from './signals/weight-calibrator.js';
 
-export {
-  validateTopologyWithTraces,
-  canValidateWithTraces,
-} from './signals/trace-validator.js';
-export type {
-  TraceValidationConfig,
-  TraceValidationResult,
-} from './signals/trace-validator.js';
+export { canValidateWithTraces, validateTopologyWithTraces } from './signals/trace-validator.js';
+export type { TraceValidationConfig, TraceValidationResult } from './signals/trace-validator.js';
 
 // ── Defaults ──────────────────────────────────────────────
 

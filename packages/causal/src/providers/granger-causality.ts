@@ -26,19 +26,19 @@
  */
 
 import type {
-  ITimingProvider,
-  TimingProviderMeta,
-  CausalDirection,
-  TemporalContext,
-  ServiceTiming,
   CallEdge,
+  CausalDirection,
+  ITimingProvider,
+  TemporalContext,
+  TimingProviderMeta,
 } from '@agentix-e/micro-kinetic-core';
 import type { GrangerConfig, GrangerTestResult } from '../types/index.js';
 import { DEFAULT_GRANGER_CONFIG } from '../types/index.js';
 
 const GRANGER_TIMING_META: TimingProviderMeta = {
   id: 'granger-causality',
-  description: 'Tests Granger causality between service metric time-series to infer fault propagation direction',
+  description:
+    'Tests Granger causality between service metric time-series to infer fault propagation direction',
   tier: 'granger',
   availability: 'conditional',
 };
@@ -204,7 +204,7 @@ export class GrangerCausalityProvider implements ITimingProvider {
       return { fStat: 0, pValue: 1 };
     }
 
-    const fStat = ((RSSr - RSSu) / p) / (RSSu / df);
+    const fStat = (RSSr - RSSu) / p / (RSSu / df);
 
     // Clamp to non-negative
     const clampedF = Math.max(0, fStat);
@@ -230,7 +230,7 @@ export class GrangerCausalityProvider implements ITimingProvider {
     // Paulson's F-to-normal transformation (A&S 26.6.16)
     // More accurate for d2 ≥ 4
     const x = Math.pow(f, 1 / 3) * (1 - 2 / (9 * d2)) - (1 - 2 / (9 * d1));
-    const denom = Math.sqrt(2 / (9 * d1) + Math.pow(f, 2 / 3) * 2 / (9 * d2));
+    const denom = Math.sqrt(2 / (9 * d1) + (Math.pow(f, 2 / 3) * 2) / (9 * d2));
 
     if (denom === 0) return 1;
 
@@ -251,13 +251,9 @@ export class GrangerCausalityProvider implements ITimingProvider {
 
     // Rational approximation (maximum error 1.5e-7)
     const t = 1 / (1 + 0.3275911 * x);
-    const y = t * (
-      0.254829592 +
-      t * (-0.284496736 +
-      t * (1.421413741 +
-      t * (-1.453152027 +
-      t * 1.061405429)))
-    );
+    const y =
+      t *
+      (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
     const erf = 1 - y * Math.exp(-x * x);
 
     return 0.5 * (1 + sign * erf);

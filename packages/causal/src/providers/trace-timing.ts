@@ -21,18 +21,19 @@
  */
 
 import type {
-  ITimingProvider,
-  TimingProviderMeta,
-  CausalDirection,
-  TemporalContext,
   CallEdge,
+  CausalDirection,
+  ITimingProvider,
+  TemporalContext,
+  TimingProviderMeta,
 } from '@agentix-e/micro-kinetic-core';
 import type { SpanTiming } from '../types/index.js';
 
 /** Trace timing provider metadata. */
 const TRACE_TIMING_META: TimingProviderMeta = {
   id: 'trace-timing',
-  description: 'Infers causal direction from distributed tracing span parent-child relationships and start time ordering',
+  description:
+    'Infers causal direction from distributed tracing span parent-child relationships and start time ordering',
   tier: 'trace',
   availability: 'conditional',
 };

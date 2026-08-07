@@ -17,17 +17,17 @@
  * @module causal/providers/static-topology
  */
 
-import { readFileSync, readdirSync, existsSync } from 'fs';
-import { join } from 'path';
 import type {
-  ITopologyProvider,
-  TopologyProviderMeta,
-  TopologyDiscoveryContext,
-  ServiceCallGraph,
-  ServiceNode,
   CallEdge,
   EdgeType,
+  ITopologyProvider,
+  ServiceCallGraph,
+  ServiceNode,
+  TopologyDiscoveryContext,
+  TopologyProviderMeta,
 } from '@agentix-e/micro-kinetic-core';
+import { existsSync, readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
 
 // ── YAML Schema Types ────────────────────────────────────
 
@@ -63,15 +63,20 @@ interface TopologyYaml {
 function normalizeEdgeType(raw: string): EdgeType {
   const lower = raw.toLowerCase().trim();
   switch (lower) {
-    case 'grpc': return 'gRPC';
-    case 'rest': return 'REST';
+    case 'grpc':
+      return 'gRPC';
+    case 'rest':
+      return 'REST';
     case 'mq':
     case 'rabbitmq':
     case 'kafka':
       return 'MQ';
-    case 'callback': return 'CALLBACK';
-    case 'async': return 'ASYNC';
-    default: return 'REST';
+    case 'callback':
+      return 'CALLBACK';
+    case 'async':
+      return 'ASYNC';
+    default:
+      return 'REST';
   }
 }
 
@@ -368,7 +373,10 @@ export class StaticTopologyProvider implements ITopologyProvider {
     while (i < lines.length) {
       const line = lines[i]!;
       const indent = line.search(/\S/);
-      if (line.trim() === '' || indent < 0) { i++; continue; }
+      if (line.trim() === '' || indent < 0) {
+        i++;
+        continue;
+      }
       if (indent <= startIndent && line.trim()) break; // Next item
 
       const trimmed = line.trim();
@@ -465,9 +473,7 @@ export class StaticTopologyProvider implements ITopologyProvider {
     if (namespace) {
       const nsLower = namespace.toLowerCase().trim();
       for (const config of this.cache.values()) {
-        const matchedSvcs = config.services.filter((s) =>
-          lowerIds.has(s.id.toLowerCase().trim()),
-        );
+        const matchedSvcs = config.services.filter((s) => lowerIds.has(s.id.toLowerCase().trim()));
         // Match if any service from this config is in the known set
         // AND the namespace matches
         const hasNsMatch = config.services.some(
@@ -484,9 +490,7 @@ export class StaticTopologyProvider implements ITopologyProvider {
     let bestScore = 0;
     let bestConfig: TopologyYaml | null = null;
     for (const config of this.cache.values()) {
-      const yamlSvcs = new Set(
-        config.services.map((s) => s.id.toLowerCase().trim()),
-      );
+      const yamlSvcs = new Set(config.services.map((s) => s.id.toLowerCase().trim()));
       let score = 0;
       for (const id of lowerIds) {
         if (yamlSvcs.has(id)) score++;
@@ -505,17 +509,12 @@ export class StaticTopologyProvider implements ITopologyProvider {
    * Resolve a YAML service ID to an actual known service ID.
    * Handles case differences by matching against the known set.
    */
-  private resolveServiceId(
-    yamlId: string,
-    knownIds: readonly string[],
-  ): string {
+  private resolveServiceId(yamlId: string, knownIds: readonly string[]): string {
     const lower = yamlId.toLowerCase().trim();
     // Exact match first
     if (knownIds.includes(yamlId)) return yamlId;
     // Case-insensitive match
-    const found = knownIds.find(
-      (id) => id.toLowerCase().trim() === lower,
-    );
+    const found = knownIds.find((id) => id.toLowerCase().trim() === lower);
     return found ?? yamlId;
   }
 
@@ -537,9 +536,7 @@ export class StaticTopologyProvider implements ITopologyProvider {
       connected.add(e.to.toLowerCase().trim());
     }
 
-    const unmatched = knownServiceIds.filter(
-      (id) => !connected.has(id.toLowerCase().trim()),
-    );
+    const unmatched = knownServiceIds.filter((id) => !connected.has(id.toLowerCase().trim()));
 
     if (unmatched.length === 1 && connected.size > 0) {
       const anchor = [...connected][0]!;
@@ -569,10 +566,7 @@ export class StaticTopologyProvider implements ITopologyProvider {
   /**
    * Create an empty graph with just the known service nodes.
    */
-  private emptyGraph(
-    knownServiceIds: readonly string[],
-    namespace?: string,
-  ): ServiceCallGraph {
+  private emptyGraph(knownServiceIds: readonly string[], namespace?: string): ServiceCallGraph {
     const nodes = new Map<string, ServiceNode>();
     for (const id of knownServiceIds) {
       nodes.set(id, {

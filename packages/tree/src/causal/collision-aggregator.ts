@@ -248,10 +248,14 @@ export function computeBoltzmannCollisionGain(
  */
 function getCollisionAmplification(type: CollisionType): number {
   switch (type) {
-    case 'cycle': return 1.8;
-    case 'bottleneck': return 1.5;
-    case 'fan-in': return 1.2;
-    case 'chain': return 1.0;
+    case 'cycle':
+      return 1.8;
+    case 'bottleneck':
+      return 1.5;
+    case 'fan-in':
+      return 1.2;
+    case 'chain':
+      return 1.0;
   }
 }
 
@@ -280,8 +284,7 @@ export function aggregateCollisionEnergy(
     collisionType,
   );
 
-  const totalEnergy = config.alpha * node.localScore
-    + (1 - config.alpha) * collisionGain;
+  const totalEnergy = config.alpha * node.localScore + (1 - config.alpha) * collisionGain;
 
   return {
     serviceId: node.serviceId,
@@ -290,9 +293,7 @@ export function aggregateCollisionEnergy(
     collisionGain,
     totalEnergy: Math.min(1, Math.max(0, totalEnergy)),
     inDegree,
-    ratioContrib: node.localScore > 0
-      ? collisionGain / (node.localScore + collisionGain)
-      : 0,
+    ratioContrib: node.localScore > 0 ? collisionGain / (node.localScore + collisionGain) : 0,
   };
 }
 
@@ -396,12 +397,7 @@ export function aggregateFaultEnergy(
     const cycleCount = cycleMembership.get(serviceId) ?? 0;
 
     // Dynamically classify with actual out-degree
-    const collisionType = classifyCollisionType(
-      incomingEdges.length,
-      od,
-      cycleCount,
-      config,
-    );
+    const collisionType = classifyCollisionType(incomingEdges.length, od, cycleCount, config);
 
     const node: CollisionNode = {
       serviceId,

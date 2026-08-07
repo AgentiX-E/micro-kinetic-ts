@@ -18,17 +18,16 @@
  * @module signals/fusion-engine
  */
 
-import { DEFAULT_FUSION_WEIGHTS } from '@agentix-e/micro-kinetic-core';
 import type {
-  FusionMode,
   FusionWeights,
   ISignalProvider,
   LearningEntry,
   MultiSignalConfig,
+  RootCauseResult,
   SignalAnalysisContext,
   SignalResult,
 } from '@agentix-e/micro-kinetic-core';
-import type { RootCauseResult } from '@agentix-e/micro-kinetic-core';
+import { DEFAULT_FUSION_WEIGHTS } from '@agentix-e/micro-kinetic-core';
 
 /**
  * Multi-signal fusion engine for root cause analysis.
@@ -121,7 +120,9 @@ export class MultiSignalFusionEngine {
     context: SignalAnalysisContext,
     results: Record<string, SignalResult>,
   ): Promise<FusionWeights> {
-    let traceQuality = 0, metricQuality = 0, topologyQuality = 0;
+    let traceQuality = 0,
+      metricQuality = 0,
+      topologyQuality = 0;
 
     for (const [signal, result] of Object.entries(results)) {
       const q = result.metadata.quality;
@@ -187,9 +188,12 @@ export class MultiSignalFusionEngine {
     const scoreMap = new Map<string, number>();
 
     for (const [signal, result] of Object.entries(results)) {
-      const signalWeight = signal === 'trace' ? weights.trace
-        : signal === 'metric' ? weights.metric
-        : weights.topology;
+      const signalWeight =
+        signal === 'trace'
+          ? weights.trace
+          : signal === 'metric'
+            ? weights.metric
+            : weights.topology;
 
       for (const candidate of result.candidates) {
         const serviceId = candidate.serviceId;

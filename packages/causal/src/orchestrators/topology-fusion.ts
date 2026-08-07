@@ -17,11 +17,13 @@
  */
 
 import type {
+  CallEdge,
+  EdgeType,
   ITopologyProvider,
-  TopologyProviderMeta,
+  ServiceCallGraph,
+  ServiceNode,
   TopologyDiscoveryContext,
 } from '@agentix-e/micro-kinetic-core';
-import type { ServiceCallGraph, ServiceNode, CallEdge, EdgeType } from '@agentix-e/micro-kinetic-core';
 
 // ── Fusion Result ────────────────────────────────────────
 
@@ -71,11 +73,12 @@ export interface TopologyFusionConfig {
   readonly minEdgeConfidence: number;
 }
 
-export const DEFAULT_TOPOLOGY_FUSION_CONFIG: Omit<TopologyFusionConfig, 'providers'> = Object.freeze({
-  ringConnectUnmatched: true,
-  ringConnectType: 'REST' as const,
-  minEdgeConfidence: 0,
-});
+export const DEFAULT_TOPOLOGY_FUSION_CONFIG: Omit<TopologyFusionConfig, 'providers'> =
+  Object.freeze({
+    ringConnectUnmatched: true,
+    ringConnectType: 'REST' as const,
+    minEdgeConfidence: 0,
+  });
 
 // ── Orchestrator ─────────────────────────────────────────
 
@@ -183,9 +186,7 @@ export class TopologyFusion {
       providerContributions: contributions,
       ringConnectCount,
       totalConfidence,
-      averageConfidence: fusedEdges.length > 0
-        ? totalConfidence / fusedEdges.length
-        : 0,
+      averageConfidence: fusedEdges.length > 0 ? totalConfidence / fusedEdges.length : 0,
     };
   }
 
@@ -264,10 +265,7 @@ export class TopologyFusion {
           });
 
           // Track contributions
-          contributions.set(
-            provider.meta.id,
-            (contributions.get(provider.meta.id) ?? 0) + 1,
-          );
+          contributions.set(provider.meta.id, (contributions.get(provider.meta.id) ?? 0) + 1);
         }
       }
     }
@@ -283,7 +281,9 @@ export class TopologyFusion {
  *
  * This is the recommended default setup for production use.
  */
-export function createDefaultTopologyFusion(providers: readonly ITopologyProvider[]): TopologyFusion {
+export function createDefaultTopologyFusion(
+  providers: readonly ITopologyProvider[],
+): TopologyFusion {
   return new TopologyFusion({
     ...DEFAULT_TOPOLOGY_FUSION_CONFIG,
     providers: [...providers],

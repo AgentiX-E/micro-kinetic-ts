@@ -27,8 +27,8 @@ import type { BenchmarkSuite } from '../loaders/types.js';
 
 import { computeAvgAtK, computeTA } from './metrics.js';
 
+import type { TrainingExample } from '../../signals/weight-calibrator.js';
 import { WeightCalibrator } from '../../signals/weight-calibrator.js';
-import type { TrainingExample, CalibratedWeights } from '../../signals/weight-calibrator.js';
 
 // ── Runner Types ──────────────────────────────────────────
 
@@ -177,7 +177,6 @@ export class BenchmarkRunner {
   /** Online weight calibrator for self-evolving RCA (I10). */
   private readonly calibrator: WeightCalibrator;
 
-
   /**
    * @param container - DI container with at least RCA_ENGINE registered.
    * @param classifier - Optional fault type classifier. When provided, the runner
@@ -208,21 +207,25 @@ export class BenchmarkRunner {
     this.container = container;
     this.classifier = classifier;
     this.calibrator = calibrator ?? new WeightCalibrator();
-    this.pcOptions = pcValidation?.enabled ? {
-      enabled: true,
-      pruneNonCausal: pcValidation.pruneNonCausal ?? false,
-      discoverNewEdges: pcValidation.discoverNewEdges ?? true,
-      alpha: pcValidation.alpha,
-      maxConditioningSetSize: pcValidation.maxConditioningSetSize,
-    } : undefined;
-    this.traceOptions = traceValidation?.enabled ? {
-      enabled: true,
-      pruneUnobserved: traceValidation.pruneUnobserved ?? true,
-      discoverNewEdges: traceValidation.discoverNewEdges ?? true,
-      pcVerifyDiscovered: traceValidation.pcVerifyDiscovered ?? false,
-      minCallFrequency: traceValidation.minCallFrequency ?? 1,
-      spans: traceValidation.spans,
-    } : undefined;
+    this.pcOptions = pcValidation?.enabled
+      ? {
+          enabled: true,
+          pruneNonCausal: pcValidation.pruneNonCausal ?? false,
+          discoverNewEdges: pcValidation.discoverNewEdges ?? true,
+          alpha: pcValidation.alpha,
+          maxConditioningSetSize: pcValidation.maxConditioningSetSize,
+        }
+      : undefined;
+    this.traceOptions = traceValidation?.enabled
+      ? {
+          enabled: true,
+          pruneUnobserved: traceValidation.pruneUnobserved ?? true,
+          discoverNewEdges: traceValidation.discoverNewEdges ?? true,
+          pcVerifyDiscovered: traceValidation.pcVerifyDiscovered ?? false,
+          minCallFrequency: traceValidation.minCallFrequency ?? 1,
+          spans: traceValidation.spans,
+        }
+      : undefined;
   }
 
   /**
@@ -250,9 +253,7 @@ export class BenchmarkRunner {
         // ── Trace Topology Validation (I9) ──
         let effectiveCallGraph = benchCase.callGraph;
         if (this.traceOptions?.enabled) {
-          const { validateTopologyWithTraces } = await import(
-            '../../signals/trace-validator.js'
-          );
+          const { validateTopologyWithTraces } = await import('../../signals/trace-validator.js');
           const traceResult = validateTopologyWithTraces(
             benchCase.callGraph,
             this.traceOptions.spans,
@@ -269,23 +270,17 @@ export class BenchmarkRunner {
 
         // ── PC Causal Discovery Validation (I8-P4b) ──
         if (this.pcOptions?.enabled) {
-          const { validateTopologyWithPC } = await import(
-            '../../signals/pc-validator.js'
-          );
+          const { validateTopologyWithPC } = await import('../../signals/pc-validator.js');
           // Feed the trace-refined graph into PC (not the original call graph)
           // so both Trace and PC contribute cumulatively to topology refinement.
-          const validationResult = validateTopologyWithPC(
-            effectiveCallGraph,
-            benchCase.metrics,
-            {
-              pruneNonCausal: this.pcOptions.pruneNonCausal,
-              discoverNewEdges: this.pcOptions.discoverNewEdges,
-              pcConfig: {
-                alpha: this.pcOptions.alpha,
-                maxConditioningSetSize: this.pcOptions.maxConditioningSetSize,
-              },
+          const validationResult = validateTopologyWithPC(effectiveCallGraph, benchCase.metrics, {
+            pruneNonCausal: this.pcOptions.pruneNonCausal,
+            discoverNewEdges: this.pcOptions.discoverNewEdges,
+            pcConfig: {
+              alpha: this.pcOptions.alpha,
+              maxConditioningSetSize: this.pcOptions.maxConditioningSetSize,
             },
-          );
+          });
           effectiveCallGraph = validationResult.refinedGraph;
         }
 

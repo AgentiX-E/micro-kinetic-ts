@@ -30,13 +30,13 @@
  * @module ai/providers
  */
 
-import type { IEmbeddingProvider, EmbeddingProviderMeta } from '../interfaces/embedding-provider.js';
 import type {
-  ApiEmbeddingConfig,
-  ApiEmbeddingConfigInput,
-} from './api-embedding-config.js';
-import { resolveApiEmbeddingConfig } from './api-embedding-config.js';
+  EmbeddingProviderMeta,
+  IEmbeddingProvider,
+} from '../interfaces/embedding-provider.js';
 import { normalizeL2 } from '../utils/similarity.js';
+import type { ApiEmbeddingConfig, ApiEmbeddingConfigInput } from './api-embedding-config.js';
+import { resolveApiEmbeddingConfig } from './api-embedding-config.js';
 
 /**
  * OpenAI-compatible embedding response shape.
@@ -119,9 +119,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
     }
 
     // Process chunks concurrently
-    const chunkResults = await Promise.all(
-      chunks.map((chunk) => this.embedChunk(chunk)),
-    );
+    const chunkResults = await Promise.all(chunks.map((chunk) => this.embedChunk(chunk)));
 
     // Reassemble in order
     const vectors: Float32Array[] = [];
@@ -155,23 +153,17 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
     for (let attempt = 0; attempt < retry.maxAttempts; attempt++) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(
-          () => controller.abort(),
-          this.config.timeoutMs ?? 30000,
-        );
+        const timeoutId = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 30000);
 
-        const response = await this._fetch(
-          this.config.endpoint,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(this.config.headers ?? {}),
-            },
-            body: JSON.stringify(this.buildRequestBody(texts)),
-            signal: controller.signal,
+        const response = await this._fetch(this.config.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.config.headers ?? {}),
           },
-        );
+          body: JSON.stringify(this.buildRequestBody(texts)),
+          signal: controller.signal,
+        });
 
         clearTimeout(timeoutId);
 
@@ -183,18 +175,14 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
               `Embedding API error ${response.status} (retries exhausted): ${body.slice(0, 200)}`,
             );
           }
-          const delayMs =
-            retry.initialDelayMs *
-            Math.pow(retry.backoffMultiplier, attempt);
+          const delayMs = retry.initialDelayMs * Math.pow(retry.backoffMultiplier, attempt);
           await sleep(delayMs);
           continue;
         }
 
         if (!response.ok) {
           const body = await response.text().catch(() => '(unknown)');
-          throw new Error(
-            `Embedding API error ${response.status}: ${body.slice(0, 200)}`,
-          );
+          throw new Error(`Embedding API error ${response.status}: ${body.slice(0, 200)}`);
         }
 
         return await response.json();
@@ -208,9 +196,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
         if (attempt === retry.maxAttempts - 1) {
           throw lastError;
         }
-        const delayMs =
-          retry.initialDelayMs *
-          Math.pow(retry.backoffMultiplier, attempt);
+        const delayMs = retry.initialDelayMs * Math.pow(retry.backoffMultiplier, attempt);
         await sleep(delayMs);
       }
     }
@@ -251,9 +237,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
     // Default: OpenAI-compatible format
     const typed = data as OpenAIEmbeddingResponse;
     if (!typed?.data || !Array.isArray(typed.data)) {
-      throw new Error(
-        'Invalid embedding API response: expected { data: [{ embedding: [...] }] }',
-      );
+      throw new Error('Invalid embedding API response: expected { data: [{ embedding: [...] }] }');
     }
 
     // Sort by index to preserve input order
@@ -275,8 +259,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
    */
   private isRetryableStatus(status: number): boolean {
     const retryable =
-      this.config.retry?.retryableStatuses ??
-      DEFAULT_RETRY_CONFIG.retryableStatuses;
+      this.config.retry?.retryableStatuses ?? DEFAULT_RETRY_CONFIG.retryableStatuses;
     return retryable.includes(status);
   }
 }

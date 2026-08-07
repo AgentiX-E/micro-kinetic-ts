@@ -37,9 +37,9 @@
  */
 
 import type { ServiceCallGraph, TraceSpan } from '@agentix-e/micro-kinetic-core';
-import { augmentTopologyWithTraces } from './trace-topology.js';
-import { validateTopologyWithPC } from './pc-validator.js';
 import type { PCValidationConfig, PCValidationResult } from './pc-validator.js';
+import { validateTopologyWithPC } from './pc-validator.js';
+import { augmentTopologyWithTraces } from './trace-topology.js';
 
 // ── Config ────────────────────────────────────────────────
 
@@ -126,12 +126,8 @@ export function validateTopologyWithTraces(
   });
 
   // Count statistics
-  const originalEdgeKeys = new Set(
-    callGraph.edges.map((e) => `${e.from}→${e.to}`),
-  );
-  const augmentedEdgeKeys = new Set(
-    augmented.edges.map((e) => `${e.from}→${e.to}`),
-  );
+  const originalEdgeKeys = new Set(callGraph.edges.map((e) => `${e.from}→${e.to}`));
+  const augmentedEdgeKeys = new Set(augmented.edges.map((e) => `${e.from}→${e.to}`));
 
   const keptEdgeCount = cfg.pruneUnobserved
     ? augmented.edges.filter((e) => originalEdgeKeys.has(`${e.from}→${e.to}`)).length

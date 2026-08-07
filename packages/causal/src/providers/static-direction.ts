@@ -29,11 +29,11 @@
  */
 
 import type {
-  ITimingProvider,
-  TimingProviderMeta,
-  CausalDirection,
-  TemporalContext,
   CallEdge,
+  CausalDirection,
+  ITimingProvider,
+  TemporalContext,
+  TimingProviderMeta,
 } from '@agentix-e/micro-kinetic-core';
 
 const STATIC_DIRECTION_META: TimingProviderMeta = {

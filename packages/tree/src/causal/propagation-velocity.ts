@@ -26,10 +26,12 @@
  * @module tree/causal/propagation-velocity
  */
 
-import { bocpdDetectOnset, type BOCPDConfig, type BOCPDResult } from '../../../kinetic/src/signals/bocpd-detector.js';
-import { computeAutoSensitivity, type AutoSensitivityConfig } from '../../../kinetic/src/signals/auto-sensitivity.js';
+import {
+  computeAutoSensitivity,
+  type AutoSensitivityConfig,
+} from '../../../kinetic/src/signals/auto-sensitivity.js';
+import { bocpdDetectOnset, type BOCPDConfig } from '../../../kinetic/src/signals/bocpd-detector.js';
 import { computeMADThreshold } from '../../../kinetic/src/signals/mad-threshold.js';
-import { RollingStats } from '../../../kinetic/src/signals/rolling-stats.js';
 
 /**
  * Configuration for the propagation velocity model.
@@ -68,8 +70,23 @@ export interface PropagationVelocityConfig {
 }
 
 export const DEFAULT_PROPAGATION_CONFIG: PropagationVelocityConfig = {
-  bocpd: { hazardRate: 1 / 250, maxRunLength: 1000, degreesOfFreedom: 3, scale: 1.0, changepointThreshold: 0.1, minRunLength: 3 },
-  autoSensitivity: { kMin: 2.0, kMax: 7.0, coarseStep: 0.5, fineStep: 10, targetAnomalyRate: 0.02, minDataPoints: 10, sparseK: 5.0 },
+  bocpd: {
+    hazardRate: 1 / 250,
+    maxRunLength: 1000,
+    degreesOfFreedom: 3,
+    scale: 1.0,
+    changepointThreshold: 0.1,
+    minRunLength: 3,
+  },
+  autoSensitivity: {
+    kMin: 2.0,
+    kMax: 7.0,
+    coarseStep: 0.5,
+    fineStep: 10,
+    targetAnomalyRate: 0.02,
+    minDataPoints: 10,
+    sparseK: 5.0,
+  },
   expectedDirectLatency: 1.0,
   latencyStddevMultiplier: 0.5,
   useBOCPD: false, // Default to MAD-based for speed; BOCPD for accuracy
@@ -201,7 +218,10 @@ export function computePropagationVelocity(
     sourceOnset = bocpdResult.onsetIndex;
     sourceConfidence = bocpdResult.confidence;
   } else {
-    ({ onsetIndex: sourceOnset, confidence: sourceConfidence } = detectMADOnset(sourceValues, asCfg));
+    ({ onsetIndex: sourceOnset, confidence: sourceConfidence } = detectMADOnset(
+      sourceValues,
+      asCfg,
+    ));
   }
 
   // Detect onset in target
@@ -213,7 +233,10 @@ export function computePropagationVelocity(
     targetOnset = bocpdResult.onsetIndex;
     targetConfidence = bocpdResult.confidence;
   } else {
-    ({ onsetIndex: targetOnset, confidence: targetConfidence } = detectMADOnset(targetValues, asCfg));
+    ({ onsetIndex: targetOnset, confidence: targetConfidence } = detectMADOnset(
+      targetValues,
+      asCfg,
+    ));
   }
 
   // If either onset is undetected, propagation is indeterminate
@@ -268,9 +291,10 @@ export function computePropagationVelocity(
   const delayMatch = gaussianKernel(propagationDelay, expectedDirectLatency, sigma);
 
   // Combined probability
-  const propagationProbability = Math.max(0, Math.min(1,
-    delayMatch * sourceConfidence * targetConfidence,
-  ));
+  const propagationProbability = Math.max(
+    0,
+    Math.min(1, delayMatch * sourceConfidence * targetConfidence),
+  );
 
   // Direct propagation: Δt within 2σ of expected latency
   const isDirectPropagation = Math.abs(propagationDelay - expectedDirectLatency) <= 2 * sigma;

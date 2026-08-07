@@ -32,8 +32,8 @@
  * @module interfaces/multi-signal-fusion
  */
 
-import type { ServiceCallGraph } from '../types/graph.js';
 import type { RootCauseResult } from '../types/faults.js';
+import type { ServiceCallGraph } from '../types/graph.js';
 import type { TimeSeries } from '../types/time-series.js';
 
 // ── Signal Result Types ──────────────────────────────────

@@ -118,7 +118,19 @@ export interface ApiEmbeddingConfig {
  * - maxBatchSize: 32
  */
 export type ApiEmbeddingConfigInput = Pick<ApiEmbeddingConfig, 'endpoint' | 'model' | 'dimension'> &
-  Partial<Pick<ApiEmbeddingConfig, 'headers' | 'format' | 'timeoutMs' | 'retry' | 'normalize' | 'maxBatchSize' | 'mapRequest' | 'mapResponse'>>;
+  Partial<
+    Pick<
+      ApiEmbeddingConfig,
+      | 'headers'
+      | 'format'
+      | 'timeoutMs'
+      | 'retry'
+      | 'normalize'
+      | 'maxBatchSize'
+      | 'mapRequest'
+      | 'mapResponse'
+    >
+  >;
 
 /**
  * Resolve a partial config to a full config with defaults applied.

@@ -263,7 +263,10 @@ function computeAnomalyFeatures(
     if (deviation < 0.05) continue;
 
     // Trend slope (linear regression)
-    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    let sx = 0,
+      sy = 0,
+      sxx = 0,
+      sxy = 0;
     for (let i = 0; i < n; i++) {
       const v = ts.values[i]!;
       sx += i;
@@ -355,12 +358,7 @@ function computeEdgePropagationWeight(
   cfg: TopologyFaultGraphConfig,
 ): EdgeWeightResult {
   // ── Tier 1: Pearson cross-service correlation ────────────
-  if (
-    sourceMetrics &&
-    sourceMetrics.length > 0 &&
-    targetMetrics &&
-    targetMetrics.length > 0
-  ) {
+  if (sourceMetrics && sourceMetrics.length > 0 && targetMetrics && targetMetrics.length > 0) {
     const pearsonWeight = computeMaxPearsonCorrelation(
       sourceMetrics,
       targetMetrics,
@@ -400,15 +398,20 @@ function computeEdgePropagationWeight(
 
       let velocityResult: PropagationVelocityResult;
       try {
-        velocityResult = computePropagationVelocity(
-          sourceValues,
-          targetValues,
-          { useBOCPD, expectedDirectLatency },
-        );
+        velocityResult = computePropagationVelocity(sourceValues, targetValues, {
+          useBOCPD,
+          expectedDirectLatency,
+        });
       } catch {
         // Velocity computation can fail for pathological data (e.g. all zeros).
         // Fall through to tier 3.
-        velocityResult = { propagationProbability: 0, method: 'mad', onsetDelta: 0, sourceOnsetIndex: -1, targetOnsetIndex: -1 };
+        velocityResult = {
+          propagationProbability: 0,
+          method: 'mad',
+          onsetDelta: 0,
+          sourceOnsetIndex: -1,
+          targetOnsetIndex: -1,
+        };
       }
 
       if (velocityResult.propagationProbability > 0) {
@@ -417,9 +420,10 @@ function computeEdgePropagationWeight(
         const anomalyCorrelation = 1 - Math.abs(sourceScore - targetScore);
 
         // Edge weight = anomaly correlation × propagation probability
-        const velocityWeight = Math.max(0, Math.min(1,
-          anomalyCorrelation * velocityResult.propagationProbability,
-        ));
+        const velocityWeight = Math.max(
+          0,
+          Math.min(1, anomalyCorrelation * velocityResult.propagationProbability),
+        );
 
         if (velocityWeight > 0.05) {
           return {
@@ -508,11 +512,7 @@ function computeMaxPearsonCorrelation(
  *
  * @internal
  */
-function pearsonCorrelation(
-  xs: Float64Array,
-  ys: Float64Array,
-  n: number,
-): number | null {
+function pearsonCorrelation(xs: Float64Array, ys: Float64Array, n: number): number | null {
   // Compute means
   let sumX = 0;
   let sumY = 0;

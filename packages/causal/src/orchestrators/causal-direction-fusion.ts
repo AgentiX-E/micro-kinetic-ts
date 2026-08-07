@@ -24,14 +24,13 @@
  */
 
 import type {
-  ITimingProvider,
-  ITimingProviderRegistry,
+  CallEdge,
   CausalDirection,
   CausalDirectionConfig,
-  TemporalContext,
-  CallEdge,
   ConfidenceTier,
-  ServiceTiming,
+  ITimingProvider,
+  ITimingProviderRegistry,
+  TemporalContext,
 } from '@agentix-e/micro-kinetic-core';
 import { DEFAULT_CAUSAL_DIRECTION_CONFIG } from '@agentix-e/micro-kinetic-core';
 import type { FusionResult, ProviderTierResult } from '../types/index.js';
@@ -115,7 +114,7 @@ export class CausalDirectionFusion implements ITimingProviderRegistry {
 
     for (const provider of this._providers) {
       // Skip unavailable providers
-      if (!await provider.canInfer(context)) {
+      if (!(await provider.canInfer(context))) {
         tierResults.push({
           providerId: provider.meta.id,
           tier: provider.meta.tier,
@@ -175,12 +174,18 @@ export class CausalDirectionFusion implements ITimingProviderRegistry {
    */
   private tierRank(tier: ConfidenceTier): number {
     switch (tier) {
-      case 'trace': return 0;
-      case 'log': return 1;
-      case 'granger': return 2;
-      case 'static': return 3;
-      case 'llm': return 4;
-      case 'none': return 5;
+      case 'trace':
+        return 0;
+      case 'log':
+        return 1;
+      case 'granger':
+        return 2;
+      case 'static':
+        return 3;
+      case 'llm':
+        return 4;
+      case 'none':
+        return 5;
     }
   }
 

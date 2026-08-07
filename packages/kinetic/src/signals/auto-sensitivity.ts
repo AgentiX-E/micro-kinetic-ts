@@ -27,7 +27,6 @@
  * @module kinetic/signals/auto-sensitivity
  */
 
-import { computeMADThreshold, type MADThresholdConfig } from './mad-threshold.js';
 import { RollingStats } from './rolling-stats.js';
 
 /**
@@ -153,8 +152,8 @@ export function computeAutoSensitivity(
   let bifurcationIdx = 0;
 
   for (let i = 0; i < coarseRates.length - 1; i++) {
-    const derivative = Math.abs(coarseRates[i + 1]! - coarseRates[i]!)
-      / (coarseK[i + 1]! - coarseK[i]!);
+    const derivative =
+      Math.abs(coarseRates[i + 1]! - coarseRates[i]!) / (coarseK[i + 1]! - coarseK[i]!);
     if (derivative > maxDerivative) {
       maxDerivative = derivative;
       bifurcationIdx = i;

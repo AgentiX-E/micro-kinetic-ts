@@ -22,7 +22,6 @@
  * @module ai/providers
  */
 
-import type { ApiEmbeddingConfigInput } from './api-embedding-config.js';
 import { ApiEmbeddingProvider } from './api-embedding.js';
 
 /**

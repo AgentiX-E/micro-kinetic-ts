@@ -208,9 +208,7 @@ export class WeightCalibrator {
       // L = -isCorrect * log(confidence + ε) - (1-isCorrect) * log(1-confidence + ε)
       const eps = 1e-7;
       const c = Math.min(1 - eps, Math.max(eps, ex.predictedConfidence));
-      const loss = ex.isCorrect
-        ? -Math.log(c)
-        : -Math.log(1 - c);
+      const loss = ex.isCorrect ? -Math.log(c) : -Math.log(1 - c);
       totalLoss += loss;
 
       // ── Fusion weight gradient ───────────────────
@@ -279,20 +277,17 @@ export class WeightCalibrator {
 
     // ── Update meta ───────────────────────────────────────
     this.iterations += 1;
-    this.avgLoss = this.avgLoss === 0
-      ? totalLoss / n
-      : (1 - this.config.lossSmoothing) * this.avgLoss +
-        this.config.lossSmoothing * (totalLoss / n);
+    this.avgLoss =
+      this.avgLoss === 0
+        ? totalLoss / n
+        : (1 - this.config.lossSmoothing) * this.avgLoss +
+          this.config.lossSmoothing * (totalLoss / n);
 
     // Learning rate decay
-    this.lr = Math.max(
-      this.config.minLearningRate,
-      this.lr * this.config.lrDecay,
-    );
+    this.lr = Math.max(this.config.minLearningRate, this.lr * this.config.lrDecay);
 
     // Convergence detection
-    this.converged = avgGradNormW < this.config.convergenceThreshold &&
-      this.iterations > 5;
+    this.converged = avgGradNormW < this.config.convergenceThreshold && this.iterations > 5;
 
     return this.getWeights();
   }

@@ -32,6 +32,11 @@
  */
 
 import {
+  DEFAULT_RCA_OPTIONS,
+  GraphCycleError,
+  invariant,
+  invariantPositiveInt,
+  invariantRange,
   type CallEdge,
   type DetectedCycle,
   type FaultPropagationGraph,
@@ -45,20 +50,15 @@ import {
   type ServiceNode,
   type TimeSeries,
   type TreeNodeScore,
-  DEFAULT_RCA_OPTIONS,
-  GraphCycleError,
-  invariant,
-  invariantPositiveInt,
-  invariantRange,
 } from '@agentix-e/micro-kinetic-core';
 
+import { computeAutoSensitivity } from '../../../kinetic/src/signals/auto-sensitivity.js';
+import { computeMADThreshold } from '../../../kinetic/src/signals/mad-threshold.js';
+import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
+import { computePropagationVelocity } from '../causal/propagation-velocity.js';
+import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
-import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
-import { computeAutoSensitivity, type AutoSensitivityConfig } from '../../../kinetic/src/signals/auto-sensitivity.js';
-import { computeMADThreshold, type MADThresholdConfig } from '../../../kinetic/src/signals/mad-threshold.js';
-import { computePropagationVelocity, type PropagationVelocityConfig } from '../causal/propagation-velocity.js';
-import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
 
 /**
  * Options for TreePruner construction.
@@ -202,11 +202,14 @@ export class TreePruner {
     // When enableCollisionAggregation is off, skip aggregation and use raw
     // anomaly scores for all nodes. This enables apples-to-apples ablation
     // comparison against the baseline (no collision enhancement).
-    let collisionEnergy: Map<ServiceId, {
-      totalEnergy: number;
-      collisionType: string;
-      collisionGain: number;
-    }>;
+    let collisionEnergy: Map<
+      ServiceId,
+      {
+        totalEnergy: number;
+        collisionType: string;
+        collisionGain: number;
+      }
+    >;
 
     if (this.options.enableCollisionAggregation) {
       // Build cycle membership map for collision type classification
@@ -226,19 +229,19 @@ export class TreePruner {
 
       collisionEnergy = new Map(
         Array.from(
-          aggregateFaultEnergy(
-            faultEdges,
-            anomalyScores,
-            cycleMembership,
-            {
-              alpha: 0.4,
-              bottleneckCapacity: 0.5,
-              fanInThreshold: 3,
-            },
-          ).entries(),
-        ).map(
-          ([id, r]) => [id, { totalEnergy: r.totalEnergy, collisionType: r.collisionType, collisionGain: r.collisionGain }],
-        ),
+          aggregateFaultEnergy(faultEdges, anomalyScores, cycleMembership, {
+            alpha: 0.4,
+            bottleneckCapacity: 0.5,
+            fanInThreshold: 3,
+          }).entries(),
+        ).map(([id, r]) => [
+          id,
+          {
+            totalEnergy: r.totalEnergy,
+            collisionType: r.collisionType,
+            collisionGain: r.collisionGain,
+          },
+        ]),
       );
     } else {
       // Collision disabled: each node gets its raw anomaly score as energy,
@@ -402,7 +405,8 @@ function computeAnomalyScore(
     const n = ts.values.length;
 
     // Basic statistics
-    let sum = 0, max = -Infinity;
+    let sum = 0,
+      max = -Infinity;
     for (let i = 0; i < n; i++) {
       const v = ts.values[i]!;
       sum += v;
@@ -420,7 +424,10 @@ function computeAnomalyScore(
     const fullStd = Math.sqrt(fullVariance);
     let changePt = n;
     for (let i = 1; i < n; i++) {
-      if (ts.values[i]! > mean + 1.5 * fullStd) { changePt = i; break; }
+      if (ts.values[i]! > mean + 1.5 * fullStd) {
+        changePt = i;
+        break;
+      }
     }
 
     // Use pre-change baseline if change point detected
@@ -437,13 +444,19 @@ function computeAnomalyScore(
     if (deviation < 0.05) continue;
 
     // Trend slope (linear regression)
-    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    let sx = 0,
+      sy = 0,
+      sxx = 0,
+      sxy = 0;
     for (let i = 0; i < n; i++) {
       const v = ts.values[i]!;
-      sx += i; sy += v; sxx += i * i; sxy += i * v;
+      sx += i;
+      sy += v;
+      sxx += i * i;
+      sxy += i * v;
     }
     const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-    const trendStrength = mean > 0 ? Math.abs(slope * n / mean) : 0;
+    const trendStrength = mean > 0 ? Math.abs((slope * n) / mean) : 0;
 
     // Variance and CV
     let variance = 0;
@@ -465,7 +478,10 @@ function computeAnomalyScore(
     let isMonotonicUp = slope > 0;
     if (isMonotonicUp) {
       for (let i = 1; i < n; i++) {
-        if (ts.values[i]! < ts.values[i - 1]!) { isMonotonicUp = false; break; }
+        if (ts.values[i]! < ts.values[i - 1]!) {
+          isMonotonicUp = false;
+          break;
+        }
       }
     }
 
@@ -486,7 +502,10 @@ function computeAnomalyScore(
  * Anomaly result with onset timing for temporal causality.
  * @internal
  */
-interface AnomalyResult { score: number; onsetIndex: number; }
+interface AnomalyResult {
+  score: number;
+  onsetIndex: number;
+}
 
 /** Compute anomaly score AND onset time. */
 function computeAnomalyScoreAndOnset(
@@ -510,7 +529,10 @@ function computeAnomalyScoreAndOnset(
       });
       if (threshold === 0) continue;
       for (let i = 0; i < ts.values.length; i++) {
-        if (Math.abs(ts.values[i]! - median) > threshold) { onset = i; break; }
+        if (Math.abs(ts.values[i]! - median) > threshold) {
+          onset = i;
+          break;
+        }
       }
     }
   }
@@ -532,17 +554,22 @@ function buildChronologicalPropagationTree(
   anomalyScores: ReadonlyMap<ServiceId, number>,
 ): ServiceCallGraph {
   const nodes = new Map(callGraph.nodes);
-  let rootId = '', rootOnset = Number.MAX_SAFE_INTEGER, rootScore = 0;
+  let rootId = '',
+    rootOnset = Number.MAX_SAFE_INTEGER,
+    rootScore = 0;
   for (const [id] of nodes) {
     const onset = onsetTimes.get(id) ?? Number.MAX_SAFE_INTEGER;
     const score = anomalyScores.get(id) ?? 0;
     if (onset < rootOnset || (onset === rootOnset && score > rootScore)) {
-      rootId = id; rootOnset = onset; rootScore = score;
+      rootId = id;
+      rootOnset = onset;
+      rootScore = score;
     }
   }
   if (!rootId || rootOnset === Number.MAX_SAFE_INTEGER) return callGraph;
 
-  const sorted = [...nodes.keys()].filter(id => id !== rootId)
+  const sorted = [...nodes.keys()]
+    .filter((id) => id !== rootId)
     .sort((a, b) => (onsetTimes.get(a) ?? 0) - (onsetTimes.get(b) ?? 0));
 
   const neighbors = new Map<string, Set<string>>();
@@ -555,13 +582,22 @@ function buildChronologicalPropagationTree(
   const connected = new Set<string>([rootId]);
   const treeEdges: CallEdge[] = [];
   for (const sid of sorted) {
-    let bestN = rootId, bestOnset = rootOnset;
-    for (const n of (neighbors.get(sid) ?? new Set())) {
+    let bestN = rootId,
+      bestOnset = rootOnset;
+    for (const n of neighbors.get(sid) ?? new Set()) {
       if (connected.has(n) && (onsetTimes.get(n) ?? Number.MAX_SAFE_INTEGER) < bestOnset) {
-        bestOnset = onsetTimes.get(n)!; bestN = n;
+        bestOnset = onsetTimes.get(n)!;
+        bestN = n;
       }
     }
-    treeEdges.push({ from: bestN, to: sid, type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 });
+    treeEdges.push({
+      from: bestN,
+      to: sid,
+      type: 'REST',
+      callRate: 100,
+      p99Latency: 50,
+      errorRate: 0.01,
+    });
     connected.add(sid);
   }
   return { nodes, edges: treeEdges, systemLoad: callGraph.systemLoad };
@@ -610,9 +646,7 @@ function computeCorrelationWeight(
       const anomalyCorrelation = 1 - Math.abs(sourceScore - targetScore);
 
       // Edge weight = anomaly correlation × propagation probability
-      return Math.max(0, Math.min(1,
-        anomalyCorrelation * velocity.propagationProbability,
-      ));
+      return Math.max(0, Math.min(1, anomalyCorrelation * velocity.propagationProbability));
     }
   }
 
@@ -745,7 +779,10 @@ function performTreeRCA(
   propagationWeights: Float64Array,
   topK: number,
   options: TreePrunerOptions,
-  collisionEnergy?: ReadonlyMap<ServiceId, { totalEnergy: number; collisionType: string; collisionGain: number }>,
+  collisionEnergy?: ReadonlyMap<
+    ServiceId,
+    { totalEnergy: number; collisionType: string; collisionGain: number }
+  >,
 ): RootCauseResult[] {
   // Build adjacency and in-degree from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -792,7 +829,7 @@ function performTreeRCA(
   const collisionTypes = new Map<ServiceId, string>();
   for (const [nodeId] of allNodes) {
     const collisionResult = collisionEnergy?.get(nodeId);
-    scores.set(nodeId, collisionResult?.totalEnergy ?? (anomalyScores.get(nodeId) ?? 0));
+    scores.set(nodeId, collisionResult?.totalEnergy ?? anomalyScores.get(nodeId) ?? 0);
     collisionTypes.set(nodeId, collisionResult?.collisionType ?? 'chain');
     depths.set(nodeId, 0);
   }
@@ -823,7 +860,7 @@ function performTreeRCA(
     // Collision energy is the Boltzmann Q(f,f) aggregate of upstream fault signals,
     // which captures propagation dynamics that raw anomaly scores miss.
     const collisionResult = collisionEnergy?.get(node);
-    const nodeEnergy = collisionResult?.totalEnergy ?? (anomalyScores.get(node) ?? 0);
+    const nodeEnergy = collisionResult?.totalEnergy ?? anomalyScores.get(node) ?? 0;
     const nodeAnomaly = anomalyScores.get(node) ?? 0;
     let childContrib = 0;
     let maxChildDepth = 0;
@@ -913,28 +950,29 @@ function performTreeRCA(
   //     cycle→1.8, bottleneck→1.5, fan-in→1.2, chain→1.0
   // This rewards nodes that are both deep AND positioned at fault convergence
   // points (collision nodes), per Deng Yu's kinetic wave amplification theory.
-  const scoreSpread = scoredNodes.length > 1
-    ? Math.max(...scoredNodes.map(n => n.score)) - Math.min(...scoredNodes.map(n => n.score))
-    : 0.2;
+  const scoreSpread =
+    scoredNodes.length > 1
+      ? Math.max(...scoredNodes.map((n) => n.score)) - Math.min(...scoredNodes.map((n) => n.score))
+      : 0.2;
   const DEPTH_BONUS = Math.max(0.1, Math.min(0.5, 0.5 - scoreSpread));
 
   // Collision type amplification factors
   const collisionAmps: Record<string, number> = {
-    cycle: 1.8, bottleneck: 1.5, 'fan-in': 1.2, chain: 1.0,
+    cycle: 1.8,
+    bottleneck: 1.5,
+    'fan-in': 1.2,
+    chain: 1.0,
   };
 
-  scoredNodes.sort(
-    (a, b) => {
-      const aCollision = collisionEnergy?.get(a.serviceId);
-      const bCollision = collisionEnergy?.get(b.serviceId);
-      const aPhi = aCollision ? (collisionAmps[aCollision.collisionType] ?? 1.0) : 1.0;
-      const bPhi = bCollision ? (collisionAmps[bCollision.collisionType] ?? 1.0) : 1.0;
-      return (
-        b.score * (1 + b.depth * DEPTH_BONUS * bPhi) -
-        a.score * (1 + a.depth * DEPTH_BONUS * aPhi)
-      );
-    },
-  );
+  scoredNodes.sort((a, b) => {
+    const aCollision = collisionEnergy?.get(a.serviceId);
+    const bCollision = collisionEnergy?.get(b.serviceId);
+    const aPhi = aCollision ? (collisionAmps[aCollision.collisionType] ?? 1.0) : 1.0;
+    const bPhi = bCollision ? (collisionAmps[bCollision.collisionType] ?? 1.0) : 1.0;
+    return (
+      b.score * (1 + b.depth * DEPTH_BONUS * bPhi) - a.score * (1 + a.depth * DEPTH_BONUS * aPhi)
+    );
+  });
 
   // Top-K results with collision type awareness
   const results: RootCauseResult[] = [];
@@ -947,7 +985,8 @@ function performTreeRCA(
     // Collision-enhanced severity: non-chain types suggest systemic impact
     let severityLabel = node.score > 0.7 ? 'critical' : node.score > 0.4 ? 'major' : 'minor';
     if (collisionType === 'cycle') severityLabel = 'critical';
-    else if (collisionType === 'bottleneck' && severityLabel !== 'critical') severityLabel = 'major';
+    else if (collisionType === 'bottleneck' && severityLabel !== 'critical')
+      severityLabel = 'major';
 
     results.push({
       serviceId: node.serviceId,
@@ -960,7 +999,9 @@ function performTreeRCA(
       rank: i + 1,
       evidenceMetrics: [
         { metric: 'rca_score', value: node.score, threshold: Math.max(0.1, scoreSpread * 0.5) },
-        ...(cResult ? [{ metric: 'collision_gain', value: cResult.collisionGain, threshold: 0.3 }] : []),
+        ...(cResult
+          ? [{ metric: 'collision_gain', value: cResult.collisionGain, threshold: 0.3 }]
+          : []),
       ],
       propagationDepth: node.depth,
       propagationErrorBound: errorBound,

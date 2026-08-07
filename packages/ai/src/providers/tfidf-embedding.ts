@@ -21,7 +21,10 @@
  * @module ai/providers
  */
 
-import type { IEmbeddingProvider, EmbeddingProviderMeta } from '../interfaces/embedding-provider.js';
+import type {
+  EmbeddingProviderMeta,
+  IEmbeddingProvider,
+} from '../interfaces/embedding-provider.js';
 import { normalizeL2 } from '../utils/similarity.js';
 
 /**
@@ -167,9 +170,7 @@ export class TfIdfEmbeddingProvider implements IEmbeddingProvider {
     }
 
     // Sort by descending document frequency, take top maxDimension
-    const sorted = [...docFreq.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, this._dimension);
+    const sorted = [...docFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, this._dimension);
 
     this.vocabulary = new Map();
     for (let i = 0; i < sorted.length; i++) {

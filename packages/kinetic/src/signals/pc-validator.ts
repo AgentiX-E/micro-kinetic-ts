@@ -29,8 +29,15 @@
  * @module signals/pc-validator
  */
 
-import type { CallEdge, MetricMap, ServiceCallGraph, ServiceId, ServiceNode, TimeSeries } from '@agentix-e/micro-kinetic-core';
-import { runPCAlgorithm, type PCResult, type PCConfig } from './pc-causal-discovery.js';
+import type {
+  CallEdge,
+  MetricMap,
+  ServiceCallGraph,
+  ServiceId,
+  ServiceNode,
+  TimeSeries,
+} from '@agentix-e/micro-kinetic-core';
+import { runPCAlgorithm, type PCConfig, type PCResult } from './pc-causal-discovery.js';
 
 /**
  * Configuration for PC-based topology validation.
@@ -49,7 +56,7 @@ export interface PCValidatorConfig {
 }
 
 const DEFAULT_VALIDATOR_CONFIG: PCValidatorConfig = {
-  pruneNonCausal: false,       // Default: decorate but don't remove edges
+  pruneNonCausal: false, // Default: decorate but don't remove edges
   discoverNewEdges: true,
   minDiscoveryCorrelation: 0.3, // Moderate threshold for edge addition
   reportPCResult: false,
@@ -191,9 +198,7 @@ export function validateTopologyWithPC(
       keptEdges.push({
         ...edge,
         // Boost v-structure edges: they're collision nodes with Φ > 1
-        callRate: vStructureChildren.has(edge.to)
-          ? edge.callRate + 50
-          : edge.callRate,
+        callRate: vStructureChildren.has(edge.to) ? edge.callRate + 50 : edge.callRate,
         errorRate: Math.max(0.01, edge.errorRate),
       });
     } else if (!cfg.pruneNonCausal) {
@@ -265,10 +270,20 @@ export function validateTopologyWithPC(
 
       // Ensure nodes exist
       if (!nodes.has(pcEdge.from)) {
-        nodes.set(pcEdge.from, { id: pcEdge.from, name: pcEdge.from, namespace: 'pc-discovered', labels: {} });
+        nodes.set(pcEdge.from, {
+          id: pcEdge.from,
+          name: pcEdge.from,
+          namespace: 'pc-discovered',
+          labels: {},
+        });
       }
       if (!nodes.has(pcEdge.to)) {
-        nodes.set(pcEdge.to, { id: pcEdge.to, name: pcEdge.to, namespace: 'pc-discovered', labels: {} });
+        nodes.set(pcEdge.to, {
+          id: pcEdge.to,
+          name: pcEdge.to,
+          namespace: 'pc-discovered',
+          labels: {},
+        });
       }
     }
   }
@@ -295,11 +310,7 @@ export function validateTopologyWithPC(
  *
  * Returns true when at least 3 nodes have time series with ≥5 data points.
  */
-export function canValidateWithPC(
-  metrics: MetricMap,
-  minNodes = 3,
-  minDataPoints = 5,
-): boolean {
+export function canValidateWithPC(metrics: MetricMap, minNodes = 3, minDataPoints = 5): boolean {
   let validNodes = 0;
   for (const [, nodeMetrics] of metrics) {
     const firstEntry = nodeMetrics.values().next();

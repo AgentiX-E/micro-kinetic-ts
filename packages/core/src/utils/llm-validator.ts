@@ -16,7 +16,7 @@
  * @module topology/validation/llm-validator
  */
 
-import type { ServiceCallGraph, ServiceNode, CallEdge } from '../types/graph.js';
+import type { CallEdge, ServiceCallGraph, ServiceNode } from '../types/graph.js';
 
 // ── Zod Schema Equivalent (Inline, Zero-Dependency) ───────
 
@@ -111,10 +111,13 @@ export function validateTopologyResponse(
 
     // Validate 'confidence' field
     const confidence = Number(item.confidence);
-    if (typeof item.confidence !== 'number' || isNaN(confidence) || confidence < 0 || confidence > 1) {
-      errors.push(
-        `${prefix}: 'confidence' must be a number 0-1, got ${String(item.confidence)}`,
-      );
+    if (
+      typeof item.confidence !== 'number' ||
+      isNaN(confidence) ||
+      confidence < 0 ||
+      confidence > 1
+    ) {
+      errors.push(`${prefix}: 'confidence' must be a number 0-1, got ${String(item.confidence)}`);
       continue;
     }
 
@@ -216,21 +219,32 @@ export function buildTopologyPrompt(
   const parts: string[] = [];
 
   parts.push('You are a microservice topology inference expert.');
-  parts.push('Given service names and their associated metrics, infer the most likely service-to-service call relationships.');
+  parts.push(
+    'Given service names and their associated metrics, infer the most likely service-to-service call relationships.',
+  );
   parts.push('');
   parts.push('## Known Services');
   for (const svcId of serviceIds) {
     const metrics = metricHints?.[svcId];
-    const metricStr = metrics && metrics.length > 0 ? ` [metrics: ${metrics.slice(0, 5).join(', ')}]` : '';
+    const metricStr =
+      metrics && metrics.length > 0 ? ` [metrics: ${metrics.slice(0, 5).join(', ')}]` : '';
     parts.push(`- ${svcId}${metricStr}`);
   }
 
   parts.push('');
   parts.push('## Inference Rules');
-  parts.push('1. A service named "frontend" or ending in "-ui" typically calls downstream services');
-  parts.push('2. A service named "orders" or "checkout" typically calls payment, shipping, inventory services');
-  parts.push('3. Services with database-related metric names (postgres_, mongo_, redis_) are typically called BY other services, not callers themselves');
-  parts.push('4. Services with http_requests_total or latency_p99 metrics are typically called BY external or upstream services');
+  parts.push(
+    '1. A service named "frontend" or ending in "-ui" typically calls downstream services',
+  );
+  parts.push(
+    '2. A service named "orders" or "checkout" typically calls payment, shipping, inventory services',
+  );
+  parts.push(
+    '3. Services with database-related metric names (postgres_, mongo_, redis_) are typically called BY other services, not callers themselves',
+  );
+  parts.push(
+    '4. Services with http_requests_total or latency_p99 metrics are typically called BY external or upstream services',
+  );
   parts.push('5. Only include edges where there is strong evidence (confidence > 0.7)');
 
   parts.push('');
@@ -244,7 +258,9 @@ export function buildTopologyPrompt(
 
   parts.push('');
   parts.push('## Example');
-  parts.push('[{"from":"frontend","to":"checkoutservice","method":"REST","confidence":0.92,"reasoning":"frontend is the user-facing entry point that calls checkoutservice to process orders. The metrics http_requests_total on checkoutservice confirm it receives external calls."}]');
+  parts.push(
+    '[{"from":"frontend","to":"checkoutservice","method":"REST","confidence":0.92,"reasoning":"frontend is the user-facing entry point that calls checkoutservice to process orders. The metrics http_requests_total on checkoutservice confirm it receives external calls."}]',
+  );
 
   parts.push('');
   parts.push('Respond ONLY with the JSON array. No markdown, no explanations.');
@@ -307,10 +323,7 @@ export const TOPOLOGY_JSON_SCHEMA = {
  * @param reasoningLength - Length of reasoning text (proxy for thoughtfulness).
  * @returns Calibrated confidence score.
  */
-export function calibrateLLMConfidence(
-  rawConfidence: number,
-  reasoningLength: number,
-): number {
+export function calibrateLLMConfidence(rawConfidence: number, reasoningLength: number): number {
   // Very short reasoning → low effort → penalize
   const reasoningFactor = Math.min(1, reasoningLength / 100);
 

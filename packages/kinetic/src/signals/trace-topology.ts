@@ -22,8 +22,12 @@
  * @module signals/trace-topology
  */
 
-import type { ServiceCallGraph, ServiceNode, CallEdge } from '@agentix-e/micro-kinetic-core';
-import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
+import type {
+  CallEdge,
+  ServiceCallGraph,
+  ServiceNode,
+  TraceSpan,
+} from '@agentix-e/micro-kinetic-core';
 
 /**
  * Configuration for trace-based topology augmentation.
@@ -112,8 +116,10 @@ export function augmentTopologyWithTraces(
       if (exists) continue;
 
       // Add discovered edge
-      if (!nodes.has(from)) nodes.set(from, { id: from, name: from, namespace: 'trace-discovered', labels: {} });
-      if (!nodes.has(to)) nodes.set(to, { id: to, name: to, namespace: 'trace-discovered', labels: {} });
+      if (!nodes.has(from))
+        nodes.set(from, { id: from, name: from, namespace: 'trace-discovered', labels: {} });
+      if (!nodes.has(to))
+        nodes.set(to, { id: to, name: to, namespace: 'trace-discovered', labels: {} });
 
       validatedEdges.push({
         from,

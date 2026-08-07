@@ -15,10 +15,10 @@
  */
 
 import type {
+  AlignmentFallbackStrategy,
+  EntityAlignmentResult,
   IEmbeddingProvider,
   ServiceDescriptor,
-  EntityAlignmentResult,
-  AlignmentFallbackStrategy,
 } from '../interfaces/embedding-provider.js';
 import type { ILLMProvider } from '../interfaces/llm-provider.js';
 import { cosineSimilarity } from '../utils/similarity.js';
@@ -133,9 +133,7 @@ export class SemanticAlignmentProvider {
         if (result) {
           lowConfidence.push({
             spanService: spanSvc,
-            candidates: [
-              { topologyId: result.topologyId, confidence: result.confidence },
-            ],
+            candidates: [{ topologyId: result.topologyId, confidence: result.confidence }],
           });
         }
         remaining.push(spanSvc);
@@ -203,9 +201,7 @@ export class SemanticAlignmentProvider {
     }
 
     // Build enriched query strings for topology descriptors
-    const topologyQueries = topologyServices.map((t) =>
-      this.buildDescriptorQuery(t),
-    );
+    const topologyQueries = topologyServices.map((t) => this.buildDescriptorQuery(t));
 
     // Generate embeddings in a single batch
     const allTexts = [...spanServices, ...topologyQueries];
@@ -220,10 +216,7 @@ export class SemanticAlignmentProvider {
       let bestSim = -1;
 
       for (let j = 0; j < topologyServices.length; j++) {
-        const sim = cosineSimilarity(
-          spanVectors[i]!,
-          topoVectors[j]!,
-        );
+        const sim = cosineSimilarity(spanVectors[i]!, topoVectors[j]!);
         if (sim > bestSim) {
           bestSim = sim;
           bestIdx = j;
@@ -261,7 +254,7 @@ export class SemanticAlignmentProvider {
       // Check cache first
       const cached = this.llmCache.get(spanSvc.toLowerCase());
       const now = Date.now();
-      if (cached && (now - cached.timestamp) < this.config.cacheTtlMs) {
+      if (cached && now - cached.timestamp < this.config.cacheTtlMs) {
         if (cached.confidence >= this.config.llmThreshold) {
           result.set(spanSvc, {
             topologyId: cached.result,
@@ -347,7 +340,7 @@ export class SemanticAlignmentProvider {
 
     // DeepSeek pricing: ~$0.27/1M input, ~$1.10/1M output
     const inputCost = (usage.promptTokens ?? 0) * (0.27 / 1_000_000);
-    const outputCost = (usage.completionTokens ?? 0) * (1.10 / 1_000_000);
+    const outputCost = (usage.completionTokens ?? 0) * (1.1 / 1_000_000);
 
     this.rolloverDayCheck();
     this.dailyCost += inputCost + outputCost;

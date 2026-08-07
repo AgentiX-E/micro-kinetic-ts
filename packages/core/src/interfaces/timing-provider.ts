@@ -41,7 +41,7 @@
  * @module interfaces/timing-provider
  */
 
-import type { ServiceId, CallEdge } from '../types/graph.js';
+import type { CallEdge, ServiceId } from '../types/graph.js';
 
 // ── Confidence Tiers ─────────────────────────────────────
 
@@ -52,12 +52,12 @@ import type { ServiceId, CallEdge } from '../types/graph.js';
  * selects the highest-tier available result.
  */
 export type ConfidenceTier =
-  | 'trace'     // Span parent-child = definitive
-  | 'log'       // Timestamped error logs = very strong
-  | 'granger'   // Granger causality test = statistically significant
-  | 'static'    // Pre-configured topology = structurally informed
-  | 'llm'       // Semantic inference = fallback only
-  | 'none';     // No direction can be inferred
+  | 'trace' // Span parent-child = definitive
+  | 'log' // Timestamped error logs = very strong
+  | 'granger' // Granger causality test = statistically significant
+  | 'static' // Pre-configured topology = structurally informed
+  | 'llm' // Semantic inference = fallback only
+  | 'none'; // No direction can be inferred
 
 // ── Causal Direction Result ──────────────────────────────
 

@@ -7,11 +7,7 @@
  * @module causal/types
  */
 
-import type {
-  ConfidenceTier,
-  CausalDirection,
-  ServiceTiming,
-} from '@agentix-e/micro-kinetic-core';
+import type { CausalDirection, ConfidenceTier, ServiceTiming } from '@agentix-e/micro-kinetic-core';
 
 // ── Trace-specific Types ─────────────────────────────────
 

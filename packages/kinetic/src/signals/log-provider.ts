@@ -29,7 +29,6 @@
 import type {
   ISignalProvider,
   SignalAnalysisContext,
-  SignalMetadata,
   SignalQuality,
   SignalResult,
 } from '@agentix-e/micro-kinetic-core';
@@ -96,7 +95,12 @@ export class LogSignalProvider implements ISignalProvider {
       .sort((a, b) => b[1] - a[1])
       .map(([serviceId, score]) => ({
         serviceId,
-        faultType: { category: 'UNKNOWN' as const, subType: 'log_anomaly', severity: (score > 0.7 ? 'critical' : score > 0.4 ? 'major' : 'minor') as 'critical' | 'major' | 'minor' },
+        faultType: {
+          category: 'UNKNOWN' as const,
+          subType: 'log_anomaly',
+          severity: (score > 0.7 ? 'critical' : score > 0.4 ? 'major' : 'minor') as
+            'critical' | 'major' | 'minor',
+        },
         confidence: Math.min(1, score),
         rank: 0,
         evidenceMetrics: [{ metric: 'log_error_score', value: score, threshold: 0.3 }],
@@ -111,8 +115,13 @@ export class LogSignalProvider implements ISignalProvider {
       confidence: ranked.length > 0 ? ranked[0]!.confidence : 0,
       metadata: {
         candidateCount: ranked.length,
-        avgConfidence: ranked.length > 0 ? ranked.reduce((s, r) => s + r.confidence, 0) / ranked.length : 0,
-        quality: { traceCoverage: 0, metricCompleteness: 0, topologyMatch: Math.min(1, errorLogs.length / 50) },
+        avgConfidence:
+          ranked.length > 0 ? ranked.reduce((s, r) => s + r.confidence, 0) / ranked.length : 0,
+        quality: {
+          traceCoverage: 0,
+          metricCompleteness: 0,
+          topologyMatch: Math.min(1, errorLogs.length / 50),
+        },
       },
     };
   }
@@ -156,18 +165,20 @@ export class LogSignalProvider implements ISignalProvider {
    * with * placeholder.
    */
   private tokenizeMessage(message: string): string {
-    return message
-      // UUIDs
-      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '*')
-      // IP addresses
-      .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '*')
-      // Hex values (0x...)
-      .replace(/\b0x[0-9a-f]+\b/gi, '*')
-      // Pure numbers (timestamps, IDs, counts)
-      .replace(/\b\d+\b/g, '*')
-      // File paths
-      .replace(/\/[^\s]*/g, '*/')
-      .trim();
+    return (
+      message
+        // UUIDs
+        .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '*')
+        // IP addresses
+        .replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '*')
+        // Hex values (0x...)
+        .replace(/\b0x[0-9a-f]+\b/gi, '*')
+        // Pure numbers (timestamps, IDs, counts)
+        .replace(/\b\d+\b/g, '*')
+        // File paths
+        .replace(/\/[^\s]*/g, '*/')
+        .trim()
+    );
   }
 
   // ── Private: Service Scoring from Logs ─────────────────
@@ -176,7 +187,10 @@ export class LogSignalProvider implements ISignalProvider {
     logs: readonly LogEntry[],
     _templates: readonly LogTemplate[],
   ): Map<string, number> {
-    const svcStats = new Map<string, { errors: number; earliest: number; latest: number; bursts: number }>();
+    const svcStats = new Map<
+      string,
+      { errors: number; earliest: number; latest: number; bursts: number }
+    >();
 
     for (const log of logs) {
       let s = svcStats.get(log.service);
@@ -192,8 +206,10 @@ export class LogSignalProvider implements ISignalProvider {
     // Detect error bursts: consecutive errors within 1 second window
     const sorted = [...logs].sort((a, b) => a.timestamp - b.timestamp);
     for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i]!.service === sorted[i - 1]!.service &&
-          sorted[i]!.timestamp - sorted[i - 1]!.timestamp < 1000) {
+      if (
+        sorted[i]!.service === sorted[i - 1]!.service &&
+        sorted[i]!.timestamp - sorted[i - 1]!.timestamp < 1000
+      ) {
         const s = svcStats.get(sorted[i]!.service)!;
         s.bursts++;
       }
@@ -208,7 +224,7 @@ export class LogSignalProvider implements ISignalProvider {
     for (const [svc, stats] of svcStats) {
       const errorDensity = stats.errors / Math.max(1, timeRange / 1000); // errors per second
       const burstBonus = 1 + Math.min(1, stats.bursts / Math.max(1, stats.errors));
-      const recencyBonus = 1 + (stats.earliest - minTimestamp) / timeRange * 0.5;
+      const recencyBonus = 1 + ((stats.earliest - minTimestamp) / timeRange) * 0.5;
 
       let score = Math.min(1, errorDensity * 0.1) * burstBonus * recencyBonus;
       scores.set(svc, score);

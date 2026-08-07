@@ -252,25 +252,19 @@ export class RCAEvalLoader {
       );
       // Validate that the JSON has the expected structure (object with service keys)
       if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).length === 0) {
-        throw new Error(
-          `Metrics file ${metricsPath} is empty or has unexpected format`,
-        );
+        throw new Error(`Metrics file ${metricsPath} is empty or has unexpected format`);
       }
       // Validate at least one service has metric points
       const validServiceCount = Object.values(raw).filter(
         (v) => Array.isArray(v) && v.length > 0,
       ).length;
       if (validServiceCount === 0) {
-        throw new Error(
-          `Metrics file ${metricsPath} has no valid service entries`,
-        );
+        throw new Error(`Metrics file ${metricsPath} has no valid service entries`);
       }
       return raw;
     } catch (err) {
       if (err instanceof SyntaxError) {
-        throw new Error(
-          `Metrics file ${metricsPath} is not valid JSON: ${err.message}`,
-        );
+        throw new Error(`Metrics file ${metricsPath} is not valid JSON: ${err.message}`);
       }
       throw err;
     }

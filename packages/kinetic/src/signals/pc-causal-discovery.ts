@@ -118,7 +118,11 @@ export function pearsonCorrelation(
   const n = xs.length;
   if (n !== ys.length || n < 3) return NaN;
 
-  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumX2 = 0,
+    sumY2 = 0;
   for (let i = 0; i < n; i++) {
     const x = xs[i]!;
     const y = ys[i]!;
@@ -191,8 +195,18 @@ export function partialCorrelation(
   const r_ysSub = r_ys.slice(0, lastIdx);
 
   const r_xy_sub = partialCorrelation(r_xy, r_xsSub, r_ysSub, r_ssSub);
-  const r_xz_sub = partialCorrelation(r_xs[lastIdx]!, r_xsSub, r_ss.slice(lastIdx * k, lastIdx * k + lastIdx), r_ssSub);
-  const r_yz_sub = partialCorrelation(r_ys[lastIdx]!, r_ysSub, r_ss.slice(lastIdx * k, lastIdx * k + lastIdx), r_ssSub);
+  const r_xz_sub = partialCorrelation(
+    r_xs[lastIdx]!,
+    r_xsSub,
+    r_ss.slice(lastIdx * k, lastIdx * k + lastIdx),
+    r_ssSub,
+  );
+  const r_yz_sub = partialCorrelation(
+    r_ys[lastIdx]!,
+    r_ysSub,
+    r_ss.slice(lastIdx * k, lastIdx * k + lastIdx),
+    r_ssSub,
+  );
 
   if (isNaN(r_xy_sub) || isNaN(r_xz_sub) || isNaN(r_yz_sub)) return NaN;
 
@@ -367,7 +381,10 @@ export function runPCAlgorithm(
   // Adjacency matrix: adj[i][j] = adjacent in skeleton
   const adj: boolean[][] = Array.from({ length: N }, () => Array(N).fill(true));
   // Separating sets: sepSet[i][j] = set of nodes that made i,j independent
-  const sepSet: (Set<number> | null)[][] = Array.from({ length: N }, () => Array(N).fill(null) as (Set<number> | null)[]);
+  const sepSet: (Set<number> | null)[][] = Array.from(
+    { length: N },
+    () => Array(N).fill(null) as (Set<number> | null)[],
+  );
 
   // Remove self-loops
   for (let i = 0; i < N; i++) adj[i]![i] = false;
@@ -376,7 +393,10 @@ export function runPCAlgorithm(
   let initialRemovals = 0;
   for (let i = 0; i < N; i++) {
     for (let j = i + 1; j < N; j++) {
-      if (isNaN(corrMatrix[i * N + j]!) || Math.abs(corrMatrix[i * N + j]!) < config.minCorrelation) {
+      if (
+        isNaN(corrMatrix[i * N + j]!) ||
+        Math.abs(corrMatrix[i * N + j]!) < config.minCorrelation
+      ) {
         adj[i]![j] = adj[j]![i] = false;
         initialRemovals++;
       }
@@ -525,11 +545,7 @@ export function runPCAlgorithm(
  * @param maxResults - Maximum number of subsets to generate
  * @returns Array of subsets (each subset is an array of items)
  */
-function generateSubsets<T>(
-  items: readonly T[],
-  size: number,
-  maxResults: number = 10,
-): T[][] {
+function generateSubsets<T>(items: readonly T[], size: number, maxResults: number = 10): T[][] {
   const results: T[][] = [];
   if (size === 0) return [[]];
   if (size > items.length) return [];

@@ -136,10 +136,7 @@ export class RollingStats {
    * estimator for the standard deviation under normality.
    * Raw MAD: divide by this factor to get unscaled MAD.
    */
-  static mad(
-    values: Float64Array | number[],
-    scaled = true,
-  ): { mad: number; median: number } {
+  static mad(values: Float64Array | number[], scaled = true): { mad: number; median: number } {
     if (values.length === 0) return { mad: 0, median: 0 };
 
     const med = RollingStats.median(values);

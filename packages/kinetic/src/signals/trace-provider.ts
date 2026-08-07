@@ -35,12 +35,8 @@ export class TraceSignalProvider implements ISignalProvider {
 
     // Separate normal vs anomalous periods if anomalyTime is known
     const anomalyTime = context.anomalyTime;
-    const preSpans = anomalyTime
-      ? spans.filter((s) => s.startTime < anomalyTime)
-      : [];
-    const postSpans = anomalyTime
-      ? spans.filter((s) => s.startTime >= anomalyTime)
-      : spans;
+    const preSpans = anomalyTime ? spans.filter((s) => s.startTime < anomalyTime) : [];
+    const postSpans = anomalyTime ? spans.filter((s) => s.startTime >= anomalyTime) : spans;
 
     // Compute per-service baseline from pre-anomaly spans
     const serviceBaselines = this.computeServiceBaselines(preSpans);
@@ -53,7 +49,12 @@ export class TraceSignalProvider implements ISignalProvider {
       .sort((a, b) => b[1] - a[1])
       .map(([serviceId, score]) => ({
         serviceId,
-        faultType: { category: 'UNKNOWN' as const, subType: 'trace_anomaly', severity: (score > 0.7 ? 'critical' : score > 0.4 ? 'major' : 'minor') as 'critical' | 'major' | 'minor' },
+        faultType: {
+          category: 'UNKNOWN' as const,
+          subType: 'trace_anomaly',
+          severity: (score > 0.7 ? 'critical' : score > 0.4 ? 'major' : 'minor') as
+            'critical' | 'major' | 'minor',
+        },
         confidence: Math.min(1, score),
         rank: 0,
         evidenceMetrics: [{ metric: 'trace_score', value: score, threshold: 0.3 }],
@@ -92,17 +93,26 @@ export class TraceSignalProvider implements ISignalProvider {
   private computeServiceBaselines(
     preSpans: readonly TraceSpan[],
   ): Map<string, { avgDuration: number; errorRate: number }> {
-    const svcStats = new Map<string, { totalDuration: number; totalErrors: number; count: number }>();
+    const svcStats = new Map<
+      string,
+      { totalDuration: number; totalErrors: number; count: number }
+    >();
     for (const s of preSpans) {
       let stats = svcStats.get(s.service);
-      if (!stats) { stats = { totalDuration: 0, totalErrors: 0, count: 0 }; svcStats.set(s.service, stats); }
+      if (!stats) {
+        stats = { totalDuration: 0, totalErrors: 0, count: 0 };
+        svcStats.set(s.service, stats);
+      }
       stats.totalDuration += s.duration;
       if (s.isError) stats.totalErrors++;
       stats.count++;
     }
     const baselines = new Map<string, { avgDuration: number; errorRate: number }>();
     for (const [svc, stats] of svcStats) {
-      baselines.set(svc, { avgDuration: stats.totalDuration / stats.count, errorRate: stats.totalErrors / stats.count });
+      baselines.set(svc, {
+        avgDuration: stats.totalDuration / stats.count,
+        errorRate: stats.totalErrors / stats.count,
+      });
     }
     return baselines;
   }
@@ -118,7 +128,10 @@ export class TraceSignalProvider implements ISignalProvider {
       spanMap.set(s.spanId, s);
       if (s.parentSpanId) {
         let children = childrenMap.get(s.parentSpanId);
-        if (!children) { children = []; childrenMap.set(s.parentSpanId, children); }
+        if (!children) {
+          children = [];
+          childrenMap.set(s.parentSpanId, children);
+        }
         children.push(s);
       }
     }
@@ -131,7 +144,8 @@ export class TraceSignalProvider implements ISignalProvider {
       const bl = baselines.get(span.service);
       let selfScore = 0;
       if (bl) {
-        const durationDegradation = bl.avgDuration > 0 ? Math.min(1, (span.duration - bl.avgDuration) / bl.avgDuration) : 0;
+        const durationDegradation =
+          bl.avgDuration > 0 ? Math.min(1, (span.duration - bl.avgDuration) / bl.avgDuration) : 0;
         const errorScore = span.isError ? 1 : 0;
         selfScore = Math.max(durationDegradation, errorScore);
       } else {

@@ -137,9 +137,11 @@ function studentTLogPredictive(
     // log P(x | prior) = log StudentT(x; dof, mu_0, scale)
     const scaledVar = scale * scale;
     const error = x - priorMean;
-    return -0.5 * (dof + 1) * Math.log(1 + (error * error) / (dof * scaledVar))
-      - 0.5 * Math.log(dof * Math.PI * scaledVar)
-      - lgammaRatio(dof, dof + 1);
+    return (
+      -0.5 * (dof + 1) * Math.log(1 + (error * error) / (dof * scaledVar)) -
+      0.5 * Math.log(dof * Math.PI * scaledVar) -
+      lgammaRatio(dof, dof + 1)
+    );
   }
 
   // Posterior predictive: Student-T with updated parameters
@@ -162,7 +164,7 @@ function studentTLogPredictive(
   const alphaN = dofN / 2;
   // β_n = prior β_0 + 0.5 * (Σx² - κ μ_n²)
   // prior β_0 = dof * scale² / 2
-  const priorBeta = dof * priorScaleSq / 2;
+  const priorBeta = (dof * priorScaleSq) / 2;
   // Σx² = sumSq + n * mean_n² — but we have sumSq from Welford which is
   // Σ(x_i - mean)² = Σx_i² - n·mean², so Σx_i² = sumSq + n·mean²
   // Then Σx² - κ·μ_n² = sumSq
@@ -174,9 +176,11 @@ function studentTLogPredictive(
 
   const error = x - meanN;
 
-  return -0.5 * (dofN + 1) * Math.log(1 + (error * error) / (dofN * predictiveVar))
-    - 0.5 * Math.log(dofN * Math.PI * predictiveVar)
-    - lgammaRatio(dofN, dofN + 1);
+  return (
+    -0.5 * (dofN + 1) * Math.log(1 + (error * error) / (dofN * predictiveVar)) -
+    0.5 * Math.log(dofN * Math.PI * predictiveVar) -
+    lgammaRatio(dofN, dofN + 1)
+  );
 }
 
 /**
@@ -253,7 +257,8 @@ export function bocpdDetectOnset(
   let dataDrivenScale = scale;
   let priorMean = 0;
   if (n >= minRunLength) {
-    let initSum = 0, initSumSq = 0;
+    let initSum = 0,
+      initSumSq = 0;
     for (let i = 0; i < minRunLength; i++) {
       initSum += values[i]!;
     }
@@ -296,7 +301,15 @@ export function bocpdDetectOnset(
     // 1. Compute predictive probabilities
     const predictives: number[] = [];
     for (let ri = 0; ri < runLengths.length; ri++) {
-      const logPred = studentTLogPredictive(x, counts[ri]!, means[ri]!, sumSqs[ri]!, dof, effectiveScale, priorMean);
+      const logPred = studentTLogPredictive(
+        x,
+        counts[ri]!,
+        means[ri]!,
+        sumSqs[ri]!,
+        dof,
+        effectiveScale,
+        priorMean,
+      );
       predictives.push(Math.exp(logPred));
     }
 
@@ -359,16 +372,17 @@ export function bocpdDetectOnset(
     const bestGrownPred = grownPreds.length > 0 ? Math.max(...grownPreds) : 0;
 
     // Bayes factor: how much more likely is x_t under changepoint vs best growth hypothesis
-    const logBayesFactor = bestGrownPred > 0
-      ? Math.log(priorPred) - Math.log(bestGrownPred)
-      : 0;
+    const logBayesFactor = bestGrownPred > 0 ? Math.log(priorPred) - Math.log(bestGrownPred) : 0;
 
     // Detection trigger: absolute probability OR strong likelihood ratio
-    if (t >= minRunLength && (
-      r0Prob > (1 - changepointThreshold)
-      || (logBayesFactor > 1.0 && r0Prob > 0.01)
-    )) {
-      const confidence = Math.max(0, Math.min(1, Math.max(r0Prob, Math.min(1, logBayesFactor / 10))));
+    if (
+      t >= minRunLength &&
+      (r0Prob > 1 - changepointThreshold || (logBayesFactor > 1.0 && r0Prob > 0.01))
+    ) {
+      const confidence = Math.max(
+        0,
+        Math.min(1, Math.max(r0Prob, Math.min(1, logBayesFactor / 10))),
+      );
       return {
         onsetIndex: t,
         confidence,
@@ -410,7 +424,7 @@ export function bocpdDetectAllChangepoints(
     // Wrap as Float64Array to avoid copy overhead in bocpdDetectOnset
     const segmentArray = Array.isArray(segment)
       ? new Float64Array(segment)
-      : segment as Float64Array;
+      : (segment as Float64Array);
     const result = bocpdDetectOnset(segmentArray, merged);
 
     if (result.onsetIndex < 0) break;

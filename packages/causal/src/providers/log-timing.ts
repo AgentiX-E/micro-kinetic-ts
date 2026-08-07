@@ -24,12 +24,11 @@
  */
 
 import type {
-  ITimingProvider,
-  TimingProviderMeta,
-  CausalDirection,
-  TemporalContext,
-  ServiceTiming,
   CallEdge,
+  CausalDirection,
+  ITimingProvider,
+  TemporalContext,
+  TimingProviderMeta,
 } from '@agentix-e/micro-kinetic-core';
 import type { LogAnomalyPoint } from '../types/index.js';
 
@@ -96,7 +95,7 @@ export class LogTimingProvider implements ITimingProvider {
     if (allTimestamps.length < 2) return 0.2;
 
     const range = Math.max(...allTimestamps) - Math.min(...allTimestamps);
-    const spreadConfidence = range > 1000 ? 0.8 : range / 1000 * 0.8;
+    const spreadConfidence = range > 1000 ? 0.8 : (range / 1000) * 0.8;
 
     return Math.min(0.9, 0.3 * countWeight + 0.7 * spreadConfidence);
   }
@@ -173,10 +172,7 @@ export class LogTimingProvider implements ITimingProvider {
     for (const result of results) {
       if (result.source.toLowerCase() === earliest.service.toLowerCase()) {
         // Adjust confidence in place (mutable for cascade enrichment)
-        (result as { confidence: number }).confidence = Math.min(
-          0.95,
-          result.confidence + 0.05,
-        );
+        (result as { confidence: number }).confidence = Math.min(0.95, result.confidence + 0.05);
       }
     }
   }

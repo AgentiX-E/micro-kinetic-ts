@@ -44,10 +44,7 @@ export function cosineDistance(
  * @param b - Second set elements.
  * @returns Jaccard similarity in [0, 1].
  */
-export function jaccardSimilarity(
-  a: readonly string[],
-  b: readonly string[],
-): number {
+export function jaccardSimilarity(a: readonly string[], b: readonly string[]): number {
   if (a.length === 0 && b.length === 0) return 1;
   const setA = new Set(a);
   const setB = new Set(b);
