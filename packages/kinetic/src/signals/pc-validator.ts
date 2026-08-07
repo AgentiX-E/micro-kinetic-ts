@@ -165,7 +165,7 @@ export function validateTopologyWithPC(
   }
 
   // ── Step 2: Run PC algorithm ──────────────────────────────
-  const pcResult = runPCAlgorithm(nodeIds, timeSeries, cfg.pcConfig);
+  const pcResult = runPCAlgorithm(nodeIds, timeSeries, cfg.pcConfig as PCConfig | undefined);
 
   // Build fast lookup: is (from, to) in the PC skeleton?
   const skeletonSet = new Set<string>();

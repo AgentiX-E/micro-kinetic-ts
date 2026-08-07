@@ -344,7 +344,7 @@ export function bocpdDetectOnset(
     // 4. Normalize
     if (growthSum > 0) {
       for (let ri = 0; ri < newRunLengths.length; ri++) {
-        newRunLengths[ri] /= growthSum;
+        newRunLengths[ri]! /= growthSum;
       }
     }
 

@@ -127,6 +127,12 @@ export interface PropagationVelocityResult {
    * Whether onset detection was BOCPD (true) or MAD-based (false).
    */
   usedBOCPD: boolean;
+
+  /** Detection method: 'bocpd' or 'mad'. */
+  method: 'bocpd' | 'mad';
+
+  /** Onset delta between source and target (time index units). */
+  onsetDelta: number;
 }
 
 /**
@@ -239,11 +245,15 @@ export function computePropagationVelocity(
     ));
   }
 
-  // If either onset is undetected, propagation is indeterminate
+  // If either onset is undetected, propagation is indeterminate.
+  // Return probability 0 to let caller fall back to tier 3 anomaly similarity,
+  // rather than producing a noisy 0.5 for non-anomalous data.
+  // Exception: empty data (zero-length input) — no insight available at all,
+  // return a neutral 0.5 so the caller can decide via other tiers.
   if (sourceOnset < 0 || targetOnset < 0) {
-    // Default to neutral propagation probability when onset unclear
+    const isEmpty = sourceValues.length === 0 || targetValues.length === 0;
     return {
-      propagationProbability: 0.5,
+      propagationProbability: isEmpty ? 0.5 : 0,
       propagationDelay: 0,
       sourceOnsetIndex: sourceOnset,
       targetOnsetIndex: targetOnset,
@@ -251,6 +261,8 @@ export function computePropagationVelocity(
       targetConfidence,
       isDirectPropagation: false,
       usedBOCPD: useBOCPD,
+      method: useBOCPD ? 'bocpd' : 'mad',
+      onsetDelta: 0,
     };
   }
 
@@ -269,6 +281,8 @@ export function computePropagationVelocity(
       targetConfidence,
       isDirectPropagation: false,
       usedBOCPD: useBOCPD,
+      method: useBOCPD ? 'bocpd' : 'mad',
+      onsetDelta: propagationDelay,
     };
   }
 
@@ -283,6 +297,8 @@ export function computePropagationVelocity(
       targetConfidence,
       isDirectPropagation: false,
       usedBOCPD: useBOCPD,
+      method: useBOCPD ? 'bocpd' : 'mad',
+      onsetDelta: 0,
     };
   }
 
@@ -308,5 +324,7 @@ export function computePropagationVelocity(
     targetConfidence,
     isDirectPropagation,
     usedBOCPD: useBOCPD,
+    method: useBOCPD ? 'bocpd' : 'mad',
+    onsetDelta: propagationDelay,
   };
 }

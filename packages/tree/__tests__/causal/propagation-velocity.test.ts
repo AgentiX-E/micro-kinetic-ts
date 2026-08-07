@@ -74,8 +74,8 @@ describe('computePropagationVelocity — edge cases', () => {
 
     const result = computePropagationVelocity(source, target, { useBOCPD: false });
 
-    // No onset in source → neutral propagation probability
-    expect(result.propagationProbability).toBe(0.5);
+    // No onset in source → neutral propagation probability (changed to 0 to fall back to anomaly similarity)
+    expect(result.propagationProbability).toBe(0);
   });
 
   it('should handle no anomaly in target (returns neutral)', () => {
@@ -88,7 +88,7 @@ describe('computePropagationVelocity — edge cases', () => {
 
     const result = computePropagationVelocity(source, target, { useBOCPD: false });
 
-    expect(result.propagationProbability).toBe(0.5);
+    expect(result.propagationProbability).toBe(0);
   });
 
   it('should handle empty data', () => {

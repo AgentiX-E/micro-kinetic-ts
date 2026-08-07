@@ -36,8 +36,8 @@
  * @module signals/trace-validator
  */
 
-import type { ServiceCallGraph, TraceSpan } from '@agentix-e/micro-kinetic-core';
-import type { PCValidationConfig, PCValidationResult } from './pc-validator.js';
+import type { MetricMap, ServiceCallGraph, TraceSpan } from '@agentix-e/micro-kinetic-core';
+import type { PCValidatorConfig, PCValidationResult } from './pc-validator.js';
 import { validateTopologyWithPC } from './pc-validator.js';
 import { augmentTopologyWithTraces } from './trace-topology.js';
 
@@ -58,7 +58,7 @@ export interface TraceValidationConfig {
    */
   readonly pcVerify: boolean;
   /** PC algorithm configuration (only used when pcVerify=true). */
-  readonly pcConfig?: PCValidationConfig;
+  readonly pcConfig?: PCValidatorConfig;
 }
 
 export const DEFAULT_TRACE_VALIDATION_CONFIG: TraceValidationConfig = {
@@ -160,7 +160,7 @@ export function validateTopologyWithTraces(
   // ── Step 2: Optional PC causal verification ─────────────
   let pcResult: PCValidationResult | undefined;
   if (cfg.pcVerify && metrics && metrics.size >= 3) {
-    pcResult = validateTopologyWithPC(refinedGraph, metrics, cfg.pcConfig);
+    pcResult = validateTopologyWithPC(refinedGraph, metrics as unknown as MetricMap, cfg.pcConfig);
     refinedGraph = pcResult.refinedGraph;
   }
 

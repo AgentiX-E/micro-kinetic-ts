@@ -257,7 +257,7 @@ export class BenchmarkRunner {
           const traceResult = validateTopologyWithTraces(
             benchCase.callGraph,
             this.traceOptions.spans,
-            benchCase.metrics,
+            benchCase.metrics as unknown as ReadonlyMap<string, readonly { name: string; values: Float64Array }[]>,
             {
               minCallFrequency: this.traceOptions.minCallFrequency,
               discoverNewEdges: this.traceOptions.discoverNewEdges,

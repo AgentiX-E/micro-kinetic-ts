@@ -191,7 +191,7 @@ interface AnomalyFeatures {
 
 interface EdgeWeightResult {
   weight: number;
-  method: 'pearson' | 'fallback';
+  method: 'pearson' | 'bocpd_velocity' | 'mad_velocity' | 'anomaly_similarity';
   temporalBonus: boolean;
 }
 
@@ -394,7 +394,7 @@ function computeEdgePropagationWeight(
 
     if (sourceValues.length >= 5 && targetValues.length >= 5) {
       const useBOCPD = cfg.propagationVelocity?.useBOCPD ?? false;
-      const expectedLatency = cfg.propagationVelocity?.expectedDirectLatency ?? 1.0;
+      const expectedDirectLatency = cfg.propagationVelocity?.expectedDirectLatency ?? 1.0;
 
       let velocityResult: PropagationVelocityResult;
       try {
@@ -407,10 +407,15 @@ function computeEdgePropagationWeight(
         // Fall through to tier 3.
         velocityResult = {
           propagationProbability: 0,
-          method: 'mad',
-          onsetDelta: 0,
+          propagationDelay: 0,
           sourceOnsetIndex: -1,
           targetOnsetIndex: -1,
+          sourceConfidence: 0,
+          targetConfidence: 0,
+          isDirectPropagation: false,
+          usedBOCPD: false,
+          method: 'mad',
+          onsetDelta: 0,
         };
       }
 
