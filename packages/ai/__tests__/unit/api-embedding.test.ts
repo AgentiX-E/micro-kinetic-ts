@@ -362,15 +362,14 @@ describe('createApiEmbeddingFromEnv', () => {
     expect(provider.dimension).toBe(128);
   });
 
-  it('should create provider without API key (no auth header)', () => {
+  it('should return null without API key (no auth header)', () => {
     const provider = createApiEmbeddingFromEnv({
       vendorPrefix: 'MISSING_VENDOR',
       endpoint: 'https://api.test.com/v1/embeddings',
       model: 'test-embedding',
       dimension: 128,
     });
-    expect(provider.modelId).toBe('test-embedding');
-    expect(provider.dimension).toBe(128);
+    expect(provider).toBeNull();
   });
 
   it('should merge extra headers', () => {

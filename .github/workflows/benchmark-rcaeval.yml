@@ -16,6 +16,8 @@ permissions:
   pages: write
   id-token: write
 
+secrets: inherit
+
 jobs:
   # ── Synthetic: fast, no external data ──
   synthetic:
@@ -45,7 +47,6 @@ jobs:
   rcaeval-re1:
     needs: synthetic
     runs-on: ubuntu-latest
-    secrets: inherit
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +82,6 @@ jobs:
   rcaeval-re2:
     needs: synthetic
     runs-on: ubuntu-latest
-    secrets: inherit
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -117,7 +117,6 @@ jobs:
   rcaeval-re3:
     needs: synthetic
     runs-on: ubuntu-latest
-    secrets: inherit
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -155,7 +154,6 @@ jobs:
     needs: rcaeval-re1
     if: needs.rcaeval-re1.result == 'success'
     runs-on: ubuntu-latest
-    secrets: inherit
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -194,7 +192,6 @@ jobs:
     needs: rcaeval-re2
     if: needs.rcaeval-re2.result == 'success'
     runs-on: ubuntu-latest
-    secrets: inherit
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -233,7 +230,6 @@ jobs:
     needs: rcaeval-re3
     if: needs.rcaeval-re3.result == 'success'
     runs-on: ubuntu-latest
-    secrets: inherit
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
