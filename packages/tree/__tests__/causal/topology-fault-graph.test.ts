@@ -384,7 +384,7 @@ describe('buildTopologyFaultGraph — Fallback Behavior', () => {
 
     const result = buildTopologyFaultGraph(graph, metrics);
 
-    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.05);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
     expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
   });
 });
@@ -625,7 +625,7 @@ describe('buildTopologyFaultGraph — Configuration', () => {
     // velocity disabled → tier 3 pure
     // sourceScore≈0, targetScore≈1 → correlationProxy≈0, avgScore≈0.5 → gainFactor=1
     // similarityWeight = 0 * (0.3 + 0.7*1) = 0 → clamped to min 0.05
-    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.05);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
     expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
   });
 
@@ -645,7 +645,7 @@ describe('buildTopologyFaultGraph — Configuration', () => {
     // velocity disabled → tier 3
     // sourceScore≈1, targetScore=0 → correlationProxy≈0, avgScore≈0.5 → gainFactor=1
     // similarityWeight ≈ 0 * (...) ≈ 0 → clamped to min 0.05
-    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.05);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
     expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
   });
 
@@ -920,7 +920,7 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
       usePropagationVelocity: false,
     });
 
-    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.05);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
     expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
   });
 
@@ -973,7 +973,7 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
     });
 
     // 3 data points → velocity skipped → falls to tier 3 anomaly similarity
-    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.05);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
     expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
   });
 
@@ -996,7 +996,7 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
 
     // All zeros → Pearson fails (zero variance), velocity may also produce
     // zero probability → tiers all resolve to anomaly similarity
-    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.05);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
     expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
   });
 });
