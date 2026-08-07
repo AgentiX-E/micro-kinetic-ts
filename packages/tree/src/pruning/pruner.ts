@@ -756,9 +756,12 @@ function performTreeRCA(
 
   // Initialize all scores with collision energy when available,
   // falling back to raw anomaly scores otherwise.
+  // Also track collision type for each node (for sort-time amplification).
+  const collisionTypes = new Map<ServiceId, string>();
   for (const [nodeId] of allNodes) {
     const collisionResult = collisionEnergy?.get(nodeId);
     scores.set(nodeId, collisionResult?.totalEnergy ?? (anomalyScores.get(nodeId) ?? 0));
+    collisionTypes.set(nodeId, collisionResult?.collisionType ?? 'chain');
     depths.set(nodeId, 0);
   }
 
@@ -784,6 +787,11 @@ function performTreeRCA(
     if (processed.has(node)) continue;
     processed.add(node);
 
+    // Use collision-enhanced energy when available, falling back to raw anomaly.
+    // Collision energy is the Boltzmann Q(f,f) aggregate of upstream fault signals,
+    // which captures propagation dynamics that raw anomaly scores miss.
+    const collisionResult = collisionEnergy?.get(node);
+    const nodeEnergy = collisionResult?.totalEnergy ?? (anomalyScores.get(node) ?? 0);
     const nodeAnomaly = anomalyScores.get(node) ?? 0;
     let childContrib = 0;
     let maxChildDepth = 0;
@@ -804,7 +812,7 @@ function performTreeRCA(
     // Fan-out dilution theorem (Deng Yu, 2024):
     // In a collision tree, a parent with N children receives anomaly
     // contributions from each child, but the total contribution is
-    // attenuated by 1/√N to prevent fan-out services (like API gateways
+    // attenuated by 1/N to prevent fan-out services (like API gateways
     // or frontends) from unfairly accumulating anomaly evidence from
     // the entire downstream graph.
     //
@@ -816,7 +824,14 @@ function performTreeRCA(
     const childCount = childList.length;
     const fanOutDilution = childCount > 0 ? 1 / childCount : 1;
 
-    const totalScore = nodeAnomaly + childContrib * fanOutDilution;
+    // Mix: collision energy (upstream-aware) + child contributions (downstream-aware)
+    // Weight: α = 0.6 collision-driven, 0.4 raw-anomaly-driven for non-collision nodes
+    // This prevents children from dominating the score of a deep bottleneck node
+    // whose collision energy already captures upstream propagation.
+    const isCollisionNode = collisionTypes.get(node) !== 'chain';
+    const collisionWeight = isCollisionNode ? 0.7 : 0.5;
+    const mixedSelf = collisionWeight * nodeEnergy + (1 - collisionWeight) * nodeAnomaly;
+    const totalScore = mixedSelf + childContrib * fanOutDilution;
     scores.set(node, totalScore);
     depths.set(node, maxChildDepth);
 

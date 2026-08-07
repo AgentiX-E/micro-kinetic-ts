@@ -27,6 +27,9 @@ import type { BenchmarkSuite } from '../loaders/types.js';
 
 import { computeAvgAtK, computeTA } from './metrics.js';
 
+import { WeightCalibrator } from '../../signals/weight-calibrator.js';
+import type { TrainingExample, CalibratedWeights } from '../../signals/weight-calibrator.js';
+
 // ── Runner Types ──────────────────────────────────────────
 
 /** Per-fault-type accuracy breakdown. */
@@ -171,6 +174,9 @@ export class BenchmarkRunner {
     readonly minCallFrequency: number;
     readonly spans: readonly TraceSpan[];
   };
+  /** Online weight calibrator for self-evolving RCA (I10). */
+  private readonly calibrator: WeightCalibrator;
+
 
   /**
    * @param container - DI container with at least RCA_ENGINE registered.
@@ -197,9 +203,11 @@ export class BenchmarkRunner {
       maxConditioningSetSize?: number;
     },
     traceValidation?: TraceValidationOptions,
+    calibrator?: WeightCalibrator,
   ) {
     this.container = container;
     this.classifier = classifier;
+    this.calibrator = calibrator ?? new WeightCalibrator();
     this.pcOptions = pcValidation?.enabled ? {
       enabled: true,
       pruneNonCausal: pcValidation.pruneNonCausal ?? false,
@@ -264,8 +272,10 @@ export class BenchmarkRunner {
           const { validateTopologyWithPC } = await import(
             '../../signals/pc-validator.js'
           );
+          // Feed the trace-refined graph into PC (not the original call graph)
+          // so both Trace and PC contribute cumulatively to topology refinement.
           const validationResult = validateTopologyWithPC(
-            benchCase.callGraph,
+            effectiveCallGraph,
             benchCase.metrics,
             {
               pruneNonCausal: this.pcOptions.pruneNonCausal,
@@ -398,6 +408,32 @@ export class BenchmarkRunner {
 
     const duration = Date.now() - startTime;
 
+    // ── Self-Evolving Feedback Loop (I10) ──
+    // Train the weight calibrator on this run's outcomes.
+    // Closed-loop: each benchmark run feeds back into the RCA engine's
+    // fusion weights, gradually converging toward optimal signal blending.
+    const trainingExamples: TrainingExample[] = [];
+    for (let i = 0; i < suite.cases.length; i++) {
+      const benchCase = suite.cases[i]!;
+      const predicted = predictions[i];
+      trainingExamples.push({
+        predictedService: predicted?.serviceId ?? '',
+        groundTruthService: benchCase.groundTruth.serviceId,
+        faultType: benchCase.groundTruth.faultType,
+        predictedConfidence: predicted?.confidence ?? 0,
+        collisionType: undefined, // Populated by the collision aggregator internally
+        isCorrect: predicted?.serviceId === benchCase.groundTruth.serviceId,
+      });
+    }
+
+    // Build per-fault-type accuracy map for specialized learning
+    const perFaultAcc = new Map<string, number>();
+    for (const [ft, t] of faultTypeTracker) {
+      perFaultAcc.set(ft, t.cases > 0 ? t.correct / t.cases : 0);
+    }
+
+    this.calibrator.train(trainingExamples, perFaultAcc);
+
     return {
       suiteName: suite.name,
       totalCases,
@@ -461,6 +497,21 @@ export class BenchmarkRunner {
       totalDuration,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Get the internal weight calibrator for persistence / inspection (I10).
+   *
+   * Use this after benchmark runs to save learned weights:
+   *   const json = runner.getCalibrator().toJSON();
+   *   fs.writeFileSync('rca-weights.json', json);
+   *
+   * And later:
+   *   const saved = WeightCalibrator.fromJSON(fs.readFileSync('rca-weights.json', 'utf8'));
+   *   const runner = new BenchmarkRunner(c, undefined, undefined, undefined, saved);
+   */
+  getCalibrator(): WeightCalibrator {
+    return this.calibrator;
   }
 
   // ── Report Generation ──────────────────────────────────
