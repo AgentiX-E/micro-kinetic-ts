@@ -61,7 +61,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
           restore-keys: |
             RCAEval-json-
       - name: Run RCAEval — RE1 only
@@ -96,7 +96,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
           restore-keys: |
             RCAEval-json-
       - name: Run RCAEval — RE2 only
@@ -131,7 +131,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
           restore-keys: |
             RCAEval-json-
       - name: Run RCAEval — RE3 only
@@ -168,7 +168,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
           restore-keys: |
             RCAEval-json-
       - name: Run ablation — RE1 only
@@ -206,7 +206,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
           restore-keys: |
             RCAEval-json-
       - name: Run ablation — RE2 only
@@ -244,7 +244,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
           restore-keys: |
             RCAEval-json-
       - name: Run ablation — RE3 only

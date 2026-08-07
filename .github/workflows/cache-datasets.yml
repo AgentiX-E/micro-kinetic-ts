@@ -88,7 +88,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
           restore-keys: |
             RCAEval-json-
 
@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/RCAEval-json
-          key: RCAEval-json-v2
+          key: RCAEval-json-v3
 
   # ── Trigger benchmark after successful cache refresh ──
   trigger-benchmark:
