@@ -67,11 +67,17 @@ export function augmentTopologyWithTraces(
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
   // ── Step 1: Extract call relationships from span trees ─
+  // Build a spanId→span lookup map (O(n)) to avoid O(n²) in the loop below.
+  const spanBySpanId = new Map<string, TraceSpan>();
+  for (const span of spans) {
+    spanBySpanId.set(span.spanId, span);
+  }
+
   const callFrequency = new Map<string, number>(); // "from→to" → count
 
   for (const span of spans) {
     // Find parent span to determine caller→callee
-    const parentSpan = spans.find((s) => s.spanId === span.parentSpanId);
+    const parentSpan = spanBySpanId.get(span.parentSpanId);
     if (parentSpan && parentSpan.service !== span.service) {
       const key = `${parentSpan.service}→${span.service}`;
       callFrequency.set(key, (callFrequency.get(key) ?? 0) + 1);
