@@ -125,7 +125,7 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   const name = basename(dirPath);
 
   // Pattern A: flat format — re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
-  const flatMatch = name.match(/^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
+  const flatMatch = name.match(/^re([123])(ob|ss|tt)_(.+?)_([a-z0-9]+)_(\d+)$/i);
   if (flatMatch) {
     const suiteNum = flatMatch[1]!;
     const sysCode = flatMatch[2]!;
@@ -161,7 +161,7 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   const sysName: CaseMeta['system'] =
     sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket';
 
-  const svcFaultMatch = name.match(/^(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
+  const svcFaultMatch = name.match(/^(.+?)_([a-z0-9]+)_(\d+)$/i);
   if (svcFaultMatch) {
     return {
       suite: `RE${suiteNum}` as CaseMeta['suite'],

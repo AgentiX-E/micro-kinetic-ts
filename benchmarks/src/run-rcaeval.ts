@@ -168,9 +168,10 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   const name = basename(dirPath);
 
   // Pattern A: flat format — re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
-  //   e.g.: re1ob_cartservice_cpu_1, re2ss_frontend_delay_3, re3tt_order_cpu_001
+  //   fault types include: cpu, mem, disk, delay, loss, socket
+  //   and RE3 generic labels: f1, f2, f3, f4, f5
   const flatMatch = name.match(
-    /^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i,
+    /^re([123])(ob|ss|tt)_(.+?)_([a-z0-9]+)_(\d+)$/i,
   );
   if (flatMatch) {
     const suiteNum = flatMatch[1]!;
@@ -227,7 +228,7 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
 
   // Parse fault info from the directory name itself
   // Pattern: {service}_{faultType}_N or case_N or just N
-  const svcFaultMatch = name.match(/^(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
+  const svcFaultMatch = name.match(/^(.+?)_([a-z0-9]+)_(\d+)$/i);
   if (svcFaultMatch) {
     return {
       suite: `RE${suiteNum}` as CaseMeta['suite'],
