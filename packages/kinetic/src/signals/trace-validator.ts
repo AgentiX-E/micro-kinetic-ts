@@ -37,7 +37,7 @@
  */
 
 import type { MetricMap, ServiceCallGraph, TraceSpan } from '@agentix-e/micro-kinetic-core';
-import type { PCValidatorConfig, PCValidationResult } from './pc-validator.js';
+import type { PCValidationResult, PCValidatorConfig } from './pc-validator.js';
 import { validateTopologyWithPC } from './pc-validator.js';
 import { augmentTopologyWithTraces } from './trace-topology.js';
 

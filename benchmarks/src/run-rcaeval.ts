@@ -79,14 +79,16 @@ async function createSemanticConfig() {
   const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
 
   // Prefer real API embedding; fall back to TF-IDF for local-only runs.
-  // SEMANTIC_DISABLE_REMOTE=1 forces TF-IDF even when API key is available —
-  // to prevent CI timeouts when the embedding API is unreachable.
+  // ZHIPU_EMBEDDING_ENDPOINT: override the default Zhipu API endpoint.
+  //   - Default: https://open.bigmodel.cn/api/paas/v4/embeddings (China mainland)
+  //   - For CI / overseas runners: https://api.z.ai/api/paas/v4/embeddings
   const zhipuKey = process.env['ZHIPU_API_KEY'];
-  const disableRemote = process.env['SEMANTIC_DISABLE_REMOTE'] === '1';
-  const embeddingProvider = zhipuKey && !disableRemote
+  const embeddingProvider = zhipuKey
     ? createApiEmbeddingFromEnv({
         vendorPrefix: 'ZHIPU',
-        endpoint: 'https://open.bigmodel.cn/api/paas/v4/embeddings',
+        endpoint:
+          process.env['ZHIPU_EMBEDDING_ENDPOINT'] ??
+          'https://open.bigmodel.cn/api/paas/v4/embeddings',
         model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
         dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
       })

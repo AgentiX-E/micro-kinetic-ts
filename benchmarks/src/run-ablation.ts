@@ -213,13 +213,14 @@ async function main(): Promise<void> {
   };
 
   const zhipuKey = process.env['ZHIPU_API_KEY'];
-  const disableRemote = process.env['SEMANTIC_DISABLE_REMOTE'] === '1';
-  if (zhipuKey && !disableRemote) {
+  if (zhipuKey) {
     try {
-      const { TfIdfEmbeddingProvider, createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
+      const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
       semanticConfig.embeddingProvider = createApiEmbeddingFromEnv({
         vendorPrefix: 'ZHIPU',
-        endpoint: 'https://open.bigmodel.cn/api/paas/v4/embeddings',
+        endpoint:
+          process.env['ZHIPU_EMBEDDING_ENDPOINT'] ??
+          'https://open.bigmodel.cn/api/paas/v4/embeddings',
         model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
         dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
       });

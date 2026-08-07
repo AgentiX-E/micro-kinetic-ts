@@ -66,7 +66,7 @@ jobs:
             RCAEval-json-
       - name: Run RCAEval — RE1 only
         env:
-          SEMANTIC_DISABLE_REMOTE: 1
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 2>&1 | tee rcaeval-re1-results.txt
@@ -101,7 +101,7 @@ jobs:
             RCAEval-json-
       - name: Run RCAEval — RE2 only
         env:
-          SEMANTIC_DISABLE_REMOTE: 1
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 2>&1 | tee rcaeval-re2-results.txt
@@ -136,7 +136,7 @@ jobs:
             RCAEval-json-
       - name: Run RCAEval — RE3 only
         env:
-          SEMANTIC_DISABLE_REMOTE: 1
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 2>&1 | tee rcaeval-re3-results.txt
@@ -173,7 +173,7 @@ jobs:
             RCAEval-json-
       - name: Run ablation — RE1 only
         env:
-          SEMANTIC_DISABLE_REMOTE: 1
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re1 2>&1 | tee ablation-re1-results.txt
@@ -211,7 +211,7 @@ jobs:
             RCAEval-json-
       - name: Run ablation — RE2 only
         env:
-          SEMANTIC_DISABLE_REMOTE: 1
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 2>&1 | tee ablation-re2-results.txt
@@ -249,7 +249,7 @@ jobs:
             RCAEval-json-
       - name: Run ablation — RE3 only
         env:
-          SEMANTIC_DISABLE_REMOTE: 1
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re3 2>&1 | tee ablation-re3-results.txt
