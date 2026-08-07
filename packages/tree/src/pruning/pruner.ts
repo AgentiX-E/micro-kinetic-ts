@@ -73,6 +73,13 @@ export interface TreePrunerOptions extends RCAEngineOptions {
   readonly useTwoHopDecay: boolean;
   /** Maximum number of cycles to enumerate */
   readonly maxCycles: number;
+  /**
+   * Enable Boltzmann Q(f,f) collision energy aggregation (I8-P3).
+   * When disabled, the engine falls back to raw anomaly scores
+   * with no collision type amplification in ranking.
+   * Default: true (collision aggregation enabled).
+   */
+  readonly enableCollisionAggregation: boolean;
 }
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
@@ -81,6 +88,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   decayBeta: 0.3,
   useTwoHopDecay: false,
   maxCycles: 10_000,
+  enableCollisionAggregation: true,
 };
 
 /**
@@ -191,31 +199,59 @@ export class TreePruner {
     }
 
     // ── Collision Node Fault Aggregation (Deng Yu Boltzmann Q(f,f)) ──────────
-    // Build cycle membership map for collision type classification
-    const cycleMembership = new Map<ServiceId, number>();
-    for (const cycle of cycles) {
-      for (const nodeId of cycle.nodePath) {
-        cycleMembership.set(nodeId, (cycleMembership.get(nodeId) ?? 0) + 1);
+    // When enableCollisionAggregation is off, skip aggregation and use raw
+    // anomaly scores for all nodes. This enables apples-to-apples ablation
+    // comparison against the baseline (no collision enhancement).
+    let collisionEnergy: Map<ServiceId, {
+      totalEnergy: number;
+      collisionType: string;
+      collisionGain: number;
+    }>;
+
+    if (this.options.enableCollisionAggregation) {
+      // Build cycle membership map for collision type classification
+      const cycleMembership = new Map<ServiceId, number>();
+      for (const cycle of cycles) {
+        for (const nodeId of cycle.nodePath) {
+          cycleMembership.set(nodeId, (cycleMembership.get(nodeId) ?? 0) + 1);
+        }
+      }
+
+      // Convert call graph edges to FaultGraphEdge format for aggregator
+      const faultEdges: FaultGraphEdge[] = topologyGraph.edges.map((e, i) => ({
+        from: e.from,
+        to: e.to,
+        weight: propagationWeights[i] ?? 0.5,
+      }));
+
+      collisionEnergy = new Map(
+        Array.from(
+          aggregateFaultEnergy(
+            faultEdges,
+            anomalyScores,
+            cycleMembership,
+            {
+              alpha: 0.4,
+              bottleneckCapacity: 0.5,
+              fanInThreshold: 3,
+            },
+          ).entries(),
+        ).map(
+          ([id, r]) => [id, { totalEnergy: r.totalEnergy, collisionType: r.collisionType, collisionGain: r.collisionGain }],
+        ),
+      );
+    } else {
+      // Collision disabled: each node gets its raw anomaly score as energy,
+      // with default 'chain' type (no amplification).
+      collisionEnergy = new Map();
+      for (const [nodeId, score] of anomalyScores) {
+        collisionEnergy.set(nodeId, {
+          totalEnergy: score,
+          collisionType: 'chain',
+          collisionGain: 0,
+        });
       }
     }
-
-    // Convert call graph edges to FaultGraphEdge format for aggregator
-    const faultEdges: FaultGraphEdge[] = topologyGraph.edges.map((e, i) => ({
-      from: e.from,
-      to: e.to,
-      weight: propagationWeights[i] ?? 0.5,
-    }));
-
-    const collisionEnergy = aggregateFaultEnergy(
-      faultEdges,
-      anomalyScores,
-      cycleMembership,
-      {
-        alpha: 0.4,
-        bottleneckCapacity: 0.5,
-        fanInThreshold: 3,
-      },
-    );
 
     return {
       callGraph: topologyGraph,
@@ -224,11 +260,7 @@ export class TreePruner {
       detectedCycles: classifiedCycles,
       totalCycleContribution,
       pruneThreshold: this.options.pruneEpsilon,
-      collisionEnergy: new Map(
-        Array.from(collisionEnergy.entries()).map(
-          ([id, r]) => [id, { totalEnergy: r.totalEnergy, collisionType: r.collisionType, collisionGain: r.collisionGain }],
-        ),
-      ),
+      collisionEnergy,
     };
   }
 
