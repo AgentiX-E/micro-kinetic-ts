@@ -166,25 +166,94 @@ interface CaseMeta {
 
 function parseCaseDir(dirPath: string): CaseMeta | null {
   const name = basename(dirPath);
-  // Pattern: re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
-  const match = name.match(
+
+  // Pattern A: flat format — re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
+  //   e.g.: re1ob_cartservice_cpu_1, re2ss_frontend_delay_3, re3tt_order_cpu_001
+  const flatMatch = name.match(
     /^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i,
   );
-  if (!match) return null;
+  if (flatMatch) {
+    const suiteNum = flatMatch[1]!;
+    const sysCode = flatMatch[2]!;
+    return {
+      suite: `RE${suiteNum}` as CaseMeta['suite'],
+      system:
+        sysCode === 'ob'
+          ? 'OnlineBoutique'
+          : sysCode === 'ss'
+            ? 'SockShop'
+            : 'TrainTicket',
+      service: flatMatch[3]!,
+      faultType: flatMatch[4]!.toLowerCase() as CaseMeta['faultType'],
+      instance: parseInt(flatMatch[5]!, 10),
+      dirPath,
+    };
+  }
 
-  const suiteNum = match[1]!;
-  const sysCode = match[2]!;
+  // Pattern B: nested format — any directory with metrics.json whose
+  //   parent or grandparent chain contains re{1-3} and system codes.
+  //   Used by HuggingFace datasets that unpack to nested layouts.
+  //   e.g.: re3/OnlineBoutique/case_001, re3/ob/1, re2/ss/2
+  const chain = dirPath.replace(/\\/g, '/').split('/');
+  let suiteNum: string | undefined;
+  let sysCode: string | undefined;
+
+  for (let i = chain.length - 2; i >= 0; i--) {
+    const segment = chain[i]!;
+    // Try matching suite: re1, re2, re3 (case insensitive)
+    const suiteM = segment.match(/^re([123])$/i);
+    if (suiteM && !suiteNum) {
+      suiteNum = suiteM[1]!;
+      continue;
+    }
+    // Try matching system: ob, ss, tt, onlineboutique, sockshop, trainticket
+    const sysM = segment.match(/^(ob|ss|tt|onlineboutique|sockshop|trainticket)$/i);
+    if (sysM && !sysCode) {
+      const s = sysM[1]!.toLowerCase();
+      sysCode = s.length === 2 ? s
+        : s === 'onlineboutique' ? 'ob'
+        : s === 'sockshop' ? 'ss'
+        : 'tt';
+      break;
+    }
+  }
+
+  if (!suiteNum || !sysCode) return null;
+
+  const sysName: CaseMeta['system'] =
+    sysCode === 'ob' ? 'OnlineBoutique'
+    : sysCode === 'ss' ? 'SockShop'
+    : 'TrainTicket';
+
+  // Parse fault info from the directory name itself
+  // Pattern: {service}_{faultType}_N or case_N or just N
+  const svcFaultMatch = name.match(/^(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
+  if (svcFaultMatch) {
+    return {
+      suite: `RE${suiteNum}` as CaseMeta['suite'],
+      system: sysName,
+      service: svcFaultMatch[1]!,
+      faultType: svcFaultMatch[2]!.toLowerCase() as CaseMeta['faultType'],
+      instance: parseInt(svcFaultMatch[3]!, 10),
+      dirPath,
+    };
+  }
+
+  const caseMatch = name.match(/^case_(\d+)$/i);
+  const indexMatch = name.match(/^(\d+)$/);
+
+  const instance = caseMatch ? parseInt(caseMatch[1]!, 10)
+    : indexMatch ? parseInt(indexMatch[1]!, 10)
+    : -1;
+
+  if (instance < 0) return null;
+
   return {
     suite: `RE${suiteNum}` as CaseMeta['suite'],
-    system:
-      sysCode === 'ob'
-        ? 'OnlineBoutique'
-        : sysCode === 'ss'
-          ? 'SockShop'
-          : 'TrainTicket',
-    service: match[3]!,
-    faultType: match[4]!.toLowerCase(),
-    instance: parseInt(match[5]!, 10),
+    system: sysName,
+    service: name,
+    faultType: 'cpu' as CaseMeta['faultType'], // best-effort default
+    instance,
     dirPath,
   };
 }
@@ -223,6 +292,55 @@ function discoverAllCases(dataDir: string): CaseMeta[] {
   }
 
   return cases;
+}
+
+/**
+ * Scan dataDir and return all directories with metrics.json, split into
+ * matched (parseable) and unmatched (present but regex/chain fails).
+ * Diagnostic-only — does not affect benchmark results.
+ */
+function discoverAllDirectoriesWithMetrics(dataDir: string): {
+  totalWithMetrics: number;
+  matched: string[];
+  unmatched: string[];
+} {
+  const matched: string[] = [];
+  const unmatched: string[] = [];
+
+  if (!existsSync(dataDir)) return { totalWithMetrics: 0, matched, unmatched };
+
+  const queue = [dataDir];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    try {
+      const entries = readdirSync(current, { withFileTypes: true });
+      const hasMetrics = entries.some(
+        (e) => e.isFile() && e.name === 'metrics.json',
+      );
+      if (hasMetrics) {
+        const rel = current.replace(dataDir + '/', '').replace(dataDir, '');
+        if (parseCaseDir(current)) {
+          matched.push(rel);
+        } else {
+          unmatched.push(rel);
+        }
+        continue;
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) {
+          queue.push(join(current, entry.name));
+        }
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  return {
+    totalWithMetrics: matched.length + unmatched.length,
+    matched,
+    unmatched,
+  };
 }
 
 // ── Loader (with comprehensive error reporting) ───────────
@@ -521,6 +639,19 @@ async function main(): Promise<void> {
       'No cases found. Ensure cache-datasets workflow has been run.',
     );
     return;
+  }
+
+  // Discovery diagnostics — scan unmatched directories for debugging
+  const scannedDirs = discoverAllDirectoriesWithMetrics(opts.dataDir);
+  console.log(`\nScanned ${scannedDirs.totalWithMetrics} directories with metrics.json`);
+  if (scannedDirs.unmatched.length > 0) {
+    console.log(`Unmatched directories (${scannedDirs.unmatched.length} total, showing first 20):`);
+    for (const d of scannedDirs.unmatched.slice(0, 20)) {
+      console.log(`  → ${d}`);
+    }
+    if (scannedDirs.unmatched.length > 20) {
+      console.log(`  ... and ${scannedDirs.unmatched.length - 20} more`);
+    }
   }
 
   // ── Discovery diagnostics ───────────────────────────────

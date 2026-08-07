@@ -123,14 +123,67 @@ interface CaseMeta {
 
 function parseCaseDir(dirPath: string): CaseMeta | null {
   const name = basename(dirPath);
-  const match = name.match(/^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
-  if (!match) return null;
+
+  // Pattern A: flat format — re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
+  const flatMatch = name.match(/^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
+  if (flatMatch) {
+    const suiteNum = flatMatch[1]!;
+    const sysCode = flatMatch[2]!;
+    return {
+      suite: `RE${suiteNum}` as CaseMeta['suite'],
+      system: sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket',
+      service: flatMatch[3]!,
+      faultType: flatMatch[4]!.toLowerCase() as CaseMeta['faultType'],
+      instance: parseInt(flatMatch[5]!, 10),
+      dirPath,
+    };
+  }
+
+  // Pattern B: nested format — walk parent chain for re{1-3} and system code
+  const chain = dirPath.replace(/\\/g, '/').split('/');
+  let suiteNum: string | undefined;
+  let sysCode: string | undefined;
+
+  for (let i = chain.length - 2; i >= 0; i--) {
+    const segment = chain[i]!;
+    const suiteM = segment.match(/^re([123])$/i);
+    if (suiteM && !suiteNum) { suiteNum = suiteM[1]!; continue; }
+    const sysM = segment.match(/^(ob|ss|tt|onlineboutique|sockshop|trainticket)$/i);
+    if (sysM && !sysCode) {
+      const s = sysM[1]!.toLowerCase();
+      sysCode = s.length === 2 ? s : s === 'onlineboutique' ? 'ob' : s === 'sockshop' ? 'ss' : 'tt';
+      break;
+    }
+  }
+
+  if (!suiteNum || !sysCode) return null;
+
+  const sysName: CaseMeta['system'] =
+    sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket';
+
+  const svcFaultMatch = name.match(/^(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
+  if (svcFaultMatch) {
+    return {
+      suite: `RE${suiteNum}` as CaseMeta['suite'],
+      system: sysName,
+      service: svcFaultMatch[1]!,
+      faultType: svcFaultMatch[2]!.toLowerCase() as CaseMeta['faultType'],
+      instance: parseInt(svcFaultMatch[3]!, 10),
+      dirPath,
+    };
+  }
+
+  const caseMatch = name.match(/^case_(\d+)$/i);
+  const indexMatch = name.match(/^(\d+)$/);
+  const instance = caseMatch ? parseInt(caseMatch[1]!, 10) : indexMatch ? parseInt(indexMatch[1]!, 10) : -1;
+  if (instance < 0) return null;
+
   return {
-    suite: `RE${match[1]}` as CaseMeta['suite'],
-    system: match[2] === 'ob' ? 'OnlineBoutique' : match[2] === 'ss' ? 'SockShop' : 'TrainTicket',
-    service: match[3]!,
-    faultType: match[4]!.toLowerCase(),
-    instance: parseInt(match[5]!, 10),
+    suite: `RE${suiteNum}` as CaseMeta['suite'],
+    system: sysName,
+    service: name,
+    faultType: 'cpu' as CaseMeta['faultType'],
+    instance,
     dirPath,
   };
 }
