@@ -101,6 +101,22 @@ export type {
 
 // ── Trace Topology ────────────────────────────────────────
 
+// ── Weight Calibrator (Self-Evolving) ─────────────────────
+
+export {
+  WeightCalibrator,
+} from './signals/weight-calibrator.js';
+export type {
+  CalibratedWeights,
+  TrainingExample,
+  WeightCalibratorConfig,
+} from './signals/weight-calibrator.js';
+export {
+  DEFAULT_FUSION_WEIGHTS,
+  DEFAULT_COLLISION_BOOSTS,
+  DEFAULT_CALIBRATOR_CONFIG,
+} from './signals/weight-calibrator.js';
+
 export {
   validateTopologyWithTraces,
   canValidateWithTraces,
