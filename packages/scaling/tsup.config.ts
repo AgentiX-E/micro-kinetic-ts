@@ -5,7 +5,7 @@ export default defineConfig({
     index: 'src/index.ts',
   },
   format: ['esm', 'cjs'],
-  dts: true,
+  dts: process.env.CI === 'true' ? false : true,
   clean: true,
   sourcemap: true,
   treeshake: true,
