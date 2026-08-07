@@ -66,6 +66,7 @@ jobs:
             RCAEval-json-
       - name: Run RCAEval — RE1 only
         env:
+          BENCHMARK_USE_TFIDF: 1
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
@@ -101,6 +102,7 @@ jobs:
             RCAEval-json-
       - name: Run RCAEval — RE2 only
         env:
+          BENCHMARK_USE_TFIDF: 1
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
@@ -136,6 +138,7 @@ jobs:
             RCAEval-json-
       - name: Run RCAEval — RE3 only
         env:
+          BENCHMARK_USE_TFIDF: 1
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
@@ -173,6 +176,7 @@ jobs:
             RCAEval-json-
       - name: Run ablation — RE1 only
         env:
+          BENCHMARK_USE_TFIDF: 1
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
@@ -211,6 +215,7 @@ jobs:
             RCAEval-json-
       - name: Run ablation — RE2 only
         env:
+          BENCHMARK_USE_TFIDF: 1
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |
@@ -249,6 +254,7 @@ jobs:
             RCAEval-json-
       - name: Run ablation — RE3 only
         env:
+          BENCHMARK_USE_TFIDF: 1
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
         run: |

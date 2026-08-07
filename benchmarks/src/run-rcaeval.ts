@@ -82,8 +82,12 @@ async function createSemanticConfig() {
   // ZHIPU_EMBEDDING_ENDPOINT: override the default Zhipu API endpoint.
   //   - Default: https://open.bigmodel.cn/api/paas/v4/embeddings (China mainland)
   //   - For CI / overseas runners: https://api.z.ai/api/paas/v4/embeddings
+  //
+  // When BENCHMARK_USE_TFIDF=1: force local TF-IDF embedding (zero network dependency).
+  // Use this in CI to prevent API latency from inflating benchmark runtime.
+  const forceTfIdf = process.env['BENCHMARK_USE_TFIDF'] === '1';
   const zhipuKey = process.env['ZHIPU_API_KEY'];
-  const embeddingProvider = zhipuKey
+  const embeddingProvider = zhipuKey && !forceTfIdf
     ? createApiEmbeddingFromEnv({
         vendorPrefix: 'ZHIPU',
         endpoint:

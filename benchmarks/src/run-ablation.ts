@@ -212,8 +212,9 @@ async function main(): Promise<void> {
     alignmentConfig: { embeddingThreshold: 0.6, llmThreshold: 0.5 },
   };
 
+  const forceTfIdf = process.env['BENCHMARK_USE_TFIDF'] === '1';
   const zhipuKey = process.env['ZHIPU_API_KEY'];
-  if (zhipuKey) {
+  if (zhipuKey && !forceTfIdf) {
     try {
       const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
       semanticConfig.embeddingProvider = createApiEmbeddingFromEnv({

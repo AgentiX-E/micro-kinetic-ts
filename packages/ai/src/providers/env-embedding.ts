@@ -66,15 +66,14 @@ export interface EnvEmbeddingConfig {
  * });
  * ```
  */
-export function createApiEmbeddingFromEnv(config: EnvEmbeddingConfig): ApiEmbeddingProvider {
+export function createApiEmbeddingFromEnv(config: EnvEmbeddingConfig): ApiEmbeddingProvider | null {
   const apiKey = process.env[`${config.vendorPrefix}_API_KEY`];
+  if (!apiKey) return null;
   const headers: Record<string, string> = {
     ...(config.extraHeaders ?? {}),
   };
 
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  }
+  headers['Authorization'] = `Bearer ${apiKey}`;
 
   return new ApiEmbeddingProvider({
     endpoint: config.endpoint,
