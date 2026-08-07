@@ -16,8 +16,6 @@ permissions:
   pages: write
   id-token: write
 
-secrets: inherit
-
 jobs:
   # ── Synthetic: fast, no external data ──
   synthetic:
