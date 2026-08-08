@@ -497,24 +497,16 @@ async function main(): Promise<void> {
             totalCases: ftCases.length,
           };
 
-          const runner = new BenchmarkRunner(container, classifier);
-
           // ── Apply feature flags ──
-          // Note: collisionAggregation is always ON in TreePruner.buildFaultGraph();
-          // to disable it we'd need a config flag. For now we measure with all features
-          // at the integration level (the code paths themselves).
-          //
-          // PC: enabled via pcValidation param
-          // Trace: enabled via traceValidation param
-          // SelfLearn: enabled via calibrator param
-
+          // PC causal discovery: when enabled, prune non-causal edges
+          // and discover new edges from conditional independence tests.
           const pcOpts = config.flags.pcCausalDiscovery
             ? { enabled: true, pruneNonCausal: true, discoverNewEdges: true }
             : undefined;
 
-          // Trace validation is wired only for cases that carry
-          // trace span data (RE2/RE3).  When the flag is set but no
-          // spans are present the Runner silently skips trace augmentation.
+          // Trace topology augmentation: when enabled and trace span
+          // data is present (RE2/RE3), augment the call graph with
+          // observed parent-child relationships from traces.
           const traceOpts = config.flags.traceAugmentation
             ? { enabled: true, pruneUnobserved: true }
             : undefined;
