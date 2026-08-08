@@ -145,13 +145,20 @@ export function buildTopologyFaultGraph(
     anomalyOnsetTimes.set(serviceId, result.onsetIndex);
   }
 
-  // ── Step 1b: Score normalization ────────────────────────
-  // On large topologies (e.g. TrainTicket with 80+ services) the raw
-  // deviation-based anomaly scores tend to be uniformly low because the
-  // injected fault's signal is diluted across many healthy services.
-  // Min-max normalization spreads scores to the full [0, 1] range so
-  // the RCA engine can discriminate the root cause from noise.
-  {
+  // ── Step 1b: Score normalization for large topologies ───
+  // On topologies with many services (e.g. TrainTicket, 80+ nodes) the
+  // raw deviation-based anomaly scores cluster near zero because the
+  // fault-injected signal is diluted across healthy services.  Min-max
+  // normalization rescales them to [0, 1], making the root cause stand
+  // out against the noise floor.
+  //
+  // We only apply this on graphs with ≥ 20 nodes so that small, well-
+  // studied topologies (OnlineBoutique 12–14, SockShop 12–14) retain
+  // their existing calibrated scoring.  The threshold is deliberately
+  // conservative — any system large enough to need this has well over
+  // 20 services and the overhead of an extra pass is negligible.
+  const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
+  if (callGraph.nodes.size >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
     let minScore = Infinity;
     let maxScore = -Infinity;
     for (const score of anomalyScores.values()) {
@@ -164,8 +171,7 @@ export function buildTopologyFaultGraph(
         anomalyScores.set(sid, (score - minScore) / range);
       }
     }
-    // If all scores are identical (range ≈ 0), leave them as-is;
-    // there is no signal to amplify.
+    // range ≈ 0 → all scores identical; no signal to amplify, skip.
   }
 
   // Step 2: Compute propagation weights for each topology edge

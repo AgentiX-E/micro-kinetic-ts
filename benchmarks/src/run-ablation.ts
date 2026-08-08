@@ -20,23 +20,25 @@
  */
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { resolve, dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as fsSync from 'node:fs';
 
-import { Container, DI_TOKENS } from '../../packages/core/src/index.js';
 import {
-  BenchmarkRunner,
-  RCAEvalLoader,
-} from '../../packages/kinetic/src/benchmarks/index.js';
-import type { BenchmarkCase, BenchmarkSuite } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
-import type { RunResult } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
-import { RegexFaultClassifier, DEFAULT_CLASSIFICATION_RULES } from '../../packages/core/src/index.js';
+  Container,
+  DEFAULT_CLASSIFICATION_RULES,
+  DI_TOKENS,
+  RegexFaultClassifier,
+} from '../../packages/core/src/index.js';
+import { BenchmarkRunner, RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
+import type {
+  BenchmarkCase,
+  BenchmarkSuite,
+} from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import { buildRCAEvalCallGraph, initRCAEvalTopology, enhanceRCAEvalCallGraph, isRCAEvalTopologyInitialized } from './rcaeval-topology.js';
+import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -77,19 +79,99 @@ interface AblationResult {
 
 const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
   // Baseline: everything OFF
-  { flags: { collisionAggregation: false, pcCausalDiscovery: false, traceAugmentation: false, selfLearning: false }, label: 'BASELINE (all OFF)' },
+  {
+    flags: {
+      collisionAggregation: false,
+      pcCausalDiscovery: false,
+      traceAugmentation: false,
+      selfLearning: false,
+    },
+    label: 'BASELINE (all OFF)',
+  },
   // Individual features
-  { flags: { collisionAggregation: true, pcCausalDiscovery: false, traceAugmentation: false, selfLearning: false }, label: '+Collision Q(f,f)' },
-  { flags: { collisionAggregation: false, pcCausalDiscovery: true, traceAugmentation: false, selfLearning: false }, label: '+PC Causal' },
-  { flags: { collisionAggregation: false, pcCausalDiscovery: false, traceAugmentation: true, selfLearning: false }, label: '+Trace Topo' },
-  { flags: { collisionAggregation: false, pcCausalDiscovery: false, traceAugmentation: false, selfLearning: true }, label: '+SelfLearn' },
+  {
+    flags: {
+      collisionAggregation: true,
+      pcCausalDiscovery: false,
+      traceAugmentation: false,
+      selfLearning: false,
+    },
+    label: '+Collision Q(f,f)',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      pcCausalDiscovery: true,
+      traceAugmentation: false,
+      selfLearning: false,
+    },
+    label: '+PC Causal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      pcCausalDiscovery: false,
+      traceAugmentation: true,
+      selfLearning: false,
+    },
+    label: '+Trace Topo',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      pcCausalDiscovery: false,
+      traceAugmentation: false,
+      selfLearning: true,
+    },
+    label: '+SelfLearn',
+  },
   // Pairs
-  { flags: { collisionAggregation: true, pcCausalDiscovery: true, traceAugmentation: false, selfLearning: false }, label: '+Collision+PC' },
-  { flags: { collisionAggregation: true, pcCausalDiscovery: false, traceAugmentation: true, selfLearning: false }, label: '+Collision+Trace' },
-  { flags: { collisionAggregation: false, pcCausalDiscovery: true, traceAugmentation: true, selfLearning: false }, label: '+PC+Trace' },
+  {
+    flags: {
+      collisionAggregation: true,
+      pcCausalDiscovery: true,
+      traceAugmentation: false,
+      selfLearning: false,
+    },
+    label: '+Collision+PC',
+  },
+  {
+    flags: {
+      collisionAggregation: true,
+      pcCausalDiscovery: false,
+      traceAugmentation: true,
+      selfLearning: false,
+    },
+    label: '+Collision+Trace',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      pcCausalDiscovery: true,
+      traceAugmentation: true,
+      selfLearning: false,
+    },
+    label: '+PC+Trace',
+  },
   // Full stack
-  { flags: { collisionAggregation: true, pcCausalDiscovery: true, traceAugmentation: true, selfLearning: false }, label: '+Collision+PC+Trace' },
-  { flags: { collisionAggregation: true, pcCausalDiscovery: true, traceAugmentation: true, selfLearning: true }, label: 'FULL STACK (all ON)' },
+  {
+    flags: {
+      collisionAggregation: true,
+      pcCausalDiscovery: true,
+      traceAugmentation: true,
+      selfLearning: false,
+    },
+    label: '+Collision+PC+Trace',
+  },
+  {
+    flags: {
+      collisionAggregation: true,
+      pcCausalDiscovery: true,
+      traceAugmentation: true,
+      selfLearning: true,
+    },
+    label: 'FULL STACK (all ON)',
+  },
 ];
 
 // Default to 3 repetitions for statistical significance
@@ -147,7 +229,10 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   for (let i = chain.length - 2; i >= 0; i--) {
     const segment = chain[i]!;
     const suiteM = segment.match(/^re([123])$/i);
-    if (suiteM && !suiteNum) { suiteNum = suiteM[1]!; continue; }
+    if (suiteM && !suiteNum) {
+      suiteNum = suiteM[1]!;
+      continue;
+    }
     const sysM = segment.match(/^(ob|ss|tt|onlineboutique|sockshop|trainticket)$/i);
     if (sysM && !sysCode) {
       const s = sysM[1]!.toLowerCase();
@@ -175,7 +260,11 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
 
   const caseMatch = name.match(/^case_(\d+)$/i);
   const indexMatch = name.match(/^(\d+)$/);
-  const instance = caseMatch ? parseInt(caseMatch[1]!, 10) : indexMatch ? parseInt(indexMatch[1]!, 10) : -1;
+  const instance = caseMatch
+    ? parseInt(caseMatch[1]!, 10)
+    : indexMatch
+      ? parseInt(indexMatch[1]!, 10)
+      : -1;
   if (instance < 0) return null;
 
   return {
@@ -207,7 +296,9 @@ function discoverAllCases(dataDir: string): CaseMeta[] {
           queue.push(join(current, entry.name));
         }
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
   return cases;
 }
@@ -225,7 +316,8 @@ async function main(): Promise<void> {
     if (args[i] === '--data-dir' && i + 1 < args.length) dataDir = args[++i]!;
     else if (args[i] === '--system' && i + 1 < args.length) systemFilter = args[++i]!;
     else if (args[i] === '--suite' && i + 1 < args.length) suiteFilter = args[++i]!;
-    else if (args[i] === '--max-cases' && i + 1 < args.length) maxCases = parseInt(args[++i]!, 10) || 0;
+    else if (args[i] === '--max-cases' && i + 1 < args.length)
+      maxCases = parseInt(args[++i]!, 10) || 0;
   }
 
   console.log('═'.repeat(80));
@@ -245,7 +337,8 @@ async function main(): Promise<void> {
   // ── Group by system ──
   const systemGroups = new Map<string, CaseMeta[]>();
   for (const c of allCases) {
-    if (systemFilter !== 'all' && !c.system.toLowerCase().includes(systemFilter.toLowerCase())) continue;
+    if (systemFilter !== 'all' && !c.system.toLowerCase().includes(systemFilter.toLowerCase()))
+      continue;
     // Suite filter: 're1' matches RE1, 're2' matches RE2, etc.
     if (suiteFilter !== 'all' && c.suite !== `RE${suiteFilter.replace(/^re/i, '')}`) continue;
     const key = c.system;
@@ -311,15 +404,14 @@ async function main(): Promise<void> {
       try {
         const rawCase = loader.loadCase(meta.dirPath);
         const callGraph = buildRCAEvalCallGraph(rawCase.benchmark, Object.keys(rawCase.metrics));
-        const suiteName = meta.suite === 'RE1' ? 'rcaeval-re1' as const
-          : meta.suite === 'RE2' ? 'rcaeval-re2' as const
-          : 'rcaeval-re3' as const;
+        const suiteName =
+          meta.suite === 'RE1'
+            ? ('rcaeval-re1' as const)
+            : meta.suite === 'RE2'
+              ? ('rcaeval-re2' as const)
+              : ('rcaeval-re3' as const);
         const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
         allBenchCases.push(benchCase);
-        // Help GC by dropping RCAEvalCase references (traces + raw metrics)
-        // that were already materialised inside BenchmarkCase.
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const _ = undefined; // prevent scope-escape
       } catch (err) {
         loadErrors.push(`${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -370,13 +462,19 @@ async function main(): Promise<void> {
         byFT.get(ft)!.push(c);
       }
 
-      let allA1 = 0, allA5 = 0, allLA = 0, allTA = 0;
-      let totalCases = 0, totalFailures = 0, totalDuration = 0;
+      let allA1 = 0,
+        allA5 = 0,
+        allLA = 0,
+        allTA = 0;
+      let totalCases = 0,
+        totalFailures = 0,
+        totalDuration = 0;
       const perFaultType = new Map<string, { cases: number; accuracy: number }>();
       const reps: number[] = [];
 
       for (let rep = 0; rep < REPETITIONS; rep++) {
-        let repA1 = 0, repCases = 0;
+        let repA1 = 0,
+          repCases = 0;
 
         for (const [ft, ftCases] of byFT) {
           if (ftCases.length === 0) continue;
@@ -435,8 +533,9 @@ async function main(): Promise<void> {
           let ftAcc: number;
           const ftMetric = result.perFaultType.get(ft);
           if (ftMetric) {
-            ftAcc = ((existing.accuracy * existing.cases) + (ftMetric.accuracy * ftMetric.cases))
-              / Math.max(1, existing.cases + ftMetric.cases);
+            ftAcc =
+              (existing.accuracy * existing.cases + ftMetric.accuracy * ftMetric.cases) /
+              Math.max(1, existing.cases + ftMetric.cases);
           } else {
             ftAcc = existing.accuracy;
           }
@@ -446,7 +545,7 @@ async function main(): Promise<void> {
         reps.push(repCases > 0 ? repA1 / repCases : 0);
 
         if (REPETITIONS > 1) {
-          const pct = ((rep + 1) / REPETITIONS * 100).toFixed(0);
+          const pct = (((rep + 1) / REPETITIONS) * 100).toFixed(0);
           process.stdout.write(`  Rep ${rep + 1}/${REPETITIONS} (${pct}%)... `);
         }
       }
@@ -470,8 +569,8 @@ async function main(): Promise<void> {
 
       console.log(
         `  A@1=${(avgA1 * 100).toFixed(1)}% A@5=${(avgA5 * 100).toFixed(1)}% ` +
-        `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
-        `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
+          `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
+          `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
     }
 
@@ -512,9 +611,12 @@ async function main(): Promise<void> {
       const r = run.results.get(ds);
       const val = r ? (r.aTop1 * 100).toFixed(1) + '%' : '     N/A';
       row += ` ${val.padEnd(16)}`;
-      if (r) { totalA1 += r.aTop1; count++; }
+      if (r) {
+        totalA1 += r.aTop1;
+        count++;
+      }
     }
-    const avg = count > 0 ? (totalA1 / count * 100).toFixed(1) + '%' : 'N/A';
+    const avg = count > 0 ? ((totalA1 / count) * 100).toFixed(1) + '%' : 'N/A';
 
     // Δ vs baseline
     const bAvg = count > 0 ? totalA1 / count : 0;

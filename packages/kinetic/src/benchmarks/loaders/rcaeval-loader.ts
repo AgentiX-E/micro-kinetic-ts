@@ -323,7 +323,8 @@ export class RCAEvalLoader {
         traceId: row.trace_id ?? 'unknown',
         spanId:
           row.span_id ?? row.spanId ?? `${row.trace_id ?? 'unknown'}_${row.service ?? 'unknown'}`,
-        parentSpanId: row.parent_span ?? row.parentSpanId ?? row.parent_span_id ?? row.parentSpan ?? undefined,
+        parentSpanId:
+          row.parent_span ?? row.parentSpanId ?? row.parent_span_id ?? row.parentSpan ?? undefined,
         service: row.service ?? 'unknown',
         operationName: row.operation ?? row.operationName ?? 'unknown',
         startTime: parseInt(row.start_time ?? row.startTime ?? row.timestamp ?? '0', 10),

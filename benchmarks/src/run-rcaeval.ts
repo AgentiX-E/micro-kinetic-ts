@@ -18,30 +18,33 @@
  */
 
 import { existsSync, readdirSync } from 'node:fs';
-import { resolve, dirname, join, basename } from 'node:path';
 import { homedir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Container, DI_TOKENS } from '../../packages/core/src/index.js';
+import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
 import {
-  BenchmarkRunner,
-  RCAEvalLoader,
-} from '../../packages/kinetic/src/benchmarks/index.js';
+  Container,
+  DEFAULT_CLASSIFICATION_RULES,
+  DI_TOKENS,
+  RegexFaultClassifier,
+} from '../../packages/core/src/index.js';
+import { BenchmarkRunner, RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
   BenchmarkCase,
   BenchmarkSuite,
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import type { RunResult } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
-import {
-  RegexFaultClassifier,
-  DEFAULT_CLASSIFICATION_RULES,
-} from '../../packages/core/src/index.js';
+import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
+import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import { buildRCAEvalCallGraph, initRCAEvalTopology, enhanceRCAEvalCallGraph, isRCAEvalTopologyInitialized } from './rcaeval-topology.js';
-import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
-import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
+import {
+  buildRCAEvalCallGraph,
+  enhanceRCAEvalCallGraph,
+  initRCAEvalTopology,
+  isRCAEvalTopologyInitialized,
+} from './rcaeval-topology.js';
 
 // ── Semantic Enhancement (optional, requires .env) ────────
 
@@ -88,16 +91,17 @@ async function createSemanticConfig() {
   // Use this in CI to prevent API latency from inflating benchmark runtime.
   const forceTfIdf = process.env['BENCHMARK_USE_TFIDF'] === '1';
   const zhipuKey = process.env['ZHIPU_API_KEY'];
-  const embeddingProvider = zhipuKey && !forceTfIdf
-    ? createApiEmbeddingFromEnv({
-        vendorPrefix: 'ZHIPU',
-        endpoint:
-          process.env['ZHIPU_EMBEDDING_ENDPOINT'] ??
-          'https://open.bigmodel.cn/api/paas/v4/embeddings',
-        model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
-        dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
-      })
-    : new TfIdfEmbeddingProvider();
+  const embeddingProvider =
+    zhipuKey && !forceTfIdf
+      ? createApiEmbeddingFromEnv({
+          vendorPrefix: 'ZHIPU',
+          endpoint:
+            process.env['ZHIPU_EMBEDDING_ENDPOINT'] ??
+            'https://open.bigmodel.cn/api/paas/v4/embeddings',
+          model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
+          dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
+        })
+      : new TfIdfEmbeddingProvider();
 
   return {
     embeddingProvider,
@@ -131,14 +135,11 @@ function parseArgs(): CliOptions {
     suite: 'all',
   };
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--data-dir' && i + 1 < args.length)
-      opts.dataDir = args[++i]!;
+    if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
     else if (args[i] === '--max-cases' && i + 1 < args.length)
       opts.maxCases = parseInt(args[++i]!, 10) || 0;
-    else if (args[i] === '--system' && i + 1 < args.length)
-      opts.system = args[++i]!;
-    else if (args[i] === '--suite' && i + 1 < args.length)
-      opts.suite = args[++i]!;
+    else if (args[i] === '--system' && i + 1 < args.length) opts.system = args[++i]!;
+    else if (args[i] === '--suite' && i + 1 < args.length) opts.suite = args[++i]!;
   }
   return opts;
 }
@@ -171,20 +172,13 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   // Pattern A: flat format — re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
   //   fault types include: cpu, mem, disk, delay, loss, socket
   //   and RE3 generic labels: f1, f2, f3, f4, f5
-  const flatMatch = name.match(
-    /^re([123])(ob|ss|tt)_(.+?)_([a-z0-9]+)_(\d+)$/i,
-  );
+  const flatMatch = name.match(/^re([123])(ob|ss|tt)_(.+?)_([a-z0-9]+)_(\d+)$/i);
   if (flatMatch) {
     const suiteNum = flatMatch[1]!;
     const sysCode = flatMatch[2]!;
     return {
       suite: `RE${suiteNum}` as CaseMeta['suite'],
-      system:
-        sysCode === 'ob'
-          ? 'OnlineBoutique'
-          : sysCode === 'ss'
-            ? 'SockShop'
-            : 'TrainTicket',
+      system: sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket',
       service: flatMatch[3]!,
       faultType: flatMatch[4]!.toLowerCase() as CaseMeta['faultType'],
       instance: parseInt(flatMatch[5]!, 10),
@@ -212,10 +206,7 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
     const sysM = segment.match(/^(ob|ss|tt|onlineboutique|sockshop|trainticket)$/i);
     if (sysM && !sysCode) {
       const s = sysM[1]!.toLowerCase();
-      sysCode = s.length === 2 ? s
-        : s === 'onlineboutique' ? 'ob'
-        : s === 'sockshop' ? 'ss'
-        : 'tt';
+      sysCode = s.length === 2 ? s : s === 'onlineboutique' ? 'ob' : s === 'sockshop' ? 'ss' : 'tt';
       break;
     }
   }
@@ -223,9 +214,7 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   if (!suiteNum || !sysCode) return null;
 
   const sysName: CaseMeta['system'] =
-    sysCode === 'ob' ? 'OnlineBoutique'
-    : sysCode === 'ss' ? 'SockShop'
-    : 'TrainTicket';
+    sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket';
 
   // Parse fault info from the directory name itself
   // Pattern: {service}_{faultType}_N or case_N or just N
@@ -244,9 +233,11 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   const caseMatch = name.match(/^case_(\d+)$/i);
   const indexMatch = name.match(/^(\d+)$/);
 
-  const instance = caseMatch ? parseInt(caseMatch[1]!, 10)
-    : indexMatch ? parseInt(indexMatch[1]!, 10)
-    : -1;
+  const instance = caseMatch
+    ? parseInt(caseMatch[1]!, 10)
+    : indexMatch
+      ? parseInt(indexMatch[1]!, 10)
+      : -1;
 
   if (instance < 0) return null;
 
@@ -275,9 +266,7 @@ function discoverAllCases(dataDir: string): CaseMeta[] {
     const current = queue.shift()!;
     try {
       const entries = readdirSync(current, { withFileTypes: true });
-      const hasMetrics = entries.some(
-        (e) => e.isFile() && e.name === 'metrics.json',
-      );
+      const hasMetrics = entries.some((e) => e.isFile() && e.name === 'metrics.json');
       if (hasMetrics) {
         const meta = parseCaseDir(current);
         if (meta) cases.push(meta);
@@ -316,9 +305,7 @@ function discoverAllDirectoriesWithMetrics(dataDir: string): {
     const current = queue.shift()!;
     try {
       const entries = readdirSync(current, { withFileTypes: true });
-      const hasMetrics = entries.some(
-        (e) => e.isFile() && e.name === 'metrics.json',
-      );
+      const hasMetrics = entries.some((e) => e.isFile() && e.name === 'metrics.json');
       if (hasMetrics) {
         const rel = current.replace(dataDir + '/', '').replace(dataDir, '');
         if (parseCaseDir(current)) {
@@ -378,7 +365,13 @@ async function loadSingleCase(
   meta: CaseMeta,
   loader: RCAEvalLoader,
   semanticConfig?: { embeddingProvider: any; llmProvider: any; alignmentConfig: any },
-): Promise<{ benchCase: BenchmarkCase; traceUsed: boolean; pruned: boolean; edgesBefore: number; edgesAfter: number }> {
+): Promise<{
+  benchCase: BenchmarkCase;
+  traceUsed: boolean;
+  pruned: boolean;
+  edgesBefore: number;
+  edgesAfter: number;
+}> {
   const rawCase = loader.loadCase(meta.dirPath);
   const serviceIds = Object.keys(rawCase.metrics);
 
@@ -458,8 +451,11 @@ async function loadCases(
 
   for (const meta of selected) {
     try {
-      const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter } =
-        await loadSingleCase(meta, loader, semanticConfig);
+      const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter } = await loadSingleCase(
+        meta,
+        loader,
+        semanticConfig,
+      );
 
       // Collect semantic stats from diagnostic labels on the call graph
       const firstNode = benchCase.callGraph.nodes.values().next().value;
@@ -498,10 +494,8 @@ async function loadCases(
     traceStats: {
       total: traceCount,
       pruned: prunedCount,
-      avgEdgesBefore:
-        edgesBeforeSum / Math.max(1, selected.length),
-      avgEdgesAfter:
-        edgesAfterSum / Math.max(1, selected.length),
+      avgEdgesBefore: edgesBeforeSum / Math.max(1, selected.length),
+      avgEdgesAfter: edgesAfterSum / Math.max(1, selected.length),
     },
     semanticStats: {
       totalServices: semTotalServices,
@@ -529,15 +523,11 @@ function printResultsTable(
 
   // Header
   console.log('');
-  console.log(
-    `${'═'.repeat(80)}`,
-  );
+  console.log(`${'═'.repeat(80)}`);
   console.log(
     `║  ${systemName.padEnd(30)} ${suiteName.padEnd(15)} ${'Micro-Kinetic'.padEnd(20)} ║`,
   );
-  console.log(
-    `${'═'.repeat(80)}`,
-  );
+  console.log(`${'═'.repeat(80)}`);
 
   // Column headers
   let header = '║ Method              | Metric |';
@@ -545,9 +535,7 @@ function printResultsTable(
   header += ' AVERAGE ║';
   console.log(header);
 
-  console.log(
-    `${'═'.repeat(80)}`,
-  );
+  console.log(`${'═'.repeat(80)}`);
 
   // Metric rows: AC@1, Avg@5, LA, TA
   const metrics: Array<{ key: keyof RunResult; label: string }> = [
@@ -571,34 +559,23 @@ function printResultsTable(
         row += `   N/A |`;
       }
     }
-    const avg =
-      averages.length > 0
-        ? averages.reduce((s, v) => s + v, 0) / averages.length
-        : 0;
+    const avg = averages.length > 0 ? averages.reduce((s, v) => s + v, 0) / averages.length : 0;
     row += ` ${avg.toFixed(1).padStart(5)}% ║`;
     console.log(row);
   }
 
-  console.log(
-    `${'═'.repeat(80)}`,
-  );
+  console.log(`${'═'.repeat(80)}`);
 }
 
 /**
  * Log comprehensive error statistics for a group's load failures.
  * Shows both deduplicated error patterns and individual samples.
  */
-function reportLoadErrors(
-  systemName: string,
-  suiteName: string,
-  stats: LoadStats,
-): void {
+function reportLoadErrors(systemName: string, suiteName: string, stats: LoadStats): void {
   const { errors, errorSamples } = stats;
   if (errors.length === 0) return;
 
-  console.log(
-    `\n┌── Load Errors: ${systemName}/${suiteName} (${errors.length} total)`,
-  );
+  console.log(`\n┌── Load Errors: ${systemName}/${suiteName} (${errors.length} total)`);
 
   // Deduplicated error patterns (sorted by frequency)
   const sorted = [...errorSamples.entries()].sort((a, b) => b[1] - a[1]);
@@ -612,8 +589,7 @@ function reportLoadErrors(
     console.log(`│  --- Samples ---`);
     for (const e of errors.slice(0, 5)) {
       const parts = e.split(': ');
-      const dirName =
-        parts.length > 1 ? basename(parts[0]!) : parts[0]!;
+      const dirName = parts.length > 1 ? basename(parts[0]!) : parts[0]!;
       const msg = parts.slice(1).join(': ');
       console.log(`│  ${dirName}: ${msg}`);
     }
@@ -628,20 +604,12 @@ function reportLoadErrors(
 /**
  * Log trace topology pruning diagnostics.
  */
-function reportTraceDiagnostics(
-  systemName: string,
-  suiteName: string,
-  stats: LoadStats,
-): void {
+function reportTraceDiagnostics(systemName: string, suiteName: string, stats: LoadStats): void {
   if (stats.traceStats.total > 0) {
-    const { total, pruned, avgEdgesBefore, avgEdgesAfter } =
-      stats.traceStats;
+    const { total, pruned, avgEdgesBefore, avgEdgesAfter } = stats.traceStats;
     const reduction =
       avgEdgesBefore > 0
-        ? (
-            ((avgEdgesBefore - avgEdgesAfter) / avgEdgesBefore) *
-            100
-          ).toFixed(0)
+        ? (((avgEdgesBefore - avgEdgesAfter) / avgEdgesBefore) * 100).toFixed(0)
         : '0';
     console.log(
       `  [trace] ${total}/${stats.cases.length} cases with traces, ` +
@@ -649,9 +617,7 @@ function reportTraceDiagnostics(
         `(${reduction}% reduction)`,
     );
   } else if (stats.cases.length > 0) {
-    console.log(
-      `  [trace] No trace data available for ${stats.cases.length} cases`,
-    );
+    console.log(`  [trace] No trace data available for ${stats.cases.length} cases`);
   }
 }
 
@@ -672,9 +638,7 @@ async function main(): Promise<void> {
   console.log(`Cases discovered: ${allCases.length}`);
 
   if (allCases.length === 0) {
-    console.log(
-      'No cases found. Ensure cache-datasets workflow has been run.',
-    );
+    console.log('No cases found. Ensure cache-datasets workflow has been run.');
     return;
   }
 
@@ -713,8 +677,7 @@ async function main(): Promise<void> {
     )
       continue;
     // Suite filter
-    if (opts.suite !== 'all' && c.suite !== `RE${opts.suite.replace(/^re/i, '')}`)
-      continue;
+    if (opts.suite !== 'all' && c.suite !== `RE${opts.suite.replace(/^re/i, '')}`) continue;
     const groupKey = `${c.system}:${c.suite}`;
     if (!groups.has(groupKey)) groups.set(groupKey, []);
     groups.get(groupKey)!.push(c);
@@ -745,40 +708,33 @@ async function main(): Promise<void> {
   const useSemantic = Boolean(semanticConfig.embeddingProvider);
   console.log(
     `Topology: YAML v2 (${isRCAEvalTopologyInitialized() ? 'loaded' : 'unavailable'})` +
-    (useSemantic ? ' + semantic enhancement (Zhipu embedding-3)' : ''),
+      (useSemantic ? ' + semantic enhancement (Zhipu embedding-3)' : ''),
   );
   console.log('═'.repeat(65));
 
   for (const [groupKey, metas] of groups) {
-    const [systemName, suiteName] = groupKey.split(':') as [
-      string,
-      string,
-    ];
-    const caseLimit =
-      opts.maxCases > 0
-        ? Math.min(opts.maxCases, metas.length)
-        : 0;
+    const [systemName, suiteName] = groupKey.split(':') as [string, string];
+    const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
     const stats = await loadCases(metas, loader, caseLimit, semanticConfig);
 
     // ── Report load errors with comprehensive diagnostics ──
     reportLoadErrors(systemName, suiteName, stats);
 
     if (stats.cases.length === 0) {
-      console.log(
-        `  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`,
-      );
+      console.log(`  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`);
       continue;
     }
 
     // ── Semantic enhancement diagnostics ──────────────────
     if (useSemantic) {
       const sem = stats.semanticStats;
-      const pct = sem.totalServices > 0
-        ? (sem.semanticallyResolved / sem.totalServices * 100).toFixed(1)
-        : '0.0';
+      const pct =
+        sem.totalServices > 0
+          ? ((sem.semanticallyResolved / sem.totalServices) * 100).toFixed(1)
+          : '0.0';
       console.log(
         `  [semantic] ${sem.semanticallyResolved}/${sem.totalServices} services` +
-        ` resolved (${pct}%) — embedding=${sem.embeddingResolved}, llm=${sem.llmResolved}, exact=${sem.exactMatched}`,
+          ` resolved (${pct}%) — embedding=${sem.embeddingResolved}, llm=${sem.llmResolved}, exact=${sem.exactMatched}`,
       );
     }
 
@@ -788,16 +744,13 @@ async function main(): Promise<void> {
     // Split by fault type (matching paper's Table 6 format)
     const byFaultType = new Map<string, BenchmarkCase[]>();
     for (const c of stats.cases) {
-      const ft =
-        c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
+      const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
       if (!byFaultType.has(ft)) byFaultType.set(ft, []);
       byFaultType.get(ft)!.push(c);
     }
 
     // Print topology diagnostics
-    const diagNode = stats.cases[0]?.callGraph.nodes
-      .values()
-      .next().value;
+    const diagNode = stats.cases[0]?.callGraph.nodes.values().next().value;
     if (diagNode?.labels?._diag_system) {
       const l = diagNode.labels;
       console.log(

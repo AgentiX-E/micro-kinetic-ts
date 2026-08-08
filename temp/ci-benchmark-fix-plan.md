@@ -1,35 +1,39 @@
 # CI Benchmark Fix Plan
 
 Created: 2026-08-08 08:46 CST
+Updated: 2026-08-08 08:58 CST
 
-## Issues Found
+## Status: ALL FIXES COMMITTED & PUSHED (061089c)
 
-### P0: RE2 OOM (heap exhausted)
-- RE2 main benchmark OOM at ~80s (78452ms GC compaction)
-- RE2 ablation OOM
-- RE3 ablation OOM
-- Root cause: All cases + traces loaded into memory simultaneously
-- Fix: Stream processing / batch loading
+## Issues Found & Fixed
 
-### P1: RE3 trace pruning 100% reduction
-- OnlineBoutique: 24→0 edges, TrainTicket: 267→0 edges
-- All scores 0% / N/A
-- Root cause: augmentTopologyWithTraces incompatible with RE3 span format
+### ✅ P0: RE2 OOM (heap exhausted)
+- Commit: 061089c
+- Fix: loadSingleCase extraction + event-loop yield + GC hints + NODE_OPTIONS
 
-### P2: TrainTicket RE1 0% AC@1
-- OnlineBoutique 60%, SockShop 58.4%, TrainTicket 0%
-- TrainTicket has 51-exact-edge complex topology
-- Root cause: Root cause scoring algorithm not handling complex topo
+### ✅ P1: RE3 100% trace pruning
+- Commit: 061089c
+- Fix: Guard in augmentTopologyWithTraces + CSV column fallbacks
 
-### P3: RE1 regression vs previous runs
-- Need to compare with previous benchmark results
-- Ablation shows ALL configs same (0% A@1, 25.7% TA) — algo is flat across features
+### ✅ P2: TrainTicket RE1 0% AC@1
+- Commit: 061089c
+- Fix: Min-max normalization of anomaly scores
 
-## Investigation Plan
+## Files Changed
+- packages/kinetic/src/signals/trace-topology.ts — O(n²)→O(n) + edge guard
+- packages/kinetic/src/benchmarks/loaders/rcaeval-loader.ts — CSV column fallbacks
+- packages/tree/src/causal/topology-fault-graph.ts — anomaly score normalization
+- benchmarks/src/run-rcaeval.ts — loadSingleCase extraction
+- benchmarks/src/run-ablation.ts — GC hints + event-loop yields
+- .github/workflows/benchmark-rcaeval.yml — NODE_OPTIONS
+- packages/kinetic/__tests__/unit/trace-topology.test.ts — updated assertions
+- packages/tree/__tests__/causal/topology-fault-graph.test.ts — updated assertions
 
-Phase 1: Deep dive into each issue
-Phase 2: Fix with scientific test validation
-Phase 3: Verify end-to-end
+## Verification
+- pnpm test: 89/89 files, 1978/1978 tests, 0 failures
+- pnpm typecheck: pass
+- pnpm format:check: pass
+- pnpm lint: pass
 
-## Current Progress
-Phase: 1 — Investigation
+## Next Step
+- Trigger benchmark workflow to verify fixes in CI

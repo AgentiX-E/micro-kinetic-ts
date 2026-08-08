@@ -7,17 +7,10 @@
  * @module __tests__/causal/topology-fault-graph.test
  */
 
-import { describe, it, expect } from 'vitest';
-import type {
-  ServiceCallGraph,
-  ServiceId,
-  TimeSeries,
-} from '@agentix-e/micro-kinetic-core';
+import type { ServiceCallGraph, ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
-import {
-  buildTopologyFaultGraph,
-  type TopologyFaultGraphConfig,
-} from '../../src/causal/topology-fault-graph.js';
+import { buildTopologyFaultGraph } from '../../src/causal/topology-fault-graph.js';
 
 // ── Test Helpers ──────────────────────────────────────────
 
@@ -27,7 +20,10 @@ function makeCallGraph(
   edges: Array<{ from: ServiceId; to: ServiceId }>,
   systemLoad = 0.5,
 ): ServiceCallGraph {
-  const nodes = new Map<ServiceId, { id: string; name: string; namespace: string; labels: Record<string, string> }>();
+  const nodes = new Map<
+    ServiceId,
+    { id: string; name: string; namespace: string; labels: Record<string, string> }
+  >();
   for (const id of nodeIds) {
     nodes.set(id, { id, name: id, namespace: 'test', labels: {} });
   }
@@ -45,11 +41,7 @@ function makeCallGraph(
 }
 
 /** Create a TimeSeries with given values and optional timestamps. */
-function makeTimeSeries(
-  label: string,
-  values: number[],
-  timestamps?: number[],
-): TimeSeries {
+function makeTimeSeries(label: string, values: number[], timestamps?: number[]): TimeSeries {
   const ts = timestamps ?? values.map((_, i) => i * 1000);
   return {
     label,
@@ -96,10 +88,7 @@ describe('buildTopologyFaultGraph — Topology Preservation', () => {
   });
 
   it('should preserve call graph edges exactly — no synthetic edge creation', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30])]],
       ['svc-b', [makeTimeSeries('cpu', [10, 20, 30])]],
@@ -120,10 +109,7 @@ describe('buildTopologyFaultGraph — Topology Preservation', () => {
 describe('buildTopologyFaultGraph — Pearson Cross-Service Correlation', () => {
   it('should compute high propagation weight for perfectly correlated metrics', () => {
     // Perfect positive correlation: both services' CPU rises identically
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80])]],
       ['svc-b', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80])]],
@@ -139,10 +125,7 @@ describe('buildTopologyFaultGraph — Pearson Cross-Service Correlation', () => 
 
   it('should compute intermediate weight for moderately correlated metrics', () => {
     // Moderate positive correlation but with noise
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 12, 18, 25, 40, 50, 45, 55, 60, 58])]],
       ['svc-b', [makeTimeSeries('cpu', [10, 13, 17, 28, 38, 48, 46, 53, 62, 59])]],
@@ -159,10 +142,7 @@ describe('buildTopologyFaultGraph — Pearson Cross-Service Correlation', () => 
 
   it('should compute low weight for uncorrelated metrics', () => {
     // Anti-correlated: when A rises, B falls
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80])]],
       ['svc-b', [makeTimeSeries('cpu', [80, 70, 60, 50, 40, 30, 20, 10])]],
@@ -177,10 +157,7 @@ describe('buildTopologyFaultGraph — Pearson Cross-Service Correlation', () => 
 
   it('should use max correlation across multiple metric pairs', () => {
     // Source has cpu and mem; target has cpu (weak corr) and mem (strong corr)
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       [
         'svc-a',
@@ -245,10 +222,7 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
     const svcBbaseline = Array.from({ length: n + 2 }, () => B);
     const svcB = [...svcBbaseline, S, S, S, S]; // onset at 42
 
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', svcA)]],
       ['svc-b', [makeTimeSeries('cpu', svcB)]],
@@ -262,16 +236,15 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
 
   it('should not apply temporal bonus when target anomaly precedes source', () => {
     // svc-b onset at 39, svc-a onset at 42 (reverse causality)
-    const B = 100; const S = 500; const n = 40;
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const B = 100;
+    const S = 500;
+    const n = 40;
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       // svc-a onset later (at 42)
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({length:n+2},()=>B), S,S,S,S])]],
+      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B), S, S, S, S])]],
       // svc-b onset earlier (at 39)
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({length:n-1},()=>B), S,S,S,S])]],
+      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
@@ -282,14 +255,13 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
 
   it('should not apply temporal bonus when both onset at same time', () => {
     // Both services have identical onset times (onset=39 for both)
-    const B = 100; const S = 500; const n = 40;
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const B = 100;
+    const S = 500;
+    const n = 40;
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({length:n-1},()=>B), S,S,S,S])]],
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({length:n-1},()=>B), S,S,S,S])]],
+      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
+      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
@@ -302,10 +274,7 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
   });
 
   it('should respect useTemporalCausality=false config', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 11, 12, 13, 50, 55, 60, 65, 70, 75])]],
       ['svc-b', [makeTimeSeries('cpu', [10, 11, 12, 13, 14, 15, 50, 55, 60, 65])]],
@@ -323,10 +292,7 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
 
 describe('buildTopologyFaultGraph — Fallback Behavior', () => {
   it('should fall back to anomaly similarity for single-point metrics', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     // Only 1 data point each — insufficient for Pearson
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [99])]],
@@ -342,10 +308,7 @@ describe('buildTopologyFaultGraph — Fallback Behavior', () => {
   });
 
   it('should fall back when source has empty metrics array', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', []], // empty metrics — length=0
       ['svc-b', [makeTimeSeries('cpu', [10, 20, 30])]],
@@ -358,10 +321,7 @@ describe('buildTopologyFaultGraph — Fallback Behavior', () => {
   });
 
   it('should fall back when target has empty metrics array', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30])]],
       ['svc-b', []], // empty target metrics
@@ -373,10 +333,7 @@ describe('buildTopologyFaultGraph — Fallback Behavior', () => {
   });
 
   it('should return non-negative weight even when anomaly scores are 0', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [0, 0, 0, 0])]],
       ['svc-b', [makeTimeSeries('cpu', [0, 0, 0, 0])]],
@@ -410,10 +367,7 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
   });
 
   it('should handle services with multiple metrics', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       [
         'svc-a',
@@ -441,10 +395,7 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
   });
 
   it('should handle all-zero anomaly scores gracefully', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       // Same constant values — no deviation → anomaly = 0
       ['svc-a', [makeTimeSeries('cpu', [5, 5, 5, 5, 5])]],
@@ -474,7 +425,12 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
 
     const metricsEntries: Array<[string, TimeSeries[]]> = nodes.map((id) => [
       id,
-      [makeTimeSeries('cpu', Array.from({ length: 10 }, (_, i) => 10 + i * 2 + Math.sin(i) * 3))],
+      [
+        makeTimeSeries(
+          'cpu',
+          Array.from({ length: 10 }, (_, i) => 10 + i * 2 + Math.sin(i) * 3),
+        ),
+      ],
     ]);
     const metrics = makeMetrics(metricsEntries);
 
@@ -485,10 +441,7 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
   });
 
   it('should handle NaN values in correlation (identical values → zero variance)', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [7, 7, 7, 7])]], // zero variance
       ['svc-b', [makeTimeSeries('cpu', [3, 3, 3, 3])]], // zero variance
@@ -503,10 +456,7 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
   });
 
   it('should handle mixed lengths — take min common length for correlation', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80, 90, 100])]], // 10 points
       ['svc-b', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70])]], // 7 points
@@ -520,10 +470,7 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
   });
 
   it('should handle negative values in time series', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [5, 10, -3, 8, 15, -2, 12, 20])]],
       ['svc-b', [makeTimeSeries('cpu', [5, 10, -3, 8, 15, -2, 12, 20])]],
@@ -539,7 +486,10 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
   it('should handle mean <= 0 by skipping that metric (avoids division by zero)', () => {
     const graph = makeCallGraph(
       ['svc-a', 'svc-b', 'svc-c'],
-      [{ from: 'svc-a', to: 'svc-b' }, { from: 'svc-b', to: 'svc-c' }],
+      [
+        { from: 'svc-a', to: 'svc-b' },
+        { from: 'svc-b', to: 'svc-c' },
+      ],
     );
     const metrics = makeMetrics([
       // All negative values → mean is negative → anomaly score computation skips → anomaly=0
@@ -588,10 +538,7 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
 
 describe('buildTopologyFaultGraph — Configuration', () => {
   it('should use data-adaptive anomaly similarity for edges with zero variance', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     // Constant values produce zero variance → Pearson fails, velocity fails.
     // Tier 3 (anomaly similarity) is used with gain factor.
     const metrics = makeMetrics([
@@ -611,10 +558,7 @@ describe('buildTopologyFaultGraph — Configuration', () => {
 
   it('should use data-adaptive anomaly similarity with asymmetric scores', () => {
     // sourceScore=0 (zero variance), targetScore≈0.5
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [5, 5, 5, 5, 5])]], // constant → anomaly=0
       ['svc-b', [makeTimeSeries('cpu', [5, 50, 100, 150, 200])]], // varies → anomaly>0
@@ -631,13 +575,10 @@ describe('buildTopologyFaultGraph — Configuration', () => {
 
   it('should use data-adaptive anomaly similarity when only source is anomalous', () => {
     // sourceScore>0, targetScore=0 — asymmetric fault evidence
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [5, 50, 100, 150, 200])]], // varies → anomaly>0
-      ['svc-b', [makeTimeSeries('cpu', [5, 5, 5, 5, 5])]],        // constant → anomaly=0
+      ['svc-b', [makeTimeSeries('cpu', [5, 5, 5, 5, 5])]], // constant → anomaly=0
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics, { usePropagationVelocity: false });
@@ -652,22 +593,20 @@ describe('buildTopologyFaultGraph — Configuration', () => {
   it('should handle multi-metric edge where second pair has weaker correlation', () => {
     // maxAbsCorr starts at -1, each absR is compared against it.
     // When second pair has LOWER correlation than first, absR > maxAbsCorr is FALSE.
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     // svc-a: cpu (correlated with svc-b.cpu) + mem (random noise)
-    // svc-b: cpu (correlated with svc-a.cpu)  
+    // svc-b: cpu (correlated with svc-a.cpu)
     // First pair (cpu, cpu): r ≈ 1, maxAbsCorr = 1.0
     // Second pair (mem, cpu): r ≈ 0, absR = 0, not > 1.0 → else branch covered
     const metrics = makeMetrics([
-      ['svc-a', [
-        makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80]),
-        makeTimeSeries('mem', [5, 99, 2, 88, 7, 77, 3, 95]), // random noise
-      ]],
-      ['svc-b', [
-        makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80]),
-      ]],
+      [
+        'svc-a',
+        [
+          makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80]),
+          makeTimeSeries('mem', [5, 99, 2, 88, 7, 77, 3, 95]), // random noise
+        ],
+      ],
+      ['svc-b', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80])]],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
@@ -680,10 +619,7 @@ describe('buildTopologyFaultGraph — Configuration', () => {
 
   it('should use anomaly similarity for fallback when both services mismatched', () => {
     // source in metrics, target NOT in metrics — covers missing targetMetrics branch
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 80, 90, 85])]], // variance → anomaly>0
       // svc-b NOT in metrics → targetMetrics is undefined → fallback
@@ -697,10 +633,7 @@ describe('buildTopologyFaultGraph — Configuration', () => {
 
   it('should skip metric pairs when target metric has insufficient data points', () => {
     // Source has 10 points, target has 2 (< minDataPoints=3)
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80, 90, 100])]],
       ['svc-b', [makeTimeSeries('cpu', [5, 10])]], // only 2 points < 3
@@ -715,10 +648,7 @@ describe('buildTopologyFaultGraph — Configuration', () => {
   it('should skip metric pairs when common aligned length is insufficient', () => {
     // Source has 8 points, target has 5 → minLen=5, OK. But minDataPoints=4
     // Using custom minDataPoints=6 makes minLen=5 < 6 → skip → fallback
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30, 40, 50, 60, 70, 80])]],
       ['svc-b', [makeTimeSeries('cpu', [10, 20, 30, 40, 50])]], // 5 points
@@ -732,10 +662,7 @@ describe('buildTopologyFaultGraph — Configuration', () => {
   });
 
   it('should use custom minDataPoints for Pearson threshold', () => {
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 20, 30, 40, 50])]], // 5 points
       ['svc-b', [makeTimeSeries('cpu', [10, 20, 30, 40, 50])]],
@@ -750,14 +677,13 @@ describe('buildTopologyFaultGraph — Configuration', () => {
   });
 
   it('should use custom temporalBonus value', () => {
-    const B = 100; const S = 500; const n = 40;
-    const graph = makeCallGraph(
-      ['svc-a', 'svc-b'],
-      [{ from: 'svc-a', to: 'svc-b' }],
-    );
+    const B = 100;
+    const S = 500;
+    const n = 40;
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({length:n-1},()=>B), S,S,S,S])]],
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({length:n+2},()=>B), S,S,S,S])]],
+      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
+      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B), S, S, S, S])]],
     ]);
 
     const resultCustom = buildTopologyFaultGraph(graph, metrics, { temporalBonus: 0.05 });
@@ -798,10 +724,13 @@ describe('buildTopologyFaultGraph — Real-world Scenarios', () => {
       // Gateway: normal operation, slight noise
       ['gateway', [makeTimeSeries('cpu', [20, 22, 21, 23, 20, 19, 21, 22, 20, 21])]],
       // Order-svc: CPU fault — sharp spike and monotonic upward trend
-      ['order-svc', [
-        makeTimeSeries('cpu', [30, 32, 31, 150, 160, 170, 175, 180, 178, 182]),
-        makeTimeSeries('mem', [20, 21, 22, 80, 85, 90, 92, 95, 94, 96]),
-      ]],
+      [
+        'order-svc',
+        [
+          makeTimeSeries('cpu', [30, 32, 31, 150, 160, 170, 175, 180, 178, 182]),
+          makeTimeSeries('mem', [20, 21, 22, 80, 85, 90, 92, 95, 94, 96]),
+        ],
+      ],
       // Payment-svc: latency spike shortly after order-svc fault (cascading)
       ['payment-svc', [makeTimeSeries('latency', [50, 52, 55, 60, 180, 250, 300, 350, 380, 400])]],
       // Inventory-svc: moderate latency increase
@@ -810,18 +739,10 @@ describe('buildTopologyFaultGraph — Real-world Scenarios', () => {
 
     const result = buildTopologyFaultGraph(graph, metrics);
 
-    // After min-max normalization the highest-anomaly service should
-    // receive the largest score and the normal gateway the smallest.
-    // The exact value depends on the anomaly spread across all 4 services.
-    const orderScore = result.anomalyScores.get('order-svc')!;
-    const gatewayScore = result.anomalyScores.get('gateway')!;
-    const paymentScore = result.anomalyScores.get('payment-svc')!;
-    const inventoryScore = result.anomalyScores.get('inventory-svc')!;
-    // Gateway is the baseline (lowest)
-    expect(gatewayScore).toBeLessThan(orderScore);
-    expect(gatewayScore).toBeLessThan(inventoryScore);
-    // Order-svc should rank among the top since it has the injected fault
-    expect(orderScore).toBeGreaterThan(gatewayScore);
+    expect(result.anomalyScores.get('order-svc')).toBeGreaterThan(0.45);
+    expect(result.anomalyScores.get('payment-svc')).toBeGreaterThan(0.3);
+    // gateway should have low anomaly (normal behavior)
+    expect(result.anomalyScores.get('gateway')).toBeLessThan(0.4);
 
     // All 3 edges should have weights
     expect(result.propagationWeights.length).toBe(3);
@@ -883,13 +804,14 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
       bVals[i] = 10 + Math.sin(i * 0.4 + 0.5) * 3;
     }
     // Spike in A at index 15, spike in B at index 17 (Δ = 2)
-    aVals[15] = 80; aVals[16] = 60; aVals[17] = 40;
-    bVals[17] = 80; bVals[18] = 60; bVals[19] = 40;
+    aVals[15] = 80;
+    aVals[16] = 60;
+    aVals[17] = 40;
+    bVals[17] = 80;
+    bVals[18] = 60;
+    bVals[19] = 40;
 
-    const graph = makeCallGraph(
-      ['A', 'B'],
-      [{ from: 'A', to: 'B' }],
-    );
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
     const metrics = makeMetrics([
       ['A', [makeTimeSeries('latency', aVals)]],
       ['B', [makeTimeSeries('latency', bVals)]],
@@ -916,10 +838,7 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
       bVals[i] = 12 + Math.sin(i * 0.5 + 0.3) * 2;
     }
 
-    const graph = makeCallGraph(
-      ['A', 'B'],
-      [{ from: 'A', to: 'B' }],
-    );
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
     const metrics = makeMetrics([
       ['A', [makeTimeSeries('latency', aVals)]],
       ['B', [makeTimeSeries('latency', bVals)]],
@@ -946,12 +865,10 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
       bVals[i] = 12 + Math.sin(i * 0.3) * 3;
     }
     // Aligned spikes
-    aVals[20] = 100; bVals[21] = 100;
+    aVals[20] = 100;
+    bVals[21] = 100;
 
-    const graph = makeCallGraph(
-      ['A', 'B'],
-      [{ from: 'A', to: 'B' }],
-    );
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
     const metrics = makeMetrics([
       ['A', [makeTimeSeries('latency', aVals)]],
       ['B', [makeTimeSeries('latency', bVals)]],
@@ -972,10 +889,7 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
 
   it('handles insufficient data points gracefully (velocity path)', () => {
     // Only 3 data points — below the 5-point minimum for velocity
-    const graph = makeCallGraph(
-      ['A', 'B'],
-      [{ from: 'A', to: 'B' }],
-    );
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
     const metrics = makeMetrics([
       ['A', [makeTimeSeries('latency', [1, 2, 3])]],
       ['B', [makeTimeSeries('latency', [1, 2, 3])]],
@@ -994,10 +908,7 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
     const n = 20;
     const allZeros = new Float64Array(n);
 
-    const graph = makeCallGraph(
-      ['A', 'B'],
-      [{ from: 'A', to: 'B' }],
-    );
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
     const metrics = makeMetrics([
       ['A', [makeTimeSeries('latency', allZeros)]],
       ['B', [makeTimeSeries('latency', allZeros)]],
@@ -1011,5 +922,105 @@ describe('buildTopologyFaultGraph — Propagation Velocity (I8-P4c)', () => {
     // zero probability → tiers all resolve to anomaly similarity
     expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
     expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
+  });
+});
+
+// ── Tests: Anomaly Score Normalization (large topology) ─
+
+describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
+  it('does NOT normalize anomaly scores on small graphs (< 20 nodes)', () => {
+    const graph = makeCallGraph(
+      ['svc-a', 'svc-b', 'svc-c'],
+      [
+        { from: 'svc-a', to: 'svc-b' },
+        { from: 'svc-b', to: 'svc-c' },
+      ],
+    );
+    // svc-b has a clear fault spike; raw deviation-based scores
+    // should hit the pre-normalization thresholds directly.
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [10, 12, 11, 10, 13, 11, 10, 12, 11, 10])]],
+      ['svc-b', [makeTimeSeries('cpu', [30, 32, 31, 150, 160, 170, 175, 180, 178, 182])]],
+      ['svc-c', [makeTimeSeries('cpu', [20, 21, 22, 25, 30, 50, 55, 60, 58, 62])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    // On a 3-node graph, scores stay raw (un-normalized). svc-b (the
+    // fault-injected service) should still be clearly identifiable by its
+    // high raw anomaly score.
+    const scoreB = result.anomalyScores.get('svc-b');
+    const scoreA = result.anomalyScores.get('svc-a');
+    expect(scoreB).toBeDefined();
+    expect(scoreA).toBeDefined();
+    expect(scoreB!).toBeGreaterThan(0.45);
+    expect(scoreB!).toBeGreaterThan(scoreA!);
+  });
+
+  it('normalizes anomaly scores on large graphs (≥ 20 nodes)', () => {
+    // Build a 20-node chain: svc-0 → svc-1 → … → svc-19
+    const nodeIds = Array.from({ length: 20 }, (_, i) => `svc-${i}`);
+    const edges = [];
+    for (let i = 0; i < 19; i++) {
+      edges.push({ from: nodeIds[i]!, to: nodeIds[i + 1]! });
+    }
+    const graph = makeCallGraph(nodeIds, edges);
+
+    // svc-10 (middle node) has the fault spike; the other 19 nodes have
+    // near-flat time series to simulate the large-topology dilution effect.
+    const metricsArr: [string, ReturnType<typeof makeTimeSeries>[]][] = [];
+    for (let i = 0; i < 20; i++) {
+      const values =
+        i === 10
+          ? [10, 12, 11, 10, 13, 150, 160, 170, 175, 180, 178, 182]
+          : Array.from({ length: 12 }, () => 10 + Math.random() * 2);
+      metricsArr.push([nodeIds[i]!, [makeTimeSeries('cpu', values)]]);
+    }
+    const metrics = makeMetrics(metricsArr);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    // After min-max normalization, the fault-injected node (svc-10) must
+    // be at or very near 1.0 — it has the extreme spike that pulls the max.
+    const faultScore = result.anomalyScores.get('svc-10');
+    expect(faultScore).toBeDefined();
+    expect(faultScore!).toBeCloseTo(1.0, 1);
+
+    // A healthy node far from the fault should have a normalized score
+    // near 0 (its raw anomaly was close to 0, which is the min before scaling).
+    // (Random noise adds ~0.1 deviation in extreme cases.)
+    const healthyScore = result.anomalyScores.get('svc-0');
+    expect(healthyScore).toBeDefined();
+    expect(healthyScore!).toBeLessThan(0.3);
+
+    // Fault score should be the maximum across all nodes.
+    const allScores = Array.from(result.anomalyScores.values());
+    expect(Math.max(...allScores)).toBe(faultScore);
+  });
+
+  it('preserves original anomaly scores when all nodes have zero anomaly (range ≈ 0)', () => {
+    // Build a 20-node chain with identical metrics everywhere — no fault.
+    const nodeIds = Array.from({ length: 20 }, (_, i) => `svc-${i}`);
+    const edges = [];
+    for (let i = 0; i < 19; i++) {
+      edges.push({ from: nodeIds[i]!, to: nodeIds[i + 1]! });
+    }
+    const graph = makeCallGraph(nodeIds, edges);
+
+    const flatValues = [5, 6, 7, 6, 5, 6, 7, 6];
+    const metricsArr: [string, ReturnType<typeof makeTimeSeries>[]][] = nodeIds.map((id) => [
+      id,
+      [makeTimeSeries('cpu', flatValues)],
+    ]);
+    const metrics = makeMetrics(metricsArr);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    // All anomaly scores should be identical (no single node stands out).
+    // When all scores are the same the range is ~0, so normalization
+    // is skipped (division by zero guard).
+    const scores = Array.from(result.anomalyScores.values());
+    const uniqueScores = new Set(scores);
+    expect(uniqueScores.size).toBe(1);
   });
 });
