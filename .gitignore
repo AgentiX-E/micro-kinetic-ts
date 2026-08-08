@@ -9,3 +9,4 @@ benchmark-results/
 # pnpm-lock.yaml — committed for CI reproducibility
 .nx/
 .env
+temp/
