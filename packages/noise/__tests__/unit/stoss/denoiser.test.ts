@@ -313,6 +313,43 @@ describe('StossDenoiser', () => {
       expect(result.falsePositiveReduction).toBeGreaterThanOrEqual(0);
       expect(result.falsePositiveReduction).toBeLessThanOrEqual(1);
     });
+
+    it('should deterministically map service IDs to matrix indices via sorted order', () => {
+      const denoiser = new StossDenoiser();
+      // Services in unsorted order — the denoiser MUST sort them
+      // to produce deterministic indices regardless of input order.
+      const alerts: AlertRecord[] = [
+        makeAlert('svc_z', 1000, 0.9),
+        makeAlert('svc_a', 1100, 0.8),
+        makeAlert('svc_m', 1200, 0.7),
+      ];
+      const coupling = makeCouplingMatrix(3, 0.9);
+
+      const result = denoiser.denoise(alerts, coupling);
+      // Classification must cover all 3 alerts
+      const total = result.trueAlarms.length + result.coincidentalAlarms.length
+        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      expect(total).toBe(3);
+    });
+
+    it('should handle service count exceeding coupling matrix dimension via modulo', () => {
+      const denoiser = new StossDenoiser();
+      // 6 services but matrix dimension is only 3 → indices wrap via modulo
+      const alerts: AlertRecord[] = [
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_b', 1100, 0.8),
+        makeAlert('svc_c', 1200, 0.7),
+        makeAlert('svc_d', 1300, 0.6),
+        makeAlert('svc_e', 1400, 0.5),
+        makeAlert('svc_f', 1500, 0.4),
+      ];
+      const coupling = makeCouplingMatrix(3, 0.9);
+
+      const result = denoiser.denoise(alerts, coupling);
+      const total = result.trueAlarms.length + result.coincidentalAlarms.length
+        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      expect(total).toBe(6);
+    });
   });
 
   describe('computeCouplingSparsity', () => {
