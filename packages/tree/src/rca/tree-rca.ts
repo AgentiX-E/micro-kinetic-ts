@@ -38,16 +38,14 @@
  */
 
 import {
-  type CallEdge,
-  type FaultType,
-  type MetricMap,
-  type PrunedTree,
-  type RootCauseResult,
-  type ServiceId,
-  type TimeSeries,
   invariant,
   invariantPositiveInt,
   invariantRange,
+  type CallEdge,
+  type FaultType,
+  type PrunedTree,
+  type RootCauseResult,
+  type ServiceId,
 } from '@agentix-e/micro-kinetic-core';
 
 import { boundToConfidence, estimateErrorBound } from './confidence.js';
@@ -223,13 +221,7 @@ export class TreeRCAEngine {
     }
 
     // Step 4: Rank and produce results
-    return rankAndProduceResults(
-      accumulators,
-      tree,
-      k,
-      this.options,
-      allEdges,
-    );
+    return rankAndProduceResults(accumulators, tree, k, this.options, allEdges);
   }
 
   /**
@@ -413,10 +405,16 @@ async function rankAndProduceResults(
   const serviceEdges = new Map<ServiceId, CallEdge[]>();
   for (const e of allEdges) {
     let edges = serviceEdges.get(e.from);
-    if (!edges) { edges = []; serviceEdges.set(e.from, edges); }
+    if (!edges) {
+      edges = [];
+      serviceEdges.set(e.from, edges);
+    }
     edges.push(e);
     edges = serviceEdges.get(e.to);
-    if (!edges) { edges = []; serviceEdges.set(e.to, edges); }
+    if (!edges) {
+      edges = [];
+      serviceEdges.set(e.to, edges);
+    }
     edges.push(e);
   }
 
@@ -444,10 +442,14 @@ async function rankAndProduceResults(
         faultType = {
           category: classification.category as FaultType['category'],
           subType: classification.description,
-          severity: classification.confidence >= 0.7 ? 'critical'
-            : classification.confidence >= 0.5 ? 'major'
-            : classification.confidence >= 0.3 ? 'minor'
-            : 'warning',
+          severity:
+            classification.confidence >= 0.7
+              ? 'critical'
+              : classification.confidence >= 0.5
+                ? 'major'
+                : classification.confidence >= 0.3
+                  ? 'minor'
+                  : 'warning',
         };
       } catch {
         faultType = classifyFaultType(acc.totalScore, acc.depth, acc.childPropagationScore);

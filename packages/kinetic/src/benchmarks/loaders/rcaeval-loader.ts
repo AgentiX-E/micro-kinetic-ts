@@ -212,9 +212,7 @@ export class RCAEvalLoader {
     // Pattern: re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
     // Fault types include named (cpu, mem, disk, delay, loss, socket, network, error)
     // and RE3 generic labels (f1, f2, f3, f4, f5).
-    const regexMatch = dirName.match(
-      /^(re[123][a-z]{2})_(.+?)_([a-z][a-z0-9]+)_(\d+)$/i,
-    );
+    const regexMatch = dirName.match(/^(re[123][a-z]{2})_(.+?)_([a-z][a-z0-9]+)_(\d+)$/i);
     if (regexMatch) {
       return {
         benchmark: regexMatch[1]!,

@@ -185,14 +185,14 @@ const FAULT_SIGNATURES: readonly FaultSignature[] = [
 /**
  * Compute linear regression slope (units per second).
  */
-function computeSlope(
-  timestamps: readonly number[],
-  values: readonly number[],
-): number {
+function computeSlope(timestamps: readonly number[], values: readonly number[]): number {
   const n = Math.min(timestamps.length, values.length);
   if (n < 2) return 0;
   const t0 = timestamps[0]!;
-  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumX2 = 0;
   for (let i = 0; i < n; i++) {
     const x = (timestamps[i]! - t0) / 1000; // seconds
     const y = values[i]!;
@@ -290,12 +290,12 @@ function classifyByMetricSignature(
 ): FaultClassification | null {
   let bestSignature: FaultSignature | null = null;
   let bestScore = 0;
-  const evidence: FaultClassification['evidence'] = [];
+  const evidence: { metric: string; observation: string }[] = [];
 
   for (const sig of FAULT_SIGNATURES) {
     let matches = 0;
     let total = 0;
-    const sigEvidence: FaultClassification['evidence'] = [];
+    const sigEvidence: { metric: string; observation: string }[] = [];
 
     for (const req of sig.requiredMetrics) {
       total++;
@@ -362,17 +362,61 @@ const FAULT_TYPE_PROTOTYPES: ReadonlyArray<{
   readonly category: string;
   readonly description: string;
 }> = [
-  { category: 'CPU', description: 'Sustained high CPU utilization causing request throttling and throughput degradation. CPU usage spikes to near 100%.' },
-  { category: 'MEM', description: 'Monotonically increasing memory consumption indicating a memory leak. Available memory steadily decreases over time.' },
-  { category: 'DISK', description: 'Disk I/O saturation with slow read/write operations. Disk usage remains high and latency increases.' },
-  { category: 'SOCKET', description: 'Connection pool exhaustion with increasing socket errors. Too many open file descriptors.' },
-  { category: 'DELAY', description: 'Injected network latency causing high response times but normal error rates. P99 latency spikes 3-10x baseline.' },
-  { category: 'LOSS', description: 'Packet loss causing request failures and error spikes. Error rate surges while throughput drops.' },
-  { category: 'F1', description: 'Incorrect parameter values passed between services. Invalid arguments cause downstream processing failures.' },
-  { category: 'F2', description: 'Missing required parameters in service calls. Null pointer exceptions from absent arguments.' },
-  { category: 'F3', description: 'Missing function call — a code path is not executed. Expected behaviour does not occur.' },
-  { category: 'F4', description: 'Incorrect return values from function calls. Wrong data types or values propagate through the call chain.' },
-  { category: 'F5', description: 'Missing exception handler causes uncaught errors. Stack traces in logs indicate unhandled exceptions.' },
+  {
+    category: 'CPU',
+    description:
+      'Sustained high CPU utilization causing request throttling and throughput degradation. CPU usage spikes to near 100%.',
+  },
+  {
+    category: 'MEM',
+    description:
+      'Monotonically increasing memory consumption indicating a memory leak. Available memory steadily decreases over time.',
+  },
+  {
+    category: 'DISK',
+    description:
+      'Disk I/O saturation with slow read/write operations. Disk usage remains high and latency increases.',
+  },
+  {
+    category: 'SOCKET',
+    description:
+      'Connection pool exhaustion with increasing socket errors. Too many open file descriptors.',
+  },
+  {
+    category: 'DELAY',
+    description:
+      'Injected network latency causing high response times but normal error rates. P99 latency spikes 3-10x baseline.',
+  },
+  {
+    category: 'LOSS',
+    description:
+      'Packet loss causing request failures and error spikes. Error rate surges while throughput drops.',
+  },
+  {
+    category: 'F1',
+    description:
+      'Incorrect parameter values passed between services. Invalid arguments cause downstream processing failures.',
+  },
+  {
+    category: 'F2',
+    description:
+      'Missing required parameters in service calls. Null pointer exceptions from absent arguments.',
+  },
+  {
+    category: 'F3',
+    description:
+      'Missing function call — a code path is not executed. Expected behaviour does not occur.',
+  },
+  {
+    category: 'F4',
+    description:
+      'Incorrect return values from function calls. Wrong data types or values propagate through the call chain.',
+  },
+  {
+    category: 'F5',
+    description:
+      'Missing exception handler causes uncaught errors. Stack traces in logs indicate unhandled exceptions.',
+  },
 ];
 
 /**
@@ -413,7 +457,12 @@ async function classifyByEmbedding(
         description: proto.description,
         confidence: Math.min(1, bestSim * 1.2), // Scale up slightly
         source: 'embedding',
-        evidence: [{ metric: 'embedding', observation: `Cosine similarity ${bestSim.toFixed(3)} to prototype "${proto.category}"` }],
+        evidence: [
+          {
+            metric: 'embedding',
+            observation: `Cosine similarity ${bestSim.toFixed(3)} to prototype "${proto.category}"`,
+          },
+        ],
       };
     }
   } catch {
@@ -427,7 +476,9 @@ async function classifyByEmbedding(
  * Compute cosine similarity between two Float64Array vectors.
  */
 function cosineSimilarity(a: Float64Array, b: Float64Array): number {
-  let dot = 0, normA = 0, normB = 0;
+  let dot = 0,
+    normA = 0,
+    normB = 0;
   const len = Math.min(a.length, b.length);
   for (let i = 0; i < len; i++) {
     dot += a[i]! * b[i]!;
@@ -443,11 +494,7 @@ function cosineSimilarity(a: Float64Array, b: Float64Array): number {
 /**
  * Build a structured prompt for LLM fault classification.
  */
-function buildLLMPrompt(
-  metricSummary: string,
-  logSummary?: string,
-  traceSummary?: string,
-): string {
+function buildLLMPrompt(metricSummary: string, logSummary?: string, traceSummary?: string): string {
   return `You are an expert SRE diagnosing a microservice failure. Based on the observability data below, classify the root cause fault type.
 
 **Fault Types (choose one):**
@@ -501,12 +548,23 @@ async function classifyByLLM(
     if (!jsonMatch) return null;
 
     const parsed = JSON.parse(jsonMatch[0]!);
-    const category = String(parsed.category ?? '').toUpperCase().trim();
+    const category = String(parsed.category ?? '')
+      .toUpperCase()
+      .trim();
     const confidence = Math.min(1, Math.max(0, Number(parsed.confidence) || 0.5));
 
     const validCategories = new Set([
-      'CPU', 'MEM', 'DISK', 'DELAY', 'LOSS', 'SOCKET',
-      'F1', 'F2', 'F3', 'F4', 'F5',
+      'CPU',
+      'MEM',
+      'DISK',
+      'DELAY',
+      'LOSS',
+      'SOCKET',
+      'F1',
+      'F2',
+      'F3',
+      'F4',
+      'F5',
     ]);
 
     if (!validCategories.has(category)) return null;
@@ -529,10 +587,7 @@ async function classifyByLLM(
  * Build a concise summary of metric behaviour across all services
  * for the root cause service's time series.
  */
-function buildMetricSummary(
-  rootServiceMetrics: readonly TimeSeries[],
-  includeAll = false,
-): string {
+function buildMetricSummary(rootServiceMetrics: readonly TimeSeries[], includeAll = false): string {
   const lines: string[] = [];
   for (const ts of rootServiceMetrics) {
     const vals = Array.from(ts.values);
@@ -540,7 +595,9 @@ function buildMetricSummary(
     const avg = mean(vals);
     const peak = vals.length > 0 ? Math.max(...vals) : 0;
     const direction = slope > 0.001 ? '↗ rising' : slope < -0.001 ? '↘ falling' : '→ stable';
-    lines.push(`  ${ts.label}: avg=${avg.toFixed(3)}, peak=${peak.toFixed(3)}, slope=${slope.toFixed(4)}/s ${direction}`);
+    lines.push(
+      `  ${ts.label}: avg=${avg.toFixed(3)}, peak=${peak.toFixed(3)}, slope=${slope.toFixed(4)}/s ${direction}`,
+    );
     if (!includeAll && lines.length >= 5) break;
   }
   return lines.join('\n');
@@ -625,18 +682,13 @@ export class IntelligentFaultClassifier {
 
     // Tier 2: Embedding similarity
     const metricSummary = buildMetricSummary(rootServiceMetrics, true);
-    const embResult = await classifyByEmbedding(
-      metricSummary,
-      this.options.embeddingProvider,
-    );
+    const embResult = await classifyByEmbedding(metricSummary, this.options.embeddingProvider);
     if (embResult && embResult.confidence >= 0.6) {
       return embResult;
     }
 
     // Tier 3: LLM reasoning (for code-level and ambiguous cases)
-    const logSummary = this.options.logs
-      ? this.options.logs.slice(0, 10).join('\n')
-      : undefined;
+    const logSummary = this.options.logs ? this.options.logs.slice(0, 10).join('\n') : undefined;
     const traceSummary = this.options.traces
       ? this.options.traces
           .slice(0, 10)
@@ -707,10 +759,17 @@ function classifyByHeuristic(
   if (score >= 0.8) {
     return {
       category: 'UNKNOWN',
-      description: isLocal ? 'Severe local anomaly (high score, low propagation)' : 'Severe cascaded anomaly (high score, high propagation)',
+      description: isLocal
+        ? 'Severe local anomaly (high score, low propagation)'
+        : 'Severe cascaded anomaly (high score, high propagation)',
       confidence: 0.4,
       source: 'heuristic',
-      evidence: [{ metric: 'rca_score', observation: `score=${score.toFixed(2)} depth=${depth} childRatio=${childRatio.toFixed(2)}` }],
+      evidence: [
+        {
+          metric: 'rca_score',
+          observation: `score=${score.toFixed(2)} depth=${depth} childRatio=${childRatio.toFixed(2)}`,
+        },
+      ],
     };
   }
   if (score >= 0.6) {
