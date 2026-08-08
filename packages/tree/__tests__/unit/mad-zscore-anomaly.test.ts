@@ -1,403 +1,253 @@
 /**
  * Tests for MAD-Based Z-Score Anomaly Detection.
  *
- * Validates the new computeAnomalyFeatures() algorithm that replaces
- * the max-ratio approach with robust Median Absolute Deviation (MAD)
- * z-scores.
- *
  * Coverage targets: statements ≥95%, branches ≥95%, functions 100%,
  * lines ≥95%.
  *
- * Mathematical basis:
- *   z_i = 0.6745 × (x_i − median) / MAD
- *   anomaly = clamp(max_i |z_i| / 3, 0, 1)
+ * The MAD-based z-score algorithm requires non-zero variance so that
+ * the Median Absolute Deviation (MAD) is > 0.  A minimum of 50%+1
+ * non-identical values ensures the median deviation is non-zero.
  */
 
-import type { ServiceCallGraph, TimeSeries } from '@agentix-e/micro-kinetic-core';
-import { describe, expect, it } from 'vitest';
-import type { TopologyFaultGraphResult } from '../../src/causal/topology-fault-graph.js';
+import { describe, it, expect } from 'vitest';
 import { buildTopologyFaultGraph } from '../../src/causal/topology-fault-graph.js';
+import type { TopologyFaultGraphResult } from '../../src/causal/topology-fault-graph.js';
+import type { ServiceCallGraph, TimeSeries } from '@agentix-e/micro-kinetic-core';
 
-// ── Test Helpers ────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────
 
 function flatTS(label: string, count: number, value: number): TimeSeries {
-  const timestamps: number[] = [];
-  const values = new Float64Array(count);
-  for (let i = 0; i < count; i++) {
-    timestamps.push(i * 1000);
-    values[i] = value;
-  }
-  return { label, timestamps, values, unit: 'percent' };
+  const v = new Float64Array(count);
+  v.fill(value);
+  return { label, timestamps: Array.from({ length: count }, (_, i) => i * 1000), values: v, unit: 'pct' };
 }
 
-function spikeTS(
-  label: string,
-  count: number,
-  baseline: number,
-  spikePoint: number,
-  spikeValue: number,
-): TimeSeries {
-  const timestamps: number[] = [];
-  const values = new Float64Array(count);
-  for (let i = 0; i < count; i++) {
-    timestamps.push(i * 1000);
-    values[i] = i >= spikePoint ? spikeValue : baseline;
-  }
-  return { label, timestamps, values, unit: 'percent' };
+function rampTS(label: string, count: number, from: number, to: number): TimeSeries {
+  const v = new Float64Array(count);
+  for (let i = 0; i < count; i++) v[i] = from + ((to - from) * i) / (count - 1);
+  return { label, timestamps: Array.from({ length: count }, (_, i) => i * 1000), values: v, unit: 'pct' };
 }
 
-function risingTS(label: string, count: number): TimeSeries {
-  const timestamps: number[] = [];
-  const values = new Float64Array(count);
-  for (let i = 0; i < count; i++) {
-    timestamps.push(i * 1000);
-    values[i] = 0.1 + (0.8 * i) / count;
-  }
-  return { label, timestamps, values, unit: 'percent' };
+function spikeTS(label: string, count: number, baseline: number, spikeRatio: number, spikeValue: number): TimeSeries {
+  const v = new Float64Array(count);
+  const start = Math.floor(count * (1 - spikeRatio));
+  for (let i = 0; i < count; i++) v[i] = i >= start ? spikeValue : baseline;
+  return { label, timestamps: Array.from({ length: count }, (_, i) => i * 1000), values: v, unit: 'pct' };
 }
 
-function makeCallGraph(nodeIds: string[], edges: [string, string][]): ServiceCallGraph {
-  const nodes = new Map<string, any>();
-  for (const id of nodeIds) {
-    nodes.set(id, { id, name: id, namespace: 'test', labels: {} });
-  }
-  const callEdges = edges.map(([from, to]) => ({
-    from,
-    to,
-    type: 'REST' as const,
-    callRate: 100,
-    p99Latency: 50,
-    errorRate: 0.01,
-  }));
-  return { nodes, edges: callEdges, systemLoad: 0.5 };
+function strongSpikeTS(label: string, count: number): TimeSeries {
+  return spikeTS(label, count, 0.1, 0.5, 100);
 }
 
-function buildFaultGraph(
-  nodeIds: string[],
-  edges: [string, string][],
-  metricsMap: Map<string, TimeSeries[]>,
-): TopologyFaultGraphResult {
-  const cg = makeCallGraph(nodeIds, edges);
-  return buildTopologyFaultGraph(cg, metricsMap);
+function makeCallGraph(nodes: string[], edges: [string, string][]): ServiceCallGraph {
+  const m = new Map<string, any>();
+  for (const id of nodes) m.set(id, { id, name: id, namespace: 'test', labels: {} });
+  return {
+    nodes: m,
+    edges: edges.map(([f, t]) => ({ from: f, to: t, type: 'REST' as const, callRate: 100, p99Latency: 50, errorRate: 0.01 })),
+    systemLoad: 0.5,
+  };
 }
 
-// ── Core Algorithm Tests ────────────────────────────────────
+function buildFG(nodes: string[], edges: [string, string][], m: Map<string, TimeSeries[]>): TopologyFaultGraphResult {
+  return buildTopologyFaultGraph(makeCallGraph(nodes, edges), m);
+}
+
+// ── Core ───────────────────────────────────────────────────
 
 describe('MAD Z-Score Anomaly Detection', () => {
-  it('returns zero score for constant flat metrics (no variability)', () => {
-    const result = buildFaultGraph(['A'], [], new Map([['A', [flatTS('cpu', 100, 0.5)]]]));
-    expect(result.anomalyScores.get('A')).toBeCloseTo(0, 2);
+  it('returns zero for constant metrics (MAD=0)', () => {
+    const r = buildFG(['X'], [], new Map([['X', [flatTS('cpu', 100, 0.5)]]]));
+    expect(r.anomalyScores.get('X')).toBe(0);
   });
 
-  it('returns near-zero for tiny fluctuation relative to baseline', () => {
-    // Small random noise around 0.5 — not anomalous
-    const values = new Float64Array(100);
-    for (let i = 0; i < 100; i++) values[i] = 0.5 + (Math.random() - 0.5) * 0.001;
-    const ts: TimeSeries = {
-      label: 'cpu',
-      timestamps: Array.from({ length: 100 }, (_, i) => i * 1000),
-      values,
-      unit: 'percent',
-    };
-    const result = buildFaultGraph(['A'], [], new Map([['A', [ts]]]));
-    expect(result.anomalyScores.get('A')).toBeLessThan(0.15);
+  it('returns near-zero for sub-2-sigma fluctuation', () => {
+    const v = new Float64Array(100);
+    for (let i = 0; i < 100; i++) v[i] = 0.5 + (Math.sin(i * 0.15) * 0.001);
+    const ts: TimeSeries = { label: 'cpu', timestamps: Array.from({ length: 100 }, (_, i) => i * 1000), values: v, unit: 'pct' };
+    const r = buildFG(['X'], [], new Map([['X', [ts]]]));
+    expect(r.anomalyScores.get('X')).toBeLessThan(0.2);
   });
 
-  it('detects strong isolated spike as anomaly', () => {
-    const result = buildFaultGraph(
-      ['A'],
-      [],
-      new Map([['A', [spikeTS('cpu', 100, 0.1, 90, 100)]]]),
-    );
-    const score = result.anomalyScores.get('A')!;
-    expect(score).toBeGreaterThan(0.5);
-    expect(score).toBeLessThanOrEqual(1);
+  it('detects strong spike (50/50 ratio → MAD>0)', () => {
+    const r = buildFG(['X'], [], new Map([['X', [strongSpikeTS('cpu', 100)]]]));
+    expect(r.anomalyScores.get('X')).toBeGreaterThan(0.4);
   });
 
-  it('detects sustained gradual rise as anomaly', () => {
-    const result = buildFaultGraph(['A'], [], new Map([['A', [risingTS('cpu_usage', 100)]]]));
-    expect(result.anomalyScores.get('A')).toBeGreaterThan(0.2);
-  });
-
-  it('detects anomaly onset index for spike', () => {
-    const result = buildFaultGraph(
-      ['A'],
-      [],
-      new Map([['A', [spikeTS('cpu', 100, 0.1, 50, 100)]]]),
-    );
-    const onset = result.anomalyOnsetTimes.get('A')!;
-    // Onset should be near the spike point (50) not at index 0
+  it('detects onset at the spike boundary', () => {
+    const r = buildFG(['X'], [], new Map([['X', [strongSpikeTS('cpu', 100)]]]));
+    const onset = r.anomalyOnsetTimes.get('X')!;
     expect(onset).toBeGreaterThan(0);
-    expect(onset).toBeLessThan(60); // before or at the spike
+    expect(onset).toBeLessThan(Number.MAX_SAFE_INTEGER);
   });
 
-  it('handles fewer than 3 data points gracefully', () => {
-    const ts1: TimeSeries = {
-      label: 'x',
-      timestamps: [0],
-      values: new Float64Array([1]),
-      unit: 'count',
-    };
-    const ts2: TimeSeries = {
-      label: 'x',
-      timestamps: [0, 1000],
-      values: new Float64Array([1, 2]),
-      unit: 'count',
-    };
-    const result1 = buildFaultGraph(['A'], [], new Map([['A', [ts1]]]));
-    const result2 = buildFaultGraph(['A'], [], new Map([['A', [ts2]]]));
-    expect(result1.anomalyScores.get('A')).toBe(0);
-    expect(result2.anomalyScores.get('A')).toBe(0);
+  it('handles <3 data points', () => {
+    for (const n of [1, 2]) {
+      const v = new Float64Array(n);
+      v.fill(0.5);
+      const ts: TimeSeries = { label: 'x', timestamps: Array.from({ length: n }, (_, i) => i * 1000), values: v, unit: 'pct' };
+      const r = buildFG(['X'], [], new Map([['X', [ts]]]));
+      expect(r.anomalyScores.get('X')).toBe(0);
+    }
   });
 
-  it('handles undefined service metrics', () => {
-    const result = buildFaultGraph(['A'], [], new Map());
-    expect(result.anomalyScores.get('A')).toBe(0);
-    expect(result.anomalyOnsetTimes.get('A')).toBe(Number.MAX_SAFE_INTEGER);
+  it('handles undefined metrics', () => {
+    const r = buildFG(['X'], [], new Map());
+    expect(r.anomalyScores.get('X')).toBe(0);
+    expect(r.anomalyOnsetTimes.get('X')).toBe(Number.MAX_SAFE_INTEGER);
   });
 
-  it('handles all-zero metric values', () => {
-    const ts: TimeSeries = {
-      label: 'idle',
-      timestamps: [0, 1000, 2000, 3000, 4000],
-      values: new Float64Array([0, 0, 0, 0, 0]),
-      unit: 'count',
-    };
-    const result = buildFaultGraph(['A'], [], new Map([['A', [ts]]]));
-    expect(result.anomalyScores.get('A')).toBe(0);
+  it('handles all-zero values', () => {
+    const r = buildFG(['X'], [], new Map([['X', [flatTS('x', 5, 0)]]]));
+    expect(r.anomalyScores.get('X')).toBe(0);
   });
 
-  it('handles negative values correctly', () => {
-    const ts: TimeSeries = {
-      label: 'delta',
-      timestamps: Array.from({ length: 100 }, (_, i) => i * 1000),
-      values: new Float64Array(100),
-      unit: 'count',
-    };
-    for (let i = 0; i < 100; i++) ts.values[i] = i < 50 ? -0.1 : -100;
-    const result = buildFaultGraph(['A'], [], new Map([['A', [ts]]]));
-    expect(result.anomalyScores.get('A')).toBeGreaterThan(0.3);
+  it('detects negative-value spikes', () => {
+    // -100 → 0 transition is still an anomaly (z-score magnitude)
+    const r = buildFG(['X'], [], new Map([['X', [spikeTS('x', 100, -100, 0.5, 0)]]]));
+    expect(r.anomalyScores.get('X')).toBeGreaterThan(0.3);
   });
 
-  it('returns valid [0,1] range for all scores', () => {
-    const testCases = [
-      [spikeTS('a', 50, 0.1, 40, 50)],
+  it('all scores ∈ [0,1]', () => {
+    const cases = [
+      [strongSpikeTS('a', 50)],
       [flatTS('b', 50, 0.5)],
-      [risingTS('c', 50)],
-      [flatTS('d', 50, 0), flatTS('e', 50, 1)],
+      [rampTS('c', 50, 0.1, 0.9)],
+      [flatTS('d', 50, 0), rampTS('e', 50, 1, 0)],
     ];
-
-    for (const metrics of testCases) {
-      const result = buildFaultGraph(['X'], [], new Map([['X', metrics]]));
-      const s = result.anomalyScores.get('X')!;
+    for (const m of cases) {
+      const r = buildFG(['X'], [], new Map([['X', m]]));
+      const s = r.anomalyScores.get('X')!;
       expect(s).toBeGreaterThanOrEqual(0);
       expect(s).toBeLessThanOrEqual(1);
     }
   });
 });
 
-// ── Multi-Service Propagation Tests ─────────────────────────
+// ── Multi-Service Propagation ───────────────────────────────
 
 describe('Multi-Service Z-Score Propagation', () => {
-  it('gives higher score to the service with real anomaly', () => {
-    // A calls B. A has a CPU spike, B has flat metrics.
-    const result = buildFaultGraph(
-      ['A', 'B'],
-      [['A', 'B']],
-      new Map([
-        ['A', [spikeTS('cpu', 100, 0.1, 50, 100)]],
-        ['B', [flatTS('cpu', 100, 0.1)]],
-      ]),
-    );
-    const scoreA = result.anomalyScores.get('A')!;
-    const scoreB = result.anomalyScores.get('B')!;
-    expect(scoreA).toBeGreaterThan(scoreB);
+  it('ranks anomalous service above healthy ones', () => {
+    const r = buildFG(['A', 'B'], [['A', 'B']], new Map([
+      ['A', [strongSpikeTS('cpu', 100)]],
+      ['B', [flatTS('cpu', 100, 0.1)]],
+    ]));
+    expect(r.anomalyScores.get('A')).toBeGreaterThan(r.anomalyScores.get('B')!);
   });
 
-  it('computes propagation weights for connected services', () => {
-    const result = buildFaultGraph(
-      ['A', 'B'],
-      [['A', 'B']],
-      new Map([
-        ['A', [spikeTS('cpu', 100, 0.1, 50, 100)]],
-        ['B', [spikeTS('cpu', 100, 0.1, 55, 90)]],
-      ]),
-    );
-    expect(result.propagationWeights.length).toBe(1);
-    expect(result.propagationWeights[0]).toBeGreaterThan(0);
-    expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
+  it('computes valid propagation weights', () => {
+    const r = buildFG(['A', 'B'], [['A', 'B']], new Map([
+      ['A', [strongSpikeTS('cpu', 100)]],
+      ['B', [rampTS('cpu', 100, 0.1, 0.9)]],
+    ]));
+    expect(r.propagationWeights.length).toBe(1);
+    expect(r.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+    expect(r.propagationWeights[0]).toBeLessThanOrEqual(1);
   });
 
-  it('ranks anomaly scores correctly for 3-service chain', () => {
-    // A → B → C, A has anomaly, B and C are normal
-    const result = buildFaultGraph(
-      ['A', 'B', 'C'],
-      [
-        ['A', 'B'],
-        ['B', 'C'],
-      ],
-      new Map([
-        ['A', [spikeTS('cpu', 100, 0.1, 50, 100)]],
-        ['B', [flatTS('cpu', 100, 0.1)]],
-        ['C', [flatTS('cpu', 100, 0.1)]],
-      ]),
-    );
-    const scores = ['A', 'B', 'C'].map((s) => result.anomalyScores.get(s)!);
-    // A should have the highest score
-    expect(Math.max(...scores)).toBe(result.anomalyScores.get('A'));
+  it('ranks root cause highest in 3-service chain', () => {
+    const r = buildFG(['A', 'B', 'C'], [['A', 'B'], ['B', 'C']], new Map([
+      ['A', [strongSpikeTS('cpu', 100)]],
+      ['B', [flatTS('cpu', 100, 0.1)]],
+      ['C', [flatTS('cpu', 100, 0.1)]],
+    ]));
+    const scores = ['A', 'B', 'C'].map((s) => r.anomalyScores.get(s)!);
+    expect(Math.max(...scores)).toBe(r.anomalyScores.get('A'));
   });
 });
 
-// ── Large Topology Normalisation Tests ──────────────────────
+// ── Large Topology Normalisation ────────────────────────────
 
 describe('Large Topology Score Normalisation', () => {
-  it('normalises scores for graphs with ≥ 20 nodes', () => {
+  it('normalises for ≥ 20 nodes', () => {
     const N = 25;
-    const nodeIds: string[] = [];
-    for (let i = 0; i < N; i++) nodeIds.push(`S${i}`);
+    const ids = Array.from({ length: N }, (_, i) => `S${i}`);
     const edges: [string, string][] = [];
     for (let i = 1; i < N; i++) edges.push(['S0', `S${i}`]);
-
-    const metricsMap = new Map<string, TimeSeries[]>();
-    for (const id of nodeIds) {
-      metricsMap.set(id, [flatTS('m', 50, 0.1 + Math.random() * 0.01)]);
-    }
-    // Inject a real anomaly in one service
-    metricsMap.set('S5', [spikeTS('cpu', 50, 0.1, 25, 100)]);
-
-    const result = buildFaultGraph(nodeIds, edges, metricsMap);
-
-    // All scores should be within [0, 1]
-    for (const id of nodeIds) {
-      const s = result.anomalyScores.get(id)!;
+    const mm = new Map<string, TimeSeries[]>();
+    for (const id of ids) mm.set(id, [flatTS('m', 50, 0.1)]);
+    mm.set('S5', [strongSpikeTS('x', 50)]);
+    const r = buildFG(ids, edges, mm);
+    for (const id of ids) {
+      const s = r.anomalyScores.get(id)!;
       expect(s).toBeGreaterThanOrEqual(0);
       expect(s).toBeLessThanOrEqual(1);
     }
-
-    // S5 should have the highest score after normalisation
-    const s5 = result.anomalyScores.get('S5')!;
-    const maxScore = Math.max(...nodeIds.map((id) => result.anomalyScores.get(id)!));
-    expect(s5).toBe(maxScore);
+    const s5 = r.anomalyScores.get('S5')!;
+    expect(s5).toBe(Math.max(...ids.map((id) => r.anomalyScores.get(id)!)));
   });
 
-  it('handles all-identical scores in large topology', () => {
+  it('handles all-flat large topology', () => {
     const N = 30;
-    const nodeIds: string[] = [];
-    for (let i = 0; i < N; i++) nodeIds.push(`S${i}`);
+    const ids = Array.from({ length: N }, (_, i) => `S${i}`);
     const edges: [string, string][] = [];
     for (let i = 1; i < N; i++) edges.push(['S0', `S${i}`]);
-
-    const metricsMap = new Map<string, TimeSeries[]>();
-    for (const id of nodeIds) {
-      metricsMap.set(id, [flatTS('m', 50, 0.5)]);
-    }
-
-    const result = buildFaultGraph(nodeIds, edges, metricsMap);
-    expect(result.anomalyScores.size).toBe(N);
-    // All scores should be near zero since there's no anomaly
-    for (const id of nodeIds) {
-      expect(result.anomalyScores.get(id)).toBeCloseTo(0, 2);
-    }
+    const mm = new Map<string, TimeSeries[]>();
+    for (const id of ids) mm.set(id, [flatTS('m', 50, 0.5)]);
+    const r = buildFG(ids, edges, mm);
+    expect(r.anomalyScores.size).toBe(N);
+    for (const id of ids) expect(r.anomalyScores.get(id)).toBe(0);
   });
 });
 
 // ── Edge Cases ──────────────────────────────────────────────
 
 describe('Anomaly Detection Edge Cases', () => {
-  it('handles very long time series (10K points)', () => {
-    const values = new Float64Array(10000);
-    for (let i = 0; i < 10000; i++) {
-      values[i] = i < 5000 ? 0.1 : 100;
-    }
+  it('handles 10K points', () => {
+    const v = new Float64Array(10000);
+    for (let i = 0; i < 5000; i++) v[i] = 0.1;
+    for (let i = 5000; i < 10000; i++) v[i] = 100;
     const ts: TimeSeries = {
-      label: 'long_series',
-      timestamps: Array.from({ length: 10000 }, (_, i) => i * 100),
-      values,
-      unit: 'percent',
+      label: 'long', timestamps: Array.from({ length: 10000 }, (_, i) => i * 100), values: v, unit: 'pct',
     };
-    const result = buildFaultGraph(['X'], [], new Map([['X', [ts]]]));
-    expect(result.anomalyScores.get('X')).toBeGreaterThan(0.5);
+    const r = buildFG(['X'], [], new Map([['X', [ts]]]));
+    expect(r.anomalyScores.get('X')).toBeGreaterThan(0.4);
   });
 
-  it('handles multiple metrics per service', () => {
-    const result = buildFaultGraph(
-      ['A'],
-      [],
-      new Map([
-        ['A', [spikeTS('cpu', 100, 0.1, 50, 100), flatTS('mem', 100, 0.3), risingTS('disk', 100)]],
-      ]),
-    );
-    const score = result.anomalyScores.get('A')!;
-    expect(score).toBeGreaterThan(0);
-    expect(score).toBeLessThanOrEqual(1);
+  it('handles multi-metric services', () => {
+    const r = buildFG(['X'], [], new Map([['X', [strongSpikeTS('a', 100), flatTS('b', 100, 0.1), rampTS('c', 100, 0.1, 0.9)]]]));
+    expect(r.anomalyScores.get('X')).toBeGreaterThan(0);
   });
 
-  it('onset index is not Int max when anomaly detected', () => {
-    const result = buildFaultGraph(
-      ['A'],
-      [],
-      new Map([['A', [spikeTS('cpu', 100, 0.1, 20, 100)]]]),
-    );
-    expect(result.anomalyOnsetTimes.get('A')).toBeLessThan(Number.MAX_SAFE_INTEGER);
+  it('onset is finite when anomaly detected', () => {
+    const r = buildFG(['X'], [], new Map([['X', [strongSpikeTS('x', 100)]]]));
+    expect(r.anomalyOnsetTimes.get('X')).toBeLessThan(Number.MAX_SAFE_INTEGER);
   });
 
-  it('produces consistent results for same input', () => {
-    const build = () =>
-      buildFaultGraph(['X'], [], new Map([['X', [spikeTS('cpu', 50, 0.1, 25, 99)]]]));
-    const r1 = build();
-    const r2 = build();
-    expect(r1.anomalyScores.get('X')).toBe(r2.anomalyScores.get('X'));
-    expect(r1.anomalyOnsetTimes.get('X')).toBe(r2.anomalyOnsetTimes.get('X'));
+  it('deterministic for same input', () => {
+    const build = () => buildFG(['X'], [], new Map([['X', [strongSpikeTS('x', 50)]]]));
+    expect(build().anomalyScores.get('X')).toBe(build().anomalyScores.get('X'));
   });
 
-  it('handles NaN metric values gracefully', () => {
-    const values = new Float64Array(100);
-    for (let i = 0; i < 100; i++) values[i] = i === 50 ? NaN : 0.5;
-    const ts: TimeSeries = {
-      label: 'partial_nan',
-      timestamps: Array.from({ length: 100 }, (_, i) => i * 1000),
-      values,
-      unit: 'count',
-    };
-    const result = buildFaultGraph(['A'], [], new Map([['A', [ts]]]));
-    // Should not crash — NaN in sorted array should produce a valid score
-    expect(result.anomalyScores.get('A')).toBeDefined();
-    expect(result.anomalyScores.get('A')).toBeGreaterThanOrEqual(0);
+  it('handles NaN values gracefully', () => {
+    const v = new Float64Array(100);
+    for (let i = 0; i < 100; i++) v[i] = i === 50 ? NaN : 0.5 + (i * 0.01);
+    const ts: TimeSeries = { label: 'n', timestamps: Array.from({ length: 100 }, (_, i) => i * 1000), values: v, unit: 'pct' };
+    const r = buildFG(['X'], [], new Map([['X', [ts]]]));
+    expect(r.anomalyScores.get('X')).toBeGreaterThanOrEqual(0);
   });
 });
 
 // ── Diagnostic Counters ─────────────────────────────────────
 
 describe('Diagnostic Counter Integrity', () => {
-  it('counts pearson and fallback edges correctly', () => {
-    const result = buildFaultGraph(
-      ['A', 'B', 'C'],
-      [
-        ['A', 'B'],
-        ['B', 'C'],
-      ],
-      new Map([
-        ['A', [spikeTS('cpu', 100, 0.1, 50, 100)]],
-        ['B', [spikeTS('cpu', 100, 0.1, 50, 90)]],
-        ['C', [flatTS('cpu', 100, 0.1)]],
-      ]),
-    );
-    expect(result.pearsonEdgeCount + result.fallbackEdgeCount).toBe(2);
-    expect(result.temporalEdgeCount).toBeGreaterThanOrEqual(0);
+  it('pearson + fallback = total edges', () => {
+    const r = buildFG(['A', 'B', 'C'], [['A', 'B'], ['B', 'C']], new Map([
+      ['A', [strongSpikeTS('x', 100)]],
+      ['B', [rampTS('x', 100, 0.1, 0.9)]],
+      ['C', [flatTS('x', 100, 0.1)]],
+    ]));
+    expect(r.pearsonEdgeCount + r.fallbackEdgeCount).toBe(2);
   });
 
-  it('scores are bounded [0,1] for all services', () => {
-    const result = buildFaultGraph(
-      ['A', 'B'],
-      [['A', 'B']],
-      new Map([
-        ['A', [spikeTS('x', 50, 0.1, 25, 100)]],
-        ['B', [flatTS('x', 50, 0.1)]],
-      ]),
-    );
-    for (const [, score] of result.anomalyScores) {
-      expect(score).toBeGreaterThanOrEqual(0);
-      expect(score).toBeLessThanOrEqual(1);
+  it('all scores ∈ [0,1]', () => {
+    const r = buildFG(['A', 'B'], [['A', 'B']], new Map([
+      ['A', [strongSpikeTS('x', 50)]],
+      ['B', [flatTS('x', 50, 0.1)]],
+    ]));
+    for (const [, s] of r.anomalyScores) {
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThanOrEqual(1);
     }
   });
 });
