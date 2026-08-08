@@ -88,7 +88,7 @@ describe('TreeRCAEngine', () => {
       const allEdges = [makeEdge('A', 'B'), makeEdge('B', 'C')];
       const propWeights = new Float64Array([0.5, 0.5]);
 
-      const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 3);
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 3);
       expect(results.length).toBeGreaterThan(0);
       expect(results.length).toBeLessThanOrEqual(3);
       for (const r of results) {
@@ -101,7 +101,7 @@ describe('TreeRCAEngine', () => {
       const engine = new TreeRCAEngine();
       const anomalyScores = new Map<string, number>([['A', 0.5]]);
       const tree = makePrunedTree(['A'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
       expect(results).toHaveLength(1);
       expect(results[0]!.serviceId).toBe('A');
     });
@@ -113,7 +113,7 @@ describe('TreeRCAEngine', () => {
         ['B', 0.6],
       ]);
       const tree = makePrunedTree(['A', 'B'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 2);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 2);
       expect(results.length).toBe(2);
       expect(results[0]!.rank).toBe(1);
       expect(results[1]!.rank).toBe(2);
@@ -130,7 +130,7 @@ describe('TreeRCAEngine', () => {
       const allEdges = [makeEdge('A', 'B'), makeEdge('A', 'C')];
       const propWeights = new Float64Array([0.5, 0.3]);
 
-      const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
       expect(results).toHaveLength(1);
       expect(results[0]!.rank).toBe(1);
     });
@@ -143,7 +143,7 @@ describe('TreeRCAEngine', () => {
         ['C', 0.4],
       ]);
       const tree = makePrunedTree(['A', 'B', 'C'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], undefined);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], undefined);
       expect(results.length).toBe(2);
     });
 
@@ -157,14 +157,14 @@ describe('TreeRCAEngine', () => {
         cyclesPruned: 0,
         contributionRemoved: 0,
       };
-      await expect(engine.analyze(tree, new Map(), new Float64Array(0), [], 5)).rejects.toThrow();
+      expect(() => engine.analyze(tree, new Map(), new Float64Array(0), [], 5)).toThrow();
     });
 
     it('throws on invalid topK', () => {
       const engine = new TreeRCAEngine();
       const anomalyScores = new Map<string, number>([['A', 0.5]]);
       const tree = makePrunedTree(['A'], [], anomalyScores);
-      await expect(engine.analyze(tree, anomalyScores, new Float64Array(0), [], -1)).rejects.toThrow();
+      expect(() => engine.analyze(tree, anomalyScores, new Float64Array(0), [], -1)).toThrow();
     });
 
     it('handles zero anomaly scores', () => {
@@ -174,7 +174,7 @@ describe('TreeRCAEngine', () => {
         ['B', 0],
       ]);
       const tree = makePrunedTree(['A', 'B'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 2);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 2);
       // Zero scores yield results with confidence based on 0 score
       expect(results.length).toBeLessThanOrEqual(2);
     });
@@ -186,7 +186,7 @@ describe('TreeRCAEngine', () => {
         ['B', 0.5],
       ]);
       const tree = makePrunedTree(['A', 'B'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 2);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 2);
       expect(results[0]!.serviceId).toBe('B');
       expect(results[1]!.serviceId).toBe('A');
     });
@@ -200,7 +200,7 @@ describe('TreeRCAEngine', () => {
       const tree = makePrunedTree(['X', 'Y'], [['X', 'Y']], anomalyScores);
       const allEdges = [makeEdge('X', 'Y')];
       const propWeights = new Float64Array([0.5]);
-      const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
       const xResult = results.find(r => r.serviceId === 'X');
       expect(xResult).toBeDefined();
     });
@@ -279,7 +279,7 @@ describe('TreeRCAEngine', () => {
       [],
       anomalyScores,
     );
-    const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 4);
+    const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 4);
 
     const critical = results.find(r => r.serviceId === 'critical')!;
     const major = results.find(r => r.serviceId === 'major')!;
@@ -304,7 +304,7 @@ describe('TreeRCAEngine', () => {
       const tree = makePrunedTree(['A', 'B'], [['A', 'B']], anomalyScores);
       const allEdges = [makeEdge('A', 'B')];
       const propWeights = new Float64Array([0.5]);
-      const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
       expect(results.length).toBeLessThanOrEqual(2);
     });
   });
@@ -320,7 +320,7 @@ describe('TreeRCAEngine', () => {
       allEdges[0]!.p99Latency = 100;
       const tree = makePrunedTree(['X', 'Y'], [['X', 'Y']], anomalyScores);
       const propWeights = new Float64Array([0.7]);
-      const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
       const xResult = results.find(r => r.serviceId === 'X');
       expect(xResult).toBeDefined();
     });
@@ -342,7 +342,7 @@ describe('TreeRCAEngine', () => {
     allEdges[0]!.p99Latency = 50;
     allEdges[1]!.p99Latency = 100;
     const propWeights = new Float64Array([0.5, 0.3]);
-    const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 3);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 3);
     expect(results.length).toBeLessThanOrEqual(3);
     const rootResult = results.find(r => r.serviceId === 'Root');
     expect(rootResult).toBeDefined();
@@ -353,7 +353,7 @@ describe('TreeRCAEngine', () => {
       const engine = new TreeRCAEngine();
       const anomalyScores = new Map<string, number>([['X', 0.85]]);
       const tree = makePrunedTree(['X'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
       expect(results[0]!.faultType.category).toBe('CPU');
       expect(results[0]!.faultType.severity).toBe('critical');
     });
@@ -362,7 +362,7 @@ describe('TreeRCAEngine', () => {
       const engine = new TreeRCAEngine();
       const anomalyScores = new Map<string, number>([['X', 0.65]]);
       const tree = makePrunedTree(['X'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
       expect(results[0]!.faultType.category).toBe('MEMORY');
     });
 
@@ -370,7 +370,7 @@ describe('TreeRCAEngine', () => {
       const engine = new TreeRCAEngine();
       const anomalyScores = new Map<string, number>([['X', 0.45]]);
       const tree = makePrunedTree(['X'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
       expect(results[0]!.faultType.category).toBe('CODE_ERROR');
     });
 
@@ -378,7 +378,7 @@ describe('TreeRCAEngine', () => {
       const engine = new TreeRCAEngine();
       const anomalyScores = new Map<string, number>([['X', 0.25]]);
       const tree = makePrunedTree(['X'], [], anomalyScores);
-      const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+      const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
       expect(results[0]!.faultType.category).toBe('UNKNOWN');
     });
   });
@@ -389,7 +389,7 @@ describe('TreeRCAEngine', () => {
       ['M', 0.65],
     ]);
     const tree = makePrunedTree(['M'], [], anomalyScores);
-    const results = await engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
+    const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
     expect(results[0]!.faultType.severity).toBe('major');
   });
 
@@ -411,7 +411,7 @@ describe('TreeRCAEngine', () => {
     allEdges[1]!.p99Latency = 30;
     allEdges[2]!.p99Latency = 100;
     const propWeights = new Float64Array([0.5, 0.4, 0.6]);
-    const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 4);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 4);
     expect(results.length).toBeGreaterThanOrEqual(1);
     const topResult = results.find(r => r.serviceId === 'Top');
     expect(topResult).toBeDefined();
@@ -444,7 +444,7 @@ describe('TreeRCAEngine', () => {
     const tree = makePrunedTree(ids, edges, anomalyScores);
     const propWeights = new Float64Array(allEdges.length).fill(0.5);
 
-    const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
     expect(results.length).toBe(1);
     // The fault-injected leaf must be ranked #1.
     expect(results[0]!.serviceId).toBe(`svc-${N - 1}`);
@@ -470,7 +470,7 @@ describe('TreeRCAEngine', () => {
     const tree = makePrunedTree(ids, edges, anomalyScores);
     const propWeights = new Float64Array(allEdges.length).fill(0.5);
 
-    const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
     expect(results.length).toBe(1);
     expect(results[0]!.serviceId).toBe('D');
   });
@@ -495,7 +495,7 @@ describe('TreeRCAEngine', () => {
     );
     const allEdges = [makeEdge('Top', 'Mid'), makeEdge('Mid', 'Bottom')];
     const propWeights = new Float64Array([0.7, 0.3]);
-    const results = await engine.analyze(tree, anomalyScores, propWeights, allEdges, 5);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 5);
     expect(results.length).toBeGreaterThanOrEqual(2);
     const top2 = results.slice(0, 2).map((r) => r.serviceId);
     expect(top2).toContain('Mid');

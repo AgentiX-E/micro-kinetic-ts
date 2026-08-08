@@ -38,21 +38,17 @@
  */
 
 import {
-  invariant,
-  invariantPositiveInt,
-  invariantRange,
   type CallEdge,
   type FaultType,
   type PrunedTree,
   type RootCauseResult,
   type ServiceId,
+  invariant,
+  invariantPositiveInt,
+  invariantRange,
 } from '@agentix-e/micro-kinetic-core';
 
 import { boundToConfidence, estimateErrorBound } from './confidence.js';
-import {
-  IntelligentFaultClassifier,
-  type IntelligentClassifierOptions,
-} from './intelligent-fault-classifier.js';
 
 /**
  * Options for TreeRCAEngine.
@@ -64,8 +60,6 @@ export interface TreeRCAOptions {
   readonly tauMs: number;
   /** Default Top-K */
   readonly defaultTopK: number;
-  /** Intelligent fault classifier options (Tiers 1-3). */
-  readonly intelligentClassifier?: IntelligentClassifierOptions;
 }
 
 const DEFAULT_TREE_RCA_OPTIONS: TreeRCAOptions = {
@@ -130,13 +124,13 @@ export class TreeRCAEngine {
    * @param topK - Number of top results (default from options)
    * @returns Ranked root cause candidates
    */
-  async analyze(
+  analyze(
     tree: PrunedTree,
     anomalyScores: ReadonlyMap<ServiceId, number>,
     propagationWeights: Float64Array,
     allEdges: readonly CallEdge[],
     topK?: number,
-  ): Promise<RootCauseResult[]> {
+  ): RootCauseResult[] {
     const k = topK ?? this.options.defaultTopK;
     invariant(tree.nodes.size > 0, 'tree must have at least one node');
     invariantPositiveInt(k, 'topK');
@@ -221,7 +215,7 @@ export class TreeRCAEngine {
     }
 
     // Step 4: Rank and produce results
-    return rankAndProduceResults(accumulators, tree, k, this.options, allEdges);
+    return rankAndProduceResults(accumulators, tree, k, this.options);
   }
 
   /**
@@ -380,43 +374,19 @@ function classifyFaultType(score: number, depth = 0, childContrib = 0): FaultTyp
 /** Remove: replaced by pre-built edgeLatencyMap (O(1) vs O(E)). */
 
 /**
- * Rank accumulators and produce RootCauseResult[], using
- * the intelligent fault classifier when available.
+ * Rank accumulators and produce RootCauseResult[].
  *
  * @internal
  */
-async function rankAndProduceResults(
+function rankAndProduceResults(
   accumulators: ReadonlyMap<ServiceId, NodeAccumulator>,
   tree: PrunedTree,
   topK: number,
   options: TreeRCAOptions,
-  allEdges: readonly CallEdge[],
-): Promise<RootCauseResult[]> {
+): RootCauseResult[] {
   const entries = Array.from(accumulators.entries()).sort(
     (a, b) => b[1].totalScore - a[1].totalScore,
   );
-
-  // Build a classifier if options were provided
-  const classifier = options.intelligentClassifier
-    ? new IntelligentFaultClassifier(options.intelligentClassifier)
-    : null;
-
-  // Build a map from service ID to its edges for metric lookup
-  const serviceEdges = new Map<ServiceId, CallEdge[]>();
-  for (const e of allEdges) {
-    let edges = serviceEdges.get(e.from);
-    if (!edges) {
-      edges = [];
-      serviceEdges.set(e.from, edges);
-    }
-    edges.push(e);
-    edges = serviceEdges.get(e.to);
-    if (!edges) {
-      edges = [];
-      serviceEdges.set(e.to, edges);
-    }
-    edges.push(e);
-  }
 
   const results: RootCauseResult[] = [];
 
@@ -428,35 +398,6 @@ async function rankAndProduceResults(
 
     // Compute confidence from score, depth, and error bound
     const confidence = boundToConfidence(acc.totalScore, errorBound, acc.depth);
-
-    // ── Intelligent fault classification ──
-    let faultType: FaultType;
-    if (classifier) {
-      try {
-        const classification = await classifier.classify(
-          [], // metrics passed via container — placeholder for now
-          acc.totalScore,
-          acc.depth,
-          acc.childPropagationScore,
-        );
-        faultType = {
-          category: classification.category as FaultType['category'],
-          subType: classification.description,
-          severity:
-            classification.confidence >= 0.7
-              ? 'critical'
-              : classification.confidence >= 0.5
-                ? 'major'
-                : classification.confidence >= 0.3
-                  ? 'minor'
-                  : 'warning',
-        };
-      } catch {
-        faultType = classifyFaultType(acc.totalScore, acc.depth, acc.childPropagationScore);
-      }
-    } else {
-      faultType = classifyFaultType(acc.totalScore, acc.depth, acc.childPropagationScore);
-    }
 
     results.push({
       serviceId: nodeId,
