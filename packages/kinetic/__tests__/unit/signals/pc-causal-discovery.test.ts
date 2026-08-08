@@ -217,10 +217,12 @@ describe('runPCAlgorithm', () => {
     const zVals = new Float64Array(n);
 
     for (let i = 0; i < n; i++) {
-      xVals[i] = Math.random();
-      yVals[i] = Math.random();
-      // Z is a common effect of X and Y
-      zVals[i] = xVals[i]! + yVals[i]! + Math.random() * 0.2;
+      // Deterministic sinusoidal signals — X and Y are independent,
+      // Z is a common effect (collider) of both.
+      xVals[i] = Math.sin(i * 0.1);
+      yVals[i] = Math.cos(i * 0.1 + 1.5);
+      // Z is a common effect of X and Y with small deterministic jitter
+      zVals[i] = xVals[i]! + yVals[i]! + Math.sin(i * 0.07) * 0.2;
     }
 
     const timeSeries = new Map([
