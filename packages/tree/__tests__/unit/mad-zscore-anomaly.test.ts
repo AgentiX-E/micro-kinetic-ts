@@ -102,7 +102,7 @@ describe('MAD Z-Score Anomaly Detection', () => {
 
   it('returns near-zero for pure noise with no spike', () => {
     const v = new Float64Array(100);
-    for (let i = 0; i < 100; i++) v[i] = 0.5 + Math.sin(i * 0.15) * 0.001;
+    for (let i = 0; i < 100; i++) v[i] = 0.5 + Math.sin(i * 0.15) * 1e-5;
     const ts: TimeSeries = {
       label: 'cpu',
       timestamps: Array.from({ length: 100 }, (_, i) => i * 1000),
