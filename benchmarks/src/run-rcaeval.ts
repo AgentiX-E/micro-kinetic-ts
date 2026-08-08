@@ -417,10 +417,9 @@ async function loadSingleCase(
 
   const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
 
-  // Free trace data after topology augmentation — the BenchmarkCase
-  // does not need traces downstream, and RE2 has 270+ cases each with
-  // 100K+ trace spans (several GB total).  Dropping this reference
-  // lets GC reclaim the memory before the next case is loaded.
+  // Free trace data after augmentation — prevents OOM on RE2 (270+ cases
+  // each with 100K+ trace spans).  The benchmark runner does not use
+  // traces downstream; the topology is already augmented.
   rawCase.traces = undefined;
 
   return { benchCase, traceUsed, pruned, edgesBefore, edgesAfter };
@@ -721,130 +720,63 @@ async function main(): Promise<void> {
 
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
+    const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
+    const stats = await loadCases(metas, loader, caseLimit, semanticConfig);
 
-    // ── Streaming batch load ─────────────────────────────────
-    // Load and process cases in batches of BATCH_SIZE to keep peak
-    // heap usage bounded.  RE2 has 270+ cases with thousands of trace
-    // spans each; loading all at once exceeds 6 GiB.
-    const BATCH_SIZE = 1;
+    // ── Report load errors with comprehensive diagnostics ──
+    reportLoadErrors(systemName, suiteName, stats);
 
-    // Per-fault-type accumulators (mutable, normalised into runResult at end)
-    interface FaultAcc {
-      sumA1: number;
-      sumA5: number;
-      sumLA: number;
-      sumTA: number;
-      count: number;
-    }
-    const faultAccumulators = new Map<string, FaultAcc>();
-    const allFaultTypes = new Set<string>();
-    let cumulativeErrors: string[] = [];
-    const errorSamplesAcc = new Map<string, number>();
-    let totalTraceCount = 0,
-      totalPruned = 0;
-    let totalEdgesBefore = 0,
-      totalEdgesAfter = 0;
-    let semTotalServices = 0,
-      semResolved = 0,
-      semEmbedding = 0,
-      semLLM = 0,
-      semExact = 0;
-    let diagShown = false;
-
-    for (let batchStart = 0; batchStart < metas.length; batchStart += BATCH_SIZE) {
-      const batch = metas.slice(batchStart, batchStart + BATCH_SIZE);
-      const stats = await loadCases(batch, loader, 0, semanticConfig);
-
-      cumulativeErrors = cumulativeErrors.concat(stats.errors);
-      for (const [k, v] of stats.errorSamples) {
-        errorSamplesAcc.set(k, (errorSamplesAcc.get(k) ?? 0) + v);
-      }
-      totalTraceCount += stats.traceStats.total;
-      totalPruned += stats.traceStats.pruned;
-      totalEdgesBefore += stats.traceStats.avgEdgesBefore * batch.length;
-      totalEdgesAfter += stats.traceStats.avgEdgesAfter * batch.length;
-      const s = stats.semanticStats;
-      semTotalServices += s.totalServices;
-      semResolved += s.semanticallyResolved;
-      semEmbedding += s.embeddingResolved;
-      semLLM += s.llmResolved;
-      semExact += s.exactMatched;
-
-      if (stats.cases.length === 0) continue;
-
-      // Print topology diagnostics once per group
-      if (!diagShown) {
-        const diagNode = stats.cases[0]?.callGraph.nodes.values().next().value;
-        if (diagNode?.labels?._diag_system) {
-          const l = diagNode.labels;
-          console.log(
-            `  [topo] system=${l._diag_system}, edges=${l._diag_matched}` +
-              ` + ${l._diag_embedding || 0} emb + ${l._diag_llm || 0} llm` +
-              `, svcs=${l._diag_svc_matched}, unconnected=${l._diag_unconnected}`,
-          );
-        }
-        diagShown = true;
-      }
-
-      // Benchmark each case individually and accumulate per-fault-type
-      for (const c of stats.cases) {
-        const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
-        allFaultTypes.add(ft);
-
-        let acc = faultAccumulators.get(ft);
-        if (!acc) {
-          acc = { sumA1: 0, sumA5: 0, sumLA: 0, sumTA: 0, count: 0 };
-          faultAccumulators.set(ft, acc);
-        }
-
-        const suite: BenchmarkSuite = {
-          name: `${systemName}-${suiteName}-${ft}-b${Math.floor(batchStart / BATCH_SIZE)}`,
-          cases: [c],
-          totalCases: 1,
-        };
-        const r = await runner.runSuite(suite);
-        acc.sumA1 += r.avgTop1;
-        acc.sumA5 += r.avgTop5;
-        acc.sumLA += r.locationAccuracy;
-        acc.sumTA += r.typeAccuracy;
-        acc.count++;
-      }
+    if (stats.cases.length === 0) {
+      console.log(`  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`);
+      continue;
     }
 
-    // ── Normalise accumulators into RunResult map ──────────────
-    if (cumulativeErrors.length > 0) {
-      console.log(`  [errors] ${cumulativeErrors.length} case load errors`);
-      for (const [msg, cnt] of errorSamplesAcc) {
-        console.log(`    ${cnt}× ${msg}`);
-      }
-    }
-
-    if (useSemantic && semTotalServices > 0) {
-      const pct = ((semResolved / semTotalServices) * 100).toFixed(1);
+    // ── Semantic enhancement diagnostics ──────────────────
+    if (useSemantic) {
+      const sem = stats.semanticStats;
+      const pct =
+        sem.totalServices > 0
+          ? ((sem.semanticallyResolved / sem.totalServices) * 100).toFixed(1)
+          : '0.0';
       console.log(
-        `  [semantic] ${semResolved}/${semTotalServices} services` +
-          ` resolved (${pct}%) — emb=${semEmbedding}, llm=${semLLM}, exact=${semExact}`,
+        `  [semantic] ${sem.semanticallyResolved}/${sem.totalServices} services` +
+          ` resolved (${pct}%) — embedding=${sem.embeddingResolved}, llm=${sem.llmResolved}, exact=${sem.exactMatched}`,
       );
     }
 
-    const results = new Map<string, RunResult>();
-    for (const [ft, acc] of faultAccumulators) {
-      const n = acc.count || 1;
-      results.set(ft, {
-        suiteName: `${systemName}-${suiteName}-${ft}`,
-        totalCases: acc.count,
-        avgTop1: acc.sumA1 / n,
-        avgTop3: 0, // not tracked per-fault-type in this runner
-        avgTop5: acc.sumA5 / n,
-        locationAccuracy: acc.sumLA / n,
-        typeAccuracy: acc.sumTA / n,
-        perFaultType: new Map(),
-        failures: [],
-        duration: 0,
-      });
+    // ── Trace pruning diagnostics ─────────────────────────
+    reportTraceDiagnostics(systemName, suiteName, stats);
+
+    // Split by fault type (matching paper's Table 6 format)
+    const byFaultType = new Map<string, BenchmarkCase[]>();
+    for (const c of stats.cases) {
+      const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
+      if (!byFaultType.has(ft)) byFaultType.set(ft, []);
+      byFaultType.get(ft)!.push(c);
     }
 
-    printResultsTable(systemName, suiteName, results, Array.from(allFaultTypes));
+    // Print topology diagnostics
+    const diagNode = stats.cases[0]?.callGraph.nodes.values().next().value;
+    if (diagNode?.labels?._diag_system) {
+      const l = diagNode.labels;
+      console.log(
+        `  [topo] system=${l._diag_system}, edges=${l._diag_matched}, svcs=${l._diag_svc_matched}, unconnected=${l._diag_unconnected}`,
+      );
+    }
+
+    // Run each fault type separately
+    const results = new Map<string, RunResult>();
+    for (const [ft, ftCases] of byFaultType) {
+      if (ftCases.length === 0) continue;
+      const suite: BenchmarkSuite = {
+        name: `${systemName}-${suiteName}-${ft}`,
+        cases: ftCases,
+        totalCases: ftCases.length,
+      };
+      results.set(ft, await runner.runSuite(suite));
+    }
+
+    printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
   }
 
   console.log(`\nTotal duration: ${Date.now() - startTime}ms`);
