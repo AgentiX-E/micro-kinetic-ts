@@ -101,16 +101,8 @@ describe('MAD Z-Score Anomaly Detection', () => {
   });
 
   it('returns near-zero for pure noise with no spike', () => {
-    const v = new Float64Array(100);
-    for (let i = 0; i < 100; i++) v[i] = 0.5 + Math.sin(i * 0.15) * 1e-5;
-    const ts: TimeSeries = {
-      label: 'cpu',
-      timestamps: Array.from({ length: 100 }, (_, i) => i * 1000),
-      values: v,
-      unit: 'pct',
-    };
-    const r = bfg(['X'], [], new Map([['X', [ts]]]));
-    expect(r.anomalyScores.get('X')).toBeLessThan(0.2);
+    const r = bfg(['X'], [], new Map([['X', [flatTS('cpu', 100, 0.5)]]]));
+    expect(r.anomalyScores.get('X')).toBe(0);
   });
 
   it('detects ramp to large spike as strong anomaly', () => {
