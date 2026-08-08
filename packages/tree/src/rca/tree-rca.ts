@@ -338,11 +338,7 @@ function topologicalSort(
  * @returns FaultType classification
  * @internal
  */
-function classifyFaultType(
-  score: number,
-  depth = 0,
-  childContrib = 0,
-): FaultType {
+function classifyFaultType(score: number, depth = 0, childContrib = 0): FaultType {
   // Distinguish local root cause (low child contribution) from cascade effect (high)
   const childRatio = score > 0 ? childContrib / score : 0;
   const isLocalAnomaly = childRatio < 0.3;
@@ -433,4 +429,3 @@ function rankAndProduceResults(
 
   return results;
 }
-
