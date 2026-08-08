@@ -167,6 +167,7 @@ export class TreeRCAEngine {
       // Accumulate from children (outgoing edges in propagation direction)
       const children = forwardAdj.get(nodeId)!;
       let childContrib = 0;
+      let totalChildWeight = 0;
       let maxChildDepth = 0;
 
       for (const childId of children) {
@@ -178,17 +179,32 @@ export class TreeRCAEngine {
         const avgLatency = getAvgLatency(nodeId, childId, tree.edges);
         const latencyDecay = Math.exp(-avgLatency / this.options.tauMs);
 
-        // Child contribution with decay weighting
-        childContrib += childAcc.totalScore * weight * latencyDecay * this.options.decayAlpha;
+        // Child contribution with decay weighting.
+        // Sum weighted contributions, then normalise by total weight so that
+        // a parent of N children with identical scores receives ≈ one child's
+        // worth of contribution, not N×.  Without normalisation, deep-tree
+        // ancestors accumulate dozens of propagated scores and drown out the
+        // root-cause anomaly signal on large topologies (e.g. TrainTicket 80+
+        // nodes → 0% AC@1).
+        childContrib += childAcc.totalScore * weight * latencyDecay;
+        totalChildWeight += weight * latencyDecay;
 
         if (childAcc.depth + 1 > maxChildDepth) {
           maxChildDepth = childAcc.depth + 1;
         }
       }
 
+      // Normalise child contribution so it is bounded by the child scores,
+      // then apply the global decay factor.
+      if (totalChildWeight > 0) {
+        childContrib = (childContrib / totalChildWeight) * this.options.decayAlpha;
+      }
+
       acc.anomalyScore = nodeAnomaly;
       acc.childPropagationScore = childContrib;
-      acc.totalScore = nodeAnomaly + childContrib;
+      // Clamp totalScore to [0, 1] so downstream confidence estimators
+      // (which assume probability-like semantics) don't reject the value.
+      acc.totalScore = Math.min(1, nodeAnomaly + childContrib);
       acc.depth = maxChildDepth;
 
       accumulators.set(nodeId, acc);

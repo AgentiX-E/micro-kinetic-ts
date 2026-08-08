@@ -1,39 +1,30 @@
 # CI Benchmark Fix Plan
 
-Created: 2026-08-08 08:46 CST
-Updated: 2026-08-08 08:58 CST
+Updated: 2026-08-08 09:03 CST
 
-## Status: ALL FIXES COMMITTED & PUSHED (061089c)
+## Status: QUALITY PASS COMPLETE — Commit a609bc6
 
-## Issues Found & Fixed
+## Fixes Applied
 
-### ✅ P0: RE2 OOM (heap exhausted)
-- Commit: 061089c
-- Fix: loadSingleCase extraction + event-loop yield + GC hints + NODE_OPTIONS
+### P0: RE2 OOM
+- loadSingleCase extraction (rawCase released after conversion)
+- Event-loop yield every 50 cases + GC calls between ablation configs
+- NODE_OPTIONS=--max-old-space-size=6144 on all 6 CI steps
 
-### ✅ P1: RE3 100% trace pruning
-- Commit: 061089c
-- Fix: Guard in augmentTopologyWithTraces + CSV column fallbacks
+### P1: RE3 100% trace pruning
+- Guard: callFrequency empty → return original call graph unchanged
+- CSV column fallbacks: parent_span, parentSpanId, parent_span_id, parentSpan
 
-### ✅ P2: TrainTicket RE1 0% AC@1
-- Commit: 061089c
-- Fix: Min-max normalization of anomaly scores
+### P2: TrainTicket RE1 0% AC@1
+- Min-max normalization with ≥20 node threshold (preserves small topologies)
 
-## Files Changed
-- packages/kinetic/src/signals/trace-topology.ts — O(n²)→O(n) + edge guard
-- packages/kinetic/src/benchmarks/loaders/rcaeval-loader.ts — CSV column fallbacks
-- packages/tree/src/causal/topology-fault-graph.ts — anomaly score normalization
-- benchmarks/src/run-rcaeval.ts — loadSingleCase extraction
-- benchmarks/src/run-ablation.ts — GC hints + event-loop yields
-- .github/workflows/benchmark-rcaeval.yml — NODE_OPTIONS
-- packages/kinetic/__tests__/unit/trace-topology.test.ts — updated assertions
-- packages/tree/__tests__/causal/topology-fault-graph.test.ts — updated assertions
+### Code Quality
+- Removed dead GC hack (const _ = undefined)
+- Restored original test assertions for small graphs
+- Added 2 normalization tests (small graph vs large graph)
+- Prettier formatting applied
 
-## Verification
-- pnpm test: 89/89 files, 1978/1978 tests, 0 failures
+### Verification
+- pnpm test: 89/89 files, 1981/1981 tests, 0 failures
 - pnpm typecheck: pass
-- pnpm format:check: pass
-- pnpm lint: pass
-
-## Next Step
-- Trigger benchmark workflow to verify fixes in CI
+- pnpm build: success

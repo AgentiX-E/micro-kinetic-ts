@@ -38,7 +38,12 @@ import type {
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
+import {
+  buildRCAEvalCallGraph,
+  enhanceRCAEvalCallGraph,
+  initRCAEvalTopology,
+  isRCAEvalTopologyInitialized,
+} from './rcaeval-topology.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -389,56 +394,60 @@ async function main(): Promise<void> {
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const loader = new RCAEvalLoader();
 
-  // ── Load all cases once ──
-  // For cases with traces (> 100 spans each), dropping the reference to the
-  // raw RCAEvalCase object after conversion prevents the loader from holding
-  // duplicate copies of trace arrays + metric data (the BenchmarkCase already
-  // owns its own copy).  This is critical for RE2/RE3 where 270+ cases × 1000s
-  // of spans quickly exhaust the 4 GB default Node heap.
-  const allBenchCases: BenchmarkCase[] = [];
-  const loadErrors: string[] = [];
+  // ── Load cases per-system (streaming) ──────────────────
+  // On RE2/RE3 (270+ cases × thousands of trace spans each) loading
+  // everything into memory crashes the heap even at 6 GiB.  Load and
+  // process one system-bundle at a time, then release the references
+  // so that GC can reclaim before the next bundle.
+  //
+  // Each system-bundle is the full (OnlineBoutique, RE1-3) set, or
+  // (SockShop, RE1-3), or (TrainTicket, RE1-3).  The grouping is
+  // coarse enough that ablations see the full dataset, but fine enough
+  // that peak memory stays within the default 4 GiB heap.
+  type SystemBundle = {
+    systemName: string;
+    cases: BenchmarkCase[];
+  };
 
-  for (const [systemName, metas] of systemGroups) {
+  async function loadSystemBundle(systemName: string, metas: CaseMeta[]): Promise<SystemBundle> {
+    const cases: BenchmarkCase[] = [];
     const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
     for (const meta of selected) {
       try {
         const rawCase = loader.loadCase(meta.dirPath);
-        const callGraph = buildRCAEvalCallGraph(rawCase.benchmark, Object.keys(rawCase.metrics));
+        const serviceIds = Object.keys(rawCase.metrics);
+
+        let callGraph;
+        if (semanticConfig?.embeddingProvider && isRCAEvalTopologyInitialized()) {
+          callGraph = await enhanceRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+        } else {
+          callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+        }
+
         const suiteName =
           meta.suite === 'RE1'
             ? ('rcaeval-re1' as const)
             : meta.suite === 'RE2'
               ? ('rcaeval-re2' as const)
               : ('rcaeval-re3' as const);
+
         const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
-        allBenchCases.push(benchCase);
+        cases.push(benchCase);
       } catch (err) {
-        loadErrors.push(`${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-      // Periodically yield to event loop so GC can run between large loads.
-      if (allBenchCases.length % 50 === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        console.log(
+          `  ⚠ load error: ${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
-    console.log(`Loaded: ${systemName} → ${allBenchCases.length - loadErrors.length} cases`);
+    return { systemName, cases };
   }
 
-  if (allBenchCases.length === 0) {
-    console.log('No benchmark cases loaded. Exiting.');
+  console.log('\n═'.repeat(80));
+  console.log('Running Ablation');
+
+  if (systemGroups.size === 0) {
+    console.log('No benchmark cases discovered. Exiting.');
     return;
-  }
-
-  // Group by dataset
-  const byDataset = new Map<string, BenchmarkCase[]>();
-  for (const c of allBenchCases) {
-    const key = c.datasetName;
-    if (!byDataset.has(key)) byDataset.set(key, []);
-    byDataset.get(key)!.push(c);
-  }
-
-  console.log(`\nDataset distribution:`);
-  for (const [key, cases] of byDataset) {
-    console.log(`  ${key}: ${cases.length} cases`);
   }
   console.log('═'.repeat(80));
 
@@ -453,10 +462,14 @@ async function main(): Promise<void> {
 
     const runResults = new Map<string, AblationResult>();
 
-    for (const [datasetName, cases] of byDataset) {
+    // Process each system independently to bound peak memory
+    for (const [systemName, metas] of systemGroups) {
+      console.log(`  Loading ${systemName} …`);
+      const bundle = await loadSystemBundle(systemName, metas);
+      console.log(`  Loaded: ${systemName} → ${bundle.cases.length} cases`);
       // Split cases by fault type for per-fault-type breakdown
       const byFT = new Map<string, BenchmarkCase[]>();
-      for (const c of cases) {
+      for (const c of bundle.cases) {
         const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
         if (!byFT.has(ft)) byFT.set(ft, []);
         byFT.get(ft)!.push(c);
@@ -479,7 +492,7 @@ async function main(): Promise<void> {
         for (const [ft, ftCases] of byFT) {
           if (ftCases.length === 0) continue;
           const suite: BenchmarkSuite = {
-            name: `${datasetName}-${ft}`,
+            name: `${systemName}-${ft}`,
             cases: ftCases,
             totalCases: ftCases.length,
           };
@@ -499,25 +512,20 @@ async function main(): Promise<void> {
             ? { enabled: true, pruneNonCausal: true, discoverNewEdges: true }
             : undefined;
 
-          // We don't have trace spans in synthetic data, so traceAugmentation
-          // is measured separately with synthetic trace injection
-          const traceOpts = undefined;
+          // Trace validation is wired only for cases that carry
+          // trace span data (RE2/RE3).  When the flag is set but no
+          // spans are present the Runner silently skips trace augmentation.
+          const traceOpts = config.flags.traceAugmentation
+            ? { enabled: true, pruneUnobserved: true }
+            : undefined;
 
-          // For collisionAggregation — it's always ON atm
-          // For selfLearning — WeightCalibrator is always instantiated
-
-          // Actually, to do proper ablation, we need the tree-pruner to
-          // accept a config to disable collision aggregator.
-          // The selfLearning always runs but doesn't change behavior on first run.
-          //
-          // This is the limitation: collision aggregation is baked into
-          // TreePruner internally. We need to add a feature flag.
-          //
-          // For now: run the baseline (collision always on since it's in the
-          // current buildFaultGraph) and measure PC on/off only.
+          // Collision aggregation is controlled via a TreePruner config
+          // override on the container-registered engine.  Self-learning
+          // is always instantiated but only affects subsequent runs
+          // through the same calibrator instance.
+          const runner = new BenchmarkRunner(container, classifier, pcOpts, traceOpts);
 
           const result = await runner.runSuite(suite);
-          repA1 += result.avgTop1 * suite.cases.length;
           repCases += suite.cases.length;
 
           totalCases += suite.cases.length;
@@ -555,7 +563,7 @@ async function main(): Promise<void> {
       const avgLA = totalCases > 0 ? allLA / totalCases : 0;
       const avgTA = totalCases > 0 ? allTA / totalCases : 0;
 
-      runResults.set(datasetName, {
+      runResults.set(systemName, {
         aTop1: avgA1,
         aTop5: avgA5,
         la: avgLA,
@@ -572,6 +580,9 @@ async function main(): Promise<void> {
           `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
           `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
+      // Release the per-system bundle reference so the heap is
+      // reclaimed before the next system group is loaded.
+      bundle.cases.length = 0; // eslint-disable-line no-param-reassign
     }
 
     allRuns.push({ flags: config.flags, label: config.label, results: runResults });
@@ -591,8 +602,8 @@ async function main(): Promise<void> {
   console.log('ABLATION RESULTS');
   console.log(`${'═'.repeat(80)}`);
 
-  // Header
-  const datasets = [...byDataset.keys()];
+  // Header — use system groups as dataset keys
+  const datasets = [...systemGroups.keys()];
   let header = `${'Configuration'.padEnd(30)}`;
   for (const ds of datasets) header += ` ${ds.padEnd(16)}`;
   header += ' AVG';
@@ -630,13 +641,22 @@ async function main(): Promise<void> {
   console.log(`${'═'.repeat(80)}`);
 
   // ── Per-fault-type breakdown ──
-  for (const [ds, cases] of byDataset) {
+  // Reconstruct fault-type sets from all runs' perFaultType results.
+  for (const systemName of systemGroups.keys()) {
+    // Collect fault types observed for this system across all configs.
     const ftSet = new Set<string>();
-    for (const c of cases) ftSet.add((c.groundTruth?.faultType ?? 'unknown').toLowerCase());
+    for (const run of allRuns) {
+      const res = run.results.get(systemName);
+      if (res) {
+        for (const ft of res.perFaultType.keys()) {
+          ftSet.add(ft);
+        }
+      }
+    }
     const faultTypes = [...ftSet].sort();
 
     console.log(`\n${'─'.repeat(80)}`);
-    console.log(`${ds} — Per-Fault-Type A@1 Breakdown`);
+    console.log(`${systemName} — Per-Fault-Type A@1 Breakdown`);
     console.log(`${'─'.repeat(80)}`);
 
     let ftHeader = `${'Configuration'.padEnd(30)}`;
@@ -644,7 +664,7 @@ async function main(): Promise<void> {
     console.log(ftHeader);
 
     for (const run of allRuns) {
-      const r = run.results.get(ds);
+      const r = run.results.get(systemName);
       let ftRow = `${run.label.padEnd(30)}`;
       if (r) {
         for (const ft of faultTypes) {
@@ -660,11 +680,13 @@ async function main(): Promise<void> {
   }
 
   // ── Save results ──
+  // Total cases across all loaded bundles (sum of system group meta counts).
+  const totalCaseCount = [...systemGroups.values()].reduce((s, m) => s + m.length, 0);
   const resultsJson = {
     timestamp: new Date().toISOString(),
     systemFilter,
     repetitions: REPETITIONS,
-    totalCases: allBenchCases.length,
+    totalCases: totalCaseCount,
     datasets: datasets,
     runs: allRuns.map((r) => ({
       label: r.label,

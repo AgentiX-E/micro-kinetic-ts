@@ -417,4 +417,88 @@ describe('TreeRCAEngine', () => {
     expect(topResult).toBeDefined();
     expect(topResult!.propagationDepth).toBeGreaterThanOrEqual(1);
   });
+
+  // ── Child propagation normalisation ─────────────────────
+  // Regression test: on deep topologies (80+ nodes) the old accumulator
+  // summed child contributions without normalisation, causing ancestors
+  // near the root to accumulate dozens of propagated scores and outrank
+  // the true root-cause leaf whose anomaly dominated.
+  it('bounds parent score below child anomaly on a deep chain', () => {
+    const engine = new TreeRCAEngine();
+    // 20-node chain: svc-0 → svc-1 → … → svc-19
+    // svc-19 (leaf) has anomaly = 1.0, every other node has 0.0.
+    // Without normalisation, svc-0 (root) would accumulate ~20 child
+    // contributions and outrank svc-19.
+    const N = 20;
+    const ids = Array.from({ length: N }, (_, i) => `svc-${i}`);
+    const edges: [string, string][] = [];
+    const allEdges: CallEdge[] = [];
+    for (let i = 0; i < N - 1; i++) {
+      edges.push([ids[i]!, ids[i + 1]!]);
+      allEdges.push(makeEdge(ids[i]!, ids[i + 1]!));
+    }
+    const anomalyScores = new Map<ServiceId, number>();
+    for (const id of ids) {
+      anomalyScores.set(id, id === `svc-${N - 1}` ? 1.0 : 0.0);
+    }
+    const tree = makePrunedTree(ids, edges, anomalyScores);
+    const propWeights = new Float64Array(allEdges.length).fill(0.5);
+
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
+    expect(results.length).toBe(1);
+    // The fault-injected leaf must be ranked #1.
+    expect(results[0]!.serviceId).toBe(`svc-${N - 1}`);
+    expect(results[0]!.confidence).toBeGreaterThan(0.5);
+  });
+
+  it('bounded parent score: 3-child fan-in does not outrank fault child', () => {
+    const engine = new TreeRCAEngine();
+    // Fan-in: Root → {A, B, C} → {D}, D has anomaly = 1.0.
+    // Root should NOT outrank D just because it has 3 children.
+    const ids = ['Root', 'A', 'B', 'C', 'D'];
+    const edges: [string, string][] = [
+      ['Root', 'A'],
+      ['Root', 'B'],
+      ['Root', 'C'],
+      ['A', 'D'],
+      ['B', 'D'],
+      ['C', 'D'],
+    ];
+    const allEdges = edges.map(([f, t]) => makeEdge(f, t));
+    const anomalyScores = new Map<ServiceId, number>();
+    for (const id of ids) anomalyScores.set(id, id === 'D' ? 1.0 : 0.0);
+    const tree = makePrunedTree(ids, edges, anomalyScores);
+    const propWeights = new Float64Array(allEdges.length).fill(0.5);
+
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
+    expect(results.length).toBe(1);
+    expect(results[0]!.serviceId).toBe('D');
+  });
+
+  it('ranks correctly on small topology with distributed anomalies after normalization', () => {
+    const engine = new TreeRCAEngine();
+    // With the normalised child accumulation the ancestor's score is
+    // bounded by a weighted average of its children's scores.  Both Top
+    // and Mid reach 1.0 when their anomaly + normalised childContrib sum
+    // exceeds 1.0 (clamped).  The relative ordering among clamped nodes
+    // depends on the tiebreaker, so we only assert that both are present
+    // in the top results (rather than forcing a specific rank).
+    const anomalyScores = new Map<ServiceId, number>([
+      ['Top', 0.6],
+      ['Mid', 0.9],
+      ['Bottom', 0.2],
+    ]);
+    const tree = makePrunedTree(
+      ['Top', 'Mid', 'Bottom'],
+      [['Top', 'Mid'], ['Mid', 'Bottom']],
+      anomalyScores,
+    );
+    const allEdges = [makeEdge('Top', 'Mid'), makeEdge('Mid', 'Bottom')];
+    const propWeights = new Float64Array([0.7, 0.3]);
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 5);
+    expect(results.length).toBeGreaterThanOrEqual(2);
+    const top2 = results.slice(0, 2).map((r) => r.serviceId);
+    expect(top2).toContain('Mid');
+    expect(top2).toContain('Top');
+  });
 });
