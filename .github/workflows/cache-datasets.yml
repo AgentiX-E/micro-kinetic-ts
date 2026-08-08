@@ -147,6 +147,6 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'benchmark-rcaeval.yml',
-              ref: 'main'
+              ref: 'master'
             });
             console.log('Benchmark workflow triggered');
