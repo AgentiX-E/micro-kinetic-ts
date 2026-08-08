@@ -253,6 +253,8 @@ function matchMetricRequirement(
   // Trend check
   if (req.trend === 'rising' && slope <= 0) return false;
   if (req.trend === 'falling' && slope >= 0) return false;
+  // Stable: slope must be near-zero (|slope| < 0.001, i.e. ~no trend)
+  if (req.trend === 'stable' && Math.abs(slope) >= 0.001) return false;
 
   // Slope check
   if (req.minSlopeAbs !== undefined && Math.abs(slope) < req.minSlopeAbs) return false;
