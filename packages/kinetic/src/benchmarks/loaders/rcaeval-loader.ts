@@ -169,7 +169,10 @@ export class RCAEvalLoader {
       injectTime: rawCase.injectTime * 1000, // Convert seconds to ms
       groundTruth: rawCase.groundTruth,
       logs: rawCase.logs,
-      traces: rawCase.traces,
+      // Traces are consumed during topology augmentation (prior to this call);
+      // storing them in BenchmarkCase wastes memory — RE2 has 270+ cases × 100K+
+      // spans each.  Set to undefined so GC can reclaim after augmentation.
+      traces: undefined,
     };
   }
 
@@ -206,10 +209,11 @@ export class RCAEvalLoader {
   // ── Private Helpers ─────────────────────────────────────
 
   private parseDirectoryName(dirName: string): ParsedDirName {
-    // Attempt regex-based parsing first (handles underscores in service names).
     // Pattern: re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
+    // Fault types include named (cpu, mem, disk, delay, loss, socket, network, error)
+    // and RE3 generic labels (f1, f2, f3, f4, f5).
     const regexMatch = dirName.match(
-      /^(re[123][a-z]{2})_(.+?)_(cpu|mem|disk|delay|loss|socket|network|error)_(\d+)$/i,
+      /^(re[123][a-z]{2})_(.+?)_([a-z][a-z0-9]+)_(\d+)$/i,
     );
     if (regexMatch) {
       return {

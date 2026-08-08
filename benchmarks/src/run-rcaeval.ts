@@ -416,6 +416,13 @@ async function loadSingleCase(
         : ('rcaeval-re3' as const);
 
   const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
+
+  // Free trace data after topology augmentation — the BenchmarkCase
+  // does not need traces downstream, and RE2 has 270+ cases each with
+  // 100K+ trace spans (several GB total).  Dropping this reference
+  // lets GC reclaim the memory before the next case is loaded.
+  rawCase.traces = undefined;
+
   return { benchCase, traceUsed, pruned, edgesBefore, edgesAfter };
 }
 
@@ -719,7 +726,7 @@ async function main(): Promise<void> {
     // Load and process cases in batches of BATCH_SIZE to keep peak
     // heap usage bounded.  RE2 has 270+ cases with thousands of trace
     // spans each; loading all at once exceeds 6 GiB.
-    const BATCH_SIZE = 30;
+    const BATCH_SIZE = 1;
 
     // Per-fault-type accumulators (mutable, normalised into runResult at end)
     interface FaultAcc {
