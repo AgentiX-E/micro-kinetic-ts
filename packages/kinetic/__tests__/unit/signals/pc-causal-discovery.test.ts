@@ -258,9 +258,17 @@ describe('runPCAlgorithm', () => {
   });
 
   it('returns empty skeleton for uncorrelated data', () => {
+    // Use deterministic sinusoidal signals at widely separated frequencies
+    // so they are structurally uncorrelated — no spurious edges.
+    const n = 50;
+    const createSignal = (freq: number) => {
+      const arr = new Float64Array(n);
+      for (let i = 0; i < n; i++) arr[i] = Math.sin(i * freq);
+      return arr;
+    };
     const timeSeries = new Map([
-      ['A', new Float64Array(50).map(() => Math.random())],
-      ['B', new Float64Array(50).map(() => Math.random())],
+      ['A', createSignal(0.1)],
+      ['B', createSignal(1.7)], // Far enough from 0.1 to be uncorrelated
     ]);
 
     const result = runPCAlgorithm(['A', 'B'], timeSeries, {
