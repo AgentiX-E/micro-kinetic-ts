@@ -42,7 +42,7 @@ describe('pearsonCorrelation', () => {
     const ys = new Float64Array(20);
     for (let i = 0; i < 20; i++) {
       xs[i] = i;
-      ys[i] = 2 * i + (Math.random() - 0.5) * 2;
+      ys[i] = 2 * i + (Math.sin(i * 0.7) - 0.5) * 2; // deterministic noise
     }
     const r = pearsonCorrelation(xs, ys);
     expect(r).toBeGreaterThan(0.9); // Strong positive
@@ -176,9 +176,11 @@ describe('runPCAlgorithm', () => {
     const cVals = new Float64Array(n);
 
     for (let i = 0; i < n; i++) {
-      aVals[i] = Math.random();
-      bVals[i] = aVals[i]! + Math.random() * 0.3;
-      cVals[i] = bVals[i]! + Math.random() * 0.3;
+      // Deterministic chain: A = sin(t), B = A + very small jitter, C = B + very small jitter.
+      // Conditioning on B must render A ⊥ C to confirm the chain.
+      aVals[i] = Math.sin(i * 0.1);            // strong signal
+      bVals[i] = aVals[i]! + Math.sin(i * 0.31) * 0.05; // B ≈ A
+      cVals[i] = bVals[i]! + Math.cos(i * 0.23) * 0.05; // C ≈ B
     }
 
     const timeSeries = new Map([
