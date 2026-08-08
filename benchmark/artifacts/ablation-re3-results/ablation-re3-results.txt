@@ -1,0 +1,298 @@
+════════════════════════════════════════════════════════════════════════════════
+Micro-Kinetic — Feature Ablation Study
+════════════════════════════════════════════════════════════════════════════════
+Data:       /home/runner/RCAEval-json
+Filter:     system=all, suite=re3
+Configs:    10
+Repetitions: 3
+════════════════════════════════════════════════════════════════════════════════
+
+Discovered: 735 cases
+Semantic: Zhipu embedding-3 ✓
+
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+Running Ablation
+════════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────
+Running: BASELINE (all OFF)
+Flags: {"collisionAggregation":false,"pcCausalDiscovery":false,"traceAugmentation":false,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 72 failures, 922ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=30.0% A@5=30.0% LA=30.0% TA=0.0% (90 cases, 27 failures, 991ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 6227ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision Q(f,f)
+Flags: {"collisionAggregation":true,"pcCausalDiscovery":false,"traceAugmentation":false,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 72 failures, 903ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=30.0% A@5=30.0% LA=30.0% TA=0.0% (90 cases, 27 failures, 1234ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 6199ms)
+
+────────────────────────────────────────────────────────────
+Running: +PC Causal
+Flags: {"collisionAggregation":false,"pcCausalDiscovery":true,"traceAugmentation":false,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 72 failures, 1199ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=30.0% A@5=30.0% LA=30.0% TA=0.0% (90 cases, 27 failures, 1324ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 8852ms)
+
+────────────────────────────────────────────────────────────
+Running: +Trace Topo
+Flags: {"collisionAggregation":false,"pcCausalDiscovery":false,"traceAugmentation":true,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 14ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+
+────────────────────────────────────────────────────────────
+Running: +SelfLearn
+Flags: {"collisionAggregation":false,"pcCausalDiscovery":false,"traceAugmentation":false,"selfLearning":true}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 72 failures, 913ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=30.0% A@5=30.0% LA=30.0% TA=0.0% (90 cases, 27 failures, 985ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 6211ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+PC
+Flags: {"collisionAggregation":true,"pcCausalDiscovery":true,"traceAugmentation":false,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 72 failures, 1165ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=30.0% A@5=30.0% LA=30.0% TA=0.0% (90 cases, 27 failures, 1308ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 8740ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+Trace
+Flags: {"collisionAggregation":true,"pcCausalDiscovery":false,"traceAugmentation":true,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 6ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+
+────────────────────────────────────────────────────────────
+Running: +PC+Trace
+Flags: {"collisionAggregation":false,"pcCausalDiscovery":true,"traceAugmentation":true,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 4ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 6ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+PC+Trace
+Flags: {"collisionAggregation":true,"pcCausalDiscovery":true,"traceAugmentation":true,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 6ms)
+
+────────────────────────────────────────────────────────────
+Running: FULL STACK (all ON)
+Flags: {"collisionAggregation":true,"pcCausalDiscovery":true,"traceAugmentation":true,"selfLearning":true}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+  Loading SockShop …
+  Loaded: SockShop → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 7ms)
+  Loading TrainTicket …
+  Loaded: TrainTicket → 30 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=0.0% (90 cases, 90 failures, 8ms)
+
+════════════════════════════════════════════════════════════════════════════════
+ABLATION RESULTS
+════════════════════════════════════════════════════════════════════════════════
+Configuration                  OnlineBoutique   SockShop         TrainTicket      AVG
+────────────────────────────────────────────────────────────────────────────────
+BASELINE (all OFF)             0.0%             30.0%            0.0%             10.0%  Δ+0.0%
++Collision Q(f,f)              0.0%             30.0%            0.0%             10.0%  Δ+0.0%
++PC Causal                     0.0%             30.0%            0.0%             10.0%  Δ+0.0%
++Trace Topo                    0.0%             0.0%             0.0%             0.0%   Δ-10.0%
++SelfLearn                     0.0%             30.0%            0.0%             10.0%  Δ+0.0%
++Collision+PC                  0.0%             30.0%            0.0%             10.0%  Δ+0.0%
++Collision+Trace               0.0%             0.0%             0.0%             0.0%   Δ-10.0%
++PC+Trace                      0.0%             0.0%             0.0%             0.0%   Δ-10.0%
++Collision+PC+Trace            0.0%             0.0%             0.0%             0.0%   Δ-10.0%
+FULL STACK (all ON)            0.0%             0.0%             0.0%             0.0%   Δ-10.0%
+════════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────────────
+OnlineBoutique — Per-Fault-Type A@1 Breakdown
+────────────────────────────────────────────────────────────────────────────────
+Configuration                  f1         f2         f3         f4         f5        
+BASELINE (all OFF)             67% (27)   0%  (9)    0% (18)    0% (18)    0% (18)   
++Collision Q(f,f)              67% (27)   0%  (9)    0% (18)    0% (18)    0% (18)   
++PC Causal                     67% (27)   0%  (9)    0% (18)    0% (18)    0% (18)   
++Trace Topo                    0% (27)    0%  (9)    0% (18)    0% (18)    0% (18)   
++SelfLearn                     67% (27)   0%  (9)    0% (18)    0% (18)    0% (18)   
++Collision+PC                  67% (27)   0%  (9)    0% (18)    0% (18)    0% (18)   
++Collision+Trace               0% (27)    0%  (9)    0% (18)    0% (18)    0% (18)   
++PC+Trace                      0% (27)    0%  (9)    0% (18)    0% (18)    0% (18)   
++Collision+PC+Trace            0% (27)    0%  (9)    0% (18)    0% (18)    0% (18)   
+FULL STACK (all ON)            0% (27)    0%  (9)    0% (18)    0% (18)    0% (18)   
+
+────────────────────────────────────────────────────────────────────────────────
+SockShop — Per-Fault-Type A@1 Breakdown
+────────────────────────────────────────────────────────────────────────────────
+Configuration                  f1         f2         f3         f4        
+BASELINE (all OFF)             70% (30)   100%  (9)  70% (30)   57% (21)  
++Collision Q(f,f)              70% (30)   100%  (9)  70% (30)   57% (21)  
++PC Causal                     70% (30)   100%  (9)  70% (30)   57% (21)  
++Trace Topo                    0% (30)    0%  (9)    0% (30)    0% (21)   
++SelfLearn                     70% (30)   100%  (9)  70% (30)   57% (21)  
++Collision+PC                  70% (30)   100%  (9)  70% (30)   57% (21)  
++Collision+Trace               0% (30)    0%  (9)    0% (30)    0% (21)   
++PC+Trace                      0% (30)    0%  (9)    0% (30)    0% (21)   
++Collision+PC+Trace            0% (30)    0%  (9)    0% (30)    0% (21)   
+FULL STACK (all ON)            0% (30)    0%  (9)    0% (30)    0% (21)   
+
+────────────────────────────────────────────────────────────────────────────────
+TrainTicket — Per-Fault-Type A@1 Breakdown
+────────────────────────────────────────────────────────────────────────────────
+Configuration                  f1         f2         f3         f4        
+BASELINE (all OFF)             0% (21)    0% (21)    0% (30)    0% (18)   
++Collision Q(f,f)              0% (21)    0% (21)    0% (30)    0% (18)   
++PC Causal                     0% (21)    0% (21)    0% (30)    0% (18)   
++Trace Topo                    0% (21)    0% (21)    0% (30)    0% (18)   
++SelfLearn                     0% (21)    0% (21)    0% (30)    0% (18)   
++Collision+PC                  0% (21)    0% (21)    0% (30)    0% (18)   
++Collision+Trace               0% (21)    0% (21)    0% (30)    0% (18)   
++PC+Trace                      0% (21)    0% (21)    0% (30)    0% (18)   
++Collision+PC+Trace            0% (21)    0% (21)    0% (30)    0% (18)   
+FULL STACK (all ON)            0% (21)    0% (21)    0% (30)    0% (18)   
+
+Results saved: /home/runner/work/micro-kinetic-ts/micro-kinetic-ts/ablation-results.json

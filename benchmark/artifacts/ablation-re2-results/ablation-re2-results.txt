@@ -1,0 +1,128 @@
+════════════════════════════════════════════════════════════════════════════════
+Micro-Kinetic — Feature Ablation Study
+════════════════════════════════════════════════════════════════════════════════
+Data:       /home/runner/RCAEval-json
+Filter:     system=all, suite=re2
+Configs:    10
+Repetitions: 3
+════════════════════════════════════════════════════════════════════════════════
+
+Discovered: 735 cases
+Semantic: Zhipu embedding-3 ✓
+
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+Running Ablation
+════════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────
+Running: BASELINE (all OFF)
+Flags: {"collisionAggregation":false,"pcCausalDiscovery":false,"traceAugmentation":false,"selfLearning":false}
+────────────────────────────────────────────────────────────
+  Loading OnlineBoutique …
+  Loaded: OnlineBoutique → 90 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=16.7% (270 cases, 162 failures, 3287ms)
+  Loading SockShop …
+  Loaded: SockShop → 90 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=0.0% A@5=0.0% LA=0.0% TA=16.7% (270 cases, 129 failures, 3117ms)
+  Loading TrainTicket …
+
+<--- Last few GCs --->
+
+[3213:0x3b5ee000]   543844 ms: Scavenge (interleaved) 12229.2 (12317.4) -> 12228.8 (12327.9) MB, pooled: 0 MB, 30.87 / 0.00 ms  (average mu = 0.334, current mu = 0.257) allocation failure; 
+[3213:0x3b5ee000]   546163 ms: Mark-Compact 12242.4 (12335.9) -> 12241.1 (12341.7) MB, pooled: 0 MB, 2139.95 / 0.00 ms  (average mu = 0.229, current mu = 0.127) allocation failure; GC in old space requested
+
+
+<--- JS stacktrace --->
+
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+----- Native stack trace -----
+
+ 1: 0xe46bbe node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 2: 0x1243740 v8::Utils::ReportOOMFailure(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 3: 0x1243a17 v8::internal::V8::FatalProcessOutOfMemory(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 4: 0x1472925  [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 5: 0x148c1b9 v8::internal::Heap::CollectGarbage(v8::internal::AllocationSpace, v8::internal::GarbageCollectionReason, v8::GCCallbackFlags) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 6: 0x14608b8 v8::internal::HeapAllocator::AllocateRawWithLightRetrySlowPath(int, v8::internal::AllocationType, v8::internal::AllocationOrigin, v8::internal::AllocationAlignment) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 7: 0x14617e5 v8::internal::HeapAllocator::AllocateRawWithRetryOrFailSlowPath(int, v8::internal::AllocationType, v8::internal::AllocationOrigin, v8::internal::AllocationAlignment) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 8: 0x143a3ee v8::internal::Factory::NewFillerObject(int, v8::internal::AllocationAlignment, v8::internal::AllocationType, v8::internal::AllocationOrigin) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 9: 0x189ce80 v8::internal::Runtime_AllocateInOldGeneration(int, unsigned long*, v8::internal::Isolate*) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+10: 0x7f1b1ae6caf6 

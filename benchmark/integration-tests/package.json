@@ -1,0 +1,23 @@
+{
+  "name": "@agentix-e/micro-kinetic-integration-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@agentix-e/micro-kinetic-core": "workspace:^",
+    "@agentix-e/micro-kinetic-tree": "workspace:^",
+    "@agentix-e/micro-kinetic-cutting": "workspace:^",
+    "@agentix-e/micro-kinetic-noise": "workspace:^",
+    "@agentix-e/micro-kinetic-scaling": "workspace:^",
+    "@agentix-e/micro-kinetic-wave": "workspace:^",
+    "@agentix-e/micro-kinetic": "workspace:^",
+    "numpy-ts": "^1.4.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "typescript": "^5.7.0"
+  }
+}

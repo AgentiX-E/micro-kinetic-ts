@@ -1,0 +1,72 @@
+Micro-Kinetic — RCAEval Industry-Standard Benchmark
+═════════════════════════════════════════════════════════════════
+Data:  /home/runner/RCAEval-json
+Filter: system=all, suite=re2
+Cases discovered: 735
+
+Scanned 735 directories with metrics.json
+Case distribution:
+  OnlineBoutique:RE1: 125 cases
+  OnlineBoutique:RE2: 90 cases
+  OnlineBoutique:RE3: 30 cases
+  SockShop:RE1: 125 cases
+  SockShop:RE2: 90 cases
+  SockShop:RE3: 30 cases
+  TrainTicket:RE1: 125 cases
+  TrainTicket:RE2: 90 cases
+  TrainTicket:RE3: 30 cases
+
+Groups to evaluate: 3
+═════════════════════════════════════════════════════════════════
+Topology: YAML v2 (loaded) + semantic enhancement (Zhipu embedding-3)
+═════════════════════════════════════════════════════════════════
+  [semantic] 89/1082 services resolved (8.2%) — embedding=89, llm=0, exact=993
+  [trace] 90/90 cases with traces, 0 pruned, avg edges: 21 → 21 (0% reduction)
+  [topo] system=OnlineBoutique, edges=13 exact + 1 emb + 0 llm, svcs=undefined, unconnected=1
+
+════════════════════════════════════════════════════════════════════════════════
+║  OnlineBoutique                 RE2             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | SOCKET | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% ║
+║ Micro-Kinetic       | Avg@5  |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% ║
+║ Micro-Kinetic       | LA     |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% ║
+║ Micro-Kinetic       | TA     |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% |  40.0% ║
+════════════════════════════════════════════════════════════════════════════════
+  [semantic] 270/1352 services resolved (20.0%) — embedding=270, llm=0, exact=1082
+  [trace] No trace data available for 90 cases
+  [topo] system=SockShop, edges=13 exact + 3 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  SockShop                       RE2             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | SOCKET | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  53.3% |  60.0% |  46.7% |  53.3% |  40.0% |  60.0% |  52.2% ║
+║ Micro-Kinetic       | Avg@5  |  53.3% |  60.0% |  46.7% |  53.3% |  40.0% |  60.0% |  52.2% ║
+║ Micro-Kinetic       | LA     |  53.3% |  60.0% |  46.7% |  53.3% |  40.0% |  60.0% |  52.2% ║
+║ Micro-Kinetic       | TA     |  53.3% |  60.0% |  46.7% |  53.3% |  40.0% |  60.0% |  52.2% ║
+════════════════════════════════════════════════════════════════════════════════
+
+<--- Last few GCs --->
+
+[3314:0xf1b8000]   531124 ms: Scavenge (interleaved) 12233.7 (12317.5) -> 12230.9 (12335.7) MB, pooled: 0 MB, 19.42 / 0.00 ms  (average mu = 0.350, current mu = 0.249) allocation failure; 
+[3314:0xf1b8000]   532913 ms: Mark-Compact 12243.9 (12335.7) -> 12236.4 (12344.5) MB, pooled: 0 MB, 1759.70 / 0.00 ms  (average mu = 0.224, current mu = 0.100) allocation failure; scavenge might not succeed
+
+
+<--- JS stacktrace --->
+
+FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory
+----- Native stack trace -----
+
+ 1: 0xe46bbe node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 2: 0x1243740 v8::Utils::ReportOOMFailure(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 3: 0x1243a17 v8::internal::V8::FatalProcessOutOfMemory(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 4: 0x1472925  [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 5: 0x148c1b9 v8::internal::Heap::CollectGarbage(v8::internal::AllocationSpace, v8::internal::GarbageCollectionReason, v8::GCCallbackFlags) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 6: 0x14608b8 v8::internal::HeapAllocator::AllocateRawWithLightRetrySlowPath(int, v8::internal::AllocationType, v8::internal::AllocationOrigin, v8::internal::AllocationAlignment) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 7: 0x14617e5 v8::internal::HeapAllocator::AllocateRawWithRetryOrFailSlowPath(int, v8::internal::AllocationType, v8::internal::AllocationOrigin, v8::internal::AllocationAlignment) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 8: 0x143a3ee v8::internal::Factory::NewFillerObject(int, v8::internal::AllocationAlignment, v8::internal::AllocationType, v8::internal::AllocationOrigin) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+ 9: 0x189ccfc v8::internal::Runtime_AllocateInYoungGeneration(int, unsigned long*, v8::internal::Isolate*) [/opt/hostedtoolcache/node/22.23.1/x64/bin/node]
+10: 0x7f1f1ee6caf6 

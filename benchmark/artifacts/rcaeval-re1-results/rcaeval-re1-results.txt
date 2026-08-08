@@ -1,0 +1,66 @@
+Micro-Kinetic — RCAEval Industry-Standard Benchmark
+═════════════════════════════════════════════════════════════════
+Data:  /home/runner/RCAEval-json
+Filter: system=all, suite=re1
+Cases discovered: 735
+
+Scanned 735 directories with metrics.json
+Case distribution:
+  OnlineBoutique:RE1: 125 cases
+  OnlineBoutique:RE2: 90 cases
+  OnlineBoutique:RE3: 30 cases
+  SockShop:RE1: 125 cases
+  SockShop:RE2: 90 cases
+  SockShop:RE3: 30 cases
+  TrainTicket:RE1: 125 cases
+  TrainTicket:RE2: 90 cases
+  TrainTicket:RE3: 30 cases
+
+Groups to evaluate: 3
+═════════════════════════════════════════════════════════════════
+Topology: YAML v2 (loaded) + semantic enhancement (Zhipu embedding-3)
+═════════════════════════════════════════════════════════════════
+  [semantic] 130/1681 services resolved (7.7%) — embedding=130, llm=0, exact=1551
+  [trace] No trace data available for 125 cases
+  [topo] system=OnlineBoutique, edges=13 exact + 1 emb + 0 llm, svcs=undefined, unconnected=3
+
+════════════════════════════════════════════════════════════════════════════════
+║  OnlineBoutique                 RE1             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% ║
+║ Micro-Kinetic       | Avg@5  |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% ║
+║ Micro-Kinetic       | LA     |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% ║
+║ Micro-Kinetic       | TA     |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% |  60.0% ║
+════════════════════════════════════════════════════════════════════════════════
+  [semantic] 375/1876 services resolved (20.0%) — embedding=375, llm=0, exact=1501
+  [trace] No trace data available for 125 cases
+  [topo] system=SockShop, edges=13 exact + 3 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  SockShop                       RE1             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  52.0% |  52.0% |  52.0% |  48.0% |  48.0% |  50.4% ║
+║ Micro-Kinetic       | Avg@5  |  52.0% |  52.0% |  52.0% |  48.0% |  48.0% |  50.4% ║
+║ Micro-Kinetic       | LA     |  52.0% |  52.0% |  52.0% |  48.0% |  48.0% |  50.4% ║
+║ Micro-Kinetic       | TA     |  52.0% |  52.0% |  52.0% |  48.0% |  48.0% |  50.4% ║
+════════════════════════════════════════════════════════════════════════════════
+  [semantic] 3500/8000 services resolved (43.8%) — embedding=3500, llm=0, exact=4500
+  [trace] No trace data available for 125 cases
+  [topo] system=TrainTicket, edges=51 exact + 28 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  TrainTicket                    RE1             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% ║
+║ Micro-Kinetic       | Avg@5  |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% ║
+║ Micro-Kinetic       | LA     |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% ║
+║ Micro-Kinetic       | TA     |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% |   0.0% ║
+════════════════════════════════════════════════════════════════════════════════
+
+Total duration: 449960ms
