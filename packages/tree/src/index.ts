@@ -55,6 +55,9 @@ export type { TreePrunerOptions } from './pruning/pruner.js';
 export { TreeRCAEngine } from './rca/tree-rca.js';
 export type { TreeRCAOptions } from './rca/tree-rca.js';
 
+export { IntelligentFaultClassifier } from './rca/intelligent-fault-classifier.js';
+export type { FaultClassification, IntelligentClassifierOptions } from './rca/intelligent-fault-classifier.js';
+
 export { ConfidenceEstimator, boundToConfidence, estimateErrorBound } from './rca/confidence.js';
 export type { ConfidenceOptions } from './rca/confidence.js';
 
