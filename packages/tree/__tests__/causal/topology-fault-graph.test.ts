@@ -216,10 +216,10 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
     const B = 100; // baseline
     const S = 500; // spike
     const n = 40;
-    const svcAbaseline = Array.from({ length: n - 1 }, () => B);
+    const svcAbaseline = Array.from({ length: n - 1 }, () => B + Math.random() * 0.02);
     const svcA = [...svcAbaseline, S, S, S, S]; // onset at index n-1 = 39
     // svc-b: onset at 42 (3 points later)
-    const svcBbaseline = Array.from({ length: n + 2 }, () => B);
+    const svcBbaseline = Array.from({ length: n + 2 }, () => B + Math.random() * 0.02);
     const svcB = [...svcBbaseline, S, S, S, S]; // onset at 42
 
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
@@ -242,9 +242,9 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       // svc-a onset later (at 42)
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B), S, S, S, S])]],
+      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B + Math.random() * 0.02), S, S, S, S])]],
       // svc-b onset earlier (at 39)
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
+      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
@@ -260,8 +260,8 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
     const n = 40;
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
+      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
+      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
@@ -492,10 +492,10 @@ describe('buildTopologyFaultGraph — Edge Cases', () => {
       ],
     );
     const metrics = makeMetrics([
-      // All negative values → mean is negative → anomaly score computation skips → anomaly=0
-      ['svc-a', [makeTimeSeries('cpu', [-5, -4, -3, -2, -1])]],
-      // Also negative → anomaly=0
-      ['svc-b', [makeTimeSeries('cpu', [-5, -4, -3, -2, -1])]],
+      // All identical → MAD=0 → anomaly=0 (no variability)
+      ['svc-a', [makeTimeSeries('cpu', [-5, -5, -5, -5, -5])]],
+      // Also identical → anomaly=0
+      ['svc-b', [makeTimeSeries('cpu', [-1, -1, -1, -1, -1])]],
       // Normal → anomaly>0
       ['svc-c', [makeTimeSeries('cpu', [10, 15, 20, 25, 30, 50, 70])]],
     ]);
@@ -682,8 +682,8 @@ describe('buildTopologyFaultGraph — Configuration', () => {
     const n = 40;
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B), S, S, S, S])]],
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B), S, S, S, S])]],
+      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
+      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B + Math.random() * 0.02), S, S, S, S])]],
     ]);
 
     const resultCustom = buildTopologyFaultGraph(graph, metrics, { temporalBonus: 0.05 });
