@@ -111,7 +111,15 @@ export class StossDenoiser {
     invariant(coupling.matrix.length > 0, 'Coupling matrix must not be empty');
 
     const N = coupling.dimension;
-    const threshold = coupling.threshold;
+
+    // Build deterministic service ID → matrix index mapping.
+    // All unique service IDs across the entire alert batch are mapped
+    // to stable indices via sorted order, avoiding hash collisions.
+    const allServiceIds = [...new Set(alerts.map((a) => a.serviceId))].sort();
+    const serviceIndexMap = new Map<string, number>();
+    for (let i = 0; i < allServiceIds.length; i++) {
+      serviceIndexMap.set(allServiceIds[i]!, i % N);
+    }
 
     // Step 1: Group alerts by time proximity and service
     const timeWindows = this.groupByTimeWindows(alerts);
@@ -151,9 +159,9 @@ export class StossDenoiser {
           const alertsA = windowAlerts.filter((a) => a.serviceId === serviceIA);
           const alertsB = windowAlerts.filter((a) => a.serviceId === serviceJB);
 
-          // Map service IDs to coupling matrix indices
-          const idxA = this.getServiceIndex(serviceIA, coupling, alerts);
-          const idxB = this.getServiceIndex(serviceJB, coupling, alerts);
+          // Map service IDs to coupling matrix indices via deterministic map
+          const idxA = serviceIndexMap.get(serviceIA) ?? 0;
+          const idxB = serviceIndexMap.get(serviceJB) ?? 0;
 
           const result = this.independenceChecker.testIndependence(
             alertsA,
@@ -252,31 +260,6 @@ export class StossDenoiser {
     windows.push(currentWindow);
 
     return windows;
-  }
-
-  /**
-   * Map a service ID to its index in the coupling matrix.
-   *
-   * Uses a heuristic based on the checksum of the service ID,
-   * normalized to the matrix dimension.
-   *
-   * @param serviceId - Service identifier
-   * @param coupling - Coupling matrix
-   * @param alerts - Alert records for context
-   * @returns Row/column index
-   */
-  private getServiceIndex(
-    serviceId: string,
-    coupling: CouplingSparsityMatrix,
-    _alerts: readonly AlertRecord[],
-  ): number {
-    // Hash the service ID to get a consistent index
-    let hash = 0;
-    for (let i = 0; i < serviceId.length; i++) {
-      hash = (hash << 5) - hash + serviceId.charCodeAt(i);
-      hash |= 0; // Convert to 32bit int
-    }
-    return Math.abs(hash) % coupling.dimension;
   }
 
   /**

@@ -152,11 +152,14 @@ export class TreeRCAEngine {
       });
     }
 
-    // Build weight lookup map from original edges
-    const weightMap = new Map<string, number>();
+    // Build weight and latency lookup maps from original edges (O(E) once, O(1) access)
+    const edgeWeightMap = new Map<string, number>();
+    const edgeLatencyMap = new Map<string, number>();
     for (let i = 0; i < allEdges.length; i++) {
       const e = allEdges[i]!;
-      weightMap.set(`${e.from}→${e.to}`, propagationWeights[i]!);
+      const key = `${e.from}→${e.to}`;
+      edgeWeightMap.set(key, propagationWeights[i]!);
+      edgeLatencyMap.set(key, e.p99Latency);
     }
 
     for (const nodeId of topoOrder) {
@@ -172,11 +175,12 @@ export class TreeRCAEngine {
 
       for (const childId of children) {
         const childAcc = accumulators.get(childId)!;
+        const edgeKey = `${nodeId}→${childId}`;
 
-        const weight = weightMap.get(`${nodeId}→${childId}`)!;
+        const weight = edgeWeightMap.get(edgeKey)!;
 
         // Latency decay: δ = exp(-latency_avg / τ)
-        const avgLatency = getAvgLatency(nodeId, childId, tree.edges);
+        const avgLatency = edgeLatencyMap.get(edgeKey)!;
         const latencyDecay = Math.exp(-avgLatency / this.options.tauMs);
 
         // Child contribution with decay weighting.
@@ -320,14 +324,58 @@ function topologicalSort(
 }
 
 /**
- * Get the average latency for an edge.
+ * Classify fault type based on anomaly score, propagation depth,
+ * and child contribution pattern.
  *
+ * Uses a multi-dimensional heuristic that considers:
+ * - Score magnitude → severity classification
+ * - Propagation depth → distinguishes root vs. cascade
+ * - Child contribution ratio → local anomaly vs. propagated symptom
+ *
+ * @param score - Total RCA score
+ * @param depth - Propagation depth from farthest leaf
+ * @param childContrib - Score contribution from children
+ * @returns FaultType classification
  * @internal
  */
-function getAvgLatency(from: ServiceId, to: ServiceId, edges: readonly CallEdge[]): number {
-  const edge = edges.find((e) => e.from === from && e.to === to);
-  return edge!.p99Latency;
+function classifyFaultType(
+  score: number,
+  depth = 0,
+  childContrib = 0,
+): FaultType {
+  // Distinguish local root cause (low child contribution) from cascade effect (high)
+  const childRatio = score > 0 ? childContrib / score : 0;
+  const isLocalAnomaly = childRatio < 0.3;
+
+  if (score >= 0.8) {
+    return {
+      category: isLocalAnomaly ? 'CPU' : 'MEMORY',
+      subType: isLocalAnomaly ? 'severe_local_anomaly' : 'severe_cascaded_anomaly',
+      severity: 'critical',
+    };
+  }
+  if (score >= 0.6) {
+    return {
+      category: isLocalAnomaly ? 'MEMORY' : 'CONNECTION_POOL',
+      subType: isLocalAnomaly ? 'significant_local_anomaly' : 'significant_cascaded_anomaly',
+      severity: 'major',
+    };
+  }
+  if (score >= 0.4) {
+    return {
+      category: 'CODE_ERROR',
+      subType: depth > 2 ? 'deep_propagation_anomaly' : 'moderate_local_anomaly',
+      severity: 'minor',
+    };
+  }
+  return {
+    category: 'UNKNOWN',
+    subType: depth > 0 ? 'mild_propagation' : 'mild_local',
+    severity: 'warning',
+  };
 }
+
+/** Remove: replaced by pre-built edgeLatencyMap (O(1) vs O(E)). */
 
 /**
  * Rank accumulators and produce RootCauseResult[].
@@ -357,7 +405,7 @@ function rankAndProduceResults(
 
     results.push({
       serviceId: nodeId,
-      faultType: classifyFaultType(acc.totalScore),
+      faultType: classifyFaultType(acc.totalScore, acc.depth, acc.childPropagationScore),
       confidence,
       rank: i + 1,
       evidenceMetrics: [
@@ -386,36 +434,3 @@ function rankAndProduceResults(
   return results;
 }
 
-/**
- * Classify fault type based on total RCA score.
- *
- * @internal
- */
-function classifyFaultType(score: number): FaultType {
-  if (score >= 0.8) {
-    return {
-      category: 'CPU',
-      subType: 'severe_anomaly',
-      severity: 'critical',
-    };
-  }
-  if (score >= 0.6) {
-    return {
-      category: 'MEMORY',
-      subType: 'significant_anomaly',
-      severity: 'major',
-    };
-  }
-  if (score >= 0.4) {
-    return {
-      category: 'CODE_ERROR',
-      subType: 'moderate_anomaly',
-      severity: 'minor',
-    };
-  }
-  return {
-    category: 'UNKNOWN',
-    subType: 'mild_anomaly',
-    severity: 'warning',
-  };
-}
