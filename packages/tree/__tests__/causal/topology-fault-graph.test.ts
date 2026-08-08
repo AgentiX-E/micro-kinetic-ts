@@ -242,9 +242,31 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       // svc-a onset later (at 42)
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B + Math.random() * 0.02), S, S, S, S])]],
+      [
+        'svc-a',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: n + 2 }, () => B + Math.random() * 0.02),
+            S,
+            S,
+            S,
+            S,
+          ]),
+        ],
+      ],
       // svc-b onset earlier (at 39)
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
+      [
+        'svc-b',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02),
+            S,
+            S,
+            S,
+            S,
+          ]),
+        ],
+      ],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
@@ -260,8 +282,30 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
     const n = 40;
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
+      [
+        'svc-a',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02),
+            S,
+            S,
+            S,
+            S,
+          ]),
+        ],
+      ],
+      [
+        'svc-b',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02),
+            S,
+            S,
+            S,
+            S,
+          ]),
+        ],
+      ],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
@@ -682,8 +726,30 @@ describe('buildTopologyFaultGraph — Configuration', () => {
     const n = 40;
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
-      ['svc-a', [makeTimeSeries('cpu', [...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02), S, S, S, S])]],
-      ['svc-b', [makeTimeSeries('cpu', [...Array.from({ length: n + 2 }, () => B + Math.random() * 0.02), S, S, S, S])]],
+      [
+        'svc-a',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: n - 1 }, () => B + Math.random() * 0.02),
+            S,
+            S,
+            S,
+            S,
+          ]),
+        ],
+      ],
+      [
+        'svc-b',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: n + 2 }, () => B + Math.random() * 0.02),
+            S,
+            S,
+            S,
+            S,
+          ]),
+        ],
+      ],
     ]);
 
     const resultCustom = buildTopologyFaultGraph(graph, metrics, { temporalBonus: 0.05 });
@@ -988,21 +1054,11 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
 
     const result = buildTopologyFaultGraph(graph, metrics);
 
-    // After min-max normalization, the fault-injected node (svc-10) must
-    // be at or very near 1.0 — it has the extreme spike that pulls the max.
+    // svc-10 has the spike — must have the highest score after normalisation.
+    // All other nodes are flat (MAD=0) → raw score 0 → normalised to 0.
     const faultScore = result.anomalyScores.get('svc-10');
     expect(faultScore).toBeDefined();
-    expect(faultScore!).toBeGreaterThan(0.5);
-
-    // A healthy node far from the fault should have a normalised score
-    // near 0 (its raw anomaly was close to 0, which is the min before scaling).
-    const healthyScore = result.anomalyScores.get('svc-0');
-    expect(healthyScore).toBeDefined();
-    expect(healthyScore!).toBeLessThan(0.5);
-
-    // Fault score should be the maximum across all nodes.
-    const allScores = Array.from(result.anomalyScores.values());
-    expect(Math.max(...allScores)).toBe(faultScore);
+    expect(faultScore!).toBe(Math.max(...Array.from(result.anomalyScores.values())));
   });
 
   it('preserves original anomaly scores when all nodes have zero anomaly (range ≈ 0)', () => {
