@@ -68,6 +68,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 2>&1 | tee rcaeval-re1-results.txt
       - name: Upload RE1 results
@@ -103,6 +104,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
@@ -138,6 +140,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
@@ -175,6 +178,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re1 2>&1 | tee ablation-re1-results.txt
       - name: Upload ablation RE1 results
@@ -213,6 +217,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 2>&1 | tee ablation-re2-results.txt
       - name: Upload ablation RE2 results
@@ -251,6 +256,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=6144
         run: |
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re3 2>&1 | tee ablation-re3-results.txt
       - name: Upload ablation RE3 results

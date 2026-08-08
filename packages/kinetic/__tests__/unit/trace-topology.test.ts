@@ -84,15 +84,14 @@ describe('augmentTopologyWithTraces', () => {
     expect(keptEdges).not.toContain('frontend→recommendation');
   });
 
-  // ── Test 2: No traces → all edges pruned (no trace evidence) ─
-  it('should prune all edges when spans are empty (no trace evidence to confirm any edge)', () => {
+  // ── Test 2: No traces → preserved (guard prevents pruning without evidence) ─
+  it('should preserve original edges when spans are empty (guard: no trace evidence)', () => {
     const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['B', 'C']]);
 
     const result = augmentTopologyWithTraces(graph, []);
 
-    // With no trace data, no edges can be confirmed → all pruned
-    expect(result.edges.length).toBe(0);
-    // Nodes are still preserved from the original graph
+    // Empty spans → callFrequency is empty → guard returns original graph unchanged
+    expect(result.edges.length).toBe(2);
     expect(result.nodes.size).toBe(3);
     expect(result.systemLoad).toBe(0.5);
     expect(result.nodes.has('A')).toBe(true);
@@ -196,11 +195,11 @@ describe('augmentTopologyWithTraces', () => {
     expect(result.edges.length).toBe(2);
   });
 
-  // ── Test 7: Empty spans with parent→child relationships ─
-  it('should handle spans that all have parentSpanId pointing to non-existent spans (no relationships)', () => {
+  // ── Test 7: All spans have orphan parentSpanIds (no valid relationships) ─
+  it('should preserve original edges when no parent-child relationships are resolved', () => {
     const graph = makeGraph(['A', 'B'], [['A', 'B']]);
     // All spans have parentSpanId set, but no span exists with that spanId
-    // → no parent→child relationships are resolved → no edge confirmations
+    // → no parent→child relationships are resolved → callFrequency is empty
     const spans: TraceSpan[] = [
       makeSpan('t1', 's1', 'nonexistent', 'A', 10, false, 0),
       makeSpan('t1', 's2', 'another-nonexistent', 'B', 10, false, 0),
@@ -208,9 +207,8 @@ describe('augmentTopologyWithTraces', () => {
 
     const result = augmentTopologyWithTraces(graph, spans);
 
-    // No relationships found → all original edges pruned
-    expect(result.edges.length).toBe(0);
-    // Nodes still preserved
+    // No relationships found → guard preserves original edges
+    expect(result.edges.length).toBe(1);
     expect(result.nodes.size).toBe(2);
   });
 
@@ -489,8 +487,8 @@ describe('augmentTopologyWithTraces', () => {
     });
   });
 
-  // ── Test 18: Root spans without children (all leaf spans) ─
-  it('should handle spans where every span is a root span (no parent→child edges)', () => {
+  // ── Test 18: Root spans without children (no parent→child relationships) ─
+  it('should preserve original edges when all spans are root spans (no parent→child edges)', () => {
     const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['B', 'C']]);
     // All spans are root spans (parentSpanId='')
     const spans: TraceSpan[] = [
@@ -501,9 +499,8 @@ describe('augmentTopologyWithTraces', () => {
 
     const result = augmentTopologyWithTraces(graph, spans);
 
-    // No parent→child relationships → all edges pruned
-    expect(result.edges.length).toBe(0);
-    // Nodes preserved
+    // No parent→child relationships → guard preserves original edges
+    expect(result.edges.length).toBe(2);
     expect(result.nodes.size).toBe(3);
   });
 });

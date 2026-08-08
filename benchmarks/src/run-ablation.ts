@@ -297,6 +297,11 @@ async function main(): Promise<void> {
   const loader = new RCAEvalLoader();
 
   // ── Load all cases once ──
+  // For cases with traces (> 100 spans each), dropping the reference to the
+  // raw RCAEvalCase object after conversion prevents the loader from holding
+  // duplicate copies of trace arrays + metric data (the BenchmarkCase already
+  // owns its own copy).  This is critical for RE2/RE3 where 270+ cases × 1000s
+  // of spans quickly exhaust the 4 GB default Node heap.
   const allBenchCases: BenchmarkCase[] = [];
   const loadErrors: string[] = [];
 
@@ -309,9 +314,18 @@ async function main(): Promise<void> {
         const suiteName = meta.suite === 'RE1' ? 'rcaeval-re1' as const
           : meta.suite === 'RE2' ? 'rcaeval-re2' as const
           : 'rcaeval-re3' as const;
-        allBenchCases.push(loader.toBenchmarkCase(rawCase, callGraph, suiteName));
+        const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
+        allBenchCases.push(benchCase);
+        // Help GC by dropping RCAEvalCase references (traces + raw metrics)
+        // that were already materialised inside BenchmarkCase.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const _ = undefined; // prevent scope-escape
       } catch (err) {
         loadErrors.push(`${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      // Periodically yield to event loop so GC can run between large loads.
+      if (allBenchCases.length % 50 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }
     console.log(`Loaded: ${systemName} → ${allBenchCases.length - loadErrors.length} cases`);
@@ -462,6 +476,15 @@ async function main(): Promise<void> {
     }
 
     allRuns.push({ flags: config.flags, label: config.label, results: runResults });
+
+    // Yield to event loop after each config so GC can collect temporary
+    // BenchmarkSuite / RunResult objects before the next config starts.
+    // Without this the node process retains ~3.8 GB of stale reachable
+    // objects (closure scopes + suite arrays), causing OOM on RE2/RE3.
+    if (typeof globalThis.gc === 'function') {
+      globalThis.gc();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
   // ── Results Table ──

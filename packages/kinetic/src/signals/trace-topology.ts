@@ -93,6 +93,17 @@ export function augmentTopologyWithTraces(
     nodes.set(id, { ...node });
   }
 
+  // If no call relationships were extracted from traces (e.g. all spans
+  // are root spans without parentSpanId, or trace format is incompatible),
+  // return the original call graph unchanged rather than pruning everything.
+  if (callFrequency.size === 0) {
+    return {
+      nodes,
+      edges: callGraph.edges.map((e) => ({ ...e })),
+      systemLoad: callGraph.systemLoad,
+    };
+  }
+
   // Check existing edges against trace data
   for (const edge of callGraph.edges) {
     const key = `${edge.from}→${edge.to}`;
