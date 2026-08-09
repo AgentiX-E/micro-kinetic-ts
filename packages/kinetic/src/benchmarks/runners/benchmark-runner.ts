@@ -287,11 +287,7 @@ export class BenchmarkRunner {
           effectiveCallGraph = validationResult.refinedGraph;
         }
 
-        const faultGraph = engine.buildFaultGraph(
-          effectiveCallGraph,
-          benchCase.metrics,
-          benchCase.injectTime,
-        );
+        const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics);
         const results = await engine.analyze(faultGraph, topK);
         const topResult = results[0];
 

@@ -30,12 +30,7 @@ export interface IRCAEngine {
    * and time-series metrics. This annotates edges with propagation
    * probabilities derived from metric anomaly correlations.
    */
-  /** @param injectTimeMs - Optional fault injection timestamp (ms) for windowing */
-  buildFaultGraph(
-    callGraph: ServiceCallGraph,
-    metrics: MetricMap,
-    injectTimeMs?: number,
-  ): FaultPropagationGraph;
+  buildFaultGraph(callGraph: ServiceCallGraph, metrics: MetricMap): FaultPropagationGraph;
 
   /**
    * Perform root cause analysis on the fault propagation graph.

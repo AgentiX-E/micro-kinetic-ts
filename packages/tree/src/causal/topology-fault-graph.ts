@@ -188,17 +188,12 @@ export interface TopologyFaultGraphResult {
  * @param callGraph - Service call graph with topology edges
  * @param metrics - Time-series metrics keyed by service ID
  * @param config - Builder configuration
- * @param injectTimeMs - Optional fault injection timestamp (ms).
- *   When provided, only data points at or after this time are used
- *   for anomaly scoring.  This improves signal-to-noise ratio by
- *   excluding pre-injection normal-fluctuation data.
  * @returns Fault graph with topology-preserving weights
  */
 export function buildTopologyFaultGraph(
   callGraph: ServiceCallGraph,
   metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
   config?: Partial<TopologyFaultGraphConfig>,
-  injectTimeMs?: number,
 ): TopologyFaultGraphResult {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
@@ -212,7 +207,7 @@ export function buildTopologyFaultGraph(
   const anomalyOnsetTimes = new Map<ServiceId, number>();
   for (const [serviceId] of callGraph.nodes) {
     const serviceMetrics = metrics.get(serviceId);
-    const result = computeAnomalyFeatures(serviceMetrics, cfg, injectTimeMs);
+    const result = computeAnomalyFeatures(serviceMetrics, cfg);
     anomalyScores.set(serviceId, result.score);
     anomalyOnsetTimes.set(serviceId, result.onsetIndex);
   }
@@ -305,11 +300,6 @@ interface EdgeWeightResult {
  * Score: maximum feature-weighted anomaly across all metrics (0-1).
  * Onset: earliest data point index where deviation exceeds 1.5σ.
  *
- * When `injectTimeMs` is provided, only data points with
- * `timestamps[i] >= injectTimeMs` are used for scoring.  This
- * improves signal-to-noise ratio by excluding pre-injection
- * normal-fluctuation data (Phase 5 optimisation).
- *
  * Feature contributions:
  *   - Base deviation: (max - baseline_mean) / baseline_mean
  *   - Trend bonus: monotonic upward slope × 0.3
@@ -321,7 +311,6 @@ interface EdgeWeightResult {
 function computeAnomalyFeatures(
   serviceMetrics: readonly TimeSeries[] | undefined,
   _cfg: TopologyFaultGraphConfig,
-  injectTimeMs?: number,
 ): AnomalyFeatures {
   if (!serviceMetrics || serviceMetrics.length === 0) {
     return { score: 0, onsetIndex: Number.MAX_SAFE_INTEGER };
@@ -333,35 +322,13 @@ function computeAnomalyFeatures(
   for (const ts of serviceMetrics) {
     if (ts.values.length < 2) continue;
 
-    // ── Injection-time window filtering (Phase 5) ────────
-    // Only consider metrics within the post-injection window
-    // to maximise fault-signal SNR.
-    let startIdx = 0;
-    let n = ts.values.length;
+    const n = ts.values.length;
 
-    if (injectTimeMs !== undefined && injectTimeMs > 0) {
-      // Binary search for the first timestamp >= injectTimeMs
-      let lo = 0;
-      let hi = n;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (ts.timestamps[mid]! < injectTimeMs) {
-          lo = mid + 1;
-        } else {
-          hi = mid;
-        }
-      }
-      startIdx = lo;
-      if (startIdx >= n) continue; // all data before injection — skip
-      n = n - startIdx;
-      if (n < 2) continue; // not enough post-injection points
-    }
-
-    // Basic statistics (post-injection window: [startIdx, startIdx+n))
+    // Basic statistics
     let sum = 0;
     let max = -Infinity;
     for (let i = 0; i < n; i++) {
-      const v = ts.values[startIdx + i]!;
+      const v = ts.values[i]!;
       sum += v;
       if (v > max) max = v;
     }
@@ -369,15 +336,11 @@ function computeAnomalyFeatures(
     if (mean <= 0) continue;
 
     // Change point detection: find first point exceeding 1.5σ
-    let fullVariance = 0;
-    for (let i = 0; i < n; i++) {
-      fullVariance += (ts.values[startIdx + i]! - mean) ** 2;
-    }
-    fullVariance /= n;
+    const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
     const fullStd = Math.sqrt(fullVariance);
     let changePt = n;
     for (let i = 1; i < n; i++) {
-      if (ts.values[startIdx + i]! > mean + 1.5 * fullStd) {
+      if (ts.values[i]! > mean + 1.5 * fullStd) {
         changePt = i;
         break;
       }
@@ -387,7 +350,7 @@ function computeAnomalyFeatures(
     let baselineMean = mean;
     if (changePt < n && changePt > 2) {
       let bs = 0;
-      for (let i = 0; i < changePt; i++) bs += ts.values[startIdx + i]!;
+      for (let i = 0; i < changePt; i++) bs += ts.values[i]!;
       baselineMean = bs / changePt;
       if (baselineMean <= 0) baselineMean = mean;
     }
@@ -396,13 +359,13 @@ function computeAnomalyFeatures(
     const deviation = Math.abs(max - baselineMean) / baselineMean;
     if (deviation < 0.05) continue;
 
-    // Trend slope (linear regression) — within window
+    // Trend slope (linear regression)
     let sx = 0,
       sy = 0,
       sxx = 0,
       sxy = 0;
     for (let i = 0; i < n; i++) {
-      const v = ts.values[startIdx + i]!;
+      const v = ts.values[i]!;
       sx += i;
       sy += v;
       sxx += i * i;
@@ -411,27 +374,27 @@ function computeAnomalyFeatures(
     const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
     const trendStrength = mean > 0 ? Math.abs((slope * n) / mean) : 0;
 
-    // CV — within window
+    // CV
     let variance = 0;
     for (let i = 0; i < n; i++) {
-      const diff = ts.values[startIdx + i]! - mean;
+      const diff = ts.values[i]! - mean;
       variance += diff * diff;
     }
     variance /= n;
     const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
 
-    // Burst detection — within window
+    // Burst detection
     let hasBurst = false;
     const threshold = mean + 3 * Math.sqrt(variance);
     for (let i = 0; i < n && !hasBurst; i++) {
-      if (ts.values[startIdx + i]! > threshold) hasBurst = true;
+      if (ts.values[i]! > threshold) hasBurst = true;
     }
 
-    // Monotonic upward — within window
+    // Monotonic upward
     let isMonotonicUp = slope > 0;
     if (isMonotonicUp) {
       for (let i = 1; i < n; i++) {
-        if (ts.values[startIdx + i]! < ts.values[startIdx + i - 1]!) {
+        if (ts.values[i]! < ts.values[i - 1]!) {
           isMonotonicUp = false;
           break;
         }
@@ -447,9 +410,9 @@ function computeAnomalyFeatures(
 
     if (featureScore > bestScore) bestScore = featureScore;
 
-    // Onset: first point exceeding 30% deviation from mean (within window)
+    // Onset: first point exceeding 30% deviation from mean
     for (let i = 0; i < n; i++) {
-      if (Math.abs(ts.values[startIdx + i]! - mean) / mean > 0.3) {
+      if (Math.abs(ts.values[i]! - mean) / mean > 0.3) {
         if (i < earliestOnset) earliestOnset = i;
         break;
       }
