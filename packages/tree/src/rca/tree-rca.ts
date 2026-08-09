@@ -169,8 +169,8 @@ export class TreeRCAEngine {
 
       // Accumulate from children (outgoing edges in propagation direction)
       const children = forwardAdj.get(nodeId)!;
-      let childContrib = 0;
-      let totalChildWeight = 0;
+      let childContribRaw = 0;
+      let maxChildScore = 0;
       let maxChildDepth = 0;
 
       for (const childId of children) {
@@ -179,30 +179,42 @@ export class TreeRCAEngine {
 
         const weight = edgeWeightMap.get(edgeKey)!;
 
-        // Latency decay: δ = exp(-latency_avg / τ)
+        // Latency decay: δ = exp(−latency_avg / τ)
         const avgLatency = edgeLatencyMap.get(edgeKey)!;
         const latencyDecay = Math.exp(-avgLatency / this.options.tauMs);
 
-        // Child contribution with decay weighting.
-        // Sum weighted contributions, then normalise by total weight so that
-        // a parent of N children with identical scores receives ≈ one child's
-        // worth of contribution, not N×.  Without normalisation, deep-tree
-        // ancestors accumulate dozens of propagated scores and drown out the
-        // root-cause anomaly signal on large topologies (e.g. TrainTicket 80+
-        // nodes → 0% AC@1).
-        childContrib += childAcc.totalScore * weight * latencyDecay;
-        totalChildWeight += weight * latencyDecay;
+        // Raw weighted child contribution (uncapped, not normalised by
+        // child count).  Multiple high-score children are a strong signal
+        // that this node is the propagation root, not the leaf.
+        childContribRaw += childAcc.totalScore * weight * latencyDecay;
+
+        if (childAcc.totalScore > maxChildScore) {
+          maxChildScore = childAcc.totalScore;
+        }
 
         if (childAcc.depth + 1 > maxChildDepth) {
           maxChildDepth = childAcc.depth + 1;
         }
       }
 
-      // Normalise child contribution so it is bounded by the child scores,
-      // then apply the global decay factor.
-      if (totalChildWeight > 0) {
-        childContrib = (childContrib / totalChildWeight) * this.options.decayAlpha;
-      }
+      // ── Child Contribution Cap (Deng Yu Collision Bound) ──────
+      // Instead of normalising by children count (which makes ALL
+      // nodes along a propagation chain converge to the same score),
+      // cap child contribution at the maximum anomaly in the
+      // subtree.  This preserves the multi-child propagation signal
+      // for root causes while preventing deep ancestors from
+      // accumulating infinite scores.
+      //
+      //   childContrib = min(raw_contrib, max(anomaly(v), max_child)) × decayAlpha
+      //
+      // A root cause with 5 anomalous children (all 0.9) gets:
+      //   raw = 5 × 0.9 × 0.5 = 2.25, cap = 0.9, contrib = 0.72
+      // A symptom with 1 weak child (0.3) gets:
+      //   raw = 1 × 0.3 × 0.5 = 0.15, cap = 0.6, contrib = 0.12
+      let childContrib = childContribRaw;
+      const cap = Math.max(nodeAnomaly, maxChildScore);
+      if (childContrib > cap) childContrib = cap;
+      childContrib *= this.options.decayAlpha;
 
       acc.anomalyScore = nodeAnomaly;
       acc.childPropagationScore = childContrib;
