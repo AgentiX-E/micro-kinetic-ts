@@ -308,9 +308,7 @@ export class RCAEvalSemanticEnhancer {
       labels: {},
     }));
 
-    const queryTexts = unmatchedServices.map((id) =>
-      this.buildDescriptorQuery({ id, name: id, namespace: system, labels: {} }),
-    );
+    const queryTexts = unmatchedServices.map((id) => [id, system].filter(Boolean).join(' '));
 
     if (!this.hasEmbedding) return [];
 
