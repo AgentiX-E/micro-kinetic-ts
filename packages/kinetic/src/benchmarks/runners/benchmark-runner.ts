@@ -291,6 +291,15 @@ export class BenchmarkRunner {
         const results = await engine.analyze(faultGraph, topK);
         const topResult = results[0];
 
+        // ── Diagnostic snapshot for failing cases ──────────────────
+        const gtAnomaly = faultGraph.anomalyScores.get(benchCase.groundTruth.serviceId) ?? 0;
+        const maxAnomaly = Math.max(...faultGraph.anomalyScores.values());
+        const topPredictions = results.slice(0, topK).map((r) => ({
+          serviceId: r.serviceId,
+          confidence: r.confidence,
+          depth: r.propagationDepth,
+        }));
+
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
           ? results.map((r) => this.enrichPrediction(r, benchCase.metrics))
@@ -334,6 +343,13 @@ export class BenchmarkRunner {
             actualTop: enrichedTop.serviceId,
             actualFaultType: formatFaultType(enrichedTop.faultType),
             reason: `Top prediction "${enrichedTop.serviceId}" does not match ground truth "${benchCase.groundTruth.serviceId}"`,
+            diag: {
+              gtAnomaly: gtAnomaly,
+              maxAnomaly: maxAnomaly,
+              topK: topPredictions,
+              gtInGraph: effectiveCallGraph.nodes.has(benchCase.groundTruth.serviceId),
+              edges: effectiveCallGraph.edges.length,
+            },
           });
         } else {
           failures.push({
