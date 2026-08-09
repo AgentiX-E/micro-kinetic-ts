@@ -346,7 +346,7 @@ function computeAnomalyFeatures(
     const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
     const fullStd = Math.sqrt(fullVariance);
     for (let i = 1; i < n; i++) {
-      if (ts.values[startIdx + i]! > mean + 1.5 * fullStd) {
+      if (ts.values[0 + i]! > mean + 1.5 * fullStd) {
         changePt = i;
         break;
       }
@@ -354,13 +354,13 @@ function computeAnomalyFeatures(
 
     if (changePt < n && changePt > 2) {
       let bs = 0;
-      for (let i = 0; i < changePt; i++) bs += ts.values[startIdx + i]!;
+      for (let i = 0; i < changePt; i++) bs += ts.values[0 + i]!;
       baselineMean = bs / changePt;
       if (baselineMean <= 0) baselineMean = mean;
     } else {
       // Fallback: lower-quartile mean — robust to spikes that occupy
       // >50% of the window (median would still be in the spike).
-      const sorted = Array.from(ts.values.slice(startIdx, startIdx + n)).sort((a, b) => a - b);
+      const sorted = Array.from(ts.values.slice(0, 0 + n)).sort((a, b) => a - b);
       const q25Idx = Math.floor(n * 0.25);
       if (q25Idx > 0) {
         let q25Sum = 0;
