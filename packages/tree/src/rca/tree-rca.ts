@@ -218,9 +218,14 @@ export class TreeRCAEngine {
 
       acc.anomalyScore = nodeAnomaly;
       acc.childPropagationScore = childContrib;
-      // Clamp totalScore to [0, 1] so downstream confidence estimators
-      // (which assume probability-like semantics) don't reject the value.
-      acc.totalScore = Math.min(1, nodeAnomaly + childContrib);
+      // Multiplicative propagation: child contribution amplifies the
+      // node's own anomaly score rather than adding to it.  This
+      // prevents a service with moderate anomaly but many children
+      // from outranking one with high anomaly but no children.
+      //
+      //   additive:  cart(0.85) + childContrib(0.15) = 1.00 = root(1.00)  → tie
+      //   mult:      cart(0.85) × (1+0.15) = 0.98  <  root(1.00)          → correct
+      acc.totalScore = Math.min(1, nodeAnomaly * (1 + childContrib));
       acc.depth = maxChildDepth;
 
       accumulators.set(nodeId, acc);
