@@ -56,6 +56,18 @@ export interface FailedCase {
   readonly actualFaultType?: string;
   /** Error reason. */
   readonly reason: string;
+  /** Per-case diagnostics (anomaly scores, predictions). */
+  readonly diag?: {
+    readonly gtAnomaly: number;
+    readonly maxAnomaly: number;
+    readonly topK: readonly {
+      readonly serviceId: string;
+      readonly confidence: number;
+      readonly depth: number;
+    }[];
+    readonly gtInGraph: boolean;
+    readonly edges: number;
+  };
 }
 
 /** Result of running a single benchmark suite. */
@@ -641,6 +653,7 @@ export class BenchmarkRunner {
           expectedService: f.expectedService,
           actualTop: f.actualTop,
           reason: f.reason,
+          diag: f.diag,
         })),
       })),
       summary: {
