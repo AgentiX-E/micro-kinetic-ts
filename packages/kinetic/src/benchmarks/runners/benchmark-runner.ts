@@ -261,6 +261,10 @@ export class BenchmarkRunner {
     const faultTypeTracker = new Map<string, { cases: number; correct: number }>();
 
     for (const benchCase of suite.cases) {
+      // Scoped before try so catch block can access diagnostic data
+      let gtAnomaly = 0;
+      let maxAnomaly = 0;
+      let topPredictions: Array<{ serviceId: string; confidence: number; depth: number }> = [];
       try {
         // ── Trace Topology Validation (I9) ──
         let effectiveCallGraph = benchCase.callGraph;
