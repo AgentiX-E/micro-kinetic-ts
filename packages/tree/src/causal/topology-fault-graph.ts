@@ -229,39 +229,14 @@ interface EdgeWeightResult {
 /**
  * Compute per-service anomaly features: score and onset index.
  *
- * ### Score Algorithm (Robust MAD-Based Z-Score)
+ * Score: maximum feature-weighted anomaly across all metrics (0-1).
+ * Onset: earliest data point index where deviation exceeds 1.5σ.
  *
- * For each metric time series, compute the z-score using the
- * Median Absolute Deviation (MAD) — robust to outliers:
- *
- *   MAD = median(|x_i - median(x)|)
- *   z_i = 0.6745 × (x_i - median) / MAD        … (1)
- *   z_peak = max_i |z_i|
- *   anomaly_score = clamp(z_peak / 3, 0, 1)    … (2)
- *
- * The overall service anomaly is the maximum anomaly score
- * across all metrics.
- *
- * **Why MAD instead of standard deviation?**
- * Standard deviation inflates under fault conditions — the very
- * anomaly we're trying to detect.  MAD uses the median, which
- * is robust to up to 50% contamination by anomalous points.
- * This prevents a single metric spike from normalising all other
- * metrics to near-zero z-scores (the "drowning effect").
- *
- * **Why clamp to 3-sigma?**
- * Under the normal approximation, a 3-sigma deviation occurs
- * with probability p ≈ 0.00135.  For a service with |M| metrics:
- *
- *   P(fp) = 1 - (1 - 0.00135)^|M|              … (3)
- *
- * At |M| = 100, P(fp) ≈ 0.127 — a 87.3% reduction in false
- * positives compared to the max-ratio approach (P(fp) ≈ 0.63).
- *
- * **Onset detection:**
- * First index where z_i > 2 (2-sigma).  Use 2-sigma for onset
- * because we want sensitivity to early-stage anomalies, not the
- * more conservative 3-sigma used for scoring.
+ * Feature contributions:
+ *   - Base deviation: (max - baseline_mean) / baseline_mean
+ *   - Trend bonus: monotonic upward slope × 0.3
+ *   - Burst bonus: 3-sigma spike detection × 0.2
+ *   - CV bonus: high coefficient of variation × 0.15
  *
  * @internal
  */
@@ -277,64 +252,104 @@ function computeAnomalyFeatures(
   let earliestOnset = Number.MAX_SAFE_INTEGER;
 
   for (const ts of serviceMetrics) {
+    if (ts.values.length < 2) continue;
+
     const n = ts.values.length;
-    if (n < 3) continue;
 
-    // ── Compute median ──────────────────────────────────
-    const sorted = new Float64Array(ts.values).sort();
-    const median =
-      n % 2 === 0 ? (sorted[n / 2 - 1]! + sorted[n / 2]!) / 2 : sorted[Math.floor(n / 2)]!;
-
-    // ── Compute MAD ─────────────────────────────────────
-    const deviations = new Float64Array(n);
+    // Basic statistics
+    let sum = 0;
+    let max = -Infinity;
     for (let i = 0; i < n; i++) {
-      deviations[i] = Math.abs(ts.values[i]! - median);
+      const v = ts.values[i]!;
+      sum += v;
+      if (v > max) max = v;
     }
-    const sortedDevs = new Float64Array(deviations).sort();
-    const mad =
-      n % 2 === 0
-        ? (sortedDevs[n / 2 - 1]! + sortedDevs[n / 2]!) / 2
-        : sortedDevs[Math.floor(n / 2)]!;
+    const mean = sum / n;
+    if (mean <= 0) continue;
 
-    // No variability → no anomaly signal possible
-    if (mad <= 1e-10) continue;
-
-    // ── Compute z-scores and anomaly ────────────────────
-    const invMAD = 0.6745 / mad; // scale factor for standard normal
-    let zPeak = 0;
-    let onsetFound = false;
-
-    for (let i = 0; i < n; i++) {
-      const zScore = Math.abs(ts.values[i]! - median) * invMAD;
-      if (zScore > zPeak) zPeak = zScore;
-
-      // Onset: first index where z > 2 (2-sigma for early sensitivity)
-      if (!onsetFound && zScore >= 2.0) {
-        earliestOnset = Math.min(earliestOnset, i);
-        onsetFound = true;
+    // Change point detection: find first point exceeding 1.5σ
+    const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+    const fullStd = Math.sqrt(fullVariance);
+    let changePt = n;
+    for (let i = 1; i < n; i++) {
+      if (ts.values[i]! > mean + 1.5 * fullStd) {
+        changePt = i;
+        break;
       }
     }
 
-    // Normalise: z_peak / 3 → [0, +∞) clamped to [0, 1]
-    const score = Math.min(1, zPeak / 3);
-
-    if (score > bestScore) {
-      bestScore = score;
+    // Baseline from pre-change period
+    let baselineMean = mean;
+    if (changePt < n && changePt > 2) {
+      let bs = 0;
+      for (let i = 0; i < changePt; i++) bs += ts.values[i]!;
+      baselineMean = bs / changePt;
+      if (baselineMean <= 0) baselineMean = mean;
     }
 
-    // Fallback onset: 30% deviation from median if no 2-sigma point found
-    if (!onsetFound) {
-      for (let i = 0; i < n; i++) {
-        if (median > 0 && Math.abs(ts.values[i]! - median) / median > 0.3) {
-          earliestOnset = Math.min(earliestOnset, i);
+    // Deviation
+    const deviation = Math.abs(max - baselineMean) / baselineMean;
+    if (deviation < 0.05) continue;
+
+    // Trend slope (linear regression)
+    let sx = 0,
+      sy = 0,
+      sxx = 0,
+      sxy = 0;
+    for (let i = 0; i < n; i++) {
+      const v = ts.values[i]!;
+      sx += i;
+      sy += v;
+      sxx += i * i;
+      sxy += i * v;
+    }
+    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+    const trendStrength = mean > 0 ? Math.abs((slope * n) / mean) : 0;
+
+    // CV
+    let variance = 0;
+    for (let i = 0; i < n; i++) {
+      const diff = ts.values[i]! - mean;
+      variance += diff * diff;
+    }
+    variance /= n;
+    const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
+
+    // Burst detection
+    let hasBurst = false;
+    const threshold = mean + 3 * Math.sqrt(variance);
+    for (let i = 0; i < n && !hasBurst; i++) {
+      if (ts.values[i]! > threshold) hasBurst = true;
+    }
+
+    // Monotonic upward
+    let isMonotonicUp = slope > 0;
+    if (isMonotonicUp) {
+      for (let i = 1; i < n; i++) {
+        if (ts.values[i]! < ts.values[i - 1]!) {
+          isMonotonicUp = false;
           break;
         }
       }
     }
-  }
 
-  // Post-condition: clamp score to valid range
-  bestScore = Math.max(0, Math.min(1, bestScore));
+    // Feature-weighted score
+    let featureScore = deviation;
+    if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.3;
+    if (hasBurst) featureScore += deviation * 0.2;
+    if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.15;
+    featureScore = Math.max(0, Math.min(1, featureScore));
+
+    if (featureScore > bestScore) bestScore = featureScore;
+
+    // Onset: first point exceeding 30% deviation from mean
+    for (let i = 0; i < n; i++) {
+      if (Math.abs(ts.values[i]! - mean) / mean > 0.3) {
+        if (i < earliestOnset) earliestOnset = i;
+        break;
+      }
+    }
+  }
 
   return { score: bestScore, onsetIndex: earliestOnset };
 }
