@@ -113,7 +113,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   temporalBonus: 0.15,
   defaultWeight: 0.05,
   useTemporalCausality: true,
-  correlationMethod: 'spearman',
+  correlationMethod: 'pearson',
   adaptiveDecay: true,
   usePropagationVelocity: true,
   propagationVelocity: {
