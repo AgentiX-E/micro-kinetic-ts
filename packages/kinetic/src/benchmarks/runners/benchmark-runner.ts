@@ -264,10 +264,10 @@ export class BenchmarkRunner {
       // Scoped before try so catch block can access diagnostic data
       let gtAnomaly = 0;
       let maxAnomaly = 0;
+      let effectiveCallGraph = benchCase.callGraph;
       let topPredictions: Array<{ serviceId: string; confidence: number; depth: number }> = [];
       try {
         // ── Trace Topology Validation (I9) ──
-        let effectiveCallGraph = benchCase.callGraph;
         if (this.traceOptions?.enabled) {
           const { validateTopologyWithTraces } = await import('../../signals/trace-validator.js');
           const traceResult = validateTopologyWithTraces(
@@ -308,9 +308,9 @@ export class BenchmarkRunner {
         const topResult = results[0];
 
         // ── Diagnostic snapshot for failing cases ──────────────────
-        const gtAnomaly = faultGraph.anomalyScores.get(benchCase.groundTruth.serviceId) ?? 0;
-        const maxAnomaly = Math.max(...faultGraph.anomalyScores.values());
-        const topPredictions = results.slice(0, topK).map((r) => ({
+        gtAnomaly = faultGraph.anomalyScores.get(benchCase.groundTruth.serviceId) ?? 0;
+        maxAnomaly = Math.max(...faultGraph.anomalyScores.values());
+        topPredictions = results.slice(0, topK).map((r) => ({
           serviceId: r.serviceId,
           confidence: r.confidence,
           depth: r.propagationDepth,
