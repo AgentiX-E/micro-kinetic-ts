@@ -220,11 +220,35 @@ export function buildTopologyFaultGraph(
   // Step 1: Compute per-service anomaly scores and onset times
   const anomalyScores = new Map<ServiceId, number>();
   const anomalyOnsetTimes = new Map<ServiceId, number>();
+  let diagSvcCount = 0;
+  let diagNoMetrics = 0;
+  let diagZeroScore = 0;
+  let diagNonZeroScore = 0;
+  const diagSampleIds: string[] = [];
   for (const [serviceId] of callGraph.nodes) {
+    diagSvcCount++;
     const serviceMetrics = metrics.get(serviceId);
     const result = computeAnomalyFeatures(serviceMetrics, cfg);
     anomalyScores.set(serviceId, result.score);
     anomalyOnsetTimes.set(serviceId, result.onsetIndex);
+
+    if (!serviceMetrics || serviceMetrics.length === 0) {
+      diagNoMetrics++;
+    } else if (result.score <= 0) {
+      diagZeroScore++;
+    } else {
+      diagNonZeroScore++;
+      if (diagSampleIds.length < 3) diagSampleIds.push(serviceId);
+    }
+  }
+
+  // Log anomaly score distribution for debugging
+  if (callGraph.nodes.size >= 30) {
+    console.log(
+      `  [anomaly] system=${callGraph.nodes.get(diagSampleIds[0] ?? [...callGraph.nodes.keys()][0])?.namespace ?? '?'}` +
+        ` services=${diagSvcCount} noMetrics=${diagNoMetrics} zero=${diagZeroScore}` +
+        ` nonzero=${diagNonZeroScore} samples=[${diagSampleIds.join(',')}]`,
+    );
   }
 
   // ── Step 1b: Score normalization for large topologies ───
