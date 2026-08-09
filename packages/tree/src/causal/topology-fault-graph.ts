@@ -355,9 +355,13 @@ function computeAnomalyFeatures(
       if (baselineMean <= 0) baselineMean = mean;
     }
 
-    // Deviation
-    const deviation = Math.abs(max - baselineMean) / baselineMean;
-    if (deviation < 0.05) continue;
+    // Deviation — log₁₀ compression for score differentiation.
+    // Linear ratio (max/baseline − 1) saturates at 1.0 for any >2x spike,
+    // making multiple services indistinguishable.  Log₁₀ spreads scores:
+    //   2x → 0.30,  3x → 0.60,  5x → 0.78,  10x → 1.04→clamped 1.0
+    const ratio = Math.abs(max - baselineMean) / baselineMean;
+    const deviation = Math.log10(1 + ratio);
+    if (deviation < 0.02) continue;
 
     // Trend slope (linear regression)
     let sx = 0,
@@ -401,11 +405,11 @@ function computeAnomalyFeatures(
       }
     }
 
-    // Feature-weighted score
+    // Feature-weighted score — bonuses scaled to match log₁₀ deviation
     let featureScore = deviation;
-    if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.3;
-    if (hasBurst) featureScore += deviation * 0.2;
-    if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.15;
+    if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.15;
+    if (hasBurst) featureScore += deviation * 0.1;
+    if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
     featureScore = Math.max(0, Math.min(1, featureScore));
 
     if (featureScore > bestScore) bestScore = featureScore;
