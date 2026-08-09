@@ -74,8 +74,9 @@ export interface TopologyFaultGraphConfig {
    * - `sliding-window`: sliding-window minimum — best for continuous data
    *   (gradual ramps, smooth trends).  +21.6% on SockShop RE1.
    *
-   * Auto-detection: bimodality score = (median − min)/(max − min) < 0.3
-   * AND spike sharpness = (max − Q3)/(Q3 − Q1) > 2 → selects q25.
+   * Auto-detection: counts values > 0.8×max.  If 30–70% of points are
+   * in the spike (spike-dominated, typical of stress-ng benchmarks like
+   * OnlineBoutique), selects q25.  Otherwise selects sliding-window.
    */
   readonly baselineStrategy: 'auto' | 'q25' | 'sliding-window';
   /**
@@ -792,31 +793,33 @@ function pearsonCorrelation(xs: Float64Array, ys: Float64Array, n: number): numb
  *           ∧ (max − Q3) / (Q3 − Q1) > 2.0
  *
  * A bimodal distribution (most values near baseline, few spike values)
- * benefits from Q25 baseline.  A continuous distribution benefits from
- * sliding-window minimum.
+ * **Spike-dominated detection:**
+ *   Count values > 0.8 × max.  If 30–70% of points are in the spike,
+ *   the metric is spike-dominated (most points elevated, few baseline).
+ *   This pattern (common in stress-ng benchmarks like OnlineBoutique)
+ *   benefits from Q25 baseline which picks the low-baseline minority.
+ *
+ *   For continuous data (SockShop, most values spread across range),
+ *   few values exceed the 0.8×max threshold → sliding-window.
  *
  * @internal
  */
 function detectBaselineStrategy(values: Float64Array, n: number): 'q25' | 'sliding-window' {
-  const sorted = Array.from(values.slice(0, n)).sort((a, b) => a - b);
-  const minVal = sorted[0]!;
-  const maxVal = sorted[n - 1]!;
+  const minVal = Math.min(...values.slice(0, n));
+  const maxVal = Math.max(...values.slice(0, n));
   if (maxVal === minVal) return 'sliding-window';
 
-  const median = sorted[Math.floor(n / 2)]!;
-  const q1Idx = Math.floor(n * 0.25);
-  const q3Idx = Math.floor(n * 0.75);
-  const q1 = sorted[q1Idx]!;
-  const q3 = sorted[q3Idx]!;
+  const spikeThreshold = maxVal * 0.8;
+  let spikeCount = 0;
+  for (let i = 0; i < n; i++) {
+    if (values[i]! >= spikeThreshold) spikeCount++;
+  }
 
-  // Normalized distance from median to min (0 = far from min, 1 = close to min)
-  const bimodality = (median - minVal) / (maxVal - minVal);
+  const spikeRatio = spikeCount / n;
 
-  // Spike sharpness: how concentrated the top 25% is vs the middle 50%
-  const spikeSharpness = q3 > q1 ? (maxVal - q3) / (q3 - q1) : 0;
-
-  // Bimodal + sharp spike → Q25.  Otherwise sliding-window.
-  return bimodality < 0.3 && spikeSharpness > 2.0 ? 'q25' : 'sliding-window';
+  // Spike-dominated: 30-70% of data elevated → bimodal with spike majority
+  // (e.g. OB order-svc: 5/10 > 0.8×max → Q25 finds the 3 baseline points)
+  return spikeRatio > 0.3 && spikeRatio <= 0.7 ? 'q25' : 'sliding-window';
 }
 
 /**
