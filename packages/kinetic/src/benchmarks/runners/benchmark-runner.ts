@@ -376,7 +376,17 @@ export class BenchmarkRunner {
           caseId: benchCase.id,
           expectedService: benchCase.groundTruth.serviceId,
           expectedFaultType: benchCase.groundTruth.faultType,
-          reason: err instanceof Error ? err.message : String(err),
+          reason:
+            err instanceof Error
+              ? `${err.message}\n${err.stack?.split('\n')[1]?.trim() ?? ''}`
+              : String(err),
+          diag: {
+            gtAnomaly: gtAnomaly,
+            maxAnomaly: maxAnomaly,
+            topK: topPredictions,
+            gtInGraph: effectiveCallGraph.nodes.has(benchCase.groundTruth.serviceId),
+            edges: effectiveCallGraph.edges.length,
+          },
         });
       }
     }
