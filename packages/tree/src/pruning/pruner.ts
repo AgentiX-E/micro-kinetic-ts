@@ -147,7 +147,11 @@ export class TreePruner {
    * @param metrics - Time series metrics keyed by service ID
    * @returns Fault propagation graph ready for analysis
    */
-  buildFaultGraph(callGraph: ServiceCallGraph, metrics: MetricMap): FaultPropagationGraph {
+  buildFaultGraph(
+    callGraph: ServiceCallGraph,
+    metrics: MetricMap,
+    injectTimeMs?: number,
+  ): FaultPropagationGraph {
     invariant(callGraph.nodes.size > 0, 'callGraph must have at least one node');
     invariant(callGraph.edges.length > 0, 'callGraph must have at least one edge');
     invariant(metrics.size > 0, 'metrics must be non-empty');
@@ -155,7 +159,7 @@ export class TreePruner {
     // Build topology-preserving fault graph with Pearson cross-service correlation.
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
-    const topoResult = buildTopologyFaultGraph(callGraph, metrics);
+    const topoResult = buildTopologyFaultGraph(callGraph, metrics, undefined, injectTimeMs);
     const { anomalyScores, anomalyOnsetTimes, propagationWeights } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.
