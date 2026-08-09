@@ -21,13 +21,12 @@
  */
 
 import type {
-  CallEdge,
-  ServiceDescriptor,
-} from '@agentix-e/micro-kinetic-core';
-import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
+  IEmbeddingProvider,
+  ILLMProvider,
+  SemanticAlignmentConfig,
+} from '@agentix-e/micro-kinetic-ai';
 import { SemanticAlignmentProvider } from '@agentix-e/micro-kinetic-ai';
-import type { SemanticAlignmentConfig } from '@agentix-e/micro-kinetic-ai';
-import type { ILLMProvider } from '@agentix-e/micro-kinetic-ai';
+import type { CallEdge, ServiceDescriptor } from '@agentix-e/micro-kinetic-core';
 
 // ── Enhanced Edge ─────────────────────────────────────────
 
@@ -116,10 +115,12 @@ export interface SemanticEnhancerConfig {
  */
 export class RCAEvalSemanticEnhancer {
   private readonly alignmentProvider: SemanticAlignmentProvider | null;
+  private readonly embedProvider: IEmbeddingProvider | null;
   private readonly hasEmbedding: boolean;
 
   constructor(config: SemanticEnhancerConfig = {}) {
     this.hasEmbedding = Boolean(config.embeddingProvider);
+    this.embedProvider = config.embeddingProvider ?? null;
 
     if (config.embeddingProvider) {
       this.alignmentProvider = new SemanticAlignmentProvider(
@@ -154,9 +155,7 @@ export class RCAEvalSemanticEnhancer {
    * 3. For each matched service, create edges inferred from its alias' topology
    * 4. Return enhanced edge set + statistics
    */
-  async enhance(
-    input: SemanticEnhancementInput,
-  ): Promise<SemanticEnhancementOutput> {
+  async enhance(input: SemanticEnhancementInput): Promise<SemanticEnhancementOutput> {
     if (input.unmatchedCaseServiceIds.length === 0) {
       return {
         edges: [],
@@ -245,14 +244,28 @@ export class RCAEvalSemanticEnhancer {
       resolved.add(svcId);
     }
 
-    const stillUnmatched = input.unmatchedCaseServiceIds.filter(
-      (s) => !resolved.has(s),
-    );
+    const stillUnmatched = input.unmatchedCaseServiceIds.filter((s) => !resolved.has(s));
+
+    // ── Phase 3: Pairwise semantic edge discovery ──────────
+    // For services that cannot be matched to any YAML entry,
+    // compute pairwise embedding similarity to discover
+    // propagation edges without relying on YAML topology.
+    // This prevents ring-connecting (which uses default weights
+    // with no Pearson correlation signal) for semantically
+    // related services — the root cause of TrainTicket 0% accuracy.
+    if (stillUnmatched.length >= 2 && this.alignmentProvider) {
+      const pairwiseEdges = await this.discoverPairwiseEdges(
+        stillUnmatched,
+        input.system,
+        yamlEdgeMap,
+      );
+      for (const edge of pairwiseEdges) {
+        edges.push(edge);
+      }
+    }
 
     const avgConf =
-      edges.length > 0
-        ? edges.reduce((sum, e) => sum + e.matchConfidence, 0) / edges.length
-        : 0;
+      edges.length > 0 ? edges.reduce((sum, e) => sum + e.matchConfidence, 0) / edges.length : 0;
 
     return {
       edges,
@@ -263,6 +276,101 @@ export class RCAEvalSemanticEnhancer {
       unresolvedServiceIds: stillUnmatched,
       averageConfidence: avgConf,
     };
+  }
+
+  // ── Phase 3 Implementation ──────────────────────────────
+
+  /**
+   * Discover pairwise semantic edges between unmatched services.
+   *
+   * Embeds all unmatched service names, computes pairwise cosine
+   * similarity, and creates semantic call edges for pairs above
+   * the similarity threshold.
+   *
+   * This fills the gap between YAML topology (exact matches) and
+   * ring-connect (no propagation signal) with embedding-based
+   * edges that carry propagation weights.
+   *
+   * Complexity: O(k²) pairwise comparisons for k services.
+   * For TrainTicket (k≈23), this is ~253 comparisons.
+   */
+  private async discoverPairwiseEdges(
+    unmatchedServices: string[],
+    system: string,
+    yamlEdgeMap: Map<string, SemanticCallEdge[]>,
+  ): Promise<SemanticCallEdge[]> {
+    if (!this.alignmentProvider) return [];
+
+    const descriptors: ServiceDescriptor[] = unmatchedServices.map((id) => ({
+      id,
+      name: id,
+      namespace: system,
+      labels: {},
+    }));
+
+    const queryTexts = unmatchedServices.map((id) =>
+      this.buildDescriptorQuery({ id, name: id, namespace: system, labels: {} }),
+    );
+
+    if (!this.hasEmbedding) return [];
+
+    // Compute pairwise cosine similarity via batch embedding
+    const { vectors } = await this.embedProvider!.embed(queryTexts);
+    if (!vectors || vectors.length < 2) return [];
+
+    const edges: SemanticCallEdge[] = [];
+    const SIMILARITY_THRESHOLD = 0.65;
+
+    for (let i = 0; i < unmatchedServices.length; i++) {
+      for (let j = i + 1; j < unmatchedServices.length; j++) {
+        const similarity = this.cosineSimilarity(vectors[i]!, vectors[j]!);
+        if (similarity < SIMILARITY_THRESHOLD) continue;
+
+        const svcI = unmatchedServices[i]!;
+        const svcJ = unmatchedServices[j]!;
+
+        // Create bidirectional edges for high-similarity pairs
+        edges.push({
+          from: svcI,
+          to: svcJ,
+          type: 'REST',
+          callRate: 100,
+          p99Latency: similarity < 0.8 ? 150 : 50,
+          errorRate: 0.01,
+          source: 'semantic-embedding',
+          matchConfidence: similarity,
+        });
+
+        edges.push({
+          from: svcJ,
+          to: svcI,
+          type: 'REST',
+          callRate: 100,
+          p99Latency: similarity < 0.8 ? 150 : 50,
+          errorRate: 0.01,
+          source: 'semantic-embedding',
+          matchConfidence: similarity,
+        });
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * Compute cosine similarity between two float vectors.
+   */
+  private cosineSimilarity(a: Float32Array, b: Float32Array): number {
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i]! * b[i]!;
+      normA += a[i]! * a[i]!;
+      normB += b[i]! * b[i]!;
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom > 0 ? dot / denom : 0;
   }
 
   // ── Helpers ────────────────────────────────────────────
@@ -285,9 +393,7 @@ export class RCAEvalSemanticEnhancer {
   /**
    * Build a map from source service ID → outgoing edges.
    */
-  private buildEdgeMap(
-    edges: readonly CallEdge[],
-  ): Map<string, CallEdge[]> {
+  private buildEdgeMap(edges: readonly CallEdge[]): Map<string, CallEdge[]> {
     const map = new Map<string, CallEdge[]>();
     for (const edge of edges) {
       const list = map.get(edge.from) ?? [];
@@ -302,11 +408,12 @@ export class RCAEvalSemanticEnhancer {
    */
   private isLLMResolved(
     svcId: string,
-    lowConfidence: readonly Array<{ spanService: string; candidates: Array<{ topologyId: string; confidence: number }> }>,
+    lowConfidence: readonly Array<{
+      spanService: string;
+      candidates: Array<{ topologyId: string; confidence: number }>;
+    }>,
   ): boolean {
-    return lowConfidence.some(
-      (lc) => lc.spanService === svcId && lc.candidates.length > 0,
-    );
+    return lowConfidence.some((lc) => lc.spanService === svcId && lc.candidates.length > 0);
   }
 
   /**
@@ -314,7 +421,10 @@ export class RCAEvalSemanticEnhancer {
    */
   private getConfidence(
     svcId: string,
-    lowConfidence: readonly Array<{ spanService: string; candidates: Array<{ topologyId: string; confidence: number }> }>,
+    lowConfidence: readonly Array<{
+      spanService: string;
+      candidates: Array<{ topologyId: string; confidence: number }>;
+    }>,
   ): number {
     const lc = lowConfidence.find((l) => l.spanService === svcId);
     return lc?.candidates[0]?.confidence ?? 0.85;
