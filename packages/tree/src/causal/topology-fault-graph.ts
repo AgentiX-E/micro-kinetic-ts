@@ -57,7 +57,7 @@ import {
  * Configuration for the topology-preserving fault graph builder.
  */
 export interface TopologyFaultGraphConfig {
-  /** Minimum number of data points required for Pearson correlation. Default: 3. */
+  /** Minimum number of data points required for correlation. Default: 3. */
   readonly minDataPoints: number;
   /** Temporal causality bonus: added when source anomaly precedes target. Default: 0.15. */
   readonly temporalBonus: number;
@@ -66,8 +66,32 @@ export interface TopologyFaultGraphConfig {
   /** Whether to apply temporal causality analysis. Default: true. */
   readonly useTemporalCausality: boolean;
   /**
+   * Correlation method for cross-service propagation weight.
+   *
+   * - `spearman`: rank-based, robust to non-linear relationships (default)
+   * - `pearson`: linear, original method (fallback when Spearman unavailable)
+   *
+   * Spearman rank correlation is preferred because microservice metrics
+   * often exhibit monotonic but non-linear co-variation — a CPU fault
+   * may cause a logarithmic latency increase, which Spearman detects
+   * while Pearson may miss.
+   */
+  readonly correlationMethod: 'pearson' | 'spearman';
+  /**
+   * Whether to use adaptive decay parameters based on topology size.
+   *
+   * When enabled, decayAlpha is chosen automatically:
+   *   | Services | decayAlpha | Rationale                         |
+   *   | < 20     | 0.90       | Shallow tree — need deep signal   |
+   *   | 20–49    | 0.85       | Balanced                          |
+   *   | 50+      | 0.75       | Deep tree — prevent dilution      |
+   *
+   * Default: true.
+   */
+  readonly adaptiveDecay: boolean;
+  /**
    * Whether to use BOCPD/MAD-based propagation velocity as a secondary
-   * weight computation method when Pearson correlation is unavailable.
+   * weight computation method when correlation is unavailable.
    * Default: true.
    */
   readonly usePropagationVelocity: boolean;
@@ -89,12 +113,48 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   temporalBonus: 0.15,
   defaultWeight: 0.05,
   useTemporalCausality: true,
+  correlationMethod: 'spearman',
+  adaptiveDecay: true,
   usePropagationVelocity: true,
   propagationVelocity: {
     useBOCPD: false, // MAD-based by default for performance
     expectedDirectLatency: 1.0,
   },
 };
+
+/**
+ * Compute optimal decayAlpha based on topology size.
+ *
+ * ## Deng Yu Mapping
+ *
+ * The number of services N determines the characteristic depth
+ * D̄ of the collision tree.  In a random binary tree:
+ *
+ *   D̄(N) ≈ log₂(N)
+ *
+ * Child contribution attenuation at depth d is decayAlphaᵈ.
+ * To maintain a minimum contribution ratio at the root:
+ *
+ *   decayAlphaᵈ ≥ 0.3 → decayAlpha = 0.3^(1/d)
+ *
+ * Mapping to practical thresholds:
+ *
+ *  | N (services) | D̄ ≈ log₂(N) | decayAlpha |
+ *  | < 20         | < 4.3        | 0.90       |
+ *  | 20–49        | 4.3–5.6      | 0.85       |
+ *  | 50+          | > 5.6        | 0.75       |
+ *
+ * For TrainTicket (N=64, D̄≈6): decayAlpha=0.75 means the
+ * contribution reaches 0.3 at depth 4, preventing deep-tree
+ * score dilution while preserving mid-tree propagation.
+ *
+ * @internal
+ */
+function computeAdaptiveDecay(nodeCount: number): number {
+  if (nodeCount < 20) return 0.9;
+  if (nodeCount < 50) return 0.85;
+  return 0.75;
+}
 
 /**
  * Result of building a topology-preserving fault graph.
@@ -112,6 +172,8 @@ export interface TopologyFaultGraphResult {
   readonly fallbackEdgeCount: number;
   /** Diagnostic: number of edges with temporal causality bonus applied. */
   readonly temporalEdgeCount: number;
+  /** Computed decayAlpha when adaptiveDecay is enabled. */
+  readonly computedDecayAlpha: number;
 }
 
 /**
@@ -134,6 +196,11 @@ export function buildTopologyFaultGraph(
   config?: Partial<TopologyFaultGraphConfig>,
 ): TopologyFaultGraphResult {
   const cfg = { ...DEFAULT_CONFIG, ...config };
+
+  // ── Adaptive decayAlpha based on topology size ──────────
+  // Larger graphs need lower decay to prevent child contributions
+  // from diluting the root cause anomaly signal across deep trees.
+  const computedDecayAlpha = cfg.adaptiveDecay ? computeAdaptiveDecay(callGraph.nodes.size) : 0.8; // default
 
   // Step 1: Compute per-service anomaly scores and onset times
   const anomalyScores = new Map<ServiceId, number>();
@@ -208,6 +275,7 @@ export function buildTopologyFaultGraph(
     pearsonEdgeCount,
     fallbackEdgeCount,
     temporalEdgeCount,
+    computedDecayAlpha,
   };
 }
 
@@ -220,7 +288,7 @@ interface AnomalyFeatures {
 
 interface EdgeWeightResult {
   weight: number;
-  method: 'pearson' | 'bocpd_velocity' | 'mad_velocity' | 'anomaly_similarity';
+  method: 'pearson' | 'spearman' | 'bocpd_velocity' | 'mad_velocity' | 'anomaly_similarity';
   temporalBonus: boolean;
 }
 
@@ -386,25 +454,24 @@ function computeEdgePropagationWeight(
   anomalyOnsetTimes: ReadonlyMap<ServiceId, number>,
   cfg: TopologyFaultGraphConfig,
 ): EdgeWeightResult {
-  // ── Tier 1: Pearson cross-service correlation ────────────
+  // ── Tier 1: Cross-service correlation (Spearman or Pearson) ─
   if (sourceMetrics && sourceMetrics.length > 0 && targetMetrics && targetMetrics.length > 0) {
-    const pearsonWeight = computeMaxPearsonCorrelation(
-      sourceMetrics,
-      targetMetrics,
-      cfg.minDataPoints,
-    );
+    const corrWeight =
+      cfg.correlationMethod === 'spearman'
+        ? computeMaxSpearmanCorrelation(sourceMetrics, targetMetrics, cfg.minDataPoints)
+        : computeMaxPearsonCorrelation(sourceMetrics, targetMetrics, cfg.minDataPoints);
 
-    if (pearsonWeight !== null) {
+    if (corrWeight !== null) {
       // Apply temporal causality bonus
       const sourceOnset = anomalyOnsetTimes.get(edge.from) ?? Number.MAX_SAFE_INTEGER;
       const targetOnset = anomalyOnsetTimes.get(edge.to) ?? Number.MAX_SAFE_INTEGER;
       const temporalBonus =
         cfg.useTemporalCausality && sourceOnset < targetOnset ? cfg.temporalBonus : 0;
 
-      const finalWeight = Math.min(1, pearsonWeight + temporalBonus);
+      const finalWeight = Math.min(1, corrWeight + temporalBonus);
       return {
         weight: finalWeight,
-        method: 'pearson',
+        method: cfg.correlationMethod,
         temporalBonus: temporalBonus > 0,
       };
     }
@@ -491,7 +558,117 @@ function computeEdgePropagationWeight(
   };
 }
 
-// ── Pearson Cross-Service Correlation ─────────────────────
+// ── Spearman Rank Correlation ───────────────────────────────
+
+/**
+ * Compute the maximum absolute Spearman rank correlation coefficient
+ * between any metric pair from source and target services.
+ *
+ * Spearman rank correlation (ρ) measures monotonic relationship
+ * strength without assuming linearity.  It converts values to ranks
+ * then computes Pearson correlation on the ranks:
+ *
+ *   ρ = 1 − (6 × Σd²) / (n(n² − 1))     (no ties)
+ *
+ * where d is the rank difference for each pair.  Average ranks are
+ * assigned for ties.
+ *
+ * Spearman is preferred over Pearson for microservice fault
+ * propagation because:
+ *   - CPU → latency is often logarithmic, not linear
+ *   - Memory leak → throughput effect is sigmoidal
+ *   - Outliers and scale differences don't distort ranks
+ *
+ * @internal
+ */
+function computeMaxSpearmanCorrelation(
+  sourceMetrics: readonly TimeSeries[],
+  targetMetrics: readonly TimeSeries[],
+  minDataPoints: number,
+): number | null {
+  let maxAbsCorr = -1;
+
+  for (const srcTs of sourceMetrics) {
+    if (srcTs.values.length < minDataPoints) continue;
+
+    for (const tgtTs of targetMetrics) {
+      if (tgtTs.values.length < minDataPoints) continue;
+
+      const minLen = Math.min(srcTs.values.length, tgtTs.values.length);
+      if (minLen < minDataPoints) continue;
+
+      const r = spearmanCorrelation(srcTs.values, tgtTs.values, minLen);
+      if (r !== null) {
+        const absR = Math.abs(r);
+        if (absR > maxAbsCorr) maxAbsCorr = absR;
+      }
+    }
+  }
+
+  return maxAbsCorr >= 0 ? maxAbsCorr : null;
+}
+
+/**
+ * Compute Spearman rank correlation coefficient (ρ).
+ *
+ * Algorithm:
+ *   1. Rank each array independently (average rank for ties)
+ *   2. Compute Pearson correlation on the ranks
+ *   3. Return ρ ∈ [−1, 1] or null if degenerate
+ *
+ * Complexity: O(n log n) due to sorting for ranking.
+ *
+ * @internal
+ */
+function spearmanCorrelation(xs: Float64Array, ys: Float64Array, n: number): number | null {
+  // ── Rank xs ──────────────────────────────────────────
+  const xRanks = rankValues(xs, n);
+  if (!xRanks) return null;
+
+  // ── Rank ys ──────────────────────────────────────────
+  const yRanks = rankValues(ys, n);
+  if (!yRanks) return null;
+
+  // ── Pearson correlation on ranks ─────────────────────
+  return pearsonCorrelation(xRanks, yRanks, n);
+}
+
+/**
+ * Rank a Float64Array with average rank for ties.
+ *
+ * Returns a Float64Array of ranks where each element's rank is its
+ * position in the sorted order (1-indexed), with tied values
+ * sharing the average of their rank positions.
+ *
+ * Returns null if all values are identical (undefined rank).
+ *
+ * @internal
+ */
+function rankValues(values: Float64Array, n: number): Float64Array | null {
+  // Create index array and sort by value
+  const indices = Array.from({ length: n }, (_, i) => i);
+  indices.sort((a, b) => values[a]! - values[b]!);
+
+  // Check for degeneracy
+  if (values[indices[0]!]! === values[indices[n - 1]!]!) return null;
+
+  // Assign average ranks for ties
+  const ranks = new Float64Array(n);
+  let i = 0;
+  while (i < n) {
+    // Find the end of the tie group
+    let j = i + 1;
+    while (j < n && values[indices[j]!]! === values[indices[i]!]!) j++;
+    // Average rank for positions i to j-1 (1-indexed: i+1 to j)
+    const avgRank = (i + 1 + j) / 2;
+    for (let k = i; k < j; k++) {
+      ranks[indices[k]!] = avgRank;
+    }
+    i = j;
+  }
+
+  return ranks;
+}
 
 /**
  * Compute the maximum absolute Pearson correlation coefficient between

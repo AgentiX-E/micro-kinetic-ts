@@ -169,9 +169,10 @@ export class TreePruner {
     );
     const cycles = this.cycleDetector.detect(edgePairs);
 
-    // Compute cycle contributions
+    // Compute cycle contributions with adaptive or fixed decayAlpha
+    const effectiveAlpha = topoResult.computedDecayAlpha;
     const analyzer = new CollisionContributionAnalyzer(topologyGraph.edges, propagationWeights, {
-      alpha: this.options.decayAlpha,
+      alpha: effectiveAlpha,
       beta: this.options.decayBeta,
     });
 
