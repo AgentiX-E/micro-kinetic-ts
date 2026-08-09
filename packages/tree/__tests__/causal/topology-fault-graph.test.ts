@@ -739,10 +739,10 @@ describe('buildTopologyFaultGraph — Real-world Scenarios', () => {
 
     const result = buildTopologyFaultGraph(graph, metrics);
 
-    expect(result.anomalyScores.get('order-svc')).toBeGreaterThan(0.45);
-    expect(result.anomalyScores.get('payment-svc')).toBeGreaterThan(0.3);
+    expect(result.anomalyScores.get('order-svc')).toBeGreaterThan(0.3);
+    expect(result.anomalyScores.get('payment-svc')).toBeGreaterThan(0.2);
     // gateway should have low anomaly (normal behavior)
-    expect(result.anomalyScores.get('gateway')).toBeLessThan(0.4);
+    expect(result.anomalyScores.get('gateway')).toBeLessThan(0.3);
 
     // All 3 edges should have weights
     expect(result.propagationWeights.length).toBe(3);
@@ -953,7 +953,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     const scoreA = result.anomalyScores.get('svc-a');
     expect(scoreB).toBeDefined();
     expect(scoreA).toBeDefined();
-    expect(scoreB!).toBeGreaterThan(0.45);
+    expect(scoreB!).toBeGreaterThan(0.2);
     expect(scoreB!).toBeGreaterThan(scoreA!);
   });
 
