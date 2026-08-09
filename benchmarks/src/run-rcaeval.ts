@@ -526,7 +526,6 @@ function printResultsTable(
   results: Map<string, RunResult>,
   faultTypes: string[],
 ): void {
-
   // Header
   console.log('');
   console.log(`${'═'.repeat(80)}`);
@@ -571,6 +570,47 @@ function printResultsTable(
   }
 
   console.log(`${'═'.repeat(80)}`);
+}
+
+/**
+ * Print per-case diagnostic data for the first N failing cases.
+ *
+ * Shows ground-truth anomaly score vs max, whether GT is in call graph,
+ * and top-K predictions with confidence/depth.
+ */
+function printFailureDiagnostics(
+  systemName: string,
+  suiteName: string,
+  results: Map<string, RunResult>,
+): void {
+  const MAX = 5;
+  let total = 0;
+
+  for (const [_ft, r] of results) {
+    const failing = r.failures.filter((f) => f.diag);
+    if (failing.length === 0) continue;
+    if (total >= MAX * results.size) break;
+
+    const show = Math.min(MAX, failing.length);
+    if (total === 0) {
+      console.log(
+        `\n── Failure Diagnostics: ${systemName}/${suiteName} (top ${show}/fault type) ──`,
+      );
+    }
+
+    for (let i = 0; i < show && total < MAX * results.size; i++, total++) {
+      const f = failing[i]!;
+      const d = f.diag!;
+      console.log(`  Case: ${f.caseId}`);
+      console.log(`    Expected: ${f.expectedService}  →  Predicted: ${f.actualTop ?? 'none'}`);
+      console.log(
+        `    GT anomaly=${d.gtAnomaly.toFixed(4)}  max=${d.maxAnomaly.toFixed(4)}  inGraph=${d.gtInGraph}  edges=${d.edges}`,
+      );
+      console.log(
+        `    Top-K: ${d.topK.map((t) => `${t.serviceId}(${t.confidence.toFixed(2)},d${t.depth})`).join(' | ')}`,
+      );
+    }
+  }
 }
 
 /**
@@ -777,6 +817,7 @@ async function main(): Promise<void> {
     }
 
     printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
+    printFailureDiagnostics(systemName, suiteName, results);
   }
 
   console.log(`\nTotal duration: ${Date.now() - startTime}ms`);
