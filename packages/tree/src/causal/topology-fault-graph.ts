@@ -358,18 +358,22 @@ function computeAnomalyFeatures(
       baselineMean = bs / changePt;
       if (baselineMean <= 0) baselineMean = mean;
     } else {
-      // Fallback: lower-quartile mean — robust to spikes that occupy
-      // >50% of the window (median would still be in the spike).
-      const sorted = Array.from(ts.values.slice(0, 0 + n)).sort((a, b) => a - b);
-      const q25Idx = Math.floor(n * 0.25);
-      if (q25Idx > 0) {
-        let q25Sum = 0;
-        for (let k = 0; k < q25Idx; k++) q25Sum += sorted[k]!;
-        baselineMean = q25Sum / q25Idx;
-        if (baselineMean <= 0) baselineMean = mean;
-      } else {
-        baselineMean = sorted[0]! > 0 ? sorted[0]! : mean;
+      // Fallback: sliding-window minimum mean.  For bimodal data
+      // (pre-spike + spike), the window that captures only pre-spike
+      // points has the lowest mean.  Window size = ceil(n × 0.2)
+      // balances local smoothness with detection sensitivity.
+      //
+      // OB order-svc [30,32,31,150,...,182]: min-win-mean ≈ 31  ✓
+      // SS front-end  [0.2,0.3,0.2,...]:     min-win-mean ≈ 0.2  (correct)
+      const winSize = Math.max(2, Math.ceil(n * 0.25));
+      let minWinMean = Infinity;
+      for (let w = 0; w <= n - winSize; w++) {
+        let winSum = 0;
+        for (let k = 0; k < winSize; k++) winSum += ts.values[w + k]!;
+        const winMean = winSum / winSize;
+        if (winMean < minWinMean) minWinMean = winMean;
       }
+      baselineMean = minWinMean > 0.001 ? minWinMean : mean;
     }
 
     // Deviation — log₁₀ compression for score differentiation.
