@@ -244,8 +244,10 @@ export function buildTopologyFaultGraph(
 
   // Log anomaly score distribution for debugging
   if (callGraph.nodes.size >= 30) {
+    const sampleId = diagSampleIds[0] ?? [...callGraph.nodes.keys()][0]!;
+    const sysName = callGraph.nodes.get(sampleId)?.namespace ?? '?';
     console.log(
-      `  [anomaly] system=${callGraph.nodes.get(diagSampleIds[0] ?? [...callGraph.nodes.keys()][0])?.namespace ?? '?'}` +
+      `  [anomaly] system=${sysName}` +
         ` services=${diagSvcCount} noMetrics=${diagNoMetrics} zero=${diagZeroScore}` +
         ` nonzero=${diagNonZeroScore} samples=[${diagSampleIds.join(',')}]`,
     );
