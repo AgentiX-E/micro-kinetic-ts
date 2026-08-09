@@ -40,7 +40,7 @@ import {
  */
 function createMockEngine(): IRCAEngine {
   return {
-    buildFaultGraph: (callGraph, _metrics) => ({
+    buildFaultGraph: (callGraph, _metrics, _injectTimeMs) => ({
       callGraph,
       propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
       anomalyScores: new Map(
@@ -1146,9 +1146,7 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     expect(result.totalCases).toBe(2);
   });
 
-  // FIXME(I14): Flaky test — mock engine returns empty results intermittently
-  // when synthetic case metrics don't match the expected service_1 format.
-  it.skip('runs suite with trace validation and PC together', async () => {
+  it('runs suite with trace validation and PC together', async () => {
     const container = new Container();
     container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
 
