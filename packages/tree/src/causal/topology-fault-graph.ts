@@ -335,24 +335,41 @@ function computeAnomalyFeatures(
     const mean = sum / n;
     if (mean <= 0) continue;
 
-    // Change point detection: find first point exceeding 1.5σ
+    // Baseline from pre-change period.
+    // Use median when change point detection fails — spike-inflated mean
+    // and stddev create a threshold too high for shorter spikes,
+    // causing changePt=n and baselineMean=mean (which includes the spike).
+    let baselineMean = mean;
+    let changePt = n;
+
+    // Change point detection: first point > mean + 1.5σ
     const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
     const fullStd = Math.sqrt(fullVariance);
-    let changePt = n;
     for (let i = 1; i < n; i++) {
-      if (ts.values[i]! > mean + 1.5 * fullStd) {
+      if (ts.values[startIdx + i]! > mean + 1.5 * fullStd) {
         changePt = i;
         break;
       }
     }
 
-    // Baseline from pre-change period
-    let baselineMean = mean;
     if (changePt < n && changePt > 2) {
       let bs = 0;
-      for (let i = 0; i < changePt; i++) bs += ts.values[i]!;
+      for (let i = 0; i < changePt; i++) bs += ts.values[startIdx + i]!;
       baselineMean = bs / changePt;
       if (baselineMean <= 0) baselineMean = mean;
+    } else {
+      // Fallback: lower-quartile mean — robust to spikes that occupy
+      // >50% of the window (median would still be in the spike).
+      const sorted = Array.from(ts.values.slice(startIdx, startIdx + n)).sort((a, b) => a - b);
+      const q25Idx = Math.floor(n * 0.25);
+      if (q25Idx > 0) {
+        let q25Sum = 0;
+        for (let k = 0; k < q25Idx; k++) q25Sum += sorted[k]!;
+        baselineMean = q25Sum / q25Idx;
+        if (baselineMean <= 0) baselineMean = mean;
+      } else {
+        baselineMean = sorted[0]! > 0 ? sorted[0]! : mean;
+      }
     }
 
     // Deviation — log₁₀ compression for score differentiation.
