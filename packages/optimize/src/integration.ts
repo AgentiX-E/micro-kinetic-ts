@@ -10,8 +10,8 @@
  * packages: only this single file imports from them.
  */
 
-import { TreePruner } from '@agentix-e/micro-kinetic-tree';
 import type { TreePrunerOptions } from '@agentix-e/micro-kinetic-tree';
+import { TreePruner } from '@agentix-e/micro-kinetic-tree';
 import type { RCAConfiguration } from './config-space.js';
 import { DEFAULT_CONFIG } from './config-space.js';
 
@@ -19,9 +19,7 @@ import { DEFAULT_CONFIG } from './config-space.js';
  * Map an RCAConfiguration to TreePrunerOptions.
  * Returns DEFAULT_TREE_PRUNER_OPTIONS overridden by config values.
  */
-export function configToPrunerOptions(
-  config: RCAConfiguration,
-): Partial<TreePrunerOptions> {
+export function configToPrunerOptions(config: RCAConfiguration): Partial<TreePrunerOptions> {
   return {
     decayAlpha: config.continuous.decayAlpha,
     pruneEpsilon: config.continuous.pruneEpsilon,
@@ -65,9 +63,7 @@ export interface TopologyFaultGraphConfig {
 /**
  * Extract topology-level config from RCAConfiguration.
  */
-export function configToTopologyConfig(
-  config: RCAConfiguration,
-): TopologyFaultGraphConfig {
+export function configToTopologyConfig(config: RCAConfiguration): TopologyFaultGraphConfig {
   return {
     minDataPoints: 3,
     temporalBonus: config.continuous.temporalBonus,
