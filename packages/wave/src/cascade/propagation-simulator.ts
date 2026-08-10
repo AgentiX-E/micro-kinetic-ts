@@ -145,7 +145,7 @@ export class PropagationSimulator {
   private computeMeanCascade(
     realizations: CascadeResult[],
     source: string,
-    graph: ServiceCallGraph,
+    _graph: ServiceCallGraph,
   ): CascadeResult {
     const M = realizations.length;
     const first = realizations[0]!;

@@ -197,7 +197,7 @@ export class CausalDirectionFusion implements ITimingProviderRegistry {
    */
   private mergeTierResults(
     tierResults: readonly ProviderTierResult[],
-    edges: readonly CallEdge[],
+    _edges: readonly CallEdge[],
   ): readonly CausalDirection[] {
     // Build a map: edge_key → best (tier, direction)
     const bestPerEdge = new Map<string, { tier: ConfidenceTier; direction: CausalDirection }>();

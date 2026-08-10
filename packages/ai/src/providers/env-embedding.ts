@@ -70,7 +70,7 @@ export function createApiEmbeddingFromEnv(config: EnvEmbeddingConfig): ApiEmbedd
   const apiKey = process.env[`${config.vendorPrefix}_API_KEY`];
   if (!apiKey) return null;
   const headers: Record<string, string> = {
-    ...(config.extraHeaders ?? {}),
+    ...config.extraHeaders,
   };
 
   headers['Authorization'] = `Bearer ${apiKey}`;

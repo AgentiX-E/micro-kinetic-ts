@@ -164,10 +164,10 @@ export class IndependenceChecker {
     const bBins = this.discretizeToBins(b, bins);
 
     // Compute marginal and joint histograms
-    const histA = new Array<number>(bins).fill(0);
-    const histB = new Array<number>(bins).fill(0);
+    const histA = Array.from({ length: bins }, () => 0);
+    const histB = Array.from({ length: bins }, () => 0);
     const histJoint: number[][] = Array.from({ length: bins }, () =>
-      new Array<number>(bins).fill(0),
+      Array.from({ length: bins }, () => 0),
     );
 
     for (let i = 0; i < n; i++) {

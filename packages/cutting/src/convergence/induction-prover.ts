@@ -148,7 +148,6 @@ export class InductionProver implements IConvergenceProver {
         // Inductive step
         const epsilonPrev = errorSequence[j - 1]!;
         const propagationBound = this.couplingConstant * maxError * normDelta;
-        const epsilonBound = epsilonPrev + propagationBound;
 
         // Verify the actual ε_j is within the predicted bound
         const actualDifference = Math.abs(epsilonJ - epsilonPrev);

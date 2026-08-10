@@ -185,7 +185,7 @@ export class PatternClassifier {
 
     let bestResult: PatternClassificationResult | null = null;
 
-    for (const [label, ts] of Object.entries(metrics)) {
+    for (const [_label, ts] of Object.entries(metrics)) {
       const result = this.classify(ts, options);
       if (!bestResult || result.confidence > bestResult.confidence) {
         bestResult = result;

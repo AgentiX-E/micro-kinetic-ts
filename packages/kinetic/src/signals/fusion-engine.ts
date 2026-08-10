@@ -145,9 +145,9 @@ export class MultiSignalFusionEngine {
   }
 
   private async computeLLMWeights(
-    context: SignalAnalysisContext,
-    model: string,
-    apiKey: string,
+    _context: SignalAnalysisContext,
+    _model: string,
+    _apiKey: string,
   ): Promise<FusionWeights> {
     // LLM-guided weight optimization — uses DeepSeek API
     // Implemented when LLM integration is enabled

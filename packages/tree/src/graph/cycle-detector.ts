@@ -174,13 +174,6 @@ function johnsonEnumerateCycles(
     const startNode = nodes[startIdx]!;
 
     // Only consider the subgraph of nodes with index >= startIdx
-    // (this ensures each cycle is reported exactly once)
-    const subgraphNodes = new Set<ServiceId>(
-      nodes.filter((n) => {
-        const ni = nodes.indexOf(n);
-        return ni >= startIdx;
-      }),
-    );
 
     // Reset blocked state for this start-node iteration
     blocked.clear();

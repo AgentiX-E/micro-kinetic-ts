@@ -27,6 +27,8 @@
  * @module cli/index
  */
 
+/* eslint-disable no-console */
+
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';

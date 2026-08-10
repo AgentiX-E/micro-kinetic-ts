@@ -63,46 +63,6 @@ class Random {
   }
 }
 
-/** linspace: returns n evenly spaced values from start to end (inclusive). */
-function linspace(start: number, end: number, n: number): number[] {
-  if (n <= 1) return [start];
-  const result: number[] = [];
-  const step = (end - start) / (n - 1);
-  for (let i = 0; i < n; i++) {
-    result.push(start + step * i);
-  }
-  return result;
-}
-
-/**
- * Add Gaussian noise to an array.
- * @param values - Original values to modify in-place.
- * @param noiseRatio - Standard deviation as fraction of range.
- * @param rng - Random number generator.
- */
-function addNoise(values: Float64Array, noiseRatio: number, rng: Random): void {
-  const range = max(values) - min(values);
-  const stdDev = range * noiseRatio;
-  for (let i = 0; i < values.length; i++) {
-    values[i]! += rng.normal(0, stdDev);
-  }
-}
-
-function min(arr: Float64Array | number[]): number {
-  let m = Infinity;
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i]! < m) m = arr[i]!;
-  }
-  return m;
-}
-
-function max(arr: Float64Array | number[]): number {
-  let m = -Infinity;
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i]! > m) m = arr[i]!;
-  }
-  return m;
-}
 
 // ── Synthetic Benchmark Generator ─────────────────────────
 
@@ -126,7 +86,7 @@ const SERVICE_NAMES = [
 ];
 
 /** Metric names per category. */
-const METRIC_CATEGORIES: Record<string, string[]> = {
+const _METRIC_CATEGORIES: Record<string, string[]> = {
   CPU: ['cpu_usage_percent', 'cpu_throttle_percent'],
   MEMORY: ['memory_rss_bytes', 'memory_working_set_bytes', 'memory_page_faults'],
   DISK: ['disk_read_iops', 'disk_write_iops', 'disk_utilization_percent'],

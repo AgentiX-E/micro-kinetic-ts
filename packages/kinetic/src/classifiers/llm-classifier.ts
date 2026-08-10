@@ -83,8 +83,8 @@ export class LLMFaultClassifier implements ILLMFaultClassifier {
    * without multi-modal context.
    */
   classify(
-    metricSeries: readonly TimeSeries[],
-    context: FaultClassifierContext,
+    _metricSeries: readonly TimeSeries[],
+    _context: FaultClassifierContext,
   ): FaultTypeHypothesis[] {
     // Synchronous fallback — the async version should be preferred.
     // This returns an UNKNOWN placeholder; callers should use classifyWithContext.

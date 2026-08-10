@@ -310,7 +310,7 @@ function topologicalSort(
 
   // Leaves: nodes with no outgoing edges
   const queue: ServiceId[] = [];
-  for (const [nodeId, deg] of inDegree) {
+  for (const [nodeId, _deg] of inDegree) {
     const outDegree = forwardAdj.get(nodeId)!.length;
     if (outDegree === 0) {
       queue.push(nodeId);

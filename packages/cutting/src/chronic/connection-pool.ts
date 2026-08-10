@@ -103,7 +103,6 @@ export class ConnectionPoolDetector {
     const tRel = timestamps.map((t) => (t - t0) / 3_600_000);
 
     // Check monotonic depletion
-    const valuesDecreasing = values.slice().reverse();
     const isMonotonic = checkMonotonicDecreasing(values);
 
     // Fit exponential decay: C(t) = C₀ × exp(-λ × t) + C_min

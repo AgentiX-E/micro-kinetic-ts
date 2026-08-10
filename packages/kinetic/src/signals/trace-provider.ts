@@ -138,7 +138,6 @@ export class TraceSignalProvider implements ISignalProvider {
 
     // Service-level aggregation
     const serviceScores = new Map<string, number>();
-    const serviceVisited = new Set<string>();
 
     const computeScore = (span: TraceSpan): number => {
       const bl = baselines.get(span.service);
@@ -175,7 +174,6 @@ export class TraceSignalProvider implements ISignalProvider {
   }
 
   private buildMetadata(spans: readonly TraceSpan[], candidateCount: number): SignalMetadata {
-    const services = new Set(spans.map((s) => s.service));
     const traceCount = new Set(spans.map((s) => s.traceId)).size;
     return {
       candidateCount,

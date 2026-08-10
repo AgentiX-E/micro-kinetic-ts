@@ -190,7 +190,7 @@ export class TfIdfEmbeddingProvider implements IEmbeddingProvider {
     this.idf = new Float32Array(vocabSize);
 
     // Count document frequency for each term in vocabulary
-    const df = new Array<number>(vocabSize).fill(0);
+    const df = Array.from({ length: vocabSize }, () => 0);
     for (const text of texts) {
       const seenTokens = new Set<number>();
       const tokens = tokenizeServiceName(text);
@@ -256,7 +256,7 @@ export class TfIdfEmbeddingProvider implements IEmbeddingProvider {
 
   /** Sorted list of vocabulary terms. */
   get terms(): readonly string[] {
-    const result = new Array<string>(this.vocabulary.size);
+    const result = Array.from<string>({ length: this.vocabulary.size });
     for (const [term, idx] of this.vocabulary) {
       result[idx] = term;
     }

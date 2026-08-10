@@ -193,7 +193,7 @@ export class CouplingSparsityAnalyzer {
   ): ReadonlyArray<readonly string[]> {
     // Union-find data structure
     const parent = Array.from({ length: N }, (_, i) => i);
-    const rank = new Array<number>(N).fill(0);
+    const rank = Array.from({ length: N }, () => 0);
 
     function find(x: number): number {
       while (parent[x] !== x) {

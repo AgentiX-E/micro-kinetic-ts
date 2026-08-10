@@ -159,7 +159,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(this.config.headers ?? {}),
+            ...this.config.headers,
           },
           body: JSON.stringify(this.buildRequestBody(texts)),
           signal: controller.signal,

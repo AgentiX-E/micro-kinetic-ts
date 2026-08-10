@@ -45,7 +45,7 @@ import { TreeRCAEngine } from '../rca/tree-rca.js';
  * @param container - DI container for resolving dependencies
  * @returns Configured TreePruner instance
  */
-export function createTreePruner(container: IContainer): TreePruner {
+export function createTreePruner(_container: IContainer): TreePruner {
   return new TreePruner({
     pruneEpsilon: 0.01,
     criticalLoadThreshold: 0.7,
@@ -64,7 +64,7 @@ export function createTreePruner(container: IContainer): TreePruner {
  * @param container - DI container for resolving dependencies
  * @returns Configured TreeRCAEngine instance
  */
-export function createTreeRCAEngine(container: IContainer): TreeRCAEngine {
+export function createTreeRCAEngine(_container: IContainer): TreeRCAEngine {
   return new TreeRCAEngine({
     decayAlpha: 0.8,
     tauMs: 1000,
@@ -81,7 +81,7 @@ export function createTreeRCAEngine(container: IContainer): TreeRCAEngine {
  * @param container - DI container for resolving dependencies
  * @returns Configured ConfidenceEstimator instance
  */
-export function createConfidenceEstimator(container: IContainer): ConfidenceEstimator {
+export function createConfidenceEstimator(_container: IContainer): ConfidenceEstimator {
   return new ConfidenceEstimator({
     alpha: 0.85,
     applyDepthPenalty: true,
@@ -98,7 +98,7 @@ export function createConfidenceEstimator(container: IContainer): ConfidenceEsti
  * @param container - DI container for resolving dependencies
  * @returns Configured NumpyTsMatrixOps instance
  */
-export function createNumpyTsMatrixOps(container: IContainer): NumpyTsMatrixOps {
+export function createNumpyTsMatrixOps(_container: IContainer): NumpyTsMatrixOps {
   return new NumpyTsMatrixOps();
 }
 
@@ -111,7 +111,7 @@ export function createNumpyTsMatrixOps(container: IContainer): NumpyTsMatrixOps 
  * @param container - DI container for resolving dependencies
  * @returns Configured UbiqueLinearAlgebra instance
  */
-export function createUbiqueLinearAlgebra(container: IContainer): UbiqueLinearAlgebra {
+export function createUbiqueLinearAlgebra(_container: IContainer): UbiqueLinearAlgebra {
   return new UbiqueLinearAlgebra();
 }
 

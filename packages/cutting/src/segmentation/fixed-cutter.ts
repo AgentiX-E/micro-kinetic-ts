@@ -44,7 +44,7 @@ import { InductionProver } from '../convergence/induction-prover.js';
 import { computeKineticEnergyBound } from './adaptive-cutter.js';
 
 /** Minimum valid window duration (10 seconds). */
-const MIN_WINDOW_MS = 10_000;
+const _MIN_WINDOW_MS = 10_000;
 
 /**
  * Fixed-window cutting engine: partitions the time series into N equal

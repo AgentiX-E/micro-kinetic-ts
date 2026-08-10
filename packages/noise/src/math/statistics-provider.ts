@@ -173,9 +173,11 @@ export class StatisticsProvider implements IStatistics {
     // Compute marginal and joint histogram
     const n = xBins.length;
 
-    const hx: number[] = new Array(bins).fill(0);
-    const hy: number[] = new Array(bins).fill(0);
-    const hxy: number[][] = Array.from({ length: bins }, () => new Array(bins).fill(0));
+    const hx: number[] = Array.from({ length: bins }, () => 0);
+    const hy: number[] = Array.from({ length: bins }, () => 0);
+    const hxy: number[][] = Array.from({ length: bins }, () =>
+      Array.from({ length: bins }, () => 0),
+    );
 
     for (let i = 0; i < n; i++) {
       const bx = xBins[i]!;
@@ -302,7 +304,7 @@ function computeHoeffdingD(x: number[], y: number[]): number {
   const yRanks = computeRanks(y);
 
   // Build 5 auxiliary arrays
-  const q: number[] = new Array(n).fill(0);
+  const q: number[] = Array.from({ length: n }, () => 0);
 
   for (let i = 0; i < n; i++) {
     let count = 0;
@@ -341,7 +343,7 @@ function computeRanks(values: number[]): number[] {
   const indexed = values.map((v, i) => ({ value: v, index: i }));
   indexed.sort((a, b) => a.value - b.value);
 
-  const ranks = new Array<number>(n);
+  const ranks = Array.from<number>({ length: n });
   let i = 0;
   while (i < n) {
     let j = i;

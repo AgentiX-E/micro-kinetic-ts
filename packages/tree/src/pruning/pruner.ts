@@ -37,7 +37,6 @@ import {
   invariant,
   invariantPositiveInt,
   invariantRange,
-  type CallEdge,
   type DetectedCycle,
   type FaultPropagationGraph,
   type MetricMap,
@@ -48,14 +47,10 @@ import {
   type ServiceCallGraph,
   type ServiceId,
   type ServiceNode,
-  type TimeSeries,
   type TreeNodeScore,
 } from '@agentix-e/micro-kinetic-core';
 
-import { computeAutoSensitivity } from '../../../kinetic/src/signals/auto-sensitivity.js';
-import { computeMADThreshold } from '../../../kinetic/src/signals/mad-threshold.js';
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
-import { computePropagationVelocity } from '../causal/propagation-velocity.js';
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
@@ -156,7 +151,7 @@ export class TreePruner {
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
     const topoResult = buildTopologyFaultGraph(callGraph, metrics);
-    const { anomalyScores, anomalyOnsetTimes, propagationWeights } = topoResult;
+    const { anomalyScores, anomalyOnsetTimes: _anomalyOnsetTimes, propagationWeights } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.
     // The call graph's edges reflect the actual service dependency topology from
@@ -375,301 +370,6 @@ export class TreePruner {
 }
 
 /**
- * Compute feature-enhanced anomaly score from service metrics.
- *
- * Upgraded from simple |max-mean|/mean to StatisticalAnalyzer-derived
- * multi-feature analysis: trend slope (linear regression), burst detection
- * (3-sigma rule), coefficient of variation, and monotonic tendency.
- *
- * Each feature contributes to the final score based on diagnostic relevance:
- * monotonic growth → cumulative faults (MEM/DISK), bursts → spike anomalies,
- * high CV → overall instability.
- *
- * Final score = base_deviation + trend_bonus + burst_bonus + cv_bonus,
- * clamped to [0, 1]. Scores > 0.3 are considered anomalous.
- *
- * @internal
- */
-function computeAnomalyScore(
-  serviceId: ServiceId,
-  serviceMetrics: readonly TimeSeries[] | undefined,
-): number {
-  if (!serviceMetrics || serviceMetrics.length === 0) {
-    return 0;
-  }
-
-  let bestScore = 0;
-
-  for (const ts of serviceMetrics) {
-    if (ts.values.length < 2) continue;
-
-    const n = ts.values.length;
-
-    // Basic statistics
-    let sum = 0,
-      max = -Infinity;
-    for (let i = 0; i < n; i++) {
-      const v = ts.values[i]!;
-      sum += v;
-      if (v > max) max = v;
-    }
-    const mean = sum / n;
-    if (mean <= 0) continue;
-
-    // ── Simple change point detection ──────────────────────
-    // Find inflection point where cumulative deviation crosses 1.5σ.
-    // Pre-inflection data is the "normal period" for baseline computation,
-    // matching BARO's insight that root cause scoring should compare
-    // post-change behavior against a clean pre-change baseline.
-    const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
-    const fullStd = Math.sqrt(fullVariance);
-    let changePt = n;
-    for (let i = 1; i < n; i++) {
-      if (ts.values[i]! > mean + 1.5 * fullStd) {
-        changePt = i;
-        break;
-      }
-    }
-
-    // Use pre-change baseline if change point detected
-    let baselineMean = mean;
-    if (changePt < n && changePt > 2) {
-      let bs = 0;
-      for (let i = 0; i < changePt; i++) bs += ts.values[i]!;
-      baselineMean = bs / changePt;
-      if (baselineMean <= 0) baselineMean = mean;
-    }
-
-    // Deviation: max value vs pre-change baseline (change-point-calibrated)
-    const deviation = Math.abs(max - baselineMean) / baselineMean;
-    if (deviation < 0.05) continue;
-
-    // Trend slope (linear regression)
-    let sx = 0,
-      sy = 0,
-      sxx = 0,
-      sxy = 0;
-    for (let i = 0; i < n; i++) {
-      const v = ts.values[i]!;
-      sx += i;
-      sy += v;
-      sxx += i * i;
-      sxy += i * v;
-    }
-    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-    const trendStrength = mean > 0 ? Math.abs((slope * n) / mean) : 0;
-
-    // Variance and CV
-    let variance = 0;
-    for (let i = 0; i < n; i++) {
-      const diff = ts.values[i]! - mean;
-      variance += diff * diff;
-    }
-    variance /= n;
-    const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
-
-    // Burst detection (3-sigma rule)
-    let hasBurst = false;
-    const threshold = mean + 3 * Math.sqrt(variance);
-    for (let i = 0; i < n && !hasBurst; i++) {
-      if (ts.values[i]! > threshold) hasBurst = true;
-    }
-
-    // Monotonic upward tendency
-    let isMonotonicUp = slope > 0;
-    if (isMonotonicUp) {
-      for (let i = 1; i < n; i++) {
-        if (ts.values[i]! < ts.values[i - 1]!) {
-          isMonotonicUp = false;
-          break;
-        }
-      }
-    }
-
-    // Feature-weighted score
-    let featureScore = deviation;
-    if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.3;
-    if (hasBurst) featureScore += deviation * 0.2;
-    if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.15;
-
-    featureScore = Math.max(0, Math.min(1, featureScore));
-    if (featureScore > bestScore) bestScore = featureScore;
-  }
-
-  return bestScore;
-}
-
-/**
- * Anomaly result with onset timing for temporal causality.
- * @internal
- */
-interface AnomalyResult {
-  score: number;
-  onsetIndex: number;
-}
-
-/** Compute anomaly score AND onset time. */
-/* c8 ignore start — legacy, replaced by buildTopologyFaultGraph */
-function computeAnomalyScoreAndOnset(
-  serviceId: ServiceId,
-  serviceMetrics: readonly TimeSeries[] | undefined,
-): AnomalyResult {
-  const score = computeAnomalyScore(serviceId, serviceMetrics);
-  let onset = Number.MAX_SAFE_INTEGER;
-  if (serviceMetrics) {
-    for (const ts of serviceMetrics) {
-      if (ts.values.length < 2) continue;
-      // Adaptive threshold: use AutoSensitivity to find k_opt,
-      // then apply MAD × k_opt for onset detection.
-      const { optimalK } = computeAutoSensitivity(ts.values, {
-        minDataPoints: 5,
-        sparseK: 5.0,
-      });
-      const { median, threshold } = computeMADThreshold(ts.values, {
-        multiplier: optimalK,
-        minDataPoints: 5,
-      });
-      if (threshold === 0) continue;
-      for (let i = 0; i < ts.values.length; i++) {
-        if (Math.abs(ts.values[i]! - median) > threshold) {
-          onset = i;
-          break;
-        }
-      }
-    }
-  }
-  return { score, onsetIndex: onset };
-}
-/* c8 ignore stop */
-
-/**
- * Build chronological propagation tree from anomaly onset times.
- *
- * Temporal causality: root cause becomes anomalous FIRST, symptoms appear
- * LATER. Tree edges point from earlier→later anomalous services.
- *
- * Algorithm: find root (earliest onset), then BFS outward connecting each
- * service to its earliest-anomalous neighbor already in the tree.
- */
-/* c8 ignore start — legacy, replaced by buildTopologyFaultGraph */
-function buildChronologicalPropagationTree(
-  callGraph: ServiceCallGraph,
-  onsetTimes: ReadonlyMap<ServiceId, number>,
-  anomalyScores: ReadonlyMap<ServiceId, number>,
-): ServiceCallGraph {
-  const nodes = new Map(callGraph.nodes);
-  let rootId = '',
-    rootOnset = Number.MAX_SAFE_INTEGER,
-    rootScore = 0;
-  for (const [id] of nodes) {
-    const onset = onsetTimes.get(id) ?? Number.MAX_SAFE_INTEGER;
-    const score = anomalyScores.get(id) ?? 0;
-    if (onset < rootOnset || (onset === rootOnset && score > rootScore)) {
-      rootId = id;
-      rootOnset = onset;
-      rootScore = score;
-    }
-  }
-  if (!rootId || rootOnset === Number.MAX_SAFE_INTEGER) return callGraph;
-
-  const sorted = [...nodes.keys()]
-    .filter((id) => id !== rootId)
-    .sort((a, b) => (onsetTimes.get(a) ?? 0) - (onsetTimes.get(b) ?? 0));
-
-  const neighbors = new Map<string, Set<string>>();
-  for (const [id] of nodes) neighbors.set(id, new Set());
-  for (const e of callGraph.edges) {
-    neighbors.get(e.from)?.add(e.to);
-    neighbors.get(e.to)?.add(e.from);
-  }
-
-  const connected = new Set<string>([rootId]);
-  const treeEdges: CallEdge[] = [];
-  for (const sid of sorted) {
-    let bestN = rootId,
-      bestOnset = rootOnset;
-    for (const n of neighbors.get(sid) ?? new Set()) {
-      if (connected.has(n) && (onsetTimes.get(n) ?? Number.MAX_SAFE_INTEGER) < bestOnset) {
-        bestOnset = onsetTimes.get(n)!;
-        bestN = n;
-      }
-    }
-    treeEdges.push({
-      from: bestN,
-      to: sid,
-      type: 'REST',
-      callRate: 100,
-      p99Latency: 50,
-      errorRate: 0.01,
-    });
-    connected.add(sid);
-  }
-  return { nodes, edges: treeEdges, systemLoad: callGraph.systemLoad };
-}
-/* c8 ignore stop */
-
-/**
- * Compute propagation weight using BOCPD-based propagation velocity model.
- *
- * Replaces the old hardcoded threshold-based correlation with a continuous
- * probability P(propagation | Δt) from the propagation velocity model.
- *
- * Edge weight = pearsonR × P(propagation | Δt)
- * where pearsonR is derived from anomaly score correlation and
- * P(propagation | Δt) is computed via BOCPD onset detection.
- *
- * Falls back to anomaly score similarity when time series data
- * is insufficient for BOCPD.
- *
- * @internal
- */
-/* c8 ignore start — replaced by computeEdgePropagationWeight in topology-fault-graph.ts */
-function computeCorrelationWeight(
-  fromId: ServiceId,
-  toId: ServiceId,
-  sourceMetrics: readonly TimeSeries[] | undefined,
-  targetMetrics: readonly TimeSeries[] | undefined,
-  anomalyScores: ReadonlyMap<ServiceId, number>,
-): number {
-  const sourceScore = anomalyScores.get(fromId) ?? 0;
-  const targetScore = anomalyScores.get(toId) ?? 0;
-
-  // Attempt BOCPD-based propagation velocity when both services have metrics
-  if (sourceMetrics && sourceMetrics.length > 0 && targetMetrics && targetMetrics.length > 0) {
-    // Use the first metric time series for onset detection
-    // In production, multi-metric aggregation should be used
-    const sourceValues = sourceMetrics[0]!.values;
-    const targetValues = targetMetrics[0]!.values;
-
-    if (sourceValues.length >= 5 && targetValues.length >= 5) {
-      const velocity = computePropagationVelocity(
-        sourceValues,
-        targetValues,
-        { useBOCPD: false }, // Default MAD-based for performance
-      );
-
-      // Pearson-like correlation from anomaly scores
-      const anomalyCorrelation = 1 - Math.abs(sourceScore - targetScore);
-
-      // Edge weight = anomaly correlation × propagation probability
-      return Math.max(0, Math.min(1, anomalyCorrelation * velocity.propagationProbability));
-    }
-  }
-
-  // Fallback: data-adaptive anomaly score similarity
-  // Uses anomaly score difference as a proxy for correlation
-  // when time series data is unavailable or insufficient
-  const correlationProxy = 1 - Math.abs(sourceScore - targetScore);
-
-  // Apply data-adaptive gain based on anomaly magnitude
-  const avgScore = (sourceScore + targetScore) / 2;
-  const gainFactor = Math.min(1, avgScore * 2); // Scale: 0→1 for scores 0→0.5
-
-  return Math.max(0, Math.min(1, correlationProxy * (0.3 + 0.7 * gainFactor)));
-}
-/* c8 ignore stop */
-
-/**
  * Prune insignificant cycles from the fault propagation graph.
  *
  * For each insignificant cycle, find the edge with the minimum
@@ -734,7 +434,7 @@ function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCyc
 
   // Build initial node scores (just anomaly, no child propagation yet)
   const nodes = new Map<ServiceId, TreeNodeScore>();
-  for (const [nodeId, node] of graph.callGraph.nodes) {
+  for (const [nodeId, _node] of graph.callGraph.nodes) {
     const anomalyScore = graph.anomalyScores.get(nodeId) ?? 0;
     nodes.set(nodeId, {
       nodeId,
@@ -823,7 +523,7 @@ function performTreeRCA(
   // fall back to nodes with the FEWEST children as starting points.
   if (leaves.length === 0) {
     let minChildren = Infinity;
-    for (const [nodeId, childList] of children) {
+    for (const [_nodeId, childList] of children) {
       if (childList.length < minChildren) minChildren = childList.length;
     }
     for (const [nodeId, childList] of children) {
@@ -834,8 +534,6 @@ function performTreeRCA(
   // Bottom-up accumulation with BFS from leaves
   const scores = new Map<ServiceId, number>();
   const depths = new Map<ServiceId, number>();
-  const visited = new Set<ServiceId>();
-
   // Queue for bottom-up processing: process nodes when all parents processed
   // Actually, we process from leaf → root: initialize leaves, then propagate upward
 
@@ -848,7 +546,10 @@ function performTreeRCA(
     const ce = collisionResult?.totalEnergy;
     // Use collision energy only when it adds signal (> 0).
     // Falls back to raw anomaly score when totalEnergy is 0 or undefined.
-    scores.set(nodeId, ce != null && ce > 0 ? ce : (anomalyScores.get(nodeId) ?? 0));
+    scores.set(
+      nodeId,
+      ce !== null && ce !== undefined && ce > 0 ? ce : (anomalyScores.get(nodeId) ?? 0),
+    );
     collisionTypes.set(nodeId, collisionResult?.collisionType ?? 'chain');
     depths.set(nodeId, 0);
   }

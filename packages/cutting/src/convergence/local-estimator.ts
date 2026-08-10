@@ -92,7 +92,7 @@ export class LocalErrorEstimator {
    * @param metric - Metric label
    * @returns Array of LocalErrorBound, one per window
    */
-  estimateLocalBounds(windows: readonly CuttingWindow[], metric: string): LocalErrorBound[] {
+  estimateLocalBounds(windows: readonly CuttingWindow[], _metric: string): LocalErrorBound[] {
     invariantNonEmpty(windows, 'windows');
 
     return windows.map((window, idx) => {
