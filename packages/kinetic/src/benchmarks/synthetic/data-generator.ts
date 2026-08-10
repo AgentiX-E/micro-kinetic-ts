@@ -63,7 +63,6 @@ class Random {
   }
 }
 
-
 // ── Synthetic Benchmark Generator ─────────────────────────
 
 /** Service names for synthetic benchmarks. */
