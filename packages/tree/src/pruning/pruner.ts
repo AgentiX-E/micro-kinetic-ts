@@ -51,8 +51,8 @@ import {
 } from '@agentix-e/micro-kinetic-core';
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
-import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js';
+import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 
