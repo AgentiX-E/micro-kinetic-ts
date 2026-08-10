@@ -37,3 +37,6 @@ export {
   createEngineWithConfig,
 } from './integration.js';
 export type { TopologyFaultGraphConfig } from './integration.js';
+
+export { ModelStore, loadModel, saveModel } from './persistence.js';
+export type { PersistedModel, PersistenceOptions } from './persistence.js';
