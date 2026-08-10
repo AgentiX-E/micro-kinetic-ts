@@ -5,3 +5,4 @@ coverage/
 *.tsbuildinfo
 .cache/
 benchmark-results/
+packages/optimize/__tests__/
