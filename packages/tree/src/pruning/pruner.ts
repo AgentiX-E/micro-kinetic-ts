@@ -814,11 +814,25 @@ function performTreeRCA(
     inDegree.set(edge.to, inDegree.get(edge.to)! + 1);
   }
 
-  // Topological sort: start with nodes that have no children (leaves)
+  // Topological sort: start with TRUE leaves (outDegree === 0).
+  // inDegree counts incoming edges (parents); inDegree===0 means ROOT nodes.
+  // We need nodes with NO children to propagate bottom-up.
   const leaves: ServiceId[] = [];
-  for (const [nodeId, deg] of inDegree) {
-    if (deg === 0) {
+  for (const [nodeId, childList] of children) {
+    if (childList.length === 0) {
       leaves.push(nodeId);
+    }
+  }
+
+  // Fallback: if ring-connect edges create cycles with no true leaves,
+  // fall back to nodes with the FEWEST children as starting points.
+  if (leaves.length === 0) {
+    let minChildren = Infinity;
+    for (const [nodeId, childList] of children) {
+      if (childList.length < minChildren) minChildren = childList.length;
+    }
+    for (const [nodeId, childList] of children) {
+      if (childList.length === minChildren) leaves.push(nodeId);
     }
   }
 
@@ -836,7 +850,10 @@ function performTreeRCA(
   const collisionTypes = new Map<ServiceId, string>();
   for (const [nodeId] of allNodes) {
     const collisionResult = collisionEnergy?.get(nodeId);
-    scores.set(nodeId, collisionResult?.totalEnergy ?? anomalyScores.get(nodeId) ?? 0);
+    const ce = collisionResult?.totalEnergy;
+    // Use collision energy only when it adds signal (> 0).
+    // Falls back to raw anomaly score when totalEnergy is 0 or undefined.
+    scores.set(nodeId, ce != null && ce > 0 ? ce : (anomalyScores.get(nodeId) ?? 0));
     collisionTypes.set(nodeId, collisionResult?.collisionType ?? 'chain');
     depths.set(nodeId, 0);
   }
