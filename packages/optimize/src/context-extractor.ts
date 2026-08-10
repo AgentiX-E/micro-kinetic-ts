@@ -235,18 +235,20 @@ class CloseToPrimitive implements CloseToMatcher {
 
 export function expectCloseTo(
   actual: number,
-  expected: number | CloseToMatcher,
+  expected: number | CloseToPrimitive,
   tolerance?: number,
 ): boolean {
+  let expVal: number;
+  let tol: number;
   if (expected instanceof CloseToPrimitive) {
-    return (
-      Math.abs(actual - expected.value) / Math.max(1, Math.abs(expected.value)) <=
-      expected.tolerance
-    );
+    expVal = expected.value;
+    tol = expected.tolerance;
+  } else {
+    expVal = expected;
+    tol = tolerance ?? 0.1;
   }
-  const tol = tolerance ?? 0.1;
-  const relError = Math.abs(actual - expected) / Math.max(1, Math.abs(expected));
-  return relError <= tol;
+  const denom = Math.max(1, Math.abs(expVal));
+  return Math.abs(actual - expVal) / denom <= tol;
 }
 
 expectCloseTo.primitive = (value: number, tolerance?: number): CloseToMatcher =>
