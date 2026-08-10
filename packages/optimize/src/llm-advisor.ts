@@ -13,8 +13,8 @@
  * Never hardcoded.  Never committed.  .env file is in .gitignore.
  */
 
-import type { SystemContext } from './types.js';
 import type { RCAConfiguration } from './config-space.js';
+import type { SystemContext } from './types.js';
 
 // ── Types ──
 
@@ -168,26 +168,23 @@ export class LLMAdvisor {
 
     const userPrompt = this.buildPrompt(history, candidates, context);
 
-    const response = await fetch(
-      `${this.options.apiBase}/chat/completions`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.options.model,
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.3,
-          max_tokens: 1024,
-          response_format: { type: 'json_object' },
-        }),
+    const response = await fetch(`${this.options.apiBase}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
       },
-    );
+      body: JSON.stringify({
+        model: this.options.model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+      }),
+    });
 
     if (!response.ok) {
       const text = await response.text();
@@ -210,7 +207,9 @@ export class LLMAdvisor {
     context: SystemContext,
   ): string {
     const lines: string[] = [];
-    lines.push(`System context: ${context.serviceCount} services, density=${context.graphDensity.toFixed(3)}, CV=${context.metricCV.toFixed(3)}, traceCoverage=${context.traceCoverage.toFixed(2)}, maxDepth=${context.maxDepth}`);
+    lines.push(
+      `System context: ${context.serviceCount} services, density=${context.graphDensity.toFixed(3)}, CV=${context.metricCV.toFixed(3)}, traceCoverage=${context.traceCoverage.toFixed(2)}, maxDepth=${context.maxDepth}`,
+    );
 
     if (history.length > 0) {
       lines.push('\nExperiment history (config → accuracy):');
@@ -243,10 +242,7 @@ export class LLMAdvisor {
   }
 
   /** Parse LLM JSON response */
-  private parseResponse(
-    content: string,
-    numCandidates: number,
-  ): Omit<RankResult, 'fromCache'> {
+  private parseResponse(content: string, numCandidates: number): Omit<RankResult, 'fromCache'> {
     try {
       const json = JSON.parse(content) as {
         ranking: number[];
@@ -257,10 +253,7 @@ export class LLMAdvisor {
       // Validate ranking: must contain exactly all indices 0..n-1
       const sorted = [...json.ranking].sort((a, b) => a - b);
       const expected = Array.from({ length: numCandidates }, (_, i) => i);
-      if (
-        sorted.length !== numCandidates ||
-        !sorted.every((v, i) => v === expected[i])
-      ) {
+      if (sorted.length !== numCandidates || !sorted.every((v, i) => v === expected[i])) {
         throw new Error(
           `Invalid ranking: expected [0..${numCandidates - 1}], got ${JSON.stringify(json.ranking)}`,
         );
@@ -278,10 +271,7 @@ export class LLMAdvisor {
   }
 
   /** Uniform fallback ranking */
-  private uniformRank(
-    candidates: readonly RCAConfiguration[],
-    reason: string,
-  ): RankResult {
+  private uniformRank(candidates: readonly RCAConfiguration[], reason: string): RankResult {
     const ranking = Array.from({ length: candidates.length }, (_, i) => i);
     return {
       ranking,
@@ -305,9 +295,7 @@ export class LLMAdvisor {
       `c=${candidates.length}`,
     ];
     for (const h of history) {
-      parts.push(
-        `${h.config.continuous.decayAlpha.toFixed(2)}_${h.accuracy.toFixed(3)}`,
-      );
+      parts.push(`${h.config.continuous.decayAlpha.toFixed(2)}_${h.accuracy.toFixed(3)}`);
     }
     return parts.join('|');
   }

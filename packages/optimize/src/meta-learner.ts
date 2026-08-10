@@ -17,9 +17,9 @@
  * Storage: ~50KB for 5 historical tuples.  Inference: < 1ms.
  */
 
-import type { SystemContext } from './types.js';
 import type { RCAConfiguration } from './config-space.js';
 import { DEFAULT_CONFIG } from './config-space.js';
+import type { SystemContext } from './types.js';
 
 // ── Types ──
 
@@ -75,10 +75,7 @@ export class MetaLearner {
   private readonly featureMeans: Float64Array;
   private readonly featureStds: Float64Array;
 
-  constructor(
-    records: readonly HistoricalRecord[],
-    options?: Partial<MetaLearnerOptions>,
-  ) {
+  constructor(records: readonly HistoricalRecord[], options?: Partial<MetaLearnerOptions>) {
     this.records = records;
     this.options = { k: 3, epsilon: 0.01, ...options };
 
@@ -236,8 +233,6 @@ function argmax(map: Map<string, number>): string | undefined {
 }
 
 /** Load MetaLearner from JSON data */
-export function loadMetaLearner(
-  data: readonly HistoricalRecord[],
-): MetaLearner {
+export function loadMetaLearner(data: readonly HistoricalRecord[]): MetaLearner {
   return new MetaLearner(data);
 }
