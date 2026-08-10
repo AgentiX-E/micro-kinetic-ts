@@ -18,3 +18,14 @@ export type { HistoricalConfig, HistoricalRecord, MetaLearnerOptions } from './m
 
 export { LLMAdvisor } from './llm-advisor.js';
 export type { ExperimentRecord, LLMAdvisorOptions, RankResult } from './llm-advisor.js';
+
+export { AdaptiveConfigOptimizer } from './optimizer.js';
+export type {
+  BenchmarkOracle,
+  IterationRecord,
+  OptimizationResult,
+  OptimizerOptions,
+} from './optimizer.js';
+
+export { ConvergenceChecker } from './convergence-checker.js';
+export type { ConvergenceOptions, ConvergenceState } from './convergence-checker.js';
