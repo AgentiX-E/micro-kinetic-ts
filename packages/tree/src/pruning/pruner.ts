@@ -791,14 +791,11 @@ function performTreeRCA(
     { totalEnergy: number; collisionType: string; collisionGain: number }
   >,
 ): RootCauseResult[] {
-  // Build adjacency and in-degree from remaining edges
+  // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
-  const parent = new Map<ServiceId, string>();
-  const inDegree = new Map<ServiceId, number>();
 
   for (const nodeId of allNodes.keys()) {
     children.set(nodeId, []);
-    inDegree.set(nodeId, 0);
   }
 
   for (let i = 0; i < tree.edges.length; i++) {
@@ -810,8 +807,6 @@ function performTreeRCA(
         weight: propagationWeights[i]!,
       });
     }
-    parent.set(edge.to, edge.from);
-    inDegree.set(edge.to, inDegree.get(edge.to)! + 1);
   }
 
   // Topological sort: start with TRUE leaves (outDegree === 0).
