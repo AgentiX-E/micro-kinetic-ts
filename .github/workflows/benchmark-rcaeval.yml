@@ -35,11 +35,19 @@ jobs:
       - name: Run synthetic benchmark (175 cases)
         run: |
           pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
+      - name: Run adaptive optimizer
+        run: |
+          pnpm exec tsx benchmarks/src/optimize-all.ts 2>&1 | tee optimize-results.txt
       - name: Upload synthetic results
         uses: actions/upload-artifact@v4
         with:
           name: synthetic-results
           path: benchmark-results.json
+      - name: Upload optimizer results
+        uses: actions/upload-artifact@v4
+        with:
+          name: optimize-results
+          path: optimize-results.txt
 
   # ── RCAEval: 3 parallel runners (RE1 / RE2 / RE3) ──
   rcaeval-re1:
