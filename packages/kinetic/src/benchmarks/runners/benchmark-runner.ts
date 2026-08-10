@@ -305,7 +305,6 @@ export class BenchmarkRunner {
 
         const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics);
         const results = await engine.analyze(faultGraph, topK);
-        const topResult = results[0];
 
         // ── Diagnostic snapshot for failing cases ──────────────────
         gtAnomaly = faultGraph.anomalyScores.get(benchCase.groundTruth.serviceId) ?? 0;

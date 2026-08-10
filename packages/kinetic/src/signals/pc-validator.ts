@@ -236,11 +236,7 @@ export function validateTopologyWithPC(
       );
 
       // Check correlation strength
-      const nodeI = nodeIds.indexOf(pcEdge.from);
-      const nodeJ = nodeIds.indexOf(pcEdge.to);
-      // We can't access the raw correlation easily post-hoc, but the
-      // skeleton only contains edges that passed minCorrelation.
-      // Use directed edge info to determine direction.
+      // Edge is validated by skeleton + directed edge info below
 
       if (directed && directed.directed) {
         discoveredEdges.push({

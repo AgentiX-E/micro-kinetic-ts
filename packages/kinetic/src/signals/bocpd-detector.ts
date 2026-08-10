@@ -281,7 +281,6 @@ export function bocpdDetectOnset(
   // Initialize run-length posterior
   // P[ri] = probability that current run length = ri
   let runLengths: number[] = [1.0]; // P(r₀=0) = 1
-  let maxProb = 1.0;
 
   // Sufficient statistics for each run-length hypothesis
   // count[ri] = number of observations in segment starting at ri
@@ -359,8 +358,8 @@ export function bocpdDetectOnset(
       sumSqs.push(newSumSqs[ri]!);
     }
 
-    // Recompute maxProb for confidence estimate
-    maxProb = Math.max(...runLengths);
+    // Track max run-length probability for confidence estimate
+    void Math.max(...runLengths);
 
     // 5. Check for changepoint detection using likelihood ratio
     // Rather than relying solely on P(r=0) (which is bounded by hazard rate),
