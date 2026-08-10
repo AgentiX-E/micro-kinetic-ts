@@ -180,7 +180,6 @@ export class AdaptiveConfigOptimizer {
       }
 
       // 4c. UCB-LLM acquisition
-      const candidateConfigs = candidates.map((c) => this.space.fromVector(c));
       let bestScore = -Infinity;
       let bestCandidate: Float64Array = candidates[0]!;
       let bestPredMean = 0;
