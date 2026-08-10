@@ -246,6 +246,7 @@ export function buildTopologyFaultGraph(
   if (callGraph.nodes.size >= 30) {
     const sampleId = diagSampleIds[0] ?? [...callGraph.nodes.keys()][0]!;
     const sysName = callGraph.nodes.get(sampleId)?.namespace ?? '?';
+    // oxlint-disable-next-line no-console -- diagnostic output for benchmark artifacts
     console.log(
       `  [anomaly] system=${sysName}` +
         ` services=${diagSvcCount} noMetrics=${diagNoMetrics} zero=${diagZeroScore}` +

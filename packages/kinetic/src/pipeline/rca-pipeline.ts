@@ -62,7 +62,6 @@ import {
   type IScalingAnalyzer,
   type IWavePropagationModel,
   type MetricMap,
-  type MicroserviceState,
   type RootCauseResult,
   type ServiceCallGraph,
 } from '@agentix-e/micro-kinetic-core';
@@ -241,8 +240,6 @@ export class RCAPipeline {
       scalingResult = await this.runStage(
         'BBGKY + Boltzmann-Grad Scaling',
         () => {
-          // Build microservice states from metrics and fault graph
-          const states = this.buildMicroserviceStates(faultGraph, metrics);
           return scalingAnalyzer.estimateFaultProbability(
             callGraph.nodes.size,
             0.1, // default impact radius
@@ -326,29 +323,6 @@ export class RCAPipeline {
    */
   private buildMockAlerts(_faultGraph: unknown, _metrics: MetricMap): AlertRecord[] {
     return [];
-  }
-
-  /**
-   * Build microservice states for BBGKY analysis.
-   */
-  private buildMicroserviceStates(
-    faultGraph: {
-      readonly callGraph: ServiceCallGraph;
-      readonly anomalyScores: ReadonlyMap<string, number>;
-    },
-    _metrics: MetricMap,
-  ): MicroserviceState[] {
-    const states: MicroserviceState[] = [];
-    for (const [serviceId] of faultGraph.callGraph.nodes) {
-      states.push({
-        serviceId,
-        timestamp: Date.now(),
-        faultProbability: 0.01,
-        anomalyScore: faultGraph.anomalyScores.get(serviceId) ?? 0,
-        trafficRps: 0,
-      });
-    }
-    return states;
   }
 }
 
