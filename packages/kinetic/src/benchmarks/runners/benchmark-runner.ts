@@ -398,15 +398,8 @@ export class BenchmarkRunner {
     const totalCases = suite.cases.length;
     const predictedServiceIds = predictions.map((p) => p.serviceId);
 
-    // Avg@K
-    let correctTop1 = 0;
-    let correctTop3 = 0;
-    let correctTop5 = 0;
-    for (let i = 0; i < truthServiceIds.length; i++) {
-      if (predictedServiceIds[i] === truthServiceIds[i]) correctTop1++;
-      // For Top-3 and Top-5, we need the full ranked lists per case, not just top-1
-      // Since we only stored top-1 for this simple aggregation, compute from stored predictions
-    }
+    // Avg@K — computed via aggregated predictions below
+    const _totalCases = truthServiceIds.length;
 
     // Need to re-compute from full predictions — for accuracy, we compute
     // using the per-case ranked lists that we captured

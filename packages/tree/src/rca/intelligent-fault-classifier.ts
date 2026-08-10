@@ -216,12 +216,6 @@ function mean(values: readonly number[]): number {
 /**
  * Compute standard deviation.
  */
-function stddev(values: readonly number[], avg: number): number {
-  if (values.length < 2) return 0;
-  const sumSq = values.reduce((s, v) => s + (v - avg) ** 2, 0);
-  return Math.sqrt(sumSq / (values.length - 1));
-}
-
 /**
  * Check if a time series has a spike (large short-duration deviation).
  */
