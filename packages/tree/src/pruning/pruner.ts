@@ -52,6 +52,7 @@ import {
 
 import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
+import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 
@@ -102,9 +103,14 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
 export class TreePruner {
   private readonly options: TreePrunerOptions;
   private readonly cycleDetector: JohnsonCycleDetector;
+  private readonly topologyConfig?: Partial<TopologyFaultGraphConfig>;
 
-  constructor(options?: Partial<TreePrunerOptions>) {
+  constructor(
+    options?: Partial<TreePrunerOptions>,
+    topologyConfig?: Partial<TopologyFaultGraphConfig>,
+  ) {
     this.options = { ...DEFAULT_TREE_PRUNER_OPTIONS, ...options };
+    this.topologyConfig = topologyConfig;
     invariantRange(this.options.pruneEpsilon, 0, 1, 'pruneEpsilon');
     invariantRange(this.options.criticalLoadThreshold, 0, 1, 'criticalLoadThreshold');
     invariantPositiveInt(this.options.defaultTopK, 'defaultTopK');
@@ -150,7 +156,7 @@ export class TreePruner {
     // Build topology-preserving fault graph with Pearson cross-service correlation.
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
-    const topoResult = buildTopologyFaultGraph(callGraph, metrics);
+    const topoResult = buildTopologyFaultGraph(callGraph, metrics, this.topologyConfig);
     const { anomalyScores, anomalyOnsetTimes: _anomalyOnsetTimes, propagationWeights } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.

@@ -29,3 +29,11 @@ export type {
 
 export { ConvergenceChecker } from './convergence-checker.js';
 export type { ConvergenceOptions, ConvergenceState } from './convergence-checker.js';
+
+export {
+  configToPrunerOptions,
+  configToTopologyConfig,
+  createDefaultEngine,
+  createEngineWithConfig,
+} from './integration.js';
+export type { TopologyFaultGraphConfig } from './integration.js';

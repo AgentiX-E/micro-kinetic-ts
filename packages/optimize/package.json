@@ -23,7 +23,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@agentix-e/micro-kinetic-core": "workspace:*"
+    "@agentix-e/micro-kinetic-core": "workspace:*",
+    "@agentix-e/micro-kinetic-tree": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
