@@ -463,10 +463,8 @@ async function main(): Promise<void> {
     const runResults = new Map<string, AblationResult>();
 
     // Process each system independently to bound peak memory
-    for (const [systemName, metas] of systemGroups) {
-      console.log(`  Loading ${systemName} …`);
-      const bundle = await loadSystemBundle(systemName, metas);
-      console.log(`  Loaded: ${systemName} → ${bundle.cases.length} cases`);
+    for (const [systemName, bundle] of systemBundles) {
+      console.log(`  ${systemName}: ${bundle.cases.length} cases`);
       // Split cases by fault type for per-fault-type breakdown
       const byFT = new Map<string, BenchmarkCase[]>();
       for (const c of bundle.cases) {
@@ -572,9 +570,7 @@ async function main(): Promise<void> {
           `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
           `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
-      // Release the per-system bundle reference so the heap is
-      // reclaimed before the next system group is loaded.
-      bundle.cases.length = 0; // eslint-disable-line no-param-reassign
+      // Bundle is pre-built and cached — no need to release.
     }
 
     allRuns.push({ flags: config.flags, label: config.label, results: runResults });
