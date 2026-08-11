@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { defineStoreTests } from '../../../../core/src/storage/abstract-store-test.js';
-import { FileSystemStore } from '../../filesystem-store.js';
+import { defineStoreTests } from '../../../core/src/storage/abstract-store-test.js';
+import { FileSystemStore } from '../../src/filesystem-store.js';
 
 // ── Contract tests ──
 
