@@ -367,7 +367,7 @@ async function main(): Promise<void> {
   const zhipuKey = process.env['ZHIPU_API_KEY'];
   if (zhipuKey && !forceTfIdf) {
     try {
-      const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
+      const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-core');
       semanticConfig.embeddingProvider = createApiEmbeddingFromEnv({
         vendorPrefix: 'ZHIPU',
         endpoint:

@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { RCAEvalSemanticEnhancer } from '../../src/rcaeval-semantic.js';
-import { createApiEmbeddingFromEnv } from '@agentix-e/micro-kinetic-ai';
+import { createApiEmbeddingFromEnv } from '@agentix-e/micro-kinetic-core';
 
 // ── Skip Check ───────────────────────────────────────────
 

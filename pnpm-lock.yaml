@@ -164,6 +164,28 @@ importers:
         version: 3.2.7(@types/node@22.20.1)(jsdom@30.0.1)(tsx@4.23.1)(yaml@2.9.0)
 
   packages/core:
+    dependencies:
+      '@agentix-e/micro-kinetic-ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agentix-e/micro-kinetic-causal':
+        specifier: workspace:*
+        version: link:../causal
+      '@agentix-e/micro-kinetic-cutting':
+        specifier: workspace:*
+        version: link:../cutting
+      '@agentix-e/micro-kinetic-noise':
+        specifier: workspace:*
+        version: link:../noise
+      '@agentix-e/micro-kinetic-scaling':
+        specifier: workspace:*
+        version: link:../scaling
+      '@agentix-e/micro-kinetic-tree':
+        specifier: workspace:*
+        version: link:../tree
+      '@agentix-e/micro-kinetic-wave':
+        specifier: workspace:*
+        version: link:../wave
     devDependencies:
       tsup:
         specifier: ^8.3.0

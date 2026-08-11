@@ -79,8 +79,8 @@ function loadEnvFile(): void {
  * NEVER contains API keys — only env variable names.
  */
 async function createSemanticConfig() {
-  const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-ai');
-  const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
+  const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-core');
+  const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-core');
 
   // Prefer real API embedding; fall back to TF-IDF for local-only runs.
   // ZHIPU_EMBEDDING_ENDPOINT: override the default Zhipu API endpoint.
