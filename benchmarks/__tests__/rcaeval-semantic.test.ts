@@ -18,11 +18,11 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-core';
+import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
 import type {
   ServiceDescriptor,
   EmbeddingResult,
-} from '@agentix-e/micro-kinetic-core';
+} from '@agentix-e/micro-kinetic-ai';
 import { RCAEvalSemanticEnhancer } from '../src/rcaeval-semantic.js';
 import type {
   SemanticCallEdge,

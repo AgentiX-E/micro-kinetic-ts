@@ -27,9 +27,9 @@ import type {
   CallEdge,
   ServiceId,
 } from '@agentix-e/micro-kinetic-core';
-import { StaticTopologyProvider } from '@agentix-e/micro-kinetic-core';
-import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-core';
-import type { ILLMProvider } from '@agentix-e/micro-kinetic-core';
+import { StaticTopologyProvider } from '@agentix-e/micro-kinetic-causal';
+import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
+import type { ILLMProvider } from '@agentix-e/micro-kinetic-ai';
 import {
   RCAEvalSemanticEnhancer,
 } from './rcaeval-semantic.js';

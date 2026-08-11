@@ -25,8 +25,8 @@ async function createSemanticConfigEnv(
     process.env['ZHIPU_API_KEY'] = zhipuKey;
   }
 
-  const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-core');
-  const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-core');
+  const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-ai');
+  const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
 
   const zhipu_effective = process.env['ZHIPU_API_KEY'];
   const embeddingProvider = zhipu_effective

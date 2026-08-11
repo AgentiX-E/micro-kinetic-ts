@@ -1,15 +1,12 @@
 /**
  * Integration test: Full AIOps-Kinetic pipeline validation.
  */
-import {
-  Container,
-  DI_TOKENS,
-  registerCuttingFactories,
-  registerNoiseFactories,
-  registerScalingFactories,
-  registerTreeModule,
-  registerWaveFactories,
-} from '@agentix-e/micro-kinetic-core';
+import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
+import { registerCuttingFactories } from '@agentix-e/micro-kinetic-cutting';
+import { registerNoiseFactories } from '@agentix-e/micro-kinetic-noise';
+import { registerScalingFactories } from '@agentix-e/micro-kinetic-scaling';
+import { registerTreeModule } from '@agentix-e/micro-kinetic-tree';
+import { registerWaveFactories } from '@agentix-e/micro-kinetic-wave';
 import { describe, expect, it } from 'vitest';
 
 function createTestGraph() {

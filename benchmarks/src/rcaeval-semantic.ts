@@ -24,10 +24,10 @@ import type {
   CallEdge,
   ServiceDescriptor,
 } from '@agentix-e/micro-kinetic-core';
-import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-core';
-import { SemanticAlignmentProvider } from '@agentix-e/micro-kinetic-core';
-import type { SemanticAlignmentConfig } from '@agentix-e/micro-kinetic-core';
-import type { ILLMProvider } from '@agentix-e/micro-kinetic-core';
+import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
+import { SemanticAlignmentProvider } from '@agentix-e/micro-kinetic-ai';
+import type { SemanticAlignmentConfig } from '@agentix-e/micro-kinetic-ai';
+import type { ILLMProvider } from '@agentix-e/micro-kinetic-ai';
 
 // ── Enhanced Edge ─────────────────────────────────────────
 

@@ -13,9 +13,9 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { ApiEmbeddingProvider } from '@agentix-e/micro-kinetic-core';
-import { cosineSimilarity } from '@agentix-e/micro-kinetic-core';
-import { createApiEmbeddingFromEnv } from '@agentix-e/micro-kinetic-core';
+import { ApiEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
+import { cosineSimilarity } from '@agentix-e/micro-kinetic-ai';
+import { createApiEmbeddingFromEnv } from '@agentix-e/micro-kinetic-ai';
 
 // ── Skip Check ───────────────────────────────────────────
 
