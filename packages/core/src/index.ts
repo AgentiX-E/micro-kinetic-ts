@@ -152,8 +152,4 @@ export type {
 
 // ── Storage ──
 export type { IKeyValueStore } from './storage/i-key-value-store.js';
-export {
-  StoreError,
-  KeyNotFoundError,
-  StoreConnectionError,
-} from './storage/store-errors.js';
+export { KeyNotFoundError, StoreConnectionError, StoreError } from './storage/store-errors.js';
