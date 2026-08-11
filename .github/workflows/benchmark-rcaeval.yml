@@ -37,6 +37,7 @@ jobs:
           pnpm exec tsx benchmarks/src/run-all.ts --cases 175 --output benchmark-results.json
       - name: Run adaptive optimizer
         run: |
+          set -o pipefail
           pnpm exec tsx benchmarks/src/optimize-all.ts 2>&1 | tee optimize-results.txt
       - name: Upload synthetic results
         uses: actions/upload-artifact@v4
@@ -78,6 +79,7 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
+          set -o pipefail
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 2>&1 | tee rcaeval-re1-results.txt
       - name: Upload RE1 results
         if: always()
@@ -114,6 +116,7 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
+          set -o pipefail
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
         if: always()
@@ -150,6 +153,7 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
+          set -o pipefail
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
         if: always()
@@ -188,6 +192,7 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
+          set -o pipefail
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re1 2>&1 | tee ablation-re1-results.txt
       - name: Upload ablation RE1 results
         if: always()
@@ -227,6 +232,7 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
+          set -o pipefail
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 2>&1 | tee ablation-re2-results.txt
       - name: Upload ablation RE2 results
         if: always()
@@ -266,6 +272,7 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
+          set -o pipefail
           pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re3 2>&1 | tee ablation-re3-results.txt
       - name: Upload ablation RE3 results
         if: always()
@@ -278,7 +285,8 @@ jobs:
 
   # ── Dashboard: combine all results, deploy to gh-pages ──
   dashboard:
-    needs: [synthetic, rcaeval-re1, rcaeval-re2, rcaeval-re3, ablation-re1, ablation-re2, ablation-re3]
+    needs:
+      [synthetic, rcaeval-re1, rcaeval-re2, rcaeval-re3, ablation-re1, ablation-re2, ablation-re3]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
