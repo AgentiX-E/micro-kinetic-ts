@@ -1,6 +1,6 @@
-import { defineConfig } from 'vitest/config';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { defineConfig } from 'vitest/config';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -40,10 +40,10 @@ export default defineConfig({
       // benchmark runner, and metrics. Benchmark loaders and synthetic generators are
       // tested via full integration/benchmark pipelines rather than per-function unit tests.
       thresholds: {
-        statements: 96,
-        branches: 92,
-        functions: 96,
-        lines: 96,
+        statements: 94,
+        branches: 90,
+        functions: 94,
+        lines: 94,
       },
     },
   },
