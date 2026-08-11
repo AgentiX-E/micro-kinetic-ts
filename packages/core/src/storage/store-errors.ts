@@ -9,7 +9,7 @@
 export class StoreError extends Error {
   constructor(
     message: string,
-    public readonly cause?: unknown,
+    public readonly inner?: unknown,
   ) {
     super(message);
     this.name = 'StoreError';
@@ -26,8 +26,8 @@ export class KeyNotFoundError extends StoreError {
 
 /** Storage backend is unreachable (network failure, permission denied, quota exceeded). */
 export class StoreConnectionError extends StoreError {
-  constructor(message: string, cause?: unknown) {
-    super(message, cause);
+  constructor(message: string, inner?: unknown) {
+    super(message, inner);
     this.name = 'StoreConnectionError';
   }
 }
