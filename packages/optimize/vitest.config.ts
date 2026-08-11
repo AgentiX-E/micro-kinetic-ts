@@ -10,6 +10,10 @@ export default defineConfig({
       '@agentix-e/micro-kinetic-optimize': resolve(__dirname, 'src/index.ts'),
       '@agentix-e/micro-kinetic-core': resolve(__dirname, '../core/src/index.ts'),
       '@agentix-e/micro-kinetic-tree': resolve(__dirname, '../tree/src/index.ts'),
+      '@agentix-e/micro-kinetic-storage-fs': resolve(
+        __dirname,
+        '../storage-fs/src/index.ts',
+      ),
     },
   },
   test: {

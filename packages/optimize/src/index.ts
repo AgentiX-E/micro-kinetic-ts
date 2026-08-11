@@ -39,4 +39,10 @@ export {
 export type { TopologyFaultGraphConfig } from './integration.js';
 
 export { ModelStore, loadModel, saveModel } from './persistence.js';
-export type { PersistedModel, PersistenceOptions } from './persistence.js';
+export type { PersistedModel } from './persistence.js';
+
+export { GPStateStore, extractGPState } from './gp-state-store.js';
+export type { GPState } from './gp-state-store.js';
+
+export { LLMCacheStore } from './llm-cache-store.js';
+export type { LlmCacheEntry } from './llm-cache-store.js';

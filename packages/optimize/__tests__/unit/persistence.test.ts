@@ -1,11 +1,18 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ModelStore, saveModel, loadModel } from '../../src/persistence.js';
+import { FileSystemStore } from '@agentix-e/micro-kinetic-storage-fs';
+import {
+  ModelStore,
+  saveModel,
+  loadModel,
+} from '../../src/persistence.js';
 import type { HistoricalRecord } from '../../src/meta-learner.js';
 
-function makeRecord(overrides?: Partial<HistoricalRecord>): HistoricalRecord {
+function makeRecord(
+  overrides?: Partial<HistoricalRecord>,
+): HistoricalRecord {
   return {
     system: 'test',
     suite: 'RE1',
@@ -40,26 +47,29 @@ function makeRecord(overrides?: Partial<HistoricalRecord>): HistoricalRecord {
 }
 
 describe('ModelStore', () => {
-  const testDir = resolve(tmpdir(), 'optimize-test-' + Date.now());
+  let tmpDir: string;
+  let store: ModelStore;
 
   beforeEach(() => {
-    if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true });
+    tmpDir = mkdtempSync(join(tmpdir(), 'model-store-'));
+    store = new ModelStore(new FileSystemStore({ baseDir: tmpDir }));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     try {
-      rmSync(testDir, { recursive: true, force: true });
-    } catch {
-      // cleanup failure is non-fatal
-    }
+      await store.load(); // no-op, just for cleanup reference
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch { /* cleanup non-fatal */ }
   });
 
-  it('should save and load model', () => {
-    const store = new ModelStore({ modelDir: testDir });
-    const records = [makeRecord({ system: 'A' }), makeRecord({ system: 'B' })];
+  it('should save and load model', async () => {
+    const records = [
+      makeRecord({ system: 'A' }),
+      makeRecord({ system: 'B' }),
+    ];
 
-    store.save(records);
-    const loaded = store.load();
+    await store.save(records);
+    const loaded = await store.load();
 
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBe(1);
@@ -67,18 +77,16 @@ describe('ModelStore', () => {
     expect(loaded!.records[0]!.system).toBe('A');
   });
 
-  it('should return null when no model exists', () => {
-    const store = new ModelStore({ modelDir: testDir });
-    expect(store.load()).toBeNull();
+  it('should return null when no model exists', async () => {
+    expect(await store.load()).toBeNull();
   });
 
-  it('should save versioned files', () => {
-    const store = new ModelStore({ modelDir: testDir });
-    store.save([makeRecord({ system: 'v1' })], 1);
-    store.save([makeRecord({ system: 'v2' })], 2);
+  it('should save and load versioned models', async () => {
+    await store.save([makeRecord({ system: 'v1' })], 1);
+    await store.save([makeRecord({ system: 'v2' })], 2);
 
-    const v1 = store.loadVersion(1);
-    const v2 = store.loadVersion(2);
+    const v1 = await store.loadVersion(1);
+    const v2 = await store.loadVersion(2);
 
     expect(v1).not.toBeNull();
     expect(v2).not.toBeNull();
@@ -86,51 +94,74 @@ describe('ModelStore', () => {
     expect(v2!.version).toBe(2);
   });
 
-  it('should return null for non-existent version', () => {
-    const store = new ModelStore({ modelDir: testDir });
-    expect(store.loadVersion(99)).toBeNull();
+  it('should return null for non-existent version', async () => {
+    expect(await store.loadVersion(99)).toBeNull();
   });
 
-  it('should merge and save with incremented version', () => {
-    const store = new ModelStore({ modelDir: testDir });
-    store.save([makeRecord({ system: 'A' })]);
+  it('should merge and save with incremented version', async () => {
+    await store.save([makeRecord({ system: 'A' })]);
 
-    const merged = store.mergeAndSave([makeRecord({ system: 'B' })]);
+    const merged = await store.mergeAndSave([
+      makeRecord({ system: 'B' }),
+    ]);
     expect(merged.version).toBe(2);
     expect(merged.records).toHaveLength(2);
 
-    const loaded = store.load();
+    const loaded = await store.load();
     expect(loaded!.records).toHaveLength(2);
   });
 
-  it('should handle empty initial save via mergeAndSave', () => {
-    const store = new ModelStore({ modelDir: testDir });
-    const merged = store.mergeAndSave([makeRecord()]);
+  it('should handle empty initial save via mergeAndSave', async () => {
+    const merged = await store.mergeAndSave([makeRecord()]);
     expect(merged.version).toBe(1);
     expect(merged.records).toHaveLength(1);
   });
 
-  it('should persist to disk as valid JSON', () => {
-    const store = new ModelStore({ modelDir: testDir });
-    store.save([makeRecord()]);
+  it('should work with FileSystemStore (round-trip)', async () => {
+    const fsStore = new FileSystemStore({ baseDir: tmpDir });
+    const ms = new ModelStore(fsStore);
+    await ms.save([makeRecord()]);
 
-    const raw = readFileSync(store.latestModelPath, 'utf-8');
-    const parsed = JSON.parse(raw);
+    const loaded = await ms.load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(1);
+  });
 
-    expect(parsed.version).toBe(1);
-    expect(parsed.records).toBeDefined();
+  it('should work with any IKeyValueStore (injectable)', async () => {
+    const map = new Map<string, string>();
+    const memStore: IKeyValueStore = {
+      get: async <T>(k: string) => {
+        const v = map.get(k);
+        return v === undefined ? null : (JSON.parse(v) as T);
+      },
+      set: async <T>(k: string, v: T) => {
+        map.set(k, JSON.stringify(v));
+      },
+      delete: async (k: string) => {
+        map.delete(k);
+      },
+      has: async (k: string) => map.has(k),
+      keys: async (p?: string) => {
+        const all = [...map.keys()];
+        return p ? all.filter((k) => k.startsWith(p)) : all;
+      },
+      clear: async () => map.clear(),
+      close: async () => map.clear(),
+    };
+    const ms = new ModelStore(memStore);
+    await ms.save([makeRecord()]);
+    expect((await ms.load())!.version).toBe(1);
   });
 });
 
 describe('saveModel / loadModel', () => {
-  it('should save to default directory', () => {
-    // Use custom directory to avoid polluting user's home directory
-    const store = new ModelStore({ modelDir: resolve(tmpdir(), 'test-save-model') });
-    const records = [makeRecord()];
-    store.save(records);
-    const loaded = store.load();
+  it('should save and load to default FileSystemStore', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'save-model-'));
+    const fs = new FileSystemStore({ baseDir: tmpDir });
+    const ms = new ModelStore(fs);
+    await ms.save([makeRecord()]);
+    const loaded = await ms.load();
     expect(loaded).not.toBeNull();
-    // Cleanup
-    rmSync(resolve(tmpdir(), 'test-save-model'), { recursive: true, force: true });
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 });

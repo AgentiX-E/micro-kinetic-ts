@@ -1,20 +1,17 @@
 /**
- * Model persistence: save/load GP state and meta-learner models.
+ * Model persistence: save/load optimizer models via IKeyValueStore.
  *
- * Stored as JSON in a user-configurable directory (default:
- * ~/.micro-kinetic/models/).  Versioning ensures backward compatibility:
- * each new training session creates a new versioned file.
+ * Uses any IKeyValueStore backend (fs, browser, remote). Defaults to
+ * FileSystemStore for backward compatibility.
  *
- * Format: optimizer-v{n}.json
- *   { version: n, timestamp: ISO, records: HistoricalRecord[] }
+ * Format: optimizer-latest and optimizer-v{n} keys store PersistedModel.
+ *
+ * @packageDocumentation
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { FileSystemStore } from '@agentix-e/micro-kinetic-storage-fs';
+import type { IKeyValueStore } from '@agentix-e/micro-kinetic-core';
 import type { HistoricalRecord } from './meta-learner.js';
-
-// ── Types ──
 
 export interface PersistedModel {
   readonly version: number;
@@ -22,107 +19,63 @@ export interface PersistedModel {
   readonly records: readonly HistoricalRecord[];
 }
 
-export interface PersistenceOptions {
-  /** Directory for model storage */
-  readonly modelDir: string;
-}
-
-// ── Defaults ──
-
-const DEFAULTS: PersistenceOptions = {
-  modelDir: resolve(homedir(), '.micro-kinetic', 'models'),
-};
-
-// ── Implementation ──
-
 export class ModelStore {
-  private readonly options: PersistenceOptions;
+  private readonly store: IKeyValueStore;
 
-  constructor(options?: Partial<PersistenceOptions>) {
-    this.options = { ...DEFAULTS, ...options };
+  constructor(store?: IKeyValueStore) {
+    this.store = store ?? new FileSystemStore();
   }
 
-  /** Get the path to the latest model file */
-  get latestModelPath(): string {
-    return resolve(this.options.modelDir, 'optimizer-latest.json');
-  }
-
-  /** Get a versioned model path */
-  versionedPath(version: number): string {
-    return resolve(this.options.modelDir, `optimizer-v${version}.json`);
-  }
-
-  /** Save a model to disk */
-  save(records: readonly HistoricalRecord[], version?: number): void {
-    const dir = this.options.modelDir;
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-
-    const v = version ?? this.getNextVersion();
+  async save(
+    records: readonly HistoricalRecord[],
+    version?: number,
+  ): Promise<void> {
+    const v = version ?? (await this.getNextVersion());
     const model: PersistedModel = {
       version: v,
       timestamp: new Date().toISOString(),
       records,
     };
-
-    const json = JSON.stringify(model, null, 2);
-
-    // Write versioned file
-    writeFileSync(this.versionedPath(v), json, 'utf-8');
-
-    // Write/overwrite latest symlink-equivalent
-    writeFileSync(this.latestModelPath, json, 'utf-8');
+    await this.store.set('optimizer-latest', model);
+    await this.store.set(`optimizer-v${v}`, model);
   }
 
-  /** Load the latest model from disk */
-  load(): PersistedModel | null {
-    try {
-      const json = readFileSync(this.latestModelPath, 'utf-8');
-      return JSON.parse(json) as PersistedModel;
-    } catch {
-      return null;
-    }
+  async load(): Promise<PersistedModel | null> {
+    return this.store.get<PersistedModel>('optimizer-latest');
   }
 
-  /** Load a specific version */
-  loadVersion(version: number): PersistedModel | null {
-    try {
-      const json = readFileSync(this.versionedPath(version), 'utf-8');
-      return JSON.parse(json) as PersistedModel;
-    } catch {
-      return null;
-    }
+  async loadVersion(version: number): Promise<PersistedModel | null> {
+    return this.store.get<PersistedModel>(`optimizer-v${version}`);
   }
 
-  /** Merge new records into existing model and save as new version */
-  mergeAndSave(newRecords: readonly HistoricalRecord[]): PersistedModel {
-    const existing = this.load();
-    const merged = existing ? [...existing.records, ...newRecords] : [...newRecords];
+  async mergeAndSave(
+    newRecords: readonly HistoricalRecord[],
+  ): Promise<PersistedModel> {
+    const existing = await this.load();
+    const merged = existing
+      ? [...existing.records, ...newRecords]
+      : [...newRecords];
     const nextVersion = existing ? existing.version + 1 : 1;
-    this.save(merged, nextVersion);
-    return {
-      version: nextVersion,
-      timestamp: new Date().toISOString(),
-      records: merged,
-    };
+    await this.save(merged, nextVersion);
+    return { version: nextVersion, timestamp: new Date().toISOString(), records: merged };
   }
 
-  /** Determine the next version number */
-  private getNextVersion(): number {
-    const existing = this.load();
+  private async getNextVersion(): Promise<number> {
+    const existing = await this.load();
     return existing ? existing.version + 1 : 1;
   }
 }
 
-/** Convenience: save optimizer models to default location */
-export function saveModel(records: readonly HistoricalRecord[]): PersistedModel {
+/** Convenience: save to default FileSystemStore */
+export async function saveModel(
+  records: readonly HistoricalRecord[],
+): Promise<PersistedModel> {
   const store = new ModelStore();
-  store.save(records);
-  return store.load()!;
+  await store.save(records);
+  return (await store.load())!;
 }
 
-/** Convenience: load optimizer models from default location */
-export function loadModel(): PersistedModel | null {
+/** Convenience: load from default FileSystemStore */
+export async function loadModel(): Promise<PersistedModel | null> {
   return new ModelStore().load();
 }

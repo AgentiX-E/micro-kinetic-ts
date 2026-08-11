@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@agentix-e/micro-kinetic-core": "workspace:*",
+    "@agentix-e/micro-kinetic-storage-fs": "workspace:*",
     "@agentix-e/micro-kinetic-tree": "workspace:*"
   },
   "devDependencies": {
