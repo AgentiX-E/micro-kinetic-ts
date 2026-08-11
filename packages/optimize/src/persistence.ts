@@ -2,7 +2,7 @@
  * Model persistence: save/load GP state and meta-learner models.
  *
  * Stored as JSON in a user-configurable directory (default:
- * ~/.workbuddy/models/).  Versioning ensures backward compatibility:
+ * ~/.micro-kinetic/models/).  Versioning ensures backward compatibility:
  * each new training session creates a new versioned file.
  *
  * Format: optimizer-v{n}.json
@@ -30,7 +30,7 @@ export interface PersistenceOptions {
 // ── Defaults ──
 
 const DEFAULTS: PersistenceOptions = {
-  modelDir: resolve(homedir(), '.workbuddy', 'models'),
+  modelDir: resolve(homedir(), '.micro-kinetic', 'models'),
 };
 
 // ── Implementation ──

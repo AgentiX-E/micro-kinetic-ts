@@ -124,7 +124,7 @@ describe('ModelStore', () => {
 
 describe('saveModel / loadModel', () => {
   it('should save to default directory', () => {
-    // Use custom directory to avoid polluting user's ~/.workbuddy
+    // Use custom directory to avoid polluting user's home directory
     const store = new ModelStore({ modelDir: resolve(tmpdir(), 'test-save-model') });
     const records = [makeRecord()];
     store.save(records);
