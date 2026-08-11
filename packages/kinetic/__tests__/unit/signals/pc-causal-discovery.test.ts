@@ -2,14 +2,14 @@
  * Unit tests for PC Algorithm causal discovery.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  pearsonCorrelation,
-  partialCorrelation,
-  fisherZ,
-  testConditionalIndependence,
   buildCorrelationMatrix,
+  fisherZ,
+  partialCorrelation,
+  pearsonCorrelation,
   runPCAlgorithm,
+  testConditionalIndependence,
 } from '../../../src/signals/pc-causal-discovery.js';
 
 describe('pearsonCorrelation', () => {
@@ -178,7 +178,7 @@ describe('runPCAlgorithm', () => {
     for (let i = 0; i < n; i++) {
       // Deterministic chain: A = sin(t), B = A + very small jitter, C = B + very small jitter.
       // Conditioning on B must render A ⊥ C to confirm the chain.
-      aVals[i] = Math.sin(i * 0.1);            // strong signal
+      aVals[i] = Math.sin(i * 0.1); // strong signal
       bVals[i] = aVals[i]! + Math.sin(i * 0.31) * 0.05; // B ≈ A
       cVals[i] = bVals[i]! + Math.cos(i * 0.23) * 0.05; // C ≈ B
     }
@@ -205,9 +205,7 @@ describe('runPCAlgorithm', () => {
     expect(result.stats.totalCITests).toBeGreaterThan(0);
 
     // Verify no A-C edge (they should be conditionally independent given B)
-    const hasAC = nodePairs.some(
-      (p) => (p === 'A-C' || p === 'C-A'),
-    );
+    const hasAC = nodePairs.some((p) => p === 'A-C' || p === 'C-A');
     expect(hasAC).toBe(false);
   });
 
@@ -215,7 +213,7 @@ describe('runPCAlgorithm', () => {
   // occasionally fails to remove the X-Y edge from the v-structure skeleton
   // when the independent signals have residual correlation. Replace
   // Math.random() with rigorous deterministic signals and tune alpha.
-  it.skip('discovers v-structure: X→Z←Y', () => {
+  it('discovers v-structure: X→Z←Y', () => {
     // Z = X + Y + noise — v-structure (collider)
     const n = 200;
     const xVals = new Float64Array(n);
@@ -223,12 +221,12 @@ describe('runPCAlgorithm', () => {
     const zVals = new Float64Array(n);
 
     for (let i = 0; i < n; i++) {
-      // Deterministic sinusoidal signals — X and Y are independent,
-      // Z is a common effect (collider) of both.
-      xVals[i] = Math.sin(i * 0.1);
-      yVals[i] = Math.cos(i * 0.1 + 1.5);
-      // Z is a common effect of X and Y with small deterministic jitter
-      zVals[i] = xVals[i]! + yVals[i]! + Math.sin(i * 0.07) * 0.2;
+      // X and Y use different, non-harmonically-related frequencies
+      // to guarantee zero correlation even in finite samples.
+      xVals[i] = Math.sin(i * 0.13 + 0.3);
+      yVals[i] = Math.sin(i * 0.17 + 1.1);
+      // Z is a common effect (collider) of both X and Y
+      zVals[i] = xVals[i]! + yVals[i]! + Math.sin(i * 0.37) * 0.1;
     }
 
     const timeSeries = new Map([
@@ -238,19 +236,19 @@ describe('runPCAlgorithm', () => {
     ]);
 
     const result = runPCAlgorithm(['X', 'Y', 'Z'], timeSeries, {
-      alpha: 0.05,
+      alpha: 0.01,
       maxConditioningSetSize: 2,
-      minCorrelation: 0.05, // Lower threshold for v-structure data
+      minCorrelation: 0.03,
     });
 
     // X and Y are NOT adjacent (no direct causal link)
     const nodePairs = result.skeleton.map((e) => `${e.from}-${e.to}`);
-    const hasXY = nodePairs.some((p) => (p === 'X-Y' || p === 'Y-X'));
+    const hasXY = nodePairs.some((p) => p === 'X-Y' || p === 'Y-X');
     expect(hasXY).toBe(false);
 
     // X-Z and Y-Z should be adjacent
-    const hasXZ = nodePairs.some((p) => (p === 'X-Z' || p === 'Z-X'));
-    const hasYZ = nodePairs.some((p) => (p === 'Y-Z' || p === 'Z-Y'));
+    const hasXZ = nodePairs.some((p) => p === 'X-Z' || p === 'Z-X');
+    const hasYZ = nodePairs.some((p) => p === 'Y-Z' || p === 'Z-Y');
     expect(hasXZ).toBe(true);
     expect(hasYZ).toBe(true);
 
@@ -284,9 +282,7 @@ describe('runPCAlgorithm', () => {
   });
 
   it('handles single node', () => {
-    const timeSeries = new Map([
-      ['A', new Float64Array([1, 2, 3])],
-    ]);
+    const timeSeries = new Map([['A', new Float64Array([1, 2, 3])]]);
 
     const result = runPCAlgorithm(['A'], timeSeries);
     expect(result.skeleton).toHaveLength(0);
