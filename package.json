@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "nx run-many --target=build --all",
+    "prepare": "husky",
     "build:core": "nx build @agentix-e/aiops-kinetic-core",
     "build:tree": "nx build @agentix-e/aiops-kinetic-tree",
     "build:cutting": "nx build @agentix-e/aiops-kinetic-cutting",
@@ -33,6 +34,7 @@
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.0.0",
     "fast-check": "^3.20.0",
+    "husky": "^9.1.7",
     "nx": "^20.0.0",
     "oxlint": "^0.15.0",
     "prettier": "^3.4.0",
