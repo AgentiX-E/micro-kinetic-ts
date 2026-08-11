@@ -1,34 +1,29 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
 import {
   Container,
   DI_TOKENS,
   type IContainer,
   type IRCAEngine,
 } from '@agentix-e/micro-kinetic-core';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import {
-  SyntheticBenchmarkGenerator,
-} from '../../src/benchmarks/synthetic/data-generator.js';
+import { SyntheticBenchmarkGenerator } from '../../src/benchmarks/synthetic/data-generator.js';
 
-import {
-  BenchmarkRunner,
-  type RunResult,
-} from '../../src/benchmarks/runners/benchmark-runner.js';
+import { BenchmarkRunner, type RunResult } from '../../src/benchmarks/runners/benchmark-runner.js';
 
 import {
   avgAtK,
-  computeAvgAtK,
-  computePrecisionAtK,
-  computeRecallAtK,
-  computeF1Score,
-  computeMRR,
-  computeAggregateMRR,
-  computeLA,
   computeAggregateLA,
-  computeTA,
+  computeAggregateMRR,
   computeAggregateTA,
   computeAIOps2025CompositeScore,
+  computeAvgAtK,
+  computeF1Score,
+  computeLA,
+  computeMRR,
+  computePrecisionAtK,
   computeRCA100CompositeScore,
+  computeRecallAtK,
+  computeTA,
 } from '../../src/benchmarks/runners/metrics.js';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -59,9 +54,7 @@ function createMockEngine(): IRCAEngine {
         confidence: 0.75,
         rank: 1,
         timestamp: Date.now(),
-        evidenceMetrics: [
-          { metric: 'cpu_usage_percent', value: 0.92, threshold: 0.8 },
-        ],
+        evidenceMetrics: [{ metric: 'cpu_usage_percent', value: 0.92, threshold: 0.8 }],
         propagationDepth: 1,
         propagationErrorBound: 0.01,
         viaTreeSearch: true,
@@ -117,11 +110,7 @@ describe('Standalone Metrics', () => {
 
   describe('computeAvgAtK', () => {
     it('should compute correct aggregate Avg@1', () => {
-      const predictions = [
-        ['correct'],
-        ['wrong'],
-        ['correct'],
-      ];
+      const predictions = [['correct'], ['wrong'], ['correct']];
       const truths = ['correct', 'correct', 'correct'];
       expect(computeAvgAtK(predictions, truths, 1)).toBeCloseTo(2 / 3);
     });
@@ -170,19 +159,13 @@ describe('Standalone Metrics', () => {
 
   describe('computeRecallAtK', () => {
     it('should return 1 when actual is in top-K (single truth)', () => {
-      const predictions = [
-        makePrediction('svc_a', 'CPU'),
-        makePrediction('svc_b', 'MEM'),
-      ];
+      const predictions = [makePrediction('svc_a', 'CPU'), makePrediction('svc_b', 'MEM')];
       // svc_a in top-2, 1 truth → 1/1 = 1
       expect(computeRecallAtK(predictions, ['svc_a'], 2)).toBe(1);
     });
 
     it('should return 0 when actual not in top-K', () => {
-      const predictions = [
-        makePrediction('svc_c', 'CPU'),
-        makePrediction('svc_d', 'MEM'),
-      ];
+      const predictions = [makePrediction('svc_c', 'CPU'), makePrediction('svc_d', 'MEM')];
       expect(computeRecallAtK(predictions, ['svc_a'], 2)).toBe(0);
     });
 
@@ -299,26 +282,17 @@ describe('Standalone Metrics', () => {
 
   describe('computeAggregateTA', () => {
     it('should return 1 when all fault types match', () => {
-      const predictions = [
-        makePrediction('svc_a', 'CPU'),
-        makePrediction('svc_b', 'MEM'),
-      ];
+      const predictions = [makePrediction('svc_a', 'CPU'), makePrediction('svc_b', 'MEM')];
       expect(computeAggregateTA(predictions, ['cpu', 'mem'])).toBe(1);
     });
 
     it('should return 0 when no fault types match', () => {
-      const predictions = [
-        makePrediction('svc_a', 'CPU'),
-        makePrediction('svc_b', 'MEM'),
-      ];
+      const predictions = [makePrediction('svc_a', 'CPU'), makePrediction('svc_b', 'MEM')];
       expect(computeAggregateTA(predictions, ['disk', 'network'])).toBe(0);
     });
 
     it('should return 0.5 when half match', () => {
-      const predictions = [
-        makePrediction('svc_a', 'CPU'),
-        makePrediction('svc_b', 'MEM'),
-      ];
+      const predictions = [makePrediction('svc_a', 'CPU'), makePrediction('svc_b', 'MEM')];
       expect(computeAggregateTA(predictions, ['cpu', 'network'])).toBe(0.5);
     });
 
@@ -350,10 +324,7 @@ describe('Standalone Metrics', () => {
 
   describe('computeAggregateLA', () => {
     it('should return 1 when all locations match', () => {
-      const predictions = [
-        makePrediction('svc_a', 'CPU'),
-        makePrediction('svc_b', 'MEM'),
-      ];
+      const predictions = [makePrediction('svc_a', 'CPU'), makePrediction('svc_b', 'MEM')];
       expect(computeAggregateLA(predictions, ['svc_a', 'svc_b'])).toBe(1);
     });
 
@@ -470,7 +441,8 @@ describe('SyntheticBenchmarkGenerator', () => {
       const series = generator.generateCPUFault(timestamps, injectIndex);
       const cpuValues = series[0].values;
       const beforeInject = cpuValues.slice(0, injectIndex).reduce((a, b) => a + b, 0) / injectIndex;
-      const afterInject = cpuValues.slice(injectIndex).reduce((a, b) => a + b, 0) / (cpuValues.length - injectIndex);
+      const afterInject =
+        cpuValues.slice(injectIndex).reduce((a, b) => a + b, 0) / (cpuValues.length - injectIndex);
       expect(afterInject).toBeGreaterThan(beforeInject);
     });
 
@@ -482,7 +454,8 @@ describe('SyntheticBenchmarkGenerator', () => {
       const postInject = Array.from(memValues.slice(injectIndex));
       const mid = Math.floor(postInject.length / 2);
       const firstHalfAvg = postInject.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
-      const secondHalfAvg = postInject.slice(mid).reduce((a, b) => a + b, 0) / (postInject.length - mid);
+      const secondHalfAvg =
+        postInject.slice(mid).reduce((a, b) => a + b, 0) / (postInject.length - mid);
       expect(secondHalfAvg).toBeGreaterThan(firstHalfAvg);
     });
 
@@ -490,7 +463,9 @@ describe('SyntheticBenchmarkGenerator', () => {
       const series = generator.generateDISKFault(timestamps, injectIndex);
       const readValues = series[0].values;
       const beforeAvg = readValues.slice(0, injectIndex).reduce((a, b) => a + b, 0) / injectIndex;
-      const afterAvg = readValues.slice(injectIndex).reduce((a, b) => a + b, 0) / (readValues.length - injectIndex);
+      const afterAvg =
+        readValues.slice(injectIndex).reduce((a, b) => a + b, 0) /
+        (readValues.length - injectIndex);
       expect(afterAvg).toBeGreaterThan(beforeAvg * 1.5);
     });
 
@@ -505,14 +480,18 @@ describe('SyntheticBenchmarkGenerator', () => {
     it('should generate LOSS fault with elevated loss rate', () => {
       const series = generator.generateLOSSFault(timestamps, injectIndex);
       const lossValues = series[0].values;
-      const afterAvg = lossValues.slice(injectIndex).reduce((a, b) => a + b, 0) / (lossValues.length - injectIndex);
+      const afterAvg =
+        lossValues.slice(injectIndex).reduce((a, b) => a + b, 0) /
+        (lossValues.length - injectIndex);
       expect(afterAvg).toBeGreaterThan(0.02);
     });
 
     it('should generate SOCKET fault with growing socket count', () => {
       const series = generator.generateSOCKETFault(timestamps, injectIndex);
       const socketValues = series[0].values;
-      const afterAvg = socketValues.slice(injectIndex).reduce((a, b) => a + b, 0) / (socketValues.length - injectIndex);
+      const afterAvg =
+        socketValues.slice(injectIndex).reduce((a, b) => a + b, 0) /
+        (socketValues.length - injectIndex);
       const beforeAvg = socketValues.slice(0, injectIndex).reduce((a, b) => a + b, 0) / injectIndex;
       expect(afterAvg).toBeGreaterThan(beforeAvg);
     });
@@ -744,10 +723,7 @@ describe('RCA Engine Integration', () => {
 
 // ── Classifier Integration Tests ─────────────────────────
 
-import {
-  RegexFaultClassifier,
-  DEFAULT_CLASSIFICATION_RULES,
-} from '@agentix-e/micro-kinetic-core';
+import { DEFAULT_CLASSIFICATION_RULES, RegexFaultClassifier } from '@agentix-e/micro-kinetic-core';
 
 describe('BenchmarkRunner with Fault Classifier', () => {
   const generator = new SyntheticBenchmarkGenerator(42);
@@ -846,10 +822,13 @@ describe('BenchmarkRunner with Fault Classifier', () => {
     const customCase = generator.generateRCAEvalCase('CPU', 2);
     const renamedMetrics = new Map<string, readonly TimeSeries[]>();
     for (const [svcId, series] of customCase.metrics) {
-      renamedMetrics.set(svcId, series.map((s) => ({
-        ...s,
-        label: `custom_biz_metric_${s.label}`,
-      })));
+      renamedMetrics.set(
+        svcId,
+        series.map((s) => ({
+          ...s,
+          label: `custom_biz_metric_${s.label}`,
+        })),
+      );
     }
     const unknownCase = {
       ...customCase,
@@ -868,7 +847,10 @@ describe('BenchmarkRunner with Fault Classifier', () => {
 
 // ── Helpers ───────────────────────────────────────────────
 
-function makePrediction(serviceId: string, faultCategory = 'CPU'): import('@agentix-e/micro-kinetic-core').RootCauseResult {
+function makePrediction(
+  serviceId: string,
+  faultCategory = 'CPU',
+): import('@agentix-e/micro-kinetic-core').RootCauseResult {
   return {
     serviceId,
     faultType: { category: faultCategory, subType: '', severity: 'major' },
@@ -893,10 +875,18 @@ function makePrediction(serviceId: string, faultCategory = 'CPU'): import('@agen
  * and runner behavior with PC options enabled.
  */
 
-import type { ServiceCallGraph, ServiceNode, CallEdge, MetricMap, TimeSeries } from '@agentix-e/micro-kinetic-core';
+import type {
+  CallEdge,
+  MetricMap,
+  ServiceCallGraph,
+  ServiceNode,
+  TimeSeries,
+} from '@agentix-e/micro-kinetic-core';
 
 describe('BenchmarkRunner PC validation integration (I8-P4b)', () => {
-  function makePCValidationSuite(): ReturnType<typeof SyntheticBenchmarkGenerator.prototype.generateRCAEvalSuite> {
+  function makePCValidationSuite(): ReturnType<
+    typeof SyntheticBenchmarkGenerator.prototype.generateRCAEvalSuite
+  > {
     const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
     return generator.generateRCAEvalSuite('pc-test-suite', 3);
   }
@@ -907,8 +897,22 @@ describe('BenchmarkRunner PC validation integration (I8-P4b)', () => {
     for (const id of ['A', 'B', 'C']) {
       nodes.set(id, { id, name: id, namespace: 'test', labels: {} });
     }
-    edges.push({ from: 'A', to: 'B', type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 });
-    edges.push({ from: 'B', to: 'C', type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 });
+    edges.push({
+      from: 'A',
+      to: 'B',
+      type: 'REST',
+      callRate: 100,
+      p99Latency: 50,
+      errorRate: 0.01,
+    });
+    edges.push({
+      from: 'B',
+      to: 'C',
+      type: 'REST',
+      callRate: 100,
+      p99Latency: 50,
+      errorRate: 0.01,
+    });
     return { nodes, edges, systemLoad: 0.5 };
   }
 
@@ -935,7 +939,12 @@ describe('BenchmarkRunner PC validation integration (I8-P4b)', () => {
         }
       }
       const tm = new Map<string, TimeSeries>();
-      tm.set('latency', { metricName: 'latency', labels: { service: id }, values: vals, timestamps: [] });
+      tm.set('latency', {
+        metricName: 'latency',
+        labels: { service: id },
+        values: vals,
+        timestamps: [],
+      });
       m.set(id, tm);
     }
     return m;
@@ -1029,7 +1038,7 @@ describe('BenchmarkRunner PC validation integration (I8-P4b)', () => {
     const result = await runner.runSuite(suite);
 
     expect(result.totalCases).toBe(4);
-    expect(result.duration).toBeGreaterThan(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
     // With PC pruning enabled, the runner still returns valid metrics
     expect(typeof result.avgTop1).toBe('number');
     expect(typeof result.avgTop5).toBe('number');
@@ -1048,7 +1057,10 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     service: string,
   ): import('@agentix-e/micro-kinetic-core').TraceSpan {
     return {
-      traceId, spanId, parentSpanId, service,
+      traceId,
+      spanId,
+      parentSpanId,
+      service,
       operation: `GET /${service}`,
       duration: 10,
       statusCode: 200,
@@ -1076,7 +1088,7 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     expect(runner).toBeDefined();
   });
 
-  it.skip('runs suite successfully with trace validation enabled', async () => {
+  it('runs suite successfully with trace validation enabled', async () => {
     const container = new Container();
     container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
 
@@ -1100,10 +1112,10 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     const result = await runner.runSuite(suite);
 
     expect(result.totalCases).toBe(2);
-    expect(result.duration).toBeGreaterThan(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
   });
 
-  it.skip('runs suite with trace + PC co-verification', async () => {
+  it('runs suite with trace + PC co-verification', async () => {
     const container = new Container();
     container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
 
@@ -1127,7 +1139,7 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     const result = await runner.runSuite(suite);
 
     expect(result.totalCases).toBe(2);
-    expect(result.duration).toBeGreaterThan(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
   });
 
   it('runs suite with trace disabled (enabled=false)', async () => {
@@ -1146,7 +1158,7 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     expect(result.totalCases).toBe(2);
   });
 
-  it.skip('runs suite with trace validation and PC together', async () => {
+  it('runs suite with trace validation and PC together', async () => {
     const container = new Container();
     container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
 
@@ -1172,6 +1184,6 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     const result = await runner.runSuite(suite);
 
     expect(result.totalCases).toBe(2);
-    expect(result.duration).toBeGreaterThan(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
   });
 });

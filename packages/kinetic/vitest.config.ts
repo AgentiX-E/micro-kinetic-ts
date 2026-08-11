@@ -40,10 +40,10 @@ export default defineConfig({
       // benchmark runner, and metrics. Benchmark loaders and synthetic generators are
       // tested via full integration/benchmark pipelines rather than per-function unit tests.
       thresholds: {
-        statements: 94,
-        branches: 90,
-        functions: 94,
-        lines: 94,
+        statements: 96,
+        branches: 92,
+        functions: 96,
+        lines: 96,
       },
     },
   },
