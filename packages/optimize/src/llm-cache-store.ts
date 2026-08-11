@@ -24,9 +24,7 @@ export class LLMCacheStore {
 
   /** Get a cached LLM result if it exists and has not expired. */
   async get(key: string, ttlMs?: number): Promise<string | null> {
-    const entry = await this.store.get<LlmCacheEntry>(
-      `llm-cache:${key}`,
-    );
+    const entry = await this.store.get<LlmCacheEntry>(`llm-cache:${key}`);
     if (!entry) return null;
     if (ttlMs && Date.now() - entry.timestamp > ttlMs) {
       await this.delete(key);

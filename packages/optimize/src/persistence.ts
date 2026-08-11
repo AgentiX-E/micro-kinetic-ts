@@ -9,8 +9,8 @@
  * @packageDocumentation
  */
 
-import { FileSystemStore } from '@agentix-e/micro-kinetic-storage-fs';
 import type { IKeyValueStore } from '@agentix-e/micro-kinetic-core';
+import { FileSystemStore } from '@agentix-e/micro-kinetic-storage-fs';
 import type { HistoricalRecord } from './meta-learner.js';
 
 export interface PersistedModel {
@@ -26,10 +26,7 @@ export class ModelStore {
     this.store = store ?? new FileSystemStore();
   }
 
-  async save(
-    records: readonly HistoricalRecord[],
-    version?: number,
-  ): Promise<void> {
+  async save(records: readonly HistoricalRecord[], version?: number): Promise<void> {
     const v = version ?? (await this.getNextVersion());
     const model: PersistedModel = {
       version: v,
@@ -48,13 +45,9 @@ export class ModelStore {
     return this.store.get<PersistedModel>(`optimizer-v${version}`);
   }
 
-  async mergeAndSave(
-    newRecords: readonly HistoricalRecord[],
-  ): Promise<PersistedModel> {
+  async mergeAndSave(newRecords: readonly HistoricalRecord[]): Promise<PersistedModel> {
     const existing = await this.load();
-    const merged = existing
-      ? [...existing.records, ...newRecords]
-      : [...newRecords];
+    const merged = existing ? [...existing.records, ...newRecords] : [...newRecords];
     const nextVersion = existing ? existing.version + 1 : 1;
     await this.save(merged, nextVersion);
     return { version: nextVersion, timestamp: new Date().toISOString(), records: merged };
@@ -67,9 +60,7 @@ export class ModelStore {
 }
 
 /** Convenience: save to default FileSystemStore */
-export async function saveModel(
-  records: readonly HistoricalRecord[],
-): Promise<PersistedModel> {
+export async function saveModel(records: readonly HistoricalRecord[]): Promise<PersistedModel> {
   const store = new ModelStore();
   await store.save(records);
   return (await store.load())!;

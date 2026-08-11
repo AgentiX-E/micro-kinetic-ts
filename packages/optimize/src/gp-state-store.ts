@@ -65,12 +65,9 @@ export function extractGPState(gp: GaussianProcess): GPState {
     X: (gp as unknown as { X: readonly (readonly number[])[] }).X,
     y: (gp as unknown as { y: readonly number[] }).y,
     options: {
-      lengthScale:
-        (gp as unknown as { lengthScale: number }).lengthScale,
-      signalVariance:
-        (gp as unknown as { signalVariance: number }).signalVariance,
-      noiseVariance:
-        (gp as unknown as { noiseVariance: number }).noiseVariance,
+      lengthScale: (gp as unknown as { lengthScale: number }).lengthScale,
+      signalVariance: (gp as unknown as { signalVariance: number }).signalVariance,
+      noiseVariance: (gp as unknown as { noiseVariance: number }).noiseVariance,
     },
   };
 }
