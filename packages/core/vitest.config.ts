@@ -27,6 +27,9 @@ export default defineConfig({
         'src/types/benchmark.ts',
         'src/types/graph.ts',
         'src/types/probability.ts',
+        // Storage — pure interface + test helper
+        'src/storage/i-key-value-store.ts',
+        'src/storage/abstract-store-test.ts',
       ],
       thresholds: {
         statements: 95,
