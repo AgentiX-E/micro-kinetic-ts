@@ -136,6 +136,7 @@ export type {
 
 // ── Multi-Signal Fusion ───────────────────────────────────
 export { DEFAULT_FUSION_WEIGHTS } from './interfaces/multi-signal-fusion.js';
+
 export type {
   FusionMode,
   FusionWeights,
@@ -148,3 +149,11 @@ export type {
   SignalResult,
   TraceSpan,
 } from './interfaces/multi-signal-fusion.js';
+
+// ── Storage ──
+export type { IKeyValueStore } from './storage/i-key-value-store.js';
+export {
+  StoreError,
+  KeyNotFoundError,
+  StoreConnectionError,
+} from './storage/store-errors.js';
