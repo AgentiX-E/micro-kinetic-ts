@@ -451,6 +451,22 @@ async function main(): Promise<void> {
   }
   console.log('═'.repeat(80));
 
+  // ── Pre-build all system bundles ONCE ────────
+  // Build call graphs (including Zhipu embedding) once before the config
+  // loop. Rebuilding inside the loop makes 735 cases × 10 configs = 7 350
+  // Zhipu API calls → guaranteed 60-minute timeout.
+  const systemBundles = new Map<string, SystemBundle>();
+
+  for (const [systemName, metas] of systemGroups) {
+    console.log(`  Pre-building ${systemName} …`);
+    const bundle = await loadSystemBundle(systemName, metas);
+    systemBundles.set(systemName, bundle);
+    console.log(`  Pre-built: ${systemName} → ${bundle.cases.length} cases`);
+  }
+
+  console.log(`\nAll ${systemBundles.size} system(s) ready.`);
+  console.log('═'.repeat(80));
+
   // ── Run Ablation ──
   const allRuns: AblationRun[] = [];
 
