@@ -818,6 +818,13 @@ async function main(): Promise<void> {
 
     printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
     printFailureDiagnostics(systemName, suiteName, results);
+
+    // Release loaded cases to free heap before next system group.
+    // RE2/RE3 have 735 cases with trace spans; keeping all in memory
+    // across system groups exceeds the 12 GB heap limit.
+    stats.cases.length = 0;
+    if (typeof globalThis.gc === 'function') globalThis.gc();
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
 
   console.log(`\nTotal duration: ${Date.now() - startTime}ms`);
