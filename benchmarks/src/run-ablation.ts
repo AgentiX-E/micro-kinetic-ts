@@ -450,44 +450,45 @@ async function main(): Promise<void> {
     return;
   }
 
-  // ── Pre-build all system bundles ONCE ────────
-  // Build call graphs (including Zhipu embedding) once before the config
-  // loop. Rebuilding inside the loop makes 735 cases × 10 configs = 7 350
-  // Zhipu API calls → guaranteed 60-minute timeout.
-  const systemBundles = new Map<string, SystemBundle>();
+  // ── Run Ablation ──
+  // Process one system at a time: pre-build its bundle, run all configs,
+  // release, then next system.  Keeps peak memory to a single system's
+  // cases (~245 RE2 cases, ~2-3 GB) instead of all systems at once
+  // (735 cases, > 7 GB → OOM on public runners).
+  const allRuns: AblationRun[] = CONFIGS.map((c) => ({
+    flags: c.flags,
+    label: c.label,
+    results: new Map<string, AblationResult>(),
+  }));
+
+  let configIdx = -1;
 
   for (const [systemName, metas] of systemGroups) {
+    configIdx = 0;
+    // ── Pre-build this system's bundle ONCE (one system at a time) ──
+    console.log(`\n${'═'.repeat(60)}`);
     console.log(`  Pre-building ${systemName} …`);
     const bundle = await loadSystemBundle(systemName, metas);
-    systemBundles.set(systemName, bundle);
     console.log(`  Pre-built: ${systemName} → ${bundle.cases.length} cases`);
-  }
 
-  console.log(`\nAll ${systemBundles.size} system(s) ready.`);
-  console.log('═'.repeat(80));
+    // Split cases by fault type (same for all configs on this system)
+    const byFT = new Map<string, BenchmarkCase[]>();
+    for (const c of bundle.cases) {
+      const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
+      if (!byFT.has(ft)) byFT.set(ft, []);
+      byFT.get(ft)!.push(c);
+    }
 
-  // ── Run Ablation ──
-  const allRuns: AblationRun[] = [];
+    // Run all configs on this system
+    for (const config of CONFIGS) {
+      console.log(`\n${'─'.repeat(60)}`);
+      console.log(`Running: ${config.label}`);
+      console.log(`Flags: ${JSON.stringify(config.flags)}`);
+      console.log(`${'─'.repeat(60)}`);
 
-  for (const config of CONFIGS) {
-    console.log(`\n${'─'.repeat(60)}`);
-    console.log(`Running: ${config.label}`);
-    console.log(`Flags: ${JSON.stringify(config.flags)}`);
-    console.log(`${'─'.repeat(60)}`);
+      const runResults = new Map<string, AblationResult>();
 
-    const runResults = new Map<string, AblationResult>();
-
-    // Process each system independently to bound peak memory
-    for (const [systemName, bundle] of systemBundles) {
       console.log(`  ${systemName}: ${bundle.cases.length} cases`);
-      // Split cases by fault type for per-fault-type breakdown
-      const byFT = new Map<string, BenchmarkCase[]>();
-      for (const c of bundle.cases) {
-        const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
-        if (!byFT.has(ft)) byFT.set(ft, []);
-        byFT.get(ft)!.push(c);
-      }
-
       let allA1 = 0,
         allA5 = 0,
         allLA = 0,
@@ -521,7 +522,13 @@ async function main(): Promise<void> {
           // data is present (RE2/RE3), augment the call graph with
           // observed parent-child relationships from traces.
           const traceOpts = config.flags.traceAugmentation
-            ? { enabled: true, pruneUnobserved: true, discoverNewEdges: false, minCallFrequency: 0, spans: [] }
+            ? {
+                enabled: true,
+                pruneUnobserved: true,
+                discoverNewEdges: false,
+                minCallFrequency: 0,
+                spans: [],
+              }
             : undefined;
 
           // Collision aggregation is controlled via a TreePruner config
@@ -586,9 +593,11 @@ async function main(): Promise<void> {
           `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
       // Bundle is pre-built and cached — no need to release.
-    }
 
-    allRuns.push({ flags: config.flags, label: config.label, results: runResults });
+      // Accumulate this system's results into the per-config AblationRun
+      allRuns[configIdx]!.results.set(systemName, runResults.get(systemName)!);
+      configIdx++;
+    }
 
     // Yield to event loop after each config so GC can collect temporary
     // BenchmarkSuite / RunResult objects before the next config starts.
@@ -597,6 +606,12 @@ async function main(): Promise<void> {
     if (typeof globalThis.gc === 'function') {
       globalThis.gc();
     }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Release this system's bundle before loading the next system
+    bundle.cases.length = 0;
+    byFT.clear();
+    if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 

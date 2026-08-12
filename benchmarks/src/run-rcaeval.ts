@@ -769,7 +769,6 @@ async function main(): Promise<void> {
     // stats incrementally without holding all cases in memory.
     const BATCH_SIZE = 50;
     const selected = caseLimit > 0 ? metas.slice(0, caseLimit) : metas;
-    const byFaultType = new Map<string, BenchmarkCase[]>();
     let totalEdgesBefore = 0,
       totalEdgesAfter = 0,
       batchCaseTotal = 0;
@@ -786,6 +785,14 @@ async function main(): Promise<void> {
       },
       traceStats: { total: 0, pruned: 0, avgEdgesBefore: 0, avgEdgesAfter: 0 },
     };
+    // Per-fault-type result accumulators — accumulate across batches
+    const faultTypesSeen = new Set<string>();
+    const ftTop1 = new Map<string, number>();
+    const ftTop5 = new Map<string, number>();
+    const ftLA = new Map<string, number>();
+    const ftTA = new Map<string, number>();
+    const ftCases = new Map<string, number>();
+    const ftFailures = new Map<string, string[]>();
 
     for (let i = 0; i < selected.length; i += BATCH_SIZE) {
       const batch = selected.slice(i, i + BATCH_SIZE);
@@ -802,23 +809,47 @@ async function main(): Promise<void> {
       s.embeddingResolved += b.embeddingResolved;
       s.llmResolved += b.llmResolved;
       s.exactMatched += b.exactMatched;
-      let batchCaseCount = 0;
-      // Accumulate trace stats from this batch
       aggStats.traceStats.total += stats.traceStats.total;
       aggStats.traceStats.pruned += stats.traceStats.pruned;
       totalEdgesBefore += stats.traceStats.avgEdgesBefore * stats.cases.length;
       totalEdgesAfter += stats.traceStats.avgEdgesAfter * stats.cases.length;
       batchCaseTotal += stats.cases.length;
 
-      // Partition loaded cases by fault type
+      // Partition this batch by fault type and RUN immediately
+      const batchByFT = new Map<string, BenchmarkCase[]>();
       for (const c of stats.cases) {
         const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
-        if (!byFaultType.has(ft)) byFaultType.set(ft, []);
-        byFaultType.get(ft)!.push(c);
+        if (!batchByFT.has(ft)) batchByFT.set(ft, []);
+        batchByFT.get(ft)!.push(c);
       }
 
-      // Release batch immediately so GC can reclaim before next batch
+      // Release batch cases immediately — no longer needed after partitioning
       stats.cases.length = 0;
+
+      for (const [ft, cases] of batchByFT) {
+        faultTypesSeen.add(ft);
+        const suite: BenchmarkSuite = {
+          name: `${systemName}-${suiteName}-${ft}`,
+          cases,
+          totalCases: cases.length,
+        };
+        const result = await runner.runSuite(suite);
+
+        // Accumulate results (small: scalars + strings, not full call graphs)
+        ftTop1.set(ft, (ftTop1.get(ft) || 0) + result.avgTop1 * suite.cases.length);
+        ftTop5.set(ft, (ftTop5.get(ft) || 0) + result.avgTop5 * suite.cases.length);
+        ftLA.set(ft, (ftLA.get(ft) || 0) + result.locationAccuracy * suite.cases.length);
+        ftTA.set(ft, (ftTA.get(ft) || 0) + result.typeAccuracy * suite.cases.length);
+        ftCases.set(ft, (ftCases.get(ft) || 0) + suite.cases.length);
+        if (!ftFailures.has(ft)) ftFailures.set(ft, []);
+        ftFailures.get(ft)!.push(...result.failures.map((f) => `${f.caseId}: ${f.reason}`));
+
+        // Release processed cases from this fault type
+        cases.length = 0;
+      }
+
+      // Release batch partition + force GC
+      batchByFT.clear();
       if (typeof globalThis.gc === 'function') globalThis.gc();
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
@@ -830,10 +861,10 @@ async function main(): Promise<void> {
     }
 
     // ── Report load errors with comprehensive diagnostics ──
-    aggStats.cases = []; // not used after batch partitioning
+    aggStats.cases = [];
     reportLoadErrors(systemName, suiteName, aggStats);
 
-    if (byFaultType.size === 0) {
+    if (faultTypesSeen.size === 0) {
       console.log(`  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`);
       continue;
     }
@@ -854,26 +885,35 @@ async function main(): Promise<void> {
     // ── Trace pruning diagnostics ─────────────────────────
     reportTraceDiagnostics(systemName, suiteName, aggStats);
 
-    // byFaultType was built incrementally during batch loading — reuse it directly.
-
-    // Run each fault type separately
+    // Build RunResult maps from accumulated stats for printResultsTable
     const results = new Map<string, RunResult>();
-    for (const [ft, ftCases] of byFaultType) {
-      if (ftCases.length === 0) continue;
-      const suite: BenchmarkSuite = {
-        name: `${systemName}-${suiteName}-${ft}`,
-        cases: ftCases,
-        totalCases: ftCases.length,
-      };
-      results.set(ft, await runner.runSuite(suite));
+    for (const ft of faultTypesSeen) {
+      const count = ftCases.get(ft) || 1;
+      results.set(ft, {
+        suiteName: `${systemName}-${suiteName}-${ft}`,
+        totalCases: count,
+        avgTop1: (ftTop1.get(ft) || 0) / count,
+        avgTop5: (ftTop5.get(ft) || 0) / count,
+        avgTop3: 0,
+        locationAccuracy: (ftLA.get(ft) || 0) / count,
+        typeAccuracy: (ftTA.get(ft) || 0) / count,
+        duration: 0,
+        failures: (ftFailures.get(ft) || []) as unknown as RunResult['failures'],
+        perFaultType: new Map(),
+      });
     }
 
-    printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
+    printResultsTable(systemName, suiteName, results, Array.from(faultTypesSeen));
     printFailureDiagnostics(systemName, suiteName, results);
 
-    // Release partitioned cases + results to free heap before next system group.
-    for (const cases of byFaultType.values()) cases.length = 0;
-    byFaultType.clear();
+    // Release accumulated result maps before next system group.
+    faultTypesSeen.clear();
+    ftTop1.clear();
+    ftTop5.clear();
+    ftLA.clear();
+    ftTA.clear();
+    ftCases.clear();
+    ftFailures.clear();
     results.clear();
     if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
