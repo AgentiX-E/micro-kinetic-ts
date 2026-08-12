@@ -761,19 +761,77 @@ async function main(): Promise<void> {
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
-    const stats = await loadCases(metas, loader, caseLimit, semanticConfig);
+
+    // ── Batch loading to keep heap below 7 GB ──────────
+    // Public GitHub runners have 7 GB physical RAM.  Loading all
+    // 735 RE2 cases with trace spans + Zhipu embeddings at once
+    // exceeds this limit.  Process in batches of 50, accumulating
+    // stats incrementally without holding all cases in memory.
+    const BATCH_SIZE = 50;
+    const selected = caseLimit > 0 ? metas.slice(0, caseLimit) : metas;
+    const byFaultType = new Map<string, BenchmarkCase[]>();
+    const aggStats: LoadStats = {
+      cases: [],
+      loadErrors: [],
+      errorSamples: new Map<string, number>(),
+      semanticStats: {
+        totalServices: 0,
+        semanticallyResolved: 0,
+        embeddingResolved: 0,
+        llmResolved: 0,
+        exactMatched: 0,
+      },
+      traceStats: { totalCases: 0, traceUsed: 0, pruned: 0, edgesBefore: 0, edgesAfter: 0 },
+    };
+
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      const batch = selected.slice(i, i + BATCH_SIZE);
+      const stats = await loadCases(batch, loader, BATCH_SIZE, semanticConfig);
+
+      // Accumulate semantic + trace stats
+      aggStats.loadErrors.push(...stats.loadErrors);
+      for (const [k, v] of stats.errorSamples)
+        aggStats.errorSamples.set(k, (aggStats.errorSamples.get(k) || 0) + v);
+      const s = aggStats.semanticStats;
+      const b = stats.semanticStats;
+      s.totalServices += b.totalServices;
+      s.semanticallyResolved += b.semanticallyResolved;
+      s.embeddingResolved += b.embeddingResolved;
+      s.llmResolved += b.llmResolved;
+      s.exactMatched += b.exactMatched;
+      const t = aggStats.traceStats;
+      const bt = stats.traceStats;
+      t.totalCases += stats.cases.length;
+      t.traceUsed += bt.traceUsed;
+      t.pruned += bt.pruned;
+      t.edgesBefore += bt.edgesBefore;
+      t.edgesAfter += bt.edgesAfter;
+
+      // Partition loaded cases by fault type
+      for (const c of stats.cases) {
+        const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
+        if (!byFaultType.has(ft)) byFaultType.set(ft, []);
+        byFaultType.get(ft)!.push(c);
+      }
+
+      // Release batch immediately so GC can reclaim before next batch
+      stats.cases.length = 0;
+      if (typeof globalThis.gc === 'function') globalThis.gc();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
 
     // ── Report load errors with comprehensive diagnostics ──
-    reportLoadErrors(systemName, suiteName, stats);
+    aggStats.cases = []; // not used after batch partitioning
+    reportLoadErrors(systemName, suiteName, aggStats);
 
-    if (stats.cases.length === 0) {
+    if (byFaultType.size === 0) {
       console.log(`  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`);
       continue;
     }
 
     // ── Semantic enhancement diagnostics ──────────────────
     if (useSemantic) {
-      const sem = stats.semanticStats;
+      const sem = aggStats.semanticStats;
       const pct =
         sem.totalServices > 0
           ? ((sem.semanticallyResolved / sem.totalServices) * 100).toFixed(1)
@@ -785,24 +843,9 @@ async function main(): Promise<void> {
     }
 
     // ── Trace pruning diagnostics ─────────────────────────
-    reportTraceDiagnostics(systemName, suiteName, stats);
+    reportTraceDiagnostics(systemName, suiteName, aggStats);
 
-    // Split by fault type (matching paper's Table 6 format)
-    const byFaultType = new Map<string, BenchmarkCase[]>();
-    for (const c of stats.cases) {
-      const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
-      if (!byFaultType.has(ft)) byFaultType.set(ft, []);
-      byFaultType.get(ft)!.push(c);
-    }
-
-    // Print topology diagnostics
-    const diagNode = stats.cases[0]?.callGraph.nodes.values().next().value;
-    if (diagNode?.labels?._diag_system) {
-      const l = diagNode.labels;
-      console.log(
-        `  [topo] system=${l._diag_system}, edges=${l._diag_matched}, svcs=${l._diag_svc_matched}, unconnected=${l._diag_unconnected}`,
-      );
-    }
+    // byFaultType was built incrementally during batch loading — reuse it directly.
 
     // Run each fault type separately
     const results = new Map<string, RunResult>();
@@ -819,10 +862,10 @@ async function main(): Promise<void> {
     printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
     printFailureDiagnostics(systemName, suiteName, results);
 
-    // Release loaded cases to free heap before next system group.
-    // RE2/RE3 have 735 cases with trace spans; keeping all in memory
-    // across system groups exceeds the 12 GB heap limit.
-    stats.cases.length = 0;
+    // Release partitioned cases + results to free heap before next system group.
+    for (const cases of byFaultType.values()) cases.length = 0;
+    byFaultType.clear();
+    results.clear();
     if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
