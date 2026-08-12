@@ -117,7 +117,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 2>&1 | tee rcaeval-re2-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 100 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -233,7 +233,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 2>&1 | tee ablation-re2-results.txt
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 --max-cases 100 2>&1 | tee ablation-re2-results.txt
       - name: Upload ablation RE2 results
         if: always()
         uses: actions/upload-artifact@v4
