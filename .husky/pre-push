@@ -67,12 +67,12 @@ failed=0
 for script in benchmarks/src/run-rcaeval.ts benchmarks/src/run-ablation.ts benchmarks/src/optimize-all.ts; do
   if [ -f "$script" ]; then
     output=$(npx tsc --noEmit --noImplicitAny --module es2022 --moduleResolution bundler --target es2022 "$script" 2>&1) || true
-    # Only count TS2304 (undeclared variable), TS2339/TS2551 (wrong property),
-    # TS2322 (type mismatch), TS2345 (argument mismatch) in our file.
-    own_errors=$(echo "$output" | grep -E "$(basename "$script").*error TS(2304|2339|2551|2322|2345)" | grep -c ".") || own_errors=0
+    # Only count TS2304 (undeclared variable), TS2552 (undeclared var w/ suggestion),
+    # TS2339/TS2551 (wrong property), TS2322 (type mismatch), TS2345 (argument mismatch).
+    own_errors=$(echo "$output" | grep -E "$(basename "$script").*error TS(2304|2552|2339|2551|2322|2345)" | grep -c ".") || own_errors=0
     if [ "$own_errors" -gt 0 ]; then
       echo ""
-      echo "  $output" | grep -E "$(basename "$script").*error TS(2304|2339|2551|2322|2345)" | head -5
+      echo "  $output" | grep -E "$(basename "$script").*error TS(2304|2552|2339|2551|2322|2345)" | head -5
       failed=$((failed + 1))
     fi
   fi
