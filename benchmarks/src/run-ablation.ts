@@ -433,6 +433,16 @@ async function main(): Promise<void> {
 
         const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
         cases.push(benchCase);
+
+        // Yield to event loop + force GC every 10 cases during loading.
+        // Each RE2 case holds a call graph + trace spans + Zhipu embedding
+        // vectors (2048 dim × N services).  Without periodic GC the heap
+        // fragments and the node process OOMs before all cases are loaded,
+        // especially for heavy systems like TrainTicket (68-69 services).
+        if (cases.length % 10 === 0) {
+          if (typeof globalThis.gc === 'function') globalThis.gc();
+          await new Promise((r) => setTimeout(r, 5));
+        }
       } catch (err) {
         console.log(
           `  ⚠ load error: ${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`,
