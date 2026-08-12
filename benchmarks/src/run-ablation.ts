@@ -506,7 +506,13 @@ async function main(): Promise<void> {
           // data is present (RE2/RE3), augment the call graph with
           // observed parent-child relationships from traces.
           const traceOpts = config.flags.traceAugmentation
-            ? { enabled: true, pruneUnobserved: true, discoverNewEdges: false, minCallFrequency: 0, spans: [] }
+            ? {
+                enabled: true,
+                pruneUnobserved: true,
+                discoverNewEdges: false,
+                minCallFrequency: 0,
+                spans: [],
+              }
             : undefined;
 
           // Collision aggregation is controlled via a TreePruner config

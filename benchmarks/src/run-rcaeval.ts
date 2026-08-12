@@ -485,6 +485,15 @@ async function loadCases(
       edgesAfterSum += edgesAfter;
 
       loaded.push(benchCase);
+
+      // Yield + GC every 10 cases during loading.  Each RE2 case holds
+      // a call graph with Zhipu embedding vectors (2048 dim × services).
+      // Without periodic GC the heap fragments and exceeds the 7 GB limit
+      // on public GitHub runners.
+      if (loaded.length % 10 === 0) {
+        if (typeof globalThis.gc === 'function') globalThis.gc();
+        await new Promise((r) => setTimeout(r, 5));
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       errors.push(`${meta.dirPath}: ${errMsg}`);
