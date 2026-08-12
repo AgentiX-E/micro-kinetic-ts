@@ -761,117 +761,19 @@ async function main(): Promise<void> {
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
-
-    // ── Batch loading to keep heap below 7 GB ──────────
-    // Public GitHub runners have 7 GB physical RAM.  Loading all
-    // 735 RE2 cases with trace spans + Zhipu embeddings at once
-    // exceeds this limit.  Process in batches of 50, accumulating
-    // stats incrementally without holding all cases in memory.
-    const BATCH_SIZE = 50;
-    const selected = caseLimit > 0 ? metas.slice(0, caseLimit) : metas;
-    let totalEdgesBefore = 0,
-      totalEdgesAfter = 0,
-      batchCaseTotal = 0;
-    const aggStats: LoadStats = {
-      cases: [],
-      errors: [],
-      errorSamples: new Map<string, number>(),
-      semanticStats: {
-        totalServices: 0,
-        semanticallyResolved: 0,
-        embeddingResolved: 0,
-        llmResolved: 0,
-        exactMatched: 0,
-      },
-      traceStats: { total: 0, pruned: 0, avgEdgesBefore: 0, avgEdgesAfter: 0 },
-    };
-    // Per-fault-type result accumulators — accumulate across batches
-    const faultTypesSeen = new Set<string>();
-    const ftTop1 = new Map<string, number>();
-    const ftTop5 = new Map<string, number>();
-    const ftLA = new Map<string, number>();
-    const ftTA = new Map<string, number>();
-    const ftCases = new Map<string, number>();
-    const ftFailures = new Map<string, string[]>();
-
-    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
-      const batch = selected.slice(i, i + BATCH_SIZE);
-      const stats = await loadCases(batch, loader, BATCH_SIZE, semanticConfig);
-
-      // Accumulate semantic + trace stats
-      aggStats.errors.push(...stats.errors);
-      for (const [k, v] of stats.errorSamples)
-        aggStats.errorSamples.set(k, (aggStats.errorSamples.get(k) || 0) + v);
-      const s = aggStats.semanticStats;
-      const b = stats.semanticStats;
-      s.totalServices += b.totalServices;
-      s.semanticallyResolved += b.semanticallyResolved;
-      s.embeddingResolved += b.embeddingResolved;
-      s.llmResolved += b.llmResolved;
-      s.exactMatched += b.exactMatched;
-      aggStats.traceStats.total += stats.traceStats.total;
-      aggStats.traceStats.pruned += stats.traceStats.pruned;
-      totalEdgesBefore += stats.traceStats.avgEdgesBefore * stats.cases.length;
-      totalEdgesAfter += stats.traceStats.avgEdgesAfter * stats.cases.length;
-      batchCaseTotal += stats.cases.length;
-
-      // Partition this batch by fault type and RUN immediately
-      const batchByFT = new Map<string, BenchmarkCase[]>();
-      for (const c of stats.cases) {
-        const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
-        if (!batchByFT.has(ft)) batchByFT.set(ft, []);
-        batchByFT.get(ft)!.push(c);
-      }
-
-      // Release batch cases immediately — no longer needed after partitioning
-      stats.cases.length = 0;
-
-      for (const [ft, cases] of batchByFT) {
-        faultTypesSeen.add(ft);
-        const suite: BenchmarkSuite = {
-          name: `${systemName}-${suiteName}-${ft}`,
-          cases,
-          totalCases: cases.length,
-        };
-        const result = await runner.runSuite(suite);
-
-        // Accumulate results (small: scalars + strings, not full call graphs)
-        ftTop1.set(ft, (ftTop1.get(ft) || 0) + result.avgTop1 * suite.cases.length);
-        ftTop5.set(ft, (ftTop5.get(ft) || 0) + result.avgTop5 * suite.cases.length);
-        ftLA.set(ft, (ftLA.get(ft) || 0) + result.locationAccuracy * suite.cases.length);
-        ftTA.set(ft, (ftTA.get(ft) || 0) + result.typeAccuracy * suite.cases.length);
-        ftCases.set(ft, (ftCases.get(ft) || 0) + suite.cases.length);
-        if (!ftFailures.has(ft)) ftFailures.set(ft, []);
-        ftFailures.get(ft)!.push(...result.failures.map((f) => `${f.caseId}: ${f.reason}`));
-
-        // Release processed cases from this fault type
-        cases.length = 0;
-      }
-
-      // Release batch partition + force GC
-      batchByFT.clear();
-      if (typeof globalThis.gc === 'function') globalThis.gc();
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-
-    // Compute weighted averages for trace stats across batches
-    if (batchCaseTotal > 0) {
-      aggStats.traceStats.avgEdgesBefore = totalEdgesBefore / batchCaseTotal;
-      aggStats.traceStats.avgEdgesAfter = totalEdgesAfter / batchCaseTotal;
-    }
+    const stats = await loadCases(metas, loader, caseLimit, semanticConfig);
 
     // ── Report load errors with comprehensive diagnostics ──
-    aggStats.cases = [];
-    reportLoadErrors(systemName, suiteName, aggStats);
+    reportLoadErrors(systemName, suiteName, stats);
 
-    if (faultTypesSeen.size === 0) {
+    if (stats.cases.length === 0) {
       console.log(`  ⚠ No cases loaded for ${systemName}/${suiteName} — skipping benchmark`);
       continue;
     }
 
     // ── Semantic enhancement diagnostics ──────────────────
     if (useSemantic) {
-      const sem = aggStats.semanticStats;
+      const sem = stats.semanticStats;
       const pct =
         sem.totalServices > 0
           ? ((sem.semanticallyResolved / sem.totalServices) * 100).toFixed(1)
@@ -883,37 +785,46 @@ async function main(): Promise<void> {
     }
 
     // ── Trace pruning diagnostics ─────────────────────────
-    reportTraceDiagnostics(systemName, suiteName, aggStats);
+    reportTraceDiagnostics(systemName, suiteName, stats);
 
-    // Build RunResult maps from accumulated stats for printResultsTable
-    const results = new Map<string, RunResult>();
-    for (const ft of faultTypesSeen) {
-      const count = ftCases.get(ft) || 1;
-      results.set(ft, {
-        suiteName: `${systemName}-${suiteName}-${ft}`,
-        totalCases: count,
-        avgTop1: (ftTop1.get(ft) || 0) / count,
-        avgTop5: (ftTop5.get(ft) || 0) / count,
-        avgTop3: 0,
-        locationAccuracy: (ftLA.get(ft) || 0) / count,
-        typeAccuracy: (ftTA.get(ft) || 0) / count,
-        duration: 0,
-        failures: (ftFailures.get(ft) || []) as unknown as RunResult['failures'],
-        perFaultType: new Map(),
-      });
+    // Split by fault type (matching paper's Table 6 format)
+    const byFaultType = new Map<string, BenchmarkCase[]>();
+    for (const c of stats.cases) {
+      const ft = c.groundTruth?.faultType?.toLowerCase() ?? 'unknown';
+      if (!byFaultType.has(ft)) byFaultType.set(ft, []);
+      byFaultType.get(ft)!.push(c);
     }
 
-    printResultsTable(systemName, suiteName, results, Array.from(faultTypesSeen));
+    // Print topology diagnostics
+    const diagNode = stats.cases[0]?.callGraph.nodes.values().next().value;
+    if (diagNode?.labels?._diag_system) {
+      const l = diagNode.labels;
+      console.log(
+        `  [topo] system=${l._diag_system}, edges=${l._diag_matched}, svcs=${l._diag_svc_matched}, unconnected=${l._diag_unconnected}`,
+      );
+    }
+
+    // Run each fault type separately
+    const results = new Map<string, RunResult>();
+    for (const [ft, ftCases] of byFaultType) {
+      if (ftCases.length === 0) continue;
+      const suite: BenchmarkSuite = {
+        name: `${systemName}-${suiteName}-${ft}`,
+        cases: ftCases,
+        totalCases: ftCases.length,
+      };
+      results.set(ft, await runner.runSuite(suite));
+    }
+
+    printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
     printFailureDiagnostics(systemName, suiteName, results);
 
-    // Release accumulated result maps before next system group.
-    faultTypesSeen.clear();
-    ftTop1.clear();
-    ftTop5.clear();
-    ftLA.clear();
-    ftTA.clear();
-    ftCases.clear();
-    ftFailures.clear();
+    // Release loaded cases between system groups to prevent OOM.
+    // Each system's 245 cases with trace spans + call graphs + embeddings
+    // consumes 3-5 GB; releasing between groups keeps peak under limit.
+    stats.cases.length = 0;
+    for (const cases of byFaultType.values()) cases.length = 0;
+    byFaultType.clear();
     results.clear();
     if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
