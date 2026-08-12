@@ -17,7 +17,7 @@
  * @module benchmarks/run-rcaeval
  */
 
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -770,6 +770,9 @@ async function main(): Promise<void> {
     const BATCH_SIZE = 50;
     const selected = caseLimit > 0 ? metas.slice(0, caseLimit) : metas;
     const byFaultType = new Map<string, BenchmarkCase[]>();
+    let totalEdgesBefore = 0,
+      totalEdgesAfter = 0,
+      batchCaseTotal = 0;
     const aggStats: LoadStats = {
       cases: [],
       errors: [],
