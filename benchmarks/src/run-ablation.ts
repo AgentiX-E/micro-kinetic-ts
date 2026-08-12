@@ -451,43 +451,41 @@ async function main(): Promise<void> {
   }
   console.log('═'.repeat(80));
 
-  // ── Pre-build all system bundles ONCE ────────
-  // Build call graphs (including Zhipu embedding) once before the config
-  // loop. Rebuilding inside the loop makes 735 cases × 10 configs = 7 350
-  // Zhipu API calls → guaranteed 60-minute timeout.
-  const systemBundles = new Map<string, SystemBundle>();
+  // ── Run Ablation ──
+  // Process ONE system at a time: load its bundle, run ALL configs on it,
+  // release, then next system.  Pre-building all systems at once holds
+  // 150+ RE2 cases (call graphs + trace spans + Zhipu embeddings) in memory
+  // → OOM on public runners (TrainTicket has 68-69 services/case).
+  const allRuns: AblationRun[] = CONFIGS.map((c) => ({
+    flags: c.flags,
+    label: c.label,
+    results: new Map<string, AblationResult>(),
+  }));
 
   for (const [systemName, metas] of systemGroups) {
+    console.log(`\n${'═'.repeat(60)}`);
+
+    // ── Pre-build this system's bundle ONCE ──
     console.log(`  Pre-building ${systemName} …`);
     const bundle = await loadSystemBundle(systemName, metas);
-    systemBundles.set(systemName, bundle);
     console.log(`  Pre-built: ${systemName} → ${bundle.cases.length} cases`);
-  }
 
-  console.log(`\nAll ${systemBundles.size} system(s) ready.`);
-  console.log('═'.repeat(80));
+    // Split cases by fault type (same across all configs for this system)
+    const byFT = new Map<string, BenchmarkCase[]>();
+    for (const c of bundle.cases) {
+      const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
+      if (!byFT.has(ft)) byFT.set(ft, []);
+      byFT.get(ft)!.push(c);
+    }
 
-  // ── Run Ablation ──
-  const allRuns: AblationRun[] = [];
+    for (let ci = 0; ci < CONFIGS.length; ci++) {
+      const config = CONFIGS[ci]!;
+      console.log(`\n${'─'.repeat(60)}`);
+      console.log(`Running: ${config.label}`);
+      console.log(`Flags: ${JSON.stringify(config.flags)}`);
+      console.log(`${'─'.repeat(60)}`);
 
-  for (const config of CONFIGS) {
-    console.log(`\n${'─'.repeat(60)}`);
-    console.log(`Running: ${config.label}`);
-    console.log(`Flags: ${JSON.stringify(config.flags)}`);
-    console.log(`${'─'.repeat(60)}`);
-
-    const runResults = new Map<string, AblationResult>();
-
-    // Process each system independently to bound peak memory
-    for (const [systemName, bundle] of systemBundles) {
       console.log(`  ${systemName}: ${bundle.cases.length} cases`);
-      // Split cases by fault type for per-fault-type breakdown
-      const byFT = new Map<string, BenchmarkCase[]>();
-      for (const c of bundle.cases) {
-        const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
-        if (!byFT.has(ft)) byFT.set(ft, []);
-        byFT.get(ft)!.push(c);
-      }
 
       let allA1 = 0,
         allA5 = 0,
@@ -575,7 +573,7 @@ async function main(): Promise<void> {
       const avgLA = totalCases > 0 ? allLA / totalCases : 0;
       const avgTA = totalCases > 0 ? allTA / totalCases : 0;
 
-      runResults.set(systemName, {
+      allRuns[ci]!.results.set(systemName, {
         aTop1: avgA1,
         aTop5: avgA5,
         la: avgLA,
@@ -592,20 +590,23 @@ async function main(): Promise<void> {
           `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
           `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
-      // Bundle is pre-built and cached — no need to release.
-    }
 
-    allRuns.push({ flags: config.flags, label: config.label, results: runResults });
+      // Yield to event loop after each config so GC can collect temporary
+      // BenchmarkSuite / RunResult objects before the next config starts.
+      if (typeof globalThis.gc === 'function') {
+        globalThis.gc();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    } // end config loop
 
-    // Yield to event loop after each config so GC can collect temporary
-    // BenchmarkSuite / RunResult objects before the next config starts.
-    // Without this the node process retains ~3.8 GB of stale reachable
-    // objects (closure scopes + suite arrays), causing OOM on RE2/RE3.
-    if (typeof globalThis.gc === 'function') {
-      globalThis.gc();
-    }
+    // Release this system's bundle before loading the next system.
+    // Each RE2 system holds 50 cases × call graphs + trace spans + embeddings;
+    // releasing prevents accumulation across systems (OOM on TrainTicket).
+    bundle.cases.length = 0;
+    byFT.clear();
+    if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  } // end system loop
 
   // ── Results Table ──
   console.log(`\n${'═'.repeat(80)}`);
