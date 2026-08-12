@@ -50,15 +50,39 @@ else
 fi
 
 # ── 3. Typecheck ──
-echo -n "  [3/5] pnpm typecheck … "
+echo -n "  [3/6] pnpm typecheck … "
 if pnpm typecheck > /dev/null 2>&1; then
   pass "typecheck"
 else
   fail "typecheck"
 fi
 
-# ── 4. Tests ──
-echo -n "  [4/5] pnpm test … "
+# ── 3b. Benchmark script typecheck ──
+# Catches type errors in run-rcaeval.ts, run-ablation.ts etc.
+# that tsc on packages/ misses (benchmarks/ is not in packages/).
+# Uses --noEmit on each script individually; only reports errors
+# in the target file (not transitive dependencies like rcaeval-semantic).
+echo -n "  [4/6] benchmark typecheck … "
+failed=0
+for script in benchmarks/src/run-rcaeval.ts benchmarks/src/run-ablation.ts benchmarks/src/optimize-all.ts; do
+  if [ -f "$script" ]; then
+    output=$(npx tsc --noEmit --skipLibCheck --esModuleInterop --moduleResolution node16 "$script" 2>&1) || true
+    own_errors=$(echo "$output" | grep -c "$(basename "$script")") || own_errors=0
+    if [ "$own_errors" -gt 0 ]; then
+      echo ""
+      echo "  $output" | grep "$(basename "$script")" | head -3
+      failed=$((failed + 1))
+    fi
+  fi
+done
+if [ $failed -eq 0 ]; then
+  pass "benchmark typecheck"
+else
+  fail "benchmark typecheck — $failed script(s) have TypeScript errors"
+fi
+
+# ── 5. Tests ──
+echo -n "  [5/6] pnpm test … "
 output=$(pnpm test 2>&1)
 if [ $? -eq 0 ]; then
   echo "$output" | grep -E "Tests\s+[0-9]+\s+passed" | head -1 | xargs echo "$GREEN✓$NC"
@@ -68,8 +92,8 @@ else
   fail "tests"
 fi
 
-# ── 5. Benchmark Script Smoke Check ──
-echo -n "  [5/5] benchmark smoke check … "
+# ── 6. Benchmark Script Smoke Check ──
+echo -n "  [6/6] benchmark smoke check … "
 failed=0
 for script in benchmarks/src/run-ablation.ts benchmarks/src/run-rcaeval.ts benchmarks/src/optimize-all.ts; do
   if [ ! -f "$script" ]; then continue; fi

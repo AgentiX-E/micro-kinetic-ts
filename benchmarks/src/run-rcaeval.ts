@@ -772,7 +772,7 @@ async function main(): Promise<void> {
     const byFaultType = new Map<string, BenchmarkCase[]>();
     const aggStats: LoadStats = {
       cases: [],
-      loadErrors: [],
+      errors: [],
       errorSamples: new Map<string, number>(),
       semanticStats: {
         totalServices: 0,
@@ -781,7 +781,7 @@ async function main(): Promise<void> {
         llmResolved: 0,
         exactMatched: 0,
       },
-      traceStats: { totalCases: 0, traceUsed: 0, pruned: 0, edgesBefore: 0, edgesAfter: 0 },
+      traceStats: { total: 0, pruned: 0, avgEdgesBefore: 0, avgEdgesAfter: 0 },
     };
 
     for (let i = 0; i < selected.length; i += BATCH_SIZE) {
@@ -789,7 +789,7 @@ async function main(): Promise<void> {
       const stats = await loadCases(batch, loader, BATCH_SIZE, semanticConfig);
 
       // Accumulate semantic + trace stats
-      aggStats.loadErrors.push(...stats.loadErrors);
+      aggStats.errors.push(...stats.errors);
       for (const [k, v] of stats.errorSamples)
         aggStats.errorSamples.set(k, (aggStats.errorSamples.get(k) || 0) + v);
       const s = aggStats.semanticStats;
@@ -799,13 +799,13 @@ async function main(): Promise<void> {
       s.embeddingResolved += b.embeddingResolved;
       s.llmResolved += b.llmResolved;
       s.exactMatched += b.exactMatched;
-      const t = aggStats.traceStats;
-      const bt = stats.traceStats;
-      t.totalCases += stats.cases.length;
-      t.traceUsed += bt.traceUsed;
-      t.pruned += bt.pruned;
-      t.edgesBefore += bt.edgesBefore;
-      t.edgesAfter += bt.edgesAfter;
+      let batchCaseCount = 0;
+      // Accumulate trace stats from this batch
+      aggStats.traceStats.total += stats.traceStats.total;
+      aggStats.traceStats.pruned += stats.traceStats.pruned;
+      totalEdgesBefore += stats.traceStats.avgEdgesBefore * stats.cases.length;
+      totalEdgesAfter += stats.traceStats.avgEdgesAfter * stats.cases.length;
+      batchCaseTotal += stats.cases.length;
 
       // Partition loaded cases by fault type
       for (const c of stats.cases) {
@@ -818,6 +818,12 @@ async function main(): Promise<void> {
       stats.cases.length = 0;
       if (typeof globalThis.gc === 'function') globalThis.gc();
       await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    // Compute weighted averages for trace stats across batches
+    if (batchCaseTotal > 0) {
+      aggStats.traceStats.avgEdgesBefore = totalEdgesBefore / batchCaseTotal;
+      aggStats.traceStats.avgEdgesAfter = totalEdgesAfter / batchCaseTotal;
     }
 
     // ── Report load errors with comprehensive diagnostics ──
