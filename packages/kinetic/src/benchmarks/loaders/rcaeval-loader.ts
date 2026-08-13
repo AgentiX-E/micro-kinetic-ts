@@ -338,6 +338,21 @@ export class RCAEvalLoader {
     }
   }
 
+  /**
+   * Load trace spans for a single case directory without re-reading metrics.
+   *
+   * RE2/RE3 traces.csv files are large (100K+ spans per case), so callers
+   * that need per-case traces for trace topology augmentation should load
+   * them lazily (one case at a time) and release them after use rather than
+   * holding every case's traces in memory simultaneously.
+   *
+   * @param casePath - Path to the case directory.
+   * @returns Parsed trace spans, or undefined if traces.csv is absent.
+   */
+  loadTraces(casePath: string): ReadonlyArray<BenchmarkTraceSpan> | undefined {
+    return this.tryLoadTraces(casePath);
+  }
+
   private parseCSV(content: string): Record<string, string>[] {
     const lines = content.trim().split('\n');
     if (lines.length < 2) return [];

@@ -399,10 +399,13 @@ async function main(): Promise<void> {
   type SystemBundle = {
     systemName: string;
     cases: BenchmarkCase[];
+    /** Case id → directory path, for lazy per-case trace loading. */
+    caseDirMap: Map<string, string>;
   };
 
   async function loadSystemBundle(systemName: string, metas: CaseMeta[]): Promise<SystemBundle> {
     const cases: BenchmarkCase[] = [];
+    const caseDirMap = new Map<string, string>();
     const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
     for (const meta of selected) {
       try {
@@ -424,19 +427,19 @@ async function main(): Promise<void> {
               : ('rcaeval-re3' as const);
 
         const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
-        // Preserve per-case trace spans for the traceAugmentation feature.
-        // toBenchmarkCase drops traces to save heap on the full rcaeval run;
-        // here we re-attach them so the ablation's +Trace Topo config has
-        // real parent→child data to validate the topology against. Peak
-        // memory stays bounded by --max-cases (50 cases per system).
-        cases.push({ ...benchCase, traces: rawCase.traces });
+        // Do NOT retain per-case traces here — RE2 traces.csv files are
+        // large enough that holding all 50 cases' spans at once OOMs.
+        // Record the directory path so the traceAugmentation config can
+        // load traces lazily, one fault-type group at a time.
+        cases.push(benchCase);
+        caseDirMap.set(benchCase.id, meta.dirPath);
       } catch (err) {
         console.log(
           `  ⚠ load error: ${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
     }
-    return { systemName, cases };
+    return { systemName, cases, caseDirMap };
   }
 
   console.log('\n═'.repeat(80));
@@ -507,18 +510,15 @@ async function main(): Promise<void> {
 
         for (const [ft, ftCases] of byFT) {
           if (ftCases.length === 0) continue;
-          const suite: BenchmarkSuite = {
-            name: `${systemName}-${ft}`,
-            cases: ftCases,
-            totalCases: ftCases.length,
-          };
 
           // ── Apply feature flags ──
 
           // Trace topology augmentation: when enabled and trace span
           // data is present (RE2/RE3), augment the call graph with
-          // observed parent-child relationships from traces. The runner
-          // reads per-case traces (benchCase.traces) when available.
+          // observed parent-child relationships from traces. Traces are
+          // loaded lazily per fault-type group (NOT pre-loaded) so peak
+          // memory stays bounded — RE2 traces.csv files are large enough
+          // that holding every case's spans at once OOMs.
           const traceOpts = config.flags.traceAugmentation
             ? {
                 enabled: true,
@@ -528,6 +528,20 @@ async function main(): Promise<void> {
                 spans: [],
               }
             : undefined;
+
+          // Attach per-case traces only when this config needs them; other
+          // configs reuse the plain (trace-free) cases.
+          const suiteCases = config.flags.traceAugmentation
+            ? ftCases.map((c) => {
+                const dirPath = bundle.caseDirMap.get(c.id);
+                return { ...c, traces: dirPath ? loader.loadTraces(dirPath) : undefined };
+              })
+            : ftCases;
+          const suite: BenchmarkSuite = {
+            name: `${systemName}-${ft}`,
+            cases: suiteCases,
+            totalCases: suiteCases.length,
+          };
 
           const runner = new BenchmarkRunner(container, classifier, traceOpts, calibrator);
 

@@ -7,13 +7,12 @@
  * @module __tests__/unit/loaders/rcaeval-loader.test
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { RCAEvalLoader } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
-import type { RCAEvalCase, BenchmarkCase, BenchmarkGroundTruth } from '../../../src/benchmarks/loaders/types.js';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -75,7 +74,11 @@ describe('RCAEvalLoader', () => {
 
   afterEach(() => {
     // Clean up temp dir
-    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ok */ }
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
   });
 
   // ── parseDirectoryName (via loadCase) ──────────────────
@@ -109,7 +112,9 @@ describe('RCAEvalLoader', () => {
 
     it('should parse RE3 case dir name (TrainTicket system)', () => {
       const casePath = createCaseDir(tempDir, 're3tt_ts-travel-service_cpu_1', {
-        metrics: { 'ts-travel-service': [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        metrics: {
+          'ts-travel-service': [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }],
+        },
         injectTime: 500,
         groundTruth: { root_cause_service: 'ts-travel-service', root_cause_metric: 'cpu' },
       });
@@ -213,9 +218,7 @@ describe('RCAEvalLoader', () => {
       });
       fs.writeFileSync(path.join(casePath, 'inject_time.txt'), '100');
 
-      expect(() => loader.loadCase(casePath)).toThrow(
-        /Invalid RCAEval directory name/,
-      );
+      expect(() => loader.loadCase(casePath)).toThrow(/Invalid RCAEval directory name/);
     });
 
     it('should handle numeric-only instance suffix', () => {
@@ -314,6 +317,33 @@ describe('RCAEvalLoader', () => {
       expect(result.traces![1]!.service).toBe('checkoutservice');
     });
 
+    it('loads traces independently via loadTraces (no metrics re-read)', () => {
+      const tracesContent = [
+        'trace_id,service,duration,status,parent_span',
+        'trace001,cartservice,150,OK,',
+        'trace001,checkoutservice,2000,ERROR,trace001.1',
+      ].join('\n');
+
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+        traces: tracesContent,
+      });
+
+      const traces = loader.loadTraces(casePath);
+      expect(traces).toBeDefined();
+      expect(traces!.length).toBe(2);
+      expect(traces![1]!.status).toBe('ERROR');
+
+      // Missing traces.csv → undefined
+      const noTracePath = createCaseDir(tempDir, 're2ob_svc_mem_2', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+      });
+      expect(loader.loadTraces(noTracePath)).toBeUndefined();
+    });
+
     it('should handle malformed logs.csv gracefully', () => {
       const badLogs = 'garbage,nonsense,data\nmore,bad,stuff';
 
@@ -367,9 +397,7 @@ describe('RCAEvalLoader', () => {
           { timestamp: 1000, value: 50.5, metric_name: 'cpu_usage' },
           { timestamp: 2000, value: 55.0, metric_name: 'cpu_usage' },
         ],
-        cartservice: [
-          { timestamp: 1000, value: 30.0, metric_name: 'mem_usage' },
-        ],
+        cartservice: [{ timestamp: 1000, value: 30.0, metric_name: 'mem_usage' }],
       };
 
       const casePath = createCaseDir(tempDir, 're1ob_svc_cpu_1', {
@@ -452,9 +480,7 @@ describe('RCAEvalLoader', () => {
             { timestamp: 1000, value: 50, metric_name: 'cpu_usage' },
             { timestamp: 2000, value: 80, metric_name: 'cpu_usage' },
           ],
-          cartservice: [
-            { timestamp: 1000, value: 30, metric_name: 'cpu_usage' },
-          ],
+          cartservice: [{ timestamp: 1000, value: 30, metric_name: 'cpu_usage' }],
         },
         injectTime: 1640000000,
         groundTruth: { root_cause_service: 'adservice', root_cause_metric: 'cpu' },
@@ -464,10 +490,20 @@ describe('RCAEvalLoader', () => {
       const callGraph = {
         nodes: new Map([
           ['adservice', { id: 'adservice', name: 'adservice', namespace: 're1ob', labels: {} }],
-          ['cartservice', { id: 'cartservice', name: 'cartservice', namespace: 're1ob', labels: {} }],
+          [
+            'cartservice',
+            { id: 'cartservice', name: 'cartservice', namespace: 're1ob', labels: {} },
+          ],
         ]),
         edges: [
-          { from: 'adservice', to: 'cartservice', type: 'REST' as const, callRate: 100, p99Latency: 50, errorRate: 0.01 },
+          {
+            from: 'adservice',
+            to: 'cartservice',
+            type: 'REST' as const,
+            callRate: 100,
+            p99Latency: 50,
+            errorRate: 0.01,
+          },
         ],
         systemLoad: 0.5,
       };
@@ -490,7 +526,12 @@ describe('RCAEvalLoader', () => {
 
       const rawCase = loader.loadCase(casePath);
       const graph = {
-        nodes: new Map([['cartservice', { id: 'cartservice', name: 'cartservice', namespace: 're2ob', labels: {} }]]),
+        nodes: new Map([
+          [
+            'cartservice',
+            { id: 'cartservice', name: 'cartservice', namespace: 're2ob', labels: {} },
+          ],
+        ]),
         edges: [],
         systemLoad: 0.5,
       };
