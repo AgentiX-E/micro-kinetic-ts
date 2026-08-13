@@ -1,9 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import {
-  validateTopologyWithTraces,
-  canValidateWithTraces,
-} from '@agentix-e/micro-kinetic';
-import type { TraceSpan, ServiceCallGraph, ServiceNode, TimeSeries } from '@agentix-e/micro-kinetic';
+import type { ServiceCallGraph, ServiceNode, TraceSpan } from '@agentix-e/micro-kinetic';
+import { canValidateWithTraces, validateTopologyWithTraces } from '@agentix-e/micro-kinetic';
+import { describe, expect, it } from 'vitest';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -16,7 +13,8 @@ function makeGraph(services: string[], edges: [string, string][]): ServiceCallGr
   return {
     nodes,
     edges: edges.map(([from, to]) => ({
-      from, to,
+      from,
+      to,
       type: 'REST' as const,
       callRate: 100,
       p99Latency: 50,
@@ -62,28 +60,20 @@ function makeLinearTraceChain(
   let prevSpanId = '';
   for (let i = 0; i < services.length; i++) {
     const spanId = `${traceId}_span_${i}`;
-    spans.push(makeSpan(
-      traceId,
-      spanId,
-      i === 0 ? '' : `${traceId}_span_${i - 1}`,
-      services[i]!,
-      stepDuration,
-      false,
-      baseStartTime + i * 20,
-    ));
+    spans.push(
+      makeSpan(
+        traceId,
+        spanId,
+        i === 0 ? '' : `${traceId}_span_${i - 1}`,
+        services[i]!,
+        stepDuration,
+        false,
+        baseStartTime + i * 20,
+      ),
+    );
     prevSpanId = spanId;
   }
   return spans;
-}
-
-const makeTimeSeries = (name: string, vals: number[]) => ({
-  name, values: new Float64Array(vals),
-});
-
-function makeMetrics(
-  entries: [string, { name: string; values: Float64Array }[]][],
-): ReadonlyMap<string, readonly { name: string; values: Float64Array }[]> {
-  return new Map(entries.map(([s, t]) => [s, Object.freeze(t)]));
 }
 
 // ── Tests ─────────────────────────────────────────────────
@@ -97,10 +87,7 @@ describe('validateTopologyWithTraces', () => {
     });
 
     it('returns false for insufficient span count (< 10)', () => {
-      const spans = [
-        makeSpan('t1', 's0', '', 'A'),
-        makeSpan('t1', 's1', 's0', 'B'),
-      ];
+      const spans = [makeSpan('t1', 's0', '', 'A'), makeSpan('t1', 's1', 's0', 'B')];
       expect(canValidateWithTraces(spans)).toBe(false);
     });
 
@@ -155,19 +142,31 @@ describe('validateTopologyWithTraces', () => {
   });
 
   it('keeps edges observed in traces', () => {
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['A', 'C']]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['A', 'C'],
+      ],
+    );
     const chain = makeLinearTraceChain('t1', ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']);
 
     const result = validateTopologyWithTraces(graph, chain);
 
     // A→B is in the trace chain, A→C is not observed
     expect(result.prunedEdgeCount).toBe(1); // A→C pruned
-    expect(result.keptEdgeCount).toBe(1);    // A→B kept
+    expect(result.keptEdgeCount).toBe(1); // A→B kept
     expect(result.discoveredEdgeCount).toBeGreaterThan(0); // B→C etc. from trace
   });
 
   it('prunes all edges not observed in traces', () => {
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['A', 'C']]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['A', 'C'],
+      ],
+    );
     // Trace only contains A→B, never A→C
     const spans = makeLinearTraceChain('t1', ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']);
 
@@ -195,7 +194,7 @@ describe('validateTopologyWithTraces', () => {
     const graph = makeGraph(['A', 'B'], [['A', 'B']]);
     const spans = makeLinearTraceChain('t1', ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']);
 
-    const result = validateTopologyWithTraces(graph, spans, undefined, {
+    const result = validateTopologyWithTraces(graph, spans, {
       discoverNewEdges: false,
     });
 
@@ -204,11 +203,17 @@ describe('validateTopologyWithTraces', () => {
   });
 
   it('respects pruneUnobserved=false', () => {
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['A', 'C']]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['A', 'C'],
+      ],
+    );
     // Trace only shows A→B
     const spans = makeLinearTraceChain('t1', ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']);
 
-    const result = validateTopologyWithTraces(graph, spans, undefined, {
+    const result = validateTopologyWithTraces(graph, spans, {
       pruneUnobserved: false,
     });
 
@@ -222,7 +227,7 @@ describe('validateTopologyWithTraces', () => {
     const spans = makeLinearTraceChain('t1', ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']);
 
     // Requires 2+ trace observations but edge only appears once
-    const result = validateTopologyWithTraces(graph, spans, undefined, {
+    const result = validateTopologyWithTraces(graph, spans, {
       minCallFrequency: 2,
     });
 
@@ -274,9 +279,14 @@ describe('validateTopologyWithTraces', () => {
   });
 
   it('handles multi-trace aggregation', () => {
-    const graph = makeGraph(['A', 'B', 'C', 'D'], [
-      ['A', 'B'], ['A', 'C'], ['A', 'D'],
-    ]);
+    const graph = makeGraph(
+      ['A', 'B', 'C', 'D'],
+      [
+        ['A', 'B'],
+        ['A', 'C'],
+        ['A', 'D'],
+      ],
+    );
     // Multiple traces: some show A→B, some A→C, none A→D
     const chain1 = makeLinearTraceChain('t1', ['A', 'B', 'X', 'Y', 'Z', 'W', 'V', 'U', 'T', 'S']);
     const chain2 = makeLinearTraceChain('t2', ['A', 'C', 'X', 'Y', 'Z', 'W', 'V', 'U', 'T', 'S']);
@@ -291,73 +301,6 @@ describe('validateTopologyWithTraces', () => {
     expect(refinedEdges.some((e) => e.from === 'A' && e.to === 'D')).toBe(false);
   });
 
-  // ── Metrics-aware PC co-verification ──────────────────
-
-  it('passes trace-validated graph through PC when pcVerify=true (with metrics)', () => {
-    const n = 30;
-    const aVals = new Float64Array(n);
-    const bVals = new Float64Array(n);
-    const cVals = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      aVals[i] = 10 + Math.sin(i * 0.15) * 2 + Math.random();
-      bVals[i] = 10 + Math.sin(i * 0.15) * 2 + Math.random();
-      cVals[i] = 5 + Math.random() * 10; // Independent of A, B
-    }
-
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['A', 'C']]);
-    const spans = makeLinearTraceChain('t1', [
-      'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-    ]);
-
-    const metrics = makeMetrics([
-      ['A', [makeTimeSeries('cpu', Array.from(aVals))]],
-      ['B', [makeTimeSeries('cpu', Array.from(bVals))]],
-      ['C', [makeTimeSeries('cpu', Array.from(cVals))]],
-    ]);
-
-    const result = validateTopologyWithTraces(graph, spans, metrics, {
-      pcVerify: true,
-    });
-
-    expect(result.pcResult).toBeDefined();
-    expect(result.pcResult!.refinedGraph).toBeDefined();
-  });
-
-  it('skips PC verification when no metrics provided (pcVerify=true)', () => {
-    const graph = makeGraph(['A', 'B'], [['A', 'B']]);
-    const spans = makeLinearTraceChain('t1', [
-      'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-    ]);
-
-    // pcVerify=true but no metrics
-    const result = validateTopologyWithTraces(graph, spans, undefined, {
-      pcVerify: true,
-    });
-
-    expect(result.pcResult).toBeUndefined();
-  });
-
-  it('skips PC verification when fewer than 3 nodes', () => {
-    const graph = makeGraph(['A', 'B'], [['A', 'B']]);
-    const n = 20;
-    const aVals = Array.from({ length: n }, (_, i) => 10 + i * 0.1);
-    const bVals = Array.from({ length: n }, (_, i) => 10 + i * 0.1);
-    const spans = makeLinearTraceChain('t1', [
-      'A', 'B', 'X', 'Y', 'Z', 'W', 'V', 'U', 'T', 'S',
-    ]);
-    const metrics = makeMetrics([
-      ['A', [makeTimeSeries('cpu', aVals)]],
-      ['B', [makeTimeSeries('cpu', bVals)]],
-    ]);
-
-    const result = validateTopologyWithTraces(graph, spans, metrics, {
-      pcVerify: true,
-    });
-
-    // 2 nodes (< 3 required for PC) → PC skipped
-    expect(result.pcResult).toBeUndefined();
-  });
-
   // ── Statistics accuracy ───────────────────────────────
 
   it('reports accurate kept/pruned/discovered counts', () => {
@@ -366,15 +309,19 @@ describe('validateTopologyWithTraces', () => {
     // Kept: A→B (observed in trace)
     // Pruned: A→C (not in trace)
     // Discovered: B→D (from trace, not in original)
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['A', 'C']]);
-    const spans = makeLinearTraceChain('t1', [
-      'A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
-    ]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['A', 'C'],
+      ],
+    );
+    const spans = makeLinearTraceChain('t1', ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']);
 
     const result = validateTopologyWithTraces(graph, spans);
 
-    expect(result.keptEdgeCount).toBe(1);    // A→B
-    expect(result.prunedEdgeCount).toBe(1);   // A→C
+    expect(result.keptEdgeCount).toBe(1); // A→B
+    expect(result.prunedEdgeCount).toBe(1); // A→C
     expect(result.discoveredEdgeCount).toBeGreaterThanOrEqual(0);
     expect(result.totalEdges).toEqual(result.refinedGraph.edges.length);
   });

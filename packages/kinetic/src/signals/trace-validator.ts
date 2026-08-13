@@ -5,7 +5,6 @@
  * 1. Validate existing topology edges against actual call patterns
  * 2. Prune unobserved edges (noise reduction)
  * 3. Discover missing edges (self-healing topology)
- * 4. Optionally co-verify discovered edges with PC algorithm
  *
  * ### Deng Yu Collision Tree Mapping
  *
@@ -24,21 +23,12 @@
  *         │
  *         ▼
  *  Refined ServiceCallGraph
- *         │
- *    (optional)
- *         ▼
- *  PC Algorithm validation
- *         │
- *         ▼
- *  Final causal-verified graph
  * ```
  *
  * @module signals/trace-validator
  */
 
-import type { MetricMap, ServiceCallGraph, TraceSpan } from '@agentix-e/micro-kinetic-core';
-import type { PCValidationResult, PCValidatorConfig } from './pc-validator.js';
-import { validateTopologyWithPC } from './pc-validator.js';
+import type { ServiceCallGraph, TraceSpan } from '@agentix-e/micro-kinetic-core';
 import { augmentTopologyWithTraces } from './trace-topology.js';
 
 // ── Config ────────────────────────────────────────────────
@@ -50,22 +40,12 @@ export interface TraceValidationConfig {
   readonly discoverNewEdges: boolean;
   /** Whether to prune edges not observed in any trace. Default: true. */
   readonly pruneUnobserved: boolean;
-  /**
-   * Whether to co-verify trace-discovered edges with the PC algorithm.
-   * When enabled, edges found by traces are passed through causal
-   * discovery to confirm direction and filter false positives.
-   * Default: false.
-   */
-  readonly pcVerify: boolean;
-  /** PC algorithm configuration (only used when pcVerify=true). */
-  readonly pcConfig?: PCValidatorConfig;
 }
 
 export const DEFAULT_TRACE_VALIDATION_CONFIG: TraceValidationConfig = {
   minCallFrequency: 1,
   discoverNewEdges: true,
   pruneUnobserved: true,
-  pcVerify: false,
 };
 
 // ── Result ────────────────────────────────────────────────
@@ -79,8 +59,6 @@ export interface TraceValidationResult {
   readonly keptEdgeCount: number;
   /** Number of edges discovered from traces (not in original). */
   readonly discoveredEdgeCount: number;
-  /** PC validation result (only when pcVerify=true). */
-  readonly pcResult?: PCValidationResult;
   /** Summary: total edges in the refined graph. */
   readonly totalEdges: number;
 }
@@ -91,19 +69,16 @@ export interface TraceValidationResult {
  * Validate and refine a topology using distributed trace data.
  *
  * Pipeline:
- * 1. `augmentTopologyWithTraces()` — filter observed edges, discover new ones
- * 2. (optional) `validateTopologyWithPC()` — causal verification
+ * `augmentTopologyWithTraces()` — filter observed edges, discover new ones
  *
  * @param callGraph - Original service call graph
  * @param spans - Trace spans from the anomaly period
- * @param metrics - Optional metric map for PC verification
  * @param config - Validation configuration
  * @returns Validation result with refined graph and statistics
  */
 export function validateTopologyWithTraces(
   callGraph: ServiceCallGraph,
   spans: readonly TraceSpan[],
-  metrics?: ReadonlyMap<string, readonly { name: string; values: Float64Array }[]>,
   config: Partial<TraceValidationConfig> = {},
 ): TraceValidationResult {
   const cfg = { ...DEFAULT_TRACE_VALIDATION_CONFIG, ...config };
@@ -157,20 +132,12 @@ export function validateTopologyWithTraces(
     refinedGraph = augmented;
   }
 
-  // ── Step 2: Optional PC causal verification ─────────────
-  let pcResult: PCValidationResult | undefined;
-  if (cfg.pcVerify && metrics && metrics.size >= 3) {
-    pcResult = validateTopologyWithPC(refinedGraph, metrics as unknown as MetricMap, cfg.pcConfig);
-    refinedGraph = pcResult.refinedGraph;
-  }
-
   return {
     refinedGraph,
     prunedEdgeCount,
     keptEdgeCount,
     discoveredEdgeCount,
     totalEdges: refinedGraph.edges.length,
-    pcResult,
   };
 }
 

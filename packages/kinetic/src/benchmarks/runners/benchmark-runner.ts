@@ -124,23 +124,12 @@ export interface CompleteBenchmarkReport {
  * Uses the DI container to resolve the RCA engine and runs
  * benchmark cases, tracking accuracy metrics and generating reports.
  *
- * When `pcValidation` is enabled, the runner first validates the
- * service call graph using the PC causal discovery algorithm before
- * passing it to buildFaultGraph(), pruning non-causal edges and
- * discovering missing causal links.
- *
  * @example
  * ```typescript
  * const container = createDefaultContainer();
  * const runner = new BenchmarkRunner(container);
  * const result = runner.runSuite(mySuite);
  * const report = runner.generateReport([result], 'json');
- *
- * // With PC causal validation:
- * const runnerPC = new BenchmarkRunner(container, undefined, {
- *   pcValidation: true,
- *   pcPruneNonCausal: true,
- * });
  * ```
  */
 /**
@@ -153,11 +142,6 @@ export interface TraceValidationOptions {
   pruneUnobserved?: boolean;
   /** Discover new edges from trace parent→child patterns. Default: true. */
   discoverNewEdges?: boolean;
-  /**
-   * When true, trace-discovered edges are co-verified with PC algorithm
-   * for causal direction. Runs PC validation internally. Default: false.
-   */
-  pcVerifyDiscovered?: boolean;
   /** Minimum call frequency to keep an edge. Default: 1. */
   minCallFrequency?: number;
   /** Trace spans from the anomaly period. */
@@ -168,21 +152,11 @@ export class BenchmarkRunner {
   private readonly container: IContainer;
   private readonly classifier: IFaultClassifier | undefined;
 
-  /** PC causal discovery validation options (I8-P4b). */
-  private readonly pcOptions?: {
-    readonly enabled: boolean;
-    readonly pruneNonCausal: boolean;
-    readonly discoverNewEdges: boolean;
-    readonly alpha?: number;
-    readonly maxConditioningSetSize?: number;
-  };
-
   /** Trace topology validation options (I9). */
   private readonly traceOptions?: {
     readonly enabled: boolean;
     readonly pruneUnobserved: boolean;
     readonly discoverNewEdges: boolean;
-    readonly pcVerifyDiscovered: boolean;
     readonly minCallFrequency: number;
     readonly spans: readonly TraceSpan[];
   };
@@ -195,9 +169,6 @@ export class BenchmarkRunner {
    *                     enriches each engine prediction with a classifier-generated
    *                     faultType based on per-service metric data, enabling
    *                     meaningful Type Accuracy (TA) computation.
-   * @param pcValidation - Optional PC causal discovery validation. When enabled
-   *                       (pcValidation: true), the runner pre-validates each case's
-   *                       call graph using the PC algorithm before RCA analysis.
    * @param traceValidation - Optional trace topology validation (I9). When enabled,
    *                          the runner first augments the call graph using distributed
    *                          trace span data to prune noise edges and discover missing
@@ -206,34 +177,17 @@ export class BenchmarkRunner {
   constructor(
     container: IContainer,
     classifier?: IFaultClassifier,
-    pcValidation?: {
-      enabled: boolean;
-      pruneNonCausal?: boolean;
-      discoverNewEdges?: boolean;
-      alpha?: number;
-      maxConditioningSetSize?: number;
-    },
     traceValidation?: TraceValidationOptions,
     calibrator?: WeightCalibrator,
   ) {
     this.container = container;
     this.classifier = classifier;
     this.calibrator = calibrator ?? new WeightCalibrator();
-    this.pcOptions = pcValidation?.enabled
-      ? {
-          enabled: true,
-          pruneNonCausal: pcValidation.pruneNonCausal ?? false,
-          discoverNewEdges: pcValidation.discoverNewEdges ?? true,
-          alpha: pcValidation.alpha,
-          maxConditioningSetSize: pcValidation.maxConditioningSetSize,
-        }
-      : undefined;
     this.traceOptions = traceValidation?.enabled
       ? {
           enabled: true,
           pruneUnobserved: traceValidation.pruneUnobserved ?? true,
           discoverNewEdges: traceValidation.discoverNewEdges ?? true,
-          pcVerifyDiscovered: traceValidation.pcVerifyDiscovered ?? false,
           minCallFrequency: traceValidation.minCallFrequency ?? 1,
           spans: traceValidation.spans,
         }
@@ -276,34 +230,13 @@ export class BenchmarkRunner {
           const traceResult = validateTopologyWithTraces(
             benchCase.callGraph,
             this.traceOptions.spans,
-            benchCase.metrics as unknown as ReadonlyMap<
-              string,
-              readonly { name: string; values: Float64Array }[]
-            >,
             {
               minCallFrequency: this.traceOptions.minCallFrequency,
               discoverNewEdges: this.traceOptions.discoverNewEdges,
               pruneUnobserved: this.traceOptions.pruneUnobserved,
-              pcVerify: this.traceOptions.pcVerifyDiscovered,
             },
           );
           effectiveCallGraph = traceResult.refinedGraph;
-        }
-
-        // ── PC Causal Discovery Validation (I8-P4b) ──
-        if (this.pcOptions?.enabled) {
-          const { validateTopologyWithPC } = await import('../../signals/pc-validator.js');
-          // Feed the trace-refined graph into PC (not the original call graph)
-          // so both Trace and PC contribute cumulatively to topology refinement.
-          const validationResult = validateTopologyWithPC(effectiveCallGraph, benchCase.metrics, {
-            pruneNonCausal: this.pcOptions.pruneNonCausal,
-            discoverNewEdges: this.pcOptions.discoverNewEdges,
-            pcConfig: {
-              alpha: this.pcOptions.alpha,
-              maxConditioningSetSize: this.pcOptions.maxConditioningSetSize,
-            },
-          });
-          effectiveCallGraph = validationResult.refinedGraph;
         }
 
         const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics);
@@ -538,7 +471,7 @@ export class BenchmarkRunner {
    *
    * And later:
    *   const saved = WeightCalibrator.fromJSON(fs.readFileSync('rca-weights.json', 'utf8'));
-   *   const runner = new BenchmarkRunner(c, undefined, undefined, undefined, saved);
+   *   const runner = new BenchmarkRunner(c, undefined, undefined, saved);
    */
   getCalibrator(): WeightCalibrator {
     return this.calibrator;

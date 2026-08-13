@@ -52,8 +52,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 interface FeatureFlags {
   /** Collision tree aggregator with Boltzmann Q(f,f). */
   collisionAggregation: boolean;
-  /** PC algorithm causal discovery. */
-  pcCausalDiscovery: boolean;
   /** Trace topology augmentation. */
   traceAugmentation: boolean;
   /** Online weight calibration (self-evolving). */
@@ -81,13 +79,16 @@ interface AblationResult {
 }
 
 // ── Configurations to Test ────────────────────────────────
+//
+// Full factorial over the 3 remaining features (2^3 = 8 configs).
+// PC Causal Discovery was removed — see ABLATION_FINDINGS.md in the
+// docs repo: it reduced Top-1 accuracy by up to 4.0% on RE2.
 
 const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
   // Baseline: everything OFF
   {
     flags: {
       collisionAggregation: false,
-      pcCausalDiscovery: false,
       traceAugmentation: false,
       selfLearning: false,
     },
@@ -97,7 +98,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
   {
     flags: {
       collisionAggregation: true,
-      pcCausalDiscovery: false,
       traceAugmentation: false,
       selfLearning: false,
     },
@@ -106,16 +106,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
   {
     flags: {
       collisionAggregation: false,
-      pcCausalDiscovery: true,
-      traceAugmentation: false,
-      selfLearning: false,
-    },
-    label: '+PC Causal',
-  },
-  {
-    flags: {
-      collisionAggregation: false,
-      pcCausalDiscovery: false,
       traceAugmentation: true,
       selfLearning: false,
     },
@@ -124,7 +114,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
   {
     flags: {
       collisionAggregation: false,
-      pcCausalDiscovery: false,
       traceAugmentation: false,
       selfLearning: true,
     },
@@ -134,16 +123,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
   {
     flags: {
       collisionAggregation: true,
-      pcCausalDiscovery: true,
-      traceAugmentation: false,
-      selfLearning: false,
-    },
-    label: '+Collision+PC',
-  },
-  {
-    flags: {
-      collisionAggregation: true,
-      pcCausalDiscovery: false,
       traceAugmentation: true,
       selfLearning: false,
     },
@@ -151,27 +130,24 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
   },
   {
     flags: {
-      collisionAggregation: false,
-      pcCausalDiscovery: true,
-      traceAugmentation: true,
-      selfLearning: false,
+      collisionAggregation: true,
+      traceAugmentation: false,
+      selfLearning: true,
     },
-    label: '+PC+Trace',
+    label: '+Collision+SelfLearn',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: true,
+      selfLearning: true,
+    },
+    label: '+Trace+SelfLearn',
   },
   // Full stack
   {
     flags: {
       collisionAggregation: true,
-      pcCausalDiscovery: true,
-      traceAugmentation: true,
-      selfLearning: false,
-    },
-    label: '+Collision+PC+Trace',
-  },
-  {
-    flags: {
-      collisionAggregation: true,
-      pcCausalDiscovery: true,
       traceAugmentation: true,
       selfLearning: true,
     },
@@ -510,11 +486,6 @@ async function main(): Promise<void> {
           };
 
           // ── Apply feature flags ──
-          // PC causal discovery: when enabled, prune non-causal edges
-          // and discover new edges from conditional independence tests.
-          const pcOpts = config.flags.pcCausalDiscovery
-            ? { enabled: true, pruneNonCausal: true, discoverNewEdges: true }
-            : undefined;
 
           // Trace topology augmentation: when enabled and trace span
           // data is present (RE2/RE3), augment the call graph with
@@ -533,7 +504,7 @@ async function main(): Promise<void> {
           // override on the container-registered engine.  Self-learning
           // is always instantiated but only affects subsequent runs
           // through the same calibrator instance.
-          const runner = new BenchmarkRunner(container, classifier, pcOpts, traceOpts);
+          const runner = new BenchmarkRunner(container, classifier, traceOpts);
 
           const result = await runner.runSuite(suite);
           repCases += suite.cases.length;

@@ -67,24 +67,6 @@ export type { LogEntry, LogTemplate } from './signals/log-provider.js';
 export { augmentTopologyWithTraces } from './signals/trace-topology.js';
 export type { TraceTopologyConfig } from './signals/trace-topology.js';
 
-export {
-  buildCorrelationMatrix,
-  fisherZ,
-  partialCorrelation,
-  pearsonCorrelation,
-  runPCAlgorithm,
-  testConditionalIndependence,
-} from './signals/pc-causal-discovery.js';
-export type {
-  CausalEdge,
-  DirectedCausalEdge,
-  PCConfig,
-  PCResult,
-} from './signals/pc-causal-discovery.js';
-
-export { canValidateWithPC, validateTopologyWithPC } from './signals/pc-validator.js';
-export type { PCValidationResult, PCValidatorConfig } from './signals/pc-validator.js';
-
 // ── Trace Topology ────────────────────────────────────────
 
 // ── Weight Calibrator (Self-Evolving) ─────────────────────
