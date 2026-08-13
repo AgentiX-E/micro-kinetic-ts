@@ -670,6 +670,116 @@ describe('BenchmarkRunner', () => {
       expect(emptyResult.avgTop1).toBe(0);
     });
   });
+
+  describe('Top-K accuracy distinction (regression)', () => {
+    /**
+     * Regression guard for the AC@1 reporting bug: `perFaultType.accuracy`
+     * and `avgTop1` must reflect Top-1 correctness, while `avgTop5` must
+     * reflect Top-5 correctness. Previously `perFaultType.accuracy` was
+     * incremented on a Top-5 match, misreporting AC@1.
+     */
+    it('distinguishes Top-1 from Top-5 when GT is ranked second', async () => {
+      const container = new Container();
+      // Engine returns 'service_1' as top-1 (wrong) and 'service_2' as
+      // top-2 (correct). GT is always 'service_2'.
+      const rankedEngine: IRCAEngine = {
+        buildFaultGraph: (callGraph) => ({
+          callGraph,
+          anomalyScores: new Map(
+            [...callGraph.nodes.keys()].map((id) => [id, id === 'service_2' ? 0.9 : 0.1]),
+          ),
+        }),
+        analyze: async (_graph, topK = 5) => {
+          const mk = (id: string, rank: number) => ({
+            serviceId: id,
+            faultType: { category: 'CPU', subType: '', severity: 'major' as const },
+            confidence: 1 - rank * 0.1,
+            rank,
+            timestamp: Date.now(),
+            evidenceMetrics: [],
+            propagationDepth: rank,
+            propagationErrorBound: 0.01,
+            viaTreeSearch: false,
+          });
+          return [
+            mk('service_1', 1),
+            mk('service_2', 2),
+            ...Array.from({ length: topK - 2 }, (_, i) => mk(`filler_${i}`, 3 + i)),
+          ];
+        },
+        getCycleContributionBound: () => 0,
+      };
+      container.register(DI_TOKENS.RCA_ENGINE, () => rankedEngine);
+      const runner = new BenchmarkRunner(container);
+
+      const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+      // Force every generated case's ground-truth service to 'service_2'.
+      const suite = generator.generateRCAEvalSuite('topk-distinction', 4);
+      const patchedCases = suite.cases.map((c) => ({
+        ...c,
+        groundTruth: { ...c.groundTruth, serviceId: 'service_2' },
+      }));
+
+      const result = await runner.runSuite({ ...suite, cases: patchedCases });
+
+      // Top-1 is wrong for every case → avgTop1 must be 0.
+      expect(result.avgTop1).toBe(0);
+      // 'service_2' is ranked second → within Top-5 → avgTop5 must be 1.
+      expect(result.avgTop5).toBe(1);
+      // perFaultType.accuracy must match Top-1 (0), NOT Top-5 (1).
+      for (const [, metric] of result.perFaultType) {
+        expect(metric.accuracy).toBe(0);
+      }
+    });
+
+    it('reports Top-1 in perFaultType when GT is ranked first', async () => {
+      const container = new Container();
+      // Engine returns the GT service as top-1.
+      const correctEngine: IRCAEngine = {
+        buildFaultGraph: (callGraph) => ({
+          callGraph,
+          anomalyScores: new Map(
+            [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
+          ),
+        }),
+        analyze: async (_graph, topK = 5) => {
+          const mk = (id: string, rank: number) => ({
+            serviceId: id,
+            faultType: { category: 'CPU', subType: '', severity: 'major' as const },
+            confidence: 1 - rank * 0.1,
+            rank,
+            timestamp: Date.now(),
+            evidenceMetrics: [],
+            propagationDepth: rank,
+            propagationErrorBound: 0.01,
+            viaTreeSearch: false,
+          });
+          return [
+            mk('service_1', 1),
+            ...Array.from({ length: topK - 1 }, (_, i) => mk(`filler_${i}`, 2 + i)),
+          ];
+        },
+        getCycleContributionBound: () => 0,
+      };
+      container.register(DI_TOKENS.RCA_ENGINE, () => correctEngine);
+      const runner = new BenchmarkRunner(container);
+
+      const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+      const suite = generator.generateRCAEvalSuite('topk-correct', 4);
+      const patchedCases = suite.cases.map((c) => ({
+        ...c,
+        groundTruth: { ...c.groundTruth, serviceId: 'service_1' },
+      }));
+
+      const result = await runner.runSuite({ ...suite, cases: patchedCases });
+
+      expect(result.avgTop1).toBe(1);
+      expect(result.avgTop5).toBe(1);
+      for (const [, metric] of result.perFaultType) {
+        expect(metric.accuracy).toBe(1);
+      }
+    });
+  });
 });
 
 // ── RCA Engine Integration Tests ──────────────────────────

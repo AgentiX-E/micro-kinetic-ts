@@ -256,6 +256,9 @@ export class BenchmarkRunner {
     const truthServiceIds: string[] = [];
     const truthFaultTypes: string[] = [];
     const failures: FailedCase[] = [];
+    // Full ranked service-ID list per case (for correct Avg@K computation).
+    // Aligned with `predictions` and `truthServiceIds` by push order.
+    const caseRankedPredictions: string[][] = [];
 
     // Per-fault-type tracking
     const faultTypeTracker = new Map<string, { cases: number; correct: number }>();
@@ -306,6 +309,9 @@ export class BenchmarkRunner {
         const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics);
         const results = await engine.analyze(faultGraph, topK);
 
+        // Capture the full ranked service-ID list for correct Avg@K.
+        caseRankedPredictions.push(results.slice(0, topK).map((r) => r.serviceId));
+
         // ── Diagnostic snapshot for failing cases ──────────────────
         gtAnomaly = faultGraph.anomalyScores.get(benchCase.groundTruth.serviceId) ?? 0;
         maxAnomaly = Math.max(...faultGraph.anomalyScores.values());
@@ -346,9 +352,11 @@ export class BenchmarkRunner {
         }
         tracker.cases++;
 
-        // Check if correct at top-5
-        const predictedIds = results.slice(0, topK).map((r) => r.serviceId);
-        if (predictedIds.includes(benchCase.groundTruth.serviceId)) {
+        // Check if correct at Top-1 (the ground-truth service is the single
+        // highest-ranked prediction). This value feeds perFaultType.accuracy,
+        // which is reported as AC@1 and must therefore be Top-1, NOT Top-K.
+        const top1Service = results[0]?.serviceId;
+        if (top1Service === benchCase.groundTruth.serviceId) {
           tracker.correct++;
         } else if (enrichedTop) {
           failures.push({
@@ -375,6 +383,8 @@ export class BenchmarkRunner {
           });
         }
       } catch (err) {
+        // Keep index alignment with truthServiceIds for this failed case.
+        caseRankedPredictions.push([]);
         failures.push({
           caseId: benchCase.id,
           expectedService: benchCase.groundTruth.serviceId,
@@ -396,25 +406,13 @@ export class BenchmarkRunner {
 
     // Compute metrics
     const totalCases = suite.cases.length;
-    const predictedServiceIds = predictions.map((p) => p.serviceId);
 
-    // Avg@K — computed via aggregated predictions below
-    const _totalCases = truthServiceIds.length;
-
-    // Need to re-compute from full predictions — for accuracy, we compute
-    // using the per-case ranked lists that we captured
-    const casePredictions: Array<readonly string[]> = [];
-    for (const benchCase of suite.cases) {
-      const idx = suite.cases.indexOf(benchCase);
-      if (idx < truthServiceIds.length) {
-        casePredictions.push([predictedServiceIds[idx]!]);
-      }
-    }
+    // Avg@K — computed from the full ranked per-case lists captured during
+    // analysis. Each list holds up to `topK` ranked service IDs; Top-1 uses
+    // only the first element, Top-3/Top-5 use the corresponding prefix.
+    const casePredictions: ReadonlyArray<readonly string[]> = caseRankedPredictions;
 
     const avgTop1 = computeAvgAtK(casePredictions, truthServiceIds, 1);
-
-    // For accurate Top-3 and Top-5, we need full ranked lists
-    // From the per-case analysis, compute what we can
     const avgTop3 = computeAvgAtK(casePredictions, truthServiceIds, 3);
     const avgTop5 = computeAvgAtK(casePredictions, truthServiceIds, 5);
 
