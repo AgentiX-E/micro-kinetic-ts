@@ -1023,4 +1023,47 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     const uniqueScores = new Set(scores);
     expect(uniqueScores.size).toBe(1);
   });
+
+  it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
+    // Regression: a previous hard noise-floor threshold discarded any
+    // metric with < 4.7% relative deviation, zeroing the entire anomaly
+    // vector on systems whose fault injection is subtle (TrainTicket).
+    // Build a 68-node chain with one fault node carrying a ~1% deviation
+    // and healthy nodes carrying flat data.
+    const n = 68;
+    const nodeIds = Array.from({ length: n }, (_, i) => `svc-${i}`);
+    const edges = [];
+    for (let i = 0; i < n - 1; i++) {
+      edges.push({ from: nodeIds[i]!, to: nodeIds[i + 1]! });
+    }
+    const graph = makeCallGraph(nodeIds, edges);
+
+    const faultIdx = 34;
+    const metricsArr: [string, ReturnType<typeof makeTimeSeries>[]][] = nodeIds.map((id, i) => {
+      // Fault node: baseline 100 with a ~1% ramp to 101 at the tail.
+      const values =
+        i === faultIdx
+          ? [
+              100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 101,
+              101, 101, 101,
+            ]
+          : Array.from({ length: 20 }, () => 100);
+      return [id, [makeTimeSeries('cpu', values)]];
+    });
+    const metrics = makeMetrics(metricsArr);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    // The fault node must carry a strictly positive score while every
+    // healthy node stays at zero — the subtle deviation is preserved and
+    // the fault stands out after min-max normalization.
+    const faultScore = result.anomalyScores.get(`svc-${faultIdx}`);
+    expect(faultScore).toBeDefined();
+    expect(faultScore!).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      if (i !== faultIdx) {
+        expect(result.anomalyScores.get(`svc-${i}`)).toBe(0);
+      }
+    }
+  });
 });

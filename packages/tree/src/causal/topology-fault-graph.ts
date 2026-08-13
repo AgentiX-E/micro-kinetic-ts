@@ -413,9 +413,19 @@ function computeAnomalyFeatures(
     // Linear ratio (max/baseline − 1) saturates at 1.0 for any >2x spike,
     // making multiple services indistinguishable.  Log₁₀ spreads scores:
     //   2x → 0.30,  3x → 0.60,  5x → 0.78,  10x → 1.04→clamped 1.0
+    //
+    // Noise floor: only discard metrics whose deviation is indistinguishable
+    // from floating-point error (~1e-16). A hard 4.7% threshold was previously
+    // used here, but it silently zeroed the entire anomaly vector on systems
+    // whose fault injection is subtle (< 4.7% relative deviation) — e.g.
+    // TrainTicket's 68-service topology. Instead, keep every real deviation
+    // and let the min-max normalization in buildTopologyFaultGraph amplify
+    // the relative separation between the fault service and its healthy
+    // neighbours. `1e-6` sits far above machine epsilon yet far below any
+    // physically meaningful metric deviation.
     const ratio = Math.abs(max - baselineMean) / baselineMean;
     const deviation = Math.log10(1 + ratio);
-    if (deviation < 0.02) continue;
+    if (deviation < 1e-6) continue;
 
     // Trend slope (linear regression)
     let sx = 0,
