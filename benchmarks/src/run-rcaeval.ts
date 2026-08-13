@@ -615,14 +615,19 @@ function printFailureDiagnostics(
       console.log(
         `    GT anomaly=${d.gtAnomaly.toFixed(4)}  max=${d.maxAnomaly.toFixed(4)}  inGraph=${d.gtInGraph}  edges=${d.edges}`,
       );
-      if (d.gtMetric) {
+      if (d.gtMetric || (d.gtMetricHead?.length ?? 0) > 0) {
         console.log(
-          `    GT metric=${d.gtMetric} head=[${(d.gtMetricHead ?? []).join(',')}] tail=[${(d.gtMetricTail ?? []).join(',')}]`,
+          `    GT metric=${d.gtMetric ?? '?'} head=[${(d.gtMetricHead ?? []).join(',')}] tail=[${(d.gtMetricTail ?? []).join(',')}]`,
         );
       }
       if (d.topAnomaly && d.topAnomaly.length > 0) {
         console.log(
           `    topAnomaly: ${d.topAnomaly.map((t) => `${t.serviceId}(${t.score.toFixed(3)})`).join(' | ')}`,
+        );
+      }
+      if (d.top1MetricLabel) {
+        console.log(
+          `    top1 metric=${d.top1MetricLabel} head=[${(d.top1MetricHead ?? []).join(',')}] tail=[${(d.top1MetricTail ?? []).join(',')}]`,
         );
       }
       console.log(`    Reason: ${f.reason}`);

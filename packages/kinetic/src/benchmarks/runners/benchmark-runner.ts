@@ -30,6 +30,37 @@ import { computeAvgAtK, computeTA } from './metrics.js';
 import type { TrainingExample } from '../../signals/weight-calibrator.js';
 import { WeightCalibrator } from '../../signals/weight-calibrator.js';
 
+/**
+ * Pick the time series with the largest value range (max - min) from a
+ * service's metrics. Used by the failure diagnostics to surface the metric
+ * that most plausibly carries the fault signature when the ground-truth
+ * metric name is absent (e.g. RCAEval RE3's generic f1..f5 labels).
+ *
+ * @internal
+ */
+function pickDominantMetric(series: readonly TimeSeries[] | undefined): TimeSeries | undefined {
+  if (!series || series.length === 0) return undefined;
+  let best: TimeSeries | undefined;
+  let bestRange = -Infinity;
+  for (const ts of series) {
+    const values = ts.values;
+    if (values.length < 2) continue;
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i]!;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const range = max - min;
+    if (range > bestRange) {
+      bestRange = range;
+      best = ts;
+    }
+  }
+  return best;
+}
+
 // ── Runner Types ──────────────────────────────────────────
 
 /** Per-fault-type accuracy breakdown. */
@@ -67,13 +98,17 @@ export interface FailedCase {
     }[];
     readonly gtInGraph: boolean;
     readonly edges: number;
-    /** Ground-truth metric name (root_cause_metric). */
+    /** Ground-truth metric name (root_cause_metric or dominant metric). */
     readonly gtMetric?: string;
     /** Head/tail of the ground-truth metric time series (fault signature). */
     readonly gtMetricHead?: readonly number[];
     readonly gtMetricTail?: readonly number[];
     /** Top-3 services by raw anomaly score, for noise/symptom inspection. */
     readonly topAnomaly?: readonly { serviceId: string; score: number }[];
+    /** Signature of the top-1 anomaly service's dominant metric. */
+    readonly top1MetricLabel?: string;
+    readonly top1MetricHead?: readonly number[];
+    readonly top1MetricTail?: readonly number[];
   };
 }
 
@@ -265,11 +300,15 @@ export class BenchmarkRunner {
         // Capture the ground-truth metric signature (name + head/tail) so the
         // benchmark artifacts can reveal whether the fault manifests as a rise
         // or a drop, and whether it is the largest deviation in the system.
+        //
+        // RE3 cases carry generic fault labels (f1..f5) with no root_cause_metric,
+        // so we pick the GT's most-deviating metric by value range instead of
+        // relying on the (often absent) ground-truth metric name.
         const gtMetricName = benchCase.groundTruth.metric;
         const gtMetricSeries = benchCase.metrics.get(benchCase.groundTruth.serviceId);
         const gtTs =
           (gtMetricName ? gtMetricSeries?.find((ts) => ts.label === gtMetricName) : undefined) ??
-          gtMetricSeries?.[0];
+          pickDominantMetric(gtMetricSeries);
         const gtMetricHead = gtTs ? Array.from(gtTs.values).slice(0, 6) : [];
         const gtMetricTail = gtTs ? Array.from(gtTs.values).slice(-4) : [];
         // Top-3 services by raw anomaly score (post-normalization) to expose
@@ -278,6 +317,14 @@ export class BenchmarkRunner {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3)
           .map(([serviceId, score]) => ({ serviceId, score }));
+        // Signature of the top-anomaly service's most-deviating metric, to
+        // reveal whether the "max" is a near-zero-baseline artifact.
+        const top1MetricTs = pickDominantMetric(
+          benchCase.metrics.get(topAnomaly[0]?.serviceId ?? ''),
+        );
+        const top1MetricLabel = top1MetricTs?.label ?? '';
+        const top1MetricHead = top1MetricTs ? Array.from(top1MetricTs.values).slice(0, 6) : [];
+        const top1MetricTail = top1MetricTs ? Array.from(top1MetricTs.values).slice(-4) : [];
 
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
@@ -330,10 +377,13 @@ export class BenchmarkRunner {
               topK: topPredictions,
               gtInGraph: effectiveCallGraph.nodes.has(benchCase.groundTruth.serviceId),
               edges: effectiveCallGraph.edges.length,
-              gtMetric: gtMetricName,
+              gtMetric: gtMetricName ?? gtTs?.label ?? '',
               gtMetricHead,
               gtMetricTail,
               topAnomaly,
+              top1MetricLabel,
+              top1MetricHead,
+              top1MetricTail,
             },
           });
         } else {
