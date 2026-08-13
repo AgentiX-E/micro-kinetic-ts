@@ -485,12 +485,23 @@ function computeAnomalyFeatures(
       }
     }
 
-    // Feature-weighted score — bonuses scaled to match log₁₀ deviation
+    // Feature-weighted score — bonuses scaled to match log₁₀ deviation.
+    //
+    // NOTE: do NOT clamp to [0, 1] here. The log₁₀ compression already
+    // keeps the magnitude bounded for realistic faults, but the [0,1]
+    // upper clamp collapsed every fault whose deviation exceeded ~9×
+    // onto the SAME score of 1.0. On dense topologies (TrainTicket's
+    // 68 services) the fault injection and its propagated symptoms all
+    // saturated at 1.0, so the downstream min-max normalization could
+    // no longer tell the root cause apart from its neighbours and the
+    // ranking fell back to an arbitrary tiebreaker. Leaving the score
+    // unbounded (clamped only at 0 below) preserves the true deviation
+    // magnitude; buildTopologyFaultGraph re-scales to [0,1] afterwards.
     let featureScore = deviation;
     if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.15;
     if (hasBurst) featureScore += deviation * 0.1;
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
-    featureScore = Math.max(0, Math.min(1, featureScore));
+    featureScore = Math.max(0, featureScore);
 
     if (featureScore > bestScore) bestScore = featureScore;
 

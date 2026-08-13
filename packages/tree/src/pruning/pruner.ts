@@ -664,28 +664,21 @@ function performTreeRCA(
     }
   }
 
-  // Collision type amplification factors (used only as a tiebreaker).
-  const collisionAmps: Record<string, number> = {
-    cycle: 1.8,
-    bottleneck: 1.5,
-    'fan-in': 1.2,
-    chain: 1.0,
-  };
-
-  // Rank primarily by SELF anomaly. The root cause is the fault injection
-  // point — the service whose OWN deviation is highest. A healthy parent
-  // must not accumulate its faulted children's anomaly (childContrib) and
-  // outrank the actual source, which is what the previous depth-weighted
-  // totalScore ranking did. Depth and collision type serve only as
-  // tiebreakers when self anomalies are equal.
+  // Rank by SELF anomaly ONLY. The root cause is the fault injection point —
+  // the service whose OWN deviation is highest. A healthy parent must not
+  // accumulate its faulted children's anomaly (childContrib) and outrank the
+  // actual source, which is what the previous depth-weighted totalScore
+  // ranking did. Nor may propagation DEPTH be used as a tiebreaker: RCAEval
+  // injects faults at arbitrary services (including leaves at depth 0), so
+  // "deeper is closer to the root cause" is provably wrong — it made a deep
+  // symptom (d5) outrank the faulted leaf (d0) when the two tied. When self
+  // anomalies are exactly equal there is no signal left to distinguish
+  // source from symptom, so the order is settled deterministically by
+  // service id rather than by an unfounded heuristic.
   scoredNodes.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    const aCollision = collisionEnergy?.get(a.serviceId);
-    const bCollision = collisionEnergy?.get(b.serviceId);
-    const aPhi = aCollision ? (collisionAmps[aCollision.collisionType] ?? 1.0) : 1.0;
-    const bPhi = bCollision ? (collisionAmps[bCollision.collisionType] ?? 1.0) : 1.0;
-    if (aPhi !== bPhi) return bPhi - aPhi;
-    return b.depth - a.depth;
+    if (a.serviceId === b.serviceId) return 0;
+    return a.serviceId < b.serviceId ? -1 : 1;
   });
 
   // Top-K results with collision type awareness

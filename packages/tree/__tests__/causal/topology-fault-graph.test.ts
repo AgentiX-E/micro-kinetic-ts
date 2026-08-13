@@ -1024,6 +1024,31 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(uniqueScores.size).toBe(1);
   });
 
+  it('preserves distinct fault magnitudes instead of saturating both at 1.0', () => {
+    // Regression: the anomaly score used to be clamped to [0, 1]. A 10× and
+    // a 100× fault both exceeded the clamp and collapsed onto the SAME score
+    // of 1.0, so the downstream min-max normalization could no longer tell
+    // them apart and the ranking fell back to an arbitrary tiebreaker.
+    // Two services with different spike magnitudes must now yield distinct
+    // (unbounded) raw scores.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10, 110, 120, 130, 140])]],
+      ['svc-b', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 10, 1010, 1020, 1030, 1040])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const scoreA = result.anomalyScores.get('svc-a');
+    const scoreB = result.anomalyScores.get('svc-b');
+    expect(scoreA).toBeDefined();
+    expect(scoreB).toBeDefined();
+    // The 100× fault must outscore the 10× fault by a wide margin, and the
+    // larger one must exceed the old 1.0 clamp (proving no saturation).
+    expect(scoreB!).toBeGreaterThan(scoreA!);
+    expect(scoreB!).toBeGreaterThan(1.0);
+  });
+
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
     // Regression: a previous hard noise-floor threshold discarded any
     // metric with < 4.7% relative deviation, zeroing the entire anomaly

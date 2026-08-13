@@ -546,11 +546,13 @@ describe('TreePruner', () => {
     });
   });
 
-  describe('depth-weighted ranking (Deng Yu propagation depth theorem)', () => {
-    it('should rank upstream root cause above downstream symptom when raw scores are similar', () => {
+  describe('self-anomaly ranking (no depth weighting)', () => {
+    it('ranks the highest-deviation service first even when it is a leaf', () => {
       const pruner = new TreePruner();
-      // Linear chain: A → B → C → D
-      // Inject fault at A: A has moderate anomaly, B/C/D have cascading high anomalies
+      // Linear chain: A → B → C → D. The fault spike lives at the LEAF (D),
+      // which has the largest raw deviation. Self-anomaly ranking must place
+      // D first — the old depth-weighted totalScore made a healthy upstream
+      // node accumulate its children's anomaly and outrank the leaf fault.
       const callGraph = makeCallGraph(
         ['A', 'B', 'C', 'D'],
         [
@@ -559,24 +561,21 @@ describe('TreePruner', () => {
           ['C', 'D'],
         ],
       );
-      // D has the highest anomaly (cascading symptom), A has the root cause
       const metrics = makeMetrics({
-        A: [2, 3, 8, 12, 15], // root cause: gradual increase
+        A: [2, 3, 8, 12, 15], // upstream: gradual increase
         B: [1, 2, 5, 15, 25], // symptom: larger spike
         C: [1, 2, 4, 18, 30], // deeper symptom: even larger
-        D: [1, 2, 3, 20, 35], // deepest symptom: largest spike
+        D: [1, 2, 3, 20, 35], // leaf symptom: largest spike
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 4);
 
       expect(results.length).toBeGreaterThan(0);
-      // Depth bonus should rank A (depth=3) above D (depth=0)
-      // despite D having a higher raw anomaly score
-      const ranks = results.map((r) => r.serviceId);
-      expect(ranks.indexOf('A')).toBeLessThan(ranks.indexOf('D'));
+      // D has the largest self deviation, so it ranks first.
+      expect(results[0]!.serviceId).toBe('D');
     });
 
-    it('should rank deeper propagation services higher', () => {
+    it('ties on identical anomaly scores deterministically by service id (not depth)', () => {
       const pruner = new TreePruner();
       const callGraph = makeCallGraph(
         ['Root', 'Mid', 'Leaf'],
@@ -585,7 +584,10 @@ describe('TreePruner', () => {
           ['Mid', 'Leaf'],
         ],
       );
-      // All similar anomaly: depth should be the tiebreaker
+      // Identical metrics → identical anomaly scores → a genuine tie. Depth
+      // must NOT break the tie: RCAEval injects faults at arbitrary services
+      // (including leaves), so a deep node is not inherently a more likely
+      // root cause. The tie is settled by deterministic service-id order.
       const metrics = makeMetrics({
         Root: [5, 10, 15, 20, 25],
         Mid: [5, 10, 15, 20, 25],
@@ -594,8 +596,9 @@ describe('TreePruner', () => {
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 3);
 
-      // Root should be ranked first (highest depth)
-      expect(results[0]!.serviceId).toBe('Root');
+      const ids = results.map((r) => r.serviceId);
+      // Deterministic lexicographic order; Root is NOT forced first.
+      expect(ids).toEqual(['Leaf', 'Mid', 'Root']);
     });
     it('should not let fan-out services outrank true root cause (fan-out dilution)', () => {
       const pruner = new TreePruner();
