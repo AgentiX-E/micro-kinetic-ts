@@ -393,6 +393,22 @@ function computeAnomalyFeatures(
     const mean = sum / n;
     if (mean <= 0) continue;
 
+    // Idle-metric guard: a metric that sits at ~0 for most of its history
+    // (e.g. a latency percentile that is 0 whenever there is no traffic) is an
+    // event/activity metric. Its idle→active transition yields an unbounded
+    // relative ratio (0 → 14.4 = 14400×) that is NOT a meaningful anomaly, yet
+    // dominates min-max normalization and drowns the genuine fault signal.
+    // Skip metrics where over 40% of samples are within 0.1% of the peak —
+    // far more than any real fault metric (cpu/mem/workload sit far above
+    // their own 0.1%-of-peak floor). The raw-sample check must precede the
+    // baseline computation below, whose `<= 0 → mean` reset would otherwise
+    // mask the idle signature.
+    let nearZeroCount = 0;
+    for (let i = 0; i < n; i++) {
+      if (ts.values[i]! <= max * 0.001) nearZeroCount++;
+    }
+    if (nearZeroCount > n * 0.4) continue;
+
     // Baseline from pre-change period.
     // Use median when change point detection fails — spike-inflated mean
     // and stddev create a threshold too high for shorter spikes,
@@ -439,16 +455,6 @@ function computeAnomalyFeatures(
     // the relative separation between the fault service and its healthy
     // neighbours. `1e-6` sits far above machine epsilon yet far below any
     // physically meaningful metric deviation.
-    // Idle-metric guard: a metric whose baseline is a negligible fraction of
-    // its peak sits idle most of the time (e.g. a latency percentile that is
-    // 0 whenever there is no traffic). Its idle→active transition yields an
-    // unbounded relative ratio (0.001 → 14.4 = 14400x) that is NOT a
-    // meaningful anomaly, yet dominates min-max normalization and drowns the
-    // genuine fault signal. Skip such metrics. The 0.1% floor sits far below
-    // any real fault's baseline/peak ratio (a 100× fault is still 1%) while
-    // well above the idle case (14400× → 0.007%).
-    if (baselineMean < max * 0.001) continue;
-
     const ratio = Math.abs(max - baselineMean) / baselineMean;
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;

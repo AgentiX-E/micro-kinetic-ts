@@ -1067,12 +1067,11 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       [
         'svc-noise',
         [
+          // Idle latency percentile: 0 everywhere except a brief pulse mid-series,
+          // mirroring TrainTicket RE3's ts-inside-payment latency-90 signature.
           makeTimeSeries(
             'latency-90',
-            [
-              0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
-              0.001, 0.001, 0.001, 0.001, 14.4, 14.4, 14.4, 14.4,
-            ],
+            [0, 0, 0, 0, 0, 0, 14.4, 14.4, 14.4, 14.4, 0, 0, 0, 0, 0, 0],
           ),
         ],
       ],
