@@ -344,6 +344,26 @@ describe('RCAEvalLoader', () => {
       expect(loader.loadTraces(noTracePath)).toBeUndefined();
     });
 
+    it('caps loadTraces at maxSpans', () => {
+      const lines = ['trace_id,service,duration,status,parent_span'];
+      for (let i = 0; i < 50; i++) {
+        lines.push(`trace${i},svc${i},${100 + i},OK,`);
+      }
+      const tracesContent = lines.join('\n');
+
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+        traces: tracesContent,
+      });
+
+      // Default cap is 10000 → loads all 50
+      expect(loader.loadTraces(casePath)!.length).toBe(50);
+      // Explicit cap → loads only the first 5
+      expect(loader.loadTraces(casePath, 5)!.length).toBe(5);
+    });
+
     it('should handle malformed logs.csv gracefully', () => {
       const badLogs = 'garbage,nonsense,data\nmore,bad,stuff';
 

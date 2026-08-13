@@ -315,13 +315,21 @@ export class RCAEvalLoader {
     }
   }
 
-  private tryLoadTraces(casePath: string): ReadonlyArray<BenchmarkTraceSpan> | undefined {
+  private tryLoadTraces(
+    casePath: string,
+    maxSpans = 10_000,
+  ): ReadonlyArray<BenchmarkTraceSpan> | undefined {
     const tracesPath = path.join(casePath, 'traces.csv');
     if (!fs.existsSync(tracesPath)) return undefined;
 
     try {
-      const content = fs.readFileSync(tracesPath, 'utf-8');
-      return this.parseCSV(content).map((row) => ({
+      // Read only the prefix needed for `maxSpans` data rows (plus the
+      // header). Each CSV line is ~150–200 bytes; capping the read keeps a
+      // multi-megabyte traces.csv from ever being fully loaded into memory.
+      const maxBytes = (maxSpans + 1) * 256;
+      const content = readFilePrefix(tracesPath, maxBytes);
+      const rows = this.parseCSV(content, maxSpans);
+      return rows.map((row) => ({
         traceId: row.trace_id ?? 'unknown',
         spanId:
           row.span_id ?? row.spanId ?? `${row.trace_id ?? 'unknown'}_${row.service ?? 'unknown'}`,
@@ -341,26 +349,30 @@ export class RCAEvalLoader {
   /**
    * Load trace spans for a single case directory without re-reading metrics.
    *
-   * RE2/RE3 traces.csv files are large (100K+ spans per case), so callers
-   * that need per-case traces for trace topology augmentation should load
-   * them lazily (one case at a time) and release them after use rather than
-   * holding every case's traces in memory simultaneously.
+   * RE2/RE3 traces.csv files are large (100K+ spans per case; TrainTicket
+   * can exceed a million), so callers that need per-case traces for trace
+   * topology augmentation should load them lazily (one case at a time) and
+   * release them after use. `maxSpans` bounds the number of parsed spans so
+   * a single case cannot OOM the heap — topology validation only needs
+   * enough spans to confirm parent→child edges, not the full trace history.
    *
    * @param casePath - Path to the case directory.
+   * @param maxSpans - Maximum spans to load (default 10000).
    * @returns Parsed trace spans, or undefined if traces.csv is absent.
    */
-  loadTraces(casePath: string): ReadonlyArray<BenchmarkTraceSpan> | undefined {
-    return this.tryLoadTraces(casePath);
+  loadTraces(casePath: string, maxSpans = 10_000): ReadonlyArray<BenchmarkTraceSpan> | undefined {
+    return this.tryLoadTraces(casePath, maxSpans);
   }
 
-  private parseCSV(content: string): Record<string, string>[] {
+  private parseCSV(content: string, maxRows?: number): Record<string, string>[] {
     const lines = content.trim().split('\n');
     if (lines.length < 2) return [];
 
     const headers = lines[0]!.split(',').map((h) => h.trim());
     const rows: Record<string, string>[] = [];
+    const limit = maxRows !== undefined ? Math.min(maxRows, lines.length - 1) : lines.length - 1;
 
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = 1; i <= limit; i++) {
       const values = lines[i]!.split(',').map((v) => v.trim());
       const row: Record<string, string> = {};
       for (let j = 0; j < headers.length; j++) {
@@ -466,4 +478,22 @@ interface RCAEvalMetricPoint {
   timestamp: number;
   value: number;
   metric_name: string;
+}
+
+/**
+ * Read the first `maxBytes` bytes of a file as UTF-8.
+ *
+ * Used to load a bounded prefix of traces.csv so a multi-megabyte file is
+ * never fully read into memory — the caller only needs enough rows for
+ * topology validation, not the entire trace history.
+ */
+function readFilePrefix(filePath: string, maxBytes: number): string {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const bytesRead = fs.readSync(fd, buffer, 0, maxBytes, 0);
+    return buffer.toString('utf-8', 0, bytesRead);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
