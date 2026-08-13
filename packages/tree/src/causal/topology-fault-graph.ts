@@ -246,11 +246,27 @@ export function buildTopologyFaultGraph(
   if (callGraph.nodes.size >= 30) {
     const sampleId = diagSampleIds[0] ?? [...callGraph.nodes.keys()][0]!;
     const sysName = callGraph.nodes.get(sampleId)?.namespace ?? '?';
+    // Raw score spread (before normalization) — reveals whether the fault
+    // signal is distinguishable from the noise floor.
+    let rawMin = Infinity;
+    let rawMax = -Infinity;
+    for (const s of anomalyScores.values()) {
+      if (s < rawMin) rawMin = s;
+      if (s > rawMax) rawMax = s;
+    }
+    // Sample the first metric's values for the top-scoring service so the
+    // benchmark artifacts carry the actual input shape (spike vs. flat).
+    const sampleMetrics = metrics.get(sampleId);
+    const firstTs = sampleMetrics?.[0];
+    const pts = firstTs ? Array.from(firstTs.values).slice(0, 6) : [];
+    const ptsLast = firstTs ? Array.from(firstTs.values).slice(-4) : [];
     // oxlint-disable-next-line no-console -- diagnostic output for benchmark artifacts
     console.log(
       `  [anomaly] system=${sysName}` +
         ` services=${diagSvcCount} noMetrics=${diagNoMetrics} zero=${diagZeroScore}` +
-        ` nonzero=${diagNonZeroScore} samples=[${diagSampleIds.join(',')}]`,
+        ` nonzero=${diagNonZeroScore} rawMin=${rawMin.toExponential(2)}` +
+        ` rawMax=${rawMax.toExponential(2)} samples=[${diagSampleIds.join(',')}]` +
+        ` metric=${firstTs?.label ?? '?'} head=[${pts.join(',')}] tail=[${ptsLast.join(',')}]`,
     );
   }
 

@@ -615,6 +615,7 @@ function printFailureDiagnostics(
       console.log(
         `    GT anomaly=${d.gtAnomaly.toFixed(4)}  max=${d.maxAnomaly.toFixed(4)}  inGraph=${d.gtInGraph}  edges=${d.edges}`,
       );
+      console.log(`    Reason: ${f.reason}`);
       console.log(
         `    Top-K: ${d.topK.map((t) => `${t.serviceId}(${t.confidence.toFixed(2)},d${t.depth})`).join(' | ')}`,
       );
