@@ -22,12 +22,22 @@
  * @module signals/trace-topology
  */
 
-import type {
-  CallEdge,
-  ServiceCallGraph,
-  ServiceNode,
-  TraceSpan,
-} from '@agentix-e/micro-kinetic-core';
+import type { CallEdge, ServiceCallGraph, ServiceNode } from '@agentix-e/micro-kinetic-core';
+
+/**
+ * Minimal span shape required for topology augmentation.
+ *
+ * `augmentTopologyWithTraces` and `canValidateWithTraces` only read the
+ * caller→callee relationship encoded by `spanId`/`parentSpanId`/`service`.
+ * Accepting this structural subset (rather than the full `TraceSpan`) lets
+ * both the core `TraceSpan` and the benchmark `BenchmarkTraceSpan` flow
+ * through without a lossy conversion layer.
+ */
+export interface TraceSpanLike {
+  readonly spanId: string;
+  readonly parentSpanId?: string;
+  readonly service: string;
+}
 
 /**
  * Configuration for trace-based topology augmentation.
@@ -61,14 +71,14 @@ const DEFAULT_CONFIG: TraceTopologyConfig = {
  */
 export function augmentTopologyWithTraces(
   callGraph: ServiceCallGraph,
-  spans: readonly TraceSpan[],
+  spans: readonly TraceSpanLike[],
   config: Partial<TraceTopologyConfig> = {},
 ): ServiceCallGraph {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
   // ── Step 1: Extract call relationships from span trees ─
   // Build a spanId→span lookup map (O(n)) to avoid O(n²) in the loop below.
-  const spanBySpanId = new Map<string, TraceSpan>();
+  const spanBySpanId = new Map<string, TraceSpanLike>();
   for (const span of spans) {
     spanBySpanId.set(span.spanId, span);
   }
@@ -76,6 +86,8 @@ export function augmentTopologyWithTraces(
   const callFrequency = new Map<string, number>(); // "from→to" → count
 
   for (const span of spans) {
+    // Root spans (no parent) carry no caller→callee relationship.
+    if (!span.parentSpanId) continue;
     // Find parent span to determine caller→callee
     const parentSpan = spanBySpanId.get(span.parentSpanId);
     if (parentSpan && parentSpan.service !== span.service) {
@@ -160,7 +172,7 @@ export function augmentTopologyWithTraces(
  * Quick check: can trace data validate this topology?
  * Returns true if traces contain meaningful call patterns.
  */
-export function canValidateWithTraces(spans: readonly TraceSpan[]): boolean {
+export function canValidateWithTraces(spans: readonly TraceSpanLike[]): boolean {
   const uniqueParents = new Set<string>();
   for (const span of spans) {
     if (span.parentSpanId) uniqueParents.add(span.parentSpanId);

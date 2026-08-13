@@ -227,15 +227,16 @@ export class BenchmarkRunner {
         // ── Trace Topology Validation (I9) ──
         if (this.traceOptions?.enabled) {
           const { validateTopologyWithTraces } = await import('../../signals/trace-validator.js');
-          const traceResult = validateTopologyWithTraces(
-            benchCase.callGraph,
-            this.traceOptions.spans,
-            {
-              minCallFrequency: this.traceOptions.minCallFrequency,
-              discoverNewEdges: this.traceOptions.discoverNewEdges,
-              pruneUnobserved: this.traceOptions.pruneUnobserved,
-            },
-          );
+          // Prefer per-case traces (benchCase.traces) when present — they
+          // describe the actual fault-period call flow for THIS case. Fall
+          // back to the constructor-level spans for synthetic cases that
+          // carry no per-case trace data.
+          const spans = benchCase.traces ?? this.traceOptions.spans;
+          const traceResult = validateTopologyWithTraces(benchCase.callGraph, spans, {
+            minCallFrequency: this.traceOptions.minCallFrequency,
+            discoverNewEdges: this.traceOptions.discoverNewEdges,
+            pruneUnobserved: this.traceOptions.pruneUnobserved,
+          });
           effectiveCallGraph = traceResult.refinedGraph;
         }
 

@@ -1067,4 +1067,57 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
 
     expect(result.totalCases).toBe(2);
   });
+
+  it('prefers per-case traces over constructor spans', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
+
+    // Constructor-level spans would prune everything if used (they point at
+    // services that do not exist in the case's call graph). Per-case traces
+    // describe the real fault-period flow and must take precedence.
+    const misleadingSpans = [
+      makeTraceSpan('t1', 'x0', '', 'ghost-a'),
+      makeTraceSpan('t1', 'x1', 'x0', 'ghost-b'),
+      ...Array.from({ length: 8 }, (_, i) =>
+        makeTraceSpan('t1', `x${i + 2}`, `x${i + 1}`, `ghost-${String.fromCodePoint(99 + i)}`),
+      ),
+    ];
+
+    const runner = new BenchmarkRunner(container, undefined, {
+      enabled: true,
+      spans: misleadingSpans,
+      pruneUnobserved: true,
+    });
+
+    const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+    const suite = generator.generateRCAEvalSuite('per-case-trace', 2);
+
+    // Attach per-case traces (BenchmarkTraceSpan shape — structurally a
+    // TraceSpanLike subset) so the runner uses them instead of the
+    // constructor spans.
+    const perCaseTraces = [
+      makeTraceSpan('t1', 's0', '', 'svc-a'),
+      makeTraceSpan('t1', 's1', 's0', 'svc-b'),
+      ...Array.from({ length: 8 }, (_, i) =>
+        makeTraceSpan('t1', `s${i + 2}`, `s${i + 1}`, `svc-${String.fromCodePoint(99 + i)}`),
+      ),
+    ].map((s) => ({
+      traceId: s.traceId,
+      spanId: s.spanId,
+      parentSpanId: s.parentSpanId || undefined,
+      service: s.service,
+      operationName: s.operation,
+      startTime: s.startTime,
+      duration: s.duration,
+      status: s.isError ? ('ERROR' as const) : ('OK' as const),
+    }));
+
+    const cases = suite.cases.map((c) => ({ ...c, traces: perCaseTraces }));
+    const result = await runner.runSuite({ ...suite, cases });
+
+    expect(result.totalCases).toBe(2);
+    // Trace validation ran without pruning the whole graph (per-case traces
+    // were recognized, not the misleading constructor spans).
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+  });
 });

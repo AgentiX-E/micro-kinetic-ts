@@ -28,8 +28,8 @@
  * @module signals/trace-validator
  */
 
-import type { ServiceCallGraph, TraceSpan } from '@agentix-e/micro-kinetic-core';
-import { augmentTopologyWithTraces } from './trace-topology.js';
+import type { ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
+import { augmentTopologyWithTraces, type TraceSpanLike } from './trace-topology.js';
 
 // ── Config ────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ export interface TraceValidationResult {
  */
 export function validateTopologyWithTraces(
   callGraph: ServiceCallGraph,
-  spans: readonly TraceSpan[],
+  spans: readonly TraceSpanLike[],
   config: Partial<TraceValidationConfig> = {},
 ): TraceValidationResult {
   const cfg = { ...DEFAULT_TRACE_VALIDATION_CONFIG, ...config };
@@ -151,7 +151,7 @@ export function validateTopologyWithTraces(
  * - At least 1 parent→child relationship
  * - (Implicitly) at least 2 unique services involved
  */
-export function canValidateWithTraces(spans: readonly TraceSpan[]): boolean {
+export function canValidateWithTraces(spans: readonly TraceSpanLike[]): boolean {
   if (spans.length < 10) return false;
 
   const services = new Set<string>();

@@ -35,6 +35,7 @@ import type {
   BenchmarkCase,
   BenchmarkSuite,
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import { WeightCalibrator } from '../../packages/kinetic/src/signals/weight-calibrator.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
@@ -362,10 +363,25 @@ async function main(): Promise<void> {
 
   await initRCAEvalTopology(undefined, semanticConfig);
 
-  const container = new Container();
-  container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
-  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner());
-  container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
+  /**
+   * Build a fresh DI container for a single ablation config.
+   *
+   * The collision-aggregation feature is controlled by the TreePruner's
+   * `enableCollisionAggregation` option. Each config gets its own container
+   * so the flag is wired directly into the engine registered under
+   * RCA_ENGINE — toggling it OFF falls back to raw anomaly scores with no
+   * Q(f,f) collision amplification.
+   */
+  function buildContainer(collisionAggregation: boolean): Container {
+    const c = new Container();
+    c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
+    c.register(
+      DI_TOKENS.RCA_ENGINE,
+      () => new TreePruner({ enableCollisionAggregation: collisionAggregation }),
+    );
+    c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
+    return c;
+  }
 
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const loader = new RCAEvalLoader();
@@ -408,7 +424,12 @@ async function main(): Promise<void> {
               : ('rcaeval-re3' as const);
 
         const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
-        cases.push(benchCase);
+        // Preserve per-case trace spans for the traceAugmentation feature.
+        // toBenchmarkCase drops traces to save heap on the full rcaeval run;
+        // here we re-attach them so the ablation's +Trace Topo config has
+        // real parent→child data to validate the topology against. Peak
+        // memory stays bounded by --max-cases (50 cases per system).
+        cases.push({ ...benchCase, traces: rawCase.traces });
       } catch (err) {
         console.log(
           `  ⚠ load error: ${meta.dirPath}: ${err instanceof Error ? err.message : String(err)}`,
@@ -463,6 +484,13 @@ async function main(): Promise<void> {
 
       console.log(`  ${systemName}: ${bundle.cases.length} cases`);
 
+      // ── Wire feature flags into this config's engine ──
+      // Collision aggregation: toggles TreePruner.enableCollisionAggregation.
+      const container = buildContainer(config.flags.collisionAggregation);
+      // Self-learning: a SHARED calibrator across this config's reps/Fts so
+      // weight updates from earlier cases feed back into later ones.
+      const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;
+
       let allA1 = 0,
         allA5 = 0,
         allLA = 0,
@@ -489,7 +517,8 @@ async function main(): Promise<void> {
 
           // Trace topology augmentation: when enabled and trace span
           // data is present (RE2/RE3), augment the call graph with
-          // observed parent-child relationships from traces.
+          // observed parent-child relationships from traces. The runner
+          // reads per-case traces (benchCase.traces) when available.
           const traceOpts = config.flags.traceAugmentation
             ? {
                 enabled: true,
@@ -500,11 +529,7 @@ async function main(): Promise<void> {
               }
             : undefined;
 
-          // Collision aggregation is controlled via a TreePruner config
-          // override on the container-registered engine.  Self-learning
-          // is always instantiated but only affects subsequent runs
-          // through the same calibrator instance.
-          const runner = new BenchmarkRunner(container, classifier, traceOpts);
+          const runner = new BenchmarkRunner(container, classifier, traceOpts, calibrator);
 
           const result = await runner.runSuite(suite);
           repCases += suite.cases.length;
