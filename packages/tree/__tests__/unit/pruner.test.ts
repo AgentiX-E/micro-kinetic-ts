@@ -628,6 +628,24 @@ describe('TreePruner', () => {
     });
   });
 
+  describe('self-anomaly primary ranking', () => {
+    it('ranks the faulted child above its healthy parent', () => {
+      // Regression: the previous depth-weighted totalScore let a healthy
+      // parent accumulate its faulted child's anomaly via childContrib and
+      // outrank the actual root cause. The fault injection point (Child)
+      // has the highest SELF anomaly and must rank first.
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(['Parent', 'Child'], [['Parent', 'Child']]);
+      const metrics = makeMetrics({
+        Parent: [10, 10, 10, 10, 10], // healthy — flat
+        Child: [10, 12, 15, 20, 40], // fault — sharp spike
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 2);
+      expect(results[0]!.serviceId).toBe('Child');
+    });
+  });
+
   describe('collision energy aggregation (I8-P3)', () => {
     it('includes collisionEnergy in buildFaultGraph output', () => {
       const pruner = new TreePruner();

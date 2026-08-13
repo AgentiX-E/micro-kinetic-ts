@@ -528,6 +528,11 @@ function performTreeRCA(
 
   // Bottom-up accumulation with BFS from leaves
   const scores = new Map<ServiceId, number>();
+  // Self anomaly per node (mixedSelf) — the primary ranking signal. Kept
+  // separate from `scores` (the accumulated totalScore) so the root cause
+  // (the fault injection point) is ranked by its OWN deviation, not by the
+  // anomaly its downstream children propagate back up to it.
+  const selfScores = new Map<ServiceId, number>();
   const depths = new Map<ServiceId, number>();
   // Queue for bottom-up processing: process nodes when all parents processed
   // Actually, we process from leaf → root: initialize leaves, then propagate upward
@@ -617,6 +622,12 @@ function performTreeRCA(
     const mixedSelf = collisionWeight * nodeEnergy + (1 - collisionWeight) * nodeAnomaly;
     const totalScore = mixedSelf + childContrib * fanOutDilution;
     scores.set(node, totalScore);
+    // Rank by the node's OWN raw anomaly — the fault injection point has the
+    // highest deviation. The collision energy (Q(f,f)) aggregates upstream
+    // signals and amplifies convergence points (fan-in/bottleneck), which
+    // would let a healthy convergence node outrank the true source, so it is
+    // deliberately excluded from the primary ranking signal.
+    selfScores.set(node, nodeAnomaly);
     depths.set(node, maxChildDepth);
 
     // Push parent nodes for processing
@@ -644,37 +655,16 @@ function performTreeRCA(
   }> = [];
 
   for (const [nodeId] of allNodes) {
-    const score = scores.get(nodeId)!;
+    const selfScore = selfScores.get(nodeId)!;
     const depth = depths.get(nodeId)!;
 
-    // Only include nodes with significant scores
-    if (score > 0) {
-      scoredNodes.push({ serviceId: nodeId, score, depth });
+    // Only include nodes with significant self anomaly
+    if (selfScore > 0) {
+      scoredNodes.push({ serviceId: nodeId, score: selfScore, depth });
     }
   }
 
-  // Sort by propagation-weighted score with collision type amplification.
-  //
-  // Deng Yu propagation depth theorem (2024):
-  // The confidence that a service is the root cause is proportional to
-  // the maximum anomaly propagation depth from that service.
-  // Services deeper in the propagation tree have accumulated anomaly
-  // evidence across more layers, indicating they are closer to the source.
-  //
-  // Final score = raw_score × (1 + depth × DEPTH_BONUS × Φ_collision)
-  // where:
-  //   DEPTH_BONUS is data-adaptive: derived from the spread of anomaly scores
-  //   Φ_collision is the collision type amplification factor:
-  //     cycle→1.8, bottleneck→1.5, fan-in→1.2, chain→1.0
-  // This rewards nodes that are both deep AND positioned at fault convergence
-  // points (collision nodes), per Deng Yu's kinetic wave amplification theory.
-  const scoreSpread =
-    scoredNodes.length > 1
-      ? Math.max(...scoredNodes.map((n) => n.score)) - Math.min(...scoredNodes.map((n) => n.score))
-      : 0.2;
-  const DEPTH_BONUS = Math.max(0.1, Math.min(0.5, 0.5 - scoreSpread));
-
-  // Collision type amplification factors
+  // Collision type amplification factors (used only as a tiebreaker).
   const collisionAmps: Record<string, number> = {
     cycle: 1.8,
     bottleneck: 1.5,
@@ -682,14 +672,20 @@ function performTreeRCA(
     chain: 1.0,
   };
 
+  // Rank primarily by SELF anomaly. The root cause is the fault injection
+  // point — the service whose OWN deviation is highest. A healthy parent
+  // must not accumulate its faulted children's anomaly (childContrib) and
+  // outrank the actual source, which is what the previous depth-weighted
+  // totalScore ranking did. Depth and collision type serve only as
+  // tiebreakers when self anomalies are equal.
   scoredNodes.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
     const aCollision = collisionEnergy?.get(a.serviceId);
     const bCollision = collisionEnergy?.get(b.serviceId);
     const aPhi = aCollision ? (collisionAmps[aCollision.collisionType] ?? 1.0) : 1.0;
     const bPhi = bCollision ? (collisionAmps[bCollision.collisionType] ?? 1.0) : 1.0;
-    return (
-      b.score * (1 + b.depth * DEPTH_BONUS * bPhi) - a.score * (1 + a.depth * DEPTH_BONUS * aPhi)
-    );
+    if (aPhi !== bPhi) return bPhi - aPhi;
+    return b.depth - a.depth;
   });
 
   // Top-K results with collision type awareness
@@ -716,7 +712,7 @@ function performTreeRCA(
       confidence: computeConfidence(node.score, node.depth, errorBound),
       rank: i + 1,
       evidenceMetrics: [
-        { metric: 'rca_score', value: node.score, threshold: Math.max(0.1, scoreSpread * 0.5) },
+        { metric: 'rca_score', value: node.score, threshold: 0.1 },
         ...(cResult
           ? [{ metric: 'collision_gain', value: cResult.collisionGain, threshold: 0.3 }]
           : []),
