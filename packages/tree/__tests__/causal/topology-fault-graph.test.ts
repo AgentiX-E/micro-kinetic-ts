@@ -1049,6 +1049,45 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(scoreB!).toBeGreaterThan(1.0);
   });
 
+  it('ignores idle metrics (near-zero baseline) instead of exploding their ratio', () => {
+    // Regression: an idle metric — e.g. a latency percentile that is 0
+    // whenever there is no traffic — produces an unbounded relative ratio
+    // (0.001 → 14.4 = 14400×) that is not a meaningful anomaly, yet it
+    // dominated min-max normalization and drowned the genuine fault on
+    // TrainTicket RE3. A normal-baseline fault must outrank such idle noise.
+    const graph = makeCallGraph(
+      ['svc-fault', 'svc-noise'],
+      [{ from: 'svc-fault', to: 'svc-noise' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-fault',
+        [makeTimeSeries('cpu', [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 9, 9, 9, 9])],
+      ],
+      [
+        'svc-noise',
+        [
+          makeTimeSeries(
+            'latency-90',
+            [
+              0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
+              0.001, 0.001, 0.001, 0.001, 14.4, 14.4, 14.4, 14.4,
+            ],
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const faultScore = result.anomalyScores.get('svc-fault') ?? 0;
+    const noiseScore = result.anomalyScores.get('svc-noise') ?? 0;
+    // The idle metric is skipped (its ratio is meaningless), so the noise
+    // service contributes nothing and the genuine fault stands out.
+    expect(noiseScore).toBe(0);
+    expect(faultScore).toBeGreaterThan(0);
+  });
+
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
     // Regression: a previous hard noise-floor threshold discarded any
     // metric with < 4.7% relative deviation, zeroing the entire anomaly

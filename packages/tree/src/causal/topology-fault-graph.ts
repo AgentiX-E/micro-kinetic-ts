@@ -439,6 +439,16 @@ function computeAnomalyFeatures(
     // the relative separation between the fault service and its healthy
     // neighbours. `1e-6` sits far above machine epsilon yet far below any
     // physically meaningful metric deviation.
+    // Idle-metric guard: a metric whose baseline is a negligible fraction of
+    // its peak sits idle most of the time (e.g. a latency percentile that is
+    // 0 whenever there is no traffic). Its idle→active transition yields an
+    // unbounded relative ratio (0.001 → 14.4 = 14400x) that is NOT a
+    // meaningful anomaly, yet dominates min-max normalization and drowns the
+    // genuine fault signal. Skip such metrics. The 0.1% floor sits far below
+    // any real fault's baseline/peak ratio (a 100× fault is still 1%) while
+    // well above the idle case (14400× → 0.007%).
+    if (baselineMean < max * 0.001) continue;
+
     const ratio = Math.abs(max - baselineMean) / baselineMean;
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
