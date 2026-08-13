@@ -31,17 +31,23 @@ import type { TrainingExample } from '../../signals/weight-calibrator.js';
 import { WeightCalibrator } from '../../signals/weight-calibrator.js';
 
 /**
- * Pick the time series with the largest value range (max - min) from a
- * service's metrics. Used by the failure diagnostics to surface the metric
- * that most plausibly carries the fault signature when the ground-truth
- * metric name is absent (e.g. RCAEval RE3's generic f1..f5 labels).
+ * Pick the time series with the largest RELATIVE change (max/min ratio,
+ * symmetric) from a service's metrics.
+ *
+ * The anomaly scorer is relative (log10 of max/baseline), so a metric whose
+ * absolute range is small but whose relative swing is huge (a counter going
+ * 0 → N) drives the score far more than a memory metric whose absolute range
+ * is millions of bytes but whose relative swing is only ~2x. Picking by raw
+ * value range therefore hid the metric that actually produced the anomaly.
+ * Used by the failure diagnostics to surface the fault signature when the
+ * ground-truth metric name is absent (e.g. RCAEval RE3's generic f1..f5).
  *
  * @internal
  */
 function pickDominantMetric(series: readonly TimeSeries[] | undefined): TimeSeries | undefined {
   if (!series || series.length === 0) return undefined;
   let best: TimeSeries | undefined;
-  let bestRange = -Infinity;
+  let bestRatio = -Infinity;
   for (const ts of series) {
     const values = ts.values;
     if (values.length < 2) continue;
@@ -52,9 +58,11 @@ function pickDominantMetric(series: readonly TimeSeries[] | undefined): TimeSeri
       if (v < min) min = v;
       if (v > max) max = v;
     }
-    const range = max - min;
-    if (range > bestRange) {
-      bestRange = range;
+    // Symmetric relative swing; guard min == 0 (a flat/idle counter).
+    const denom = min > 0 ? min : max > 0 ? 1e-9 : 0;
+    const ratio = denom > 0 ? Math.max(max / denom, denom / max) : 0;
+    if (ratio > bestRatio) {
+      bestRatio = ratio;
       best = ts;
     }
   }
