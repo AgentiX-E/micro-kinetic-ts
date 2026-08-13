@@ -1,15 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { TreePruner } from '@agentix-e/micro-kinetic-tree';
 import type {
+  CallEdge,
+  MetricMap,
   ServiceCallGraph,
   ServiceNode,
-  CallEdge,
   TimeSeries,
-  MetricMap,
 } from '@agentix-e/micro-kinetic-core';
-import {
-  GraphCycleError,
-} from '@agentix-e/micro-kinetic-core';
+import { TreePruner } from '@agentix-e/micro-kinetic-tree';
+import { describe, expect, it } from 'vitest';
 
 function makeNode(id: string): ServiceNode {
   return {
@@ -86,10 +83,7 @@ describe('TreePruner', () => {
   describe('buildFaultGraph', () => {
     it('builds graph with nodes and edges', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = makeMetrics({
         A: [10, 10, 10, 10, 10],
         B: [10, 10, 10, 10, 10],
@@ -105,10 +99,7 @@ describe('TreePruner', () => {
 
     it('builds graph with high-anomaly scores producing high weights', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       // High anomaly values for both → high propagation weight via Pearson correlation
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
@@ -127,7 +118,11 @@ describe('TreePruner', () => {
       const pruner = new TreePruner();
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'A'],
+        ],
       );
       const metrics = makeMetrics({
         A: [10, 10, 10],
@@ -143,7 +138,10 @@ describe('TreePruner', () => {
       const pruner = new TreePruner();
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+        ],
       );
       const metrics = makeMetrics({
         A: [10, 10, 10],
@@ -182,7 +180,11 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ useTwoHopDecay: true });
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'A'],
+        ],
       );
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
@@ -200,7 +202,11 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ defaultTopK: 5 });
       const callGraph = makeCallGraph(
         ['A', 'B', 'C', 'D'],
-        [['A', 'B'], ['A', 'C'], ['B', 'D']],
+        [
+          ['A', 'B'],
+          ['A', 'C'],
+          ['B', 'D'],
+        ],
       );
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
@@ -224,7 +230,10 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ pruneEpsilon: 1.0, useTwoHopDecay: true });
       const callGraph = makeCallGraph(
         ['A', 'B'],
-        [['A', 'B'], ['B', 'A']],
+        [
+          ['A', 'B'],
+          ['B', 'A'],
+        ],
       );
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
@@ -239,10 +248,7 @@ describe('TreePruner', () => {
 
     it('uses default topK when not provided', () => {
       const pruner = new TreePruner({ defaultTopK: 2 });
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
         B: [10, 11, 12, 10, 50],
@@ -295,10 +301,7 @@ describe('TreePruner', () => {
   describe('analyze with default topK', () => {
     it('uses defaultTopK when topK is not provided', () => {
       const pruner = new TreePruner({ defaultTopK: 1 });
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
         B: [10, 11, 12, 10, 50],
@@ -314,7 +317,10 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ defaultTopK: 2 });
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+        ],
       );
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
@@ -332,7 +338,11 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ pruneEpsilon: 1.0 });
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'A'],
+        ],
       );
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
@@ -343,15 +353,41 @@ describe('TreePruner', () => {
       const results = pruner.analyze(graph, 3);
       expect(results.length).toBeGreaterThan(0);
     });
+
+    it('analyzes graph with significant cycles instead of throwing', () => {
+      // Regression: analyze used to throw GraphCycleError when a cycle's
+      // contribution exceeded pruneEpsilon, which returned "no prediction"
+      // for dense real-world topologies (TrainTicket: 68 nodes, 267 edges).
+      // Default pruneEpsilon (0.001) with a strong 3-node cycle makes the
+      // cycle significant; analyze must now prune it and return results.
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'A'],
+        ],
+      );
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 100],
+        C: [10, 11, 12, 10, 100],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      // The cycle A→B→C→A should be classified significant.
+      expect(graph.detectedCycles.some((c) => c.significant)).toBe(true);
+      // analyze prunes it and returns ranked results instead of throwing.
+      const results = pruner.analyze(graph, 3);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.every((r) => r.serviceId)).toBe(true);
+    });
   });
 
   describe('buildFaultGraph with partial metrics', () => {
     it('handles services not present in metrics map (undefined metrics)', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = new Map<string, readonly TimeSeries[]>();
       metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       // B not in metrics
@@ -362,10 +398,7 @@ describe('TreePruner', () => {
 
     it('handles service with empty metrics array', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = new Map<string, readonly TimeSeries[]>();
       metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       metrics.set('B', []);
@@ -375,10 +408,7 @@ describe('TreePruner', () => {
 
     it('handles time series with empty values', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = new Map<string, readonly TimeSeries[]>();
       metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       metrics.set('B', [makeTimeSeries('cpu', [])]);
@@ -388,10 +418,7 @@ describe('TreePruner', () => {
 
     it('handles metrics with all negative values (mean <= 0)', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = new Map<string, readonly TimeSeries[]>();
       metrics.set('A', [makeTimeSeries('cpu', [10, 11, 12, 10, 100])]);
       metrics.set('B', [makeTimeSeries('cpu', [-10, -10, -10])]);
@@ -403,10 +430,7 @@ describe('TreePruner', () => {
   describe('buildFaultGraph with correlation weight branches', () => {
     it('computes medium correlation weight (scores >= 0.5)', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 60],
         B: [10, 11, 12, 10, 60],
@@ -417,10 +441,7 @@ describe('TreePruner', () => {
 
     it('computes low score correlation weight (one score >= 0.3)', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = makeMetrics({
         A: [10, 10, 10, 10, 35],
         B: [10, 10, 10, 10, 10],
@@ -434,10 +455,7 @@ describe('TreePruner', () => {
 
     it('computes default low correlation weight (both low scores)', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['A', 'B'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
       const metrics = makeMetrics({
         A: [10, 10, 10, 10, 10],
         B: [10, 10, 10, 10, 10],
@@ -454,7 +472,11 @@ describe('TreePruner', () => {
       // Tree: Root → Mid1, Root → Mid2, Mid1 → Leaf
       const callGraph = makeCallGraph(
         ['Root', 'Mid1', 'Mid2', 'Leaf'],
-        [['Root', 'Mid1'], ['Root', 'Mid2'], ['Mid1', 'Leaf']],
+        [
+          ['Root', 'Mid1'],
+          ['Root', 'Mid2'],
+          ['Mid1', 'Leaf'],
+        ],
       );
       const metrics = makeMetrics({
         Root: [10, 11, 12, 10, 100],
@@ -467,7 +489,7 @@ describe('TreePruner', () => {
       expect(results.length).toBeGreaterThan(0);
       expect(results.length).toBeLessThanOrEqual(4);
       // Root should accumulate scores from both mid-level nodes
-      const rootResult = results.find(r => r.serviceId === 'Root');
+      const rootResult = results.find((r) => r.serviceId === 'Root');
       expect(rootResult).toBeDefined();
     });
   });
@@ -478,7 +500,12 @@ describe('TreePruner', () => {
       // Diamond DAG: Top → Left, Top → Right, Left → Bottom, Right → Bottom
       const callGraph = makeCallGraph(
         ['Top', 'Left', 'Right', 'Bottom'],
-        [['Top', 'Left'], ['Top', 'Right'], ['Left', 'Bottom'], ['Right', 'Bottom']],
+        [
+          ['Top', 'Left'],
+          ['Top', 'Right'],
+          ['Left', 'Bottom'],
+          ['Right', 'Bottom'],
+        ],
       );
       const metrics = makeMetrics({
         Top: [10, 11, 12, 10, 100],
@@ -497,11 +524,14 @@ describe('TreePruner', () => {
       const pruner = new TreePruner();
       // Linear chain: A → B → C → D
       // Inject fault at A: A has moderate anomaly, B/C/D have cascading high anomalies
-      const callGraph = makeCallGraph(['A', 'B', 'C', 'D'], [
-        ['A', 'B'],
-        ['B', 'C'],
-        ['C', 'D'],
-      ]);
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C', 'D'],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'D'],
+        ],
+      );
       // D has the highest anomaly (cascading symptom), A has the root cause
       const metrics = makeMetrics({
         A: [2, 3, 8, 12, 15], // root cause: gradual increase
@@ -521,10 +551,13 @@ describe('TreePruner', () => {
 
     it('should rank deeper propagation services higher', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(['Root', 'Mid', 'Leaf'], [
-        ['Root', 'Mid'],
-        ['Mid', 'Leaf'],
-      ]);
+      const callGraph = makeCallGraph(
+        ['Root', 'Mid', 'Leaf'],
+        [
+          ['Root', 'Mid'],
+          ['Mid', 'Leaf'],
+        ],
+      );
       // All similar anomaly: depth should be the tiebreaker
       const metrics = makeMetrics({
         Root: [5, 10, 15, 20, 25],
@@ -544,18 +577,21 @@ describe('TreePruner', () => {
       const callGraph = makeCallGraph(
         ['Parent', 'Child1', 'Child2', 'Child3', 'Child4', 'Child5'],
         [
-          ['Parent', 'Child1'], ['Parent', 'Child2'], ['Parent', 'Child3'],
-          ['Parent', 'Child4'], ['Parent', 'Child5'],
+          ['Parent', 'Child1'],
+          ['Parent', 'Child2'],
+          ['Parent', 'Child3'],
+          ['Parent', 'Child4'],
+          ['Parent', 'Child5'],
         ],
       );
       // Child3 has clear anomaly spike, others are flat (no anomaly)
       const metrics = makeMetrics({
-        Parent: [5, 5, 5, 5, 6],    // tiny anomaly — cascaded
-        Child1: [5, 5, 5, 5, 5],    // flat — no anomaly
-        Child2: [5, 5, 5, 5, 5],    // flat — no anomaly
-        Child3: [5, 6, 9, 14, 18],  // sharp spike — root cause
-        Child4: [5, 5, 5, 5, 5],    // flat — no anomaly
-        Child5: [5, 5, 5, 5, 5],    // flat — no anomaly
+        Parent: [5, 5, 5, 5, 6], // tiny anomaly — cascaded
+        Child1: [5, 5, 5, 5, 5], // flat — no anomaly
+        Child2: [5, 5, 5, 5, 5], // flat — no anomaly
+        Child3: [5, 6, 9, 14, 18], // sharp spike — root cause
+        Child4: [5, 5, 5, 5, 5], // flat — no anomaly
+        Child5: [5, 5, 5, 5, 5], // flat — no anomaly
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 3);
@@ -570,12 +606,15 @@ describe('TreePruner', () => {
       const pruner = new TreePruner();
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+        ],
       );
       const metrics = makeMetrics({
-        A: [10, 11, 12, 10, 100],  // spike anomaly
-        B: [10, 10, 10, 10, 15],   // mild deviation
-        C: [5, 5, 5, 5, 5],       // flat
+        A: [10, 11, 12, 10, 100], // spike anomaly
+        B: [10, 10, 10, 10, 15], // mild deviation
+        C: [5, 5, 5, 5, 5], // flat
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       expect(graph.collisionEnergy).toBeDefined();
@@ -591,7 +630,7 @@ describe('TreePruner', () => {
         expect(a.totalEnergy).toBeGreaterThanOrEqual(0);
         expect(a.totalEnergy).toBeLessThanOrEqual(1);
         expect(a.collisionType).toBe('chain'); // A has no incoming edges
-        expect(a.collisionGain).toBe(0);       // No parents → no collision
+        expect(a.collisionGain).toBe(0); // No parents → no collision
 
         expect(b.collisionType).toBe('chain');
         expect(b.collisionGain).toBeGreaterThanOrEqual(0); // May have collision from A
@@ -604,14 +643,19 @@ describe('TreePruner', () => {
       const pruner = new TreePruner();
       const callGraph = makeCallGraph(
         ['Src1', 'Src2', 'Src3', 'Src4', 'Hub'],
-        [['Src1', 'Hub'], ['Src2', 'Hub'], ['Src3', 'Hub'], ['Src4', 'Hub']],
+        [
+          ['Src1', 'Hub'],
+          ['Src2', 'Hub'],
+          ['Src3', 'Hub'],
+          ['Src4', 'Hub'],
+        ],
       );
       const metrics = makeMetrics({
         Src1: [100, 100, 100, 100, 100],
         Src2: [100, 100, 100, 100, 100],
         Src3: [100, 100, 100, 100, 100],
         Src4: [100, 100, 100, 100, 100],
-        Hub: [100, 95, 90, 85, 10],  // dropping anomaly
+        Hub: [100, 95, 90, 85, 10], // dropping anomaly
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       expect(graph.collisionEnergy).toBeDefined();
@@ -627,7 +671,10 @@ describe('TreePruner', () => {
       const pruner = new TreePruner();
       const callGraph = makeCallGraph(
         ['A', 'B'],
-        [['A', 'B'], ['B', 'A']],  // bidirectional = cycle
+        [
+          ['A', 'B'],
+          ['B', 'A'],
+        ], // bidirectional = cycle
       );
       const metrics = makeMetrics({
         A: [10, 10, 10, 10, 100],
@@ -645,13 +692,18 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ maxCycles: 100 });
       const callGraph = makeCallGraph(
         ['A', 'B', 'C', 'D'],
-        [['A', 'B'], ['A', 'C'], ['B', 'D'], ['C', 'D']],
+        [
+          ['A', 'B'],
+          ['A', 'C'],
+          ['B', 'D'],
+          ['C', 'D'],
+        ],
       );
       const metrics = makeMetrics({
-        A: [1, 2, 3, 4, 100],    // spike at end → high anomaly
-        B: [1, 2, 3, 4, 5],      // flat
-        C: [1, 2, 3, 4, 5],      // flat
-        D: [1, 2, 3, 4, 50],     // mild spike from A
+        A: [1, 2, 3, 4, 100], // spike at end → high anomaly
+        B: [1, 2, 3, 4, 5], // flat
+        C: [1, 2, 3, 4, 5], // flat
+        D: [1, 2, 3, 4, 50], // mild spike from A
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 4);
@@ -667,10 +719,7 @@ describe('TreePruner', () => {
 
     it('collision results accept optional propagationWeights', () => {
       const pruner = new TreePruner();
-      const callGraph = makeCallGraph(
-        ['X', 'Y'],
-        [['X', 'Y']],
-      );
+      const callGraph = makeCallGraph(['X', 'Y'], [['X', 'Y']]);
       const metrics = makeMetrics({
         X: [1, 2, 3, 4, 100],
         Y: [1, 2, 3, 4, 5],
@@ -686,10 +735,7 @@ describe('TreePruner', () => {
 
     it('buildFaultGraph with collision disabled', () => {
       const pruner = new TreePruner({ enableCollisionAggregation: false });
-      const callGraph = makeCallGraph(
-        ['X', 'Y'],
-        [['X', 'Y']],
-      );
+      const callGraph = makeCallGraph(['X', 'Y'], [['X', 'Y']]);
       const metrics = makeMetrics({
         X: [1, 2, 3, 4, 100],
         Y: [1, 2, 3, 4, 5],
@@ -708,7 +754,11 @@ describe('TreePruner', () => {
       const pruner = new TreePruner({ useTwoHopDecay: true });
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C'], ['C', 'A']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'A'],
+        ],
       );
       const metrics = makeMetrics({
         A: [1, 2, 3, 4, 100],
