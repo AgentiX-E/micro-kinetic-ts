@@ -505,6 +505,15 @@ describe('BenchmarkRunner', () => {
   const container = createContainer();
   const runner = new BenchmarkRunner(container);
 
+  describe('calibrator access', () => {
+    it('exposes the weight calibrator instance', () => {
+      const calibrator = runner.getCalibrator();
+      expect(calibrator).toBeDefined();
+      // The calibrator persists across runSuite calls (self-evolving RCA).
+      expect(runner.getCalibrator()).toBe(calibrator);
+    });
+  });
+
   describe('runSuite', () => {
     let result: RunResult;
 
