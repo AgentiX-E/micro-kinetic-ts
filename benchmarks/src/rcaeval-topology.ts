@@ -18,24 +18,18 @@
  * @module benchmarks/rcaeval-topology
  */
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type {
-  ServiceCallGraph,
-  ServiceNode,
-  CallEdge,
-  ServiceId,
-} from '@agentix-e/micro-kinetic-core';
 import { StaticTopologyProvider } from '@agentix-e/micro-kinetic-causal';
-import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
-import type { ILLMProvider } from '@agentix-e/micro-kinetic-ai';
-import {
-  RCAEvalSemanticEnhancer,
-} from './rcaeval-semantic.js';
 import type {
-  SemanticEnhancerConfig,
-} from './rcaeval-semantic.js';
+  CallEdge,
+  ServiceCallGraph,
+  ServiceId,
+  ServiceNode,
+} from '@agentix-e/micro-kinetic-core';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
+import { RCAEvalSemanticEnhancer } from './rcaeval-semantic.js';
 
 // ── Topology Registry ─────────────────────────────────────
 
@@ -79,18 +73,18 @@ const TOPOLOGY_CONFIG_DIR = 'configs/topology';
  * Config files: onlineboutique.yaml, sockshop.yaml, trainticket.yaml
  */
 const SYSTEM_TO_CONFIG_FILE: Readonly<Record<string, string>> = {
-  'ob': 'onlineboutique.yaml',
-  'OnlineBoutique': 'onlineboutique.yaml',
-  'ss': 'sockshop.yaml',
-  'SockShop': 'sockshop.yaml',
-  'tt': 'trainticket.yaml',
-  'TrainTicket': 'trainticket.yaml',
+  ob: 'onlineboutique.yaml',
+  OnlineBoutique: 'onlineboutique.yaml',
+  ss: 'sockshop.yaml',
+  SockShop: 'sockshop.yaml',
+  tt: 'trainticket.yaml',
+  TrainTicket: 'trainticket.yaml',
 };
 
 const SYSTEM_CODE_TO_NAME: Readonly<Record<string, string>> = {
-  'ob': 'OnlineBoutique',
-  'ss': 'SockShop',
-  'tt': 'TrainTicket',
+  ob: 'OnlineBoutique',
+  ss: 'SockShop',
+  tt: 'TrainTicket',
 };
 
 // ── System Identification ─────────────────────────────────
@@ -111,20 +105,16 @@ export function identifyBenchmarkSystem(
   const sysMatch = lower.match(/^re\d(ob|ss|tt)/);
   if (sysMatch) {
     const sysCode = sysMatch[1]!;
-    return (SYSTEM_CODE_TO_NAME[sysCode] as
-      | 'OnlineBoutique'
-      | 'SockShop'
-      | 'TrainTicket'
-      | undefined) ?? null;
+    return (
+      (SYSTEM_CODE_TO_NAME[sysCode] as 'OnlineBoutique' | 'SockShop' | 'TrainTicket' | undefined) ??
+      null
+    );
   }
 
   // Fallback heuristic for non-standard naming
-  if (lower.includes('_ob_'))
-    return 'OnlineBoutique';
-  if (lower.includes('_ss_'))
-    return 'SockShop';
-  if (lower.includes('_tt_'))
-    return 'TrainTicket';
+  if (lower.includes('_ob_')) return 'OnlineBoutique';
+  if (lower.includes('_ss_')) return 'SockShop';
+  if (lower.includes('_tt_')) return 'TrainTicket';
   return null;
 }
 
@@ -195,8 +185,10 @@ function collectServiceIds(configDir: string, system: string): string[] {
     for (const file of files) {
       const content = readFileSync(join(configDir, file), 'utf-8');
       // Quick extraction: find all `- id: XXX` lines under `services:`
-      if (!content.toLowerCase().includes(`system: ${system.toLowerCase()}`) &&
-          !content.toLowerCase().includes(`system: ${system.replace(/ /g, '-').toLowerCase()}`)) {
+      if (
+        !content.toLowerCase().includes(`system: ${system.toLowerCase()}`) &&
+        !content.toLowerCase().includes(`system: ${system.replace(/ /g, '-').toLowerCase()}`)
+      ) {
         // Check if file name matches system
         const fileNameBase = file.replace(/\.ya?ml$/, '').toLowerCase();
         const sysLower = system.toLowerCase();
@@ -207,9 +199,15 @@ function collectServiceIds(configDir: string, system: string): string[] {
       const ids: string[] = [];
       let inServices = false;
       for (const line of content.split('\n')) {
-        if (line.trim() === 'services:') { inServices = true; continue; }
+        if (line.trim() === 'services:') {
+          inServices = true;
+          continue;
+        }
         if (inServices && line.match(/^  - id:\s*/)) {
-          const id = line.replace(/^  - id:\s*'?/, '').replace(/'?\s*$/, '').trim();
+          const id = line
+            .replace(/^  - id:\s*'?/, '')
+            .replace(/'?\s*$/, '')
+            .trim();
           ids.push(id);
         } else if (inServices && line.trim() === 'edges:') {
           break;
@@ -332,9 +330,17 @@ export async function enhanceRCAEvalCallGraph(
     return true;
   });
 
-  // Add semantic edges
+  // Add semantic edges — but only those whose BOTH endpoints exist in this
+  // case's service set. The semantic enhancer maps a case service to a YAML
+  // alias and reuses that alias' neighbours verbatim; a neighbour alias may
+  // reference a service that is absent from this specific case's metric set,
+  // producing a dangling edge whose endpoint has no node. Dangling edges make
+  // the graph inconsistent and crash the RCA pruning/topological-sort step.
+  const caseSvcSet = new Set(serviceIds);
   for (const semEdge of result.edges) {
-    enhancedEdges.push(semEdge);
+    if (caseSvcSet.has(semEdge.from) && caseSvcSet.has(semEdge.to)) {
+      enhancedEdges.push(semEdge);
+    }
   }
 
   const enhancedGraph: ServiceCallGraph = {
@@ -394,7 +400,15 @@ function buildFromRegistry(
   ringConnect(unconnected, connectedSvcs, edges);
 
   // Inject diagnostic labels
-  annotateNodes(nodes, caseId, system, matchedEdgeCount, topologyEdges.length, serviceIds.length, unconnected.length);
+  annotateNodes(
+    nodes,
+    caseId,
+    system,
+    matchedEdgeCount,
+    topologyEdges.length,
+    serviceIds.length,
+    unconnected.length,
+  );
 
   return { nodes, edges, systemLoad: 0.5 };
 }
@@ -441,10 +455,7 @@ function buildRingConnectOnly(
 
 // ── Helpers ───────────────────────────────────────────────
 
-function buildNodes(
-  serviceIds: readonly string[],
-  namespace: string,
-): Map<ServiceId, ServiceNode> {
+function buildNodes(serviceIds: readonly string[], namespace: string): Map<ServiceId, ServiceNode> {
   const nodes = new Map<ServiceId, ServiceNode>();
   for (const id of serviceIds) {
     nodes.set(id, { id, name: id, namespace, labels: {} });
@@ -501,15 +512,15 @@ function annotateNodes(
   for (const node of nodes.values()) {
     node.labels = {
       ...node.labels,
-      '_diag_case': caseId,
-      '_diag_system': system,
-      '_diag_matched': `${matchedEdgeCount}/${topologyEdgeCount}`,
-      '_diag_svc_total': String(serviceCount),
-      '_diag_unconnected': String(unconnectedCount),
-      '_diag_source': _registry.initialized ? 'yaml-v2' : 'ring-connect-legacy',
-      '_diag_semantic': String(semanticResolved),
-      '_diag_embedding': String(embeddingResolved),
-      '_diag_llm': String(llmResolved),
+      _diag_case: caseId,
+      _diag_system: system,
+      _diag_matched: `${matchedEdgeCount}/${topologyEdgeCount}`,
+      _diag_svc_total: String(serviceCount),
+      _diag_unconnected: String(unconnectedCount),
+      _diag_source: _registry.initialized ? 'yaml-v2' : 'ring-connect-legacy',
+      _diag_semantic: String(semanticResolved),
+      _diag_embedding: String(embeddingResolved),
+      _diag_llm: String(llmResolved),
     };
   }
 }
@@ -525,21 +536,24 @@ function annotateWithSemanticStats(
   serviceCount: number,
 ): ServiceCallGraph {
   const exactMatchEdgeCount = graph.edges.filter(
-    (e) => !isRingConnectEdge(e) && !isEdgeFromSource(e, 'semantic-embedding') && !isEdgeFromSource(e, 'semantic-llm'),
+    (e) =>
+      !isRingConnectEdge(e) &&
+      !isEdgeFromSource(e, 'semantic-embedding') &&
+      !isEdgeFromSource(e, 'semantic-llm'),
   ).length;
 
   for (const node of graph.nodes.values()) {
     node.labels = {
       ...node.labels,
-      '_diag_case': caseId,
-      '_diag_system': system,
-      '_diag_matched': `${exactMatchEdgeCount} exact + ${result.embeddingResolvedCount} emb + ${result.llmResolvedCount} llm`,
-      '_diag_svc_total': String(serviceCount),
-      '_diag_unconnected': String(result.stillUnmatchedCount),
-      '_diag_source': 'yaml-v2+semantic',
-      '_diag_semantic': `${result.resolvedServiceIds.length}`,
-      '_diag_embedding': `${result.embeddingResolvedCount}`,
-      '_diag_llm': `${result.llmResolvedCount}`,
+      _diag_case: caseId,
+      _diag_system: system,
+      _diag_matched: `${exactMatchEdgeCount} exact + ${result.embeddingResolvedCount} emb + ${result.llmResolvedCount} llm`,
+      _diag_svc_total: String(serviceCount),
+      _diag_unconnected: String(result.stillUnmatchedCount),
+      _diag_source: 'yaml-v2+semantic',
+      _diag_semantic: `${result.resolvedServiceIds.length}`,
+      _diag_embedding: `${result.embeddingResolvedCount}`,
+      _diag_llm: `${result.llmResolvedCount}`,
     };
   }
 

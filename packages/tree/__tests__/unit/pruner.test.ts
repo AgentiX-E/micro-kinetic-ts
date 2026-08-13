@@ -382,6 +382,33 @@ describe('TreePruner', () => {
       expect(results.length).toBeGreaterThan(0);
       expect(results.every((r) => r.serviceId)).toBe(true);
     });
+
+    it('handles a dangling edge (endpoint not in nodes) without crashing', () => {
+      // Regression: the semantic topology enhancer could emit edges whose
+      // endpoint is a YAML alias absent from the case's service set. Those
+      // dangling edges crashed performTreeRCA ("Cannot read properties of
+      // undefined (reading 'every')"). The engine must skip dangling parents
+      // instead of throwing.
+      const pruner = new TreePruner();
+      // 'X' is an edge endpoint that is NOT a node.
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['X', 'A'],
+        ],
+      );
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
+        C: [10, 11, 12, 10, 30],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const results = pruner.analyze(graph, 3);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.every((r) => r.serviceId)).toBe(true);
+    });
   });
 
   describe('buildFaultGraph with partial metrics', () => {

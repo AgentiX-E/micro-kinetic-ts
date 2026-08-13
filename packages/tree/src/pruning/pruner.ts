@@ -623,8 +623,11 @@ function performTreeRCA(
     const parents = reverseAdj.get(node)!;
     for (const p of parents) {
       if (!processed.has(p)) {
-        // Check if all children of p have been processed
-        const pChildren = children.get(p)!;
+        // Check if all children of p have been processed. Guard against a
+        // parent absent from the node map (a dangling edge endpoint) — skip
+        // it rather than crashing the whole analysis.
+        const pChildren = children.get(p);
+        if (!pChildren) continue;
         const allProcessed = pChildren.every((c) => processed.has(c.child));
         if (allProcessed && !processQueue.includes(p)) {
           processQueue.push(p);
