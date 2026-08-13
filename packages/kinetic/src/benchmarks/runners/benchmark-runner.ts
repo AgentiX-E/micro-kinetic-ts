@@ -67,6 +67,13 @@ export interface FailedCase {
     }[];
     readonly gtInGraph: boolean;
     readonly edges: number;
+    /** Ground-truth metric name (root_cause_metric). */
+    readonly gtMetric?: string;
+    /** Head/tail of the ground-truth metric time series (fault signature). */
+    readonly gtMetricHead?: readonly number[];
+    readonly gtMetricTail?: readonly number[];
+    /** Top-3 services by raw anomaly score, for noise/symptom inspection. */
+    readonly topAnomaly?: readonly { serviceId: string; score: number }[];
   };
 }
 
@@ -255,6 +262,23 @@ export class BenchmarkRunner {
           depth: r.propagationDepth,
         }));
 
+        // Capture the ground-truth metric signature (name + head/tail) so the
+        // benchmark artifacts can reveal whether the fault manifests as a rise
+        // or a drop, and whether it is the largest deviation in the system.
+        const gtMetricName = benchCase.groundTruth.metric;
+        const gtMetricSeries = benchCase.metrics.get(benchCase.groundTruth.serviceId);
+        const gtTs =
+          (gtMetricName ? gtMetricSeries?.find((ts) => ts.label === gtMetricName) : undefined) ??
+          gtMetricSeries?.[0];
+        const gtMetricHead = gtTs ? Array.from(gtTs.values).slice(0, 6) : [];
+        const gtMetricTail = gtTs ? Array.from(gtTs.values).slice(-4) : [];
+        // Top-3 services by raw anomaly score (post-normalization) to expose
+        // whether the max is the injected fault, a consistent symptom, or noise.
+        const topAnomaly = [...faultGraph.anomalyScores.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([serviceId, score]) => ({ serviceId, score }));
+
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
           ? results.map((r) => this.enrichPrediction(r, benchCase.metrics))
@@ -306,6 +330,10 @@ export class BenchmarkRunner {
               topK: topPredictions,
               gtInGraph: effectiveCallGraph.nodes.has(benchCase.groundTruth.serviceId),
               edges: effectiveCallGraph.edges.length,
+              gtMetric: gtMetricName,
+              gtMetricHead,
+              gtMetricTail,
+              topAnomaly,
             },
           });
         } else {
