@@ -395,24 +395,29 @@ function computeAnomalyFeatures(
     const mean = sum / n;
     if (mean <= 0) continue;
 
-    // Event/idle guard: a metric whose minimum sits below 0.1% of its peak
-    // spans a >1000× relative range, which only happens when it touches ~0.
-    // Such a metric is duty-cycled — ~0 whenever the service is inactive and
-    // non-zero only when active. This is ONE signature with two faces:
+    // Idle-metric guard: a metric that sits at ~0 for MOST of its history
+    // (e.g. a latency percentile that is 0 whenever there is no traffic) is an
+    // event/activity metric. Its idle→active transition yields an unbounded
+    // relative RISE ratio (0.001 → 14.4 = 14400×) that is NOT a meaningful
+    // anomaly, yet dominates min-max normalization and drowns the genuine
+    // fault signal.
     //
-    //   • idle→active pulse (latency-90: 0 → 14.4), and
-    //   • active→idle collapse (workload: 11.467 → 0), the #192 regression.
-    //
-    // For both, any RELATIVE deviation is ill-defined: dividing by a near-zero
-    // baseline (rise side) or a near-zero minimum (drop side) produces an
-    // unbounded ratio (0 → 14.4 = 14400×; 11.467 → 0 = 1e6×) that is not a
-    // meaningful anomaly, yet dominates min-max normalization and drowns the
-    // genuine fault signal. Checking min against the PEAK (rather than counting
-    // near-zero samples) catches both faces with one rule, and the 0.1% floor
-    // sits far below any real fault's min/peak ratio (a 100× fault still has
-    // min/peak = 1%). The check must precede the baseline computation below,
-    // whose `<= 0 → mean` reset would otherwise mask the signature.
-    if (min < max * 0.001) continue;
+    // We count near-zero SAMPLES (within 0.1% of the peak) rather than testing
+    // the minimum against the peak. The distinction matters: a metric whose
+    // tail collapses to zero (e.g. mem 171MB → 0 — a genuine crash fault, or
+    // workload 11.467 → 0 — a traffic-loss symptom) has a near-zero minimum
+    // but only a few near-zero samples, and its DROP is already bounded at
+    // 100% by the deviation formula below. A min-vs-peak guard would wrongly
+    // discard such drop-to-zero faults (the #194 RE3 OnlineBoutique regression:
+    // adservice's mem crash scored 0). Only a metric that is ~0 for >40% of
+    // its history is a duty-cycled event metric. The raw-sample check must
+    // precede the baseline computation below, whose `<= 0 → mean` reset would
+    // otherwise mask the idle signature.
+    let nearZeroCount = 0;
+    for (let i = 0; i < n; i++) {
+      if (ts.values[i]! <= max * 0.001) nearZeroCount++;
+    }
+    if (nearZeroCount > n * 0.4) continue;
 
     // Baseline from pre-change period.
     // Use median when change point detection fails — spike-inflated mean
