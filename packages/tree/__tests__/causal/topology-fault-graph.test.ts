@@ -1192,10 +1192,60 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(faultScore).toBeGreaterThan(0);
   });
 
+  it('skips a transient spike that returns to a NON-ZERO baseline', () => {
+    // Regression (#197 RE3 TrainTicket): the top-anomaly service's cpu carried
+    // a transient mid-series pulse over a NON-ZERO baseline (~0.13), so the
+    // old burst guard (head AND tail near-zero) missed it and the transient
+    // symptom outranked the source's permanent 3.5× workload rise. The
+    // generalized transient-spike guard measures the head↔tail spread against
+    // the full range: head ≈ tail → spread/range ≈ 0 → skip, regardless of the
+    // baseline's absolute level.
+    const graph = makeCallGraph(
+      ['svc-source', 'svc-symptom'],
+      [{ from: 'svc-source', to: 'svc-symptom' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-source',
+        [
+          makeTimeSeries(
+            'workload',
+            [
+              0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
+              1.4, 1.4, 1.4,
+            ],
+          ),
+        ],
+      ],
+      [
+        'svc-symptom',
+        [
+          makeTimeSeries(
+            'cpu',
+            [
+              0.13, 0.13, 0.13, 0.13, 0.13, 0.13, 0.13, 0.13, 2.0, 2.0, 2.0, 2.0, 0.107, 0.107,
+              0.107, 0.107, 0.107, 0.107, 0.107, 0.107,
+            ],
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const sourceScore = result.anomalyScores.get('svc-source') ?? 0;
+    const symptomScore = result.anomalyScores.get('svc-symptom') ?? 0;
+    // The transient spike returns to its baseline (head 0.13 ≈ tail 0.107), so
+    // it is skipped and the permanent 3.5× rise stands out.
+    expect(symptomScore).toBe(0);
+    expect(sourceScore).toBeGreaterThan(0);
+  });
+
   it('keeps a ramp-up fault (zero head, high tail)', () => {
-    // Regression guard: the burst check must NOT discard a genuine ramp-up
-    // fault whose baseline happens to start at ~0 (the metric rises and STAYS
-    // high). Only ONE boundary (the head) is near-zero, so it is not a burst.
+    // Regression guard: the transient-spike check must NOT discard a genuine
+    // ramp-up fault whose baseline happens to start at ~0 (the metric rises
+    // and STAYS high). The head↔tail spread is large relative to the range
+    // (permanent shift), so it is NOT a transient spike.
     const graph = makeCallGraph(['svc-ramp'], []);
     const metrics = makeMetrics([
       [

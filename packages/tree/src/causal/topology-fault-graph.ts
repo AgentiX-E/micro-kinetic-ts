@@ -433,22 +433,26 @@ function computeAnomalyFeatures(
     }
     if (nearZeroCount > n * 0.4) continue;
 
-    // Burst-metric guard: a metric that is ~0 at BOTH the head and the tail
-    // (relative to its peak) is a transient/event metric — the service is idle
-    // before AND after the fault window and only active during a mid-series
-    // pulse (e.g. TrainTicket RE3's latency-90, which is 0 everywhere except a
-    // brief mid-series burst). Its idle→active→idle transition yields an
-    // unbounded relative RISE ratio regardless of how long the pulse lasts, so
-    // the sample-count idle guard above (which fires only when >40% of samples
-    // are near-zero) misses a LONG pulse. Checking the head AND the tail
-    // catches it independently of the pulse length.
+    // Transient-spike guard: a metric that spikes and then RETURNS to (or
+    // near) its starting level is a transient excursion — a symptom of fault
+    // propagation, not the source. The fault source's shift is PERMANENT (its
+    // head ≠ tail). Measuring the head↔tail spread against the full range
+    // captures this without depending on the baseline being near-zero:
     //
-    // A ramp-up fault (zero head, high tail), a drop-to-zero crash (high head,
-    // zero tail), or a steady-state metric (both boundaries non-zero) has at
-    // most ONE near-zero boundary, so it is NOT a burst and is kept. The AND
-    // of the two boundary checks is what separates a transient pulse from a
-    // permanent level shift.
-    if (ts.values[0]! <= max * 0.001 && ts.values[n - 1]! <= max * 0.001) continue;
+    //   • transient spike (cpu 0.133 → pulse → 0.107, #197 RE3 TrainTicket):
+    //     head ≈ tail, range ≈ pulse height → spread/range ≈ 0 → skip.
+    //   • idle pulse (latency-90 0 → 14.4 → 0): head ≈ tail ≈ 0 → skip (this
+    //     subsumes the former burst guard, which only tested for near-zero).
+    //   • permanent rise (workload 0.4 → 1.4): spread ≈ range → keep.
+    //   • permanent drop / crash (mem 171MB → 0): spread ≈ range → keep.
+    //
+    // The 0.3 threshold means the metric must return to within 30% of its
+    // spike height from where it started to count as transient; a permanent
+    // shift of any magnitude (even 40%) has spread/range ≈ 1 and is kept.
+    const range = max - min;
+    const headTailSpread = Math.abs(ts.values[0]! - ts.values[n - 1]!);
+    const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
+    if (permanence < 0.3) continue;
 
     // Baseline from pre-change period.
     // Use median when change point detection fails — spike-inflated mean
