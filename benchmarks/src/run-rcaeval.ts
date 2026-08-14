@@ -630,6 +630,11 @@ function printFailureDiagnostics(
           `    top1 metric=${d.top1MetricLabel} head=[${(d.top1MetricHead ?? []).join(',')}] tail=[${(d.top1MetricTail ?? []).join(',')}]`,
         );
       }
+      if (d.gtOnset !== undefined && d.topOnset !== undefined) {
+        console.log(
+          `    onset GT=${d.gtOnset} top1=${d.topOnset} (${d.gtOnset < d.topOnset ? 'source earlier ✓' : d.gtOnset > d.topOnset ? 'source later ✗' : 'tie'})`,
+        );
+      }
       console.log(`    Reason: ${f.reason}`);
       console.log(
         `    Top-K: ${d.topK.map((t) => `${t.serviceId}(${t.confidence.toFixed(2)},d${t.depth})`).join(' | ')}`,

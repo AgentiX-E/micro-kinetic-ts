@@ -41,6 +41,7 @@ function createMockEngine(): IRCAEngine {
       anomalyScores: new Map(
         [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
       ),
+      anomalyOnsetTimes: new Map(),
       detectedCycles: [],
       totalCycleContribution: 0,
       pruneThreshold: 0.001,
@@ -697,6 +698,7 @@ describe('BenchmarkRunner', () => {
           anomalyScores: new Map(
             [...callGraph.nodes.keys()].map((id) => [id, id === 'service_2' ? 0.9 : 0.1]),
           ),
+          anomalyOnsetTimes: new Map(),
         }),
         analyze: async (_graph, topK = 5) => {
           const mk = (id: string, rank: number) => ({
@@ -750,6 +752,7 @@ describe('BenchmarkRunner', () => {
           anomalyScores: new Map(
             [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
           ),
+          anomalyOnsetTimes: new Map(),
         }),
         analyze: async (_graph, topK = 5) => {
           const mk = (id: string, rank: number) => ({

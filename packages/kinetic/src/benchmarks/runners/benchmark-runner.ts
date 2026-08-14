@@ -117,6 +117,14 @@ export interface FailedCase {
     readonly top1MetricLabel?: string;
     readonly top1MetricHead?: readonly number[];
     readonly top1MetricTail?: readonly number[];
+    /**
+     * Anomaly ONSET indices for the ground-truth service and the top-1
+     * anomaly service, to validate whether the source (GT) changed EARLIER
+     * than the symptom (top-1). If so, the onset-ordering signal can separate
+     * them; if not, the onset detection needs work before re-enabling it.
+     */
+    readonly gtOnset?: number;
+    readonly topOnset?: number;
   };
 }
 
@@ -335,6 +343,10 @@ export class BenchmarkRunner {
         const top1MetricLabel = top1Dominant?.label ?? '';
         const top1MetricHead = top1Dominant?.head ?? [];
         const top1MetricTail = top1Dominant?.tail ?? [];
+        // Onset indices for the GT vs the top-anomaly service, to validate
+        // whether the source changed earlier than the symptom.
+        const gtOnset = faultGraph.anomalyOnsetTimes.get(benchCase.groundTruth.serviceId);
+        const topOnset = faultGraph.anomalyOnsetTimes.get(topAnomaly[0]?.serviceId ?? '');
 
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
@@ -394,6 +406,8 @@ export class BenchmarkRunner {
               top1MetricLabel,
               top1MetricHead,
               top1MetricTail,
+              gtOnset,
+              topOnset,
             },
           });
         } else {
