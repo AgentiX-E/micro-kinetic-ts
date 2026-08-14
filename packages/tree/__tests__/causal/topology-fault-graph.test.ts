@@ -1141,14 +1141,15 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(collapseScore).toBeGreaterThan(0);
   });
 
-  it('skips a long burst metric (zero at head AND tail)', () => {
-    // Regression (#195 RE3 TrainTicket): a latency-90 metric that is 0 at
-    // BOTH the head and the tail with a mid-series pulse is a burst/event
-    // metric — the service is idle before and after the fault window. Its
-    // idle→active→idle transition produces an unbounded RISE ratio regardless
-    // of how long the pulse lasts, so the sample-count idle guard (which only
-    // fires when >40% of samples are near-zero) misses a LONG pulse. The
-    // head-and-tail check catches it independently of the pulse length.
+  it('keeps a zero-baseline burst (event fault)', () => {
+    // Regression (#199 RE3 OnlineBoutique): an error metric that is 0 at both
+    // the head and the tail with a mid-series burst is the FAULT ITSELF (an
+    // error burst), not a transient symptom. The transient-spike guard only
+    // discards an excursion over a NON-ZERO baseline (a resource briefly
+    // overloaded = symptom); a zero-baseline event burst must survive so the
+    // error fault is scored. The ">40% near-zero" idle guard handles mostly-
+    // idle metrics; a LONG event burst (whose pulse exceeds 60% of samples)
+    // must not be discarded by the transient guard.
     const graph = makeCallGraph(
       ['svc-fault', 'svc-burst'],
       [{ from: 'svc-fault', to: 'svc-burst' }],
@@ -1169,13 +1170,13 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       [
         'svc-burst',
         [
-          // Long mid-series pulse: only 8/24 = 33% samples are near-zero, so
-          // the sample-count guard misses it, but head AND tail are both 0.
+          // Long error burst: only 8/24 = 33% samples are near-zero, so the
+          // sample-count idle guard misses it; the zero baseline means the
+          // transient-spike guard must ALSO keep it (it is an event fault).
           makeTimeSeries(
-            'latency-90',
+            'error',
             [
-              0, 0, 0, 0, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4,
-              14.4, 14.4, 14.4, 14.4, 0, 0, 0, 0,
+              0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0,
             ],
           ),
         ],
@@ -1184,12 +1185,9 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
 
     const result = buildTopologyFaultGraph(graph, metrics);
 
-    const faultScore = result.anomalyScores.get('svc-fault') ?? 0;
     const burstScore = result.anomalyScores.get('svc-burst') ?? 0;
-    // The burst metric is skipped (idle at both boundaries), so the burst
-    // service contributes nothing and the genuine 3.5× rise stands out.
-    expect(burstScore).toBe(0);
-    expect(faultScore).toBeGreaterThan(0);
+    // The error burst is kept (zero-baseline event fault), so it scores > 0.
+    expect(burstScore).toBeGreaterThan(0);
   });
 
   it('skips a transient spike that returns to a NON-ZERO baseline', () => {

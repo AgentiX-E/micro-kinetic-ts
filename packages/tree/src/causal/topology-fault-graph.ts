@@ -434,25 +434,34 @@ function computeAnomalyFeatures(
     if (nearZeroCount > n * 0.4) continue;
 
     // Transient-spike guard: a metric that spikes and then RETURNS to (or
-    // near) its starting level is a transient excursion — a symptom of fault
-    // propagation, not the source. The fault source's shift is PERMANENT (its
-    // head ≠ tail). Measuring the head↔tail spread against the full range
-    // captures this without depending on the baseline being near-zero:
+    // near) its starting level over a NON-ZERO baseline is a transient
+    // excursion — a symptom of fault propagation, not the source. The fault
+    // source's shift is PERMANENT (its head ≠ tail). Measuring the head↔tail
+    // spread against the full range captures this:
     //
-    //   • transient spike (cpu 0.133 → pulse → 0.107, #197 RE3 TrainTicket):
-    //     head ≈ tail, range ≈ pulse height → spread/range ≈ 0 → skip.
-    //   • idle pulse (latency-90 0 → 14.4 → 0): head ≈ tail ≈ 0 → skip (this
-    //     subsumes the former burst guard, which only tested for near-zero).
+    //   • transient spike over a real operating level (cpu 0.133 → pulse →
+    //     0.107, #197 RE3 TrainTicket): head ≈ tail, range ≈ pulse height →
+    //     spread/range ≈ 0 → skip (a resource briefly overloaded = symptom).
     //   • permanent rise (workload 0.4 → 1.4): spread ≈ range → keep.
     //   • permanent drop / crash (mem 171MB → 0): spread ≈ range → keep.
+    //
+    // The NON-ZERO-baseline requirement is what separates a transient RESOURCE
+    // symptom from a transient EVENT fault: an error burst (0 → spike → 0) is
+    // the fault ITSELF, so its zero baseline must NOT trigger the guard (the
+    // #199 RE3 OnlineBoutique regression). The ">40% near-zero" idle guard
+    // above already discards the mostly-idle metrics; a LONG event burst must
+    // survive to be scored.
     //
     // The 0.3 threshold means the metric must return to within 30% of its
     // spike height from where it started to count as transient; a permanent
     // shift of any magnitude (even 40%) has spread/range ≈ 1 and is kept.
+    const headLevel = ts.values[0]!;
+    const tailLevel = ts.values[n - 1]!;
     const range = max - min;
-    const headTailSpread = Math.abs(ts.values[0]! - ts.values[n - 1]!);
+    const headTailSpread = Math.abs(headLevel - tailLevel);
+    const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
     const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-    if (permanence < 0.3) continue;
+    if (nonZeroBaseline && permanence < 0.3) continue;
 
     // Baseline from pre-change period.
     // Use median when change point detection fails — spike-inflated mean
