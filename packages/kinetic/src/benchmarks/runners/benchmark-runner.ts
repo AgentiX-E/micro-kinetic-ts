@@ -325,14 +325,16 @@ export class BenchmarkRunner {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3)
           .map(([serviceId, score]) => ({ serviceId, score }));
-        // Signature of the top-anomaly service's most-deviating metric, to
-        // reveal whether the "max" is a near-zero-baseline artifact.
-        const top1MetricTs = pickDominantMetric(
-          benchCase.metrics.get(topAnomaly[0]?.serviceId ?? ''),
-        );
-        const top1MetricLabel = top1MetricTs?.label ?? '';
-        const top1MetricHead = top1MetricTs ? Array.from(top1MetricTs.values).slice(0, 6) : [];
-        const top1MetricTail = top1MetricTs ? Array.from(top1MetricTs.values).slice(-4) : [];
+        // Signature of the top-anomaly service's ACTUAL driving metric — the
+        // one computeAnomalyFeatures selected as the highest feature-weighted
+        // deviation — to reveal whether the "max" is a near-zero-baseline
+        // artifact or a real symptom. (A separate ratio heuristic used to pick
+        // this, but it could point at an idle metric the guards already
+        // skipped, which was misleading.)
+        const top1Dominant = faultGraph.dominantMetrics?.get(topAnomaly[0]?.serviceId ?? '');
+        const top1MetricLabel = top1Dominant?.label ?? '';
+        const top1MetricHead = top1Dominant?.head ?? [];
+        const top1MetricTail = top1Dominant?.tail ?? [];
 
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier

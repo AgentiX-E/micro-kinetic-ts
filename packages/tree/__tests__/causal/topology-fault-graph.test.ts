@@ -1209,6 +1209,35 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(result.anomalyScores.get('svc-ramp')).toBeGreaterThan(0);
   });
 
+  it('reports the true anomaly driver, not the idle metric the guards skipped', () => {
+    // A service with two metrics: an idle latency-90 (0 everywhere except a
+    // brief pulse, skipped by the idle/burst guards) and a genuine workload
+    // ramp (0.4 → 1.4). The dominant metric must be workload — the one that
+    // actually drove the anomaly score — NOT latency-90. A separate ratio
+    // heuristic used to pick the highest max/min ratio, which would wrongly
+    // surface the idle metric.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          makeTimeSeries('latency-90', [0, 0, 0, 0, 14.4, 14.4, 14.4, 14.4, 0, 0, 0, 0]),
+          makeTimeSeries(
+            'workload',
+            [
+              0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
+              1.4, 1.4, 1.4,
+            ],
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    expect(result.dominantMetrics.get('svc')?.label).toBe('workload');
+  });
+
   it('bounds a drop while leaving a rise unbounded (direction-aware deviation)', () => {
     // Regression: measuring the drop against the post-drop MINIMUM made a
     // 28× drop symmetric with a 28× rise, but re-exploded drop-noise — a

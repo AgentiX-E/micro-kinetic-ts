@@ -174,7 +174,7 @@ export class TreePruner {
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
     const topoResult = buildTopologyFaultGraph(callGraph, metrics, this.topologyConfig);
-    const { anomalyScores, anomalyOnsetTimes, propagationWeights } = topoResult;
+    const { anomalyScores, anomalyOnsetTimes, dominantMetrics, propagationWeights } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.
     // The call graph's edges reflect the actual service dependency topology from
@@ -280,6 +280,7 @@ export class TreePruner {
       propagationWeights,
       anomalyScores,
       anomalyOnsetTimes,
+      dominantMetrics,
       detectedCycles: classifiedCycles,
       totalCycleContribution,
       pruneThreshold: this.options.pruneEpsilon,

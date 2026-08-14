@@ -1,16 +1,16 @@
-import { describe, it, expect } from 'vitest';
 import type {
-  ServiceId,
-  EdgeType,
-  ServiceNode,
   CallEdge,
-  ServiceCallGraph,
   DetectedCycle,
+  EdgeType,
   FaultPropagationGraph,
   PrunedEdgeRecord,
-  TreeNodeScore,
   PrunedTree,
+  ServiceCallGraph,
+  ServiceId,
+  ServiceNode,
+  TreeNodeScore,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Graph types - ServiceNode', () => {
   it('should accept a valid ServiceNode object', () => {
@@ -56,8 +56,12 @@ describe('Graph types - CallEdge', () => {
     const types: EdgeType[] = ['REST', 'gRPC', 'MQ', 'CALLBACK', 'ASYNC'];
     for (const t of types) {
       const edge: CallEdge = {
-        from: 'a', to: 'b', type: t,
-        callRate: 1, p99Latency: 1, errorRate: 0,
+        from: 'a',
+        to: 'b',
+        type: t,
+        callRate: 1,
+        p99Latency: 1,
+        errorRate: 0,
       };
       expect(edge.type).toBe(t);
     }
@@ -124,6 +128,8 @@ describe('Graph types - FaultPropagationGraph', () => {
       callGraph,
       propagationWeights: new Float64Array([0.5, 0.3]),
       anomalyScores,
+      anomalyOnsetTimes: new Map<ServiceId, number>(),
+      dominantMetrics: new Map<ServiceId, { label: string; head: number[]; tail: number[] }>(),
       detectedCycles: [],
       totalCycleContribution: 0,
       pruneThreshold: 0.001,
@@ -165,7 +171,13 @@ describe('Graph types - TreeNodeScore', () => {
 describe('Graph types - PrunedTree', () => {
   it('should accept a valid PrunedTree with full data', () => {
     const nodes = new Map<ServiceId, TreeNodeScore>();
-    nodes.set('a', { nodeId: 'a', anomalyScore: 0.5, childPropagationScore: 0.1, totalScore: 0.6, depth: 0 });
+    nodes.set('a', {
+      nodeId: 'a',
+      anomalyScore: 0.5,
+      childPropagationScore: 0.1,
+      totalScore: 0.6,
+      depth: 0,
+    });
     const rootCauseScores = new Map<ServiceId, number>();
     rootCauseScores.set('a', 0.6);
 

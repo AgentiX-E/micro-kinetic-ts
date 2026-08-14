@@ -179,6 +179,8 @@ export interface TopologyFaultGraphResult {
   readonly anomalyScores: Map<ServiceId, number>;
   /** Per-service anomaly onset indices (earliest anomalous data point). */
   readonly anomalyOnsetTimes: Map<ServiceId, number>;
+  /** Per-service dominant metric (the metric that drove the anomaly score). */
+  readonly dominantMetrics: Map<ServiceId, { label: string; head: number[]; tail: number[] }>;
   /** Per-edge propagation weights (0-1), aligned with callGraph.edges. */
   readonly propagationWeights: Float64Array;
   /** Diagnostic: number of edges computed via Pearson correlation. */
@@ -220,6 +222,7 @@ export function buildTopologyFaultGraph(
   // Step 1: Compute per-service anomaly scores and onset times
   const anomalyScores = new Map<ServiceId, number>();
   const anomalyOnsetTimes = new Map<ServiceId, number>();
+  const dominantMetrics = new Map<ServiceId, { label: string; head: number[]; tail: number[] }>();
   let diagSvcCount = 0;
   let diagNoMetrics = 0;
   let diagZeroScore = 0;
@@ -231,6 +234,7 @@ export function buildTopologyFaultGraph(
     const result = computeAnomalyFeatures(serviceMetrics, cfg);
     anomalyScores.set(serviceId, result.score);
     anomalyOnsetTimes.set(serviceId, result.onsetIndex);
+    dominantMetrics.set(serviceId, result.dominantMetric);
 
     if (!serviceMetrics || serviceMetrics.length === 0) {
       diagNoMetrics++;
@@ -329,6 +333,7 @@ export function buildTopologyFaultGraph(
   return {
     anomalyScores,
     anomalyOnsetTimes,
+    dominantMetrics,
     propagationWeights,
     pearsonEdgeCount,
     fallbackEdgeCount,
@@ -342,6 +347,8 @@ export function buildTopologyFaultGraph(
 interface AnomalyFeatures {
   score: number;
   onsetIndex: number;
+  /** The metric that drove the score (highest feature-weighted deviation). */
+  dominantMetric: { label: string; head: number[]; tail: number[] };
 }
 
 interface EdgeWeightResult {
@@ -371,10 +378,17 @@ function computeAnomalyFeatures(
   cfg: TopologyFaultGraphConfig,
 ): AnomalyFeatures {
   if (!serviceMetrics || serviceMetrics.length === 0) {
-    return { score: 0, onsetIndex: Number.MAX_SAFE_INTEGER };
+    return {
+      score: 0,
+      onsetIndex: Number.MAX_SAFE_INTEGER,
+      dominantMetric: { label: '', head: [], tail: [] },
+    };
   }
 
   let bestScore = 0;
+  let bestMetricLabel = '';
+  let bestMetricHead: number[] = [];
+  let bestMetricTail: number[] = [];
   let earliestOnset = Number.MAX_SAFE_INTEGER;
 
   for (const ts of serviceMetrics) {
@@ -554,7 +568,16 @@ function computeAnomalyFeatures(
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
     featureScore = Math.max(0, featureScore);
 
-    if (featureScore > bestScore) bestScore = featureScore;
+    if (featureScore > bestScore) {
+      bestScore = featureScore;
+      // Record the metric that actually drove the score, so downstream
+      // diagnostics can reveal the TRUE anomaly driver rather than a metric
+      // picked by a separate ratio heuristic (which can point at an idle
+      // metric that the guards already skipped).
+      bestMetricLabel = ts.label;
+      bestMetricHead = Array.from(ts.values).slice(0, 6);
+      bestMetricTail = Array.from(ts.values).slice(-4);
+    }
 
     // Onset: the first point deviating from the PRE-CHANGE baseline by more
     // than 30%. Comparing against the full mean (which includes the spike)
@@ -570,7 +593,11 @@ function computeAnomalyFeatures(
     }
   }
 
-  return { score: bestScore, onsetIndex: earliestOnset };
+  return {
+    score: bestScore,
+    onsetIndex: earliestOnset,
+    dominantMetric: { label: bestMetricLabel, head: bestMetricHead, tail: bestMetricTail },
+  };
 }
 
 // ── Edge Propagation Weight ───────────────────────────────

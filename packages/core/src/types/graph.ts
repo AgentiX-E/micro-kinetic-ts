@@ -88,6 +88,18 @@ export interface FaultPropagationGraph {
    * (change-point detection), never from dataset metadata such as inject_time.
    */
   readonly anomalyOnsetTimes: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-node dominant metric — the metric that actually drove the node's
+   * anomaly score (highest feature-weighted deviation). Used by diagnostics
+   * to surface the TRUE anomaly driver rather than a metric picked by a
+   * separate ratio heuristic (which may point at an idle metric the guards
+   * already skipped). Optional: it is a diagnostic convenience, not a ranking
+   * input, so engines may omit it.
+   */
+  readonly dominantMetrics?: ReadonlyMap<
+    ServiceId,
+    { readonly label: string; readonly head: number[]; readonly tail: number[] }
+  >;
   /** All detected cycles before pruning */
   readonly detectedCycles: readonly DetectedCycle[];
   /** Sum of all cycle contributions w(C) */
