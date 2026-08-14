@@ -458,14 +458,14 @@ function computeAnomalyFeatures(
     // neighbours. `1e-6` sits far above machine epsilon yet far below any
     // physically meaningful metric deviation.
     //
-    // The deviation is the LARGER of the two directional deviations. A rise
-    // (max above baseline) and a drop (min below baseline) are both anomalies,
-    // but a relative DROP is bounded at 100% (a metric can fall to zero, ratio
-    // → 1) whereas a relative RISE is unbounded. Measuring both and taking the
-    // max keeps a genuine percentage-increase fault outranking a symptom that
-    // merely fell to ~0, and vice-versa for a fault that is itself a drop.
+    // The deviation is the LARGER of the two directional deviations, measured
+    // SYMMETRICALLY: a rise is relative to the (pre-rise) baseline, a drop is
+    // relative to the (post-drop) minimum. A 28× drop is therefore scored the
+    // same as a 28× rise — a drop-type fault (memory release, crash) is a real
+    // fault, not a mere symptom. Direction bias is NOT used to separate source
+    // from symptom; that is the onset-ordering signal's job (see performTreeRCA).
     const riseRatio = Math.abs(max - baselineMean) / baselineMean;
-    const dropRatio = Math.abs(baselineMean - min) / baselineMean;
+    const dropRatio = Math.abs(baselineMean - min) / Math.max(min, baselineMean * 1e-6);
     const ratio = Math.max(riseRatio, dropRatio);
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
@@ -503,17 +503,6 @@ function computeAnomalyFeatures(
       if (ts.values[i]! > threshold) hasBurst = true;
     }
 
-    // Monotonic upward
-    let isMonotonicUp = slope > 0;
-    if (isMonotonicUp) {
-      for (let i = 1; i < n; i++) {
-        if (ts.values[i]! < ts.values[i - 1]!) {
-          isMonotonicUp = false;
-          break;
-        }
-      }
-    }
-
     // Feature-weighted score — bonuses scaled to match log₁₀ deviation.
     //
     // NOTE: do NOT clamp to [0, 1] here. The log₁₀ compression already
@@ -527,16 +516,24 @@ function computeAnomalyFeatures(
     // unbounded (clamped only at 0 below) preserves the true deviation
     // magnitude; buildTopologyFaultGraph re-scales to [0,1] afterwards.
     let featureScore = deviation;
-    if (isMonotonicUp && trendStrength > 0.1) featureScore += trendStrength * 0.15;
+    // Trend bonus is direction-agnostic: trendStrength is already the
+    // ABSOLUTE normalized slope, so a monotonic drop (memory release,
+    // crash) gets the same bonus as a monotonic rise (leak, saturation).
+    if (trendStrength > 0.1) featureScore += trendStrength * 0.15;
     if (hasBurst) featureScore += deviation * 0.1;
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
     featureScore = Math.max(0, featureScore);
 
     if (featureScore > bestScore) bestScore = featureScore;
 
-    // Onset: first point exceeding 30% deviation from mean
+    // Onset: the first point deviating from the PRE-CHANGE baseline by more
+    // than 30%. Comparing against the full mean (which includes the spike)
+    // made every first point look anomalous, so the onset was always 0 and
+    // the source/symptom ordering signal was useless. The baseline is the
+    // pre-anomaly level, so the first point that leaves it marks the fault
+    // injection time — earlier for the source, later for propagated symptoms.
     for (let i = 0; i < n; i++) {
-      if (Math.abs(ts.values[i]! - mean) / mean > 0.3) {
+      if (baselineMean > 0 && Math.abs(ts.values[i]! - baselineMean) / baselineMean > 0.3) {
         if (i < earliestOnset) earliestOnset = i;
         break;
       }

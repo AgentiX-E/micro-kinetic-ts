@@ -548,7 +548,9 @@ describe('TreePruner', () => {
 
   describe('self-anomaly ranking (no depth weighting)', () => {
     it('ranks the highest-deviation service first even when it is a leaf', () => {
-      const pruner = new TreePruner();
+      // sourceWeight: 0 isolates pure self-anomaly ranking (the source signal
+      // is covered separately in the source-likelihood describe block).
+      const pruner = new TreePruner({ sourceWeight: 0 });
       // Linear chain: A → B → C → D. The fault spike lives at the LEAF (D),
       // which has the largest raw deviation. Self-anomaly ranking must place
       // D first — the old depth-weighted totalScore made a healthy upstream
@@ -842,6 +844,58 @@ describe('TreePruner', () => {
 
       expect(results.length).toBeGreaterThan(0);
       expect(results[0]!.serviceId).toBeDefined();
+    });
+  });
+
+  describe('source-likelihood ranking (onset ordering)', () => {
+    it('ranks the earliest-onset source above later-onset symptoms', () => {
+      // A chain A → B → C where the fault is injected at A (step change at
+      // index 3), and B/C change later (index 5 / index 7) with slightly
+      // HIGHER anomaly. Cause precedes effect (Deng Yu's mean free time τ),
+      // so the source-likelihood prior must rank A first despite its lower
+      // self-anomaly — this is the dataset-agnostic source/symptom signal.
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+        ],
+      );
+      const metrics = makeMetrics({
+        A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+        B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+        C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      const results = pruner.analyze(graph, 3);
+
+      expect(results[0]!.serviceId).toBe('A');
+    });
+
+    it('disables the source signal when sourceWeight is 0', () => {
+      // sourceWeight = 0 reverts to pure self-anomaly ranking: the highest
+      // self-anomaly service (B, the symptom) ranks first, NOT the source A.
+      const pruner = new TreePruner({ sourceWeight: 0 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+        ],
+      );
+      const metrics = makeMetrics({
+        A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+        B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+        C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      const results = pruner.analyze(graph, 3);
+
+      // With sourceWeight 0, B (highest anomaly) ranks first.
+      expect(results[0]!.serviceId).toBe('B');
     });
   });
 });

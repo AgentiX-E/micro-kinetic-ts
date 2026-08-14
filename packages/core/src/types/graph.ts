@@ -80,6 +80,14 @@ export interface FaultPropagationGraph {
   readonly propagationWeights: Float64Array;
   /** Per-node anomaly scores (0-1, where 1 = fully anomalous) */
   readonly anomalyScores: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-node anomaly ONSET indices — the earliest data-point index (in the
+   * service's own time series) where its metric deviated from normal. Used
+   * as a dataset-agnostic causality signal: the fault source's anomaly onset
+   * precedes its downstream neighbours'. Derived purely from the time series
+   * (change-point detection), never from dataset metadata such as inject_time.
+   */
+  readonly anomalyOnsetTimes: ReadonlyMap<ServiceId, number>;
   /** All detected cycles before pruning */
   readonly detectedCycles: readonly DetectedCycle[];
   /** Sum of all cycle contributions w(C) */

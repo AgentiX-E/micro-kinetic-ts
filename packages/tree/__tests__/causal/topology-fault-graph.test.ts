@@ -124,14 +124,17 @@ describe('buildTopologyFaultGraph — Pearson Cross-Service Correlation', () => 
   });
 
   it('should compute intermediate weight for moderately correlated metrics', () => {
-    // Moderate positive correlation but with noise
+    // Moderate positive correlation but with noise. Temporal causality is
+    // disabled to isolate the raw correlation — with the corrected onset
+    // detection the temporal bonus would otherwise apply and saturate the
+    // weight to 1.0.
     const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
     const metrics = makeMetrics([
       ['svc-a', [makeTimeSeries('cpu', [10, 12, 18, 25, 40, 50, 45, 55, 60, 58])]],
       ['svc-b', [makeTimeSeries('cpu', [10, 13, 17, 28, 38, 48, 46, 53, 62, 59])]],
     ]);
 
-    const result = buildTopologyFaultGraph(graph, metrics);
+    const result = buildTopologyFaultGraph(graph, metrics, { useTemporalCausality: false });
 
     expect(result.pearsonEdgeCount).toBe(1);
     // High correlation but not perfect
@@ -1087,45 +1090,32 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(faultScore).toBeGreaterThan(0);
   });
 
-  it('does not invert a drop into a spurious rise (direction-aware baseline)', () => {
-    // Regression: the sliding-window baseline took the MINIMUM window for
-    // every metric. For a DROP (cpu 12.48 → 0.087) that made the low tail the
-    // baseline and the high pre-drop level a phantom 142× "rise", letting a
-    // symptom that merely fell to ~0 outrank the fault's genuine percentage
-    // increase (workload 0.4 → 1.4 = 250%). The baseline must be direction
-    // aware: low side for a rise, high side for a drop.
-    const graph = makeCallGraph(['svc-fault', 'svc-drop'], [{ from: 'svc-fault', to: 'svc-drop' }]);
+  it('scores a drop symmetrically with an equal-magnitude rise', () => {
+    // Regression: the previous direction-biased deviation bounded a relative
+    // DROP at 100% (ratio → 1) while letting a relative RISE stay unbounded.
+    // That under-scored drop-type faults (memory release, crash) — e.g.
+    // OnlineBoutique's emailservice mem 88MB → 3MB is a 28× drop and IS the
+    // fault. The deviation must be symmetric: a 28× drop scores like a 28×
+    // rise. Source-vs-symptom is decided by onset ordering, not direction.
+    const graph = makeCallGraph(['svc-rise', 'svc-drop'], [{ from: 'svc-rise', to: 'svc-drop' }]);
+    // svc-rise: 1 → 28 (28× rise). svc-drop: 28 → 1 (28× drop).
     const metrics = makeMetrics([
       [
-        'svc-fault',
-        [
-          makeTimeSeries(
-            'workload',
-            [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4],
-          ),
-        ],
+        'svc-rise',
+        [makeTimeSeries('cpu', [1, 1, 1, 1, 1, 1, 1, 1, 28, 28, 28, 28, 28, 28, 28, 28])],
       ],
       [
         'svc-drop',
-        [
-          makeTimeSeries(
-            'cpu',
-            [
-              12.48, 12.48, 12.48, 12.48, 12.48, 12.48, 12.48, 12.48, 0.087, 0.087, 0.087, 0.087,
-              0.087, 0.087, 0.087, 0.087,
-            ],
-          ),
-        ],
+        [makeTimeSeries('cpu', [28, 28, 28, 28, 28, 28, 28, 28, 1, 1, 1, 1, 1, 1, 1, 1])],
       ],
     ]);
 
     const result = buildTopologyFaultGraph(graph, metrics);
 
-    const faultScore = result.anomalyScores.get('svc-fault') ?? 0;
+    const riseScore = result.anomalyScores.get('svc-rise') ?? 0;
     const dropScore = result.anomalyScores.get('svc-drop') ?? 0;
-    // The 250% rise must outrank the ~99% drop (a drop is bounded at 100%
-    // relative, while a rise is unbounded).
-    expect(faultScore).toBeGreaterThan(dropScore);
+    // Symmetric deviation: the 28× rise and the 28× drop must score the same.
+    expect(riseScore).toBeCloseTo(dropScore, 2);
   });
 
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {

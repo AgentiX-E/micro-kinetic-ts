@@ -74,6 +74,17 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Default: true (collision aggregation enabled).
    */
   readonly enableCollisionAggregation: boolean;
+  /**
+   * Weight of the source-likelihood signal in root-cause ranking.
+   *
+   * The ranking combines a node's self-anomaly with a dataset-agnostic
+   * causality prior: a service whose anomaly ONSET precedes its causal
+   * neighbours' is more likely to be the fault source (cause precedes
+   * effect — Deng Yu's mean free time τ). A higher weight favours the
+   * source over a larger downstream symptom. `0` disables the signal
+   * (pure self-anomaly ranking). Default: 1.0.
+   */
+  readonly sourceWeight: number;
 }
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
@@ -83,6 +94,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   useTwoHopDecay: false,
   maxCycles: 10_000,
   enableCollisionAggregation: true,
+  sourceWeight: 1.0,
 };
 
 /**
@@ -155,7 +167,7 @@ export class TreePruner {
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
     const topoResult = buildTopologyFaultGraph(callGraph, metrics, this.topologyConfig);
-    const { anomalyScores, anomalyOnsetTimes: _anomalyOnsetTimes, propagationWeights } = topoResult;
+    const { anomalyScores, anomalyOnsetTimes, propagationWeights } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.
     // The call graph's edges reflect the actual service dependency topology from
@@ -260,6 +272,7 @@ export class TreePruner {
       callGraph: topologyGraph,
       propagationWeights,
       anomalyScores,
+      anomalyOnsetTimes,
       detectedCycles: classifiedCycles,
       totalCycleContribution,
       pruneThreshold: this.options.pruneEpsilon,
@@ -311,6 +324,7 @@ export class TreePruner {
     const results = performTreeRCA(
       prunedTree,
       graph.anomalyScores,
+      graph.anomalyOnsetTimes,
       graph.callGraph.nodes,
       graph.propagationWeights,
       k,
@@ -477,6 +491,7 @@ function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCyc
 function performTreeRCA(
   tree: PrunedTree,
   anomalyScores: ReadonlyMap<ServiceId, number>,
+  anomalyOnsetTimes: ReadonlyMap<ServiceId, number>,
   allNodes: ReadonlyMap<ServiceId, ServiceNode>,
   propagationWeights: Float64Array,
   topK: number,
@@ -564,6 +579,30 @@ function performTreeRCA(
     if (list) {
       list.push(edge.from);
     }
+  }
+
+  // Source-likelihood prior: the fraction of a node's causal neighbours
+  // (children + parents in the pruned tree) whose anomaly onset is LATER
+  // than its own. The fault source's disturbance precedes its neighbours'
+  // (cause precedes effect — Deng Yu's mean free time τ), so a source has a
+  // high score while a downstream symptom (whose parent changed first) or an
+  // isolated noise service (random neighbour onsets) has a low score. Onset
+  // indices are derived purely from each service's own time series, never
+  // from dataset metadata such as inject_time.
+  const sourceScores = new Map<ServiceId, number>();
+  for (const [nodeId] of allNodes) {
+    const myOnset = anomalyOnsetTimes.get(nodeId) ?? Number.MAX_SAFE_INTEGER;
+    let later = 0;
+    let neighbours = 0;
+    for (const { child } of children.get(nodeId) ?? []) {
+      neighbours++;
+      if ((anomalyOnsetTimes.get(child) ?? Number.MAX_SAFE_INTEGER) > myOnset) later++;
+    }
+    for (const parent of reverseAdj.get(nodeId) ?? []) {
+      neighbours++;
+      if ((anomalyOnsetTimes.get(parent) ?? Number.MAX_SAFE_INTEGER) > myOnset) later++;
+    }
+    sourceScores.set(nodeId, neighbours > 0 ? later / neighbours : 0);
   }
 
   // Topological order: use in-degree with reverse adjacency
@@ -664,19 +703,24 @@ function performTreeRCA(
     }
   }
 
-  // Rank by SELF anomaly ONLY. The root cause is the fault injection point —
-  // the service whose OWN deviation is highest. A healthy parent must not
-  // accumulate its faulted children's anomaly (childContrib) and outrank the
-  // actual source, which is what the previous depth-weighted totalScore
-  // ranking did. Nor may propagation DEPTH be used as a tiebreaker: RCAEval
-  // injects faults at arbitrary services (including leaves at depth 0), so
-  // "deeper is closer to the root cause" is provably wrong — it made a deep
-  // symptom (d5) outrank the faulted leaf (d0) when the two tied. When self
-  // anomalies are exactly equal there is no signal left to distinguish
-  // source from symptom, so the order is settled deterministically by
-  // service id rather than by an unfounded heuristic.
+  // Rank by self anomaly combined with a dataset-agnostic source-likelihood
+  // prior. The root cause is the fault injection point — the service whose
+  // OWN deviation is highest AND whose onset precedes its causal neighbours'.
+  // A healthy parent must not accumulate its faulted children's anomaly
+  // (childContrib) and outrank the actual source, and propagation DEPTH is
+  // not used (RCAEval injects faults at arbitrary depths). The combination is
+  // in LOG space so a strong source signal can overcome a moderately larger
+  // symptom anomaly without unbounded amplification:
+  //
+  //   finalScore(v) = log(selfAnomaly(v)) + sourceWeight × sourceScore(v)
+  //
+  // When self anomalies are exactly equal (or sourceWeight = 0), the order is
+  // settled deterministically by service id.
+  const sourceWeight = options.sourceWeight;
   scoredNodes.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
+    const aScore = Math.log(a.score) + sourceWeight * (sourceScores.get(a.serviceId) ?? 0);
+    const bScore = Math.log(b.score) + sourceWeight * (sourceScores.get(b.serviceId) ?? 0);
+    if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;
   });
