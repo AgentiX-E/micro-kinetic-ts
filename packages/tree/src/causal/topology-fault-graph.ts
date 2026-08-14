@@ -461,17 +461,19 @@ function computeAnomalyFeatures(
     // neighbours. `1e-6` sits far above machine epsilon yet far below any
     // physically meaningful metric deviation.
     //
-    // The deviation is the LARGER of the two directional deviations, measured
-    // SYMMETRICALLY: a rise is relative to the (pre-rise) baseline, a drop is
-    // relative to the (post-drop) minimum. A 28× drop is therefore scored the
-    // same as a 28× rise — a drop-type fault (memory release, crash) is a real
-    // fault, not a mere symptom. Direction bias is NOT used to separate source
-    // from symptom; that is the onset-ordering signal's job (see performTreeRCA).
-    // The event/idle guard above guarantees min ≥ max × 0.001 > 0, so the drop
-    // ratio is well-bounded and the former `/0` floor (`max(min, baseline·1e-6)`)
-    // is dead code.
+    // The deviation is the LARGER of the two directional deviations. A rise is
+    // relative to the (pre-rise) baseline and is unbounded; a drop is relative
+    // to the SAME baseline, so a relative DROP is bounded at 100% (a metric can
+    // at most fall to zero, ratio → 1) while a relative RISE is unbounded.
+    //
+    // Measuring the drop against the post-drop MINIMUM was tried to make "28×
+    // drop" symmetric with "28× rise", but it re-exploded drop-noise: a counter
+    // collapsing ~153× to a near-zero floor outranked the genuine fault (the
+    // #193 RE3 OnlineBoutique regression, paymentservice 2.19 > adservice 1.84).
+    // The event/idle guard above removes the degenerate drop-to-zero case
+    // (min < max × 0.001), so the remaining drops are bounded and safe.
     const riseRatio = Math.abs(max - baselineMean) / baselineMean;
-    const dropRatio = Math.abs(baselineMean - min) / min;
+    const dropRatio = Math.abs(baselineMean - min) / baselineMean;
     const ratio = Math.max(riseRatio, dropRatio);
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;

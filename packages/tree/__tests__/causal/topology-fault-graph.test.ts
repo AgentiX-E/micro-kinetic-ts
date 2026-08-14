@@ -1140,13 +1140,14 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(faultScore).toBeGreaterThan(0);
   });
 
-  it('scores a drop symmetrically with an equal-magnitude rise', () => {
-    // Regression: the previous direction-biased deviation bounded a relative
-    // DROP at 100% (ratio → 1) while letting a relative RISE stay unbounded.
-    // That under-scored drop-type faults (memory release, crash) — e.g.
-    // OnlineBoutique's emailservice mem 88MB → 3MB is a 28× drop and IS the
-    // fault. The deviation must be symmetric: a 28× drop scores like a 28×
-    // rise. Source-vs-symptom is decided by onset ordering, not direction.
+  it('bounds a drop while leaving a rise unbounded (direction-aware deviation)', () => {
+    // Regression: measuring the drop against the post-drop MINIMUM made a
+    // 28× drop symmetric with a 28× rise, but re-exploded drop-noise — a
+    // counter collapsing ~153× to a near-zero floor outranked the genuine
+    // fault (#193 RE3 OnlineBoutique). A drop is therefore measured against
+    // the SAME baseline as a rise, so it is bounded at 100% (ratio → 1) while
+    // a rise stays unbounded. A drop-type fault (memory release) is still
+    // detected — it just cannot outrank a larger relative rise.
     const graph = makeCallGraph(['svc-rise', 'svc-drop'], [{ from: 'svc-rise', to: 'svc-drop' }]);
     // svc-rise: 1 → 28 (28× rise). svc-drop: 28 → 1 (28× drop).
     const metrics = makeMetrics([
@@ -1164,8 +1165,11 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
 
     const riseScore = result.anomalyScores.get('svc-rise') ?? 0;
     const dropScore = result.anomalyScores.get('svc-drop') ?? 0;
-    // Symmetric deviation: the 28× rise and the 28× drop must score the same.
-    expect(riseScore).toBeCloseTo(dropScore, 2);
+    // A 28× rise is unbounded (~log₁₀ 28 ≈ 1.45) while the 28× drop is
+    // bounded at ~100% (~log₁₀ 2 ≈ 0.30), so the rise must outscore the drop.
+    expect(riseScore).toBeGreaterThan(dropScore);
+    // The drop is still detected (a drop-type fault is not ignored).
+    expect(dropScore).toBeGreaterThan(0);
   });
 
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {

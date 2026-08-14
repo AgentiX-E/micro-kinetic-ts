@@ -847,14 +847,15 @@ describe('TreePruner', () => {
     });
   });
 
-  describe('source-likelihood ranking (onset ordering)', () => {
-    it('ranks the earliest-onset source above later-onset symptoms', () => {
+  describe('source-likelihood ranking (onset ordering, opt-in)', () => {
+    it('ranks the earliest-onset source above later-onset symptoms when enabled', () => {
       // A chain A → B → C where the fault is injected at A (step change at
       // index 3), and B/C change later (index 5 / index 7) with slightly
       // HIGHER anomaly. Cause precedes effect (Deng Yu's mean free time τ),
-      // so the source-likelihood prior must rank A first despite its lower
-      // self-anomaly — this is the dataset-agnostic source/symptom signal.
-      const pruner = new TreePruner();
+      // so with sourceWeight > 0 the source-likelihood prior must rank A first
+      // despite its lower self-anomaly — this is the dataset-agnostic
+      // source/symptom signal, opt-in (default is 0 / disabled).
+      const pruner = new TreePruner({ sourceWeight: 1.0 });
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
         [
@@ -874,10 +875,12 @@ describe('TreePruner', () => {
       expect(results[0]!.serviceId).toBe('A');
     });
 
-    it('disables the source signal when sourceWeight is 0', () => {
-      // sourceWeight = 0 reverts to pure self-anomaly ranking: the highest
-      // self-anomaly service (B, the symptom) ranks first, NOT the source A.
-      const pruner = new TreePruner({ sourceWeight: 0 });
+    it('disables the source signal by default (pure self-anomaly ranking)', () => {
+      // The default sourceWeight is 0: the highest self-anomaly service (B,
+      // the symptom) ranks first, NOT the source A. This is the shipped
+      // behaviour — the onset signal regressed the benchmark at weight 1.0
+      // (#193), so it is opt-in until the onset detector is validated.
+      const pruner = new TreePruner();
       const callGraph = makeCallGraph(
         ['A', 'B', 'C'],
         [
@@ -894,7 +897,7 @@ describe('TreePruner', () => {
 
       const results = pruner.analyze(graph, 3);
 
-      // With sourceWeight 0, B (highest anomaly) ranks first.
+      // With the default sourceWeight 0, B (highest anomaly) ranks first.
       expect(results[0]!.serviceId).toBe('B');
     });
   });

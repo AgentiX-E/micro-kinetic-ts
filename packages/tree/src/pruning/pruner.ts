@@ -82,7 +82,14 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * neighbours' is more likely to be the fault source (cause precedes
    * effect — Deng Yu's mean free time τ). A higher weight favours the
    * source over a larger downstream symptom. `0` disables the signal
-   * (pure self-anomaly ranking). Default: 1.0.
+   * (pure self-anomaly ranking).
+   *
+   * Default: 0 — the onset-ordering signal is opt-in. It is shipped
+   * disabled because, at weight 1.0, it regressed the benchmark (#193):
+   * the naive onset detection was too noisy to reliably separate source
+   * from symptom, and the signal could not overcome even a small
+   * self-anomaly gap. Re-enable at a low weight only after the onset
+   * detector has been validated against real data.
    */
   readonly sourceWeight: number;
 }
@@ -94,7 +101,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   useTwoHopDecay: false,
   maxCycles: 10_000,
   enableCollisionAggregation: true,
-  sourceWeight: 1.0,
+  sourceWeight: 0.0,
 };
 
 /**
