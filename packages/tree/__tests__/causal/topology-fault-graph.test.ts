@@ -1090,6 +1090,56 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(faultScore).toBeGreaterThan(0);
   });
 
+  it('does not explode a drop-to-zero metric (active→idle collapse)', () => {
+    // Regression (#192): the symmetric deviation divided the drop ratio by the
+    // post-drop MINIMUM. A metric that collapses to exactly 0 (workload
+    // 11.467 → 0 — a service losing all traffic, a SYMPTOM not a fault) then
+    // produced an unbounded ratio (11.467 / 0 → floored to 1e6×) whose
+    // deviation ≈ 6.0 drowned every genuine fault (a 3.5× rise ≈ 0.54) after
+    // min-max normalization, collapsing all nine benchmark cells. A drop-to-zero
+    // is the SAME duty-cycled signature as an idle pulse (0 → 14.4): its
+    // relative deviation is ill-defined and must be skipped, not scored.
+    const graph = makeCallGraph(
+      ['svc-fault', 'svc-collapse'],
+      [{ from: 'svc-fault', to: 'svc-collapse' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-fault',
+        [
+          makeTimeSeries(
+            'workload',
+            [
+              0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
+              1.4, 1.4, 1.4,
+            ],
+          ),
+        ],
+      ],
+      [
+        'svc-collapse',
+        [
+          makeTimeSeries(
+            'workload',
+            [
+              11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467,
+              11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 0, 0, 0, 0,
+            ],
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const faultScore = result.anomalyScores.get('svc-fault') ?? 0;
+    const collapseScore = result.anomalyScores.get('svc-collapse') ?? 0;
+    // The drop-to-zero metric is skipped (event signature), so the collapse
+    // service contributes nothing and the genuine 3.5× rise stands out.
+    expect(collapseScore).toBe(0);
+    expect(faultScore).toBeGreaterThan(0);
+  });
+
   it('scores a drop symmetrically with an equal-magnitude rise', () => {
     // Regression: the previous direction-biased deviation bounded a relative
     // DROP at 100% (ratio → 1) while letting a relative RISE stay unbounded.

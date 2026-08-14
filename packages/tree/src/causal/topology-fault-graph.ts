@@ -395,21 +395,24 @@ function computeAnomalyFeatures(
     const mean = sum / n;
     if (mean <= 0) continue;
 
-    // Idle-metric guard: a metric that sits at ~0 for most of its history
-    // (e.g. a latency percentile that is 0 whenever there is no traffic) is an
-    // event/activity metric. Its idle→active transition yields an unbounded
-    // relative ratio (0 → 14.4 = 14400×) that is NOT a meaningful anomaly, yet
-    // dominates min-max normalization and drowns the genuine fault signal.
-    // Skip metrics where over 40% of samples are within 0.1% of the peak —
-    // far more than any real fault metric (cpu/mem/workload sit far above
-    // their own 0.1%-of-peak floor). The raw-sample check must precede the
-    // baseline computation below, whose `<= 0 → mean` reset would otherwise
-    // mask the idle signature.
-    let nearZeroCount = 0;
-    for (let i = 0; i < n; i++) {
-      if (ts.values[i]! <= max * 0.001) nearZeroCount++;
-    }
-    if (nearZeroCount > n * 0.4) continue;
+    // Event/idle guard: a metric whose minimum sits below 0.1% of its peak
+    // spans a >1000× relative range, which only happens when it touches ~0.
+    // Such a metric is duty-cycled — ~0 whenever the service is inactive and
+    // non-zero only when active. This is ONE signature with two faces:
+    //
+    //   • idle→active pulse (latency-90: 0 → 14.4), and
+    //   • active→idle collapse (workload: 11.467 → 0), the #192 regression.
+    //
+    // For both, any RELATIVE deviation is ill-defined: dividing by a near-zero
+    // baseline (rise side) or a near-zero minimum (drop side) produces an
+    // unbounded ratio (0 → 14.4 = 14400×; 11.467 → 0 = 1e6×) that is not a
+    // meaningful anomaly, yet dominates min-max normalization and drowns the
+    // genuine fault signal. Checking min against the PEAK (rather than counting
+    // near-zero samples) catches both faces with one rule, and the 0.1% floor
+    // sits far below any real fault's min/peak ratio (a 100× fault still has
+    // min/peak = 1%). The check must precede the baseline computation below,
+    // whose `<= 0 → mean` reset would otherwise mask the signature.
+    if (min < max * 0.001) continue;
 
     // Baseline from pre-change period.
     // Use median when change point detection fails — spike-inflated mean
@@ -464,8 +467,11 @@ function computeAnomalyFeatures(
     // same as a 28× rise — a drop-type fault (memory release, crash) is a real
     // fault, not a mere symptom. Direction bias is NOT used to separate source
     // from symptom; that is the onset-ordering signal's job (see performTreeRCA).
+    // The event/idle guard above guarantees min ≥ max × 0.001 > 0, so the drop
+    // ratio is well-bounded and the former `/0` floor (`max(min, baseline·1e-6)`)
+    // is dead code.
     const riseRatio = Math.abs(max - baselineMean) / baselineMean;
-    const dropRatio = Math.abs(baselineMean - min) / Math.max(min, baselineMean * 1e-6);
+    const dropRatio = Math.abs(baselineMean - min) / min;
     const ratio = Math.max(riseRatio, dropRatio);
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
