@@ -1141,6 +1141,74 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(collapseScore).toBeGreaterThan(0);
   });
 
+  it('skips a long burst metric (zero at head AND tail)', () => {
+    // Regression (#195 RE3 TrainTicket): a latency-90 metric that is 0 at
+    // BOTH the head and the tail with a mid-series pulse is a burst/event
+    // metric — the service is idle before and after the fault window. Its
+    // idle→active→idle transition produces an unbounded RISE ratio regardless
+    // of how long the pulse lasts, so the sample-count idle guard (which only
+    // fires when >40% of samples are near-zero) misses a LONG pulse. The
+    // head-and-tail check catches it independently of the pulse length.
+    const graph = makeCallGraph(
+      ['svc-fault', 'svc-burst'],
+      [{ from: 'svc-fault', to: 'svc-burst' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-fault',
+        [
+          makeTimeSeries(
+            'workload',
+            [
+              0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
+              1.4, 1.4, 1.4,
+            ],
+          ),
+        ],
+      ],
+      [
+        'svc-burst',
+        [
+          // Long mid-series pulse: only 8/24 = 33% samples are near-zero, so
+          // the sample-count guard misses it, but head AND tail are both 0.
+          makeTimeSeries(
+            'latency-90',
+            [
+              0, 0, 0, 0, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4, 14.4,
+              14.4, 14.4, 14.4, 14.4, 0, 0, 0, 0,
+            ],
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const faultScore = result.anomalyScores.get('svc-fault') ?? 0;
+    const burstScore = result.anomalyScores.get('svc-burst') ?? 0;
+    // The burst metric is skipped (idle at both boundaries), so the burst
+    // service contributes nothing and the genuine 3.5× rise stands out.
+    expect(burstScore).toBe(0);
+    expect(faultScore).toBeGreaterThan(0);
+  });
+
+  it('keeps a ramp-up fault (zero head, high tail)', () => {
+    // Regression guard: the burst check must NOT discard a genuine ramp-up
+    // fault whose baseline happens to start at ~0 (the metric rises and STAYS
+    // high). Only ONE boundary (the head) is near-zero, so it is not a burst.
+    const graph = makeCallGraph(['svc-ramp'], []);
+    const metrics = makeMetrics([
+      [
+        'svc-ramp',
+        [makeTimeSeries('cpu', [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4])],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    expect(result.anomalyScores.get('svc-ramp')).toBeGreaterThan(0);
+  });
+
   it('bounds a drop while leaving a rise unbounded (direction-aware deviation)', () => {
     // Regression: measuring the drop against the post-drop MINIMUM made a
     // 28× drop symmetric with a 28× rise, but re-exploded drop-noise — a

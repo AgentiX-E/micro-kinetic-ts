@@ -419,6 +419,23 @@ function computeAnomalyFeatures(
     }
     if (nearZeroCount > n * 0.4) continue;
 
+    // Burst-metric guard: a metric that is ~0 at BOTH the head and the tail
+    // (relative to its peak) is a transient/event metric — the service is idle
+    // before AND after the fault window and only active during a mid-series
+    // pulse (e.g. TrainTicket RE3's latency-90, which is 0 everywhere except a
+    // brief mid-series burst). Its idle→active→idle transition yields an
+    // unbounded relative RISE ratio regardless of how long the pulse lasts, so
+    // the sample-count idle guard above (which fires only when >40% of samples
+    // are near-zero) misses a LONG pulse. Checking the head AND the tail
+    // catches it independently of the pulse length.
+    //
+    // A ramp-up fault (zero head, high tail), a drop-to-zero crash (high head,
+    // zero tail), or a steady-state metric (both boundaries non-zero) has at
+    // most ONE near-zero boundary, so it is NOT a burst and is kept. The AND
+    // of the two boundary checks is what separates a transient pulse from a
+    // permanent level shift.
+    if (ts.values[0]! <= max * 0.001 && ts.values[n - 1]! <= max * 0.001) continue;
+
     // Baseline from pre-change period.
     // Use median when change point detection fails — spike-inflated mean
     // and stddev create a threshold too high for shorter spikes,
