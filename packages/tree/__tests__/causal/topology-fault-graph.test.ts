@@ -1087,6 +1087,47 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(faultScore).toBeGreaterThan(0);
   });
 
+  it('does not invert a drop into a spurious rise (direction-aware baseline)', () => {
+    // Regression: the sliding-window baseline took the MINIMUM window for
+    // every metric. For a DROP (cpu 12.48 → 0.087) that made the low tail the
+    // baseline and the high pre-drop level a phantom 142× "rise", letting a
+    // symptom that merely fell to ~0 outrank the fault's genuine percentage
+    // increase (workload 0.4 → 1.4 = 250%). The baseline must be direction
+    // aware: low side for a rise, high side for a drop.
+    const graph = makeCallGraph(['svc-fault', 'svc-drop'], [{ from: 'svc-fault', to: 'svc-drop' }]);
+    const metrics = makeMetrics([
+      [
+        'svc-fault',
+        [
+          makeTimeSeries(
+            'workload',
+            [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4],
+          ),
+        ],
+      ],
+      [
+        'svc-drop',
+        [
+          makeTimeSeries(
+            'cpu',
+            [
+              12.48, 12.48, 12.48, 12.48, 12.48, 12.48, 12.48, 12.48, 0.087, 0.087, 0.087, 0.087,
+              0.087, 0.087, 0.087, 0.087,
+            ],
+          ),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const faultScore = result.anomalyScores.get('svc-fault') ?? 0;
+    const dropScore = result.anomalyScores.get('svc-drop') ?? 0;
+    // The 250% rise must outrank the ~99% drop (a drop is bounded at 100%
+    // relative, while a rise is unbounded).
+    expect(faultScore).toBeGreaterThan(dropScore);
+  });
+
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
     // Regression: a previous hard noise-floor threshold discarded any
     // metric with < 4.7% relative deviation, zeroing the entire anomaly
@@ -1128,5 +1169,177 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         expect(result.anomalyScores.get(`svc-${i}`)).toBe(0);
       }
     }
+  });
+});
+
+describe('buildTopologyFaultGraph — Spearman Rank Correlation', () => {
+  it('computes edge weight via Spearman when correlationMethod=spearman', () => {
+    // Two services with a monotonic (non-linear) co-movement. Spearman is
+    // rank-based and should still recover a strong relationship.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 2, 4, 8, 16, 32, 64])]],
+      ['svc-b', [makeTimeSeries('latency', [10, 20, 40, 80, 160, 320, 640])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { correlationMethod: 'spearman' });
+
+    // Spearman is selected via config; the weight must reflect a real
+    // correlation (high), not the tier-3 anomaly-similarity fallback.
+    expect(result.propagationWeights.length).toBe(1);
+    expect(result.propagationWeights[0]).toBeGreaterThan(0.5);
+  });
+
+  it('handles tied values with average ranks', () => {
+    // Ties force the average-rank branch inside rankValues.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 1, 2, 2, 3, 3])]],
+      ['svc-b', [makeTimeSeries('mem', [5, 5, 7, 7, 9, 9])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { correlationMethod: 'spearman' });
+
+    expect(result.propagationWeights.length).toBe(1);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  it('returns null for degenerate identical series and falls back', () => {
+    // All-identical values make ranks undefined (degenerate), so Spearman
+    // returns null and the builder falls through to the anomaly-similarity tier.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [5, 5, 5, 5, 5, 5])]],
+      ['svc-b', [makeTimeSeries('mem', [9, 9, 9, 9, 9, 9])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { correlationMethod: 'spearman' });
+
+    expect(result.propagationWeights.length).toBe(1);
+    // Fallback path still yields a non-negative weight.
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+    expect(result.fallbackEdgeCount).toBe(1);
+  });
+});
+
+describe('buildTopologyFaultGraph — Velocity Tier & Baseline Strategy', () => {
+  it('reaches the velocity tier when correlation is unavailable (minDataPoints)', () => {
+    // Tier 1 (correlation) skips metrics shorter than minDataPoints, but the
+    // MAD onset detection in Tier 2 needs length >= 10 AND a non-zero MAD (a
+    // noisy baseline, not all-identical). A single spike on a flat baseline has
+    // MAD = 0, which suppresses onset detection. minDataPoints above the series
+    // length forces the flow into Tier 2; a noisy baseline + offset spikes let
+    // computePropagationVelocity detect onsets and return probability > 0.
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
+    const metrics = makeMetrics([
+      ['A', [makeTimeSeries('latency', [10, 12, 9, 11, 10, 13, 8, 50, 10, 9])]],
+      ['B', [makeTimeSeries('latency', [11, 10, 12, 9, 11, 10, 12, 9, 50, 10])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      minDataPoints: 11,
+      usePropagationVelocity: true,
+    });
+
+    expect(result.propagationWeights.length).toBe(1);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+    expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
+  });
+
+  it('honours an explicit baselineStrategy=sliding-window', () => {
+    // Cover the non-'auto' branch of the baseline strategy selection, which
+    // bypasses detectBaselineStrategy and uses the configured strategy.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 1, 1, 1, 1, 1, 1, 1, 20, 20, 20, 20])]],
+      ['svc-b', [makeTimeSeries('cpu', [2, 2, 2, 2, 2, 2, 2, 2, 30, 30, 30, 30])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      baselineStrategy: 'sliding-window',
+    });
+
+    expect(result.anomalyScores.size).toBe(2);
+    expect(result.anomalyScores.get('svc-a')).toBeDefined();
+  });
+
+  it('honours an explicit baselineStrategy=q25', () => {
+    // Cover the q25 branch of computeRobustBaseline via an explicit strategy.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 1, 1, 1, 1, 1, 1, 1, 20, 20, 20, 20])]],
+      ['svc-b', [makeTimeSeries('cpu', [2, 2, 2, 2, 2, 2, 2, 2, 30, 30, 30, 30])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      baselineStrategy: 'q25',
+    });
+
+    expect(result.anomalyScores.size).toBe(2);
+    expect(result.anomalyScores.get('svc-a')).toBeDefined();
+  });
+
+  it('uses a fixed decayAlpha when adaptiveDecay is disabled', () => {
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 2, 3, 4, 5, 6, 7, 8])]],
+      ['svc-b', [makeTimeSeries('cpu', [1, 2, 3, 4, 5, 6, 7, 8])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { adaptiveDecay: false });
+
+    expect(result.computedDecayAlpha).toBe(0.8);
+  });
+
+  it('skips the temporal bonus when temporal causality is disabled', () => {
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 2, 3, 4, 5, 6, 7, 8])]],
+      ['svc-b', [makeTimeSeries('cpu', [1, 2, 3, 4, 5, 6, 7, 8])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      useTemporalCausality: false,
+      usePropagationVelocity: false,
+    });
+
+    expect(result.temporalEdgeCount).toBe(0);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  it('honours propagationVelocity.useBOCPD', () => {
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
+    const metrics = makeMetrics([
+      ['A', [makeTimeSeries('latency', [10, 12, 9, 11, 10, 13, 8, 50, 10, 9])]],
+      ['B', [makeTimeSeries('latency', [11, 10, 12, 9, 11, 10, 12, 9, 50, 10])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      minDataPoints: 11,
+      usePropagationVelocity: true,
+      propagationVelocity: { useBOCPD: true, expectedDirectLatency: 1.0 },
+    });
+
+    expect(result.propagationWeights.length).toBe(1);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  it('skips metrics shorter than minDataPoints in Spearman correlation', () => {
+    // Both metrics are shorter than minDataPoints, so computeMaxSpearmanCorrelation
+    // skips every pair and returns null (the maxAbsCorr < 0 path).
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 2, 3])]],
+      ['svc-b', [makeTimeSeries('mem', [4, 5, 6])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      correlationMethod: 'spearman',
+      minDataPoints: 5,
+      usePropagationVelocity: false,
+    });
+
+    expect(result.propagationWeights.length).toBe(1);
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
   });
 });

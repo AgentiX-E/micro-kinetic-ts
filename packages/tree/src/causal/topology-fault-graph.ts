@@ -385,10 +385,12 @@ function computeAnomalyFeatures(
     // Basic statistics
     let sum = 0;
     let max = -Infinity;
+    let min = Infinity;
     for (let i = 0; i < n; i++) {
       const v = ts.values[i]!;
       sum += v;
       if (v > max) max = v;
+      if (v < min) min = v;
     }
     const mean = sum / n;
     if (mean <= 0) continue;
@@ -455,7 +457,16 @@ function computeAnomalyFeatures(
     // the relative separation between the fault service and its healthy
     // neighbours. `1e-6` sits far above machine epsilon yet far below any
     // physically meaningful metric deviation.
-    const ratio = Math.abs(max - baselineMean) / baselineMean;
+    //
+    // The deviation is the LARGER of the two directional deviations. A rise
+    // (max above baseline) and a drop (min below baseline) are both anomalies,
+    // but a relative DROP is bounded at 100% (a metric can fall to zero, ratio
+    // → 1) whereas a relative RISE is unbounded. Measuring both and taking the
+    // max keeps a genuine percentage-increase fault outranking a symptom that
+    // merely fell to ~0, and vice-versa for a fault that is itself a drop.
+    const riseRatio = Math.abs(max - baselineMean) / baselineMean;
+    const dropRatio = Math.abs(baselineMean - min) / baselineMean;
+    const ratio = Math.max(riseRatio, dropRatio);
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
 
@@ -472,7 +483,9 @@ function computeAnomalyFeatures(
       sxy += i * v;
     }
     const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-    const trendStrength = mean > 0 ? Math.abs((slope * n) / mean) : 0;
+    // `mean > 0` is guaranteed here — the loop above `continue`s on mean <= 0 —
+    // so the former `: 0` fallback was unreachable dead code.
+    const trendStrength = Math.abs((slope * n) / mean);
 
     // CV
     let variance = 0;
@@ -481,7 +494,7 @@ function computeAnomalyFeatures(
       variance += diff * diff;
     }
     variance /= n;
-    const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
+    const cv = Math.sqrt(variance) / mean;
 
     // Burst detection
     let hasBurst = false;
@@ -906,6 +919,17 @@ function detectBaselineStrategy(values: Float64Array, n: number): 'q25' | 'slidi
  * Compute a robust baseline when change-point detection fails,
  * using the selected strategy.
  *
+ * The baseline must be the PRE-anomaly level. A rise starts low and climbs
+ * high, so its pre-anomaly level is the LOW side; a drop starts high and
+ * falls low, so its pre-anomaly level is the HIGH side. Picking the minimum
+ * window unconditionally (the previous behaviour) inverted a drop — the low
+ * tail became the "baseline" and the high pre-drop level became a spurious
+ * 142× "rise", letting a symptom that merely fell to ~0 outrank the fault's
+ * genuine percentage increase. We therefore detect the trend direction from
+ * the two halves of the series and select the extreme window on the
+ * pre-anomaly side: minimum-mean windows for a rise, maximum-mean windows
+ * for a drop.
+ *
  * @internal
  */
 function computeRobustBaseline(
@@ -914,8 +938,24 @@ function computeRobustBaseline(
   strategy: 'q25' | 'sliding-window',
   fallbackMean: number,
 ): number {
+  // Trend direction from the two halves: a drop's first half is higher.
+  const half = Math.floor(n / 2);
+  let firstSum = 0;
+  for (let i = 0; i < half; i++) firstSum += values[i]!;
+  let secondSum = 0;
+  for (let i = half; i < n; i++) secondSum += values[i]!;
+  const isDrop = firstSum / half > secondSum / (n - half);
+
   if (strategy === 'q25') {
     const sorted = Array.from(values.slice(0, n)).sort((a, b) => a - b);
+    if (isDrop) {
+      // Pre-drop baseline is the HIGH quarter of the distribution.
+      const lo = Math.floor(n * 0.75);
+      let sum = 0;
+      for (let k = lo; k < n; k++) sum += sorted[k]!;
+      const highMean = sum / (n - lo);
+      return highMean > 0.001 ? highMean : fallbackMean;
+    }
     const q25Idx = Math.max(1, Math.floor(n * 0.25));
     let sum = 0;
     for (let k = 0; k < q25Idx; k++) sum += sorted[k]!;
@@ -923,14 +963,16 @@ function computeRobustBaseline(
     return q25Mean > 0.001 ? q25Mean : fallbackMean;
   }
 
-  // sliding-window minimum mean
+  // sliding-window: minimum-mean window for a rise, maximum-mean for a drop.
   const winSize = Math.max(2, Math.ceil(n * 0.25));
-  let minWinMean = Infinity;
+  let extremeWinMean = isDrop ? -Infinity : Infinity;
   for (let w = 0; w <= n - winSize; w++) {
     let winSum = 0;
     for (let k = 0; k < winSize; k++) winSum += values[w + k]!;
     const winMean = winSum / winSize;
-    if (winMean < minWinMean) minWinMean = winMean;
+    if (isDrop ? winMean > extremeWinMean : winMean < extremeWinMean) {
+      extremeWinMean = winMean;
+    }
   }
-  return minWinMean > 0.001 ? minWinMean : fallbackMean;
+  return extremeWinMean > 0.001 ? extremeWinMean : fallbackMean;
 }

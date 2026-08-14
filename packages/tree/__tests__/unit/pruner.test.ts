@@ -817,5 +817,31 @@ describe('TreePruner', () => {
       // Should compute two-hop cycle contributions
       expect(graph.detectedCycles.length).toBeGreaterThanOrEqual(0);
     });
+
+    it('analyzes a graph without collision energy (undefined fallbacks)', () => {
+      // Exercise the defensive ?? fallbacks in performTreeRCA when collision
+      // energy is absent — the graph is built then stripped of its collision
+      // map before analysis, so every `collisionEnergy?.get` and `?? 'chain'`
+      // / `?? 0` path is taken.
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+        ],
+      );
+      const metrics = makeMetrics({
+        A: [1, 2, 3, 4, 100],
+        B: [1, 2, 3, 4, 5],
+        C: [1, 2, 3, 4, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const stripped = { ...graph, collisionEnergy: undefined };
+      const results = pruner.analyze(stripped, 3);
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]!.serviceId).toBeDefined();
+    });
   });
 });
