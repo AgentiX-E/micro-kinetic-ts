@@ -620,6 +620,11 @@ function printFailureDiagnostics(
           `    GT metric=${d.gtMetric ?? '?'} head=[${(d.gtMetricHead ?? []).join(',')}] tail=[${(d.gtMetricTail ?? []).join(',')}]`,
         );
       }
+      if (d.gtDominantLabel) {
+        console.log(
+          `    GT dominant=${d.gtDominantLabel} head=[${(d.gtDominantHead ?? []).join(',')}] tail=[${(d.gtDominantTail ?? []).join(',')}]`,
+        );
+      }
       if (d.topAnomaly && d.topAnomaly.length > 0) {
         console.log(
           `    topAnomaly: ${d.topAnomaly.map((t) => `${t.serviceId}(${t.score.toFixed(3)})`).join(' | ')}`,

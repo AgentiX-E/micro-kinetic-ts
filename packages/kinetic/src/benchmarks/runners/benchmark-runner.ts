@@ -111,6 +111,10 @@ export interface FailedCase {
     /** Head/tail of the ground-truth metric time series (fault signature). */
     readonly gtMetricHead?: readonly number[];
     readonly gtMetricTail?: readonly number[];
+    /** The GT's ACTUAL driving metric (highest feature-weighted deviation). */
+    readonly gtDominantLabel?: string;
+    readonly gtDominantHead?: readonly number[];
+    readonly gtDominantTail?: readonly number[];
     /** Top-3 services by raw anomaly score, for noise/symptom inspection. */
     readonly topAnomaly?: readonly { serviceId: string; score: number }[];
     /** Signature of the top-1 anomaly service's dominant metric. */
@@ -327,6 +331,15 @@ export class BenchmarkRunner {
           pickDominantMetric(gtMetricSeries);
         const gtMetricHead = gtTs ? Array.from(gtTs.values).slice(0, 6) : [];
         const gtMetricTail = gtTs ? Array.from(gtTs.values).slice(-4) : [];
+        // The GT's ACTUAL driving metric (the one computeAnomalyFeatures scored)
+        // — reveals whether the fault signal was discarded by a guard (e.g. the
+        // transient-spike guard) rather than being genuinely small. This is
+        // distinct from the root_cause_metric label above, which for RE3's
+        // generic f1..f5 labels is often absent or misleading.
+        const gtDominant = faultGraph.dominantMetrics?.get(benchCase.groundTruth.serviceId);
+        const gtDominantLabel = gtDominant?.label ?? '';
+        const gtDominantHead = gtDominant?.head ?? [];
+        const gtDominantTail = gtDominant?.tail ?? [];
         // Top-3 services by raw anomaly score (post-normalization) to expose
         // whether the max is the injected fault, a consistent symptom, or noise.
         const topAnomaly = [...faultGraph.anomalyScores.entries()]
@@ -402,6 +415,9 @@ export class BenchmarkRunner {
               gtMetric: gtMetricName ?? gtTs?.label ?? '',
               gtMetricHead,
               gtMetricTail,
+              gtDominantLabel,
+              gtDominantHead,
+              gtDominantTail,
               topAnomaly,
               top1MetricLabel,
               top1MetricHead,
