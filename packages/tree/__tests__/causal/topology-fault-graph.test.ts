@@ -1253,6 +1253,11 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
               0.107, 0.107, 0.107, 0.107, 0.107, 0.107,
             ],
           ),
+          // The symptom is NARROWLY disrupted: its other metrics are flat, so
+          // the single transient cpu spike is an isolated symptom, not a broad
+          // transient fault.
+          makeTimeSeries('mem', [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]),
+          makeTimeSeries('workload', [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
         ],
       ],
     ]);
@@ -1261,10 +1266,45 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
 
     const sourceScore = result.anomalyScores.get('svc-source') ?? 0;
     const symptomScore = result.anomalyScores.get('svc-symptom') ?? 0;
-    // The transient spike returns to its baseline (head 0.13 ≈ tail 0.107), so
-    // it is skipped and the permanent 3.5× rise stands out.
+    // The transient spike returns to its baseline (head 0.13 ≈ tail 0.107) over
+    // a NON-ZERO baseline, and it is the ONLY transient among the symptom's
+    // otherwise-flat metrics (narrowly disrupted) — so it is skipped as a
+    // symptom and the permanent 3.5× rise stands out.
     expect(symptomScore).toBe(0);
     expect(sourceScore).toBeGreaterThan(0);
+  });
+
+  it('keeps transient metrics for a broadly-disrupted service (transient fault)', () => {
+    // Regression (#205 RE3 OnlineBoutique): the GT's fault signature is a
+    // TRANSIENT burst — cpu/mem/socket/workload/latency all spike and return to
+    // baseline. The transient-spike guard discarded 5 of the GT's 6 metrics,
+    // leaving only latency-50 (bounded 0.30) and letting the top-1 outrank it.
+    // A service where MOST metrics are transient is BROADLY disrupted by a
+    // transient fault, not a single transient symptom — so its transient
+    // metrics must be KEPT, not skipped.
+    const graph = makeCallGraph(['svc-fault'], []);
+    const spike = (v: number) => [v, v, v, v, 50, 50, 50, 50, v, v, v, v];
+    const metrics = makeMetrics([
+      [
+        'svc-fault',
+        [
+          makeTimeSeries('cpu', spike(10)),
+          makeTimeSeries('mem', spike(10)),
+          makeTimeSeries('socket', spike(10)),
+          makeTimeSeries('workload', spike(10)),
+          makeTimeSeries('latency-90', spike(10)),
+          // One permanent drop (6 -> 3) — the only non-transient metric.
+          makeTimeSeries('latency-50', [6, 6, 6, 6, 6, 6, 3, 3, 3, 3, 3, 3]),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    // Broadly disrupted: the transient metrics are the fault, so none of them
+    // may be discarded by the transient guard.
+    expect(result.dominantMetrics.get('svc-fault')?.transientSkipped).toEqual([]);
+    expect(result.anomalyScores.get('svc-fault')).toBeGreaterThan(0);
   });
 
   it('keeps a ramp-up fault (zero head, high tail)', () => {

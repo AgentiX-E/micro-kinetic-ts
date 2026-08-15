@@ -405,6 +405,51 @@ function computeAnomalyFeatures(
   let bestMetricOnset = Number.MAX_SAFE_INTEGER;
   const transientSkippedLabels: string[] = [];
 
+  // Pre-pass: decide whether a transient metric is a fault or a symptom.
+  //
+  // A fault source is BROADLY disrupted — the injection perturbs MOST of its
+  // metrics at once (a transient burst across cpu/mem/socket/workload/latency,
+  // e.g. RE3 OnlineBoutique's adservice). A symptom is NARROWLY disturbed —
+  // a single metric pulses transiently over otherwise-normal ones (e.g. RE1
+  // TrainTicket's ts-preserve cpu spike). Skipping a transient metric is only
+  // sound when the service is narrowly transient; skipping the majority of a
+  // service's metrics as "transient symptoms" discards the fault itself (the
+  // #205 RE3 OnlineBoutique regression: 5 of 6 GT metrics were dropped).
+  //
+  // The pre-pass reproduces the idle/transient guards below WITHOUT the
+  // `continue` side effects, just to count transient vs kept metrics. The
+  // counts are then used to gate the transient guard in the scoring pass.
+  let transientCount = 0;
+  let keepCount = 0;
+  for (const ts of serviceMetrics) {
+    if (ts.values.length < 2) continue;
+    const n = ts.values.length;
+    let sum = 0;
+    let max = -Infinity;
+    let min = Infinity;
+    for (let i = 0; i < n; i++) {
+      const v = ts.values[i]!;
+      sum += v;
+      if (v > max) max = v;
+      if (v < min) min = v;
+    }
+    if (sum / n <= 0) continue;
+    let nearZeroCount = 0;
+    for (let i = 0; i < n; i++) {
+      if (ts.values[i]! <= max * 0.001) nearZeroCount++;
+    }
+    if (nearZeroCount > n * 0.4) continue; // idle — excluded from the ratio
+    const headLevel = ts.values[0]!;
+    const tailLevel = ts.values[n - 1]!;
+    const range = max - min;
+    const headTailSpread = Math.abs(headLevel - tailLevel);
+    const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
+    const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
+    if (nonZeroBaseline && permanence < 0.3) transientCount++;
+    else keepCount++;
+  }
+  const skipTransient = transientCount <= keepCount;
+
   for (const ts of serviceMetrics) {
     if (ts.values.length < 2) continue;
 
@@ -475,7 +520,7 @@ function computeAnomalyFeatures(
     const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
     const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-    if (nonZeroBaseline && permanence < 0.3) {
+    if (skipTransient && nonZeroBaseline && permanence < 0.3) {
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.
