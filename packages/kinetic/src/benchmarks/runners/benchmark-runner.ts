@@ -305,7 +305,9 @@ export class BenchmarkRunner {
           effectiveCallGraph = traceResult.refinedGraph;
         }
 
-        const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics);
+        const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics, {
+          injectTimeMs: benchCase.injectTime,
+        });
         const results = await engine.analyze(faultGraph, topK);
 
         // Capture the full ranked service-ID list for correct Avg@K.

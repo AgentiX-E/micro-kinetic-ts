@@ -24,13 +24,36 @@ import type { FaultPropagationGraph, ServiceCallGraph } from '../types/graph.js'
  * - TODO: GNN-based RCA engine
  * - TODO: LLM-assisted RCA engine
  */
+/**
+ * Optional inputs to {@link IRCAEngine.buildFaultGraph}.
+ *
+ * These carry case-level temporal context that is independent of the call
+ * graph and metric series — most importantly the fault injection time, which
+ * anchors the causal source/symptom onset ordering.
+ */
+export interface BuildFaultGraphOptions {
+  /**
+   * Fault injection time in Unix milliseconds. `0` or `undefined` means
+   * "unknown" and disables the temporal onset signal.
+   */
+  readonly injectTimeMs?: number;
+}
+
 export interface IRCAEngine {
   /**
    * Build a fault propagation graph from the service call graph
    * and time-series metrics. This annotates edges with propagation
    * probabilities derived from metric anomaly correlations.
+   *
+   * @param callGraph - Service call graph with topology
+   * @param metrics - Time series metrics keyed by service ID
+   * @param options - Optional case-level context (e.g. fault injection time)
    */
-  buildFaultGraph(callGraph: ServiceCallGraph, metrics: MetricMap): FaultPropagationGraph;
+  buildFaultGraph(
+    callGraph: ServiceCallGraph,
+    metrics: MetricMap,
+    options?: BuildFaultGraphOptions,
+  ): FaultPropagationGraph;
 
   /**
    * Perform root cause analysis on the fault propagation graph.

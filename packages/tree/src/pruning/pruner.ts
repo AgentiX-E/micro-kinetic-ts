@@ -35,6 +35,7 @@ import {
   invariant,
   invariantPositiveInt,
   invariantRange,
+  type BuildFaultGraphOptions,
   type DetectedCycle,
   type FaultPropagationGraph,
   type MetricMap,
@@ -92,6 +93,28 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * detector has been validated against real data.
    */
   readonly sourceWeight: number;
+  /**
+   * Weight of the GLOBAL temporal-earliness signal in root-cause ranking.
+   *
+   * Unlike `sourceWeight` (a LOCAL neighbour-fraction prior based on the
+   * index-based, self-derived-baseline onset), this signal is anchored to
+   * the fault INJECTION time: each service's onset delay after injection is
+   * computed from a clean pre-injection baseline, then min-max normalised
+   * into an earliness score (earliest = 1, latest = 0, undetermined = 0.5).
+   * The combination is in log space:
+   *
+   *   finalScore(v) = log(selfAnomaly(v)) + temporalWeight × 2 × (earliness − 0.5)
+   *
+   * so a source (earliness → 1) gains up to `+temporalWeight` while a symptom
+   * (earliness → 0) loses up to `−temporalWeight`, and an undetermined onset
+   * contributes nothing. When the injection time is unknown, every service is
+   * neutral and the signal has no effect.
+   *
+   * Default: 0.5 — a moderate strength that can flip a source whose
+   * self-anomaly is ~3× smaller than a symptom's (log-gap ≈ 1.1), without
+   * letting a single noisy onset dominate the ranking.
+   */
+  readonly temporalWeight: number;
 }
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
@@ -102,6 +125,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   maxCycles: 10_000,
   enableCollisionAggregation: true,
   sourceWeight: 0.0,
+  temporalWeight: 0.5,
 };
 
 /**
@@ -165,7 +189,11 @@ export class TreePruner {
    * @param metrics - Time series metrics keyed by service ID
    * @returns Fault propagation graph ready for analysis
    */
-  buildFaultGraph(callGraph: ServiceCallGraph, metrics: MetricMap): FaultPropagationGraph {
+  buildFaultGraph(
+    callGraph: ServiceCallGraph,
+    metrics: MetricMap,
+    options?: BuildFaultGraphOptions,
+  ): FaultPropagationGraph {
     invariant(callGraph.nodes.size > 0, 'callGraph must have at least one node');
     invariant(callGraph.edges.length > 0, 'callGraph must have at least one edge');
     invariant(metrics.size > 0, 'metrics must be non-empty');
@@ -173,8 +201,19 @@ export class TreePruner {
     // Build topology-preserving fault graph with Pearson cross-service correlation.
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
-    const topoResult = buildTopologyFaultGraph(callGraph, metrics, this.topologyConfig);
-    const { anomalyScores, anomalyOnsetTimes, dominantMetrics, propagationWeights } = topoResult;
+    // The fault injection time (when known) is forwarded so the builder can anchor
+    // each service's anomaly onset to a clean pre-injection baseline.
+    const topoResult = buildTopologyFaultGraph(callGraph, metrics, {
+      ...this.topologyConfig,
+      injectTimeMs: options?.injectTimeMs ?? this.topologyConfig?.injectTimeMs ?? 0,
+    });
+    const {
+      anomalyScores,
+      anomalyOnsetTimes,
+      postInjectOnsetDelays,
+      dominantMetrics,
+      propagationWeights,
+    } = topoResult;
 
     // Use the original call graph (topology-preserving), not a synthetic star-tree.
     // The call graph's edges reflect the actual service dependency topology from
@@ -280,7 +319,9 @@ export class TreePruner {
       propagationWeights,
       anomalyScores,
       anomalyOnsetTimes,
+      postInjectOnsetDelays,
       dominantMetrics,
+      injectTimeMs: options?.injectTimeMs ?? this.topologyConfig?.injectTimeMs ?? 0,
       detectedCycles: classifiedCycles,
       totalCycleContribution,
       pruneThreshold: this.options.pruneEpsilon,
@@ -333,6 +374,8 @@ export class TreePruner {
       prunedTree,
       graph.anomalyScores,
       graph.anomalyOnsetTimes,
+      graph.postInjectOnsetDelays,
+      graph.injectTimeMs ?? 0,
       graph.callGraph.nodes,
       graph.propagationWeights,
       k,
@@ -500,6 +543,8 @@ function performTreeRCA(
   tree: PrunedTree,
   anomalyScores: ReadonlyMap<ServiceId, number>,
   anomalyOnsetTimes: ReadonlyMap<ServiceId, number>,
+  postInjectOnsetDelays: ReadonlyMap<ServiceId, number> | undefined,
+  injectTimeMs: number,
   allNodes: ReadonlyMap<ServiceId, ServiceNode>,
   propagationWeights: Float64Array,
   topK: number,
@@ -613,6 +658,14 @@ function performTreeRCA(
     sourceScores.set(nodeId, neighbours > 0 ? later / neighbours : 0);
   }
 
+  // Global temporal earliness — the injection-time-anchored causal prior.
+  // Each service's onset delay (ms after fault injection) is min-max
+  // normalised so the EARLIEST service scores 1 and the LATEST scores 0;
+  // an undetermined delay is neutral (0.5) and contributes nothing. This is
+  // strictly more reliable than the local `sourceScores` prior above, whose
+  // onset index came from a fault-contaminated baseline.
+  const temporalEarliness = computeTemporalEarliness(postInjectOnsetDelays, injectTimeMs);
+
   // Topological order: use in-degree with reverse adjacency
   // Process from leaves upward
   const processQueue = [...leaves];
@@ -711,23 +764,39 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with a dataset-agnostic source-likelihood
-  // prior. The root cause is the fault injection point — the service whose
-  // OWN deviation is highest AND whose onset precedes its causal neighbours'.
-  // A healthy parent must not accumulate its faulted children's anomaly
-  // (childContrib) and outrank the actual source, and propagation DEPTH is
-  // not used (RCAEval injects faults at arbitrary depths). The combination is
-  // in LOG space so a strong source signal can overcome a moderately larger
-  // symptom anomaly without unbounded amplification:
+  // Rank by self anomaly combined with two causal priors:
   //
-  //   finalScore(v) = log(selfAnomaly(v)) + sourceWeight × sourceScore(v)
+  // 1. A LOCAL source-likelihood prior (opt-in via `sourceWeight`, default 0)
+  //    — the fraction of a node's neighbours whose index-based onset is later.
+  // 2. A GLOBAL temporal-earliness prior (`temporalWeight`) anchored to the
+  //    fault injection time — the earlier a service deviated from its clean
+  //    pre-injection baseline, the more likely it is the source.
   //
-  // When self anomalies are exactly equal (or sourceWeight = 0), the order is
-  // settled deterministically by service id.
+  // The root cause is the fault injection point — the service whose OWN
+  // deviation is highest AND whose onset precedes its neighbours'. A healthy
+  // parent must not accumulate its faulted children's anomaly (childContrib)
+  // and outrank the actual source, and propagation DEPTH is not used
+  // (RCAEval injects faults at arbitrary depths). The combination is in LOG
+  // space so a strong causal signal can overcome a moderately larger symptom
+  // anomaly without unbounded amplification:
+  //
+  //   finalScore(v) = log(selfAnomaly(v))
+  //                 + sourceWeight × sourceScore(v)
+  //                 + temporalWeight × 2 × (earliness(v) − 0.5)
+  //
+  // When self anomalies are exactly equal (or all weights are 0), the order
+  // is settled deterministically by service id.
   const sourceWeight = options.sourceWeight;
+  const temporalWeight = options.temporalWeight;
   scoredNodes.sort((a, b) => {
-    const aScore = Math.log(a.score) + sourceWeight * (sourceScores.get(a.serviceId) ?? 0);
-    const bScore = Math.log(b.score) + sourceWeight * (sourceScores.get(b.serviceId) ?? 0);
+    const aScore =
+      Math.log(a.score) +
+      sourceWeight * (sourceScores.get(a.serviceId) ?? 0) +
+      temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5);
+    const bScore =
+      Math.log(b.score) +
+      sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
+      temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5);
     if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;
@@ -799,4 +868,47 @@ function estimatePropagationError(depth: number, decayAlpha: number): number {
 function computeConfidence(score: number, depth: number, errorBound: number): number {
   const depthPenalty = depth > 0 ? 1 / (1 + Math.log(depth + 1)) : 1;
   return Math.max(0, Math.min(1, score * (1 - errorBound) * depthPenalty));
+}
+
+/**
+ * Compute the global temporal earliness score for each service from its
+ * post-injection onset delay.
+ *
+ * Each defined delay (ms after fault injection) is min-max normalised so the
+ * EARLIEST service scores 1 and the LATEST scores 0; an undetermined delay
+ * (absent from the map, negative, or non-finite) stays out of the map and is
+ * treated as neutral 0.5 by the caller. A single defined onset (or none, or
+ * an unknown injection time) carries no comparative information, so the map is
+ * left empty — the temporal signal then contributes nothing to the ranking.
+ *
+ * @internal
+ */
+function computeTemporalEarliness(
+  postInjectOnsetDelays: ReadonlyMap<ServiceId, number> | undefined,
+  injectTimeMs: number,
+): Map<ServiceId, number> {
+  const earliness = new Map<ServiceId, number>();
+  if (!injectTimeMs || injectTimeMs <= 0 || !postInjectOnsetDelays) return earliness;
+
+  const defined: Array<{ id: ServiceId; delay: number }> = [];
+  for (const [id, delay] of postInjectOnsetDelays) {
+    if (Number.isFinite(delay) && delay >= 0) defined.push({ id, delay });
+  }
+
+  // A single defined onset (or none) cannot establish a before/after order.
+  if (defined.length < 2) return earliness;
+
+  let minDelay = Infinity;
+  let maxDelay = -Infinity;
+  for (const { delay } of defined) {
+    if (delay < minDelay) minDelay = delay;
+    if (delay > maxDelay) maxDelay = delay;
+  }
+  const span = maxDelay - minDelay;
+
+  for (const { id, delay } of defined) {
+    // earliest → 1, latest → 0; a zero span (all tied) → neutral 0.5.
+    earliness.set(id, span > 0 ? 1 - (delay - minDelay) / span : 0.5);
+  }
+  return earliness;
 }

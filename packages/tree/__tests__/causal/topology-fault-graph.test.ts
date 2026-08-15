@@ -321,6 +321,89 @@ describe('buildTopologyFaultGraph — Onset Detection', () => {
   });
 });
 
+// ── Tests: Injection-Time-Anchored Onset Delay ───────────
+
+describe('buildTopologyFaultGraph — Post-Inject Onset Delay', () => {
+  const ts = [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000];
+
+  it('anchors the onset to the injection time (source earlier than symptom)', () => {
+    // The fault source 'src' leaves its normal level (10) at timestamp 5000 —
+    // exactly the injection instant — while the symptom 'sym' lags until
+    // timestamp 7000 as the disturbance propagates. The delay is therefore
+    // 0 for the source and 2000ms for the symptom.
+    const graph = makeCallGraph(['src', 'sym'], [{ from: 'src', to: 'sym' }]);
+    const metrics = makeMetrics([
+      ['src', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 30, 30, 30, 30, 30], ts)]],
+      ['sym', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 30, 30, 30], ts)]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 5000 });
+
+    expect(result.postInjectOnsetDelays.get('src')).toBe(0);
+    expect(result.postInjectOnsetDelays.get('sym')).toBe(2000);
+  });
+
+  it('disables the temporal anchor when the injection time is unknown', () => {
+    // Without injectTimeMs (0 = unknown), every delay is -1 (undetermined).
+    const graph = makeCallGraph(['src', 'sym'], [{ from: 'src', to: 'sym' }]);
+    const metrics = makeMetrics([
+      ['src', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 30, 30, 30, 30, 30], ts)]],
+      ['sym', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 30, 30, 30], ts)]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    expect(result.postInjectOnsetDelays.get('src')).toBe(-1);
+    expect(result.postInjectOnsetDelays.get('sym')).toBe(-1);
+  });
+
+  it('returns -1 when the injection time falls after the whole series', () => {
+    // injectTimeMs beyond the last sample → no post-inject window to scan.
+    const graph = makeCallGraph(['src', 'sym'], [{ from: 'src', to: 'sym' }]);
+    const metrics = makeMetrics([
+      ['src', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 30, 30, 30, 30, 30], ts)]],
+      ['sym', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 30, 30, 30], ts)]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 20000 });
+
+    expect(result.postInjectOnsetDelays.get('src')).toBe(-1);
+    expect(result.postInjectOnsetDelays.get('sym')).toBe(-1);
+  });
+
+  it('returns -1 when the pre-injection window is too short (< 2 samples)', () => {
+    // injectTimeMs at the very first sample leaves < 2 clean pre-inject
+    // samples, so no reliable baseline can be established.
+    const graph = makeCallGraph(['src', 'sym'], [{ from: 'src', to: 'sym' }]);
+    const metrics = makeMetrics([
+      ['src', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 30, 30, 30, 30, 30], ts)]],
+      ['sym', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 30, 30, 30], ts)]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 500 });
+
+    expect(result.postInjectOnsetDelays.get('src')).toBe(-1);
+    expect(result.postInjectOnsetDelays.get('sym')).toBe(-1);
+  });
+
+  it('absorbs a pre-injection outlier via the median baseline', () => {
+    // A single pre-inject sample already elevated (index 4, a sampling
+    // artifact) must not shift the clean baseline: the MEDIAN of the
+    // pre-injection window stays 10, so the source's true onset at the
+    // injection instant is still detected as delay 0.
+    const graph = makeCallGraph(['src', 'sym'], [{ from: 'src', to: 'sym' }]);
+    const metrics = makeMetrics([
+      ['src', [makeTimeSeries('cpu', [10, 10, 10, 10, 30, 30, 30, 30, 30, 30], ts)]],
+      ['sym', [makeTimeSeries('cpu', [10, 10, 10, 10, 10, 10, 10, 30, 30, 30], ts)]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics, { injectTimeMs: 5000 });
+
+    expect(result.postInjectOnsetDelays.get('src')).toBe(0);
+    expect(result.postInjectOnsetDelays.get('sym')).toBe(2000);
+  });
+});
+
 // ── Tests: Fallback Behavior ─────────────────────────────
 
 describe('buildTopologyFaultGraph — Fallback Behavior', () => {

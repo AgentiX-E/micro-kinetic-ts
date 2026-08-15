@@ -120,6 +120,18 @@ export interface TopologyFaultGraphConfig {
     /** Expected direct-call latency in time-index units. Default: 1.0. */
     readonly expectedDirectLatency?: number;
   };
+  /**
+   * Fault injection time in Unix milliseconds (case-level temporal anchor).
+   *
+   * When `> 0`, the builder computes each service's onset DELAY relative to
+   * this instant (using the pre-injection window as a clean baseline) instead
+   * of relying solely on the index-based, self-derived-baseline onset. This
+   * yields a far more reliable source/symptom ordering — the fault source's
+   * metric deviates at (or immediately after) injection, while symptoms lag
+   * as the disturbance propagates. `0`/`undefined` means "unknown" and
+   * disables the anchored onset (the index-based fallback still applies).
+   */
+  readonly injectTimeMs?: number;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -135,6 +147,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
     useBOCPD: false, // MAD-based by default for performance
     expectedDirectLatency: 1.0,
   },
+  injectTimeMs: 0, // unknown — temporal anchor disabled by default
 };
 
 /**
@@ -179,6 +192,13 @@ export interface TopologyFaultGraphResult {
   readonly anomalyScores: Map<ServiceId, number>;
   /** Per-service anomaly onset indices (earliest anomalous data point). */
   readonly anomalyOnsetTimes: Map<ServiceId, number>;
+  /**
+   * Per-service onset DELAY in milliseconds after `injectTimeMs` (the first
+   * post-injection sample of the dominant metric deviating >30% from its
+   * pre-injection baseline). `-1` = undetermined. Empty when `injectTimeMs`
+   * is unknown — the temporal signal is then disabled by callers.
+   */
+  readonly postInjectOnsetDelays: Map<ServiceId, number>;
   /** Per-service dominant metric (the metric that drove the anomaly score). */
   readonly dominantMetrics: Map<
     ServiceId,
@@ -225,6 +245,7 @@ export function buildTopologyFaultGraph(
   // Step 1: Compute per-service anomaly scores and onset times
   const anomalyScores = new Map<ServiceId, number>();
   const anomalyOnsetTimes = new Map<ServiceId, number>();
+  const postInjectOnsetDelays = new Map<ServiceId, number>();
   const dominantMetrics = new Map<
     ServiceId,
     { label: string; head: number[]; tail: number[]; transientSkipped: string[] }
@@ -240,6 +261,7 @@ export function buildTopologyFaultGraph(
     const result = computeAnomalyFeatures(serviceMetrics, cfg);
     anomalyScores.set(serviceId, result.score);
     anomalyOnsetTimes.set(serviceId, result.onsetIndex);
+    postInjectOnsetDelays.set(serviceId, result.postInjectOnsetDelay);
     dominantMetrics.set(serviceId, result.dominantMetric);
 
     if (!serviceMetrics || serviceMetrics.length === 0) {
@@ -339,6 +361,7 @@ export function buildTopologyFaultGraph(
   return {
     anomalyScores,
     anomalyOnsetTimes,
+    postInjectOnsetDelays,
     dominantMetrics,
     propagationWeights,
     pearsonEdgeCount,
@@ -353,6 +376,15 @@ export function buildTopologyFaultGraph(
 interface AnomalyFeatures {
   score: number;
   onsetIndex: number;
+  /**
+   * Onset delay in milliseconds after the fault injection time (the first
+   * post-injection sample of the dominant metric deviating >30% from its
+   * pre-injection baseline). `-1` when the injection time is unknown or no
+   * clean deviation can be located. This is the temporal causal signal —
+   * strictly more reliable than `onsetIndex`, whose baseline is contaminated
+   * by the fault itself.
+   */
+  postInjectOnsetDelay: number;
   /** The metric that drove the score (highest feature-weighted deviation). */
   dominantMetric: {
     label: string;
@@ -394,6 +426,7 @@ function computeAnomalyFeatures(
     return {
       score: 0,
       onsetIndex: Number.MAX_SAFE_INTEGER,
+      postInjectOnsetDelay: -1,
       dominantMetric: { label: '', head: [], tail: [], transientSkipped: [] },
     };
   }
@@ -403,6 +436,8 @@ function computeAnomalyFeatures(
   let bestMetricHead: number[] = [];
   let bestMetricTail: number[] = [];
   let bestMetricOnset = Number.MAX_SAFE_INTEGER;
+  let bestMetricValues: Float64Array | null = null;
+  let bestMetricTimestamps: readonly number[] | null = null;
   const transientSkippedLabels: string[] = [];
 
   for (const ts of serviceMetrics) {
@@ -624,6 +659,10 @@ function computeAnomalyFeatures(
       bestMetricLabel = ts.label;
       bestMetricHead = Array.from(ts.values).slice(0, 6);
       bestMetricTail = Array.from(ts.values).slice(-4);
+      // Retain the dominant metric's full series + timestamps so the onset
+      // delay can be anchored to the fault injection time afterwards.
+      bestMetricValues = ts.values;
+      bestMetricTimestamps = ts.timestamps;
       // The onset must follow the DOMINANT metric (the one that drives the
       // score), not the earliest point across all metrics. Taking the MIN
       // across metrics let a non-dominant metric with pre-existing drift
@@ -633,9 +672,21 @@ function computeAnomalyFeatures(
     }
   }
 
+  // Temporal causal onset: how long after injection did the dominant metric
+  // first leave its PRE-INJECT baseline. Anchoring the baseline to the clean
+  // pre-fault window avoids the self-derived-baseline contamination that made
+  // the index-based `onsetIndex` unreliable (the fault spike inflated the
+  // baseline, so the first point looked anomalous and the onset read 0).
+  const postInjectOnsetDelay = computePostInjectOnsetDelay(
+    bestMetricValues,
+    bestMetricTimestamps,
+    cfg.injectTimeMs ?? 0,
+  );
+
   return {
     score: bestScore,
     onsetIndex: bestMetricOnset,
+    postInjectOnsetDelay,
     dominantMetric: {
       label: bestMetricLabel,
       head: bestMetricHead,
@@ -643,6 +694,74 @@ function computeAnomalyFeatures(
       transientSkipped: transientSkippedLabels,
     },
   };
+}
+
+/**
+ * Compute how long after fault injection a metric first deviated from its
+ * pre-injection (clean) baseline.
+ *
+ * The metric series is split at `injectTimeMs` into a pre-injection window
+ * (the fault-free "normal" level, summarised by its median) and a
+ * post-injection window. The delay is the timestamp of the first post-inject
+ * sample deviating more than 30% from that clean baseline, minus the injection
+ * time. This is the temporal causal signal: the fault source's metric leaves
+ * its normal level at (or immediately after) injection, while a symptom's lags
+ * as the disturbance propagates (Deng Yu's mean free time τ).
+ *
+ * @param values - The dominant metric's values (aligned with timestamps).
+ * @param timestamps - The dominant metric's Unix-ms timestamps.
+ * @param injectTimeMs - Fault injection time in Unix ms (0 = unknown).
+ * @returns Onset delay in ms, or -1 when undetermined.
+ * @internal
+ */
+function computePostInjectOnsetDelay(
+  values: Float64Array | null,
+  timestamps: readonly number[] | null,
+  injectTimeMs: number,
+): number {
+  if (!values || !timestamps) return -1;
+  if (injectTimeMs <= 0) return -1;
+  if (values.length < 3 || timestamps.length !== values.length) return -1;
+
+  // First sample at/after the injection instant — the inject boundary.
+  let boundary = -1;
+  for (let i = 0; i < timestamps.length; i++) {
+    if (timestamps[i]! >= injectTimeMs) {
+      boundary = i;
+      break;
+    }
+  }
+  // Need at least two clean pre-inject samples and one post-inject sample.
+  if (boundary < 2 || boundary >= values.length) return -1;
+
+  // Clean baseline = median of the pre-injection window. The median resists
+  // the odd pre-fault outlier, unlike the mean which the fault could inflate.
+  const baseline = medianOfRange(values, 0, boundary);
+  if (!Number.isFinite(baseline) || baseline <= 0) return -1;
+
+  for (let i = boundary; i < values.length; i++) {
+    if (Math.abs(values[i]! - baseline) / baseline > 0.3) {
+      // Defensive clamp: with monotonic timestamps this is always >= 0 (the
+      // boundary is the first sample at/after injection); the clamp guards
+      // against non-monotonic input so a negative delay cannot surface.
+      return Math.max(0, timestamps[i]! - injectTimeMs);
+    }
+  }
+  return -1;
+}
+
+/**
+ * Median of a half-open slice `values[start..end)`.
+ *
+ * @internal
+ */
+function medianOfRange(values: Float64Array, start: number, end: number): number {
+  const slice = Array.from(values.slice(start, end)).sort((a, b) => a - b);
+  const n = slice.length;
+  if (n === 0) return NaN;
+  const mid = Math.floor(n / 2);
+  if (n % 2 === 1) return slice[mid]!;
+  return (slice[mid - 1]! + slice[mid]!) / 2;
 }
 
 // ── Edge Propagation Weight ───────────────────────────────

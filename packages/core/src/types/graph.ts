@@ -106,6 +106,29 @@ export interface FaultPropagationGraph {
       readonly transientSkipped: string[];
     }
   >;
+  /**
+   * Fault injection time in Unix milliseconds, when known.
+   *
+   * This is the temporal anchor for the causal root-cause signal: the fault
+   * source's metric deviates AT (or immediately after) this instant, while
+   * symptoms deviate LATER as the disturbance propagates. It is derived from
+   * the benchmark case's `inject_time` (analogous to the incident start time
+   * an operator observes from alerting), NOT from the ground-truth service id.
+   * `0` or `undefined` means "unknown" — the temporal signal must be disabled.
+   */
+  readonly injectTimeMs?: number;
+  /**
+   * Per-node onset DELAY in milliseconds — how long after `injectTimeMs` the
+   * service's dominant metric first deviated from its PRE-INJECT baseline.
+   *
+   * This replaces the old index-based `anomalyOnsetTimes` as the temporal
+   * causality signal: anchoring the baseline to the pre-injection window (a
+   * clean, fault-free segment) makes the source/symptom ordering far more
+   * reliable than a self-derived baseline contaminated by the fault itself.
+   * `-1` (or absent) means "onset undetermined" — the service is treated as
+   * temporally neutral (no earliness reward, no lateness penalty).
+   */
+  readonly postInjectOnsetDelays?: ReadonlyMap<ServiceId, number>;
   /** All detected cycles before pruning */
   readonly detectedCycles: readonly DetectedCycle[];
   /** Sum of all cycle contributions w(C) */

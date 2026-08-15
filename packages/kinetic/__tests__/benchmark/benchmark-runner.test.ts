@@ -849,6 +849,49 @@ describe('RCA Engine Integration', () => {
     expect(result.typeAccuracy).toBeGreaterThanOrEqual(0);
     expect(result.typeAccuracy).toBeLessThanOrEqual(1);
   });
+
+  it('forwards the case injectTime to buildFaultGraph options', async () => {
+    // The runner must pass the fault injection time through to the engine so
+    // the temporal causal onset can be anchored. A spy engine records the
+    // options object and the test asserts it carries the case's injectTime.
+    const container = new Container();
+    let receivedInjectTimeMs: number | undefined;
+    const spyEngine: IRCAEngine = {
+      buildFaultGraph: (callGraph, _metrics, options) => {
+        receivedInjectTimeMs = options?.injectTimeMs;
+        return {
+          callGraph,
+          propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+          anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          anomalyOnsetTimes: new Map(),
+          detectedCycles: [],
+          totalCycleContribution: 0,
+          pruneThreshold: 0.001,
+        };
+      },
+      analyze: async () => [
+        {
+          serviceId: 'service_1',
+          faultType: { category: 'UNKNOWN', subType: '', severity: 'info' as const },
+          confidence: 0.5,
+          rank: 1,
+          evidenceMetrics: [],
+          propagationDepth: 0,
+          propagationErrorBound: 0,
+          viaTreeSearch: false,
+        },
+      ],
+      getCycleContributionBound: () => 0,
+    };
+    container.register(DI_TOKENS.RCA_ENGINE, () => spyEngine);
+    const runner = new BenchmarkRunner(container);
+
+    const benchCase = generator.generateRCAEvalCase('CPU', 3);
+    await runner.runSuite({ name: 'inject-time', cases: [benchCase], totalCases: 1 });
+
+    expect(receivedInjectTimeMs).toBe(benchCase.injectTime);
+    expect(receivedInjectTimeMs).toBeGreaterThan(0);
+  });
 });
 
 // ── Classifier Integration Tests ─────────────────────────

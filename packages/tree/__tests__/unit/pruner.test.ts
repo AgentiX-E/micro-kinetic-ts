@@ -901,4 +901,101 @@ describe('TreePruner', () => {
       expect(results[0]!.serviceId).toBe('B');
     });
   });
+
+  describe('temporal earliness ranking (injection-time anchored)', () => {
+    // Shared metric values: A (source) steps at index 3, B at index 5, C at
+    // index 7 — the same values used by the source-likelihood block, so the
+    // pure self-anomaly ordering (B > C > A) is already established there.
+    // The pruner test helper stamps timestamps at i*60000 ms, so injectTimeMs
+    // 180000 sits on the index-3 boundary.
+    const metrics = makeMetrics({
+      A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+      C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
+    });
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
+
+    it('ranks the earliest-onset source above a higher-anomaly symptom', () => {
+      // With the injection time known, A's disturbance precedes B's and C's,
+      // so the temporal earliness prior must lift A above B (whose anomaly is
+      // larger) even at the DEFAULT temporalWeight. This is the causal
+      // source/symptom separation the index-based onset could not provide.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
+
+      // Onset delays: A=0ms, B=120000ms, C=240000ms (relative to injection).
+      expect(graph.postInjectOnsetDelays?.get('A')).toBe(0);
+      expect(graph.postInjectOnsetDelays?.get('B')).toBe(120000);
+      expect(graph.postInjectOnsetDelays?.get('C')).toBe(240000);
+      expect(graph.injectTimeMs).toBe(180000);
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('A');
+    });
+
+    it('leaves the ranking on pure self-anomaly when the injection time is unknown', () => {
+      // No injectTimeMs → the temporal signal is neutral for every service
+      // and the highest self-anomaly service (B) still ranks first.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      expect(graph.injectTimeMs).toBe(0);
+      for (const id of ['A', 'B', 'C']) {
+        expect(graph.postInjectOnsetDelays?.get(id)).toBe(-1);
+      }
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('B');
+    });
+
+    it('produces no temporal effect when all onsets tie', () => {
+      // All three services step at the SAME index (5), so every onset delay
+      // equals the same value. The min-max span is zero → every service is
+      // neutral and the ranking falls back to pure self-anomaly (B first).
+      const tied = makeMetrics({
+        A: [1, 1, 1, 1, 1, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0],
+        B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+        C: [1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2, 3.2],
+      });
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, tied, { injectTimeMs: 180000 });
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('B');
+    });
+
+    it('produces no temporal effect when the graph carries no onset delays', () => {
+      // A graph stripped of its postInjectOnsetDelays map (e.g. produced by a
+      // different engine) has no temporal evidence: every service is neutral
+      // and the highest self-anomaly service (B) still ranks first.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
+      const stripped = { ...graph, postInjectOnsetDelays: undefined };
+
+      const results = pruner.analyze(stripped, 3);
+      expect(results[0]!.serviceId).toBe('B');
+    });
+
+    it('produces no temporal effect when only one service has a defined onset', () => {
+      // A single defined onset (A steps; B and C stay flat) cannot establish
+      // a before/after ordering, so the temporal prior contributes nothing.
+      const single = makeMetrics({
+        A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+        B: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        C: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      });
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, single, { injectTimeMs: 180000 });
+
+      const results = pruner.analyze(graph, 3);
+      // Only A has a non-zero anomaly → A is the sole candidate.
+      expect(results[0]!.serviceId).toBe('A');
+    });
+  });
 });
