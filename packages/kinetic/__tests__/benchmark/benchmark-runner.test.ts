@@ -41,7 +41,15 @@ function createMockEngine(): IRCAEngine {
       anomalyScores: new Map(
         [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
       ),
-      anomalyOnsetTimes: new Map(),
+      anomalyOnsetTimes: new Map(
+        [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 2 : 5]),
+      ),
+      dominantMetrics: new Map(
+        [...callGraph.nodes.keys()].map((id) => [
+          id,
+          { label: 'cpu', head: [0.1, 0.2, 0.3], tail: [0.8, 0.9] },
+        ]),
+      ),
       detectedCycles: [],
       totalCycleContribution: 0,
       pruneThreshold: 0.001,
