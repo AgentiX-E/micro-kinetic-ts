@@ -132,6 +132,13 @@ export interface FailedCase {
      */
     readonly gtOnset?: number;
     readonly topOnset?: number;
+    /**
+     * Injection-anchored onset DELAYS (ms after inject_time) for the GT and
+     * the top-1 anomaly service (-1 = undetermined). These reveal whether the
+     * temporal causal signal placed the source EARLIER than the symptom.
+     */
+    readonly gtInjectDelay?: number;
+    readonly topInjectDelay?: number;
   };
 }
 
@@ -227,6 +234,16 @@ export class BenchmarkRunner {
   };
   /** Online weight calibrator for self-evolving RCA (I10). */
   private readonly calibrator: WeightCalibrator;
+  /**
+   * Whether to forward the case's fault injection time to the RCA engine.
+   *
+   * The fault injection time (`benchCase.injectTime`) anchors the engine's
+   * temporal causal onset signal — the same "detected anomaly / alert time"
+   * input that the RCAEval framework passes to every published baseline. Set
+   * to `false` to measure the engine's performance WITHOUT that signal, i.e.
+   * the production-transferable, dataset-decoupled number.
+   */
+  private readonly useInjectTime: boolean;
 
   /**
    * @param container - DI container with at least RCA_ENGINE registered.
@@ -238,16 +255,21 @@ export class BenchmarkRunner {
    *                          the runner first augments the call graph using distributed
    *                          trace span data to prune noise edges and discover missing
    *                          causal links.
+   * @param calibrator - Optional pre-trained weight calibrator (self-evolving RCA).
+   * @param useInjectTime - Forward the fault injection time to the engine (default
+   *                        true, matching the RCAEval baseline protocol).
    */
   constructor(
     container: IContainer,
     classifier?: IFaultClassifier,
     traceValidation?: TraceValidationOptions,
     calibrator?: WeightCalibrator,
+    useInjectTime = true,
   ) {
     this.container = container;
     this.classifier = classifier;
     this.calibrator = calibrator ?? new WeightCalibrator();
+    this.useInjectTime = useInjectTime;
     this.traceOptions = traceValidation?.enabled
       ? {
           enabled: true,
@@ -306,7 +328,7 @@ export class BenchmarkRunner {
         }
 
         const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics, {
-          injectTimeMs: benchCase.injectTime,
+          injectTimeMs: this.useInjectTime ? benchCase.injectTime : 0,
         });
         const results = await engine.analyze(faultGraph, topK);
 
@@ -367,6 +389,14 @@ export class BenchmarkRunner {
         // whether the source changed earlier than the symptom.
         const gtOnset = faultGraph.anomalyOnsetTimes.get(benchCase.groundTruth.serviceId);
         const topOnset = faultGraph.anomalyOnsetTimes.get(topAnomaly[0]?.serviceId ?? '');
+        // Injection-anchored onset delays (ms after inject_time) for the same
+        // pair — the temporal causal signal's actual input.
+        const gtInjectDelay = faultGraph.postInjectOnsetDelays?.get(
+          benchCase.groundTruth.serviceId,
+        );
+        const topInjectDelay = faultGraph.postInjectOnsetDelays?.get(
+          topAnomaly[0]?.serviceId ?? '',
+        );
 
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
@@ -433,6 +463,8 @@ export class BenchmarkRunner {
               top1MetricTail,
               gtOnset,
               topOnset,
+              gtInjectDelay,
+              topInjectDelay,
             },
           });
         } else {

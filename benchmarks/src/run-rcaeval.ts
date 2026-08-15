@@ -124,6 +124,14 @@ interface CliOptions {
   system: string;
   /** Filter to specific suite: 're1', 're2', 're3', or 'all' */
   suite: string;
+  /**
+   * Disable the fault injection time signal (dataset-decoupled mode). When
+   * set, the runner does NOT forward inject_time to the engine, so the
+   * temporal causal onset is neutral and ranking falls back to pure
+   * self-anomaly. This produces the production-transferable result; the
+   * default (no flag) produces the result comparable to the RCAEval baselines.
+   */
+  noInjectTime: boolean;
 }
 
 function parseArgs(): CliOptions {
@@ -133,6 +141,7 @@ function parseArgs(): CliOptions {
     maxCases: 0,
     system: 'all',
     suite: 'all',
+    noInjectTime: false,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -140,6 +149,7 @@ function parseArgs(): CliOptions {
       opts.maxCases = parseInt(args[++i]!, 10) || 0;
     else if (args[i] === '--system' && i + 1 < args.length) opts.system = args[++i]!;
     else if (args[i] === '--suite' && i + 1 < args.length) opts.suite = args[++i]!;
+    else if (args[i] === '--no-inject-time') opts.noInjectTime = true;
   }
   return opts;
 }
@@ -646,6 +656,19 @@ function printFailureDiagnostics(
           `    onset GT=${d.gtOnset} top1=${d.topOnset} (${d.gtOnset < d.topOnset ? 'source earlier ✓' : d.gtOnset > d.topOnset ? 'source later ✗' : 'tie'})`,
         );
       }
+      if (d.gtInjectDelay !== undefined && d.topInjectDelay !== undefined) {
+        const gtD = d.gtInjectDelay < 0 ? 'undef' : d.gtInjectDelay;
+        const topD = d.topInjectDelay < 0 ? 'undef' : d.topInjectDelay;
+        const verdict =
+          d.gtInjectDelay < 0 || d.topInjectDelay < 0
+            ? 'undetermined'
+            : d.gtInjectDelay < d.topInjectDelay
+              ? 'source earlier ✓'
+              : d.gtInjectDelay > d.topInjectDelay
+                ? 'source later ✗'
+                : 'tie';
+        console.log(`    injectDelay GT=${gtD} top1=${topD} (${verdict})`);
+      }
       console.log(`    Reason: ${f.reason}`);
       console.log(
         `    Top-K: ${d.topK.map((t) => `${t.serviceId}(${t.confidence.toFixed(2)},d${t.depth})`).join(' | ')}`,
@@ -720,6 +743,7 @@ async function main(): Promise<void> {
   console.log(
     `Filter: system=${opts.system}, suite=${opts.suite}${opts.maxCases > 0 ? ` (max ${opts.maxCases} cases)` : ''}`,
   );
+  console.log(`injectTime: ${opts.noInjectTime ? 'OFF (dataset-decoupled)' : 'ON (RCAEval baseline protocol)'}`);
 
   const allCases = discoverAllCases(opts.dataDir);
   console.log(`Cases discovered: ${allCases.length}`);
@@ -780,7 +804,7 @@ async function main(): Promise<void> {
 
   const container = createContainer();
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
-  const runner = new BenchmarkRunner(container, classifier);
+  const runner = new BenchmarkRunner(container, classifier, undefined, undefined, !opts.noInjectTime);
   const loader = new RCAEvalLoader();
 
   // ── Init YAML-driven topology registry ──────────────────

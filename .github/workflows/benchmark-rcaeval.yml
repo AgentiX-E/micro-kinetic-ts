@@ -87,6 +87,20 @@ jobs:
         with:
           name: rcaeval-re1-results
           path: rcaeval-re1-results.txt
+      - name: Run RCAEval — RE1 only (no inject_time)
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time 2>&1 | tee rcaeval-re1-noinject-results.txt
+      - name: Upload RE1 no-inject results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re1-noinject-results
+          path: rcaeval-re1-noinject-results.txt
 
   rcaeval-re2:
     needs: synthetic
@@ -124,6 +138,20 @@ jobs:
         with:
           name: rcaeval-re2-results
           path: rcaeval-re2-results.txt
+      - name: Run RCAEval — RE2 only (no inject_time)
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --no-inject-time 2>&1 | tee rcaeval-re2-noinject-results.txt
+      - name: Upload RE2 no-inject results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re2-noinject-results
+          path: rcaeval-re2-noinject-results.txt
 
   rcaeval-re3:
     needs: synthetic
@@ -161,6 +189,20 @@ jobs:
         with:
           name: rcaeval-re3-results
           path: rcaeval-re3-results.txt
+      - name: Run RCAEval — RE3 only (no inject_time)
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time 2>&1 | tee rcaeval-re3-noinject-results.txt
+      - name: Upload RE3 no-inject results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re3-noinject-results
+          path: rcaeval-re3-noinject-results.txt
 
   # ── Ablation: 3 parallel runners (RE1 / RE2 / RE3) ──
   ablation-re1:

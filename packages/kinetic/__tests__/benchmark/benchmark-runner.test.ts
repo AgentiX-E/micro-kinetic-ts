@@ -892,6 +892,47 @@ describe('RCA Engine Integration', () => {
     expect(receivedInjectTimeMs).toBe(benchCase.injectTime);
     expect(receivedInjectTimeMs).toBeGreaterThan(0);
   });
+
+  it('passes injectTimeMs=0 when useInjectTime is false', async () => {
+    // The dataset-decoupled mode (useInjectTime=false) must forward a ZERO
+    // injection time so the engine's temporal causal signal stays neutral.
+    const container = new Container();
+    let receivedInjectTimeMs: number | undefined;
+    const spyEngine: IRCAEngine = {
+      buildFaultGraph: (callGraph, _metrics, options) => {
+        receivedInjectTimeMs = options?.injectTimeMs;
+        return {
+          callGraph,
+          propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+          anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          anomalyOnsetTimes: new Map(),
+          detectedCycles: [],
+          totalCycleContribution: 0,
+          pruneThreshold: 0.001,
+        };
+      },
+      analyze: async () => [
+        {
+          serviceId: 'service_1',
+          faultType: { category: 'UNKNOWN', subType: '', severity: 'info' as const },
+          confidence: 0.5,
+          rank: 1,
+          evidenceMetrics: [],
+          propagationDepth: 0,
+          propagationErrorBound: 0,
+          viaTreeSearch: false,
+        },
+      ],
+      getCycleContributionBound: () => 0,
+    };
+    container.register(DI_TOKENS.RCA_ENGINE, () => spyEngine);
+    const runner = new BenchmarkRunner(container, undefined, undefined, undefined, false);
+
+    const benchCase = generator.generateRCAEvalCase('CPU', 3);
+    await runner.runSuite({ name: 'inject-time-off', cases: [benchCase], totalCases: 1 });
+
+    expect(receivedInjectTimeMs).toBe(0);
+  });
 });
 
 // ── Classifier Integration Tests ─────────────────────────
