@@ -511,34 +511,18 @@ function computeAnomalyFeatures(
     // physically meaningful metric deviation.
     //
     // The deviation is the LARGER of the two directional deviations. A rise is
-    // relative to the (pre-rise) baseline and is unbounded. A drop is either
-    // SYMMETRIC (relative to the post-drop minimum) or BOUNDED (relative to
-    // the baseline), depending on where the drop lands:
+    // relative to the (pre-rise) baseline and is unbounded; a drop is relative
+    // to the SAME baseline, so a relative DROP is bounded at 100% (a metric can
+    // at most fall to zero, ratio → 1) while a relative RISE is unbounded.
     //
-    //   • MEANINGFUL drop (min > 10% of baseline): the service DEGRADED but is
-    //     still operating. This is a genuine fault signature (RE3
-    //     OnlineBoutique: adservice's latency-50 8× drop → 0.000495, 12% of
-    //     baseline) and must score the same as an equal-magnitude rise —
-    //     measuring it against the baseline bounded it at ~100% (~0.27) and
-    //     let a 6× workload-rise symptom (~0.78) outrank it (the #200/#202
-    //     RE3 OnlineBoutique 88.9% → 72.2% regression).
-    //
-    //   • COLLAPSE (min ≤ 10% of baseline): the service essentially STOPPED
-    //     the measured activity (crash, traffic loss). Its relative magnitude
-    //     is ill-defined — dividing by a near-zero minimum re-explodes the
-    //     drop-noise that #193 exposed (a counter collapsing ~153× to a
-    //     near-zero floor outranked the fault). It stays bounded at 100%.
-    //
-    // The 10% boundary is the "stopped vs degraded" threshold: a service that
-    // lost >90% of an activity has effectively halted it, while one that
-    // retained ≥10% is still active at a reduced level. Observed fault drops
-    // land at 12–50% of baseline (latency-50, socket, cpu, mem, workload);
-    // observed event collapses land at 0.2–9% (counter, latency-90, cpu).
+    // Measuring the drop against the post-drop MINIMUM was tried to make "28×
+    // drop" symmetric with "28× rise", but it re-exploded drop-noise: a counter
+    // collapsing ~153× to a near-zero floor outranked the genuine fault (the
+    // #193 RE3 OnlineBoutique regression, paymentservice 2.19 > adservice 1.84).
+    // The event/idle guard above removes the degenerate drop-to-zero case
+    // (min < max × 0.001), so the remaining drops are bounded and safe.
     const riseRatio = Math.abs(max - baselineMean) / baselineMean;
-    const dropRatio =
-      min > baselineMean * 0.1
-        ? Math.abs(baselineMean - min) / min // meaningful drop: symmetric with a rise
-        : Math.abs(baselineMean - min) / baselineMean; // collapse: bounded at 100%
+    const dropRatio = Math.abs(baselineMean - min) / baselineMean;
     const ratio = Math.max(riseRatio, dropRatio);
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
