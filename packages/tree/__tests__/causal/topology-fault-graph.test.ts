@@ -291,6 +291,36 @@ describe('buildTopologyFaultGraph — Temporal Causality', () => {
   });
 });
 
+// ── Tests: Onset Detection (dominant metric) ─────────────
+
+describe('buildTopologyFaultGraph — Onset Detection', () => {
+  it('tracks the dominant metric onset, not the minimum across metrics', () => {
+    // Regression: anomalyOnsetTimes took the MINIMUM onset across ALL metrics,
+    // so a non-dominant metric with an early drift (index 0) polluted the
+    // onset and made every service look "already anomalous at the start".
+    // The onset must reflect the metric that actually DRIVES the anomaly
+    // score (the dominant metric), which here steps at index 8.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          // 'noise': early spike at index 0, then flat — non-dominant.
+          makeTimeSeries('noise', [20, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]),
+          // 'fault': late step 10 -> 30 at index 8 — dominant (larger deviation).
+          makeTimeSeries('fault', [10, 10, 10, 10, 10, 10, 10, 10, 30, 30, 30, 30]),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    // The dominant 'fault' metric steps at index 8; the 'noise' metric's
+    // early spike (index 0) must not drag the onset down to 0.
+    expect(result.anomalyOnsetTimes.get('svc')).toBe(8);
+  });
+});
+
 // ── Tests: Fallback Behavior ─────────────────────────────
 
 describe('buildTopologyFaultGraph — Fallback Behavior', () => {
@@ -1175,9 +1205,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
           // transient-spike guard must ALSO keep it (it is an event fault).
           makeTimeSeries(
             'error',
-            [
-              0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0,
-            ],
+            [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
           ),
         ],
       ],

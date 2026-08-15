@@ -363,13 +363,14 @@ interface EdgeWeightResult {
  * Compute per-service anomaly features: score and onset index.
  *
  * Score: maximum feature-weighted anomaly across all metrics (0-1).
- * Onset: earliest data point index where deviation exceeds 1.5σ.
+ * Onset: first index of the DOMINANT metric (the one driving the score)
+ *        that deviates >30% from its pre-change baseline.
  *
  * Feature contributions:
  *   - Base deviation: (max - baseline_mean) / baseline_mean
- *   - Trend bonus: monotonic upward slope × 0.3
- *   - Burst bonus: 3-sigma spike detection × 0.2
- *   - CV bonus: high coefficient of variation × 0.15
+ *   - Trend bonus: monotonic slope × 0.15
+ *   - Burst bonus: 3-sigma spike detection × 0.1
+ *   - CV bonus: high coefficient of variation × 0.05
  *
  * @internal
  */
@@ -389,7 +390,7 @@ function computeAnomalyFeatures(
   let bestMetricLabel = '';
   let bestMetricHead: number[] = [];
   let bestMetricTail: number[] = [];
-  let earliestOnset = Number.MAX_SAFE_INTEGER;
+  let bestMetricOnset = Number.MAX_SAFE_INTEGER;
 
   for (const ts of serviceMetrics) {
     if (ts.values.length < 2) continue;
@@ -581,6 +582,20 @@ function computeAnomalyFeatures(
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
     featureScore = Math.max(0, featureScore);
 
+    // Onset: the first point deviating from the PRE-CHANGE baseline by more
+    // than 30%. Comparing against the full mean (which includes the spike)
+    // made every first point look anomalous, so the onset was always 0 and
+    // the source/symptom ordering signal was useless. The baseline is the
+    // pre-anomaly level, so the first point that leaves it marks the fault
+    // injection time — earlier for the source, later for propagated symptoms.
+    let metricOnset = Number.MAX_SAFE_INTEGER;
+    for (let i = 0; i < n; i++) {
+      if (baselineMean > 0 && Math.abs(ts.values[i]! - baselineMean) / baselineMean > 0.3) {
+        metricOnset = i;
+        break;
+      }
+    }
+
     if (featureScore > bestScore) {
       bestScore = featureScore;
       // Record the metric that actually drove the score, so downstream
@@ -590,25 +605,18 @@ function computeAnomalyFeatures(
       bestMetricLabel = ts.label;
       bestMetricHead = Array.from(ts.values).slice(0, 6);
       bestMetricTail = Array.from(ts.values).slice(-4);
-    }
-
-    // Onset: the first point deviating from the PRE-CHANGE baseline by more
-    // than 30%. Comparing against the full mean (which includes the spike)
-    // made every first point look anomalous, so the onset was always 0 and
-    // the source/symptom ordering signal was useless. The baseline is the
-    // pre-anomaly level, so the first point that leaves it marks the fault
-    // injection time — earlier for the source, later for propagated symptoms.
-    for (let i = 0; i < n; i++) {
-      if (baselineMean > 0 && Math.abs(ts.values[i]! - baselineMean) / baselineMean > 0.3) {
-        if (i < earliestOnset) earliestOnset = i;
-        break;
-      }
+      // The onset must follow the DOMINANT metric (the one that drives the
+      // score), not the earliest point across all metrics. Taking the MIN
+      // across metrics let a non-dominant metric with pre-existing drift
+      // (index 0) mask the true fault onset (e.g. a late step change), which
+      // corrupted the source/symptom ordering signal used downstream.
+      bestMetricOnset = metricOnset;
     }
   }
 
   return {
     score: bestScore,
-    onsetIndex: earliestOnset,
+    onsetIndex: bestMetricOnset,
     dominantMetric: { label: bestMetricLabel, head: bestMetricHead, tail: bestMetricTail },
   };
 }
