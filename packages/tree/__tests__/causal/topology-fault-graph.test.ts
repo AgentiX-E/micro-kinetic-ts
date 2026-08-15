@@ -1175,9 +1175,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
           // transient-spike guard must ALSO keep it (it is an event fault).
           makeTimeSeries(
             'error',
-            [
-              0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0,
-            ],
+            [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
           ),
         ],
       ],
@@ -1286,16 +1284,18 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(result.dominantMetrics.get('svc')?.label).toBe('workload');
   });
 
-  it('bounds a drop while leaving a rise unbounded (direction-aware deviation)', () => {
+  it('bounds a collapse drop (to <10% of baseline) while leaving a rise unbounded', () => {
     // Regression: measuring the drop against the post-drop MINIMUM made a
     // 28× drop symmetric with a 28× rise, but re-exploded drop-noise — a
     // counter collapsing ~153× to a near-zero floor outranked the genuine
-    // fault (#193 RE3 OnlineBoutique). A drop is therefore measured against
-    // the SAME baseline as a rise, so it is bounded at 100% (ratio → 1) while
-    // a rise stays unbounded. A drop-type fault (memory release) is still
-    // detected — it just cannot outrank a larger relative rise.
+    // fault (#193 RE3 OnlineBoutique). The collapse/meaningful distinction
+    // fixes this: a drop that collapses to ≤10% of its baseline means the
+    // service essentially STOPPED the measured activity (crash, traffic
+    // loss), an event whose relative magnitude is ill-defined and therefore
+    // bounded at 100%. A rise stays unbounded.
     const graph = makeCallGraph(['svc-rise', 'svc-drop'], [{ from: 'svc-rise', to: 'svc-drop' }]);
-    // svc-rise: 1 → 28 (28× rise). svc-drop: 28 → 1 (28× drop).
+    // svc-rise: 1 → 28 (28× rise). svc-drop: 28 → 1 (28× drop to 1/28 = 3.6%
+    // of baseline — a COLLAPSE, not a meaningful degradation).
     const metrics = makeMetrics([
       [
         'svc-rise',
@@ -1311,11 +1311,69 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
 
     const riseScore = result.anomalyScores.get('svc-rise') ?? 0;
     const dropScore = result.anomalyScores.get('svc-drop') ?? 0;
-    // A 28× rise is unbounded (~log₁₀ 28 ≈ 1.45) while the 28× drop is
+    // A 28× rise is unbounded (~log₁₀ 28 ≈ 1.45) while the 28× collapse is
     // bounded at ~100% (~log₁₀ 2 ≈ 0.30), so the rise must outscore the drop.
     expect(riseScore).toBeGreaterThan(dropScore);
-    // The drop is still detected (a drop-type fault is not ignored).
+    // The collapse is still detected (a crash is a signal, not ignored).
     expect(dropScore).toBeGreaterThan(0);
+  });
+
+  it('scores a meaningful drop symmetrically with an equal-magnitude rise', () => {
+    // A drop that lands at a MEANINGFUL fraction of its baseline (>10%) is a
+    // degradation, not a collapse: the service is still operating at a lower
+    // level. Such a drop is a real fault signature and must score the SAME as
+    // an equal-magnitude rise. This is the RE3 OnlineBoutique fix — adservice's
+    // latency-50 8× drop (0.00398 → 0.000495, 12% of baseline) was previously
+    // bounded at ~100% (~0.27) and outranked by a 6× workload rise (~0.78).
+    const graph = makeCallGraph(['svc-rise', 'svc-drop'], [{ from: 'svc-rise', to: 'svc-drop' }]);
+    // svc-rise: 1 → 8 (8× rise). svc-drop: 8 → 1 (8× drop to 12.5% — MEANINGFUL).
+    const metrics = makeMetrics([
+      ['svc-rise', [makeTimeSeries('cpu', [1, 1, 1, 1, 1, 1, 1, 1, 8, 8, 8, 8, 8, 8, 8, 8])]],
+      ['svc-drop', [makeTimeSeries('cpu', [8, 8, 8, 8, 8, 8, 8, 8, 1, 1, 1, 1, 1, 1, 1, 1])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const riseScore = result.anomalyScores.get('svc-rise') ?? 0;
+    const dropScore = result.anomalyScores.get('svc-drop') ?? 0;
+    // Symmetric: the 8× rise and the 8× drop must score the same.
+    expect(dropScore).toBeCloseTo(riseScore, 2);
+    expect(dropScore).toBeGreaterThan(0);
+  });
+
+  it('ranks a meaningful drop above a larger collapse', () => {
+    // The collapse/meaningful boundary is what separates a fault from an
+    // event. A 100× collapse (100 → 1, 1% of baseline) is an event whose
+    // relative magnitude is ill-defined, so it stays bounded (~0.30). A
+    // smaller 8× drop that lands at 12% of baseline (100 → 12) is a
+    // meaningful degradation and scores symmetrically (~0.92). Despite the
+    // collapse having a far larger raw ratio, the meaningful drop must win.
+    const graph = makeCallGraph(
+      ['svc-meaningful', 'svc-collapse'],
+      [{ from: 'svc-meaningful', to: 'svc-collapse' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-meaningful',
+        [
+          makeTimeSeries(
+            'cpu',
+            [100, 100, 100, 100, 100, 100, 100, 100, 12, 12, 12, 12, 12, 12, 12, 12],
+          ),
+        ],
+      ],
+      [
+        'svc-collapse',
+        [makeTimeSeries('cpu', [100, 100, 100, 100, 100, 100, 100, 100, 1, 1, 1, 1, 1, 1, 1, 1])],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const meaningfulScore = result.anomalyScores.get('svc-meaningful') ?? 0;
+    const collapseScore = result.anomalyScores.get('svc-collapse') ?? 0;
+    expect(meaningfulScore).toBeGreaterThan(collapseScore);
+    expect(collapseScore).toBeGreaterThan(0);
   });
 
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
