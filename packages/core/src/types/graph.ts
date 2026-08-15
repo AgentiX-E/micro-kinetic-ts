@@ -98,7 +98,13 @@ export interface FaultPropagationGraph {
    */
   readonly dominantMetrics?: ReadonlyMap<
     ServiceId,
-    { readonly label: string; readonly head: number[]; readonly tail: number[] }
+    {
+      readonly label: string;
+      readonly head: number[];
+      readonly tail: number[];
+      /** Labels of metrics discarded by the transient-spike guard. */
+      readonly transientSkipped: string[];
+    }
   >;
   /** All detected cycles before pruning */
   readonly detectedCycles: readonly DetectedCycle[];

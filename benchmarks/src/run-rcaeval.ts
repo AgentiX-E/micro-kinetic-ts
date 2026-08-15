@@ -625,6 +625,9 @@ function printFailureDiagnostics(
           `    GT dominant=${d.gtDominantLabel} head=[${(d.gtDominantHead ?? []).join(',')}] tail=[${(d.gtDominantTail ?? []).join(',')}]`,
         );
       }
+      if ((d.gtTransientSkipped ?? []).length > 0) {
+        console.log(`    GT transientSkipped=[${d.gtTransientSkipped!.join(',')}]`);
+      }
       if (d.topAnomaly && d.topAnomaly.length > 0) {
         console.log(
           `    topAnomaly: ${d.topAnomaly.map((t) => `${t.serviceId}(${t.score.toFixed(3)})`).join(' | ')}`,
@@ -634,6 +637,9 @@ function printFailureDiagnostics(
         console.log(
           `    top1 metric=${d.top1MetricLabel} head=[${(d.top1MetricHead ?? []).join(',')}] tail=[${(d.top1MetricTail ?? []).join(',')}]`,
         );
+      }
+      if ((d.top1TransientSkipped ?? []).length > 0) {
+        console.log(`    top1 transientSkipped=[${d.top1TransientSkipped!.join(',')}]`);
       }
       if (d.gtOnset !== undefined && d.topOnset !== undefined) {
         console.log(

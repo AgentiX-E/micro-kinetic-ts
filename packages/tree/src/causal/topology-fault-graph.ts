@@ -180,7 +180,10 @@ export interface TopologyFaultGraphResult {
   /** Per-service anomaly onset indices (earliest anomalous data point). */
   readonly anomalyOnsetTimes: Map<ServiceId, number>;
   /** Per-service dominant metric (the metric that drove the anomaly score). */
-  readonly dominantMetrics: Map<ServiceId, { label: string; head: number[]; tail: number[] }>;
+  readonly dominantMetrics: Map<
+    ServiceId,
+    { label: string; head: number[]; tail: number[]; transientSkipped: string[] }
+  >;
   /** Per-edge propagation weights (0-1), aligned with callGraph.edges. */
   readonly propagationWeights: Float64Array;
   /** Diagnostic: number of edges computed via Pearson correlation. */
@@ -222,7 +225,10 @@ export function buildTopologyFaultGraph(
   // Step 1: Compute per-service anomaly scores and onset times
   const anomalyScores = new Map<ServiceId, number>();
   const anomalyOnsetTimes = new Map<ServiceId, number>();
-  const dominantMetrics = new Map<ServiceId, { label: string; head: number[]; tail: number[] }>();
+  const dominantMetrics = new Map<
+    ServiceId,
+    { label: string; head: number[]; tail: number[]; transientSkipped: string[] }
+  >();
   let diagSvcCount = 0;
   let diagNoMetrics = 0;
   let diagZeroScore = 0;
@@ -348,7 +354,13 @@ interface AnomalyFeatures {
   score: number;
   onsetIndex: number;
   /** The metric that drove the score (highest feature-weighted deviation). */
-  dominantMetric: { label: string; head: number[]; tail: number[] };
+  dominantMetric: {
+    label: string;
+    head: number[];
+    tail: number[];
+    /** Labels of metrics skipped by the transient-spike guard (diagnostic). */
+    transientSkipped: string[];
+  };
 }
 
 interface EdgeWeightResult {
@@ -382,7 +394,7 @@ function computeAnomalyFeatures(
     return {
       score: 0,
       onsetIndex: Number.MAX_SAFE_INTEGER,
-      dominantMetric: { label: '', head: [], tail: [] },
+      dominantMetric: { label: '', head: [], tail: [], transientSkipped: [] },
     };
   }
 
@@ -391,6 +403,7 @@ function computeAnomalyFeatures(
   let bestMetricHead: number[] = [];
   let bestMetricTail: number[] = [];
   let bestMetricOnset = Number.MAX_SAFE_INTEGER;
+  const transientSkippedLabels: string[] = [];
 
   for (const ts of serviceMetrics) {
     if (ts.values.length < 2) continue;
@@ -462,7 +475,13 @@ function computeAnomalyFeatures(
     const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
     const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-    if (nonZeroBaseline && permanence < 0.3) continue;
+    if (nonZeroBaseline && permanence < 0.3) {
+      // Diagnostic: record what the transient guard discards, so the
+      // benchmark failure diagnostics can reveal whether a genuine fault
+      // signature is being mistaken for a transient symptom.
+      transientSkippedLabels.push(ts.label);
+      continue;
+    }
 
     // Baseline from pre-change period.
     // Use median when change point detection fails — spike-inflated mean
@@ -617,7 +636,12 @@ function computeAnomalyFeatures(
   return {
     score: bestScore,
     onsetIndex: bestMetricOnset,
-    dominantMetric: { label: bestMetricLabel, head: bestMetricHead, tail: bestMetricTail },
+    dominantMetric: {
+      label: bestMetricLabel,
+      head: bestMetricHead,
+      tail: bestMetricTail,
+      transientSkipped: transientSkippedLabels,
+    },
   };
 }
 

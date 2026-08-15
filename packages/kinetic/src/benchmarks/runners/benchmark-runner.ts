@@ -115,6 +115,9 @@ export interface FailedCase {
     readonly gtDominantLabel?: string;
     readonly gtDominantHead?: readonly number[];
     readonly gtDominantTail?: readonly number[];
+    /** Metrics discarded by the transient-spike guard (GT / top-1 service). */
+    readonly gtTransientSkipped?: readonly string[];
+    readonly top1TransientSkipped?: readonly string[];
     /** Top-3 services by raw anomaly score, for noise/symptom inspection. */
     readonly topAnomaly?: readonly { serviceId: string; score: number }[];
     /** Signature of the top-1 anomaly service's dominant metric. */
@@ -340,6 +343,7 @@ export class BenchmarkRunner {
         const gtDominantLabel = gtDominant?.label ?? '';
         const gtDominantHead = gtDominant?.head ?? [];
         const gtDominantTail = gtDominant?.tail ?? [];
+        const gtTransientSkipped = gtDominant?.transientSkipped ?? [];
         // Top-3 services by raw anomaly score (post-normalization) to expose
         // whether the max is the injected fault, a consistent symptom, or noise.
         const topAnomaly = [...faultGraph.anomalyScores.entries()]
@@ -356,6 +360,7 @@ export class BenchmarkRunner {
         const top1MetricLabel = top1Dominant?.label ?? '';
         const top1MetricHead = top1Dominant?.head ?? [];
         const top1MetricTail = top1Dominant?.tail ?? [];
+        const top1TransientSkipped = top1Dominant?.transientSkipped ?? [];
         // Onset indices for the GT vs the top-anomaly service, to validate
         // whether the source changed earlier than the symptom.
         const gtOnset = faultGraph.anomalyOnsetTimes.get(benchCase.groundTruth.serviceId);
@@ -418,6 +423,8 @@ export class BenchmarkRunner {
               gtDominantLabel,
               gtDominantHead,
               gtDominantTail,
+              gtTransientSkipped,
+              top1TransientSkipped,
               topAnomaly,
               top1MetricLabel,
               top1MetricHead,
