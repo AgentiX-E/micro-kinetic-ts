@@ -391,6 +391,18 @@ interface LoadStats {
     llmResolved: number;
     exactMatched: number;
   };
+  /** Log-loading diagnostics (RE2/RE3): whether logs flow to the engine. */
+  logStats: {
+    /** Cases carrying at least one log entry. */
+    total: number;
+    /** Total ERROR/FATAL entries (after severity derivation). */
+    errorEntries: number;
+    /** First log entry's timestamp (ms), level, service, and message sample. */
+    sampleTs: number;
+    sampleLevel: string;
+    sampleService: string;
+    sampleMsg: string;
+  };
 }
 
 /**
@@ -493,6 +505,13 @@ async function loadCases(
     semEmbedding = 0,
     semLLM = 0,
     semExact = 0;
+  let logCases = 0,
+    logErrorEntries = 0;
+  let logSampleTs = 0,
+    logSampleLevel = '',
+    logSampleService = '',
+    logSampleMsg = '';
+  let logSampleCaptured = false;
 
   for (const meta of selected) {
     try {
@@ -522,6 +541,25 @@ async function loadCases(
       if (pruned) prunedCount++;
       edgesBeforeSum += edgesBefore;
       edgesAfterSum += edgesAfter;
+
+      // ── Log-loading diagnostics ──
+      // Count ERROR/FATAL entries and capture the first log line so the
+      // benchmark output can reveal whether logs reach the engine and whether
+      // severity derivation (message-based) is actually producing errors.
+      const caseLogs = benchCase.logs;
+      if (caseLogs && caseLogs.length > 0) {
+        logCases++;
+        for (const l of caseLogs) {
+          if (l.level === 'ERROR' || l.level === 'FATAL') logErrorEntries++;
+        }
+        if (!logSampleCaptured) {
+          logSampleCaptured = true;
+          logSampleTs = caseLogs[0]!.timestamp;
+          logSampleLevel = caseLogs[0]!.level;
+          logSampleService = caseLogs[0]!.service;
+          logSampleMsg = caseLogs[0]!.message.slice(0, 80);
+        }
+      }
 
       loaded.push(benchCase);
 
@@ -557,6 +595,14 @@ async function loadCases(
       embeddingResolved: semEmbedding,
       llmResolved: semLLM,
       exactMatched: semExact,
+    },
+    logStats: {
+      total: logCases,
+      errorEntries: logErrorEntries,
+      sampleTs: logSampleTs,
+      sampleLevel: logSampleLevel,
+      sampleService: logSampleService,
+      sampleMsg: logSampleMsg,
     },
   };
 }
@@ -699,7 +745,9 @@ function printFailureDiagnostics(
         console.log(`    injectDelay GT=${gtD} top1=${topD} (${verdict})`);
       }
       if (d.gtLogScore !== undefined || d.topLogScore !== undefined) {
-        console.log(`    logScore GT=${d.gtLogScore?.toFixed(3) ?? '-'} top1=${d.topLogScore?.toFixed(3) ?? '-'}`);
+        console.log(
+          `    logScore GT=${d.gtLogScore?.toFixed(3) ?? '-'} top1=${d.topLogScore?.toFixed(3) ?? '-'}`,
+        );
       }
       if (d.gtRatioContrib !== undefined || d.topRatioContrib !== undefined) {
         console.log(
@@ -773,6 +821,25 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
   }
 }
 
+/**
+ * Log log-loading diagnostics: whether logs reach the engine, how many
+ * ERROR/FATAL entries the severity derivation produced, and a sample of the
+ * first log line (timestamp/level/service/message) to eyeball the raw format.
+ */
+function reportLogDiagnostics(systemName: string, suiteName: string, stats: LoadStats): void {
+  const { total, errorEntries, sampleTs, sampleLevel, sampleService, sampleMsg } = stats.logStats;
+  if (total > 0) {
+    console.log(
+      `  [log] ${total}/${stats.cases.length} cases with logs, ${errorEntries} ERROR/FATAL entries`,
+    );
+    console.log(
+      `  [log] sample: ts=${sampleTs} level=${sampleLevel || '?'} svc=${sampleService} msg="${sampleMsg}"`,
+    );
+  } else if (stats.cases.length > 0) {
+    console.log(`  [log] No log data available for ${stats.cases.length} cases`);
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -785,7 +852,9 @@ async function main(): Promise<void> {
   console.log(
     `Filter: system=${opts.system}, suite=${opts.suite}${opts.maxCases > 0 ? ` (max ${opts.maxCases} cases)` : ''}`,
   );
-  const injectMode = opts.noInjectTime ? 'OFF (dataset-decoupled)' : 'ON (RCAEval baseline protocol)';
+  const injectMode = opts.noInjectTime
+    ? 'OFF (dataset-decoupled)'
+    : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
     `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight}`,
@@ -855,7 +924,13 @@ async function main(): Promise<void> {
     logWeight: opts.logWeight,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
-  const runner = new BenchmarkRunner(container, classifier, undefined, undefined, !opts.noInjectTime);
+  const runner = new BenchmarkRunner(
+    container,
+    classifier,
+    undefined,
+    undefined,
+    !opts.noInjectTime,
+  );
   const loader = new RCAEvalLoader();
 
   // ── Init YAML-driven topology registry ──────────────────
@@ -902,6 +977,9 @@ async function main(): Promise<void> {
 
     // ── Trace pruning diagnostics ─────────────────────────
     reportTraceDiagnostics(systemName, suiteName, stats);
+
+    // ── Log-loading diagnostics ───────────────────────────
+    reportLogDiagnostics(systemName, suiteName, stats);
 
     // Split by fault type (matching paper's Table 6 format)
     const byFaultType = new Map<string, BenchmarkCase[]>();
