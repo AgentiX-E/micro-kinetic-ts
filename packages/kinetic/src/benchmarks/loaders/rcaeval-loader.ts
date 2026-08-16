@@ -79,6 +79,15 @@ export function classifyLogLevel(
 
 export class RCAEvalLoader {
   /**
+   * Raw header of the last logs.csv parsed (comma-joined column names).
+   * Exposed for benchmark diagnostics — it reveals the ACTUAL column names of
+   * the RCAEval log data, which is essential for correctly attributing log
+   * lines to services (the `service` column has proven not to be the obvious
+   * name).
+   */
+  lastLogHeader = '';
+
+  /**
    * Load a single RCAEval case from a directory.
    *
    * Uses defensive loading: if optional files are missing or malformed,
@@ -345,12 +354,33 @@ export class RCAEvalLoader {
       // MESSAGE text (stack traces / error keywords). Detect columns flexibly
       // so both the original CSV layout and any Parquet-derived variant work.
       const header = Object.keys(rows[0]!);
+      this.lastLogHeader = header.join(',');
       const tsCol = header.find((h) => ['timestamp', 'time', 'ts', 't'].includes(h.toLowerCase()));
       const svcCol = header.find((h) =>
-        ['service', 'svc', 'service_name', 'service_id'].includes(h.toLowerCase()),
+        [
+          'service',
+          'svc',
+          'service_name',
+          'service_id',
+          'serviceid',
+          'svc_name',
+          'svcname',
+          'app',
+          'application',
+          'app_name',
+          'pod',
+          'pod_name',
+          'container',
+          'container_name',
+          'instance',
+          'component',
+          'source',
+          'source_service',
+          'name',
+        ].includes(h.toLowerCase()),
       );
       const msgCol = header.find((h) =>
-        ['message', 'msg', 'content', 'log', 'text'].includes(h.toLowerCase()),
+        ['message', 'msg', 'content', 'log', 'text', 'line'].includes(h.toLowerCase()),
       );
       const lvlCol = header.find((h) =>
         ['level', 'severity', 'log_level', 'loglevel'].includes(h.toLowerCase()),

@@ -397,6 +397,8 @@ interface LoadStats {
     total: number;
     /** Total ERROR/FATAL entries (after severity derivation). */
     errorEntries: number;
+    /** Raw logs.csv header (comma-joined column names). */
+    header: string;
     /** First log entry's timestamp (ms), level, service, and message sample. */
     sampleTs: number;
     sampleLevel: string;
@@ -599,6 +601,7 @@ async function loadCases(
     logStats: {
       total: logCases,
       errorEntries: logErrorEntries,
+      header: loader.lastLogHeader,
       sampleTs: logSampleTs,
       sampleLevel: logSampleLevel,
       sampleService: logSampleService,
@@ -827,11 +830,13 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
  * first log line (timestamp/level/service/message) to eyeball the raw format.
  */
 function reportLogDiagnostics(systemName: string, suiteName: string, stats: LoadStats): void {
-  const { total, errorEntries, sampleTs, sampleLevel, sampleService, sampleMsg } = stats.logStats;
+  const { total, errorEntries, header, sampleTs, sampleLevel, sampleService, sampleMsg } =
+    stats.logStats;
   if (total > 0) {
     console.log(
       `  [log] ${total}/${stats.cases.length} cases with logs, ${errorEntries} ERROR/FATAL entries`,
     );
+    console.log(`  [log] header: ${header}`);
     console.log(
       `  [log] sample: ts=${sampleTs} level=${sampleLevel || '?'} svc=${sampleService} msg="${sampleMsg}"`,
     );
