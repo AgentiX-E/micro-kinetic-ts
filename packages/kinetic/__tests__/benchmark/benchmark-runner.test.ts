@@ -933,6 +933,127 @@ describe('RCA Engine Integration', () => {
 
     expect(receivedInjectTimeMs).toBe(0);
   });
+
+  it('forwards the case logs to buildFaultGraph options', async () => {
+    // The runner must pass raw service logs through to the engine so the log
+    // signal (post-injection ERROR/FATAL volume) can be derived. A spy engine
+    // records the options object and the test asserts it carries the logs.
+    const container = new Container();
+    let receivedLogs: ReadonlyArray<{ timestamp: number; service: string; level: string }> | undefined;
+    const spyEngine: IRCAEngine = {
+      buildFaultGraph: (callGraph, _metrics, options) => {
+        receivedLogs = options?.logs;
+        return {
+          callGraph,
+          propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+          anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+          anomalyOnsetTimes: new Map(),
+          detectedCycles: [],
+          totalCycleContribution: 0,
+          pruneThreshold: 0.001,
+        };
+      },
+      analyze: async () => [
+        {
+          serviceId: 'service_1',
+          faultType: { category: 'UNKNOWN', subType: '', severity: 'info' as const },
+          confidence: 0.5,
+          rank: 1,
+          evidenceMetrics: [],
+          propagationDepth: 0,
+          propagationErrorBound: 0,
+          viaTreeSearch: false,
+        },
+      ],
+      getCycleContributionBound: () => 0,
+    };
+    container.register(DI_TOKENS.RCA_ENGINE, () => spyEngine);
+    const runner = new BenchmarkRunner(container);
+
+    const benchCase = generator.generateRCAEvalCase('CPU', 3);
+    const caseWithLogs = {
+      ...benchCase,
+      logs: [{ timestamp: 1000, service: 'service_1', level: 'ERROR' as const }],
+    };
+    await runner.runSuite({ name: 'logs-fwd', cases: [caseWithLogs], totalCases: 1 });
+
+    expect(receivedLogs).toBeDefined();
+    expect(receivedLogs).toHaveLength(1);
+    expect(receivedLogs![0]!.service).toBe('service_1');
+    expect(receivedLogs![0]!.level).toBe('ERROR');
+  });
+
+  it('exposes the auxiliary signal values in the failure diagnostics', async () => {
+    // When a case fails, the runner must record the GT vs top-1 values of the
+    // three auxiliary ranking signals (log volume, collision ratio, and
+    // topological source) so the benchmark artifacts can reveal whether each
+    // signal is helping or hurting source/symptom separation.
+    const container = new Container();
+    const spyEngine: IRCAEngine = {
+      buildFaultGraph: (callGraph) => ({
+        callGraph,
+        propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+        // 'frontend' is the highest-anomaly service → it becomes topAnomaly[0].
+        anomalyScores: new Map(
+          [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 0.9 : 0.1]),
+        ),
+        anomalyOnsetTimes: new Map(),
+        logScores: new Map(
+          [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 1 : 0]),
+        ),
+        topoScores: new Map(
+          [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 1 : 0.5]),
+        ),
+        collisionEnergy: new Map(
+          [...callGraph.nodes.keys()].map((id) => [
+            id,
+            {
+              totalEnergy: 0.5,
+              collisionType: 'chain',
+              collisionGain: 0,
+              ratioContrib: id === 'frontend' ? 0 : 0.3,
+            },
+          ]),
+        ),
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+      }),
+      analyze: async () => [
+        {
+          serviceId: 'frontend',
+          faultType: { category: 'UNKNOWN', subType: '', severity: 'info' as const },
+          confidence: 0.5,
+          rank: 1,
+          evidenceMetrics: [],
+          propagationDepth: 0,
+          propagationErrorBound: 0,
+          viaTreeSearch: false,
+        },
+      ],
+      getCycleContributionBound: () => 0,
+    };
+    container.register(DI_TOKENS.RCA_ENGINE, () => spyEngine);
+    const runner = new BenchmarkRunner(container);
+
+    // Ground truth is 'cartservice', so the spy's 'frontend' prediction fails.
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const benchCase = {
+      ...base,
+      groundTruth: { ...base.groundTruth, serviceId: 'cartservice' },
+    };
+    const result = await runner.runSuite({ name: 'sig-diag', cases: [benchCase], totalCases: 1 });
+
+    expect(result.failures).toHaveLength(1);
+    const diag = result.failures[0]!.diag;
+    expect(diag).toBeDefined();
+    expect(diag!.gtLogScore).toBe(0);
+    expect(diag!.topLogScore).toBe(1);
+    expect(diag!.gtRatioContrib).toBe(0.3);
+    expect(diag!.topRatioContrib).toBe(0);
+    expect(diag!.gtTopoSource).toBe(0.5);
+    expect(diag!.topTopoSource).toBe(1);
+  });
 });
 
 // ── Classifier Integration Tests ─────────────────────────

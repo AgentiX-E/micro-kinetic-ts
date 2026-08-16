@@ -5,7 +5,7 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import { TreePruner } from '@agentix-e/micro-kinetic-tree';
+import { TreePruner, toRankingWeights } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
 function makeNode(id: string): ServiceNode {
@@ -1011,6 +1011,184 @@ describe('TreePruner', () => {
       const results = pruner.analyze(graph, 3);
       // Only A has a non-zero anomaly → A is the sole candidate.
       expect(results[0]!.serviceId).toBe('A');
+    });
+  });
+
+  describe('ranking fusion weights (serializable structure)', () => {
+    it('packs the five flat option fields into a RankingWeights object', () => {
+      const pruner = new TreePruner({
+        sourceWeight: 0.1,
+        temporalWeight: 0.2,
+        collisionWeight: 0.3,
+        topoWeight: 0.4,
+        logWeight: 0.5,
+      });
+
+      // toRankingWeights reads the DEFAULT_TREE_PRUNER_OPTIONS merge result.
+      // We assert via a fresh pruner's defaults instead — the helper is pure
+      // over an options object, so construct one directly.
+      const weights = toRankingWeights({
+        sourceWeight: 0.1,
+        temporalWeight: 0.2,
+        collisionWeight: 0.3,
+        topoWeight: 0.4,
+        logWeight: 0.5,
+      });
+
+      expect(weights).toEqual({
+        sourceWeight: 0.1,
+        temporalWeight: 0.2,
+        collisionWeight: 0.3,
+        topoWeight: 0.4,
+        logWeight: 0.5,
+      });
+
+      // Sanity: the pruner accepts the same fields through its constructor.
+      expect(pruner.pruneEpsilon).toBeGreaterThan(0);
+    });
+
+    it('defaults every ranking weight to 0 (all signals opt-in)', () => {
+      // The shipped default is pure self-anomaly ranking — no causal signal
+      // is active unless explicitly enabled, so ablation can measure each
+      // signal's marginal contribution in isolation.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(
+        makeCallGraph(['A', 'B'], [['A', 'B']]),
+        makeMetrics({ A: [1, 1, 3, 3], B: [1, 1, 3.5, 3.5] }),
+      );
+      const results = pruner.analyze(graph, 2);
+      // B (higher self-anomaly) ranks first with all signals disabled.
+      expect(results[0]!.serviceId).toBe('B');
+    });
+  });
+
+  describe('log signal ranking (opt-in)', () => {
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
+    // B has the highest self-anomaly, then C, then A (established elsewhere).
+    const metrics = makeMetrics({
+      A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+      C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
+    });
+    const logs = [
+      { timestamp: 0, service: 'A', level: 'ERROR' },
+      { timestamp: 0, service: 'A', level: 'ERROR' },
+      { timestamp: 0, service: 'A', level: 'ERROR' },
+    ];
+
+    it('stores max-normalised log scores on the graph', () => {
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { logs });
+
+      expect(graph.logScores?.get('A')).toBe(1);
+      expect(graph.logScores?.get('B')).toBe(0);
+      expect(graph.logScores?.get('C')).toBe(0);
+    });
+
+    it('lifts the erroring service to rank first when enabled', () => {
+      // A is the only service throwing ERROR logs, so a non-zero logWeight
+      // must overcome B's modest self-anomaly lead and rank A first.
+      const pruner = new TreePruner({ logWeight: 3.0 });
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { logs });
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('A');
+    });
+
+    it('is disabled by default (pure self-anomaly ranking)', () => {
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { logs });
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('B');
+    });
+  });
+
+  describe('topological source signal ranking (opt-in)', () => {
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
+    const metrics = makeMetrics({
+      A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+      C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
+    });
+
+    it('stores topological-source scores with the parentless root highest', () => {
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      // A has no parent → score 1. B/C have an anomalous parent → score < 1.
+      expect(graph.topoScores?.get('A')).toBe(1);
+      expect(graph.topoScores?.get('B')).toBeLessThan(1);
+      expect(graph.topoScores?.get('C')).toBeLessThan(1);
+    });
+
+    it('lifts the parentless source to rank first when enabled', () => {
+      const pruner = new TreePruner({ topoWeight: 5.0 });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('A');
+    });
+
+    it('is disabled by default (pure self-anomaly ranking)', () => {
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('B');
+    });
+  });
+
+  describe('collision-energy signal ranking (opt-in)', () => {
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
+    const metrics = makeMetrics({
+      A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+      C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
+    });
+
+    it('stores ratioContrib with the source at 0 and symptoms positive', () => {
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      // A has no upstream parent → no inherited energy → ratioContrib 0.
+      expect(graph.collisionEnergy?.get('A')?.ratioContrib).toBe(0);
+      // B and C inherit energy from an anomalous parent → ratioContrib > 0.
+      expect(graph.collisionEnergy?.get('B')?.ratioContrib).toBeGreaterThan(0);
+    });
+
+    it('penalises upstream-explained symptoms to lift the source when enabled', () => {
+      const pruner = new TreePruner({ collisionWeight: 10.0 });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('A');
+    });
+
+    it('records ratioContrib 0 when collision aggregation is disabled', () => {
+      const pruner = new TreePruner({ enableCollisionAggregation: false });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      expect(graph.collisionEnergy?.get('A')?.ratioContrib).toBe(0);
+      expect(graph.collisionEnergy?.get('B')?.ratioContrib).toBe(0);
     });
   });
 });

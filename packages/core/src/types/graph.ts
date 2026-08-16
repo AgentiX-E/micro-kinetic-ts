@@ -142,6 +142,9 @@ export interface FaultPropagationGraph {
    * - totalEnergy: combined local + collision gain ∈ [0, 1]
    * - collisionType: chain | fan-in | bottleneck | cycle
    * - collisionGain: Boltzmann Q(f,f) value ∈ [0, 1]
+   * - ratioContrib: collisionGain / (local + collisionGain) — the fraction of
+   *   a node's fault energy inherited from upstream. A source ≈ 0, a fan-in
+   *   symptom → 1. Feeds the (opt-in) collisionWeight ranking signal.
    *
    * When present, this replaces raw anomalyScores as the primary energy
    * source for root cause ranking.
@@ -152,8 +155,27 @@ export interface FaultPropagationGraph {
       readonly totalEnergy: number;
       readonly collisionType: string;
       readonly collisionGain: number;
+      readonly ratioContrib: number;
     }
   >;
+  /**
+   * Per-service log signal score (0-1) — the count of ERROR/FATAL log lines
+   * emitted at/after the fault injection time, normalised by the maximum
+   * count (the top erroring service scores 1, zero-error services 0). Targets
+   * code-level faults (stack traces) that metric-shape signals cannot see.
+   * Optional: absent when the case carried no error logs. Feeds the (opt-in)
+   * logWeight ranking signal.
+   */
+  readonly logScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service topological-source score (0-1) — `1 − maxParentExplanation`,
+   * where `maxParentExplanation` is the largest `propagationWeight(p→v) ×
+   * anomaly(p)` over a node's upstream parents. A source (no strongly
+   * anomalous parent) scores 1; a symptom (explained by a parent) scores low.
+   * A pure structural signal, distinct from the nonlinear collision gain.
+   * Feeds the (opt-in) topoWeight ranking signal.
+   */
+  readonly topoScores?: ReadonlyMap<ServiceId, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

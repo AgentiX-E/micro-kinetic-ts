@@ -48,8 +48,10 @@ export type { JohnsonCycleOptions } from './graph/cycle-detector.js';
 export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';
 export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 
-export { TreePruner } from './pruning/pruner.js';
+export { TreePruner, toRankingWeights } from './pruning/pruner.js';
 export type { TreePrunerOptions } from './pruning/pruner.js';
+
+export { computeLogScores, computeTopoSourceScores } from './pruning/ranking-signals.js';
 
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';

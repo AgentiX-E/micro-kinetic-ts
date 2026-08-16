@@ -139,6 +139,19 @@ export interface FailedCase {
      */
     readonly gtInjectDelay?: number;
     readonly topInjectDelay?: number;
+    /**
+     * The three auxiliary ranking signals (log volume, collision ratio, and
+     * topological source) for the GT and the top-1 anomaly service, so the
+     * benchmark artifacts can reveal whether each signal is helping or hurting
+     * source/symptom separation. Absent when the signal is disabled or the
+     * case carried no relevant data.
+     */
+    readonly gtLogScore?: number;
+    readonly topLogScore?: number;
+    readonly gtRatioContrib?: number;
+    readonly topRatioContrib?: number;
+    readonly gtTopoSource?: number;
+    readonly topTopoSource?: number;
   };
 }
 
@@ -329,6 +342,7 @@ export class BenchmarkRunner {
 
         const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics, {
           injectTimeMs: this.useInjectTime ? benchCase.injectTime : 0,
+          logs: benchCase.logs,
         });
         const results = await engine.analyze(faultGraph, topK);
 
@@ -397,6 +411,20 @@ export class BenchmarkRunner {
         const topInjectDelay = faultGraph.postInjectOnsetDelays?.get(
           topAnomaly[0]?.serviceId ?? '',
         );
+        // The three auxiliary ranking signals for the GT and top-1 anomaly
+        // service — log volume, collision ratio, and topological source. These
+        // reveal whether each signal is helping (GT > symptom) or hurting
+        // (symptom > GT) the source/symptom separation.
+        const gtLogScore = faultGraph.logScores?.get(benchCase.groundTruth.serviceId);
+        const topLogScore = faultGraph.logScores?.get(topAnomaly[0]?.serviceId ?? '');
+        const gtRatioContrib = faultGraph.collisionEnergy?.get(
+          benchCase.groundTruth.serviceId,
+        )?.ratioContrib;
+        const topRatioContrib = faultGraph.collisionEnergy?.get(
+          topAnomaly[0]?.serviceId ?? '',
+        )?.ratioContrib;
+        const gtTopoSource = faultGraph.topoScores?.get(benchCase.groundTruth.serviceId);
+        const topTopoSource = faultGraph.topoScores?.get(topAnomaly[0]?.serviceId ?? '');
 
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
@@ -465,6 +493,12 @@ export class BenchmarkRunner {
               topOnset,
               gtInjectDelay,
               topInjectDelay,
+              gtLogScore,
+              topLogScore,
+              gtRatioContrib,
+              topRatioContrib,
+              gtTopoSource,
+              topTopoSource,
             },
           });
         } else {

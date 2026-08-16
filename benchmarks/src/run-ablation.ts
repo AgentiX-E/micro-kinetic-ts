@@ -57,6 +57,12 @@ interface FeatureFlags {
   traceAugmentation: boolean;
   /** Online weight calibration (self-evolving). */
   selfLearning: boolean;
+  /** Log signal: reward post-injection ERROR/FATAL volume (logWeight). */
+  logSignal: boolean;
+  /** Topological-source signal: reward no-anomalous-parent nodes (topoWeight). */
+  topoSignal: boolean;
+  /** Collision-energy signal: penalise upstream-inherited energy (collisionWeight). */
+  collisionSignal: boolean;
 }
 
 interface AblationRun {
@@ -92,6 +98,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: false,
       traceAugmentation: false,
       selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -101,6 +110,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: true,
       traceAugmentation: false,
       selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -109,6 +121,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: false,
       traceAugmentation: true,
       selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: '+Trace Topo',
   },
@@ -117,6 +132,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: false,
       traceAugmentation: false,
       selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: '+SelfLearn',
   },
@@ -126,6 +144,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: true,
       traceAugmentation: true,
       selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: '+Collision+Trace',
   },
@@ -134,6 +155,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: true,
       traceAugmentation: false,
       selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -142,6 +166,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: false,
       traceAugmentation: true,
       selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -151,8 +178,53 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionAggregation: true,
       traceAugmentation: true,
       selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
     },
     label: 'FULL STACK (all ON)',
+  },
+  // ── New ranking signals (marginal over BASELINE, one at a time) ──
+  // Each measures the marginal contribution of a single ranking signal.
+  // They are NOT part of the full factorial above — 2^6 = 64 configs × 3 reps
+  // would exceed CI budget — so they are added as 1-D slices: baseline + one
+  // signal at full strength (weight 1.0).
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+    },
+    label: '+Log Signal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: true,
+      collisionSignal: false,
+    },
+    label: '+Topo Signal',
+  },
+  {
+    // The collision signal consumes `ratioContrib`, which is only populated
+    // when Boltzmann aggregation is ON — so this config enables aggregation
+    // (unlike +Log/+Topo). Its marginal over "+Collision Q(f,f)" isolates the
+    // collisionWeight penalty from the aggregation itself.
+    flags: {
+      collisionAggregation: true,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: true,
+    },
+    label: '+Collision Signal',
   },
 ];
 
@@ -367,17 +439,23 @@ async function main(): Promise<void> {
    * Build a fresh DI container for a single ablation config.
    *
    * The collision-aggregation feature is controlled by the TreePruner's
-   * `enableCollisionAggregation` option. Each config gets its own container
-   * so the flag is wired directly into the engine registered under
-   * RCA_ENGINE — toggling it OFF falls back to raw anomaly scores with no
-   * Q(f,f) collision amplification.
+   * `enableCollisionAggregation` option; the three ranking signals map to the
+   * `collisionWeight` / `topoWeight` / `logWeight` options (weight 1.0 when
+   * enabled). Each config gets its own container so the flags are wired
+   * directly into the engine registered under RCA_ENGINE.
    */
-  function buildContainer(collisionAggregation: boolean): Container {
+  function buildContainer(flags: FeatureFlags): Container {
     const c = new Container();
     c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
     c.register(
       DI_TOKENS.RCA_ENGINE,
-      () => new TreePruner({ enableCollisionAggregation: collisionAggregation }),
+      () =>
+        new TreePruner({
+          enableCollisionAggregation: flags.collisionAggregation,
+          collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
+          topoWeight: flags.topoSignal ? 1.0 : 0.0,
+          logWeight: flags.logSignal ? 1.0 : 0.0,
+        }),
     );
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
     return c;
@@ -489,7 +567,8 @@ async function main(): Promise<void> {
 
       // ── Wire feature flags into this config's engine ──
       // Collision aggregation: toggles TreePruner.enableCollisionAggregation.
-      const container = buildContainer(config.flags.collisionAggregation);
+      // The three ranking signals map to collisionWeight/topoWeight/logWeight.
+      const container = buildContainer(config.flags);
       // Self-learning: a SHARED calibrator across this config's reps/Fts so
       // weight updates from earlier cases feed back into later ones.
       const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;

@@ -31,6 +31,31 @@
  * 2. **Collision type boosts**: [b_cycle, b_bottleneck, b_fanIn, b_chain]
  *    Controls how much extra weight collision tree topology types receive.
  *
+ * @deprecated This online calibrator is a DEAD LOOP and must not be used as
+ * the production self-tuning mechanism:
+ *
+ * 1. **Its weights are never consumed.** The `TreePruner` ranking reads only
+ *    the flat `RankingWeights` fields (`sourceWeight`, `temporalWeight`,
+ *    `collisionWeight`, `topoWeight`, `logWeight`), never this calibrator's
+ *    `fusion` / `collisionBoosts`. Training it therefore has no effect on any
+ *    prediction.
+ *
+ * 2. **Its "gradient" is not a real derivative.** The update uses a hand-waved
+ *    sign of the correctness flag (`gradSign = ±1`), not the gradient of a
+ *    differentiable loss, so even wired up it would not converge meaningfully.
+ *
+ * 3. **Self-tuning during evaluation leaks ground truth.** Optimising weights
+ *    on the benchmark's own cases overfits the 735 RCAEval cases (weights
+ *    memorise dataset idiosyncrasies rather than generalising), which is
+ *    equivalent to cheating. Any weight tuning must use a train/val/test split
+ *    and live OUTSIDE the evaluation loop.
+ *
+ * The correct architecture is a two-tier approach on {@link RankingWeights}:
+ * an OFFLINE optimizer (the `optimize` package) that searches the five ranking
+ * weights under cross-validation, and — only with real production feedback —
+ * an online bandit/real-gradient adapter. This class is retained solely for
+ * interface continuity and existing tests; do not extend it.
+ *
  * @module signals/weight-calibrator
  */
 

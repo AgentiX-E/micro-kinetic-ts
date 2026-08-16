@@ -42,6 +42,7 @@ import {
   type PrunedEdgeRecord,
   type PrunedTree,
   type RCAEngineOptions,
+  type RankingWeights,
   type RootCauseResult,
   type ServiceCallGraph,
   type ServiceId,
@@ -54,6 +55,7 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
+import { computeLogScores, computeTopoSourceScores } from './ranking-signals.js';
 
 /**
  * Options for TreePruner construction.
@@ -120,6 +122,76 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * (at a low weight) after the onset detector is validated against real data.
    */
   readonly temporalWeight: number;
+  /**
+   * Weight of the collision-energy signal: penalise a node whose fault energy
+   * is mostly INHERITED from upstream rather than self-generated.
+   *
+   *   finalScore(v) −= collisionWeight × ratioContrib(v)
+   *
+   * `ratioContrib(v) = collisionGain / (local + collisionGain)` is the
+   * fraction of v's Boltzmann fault energy coming from its parents. A source
+   * generates its own fault (ratioContrib ≈ 0) and is untouched; a fan-in
+   * symptom aggregates upstream faults (ratioContrib → 1) and is penalised.
+   *
+   * Default: 0 (opt-in). The direction of the call-graph edges is a known
+   * assumption to validate via ablation — resource faults can propagate
+   * callee → caller, in which case this directed penalty would misfire.
+   */
+  readonly collisionWeight: number;
+  /**
+   * Weight of the topological-source signal: reward a node with no strongly
+   * anomalous upstream parent.
+   *
+   *   finalScore(v) += topoWeight × topoSource(v)
+   *
+   * `topoSource(v) = 1 − max over parents p of (propagationWeight(p→v) ×
+   * anomaly(p))` — a source has no explaining parent (score 1), a symptom is
+   * explained by an already-anomalous parent (score low). This is a PURE
+   * structural signal, deliberately distinct from the nonlinear collision
+   * gain so the two can be ablated independently.
+   *
+   * Default: 0 (opt-in).
+   */
+  readonly topoWeight: number;
+  /**
+   * Weight of the log signal: reward a node whose post-injection ERROR/FATAL
+   * log volume is highest.
+   *
+   *   finalScore(v) += logWeight × logScore(v)
+   *
+   * `logScore(v)` is the min-max normalised count of ERROR/FATAL lines
+   * emitted at/after the fault injection time. Code-level faults (uncaught
+   * exceptions, stack traces) are frequently visible only in logs, so this
+   * targets the RE3 cases that metric-shape signals cannot distinguish. The
+   * count is passed through the engine as `BuildFaultGraphOptions.logs`.
+   *
+   * Default: 0 (opt-in). A known risk: a code-level source may emit only a
+   * few errors while cascading symptoms flood downstream services with
+   * secondary errors; if ablation shows this, the signal should be upgraded
+   * from raw count to message-uniqueness or first-ERROR time.
+   */
+  readonly logWeight: number;
+}
+
+/**
+ * Package the five ranking fusion weights into the shared, serializable
+ * {@link RankingWeights} structure. This is the single source of truth for
+ * "what are the ranking weights", used by the offline optimizer (L2) to tune
+ * and persist them without coupling to the engine's flat option fields.
+ */
+export function toRankingWeights(
+  options: Pick<
+    TreePrunerOptions,
+    'sourceWeight' | 'temporalWeight' | 'collisionWeight' | 'topoWeight' | 'logWeight'
+  >,
+): RankingWeights {
+  return {
+    sourceWeight: options.sourceWeight,
+    temporalWeight: options.temporalWeight,
+    collisionWeight: options.collisionWeight,
+    topoWeight: options.topoWeight,
+    logWeight: options.logWeight,
+  };
 }
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
@@ -131,6 +203,9 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   enableCollisionAggregation: true,
   sourceWeight: 0.0,
   temporalWeight: 0.0,
+  collisionWeight: 0.0,
+  topoWeight: 0.0,
+  logWeight: 0.0,
 };
 
 /**
@@ -203,6 +278,11 @@ export class TreePruner {
     invariant(callGraph.edges.length > 0, 'callGraph must have at least one edge');
     invariant(metrics.size > 0, 'metrics must be non-empty');
 
+    // The fault injection time, resolved once and reused by the topology
+    // builder (onset anchor), the log signal (post-injection window), and the
+    // returned graph.
+    const injectTimeMs = options?.injectTimeMs ?? this.topologyConfig?.injectTimeMs ?? 0;
+
     // Build topology-preserving fault graph with Pearson cross-service correlation.
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
@@ -210,7 +290,7 @@ export class TreePruner {
     // each service's anomaly onset to a clean pre-injection baseline.
     const topoResult = buildTopologyFaultGraph(callGraph, metrics, {
       ...this.topologyConfig,
-      injectTimeMs: options?.injectTimeMs ?? this.topologyConfig?.injectTimeMs ?? 0,
+      injectTimeMs,
     });
     const {
       anomalyScores,
@@ -271,6 +351,7 @@ export class TreePruner {
         totalEnergy: number;
         collisionType: string;
         collisionGain: number;
+        ratioContrib: number;
       }
     >;
 
@@ -303,21 +384,40 @@ export class TreePruner {
             totalEnergy: r.totalEnergy,
             collisionType: r.collisionType,
             collisionGain: r.collisionGain,
+            ratioContrib: r.ratioContrib,
           },
         ]),
       );
     } else {
       // Collision disabled: each node gets its raw anomaly score as energy,
-      // with default 'chain' type (no amplification).
+      // with default 'chain' type (no amplification) and no upstream gain.
       collisionEnergy = new Map();
       for (const [nodeId, score] of anomalyScores) {
         collisionEnergy.set(nodeId, {
           totalEnergy: score,
           collisionType: 'chain',
           collisionGain: 0,
+          ratioContrib: 0,
         });
       }
     }
+
+    // ── Auxiliary ranking signals (dataset-decoupled, opt-in) ────────────────
+    // The log signal (ERROR/FATAL volume after injection) and the topological
+    // source signal (no strongly anomalous parent) are computed here — once,
+    // on the full graph — and stored so the ranking can consume them without
+    // re-deriving per case. Both default to neutral when the case carries no
+    // logs or when collision aggregation is disabled, respectively.
+    const logScores = computeLogScores(
+      options?.logs,
+      new Set(callGraph.nodes.keys()),
+      injectTimeMs,
+    );
+    const topoScores = computeTopoSourceScores(
+      topologyGraph.edges,
+      propagationWeights,
+      anomalyScores,
+    );
 
     return {
       callGraph: topologyGraph,
@@ -326,11 +426,13 @@ export class TreePruner {
       anomalyOnsetTimes,
       postInjectOnsetDelays,
       dominantMetrics,
-      injectTimeMs: options?.injectTimeMs ?? this.topologyConfig?.injectTimeMs ?? 0,
+      injectTimeMs,
       detectedCycles: classifiedCycles,
       totalCycleContribution,
       pruneThreshold: this.options.pruneEpsilon,
       collisionEnergy,
+      logScores,
+      topoScores,
     };
   }
 
@@ -386,6 +488,8 @@ export class TreePruner {
       k,
       this.options,
       graph.collisionEnergy,
+      graph.logScores,
+      graph.topoScores,
     );
 
     return results;
@@ -556,8 +660,10 @@ function performTreeRCA(
   options: TreePrunerOptions,
   collisionEnergy?: ReadonlyMap<
     ServiceId,
-    { totalEnergy: number; collisionType: string; collisionGain: number }
+    { totalEnergy: number; collisionType: string; collisionGain: number; ratioContrib: number }
   >,
+  logScores?: ReadonlyMap<ServiceId, number>,
+  topoScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -769,13 +875,19 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with two causal priors:
+  // Rank by self anomaly combined with four causal priors (all opt-in, default 0):
   //
-  // 1. A LOCAL source-likelihood prior (opt-in via `sourceWeight`, default 0)
-  //    — the fraction of a node's neighbours whose index-based onset is later.
+  // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
+  //    node's neighbours whose index-based onset is later.
   // 2. A GLOBAL temporal-earliness prior (`temporalWeight`) anchored to the
   //    fault injection time — the earlier a service deviated from its clean
   //    pre-injection baseline, the more likely it is the source.
+  // 3. A COLLISION-ENERGY prior (`collisionWeight`) — penalise a node whose
+  //    fault energy is mostly INHERITED from upstream (ratioContrib → 1).
+  // 4. A TOPOLOGICAL-source prior (`topoWeight`) — reward a node with no
+  //    strongly anomalous upstream parent.
+  // 5. A LOG prior (`logWeight`) — reward the service with the highest
+  //    post-injection ERROR/FATAL volume (code-level faults).
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -786,22 +898,37 @@ function performTreeRCA(
   // anomaly without unbounded amplification:
   //
   //   finalScore(v) = log(selfAnomaly(v))
-  //                 + sourceWeight × sourceScore(v)
-  //                 + temporalWeight × 2 × (earliness(v) − 0.5)
+  //                 + sourceWeight    × sourceScore(v)
+  //                 + temporalWeight  × 2 × (earliness(v) − 0.5)
+  //                 − collisionWeight × ratioContrib(v)
+  //                 + topoWeight      × topoSource(v)
+  //                 + logWeight       × logScore(v)
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
-  const sourceWeight = options.sourceWeight;
-  const temporalWeight = options.temporalWeight;
+  const weights = toRankingWeights(options);
+  // Extract the ratioContrib of each node's collision result once, so the
+  // comparator does not re-read the (possibly undefined) collision map per
+  // comparison.
+  const ratioContrib = new Map<ServiceId, number>();
+  for (const [id, ce] of collisionEnergy ?? []) {
+    ratioContrib.set(id, ce.ratioContrib ?? 0);
+  }
   scoredNodes.sort((a, b) => {
     const aScore =
       Math.log(a.score) +
-      sourceWeight * (sourceScores.get(a.serviceId) ?? 0) +
-      temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5);
+      weights.sourceWeight * (sourceScores.get(a.serviceId) ?? 0) +
+      weights.temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5) -
+      weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
+      weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
+      weights.logWeight * (logScores?.get(a.serviceId) ?? 0);
     const bScore =
       Math.log(b.score) +
-      sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
-      temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5);
+      weights.sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
+      weights.temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5) -
+      weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
+      weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
+      weights.logWeight * (logScores?.get(b.serviceId) ?? 0);
     if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;

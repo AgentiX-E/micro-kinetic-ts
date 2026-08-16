@@ -31,12 +31,46 @@ import type { FaultPropagationGraph, ServiceCallGraph } from '../types/graph.js'
  * graph and metric series — most importantly the fault injection time, which
  * anchors the causal source/symptom onset ordering.
  */
+/**
+ * A single log line, reduced to the minimal fields the RCA engine needs.
+ *
+ * The core layer must not depend on any benchmark package's log type, so this
+ * is a deliberately minimal structural contract: a timestamp, the emitting
+ * service, and the severity level (compared as a string against 'ERROR' /
+ * 'FATAL'). The `message` text is intentionally NOT carried — the current log
+ * signal only uses error/fatal volume, so pulling the full message through
+ * the engine would waste memory on RE2/RE3 cases with hundreds of thousands
+ * of log lines.
+ */
+export interface FaultLogEntry {
+  /** Log emission time in Unix milliseconds. */
+  readonly timestamp: number;
+  /** The service that emitted the log. */
+  readonly service: string;
+  /** Severity level (e.g. 'INFO', 'WARN', 'ERROR', 'FATAL'). */
+  readonly level: string;
+}
+
+/**
+ * Optional inputs to {@link IRCAEngine.buildFaultGraph}.
+ *
+ * These carry case-level temporal context that is independent of the call
+ * graph and metric series — most importantly the fault injection time, which
+ * anchors the causal source/symptom onset ordering, and the raw service logs,
+ * which drive the log-volume source signal.
+ */
 export interface BuildFaultGraphOptions {
   /**
    * Fault injection time in Unix milliseconds. `0` or `undefined` means
    * "unknown" and disables the temporal onset signal.
    */
   readonly injectTimeMs?: number;
+  /**
+   * Raw service logs (RE2/RE3 cases). When present, the engine derives a
+   * post-injection ERROR/FATAL volume score per service for the log signal.
+   * Absent logs simply disable that signal (neutral for every service).
+   */
+  readonly logs?: ReadonlyArray<FaultLogEntry>;
 }
 
 export interface IRCAEngine {

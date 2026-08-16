@@ -138,6 +138,12 @@ interface CliOptions {
    * TreePrunerOptions.temporalWeight). Set e.g. 0.5 to re-enable the ON mode.
    */
   temporalWeight: number;
+  /** Strength of the collision-energy signal (penalise upstream-inherited energy). */
+  collisionWeight: number;
+  /** Strength of the topological-source signal (reward no-anomalous-parent nodes). */
+  topoWeight: number;
+  /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
+  logWeight: number;
 }
 
 function parseArgs(): CliOptions {
@@ -149,6 +155,9 @@ function parseArgs(): CliOptions {
     suite: 'all',
     noInjectTime: false,
     temporalWeight: 0,
+    collisionWeight: 0,
+    topoWeight: 0,
+    logWeight: 0,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -159,16 +168,27 @@ function parseArgs(): CliOptions {
     else if (args[i] === '--no-inject-time') opts.noInjectTime = true;
     else if (args[i] === '--temporal-weight' && i + 1 < args.length)
       opts.temporalWeight = parseFloat(args[++i]!) || 0;
+    else if (args[i] === '--collision-weight' && i + 1 < args.length)
+      opts.collisionWeight = parseFloat(args[++i]!) || 0;
+    else if (args[i] === '--topo-weight' && i + 1 < args.length)
+      opts.topoWeight = parseFloat(args[++i]!) || 0;
+    else if (args[i] === '--log-weight' && i + 1 < args.length)
+      opts.logWeight = parseFloat(args[++i]!) || 0;
   }
   return opts;
 }
 
 // ── DI Assembly ───────────────────────────────────────────
 
-function createContainer(temporalWeight: number): Container {
+function createContainer(weights: {
+  temporalWeight: number;
+  collisionWeight: number;
+  topoWeight: number;
+  logWeight: number;
+}): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
-  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner({ temporalWeight }));
+  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner(weights));
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   return container;
 }
@@ -678,6 +698,19 @@ function printFailureDiagnostics(
                 : 'tie';
         console.log(`    injectDelay GT=${gtD} top1=${topD} (${verdict})`);
       }
+      if (d.gtLogScore !== undefined || d.topLogScore !== undefined) {
+        console.log(`    logScore GT=${d.gtLogScore?.toFixed(3) ?? '-'} top1=${d.topLogScore?.toFixed(3) ?? '-'}`);
+      }
+      if (d.gtRatioContrib !== undefined || d.topRatioContrib !== undefined) {
+        console.log(
+          `    ratioContrib GT=${d.gtRatioContrib?.toFixed(3) ?? '-'} top1=${d.topRatioContrib?.toFixed(3) ?? '-'}`,
+        );
+      }
+      if (d.gtTopoSource !== undefined || d.topTopoSource !== undefined) {
+        console.log(
+          `    topoSource GT=${d.gtTopoSource?.toFixed(3) ?? '-'} top1=${d.topTopoSource?.toFixed(3) ?? '-'}`,
+        );
+      }
       console.log(`    Reason: ${f.reason}`);
       console.log(
         `    Top-K: ${d.topK.map((t) => `${t.serviceId}(${t.confidence.toFixed(2)},d${t.depth})`).join(' | ')}`,
@@ -754,6 +787,9 @@ async function main(): Promise<void> {
   );
   const injectMode = opts.noInjectTime ? 'OFF (dataset-decoupled)' : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
+  console.log(
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight}`,
+  );
 
   const allCases = discoverAllCases(opts.dataDir);
   console.log(`Cases discovered: ${allCases.length}`);
@@ -812,7 +848,12 @@ async function main(): Promise<void> {
   console.log(`\nGroups to evaluate: ${groups.size}`);
   console.log('═'.repeat(65));
 
-  const container = createContainer(opts.temporalWeight);
+  const container = createContainer({
+    temporalWeight: opts.temporalWeight,
+    collisionWeight: opts.collisionWeight,
+    topoWeight: opts.topoWeight,
+    logWeight: opts.logWeight,
+  });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(container, classifier, undefined, undefined, !opts.noInjectTime);
   const loader = new RCAEvalLoader();
