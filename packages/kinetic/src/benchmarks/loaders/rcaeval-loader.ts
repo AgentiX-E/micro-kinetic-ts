@@ -305,7 +305,13 @@ export class RCAEvalLoader {
     try {
       const content = fs.readFileSync(logsPath, 'utf-8');
       return this.parseCSV(content).map((row) => ({
-        timestamp: parseInt(row.timestamp ?? '0', 10),
+        // RCAEval logs.csv timestamps are Unix SECONDS (same domain as
+        // inject_time.txt), while the unified BenchmarkCase carries time in
+        // MILLISECONDS. Convert to ms so the log signal's post-injection
+        // filter (`timestamp >= injectTimeMs`) compares like-for-like. Without
+        // this, every log line predates the ms-scaled injectTime and the log
+        // signal silently degrades to "no data".
+        timestamp: parseInt(row.timestamp ?? '0', 10) * 1000,
         service: row.service ?? 'unknown',
         message: row.message ?? '',
         level: (row.level?.toUpperCase() as BenchmarkLogEntry['level']) ?? 'INFO',

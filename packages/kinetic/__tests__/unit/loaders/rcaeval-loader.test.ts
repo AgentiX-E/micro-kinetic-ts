@@ -633,6 +633,27 @@ describe('RCAEvalLoader', () => {
       expect(suite.cases[0]!.logs).toBeDefined();
       expect(suite.cases[0]!.traces).toBeDefined();
     });
+
+    it('should convert log timestamps from seconds to milliseconds', () => {
+      // Regression: the log signal's post-injection filter compares a log's
+      // timestamp against the ms-scaled injectTime. The loader must convert
+      // logs.csv timestamps (Unix seconds) to ms, matching the metric and
+      // injectTime conversions, otherwise every log line predates the
+      // ms-scaled injectTime and the log signal silently degrades to no data.
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        logs: 'timestamp,service,message,level\n1000,cartservice,Boom,ERROR',
+      });
+
+      const rawCase = loader.loadCase(casePath);
+
+      expect(rawCase.logs).toBeDefined();
+      expect(rawCase.logs![0]!.timestamp).toBe(1000 * 1000);
+      // InjectTime stays in seconds on the raw case (converted later in
+      // toBenchmarkCase), while the log timestamp is already in ms.
+      expect(rawCase.injectTime).toBe(500);
+    });
   });
 
   // ── toBenchmarkSuite ────────────────────────────────────
