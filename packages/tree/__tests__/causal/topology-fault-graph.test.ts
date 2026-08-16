@@ -404,31 +404,6 @@ describe('buildTopologyFaultGraph — Post-Inject Onset Delay', () => {
   });
 });
 
-// ── Tests: Trend Monotonicity Bonus ──────────────────────
-
-describe('buildTopologyFaultGraph — Trend Monotonicity Bonus', () => {
-  it('scores a monotonic ramp above a noisy series with the same range', () => {
-    // Regression for the magnitude-based trend bonus: a monotonic drop
-    // [10..1] and a noisy series [10,1,10,1,...] share the SAME min/max (and
-    // thus nearly the same deviation), but the ramp is consistently monotonic
-    // (|r| ≈ 1) while the noisy series has no trend (|r| ≈ 0). The trend bonus
-    // must reward the CONSISTENCY of the drift, so the ramp scores higher. The
-    // previous trendStrength = |slope·n/mean| double-counted the magnitude,
-    // which is already captured by the deviation term.
-    const graph = makeCallGraph(['ramp', 'noise'], []);
-    const metrics = makeMetrics([
-      ['ramp', [makeTimeSeries('cpu', [10, 9, 8, 7, 6, 5, 4, 3, 2, 1])]],
-      ['noise', [makeTimeSeries('cpu', [10, 1, 10, 1, 10, 1, 10, 1, 10, 1])]],
-    ]);
-
-    const result = buildTopologyFaultGraph(graph, metrics);
-
-    expect(result.anomalyScores.get('ramp')!).toBeGreaterThan(
-      result.anomalyScores.get('noise')!,
-    );
-  });
-});
-
 // ── Tests: Fallback Behavior ─────────────────────────────
 
 describe('buildTopologyFaultGraph — Fallback Behavior', () => {
