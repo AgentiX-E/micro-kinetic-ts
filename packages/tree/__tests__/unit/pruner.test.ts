@@ -555,6 +555,9 @@ describe('TreePruner', () => {
       // which has the largest raw deviation. Self-anomaly ranking must place
       // D first — the old depth-weighted totalScore made a healthy upstream
       // node accumulate its children's anomaly and outrank the leaf fault.
+      // The values are chosen so D's deviation is UNEQUIVOCALLY the largest;
+      // A's mild drift stays far below it so the (monotonicity-based) trend
+      // bonus cannot flip the order.
       const callGraph = makeCallGraph(
         ['A', 'B', 'C', 'D'],
         [
@@ -564,10 +567,10 @@ describe('TreePruner', () => {
         ],
       );
       const metrics = makeMetrics({
-        A: [2, 3, 8, 12, 15], // upstream: gradual increase
-        B: [1, 2, 5, 15, 25], // symptom: larger spike
-        C: [1, 2, 4, 18, 30], // deeper symptom: even larger
-        D: [1, 2, 3, 20, 35], // leaf symptom: largest spike
+        A: [2, 3, 4, 5, 6], // upstream: mild gradual increase
+        B: [1, 2, 3, 4, 8], // symptom: moderate spike
+        C: [1, 2, 3, 4, 10], // deeper symptom: larger spike
+        D: [1, 2, 3, 4, 15], // leaf symptom: largest spike
       });
       const graph = pruner.buildFaultGraph(callGraph, metrics);
       const results = pruner.analyze(graph, 4);
@@ -921,12 +924,12 @@ describe('TreePruner', () => {
       ],
     );
 
-    it('ranks the earliest-onset source above a higher-anomaly symptom', () => {
-      // With the injection time known, A's disturbance precedes B's and C's,
-      // so the temporal earliness prior must lift A above B (whose anomaly is
-      // larger) even at the DEFAULT temporalWeight. This is the causal
-      // source/symptom separation the index-based onset could not provide.
-      const pruner = new TreePruner();
+    it('ranks the earliest-onset source above a higher-anomaly symptom when enabled', () => {
+      // With the injection time known AND temporalWeight > 0, A's disturbance
+      // precedes B's and C's, so the temporal earliness prior must lift A above
+      // B (whose anomaly is larger). This is the opt-in causal source/symptom
+      // separation the index-based onset could not provide.
+      const pruner = new TreePruner({ temporalWeight: 0.5 });
       const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
 
       // Onset delays: A=0ms, B=120000ms, C=240000ms (relative to injection).
@@ -937,6 +940,18 @@ describe('TreePruner', () => {
 
       const results = pruner.analyze(graph, 3);
       expect(results[0]!.serviceId).toBe('A');
+    });
+
+    it('disables the temporal signal by default (pure self-anomaly even with injectTime)', () => {
+      // The DEFAULT temporalWeight is 0: even when the injection time is known,
+      // the temporal signal is neutral and the highest self-anomaly service (B)
+      // ranks first. This is the shipped behaviour — the signal regressed the
+      // benchmark (#207/#208, net ≈ −2.5pp) and is therefore opt-in.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
+
+      const results = pruner.analyze(graph, 3);
+      expect(results[0]!.serviceId).toBe('B');
     });
 
     it('leaves the ranking on pure self-anomaly when the injection time is unknown', () => {

@@ -582,22 +582,33 @@ function computeAnomalyFeatures(
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
 
-    // Trend slope (linear regression)
+    // Trend monotonicity — the |Pearson r| between the time index and the
+    // value, i.e. how CONSISTENTLY the series drifts in one direction. A clean
+    // ramp (memory leak / gradual saturation) has |r| ≈ 1; a noisy or flat
+    // series has |r| ≈ 0. This is distinct from MAGNITUDE, which the deviation
+    // term above already captures (log₁₀ of the relative change).
+    //
+    // The previous trend bonus used trendStrength = |slope·n / mean| — a
+    // MAGNITUDE measure — which double-counted the deviation and let a
+    // symptom's sharp drop-to-zero (large |slope|) outrank a source's moderate
+    // fault shift (small |slope|), even though both are equally monotonic.
+    // The magnitude is already scored; the trend bonus should reward only the
+    // CONSISTENCY of the drift.
     let sx = 0,
       sy = 0,
       sxx = 0,
-      sxy = 0;
+      sxy = 0,
+      syy = 0;
     for (let i = 0; i < n; i++) {
       const v = ts.values[i]!;
       sx += i;
       sy += v;
       sxx += i * i;
       sxy += i * v;
+      syy += v * v;
     }
-    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-    // `mean > 0` is guaranteed here — the loop above `continue`s on mean <= 0 —
-    // so the former `: 0` fallback was unreachable dead code.
-    const trendStrength = Math.abs((slope * n) / mean);
+    const trendDenom = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+    const monotonicity = trendDenom > 0 ? Math.abs((n * sxy - sx * sy) / trendDenom) : 0;
 
     // CV
     let variance = 0;
@@ -628,10 +639,11 @@ function computeAnomalyFeatures(
     // unbounded (clamped only at 0 below) preserves the true deviation
     // magnitude; buildTopologyFaultGraph re-scales to [0,1] afterwards.
     let featureScore = deviation;
-    // Trend bonus is direction-agnostic: trendStrength is already the
-    // ABSOLUTE normalized slope, so a monotonic drop (memory release,
-    // crash) gets the same bonus as a monotonic rise (leak, saturation).
-    if (trendStrength > 0.1) featureScore += trendStrength * 0.15;
+    // Trend bonus is direction-agnostic: monotonicity is |r|, so a monotonic
+    // drop (memory release, crash) gets the same bonus as a monotonic rise
+    // (leak, saturation). Only strongly monotonic series (|r| > 0.5) qualify;
+    // a noisy or flat series carries little trend evidence.
+    if (monotonicity > 0.5) featureScore += monotonicity * 0.15;
     if (hasBurst) featureScore += deviation * 0.1;
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
     featureScore = Math.max(0, featureScore);

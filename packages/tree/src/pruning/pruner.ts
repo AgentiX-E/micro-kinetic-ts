@@ -110,9 +110,14 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * contributes nothing. When the injection time is unknown, every service is
    * neutral and the signal has no effect.
    *
-   * Default: 0.5 — a moderate strength that can flip a source whose
-   * self-anomaly is ~3× smaller than a symptom's (log-gap ≈ 1.1), without
-   * letting a single noisy onset dominate the ranking.
+   * Default: 0 — the temporal signal is opt-in. Benchmarks #207/#208 measured
+   * a NET REGRESSION of ≈ −2.5pp (OnlineBoutique RE1 −12.0, RE3 −13.3) with
+   * temporalWeight 0.5: the injection-anchored onset systematically anchors to
+   * the source's slow-responding dominant metric (latency/socket), which
+   * crosses the 30% deviation threshold LATE, while symptoms' fast metrics
+   * (workload/cpu) cross it EARLY. "Earliest onset = source" therefore does
+   * not hold on RCAEval, so the signal is shipped disabled and only re-enabled
+   * (at a low weight) after the onset detector is validated against real data.
    */
   readonly temporalWeight: number;
 }
@@ -125,7 +130,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   maxCycles: 10_000,
   enableCollisionAggregation: true,
   sourceWeight: 0.0,
-  temporalWeight: 0.5,
+  temporalWeight: 0.0,
 };
 
 /**

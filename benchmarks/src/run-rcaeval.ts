@@ -132,6 +132,12 @@ interface CliOptions {
    * default (no flag) produces the result comparable to the RCAEval baselines.
    */
   noInjectTime: boolean;
+  /**
+   * Strength of the injection-time-anchored temporal-earliness signal in the
+   * ranking. Default 0 (disabled — the signal empirically regressed, see
+   * TreePrunerOptions.temporalWeight). Set e.g. 0.5 to re-enable the ON mode.
+   */
+  temporalWeight: number;
 }
 
 function parseArgs(): CliOptions {
@@ -142,6 +148,7 @@ function parseArgs(): CliOptions {
     system: 'all',
     suite: 'all',
     noInjectTime: false,
+    temporalWeight: 0,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -150,16 +157,18 @@ function parseArgs(): CliOptions {
     else if (args[i] === '--system' && i + 1 < args.length) opts.system = args[++i]!;
     else if (args[i] === '--suite' && i + 1 < args.length) opts.suite = args[++i]!;
     else if (args[i] === '--no-inject-time') opts.noInjectTime = true;
+    else if (args[i] === '--temporal-weight' && i + 1 < args.length)
+      opts.temporalWeight = parseFloat(args[++i]!) || 0;
   }
   return opts;
 }
 
 // ── DI Assembly ───────────────────────────────────────────
 
-function createContainer(): Container {
+function createContainer(temporalWeight: number): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
-  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner());
+  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner({ temporalWeight }));
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   return container;
 }
@@ -743,7 +752,8 @@ async function main(): Promise<void> {
   console.log(
     `Filter: system=${opts.system}, suite=${opts.suite}${opts.maxCases > 0 ? ` (max ${opts.maxCases} cases)` : ''}`,
   );
-  console.log(`injectTime: ${opts.noInjectTime ? 'OFF (dataset-decoupled)' : 'ON (RCAEval baseline protocol)'}`);
+  const injectMode = opts.noInjectTime ? 'OFF (dataset-decoupled)' : 'ON (RCAEval baseline protocol)';
+  console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
 
   const allCases = discoverAllCases(opts.dataDir);
   console.log(`Cases discovered: ${allCases.length}`);
@@ -802,7 +812,7 @@ async function main(): Promise<void> {
   console.log(`\nGroups to evaluate: ${groups.size}`);
   console.log('═'.repeat(65));
 
-  const container = createContainer();
+  const container = createContainer(opts.temporalWeight);
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(container, classifier, undefined, undefined, !opts.noInjectTime);
   const loader = new RCAEvalLoader();
