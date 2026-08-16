@@ -8,7 +8,8 @@
  *   {benchmark}_{service}_{fault}_{instance}/
  *     ├── metrics.json    — [{timestamp, value, metric_name}] per service
  *     ├── inject_time.txt — single Unix timestamp (seconds)
- *     ├── logs.csv        — timestamp,service,message,level (RE2/RE3 only)
+ *     ├── logs.csv        — timestamp,service,message (RE2/RE3 only; no level
+ *     │                      column — severity is derived from the message)
  *     ├── traces.csv      — trace_id,service,duration,status,parent_span (RE2/RE3 only)
  *     └── ground_truth.json — {root_cause_service, root_cause_metric}
  *
@@ -44,6 +45,38 @@ import type {
  * Parses the RCAEval directory structure and converts raw data
  * into the unified BenchmarkCase format understood by the runner.
  */
+
+/**
+ * Normalise a raw log line into a `BenchmarkLogEntry` severity level.
+ *
+ * RCAEval's logs.csv has NO level/severity column — each row is just
+ * `timestamp, service, message` (paper §3.4), and the root cause of a
+ * code-level fault (RE3) is diagnosed from the STACK TRACES / error text in
+ * the message. When an explicit level column IS present it takes precedence;
+ * otherwise the severity is derived from message keywords (case-insensitive).
+ *
+ * @param explicitLevel - Uppercased explicit level from a level/severity
+ *   column, or '' when the column is absent.
+ * @param message - The raw log message text.
+ * @returns A normalised `BenchmarkLogEntry` level.
+ */
+export function classifyLogLevel(
+  explicitLevel: string,
+  message: string,
+): BenchmarkLogEntry['level'] {
+  if (explicitLevel === 'ERROR' || explicitLevel === 'FATAL') return explicitLevel;
+  if (explicitLevel === 'WARN' || explicitLevel === 'DEBUG' || explicitLevel === 'INFO') {
+    return explicitLevel;
+  }
+
+  // No (or unrecognised) explicit level → derive from the message text.
+  const lower = message.toLowerCase();
+  if (/(fatal|panic|traceback|stack ?trace)/.test(lower)) return 'FATAL';
+  if (/(error|exception|failed|failure)/.test(lower)) return 'ERROR';
+  if (/(warn|warning)/.test(lower)) return 'WARN';
+  return 'INFO';
+}
+
 export class RCAEvalLoader {
   /**
    * Load a single RCAEval case from a directory.
@@ -304,18 +337,39 @@ export class RCAEvalLoader {
 
     try {
       const content = fs.readFileSync(logsPath, 'utf-8');
-      return this.parseCSV(content).map((row) => ({
-        // RCAEval logs.csv timestamps are Unix SECONDS (same domain as
-        // inject_time.txt), while the unified BenchmarkCase carries time in
-        // MILLISECONDS. Convert to ms so the log signal's post-injection
-        // filter (`timestamp >= injectTimeMs`) compares like-for-like. Without
-        // this, every log line predates the ms-scaled injectTime and the log
-        // signal silently degrades to "no data".
-        timestamp: parseInt(row.timestamp ?? '0', 10) * 1000,
-        service: row.service ?? 'unknown',
-        message: row.message ?? '',
-        level: (row.level?.toUpperCase() as BenchmarkLogEntry['level']) ?? 'INFO',
-      }));
+      const rows = this.parseCSV(content);
+      if (rows.length === 0) return undefined;
+
+      // RCAEval's logs.csv carries `timestamp, service, message` (paper §3.4)
+      // with NO level/severity column — severity must be derived from the log
+      // MESSAGE text (stack traces / error keywords). Detect columns flexibly
+      // so both the original CSV layout and any Parquet-derived variant work.
+      const header = Object.keys(rows[0]!);
+      const tsCol = header.find((h) => ['timestamp', 'time', 'ts', 't'].includes(h.toLowerCase()));
+      const svcCol = header.find((h) =>
+        ['service', 'svc', 'service_name', 'service_id'].includes(h.toLowerCase()),
+      );
+      const msgCol = header.find((h) =>
+        ['message', 'msg', 'content', 'log', 'text'].includes(h.toLowerCase()),
+      );
+      const lvlCol = header.find((h) =>
+        ['level', 'severity', 'log_level', 'loglevel'].includes(h.toLowerCase()),
+      );
+
+      return rows.map((row) => {
+        const message = msgCol ? (row[msgCol] ?? '') : '';
+        const explicitLevel = lvlCol ? (row[lvlCol] ?? '').toUpperCase() : '';
+        return {
+          // RCAEval timestamps are Unix SECONDS (same domain as inject_time),
+          // while the unified BenchmarkCase carries time in MILLISECONDS.
+          // Convert to ms so the log signal's post-injection filter
+          // (`timestamp >= injectTimeMs`) compares like-for-like.
+          timestamp: (tsCol ? parseInt(row[tsCol] ?? '0', 10) : 0) * 1000,
+          service: svcCol ? (row[svcCol] ?? 'unknown') : 'unknown',
+          message,
+          level: classifyLogLevel(explicitLevel, message),
+        };
+      });
     } catch {
       return undefined;
     }

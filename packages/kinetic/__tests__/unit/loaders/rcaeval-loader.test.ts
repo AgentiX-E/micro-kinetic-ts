@@ -12,7 +12,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { RCAEvalLoader } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
+import { RCAEvalLoader, classifyLogLevel } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -62,6 +62,35 @@ function createCaseDir(
 }
 
 // ── Tests ─────────────────────────────────────────────────
+
+describe('classifyLogLevel', () => {
+  it('returns the explicit level when a recognised level column value is present', () => {
+    expect(classifyLogLevel('ERROR', '')).toBe('ERROR');
+    expect(classifyLogLevel('FATAL', '')).toBe('FATAL');
+    expect(classifyLogLevel('WARN', '')).toBe('WARN');
+    expect(classifyLogLevel('INFO', 'anything')).toBe('INFO');
+  });
+
+  it('derives FATAL from stack-trace / panic keywords in the message', () => {
+    expect(classifyLogLevel('', 'Traceback (most recent call last)')).toBe('FATAL');
+    expect(classifyLogLevel('', 'kernel panic at 0xdeadbeef')).toBe('FATAL');
+  });
+
+  it('derives ERROR from error/exception/failure keywords in the message', () => {
+    expect(classifyLogLevel('', 'NullPointerException: null reference')).toBe('ERROR');
+    expect(classifyLogLevel('', 'request failed with status 500')).toBe('ERROR');
+    expect(classifyLogLevel('', 'an unexpected error occurred')).toBe('ERROR');
+  });
+
+  it('derives WARN from warning keywords', () => {
+    expect(classifyLogLevel('', 'deprecation warning: use v2')).toBe('WARN');
+  });
+
+  it('defaults to INFO for benign messages', () => {
+    expect(classifyLogLevel('', 'request completed in 12ms')).toBe('INFO');
+    expect(classifyLogLevel('', 'cart GetCart called')).toBe('INFO');
+  });
+});
 
 describe('RCAEvalLoader', () => {
   let loader: RCAEvalLoader;
@@ -653,6 +682,27 @@ describe('RCAEvalLoader', () => {
       // InjectTime stays in seconds on the raw case (converted later in
       // toBenchmarkCase), while the log timestamp is already in ms.
       expect(rawCase.injectTime).toBe(500);
+    });
+
+    it('derives the log level from the message when no level column exists', () => {
+      // RCAEval logs.csv has only `timestamp, service, message` (paper §3.4) —
+      // no level/severity column. The loader must derive severity from the
+      // message text so the log signal can count post-injection error volume.
+      const casePath = createCaseDir(tempDir, 're3ob_cartservice_f1_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        logs: [
+          'timestamp,service,message',
+          '1000,cartservice,NullPointerException at checkout',
+          '1001,cartservice,request completed',
+        ].join('\n'),
+      });
+
+      const rawCase = loader.loadCase(casePath);
+
+      expect(rawCase.logs).toBeDefined();
+      expect(rawCase.logs![0]!.level).toBe('ERROR');
+      expect(rawCase.logs![1]!.level).toBe('INFO');
     });
   });
 
