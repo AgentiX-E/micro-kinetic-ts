@@ -97,12 +97,22 @@ describe('classifyLogLevel', () => {
 });
 
 describe('isStackTraceMessage', () => {
-  it('detects stack-trace signatures (code-level fault markers)', () => {
+  it('detects structural stack-trace frames (code-level fault markers)', () => {
     expect(isStackTraceMessage('at com.foo.Bar.baz(Bar.java:42)')).toBe(true);
-    expect(isStackTraceMessage('Caused by: java.lang.NullPointerException')).toBe(true);
-    expect(isStackTraceMessage('NullPointerException: null reference')).toBe(true);
-    expect(isStackTraceMessage('Traceback (most recent call last):')).toBe(true);
     expect(isStackTraceMessage('File "/app/main.py", line 42, in handle')).toBe(true);
+    expect(isStackTraceMessage('Traceback (most recent call last):')).toBe(true);
+    // JavaScript stack frame (Node.js): `at Object.handler (/app/server.js:42:13)`
+    expect(isStackTraceMessage('at Object.handler (/app/server.js:42:13)')).toBe(true);
+  });
+
+  it('rejects exception class names without a stack frame (cascade leak)', () => {
+    // A Java exception NAME is not a stack trace. These appear in
+    // resource/network cascades (RE2) in the SYMPTOM services and must not
+    // open the log-signal gate (benchmark #217 SS RE2 regression).
+    expect(isStackTraceMessage('NullPointerException: null reference')).toBe(false);
+    expect(isStackTraceMessage('RedisConnectionFailureException: connection refused')).toBe(false);
+    expect(isStackTraceMessage('Caused by: java.lang.NullPointerException')).toBe(false);
+    expect(isStackTraceMessage('java.net.SocketTimeoutException: Read timed out')).toBe(false);
   });
 
   it('rejects resource/network cascade messages (no stack trace)', () => {
@@ -714,7 +724,7 @@ describe('RCAEvalLoader', () => {
         injectTime: 500,
         logs: [
           'timestamp,service,message',
-          '1000,cartservice,NullPointerException at checkout',
+          '1000,cartservice,NullPointerException at com.cartservice.Checkout.checkout(Checkout.java:42)',
           '1001,cartservice,request completed',
         ].join('\n'),
       });
@@ -725,7 +735,8 @@ describe('RCAEvalLoader', () => {
       expect(rawCase.logs![0]!.level).toBe('ERROR');
       expect(rawCase.logs![1]!.level).toBe('INFO');
       // The stack-trace signature must be derived from the message too, so the
-      // log signal can gate on code-level evidence.
+      // log signal can gate on code-level evidence. Only a STRUCTURAL frame
+      // (at cls.method(file:line)) counts; a bare exception name does not.
       expect(rawCase.logs![0]!.isStackTrace).toBe(true);
       expect(rawCase.logs![1]!.isStackTrace).toBe(false);
     });

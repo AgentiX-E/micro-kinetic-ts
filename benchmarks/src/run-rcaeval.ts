@@ -404,6 +404,10 @@ interface LoadStats {
     sampleLevel: string;
     sampleService: string;
     sampleMsg: string;
+    /** ERROR/FATAL entries flagged as stack traces (code-level evidence). */
+    stackTraceEntries: number;
+    /** First stack-trace entry's message prefix (eyeball the gate's target). */
+    sampleStackTraceMsg: string;
   };
 }
 
@@ -514,6 +518,9 @@ async function loadCases(
     logSampleService = '',
     logSampleMsg = '';
   let logSampleCaptured = false;
+  let logStackTraceEntries = 0;
+  let logSampleStackTraceMsg = '';
+  let logStackTraceSampleCaptured = false;
 
   for (const meta of selected) {
     try {
@@ -552,7 +559,16 @@ async function loadCases(
       if (caseLogs && caseLogs.length > 0) {
         logCases++;
         for (const l of caseLogs) {
-          if (l.level === 'ERROR' || l.level === 'FATAL') logErrorEntries++;
+          if (l.level === 'ERROR' || l.level === 'FATAL') {
+            logErrorEntries++;
+            if (l.isStackTrace) {
+              logStackTraceEntries++;
+              if (!logStackTraceSampleCaptured) {
+                logStackTraceSampleCaptured = true;
+                logSampleStackTraceMsg = l.message.slice(0, 120);
+              }
+            }
+          }
         }
         if (!logSampleCaptured) {
           logSampleCaptured = true;
@@ -606,6 +622,8 @@ async function loadCases(
       sampleLevel: logSampleLevel,
       sampleService: logSampleService,
       sampleMsg: logSampleMsg,
+      stackTraceEntries: logStackTraceEntries,
+      sampleStackTraceMsg: logSampleStackTraceMsg,
     },
   };
 }
@@ -830,16 +848,28 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
  * first log line (timestamp/level/service/message) to eyeball the raw format.
  */
 function reportLogDiagnostics(systemName: string, suiteName: string, stats: LoadStats): void {
-  const { total, errorEntries, header, sampleTs, sampleLevel, sampleService, sampleMsg } =
-    stats.logStats;
+  const {
+    total,
+    errorEntries,
+    header,
+    sampleTs,
+    sampleLevel,
+    sampleService,
+    sampleMsg,
+    stackTraceEntries,
+    sampleStackTraceMsg,
+  } = stats.logStats;
   if (total > 0) {
     console.log(
-      `  [log] ${total}/${stats.cases.length} cases with logs, ${errorEntries} ERROR/FATAL entries`,
+      `  [log] ${total}/${stats.cases.length} cases with logs, ${errorEntries} ERROR/FATAL entries, ${stackTraceEntries} stack-trace entries`,
     );
     console.log(`  [log] header: ${header}`);
     console.log(
       `  [log] sample: ts=${sampleTs} level=${sampleLevel || '?'} svc=${sampleService} msg="${sampleMsg}"`,
     );
+    if (sampleStackTraceMsg) {
+      console.log(`  [log] stacktrace sample: "${sampleStackTraceMsg}"`);
+    }
   } else if (stats.cases.length > 0) {
     console.log(`  [log] No log data available for ${stats.cases.length} cases`);
   }

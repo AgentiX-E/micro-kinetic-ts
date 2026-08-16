@@ -82,24 +82,36 @@ export function classifyLogLevel(
  * a code-level fault (RCAEval RE3), as opposed to a resource/network cascade
  * (RE2) whose errors are plain "connection refused" / "timeout" lines.
  *
- * A message is a stack trace when it contains a stack frame (`at
- * com.foo.Bar.baz(Bar.java:42)` or Python `File "x.py", line N`), a Java
- * exception class name (`NullPointerException`), a `Caused by:` chain, or a
- * `Traceback` / `stack trace` header.
+ * A stack trace is STRUCTURE, not a name. Only structural evidence is accepted:
+ *
+ * - a Java stack frame: `at com.foo.Bar.baz(Bar.java:42)`
+ * - a Python traceback frame: `File "/app/main.py", line 42, in handle`
+ * - a Python traceback header: `Traceback (most recent call last):`
+ *
+ * Deliberately REJECTED as too loose:
+ *
+ * - `\w+Exception` — a Java exception CLASS NAME (e.g. Spring's
+ *   `ConnectionException` / `SocketTimeoutException`). Resource-fault CASCADES
+ *   (RE2) log these names in the SYMPTOM services, so matching them kept the
+ *   log-signal gate open and regressed SockShop RE2 (benchmark #217: SS RE2
+ *   stayed −10 while OB/TT were fixed by the gate). A name alone is not a
+ *   stack trace.
+ * - the bare keywords "stack trace" / "traceback" — frameworks log these
+ *   phrases on ANY error, including cascades.
+ * - `Caused by:` — Java exception chaining; without an accompanying frame it
+ *   is just a name reference, indistinguishable from a cascade.
  *
  * This is independent of `classifyLogLevel`: a message can be ERROR without
  * being a stack trace (e.g. "connection refused"), and vice versa.
  *
  * @param message - The raw log message text.
- * @returns True when the message looks like a stack trace.
+ * @returns True when the message contains a structural stack-trace frame.
  */
 export function isStackTraceMessage(message: string): boolean {
   return (
-    /traceback|stack ?trace/i.test(message) ||
-    /Caused by:/.test(message) ||
-    /\w+Exception\b/.test(message) ||
-    /at\s+[\w.$]+\.[\w$]+\([^)]*:\d+\)/.test(message) ||
-    /File\s+"[^"]+",\s*line\s+\d+/i.test(message)
+    /at\s+\S+\s*\([^)]*:\d+\)/.test(message) ||
+    /File\s+"[^"]+",\s*line\s+\d+/i.test(message) ||
+    /Traceback\s*\(most recent call last\)/i.test(message)
   );
 }
 
