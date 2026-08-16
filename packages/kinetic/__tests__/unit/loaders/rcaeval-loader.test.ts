@@ -12,7 +12,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { RCAEvalLoader, classifyLogLevel } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
+import {
+  RCAEvalLoader,
+  classifyLogLevel,
+  isStackTraceMessage,
+} from '../../../src/benchmarks/loaders/rcaeval-loader.js';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -89,6 +93,23 @@ describe('classifyLogLevel', () => {
   it('defaults to INFO for benign messages', () => {
     expect(classifyLogLevel('', 'request completed in 12ms')).toBe('INFO');
     expect(classifyLogLevel('', 'cart GetCart called')).toBe('INFO');
+  });
+});
+
+describe('isStackTraceMessage', () => {
+  it('detects stack-trace signatures (code-level fault markers)', () => {
+    expect(isStackTraceMessage('at com.foo.Bar.baz(Bar.java:42)')).toBe(true);
+    expect(isStackTraceMessage('Caused by: java.lang.NullPointerException')).toBe(true);
+    expect(isStackTraceMessage('NullPointerException: null reference')).toBe(true);
+    expect(isStackTraceMessage('Traceback (most recent call last):')).toBe(true);
+    expect(isStackTraceMessage('File "/app/main.py", line 42, in handle')).toBe(true);
+  });
+
+  it('rejects resource/network cascade messages (no stack trace)', () => {
+    expect(isStackTraceMessage('connection refused')).toBe(false);
+    expect(isStackTraceMessage('upstream connect error or disconnect/reset')).toBe(false);
+    expect(isStackTraceMessage('request timeout after 5000ms')).toBe(false);
+    expect(isStackTraceMessage('conversion request successful')).toBe(false);
   });
 });
 
@@ -703,6 +724,10 @@ describe('RCAEvalLoader', () => {
       expect(rawCase.logs).toBeDefined();
       expect(rawCase.logs![0]!.level).toBe('ERROR');
       expect(rawCase.logs![1]!.level).toBe('INFO');
+      // The stack-trace signature must be derived from the message too, so the
+      // log signal can gate on code-level evidence.
+      expect(rawCase.logs![0]!.isStackTrace).toBe(true);
+      expect(rawCase.logs![1]!.isStackTrace).toBe(false);
     });
   });
 

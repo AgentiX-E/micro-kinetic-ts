@@ -41,8 +41,18 @@ import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kineti
  * Normalisation is `count(v) / maxCount`, so the top erroring service scores
  * 1, zero-error services score 0, and a lone erroring service scores 1 against
  * its silent peers — which is exactly the code-level-fault signature (only the
- * faulting service emits stack traces). The map is empty when no ERROR/FATAL
- * line survives filtering; callers treat an absent score as neutral.
+ * faulting service emits stack traces).
+ *
+ * ## Code-level gate
+ *
+ * Error VOLUME alone is not a reliable source/symptom discriminator: in a
+ * resource/network fault (RCAEval RE2) the SYMPTOM services flood ERROR logs
+ * (a "connection refused" / "timeout" cascade), so max-count would boost the
+ * symptom. A code-level fault (RE3) instead emits STACK TRACES concentrated in
+ * the source. The signal is therefore gated: it is only emitted when at least
+ * one ERROR/FATAL line carries a stack-trace signature (`isStackTrace`), i.e.
+ * when there is code-level-fault evidence. Otherwise the map is empty and the
+ * caller treats the log signal as neutral, avoiding the cascade regression.
  *
  * @param logs - Raw log lines (may be undefined → empty map).
  * @param nodeIds - Services present in the call graph.
@@ -58,16 +68,22 @@ export function computeLogScores(
   if (!logs || logs.length === 0 || nodeIds.size === 0) return scores;
 
   // Count ERROR/FATAL lines per service, filtered by time and membership.
+  // Track whether any surviving error line is a stack trace — the gate that
+  // distinguishes a code-level fault from a resource/network cascade.
   const counts = new Map<ServiceId, number>();
+  let stackTraceCount = 0;
   for (const log of logs) {
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
     if (!nodeIds.has(log.service)) continue;
     if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
     counts.set(log.service, (counts.get(log.service) ?? 0) + 1);
+    if (log.isStackTrace) stackTraceCount++;
   }
 
-  // No error logs at all → no signal.
-  if (counts.size === 0) return scores;
+  // No error logs, or no code-level evidence (stack trace) → no signal. The
+  // latter is deliberate: without a stack trace the errors are most likely a
+  // resource/network cascade, where max-count would misfire onto symptoms.
+  if (counts.size === 0 || stackTraceCount === 0) return scores;
 
   let max = 0;
   for (const count of counts.values()) {

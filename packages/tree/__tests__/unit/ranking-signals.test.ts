@@ -6,8 +6,13 @@ function makeEdge(from: string, to: string): CallEdge {
   return { from, to, type: 'REST', callRate: 100, p99Latency: 50, errorRate: 0.01 };
 }
 
-function makeLog(service: string, level: string, timestamp = 0): FaultLogEntry {
-  return { service, level, timestamp };
+function makeLog(
+  service: string,
+  level: string,
+  timestamp = 0,
+  isStackTrace = true,
+): FaultLogEntry {
+  return { service, level, timestamp, isStackTrace };
 }
 
 describe('computeLogScores', () => {
@@ -80,6 +85,33 @@ describe('computeLogScores', () => {
       makeLog('b', 'ERROR', 100), // before injection
     ];
     expect(computeLogScores(logs, nodes, 200).size).toBe(0);
+  });
+
+  it('returns an empty map when errors carry no stack-trace evidence', () => {
+    // A resource/network cascade (e.g. RE2) floods ERROR lines without any
+    // stack trace. The signal must stay neutral so max-count does not boost
+    // the symptom service instead of the source.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false),
+      makeLog('a', 'ERROR', 0, false),
+      makeLog('b', 'ERROR', 0, false),
+    ];
+    expect(computeLogScores(logs, nodes, 0).size).toBe(0);
+  });
+
+  it('fires when at least one error carries a stack-trace signature', () => {
+    // A single stack trace (code-level fault) among the errors is enough to
+    // un-gate the signal; the volume then points at the source.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false), // cascade noise
+      makeLog('a', 'ERROR', 0, true), // stack trace — code-level evidence
+      makeLog('b', 'ERROR', 0, false),
+    ];
+    const scores = computeLogScores(logs, nodes, 0);
+
+    // a has 2 errors (max → 1), b has 1 (→ 0.5).
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBeCloseTo(0.5, 10);
   });
 });
 

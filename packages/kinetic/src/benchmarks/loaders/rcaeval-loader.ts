@@ -77,6 +77,32 @@ export function classifyLogLevel(
   return 'INFO';
 }
 
+/**
+ * Detect whether a log message carries a STACK-TRACE signature — the marker of
+ * a code-level fault (RCAEval RE3), as opposed to a resource/network cascade
+ * (RE2) whose errors are plain "connection refused" / "timeout" lines.
+ *
+ * A message is a stack trace when it contains a stack frame (`at
+ * com.foo.Bar.baz(Bar.java:42)` or Python `File "x.py", line N`), a Java
+ * exception class name (`NullPointerException`), a `Caused by:` chain, or a
+ * `Traceback` / `stack trace` header.
+ *
+ * This is independent of `classifyLogLevel`: a message can be ERROR without
+ * being a stack trace (e.g. "connection refused"), and vice versa.
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message looks like a stack trace.
+ */
+export function isStackTraceMessage(message: string): boolean {
+  return (
+    /traceback|stack ?trace/i.test(message) ||
+    /Caused by:/.test(message) ||
+    /\w+Exception\b/.test(message) ||
+    /at\s+[\w.$]+\.[\w$]+\([^)]*:\d+\)/.test(message) ||
+    /File\s+"[^"]+",\s*line\s+\d+/i.test(message)
+  );
+}
+
 export class RCAEvalLoader {
   /**
    * Raw header of the last logs.csv parsed (comma-joined column names).
@@ -398,6 +424,7 @@ export class RCAEvalLoader {
           service: svcCol ? (row[svcCol] ?? 'unknown') : 'unknown',
           message,
           level: classifyLogLevel(explicitLevel, message),
+          isStackTrace: isStackTraceMessage(message),
         };
       });
     } catch {

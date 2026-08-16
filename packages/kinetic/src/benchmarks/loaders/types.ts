@@ -67,6 +67,8 @@ export interface BenchmarkLogEntry {
   readonly service: string;
   readonly message: string;
   readonly level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
+  /** Whether the message carries a stack-trace signature (code-level fault). */
+  readonly isStackTrace?: boolean;
 }
 
 /** Trace span within a benchmark case. */

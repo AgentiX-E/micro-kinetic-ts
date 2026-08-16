@@ -49,6 +49,14 @@ export interface FaultLogEntry {
   readonly service: string;
   /** Severity level (e.g. 'INFO', 'WARN', 'ERROR', 'FATAL'). */
   readonly level: string;
+  /**
+   * Whether the log message carries a stack-trace signature (a code-level
+   * fault marker: `at ...(file:line)`, `Caused by:`, an exception class name,
+   * or a `Traceback`/`stack trace` header). When true, the log signal treats
+   * this line as evidence of a code-level fault rather than a resource/network
+   * cascade. Optional — absent means "unknown" (treated as not a stack trace).
+   */
+  readonly isStackTrace?: boolean;
 }
 
 /**
