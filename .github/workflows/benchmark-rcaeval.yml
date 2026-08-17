@@ -355,7 +355,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-optimize.ts --data-dir ~/RCAEval-json 2>&1 | tee optimize-rcaeval-results.txt
+          pnpm exec tsx benchmarks/src/run-optimize.ts --data-dir ~/RCAEval-json --max-cases 200 2>&1 | tee optimize-rcaeval-results.txt
       - name: Upload weight-search results
         if: always()
         uses: actions/upload-artifact@v4

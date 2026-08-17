@@ -122,6 +122,34 @@ function detectSuite(dirPath: string): 'RE1' | 'RE2' | 'RE3' {
   return 'RE1';
 }
 
+/**
+ * Derive a lightweight `system:suite` stratum key from a directory PATH only,
+ * without parsing any file. Used to deterministically down-sample the full
+ * 735-case dataset before loading — loading every case at once exhausts the
+ * 12 GB CI heap (the benchmark itself caps RE2 at 50 cases for the same
+ * reason), so we sample proportionally per (system, suite) to stay bounded
+ * while preserving the fault-type distribution.
+ */
+function deriveStratumKey(dirPath: string): string {
+  let suite = '';
+  let system = '';
+  for (const seg of dirPath.replace(/\\/g, '/').split('/')) {
+    const lower = seg.toLowerCase();
+    if (!suite) {
+      const m = lower.match(/^re([123])/);
+      if (m) suite = `re${m[1]}`;
+    }
+    if (!system) {
+      if (/^re[123](ob|ss|tt)\b/.test(lower)) {
+        system = lower.slice(2, 4);
+      } else if (lower === 'ob' || lower === 'onlineboutique') system = 'ob';
+      else if (lower === 'ss' || lower === 'sockshop') system = 'ss';
+      else if (lower === 'tt' || lower === 'trainticket') system = 'tt';
+    }
+  }
+  return `${system || 'unknown'}:${suite || 'unknown'}`;
+}
+
 const SUITE_IDS = { RE1: 'rcaeval-re1', RE2: 'rcaeval-re2', RE3: 'rcaeval-re3' } as const;
 
 // ── Case loading ──────────────────────────────────────────
@@ -132,15 +160,33 @@ interface LoadedCase {
   stratum: string;
 }
 
-async function loadAllCases(dataDir: string, maxCases: number): Promise<LoadedCase[]> {
+async function loadAllCases(
+  dataDir: string,
+  maxCases: number,
+  seed: number,
+): Promise<LoadedCase[]> {
   const loader = new RCAEvalLoader();
   await initRCAEvalTopology(); // exact-match topology (no semantic/API dependency)
 
-  const dirs = discoverCaseDirs(dataDir);
-  const selected = maxCases > 0 ? dirs.slice(0, maxCases) : dirs;
+  let dirs = discoverCaseDirs(dataDir);
+
+  // Deterministic, stratified down-sample before loading: the full dataset
+  // (735 cases) does not fit in the CI heap when every case's logs+metrics are
+  // held at once, so cap the working set to `maxCases` while preserving each
+  // (system, suite) stratum's share.
+  if (maxCases > 0 && dirs.length > maxCases) {
+    const ratio = maxCases / dirs.length;
+    const { train } = stratifiedSplit(
+      dirs,
+      deriveStratumKey,
+      { train: ratio, val: 0, test: 1 - ratio },
+      seed,
+    );
+    dirs = [...train];
+  }
 
   const out: LoadedCase[] = [];
-  for (const dir of selected) {
+  for (const dir of dirs) {
     try {
       const rawCase = loader.loadCase(dir);
       const suite = detectSuite(dir);
@@ -240,7 +286,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const loaded = await loadAllCases(opts.dataDir, opts.maxCases);
+  const loaded = await loadAllCases(opts.dataDir, opts.maxCases, opts.seed);
   console.log(`loaded ${loaded.length} cases`);
 
   if (loaded.length === 0) {
