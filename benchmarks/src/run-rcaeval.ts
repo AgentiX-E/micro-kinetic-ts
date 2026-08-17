@@ -29,7 +29,11 @@ import {
   DI_TOKENS,
   RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
-import { BenchmarkRunner, RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
+import {
+  BenchmarkRunner,
+  extractExceptionNames,
+  RCAEvalLoader,
+} from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
   BenchmarkCase,
   BenchmarkSuite,
@@ -408,6 +412,8 @@ interface LoadStats {
     stackTraceEntries: number;
     /** First stack-trace entry's message prefix (eyeball the gate's target). */
     sampleStackTraceMsg: string;
+    /** Distinct exception/error type names sampled from ERROR/FATAL messages. */
+    exceptionNamesSample: string;
   };
 }
 
@@ -521,6 +527,7 @@ async function loadCases(
   let logStackTraceEntries = 0;
   let logSampleStackTraceMsg = '';
   let logStackTraceSampleCaptured = false;
+  const exceptionNamesSeen = new Set<string>();
 
   for (const meta of selected) {
     try {
@@ -566,6 +573,14 @@ async function loadCases(
               if (!logStackTraceSampleCaptured) {
                 logStackTraceSampleCaptured = true;
                 logSampleStackTraceMsg = l.message.slice(0, 120);
+              }
+            }
+            // Sample the distinct exception/error TYPE names so the benchmark
+            // can discriminate logic exceptions (code-level fault) from
+            // connectivity exceptions (resource cascade) — the next gate's axis.
+            for (const name of extractExceptionNames(l.message)) {
+              if (exceptionNamesSeen.size < 12 && !exceptionNamesSeen.has(name)) {
+                exceptionNamesSeen.add(name);
               }
             }
           }
@@ -624,6 +639,7 @@ async function loadCases(
       sampleMsg: logSampleMsg,
       stackTraceEntries: logStackTraceEntries,
       sampleStackTraceMsg: logSampleStackTraceMsg,
+      exceptionNamesSample: [...exceptionNamesSeen].join(', '),
     },
   };
 }
@@ -858,6 +874,7 @@ function reportLogDiagnostics(systemName: string, suiteName: string, stats: Load
     sampleMsg,
     stackTraceEntries,
     sampleStackTraceMsg,
+    exceptionNamesSample,
   } = stats.logStats;
   if (total > 0) {
     console.log(
@@ -869,6 +886,9 @@ function reportLogDiagnostics(systemName: string, suiteName: string, stats: Load
     );
     if (sampleStackTraceMsg) {
       console.log(`  [log] stacktrace sample: "${sampleStackTraceMsg}"`);
+    }
+    if (exceptionNamesSample) {
+      console.log(`  [log] exception types: ${exceptionNamesSample}`);
     }
   } else if (stats.cases.length > 0) {
     console.log(`  [log] No log data available for ${stats.cases.length} cases`);

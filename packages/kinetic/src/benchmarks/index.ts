@@ -11,7 +11,12 @@
 
 export { AIOps2025Loader } from './loaders/aiops2025-loader.js';
 export { RCA100Loader } from './loaders/rca100-loader.js';
-export { RCAEvalLoader } from './loaders/rcaeval-loader.js';
+export {
+  RCAEvalLoader,
+  classifyLogLevel,
+  extractExceptionNames,
+  isStackTraceMessage,
+} from './loaders/rcaeval-loader.js';
 
 export type {
   AIOps2025Case,

@@ -78,41 +78,72 @@ export function classifyLogLevel(
 }
 
 /**
- * Detect whether a log message carries a STACK-TRACE signature — the marker of
- * a code-level fault (RCAEval RE3), as opposed to a resource/network cascade
- * (RE2) whose errors are plain "connection refused" / "timeout" lines.
+ * Detect whether a log message carries a stack-trace / exception signature —
+ * the marker of a code-level fault (RCAEval RE3), as opposed to a plain
+ * resource/network cascade (RE2) whose errors are "connection refused" /
+ * "timeout" lines with no exception identity.
  *
- * A stack trace is STRUCTURE, not a name. Only structural evidence is accepted:
+ * The signature is BROAD: an exception class name (`\w+Exception`), a Java
+ * stack frame (`at com.foo.Bar.baz(Bar.java:42)`), a `Caused by:` chain, or a
+ * Python traceback. This is deliberately broad because benchmark #218 proved
+ * that RE3 code-level faults log exception NAMES — not structural frames — in
+ * their logs (RE3 SS/TT carried 0 `at …(file:line)` frames, yet their
+ * exception names drove the TT RE3 +16.7 lift). A structural-frames-only
+ * detector therefore erased the entire RE3 gain.
  *
- * - a Java stack frame: `at com.foo.Bar.baz(Bar.java:42)`
- * - a Python traceback frame: `File "/app/main.py", line 42, in handle`
- * - a Python traceback header: `Traceback (most recent call last):`
- *
- * Deliberately REJECTED as too loose:
- *
- * - `\w+Exception` — a Java exception CLASS NAME (e.g. Spring's
- *   `ConnectionException` / `SocketTimeoutException`). Resource-fault CASCADES
- *   (RE2) log these names in the SYMPTOM services, so matching them kept the
- *   log-signal gate open and regressed SockShop RE2 (benchmark #217: SS RE2
- *   stayed −10 while OB/TT were fixed by the gate). A name alone is not a
- *   stack trace.
- * - the bare keywords "stack trace" / "traceback" — frameworks log these
- *   phrases on ANY error, including cascades.
- * - `Caused by:` — Java exception chaining; without an accompanying frame it
- *   is just a name reference, indistinguishable from a cascade.
+ * KNOWN LIMITATION (the next discriminator must fix this): the broad
+ * `\w+Exception` also matches CONNECTIVITY exception names (Spring's
+ * `ConnectionException` / `SocketTimeoutException`) that resource-fault
+ * CASCADES (RE2) log in the SYMPTOM services, which regresses SockShop RE2
+ * (−10). The correct axis is exception SEMANTICS (logic vs connectivity), not
+ * message shape — see `extractExceptionNames` for the sampling hook.
  *
  * This is independent of `classifyLogLevel`: a message can be ERROR without
  * being a stack trace (e.g. "connection refused"), and vice versa.
  *
  * @param message - The raw log message text.
- * @returns True when the message contains a structural stack-trace frame.
+ * @returns True when the message carries a stack-trace / exception signature.
  */
 export function isStackTraceMessage(message: string): boolean {
   return (
+    /traceback|stack ?trace/i.test(message) ||
+    /Caused by:/.test(message) ||
+    /\w+Exception\b/.test(message) ||
     /at\s+\S+\s*\([^)]*:\d+\)/.test(message) ||
-    /File\s+"[^"]+",\s*line\s+\d+/i.test(message) ||
-    /Traceback\s*\(most recent call last\)/i.test(message)
+    /File\s+"[^"]+",\s*line\s+\d+/i.test(message)
   );
+}
+
+/**
+ * Extract the distinct exception/error TYPE names from a log message, in order
+ * of first appearance. This is a DIAGNOSTIC hook for the log-signal gate: it
+ * surfaces which exception classes actually appear in each system's error logs,
+ * to discriminate LOGIC exceptions (a code-level fault's NullPointerException /
+ * IllegalArgumentException / ArrayIndexOutOfBounds) from CONNECTIVITY
+ * exceptions (a resource cascade's ConnectionException / SocketTimeoutException).
+ *
+ * Only the simple class name is returned — a qualified name such as
+ * `java.lang.NullPointerException` or
+ * `org.springframework.dao.QueryTimeoutException` yields
+ * `NullPointerException` / `QueryTimeoutException` (the token ending in
+ * `Exception` / `Error` / `Timeout` / `Failure`).
+ *
+ * @param message - The raw log message text.
+ * @returns Distinct exception/error type names in order of first appearance.
+ */
+export function extractExceptionNames(message: string): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const pattern = /\b[A-Za-z][\w]*(?:Exception|Error|Timeout|Failure)\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(message)) !== null) {
+    const name = match[0];
+    if (!seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+  }
+  return names;
 }
 
 export class RCAEvalLoader {
