@@ -8,7 +8,7 @@
  */
 
 import type { ServiceCallGraph, ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { buildTopologyFaultGraph } from '../../src/causal/topology-fault-graph.js';
 
@@ -1642,5 +1642,48 @@ describe('buildTopologyFaultGraph — Velocity Tier & Baseline Strategy', () => 
 
     expect(result.propagationWeights.length).toBe(1);
     expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── Tests: Anomaly Distribution Diagnostic Gate ──────────
+
+describe('buildTopologyFaultGraph — Anomaly Distribution Diagnostic Gate', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** A 30-node ring so the diagnostic gate (nodes >= 30) is the only blocker. */
+  function makeLargeGraph(): ServiceCallGraph {
+    const ids = Array.from({ length: 30 }, (_, i) => `svc-${i}`);
+    const edges = ids.map((id, i) => ({ from: id, to: ids[(i + 1) % ids.length]! }));
+    return makeCallGraph(ids, edges);
+  }
+
+  function makeLargeMetrics(): Map<ServiceId, readonly TimeSeries[]> {
+    const ids = Array.from({ length: 30 }, (_, i) => `svc-${i}`);
+    return makeMetrics(ids.map((id) => [id, [makeTimeSeries('cpu', [1, 1, 3, 3, 3, 3])]]));
+  }
+
+  it('does NOT log the anomaly distribution by default', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    buildTopologyFaultGraph(makeLargeGraph(), makeLargeMetrics());
+
+    const anomalyLines = spy.mock.calls.filter((args) =>
+      String(args[0]).includes('[anomaly]'),
+    );
+    expect(anomalyLines).toHaveLength(0);
+  });
+
+  it('logs the anomaly distribution once when BENCHMARK_ANOMALY_DIAG=1', () => {
+    vi.stubEnv('BENCHMARK_ANOMALY_DIAG', '1');
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    buildTopologyFaultGraph(makeLargeGraph(), makeLargeMetrics());
+
+    const anomalyLines = spy.mock.calls.filter((args) =>
+      String(args[0]).includes('[anomaly]'),
+    );
+    expect(anomalyLines).toHaveLength(1);
+    expect(String(anomalyLines[0]![0])).toContain('system=test');
   });
 });

@@ -274,8 +274,16 @@ export function buildTopologyFaultGraph(
     }
   }
 
-  // Log anomaly score distribution for debugging
-  if (callGraph.nodes.size >= 30) {
+  // Log anomaly score distribution for debugging.
+  //
+  // This fires once per large-topology buildFaultGraph call, so it is OFF by
+  // default: the L2 weight search calls buildFaultGraph thousands of times
+  // (25 oracle evaluations × ~200 cases), and every TrainTicket case has a
+  // 64+ node graph, flooding the log with a `[anomaly]` line each. Opt in
+  // with BENCHMARK_ANOMALY_DIAG=1 when the raw score spread / input shape is
+  // needed for debugging.
+  const logAnomalyDistribution = process.env['BENCHMARK_ANOMALY_DIAG'] === '1';
+  if (logAnomalyDistribution && callGraph.nodes.size >= 30) {
     const sampleId = diagSampleIds[0] ?? [...callGraph.nodes.keys()][0]!;
     const sysName = callGraph.nodes.get(sampleId)?.namespace ?? '?';
     // Raw score spread (before normalization) — reveals whether the fault
