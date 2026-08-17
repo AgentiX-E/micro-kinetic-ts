@@ -1047,22 +1047,25 @@ describe('TreePruner', () => {
       expect(pruner.pruneEpsilon).toBeGreaterThan(0);
     });
 
-    it('defaults every ranking weight to 0 (all signals opt-in)', () => {
-      // The shipped default is pure self-anomaly ranking — no causal signal
-      // is active unless explicitly enabled, so ablation can measure each
-      // signal's marginal contribution in isolation.
+    it('defaults the causal priors to 0 (log signal enabled but neutral without logs)', () => {
+      // The shipped default enables ONLY the log signal (logWeight 1.0,
+      // proven net-positive by #220). The other causal priors — source,
+      // temporal, collision, topological — default to 0 (opt-in) so ablation
+      // can measure each in isolation. This case carries no logs, so the log
+      // signal is neutral and the ranking is pure self-anomaly.
       const pruner = new TreePruner();
       const graph = pruner.buildFaultGraph(
         makeCallGraph(['A', 'B'], [['A', 'B']]),
         makeMetrics({ A: [1, 1, 3, 3], B: [1, 1, 3.5, 3.5] }),
       );
       const results = pruner.analyze(graph, 2);
-      // B (higher self-anomaly) ranks first with all signals disabled.
+      // B (higher self-anomaly) ranks first with no logs and the causal
+      // priors disabled.
       expect(results[0]!.serviceId).toBe('B');
     });
   });
 
-  describe('log signal ranking (opt-in)', () => {
+  describe('log signal ranking', () => {
     const callGraph = makeCallGraph(
       ['A', 'B', 'C'],
       [
@@ -1104,12 +1107,15 @@ describe('TreePruner', () => {
       expect(results[0]!.serviceId).toBe('A');
     });
 
-    it('is disabled by default (pure self-anomaly ranking)', () => {
+    it('is enabled by default (logWeight 1.0 lifts the erroring source)', () => {
+      // logWeight defaults to 1.0 (proven net-positive by #220), so A — the
+      // only service throwing logic-exception logs — is lifted above B's
+      // higher self-anomaly even with the default TreePruner options.
       const pruner = new TreePruner();
       const graph = pruner.buildFaultGraph(callGraph, metrics, { logs });
 
       const results = pruner.analyze(graph, 3);
-      expect(results[0]!.serviceId).toBe('B');
+      expect(results[0]!.serviceId).toBe('A');
     });
   });
 

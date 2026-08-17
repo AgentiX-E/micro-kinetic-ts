@@ -161,7 +161,7 @@ function parseArgs(): CliOptions {
     temporalWeight: 0,
     collisionWeight: 0,
     topoWeight: 0,
-    logWeight: 0,
+    logWeight: 1.0,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;

@@ -159,16 +159,19 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *
    *   finalScore(v) += logWeight × logScore(v)
    *
-   * `logScore(v)` is the min-max normalised count of ERROR/FATAL lines
-   * emitted at/after the fault injection time. Code-level faults (uncaught
-   * exceptions, stack traces) are frequently visible only in logs, so this
-   * targets the RE3 cases that metric-shape signals cannot distinguish. The
-   * count is passed through the engine as `BuildFaultGraphOptions.logs`.
+   * `logScore(v)` is the max-normalised count of SELF-CAUSED logic-exception
+   * lines emitted at/after the fault injection time (see computeLogScores).
+   * Code-level faults (uncaught exceptions, stack traces) are frequently
+   * visible only in logs, so this targets the RE3 cases that metric-shape
+   * signals cannot distinguish. The count is passed through the engine as
+   * `BuildFaultGraphOptions.logs`.
    *
-   * Default: 0 (opt-in). A known risk: a code-level source may emit only a
-   * few errors while cascading symptoms flood downstream services with
-   * secondary errors; if ablation shows this, the signal should be upgraded
-   * from raw count to message-uniqueness or first-ERROR time.
+   * Default: 1.0 (enabled). Benchmark #220 measured the logic-exception-
+   * weighted signal as net-positive with ZERO regression: RE2 resource
+   * cascades are neutral (connectivity exceptions are excluded, so the signal
+   * does not misfire onto symptoms), while RE3 code-level faults are lifted
+   * (OnlineBoutique +13.4pp, SockShop +3.3pp). It is the first ranking signal
+   * to ship enabled; the other causal priors remain opt-in.
    */
   readonly logWeight: number;
 }
@@ -205,7 +208,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   temporalWeight: 0.0,
   collisionWeight: 0.0,
   topoWeight: 0.0,
-  logWeight: 0.0,
+  logWeight: 1.0,
 };
 
 /**
