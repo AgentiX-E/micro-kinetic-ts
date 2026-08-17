@@ -15,6 +15,7 @@ export {
   RCAEvalLoader,
   classifyLogLevel,
   extractExceptionNames,
+  isLogicExceptionMessage,
   isStackTraceMessage,
 } from './loaders/rcaeval-loader.js';
 

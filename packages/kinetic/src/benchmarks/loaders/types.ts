@@ -69,6 +69,8 @@ export interface BenchmarkLogEntry {
   readonly level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
   /** Whether the message carries a stack-trace signature (code-level fault). */
   readonly isStackTrace?: boolean;
+  /** Whether the message is a self-caused logic exception (source signal). */
+  readonly isLogicException?: boolean;
 }
 
 /** Trace span within a benchmark case. */

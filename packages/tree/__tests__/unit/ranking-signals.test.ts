@@ -10,15 +10,15 @@ function makeLog(
   service: string,
   level: string,
   timestamp = 0,
-  isStackTrace = true,
+  isLogicException = true,
 ): FaultLogEntry {
-  return { service, level, timestamp, isStackTrace };
+  return { service, level, timestamp, isLogicException };
 }
 
 describe('computeLogScores', () => {
   const nodes = new Set<ServiceId>(['a', 'b', 'c']);
 
-  it('counts only ERROR/FATAL lines and max-normalises across services', () => {
+  it('counts only ERROR/FATAL logic-exception lines and max-normalises', () => {
     const logs = [
       makeLog('a', 'ERROR'),
       makeLog('a', 'ERROR'),
@@ -29,7 +29,7 @@ describe('computeLogScores', () => {
     ];
     const scores = computeLogScores(logs, nodes, 0);
 
-    // a has 3 errors (max → 1), b has 1 (→ 1/3), c has 0 (→ 0).
+    // a has 3 logic errors (max → 1), b has 1 (→ 1/3), c has 0 (→ 0).
     expect(scores.get('a')).toBe(1);
     expect(scores.get('b')).toBeCloseTo(1 / 3, 10);
     expect(scores.get('c')).toBe(0);
@@ -49,7 +49,7 @@ describe('computeLogScores', () => {
     expect(scores.get('b')).toBeCloseTo(0.5, 10);
   });
 
-  it('filters out ERROR/FATAL lines emitted BEFORE the injection time', () => {
+  it('filters out logic-exception lines emitted BEFORE the injection time', () => {
     const logs = [
       makeLog('a', 'ERROR', 100), // before injection — filtered
       makeLog('a', 'ERROR', 300), // after
@@ -87,10 +87,10 @@ describe('computeLogScores', () => {
     expect(computeLogScores(logs, nodes, 200).size).toBe(0);
   });
 
-  it('returns an empty map when errors carry no stack-trace evidence', () => {
-    // A resource/network cascade (e.g. RE2) floods ERROR lines without any
-    // stack trace. The signal must stay neutral so max-count does not boost
-    // the symptom service instead of the source.
+  it('returns an empty map when errors are connectivity, not logic', () => {
+    // A resource/network cascade (RE2) floods ERROR lines with CONNECTIVITY
+    // exceptions (isLogicException=false). The signal must stay neutral so
+    // max-count does not boost the symptom service instead of the source.
     const logs = [
       makeLog('a', 'ERROR', 0, false),
       makeLog('a', 'ERROR', 0, false),
@@ -99,19 +99,22 @@ describe('computeLogScores', () => {
     expect(computeLogScores(logs, nodes, 0).size).toBe(0);
   });
 
-  it('fires when at least one error carries a stack-trace signature', () => {
-    // A single stack trace (code-level fault) among the errors is enough to
-    // un-gate the signal; the volume then points at the source.
+  it('counts only logic exceptions, ignoring connectivity cascade noise', () => {
+    // A code-level fault's SOURCE (a) floods logic exceptions while a SYMPTOM
+    // (b) floods connectivity exceptions. Only a's logic errors count, so a
+    // scores 1 and b (connectivity-only) is excluded entirely.
     const logs = [
-      makeLog('a', 'ERROR', 0, false), // cascade noise
-      makeLog('a', 'ERROR', 0, true), // stack trace — code-level evidence
+      makeLog('a', 'ERROR', 0, true), // logic — source
+      makeLog('a', 'ERROR', 0, true), // logic — source
+      makeLog('b', 'ERROR', 0, false), // connectivity — symptom noise
+      makeLog('b', 'ERROR', 0, false),
       makeLog('b', 'ERROR', 0, false),
     ];
     const scores = computeLogScores(logs, nodes, 0);
 
-    // a has 2 errors (max → 1), b has 1 (→ 0.5).
     expect(scores.get('a')).toBe(1);
-    expect(scores.get('b')).toBeCloseTo(0.5, 10);
+    expect(scores.get('b')).toBe(0);
+    expect(scores.get('c')).toBe(0);
   });
 });
 

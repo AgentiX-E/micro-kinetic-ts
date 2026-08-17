@@ -16,6 +16,7 @@ import {
   RCAEvalLoader,
   classifyLogLevel,
   extractExceptionNames,
+  isLogicExceptionMessage,
   isStackTraceMessage,
 } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
 
@@ -145,6 +146,36 @@ describe('extractExceptionNames', () => {
   it('returns an empty array when no exception type is present', () => {
     expect(extractExceptionNames('connection refused')).toEqual([]);
     expect(extractExceptionNames('request completed in 12ms')).toEqual([]);
+  });
+});
+
+describe('isLogicExceptionMessage', () => {
+  it('detects self-caused logic exceptions (code-level fault signatures)', () => {
+    expect(isLogicExceptionMessage('java.lang.NullPointerException: null')).toBe(true);
+    expect(isLogicExceptionMessage('IllegalArgumentException: invalid argument')).toBe(true);
+    expect(isLogicExceptionMessage('ConcurrentModificationException at runtime')).toBe(true);
+    expect(isLogicExceptionMessage('JsonMappingException: cannot deserialize')).toBe(true);
+    expect(isLogicExceptionMessage("AttributeError: 'NoneType' object has no attribute")).toBe(true);
+    expect(isLogicExceptionMessage("TypeError: cannot read property 'foo' of undefined")).toBe(true);
+    expect(isLogicExceptionMessage('MalformedJwtException: invalid token')).toBe(true);
+    expect(isLogicExceptionMessage('ArrayIndexOutOfBoundsException: index 5')).toBe(true);
+  });
+
+  it('rejects connectivity/IO exceptions (propagated cascade signatures)', () => {
+    expect(isLogicExceptionMessage('RedisConnectionFailureException: connection refused')).toBe(
+      false,
+    );
+    expect(isLogicExceptionMessage('java.net.SocketTimeoutException: Read timed out')).toBe(false);
+    expect(isLogicExceptionMessage('UnknownHostException: host not found')).toBe(false);
+    expect(isLogicExceptionMessage('MongoSocketReadException: read error')).toBe(false);
+    expect(isLogicExceptionMessage('AmqpIOException: broken pipe')).toBe(false);
+    expect(isLogicExceptionMessage('EOFException: unexpected end of stream')).toBe(false);
+  });
+
+  it('rejects non-exception and generic messages', () => {
+    expect(isLogicExceptionMessage('connection refused')).toBe(false);
+    expect(isLogicExceptionMessage('request completed in 12ms')).toBe(false);
+    expect(isLogicExceptionMessage('ProcessingException: unexpected')).toBe(false);
   });
 });
 
@@ -759,11 +790,13 @@ describe('RCAEvalLoader', () => {
       expect(rawCase.logs).toBeDefined();
       expect(rawCase.logs![0]!.level).toBe('ERROR');
       expect(rawCase.logs![1]!.level).toBe('INFO');
-      // The stack-trace signature must be derived from the message too, so the
-      // log signal can gate on code-level evidence. Only a STRUCTURAL frame
-      // (at cls.method(file:line)) counts; a bare exception name does not.
+      // The stack-trace and logic-exception signatures must be derived from the
+      // message text too, so the log signal can count self-caused logic errors
+      // (code-level evidence) and ignore connectivity cascade noise.
       expect(rawCase.logs![0]!.isStackTrace).toBe(true);
+      expect(rawCase.logs![0]!.isLogicException).toBe(true);
       expect(rawCase.logs![1]!.isStackTrace).toBe(false);
+      expect(rawCase.logs![1]!.isLogicException).toBe(false);
     });
   });
 

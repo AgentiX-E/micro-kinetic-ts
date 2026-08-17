@@ -1076,13 +1076,13 @@ describe('TreePruner', () => {
       B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
       C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
     });
-    // Stack-trace flags are set so the log signal's code-level gate fires
-    // (error volume alone is treated as a resource/network cascade and gated
-    // off — see computeLogScores).
+    // Logic-exception flags are set so the log signal counts A as the source
+    // (connectivity exceptions would be treated as a cascade and excluded —
+    // see computeLogScores).
     const logs = [
-      { timestamp: 0, service: 'A', level: 'ERROR', isStackTrace: true },
-      { timestamp: 0, service: 'A', level: 'ERROR', isStackTrace: true },
-      { timestamp: 0, service: 'A', level: 'ERROR', isStackTrace: true },
+      { timestamp: 0, service: 'A', level: 'ERROR', isLogicException: true },
+      { timestamp: 0, service: 'A', level: 'ERROR', isLogicException: true },
+      { timestamp: 0, service: 'A', level: 'ERROR', isLogicException: true },
     ];
 
     it('stores max-normalised log scores on the graph', () => {

@@ -30,8 +30,9 @@
 import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 
 /**
- * Compute the log signal score for each service: the ERROR/FATAL volume
- * emitted at/after the fault injection time, normalised by the maximum count.
+ * Compute the log signal score for each service: the SELF-CAUSED logic-exception
+ * volume emitted at/after the fault injection time, normalised by the maximum
+ * count.
  *
  * The count is restricted to services present in `nodeIds` (a log line for a
  * service absent from the call graph cannot contribute a ranking signal) and,
@@ -40,19 +41,27 @@ import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kineti
  *
  * Normalisation is `count(v) / maxCount`, so the top erroring service scores
  * 1, zero-error services score 0, and a lone erroring service scores 1 against
- * its silent peers — which is exactly the code-level-fault signature (only the
- * faulting service emits stack traces).
+ * its silent peers — the code-level-fault signature (only the faulting service
+ * emits self-caused logic exceptions).
  *
- * ## Code-level gate
+ * ## Logic-exception (self-caused) discriminator
  *
  * Error VOLUME alone is not a reliable source/symptom discriminator: in a
  * resource/network fault (RCAEval RE2) the SYMPTOM services flood ERROR logs
  * (a "connection refused" / "timeout" cascade), so max-count would boost the
- * symptom. A code-level fault (RE3) instead emits STACK TRACES concentrated in
- * the source. The signal is therefore gated: it is only emitted when at least
- * one ERROR/FATAL line carries a stack-trace signature (`isStackTrace`), i.e.
- * when there is code-level-fault evidence. Otherwise the map is empty and the
- * caller treats the log signal as neutral, avoiding the cascade regression.
+ * symptom. Benchmark #219's exception-type diagnostic showed the causal split:
+ *
+ * - RE3 code-level faults flood LOGIC exceptions (NullPointerException,
+ *   ConcurrentModificationException, JsonMappingException, AttributeError, …)
+ *   in the SOURCE — a programming error is SELF-CAUSED.
+ * - RE2 resource faults flood CONNECTIVITY exceptions (ConnectionException,
+ *   SocketTimeoutException, MongoSocketException, UnknownHostException, …)
+ *   in the SYMPTOMS — a connection failure is PROPAGATED.
+ *
+ * The signal therefore counts only lines flagged `isLogicException` (self-caused)
+ * and ignores connectivity/other errors. A resource cascade with no logic
+ * exceptions yields an empty map (neutral); a code-level fault concentrates the
+ * count on the source.
  *
  * @param logs - Raw log lines (may be undefined → empty map).
  * @param nodeIds - Services present in the call graph.
@@ -67,23 +76,20 @@ export function computeLogScores(
   const scores = new Map<ServiceId, number>();
   if (!logs || logs.length === 0 || nodeIds.size === 0) return scores;
 
-  // Count ERROR/FATAL lines per service, filtered by time and membership.
-  // Track whether any surviving error line is a stack trace — the gate that
-  // distinguishes a code-level fault from a resource/network cascade.
+  // Count only SELF-CAUSED logic exceptions per service, filtered by time and
+  // membership. Connectivity exceptions (propagated cascade noise) and non-
+  // error lines are ignored — they would misfire max-count onto symptoms.
   const counts = new Map<ServiceId, number>();
-  let stackTraceCount = 0;
   for (const log of logs) {
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
     if (!nodeIds.has(log.service)) continue;
     if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
+    if (!log.isLogicException) continue;
     counts.set(log.service, (counts.get(log.service) ?? 0) + 1);
-    if (log.isStackTrace) stackTraceCount++;
   }
 
-  // No error logs, or no code-level evidence (stack trace) → no signal. The
-  // latter is deliberate: without a stack trace the errors are most likely a
-  // resource/network cascade, where max-count would misfire onto symptoms.
-  if (counts.size === 0 || stackTraceCount === 0) return scores;
+  // No self-caused logic errors → no signal (a resource cascade is neutral).
+  if (counts.size === 0) return scores;
 
   let max = 0;
   for (const count of counts.values()) {

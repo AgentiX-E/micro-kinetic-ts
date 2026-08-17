@@ -57,6 +57,21 @@ export interface FaultLogEntry {
    * cascade. Optional — absent means "unknown" (treated as not a stack trace).
    */
   readonly isStackTrace?: boolean;
+  /**
+   * Whether the log line is a SELF-CAUSED logic exception (a programming error
+   * such as `NullPointerException`, `IllegalArgumentException`,
+   * `ConcurrentModificationException`, `AttributeError`, …), as opposed to a
+   * PROPAGATED connectivity exception (`ConnectionException`,
+   * `SocketTimeoutException`, `MongoSocketException`, …) or a non-error line.
+   *
+   * A logic exception indicates the emitting service has an internal bug, so it
+   * is a SOURCE signal; a connectivity exception is a downstream cascade and is
+   * noise for source identification. The log signal therefore counts only logic
+   * exceptions (benchmark #219: RE2 resource faults flood connectivity
+   * exceptions in the SYMPTOM services, while RE3 code-level faults flood logic
+   * exceptions in the SOURCE). Optional — absent means "not a logic exception".
+   */
+  readonly isLogicException?: boolean;
 }
 
 /**

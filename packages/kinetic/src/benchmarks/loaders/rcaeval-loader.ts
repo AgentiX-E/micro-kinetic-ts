@@ -146,6 +146,42 @@ export function extractExceptionNames(message: string): string[] {
   return names;
 }
 
+/**
+ * Names of SELF-CAUSED logic exceptions — the programming-error signatures of
+ * a code-level fault (RCAEval RE3). These arise from an internal bug (a null
+ * dereference, a bad argument, an invalid state, a malformed payload) and
+ * therefore identify the SOURCE service, not a downstream symptom.
+ */
+const LOGIC_EXCEPTION_PATTERN =
+  /(?:NullPointer|IllegalArgument|IllegalState|ArrayIndex|IndexOutOfBounds|ClassCast|ConcurrentModification|NumberFormat|Arithmetic|NoSuchElement|UnsupportedOperation|ClassNotFound|NoSuchMethod|NoSuchField|JsonMapping|JsonParse|JsonProcessing|HttpMessageNotReadable|MalformedJwt|AttributeError|TypeError|NameError|IndexError|ValueError|KeyError|ZeroDivisionError|TokenException)/i;
+
+/**
+ * Determine whether a log message is a SELF-CAUSED logic exception — the
+ * signature of a code-level fault — as opposed to a PROPAGATED connectivity
+ * exception (a resource/network cascade) or a non-error line.
+ *
+ * This is the causal discriminator behind the log signal (benchmark #219):
+ *
+ * - RE3 code-level faults flood LOGIC exceptions (NullPointerException,
+ *   ConcurrentModificationException, JsonMappingException, AttributeError,
+ *   TypeError, MalformedJwtException, …) in the SOURCE service.
+ * - RE2 resource faults flood CONNECTIVITY exceptions (ConnectionException,
+ *   SocketTimeoutException, MongoSocketException, UnknownHostException, …)
+ *   in the SYMPTOM services — these are PROPAGATED, not self-caused.
+ *
+ * Counting only logic exceptions therefore points at the source for code-level
+ * faults and stays neutral for resource cascades. A logic exception is a
+ * programming error (null dereference / bad argument / invalid state /
+ * malformed payload); a connectivity exception is an environmental condition
+ * (unreachable dependency / timeout).
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message names a self-caused logic exception.
+ */
+export function isLogicExceptionMessage(message: string): boolean {
+  return LOGIC_EXCEPTION_PATTERN.test(message);
+}
+
 export class RCAEvalLoader {
   /**
    * Raw header of the last logs.csv parsed (comma-joined column names).
@@ -468,6 +504,7 @@ export class RCAEvalLoader {
           message,
           level: classifyLogLevel(explicitLevel, message),
           isStackTrace: isStackTraceMessage(message),
+          isLogicException: isLogicExceptionMessage(message),
         };
       });
     } catch {
