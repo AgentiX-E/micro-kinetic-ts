@@ -42,6 +42,12 @@ export interface HistoricalConfig {
   readonly temporalBonus: number;
   readonly defaultWeight: number;
   readonly childContributionCap: number;
+  /** Ranking fusion weights (log-space source/symptom priors). */
+  readonly sourceWeight: number;
+  readonly temporalWeight: number;
+  readonly collisionWeight: number;
+  readonly topoWeight: number;
+  readonly logWeight: number;
 }
 
 export interface MetaLearnerOptions {
@@ -153,6 +159,11 @@ export class MetaLearner {
     let temporalBonus = 0;
     let defaultWeight = 0;
     let childContributionCap = 0;
+    let sourceWeight = 0;
+    let temporalWeight = 0;
+    let collisionWeight = 0;
+    let topoWeight = 0;
+    let logWeight = 0;
 
     for (let i = 0; i < k; i++) {
       const cfg = records[neighbors[i]!]!.config;
@@ -161,6 +172,11 @@ export class MetaLearner {
       temporalBonus += weights[i]! * cfg.temporalBonus;
       defaultWeight += weights[i]! * cfg.defaultWeight;
       childContributionCap += weights[i]! * cfg.childContributionCap;
+      sourceWeight += weights[i]! * cfg.sourceWeight;
+      temporalWeight += weights[i]! * cfg.temporalWeight;
+      collisionWeight += weights[i]! * cfg.collisionWeight;
+      topoWeight += weights[i]! * cfg.topoWeight;
+      logWeight += weights[i]! * cfg.logWeight;
     }
 
     // ── Discrete params: weighted voting ──
@@ -191,6 +207,13 @@ export class MetaLearner {
         temporalBonus,
         defaultWeight,
         childContributionCap,
+      },
+      ranking: {
+        sourceWeight,
+        temporalWeight,
+        collisionWeight,
+        topoWeight,
+        logWeight,
       },
       discrete: {
         baselineStrategy: bestBaseline as RCAConfiguration['discrete']['baselineStrategy'],

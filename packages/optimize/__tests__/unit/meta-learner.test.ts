@@ -32,6 +32,11 @@ function makeCfg(overrides?: Partial<HistoricalConfig>): HistoricalConfig {
     temporalBonus: 0.15,
     defaultWeight: 0.05,
     childContributionCap: 1.0,
+    sourceWeight: 0,
+    temporalWeight: 0,
+    collisionWeight: 0,
+    topoWeight: 0,
+    logWeight: 1.0,
     ...overrides,
   };
 }
@@ -59,13 +64,16 @@ describe('MetaLearner', () => {
 
   it('should predict from single record', () => {
     const rec = makeRecord({
-      config: makeCfg({ baselineStrategy: 'q25', decayAlpha: 0.9 }),
+      config: makeCfg({ baselineStrategy: 'q25', decayAlpha: 0.9, logWeight: 2.5 }),
     });
     const ml = new MetaLearner([rec]);
 
     const pred = ml.predict(makeCtx());
     expect(pred.discrete.baselineStrategy).toBe('q25');
     expect(pred.continuous.decayAlpha).toBeCloseTo(0.9);
+    // Ranking weights are weighted-averaged too (single record → unchanged).
+    expect(pred.ranking.logWeight).toBeCloseTo(2.5);
+    expect(pred.ranking.sourceWeight).toBeCloseTo(0);
   });
 
   it('should predict from multiple identical records', () => {

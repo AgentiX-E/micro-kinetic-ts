@@ -65,6 +65,13 @@ describe('AdaptiveConfigOptimizer E2E', () => {
         defaultWeight: 0.05,
         childContributionCap: 1.0,
       },
+      ranking: {
+        sourceWeight: 0,
+        temporalWeight: 0,
+        collisionWeight: 0,
+        topoWeight: 0,
+        logWeight: 1.0,
+      },
       discrete: {
         baselineStrategy: 'q25',
         correlationMethod: 'pearson',
@@ -124,7 +131,7 @@ describe('AdaptiveConfigOptimizer E2E', () => {
 
     // Config should be valid
     const vec = DEFAULT_CONFIG_SPACE.toVector(result.config);
-    expect(vec).toHaveLength(16);
+    expect(vec).toHaveLength(21);
     for (let i = 0; i < vec.length; i++) {
       expect(vec[i]).toBeGreaterThanOrEqual(0);
       expect(vec[i]).toBeLessThanOrEqual(1);

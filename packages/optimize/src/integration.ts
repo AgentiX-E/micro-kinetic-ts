@@ -25,6 +25,12 @@ export function configToPrunerOptions(config: RCAConfiguration): Partial<TreePru
     pruneEpsilon: config.continuous.pruneEpsilon,
     enableCollisionAggregation: config.discrete.enableCollisionAggregation,
     criticalLoadThreshold: 0.7,
+    // Ranking fusion weights — the L2 optimizer tunes these directly.
+    sourceWeight: config.ranking.sourceWeight,
+    temporalWeight: config.ranking.temporalWeight,
+    collisionWeight: config.ranking.collisionWeight,
+    topoWeight: config.ranking.topoWeight,
+    logWeight: config.ranking.logWeight,
   };
 }
 

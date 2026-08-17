@@ -2,13 +2,16 @@
  * Configuration space Θ for the adaptive RCA optimizer.
  *
  * Defines the search space boundaries, parameter types, and sampling
- * strategies used by the Gaussian Process surrogate.  Five continuous
- * parameters map to a unit-cube [0,1]⁵ via affine transforms; five
- * discrete parameters are enumerated as integer indices 0..|options|-1.
+ * strategies used by the Gaussian Process surrogate.  Five tree-decay
+ * continuous parameters + five ranking-fusion weights map to a unit-cube
+ * [0,1]¹⁰ via affine transforms; five discrete parameters are enumerated
+ * as integer indices 0..|options|-1.
  *
  * Total search space: |Θ_continuous| × ∏|Θ_discrete_i| ≈ 4000 configurations.
  * GP with UCB acquisition converges in 3–5 evaluations (≈0.1% of grid search).
  */
+
+import type { RankingWeights } from '@agentix-e/micro-kinetic-core';
 
 // ── Continuous parameters ──────────
 
@@ -29,11 +32,13 @@ export interface ContinuousParam {
 /**
  * Configuration space definition.
  * The `fromVector` / `toVector` methods convert between the GP's
- * internal representation (5 continuous + 5 one-hot = 5 + Σ|D_k| dims)
- * and typed RCAConfiguration objects.
+ * internal representation (5 tree + 5 ranking continuous + 5 one-hot
+ * discrete = 10 + Σ|D_k| dims) and typed RCAConfiguration objects.
  */
 export interface ConfigSpace {
   readonly continuous: readonly ContinuousParam[];
+  /** Ranking fusion weights (dimensionless, log-space, [0, 3]). */
+  readonly ranking: readonly ContinuousParam[];
   readonly discrete: readonly DiscreteParam[];
   /** Total dimensionality of the GP input vector */
   readonly dimension: number;
@@ -68,6 +73,8 @@ export interface RCAConfiguration {
     readonly defaultWeight: number;
     readonly childContributionCap: number;
   };
+  /** Ranking fusion weights (log-space source/symptom priors). */
+  readonly ranking: RankingWeights;
   readonly discrete: {
     readonly baselineStrategy: 'q25' | 'sliding-window' | 'auto';
     readonly correlationMethod: 'pearson' | 'spearman';
@@ -117,6 +124,52 @@ const CONTINUOUS: readonly ContinuousParam[] = [
   },
 ];
 
+/**
+ * Ranking fusion weights — the five log-space priors blended into the root
+ * cause ordering. All are dimensionless with range [0, 3] (linear). A weight
+ * of 0 disables a signal; 1.0 makes it comparable to the self-anomaly term
+ * (log(selfAnomaly) ∈ (−∞, 0]); 3.0 lets it dominate (the ablation's strong
+ * signal strength). This is the search space the L2 optimizer tunes directly
+ * — the same RankingWeights contract the tree engine consumes.
+ */
+const RANKING: readonly ContinuousParam[] = [
+  {
+    name: 'sourceWeight',
+    min: 0,
+    max: 3,
+    fromUnit: (u) => u * 3,
+    toUnit: (v) => v / 3,
+  },
+  {
+    name: 'temporalWeight',
+    min: 0,
+    max: 3,
+    fromUnit: (u) => u * 3,
+    toUnit: (v) => v / 3,
+  },
+  {
+    name: 'collisionWeight',
+    min: 0,
+    max: 3,
+    fromUnit: (u) => u * 3,
+    toUnit: (v) => v / 3,
+  },
+  {
+    name: 'topoWeight',
+    min: 0,
+    max: 3,
+    fromUnit: (u) => u * 3,
+    toUnit: (v) => v / 3,
+  },
+  {
+    name: 'logWeight',
+    min: 0,
+    max: 3,
+    fromUnit: (u) => u * 3,
+    toUnit: (v) => v / 3,
+  },
+];
+
 const DISCRETE: readonly DiscreteParam[] = [
   {
     name: 'baselineStrategy',
@@ -160,6 +213,16 @@ function continuousToVector(cfg: RCAConfiguration['continuous']): Float64Array {
   return v;
 }
 
+function rankingToVector(cfg: RCAConfiguration['ranking']): Float64Array {
+  const v = new Float64Array(RANKING.length);
+  v[0] = RANKING[0]!.toUnit(cfg.sourceWeight);
+  v[1] = RANKING[1]!.toUnit(cfg.temporalWeight);
+  v[2] = RANKING[2]!.toUnit(cfg.collisionWeight);
+  v[3] = RANKING[3]!.toUnit(cfg.topoWeight);
+  v[4] = RANKING[4]!.toUnit(cfg.logWeight);
+  return v;
+}
+
 function discreteToVector(cfg: RCAConfiguration['discrete']): Float64Array {
   let offset = 0;
   const totalDim = computeDiscreteDim(DISCRETE);
@@ -181,6 +244,16 @@ function vectorToContinuous(u: Float64Array): RCAConfiguration['continuous'] {
     temporalBonus: CONTINUOUS[2]!.fromUnit(u[2]!),
     defaultWeight: CONTINUOUS[3]!.fromUnit(u[3]!),
     childContributionCap: CONTINUOUS[4]!.fromUnit(u[4]!),
+  };
+}
+
+function vectorToRanking(u: Float64Array): RCAConfiguration['ranking'] {
+  return {
+    sourceWeight: RANKING[0]!.fromUnit(u[0]!),
+    temporalWeight: RANKING[1]!.fromUnit(u[1]!),
+    collisionWeight: RANKING[2]!.fromUnit(u[2]!),
+    topoWeight: RANKING[3]!.fromUnit(u[3]!),
+    logWeight: RANKING[4]!.fromUnit(u[4]!),
   };
 }
 
@@ -220,21 +293,25 @@ function vectorToDiscrete(u: Float64Array): RCAConfiguration['discrete'] {
 
 export const DEFAULT_CONFIG_SPACE: ConfigSpace = {
   continuous: CONTINUOUS,
+  ranking: RANKING,
   discrete: DISCRETE,
-  dimension: CONTINUOUS.length + computeDiscreteDim(DISCRETE),
+  dimension: CONTINUOUS.length + RANKING.length + computeDiscreteDim(DISCRETE),
 
   fromVector(x: Float64Array): RCAConfiguration {
     const cont = vectorToContinuous(x.slice(0, CONTINUOUS.length));
-    const disc = vectorToDiscrete(x.slice(CONTINUOUS.length));
-    return { continuous: cont, discrete: disc };
+    const rank = vectorToRanking(x.slice(CONTINUOUS.length, CONTINUOUS.length + RANKING.length));
+    const disc = vectorToDiscrete(x.slice(CONTINUOUS.length + RANKING.length));
+    return { continuous: cont, ranking: rank, discrete: disc };
   },
 
   toVector(cfg: RCAConfiguration): Float64Array {
     const cv = continuousToVector(cfg.continuous);
+    const rv = rankingToVector(cfg.ranking);
     const dv = discreteToVector(cfg.discrete);
-    const result = new Float64Array(cv.length + dv.length);
+    const result = new Float64Array(cv.length + rv.length + dv.length);
     result.set(cv, 0);
-    result.set(dv, cv.length);
+    result.set(rv, cv.length);
+    result.set(dv, cv.length + rv.length);
     return result;
   },
 
@@ -278,6 +355,16 @@ export const DEFAULT_CONFIG: RCAConfiguration = {
     temporalBonus: 0.15,
     defaultWeight: 0.05,
     childContributionCap: 1.0,
+  },
+  ranking: {
+    // The log signal ships enabled (benchmark #220 proved it net-positive);
+    // the other four causal priors default to 0 (opt-in / empirically
+    // regressed — see RankingWeights).
+    sourceWeight: 0.0,
+    temporalWeight: 0.0,
+    collisionWeight: 0.0,
+    topoWeight: 0.0,
+    logWeight: 1.0,
   },
   discrete: {
     baselineStrategy: 'auto',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GaussianProcess } from '../../src/gaussian-process.js';
-import { DEFAULT_CONFIG_SPACE } from '../../src/config-space.js';
+import { DEFAULT_CONFIG_SPACE, DEFAULT_CONFIG } from '../../src/config-space.js';
 
 describe('GaussianProcess', () => {
   it('should create with default options', () => {
@@ -200,16 +200,13 @@ describe('GaussianProcess', () => {
 });
 
 describe('GaussianProcess with DEFAULT_CONFIG_SPACE', () => {
-  it('should handle full 16-dim config space', () => {
+  it('should handle full 21-dim config space', () => {
     const gp = new GaussianProcess(
       DEFAULT_CONFIG_SPACE.dimension,
       undefined,
       DEFAULT_CONFIG_SPACE,
     );
-    const defaultVec = DEFAULT_CONFIG_SPACE.toVector({
-      continuous: { decayAlpha: 0.8, pruneEpsilon: 0.001, temporalBonus: 0.15, defaultWeight: 0.05, childContributionCap: 1.0 },
-      discrete: { baselineStrategy: 'auto', correlationMethod: 'pearson', propagationMode: 'additive', enableCollisionAggregation: true, useTemporalCausality: true },
-    });
+    const defaultVec = DEFAULT_CONFIG_SPACE.toVector(DEFAULT_CONFIG);
 
     gp.addObservation(defaultVec, 0.74); // OB accuracy
     const pred = gp.predict(defaultVec);
