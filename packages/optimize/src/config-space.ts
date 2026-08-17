@@ -213,7 +213,12 @@ function continuousToVector(cfg: RCAConfiguration['continuous']): Float64Array {
   return v;
 }
 
-function rankingToVector(cfg: RCAConfiguration['ranking']): Float64Array {
+/**
+ * Map `RankingWeights` to its unit-cube [0,1]⁵ representation.
+ * Exported so the L2 coordinate-descent harness can translate between the
+ * tunable weight vector and the typed `RankingWeights` contract.
+ */
+export function rankingToVector(cfg: RCAConfiguration['ranking']): Float64Array {
   const v = new Float64Array(RANKING.length);
   v[0] = RANKING[0]!.toUnit(cfg.sourceWeight);
   v[1] = RANKING[1]!.toUnit(cfg.temporalWeight);
@@ -247,7 +252,11 @@ function vectorToContinuous(u: Float64Array): RCAConfiguration['continuous'] {
   };
 }
 
-function vectorToRanking(u: Float64Array): RCAConfiguration['ranking'] {
+/**
+ * Inverse of `rankingToVector`: map a unit-cube [0,1]⁵ vector back to typed
+ * `RankingWeights`.
+ */
+export function vectorToRanking(u: Float64Array): RCAConfiguration['ranking'] {
   return {
     sourceWeight: RANKING[0]!.fromUnit(u[0]!),
     temporalWeight: RANKING[1]!.fromUnit(u[1]!),

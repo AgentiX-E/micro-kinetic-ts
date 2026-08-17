@@ -2,13 +2,29 @@ export { BENCHMARK_CONTEXTS, expectCloseTo, extractSystemContext } from './conte
 export type { CloseToMatcher } from './context-extractor.js';
 export type { ContextBenchmark, SystemContext } from './types.js';
 
-export { DEFAULT_CONFIG, DEFAULT_CONFIG_SPACE } from './config-space.js';
+export {
+  DEFAULT_CONFIG,
+  DEFAULT_CONFIG_SPACE,
+  rankingToVector,
+  vectorToRanking,
+} from './config-space.js';
 export type {
   ConfigSpace,
   ContinuousParam,
   DiscreteParam,
   RCAConfiguration,
 } from './config-space.js';
+
+export { coordinateDescent } from './coordinate-descent.js';
+export type {
+  CoordinateDescentOptions,
+  CoordinateDescentResult,
+  CoordinateDescentStep,
+  CoordinateOracle,
+} from './coordinate-descent.js';
+
+export { stratifiedSplit } from './split.js';
+export type { SplitRatios, SplitResult } from './split.js';
 
 export { GaussianProcess } from './gaussian-process.js';
 export type { GPObservation, GPOptions, GPPrediction } from './gaussian-process.js';
