@@ -148,6 +148,11 @@ interface CliOptions {
   topoWeight: number;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
+  /**
+   * Use a monotonicity-based trend bonus (instead of magnitude) when the case
+   * carries code-level evidence. Opt-in experiment for the TT RE3 weak cell.
+   */
+  codeLevelMonotonicTrend: boolean;
 }
 
 function parseArgs(): CliOptions {
@@ -162,6 +167,7 @@ function parseArgs(): CliOptions {
     collisionWeight: 0,
     topoWeight: 0,
     logWeight: 1.0,
+    codeLevelMonotonicTrend: false,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -178,6 +184,7 @@ function parseArgs(): CliOptions {
       opts.topoWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--log-weight' && i + 1 < args.length)
       opts.logWeight = parseFloat(args[++i]!) || 0;
+    else if (args[i] === '--code-level-monotonic-trend') opts.codeLevelMonotonicTrend = true;
   }
   return opts;
 }
@@ -189,10 +196,14 @@ function createContainer(weights: {
   collisionWeight: number;
   topoWeight: number;
   logWeight: number;
+  codeLevelMonotonicTrend: boolean;
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
-  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner(weights));
+  container.register(
+    DI_TOKENS.RCA_ENGINE,
+    () => new TreePruner(weights, { codeLevelMonotonicTrend: weights.codeLevelMonotonicTrend }),
+  );
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   return container;
 }
@@ -977,6 +988,7 @@ async function main(): Promise<void> {
     collisionWeight: opts.collisionWeight,
     topoWeight: opts.topoWeight,
     logWeight: opts.logWeight,
+    codeLevelMonotonicTrend: opts.codeLevelMonotonicTrend,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(

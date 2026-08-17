@@ -63,6 +63,8 @@ interface FeatureFlags {
   topoSignal: boolean;
   /** Collision-energy signal: penalise upstream-inherited energy (collisionWeight). */
   collisionSignal: boolean;
+  /** Monotonicity-based trend when code-level evidence is present. */
+  codeLevelTrend: boolean;
 }
 
 interface AblationRun {
@@ -101,6 +103,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -113,6 +116,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -124,6 +128,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+Trace Topo',
   },
@@ -135,6 +140,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+SelfLearn',
   },
@@ -147,6 +153,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+Collision+Trace',
   },
@@ -158,6 +165,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -169,6 +177,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -181,6 +190,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -197,6 +207,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: true,
       topoSignal: false,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+Log Signal',
   },
@@ -208,6 +219,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: true,
       collisionSignal: false,
+      codeLevelTrend: false,
     },
     label: '+Topo Signal',
   },
@@ -223,8 +235,25 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: true,
+      codeLevelTrend: false,
     },
     label: '+Collision Signal',
+  },
+  {
+    // Monotonicity-based trend when the case carries code-level evidence
+    // (logic exceptions). Marginal over BASELINE — isolates whether suppressing
+    // the magnitude trend for a symptom's sharp collapse lifts TT RE3 without
+    // hurting the resource-fault cells.
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      codeLevelTrend: true,
+    },
+    label: '+CodeLevel Trend',
   },
 ];
 
@@ -450,12 +479,15 @@ async function main(): Promise<void> {
     c.register(
       DI_TOKENS.RCA_ENGINE,
       () =>
-        new TreePruner({
-          enableCollisionAggregation: flags.collisionAggregation,
-          collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
-          topoWeight: flags.topoSignal ? 1.0 : 0.0,
-          logWeight: flags.logSignal ? 1.0 : 0.0,
-        }),
+        new TreePruner(
+          {
+            enableCollisionAggregation: flags.collisionAggregation,
+            collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
+            topoWeight: flags.topoSignal ? 1.0 : 0.0,
+            logWeight: flags.logSignal ? 1.0 : 0.0,
+          },
+          { codeLevelMonotonicTrend: flags.codeLevelTrend },
+        ),
     );
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
     return c;
