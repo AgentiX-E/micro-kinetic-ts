@@ -286,12 +286,6 @@ export class TreePruner {
     // returned graph.
     const injectTimeMs = options?.injectTimeMs ?? this.topologyConfig?.injectTimeMs ?? 0;
 
-    // Code-level evidence: any self-caused logic exception in the logs. This
-    // drives the fault-type-aware anomaly scoring (the monotonic-trend option
-    // below) — a code-level fault floods logic exceptions in the source, while
-    // a resource fault floods connectivity exceptions in the symptoms.
-    const hasCodeLevelEvidence = options?.logs?.some((l) => l.isLogicException === true) ?? false;
-
     // Build topology-preserving fault graph with Pearson cross-service correlation.
     // Unlike the legacy chronological propagation tree, this preserves the YAML
     // topology edges and computes real cross-service correlation for edge weights.
@@ -300,7 +294,6 @@ export class TreePruner {
     const topoResult = buildTopologyFaultGraph(callGraph, metrics, {
       ...this.topologyConfig,
       injectTimeMs,
-      hasCodeLevelEvidence,
     });
     const {
       anomalyScores,

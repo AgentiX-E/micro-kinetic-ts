@@ -132,29 +132,6 @@ export interface TopologyFaultGraphConfig {
    * disables the anchored onset (the index-based fallback still applies).
    */
   readonly injectTimeMs?: number;
-  /**
-   * Whether the case carries code-level-fault evidence (a self-caused logic
-   * exception in the logs). Derived from `BuildFaultGraphOptions.logs` by the
-   * caller. When true, the anomaly trend bonus can be switched from magnitude
-   * to monotonicity (see `codeLevelMonotonicTrend`) so a downstream symptom's
-   * sharp metric collapse does not out-rank the source's moderate shift.
-   */
-  readonly hasCodeLevelEvidence?: boolean;
-  /**
-   * Use a MONOTONICITY-based trend bonus (|Pearson r| between time index and
-   * value, bounded at 0.15) instead of the magnitude-based bonus
-   * (|slope·n/mean|) when `hasCodeLevelEvidence` is true.
-   *
-   * A magnitude-based trend double-counts the deviation and amplifies a sharp
-   * drop-to-zero (a downstream symptom collapsing to idle in a code-level
-   * fault) over a source's moderate rise, which mutes the source in RE3
-   * (benchmark #220 TT RE3). Monotonicity rewards only the CONSISTENCY of the
-   * drift — a clean ramp in either direction scores the same — so the
-   * deviation term (which already scores magnitude) decides the winner.
-   * Opt-in (default false): the magnitude-based trend is retained for
-   * resource faults, where the source's magnitude is the larger signal.
-   */
-  readonly codeLevelMonotonicTrend?: boolean;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -611,26 +588,18 @@ function computeAnomalyFeatures(
     let sx = 0,
       sy = 0,
       sxx = 0,
-      sxy = 0,
-      syy = 0;
+      sxy = 0;
     for (let i = 0; i < n; i++) {
       const v = ts.values[i]!;
       sx += i;
       sy += v;
       sxx += i * i;
       sxy += i * v;
-      syy += v * v;
     }
     const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
     // `mean > 0` is guaranteed here — the loop above `continue`s on mean <= 0 —
     // so the former `: 0` fallback was unreachable dead code.
     const trendStrength = Math.abs((slope * n) / mean);
-    // Monotonicity — |Pearson r| between the time index and the value, i.e.
-    // how CONSISTENTLY the series drifts in one direction (0 = noise, 1 =
-    // clean ramp). Computed unconditionally so the code-level trend path can
-    // substitute it for the magnitude trend without a second pass.
-    const trendDenom = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
-    const monotonicity = trendDenom > 0 ? Math.abs((n * sxy - sx * sy) / trendDenom) : 0;
 
     // CV
     let variance = 0;
@@ -661,21 +630,10 @@ function computeAnomalyFeatures(
     // unbounded (clamped only at 0 below) preserves the true deviation
     // magnitude; buildTopologyFaultGraph re-scales to [0,1] afterwards.
     let featureScore = deviation;
-    // Trend bonus. When the case carries code-level evidence and the
-    // code-level monotonic-trend option is enabled, reward MONOTONICITY
-    // (|r|, bounded at 0.15) rather than MAGNITUDE (|slope·n/mean|). The
-    // magnitude trend double-counts the deviation and amplifies a symptom's
-    // sharp drop-to-zero over a source's moderate rise in a code-level fault
-    // (benchmark #220 TT RE3); monotonicity rewards a clean ramp in EITHER
-    // direction equally, so the deviation term (which already scores
-    // magnitude) decides the source/symptom ordering. Resource faults (no
-    // code-level evidence) keep the magnitude trend, where the source's
-    // magnitude is the larger signal.
-    if (cfg.codeLevelMonotonicTrend && cfg.hasCodeLevelEvidence) {
-      if (monotonicity > 0.5) featureScore += monotonicity * 0.15;
-    } else if (trendStrength > 0.1) {
-      featureScore += trendStrength * 0.15;
-    }
+    // Trend bonus is direction-agnostic: trendStrength is already the
+    // ABSOLUTE normalized slope, so a monotonic drop (memory release,
+    // crash) gets the same bonus as a monotonic rise (leak, saturation).
+    if (trendStrength > 0.1) featureScore += trendStrength * 0.15;
     if (hasBurst) featureScore += deviation * 0.1;
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
     featureScore = Math.max(0, featureScore);
