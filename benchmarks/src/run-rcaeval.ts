@@ -966,9 +966,23 @@ function reportDeepestExceptionDiagnostics(
       ? [...gtClasses.keys()].map((cls) => `${cls}(df=${df.get(cls)}/${totalSvcs})`).join(', ')
       : '<none>';
 
+    // Dump the source's first ERROR/FATAL line (FULL, untruncated) so the raw
+    // message format is visible — TrainTicket embeds a Spring Boot preamble and
+    // the exception class may be absent or buried, which the deepest-class
+    // extractor must handle to make the novelty signal fire.
+    let srcMsg = '<no ERROR line>';
+    for (const l of logs) {
+      if (l.service !== gt) continue;
+      if (l.level !== 'ERROR' && l.level !== 'FATAL') continue;
+      if (c.injectTime > 0 && l.timestamp < c.injectTime) continue;
+      srcMsg = l.message;
+      break;
+    }
+
     console.log(`  [log-diag] ${c.id} gt=${gt}`);
     console.log(`    source deepest: ${gtStr}`);
     console.log(`    wrapper deepest: ${wrapper}(df=${wrapperDf}/${totalSvcs})`);
+    console.log(`    source msg: ${srcMsg.slice(0, 400)}`);
 
     shown++;
   }
