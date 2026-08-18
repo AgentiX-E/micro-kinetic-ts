@@ -1,5 +1,6 @@
 import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 import {
+  computeDirectionSourceScores,
   computeLogNoveltyScores,
   computeLogScores,
   computeTopoSourceScores,
@@ -178,16 +179,40 @@ describe('computeLogNoveltyScores', () => {
     const logs = [
       ...noveltyLog('a', 'ConnectException', 3, false),
       ...noveltyLog('b', 'SocketTimeoutException', 3, false),
-      { service: 'c', level: 'INFO', timestamp: 0, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // non-error level — skipped
+      {
+        service: 'c',
+        level: 'INFO',
+        timestamp: 0,
+        isLogicException: true,
+        deepestExceptionClass: 'NullPointerException',
+      }, // non-error level — skipped
     ];
     expect(computeLogNoveltyScores(logs, nodes, 0).size).toBe(0);
   });
 
   it('filters by membership and injection time like count mode', () => {
     const logs = [
-      { service: 'a', level: 'ERROR', timestamp: 300, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // post-inject
-      { service: 'ghost', level: 'ERROR', timestamp: 300, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // not in graph
-      { service: 'b', level: 'ERROR', timestamp: 100, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // pre-inject
+      {
+        service: 'a',
+        level: 'ERROR',
+        timestamp: 300,
+        isLogicException: true,
+        deepestExceptionClass: 'NullPointerException',
+      }, // post-inject
+      {
+        service: 'ghost',
+        level: 'ERROR',
+        timestamp: 300,
+        isLogicException: true,
+        deepestExceptionClass: 'NullPointerException',
+      }, // not in graph
+      {
+        service: 'b',
+        level: 'ERROR',
+        timestamp: 100,
+        isLogicException: true,
+        deepestExceptionClass: 'NullPointerException',
+      }, // pre-inject
     ];
     const scores = computeLogNoveltyScores(logs, nodes, 200);
 
@@ -239,6 +264,93 @@ describe('computeLogNoveltyScores', () => {
     const direct = computeLogNoveltyScores(logs, nodes, 0);
 
     expect(viaDispatch).toEqual(direct);
+  });
+});
+
+describe('computeDirectionSourceScores', () => {
+  it('ranks a source above its middle and leaf symptoms', () => {
+    // s → m → leaf (a fault path) plus three off-path nodes. Anomalies rise
+    // toward the leaf (the collapse), but the binary flag + fan-normalisation
+    // must still identify s as the source of the anomalous subgraph.
+    const edges = [makeEdge('s', 'm'), makeEdge('m', 'leaf')];
+    const anomaly = new Map<ServiceId, number>([
+      ['s', 0.45],
+      ['m', 0.6],
+      ['leaf', 0.9],
+      ['x1', 0.05],
+      ['x2', 0.05],
+      ['x3', 0.05],
+    ]);
+
+    const scores = computeDirectionSourceScores(edges, anomaly);
+
+    // s is the source: anomalous child, no anomalous parent → max (1).
+    expect(scores.get('s')).toBeCloseTo(1, 10);
+    // m is a middle symptom (anomalous child AND parent) → lower than s.
+    expect(scores.get('m')!).toBeLessThan(scores.get('s')!);
+    // leaf is a sink (anomalous parent, no child) → lowest of the path.
+    expect(scores.get('leaf')!).toBeLessThan(scores.get('m')!);
+  });
+
+  it('is insensitive to the rise/collapse magnitude asymmetry', () => {
+    // The collapse at the leaf (1.0) must not dominate: direction uses a binary
+    // flag, so the source still wins even when the leaf's collapse is huge.
+    const edges = [makeEdge('s', 'm'), makeEdge('m', 'leaf')];
+    const anomaly = new Map<ServiceId, number>([
+      ['s', 0.3],
+      ['m', 0.35],
+      ['leaf', 1.0],
+      ['x1', 0.0],
+      ['x2', 0.0],
+    ]);
+
+    const scores = computeDirectionSourceScores(edges, anomaly);
+    expect(scores.get('s')!).toBeGreaterThan(scores.get('leaf')!);
+  });
+
+  it('is fan-normalised: a hub with many anomalous children does not outrank a source', () => {
+    // hub has THREE anomalous children but also an anomalous parent; src has
+    // ONE anomalous child and no parent. Fan-normalisation keeps the hub's
+    // degree from dominating, so src (no anomalous parent) still outranks it.
+    const edges = [
+      makeEdge('src', 'c1'),
+      makeEdge('p1', 'hub'),
+      makeEdge('hub', 'h1'),
+      makeEdge('hub', 'h2'),
+      makeEdge('hub', 'h3'),
+    ];
+    const anomaly = new Map<ServiceId, number>([
+      ['src', 0.5],
+      ['c1', 0.8],
+      ['p1', 0.8],
+      ['hub', 0.5],
+      ['h1', 0.8],
+      ['h2', 0.8],
+      ['h3', 0.8],
+      ['x1', 0.1],
+      ['x2', 0.1],
+      ['x3', 0.1],
+    ]);
+
+    const scores = computeDirectionSourceScores(edges, anomaly);
+
+    // src: out=1, in=0 → softplus(1). hub: out=1, in=1 → softplus(0).
+    expect(scores.get('src')!).toBeGreaterThan(scores.get('hub')!);
+  });
+
+  it('returns an empty map for an empty anomaly set', () => {
+    expect(computeDirectionSourceScores([makeEdge('a', 'b')], new Map()).size).toBe(0);
+  });
+
+  it('is neutral (all nodes equal) when there are no edges', () => {
+    const anomaly = new Map<ServiceId, number>([
+      ['a', 0.8],
+      ['b', 0.6],
+    ]);
+    const scores = computeDirectionSourceScores([], anomaly);
+    expect(scores.size).toBe(2);
+    // No edges → no direction information → all nodes score the same neutral value.
+    expect(scores.get('a')).toBeCloseTo(scores.get('b')!, 10);
   });
 });
 

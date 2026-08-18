@@ -55,7 +55,11 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
-import { computeLogScores, computeTopoSourceScores } from './ranking-signals.js';
+import {
+  computeDirectionSourceScores,
+  computeLogScores,
+  computeTopoSourceScores,
+} from './ranking-signals.js';
 
 /**
  * Options for TreePruner construction.
@@ -187,10 +191,28 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * `novelty` is opt-in until benchmarked; `count` is the shipped default.
    */
   readonly logSignalMode: 'count' | 'novelty';
+  /**
+   * Weight of the directional-source signal: reward a node whose anomaly
+   * spreads to anomalous children while its parents stay healthy (a source),
+   * penalise a sink whose anomaly is fully inherited from an anomalous parent.
+   *
+   *   finalScore(v) += directionWeight × directionScore(v)
+   *
+   * `directionScore(v)` is the max-normalised `softplus(avgOut(v) − avgIn(v))`
+   * (see `computeDirectionSourceScores`). Fan-normalised so a hub with many
+   * anomalous children does not automatically out-rank a single-child source.
+   * Uses only anomaly scores (no Pearson weights) because a code-level fault
+   * propagates as a wrong value with unreliable cross-service correlation.
+   *
+   * Default: 0 (opt-in). TraceRCA's `in_out_diff` — the directional excess of
+   * anomalous outgoing over incoming — is its single highest-leverage signal
+   * for deep-graph faults; this is the metric-only analogue.
+   */
+  readonly directionWeight: number;
 }
 
 /**
- * Package the five ranking fusion weights into the shared, serializable
+ * Package the ranking fusion weights into the shared, serializable
  * {@link RankingWeights} structure. This is the single source of truth for
  * "what are the ranking weights", used by the offline optimizer (L2) to tune
  * and persist them without coupling to the engine's flat option fields.
@@ -198,7 +220,12 @@ export interface TreePrunerOptions extends RCAEngineOptions {
 export function toRankingWeights(
   options: Pick<
     TreePrunerOptions,
-    'sourceWeight' | 'temporalWeight' | 'collisionWeight' | 'topoWeight' | 'logWeight'
+    | 'sourceWeight'
+    | 'temporalWeight'
+    | 'collisionWeight'
+    | 'topoWeight'
+    | 'logWeight'
+    | 'directionWeight'
   >,
 ): RankingWeights {
   return {
@@ -207,6 +234,7 @@ export function toRankingWeights(
     collisionWeight: options.collisionWeight,
     topoWeight: options.topoWeight,
     logWeight: options.logWeight,
+    directionWeight: options.directionWeight,
   };
 }
 
@@ -223,6 +251,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoWeight: 0.0,
   logWeight: 1.0,
   logSignalMode: 'count',
+  directionWeight: 0.0,
 };
 
 /**
@@ -436,6 +465,7 @@ export class TreePruner {
       propagationWeights,
       anomalyScores,
     );
+    const directionScores = computeDirectionSourceScores(topologyGraph.edges, anomalyScores);
 
     return {
       callGraph: topologyGraph,
@@ -451,6 +481,7 @@ export class TreePruner {
       collisionEnergy,
       logScores,
       topoScores,
+      directionScores,
     };
   }
 
@@ -508,6 +539,7 @@ export class TreePruner {
       graph.collisionEnergy,
       graph.logScores,
       graph.topoScores,
+      graph.directionScores,
     );
 
     return results;
@@ -682,6 +714,7 @@ function performTreeRCA(
   >,
   logScores?: ReadonlyMap<ServiceId, number>,
   topoScores?: ReadonlyMap<ServiceId, number>,
+  directionScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -893,7 +926,7 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with four causal priors (all opt-in, default 0):
+  // Rank by self anomaly combined with six causal priors (all opt-in, default 0):
   //
   // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
   //    node's neighbours whose index-based onset is later.
@@ -906,6 +939,8 @@ function performTreeRCA(
   //    strongly anomalous upstream parent.
   // 5. A LOG prior (`logWeight`) — reward the service with the highest
   //    post-injection ERROR/FATAL volume (code-level faults).
+  // 6. A DIRECTIONAL-source prior (`directionWeight`) — reward a node whose
+  //    anomaly spreads to anomalous children while its parents stay healthy.
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -921,6 +956,7 @@ function performTreeRCA(
   //                 − collisionWeight × ratioContrib(v)
   //                 + topoWeight      × topoSource(v)
   //                 + logWeight       × logScore(v)
+  //                 + directionWeight × directionScore(v)
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
@@ -939,14 +975,16 @@ function performTreeRCA(
       weights.temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(a.serviceId) ?? 0);
+      weights.logWeight * (logScores?.get(a.serviceId) ?? 0) +
+      weights.directionWeight * (directionScores?.get(a.serviceId) ?? 0);
     const bScore =
       Math.log(b.score) +
       weights.sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
       weights.temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(b.serviceId) ?? 0);
+      weights.logWeight * (logScores?.get(b.serviceId) ?? 0) +
+      weights.directionWeight * (directionScores?.get(b.serviceId) ?? 0);
     if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;

@@ -338,7 +338,7 @@ async function main(): Promise<void> {
   console.log(`iterations: ${result.rounds} sweeps, ${result.evaluations} oracle evaluations`);
   console.log(`best train: ${formatPct(result.bestScore)}`);
   console.log(
-    `tuned weights: source=${bestWeights.sourceWeight.toFixed(2)} temporal=${bestWeights.temporalWeight.toFixed(2)} collision=${bestWeights.collisionWeight.toFixed(2)} topo=${bestWeights.topoWeight.toFixed(2)} log=${bestWeights.logWeight.toFixed(2)}`,
+    `tuned weights: source=${bestWeights.sourceWeight.toFixed(2)} temporal=${bestWeights.temporalWeight.toFixed(2)} collision=${bestWeights.collisionWeight.toFixed(2)} topo=${bestWeights.topoWeight.toFixed(2)} log=${bestWeights.logWeight.toFixed(2)} direction=${bestWeights.directionWeight.toFixed(2)}`,
   );
 
   console.log('\n=== Generalization (held-out) ===');

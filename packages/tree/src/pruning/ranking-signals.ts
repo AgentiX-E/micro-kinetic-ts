@@ -246,3 +246,100 @@ export function computeTopoSourceScores(
   }
   return scores;
 }
+
+/**
+ * Compute the directional-source score for each service: the (max-normalised)
+ * softplus of the difference between the fraction of a node's ANOMALOUS
+ * children and the fraction of its ANOMALOUS parents.
+ *
+ * ## Motivation
+ *
+ * `computeTopoSourceScores` only looks UPSTREAM — it rewards a node with no
+ * anomalous parent, but ignores whether the node actually PROPAGATES its fault
+ * downstream. A directional signal (TraceRCA's `in_out_diff`) separates the
+ * three roles in the anomalous subgraph:
+ *
+ * - **Source**: anomalous children (its fault spreads outward), healthy parents
+ *   → `out ≫ in`.
+ * - **Middle symptom**: anomalous children AND an anomalous parent → `out ≈ in`.
+ * - **Leaf symptom (sink)**: anomalous parent, no anomalous children → `in ≫
+ *   out`.
+ *
+ * ## Why a BINARY anomaly flag (not magnitude)
+ *
+ * Using the raw anomaly MAGNITUDE would re-introduce the exact failure this
+ * signal exists to fix: in a code-level fault the anomaly magnitude grows
+ * monotonically toward the collapse (source rise 0.35 → leaf collapse 1.0), so
+ * a magnitude-based `out − in` would crown the leaf's PARENT, not the source.
+ * Binarising "anomalous" (vs the per-case median) collapses that gradient to
+ * the structural question that actually matters — *who is the source of the
+ * anomalous subgraph?* — and is insensitive to the rise/collapse asymmetry.
+ *
+ * ## Formula
+ *
+ * Let `τ = median(anomalyScores)` (a data-driven threshold, no magic constant)
+ * and `a(v) = 𝟙[anomaly(v) > τ]`. With fan-out `d⁺(v)` and fan-in `d⁻(v)`:
+ *
+ * ```
+ * out(v) = (1 / d⁺(v)) · Σ_{v→u} a(u)      (0 when d⁺ = 0)
+ * in(v)  = (1 / d⁻(v)) · Σ_{p→v} a(p)      (0 when d⁻ = 0)
+ * raw(v) = softplus(out(v) − in(v))          = ln(1 + e^{out − in})
+ * ```
+ *
+ * Fan-normalisation makes the score insensitive to degree (a hub with many
+ * anomalous children does not automatically out-rank a single-child source).
+ * `softplus` is log-concave, positive-definite and smooth, so the score decays
+ * gracefully from a strong source (`out − in = 1`) down to a sink (`= −1`).
+ * The map is max-normalised to [0, 1] exactly as the log signal is.
+ *
+ * @param edges - Call graph edges (parent → child).
+ * @param anomalyScores - Per-service anomaly score in [0, 1].
+ * @returns Per-service directional-source score in [0, 1]; empty when no node
+ *   carries an anomaly (or the graph has no edges).
+ */
+export function computeDirectionSourceScores(
+  edges: readonly CallEdge[],
+  anomalyScores: ReadonlyMap<ServiceId, number>,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (anomalyScores.size === 0) return scores;
+
+  // Data-driven anomaly threshold: the per-case median anomaly. Services at or
+  // below the median are "normal", above it are "anomalous".
+  const values = [...anomalyScores.values()].sort((x, y) => x - y);
+  const mid = values.length >> 1;
+  const threshold = values.length % 2 === 0 ? (values[mid - 1]! + values[mid]!) / 2 : values[mid]!;
+  const isAnomalous = (id: ServiceId): number => ((anomalyScores.get(id) ?? 0) > threshold ? 1 : 0);
+
+  const outSum = new Map<ServiceId, number>();
+  const outDeg = new Map<ServiceId, number>();
+  const inSum = new Map<ServiceId, number>();
+  const inDeg = new Map<ServiceId, number>();
+
+  for (const edge of edges) {
+    const childFlag = isAnomalous(edge.to);
+    const parentFlag = isAnomalous(edge.from);
+    outSum.set(edge.from, (outSum.get(edge.from) ?? 0) + childFlag);
+    outDeg.set(edge.from, (outDeg.get(edge.from) ?? 0) + 1);
+    inSum.set(edge.to, (inSum.get(edge.to) ?? 0) + parentFlag);
+    inDeg.set(edge.to, (inDeg.get(edge.to) ?? 0) + 1);
+  }
+
+  const raw = new Map<ServiceId, number>();
+  let max = 0;
+  for (const [nodeId] of anomalyScores) {
+    const dOut = outDeg.get(nodeId) ?? 0;
+    const dIn = inDeg.get(nodeId) ?? 0;
+    const avgOut = dOut > 0 ? (outSum.get(nodeId) ?? 0) / dOut : 0;
+    const avgIn = dIn > 0 ? (inSum.get(nodeId) ?? 0) / dIn : 0;
+    const r = Math.log(1 + Math.exp(avgOut - avgIn));
+    raw.set(nodeId, r);
+    if (r > max) max = r;
+  }
+
+  // Every node has softplus ≥ ln 2 > 0, so max > 0 whenever the map is non-empty.
+  for (const [nodeId] of anomalyScores) {
+    scores.set(nodeId, (raw.get(nodeId) ?? 0) / max);
+  }
+  return scores;
+}
