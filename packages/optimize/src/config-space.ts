@@ -125,7 +125,7 @@ const CONTINUOUS: readonly ContinuousParam[] = [
 ];
 
 /**
- * Ranking fusion weights — the six log-space priors blended into the root
+ * Ranking fusion weights — the five log-space priors blended into the root
  * cause ordering. All are dimensionless with range [0, 3] (linear). A weight
  * of 0 disables a signal; 1.0 makes it comparable to the self-anomaly term
  * (log(selfAnomaly) ∈ (−∞, 0]); 3.0 lets it dominate (the ablation's strong
@@ -163,13 +163,6 @@ const RANKING: readonly ContinuousParam[] = [
   },
   {
     name: 'logWeight',
-    min: 0,
-    max: 3,
-    fromUnit: (u) => u * 3,
-    toUnit: (v) => v / 3,
-  },
-  {
-    name: 'directionWeight',
     min: 0,
     max: 3,
     fromUnit: (u) => u * 3,
@@ -232,7 +225,6 @@ export function rankingToVector(cfg: RCAConfiguration['ranking']): Float64Array 
   v[2] = RANKING[2]!.toUnit(cfg.collisionWeight);
   v[3] = RANKING[3]!.toUnit(cfg.topoWeight);
   v[4] = RANKING[4]!.toUnit(cfg.logWeight);
-  v[5] = RANKING[5]!.toUnit(cfg.directionWeight);
   return v;
 }
 
@@ -271,7 +263,6 @@ export function vectorToRanking(u: Float64Array): RCAConfiguration['ranking'] {
     collisionWeight: RANKING[2]!.fromUnit(u[2]!),
     topoWeight: RANKING[3]!.fromUnit(u[3]!),
     logWeight: RANKING[4]!.fromUnit(u[4]!),
-    directionWeight: RANKING[5]!.fromUnit(u[5]!),
   };
 }
 
@@ -376,14 +367,13 @@ export const DEFAULT_CONFIG: RCAConfiguration = {
   },
   ranking: {
     // The log signal ships enabled (benchmark #220 proved it net-positive);
-    // the other five causal priors default to 0 (opt-in / empirically
+    // the other four causal priors default to 0 (opt-in / empirically
     // regressed — see RankingWeights).
     sourceWeight: 0.0,
     temporalWeight: 0.0,
     collisionWeight: 0.0,
     topoWeight: 0.0,
     logWeight: 1.0,
-    directionWeight: 0.0,
   },
   discrete: {
     baselineStrategy: 'auto',

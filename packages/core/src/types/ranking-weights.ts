@@ -22,7 +22,6 @@
  *                 − collisionWeight × ratioContrib(v)
  *                 + topoWeight      × topoSource(v)
  *                 + logWeight       × logScore(v)
- *                 + directionWeight × directionScore(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -57,10 +56,4 @@ export interface RankingWeights {
    * (stack traces) that metric shape cannot detect. Default 0.
    */
   readonly logWeight: number;
-  /**
-   * Directional-source prior: rewards a node whose anomaly spreads to
-   * anomalous children while its parents stay healthy (softplus of the
-   * fan-normalised downstream-minus-upstream anomaly). Default 0 (opt-in).
-   */
-  readonly directionWeight: number;
 }

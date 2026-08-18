@@ -52,7 +52,6 @@ export { TreePruner, toRankingWeights } from './pruning/pruner.js';
 export type { TreePrunerOptions } from './pruning/pruner.js';
 
 export {
-  computeDirectionSourceScores,
   computeLogNoveltyScores,
   computeLogScores,
   computeTopoSourceScores,

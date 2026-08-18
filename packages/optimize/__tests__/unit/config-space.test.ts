@@ -8,20 +8,19 @@ const RANKING_ZERO = {
   collisionWeight: 0,
   topoWeight: 0,
   logWeight: 0,
-  directionWeight: 0,
 };
 
 describe('DEFAULT_CONFIG_SPACE', () => {
   it('correct dimension', () => {
-    expect(DEFAULT_CONFIG_SPACE.dimension).toBe(22);
+    expect(DEFAULT_CONFIG_SPACE.dimension).toBe(21);
   });
 
   it('5 continuous params', () => {
     expect(DEFAULT_CONFIG_SPACE.continuous).toHaveLength(5);
   });
 
-  it('6 ranking params', () => {
-    expect(DEFAULT_CONFIG_SPACE.ranking).toHaveLength(6);
+  it('5 ranking params', () => {
+    expect(DEFAULT_CONFIG_SPACE.ranking).toHaveLength(5);
   });
 
   it('5 discrete params', () => {
@@ -39,7 +38,7 @@ describe('DEFAULT_CONFIG_SPACE', () => {
   it('round-trip extreme config', () => {
     const extreme: RCAConfiguration = {
       continuous: { decayAlpha: 0.95, pruneEpsilon: 1e-2, temporalBonus: 0.3, defaultWeight: 0.2, childContributionCap: 2.0 },
-      ranking: { sourceWeight: 3, temporalWeight: 3, collisionWeight: 3, topoWeight: 3, logWeight: 3, directionWeight: 3 },
+      ranking: { sourceWeight: 3, temporalWeight: 3, collisionWeight: 3, topoWeight: 3, logWeight: 3 },
       discrete: { baselineStrategy: 'q25', correlationMethod: 'spearman', propagationMode: 'multiplicative', enableCollisionAggregation: false, useTemporalCausality: false },
     };
     const restored = DEFAULT_CONFIG_SPACE.fromVector(DEFAULT_CONFIG_SPACE.toVector(extreme));
@@ -71,7 +70,7 @@ describe('DEFAULT_CONFIG_SPACE', () => {
   });
 
   it('Thompson sampling around center', () => {
-    const samples = DEFAULT_CONFIG_SPACE.sampleThompson(new Float64Array(22).fill(0.5), new Float64Array(22).fill(0.01), 10, () => 0.5);
+    const samples = DEFAULT_CONFIG_SPACE.sampleThompson(new Float64Array(21).fill(0.5), new Float64Array(21).fill(0.01), 10, () => 0.5);
     expect(samples).toHaveLength(10);
     for (const s of samples) {
       expect(s[0]).toBeGreaterThanOrEqual(0);

@@ -176,15 +176,6 @@ export interface FaultPropagationGraph {
    * Feeds the (opt-in) topoWeight ranking signal.
    */
   readonly topoScores?: ReadonlyMap<ServiceId, number>;
-  /**
-   * Per-service directional-source score (0-1) — `softplus(avgOut(v) −
-   * avgIn(v))`, max-normalised, where `avgOut`/`avgIn` are the mean anomaly of
-   * a node's downstream children / upstream parents. A node whose anomaly
-   * spreads to anomalous children while its parents stay healthy (a source)
-   * scores high; a sink with anomalous parents but no anomalous children
-   * (a leaf symptom) scores low. Feeds the (opt-in) directionWeight signal.
-   */
-  readonly directionScores?: ReadonlyMap<ServiceId, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

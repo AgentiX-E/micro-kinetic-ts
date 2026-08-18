@@ -63,8 +63,6 @@ interface FeatureFlags {
   topoSignal: boolean;
   /** Collision-energy signal: penalise upstream-inherited energy (collisionWeight). */
   collisionSignal: boolean;
-  /** Directional-source signal: softplus(downstream − upstream anomaly). */
-  directionSignal: boolean;
 }
 
 interface AblationRun {
@@ -103,7 +101,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -116,7 +113,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -128,7 +124,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+Trace Topo',
   },
@@ -140,7 +135,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+SelfLearn',
   },
@@ -153,7 +147,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+Collision+Trace',
   },
@@ -165,7 +158,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -177,7 +169,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -190,7 +181,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -207,7 +197,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: true,
       topoSignal: false,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+Log Signal',
   },
@@ -219,7 +208,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: true,
       collisionSignal: false,
-      directionSignal: false,
     },
     label: '+Topo Signal',
   },
@@ -235,21 +223,8 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: true,
-      directionSignal: false,
     },
     label: '+Collision Signal',
-  },
-  {
-    flags: {
-      collisionAggregation: false,
-      traceAugmentation: false,
-      selfLearning: false,
-      logSignal: false,
-      topoSignal: false,
-      collisionSignal: false,
-      directionSignal: true,
-    },
-    label: '+Direction Signal',
   },
 ];
 
@@ -480,7 +455,6 @@ async function main(): Promise<void> {
           collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
           topoWeight: flags.topoSignal ? 1.0 : 0.0,
           logWeight: flags.logSignal ? 1.0 : 0.0,
-          directionWeight: flags.directionSignal ? 1.0 : 0.0,
         }),
     );
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
