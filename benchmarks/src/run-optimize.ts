@@ -320,7 +320,9 @@ async function main(): Promise<void> {
 
   // Coordinate descent on the TRAIN split only.
   const oracle = makeOracle(trainCases);
-  const step = new Float64Array(5).fill(0.25); // weight step 0.75 in [0,3] space
+  // Step length in unit space must match the ranking-vector dimension; derive
+  // it from `initial` so adding a weight (5 → 6) cannot desynchronise them.
+  const step = new Float64Array(initial.length).fill(0.25); // weight step 0.75 in [0,3] space
   const result = await coordinateDescent(oracle, {
     initial,
     stepSizes: step,
