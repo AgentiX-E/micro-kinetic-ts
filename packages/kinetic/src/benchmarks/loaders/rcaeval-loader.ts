@@ -147,6 +147,49 @@ export function extractExceptionNames(message: string): string[] {
 }
 
 /**
+ * Matches a (possibly fully-qualified) Java/Python exception class name such as
+ * `java.lang.IllegalArgumentException`, `org.foo.MyError`, or `TypeError`.
+ */
+const EXCEPTION_CLASS_RE = /\b[A-Za-z_][\w.]*(?:Exception|Error|Throwable)\b/;
+
+/**
+ * Strip a qualified class name down to its simple name.
+ *
+ * `java.lang.IllegalArgumentException` → `IllegalArgumentException`; an
+ * already-simple name such as `TypeError` is returned unchanged.
+ */
+function simpleClassName(qualified: string): string {
+  const idx = qualified.lastIndexOf('.');
+  return idx >= 0 ? qualified.slice(idx + 1) : qualified;
+}
+
+/**
+ * Extract the simple class name of the DEEPEST exception in a log message's
+ * `Caused by:` chain — the root cause that actually triggered the cascade.
+ *
+ * The head of a Java exception message is often a non-discriminative wrapper:
+ * Spring's `HttpServerErrorException` is thrown by a CLIENT whenever an
+ * upstream 5xx is received, so every downstream symptom logs it, while the
+ * actual fault signature (e.g. `IllegalArgumentException`) lives in the LAST
+ * `Caused by:` clause. Ranking on the deepest exception therefore separates the
+ * source (rare, specific root cause) from the symptoms (shared wrapper).
+ *
+ * When there is no `Caused by:` chain, the leading exception of the message is
+ * used — which degrades gracefully to the same value the count-mode whitelist
+ * inspects.
+ *
+ * @param message - The raw log message text.
+ * @returns The simple class name of the deepest exception, or undefined when
+ *   the message carries no recognisable exception class.
+ */
+export function extractDeepestExceptionClass(message: string): string | undefined {
+  const causedByIdx = message.lastIndexOf('Caused by:');
+  const source = causedByIdx >= 0 ? message.slice(causedByIdx + 'Caused by:'.length) : message;
+  const match = EXCEPTION_CLASS_RE.exec(source);
+  return match ? simpleClassName(match[0]) : undefined;
+}
+
+/**
  * Names of SELF-CAUSED logic exceptions — the programming-error signatures of
  * a code-level fault (RCAEval RE3). These arise from an internal bug (a null
  * dereference, a bad argument, an invalid state, a malformed payload) and
@@ -494,6 +537,7 @@ export class RCAEvalLoader {
       return rows.map((row) => {
         const message = msgCol ? (row[msgCol] ?? '') : '';
         const explicitLevel = lvlCol ? (row[lvlCol] ?? '').toUpperCase() : '';
+        const level = classifyLogLevel(explicitLevel, message);
         return {
           // RCAEval timestamps are Unix SECONDS (same domain as inject_time),
           // while the unified BenchmarkCase carries time in MILLISECONDS.
@@ -502,9 +546,16 @@ export class RCAEvalLoader {
           timestamp: (tsCol ? parseInt(row[tsCol] ?? '0', 10) : 0) * 1000,
           service: svcCol ? (row[svcCol] ?? 'unknown') : 'unknown',
           message,
-          level: classifyLogLevel(explicitLevel, message),
+          level,
           isStackTrace: isStackTraceMessage(message),
           isLogicException: isLogicExceptionMessage(message),
+          // Only error/fatal lines carry a root-cause exception worth ranking
+          // on; INFO/WARN/DEBUG lines are skipped to avoid a regex pass over
+          // the (dominant) non-error volume of large RE2/RE3 log files.
+          deepestExceptionClass:
+            level === 'ERROR' || level === 'FATAL'
+              ? extractDeepestExceptionClass(message)
+              : undefined,
         };
       });
     } catch {

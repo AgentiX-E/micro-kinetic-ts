@@ -174,6 +174,19 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * to ship enabled; the other causal priors remain opt-in.
    */
   readonly logWeight: number;
+  /**
+   * The log signal's scoring mode:
+   *
+   * - `count` (default): the max-normalised count of self-caused
+   *   logic-exception lines per service (benchmark-validated #220).
+   * - `novelty`: each logic-exception line is weighted by the inverse document
+   *   frequency of its DEEPEST `Caused by:` exception class, so a service
+   *   emitting a rare, specific root cause out-scores one emitting a shared
+   *   HTTP wrapper (e.g. Spring's `HttpServerErrorException`).
+   *
+   * `novelty` is opt-in until benchmarked; `count` is the shipped default.
+   */
+  readonly logSignalMode: 'count' | 'novelty';
 }
 
 /**
@@ -209,6 +222,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   collisionWeight: 0.0,
   topoWeight: 0.0,
   logWeight: 1.0,
+  logSignalMode: 'count',
 };
 
 /**
@@ -415,6 +429,7 @@ export class TreePruner {
       options?.logs,
       new Set(callGraph.nodes.keys()),
       injectTimeMs,
+      this.options.logSignalMode,
     );
     const topoScores = computeTopoSourceScores(
       topologyGraph.edges,

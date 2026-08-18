@@ -148,6 +148,8 @@ interface CliOptions {
   topoWeight: number;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
+  /** Log signal scoring mode: 'count' (default) or 'novelty' (IDF-weighted). */
+  logSignalMode: 'count' | 'novelty';
 }
 
 function parseArgs(): CliOptions {
@@ -162,6 +164,7 @@ function parseArgs(): CliOptions {
     collisionWeight: 0,
     topoWeight: 0,
     logWeight: 1.0,
+    logSignalMode: 'count',
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -178,6 +181,10 @@ function parseArgs(): CliOptions {
       opts.topoWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--log-weight' && i + 1 < args.length)
       opts.logWeight = parseFloat(args[++i]!) || 0;
+    else if (args[i] === '--log-signal-mode' && i + 1 < args.length) {
+      const mode = args[++i]!;
+      opts.logSignalMode = mode === 'novelty' ? 'novelty' : 'count';
+    }
   }
   return opts;
 }
@@ -189,6 +196,7 @@ function createContainer(weights: {
   collisionWeight: number;
   topoWeight: number;
   logWeight: number;
+  logSignalMode: 'count' | 'novelty';
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
@@ -895,6 +903,77 @@ function reportLogDiagnostics(systemName: string, suiteName: string, stats: Load
   }
 }
 
+/**
+ * Gated per-case diagnostic: for the first few log-bearing cases, dump each
+ * case's per-service DEEPEST exception classes and their document frequencies
+ * (`df = distinct services emitting that class / total services`).
+ *
+ * This is the ground-truth probe for the log signal's `novelty` mode: it shows
+ * whether the GROUND-TRUTH source service emits a rare root-cause exception
+ * (e.g. `IllegalArgumentException`, df=1) while the symptom services share a
+ * wrapper (e.g. Spring's `HttpServerErrorException`, df=N). If that split does
+ * NOT hold for TrainTicket RE3, the novelty signal cannot help that cell.
+ *
+ * Enabled by `BENCHMARK_LOG_DIAG=1`; silent otherwise (it is verbose).
+ */
+function reportDeepestExceptionDiagnostics(
+  systemName: string,
+  suiteName: string,
+  stats: LoadStats,
+): void {
+  if (process.env['BENCHMARK_LOG_DIAG'] !== '1') return;
+  const MAX_CASES = 6;
+
+  let shown = 0;
+  for (const c of stats.cases) {
+    if (shown >= MAX_CASES) break;
+    const logs = c.logs;
+    if (!logs || logs.length === 0) continue;
+
+    // per-service → per-deepest-class counts (post-inject ERROR/FATAL only).
+    const perService = new Map<string, Map<string, number>>();
+    for (const l of logs) {
+      if (l.level !== 'ERROR' && l.level !== 'FATAL') continue;
+      if (c.injectTime > 0 && l.timestamp < c.injectTime) continue;
+      const cls = l.deepestExceptionClass ?? '?';
+      let m = perService.get(l.service);
+      if (!m) {
+        m = new Map<string, number>();
+        perService.set(l.service, m);
+      }
+      m.set(cls, (m.get(cls) ?? 0) + 1);
+    }
+    if (perService.size === 0) continue;
+
+    const df = new Map<string, number>();
+    for (const m of perService.values()) {
+      for (const cls of m.keys()) df.set(cls, (df.get(cls) ?? 0) + 1);
+    }
+    const totalSvcs = perService.size;
+
+    let wrapper = '?';
+    let wrapperDf = 0;
+    for (const [cls, d] of df) {
+      if (d > wrapperDf) {
+        wrapperDf = d;
+        wrapper = cls;
+      }
+    }
+
+    const gt = c.groundTruth?.serviceId ?? '?';
+    const gtClasses = perService.get(gt);
+    const gtStr = gtClasses
+      ? [...gtClasses.keys()].map((cls) => `${cls}(df=${df.get(cls)}/${totalSvcs})`).join(', ')
+      : '<none>';
+
+    console.log(`  [log-diag] ${c.id} gt=${gt}`);
+    console.log(`    source deepest: ${gtStr}`);
+    console.log(`    wrapper deepest: ${wrapper}(df=${wrapperDf}/${totalSvcs})`);
+
+    shown++;
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -912,7 +991,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -977,6 +1056,7 @@ async function main(): Promise<void> {
     collisionWeight: opts.collisionWeight,
     topoWeight: opts.topoWeight,
     logWeight: opts.logWeight,
+    logSignalMode: opts.logSignalMode,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(
@@ -1035,6 +1115,7 @@ async function main(): Promise<void> {
 
     // ── Log-loading diagnostics ───────────────────────────
     reportLogDiagnostics(systemName, suiteName, stats);
+    reportDeepestExceptionDiagnostics(systemName, suiteName, stats);
 
     // Split by fault type (matching paper's Table 6 format)
     const byFaultType = new Map<string, BenchmarkCase[]>();

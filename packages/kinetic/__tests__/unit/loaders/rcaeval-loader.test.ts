@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   RCAEvalLoader,
   classifyLogLevel,
+  extractDeepestExceptionClass,
   extractExceptionNames,
   isLogicExceptionMessage,
   isStackTraceMessage,
@@ -176,6 +177,52 @@ describe('isLogicExceptionMessage', () => {
     expect(isLogicExceptionMessage('connection refused')).toBe(false);
     expect(isLogicExceptionMessage('request completed in 12ms')).toBe(false);
     expect(isLogicExceptionMessage('ProcessingException: unexpected')).toBe(false);
+  });
+});
+
+describe('extractDeepestExceptionClass', () => {
+  it('returns the leading exception when there is no Caused by chain', () => {
+    expect(extractDeepestExceptionClass('java.lang.NullPointerException: null ref')).toBe(
+      'NullPointerException',
+    );
+    expect(extractDeepestExceptionClass('IllegalArgumentException: invalid argument')).toBe(
+      'IllegalArgumentException',
+    );
+  });
+
+  it('returns the DEEPEST (last) exception in a Caused by chain', () => {
+    // Spring wraps an upstream 5xx in HttpServerErrorException; the root cause
+    // is the deepest clause.
+    const msg =
+      'HttpServerErrorException: 500 Internal Server Error Caused by: java.lang.IllegalArgumentException: bad value';
+    expect(extractDeepestExceptionClass(msg)).toBe('IllegalArgumentException');
+  });
+
+  it('picks the LAST Caused by clause when the chain has multiple links', () => {
+    const msg =
+      'org.foo.WrapperException: wrapped Caused by: org.foo.MidException: mid Caused by: java.net.ConnectException: refused';
+    expect(extractDeepestExceptionClass(msg)).toBe('ConnectException');
+  });
+
+  it('strips package qualifiers to the simple class name', () => {
+    expect(extractDeepestExceptionClass('org.springframework.dao.QueryTimeoutException: timeout')).toBe(
+      'QueryTimeoutException',
+    );
+  });
+
+  it('recognises Error and Throwable suffixes', () => {
+    expect(extractDeepestExceptionClass('java.lang.OutOfMemoryError: heap space')).toBe(
+      'OutOfMemoryError',
+    );
+    expect(extractDeepestExceptionClass('Caused by: java.lang.AssertionError: fail')).toBe(
+      'AssertionError',
+    );
+  });
+
+  it('returns undefined when no exception class is present', () => {
+    expect(extractDeepestExceptionClass('connection refused')).toBeUndefined();
+    expect(extractDeepestExceptionClass('request completed in 12ms')).toBeUndefined();
+    expect(extractDeepestExceptionClass('')).toBeUndefined();
   });
 });
 
@@ -797,6 +844,29 @@ describe('RCAEvalLoader', () => {
       expect(rawCase.logs![0]!.isLogicException).toBe(true);
       expect(rawCase.logs![1]!.isStackTrace).toBe(false);
       expect(rawCase.logs![1]!.isLogicException).toBe(false);
+    });
+
+    it('extracts the deepest Caused-by exception for ERROR lines only', () => {
+      const casePath = createCaseDir(tempDir, 're3tt_ts-auth-service_f1_1', {
+        metrics: {
+          'ts-auth-service': [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }],
+        },
+        injectTime: 500,
+        logs: [
+          'timestamp,service,message',
+          '1000,ts-auth-service,HttpServerErrorException: 500 Caused by: java.lang.IllegalArgumentException: bad token',
+          '1001,ts-auth-service,request completed',
+        ].join('\n'),
+      });
+
+      const rawCase = loader.loadCase(casePath);
+
+      expect(rawCase.logs![0]!.level).toBe('ERROR');
+      expect(rawCase.logs![0]!.deepestExceptionClass).toBe('IllegalArgumentException');
+      // INFO lines carry no root-cause exception → undefined (and are skipped
+      // by the extractor to avoid a regex pass over non-error volume).
+      expect(rawCase.logs![1]!.level).toBe('INFO');
+      expect(rawCase.logs![1]!.deepestExceptionClass).toBeUndefined();
     });
   });
 

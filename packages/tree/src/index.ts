@@ -51,7 +51,12 @@ export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 export { TreePruner, toRankingWeights } from './pruning/pruner.js';
 export type { TreePrunerOptions } from './pruning/pruner.js';
 
-export { computeLogScores, computeTopoSourceScores } from './pruning/ranking-signals.js';
+export {
+  computeLogNoveltyScores,
+  computeLogScores,
+  computeTopoSourceScores,
+} from './pruning/ranking-signals.js';
+export type { LogSignalMode } from './pruning/ranking-signals.js';
 
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';

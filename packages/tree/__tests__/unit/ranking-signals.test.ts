@@ -1,5 +1,9 @@
 import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
-import { computeLogScores, computeTopoSourceScores } from '@agentix-e/micro-kinetic-tree';
+import {
+  computeLogNoveltyScores,
+  computeLogScores,
+  computeTopoSourceScores,
+} from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
 function makeEdge(from: string, to: string): CallEdge {
@@ -115,6 +119,126 @@ describe('computeLogScores', () => {
     expect(scores.get('a')).toBe(1);
     expect(scores.get('b')).toBe(0);
     expect(scores.get('c')).toBe(0);
+  });
+});
+
+describe('computeLogNoveltyScores', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  function noveltyLog(
+    service: string,
+    deepestClass: string,
+    count: number,
+    isLogicException = true,
+  ): FaultLogEntry[] {
+    return Array.from({ length: count }, () => ({
+      service,
+      level: 'ERROR',
+      timestamp: 0,
+      isLogicException,
+      deepestExceptionClass: deepestClass,
+    }));
+  }
+
+  it('a rare (df=1) root cause out-ranks a common (df=2) one at equal volume', () => {
+    // 'a' emits a unique exception (NullPointerException, df=1); 'b' and 'c'
+    // both emit IllegalArgumentException (df=2). In count mode all three tie at
+    // 1; novelty mode weights the rare class higher.
+    const logs = [
+      ...noveltyLog('a', 'NullPointerException', 1),
+      ...noveltyLog('b', 'IllegalArgumentException', 1),
+      ...noveltyLog('c', 'IllegalArgumentException', 1),
+    ];
+    const scores = computeLogNoveltyScores(logs, nodes, 0);
+
+    expect(scores.get('a')).toBeCloseTo(1, 10);
+    expect(scores.get('b')).toBeLessThan(1);
+    expect(scores.get('c')).toBeLessThan(1);
+    // b and c share the same class → identical (lower) score.
+    expect(scores.get('b')).toBeCloseTo(scores.get('c')!, 10);
+  });
+
+  it('the source (rare logic) beats symptoms sharing a non-logic wrapper', () => {
+    // Source 'a' emits a rare logic exception; symptoms 'b'/'c' flood the
+    // HttpServerErrorException wrapper (isLogicException=false). Only 'a'
+    // passes the logic gate, so it scores 1 and the symptoms 0.
+    const logs = [
+      ...noveltyLog('a', 'IllegalArgumentException', 2, true),
+      ...noveltyLog('b', 'HttpServerErrorException', 5, false),
+      ...noveltyLog('c', 'HttpServerErrorException', 5, false),
+    ];
+    const scores = computeLogNoveltyScores(logs, nodes, 0);
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBe(0);
+    expect(scores.get('c')).toBe(0);
+  });
+
+  it('stays neutral on a pure connectivity cascade (RE2 safety)', () => {
+    const logs = [
+      ...noveltyLog('a', 'ConnectException', 3, false),
+      ...noveltyLog('b', 'SocketTimeoutException', 3, false),
+      { service: 'c', level: 'INFO', timestamp: 0, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // non-error level — skipped
+    ];
+    expect(computeLogNoveltyScores(logs, nodes, 0).size).toBe(0);
+  });
+
+  it('filters by membership and injection time like count mode', () => {
+    const logs = [
+      { service: 'a', level: 'ERROR', timestamp: 300, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // post-inject
+      { service: 'ghost', level: 'ERROR', timestamp: 300, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // not in graph
+      { service: 'b', level: 'ERROR', timestamp: 100, isLogicException: true, deepestExceptionClass: 'NullPointerException' }, // pre-inject
+    ];
+    const scores = computeLogNoveltyScores(logs, nodes, 200);
+
+    expect(scores.get('ghost')).toBeUndefined();
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBe(0);
+  });
+
+  it('falls back to a shared "Unknown" class when deepestExceptionClass is absent', () => {
+    // Two services emit logic exceptions with no deepest class → both share
+    // the "Unknown" class (df=2), so they tie at 1 after max-normalisation.
+    const logs = [
+      { service: 'a', level: 'ERROR', timestamp: 0, isLogicException: true },
+      { service: 'b', level: 'ERROR', timestamp: 0, isLogicException: true },
+    ];
+    const scores = computeLogNoveltyScores(logs, nodes, 0);
+
+    expect(scores.get('a')).toBeCloseTo(1, 10);
+    expect(scores.get('b')).toBeCloseTo(1, 10);
+    expect(scores.get('c')).toBe(0);
+  });
+
+  it('counts FATAL lines identically to ERROR lines', () => {
+    const logs = [
+      {
+        service: 'a',
+        level: 'FATAL',
+        timestamp: 0,
+        isLogicException: true,
+        deepestExceptionClass: 'NullPointerException',
+      },
+    ];
+    const scores = computeLogNoveltyScores(logs, nodes, 0);
+    expect(scores.get('a')).toBe(1);
+  });
+
+  it('returns an empty map for absent or empty logs', () => {
+    expect(computeLogNoveltyScores(undefined, nodes, 0).size).toBe(0);
+    expect(computeLogNoveltyScores([], nodes, 0).size).toBe(0);
+  });
+
+  it('computeLogScores dispatches to novelty mode', () => {
+    const logs = [
+      ...noveltyLog('a', 'NullPointerException', 1),
+      ...noveltyLog('b', 'IllegalArgumentException', 1),
+      ...noveltyLog('c', 'IllegalArgumentException', 1),
+    ];
+    const viaDispatch = computeLogScores(logs, nodes, 0, 'novelty');
+    const direct = computeLogNoveltyScores(logs, nodes, 0);
+
+    expect(viaDispatch).toEqual(direct);
   });
 });
 

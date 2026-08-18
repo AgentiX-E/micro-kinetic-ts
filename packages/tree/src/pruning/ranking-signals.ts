@@ -30,6 +30,19 @@
 import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 
 /**
+ * The log signal's scoring mode.
+ *
+ * - `count` (default): the max-normalised count of self-caused logic-exception
+ *   lines per service — the original, benchmark-validated behaviour (#219/#220).
+ * - `novelty`: each logic-exception line is weighted by the inverse document
+ *   frequency (IDF) of its DEEPEST `Caused by:` exception class, so a service
+ *   emitting a rare, specific root-cause exception out-scores one emitting a
+ *   shared wrapper. Targets the code-level fault whose error signature is
+ *   otherwise indistinguishable from the propagated 5xx cascade.
+ */
+export type LogSignalMode = 'count' | 'novelty';
+
+/**
  * Compute the log signal score for each service: the SELF-CAUSED logic-exception
  * volume emitted at/after the fault injection time, normalised by the maximum
  * count.
@@ -66,13 +79,17 @@ import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kineti
  * @param logs - Raw log lines (may be undefined → empty map).
  * @param nodeIds - Services present in the call graph.
  * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
+ * @param mode - Scoring mode (`count` default; `novelty` for IDF weighting).
  * @returns Per-service log score in [0, 1]; empty when no signal.
  */
 export function computeLogScores(
   logs: readonly FaultLogEntry[] | undefined,
   nodeIds: ReadonlySet<ServiceId>,
   injectTimeMs: number,
+  mode: LogSignalMode = 'count',
 ): Map<ServiceId, number> {
+  if (mode === 'novelty') return computeLogNoveltyScores(logs, nodeIds, injectTimeMs);
+
   const scores = new Map<ServiceId, number>();
   if (!logs || logs.length === 0 || nodeIds.size === 0) return scores;
 
@@ -98,6 +115,94 @@ export function computeLogScores(
 
   for (const nodeId of nodeIds) {
     scores.set(nodeId, (counts.get(nodeId) ?? 0) / max);
+  }
+  return scores;
+}
+
+/**
+ * Compute the log signal in `novelty` mode: each self-caused logic-exception
+ * line is weighted by the inverse document frequency (IDF) of its DEEPEST
+ * exception class, then summed and max-normalised per service.
+ *
+ * ## Rationale
+ *
+ * Spring's `HttpServerErrorException` is a non-discriminative HTTP wrapper: a
+ * client throws it for ANY upstream 5xx, so every downstream symptom logs it.
+ * The actual fault signature is the DEEPEST `Caused by:` class — e.g.
+ * `IllegalArgumentException` — which is rare and unique to the source. Counting
+ * volume (`count` mode) can misfire when a symptom floods more wrapper lines
+ * than the source emits root-cause lines; weighting by rarity corrects for this.
+ *
+ * ## Formula
+ *
+ * Let `df(c)` = number of distinct services emitting logic-exception lines whose
+ * deepest class is `c`, and `N = |nodeIds|`. The IDF weight is
+ *
+ * ```
+ * idf(c) = log(1 + N / (1 + df(c)))
+ * ```
+ *
+ * — a rare class (df = 1) weighs ≈ 2.4× a ubiquitous class (df = N/2). A
+ * service's raw score is `Σ_c count(v, c) · idf(c)`; the map is then
+ * max-normalised exactly as in `count` mode. The `isLogicException` gate is
+ * retained so connectivity cascades (RE2) stay neutral.
+ *
+ * @param logs - Raw log lines (may be undefined → empty map).
+ * @param nodeIds - Services present in the call graph.
+ * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
+ * @returns Per-service log score in [0, 1]; empty when no signal.
+ */
+export function computeLogNoveltyScores(
+  logs: readonly FaultLogEntry[] | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+  injectTimeMs: number,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (!logs || logs.length === 0 || nodeIds.size === 0) return scores;
+
+  // Pass 1: per-service counts of logic-exception lines keyed by their deepest
+  // exception class (post-inject, node member, self-caused logic only).
+  const perService = new Map<ServiceId, Map<string, number>>();
+  for (const log of logs) {
+    if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
+    if (!nodeIds.has(log.service)) continue;
+    if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
+    if (!log.isLogicException) continue;
+    const cls = log.deepestExceptionClass ?? 'Unknown';
+    let svcMap = perService.get(log.service);
+    if (!svcMap) {
+      svcMap = new Map<string, number>();
+      perService.set(log.service, svcMap);
+    }
+    svcMap.set(cls, (svcMap.get(cls) ?? 0) + 1);
+  }
+
+  if (perService.size === 0) return scores;
+
+  // Pass 2: document frequency — how many distinct services emit each deepest
+  // class. A class emitted by one service is the source signature; a class
+  // emitted by many is a propagated wrapper.
+  const df = new Map<string, number>();
+  for (const svcMap of perService.values()) {
+    for (const cls of svcMap.keys()) {
+      df.set(cls, (df.get(cls) ?? 0) + 1);
+    }
+  }
+  const n = nodeIds.size;
+  const idf = (cls: string): number => Math.log(1 + n / (1 + (df.get(cls) ?? 0)));
+
+  // Pass 3: raw score per service, then max-normalise.
+  const raw = new Map<ServiceId, number>();
+  let max = 0;
+  for (const [svc, svcMap] of perService) {
+    let sum = 0;
+    for (const [cls, count] of svcMap) sum += count * idf(cls);
+    raw.set(svc, sum);
+    if (sum > max) max = sum;
+  }
+
+  for (const nodeId of nodeIds) {
+    scores.set(nodeId, (raw.get(nodeId) ?? 0) / max);
   }
   return scores;
 }

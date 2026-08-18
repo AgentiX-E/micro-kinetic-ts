@@ -72,6 +72,17 @@ export interface FaultLogEntry {
    * exceptions in the SOURCE). Optional — absent means "not a logic exception".
    */
   readonly isLogicException?: boolean;
+  /**
+   * The simple class name of the DEEPEST exception in the message's `Caused by:`
+   * chain (the root cause), or of the leading exception when there is no chain.
+   *
+   * This is the discriminative feature behind the log signal's `novelty` mode:
+   * Spring's `HttpServerErrorException` is a non-discriminative HTTP *wrapper*
+   * that every downstream symptom emits, while the actual fault signature is the
+   * deepest `Caused by:` class (e.g. `IllegalArgumentException`), which is rare
+   * and unique to the source. Optional — absent means "no exception detected".
+   */
+  readonly deepestExceptionClass?: string;
 }
 
 /**

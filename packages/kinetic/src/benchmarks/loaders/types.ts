@@ -71,6 +71,8 @@ export interface BenchmarkLogEntry {
   readonly isStackTrace?: boolean;
   /** Whether the message is a self-caused logic exception (source signal). */
   readonly isLogicException?: boolean;
+  /** Simple class name of the deepest `Caused by:` exception (root cause). */
+  readonly deepestExceptionClass?: string;
 }
 
 /** Trace span within a benchmark case. */
