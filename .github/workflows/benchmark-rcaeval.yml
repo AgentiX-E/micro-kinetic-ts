@@ -194,6 +194,7 @@ jobs:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
+          BENCHMARK_LOG_DIAG: '1'
         run: |
           set -o pipefail
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time 2>&1 | tee rcaeval-re3-noinject-results.txt
@@ -203,6 +204,21 @@ jobs:
         with:
           name: rcaeval-re3-noinject-results
           path: rcaeval-re3-noinject-results.txt
+      - name: Run RCAEval — RE3 novelty log signal (no inject_time)
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+          BENCHMARK_LOG_DIAG: '1'
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty 2>&1 | tee rcaeval-re3-novelty-results.txt
+      - name: Upload RE3 novelty results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re3-novelty-results
+          path: rcaeval-re3-novelty-results.txt
 
   # ── Ablation: 3 parallel runners (RE1 / RE2 / RE3) ──
   ablation-re1:
