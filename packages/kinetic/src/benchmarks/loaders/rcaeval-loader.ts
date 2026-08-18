@@ -47,6 +47,35 @@ import type {
  */
 
 /**
+ * Matches the LEVEL token inside a Spring Boot full-log-line preamble, e.g.
+ *
+ *   2024-12-07 17:19:30.573  INFO 1 --- [Thread-5] o.s.i.endpoint... : msg
+ *
+ * TrainTicket's logs.csv `message` field is the COMPLETE logback line (date,
+ * time, level, pid, thread, logger, message), not just the message body. The
+ * actual severity is this level token; keyword matching on the whole line is
+ * fooled by benign words in the body such as `errorLogger` / `errorChannel`.
+ *
+ * Only the five levels representable as a `BenchmarkLogEntry` level are
+ * matched; `TRACE` (below DEBUG) is intentionally NOT captured here and falls
+ * through to the keyword derivation, since TRACE lines are noise regardless.
+ */
+const SPRING_BOOT_LEVEL_RE =
+  /^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2}(?:[.,]\d+)?\s+(DEBUG|INFO|WARN|ERROR|FATAL)\b/;
+
+/**
+ * Extract the explicit level from a Spring Boot full-log-line preamble, or
+ * undefined when the message does not begin with the logback timestamp pattern.
+ *
+ * @param message - The raw log message text.
+ * @returns The level token (DEBUG/INFO/WARN/ERROR/FATAL), or undefined.
+ */
+export function extractSpringBootLevel(message: string): BenchmarkLogEntry['level'] | undefined {
+  const match = SPRING_BOOT_LEVEL_RE.exec(message);
+  return match ? (match[1] as BenchmarkLogEntry['level']) : undefined;
+}
+
+/**
  * Normalise a raw log line into a `BenchmarkLogEntry` severity level.
  *
  * RCAEval's logs.csv has NO level/severity column — each row is just
@@ -54,6 +83,14 @@ import type {
  * code-level fault (RE3) is diagnosed from the STACK TRACES / error text in
  * the message. When an explicit level column IS present it takes precedence;
  * otherwise the severity is derived from message keywords (case-insensitive).
+ *
+ * ## Spring Boot preamble (TrainTicket)
+ *
+ * TrainTicket's `message` is the full logback line, so the actual level lives
+ * in the preamble (`2024-12-07 17:19:30.573  INFO 1 --- [...]`). Keyword
+ * matching on the whole line would mislabel an INFO line mentioning
+ * `errorChannel` / `errorLogger` as ERROR (benchmark #226). The preamble level
+ * therefore takes precedence over keyword derivation when present.
  *
  * @param explicitLevel - Uppercased explicit level from a level/severity
  *   column, or '' when the column is absent.
@@ -68,6 +105,11 @@ export function classifyLogLevel(
   if (explicitLevel === 'WARN' || explicitLevel === 'DEBUG' || explicitLevel === 'INFO') {
     return explicitLevel;
   }
+
+  // Spring Boot full-log-line: trust the preamble's explicit level, not the
+  // message body (which may mention "error" in a benign word).
+  const springLevel = extractSpringBootLevel(message);
+  if (springLevel) return springLevel;
 
   // No (or unrecognised) explicit level → derive from the message text.
   const lower = message.toLowerCase();

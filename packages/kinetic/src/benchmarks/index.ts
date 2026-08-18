@@ -16,6 +16,7 @@ export {
   classifyLogLevel,
   extractDeepestExceptionClass,
   extractExceptionNames,
+  extractSpringBootLevel,
   isLogicExceptionMessage,
   isStackTraceMessage,
 } from './loaders/rcaeval-loader.js';

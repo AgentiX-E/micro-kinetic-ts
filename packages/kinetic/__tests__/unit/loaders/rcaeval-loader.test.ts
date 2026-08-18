@@ -17,6 +17,7 @@ import {
   classifyLogLevel,
   extractDeepestExceptionClass,
   extractExceptionNames,
+  extractSpringBootLevel,
   isLogicExceptionMessage,
   isStackTraceMessage,
 } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
@@ -96,6 +97,47 @@ describe('classifyLogLevel', () => {
   it('defaults to INFO for benign messages', () => {
     expect(classifyLogLevel('', 'request completed in 12ms')).toBe('INFO');
     expect(classifyLogLevel('', 'cart GetCart called')).toBe('INFO');
+  });
+
+  it('prefers the Spring Boot preamble level over body keywords', () => {
+    // The message body mentions "errorLogger"/"errorChannel" (benign), but the
+    // preamble says INFO — the level must come from the preamble, not the body.
+    const msg =
+      '2024-12-07 17:19:30.573  INFO 1 --- [Thread-5] o.s.i.endpoint.EventDrivenConsumer : Removing {logging-channel-adapter:_org.springframework.integration.errorLogger} as a subscriber to the errorChannel channel';
+    expect(classifyLogLevel('', msg)).toBe('INFO');
+  });
+
+  it('returns ERROR for a Spring Boot preamble ERROR line', () => {
+    const msg =
+      '2024-12-07 17:20:09.351 ERROR 1 --- [io-12031-exec-5] o.a.c.c.C.[.[.[/].[dispatcherServlet] : Servlet.service() for servlet';
+    expect(classifyLogLevel('', msg)).toBe('ERROR');
+  });
+
+  it('returns WARN for a Spring Boot preamble WARN line', () => {
+    const msg = '2024-12-07 17:20:09.351  WARN 1 --- [main] c.f.App : deprecated config';
+    expect(classifyLogLevel('', msg)).toBe('WARN');
+  });
+});
+
+describe('extractSpringBootLevel', () => {
+  it('extracts the level token from a logback preamble', () => {
+    expect(extractSpringBootLevel('2024-12-07 17:19:30.573  INFO 1 --- [t] l : m')).toBe('INFO');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 ERROR 1 --- [t] l : m')).toBe('ERROR');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351  WARN 1 --- [t] l : m')).toBe('WARN');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 DEBUG 1 --- [t] l : m')).toBe('DEBUG');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 FATAL 1 --- [t] l : m')).toBe('FATAL');
+  });
+
+  it('handles comma-separated milliseconds and one-digit hours', () => {
+    expect(extractSpringBootLevel('2024-12-07 7:20:09,351  INFO 1 --- [t] l : m')).toBe('INFO');
+  });
+
+  it('returns undefined when the message has no Spring Boot preamble', () => {
+    expect(extractSpringBootLevel('NullPointerException: null reference')).toBeUndefined();
+    expect(extractSpringBootLevel('org.springframework.web.client.HttpServerErrorException: 503')).toBeUndefined();
+    expect(extractSpringBootLevel('')).toBeUndefined();
+    // TRACE is below DEBUG and intentionally not captured.
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 TRACE 1 --- [t] l : m')).toBeUndefined();
   });
 });
 
