@@ -104,6 +104,21 @@ export interface FaultPropagationGraph {
       readonly tail: number[];
       /** Labels of metrics discarded by the transient-spike guard. */
       readonly transientSkipped: string[];
+      /**
+       * Raw feature-score decomposition (deviation / trend / cv / burst /
+       * riseRatio / dropRatio / baselineMean) — a diagnostic for why one
+       * metric out-ranked another. Optional: diagnostic-only, not a ranking
+       * input.
+       */
+      readonly breakdown?: {
+        readonly deviation: number;
+        readonly trend: number;
+        readonly cv: number;
+        readonly burst: number;
+        readonly riseRatio: number;
+        readonly dropRatio: number;
+        readonly baselineMean: number;
+      };
     }
   >;
   /**

@@ -152,6 +152,15 @@ export interface FailedCase {
     readonly topRatioContrib?: number;
     readonly gtTopoSource?: number;
     readonly topTopoSource?: number;
+    /**
+     * Raw feature-score decomposition of the GT / top-1 anomaly service's
+     * dominant metric (deviation / trend / cv / burst / riseRatio / dropRatio
+     * / baselineMean). Preformatted for the failure diagnostic — reveals WHY
+     * one metric out-ranked another (the component that dominates), which a
+     * single scalar anomaly cannot.
+     */
+    readonly gtBreakdown?: string;
+    readonly top1Breakdown?: string;
   };
 }
 
@@ -399,6 +408,11 @@ export class BenchmarkRunner {
         const top1MetricHead = top1Dominant?.head ?? [];
         const top1MetricTail = top1Dominant?.tail ?? [];
         const top1TransientSkipped = top1Dominant?.transientSkipped ?? [];
+        // Raw feature-score decomposition of the GT and top-1 anomaly service's
+        // dominant metric — reveals the component (deviation/trend/cv/burst)
+        // that makes a symptom out-rank the source.
+        const gtBreakdown = formatBreakdown(gtDominant?.breakdown);
+        const top1Breakdown = formatBreakdown(top1Dominant?.breakdown);
         // Onset indices for the GT vs the top-anomaly service, to validate
         // whether the source changed earlier than the symptom.
         const gtOnset = faultGraph.anomalyOnsetTimes.get(benchCase.groundTruth.serviceId);
@@ -499,6 +513,8 @@ export class BenchmarkRunner {
               topRatioContrib,
               gtTopoSource,
               topTopoSource,
+              gtBreakdown,
+              top1Breakdown,
             },
           });
         } else {
@@ -941,4 +957,30 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Format a metric's raw feature-score decomposition for the failure
+ * diagnostic: `dev=0.54 trend=0.27 cv=0.08 burst=0 rise=2.50 drop=0.00 base=0.40`.
+ * Returns '' when no breakdown is available (e.g. the service had no metric).
+ */
+function formatBreakdown(
+  b:
+    | {
+        deviation: number;
+        trend: number;
+        cv: number;
+        burst: number;
+        riseRatio: number;
+        dropRatio: number;
+        baselineMean: number;
+      }
+    | undefined,
+): string {
+  if (!b) return '';
+  return (
+    `dev=${b.deviation.toFixed(3)} trend=${b.trend.toFixed(3)} cv=${b.cv.toFixed(3)}` +
+    ` burst=${b.burst.toFixed(3)} rise=${b.riseRatio.toFixed(3)} drop=${b.dropRatio.toFixed(3)}` +
+    ` base=${b.baselineMean.toFixed(3)}`
+  );
 }

@@ -770,6 +770,9 @@ function printFailureDiagnostics(
           `    GT dominant=${d.gtDominantLabel} head=[${(d.gtDominantHead ?? []).join(',')}] tail=[${(d.gtDominantTail ?? []).join(',')}]`,
         );
       }
+      if (d.gtBreakdown) {
+        console.log(`    GT breakdown=${d.gtBreakdown}`);
+      }
       if ((d.gtTransientSkipped ?? []).length > 0) {
         console.log(`    GT transientSkipped=[${d.gtTransientSkipped!.join(',')}]`);
       }
@@ -782,6 +785,9 @@ function printFailureDiagnostics(
         console.log(
           `    top1 metric=${d.top1MetricLabel} head=[${(d.top1MetricHead ?? []).join(',')}] tail=[${(d.top1MetricTail ?? []).join(',')}]`,
         );
+      }
+      if (d.top1Breakdown) {
+        console.log(`    top1 breakdown=${d.top1Breakdown}`);
       }
       if ((d.top1TransientSkipped ?? []).length > 0) {
         console.log(`    top1 transientSkipped=[${d.top1TransientSkipped!.join(',')}]`);
