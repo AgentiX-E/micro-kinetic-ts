@@ -187,16 +187,6 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * `novelty` is opt-in until benchmarked; `count` is the shipped default.
    */
   readonly logSignalMode: 'count' | 'novelty';
-  /**
-   * Suppress the direction-agnostic trend bonus for "shutdown drops" — a
-   * metric whose dominant direction is a >95% collapse to near-zero (a
-   * traffic-loss / shutdown signature). Keeps the deviation (a genuine crash
-   * still scores) but removes the steep-slope amplification that lets a
-   * symptom's collapse outrank the source's rise (benchmark #220).
-   *
-   * Default: false (opt-in until measured).
-   */
-  readonly collapsePenalty: boolean;
 }
 
 /**
@@ -233,7 +223,6 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoWeight: 0.0,
   logWeight: 1.0,
   logSignalMode: 'count',
-  collapsePenalty: false,
 };
 
 /**
@@ -319,7 +308,6 @@ export class TreePruner {
     const topoResult = buildTopologyFaultGraph(callGraph, metrics, {
       ...this.topologyConfig,
       injectTimeMs,
-      collapsePenalty: this.options.collapsePenalty,
     });
     const {
       anomalyScores,

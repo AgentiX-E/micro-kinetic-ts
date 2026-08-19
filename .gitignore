@@ -11,5 +11,3 @@ benchmark-results/
 .env
 temp/
 _tmp_*
-# tsup bundler emits a per-build temporary config next to tsup.config.ts
-tsup.config.bundled_*.mjs
