@@ -132,6 +132,23 @@ export interface TopologyFaultGraphConfig {
    * disables the anchored onset (the index-based fallback still applies).
    */
   readonly injectTimeMs?: number;
+  /**
+   * Suppress the direction-agnostic trend bonus for "shutdown drops" — a
+   * metric whose dominant direction is a DROP of >95% (collapse to near-zero).
+   *
+   * A >95% collapse is a traffic-loss / shutdown SIGNATURE, not a monotonic
+   * fault trend: in a code-level fault the source's fault metric RISES (it does
+   * more wrong work) while a downstream symptom's cpu/traffic COLLAPSES as it
+   * stops receiving work. The steep downward slope would otherwise earn a large
+   * direction-agnostic trend bonus (`trendStrength × 0.15`) that lets the
+   * symptom's collapse outrank the source's rise (benchmark #220: symptom cpu
+   * 99% drop → anomaly 1.0 vs source workload 3.5× rise → 0.35).
+   *
+   * The deviation itself is kept — a genuine crash fault (mem → 0) still
+   * scores — only the slope AMPLIFICATION is suppressed, so the fix cannot
+   * erase a real source. Default: false (opt-in until measured).
+   */
+  readonly collapsePenalty: boolean;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -148,6 +165,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
     expectedDirectLatency: 1.0,
   },
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
+  collapsePenalty: false,
 };
 
 /**
@@ -590,6 +608,14 @@ function computeAnomalyFeatures(
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
 
+    // Shutdown-drop detection: the dominant direction is a DROP of >95% (a
+    // collapse to near-zero). A >95% collapse is a traffic-loss / shutdown
+    // signature — the metric stopped processing, rather than drifting under a
+    // fault. Its steep downward slope must not earn the direction-agnostic
+    // trend bonus, which would let a symptom's collapse outrank the source's
+    // rise (benchmark #220).
+    const isShutdownDrop = cfg.collapsePenalty && dropRatio > riseRatio && dropRatio > 0.95;
+
     // Trend slope (linear regression) — the magnitude of the monotonic drift.
     // This is direction-agnostic: a monotonic drop (memory release, crash)
     // gets the same bonus as a monotonic rise (leak, saturation).
@@ -641,7 +667,9 @@ function computeAnomalyFeatures(
     // Trend bonus is direction-agnostic: trendStrength is already the
     // ABSOLUTE normalized slope, so a monotonic drop (memory release,
     // crash) gets the same bonus as a monotonic rise (leak, saturation).
-    if (trendStrength > 0.1) featureScore += trendStrength * 0.15;
+    // A shutdown drop is EXEMPT — its steep slope is the shutdown itself,
+    // not a fault trend (see `isShutdownDrop` above).
+    if (trendStrength > 0.1 && !isShutdownDrop) featureScore += trendStrength * 0.15;
     if (hasBurst) featureScore += deviation * 0.1;
     if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
     featureScore = Math.max(0, featureScore);

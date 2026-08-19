@@ -150,6 +150,8 @@ interface CliOptions {
   logWeight: number;
   /** Log signal scoring mode: 'count' (default) or 'novelty' (IDF-weighted). */
   logSignalMode: 'count' | 'novelty';
+  /** Suppress the trend bonus for >95% shutdown drops (traffic-loss symptoms). */
+  collapsePenalty: boolean;
 }
 
 function parseArgs(): CliOptions {
@@ -165,6 +167,7 @@ function parseArgs(): CliOptions {
     topoWeight: 0,
     logWeight: 1.0,
     logSignalMode: 'count',
+    collapsePenalty: false,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -184,7 +187,7 @@ function parseArgs(): CliOptions {
     else if (args[i] === '--log-signal-mode' && i + 1 < args.length) {
       const mode = args[++i]!;
       opts.logSignalMode = mode === 'novelty' ? 'novelty' : 'count';
-    }
+    } else if (args[i] === '--collapse-penalty') opts.collapsePenalty = true;
   }
   return opts;
 }
@@ -197,6 +200,7 @@ function createContainer(weights: {
   topoWeight: number;
   logWeight: number;
   logSignalMode: 'count' | 'novelty';
+  collapsePenalty: boolean;
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
@@ -1005,7 +1009,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapsePenalty=${opts.collapsePenalty}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1071,6 +1075,7 @@ async function main(): Promise<void> {
     topoWeight: opts.topoWeight,
     logWeight: opts.logWeight,
     logSignalMode: opts.logSignalMode,
+    collapsePenalty: opts.collapsePenalty,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(
