@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .tsup/
+tsup.config.bundled_*.mjs
 *.tsbuildinfo
 .cache/
 benchmark-results/

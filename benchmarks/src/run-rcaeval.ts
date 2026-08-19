@@ -150,6 +150,13 @@ interface CliOptions {
   logWeight: number;
   /** Log signal scoring mode: 'count' (default) or 'novelty' (IDF-weighted). */
   logSignalMode: 'count' | 'novelty';
+  /**
+   * Direction-aware deviation: discount the DROP component of a metric's
+   * deviation by this factor (0 = symmetric, 1 = ignore drops entirely). A
+   * traffic-loss collapse (symptom) is discounted so it cannot out-rank an
+   * equivalent rise (source). Opt-in; default 0.
+   */
+  collapseDiscount: number;
 }
 
 function parseArgs(): CliOptions {
@@ -165,6 +172,7 @@ function parseArgs(): CliOptions {
     topoWeight: 0,
     logWeight: 1.0,
     logSignalMode: 'count',
+    collapseDiscount: 0,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -184,6 +192,9 @@ function parseArgs(): CliOptions {
     else if (args[i] === '--log-signal-mode' && i + 1 < args.length) {
       const mode = args[++i]!;
       opts.logSignalMode = mode === 'novelty' ? 'novelty' : 'count';
+    } else if (args[i] === '--collapse-discount' && i + 1 < args.length) {
+      const d = parseFloat(args[++i]!);
+      opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;
     }
   }
   return opts;
@@ -197,10 +208,14 @@ function createContainer(weights: {
   topoWeight: number;
   logWeight: number;
   logSignalMode: 'count' | 'novelty';
+  collapseDiscount: number;
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
-  container.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner(weights));
+  container.register(
+    DI_TOKENS.RCA_ENGINE,
+    () => new TreePruner(weights, { collapseDiscount: weights.collapseDiscount }),
+  );
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   return container;
 }
@@ -1005,7 +1020,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1071,6 +1086,7 @@ async function main(): Promise<void> {
     topoWeight: opts.topoWeight,
     logWeight: opts.logWeight,
     logSignalMode: opts.logSignalMode,
+    collapseDiscount: opts.collapseDiscount,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(

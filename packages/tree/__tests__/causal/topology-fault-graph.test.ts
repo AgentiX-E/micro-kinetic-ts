@@ -1669,9 +1669,7 @@ describe('buildTopologyFaultGraph — Anomaly Distribution Diagnostic Gate', () 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     buildTopologyFaultGraph(makeLargeGraph(), makeLargeMetrics());
 
-    const anomalyLines = spy.mock.calls.filter((args) =>
-      String(args[0]).includes('[anomaly]'),
-    );
+    const anomalyLines = spy.mock.calls.filter((args) => String(args[0]).includes('[anomaly]'));
     expect(anomalyLines).toHaveLength(0);
   });
 
@@ -1680,10 +1678,146 @@ describe('buildTopologyFaultGraph — Anomaly Distribution Diagnostic Gate', () 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     buildTopologyFaultGraph(makeLargeGraph(), makeLargeMetrics());
 
-    const anomalyLines = spy.mock.calls.filter((args) =>
-      String(args[0]).includes('[anomaly]'),
-    );
+    const anomalyLines = spy.mock.calls.filter((args) => String(args[0]).includes('[anomaly]'));
     expect(anomalyLines).toHaveLength(1);
     expect(String(anomalyLines[0]![0])).toContain('system=test');
+  });
+
+  it('logs the diagnostic fallback when no service has a metric (empty sample)', () => {
+    vi.stubEnv('BENCHMARK_ANOMALY_DIAG', '1');
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    buildTopologyFaultGraph(makeLargeGraph(), new Map());
+
+    const anomalyLines = spy.mock.calls.filter((args) => String(args[0]).includes('[anomaly]'));
+    // The diagnostic still fires (fallback sampleId + empty metric sample).
+    expect(anomalyLines).toHaveLength(1);
+    expect(String(anomalyLines[0]![0])).toContain('metric=?');
+  });
+});
+
+// ── Tests: collapseDiscount (direction-aware deviation) ───
+
+describe('buildTopologyFaultGraph — collapseDiscount', () => {
+  // A permanent rise (0.4 → 1.4): the source signature (fault = doing more work).
+  const rise = makeTimeSeries('workload', [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4, 1.4]);
+  // A permanent collapse (3.55 → 0.046): the traffic-loss symptom signature.
+  const drop = makeTimeSeries(
+    'cpu',
+    [3.554, 3.63, 3.705, 3.78, 3.856, 4.521, 0.046, 0.046, 0.046, 0.062],
+  );
+  // A pure drop with a FLAT head (no pre-collapse rise): riseRatio ≈ 0.
+  const pureDrop = makeTimeSeries('cpu', [5, 5, 5, 5, 5, 5, 5, 0.5, 0.5, 0.5]);
+
+  function graphWith(series: TimeSeries): {
+    result: ReturnType<typeof buildTopologyFaultGraph>;
+    id: ServiceId;
+  } {
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [series]]]));
+    return { result, id };
+  }
+
+  it('default (0) scores a collapse symmetrically — drop is NOT discounted', () => {
+    const { result, id } = graphWith(drop);
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+    const breakdown = result.dominantMetrics.get(id)?.breakdown;
+    expect(breakdown?.dropRatio).toBeGreaterThan(0.9);
+    expect(breakdown?.collapseDiscount).toBe(0);
+    // A pure collapse has no rise component.
+    expect(breakdown?.riseRatio).toBeLessThan(0.2);
+  });
+
+  it('collapseDiscount=1 fully discounts a pure drop to zero', () => {
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [pureDrop]]]), {
+      collapseDiscount: 1,
+    });
+    // The drop-only metric (flat head, no rise) is discarded (deviation
+    // < 1e-6), so the service carries no anomaly.
+    expect(result.anomalyScores.get(id)).toBe(0);
+    expect(result.dominantMetrics.get(id)?.breakdown).toBeUndefined();
+  });
+
+  it('collapseDiscount leaves a pure rise unchanged', () => {
+    const { result, id } = graphWith(rise);
+    const baseline = result.dominantMetrics.get(id)?.breakdown;
+    expect(baseline?.riseRatio).toBeGreaterThan(1);
+
+    const id2: ServiceId = 'svc2';
+    const graph2 = makeCallGraph([id2], []);
+    const result2 = buildTopologyFaultGraph(graph2, makeMetrics([[id2, [rise]]]), {
+      collapseDiscount: 1,
+    });
+    const discounted = result2.dominantMetrics.get(id2)?.breakdown;
+    // The rise component is untouched by the drop discount.
+    expect(discounted?.riseRatio).toBeCloseTo(baseline!.riseRatio, 10);
+    expect(discounted?.deviation).toBeCloseTo(baseline!.deviation, 10);
+  });
+
+  it('collapseDiscount=0.5 halves the drop component in the deviation', () => {
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const base = buildTopologyFaultGraph(graph, makeMetrics([[id, [drop]]]));
+    const half = buildTopologyFaultGraph(graph, makeMetrics([[id, [drop]]]), {
+      collapseDiscount: 0.5,
+    });
+    const baseDev = base.dominantMetrics.get(id)?.breakdown?.deviation;
+    const halfDev = half.dominantMetrics.get(id)?.breakdown?.deviation;
+    // The halved drop produces a strictly smaller deviation.
+    expect(halfDev).toBeDefined();
+    expect(baseDev).toBeDefined();
+    expect(halfDev!).toBeLessThan(baseDev!);
+  });
+
+  it('reports the full breakdown (deviation/trend/cv/burst) for the dominant metric', () => {
+    const { result, id } = graphWith(drop);
+    const b = result.dominantMetrics.get(id)?.breakdown;
+    expect(b).toBeDefined();
+    expect(b!.deviation).toBeGreaterThan(0);
+    expect(b!.trend).toBeGreaterThanOrEqual(0);
+    expect(b!.cv).toBeGreaterThanOrEqual(0);
+    expect(b!.burst).toBeGreaterThanOrEqual(0);
+    expect(b!.baselineMean).toBeGreaterThan(0);
+  });
+});
+
+// ── Tests: post-inject onset delay (injectTimeMs > 0) ────
+
+describe('buildTopologyFaultGraph — post-inject onset delay', () => {
+  it('computes a delay with an EVEN-length pre-inject window', () => {
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries(
+      'cpu',
+      [1, 1, 1, 1, 2, 2, 2, 2],
+      [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000],
+    );
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 4000,
+    });
+    // The metric deviates at the boundary → delay 0.
+    expect(result.postInjectOnsetDelays.get(id)).toBe(0);
+  });
+
+  it('computes a delay with an ODD-length pre-inject window', () => {
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries('cpu', [1, 1, 1, 2, 2, 2], [0, 1000, 2000, 3000, 4000, 5000]);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 3000,
+    });
+    expect(result.postInjectOnsetDelays.get(id)).toBe(0);
+  });
+
+  it('returns -1 when injectTimeMs is explicitly undefined', () => {
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries('cpu', [1, 1, 1, 2, 2, 2], [0, 1000, 2000, 3000, 4000, 5000]);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: undefined,
+    });
+    expect(result.postInjectOnsetDelays.get(id)).toBe(-1);
   });
 });

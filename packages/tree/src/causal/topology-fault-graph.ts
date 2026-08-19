@@ -132,6 +132,32 @@ export interface TopologyFaultGraphConfig {
    * disables the anchored onset (the index-based fallback still applies).
    */
   readonly injectTimeMs?: number;
+  /**
+   * Direction-aware deviation: the factor by which the DROP component of a
+   * metric's deviation is discounted, in [0, 1].
+   *
+   * The anomaly deviation is currently `log10(1 + max(riseRatio, dropRatio))`,
+   * treating a monotonic RISE (resource consumption, work) and a monotonic
+   * COLLAPSE (traffic loss, shutdown) as equally anomalous. But they are NOT
+   * symmetric signals: a fault SOURCE's metric RISES (leak, saturation, wrong
+   * value doing more work), while a downstream SYMPTOM's traffic metric
+   * COLLAPSES to near-zero once the source stops feeding it (TrainTicket RE3:
+   * source workload 0.4→1.4 vs symptom cpu 3.55→0.046). Rewarding the rise and
+   * discounting the collapse makes the score direction-aware:
+   *
+   *   effectiveRatio = max(riseRatio, dropRatio × (1 − collapseDiscount))
+   *
+   * `0` (default) is bit-identical to the current symmetric behaviour. `1`
+   * ignores drops entirely (only rises count). The drop is DISCOUNTED, never
+   * amplified — the opposite of the #193 "drop vs post-drop minimum" failure,
+   * which re-exploded drop-noise by making a collapse symmetric with a rise.
+   *
+   * Opt-in: a genuine crash fault (RE1/RE2 resource exhaustion) manifests as a
+   * RISE first (usage climbs to the limit), so its rise component still scores
+   * even when the post-crash drop is discounted; the ablation must confirm
+   * this against real RE1/RE2 data before the default is changed.
+   */
+  readonly collapseDiscount: number;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -148,6 +174,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
     expectedDirectLatency: 1.0,
   },
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
+  collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
 };
 
 /**
@@ -202,7 +229,13 @@ export interface TopologyFaultGraphResult {
   /** Per-service dominant metric (the metric that drove the anomaly score). */
   readonly dominantMetrics: Map<
     ServiceId,
-    { label: string; head: number[]; tail: number[]; transientSkipped: string[] }
+    {
+      label: string;
+      head: number[];
+      tail: number[];
+      transientSkipped: string[];
+      breakdown?: MetricBreakdown;
+    }
   >;
   /** Per-edge propagation weights (0-1), aligned with callGraph.edges. */
   readonly propagationWeights: Float64Array;
@@ -400,7 +433,33 @@ interface AnomalyFeatures {
     tail: number[];
     /** Labels of metrics skipped by the transient-spike guard (diagnostic). */
     transientSkipped: string[];
+    /** Raw score decomposition of the dominant metric (diagnostic). */
+    breakdown?: MetricBreakdown;
   };
+}
+
+/**
+ * The raw feature-score decomposition of a metric's anomaly, for the failure
+ * diagnostics. Reveals WHY a metric out-ranked another (deviation vs trend vs
+ * CV vs burst), which a single scalar score cannot.
+ */
+export interface MetricBreakdown {
+  /** log10(1 + ratio) — the direction-aware deviation magnitude. */
+  readonly deviation: number;
+  /** trendStrength × 0.15 — the monotonic-slope bonus (0 when suppressed). */
+  readonly trend: number;
+  /** min(cv, 1.5) × 0.05 — the coefficient-of-variation bonus. */
+  readonly cv: number;
+  /** deviation × 0.1 — the burst bonus. */
+  readonly burst: number;
+  /** (max − baseline) / baseline — the rise component. */
+  readonly riseRatio: number;
+  /** (baseline − min) / baseline — the drop component (before discount). */
+  readonly dropRatio: number;
+  /** The pre-anomaly baseline used to compute both ratios. */
+  readonly baselineMean: number;
+  /** The collapseDiscount in effect when the score was computed. */
+  readonly collapseDiscount: number;
 }
 
 interface EdgeWeightResult {
@@ -446,6 +505,7 @@ function computeAnomalyFeatures(
   let bestMetricOnset = Number.MAX_SAFE_INTEGER;
   let bestMetricValues: Float64Array | null = null;
   let bestMetricTimestamps: readonly number[] | null = null;
+  let bestBreakdown: MetricBreakdown | undefined;
   const transientSkippedLabels: string[] = [];
 
   for (const ts of serviceMetrics) {
@@ -586,7 +646,13 @@ function computeAnomalyFeatures(
     // (min < max × 0.001), so the remaining drops are bounded and safe.
     const riseRatio = Math.abs(max - baselineMean) / baselineMean;
     const dropRatio = Math.abs(baselineMean - min) / baselineMean;
-    const ratio = Math.max(riseRatio, dropRatio);
+    // Direction-aware deviation (collapseDiscount): discount the DROP
+    // component so a traffic-loss collapse (symptom) does not out-rank an
+    // equivalent RISE (source). See the `collapseDiscount` config doc. With
+    // the default 0 this is bit-identical to max(riseRatio, dropRatio).
+    const collapseDiscount = cfg.collapseDiscount > 0 ? cfg.collapseDiscount : 0;
+    const effectiveDrop = dropRatio * (1 - collapseDiscount);
+    const ratio = Math.max(riseRatio, effectiveDrop);
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) continue;
 
@@ -637,13 +703,13 @@ function computeAnomalyFeatures(
     // ranking fell back to an arbitrary tiebreaker. Leaving the score
     // unbounded (clamped only at 0 below) preserves the true deviation
     // magnitude; buildTopologyFaultGraph re-scales to [0,1] afterwards.
-    let featureScore = deviation;
     // Trend bonus is direction-agnostic: trendStrength is already the
     // ABSOLUTE normalized slope, so a monotonic drop (memory release,
     // crash) gets the same bonus as a monotonic rise (leak, saturation).
-    if (trendStrength > 0.1) featureScore += trendStrength * 0.15;
-    if (hasBurst) featureScore += deviation * 0.1;
-    if (cv > 0.5) featureScore += Math.min(cv, 1.5) * 0.05;
+    const trendBonus = trendStrength > 0.1 ? trendStrength * 0.15 : 0;
+    const burstBonus = hasBurst ? deviation * 0.1 : 0;
+    const cvBonus = cv > 0.5 ? Math.min(cv, 1.5) * 0.05 : 0;
+    let featureScore = deviation + trendBonus + burstBonus + cvBonus;
     featureScore = Math.max(0, featureScore);
 
     // Onset: the first point deviating from the PRE-CHANGE baseline by more
@@ -679,6 +745,16 @@ function computeAnomalyFeatures(
       // (index 0) mask the true fault onset (e.g. a late step change), which
       // corrupted the source/symptom ordering signal used downstream.
       bestMetricOnset = metricOnset;
+      bestBreakdown = {
+        deviation,
+        trend: trendBonus,
+        cv: cvBonus,
+        burst: burstBonus,
+        riseRatio,
+        dropRatio,
+        baselineMean,
+        collapseDiscount,
+      };
     }
   }
 
@@ -702,6 +778,7 @@ function computeAnomalyFeatures(
       head: bestMetricHead,
       tail: bestMetricTail,
       transientSkipped: transientSkippedLabels,
+      breakdown: bestBreakdown,
     },
   };
 }

@@ -63,6 +63,8 @@ interface FeatureFlags {
   topoSignal: boolean;
   /** Collision-energy signal: penalise upstream-inherited energy (collisionWeight). */
   collisionSignal: boolean;
+  /** Direction-aware deviation: discount the DROP component (collapseDiscount). */
+  collapseDiscount: boolean;
 }
 
 interface AblationRun {
@@ -101,6 +103,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -113,6 +116,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -124,6 +128,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+Trace Topo',
   },
@@ -135,6 +140,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+SelfLearn',
   },
@@ -147,6 +153,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+Collision+Trace',
   },
@@ -158,6 +165,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -169,6 +177,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -181,6 +190,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -197,6 +207,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: true,
       topoSignal: false,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+Log Signal',
   },
@@ -208,6 +219,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: true,
       collisionSignal: false,
+      collapseDiscount: false,
     },
     label: '+Topo Signal',
   },
@@ -223,8 +235,21 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       logSignal: false,
       topoSignal: false,
       collisionSignal: true,
+      collapseDiscount: false,
     },
     label: '+Collision Signal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: true,
+    },
+    label: '+Collapse Discount',
   },
 ];
 
@@ -450,12 +475,15 @@ async function main(): Promise<void> {
     c.register(
       DI_TOKENS.RCA_ENGINE,
       () =>
-        new TreePruner({
-          enableCollisionAggregation: flags.collisionAggregation,
-          collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
-          topoWeight: flags.topoSignal ? 1.0 : 0.0,
-          logWeight: flags.logSignal ? 1.0 : 0.0,
-        }),
+        new TreePruner(
+          {
+            enableCollisionAggregation: flags.collisionAggregation,
+            collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
+            topoWeight: flags.topoSignal ? 1.0 : 0.0,
+            logWeight: flags.logSignal ? 1.0 : 0.0,
+          },
+          { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
+        ),
     );
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
     return c;
