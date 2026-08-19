@@ -65,6 +65,8 @@ interface FeatureFlags {
   collisionSignal: boolean;
   /** Direction-aware deviation: discount the DROP component (collapseDiscount). */
   collapseDiscount: boolean;
+  /** Loosened idle guard: skip duty-cycled metrics (idleNearZeroRatio=0.02). */
+  idleGuard: boolean;
 }
 
 interface AblationRun {
@@ -104,6 +106,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -117,6 +120,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -129,6 +133,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Trace Topo',
   },
@@ -141,6 +146,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+SelfLearn',
   },
@@ -154,6 +160,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Collision+Trace',
   },
@@ -166,6 +173,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -178,6 +186,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -191,6 +200,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -208,6 +218,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Log Signal',
   },
@@ -220,6 +231,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: true,
       collisionSignal: false,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Topo Signal',
   },
@@ -236,6 +248,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: true,
       collapseDiscount: false,
+      idleGuard: false,
     },
     label: '+Collision Signal',
   },
@@ -248,8 +261,22 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: true,
+      idleGuard: false,
     },
     label: '+Collapse Discount',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      idleGuard: true,
+    },
+    label: '+Idle Guard',
   },
 ];
 
@@ -482,7 +509,10 @@ async function main(): Promise<void> {
             topoWeight: flags.topoSignal ? 1.0 : 0.0,
             logWeight: flags.logSignal ? 1.0 : 0.0,
           },
-          { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
+          {
+            collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
+            idleNearZeroRatio: flags.idleGuard ? 0.02 : 0.001,
+          },
         ),
     );
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());

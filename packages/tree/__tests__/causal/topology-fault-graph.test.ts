@@ -1821,3 +1821,36 @@ describe('buildTopologyFaultGraph — post-inject onset delay', () => {
     expect(result.postInjectOnsetDelays.get(id)).toBe(-1);
   });
 });
+
+// ── Tests: idle guard (idleNearZeroRatio) ────────────────
+
+describe('buildTopologyFaultGraph — idle guard (idleNearZeroRatio)', () => {
+  // A duty-cycled event metric: one brief activity peak (4.5) over a near-zero
+  // floor (0.05 = ~1.1% of peak). 9/10 samples sit at the floor.
+  const dutyCycled = makeTimeSeries('cpu', [4.5, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]);
+  // A genuine permanent rise (0.4 → 1.4): the source signature.
+  const rise = makeTimeSeries('workload', [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4, 1.4]);
+
+  function score(series: TimeSeries, idleNearZeroRatio?: number): number {
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [series]]]), {
+      ...(idleNearZeroRatio !== undefined ? { idleNearZeroRatio } : {}),
+    });
+    return result.anomalyScores.get(id) ?? 0;
+  }
+
+  it('default (0.001) does NOT skip a duty-cycled metric with a ~1% floor', () => {
+    // 0.05 > 4.5 × 0.001 = 0.0045 → the floor is above the near-zero bar.
+    expect(score(dutyCycled)).toBeGreaterThan(0);
+  });
+
+  it('idleNearZeroRatio=0.02 skips the duty-cycled metric (floor below 2% of peak)', () => {
+    // 0.05 ≤ 4.5 × 0.02 = 0.09, and 9/10 > 40% of samples are near-zero.
+    expect(score(dutyCycled, 0.02)).toBe(0);
+  });
+
+  it('idleNearZeroRatio=0.02 keeps a genuine rise (not mostly near-zero)', () => {
+    expect(score(rise, 0.02)).toBeGreaterThan(0);
+  });
+});
