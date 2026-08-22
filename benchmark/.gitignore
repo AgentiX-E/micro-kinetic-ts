@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.tsup/
+tsup.config.bundled_*.mjs
+*.tsbuildinfo
+.cache/
+benchmark-results/
+*.log
+# pnpm-lock.yaml — committed for CI reproducibility
+.nx/
+.env
+temp/
+_tmp_*

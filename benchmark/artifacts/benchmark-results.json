@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Total Duration",
+    "value": 121,
+    "unit": "ms",
+    "range": "± 50"
+  },
+  {
+    "name": "Avg@1 Accuracy",
+    "value": 1,
+    "unit": "ratio",
+    "range": "0-1"
+  },
+  {
+    "name": "Avg@5 Accuracy",
+    "value": 1,
+    "unit": "ratio",
+    "range": "0-1"
+  },
+  {
+    "name": "Location Accuracy",
+    "value": 1,
+    "unit": "ratio",
+    "range": "0-1"
+  },
+  {
+    "name": "Type Accuracy",
+    "value": 1,
+    "unit": "ratio",
+    "range": "0-1"
+  }
+]

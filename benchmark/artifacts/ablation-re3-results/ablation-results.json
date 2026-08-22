@@ -1,0 +1,1508 @@
+{
+  "timestamp": "2026-08-22T10:37:38.868Z",
+  "systemFilter": "all",
+  "repetitions": 3,
+  "totalCases": 90,
+  "datasets": [
+    "OnlineBoutique",
+    "SockShop",
+    "TrainTicket"
+  ],
+  "runs": [
+    {
+      "label": "BASELINE (all OFF)",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1433,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1883,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13399,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision Q(f,f)",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1348,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1869,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13389,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Trace Topo",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": true,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1430,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1879,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13614,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+SelfLearn",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1335,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1868,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13391,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision+Trace",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": true,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1487,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1874,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13591,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision+SelfLearn",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": false,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1369,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1869,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13426,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Trace+SelfLearn",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": true,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1440,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1873,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13711,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "FULL STACK (all ON)",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": true,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6333333333333333,
+          "aTop5": 0.8,
+          "la": 0.6333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1435,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1881,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13605,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Log Signal",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": true,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.7666666666666667,
+          "aTop5": 0.8,
+          "la": 0.7666666666666667,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1332,
+          "failures": 21,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 1
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.43333333333333335,
+          "aTop5": 0.9333333333333333,
+          "la": 0.43333333333333335,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1874,
+          "failures": 51,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.6
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13277,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Topo Signal",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": true,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.5333333333333333,
+          "aTop5": 0.8,
+          "la": 0.5333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1328,
+          "failures": 42,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.5
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4666666666666667,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4666666666666667,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1866,
+          "failures": 48,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.4
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.6
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0,
+          "aTop5": 0.03333333333333333,
+          "la": 0,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13246,
+          "failures": 90,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision Signal",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": true,
+        "collapseDiscount": false,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.5666666666666667,
+          "aTop5": 0.8,
+          "la": 0.5666666666666667,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1328,
+          "failures": 39,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.5
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.43333333333333335,
+          "aTop5": 0.9333333333333333,
+          "la": 0.43333333333333335,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1868,
+          "failures": 51,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.4
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0,
+          "aTop5": 0.03333333333333333,
+          "la": 0,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13292,
+          "failures": 90,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collapse Discount",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": true,
+        "idleGuard": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6,
+          "aTop5": 0.8333333333333334,
+          "la": 0.6,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1322,
+          "failures": 36,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9333333333333333,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1864,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.06666666666666667,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 13258,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Idle Guard",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "idleGuard": true
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6,
+          "aTop5": 0.8333333333333334,
+          "la": 0.6,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1325,
+          "failures": 36,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f3": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            },
+            "f5": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            },
+            "f1": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.4,
+          "aTop5": 0.9666666666666667,
+          "la": 0.4,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 1834,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 30,
+              "accuracy": 0.5
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0.3
+            },
+            "f4": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 9,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.03333333333333333,
+          "aTop5": 0.1,
+          "la": 0.03333333333333333,
+          "ta": 0,
+          "totalCases": 90,
+          "duration": 12939,
+          "failures": 87,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "f1": {
+              "cases": 21,
+              "accuracy": 0.14285714285714285
+            },
+            "f2": {
+              "cases": 21,
+              "accuracy": 0
+            },
+            "f3": {
+              "cases": 30,
+              "accuracy": 0
+            },
+            "f4": {
+              "cases": 18,
+              "accuracy": 0
+            }
+          }
+        }
+      }
+    }
+  ]
+}

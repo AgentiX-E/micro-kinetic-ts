@@ -1,0 +1,455 @@
+════════════════════════════════════════════════════════════════════════════════
+Micro-Kinetic — Feature Ablation Study
+════════════════════════════════════════════════════════════════════════════════
+Data:       /home/runner/RCAEval-json
+Filter:     system=all, suite=re1
+Configs:    13
+Repetitions: 3
+════════════════════════════════════════════════════════════════════════════════
+
+Discovered: 735 cases
+Semantic: Zhipu embedding-3 ✓
+
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+═
+Running Ablation
+════════════════════════════════════════════════════════════════════════════════
+
+════════════════════════════════════════════════════════════
+  Pre-building OnlineBoutique …
+  Pre-built: OnlineBoutique → 125 cases
+
+────────────────────────────────────────────────────────────
+Running: BASELINE (all OFF)
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4442ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision Q(f,f)
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4361ms)
+
+────────────────────────────────────────────────────────────
+Running: +Trace Topo
+Flags: {"collisionAggregation":false,"traceAugmentation":true,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4380ms)
+
+────────────────────────────────────────────────────────────
+Running: +SelfLearn
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4378ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+Trace
+Flags: {"collisionAggregation":true,"traceAugmentation":true,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4369ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+SelfLearn
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4258ms)
+
+────────────────────────────────────────────────────────────
+Running: +Trace+SelfLearn
+Flags: {"collisionAggregation":false,"traceAugmentation":true,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4300ms)
+
+────────────────────────────────────────────────────────────
+Running: FULL STACK (all ON)
+Flags: {"collisionAggregation":true,"traceAugmentation":true,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4331ms)
+
+────────────────────────────────────────────────────────────
+Running: +Log Signal
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":true,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4270ms)
+
+────────────────────────────────────────────────────────────
+Running: +Topo Signal
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":true,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=52.8% A@5=94.4% LA=52.8% TA=20.0% (375 cases, 177 failures, 4282ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision Signal
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":true,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=68.0% A@5=94.4% LA=68.0% TA=20.0% (375 cases, 120 failures, 4287ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collapse Discount
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":true,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=80.0% A@5=95.2% LA=80.0% TA=20.0% (375 cases, 75 failures, 4316ms)
+
+────────────────────────────────────────────────────────────
+Running: +Idle Guard
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":true}
+────────────────────────────────────────────────────────────
+  OnlineBoutique: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=57.6% A@5=85.6% LA=57.6% TA=20.0% (375 cases, 159 failures, 4231ms)
+
+════════════════════════════════════════════════════════════
+  Pre-building SockShop …
+  Pre-built: SockShop → 125 cases
+
+────────────────────────────────────────────────────────────
+Running: BASELINE (all OFF)
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1585ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision Q(f,f)
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1553ms)
+
+────────────────────────────────────────────────────────────
+Running: +Trace Topo
+Flags: {"collisionAggregation":false,"traceAugmentation":true,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1572ms)
+
+────────────────────────────────────────────────────────────
+Running: +SelfLearn
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1545ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+Trace
+Flags: {"collisionAggregation":true,"traceAugmentation":true,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1575ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+SelfLearn
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1549ms)
+
+────────────────────────────────────────────────────────────
+Running: +Trace+SelfLearn
+Flags: {"collisionAggregation":false,"traceAugmentation":true,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1569ms)
+
+────────────────────────────────────────────────────────────
+Running: FULL STACK (all ON)
+Flags: {"collisionAggregation":true,"traceAugmentation":true,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1577ms)
+
+────────────────────────────────────────────────────────────
+Running: +Log Signal
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":true,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=97.6% LA=92.8% TA=20.0% (375 cases, 27 failures, 1558ms)
+
+────────────────────────────────────────────────────────────
+Running: +Topo Signal
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":true,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=66.4% A@5=97.6% LA=66.4% TA=20.0% (375 cases, 126 failures, 1543ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision Signal
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":true,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=87.2% A@5=97.6% LA=87.2% TA=20.0% (375 cases, 48 failures, 1548ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collapse Discount
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":true,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=92.8% A@5=98.4% LA=92.8% TA=20.0% (375 cases, 27 failures, 1542ms)
+
+────────────────────────────────────────────────────────────
+Running: +Idle Guard
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":true}
+────────────────────────────────────────────────────────────
+  SockShop: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=70.4% A@5=83.2% LA=70.4% TA=20.0% (375 cases, 111 failures, 1506ms)
+
+════════════════════════════════════════════════════════════
+  Pre-building TrainTicket …
+  Pre-built: TrainTicket → 125 cases
+
+────────────────────────────────────────────────────────────
+Running: BASELINE (all OFF)
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8259ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision Q(f,f)
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8216ms)
+
+────────────────────────────────────────────────────────────
+Running: +Trace Topo
+Flags: {"collisionAggregation":false,"traceAugmentation":true,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8185ms)
+
+────────────────────────────────────────────────────────────
+Running: +SelfLearn
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8150ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+Trace
+Flags: {"collisionAggregation":true,"traceAugmentation":true,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8288ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision+SelfLearn
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8244ms)
+
+────────────────────────────────────────────────────────────
+Running: +Trace+SelfLearn
+Flags: {"collisionAggregation":false,"traceAugmentation":true,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8222ms)
+
+────────────────────────────────────────────────────────────
+Running: FULL STACK (all ON)
+Flags: {"collisionAggregation":true,"traceAugmentation":true,"selfLearning":true,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8257ms)
+
+────────────────────────────────────────────────────────────
+Running: +Log Signal
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":true,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8185ms)
+
+────────────────────────────────────────────────────────────
+Running: +Topo Signal
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":true,"collisionSignal":false,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=23.2% A@5=77.6% LA=23.2% TA=20.0% (375 cases, 288 failures, 8195ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collision Signal
+Flags: {"collisionAggregation":true,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":true,"collapseDiscount":false,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=62.4% A@5=85.6% LA=62.4% TA=20.0% (375 cases, 141 failures, 8267ms)
+
+────────────────────────────────────────────────────────────
+Running: +Collapse Discount
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":true,"idleGuard":false}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=67.2% A@5=88.8% LA=67.2% TA=20.0% (375 cases, 123 failures, 8261ms)
+
+────────────────────────────────────────────────────────────
+Running: +Idle Guard
+Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,"topoSignal":false,"collisionSignal":false,"collapseDiscount":false,"idleGuard":true}
+────────────────────────────────────────────────────────────
+  TrainTicket: 125 cases
+  Rep 1/3 (33%)...   Rep 2/3 (67%)...   Rep 3/3 (100%)...   A@1=60.0% A@5=83.2% LA=60.0% TA=20.0% (375 cases, 150 failures, 8121ms)
+
+════════════════════════════════════════════════════════════════════════════════
+ABLATION RESULTS
+════════════════════════════════════════════════════════════════════════════════
+Configuration                  OnlineBoutique   SockShop         TrainTicket      AVG
+────────────────────────────────────────────────────────────────────────────────
+BASELINE (all OFF)             80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Collision Q(f,f)              80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Trace Topo                    80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++SelfLearn                     80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Collision+Trace               80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Collision+SelfLearn           80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Trace+SelfLearn               80.0%            92.8%            67.2%            80.0%  Δ+0.0%
+FULL STACK (all ON)            80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Log Signal                    80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Topo Signal                   52.8%            66.4%            23.2%            47.5%  Δ-32.5%
++Collision Signal              68.0%            87.2%            62.4%            72.5%  Δ-7.5%
++Collapse Discount             80.0%            92.8%            67.2%            80.0%  Δ+0.0%
++Idle Guard                    57.6%            70.4%            60.0%            62.7%  Δ-17.3%
+════════════════════════════════════════════════════════════════════════════════
+
+────────────────────────────────────────────────────────────────────────────────
+OnlineBoutique — Per-Fault-Type A@1 Breakdown
+────────────────────────────────────────────────────────────────────────────────
+Configuration                  cpu        delay      disk       loss       mem       
+BASELINE (all OFF)             92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Collision Q(f,f)              92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Trace Topo                    92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++SelfLearn                     92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Collision+Trace               92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Collision+SelfLearn           92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Trace+SelfLearn               92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
+FULL STACK (all ON)            92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Log Signal                    92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Topo Signal                   84% (75)   32% (75)   48% (75)   52% (75)   48% (75)  
++Collision Signal              92% (75)   52% (75)   68% (75)   52% (75)   76% (75)  
++Collapse Discount             92% (75)   88% (75)   84% (75)   44% (75)   92% (75)  
++Idle Guard                    72% (75)   24% (75)   84% (75)   28% (75)   80% (75)  
+
+────────────────────────────────────────────────────────────────────────────────
+SockShop — Per-Fault-Type A@1 Breakdown
+────────────────────────────────────────────────────────────────────────────────
+Configuration                  cpu        delay      disk       loss       mem       
+BASELINE (all OFF)             100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Collision Q(f,f)              100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Trace Topo                    100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++SelfLearn                     100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Collision+Trace               100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Collision+SelfLearn           100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Trace+SelfLearn               100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
+FULL STACK (all ON)            100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Log Signal                    100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Topo Signal                   96% (75)   40% (75)   96% (75)   52% (75)   48% (75)  
++Collision Signal              100% (75)  100% (75)  100% (75)  68% (75)   68% (75)  
++Collapse Discount             100% (75)  100% (75)  100% (75)  68% (75)   96% (75)  
++Idle Guard                    100% (75)  16% (75)   100% (75)  48% (75)   88% (75)  
+
+────────────────────────────────────────────────────────────────────────────────
+TrainTicket — Per-Fault-Type A@1 Breakdown
+────────────────────────────────────────────────────────────────────────────────
+Configuration                  cpu        delay      disk       loss       mem       
+BASELINE (all OFF)             80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Collision Q(f,f)              80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Trace Topo                    80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++SelfLearn                     80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Collision+Trace               80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Collision+SelfLearn           80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Trace+SelfLearn               80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
+FULL STACK (all ON)            80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Log Signal                    80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Topo Signal                   56% (75)   8% (75)    28% (75)   4% (75)    20% (75)  
++Collision Signal              76% (75)   64% (75)   44% (75)   48% (75)   80% (75)  
++Collapse Discount             80% (75)   72% (75)   48% (75)   44% (75)   92% (75)  
++Idle Guard                    68% (75)   56% (75)   48% (75)   36% (75)   92% (75)  
+
+Results saved: /home/runner/work/micro-kinetic-ts/micro-kinetic-ts/ablation-results.json

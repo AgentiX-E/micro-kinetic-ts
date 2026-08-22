@@ -1,0 +1,43 @@
+{
+  "name": "@agentix-e/micro-kinetic-noise",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Stosszahlansatz-based alert denoising — applying Deng Yu's molecular chaos proof to AIOps alert noise reduction",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist coverage .tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentix-e/micro-kinetic-core": "workspace:^",
+    "decimal.js": "^10.4.3",
+    "simple-statistics": "^7.8.3"
+  },
+  "peerDependencies": {
+    "decimal.js": "^10.4.3",
+    "simple-statistics": "^7.8.3"
+  },
+  "devDependencies": {
+    "@agentix-e/micro-kinetic-core": "workspace:^",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "license": "MIT"
+}
