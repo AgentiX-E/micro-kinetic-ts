@@ -157,12 +157,6 @@ interface CliOptions {
    * equivalent rise (source). Opt-in; default 0.
    */
   collapseDiscount: number;
-  /**
-   * Idle-metric guard threshold (fraction of peak below which a sample is
-   * "near zero"). 0.001 = shipped default; looser values (e.g. 0.02) skip
-   * duty-cycled event metrics whose near-zero floor is misread as a rise.
-   */
-  idleNearZeroRatio: number;
 }
 
 function parseArgs(): CliOptions {
@@ -179,7 +173,6 @@ function parseArgs(): CliOptions {
     logWeight: 1.0,
     logSignalMode: 'count',
     collapseDiscount: 0,
-    idleNearZeroRatio: 0.001,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -202,9 +195,6 @@ function parseArgs(): CliOptions {
     } else if (args[i] === '--collapse-discount' && i + 1 < args.length) {
       const d = parseFloat(args[++i]!);
       opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;
-    } else if (args[i] === '--idle-near-zero-ratio' && i + 1 < args.length) {
-      const r = parseFloat(args[++i]!);
-      opts.idleNearZeroRatio = Number.isFinite(r) ? Math.min(1, Math.max(0, r)) : 0.001;
     }
   }
   return opts;
@@ -219,17 +209,12 @@ function createContainer(weights: {
   logWeight: number;
   logSignalMode: 'count' | 'novelty';
   collapseDiscount: number;
-  idleNearZeroRatio: number;
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
   container.register(
     DI_TOKENS.RCA_ENGINE,
-    () =>
-      new TreePruner(weights, {
-        collapseDiscount: weights.collapseDiscount,
-        idleNearZeroRatio: weights.idleNearZeroRatio,
-      }),
+    () => new TreePruner(weights, { collapseDiscount: weights.collapseDiscount }),
   );
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   return container;
@@ -1041,7 +1026,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} idleNearZeroRatio=${opts.idleNearZeroRatio}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1108,7 +1093,6 @@ async function main(): Promise<void> {
     logWeight: opts.logWeight,
     logSignalMode: opts.logSignalMode,
     collapseDiscount: opts.collapseDiscount,
-    idleNearZeroRatio: opts.idleNearZeroRatio,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(

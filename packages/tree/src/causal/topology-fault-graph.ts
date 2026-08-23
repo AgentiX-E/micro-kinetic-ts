@@ -158,21 +158,6 @@ export interface TopologyFaultGraphConfig {
    * this against real RE1/RE2 data before the default is changed.
    */
   readonly collapseDiscount: number;
-  /**
-   * Idle-metric guard threshold: the fraction of the peak below which a sample
-   * is counted as "near zero" for the duty-cycle check. The guard skips a
-   * metric when >40% of its samples sit below `max × idleNearZeroRatio`.
-   *
-   * `0.001` (default) is the shipped behaviour. Benchmark #227 showed it is
-   * TOO TIGHT: a symptom's duty-cycled metric with a floor at ~0.005–0.046
-   * (0.25%–1% of a ~1–4.5 peak) is NOT caught, so its brief activity peak is
-   * misread by the baseline detector as a spurious 8–27× RISE, inflating its
-   * deviation to ~1.0 and out-ranking the fault source. Loosening the
-   * threshold (e.g. `0.02`) skips such duty-cycled metrics outright. Opt-in;
-   * must be validated against RE1/RE2 crash faults (which RISE to exhaustion
-   * and so are not mostly-near-zero) before the default is changed.
-   */
-  readonly idleNearZeroRatio: number;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -190,7 +175,6 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   },
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
   collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
-  idleNearZeroRatio: 0.001, // 0.1% of peak (shipped behaviour)
 };
 
 /**
@@ -562,7 +546,7 @@ function computeAnomalyFeatures(
     // otherwise mask the idle signature.
     let nearZeroCount = 0;
     for (let i = 0; i < n; i++) {
-      if (ts.values[i]! <= max * cfg.idleNearZeroRatio) nearZeroCount++;
+      if (ts.values[i]! <= max * 0.001) nearZeroCount++;
     }
     if (nearZeroCount > n * 0.4) continue;
 
