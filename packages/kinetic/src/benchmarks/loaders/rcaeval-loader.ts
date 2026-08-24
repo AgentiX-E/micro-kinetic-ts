@@ -124,18 +124,33 @@ export function classifyLogLevel(
 const MAX_TRACE_ERROR_SPANS = 20_000;
 
 /**
- * Header aliases for the trace span's SERVICE column. RCAEval's traces.csv
- * uses Jaeger camelCase (`serviceName`), not the snake_case `service` the
- * original parser assumed; the alias set mirrors tryLoadLogs's service-column
- * detection so both layouts (and any Parquet-derived variant) resolve.
+ * Header aliases for the trace span's SERVICE column. RCAEval stores the
+ * service under `container_name` (the log header is `timestamp, container_name,
+ * message`) or Jaeger `serviceName`, NOT the snake_case `service` the original
+ * parser assumed. The alias set is the SAME comprehensive list tryLoadLogs uses
+ * so logs and traces resolve the service identically.
  */
 const SERVICE_COLUMN_ALIASES = new Set([
   'service',
   'servicename',
   'service_name',
+  'service_id',
+  'serviceid',
   'svc',
   'svcname',
   'svc_name',
+  'app',
+  'application',
+  'app_name',
+  'pod',
+  'pod_name',
+  'container',
+  'container_name',
+  'instance',
+  'component',
+  'source',
+  'source_service',
+  'name',
 ]);
 
 /**
@@ -647,29 +662,7 @@ export class RCAEvalLoader {
       const header = Object.keys(rows[0]!);
       this.lastLogHeader = header.join(',');
       const tsCol = header.find((h) => ['timestamp', 'time', 'ts', 't'].includes(h.toLowerCase()));
-      const svcCol = header.find((h) =>
-        [
-          'service',
-          'svc',
-          'service_name',
-          'service_id',
-          'serviceid',
-          'svc_name',
-          'svcname',
-          'app',
-          'application',
-          'app_name',
-          'pod',
-          'pod_name',
-          'container',
-          'container_name',
-          'instance',
-          'component',
-          'source',
-          'source_service',
-          'name',
-        ].includes(h.toLowerCase()),
-      );
+      const svcCol = header.find((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
       const msgCol = header.find((h) =>
         ['message', 'msg', 'content', 'log', 'text', 'line'].includes(h.toLowerCase()),
       );

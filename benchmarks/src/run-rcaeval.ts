@@ -644,6 +644,7 @@ async function loadCases(
       pruned: prunedCount,
       avgEdgesBefore: edgesBeforeSum / Math.max(1, selected.length),
       avgEdgesAfter: edgesAfterSum / Math.max(1, selected.length),
+      header: loader.lastTraceHeader,
     },
     semanticStats: {
       totalServices: semTotalServices,
