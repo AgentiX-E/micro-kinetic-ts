@@ -39,6 +39,9 @@ export type { ChatCompletionOptions, ChatMessage, IChatProvider } from './provid
 
 export { EvidenceGroundedReranker } from './providers/evidence-reranker.js';
 
+export { createEvidenceRerankerFromEnv } from './providers/env-reranker.js';
+export type { EnvRerankerConfig } from './providers/env-reranker.js';
+
 export {
   MAX_RERANK_CANDIDATES,
   buildRerankPrompt,

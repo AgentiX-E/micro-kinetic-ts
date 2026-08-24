@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CandidateEvidence } from '../../src/interfaces/reranker.js';
 import { ApiChatProvider } from '../../src/providers/api-llm.js';
 import { EvidenceGroundedReranker } from '../../src/providers/evidence-reranker.js';
+import { createEvidenceRerankerFromEnv } from '../../src/providers/env-reranker.js';
 import {
   buildRerankPrompt,
   parseRerankOrder,
@@ -317,5 +318,36 @@ describe('EvidenceGroundedReranker', () => {
     const result = await reranker.rerank({ candidates: [cand('only')] });
     expect(result.order).toEqual(['only']);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── createEvidenceRerankerFromEnv ─────────────────────────
+
+describe('createEvidenceRerankerFromEnv', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('returns null when the API key is not set', () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '');
+    expect(createEvidenceRerankerFromEnv()).toBeNull();
+  });
+
+  it('returns a reranker when the API key is set', () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key');
+    const reranker = createEvidenceRerankerFromEnv();
+    expect(reranker).not.toBeNull();
+    expect(reranker!.modelId).toBe('deepseek-chat');
+  });
+
+  it('honours a custom env var name and model', () => {
+    vi.stubEnv('CUSTOM_KEY', 'test-key');
+    const reranker = createEvidenceRerankerFromEnv({
+      apiKeyEnv: 'CUSTOM_KEY',
+      model: 'custom-model',
+    });
+    expect(reranker).not.toBeNull();
+    expect(reranker!.modelId).toBe('custom-model');
   });
 });

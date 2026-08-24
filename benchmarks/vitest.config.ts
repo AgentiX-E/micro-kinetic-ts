@@ -24,7 +24,7 @@ export default defineConfig({
     setupFiles: ['__tests__/setup.ts'],
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.spec.ts'],
     coverage: {
-      include: ['src/rcaeval-topology.ts', 'src/rcaeval-semantic.ts'],
+      include: ['src/rcaeval-topology.ts', 'src/rcaeval-semantic.ts', 'src/reranking-engine.ts'],
       exclude: ['__tests__/integration/**'],
       thresholds: {
         // rcaeval-semantic.ts hits 99%+, rcaeval-topology.ts is ~76%

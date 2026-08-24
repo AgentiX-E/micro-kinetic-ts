@@ -39,6 +39,8 @@ import { WeightCalibrator } from '../../packages/kinetic/src/signals/weight-cali
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+import { createEvidenceRerankerFromEnv } from '../../packages/ai/src/index.js';
+import { RerankingEngine } from './reranking-engine.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
@@ -65,6 +67,8 @@ interface FeatureFlags {
   collisionSignal: boolean;
   /** Direction-aware deviation: discount the DROP component (collapseDiscount). */
   collapseDiscount: boolean;
+  /** Evidence-grounded LLM reranker (gap-triggered, DeepSeek). */
+  llmReranker: boolean;
 }
 
 interface AblationRun {
@@ -104,6 +108,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -117,6 +122,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -129,6 +135,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Trace Topo',
   },
@@ -141,6 +148,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+SelfLearn',
   },
@@ -154,6 +162,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Collision+Trace',
   },
@@ -166,6 +175,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -178,6 +188,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -191,6 +202,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -208,6 +220,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Log Signal',
   },
@@ -220,6 +233,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: true,
       collisionSignal: false,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Topo Signal',
   },
@@ -236,6 +250,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: true,
       collapseDiscount: false,
+      llmReranker: false,
     },
     label: '+Collision Signal',
   },
@@ -248,13 +263,32 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: true,
+      llmReranker: false,
     },
     label: '+Collapse Discount',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      llmReranker: true,
+    },
+    label: '+LLM Reranker',
   },
 ];
 
 // Default to 3 repetitions for statistical significance
 const REPETITIONS = 3;
+
+// Gap threshold for the evidence-grounded reranker: the LLM is only consulted
+// when the deterministic top-1 and top-2 confidence scores are within this gap,
+// so a confidently-ranked case never pays for an LLM round-trip.
+const LLM_RERANK_GAP_THRESHOLD = 0.1;
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -474,8 +508,8 @@ async function main(): Promise<void> {
     c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
     c.register(
       DI_TOKENS.RCA_ENGINE,
-      () =>
-        new TreePruner(
+      () => {
+        const pruner = new TreePruner(
           {
             enableCollisionAggregation: flags.collisionAggregation,
             collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
@@ -483,7 +517,14 @@ async function main(): Promise<void> {
             logWeight: flags.logSignal ? 1.0 : 0.0,
           },
           { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
-        ),
+        );
+        if (!flags.llmReranker) return pruner;
+        // Evidence-grounded reranker (DeepSeek). When the API key is absent the
+        // factory returns null and the wrapper falls back to the deterministic
+        // order, so the ablation still runs (no-op slice) without a key.
+        const reranker = createEvidenceRerankerFromEnv();
+        return new RerankingEngine(pruner, reranker, LLM_RERANK_GAP_THRESHOLD);
+      },
     );
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
     return c;

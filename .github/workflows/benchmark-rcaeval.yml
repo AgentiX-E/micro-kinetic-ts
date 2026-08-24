@@ -77,6 +77,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -91,6 +92,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -128,6 +130,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -142,6 +145,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -179,6 +183,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -193,6 +198,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
           BENCHMARK_LOG_DIAG: '1'
         run: |
@@ -208,6 +214,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
           BENCHMARK_LOG_DIAG: '1'
         run: |
@@ -248,6 +255,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -288,6 +296,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -328,6 +337,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
@@ -368,6 +378,7 @@ jobs:
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
