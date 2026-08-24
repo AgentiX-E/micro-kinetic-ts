@@ -124,6 +124,60 @@ export function classifyLogLevel(
 const MAX_TRACE_ERROR_SPANS = 20_000;
 
 /**
+ * Header aliases for the trace span's SERVICE column. RCAEval's traces.csv
+ * uses Jaeger camelCase (`serviceName`), not the snake_case `service` the
+ * original parser assumed; the alias set mirrors tryLoadLogs's service-column
+ * detection so both layouts (and any Parquet-derived variant) resolve.
+ */
+const SERVICE_COLUMN_ALIASES = new Set([
+  'service',
+  'servicename',
+  'service_name',
+  'svc',
+  'svcname',
+  'svc_name',
+]);
+
+/**
+ * Header aliases for the trace span's ERROR-INDICATOR column. RCAEval stores
+ * the failure signal as a RESPONSE CODE (`response_code`/`status_code`/HTTP
+ * status), not an explicit `status` flag — a code-level fault makes the
+ * SOURCE's own spans return an error code.
+ */
+const STATUS_COLUMN_ALIASES = new Set([
+  'status',
+  'statuscode',
+  'status_code',
+  'httpstatus',
+  'http_status',
+  'http_status_code',
+  'httpstatuscode',
+  'responsecode',
+  'response_code',
+  'code',
+]);
+
+/**
+ * Normalise a trace span's status/response-code value to `'OK' | 'ERROR'`.
+ *
+ * Treats explicit error markers (`error`/`failed`/`true`/`1`) and HTTP 4xx/5xx
+ * response codes as ERROR; anything else (absent, `ok`, 2xx/3xx) is OK.
+ *
+ * @param value - Raw status/response-code cell value, or undefined.
+ * @returns The normalised span status.
+ */
+export function normalizeSpanStatus(value: string | undefined): 'OK' | 'ERROR' {
+  if (value === undefined || value === '') return 'OK';
+  const v = value.trim().toLowerCase();
+  if (v === 'error' || v === 'failed' || v === 'failure' || v === 'true' || v === '1') {
+    return 'ERROR';
+  }
+  // HTTP status code: 4xx (client error) and 5xx (server error) are failures.
+  if (/^[45]\d\d$/.test(v)) return 'ERROR';
+  return 'OK';
+}
+
+/**
  * Extract the compact ERROR-only span subset from a full trace span list.
  *
  * RE2/RE3 `traces.csv` files can exceed 100K spans per case; retaining the full
@@ -306,6 +360,15 @@ export class RCAEvalLoader {
    * name).
    */
   lastLogHeader = '';
+
+  /**
+   * Raw header of the last traces.csv parsed (comma-joined column names).
+   * Exposed for benchmark diagnostics — it reveals the ACTUAL column names of
+   * the RCAEval trace data, which is essential for correctly attributing spans
+   * to services (the trace columns are Jaeger camelCase, NOT the snake_case
+   * `service`/`status` the original parser assumed).
+   */
+  lastTraceHeader = '';
 
   /**
    * Load a single RCAEval case from a directory.
@@ -657,18 +720,38 @@ export class RCAEvalLoader {
       const maxBytes = (maxSpans + 1) * 256;
       const content = readFilePrefix(tracesPath, maxBytes);
       const rows = this.parseCSV(content, maxSpans);
-      return rows.map((row) => ({
-        traceId: row.trace_id ?? 'unknown',
-        spanId:
-          row.span_id ?? row.spanId ?? `${row.trace_id ?? 'unknown'}_${row.service ?? 'unknown'}`,
-        parentSpanId:
-          row.parent_span ?? row.parentSpanId ?? row.parent_span_id ?? row.parentSpan ?? undefined,
-        service: row.service ?? 'unknown',
-        operationName: row.operation ?? row.operationName ?? 'unknown',
-        startTime: parseInt(row.start_time ?? row.startTime ?? row.timestamp ?? '0', 10),
-        duration: parseInt(row.duration ?? '0', 10),
-        status: row.status === 'ERROR' ? 'ERROR' : 'OK',
-      }));
+      if (rows.length === 0) return undefined;
+
+      // RCAEval traces.csv uses Jaeger CAMELCASE columns (traceId, spanId,
+      // parentSpanId, serviceName, operationName, startTime, duration) — NOT
+      // the snake_case `service`/`status`/`trace_id` the original parser
+      // assumed. Detect the service and status columns by header alias (as
+      // tryLoadLogs does), so spans are attributed to the right service and
+      // the error response code is actually read.
+      const header = Object.keys(rows[0]!);
+      this.lastTraceHeader = header.join(',');
+      const svcCol = header.find((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+      const statusCol = header.find((h) => STATUS_COLUMN_ALIASES.has(h.toLowerCase()));
+
+      return rows.map((row) => {
+        const service = svcCol ? (row[svcCol] ?? 'unknown') : 'unknown';
+        return {
+          traceId: row.trace_id ?? row.traceId ?? row.traceid ?? 'unknown',
+          spanId:
+            row.span_id ?? row.spanId ?? row.spanid ?? `${row.trace_id ?? 'unknown'}_${service}`,
+          parentSpanId:
+            row.parent_span ??
+            row.parentSpanId ??
+            row.parent_span_id ??
+            row.parentSpan ??
+            undefined,
+          service,
+          operationName: row.operation ?? row.operationName ?? 'unknown',
+          startTime: parseInt(row.start_time ?? row.startTime ?? row.timestamp ?? '0', 10),
+          duration: parseInt(row.duration ?? '0', 10),
+          status: normalizeSpanStatus(statusCol ? row[statusCol] : undefined),
+        };
+      });
     } catch {
       return undefined;
     }

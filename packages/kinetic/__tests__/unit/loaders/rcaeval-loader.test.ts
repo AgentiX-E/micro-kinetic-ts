@@ -21,6 +21,7 @@ import {
   extractTraceErrors,
   isLogicExceptionMessage,
   isStackTraceMessage,
+  normalizeSpanStatus,
 } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -1037,5 +1038,29 @@ describe('extractTraceErrors', () => {
     expect(extractTraceErrors(undefined)).toBeUndefined();
     expect(extractTraceErrors([])).toBeUndefined();
     expect(extractTraceErrors([span('a', 'OK')])).toBeUndefined();
+  });
+});
+
+describe('normalizeSpanStatus', () => {
+  it('maps explicit error markers to ERROR', () => {
+    expect(normalizeSpanStatus('ERROR')).toBe('ERROR');
+    expect(normalizeSpanStatus('error')).toBe('ERROR');
+    expect(normalizeSpanStatus('failed')).toBe('ERROR');
+    expect(normalizeSpanStatus('true')).toBe('ERROR');
+    expect(normalizeSpanStatus('1')).toBe('ERROR');
+  });
+
+  it('maps HTTP 4xx/5xx response codes to ERROR', () => {
+    expect(normalizeSpanStatus('500')).toBe('ERROR');
+    expect(normalizeSpanStatus('404')).toBe('ERROR');
+    expect(normalizeSpanStatus('503')).toBe('ERROR');
+  });
+
+  it('maps ok / 2xx / absent values to OK', () => {
+    expect(normalizeSpanStatus(undefined)).toBe('OK');
+    expect(normalizeSpanStatus('')).toBe('OK');
+    expect(normalizeSpanStatus('OK')).toBe('OK');
+    expect(normalizeSpanStatus('200')).toBe('OK');
+    expect(normalizeSpanStatus('302')).toBe('OK');
   });
 });
