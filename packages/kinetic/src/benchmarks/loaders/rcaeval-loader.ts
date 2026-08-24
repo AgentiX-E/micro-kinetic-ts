@@ -21,6 +21,7 @@ import * as path from 'node:path';
 
 import type {
   CallEdge,
+  FaultTraceSpan,
   MetricMap,
   ServiceCallGraph,
   ServiceNode,
@@ -117,6 +118,35 @@ export function classifyLogLevel(
   if (/(error|exception|failed|failure)/.test(lower)) return 'ERROR';
   if (/(warn|warning)/.test(lower)) return 'WARN';
   return 'INFO';
+}
+
+/** Cap on retained ERROR spans per case, bounding the trace signal's memory. */
+const MAX_TRACE_ERROR_SPANS = 20_000;
+
+/**
+ * Extract the compact ERROR-only span subset from a full trace span list.
+ *
+ * RE2/RE3 `traces.csv` files can exceed 100K spans per case; retaining the full
+ * history would blow the heap across 270+ cases. ERROR spans are the source-
+ * fault signature (a code-level fault makes the SOURCE's own spans fail), so
+ * only they are kept — mapped to the minimal {@link FaultTraceSpan} and capped
+ * at {@link MAX_TRACE_ERROR_SPANS}.
+ *
+ * @param spans - Full trace spans, or undefined when the case has no traces.
+ * @returns Compact ERROR spans, or undefined when there are none.
+ */
+export function extractTraceErrors(
+  spans: readonly BenchmarkTraceSpan[] | undefined,
+): readonly FaultTraceSpan[] | undefined {
+  if (!spans || spans.length === 0) return undefined;
+
+  const errors: FaultTraceSpan[] = [];
+  for (const span of spans) {
+    if (span.status !== 'ERROR') continue;
+    errors.push({ service: span.service, startTime: span.startTime, status: 'ERROR' });
+    if (errors.length >= MAX_TRACE_ERROR_SPANS) break;
+  }
+  return errors.length > 0 ? errors : undefined;
 }
 
 /**
@@ -304,6 +334,11 @@ export class RCAEvalLoader {
     // Load optional multimodal data (defensive — returns undefined on failure)
     const logs = this.tryLoadLogs(casePath);
     const traces = this.tryLoadTraces(casePath);
+    // Compact ERROR-only span subset for the trace ranking signal — the full
+    // span history is discarded in toBenchmarkCase to bound memory, but the
+    // source-fault signature (which service's spans returned an error) is tiny
+    // and worth retaining.
+    const traceErrors = extractTraceErrors(traces);
 
     return {
       casePath,
@@ -316,6 +351,7 @@ export class RCAEvalLoader {
       groundTruth,
       logs,
       traces,
+      traceErrors,
     };
   }
 
@@ -405,6 +441,8 @@ export class RCAEvalLoader {
       // storing them in BenchmarkCase wastes memory — RE2 has 270+ cases × 100K+
       // spans each.  Set to undefined so GC can reclaim after augmentation.
       traces: undefined,
+      // The compact ERROR-only subset is retained for the trace ranking signal.
+      traceErrors: rawCase.traceErrors,
     };
   }
 

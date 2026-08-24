@@ -86,6 +86,26 @@ export interface FaultLogEntry {
 }
 
 /**
+ * A minimal trace span carried into the engine for the trace ranking signal.
+ *
+ * RCAEval RE2/RE3 `traces.csv` files can exceed 100K spans per case, so only a
+ * COMPACT subset (ERROR spans, or a bounded sample) is passed through the
+ * engine — never the full span history. `status === 'ERROR'` marks a span that
+ * returned an error response code, which for a code-level fault (RE3) is the
+ * SOURCE's own span failing, distinct from the OK spans of healthy services.
+ */
+export interface FaultTraceSpan {
+  /** The service that executed the span. */
+  readonly service: string;
+  /** Span start time in Unix milliseconds (for post-injection filtering). */
+  readonly startTime: number;
+  /** Span status: 'OK' or 'ERROR'. */
+  readonly status: 'OK' | 'ERROR';
+  /** Span duration in milliseconds (reserved for the latency-instability signal). */
+  readonly duration?: number;
+}
+
+/**
  * Optional inputs to {@link IRCAEngine.buildFaultGraph}.
  *
  * These carry case-level temporal context that is independent of the call
@@ -105,6 +125,13 @@ export interface BuildFaultGraphOptions {
    * Absent logs simply disable that signal (neutral for every service).
    */
   readonly logs?: ReadonlyArray<FaultLogEntry>;
+  /**
+   * Compact trace spans (RE2/RE3 cases) — ERROR spans only, or a bounded
+   * sample. When present, the engine derives a post-injection ERROR-span count
+   * score per service for the (opt-in) trace signal. Absent traces simply
+   * disable that signal (neutral for every service).
+   */
+  readonly traces?: ReadonlyArray<FaultTraceSpan>;
 }
 
 export interface IRCAEngine {

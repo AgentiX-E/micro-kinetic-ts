@@ -18,6 +18,7 @@ import {
   extractDeepestExceptionClass,
   extractExceptionNames,
   extractSpringBootLevel,
+  extractTraceErrors,
   isLogicExceptionMessage,
   isStackTraceMessage,
 } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
@@ -134,7 +135,9 @@ describe('extractSpringBootLevel', () => {
 
   it('returns undefined when the message has no Spring Boot preamble', () => {
     expect(extractSpringBootLevel('NullPointerException: null reference')).toBeUndefined();
-    expect(extractSpringBootLevel('org.springframework.web.client.HttpServerErrorException: 503')).toBeUndefined();
+    expect(
+      extractSpringBootLevel('org.springframework.web.client.HttpServerErrorException: 503'),
+    ).toBeUndefined();
     expect(extractSpringBootLevel('')).toBeUndefined();
     // TRACE is below DEBUG and intentionally not captured.
     expect(extractSpringBootLevel('2024-12-07 17:20:09.351 TRACE 1 --- [t] l : m')).toBeUndefined();
@@ -198,8 +201,12 @@ describe('isLogicExceptionMessage', () => {
     expect(isLogicExceptionMessage('IllegalArgumentException: invalid argument')).toBe(true);
     expect(isLogicExceptionMessage('ConcurrentModificationException at runtime')).toBe(true);
     expect(isLogicExceptionMessage('JsonMappingException: cannot deserialize')).toBe(true);
-    expect(isLogicExceptionMessage("AttributeError: 'NoneType' object has no attribute")).toBe(true);
-    expect(isLogicExceptionMessage("TypeError: cannot read property 'foo' of undefined")).toBe(true);
+    expect(isLogicExceptionMessage("AttributeError: 'NoneType' object has no attribute")).toBe(
+      true,
+    );
+    expect(isLogicExceptionMessage("TypeError: cannot read property 'foo' of undefined")).toBe(
+      true,
+    );
     expect(isLogicExceptionMessage('MalformedJwtException: invalid token')).toBe(true);
     expect(isLogicExceptionMessage('ArrayIndexOutOfBoundsException: index 5')).toBe(true);
   });
@@ -247,9 +254,9 @@ describe('extractDeepestExceptionClass', () => {
   });
 
   it('strips package qualifiers to the simple class name', () => {
-    expect(extractDeepestExceptionClass('org.springframework.dao.QueryTimeoutException: timeout')).toBe(
-      'QueryTimeoutException',
-    );
+    expect(
+      extractDeepestExceptionClass('org.springframework.dao.QueryTimeoutException: timeout'),
+    ).toBe('QueryTimeoutException');
   });
 
   it('recognises Error and Throwable suffixes', () => {
@@ -990,5 +997,45 @@ describe('RCAEvalLoader', () => {
       const benchSuite = loader.toBenchmarkSuite(suite, callGraphs);
       expect(benchSuite.name).toBe('rcaeval-re3');
     });
+  });
+});
+
+describe('extractTraceErrors', () => {
+  function span(
+    service: string,
+    status: 'OK' | 'ERROR',
+    startTime = 0,
+  ): {
+    traceId: string;
+    spanId: string;
+    service: string;
+    operationName: string;
+    startTime: number;
+    duration: number;
+    status: 'OK' | 'ERROR';
+  } {
+    return {
+      traceId: 't',
+      spanId: 's',
+      service,
+      operationName: 'op',
+      startTime,
+      duration: 10,
+      status,
+    };
+  }
+
+  it('retains only ERROR spans, mapped to the compact FaultTraceSpan shape', () => {
+    const spans = [span('a', 'ERROR', 100), span('b', 'OK', 100), span('c', 'ERROR', 200)];
+    const errors = extractTraceErrors(spans);
+    expect(errors).toHaveLength(2);
+    expect(errors![0]).toEqual({ service: 'a', startTime: 100, status: 'ERROR' });
+    expect(errors![1]).toEqual({ service: 'c', startTime: 200, status: 'ERROR' });
+  });
+
+  it('returns undefined for empty input or no ERROR spans', () => {
+    expect(extractTraceErrors(undefined)).toBeUndefined();
+    expect(extractTraceErrors([])).toBeUndefined();
+    expect(extractTraceErrors([span('a', 'OK')])).toBeUndefined();
   });
 });

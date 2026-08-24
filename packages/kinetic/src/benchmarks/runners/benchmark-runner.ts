@@ -352,6 +352,7 @@ export class BenchmarkRunner {
         const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics, {
           injectTimeMs: this.useInjectTime ? benchCase.injectTime : 0,
           logs: benchCase.logs,
+          traces: benchCase.traceErrors,
         });
         const results = await engine.analyze(faultGraph, topK);
 

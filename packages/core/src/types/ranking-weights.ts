@@ -22,6 +22,7 @@
  *                 − collisionWeight × ratioContrib(v)
  *                 + topoWeight      × topoSource(v)
  *                 + logWeight       × logScore(v)
+ *                 + traceWeight     × traceScore(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -56,4 +57,14 @@ export interface RankingWeights {
    * (stack traces) that metric shape cannot detect. Default 0.
    */
   readonly logWeight: number;
+  /**
+   * Trace-signal prior: rewards a node whose post-injection ERROR-span count is
+   * highest (min-max normalised). For a code-level fault the SOURCE's own spans
+   * return error response codes, an orthogonal signal to logs.
+   *
+   * OPTIONAL: absent means 0 (signal disabled). Kept optional so the L2
+   * optimizer's existing [0,1]⁵ weight cube is not forced to grow a dimension
+   * before the trace signal is benchmarked.
+   */
+  readonly traceWeight?: number;
 }

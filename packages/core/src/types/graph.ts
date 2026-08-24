@@ -191,6 +191,15 @@ export interface FaultPropagationGraph {
    * Feeds the (opt-in) topoWeight ranking signal.
    */
   readonly topoScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service trace-error score (0-1) — the max-normalised count of ERROR
+   * spans emitted at/after the fault injection time. For a code-level fault
+   * (RE3) the SOURCE's own spans return error response codes, so this targets
+   * the cases that metric-shape and log signals cannot distinguish. Feeds the
+   * (opt-in) traceWeight ranking signal. Optional: absent when the case carried
+   * no trace spans.
+   */
+  readonly traceScores?: ReadonlyMap<ServiceId, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

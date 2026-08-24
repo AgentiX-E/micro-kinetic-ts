@@ -55,7 +55,11 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
-import { computeLogScores, computeTopoSourceScores } from './ranking-signals.js';
+import {
+  computeLogScores,
+  computeTopoSourceScores,
+  computeTraceScores,
+} from './ranking-signals.js';
 
 /**
  * Options for TreePruner construction.
@@ -187,6 +191,23 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * `novelty` is opt-in until benchmarked; `count` is the shipped default.
    */
   readonly logSignalMode: 'count' | 'novelty';
+  /**
+   * Weight of the trace signal: reward a node whose post-injection ERROR-span
+   * count is highest.
+   *
+   *   finalScore(v) += traceWeight × traceScore(v)
+   *
+   * `traceScore(v)` is the max-normalised count of ERROR spans emitted at/after
+   * the fault injection time (see computeTraceScores). For a code-level fault
+   * (RE3) the SOURCE's own spans return error response codes — an orthogonal
+   * signal to the log signal (which needs an exception MESSAGE). The spans are
+   * passed through the engine as `BuildFaultGraphOptions.traces`.
+   *
+   * Default: 0 (opt-in until benchmarked). The trace signal targets the same
+   * RE3 code-level cases as the log signal, but from the span-status axis that
+   * the log signal cannot see when the source logs no exception.
+   */
+  readonly traceWeight: number;
 }
 
 /**
@@ -198,7 +219,12 @@ export interface TreePrunerOptions extends RCAEngineOptions {
 export function toRankingWeights(
   options: Pick<
     TreePrunerOptions,
-    'sourceWeight' | 'temporalWeight' | 'collisionWeight' | 'topoWeight' | 'logWeight'
+    | 'sourceWeight'
+    | 'temporalWeight'
+    | 'collisionWeight'
+    | 'topoWeight'
+    | 'logWeight'
+    | 'traceWeight'
   >,
 ): RankingWeights {
   return {
@@ -207,6 +233,7 @@ export function toRankingWeights(
     collisionWeight: options.collisionWeight,
     topoWeight: options.topoWeight,
     logWeight: options.logWeight,
+    traceWeight: options.traceWeight,
   };
 }
 
@@ -223,6 +250,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoWeight: 0.0,
   logWeight: 1.0,
   logSignalMode: 'count',
+  traceWeight: 0.0,
 };
 
 /**
@@ -436,6 +464,11 @@ export class TreePruner {
       propagationWeights,
       anomalyScores,
     );
+    const traceScores = computeTraceScores(
+      options?.traces,
+      new Set(callGraph.nodes.keys()),
+      injectTimeMs,
+    );
 
     return {
       callGraph: topologyGraph,
@@ -451,6 +484,7 @@ export class TreePruner {
       collisionEnergy,
       logScores,
       topoScores,
+      traceScores,
     };
   }
 
@@ -508,6 +542,7 @@ export class TreePruner {
       graph.collisionEnergy,
       graph.logScores,
       graph.topoScores,
+      graph.traceScores,
     );
 
     return results;
@@ -682,6 +717,7 @@ function performTreeRCA(
   >,
   logScores?: ReadonlyMap<ServiceId, number>,
   topoScores?: ReadonlyMap<ServiceId, number>,
+  traceScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -906,6 +942,8 @@ function performTreeRCA(
   //    strongly anomalous upstream parent.
   // 5. A LOG prior (`logWeight`) — reward the service with the highest
   //    post-injection ERROR/FATAL volume (code-level faults).
+  // 6. A TRACE prior (`traceWeight`) — reward the service with the highest
+  //    post-injection ERROR-span count (code-level faults, span-status axis).
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -921,6 +959,7 @@ function performTreeRCA(
   //                 − collisionWeight × ratioContrib(v)
   //                 + topoWeight      × topoSource(v)
   //                 + logWeight       × logScore(v)
+  //                 + traceWeight     × traceScore(v)
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
@@ -932,6 +971,7 @@ function performTreeRCA(
   for (const [id, ce] of collisionEnergy ?? []) {
     ratioContrib.set(id, ce.ratioContrib ?? 0);
   }
+  const traceWeight = weights.traceWeight ?? 0;
   scoredNodes.sort((a, b) => {
     const aScore =
       Math.log(a.score) +
@@ -939,14 +979,16 @@ function performTreeRCA(
       weights.temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(a.serviceId) ?? 0);
+      weights.logWeight * (logScores?.get(a.serviceId) ?? 0) +
+      traceWeight * (traceScores?.get(a.serviceId) ?? 0);
     const bScore =
       Math.log(b.score) +
       weights.sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
       weights.temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(b.serviceId) ?? 0);
+      weights.logWeight * (logScores?.get(b.serviceId) ?? 0) +
+      traceWeight * (traceScores?.get(b.serviceId) ?? 0);
     if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;
