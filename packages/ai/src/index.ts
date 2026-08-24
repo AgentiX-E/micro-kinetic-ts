@@ -15,6 +15,13 @@ export type {
   SingleEntityAlignmentResult,
 } from './interfaces/llm-provider.js';
 
+export type {
+  CandidateEvidence,
+  IRootCauseReranker,
+  RerankRequest,
+  RerankResult,
+} from './interfaces/reranker.js';
+
 // ── Providers ───────────────────────────────────────────
 export { TfIdfEmbeddingProvider, tokenizeServiceName } from './providers/tfidf-embedding.js';
 
@@ -26,6 +33,18 @@ export {
 export type { SemanticAlignmentConfig } from './providers/semantic-alignment.js';
 
 export { ApiEmbeddingProvider } from './providers/api-embedding.js';
+
+export { ApiChatProvider } from './providers/api-llm.js';
+export type { ChatCompletionOptions, ChatMessage, IChatProvider } from './providers/api-llm.js';
+
+export { EvidenceGroundedReranker } from './providers/evidence-reranker.js';
+
+export {
+  MAX_RERANK_CANDIDATES,
+  buildRerankPrompt,
+  parseRerankOrder,
+  shouldRerank,
+} from './providers/reranker-core.js';
 
 export { createApiEmbeddingFromEnv } from './providers/env-embedding.js';
 
