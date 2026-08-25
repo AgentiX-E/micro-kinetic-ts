@@ -409,6 +409,8 @@ interface LoadStats {
     pruned: number;
     avgEdgesBefore: number;
     avgEdgesAfter: number;
+    /** Raw traces.csv header (comma-joined column names). */
+    header: string;
   };
   /** Semantic enhancement statistics (only when enhancer is configured). */
   semanticStats: {
@@ -873,7 +875,7 @@ function reportLoadErrors(systemName: string, suiteName: string, stats: LoadStat
  */
 function reportTraceDiagnostics(systemName: string, suiteName: string, stats: LoadStats): void {
   if (stats.traceStats.total > 0) {
-    const { total, pruned, avgEdgesBefore, avgEdgesAfter } = stats.traceStats;
+    const { total, pruned, avgEdgesBefore, avgEdgesAfter, header } = stats.traceStats;
     const reduction =
       avgEdgesBefore > 0
         ? (((avgEdgesBefore - avgEdgesAfter) / avgEdgesBefore) * 100).toFixed(0)
@@ -883,6 +885,7 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
         `${pruned} pruned, avg edges: ${avgEdgesBefore.toFixed(0)} → ${avgEdgesAfter.toFixed(0)} ` +
         `(${reduction}% reduction)`,
     );
+    if (header) console.log(`  [trace] header: ${header}`);
   } else if (stats.cases.length > 0) {
     console.log(`  [trace] No trace data available for ${stats.cases.length} cases`);
   }
