@@ -530,6 +530,43 @@ describe('RCAEvalLoader', () => {
       expect(result.traces![1]!.service).toBe('checkoutservice');
     });
 
+    it('extracts ERROR spans from the ACTUAL camelCase traces.csv columns', () => {
+      // RCAEval traces.csv uses Jaeger camelCase with an uppercase ID suffix
+      // (traceID/spanID/parentSpanID) and a statusCode column, NOT the
+      // snake_case trace_id/status the legacy parser assumed.
+      const tracesContent = [
+        'time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode',
+        '1000,t1,s1,cartservice,GetCart,GetCart,,1000000,1000,150,200',
+        '1001,t1,s2,checkoutservice,Checkout,Checkout,s1,1001000,1001,2000,500',
+        '1002,t2,s3,cartservice,GetCart,GetCart,,1002000,1002,120,200',
+      ].join('\n');
+
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+        traces: tracesContent,
+      });
+
+      const result = loader.loadCase(casePath);
+      // serviceName and statusCode are detected via header aliases.
+      expect(result.traces).toBeDefined();
+      expect(result.traces![1]!.service).toBe('checkoutservice');
+      expect(result.traces![1]!.status).toBe('ERROR');
+      // The full-file error extraction keeps only the ERROR span (statusCode 500).
+      expect(result.traceErrors).toBeDefined();
+      expect(result.traceErrors!.length).toBe(1);
+      expect(result.traceErrors![0]).toEqual({
+        service: 'checkoutservice',
+        startTime: 1001,
+        status: 'ERROR',
+      });
+      expect(loader.lastTraceHeader).toBe(
+        'time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode',
+      );
+      expect(loader.lastTraceErrorCount).toBe(1);
+    });
+
     it('loads traces independently via loadTraces (no metrics re-read)', () => {
       const tracesContent = [
         'trace_id,service,duration,status,parent_span',

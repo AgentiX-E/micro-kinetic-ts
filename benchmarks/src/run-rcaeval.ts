@@ -411,6 +411,8 @@ interface LoadStats {
     avgEdgesAfter: number;
     /** Raw traces.csv header (comma-joined column names). */
     header: string;
+    /** ERROR spans extracted from the last case's full traces.csv. */
+    errorSpans: number;
   };
   /** Semantic enhancement statistics (only when enhancer is configured). */
   semanticStats: {
@@ -647,6 +649,7 @@ async function loadCases(
       avgEdgesBefore: edgesBeforeSum / Math.max(1, selected.length),
       avgEdgesAfter: edgesAfterSum / Math.max(1, selected.length),
       header: loader.lastTraceHeader,
+      errorSpans: loader.lastTraceErrorCount,
     },
     semanticStats: {
       totalServices: semTotalServices,
@@ -875,7 +878,7 @@ function reportLoadErrors(systemName: string, suiteName: string, stats: LoadStat
  */
 function reportTraceDiagnostics(systemName: string, suiteName: string, stats: LoadStats): void {
   if (stats.traceStats.total > 0) {
-    const { total, pruned, avgEdgesBefore, avgEdgesAfter, header } = stats.traceStats;
+    const { total, pruned, avgEdgesBefore, avgEdgesAfter, header, errorSpans } = stats.traceStats;
     const reduction =
       avgEdgesBefore > 0
         ? (((avgEdgesBefore - avgEdgesAfter) / avgEdgesBefore) * 100).toFixed(0)
@@ -883,7 +886,7 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
     console.log(
       `  [trace] ${total}/${stats.cases.length} cases with traces, ` +
         `${pruned} pruned, avg edges: ${avgEdgesBefore.toFixed(0)} → ${avgEdgesAfter.toFixed(0)} ` +
-        `(${reduction}% reduction)`,
+        `(${reduction}% reduction), errorSpans=${errorSpans}`,
     );
     if (header) console.log(`  [trace] header: ${header}`);
   } else if (stats.cases.length > 0) {

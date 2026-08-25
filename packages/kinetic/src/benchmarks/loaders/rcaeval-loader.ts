@@ -386,6 +386,14 @@ export class RCAEvalLoader {
   lastTraceHeader = '';
 
   /**
+   * Number of ERROR spans extracted from the last case's traces.csv (via the
+   * full-file {@link loadTraceErrors}). Exposed for benchmark diagnostics — a
+   * zero here means the status column carries no error values, and the trace
+   * signal can never fire regardless of column mapping.
+   */
+  lastTraceErrorCount = 0;
+
+  /**
    * Load a single RCAEval case from a directory.
    *
    * Uses defensive loading: if optional files are missing or malformed,
@@ -412,11 +420,10 @@ export class RCAEvalLoader {
     // Load optional multimodal data (defensive — returns undefined on failure)
     const logs = this.tryLoadLogs(casePath);
     const traces = this.tryLoadTraces(casePath);
-    // Compact ERROR-only span subset for the trace ranking signal — the full
-    // span history is discarded in toBenchmarkCase to bound memory, but the
-    // source-fault signature (which service's spans returned an error) is tiny
-    // and worth retaining.
-    const traceErrors = extractTraceErrors(traces);
+    // Compact ERROR-only span subset for the trace ranking signal — read from
+    // the FULL traces.csv (not the bounded 10K-span prefix used for topology),
+    // because the post-injection error spans sit AFTER the first 10K spans.
+    const traceErrors = this.loadTraceErrors(casePath);
 
     return {
       casePath,
@@ -729,12 +736,17 @@ export class RCAEvalLoader {
       return rows.map((row) => {
         const service = svcCol ? (row[svcCol] ?? 'unknown') : 'unknown';
         return {
-          traceId: row.trace_id ?? row.traceId ?? row.traceid ?? 'unknown',
+          traceId: row.trace_id ?? row.traceId ?? row.traceID ?? row.traceid ?? 'unknown',
           spanId:
-            row.span_id ?? row.spanId ?? row.spanid ?? `${row.trace_id ?? 'unknown'}_${service}`,
+            row.span_id ??
+            row.spanId ??
+            row.spanID ??
+            row.spanid ??
+            `${row.trace_id ?? 'unknown'}_${service}`,
           parentSpanId:
             row.parent_span ??
             row.parentSpanId ??
+            row.parentSpanID ??
             row.parent_span_id ??
             row.parentSpan ??
             undefined,
@@ -745,6 +757,57 @@ export class RCAEvalLoader {
           status: normalizeSpanStatus(statusCol ? row[statusCol] : undefined),
         };
       });
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Extract the compact ERROR-span subset from the FULL traces.csv.
+   *
+   * The post-injection error spans — the code-level-fault signature — occur
+   * AFTER the first ~10K spans (the bounded prefix {@link tryLoadTraces} reads
+   * for topology), so a prefix read finds zero errors. This reads the whole
+   * file once, streams line-by-line, and retains only ≤ {@link
+   * MAX_TRACE_ERROR_SPANS} ERROR spans, so memory stays bounded while the
+   * signal captures the actual fault window.
+   *
+   * @param casePath - Path to the case directory.
+   * @returns Compact ERROR spans, or undefined when there are none.
+   */
+  private loadTraceErrors(casePath: string): ReadonlyArray<FaultTraceSpan> | undefined {
+    const tracesPath = path.join(casePath, 'traces.csv');
+    if (!fs.existsSync(tracesPath)) return undefined;
+
+    try {
+      const content = fs.readFileSync(tracesPath, 'utf-8');
+      const lines = content.split('\n');
+      if (lines.length < 2) return undefined;
+
+      const headers = lines[0]!.split(',').map((h) => h.trim());
+      this.lastTraceHeader = headers.join(',');
+      const svcIdx = headers.findIndex((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+      const statusIdx = headers.findIndex((h) => STATUS_COLUMN_ALIASES.has(h.toLowerCase()));
+      const startIdx = headers.findIndex((h) =>
+        ['starttime', 'start_time', 'starttimemillis', 'timestamp', 'time'].includes(
+          h.toLowerCase(),
+        ),
+      );
+      if (svcIdx < 0) return undefined;
+
+      const errors: FaultTraceSpan[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i]!.split(',');
+        if (values.length <= Math.max(svcIdx, statusIdx, startIdx)) continue;
+        const status = normalizeSpanStatus(statusIdx >= 0 ? values[statusIdx]?.trim() : undefined);
+        if (status !== 'ERROR') continue;
+        const service = values[svcIdx]?.trim() || 'unknown';
+        const startTime = parseInt(values[startIdx] ?? '0', 10) || 0;
+        errors.push({ service, startTime, status: 'ERROR' });
+        if (errors.length >= MAX_TRACE_ERROR_SPANS) break;
+      }
+      this.lastTraceErrorCount = errors.length;
+      return errors.length > 0 ? errors : undefined;
     } catch {
       return undefined;
     }
