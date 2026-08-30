@@ -248,24 +248,27 @@ export function computeTopoSourceScores(
 }
 
 /**
- * Compute the metric-direction (RISE vs COLLAPSE) score per service, derived
- * from the DOMINANT metric's pre/post-injection levels.
+ * Compute a ONE-SIDED metric-RISE score per service, derived from the DOMINANT
+ * metric's pre/post-injection levels.
  *
- *   riseScore(v) = mean(tail) / (mean(head) + mean(tail))
+ *   raw(v)    = mean(tail) / (mean(head) + mean(tail))
+ *   score(v)  = max(0.5, raw(v))                       ∈ [0.5, 1]
  *
- * A code-level fault (RCAEval RE3) makes the SOURCE do MORE work — a "wrong
- * value" forces downstream reprocessing — so its dominant metric RISES
- * (tail > head, score → 1), while the SYMPTOM loses traffic, so its dominant
- * metric COLLAPSES (tail < head, score → 0). This is the direction signal
- * `collapseDiscount` attempted, but measured on the CLEAN head↔tail change
- * rather than the baseline-relative rise/drop ratios (whose tiny-baseline
- * spurious rise the collapseDiscount could not discount — benchmark #226/227:
- * the source's workload 0.4→1.4 was outranked by a symptom's cpu whose 9.8×
- * "rise" was an artifact of a ~0.4 baseline).
+ * A "wrong value" code-level fault (RCAEval RE3) makes the SOURCE do MORE work
+ * (downstream reprocessing), so its dominant metric RISES (tail > head, score
+ * → 1). The score is deliberately CLAMPED at 0.5 so a COLLAPSE is neutral,
+ * never penalised: a collapse is the SYMPTOM's signature for code-level faults
+ * but the SOURCE's signature for resource faults (memory release, crash), so
+ * its direction is ambiguous and must not be used to demote. Measured on the
+ * clean head↔tail change rather than the baseline-relative rise/drop ratios,
+ * whose tiny-baseline spurious rise `collapseDiscount` could not discount
+ * (benchmark #226/227: the source's workload 0.4→1.4 was outranked by a
+ * symptom's cpu whose 9.8× "rise" was an artifact of a ~0.4 baseline).
  *
  * @param dominantMetrics - Per-service dominant metric (label + head/tail).
  * @param nodeIds - Services present in the call graph.
- * @returns Per-service rise score in [0, 1]; 0.5 (neutral) when unknown.
+ * @returns Per-service rise score in [0.5, 1]; 0.5 (neutral) when unknown or
+ *   when the dominant metric collapses.
  */
 export function computeRiseScores(
   dominantMetrics:
@@ -292,7 +295,8 @@ export function computeRiseScores(
     const headMean = headSum / dm.head.length;
     const tailMean = tailSum / dm.tail.length;
     const denom = headMean + tailMean;
-    scores.set(nodeId, denom <= 0 ? 0.5 : tailMean / denom);
+    // One-sided: clamp so a collapse is neutral (0.5), never a penalty.
+    scores.set(nodeId, denom <= 0 ? 0.5 : Math.max(0.5, tailMean / denom));
   }
   return scores;
 }

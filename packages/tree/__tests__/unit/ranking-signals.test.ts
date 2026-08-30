@@ -328,7 +328,7 @@ describe('computeRiseScores', () => {
     return { label: 'workload', head, tail };
   }
 
-  it('scores a rise (tail > head) high and a collapse (tail < head) low', () => {
+  it('scores a rise (tail > head) high and clamps a collapse to neutral 0.5', () => {
     const metrics = new Map([
       ['a', dm([0.4, 0.4, 0.4], [1.4, 1.4, 1.4])], // rise 0.4 -> 1.4
       ['b', dm([3.5, 3.6, 3.7], [0.05, 0.05, 0.05])], // collapse 3.6 -> 0.05
@@ -336,7 +336,7 @@ describe('computeRiseScores', () => {
     const scores = computeRiseScores(metrics, nodes);
 
     expect(scores.get('a')).toBeCloseTo(1.4 / (0.4 + 1.4), 10); // ~0.778
-    expect(scores.get('b')).toBeCloseTo(0.05 / (3.6 + 0.05), 10); // ~0.0137
+    expect(scores.get('b')).toBe(0.5); // collapse is clamped to neutral
   });
 
   it('scores an unchanged metric 0.5 and a missing metric 0.5 (neutral)', () => {

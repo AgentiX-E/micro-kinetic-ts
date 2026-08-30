@@ -193,10 +193,12 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *
    *   finalScore(v) += riseWeight × 2 × (riseScore(v) − 0.5)
    *
-   * `riseScore(v)` is `mean(tail) / (mean(head) + mean(tail))` of the dominant
-   * metric's pre/post-injection levels (see computeRiseScores). A code-level
-   * fault (RE3) makes the SOURCE's dominant metric rise (wrong value → more
-   * work) while the SYMPTOM's collapses (lost traffic). Default 0 (opt-in).
+   * `riseScore(v)` is the ONE-SIDED `max(0.5, mean(tail) / (mean(head) +
+   * mean(tail)))` of the dominant metric's pre/post-injection levels (see
+   * computeRiseScores). A code-level fault (RE3) makes the SOURCE's dominant
+   * metric rise (wrong value → more work); a collapse is NEUTRAL, never
+   * penalised (a collapse is the source's signature for resource faults).
+   * Default 0 (opt-in).
    */
   readonly riseWeight: number;
 }
@@ -930,7 +932,8 @@ function performTreeRCA(
   // 5. A LOG prior (`logWeight`) — reward the service with the highest
   //    post-injection ERROR/FATAL volume (code-level faults).
   // 6. A RISE prior (`riseWeight`) — reward the service whose DOMINANT metric
-  //    rises post-injection (source does more work), penalise a collapse.
+  //    rises post-injection (source does more work). One-sided: a collapse is
+  //    neutral (its direction is fault-class-ambiguous).
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
