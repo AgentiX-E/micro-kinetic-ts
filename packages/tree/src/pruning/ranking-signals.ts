@@ -27,12 +27,7 @@
  * @module pruning/ranking-signals
  */
 
-import type {
-  CallEdge,
-  FaultLogEntry,
-  FaultTraceSpan,
-  ServiceId,
-} from '@agentix-e/micro-kinetic-core';
+import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 
 /**
  * The log signal's scoring mode.
@@ -208,60 +203,6 @@ export function computeLogNoveltyScores(
 
   for (const nodeId of nodeIds) {
     scores.set(nodeId, (raw.get(nodeId) ?? 0) / max);
-  }
-  return scores;
-}
-
-/**
- * Compute the trace-error score for each service: the count of ERROR spans
- * emitted at/after the fault injection time, normalised by the maximum count.
- *
- * ## Rationale
- *
- * For a code-level fault (RCAEval RE3) the SOURCE's own spans return error
- * response codes (500/exception) while healthy services' spans stay OK, so the
- * service whose spans fail is the source — an orthogonal signal to the log
- * signal (which needs an exception MESSAGE, absent for silent logic errors)
- * and to metric shape (which collapses ambiguously for both source and
- * symptom). The count is restricted to services present in `nodeIds` and, when
- * `injectTimeMs` is known, to spans starting at/after that instant.
- *
- * Normalisation is `count(v) / maxCount`, exactly as the log signal: the top
- * failing service scores 1, silent services score 0, and a lone failing
- * service scores 1 against its peers.
- *
- * @param traces - Compact trace spans (ERROR spans only, or a bounded sample).
- * @param nodeIds - Services present in the call graph.
- * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
- * @returns Per-service trace score in [0, 1]; empty when no signal.
- */
-export function computeTraceScores(
-  traces: readonly FaultTraceSpan[] | undefined,
-  nodeIds: ReadonlySet<ServiceId>,
-  injectTimeMs: number,
-): Map<ServiceId, number> {
-  const scores = new Map<ServiceId, number>();
-  if (!traces || traces.length === 0 || nodeIds.size === 0) return scores;
-
-  // Count ERROR spans per service, filtered by time and membership.
-  const counts = new Map<ServiceId, number>();
-  for (const span of traces) {
-    if (span.status !== 'ERROR') continue;
-    if (!nodeIds.has(span.service)) continue;
-    if (injectTimeMs > 0 && span.startTime < injectTimeMs) continue;
-    counts.set(span.service, (counts.get(span.service) ?? 0) + 1);
-  }
-
-  // No error spans → no signal (neutral for every service).
-  if (counts.size === 0) return scores;
-
-  let max = 0;
-  for (const count of counts.values()) {
-    if (count > max) max = count;
-  }
-
-  for (const nodeId of nodeIds) {
-    scores.set(nodeId, (counts.get(nodeId) ?? 0) / max);
   }
   return scores;
 }

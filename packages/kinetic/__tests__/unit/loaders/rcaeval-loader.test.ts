@@ -18,7 +18,6 @@ import {
   extractDeepestExceptionClass,
   extractExceptionNames,
   extractSpringBootLevel,
-  extractTraceErrors,
   isLogicExceptionMessage,
   isStackTraceMessage,
   normalizeSpanStatus,
@@ -530,7 +529,7 @@ describe('RCAEvalLoader', () => {
       expect(result.traces![1]!.service).toBe('checkoutservice');
     });
 
-    it('extracts ERROR spans from the ACTUAL camelCase traces.csv columns', () => {
+    it('parses the ACTUAL camelCase traces.csv columns', () => {
       // RCAEval traces.csv uses Jaeger camelCase with an uppercase ID suffix
       // (traceID/spanID/parentSpanID) and a statusCode column, NOT the
       // snake_case trace_id/status the legacy parser assumed.
@@ -553,18 +552,9 @@ describe('RCAEvalLoader', () => {
       expect(result.traces).toBeDefined();
       expect(result.traces![1]!.service).toBe('checkoutservice');
       expect(result.traces![1]!.status).toBe('ERROR');
-      // The full-file error extraction keeps only the ERROR span (statusCode 500).
-      expect(result.traceErrors).toBeDefined();
-      expect(result.traceErrors!.length).toBe(1);
-      expect(result.traceErrors![0]).toEqual({
-        service: 'checkoutservice',
-        startTime: 1001,
-        status: 'ERROR',
-      });
       expect(loader.lastTraceHeader).toBe(
         'time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode',
       );
-      expect(loader.lastTraceErrorCount).toBe(1);
     });
 
     it('loads traces independently via loadTraces (no metrics re-read)', () => {
@@ -1035,46 +1025,6 @@ describe('RCAEvalLoader', () => {
       const benchSuite = loader.toBenchmarkSuite(suite, callGraphs);
       expect(benchSuite.name).toBe('rcaeval-re3');
     });
-  });
-});
-
-describe('extractTraceErrors', () => {
-  function span(
-    service: string,
-    status: 'OK' | 'ERROR',
-    startTime = 0,
-  ): {
-    traceId: string;
-    spanId: string;
-    service: string;
-    operationName: string;
-    startTime: number;
-    duration: number;
-    status: 'OK' | 'ERROR';
-  } {
-    return {
-      traceId: 't',
-      spanId: 's',
-      service,
-      operationName: 'op',
-      startTime,
-      duration: 10,
-      status,
-    };
-  }
-
-  it('retains only ERROR spans, mapped to the compact FaultTraceSpan shape', () => {
-    const spans = [span('a', 'ERROR', 100), span('b', 'OK', 100), span('c', 'ERROR', 200)];
-    const errors = extractTraceErrors(spans);
-    expect(errors).toHaveLength(2);
-    expect(errors![0]).toEqual({ service: 'a', startTime: 100, status: 'ERROR' });
-    expect(errors![1]).toEqual({ service: 'c', startTime: 200, status: 'ERROR' });
-  });
-
-  it('returns undefined for empty input or no ERROR spans', () => {
-    expect(extractTraceErrors(undefined)).toBeUndefined();
-    expect(extractTraceErrors([])).toBeUndefined();
-    expect(extractTraceErrors([span('a', 'OK')])).toBeUndefined();
   });
 });
 

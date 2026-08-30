@@ -69,8 +69,6 @@ interface FeatureFlags {
   collapseDiscount: boolean;
   /** Evidence-grounded LLM reranker (gap-triggered, DeepSeek). */
   llmReranker: boolean;
-  /** Trace signal: reward post-injection ERROR-span count (traceWeight). */
-  traceSignal: boolean;
 }
 
 interface AblationRun {
@@ -111,7 +109,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -126,7 +123,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -140,7 +136,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Trace Topo',
   },
@@ -154,7 +149,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+SelfLearn',
   },
@@ -169,7 +163,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Collision+Trace',
   },
@@ -183,7 +176,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -197,7 +189,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -212,7 +203,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -231,7 +221,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Log Signal',
   },
@@ -245,7 +234,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Topo Signal',
   },
@@ -263,7 +251,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: true,
       collapseDiscount: false,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Collision Signal',
   },
@@ -277,7 +264,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: true,
       llmReranker: false,
-      traceSignal: false,
     },
     label: '+Collapse Discount',
   },
@@ -291,23 +277,8 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       llmReranker: true,
-      traceSignal: false,
     },
     label: '+LLM Reranker',
-  },
-  {
-    flags: {
-      collisionAggregation: false,
-      traceAugmentation: false,
-      selfLearning: false,
-      logSignal: false,
-      topoSignal: false,
-      collisionSignal: false,
-      collapseDiscount: false,
-      llmReranker: false,
-      traceSignal: true,
-    },
-    label: '+Trace Signal',
   },
 ];
 
@@ -542,7 +513,6 @@ async function main(): Promise<void> {
           collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
           topoWeight: flags.topoSignal ? 1.0 : 0.0,
           logWeight: flags.logSignal ? 1.0 : 0.0,
-          traceWeight: flags.traceSignal ? 1.0 : 0.0,
         },
         { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
       );

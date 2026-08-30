@@ -1,14 +1,8 @@
-import type {
-  CallEdge,
-  FaultLogEntry,
-  FaultTraceSpan,
-  ServiceId,
-} from '@agentix-e/micro-kinetic-core';
+import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 import {
   computeLogNoveltyScores,
   computeLogScores,
   computeTopoSourceScores,
-  computeTraceScores,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
@@ -23,10 +17,6 @@ function makeLog(
   isLogicException = true,
 ): FaultLogEntry {
   return { service, level, timestamp, isLogicException };
-}
-
-function makeSpan(service: string, status: 'OK' | 'ERROR', startTime = 0): FaultTraceSpan {
-  return { service, status, startTime };
 }
 
 describe('computeLogScores', () => {
@@ -327,51 +317,5 @@ describe('computeTopoSourceScores', () => {
   it('handles a node with no edges (isolated) as a source score of 1', () => {
     const scores = computeTopoSourceScores([], new Float64Array(0), new Map([['x', 0.9]]));
     expect(scores.get('x')).toBe(1);
-  });
-});
-
-describe('computeTraceScores', () => {
-  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
-
-  it('counts only ERROR spans per service and max-normalises', () => {
-    const traces = [
-      makeSpan('a', 'ERROR'),
-      makeSpan('a', 'ERROR'),
-      makeSpan('a', 'ERROR'),
-      makeSpan('b', 'ERROR'),
-      makeSpan('b', 'OK'), // ignored
-      makeSpan('c', 'OK'), // ignored
-    ];
-    const scores = computeTraceScores(traces, nodes, 0);
-
-    expect(scores.get('a')).toBe(1);
-    expect(scores.get('b')).toBeCloseTo(1 / 3, 10);
-    expect(scores.get('c')).toBe(0);
-  });
-
-  it('filters spans by inject time and graph membership', () => {
-    const traces = [
-      makeSpan('a', 'ERROR', 100), // post-injection → counted
-      makeSpan('a', 'ERROR', 50), // pre-injection → ignored
-      makeSpan('d', 'ERROR', 100), // not in graph → ignored
-      makeSpan('b', 'ERROR', 100),
-    ];
-    const scores = computeTraceScores(traces, nodes, 75);
-
-    expect(scores.get('a')).toBe(1);
-    expect(scores.get('b')).toBe(1);
-    expect(scores.get('c')).toBe(0);
-  });
-
-  it('returns an empty map for empty input or no ERROR spans', () => {
-    expect(computeTraceScores(undefined, nodes, 0).size).toBe(0);
-    expect(computeTraceScores([], nodes, 0).size).toBe(0);
-    expect(computeTraceScores([makeSpan('a', 'OK')], nodes, 0).size).toBe(0);
-  });
-
-  it('scores a lone erroring service 1 against silent peers', () => {
-    const scores = computeTraceScores([makeSpan('a', 'ERROR')], new Set(['a', 'b']), 0);
-    expect(scores.get('a')).toBe(1);
-    expect(scores.get('b')).toBe(0);
   });
 });

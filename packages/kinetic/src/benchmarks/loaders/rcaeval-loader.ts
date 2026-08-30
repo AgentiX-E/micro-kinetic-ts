@@ -21,7 +21,6 @@ import * as path from 'node:path';
 
 import type {
   CallEdge,
-  FaultTraceSpan,
   MetricMap,
   ServiceCallGraph,
   ServiceNode,
@@ -120,9 +119,6 @@ export function classifyLogLevel(
   return 'INFO';
 }
 
-/** Cap on retained ERROR spans per case, bounding the trace signal's memory. */
-const MAX_TRACE_ERROR_SPANS = 20_000;
-
 /**
  * Header aliases for the trace span's SERVICE column. RCAEval stores the
  * service under `container_name` (the log header is `timestamp, container_name,
@@ -156,8 +152,7 @@ const SERVICE_COLUMN_ALIASES = new Set([
 /**
  * Header aliases for the trace span's ERROR-INDICATOR column. RCAEval stores
  * the failure signal as a RESPONSE CODE (`response_code`/`status_code`/HTTP
- * status), not an explicit `status` flag — a code-level fault makes the
- * SOURCE's own spans return an error code.
+ * status), not an explicit `status` flag.
  */
 const STATUS_COLUMN_ALIASES = new Set([
   'status',
@@ -190,32 +185,6 @@ export function normalizeSpanStatus(value: string | undefined): 'OK' | 'ERROR' {
   // HTTP status code: 4xx (client error) and 5xx (server error) are failures.
   if (/^[45]\d\d$/.test(v)) return 'ERROR';
   return 'OK';
-}
-
-/**
- * Extract the compact ERROR-only span subset from a full trace span list.
- *
- * RE2/RE3 `traces.csv` files can exceed 100K spans per case; retaining the full
- * history would blow the heap across 270+ cases. ERROR spans are the source-
- * fault signature (a code-level fault makes the SOURCE's own spans fail), so
- * only they are kept — mapped to the minimal {@link FaultTraceSpan} and capped
- * at {@link MAX_TRACE_ERROR_SPANS}.
- *
- * @param spans - Full trace spans, or undefined when the case has no traces.
- * @returns Compact ERROR spans, or undefined when there are none.
- */
-export function extractTraceErrors(
-  spans: readonly BenchmarkTraceSpan[] | undefined,
-): readonly FaultTraceSpan[] | undefined {
-  if (!spans || spans.length === 0) return undefined;
-
-  const errors: FaultTraceSpan[] = [];
-  for (const span of spans) {
-    if (span.status !== 'ERROR') continue;
-    errors.push({ service: span.service, startTime: span.startTime, status: 'ERROR' });
-    if (errors.length >= MAX_TRACE_ERROR_SPANS) break;
-  }
-  return errors.length > 0 ? errors : undefined;
 }
 
 /**
@@ -386,14 +355,6 @@ export class RCAEvalLoader {
   lastTraceHeader = '';
 
   /**
-   * Number of ERROR spans extracted from the last case's traces.csv (via the
-   * full-file {@link loadTraceErrors}). Exposed for benchmark diagnostics — a
-   * zero here means the status column carries no error values, and the trace
-   * signal can never fire regardless of column mapping.
-   */
-  lastTraceErrorCount = 0;
-
-  /**
    * Load a single RCAEval case from a directory.
    *
    * Uses defensive loading: if optional files are missing or malformed,
@@ -420,10 +381,6 @@ export class RCAEvalLoader {
     // Load optional multimodal data (defensive — returns undefined on failure)
     const logs = this.tryLoadLogs(casePath);
     const traces = this.tryLoadTraces(casePath);
-    // Compact ERROR-only span subset for the trace ranking signal — read from
-    // the FULL traces.csv (not the bounded 10K-span prefix used for topology),
-    // because the post-injection error spans sit AFTER the first 10K spans.
-    const traceErrors = this.loadTraceErrors(casePath);
 
     return {
       casePath,
@@ -436,7 +393,6 @@ export class RCAEvalLoader {
       groundTruth,
       logs,
       traces,
-      traceErrors,
     };
   }
 
@@ -526,8 +482,6 @@ export class RCAEvalLoader {
       // storing them in BenchmarkCase wastes memory — RE2 has 270+ cases × 100K+
       // spans each.  Set to undefined so GC can reclaim after augmentation.
       traces: undefined,
-      // The compact ERROR-only subset is retained for the trace ranking signal.
-      traceErrors: rawCase.traceErrors,
     };
   }
 
@@ -757,57 +711,6 @@ export class RCAEvalLoader {
           status: normalizeSpanStatus(statusCol ? row[statusCol] : undefined),
         };
       });
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
-   * Extract the compact ERROR-span subset from the FULL traces.csv.
-   *
-   * The post-injection error spans — the code-level-fault signature — occur
-   * AFTER the first ~10K spans (the bounded prefix {@link tryLoadTraces} reads
-   * for topology), so a prefix read finds zero errors. This reads the whole
-   * file once, streams line-by-line, and retains only ≤ {@link
-   * MAX_TRACE_ERROR_SPANS} ERROR spans, so memory stays bounded while the
-   * signal captures the actual fault window.
-   *
-   * @param casePath - Path to the case directory.
-   * @returns Compact ERROR spans, or undefined when there are none.
-   */
-  private loadTraceErrors(casePath: string): ReadonlyArray<FaultTraceSpan> | undefined {
-    const tracesPath = path.join(casePath, 'traces.csv');
-    if (!fs.existsSync(tracesPath)) return undefined;
-
-    try {
-      const content = fs.readFileSync(tracesPath, 'utf-8');
-      const lines = content.split('\n');
-      if (lines.length < 2) return undefined;
-
-      const headers = lines[0]!.split(',').map((h) => h.trim());
-      this.lastTraceHeader = headers.join(',');
-      const svcIdx = headers.findIndex((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
-      const statusIdx = headers.findIndex((h) => STATUS_COLUMN_ALIASES.has(h.toLowerCase()));
-      const startIdx = headers.findIndex((h) =>
-        ['starttime', 'start_time', 'starttimemillis', 'timestamp', 'time'].includes(
-          h.toLowerCase(),
-        ),
-      );
-      if (svcIdx < 0) return undefined;
-
-      const errors: FaultTraceSpan[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i]!.split(',');
-        if (values.length <= Math.max(svcIdx, statusIdx, startIdx)) continue;
-        const status = normalizeSpanStatus(statusIdx >= 0 ? values[statusIdx]?.trim() : undefined);
-        if (status !== 'ERROR') continue;
-        const service = values[svcIdx]?.trim() || 'unknown';
-        const startTime = parseInt(values[startIdx] ?? '0', 10) || 0;
-        errors.push({ service, startTime, status: 'ERROR' });
-        if (errors.length >= MAX_TRACE_ERROR_SPANS) break;
-      }
-      this.lastTraceErrorCount = errors.length;
-      return errors.length > 0 ? errors : undefined;
     } catch {
       return undefined;
     }

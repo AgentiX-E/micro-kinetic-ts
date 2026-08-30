@@ -55,7 +55,6 @@ export {
   computeLogNoveltyScores,
   computeLogScores,
   computeTopoSourceScores,
-  computeTraceScores,
 } from './pruning/ranking-signals.js';
 export type { LogSignalMode } from './pruning/ranking-signals.js';
 

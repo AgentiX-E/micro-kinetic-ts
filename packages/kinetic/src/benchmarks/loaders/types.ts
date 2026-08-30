@@ -7,7 +7,7 @@
  * @module benchmarks/loaders/types
  */
 
-import type { FaultTraceSpan, MetricMap, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
+import type { MetricMap, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
 
 // ── Common Benchmark Types ────────────────────────────────
 
@@ -53,12 +53,6 @@ export interface BenchmarkCase {
   readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
   /** Optional trace spans (RE2, RE3, AIOps2025). */
   readonly traces?: ReadonlyArray<BenchmarkTraceSpan>;
-  /**
-   * Compact ERROR-only trace spans (RE2/RE3) for the trace ranking signal.
-   * The full span history is discarded to save memory; only the source-fault
-   * signature (which service's spans returned an error) is retained.
-   */
-  readonly traceErrors?: ReadonlyArray<FaultTraceSpan>;
   /** Optional structured event records (RCA100). */
   readonly events?: ReadonlyArray<BenchmarkEvent>;
   /** Optional alert data (RCA100). */
@@ -156,8 +150,6 @@ export interface RCAEvalCase {
   readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
   /** Trace spans (RE2/RE3 only). */
   readonly traces?: ReadonlyArray<BenchmarkTraceSpan>;
-  /** Compact ERROR-only trace spans (RE2/RE3) for the trace ranking signal. */
-  readonly traceErrors?: ReadonlyArray<FaultTraceSpan>;
   /** Ground truth: root cause service and metric. */
   readonly groundTruth: BenchmarkGroundTruth;
 }
