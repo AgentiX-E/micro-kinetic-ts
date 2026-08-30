@@ -56,6 +56,7 @@ import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import {
+  computeDeepestExceptions,
   computeLogScores,
   computeRiseScores,
   computeTopoSourceScores,
@@ -463,6 +464,11 @@ export class TreePruner {
       anomalyScores,
     );
     const riseScores = computeRiseScores(dominantMetrics, new Set(callGraph.nodes.keys()));
+    const deepestExceptions = computeDeepestExceptions(
+      options?.logs,
+      new Set(callGraph.nodes.keys()),
+      injectTimeMs,
+    );
 
     return {
       callGraph: topologyGraph,
@@ -479,6 +485,7 @@ export class TreePruner {
       logScores,
       topoScores,
       riseScores,
+      deepestExceptions,
     };
   }
 

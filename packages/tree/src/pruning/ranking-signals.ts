@@ -325,3 +325,85 @@ export function gatedRiseContribution(direction: number, hasLogicException: bool
   if (dir >= 0) return dir;
   return hasLogicException ? 0 : dir;
 }
+
+/**
+ * Compute, per service, the most DISTINCTIVE deepest `Caused by:` exception
+ * class among its post-injection logic-exception log lines.
+ *
+ * A service emits many error lines; the one that identifies it as a fault
+ * source is the RAREST root-cause class across the whole system. A ubiquitous
+ * wrapper (Spring's `HttpServerErrorException`) is shared by every symptom, so
+ * it is not distinctive; a rare class (`MalformedJwtException`,
+ * `NullPointerException`) is the fingerprint of the service that actually
+ * produces (or first detects) the fault. Rarity is document frequency:
+ * `df(c)` = number of DISTINCT services emitting logic-exception lines whose
+ * deepest class is `c`; the rarest class wins, tie-broken by per-service count
+ * then lexicographic order for determinism.
+ *
+ * This feeds the evidence-grounded LLM reranker's `deepestLogException` field
+ * (previously declared but never populated), so the model can reason over the
+ * actual exception identity rather than only metric shift.
+ *
+ * @param logs - Raw log lines (may be undefined → empty map).
+ * @param nodeIds - Services present in the call graph.
+ * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
+ * @returns Per-service deepest exception class; absent when the service emits
+ *   no logic exception.
+ */
+export function computeDeepestExceptions(
+  logs: readonly FaultLogEntry[] | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+  injectTimeMs: number,
+): Map<ServiceId, string> {
+  const result = new Map<ServiceId, string>();
+  if (!logs || logs.length === 0 || nodeIds.size === 0) return result;
+
+  // Pass 1: document frequency per class, and per-service class counts.
+  const docServices = new Map<string, Set<ServiceId>>();
+  const perService = new Map<ServiceId, Map<string, number>>();
+  for (const log of logs) {
+    if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
+    if (!nodeIds.has(log.service)) continue;
+    if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
+    if (!log.isLogicException) continue;
+    const cls = log.deepestExceptionClass ?? 'Unknown';
+    let svcSet = docServices.get(cls);
+    if (!svcSet) {
+      svcSet = new Set();
+      docServices.set(cls, svcSet);
+    }
+    svcSet.add(log.service);
+    let clsCount = perService.get(log.service);
+    if (!clsCount) {
+      clsCount = new Map();
+      perService.set(log.service, clsCount);
+    }
+    clsCount.set(cls, (clsCount.get(cls) ?? 0) + 1);
+  }
+
+  // Class → document frequency (number of DISTINCT services emitting it).
+  const dfByClass = new Map<string, number>();
+  for (const [cls, svcSet] of docServices) {
+    dfByClass.set(cls, svcSet.size);
+  }
+
+  // Pass 2: pick the rarest class per service. The sort key orders by
+  // (df ASC, count DESC, class ASC) so the rarest, most frequent, then
+  // lexicographically smallest class wins deterministically.
+  for (const [svc, clsCount] of perService) {
+    let best: string | undefined;
+    let bestKey = '';
+    for (const [cls, count] of clsCount) {
+      // Every class in perService was inserted into docServices (and thus
+      // dfByClass) during pass 1, so the lookup is always defined.
+      const df = dfByClass.get(cls)!;
+      const key = `${String(df).padStart(12, '0')}_${String(1_000_000_000 - count)}_${cls}`;
+      if (best === undefined || key < bestKey) {
+        best = cls;
+        bestKey = key;
+      }
+    }
+    if (best !== undefined) result.set(svc, best);
+  }
+  return result;
+}

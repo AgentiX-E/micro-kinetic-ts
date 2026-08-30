@@ -1,5 +1,6 @@
 import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 import {
+  computeDeepestExceptions,
   computeLogNoveltyScores,
   computeLogScores,
   computeRiseScores,
@@ -17,8 +18,9 @@ function makeLog(
   level: string,
   timestamp = 0,
   isLogicException = true,
+  deepestExceptionClass?: string,
 ): FaultLogEntry {
-  return { service, level, timestamp, isLogicException };
+  return { service, level, timestamp, isLogicException, deepestExceptionClass };
 }
 
 describe('computeLogScores', () => {
@@ -378,5 +380,71 @@ describe('gatedRiseContribution', () => {
   it('is neutral at direction 0.5', () => {
     expect(gatedRiseContribution(0.5, false)).toBe(0);
     expect(gatedRiseContribution(0.5, true)).toBe(0);
+  });
+});
+
+describe('computeDeepestExceptions', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  it('returns the rarest deepest exception class per service', () => {
+    const logs = [
+      // 'a' emits only MalformedJwtException (df=1, rarest).
+      makeLog('a', 'ERROR', 100, true, 'MalformedJwtException'),
+      makeLog('a', 'ERROR', 101, true, 'MalformedJwtException'),
+      // 'b' and 'c' both emit the ubiquitous HttpServerErrorException (df=2).
+      makeLog('b', 'ERROR', 100, true, 'HttpServerErrorException'),
+      makeLog('c', 'ERROR', 100, true, 'HttpServerErrorException'),
+    ];
+    const result = computeDeepestExceptions(logs, nodes, 0);
+
+    expect(result.get('a')).toBe('MalformedJwtException');
+    expect(result.get('b')).toBe('HttpServerErrorException');
+    expect(result.get('c')).toBe('HttpServerErrorException');
+  });
+
+  it('ties on rarity by per-service count, then lexicographic order', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 100, true, 'ZetaException'),
+      makeLog('a', 'ERROR', 101, true, 'ZetaException'),
+      makeLog('a', 'ERROR', 102, true, 'AlphaException'), // df=1, count=1 → loses
+    ];
+    const result = computeDeepestExceptions(logs, nodes, 0);
+    expect(result.get('a')).toBe('ZetaException'); // df=1 for both, higher count wins
+  });
+
+  it('breaks a full tie (same df and count) lexicographically', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 100, true, 'BetaException'),
+      makeLog('a', 'ERROR', 101, true, 'AlphaException'), // same df=1, count=1
+    ];
+    const result = computeDeepestExceptions(logs, nodes, 0);
+    expect(result.get('a')).toBe('AlphaException'); // lexicographically smaller
+  });
+
+  it('counts FATAL lines the same as ERROR lines', () => {
+    const logs = [makeLog('a', 'FATAL', 100, true, 'NullPointerException')];
+    const result = computeDeepestExceptions(logs, nodes, 0);
+    expect(result.get('a')).toBe('NullPointerException');
+  });
+
+  it('ignores connectivity errors, non-node services, and pre-inject lines', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 100, false, 'ConnectionException'), // not logic
+      makeLog('a', 'ERROR', 50, true, 'NullPointerException'), // pre-inject
+      makeLog('ghost', 'ERROR', 100, true, 'TypeError'), // not in graph
+    ];
+    const result = computeDeepestExceptions(logs, nodes, 75);
+    expect(result.size).toBe(0);
+  });
+
+  it('falls back to "Unknown" for logic lines with no deepest class', () => {
+    const logs = [makeLog('a', 'ERROR', 100, true, undefined)];
+    const result = computeDeepestExceptions(logs, nodes, 0);
+    expect(result.get('a')).toBe('Unknown');
+  });
+
+  it('returns an empty map for undefined logs or empty nodeIds', () => {
+    expect(computeDeepestExceptions(undefined, nodes, 0).size).toBe(0);
+    expect(computeDeepestExceptions([], new Set(), 0).size).toBe(0);
   });
 });

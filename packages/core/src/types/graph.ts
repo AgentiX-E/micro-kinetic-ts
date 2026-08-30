@@ -199,6 +199,14 @@ export interface FaultPropagationGraph {
    * silent collapse is the symptom). Feeds the (opt-in) riseWeight signal.
    */
   readonly riseScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service most DISTINCTIVE deepest `Caused by:` exception class (a
+   * string, e.g. `MalformedJwtException`). Consumed by the evidence-grounded
+   * LLM reranker so the model reasons over the actual exception identity, not
+   * only metric shift. Optional: absent when the case carried no logic
+   * exceptions.
+   */
+  readonly deepestExceptions?: ReadonlyMap<ServiceId, string>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */
