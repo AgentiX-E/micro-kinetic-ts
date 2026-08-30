@@ -248,27 +248,28 @@ export function computeTopoSourceScores(
 }
 
 /**
- * Compute a ONE-SIDED metric-RISE score per service, derived from the DOMINANT
- * metric's pre/post-injection levels.
+ * Compute the metric direction (RISE vs COLLAPSE) per service, derived from
+ * the DOMINANT metric's pre/post-injection levels.
  *
- *   raw(v)    = mean(tail) / (mean(head) + mean(tail))
- *   score(v)  = max(0.5, raw(v))                       ∈ [0.5, 1]
+ *   direction(v) = mean(tail) / (mean(head) + mean(tail))   ∈ [0, 1]
  *
- * A "wrong value" code-level fault (RCAEval RE3) makes the SOURCE do MORE work
- * (downstream reprocessing), so its dominant metric RISES (tail > head, score
- * → 1). The score is deliberately CLAMPED at 0.5 so a COLLAPSE is neutral,
- * never penalised: a collapse is the SYMPTOM's signature for code-level faults
- * but the SOURCE's signature for resource faults (memory release, crash), so
- * its direction is ambiguous and must not be used to demote. Measured on the
- * clean head↔tail change rather than the baseline-relative rise/drop ratios,
- * whose tiny-baseline spurious rise `collapseDiscount` could not discount
- * (benchmark #226/227: the source's workload 0.4→1.4 was outranked by a
- * symptom's cpu whose 9.8× "rise" was an artifact of a ~0.4 baseline).
+ * 1 = a pure rise (tail ≫ head), 0 = a pure collapse (tail ≪ head), 0.5 =
+ * unchanged. A "wrong value" code-level fault (RCAEval RE3) makes the SOURCE
+ * do MORE work so its dominant metric RISES (→ 1), while a losing SYMPTOM's
+ * COLLAPSES (→ 0). Measured on the CLEAN head↔tail change rather than the
+ * baseline-relative rise/drop ratios, whose tiny-baseline spurious rise
+ * `collapseDiscount` could not discount (benchmark #226/227: the source's
+ * workload 0.4→1.4 was outranked by a symptom's cpu whose 9.8× "rise" was an
+ * artifact of a ~0.4 baseline).
+ *
+ * The direction is LEFT RAW here — the caller gates the collapse half by the
+ * log signal via {@link gatedRiseContribution}, because a collapse is the
+ * SOURCE's signature for some fault classes (crash) and the SYMPTOM's for
+ * others, so it must not be penalised unconditionally.
  *
  * @param dominantMetrics - Per-service dominant metric (label + head/tail).
  * @param nodeIds - Services present in the call graph.
- * @returns Per-service rise score in [0.5, 1]; 0.5 (neutral) when unknown or
- *   when the dominant metric collapses.
+ * @returns Per-service direction in [0, 1]; 0.5 (neutral) when unknown.
  */
 export function computeRiseScores(
   dominantMetrics:
@@ -295,8 +296,32 @@ export function computeRiseScores(
     const headMean = headSum / dm.head.length;
     const tailMean = tailSum / dm.tail.length;
     const denom = headMean + tailMean;
-    // One-sided: clamp so a collapse is neutral (0.5), never a penalty.
-    scores.set(nodeId, denom <= 0 ? 0.5 : Math.max(0.5, tailMean / denom));
+    scores.set(nodeId, denom <= 0 ? 0.5 : tailMean / denom);
   }
   return scores;
+}
+
+/**
+ * Combine a raw metric direction with the log signal into a single rise
+ * contribution in [−1, 1].
+ *
+ *   dir = 2 × (direction − 0.5)          ∈ [−1, 1]   (+1 rise, −1 collapse)
+ *   contribution = dir ≥ 0 ? dir : (hasLogicException ? 0 : dir)
+ *
+ * A RISE is always rewarded (the source does more work). A COLLAPSE is
+ * penalised ONLY when the service has NO logic exception — a silent collapse
+ * is the SYMPTOM's signature — and is NEUTRAL when it has one, because a
+ * logic-exception collapse is the SOURCE's own crash (e.g. an
+ * `NullPointerException` that takes the service down). This is the gate that
+ * lets the collapse penalty lift TrainTicket (silent symptoms) without
+ * regressing OnlineBoutique (logic-exception sources).
+ *
+ * @param direction - Raw metric direction in [0, 1] (see computeRiseScores).
+ * @param hasLogicException - Whether the service emitted a logic exception.
+ * @returns The gated contribution in [−1, 1].
+ */
+export function gatedRiseContribution(direction: number, hasLogicException: boolean): number {
+  const dir = 2 * (direction - 0.5);
+  if (dir >= 0) return dir;
+  return hasLogicException ? 0 : dir;
 }

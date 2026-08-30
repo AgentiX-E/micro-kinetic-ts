@@ -192,12 +192,11 @@ export interface FaultPropagationGraph {
    */
   readonly topoScores?: ReadonlyMap<ServiceId, number>;
   /**
-   * Per-service ONE-SIDED metric-RISE score [0.5, 1] — `max(0.5, mean(tail) /
-   * (mean(head) + mean(tail)))` of the DOMINANT metric's pre/post-injection
-   * levels. A code-level-fault SOURCE's dominant metric rises (score → 1); a
-   * collapse is neutral (0.5), never penalised, because a collapse is the
-   * source's signature for resource faults and the symptom's for code-level
-   * faults. Feeds the (opt-in) riseWeight ranking signal.
+   * Per-service metric-direction score [0, 1] — `mean(tail) / (mean(head) +
+   * mean(tail))` of the DOMINANT metric's pre/post-injection levels (1 = pure
+   * rise, 0 = pure collapse, 0.5 = unchanged). The collapse half is gated by
+   * the log signal before fusion (a logic-exception collapse is the source, a
+   * silent collapse is the symptom). Feeds the (opt-in) riseWeight signal.
    */
   readonly riseScores?: ReadonlyMap<ServiceId, number>;
 }

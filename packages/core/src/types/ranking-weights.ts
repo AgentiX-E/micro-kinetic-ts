@@ -59,8 +59,8 @@ export interface RankingWeights {
   readonly logWeight: number;
   /**
    * Metric-direction prior: rewards a node whose DOMINANT metric RISES
-   * (post-injection level above pre-injection). One-sided — a collapse is
-   * neutral, never penalised. OPTIONAL: absent means 0 (disabled).
+   * (post-injection level above pre-injection); penalises a COLLAPSE only when
+   * the node emitted no logic exception. OPTIONAL: absent means 0 (disabled).
    */
   readonly riseWeight?: number;
 }

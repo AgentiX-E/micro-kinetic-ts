@@ -56,6 +56,7 @@ export {
   computeLogScores,
   computeRiseScores,
   computeTopoSourceScores,
+  gatedRiseContribution,
 } from './pruning/ranking-signals.js';
 export type { LogSignalMode } from './pruning/ranking-signals.js';
 

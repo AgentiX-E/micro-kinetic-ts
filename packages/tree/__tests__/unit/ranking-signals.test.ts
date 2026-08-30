@@ -4,6 +4,7 @@ import {
   computeLogScores,
   computeRiseScores,
   computeTopoSourceScores,
+  gatedRiseContribution,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
@@ -328,7 +329,7 @@ describe('computeRiseScores', () => {
     return { label: 'workload', head, tail };
   }
 
-  it('scores a rise (tail > head) high and clamps a collapse to neutral 0.5', () => {
+  it('scores a rise (tail > head) high and a collapse (tail < head) low', () => {
     const metrics = new Map([
       ['a', dm([0.4, 0.4, 0.4], [1.4, 1.4, 1.4])], // rise 0.4 -> 1.4
       ['b', dm([3.5, 3.6, 3.7], [0.05, 0.05, 0.05])], // collapse 3.6 -> 0.05
@@ -336,7 +337,7 @@ describe('computeRiseScores', () => {
     const scores = computeRiseScores(metrics, nodes);
 
     expect(scores.get('a')).toBeCloseTo(1.4 / (0.4 + 1.4), 10); // ~0.778
-    expect(scores.get('b')).toBe(0.5); // collapse is clamped to neutral
+    expect(scores.get('b')).toBeCloseTo(0.05 / (3.6 + 0.05), 10); // ~0.0137
   });
 
   it('scores an unchanged metric 0.5 and a missing metric 0.5 (neutral)', () => {
@@ -357,5 +358,25 @@ describe('computeRiseScores', () => {
     const metrics = new Map([['a', dm([0, 0], [0, 0])]]);
     const scores = computeRiseScores(metrics, nodes);
     expect(scores.get('a')).toBe(0.5);
+  });
+});
+
+describe('gatedRiseContribution', () => {
+  it('always rewards a rise, regardless of the log gate', () => {
+    expect(gatedRiseContribution(0.75, false)).toBeCloseTo(0.5, 10); // 2*(0.75-0.5)
+    expect(gatedRiseContribution(0.75, true)).toBeCloseTo(0.5, 10);
+    expect(gatedRiseContribution(1.0, true)).toBeCloseTo(1.0, 10);
+  });
+
+  it('penalises a silent collapse (no logic exception) but neutralises a logic-exception collapse', () => {
+    expect(gatedRiseContribution(0.25, false)).toBeCloseTo(-0.5, 10); // 2*(0.25-0.5)
+    expect(gatedRiseContribution(0.25, true)).toBe(0); // source crash -> neutral
+    expect(gatedRiseContribution(0.0, false)).toBeCloseTo(-1.0, 10);
+    expect(gatedRiseContribution(0.0, true)).toBe(0);
+  });
+
+  it('is neutral at direction 0.5', () => {
+    expect(gatedRiseContribution(0.5, false)).toBe(0);
+    expect(gatedRiseContribution(0.5, true)).toBe(0);
   });
 });

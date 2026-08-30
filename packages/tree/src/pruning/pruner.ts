@@ -55,7 +55,12 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
-import { computeLogScores, computeRiseScores, computeTopoSourceScores } from './ranking-signals.js';
+import {
+  computeLogScores,
+  computeRiseScores,
+  computeTopoSourceScores,
+  gatedRiseContribution,
+} from './ranking-signals.js';
 
 /**
  * Options for TreePruner construction.
@@ -189,15 +194,15 @@ export interface TreePrunerOptions extends RCAEngineOptions {
   readonly logSignalMode: 'count' | 'novelty';
   /**
    * Weight of the metric-direction (RISE) signal: reward a node whose DOMINANT
-   * metric rises post-injection, penalise a collapse.
+   * metric rises post-injection; penalise a COLLAPSE only when the node
+   * emitted NO logic exception (a silent collapse is the symptom), never when
+   * it did (a logic-exception collapse is the source's own crash).
    *
-   *   finalScore(v) += riseWeight × 2 × (riseScore(v) − 0.5)
+   *   finalScore(v) += riseWeight × gatedRiseContribution(dir(v), hasLogicException(v))
    *
-   * `riseScore(v)` is the ONE-SIDED `max(0.5, mean(tail) / (mean(head) +
-   * mean(tail)))` of the dominant metric's pre/post-injection levels (see
-   * computeRiseScores). A code-level fault (RE3) makes the SOURCE's dominant
-   * metric rise (wrong value → more work); a collapse is NEUTRAL, never
-   * penalised (a collapse is the source's signature for resource faults).
+   * `dir(v)` is `2 × (direction(v) − 0.5)` and `direction(v) =
+   * mean(tail) / (mean(head) + mean(tail))` of the dominant metric's
+   * pre/post-injection levels (see computeRiseScores + gatedRiseContribution).
    * Default 0 (opt-in).
    */
   readonly riseWeight: number;
@@ -932,8 +937,9 @@ function performTreeRCA(
   // 5. A LOG prior (`logWeight`) — reward the service with the highest
   //    post-injection ERROR/FATAL volume (code-level faults).
   // 6. A RISE prior (`riseWeight`) — reward the service whose DOMINANT metric
-  //    rises post-injection (source does more work). One-sided: a collapse is
-  //    neutral (its direction is fault-class-ambiguous).
+  //    rises post-injection (source does more work); penalise a collapse ONLY
+  //    when the service emitted no logic exception (silent symptom), never
+  //    when it did (source crash) — see gatedRiseContribution.
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -949,7 +955,7 @@ function performTreeRCA(
   //                 − collisionWeight × ratioContrib(v)
   //                 + topoWeight      × topoSource(v)
   //                 + logWeight       × logScore(v)
-  //                 + riseWeight      × 2 × (riseScore(v) − 0.5)
+  //                 + riseWeight      × gatedRiseContribution(dir(v), hasLogicException(v))
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
@@ -962,6 +968,11 @@ function performTreeRCA(
     ratioContrib.set(id, ce.ratioContrib ?? 0);
   }
   const riseWeight = weights.riseWeight ?? 0;
+  // Gate the collapse half of the rise signal by the log signal: a RISE is
+  // always rewarded; a COLLAPSE is penalised only when the service emitted NO
+  // logic exception (silent symptom), never when it did (source crash).
+  const riseTerm = (id: ServiceId): number =>
+    riseWeight * gatedRiseContribution(riseScores?.get(id) ?? 0.5, (logScores?.get(id) ?? 0) > 0);
   scoredNodes.sort((a, b) => {
     const aScore =
       Math.log(a.score) +
@@ -970,7 +981,7 @@ function performTreeRCA(
       weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
       weights.logWeight * (logScores?.get(a.serviceId) ?? 0) +
-      riseWeight * 2 * ((riseScores?.get(a.serviceId) ?? 0.5) - 0.5);
+      riseTerm(a.serviceId);
     const bScore =
       Math.log(b.score) +
       weights.sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
@@ -978,7 +989,7 @@ function performTreeRCA(
       weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
       weights.logWeight * (logScores?.get(b.serviceId) ?? 0) +
-      riseWeight * 2 * ((riseScores?.get(b.serviceId) ?? 0.5) - 0.5);
+      riseTerm(b.serviceId);
     if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;
