@@ -29,13 +29,6 @@ import type {
 } from '../../packages/core/src/index.js';
 
 /**
- * Cap on the number of upstream ancestors added to the rerank candidate set.
- * Keeps the LLM prompt bounded even on dense topologies (TrainTicket has 68
- * services); the ancestor walk stops as soon as this many are collected.
- */
-const MAX_ANCESTOR_CANDIDATES = 3;
-
-/**
  * The deterministic engine the reranker wraps.
  *
  * {@link IRCAEngine} declares `analyze` as async (`Promise<...>`), but the
@@ -84,23 +77,11 @@ export class RerankingEngine implements IRCAEngine {
     )
       return results;
 
-    // Widen the candidate set with the upstream ancestors of the top-K results:
-    // a silent "wrong value" source can rank BELOW top-K (e.g. TrainTicket RE3)
-    // while its symptom tops the list, so without the ancestors the LLM would
-    // never see the true source.
-    const ancestors = upstreamAncestors(results, graph);
-    const candidates = [
-      ...results.map((r) => toEvidence(r.serviceId, graph)),
-      ...ancestors.map((a) => toEvidence(a, graph)),
-    ];
+    const candidates = results.map((r) => toEvidence(r.serviceId, graph));
     const { order } = await this.reranker.rerank({ candidates });
 
-    // Rebuild the final order: original results plus a minimal result for any
-    // ancestor the LLM promoted (so a promoted source becomes a valid output).
-    const byId = new Map<string, RootCauseResult>(results.map((r) => [r.serviceId, r]));
-    for (const a of ancestors) {
-      if (!byId.has(a)) byId.set(a, minimalResult(a, graph));
-    }
+    // Re-order the results by the reranker's permutation and refresh ranks.
+    const byId = new Map(results.map((r) => [r.serviceId, r]));
     const reordered: RootCauseResult[] = [];
     for (const id of order) {
       const r = byId.get(id);
@@ -112,48 +93,8 @@ export class RerankingEngine implements IRCAEngine {
       if (!reordered.some((x) => x.serviceId === r.serviceId)) reordered.push(r);
     }
 
-    return reordered.slice(0, topK ?? results.length).map((r, i) => ({ ...r, rank: i + 1 }));
+    return reordered.map((r, i) => ({ ...r, rank: i + 1 }));
   }
-}
-
-/**
- * Upstream ancestors of the top-K results, capped so the rerank prompt stays
- * bounded. An ancestor is a service that calls INTO a candidate (edge
- * `ancestor → candidate`); the true source of a propagated fault is always
- * upstream of the symptom that tops the deterministic list.
- */
-function upstreamAncestors(
-  results: readonly RootCauseResult[],
-  graph: FaultPropagationGraph,
-): ServiceId[] {
-  const inResults = new Set(results.map((r) => r.serviceId));
-  const ancestors: ServiceId[] = [];
-  for (const r of results) {
-    for (const e of graph.callGraph.edges) {
-      if (e.to === r.serviceId && !inResults.has(e.from) && !ancestors.includes(e.from)) {
-        ancestors.push(e.from);
-        if (ancestors.length >= MAX_ANCESTOR_CANDIDATES) return ancestors;
-      }
-    }
-  }
-  return ancestors;
-}
-
-/**
- * Build a minimal {@link RootCauseResult} for an ancestor the LLM promoted,
- * using its anomaly score as the confidence and an UNKNOWN fault type.
- */
-function minimalResult(serviceId: ServiceId, graph: FaultPropagationGraph): RootCauseResult {
-  return {
-    serviceId,
-    faultType: { category: 'UNKNOWN', subType: 'llm_promoted_ancestor', severity: 'minor' },
-    confidence: graph.anomalyScores.get(serviceId) ?? 0,
-    rank: 0,
-    evidenceMetrics: [],
-    propagationDepth: 0,
-    propagationErrorBound: 0,
-    viaTreeSearch: false,
-  };
 }
 
 /**
