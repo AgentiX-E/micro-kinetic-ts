@@ -246,3 +246,53 @@ export function computeTopoSourceScores(
   }
   return scores;
 }
+
+/**
+ * Compute the metric-direction (RISE vs COLLAPSE) score per service, derived
+ * from the DOMINANT metric's pre/post-injection levels.
+ *
+ *   riseScore(v) = mean(tail) / (mean(head) + mean(tail))
+ *
+ * A code-level fault (RCAEval RE3) makes the SOURCE do MORE work — a "wrong
+ * value" forces downstream reprocessing — so its dominant metric RISES
+ * (tail > head, score → 1), while the SYMPTOM loses traffic, so its dominant
+ * metric COLLAPSES (tail < head, score → 0). This is the direction signal
+ * `collapseDiscount` attempted, but measured on the CLEAN head↔tail change
+ * rather than the baseline-relative rise/drop ratios (whose tiny-baseline
+ * spurious rise the collapseDiscount could not discount — benchmark #226/227:
+ * the source's workload 0.4→1.4 was outranked by a symptom's cpu whose 9.8×
+ * "rise" was an artifact of a ~0.4 baseline).
+ *
+ * @param dominantMetrics - Per-service dominant metric (label + head/tail).
+ * @param nodeIds - Services present in the call graph.
+ * @returns Per-service rise score in [0, 1]; 0.5 (neutral) when unknown.
+ */
+export function computeRiseScores(
+  dominantMetrics:
+    | ReadonlyMap<
+        ServiceId,
+        { readonly label: string; readonly head: number[]; readonly tail: number[] }
+      >
+    | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (!dominantMetrics || nodeIds.size === 0) return scores;
+
+  for (const nodeId of nodeIds) {
+    const dm = dominantMetrics.get(nodeId);
+    if (!dm || dm.head.length === 0 || dm.tail.length === 0) {
+      scores.set(nodeId, 0.5);
+      continue;
+    }
+    let headSum = 0;
+    for (const v of dm.head) headSum += v;
+    let tailSum = 0;
+    for (const v of dm.tail) tailSum += v;
+    const headMean = headSum / dm.head.length;
+    const tailMean = tailSum / dm.tail.length;
+    const denom = headMean + tailMean;
+    scores.set(nodeId, denom <= 0 ? 0.5 : tailMean / denom);
+  }
+  return scores;
+}

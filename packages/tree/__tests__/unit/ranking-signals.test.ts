@@ -2,6 +2,7 @@ import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kineti
 import {
   computeLogNoveltyScores,
   computeLogScores,
+  computeRiseScores,
   computeTopoSourceScores,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
@@ -317,5 +318,44 @@ describe('computeTopoSourceScores', () => {
   it('handles a node with no edges (isolated) as a source score of 1', () => {
     const scores = computeTopoSourceScores([], new Float64Array(0), new Map([['x', 0.9]]));
     expect(scores.get('x')).toBe(1);
+  });
+});
+
+describe('computeRiseScores', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  function dm(head: number[], tail: number[]): { label: string; head: number[]; tail: number[] } {
+    return { label: 'workload', head, tail };
+  }
+
+  it('scores a rise (tail > head) high and a collapse (tail < head) low', () => {
+    const metrics = new Map([
+      ['a', dm([0.4, 0.4, 0.4], [1.4, 1.4, 1.4])], // rise 0.4 -> 1.4
+      ['b', dm([3.5, 3.6, 3.7], [0.05, 0.05, 0.05])], // collapse 3.6 -> 0.05
+    ]);
+    const scores = computeRiseScores(metrics, nodes);
+
+    expect(scores.get('a')).toBeCloseTo(1.4 / (0.4 + 1.4), 10); // ~0.778
+    expect(scores.get('b')).toBeCloseTo(0.05 / (3.6 + 0.05), 10); // ~0.0137
+  });
+
+  it('scores an unchanged metric 0.5 and a missing metric 0.5 (neutral)', () => {
+    const metrics = new Map([['a', dm([1.0, 1.0], [1.0, 1.0])]]);
+    const scores = computeRiseScores(metrics, nodes);
+
+    expect(scores.get('a')).toBeCloseTo(0.5, 10);
+    expect(scores.get('b')).toBe(0.5); // missing -> neutral
+    expect(scores.get('c')).toBe(0.5);
+  });
+
+  it('returns an empty map for undefined metrics or empty nodeIds', () => {
+    expect(computeRiseScores(undefined, nodes).size).toBe(0);
+    expect(computeRiseScores(new Map(), new Set()).size).toBe(0);
+  });
+
+  it('treats a zero denominator (both means zero) as neutral 0.5', () => {
+    const metrics = new Map([['a', dm([0, 0], [0, 0])]]);
+    const scores = computeRiseScores(metrics, nodes);
+    expect(scores.get('a')).toBe(0.5);
   });
 });

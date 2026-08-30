@@ -55,7 +55,7 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
-import { computeLogScores, computeTopoSourceScores } from './ranking-signals.js';
+import { computeLogScores, computeRiseScores, computeTopoSourceScores } from './ranking-signals.js';
 
 /**
  * Options for TreePruner construction.
@@ -187,6 +187,18 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * `novelty` is opt-in until benchmarked; `count` is the shipped default.
    */
   readonly logSignalMode: 'count' | 'novelty';
+  /**
+   * Weight of the metric-direction (RISE) signal: reward a node whose DOMINANT
+   * metric rises post-injection, penalise a collapse.
+   *
+   *   finalScore(v) += riseWeight × 2 × (riseScore(v) − 0.5)
+   *
+   * `riseScore(v)` is `mean(tail) / (mean(head) + mean(tail))` of the dominant
+   * metric's pre/post-injection levels (see computeRiseScores). A code-level
+   * fault (RE3) makes the SOURCE's dominant metric rise (wrong value → more
+   * work) while the SYMPTOM's collapses (lost traffic). Default 0 (opt-in).
+   */
+  readonly riseWeight: number;
 }
 
 /**
@@ -198,7 +210,12 @@ export interface TreePrunerOptions extends RCAEngineOptions {
 export function toRankingWeights(
   options: Pick<
     TreePrunerOptions,
-    'sourceWeight' | 'temporalWeight' | 'collisionWeight' | 'topoWeight' | 'logWeight'
+    | 'sourceWeight'
+    | 'temporalWeight'
+    | 'collisionWeight'
+    | 'topoWeight'
+    | 'logWeight'
+    | 'riseWeight'
   >,
 ): RankingWeights {
   return {
@@ -207,6 +224,7 @@ export function toRankingWeights(
     collisionWeight: options.collisionWeight,
     topoWeight: options.topoWeight,
     logWeight: options.logWeight,
+    riseWeight: options.riseWeight,
   };
 }
 
@@ -223,6 +241,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   topoWeight: 0.0,
   logWeight: 1.0,
   logSignalMode: 'count',
+  riseWeight: 0.0,
 };
 
 /**
@@ -436,6 +455,7 @@ export class TreePruner {
       propagationWeights,
       anomalyScores,
     );
+    const riseScores = computeRiseScores(dominantMetrics, new Set(callGraph.nodes.keys()));
 
     return {
       callGraph: topologyGraph,
@@ -451,6 +471,7 @@ export class TreePruner {
       collisionEnergy,
       logScores,
       topoScores,
+      riseScores,
     };
   }
 
@@ -508,6 +529,7 @@ export class TreePruner {
       graph.collisionEnergy,
       graph.logScores,
       graph.topoScores,
+      graph.riseScores,
     );
 
     return results;
@@ -682,6 +704,7 @@ function performTreeRCA(
   >,
   logScores?: ReadonlyMap<ServiceId, number>,
   topoScores?: ReadonlyMap<ServiceId, number>,
+  riseScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -906,6 +929,8 @@ function performTreeRCA(
   //    strongly anomalous upstream parent.
   // 5. A LOG prior (`logWeight`) — reward the service with the highest
   //    post-injection ERROR/FATAL volume (code-level faults).
+  // 6. A RISE prior (`riseWeight`) — reward the service whose DOMINANT metric
+  //    rises post-injection (source does more work), penalise a collapse.
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -921,6 +946,7 @@ function performTreeRCA(
   //                 − collisionWeight × ratioContrib(v)
   //                 + topoWeight      × topoSource(v)
   //                 + logWeight       × logScore(v)
+  //                 + riseWeight      × 2 × (riseScore(v) − 0.5)
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
@@ -932,6 +958,7 @@ function performTreeRCA(
   for (const [id, ce] of collisionEnergy ?? []) {
     ratioContrib.set(id, ce.ratioContrib ?? 0);
   }
+  const riseWeight = weights.riseWeight ?? 0;
   scoredNodes.sort((a, b) => {
     const aScore =
       Math.log(a.score) +
@@ -939,14 +966,16 @@ function performTreeRCA(
       weights.temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(a.serviceId) ?? 0);
+      weights.logWeight * (logScores?.get(a.serviceId) ?? 0) +
+      riseWeight * 2 * ((riseScores?.get(a.serviceId) ?? 0.5) - 0.5);
     const bScore =
       Math.log(b.score) +
       weights.sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
       weights.temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(b.serviceId) ?? 0);
+      weights.logWeight * (logScores?.get(b.serviceId) ?? 0) +
+      riseWeight * 2 * ((riseScores?.get(b.serviceId) ?? 0.5) - 0.5);
     if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;

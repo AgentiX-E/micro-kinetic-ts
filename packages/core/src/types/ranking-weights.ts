@@ -22,6 +22,7 @@
  *                 − collisionWeight × ratioContrib(v)
  *                 + topoWeight      × topoSource(v)
  *                 + logWeight       × logScore(v)
+ *                 + riseWeight      × 2 × (riseScore(v) − 0.5)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -56,4 +57,11 @@ export interface RankingWeights {
    * (stack traces) that metric shape cannot detect. Default 0.
    */
   readonly logWeight: number;
+  /**
+   * Metric-direction prior: rewards a node whose DOMINANT metric RISES
+   * (post-injection level above pre-injection) and penalises a COLLAPSE.
+   * A code-level-fault SOURCE's dominant metric rises while a SYMPTOM's
+   * collapses. OPTIONAL: absent means 0 (disabled).
+   */
+  readonly riseWeight?: number;
 }

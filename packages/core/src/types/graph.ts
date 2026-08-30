@@ -191,6 +191,15 @@ export interface FaultPropagationGraph {
    * Feeds the (opt-in) topoWeight ranking signal.
    */
   readonly topoScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service metric-direction (RISE) score (0-1) — `mean(tail) /
+   * (mean(head) + mean(tail))` of the DOMINANT metric's pre/post-injection
+   * levels. A code-level-fault SOURCE's dominant metric rises (score → 1);
+   * a SYMPTOM's collapses (score → 0); an unchanged metric scores 0.5. Feeds
+   * the (opt-in) riseWeight ranking signal. Optional: absent when no dominant
+   * metrics are available.
+   */
+  readonly riseScores?: ReadonlyMap<ServiceId, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

@@ -54,6 +54,7 @@ export type { TreePrunerOptions } from './pruning/pruner.js';
 export {
   computeLogNoveltyScores,
   computeLogScores,
+  computeRiseScores,
   computeTopoSourceScores,
 } from './pruning/ranking-signals.js';
 export type { LogSignalMode } from './pruning/ranking-signals.js';
