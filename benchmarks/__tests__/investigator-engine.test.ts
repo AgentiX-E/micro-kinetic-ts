@@ -33,7 +33,7 @@ function result(serviceId: string, confidence: number, rank: number): RootCauseR
   };
 }
 
-/** A 2-node graph: src → sym. */
+/** A 2-node graph: src → sym, with a logic-exception symptom (code-level fault). */
 function minimalGraph(): FaultPropagationGraph {
   return {
     callGraph: {
@@ -49,6 +49,7 @@ function minimalGraph(): FaultPropagationGraph {
       ['src', 0.3],
       ['sym', 1.0],
     ]),
+    deepestExceptions: new Map([['sym', 'MalformedJwtException']]),
     anomalyOnsetTimes: new Map(),
     injectTimeMs: 0,
   } as unknown as FaultPropagationGraph;
@@ -75,6 +76,7 @@ function threeNodeGraph(): FaultPropagationGraph {
       ['sym1', 1.0],
       ['sym2', 0.9],
     ]),
+    deepestExceptions: new Map([['sym1', 'MalformedJwtException']]),
     anomalyOnsetTimes: new Map(),
     injectTimeMs: 0,
   } as unknown as FaultPropagationGraph;
@@ -215,5 +217,24 @@ describe('InvestigatorEngine', () => {
     );
     await wide.analyze(threeNodeGraph(), 2);
     expect(wide.stats.triggered).toBe(0);
+  });
+
+  it('skips the agent when there are no logic exceptions (resource fault)', async () => {
+    // A graph with no deepestExceptions models a resource fault (RE1/RE2):
+    // the agent is gated out and the deterministic order is returned unchanged.
+    const graph = threeNodeGraph();
+    delete (graph as { deepestExceptions?: unknown }).deepestExceptions;
+
+    const agent = stubAgent('src');
+    const engine = new InvestigatorEngine(
+      innerEngine([result('sym1', 1.0, 1), result('sym2', 0.9, 2)]),
+      agent,
+      0.2,
+    );
+
+    const out = await engine.analyze(graph, 2);
+    expect(out.map((r) => r.serviceId)).toEqual(['sym1', 'sym2']);
+    expect(agent.investigate).not.toHaveBeenCalled();
+    expect(engine.stats.triggered).toBe(0);
   });
 });

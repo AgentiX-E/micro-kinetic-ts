@@ -35,6 +35,13 @@ type DeterministicEngine = Omit<IRCAEngine, 'analyze'> & {
 };
 
 /**
+ * Maximum ReAct hops per investigation. A code-level fault is found within a
+ * couple of upstream steps (symptom → upstream producer → evidence → answer),
+ * so the budget is kept small to bound the LLM cost per case.
+ */
+const MAX_AGENT_HOPS = 4;
+
+/**
  * Wraps a deterministic engine with an optional graph-guided investigator.
  */
 export class InvestigatorEngine implements IRCAEngine {
@@ -67,6 +74,14 @@ export class InvestigatorEngine implements IRCAEngine {
     const results = await this.inner.analyze(graph, topK);
 
     if (!this.agent || results.length < 2) return results;
+
+    // The agent targets CODE-LEVEL faults: a silent source hides behind a
+    // logic-exception symptom (e.g. TrainTicket RE3's MalformedJwtException).
+    // Resource faults (RE1/RE2) emit only connectivity exceptions — no logic
+    // exception — and the deterministic signals already rank them, so the agent
+    // is skipped there (avoids both the cost and the regression risk).
+    if (!graph.deepestExceptions || graph.deepestExceptions.size === 0) return results;
+
     if (
       !shouldRerank(
         results.map((r) => r.confidence),
@@ -80,7 +95,7 @@ export class InvestigatorEngine implements IRCAEngine {
     // Seed the toolkit with the deterministic top-K and let the agent walk the
     // graph upstream from those symptoms.
     const seeds = results.map((r) => r.serviceId);
-    const toolkit = new GraphInvestigatorToolkit(graph, seeds);
+    const toolkit = new GraphInvestigatorToolkit(graph, seeds, MAX_AGENT_HOPS);
     const outcome = await this.agent.investigate(toolkit);
 
     // Undecided, or a hallucinated service → deterministic fallback.
