@@ -1,6 +1,6 @@
-import { defineConfig } from 'vitest/config';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { defineConfig } from 'vitest/config';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -24,7 +24,12 @@ export default defineConfig({
     setupFiles: ['__tests__/setup.ts'],
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.spec.ts'],
     coverage: {
-      include: ['src/rcaeval-topology.ts', 'src/rcaeval-semantic.ts', 'src/reranking-engine.ts'],
+      include: [
+        'src/rcaeval-topology.ts',
+        'src/rcaeval-semantic.ts',
+        'src/reranking-engine.ts',
+        'src/investigator-engine.ts',
+      ],
       exclude: ['__tests__/integration/**'],
       thresholds: {
         // rcaeval-semantic.ts hits 99%+, rcaeval-topology.ts is ~76%

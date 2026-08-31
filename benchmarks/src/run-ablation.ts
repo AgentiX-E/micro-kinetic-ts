@@ -24,7 +24,10 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createEvidenceRerankerFromEnv } from '../../packages/ai/src/index.js';
+import {
+  createEvidenceRerankerFromEnv,
+  createInvestigatorFromEnv,
+} from '../../packages/ai/src/index.js';
 import {
   Container,
   DEFAULT_CLASSIFICATION_RULES,
@@ -40,6 +43,7 @@ import { WeightCalibrator } from '../../packages/kinetic/src/signals/weight-cali
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+import { InvestigatorEngine } from './investigator-engine.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
@@ -71,6 +75,8 @@ interface FeatureFlags {
   llmReranker: boolean;
   /** Metric-direction signal: reward source RISE, penalise symptom COLLAPSE (riseWeight). */
   riseSignal: boolean;
+  /** Graph-guided ReAct investigator (gap-triggered, walks upstream). */
+  agenticInvestigation: boolean;
 }
 
 interface AblationRun {
@@ -112,6 +118,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -127,6 +134,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -141,6 +149,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Trace Topo',
   },
@@ -155,6 +164,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+SelfLearn',
   },
@@ -170,6 +180,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Collision+Trace',
   },
@@ -184,6 +195,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -198,6 +210,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -213,6 +226,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -232,6 +246,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Log Signal',
   },
@@ -246,6 +261,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Topo Signal',
   },
@@ -264,6 +280,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Collision Signal',
   },
@@ -278,6 +295,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: true,
       llmReranker: false,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+Collapse Discount',
   },
@@ -292,6 +310,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: true,
       riseSignal: false,
+      agenticInvestigation: false,
     },
     label: '+LLM Reranker',
   },
@@ -306,8 +325,24 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       llmReranker: false,
       riseSignal: true,
+      agenticInvestigation: false,
     },
     label: '+Rise Signal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      llmReranker: false,
+      riseSignal: false,
+      agenticInvestigation: true,
+    },
+    label: '+Agentic Investigation',
   },
 ];
 
@@ -318,6 +353,10 @@ const REPETITIONS = 3;
 // when the deterministic top-1 and top-2 confidence scores are within this gap,
 // so a confidently-ranked case never pays for an LLM round-trip.
 const LLM_RERANK_GAP_THRESHOLD = 0.1;
+
+// Gap threshold for the graph-guided investigator, kept identical so the two
+// LLM slices differ only in the reasoning strategy (rerank vs graph walk).
+const AGENTIC_GAP_THRESHOLD = 0.1;
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -546,6 +585,12 @@ async function main(): Promise<void> {
         },
         { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
       );
+      if (flags.agenticInvestigation) {
+        // Graph-guided ReAct investigator (DeepSeek). Null factory → the
+        // wrapper falls back to the deterministic order (no-op slice).
+        const agent = createInvestigatorFromEnv();
+        return new InvestigatorEngine(pruner, agent, AGENTIC_GAP_THRESHOLD);
+      }
       if (!flags.llmReranker) return pruner;
       // Evidence-grounded reranker (DeepSeek). When the API key is absent the
       // factory returns null and the wrapper falls back to the deterministic
