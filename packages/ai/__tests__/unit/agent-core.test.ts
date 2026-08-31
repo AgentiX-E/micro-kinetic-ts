@@ -41,6 +41,14 @@ describe('buildSystemPrompt', () => {
     expect(p).toContain('"action"');
     expect(p).toContain('"answer"');
   });
+
+  it('teaches the token/JWT semantic chain to the auth producer', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('MALFORMED TOKEN');
+    expect(p).toContain('AUTHENTICATION service');
+    expect(p).toContain('JsonMappingException');
+    expect(p).toContain('conclude the upstream producer');
+  });
 });
 
 // ── parseAgentResponse ────────────────────────────────────
