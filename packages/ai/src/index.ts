@@ -89,6 +89,7 @@ export type {
   AgentTool,
   EnvInvestigatorConfig,
   InvestigationResult,
+  InvestigationTermination,
   InvestigatorAgent,
   InvestigatorToolkit,
   ParsedStep,

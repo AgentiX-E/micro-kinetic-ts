@@ -16,6 +16,9 @@ import type { ChatMessage, IChatProvider } from '../providers/api-llm.js';
 import { buildSystemPrompt, executeAction, parseAgentResponse } from './agent-core.js';
 import type { InvestigatorToolkit } from './investigator-toolkit.js';
 
+/** Why the investigation loop terminated. */
+export type InvestigationTermination = 'answer' | 'invalid' | 'budget' | 'error';
+
 /** The result of one investigation pass. */
 export interface InvestigationResult {
   /** The service the agent concluded is the root cause, or null when undecided. */
@@ -26,6 +29,8 @@ export interface InvestigationResult {
   readonly reasoning: string;
   /** How many tool calls were made before the result was produced. */
   readonly hopsUsed: number;
+  /** Why the loop stopped (answer, unparseable response, budget, provider error). */
+  readonly termination: InvestigationTermination;
 }
 
 /**
@@ -74,10 +79,17 @@ export class ReActInvestigatorAgent implements InvestigatorAgent {
             confidence: step.answer.confidence,
             reasoning: step.answer.reasoning,
             hopsUsed,
+            termination: 'answer',
           };
         }
         if (step.kind === 'invalid') {
-          return { rootCause: null, confidence: 0, reasoning: response, hopsUsed };
+          return {
+            rootCause: null,
+            confidence: 0,
+            reasoning: response,
+            hopsUsed,
+            termination: 'invalid',
+          };
         }
 
         const observation = executeAction(step.action, toolkit);
@@ -88,9 +100,9 @@ export class ReActInvestigatorAgent implements InvestigatorAgent {
       }
     } catch {
       // Provider failure (network, timeout) → deterministic fallback.
-      return { rootCause: null, confidence: 0, reasoning: '', hopsUsed };
+      return { rootCause: null, confidence: 0, reasoning: '', hopsUsed, termination: 'error' };
     }
 
-    return { rootCause: null, confidence: 0, reasoning: '', hopsUsed };
+    return { rootCause: null, confidence: 0, reasoning: '', hopsUsed, termination: 'budget' };
   }
 }

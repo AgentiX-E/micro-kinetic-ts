@@ -48,9 +48,17 @@ export class InvestigatorEngine implements IRCAEngine {
   /**
    * Diagnostic counters, aggregated by the ablation runner to tell whether the
    * agent is firing at all (`triggered`), reaching a conclusion (`concluded`),
-   * or actually changing the deterministic top-1 (`changed`).
+   * actually changing the deterministic top-1 (`changed`), or why it stopped
+   * without a conclusion (`invalid` / `budget` / `error`).
    */
-  public readonly stats = { triggered: 0, concluded: 0, changed: 0 };
+  public readonly stats = {
+    triggered: 0,
+    concluded: 0,
+    changed: 0,
+    invalid: 0,
+    budget: 0,
+    error: 0,
+  };
 
   constructor(
     private readonly inner: DeterministicEngine,
@@ -97,6 +105,11 @@ export class InvestigatorEngine implements IRCAEngine {
     const seeds = results.map((r) => r.serviceId);
     const toolkit = new GraphInvestigatorToolkit(graph, seeds, MAX_AGENT_HOPS);
     const outcome = await this.agent.investigate(toolkit);
+
+    // Track WHY the agent stopped without a conclusion.
+    if (outcome.termination === 'invalid') this.stats.invalid++;
+    else if (outcome.termination === 'budget') this.stats.budget++;
+    else if (outcome.termination === 'error') this.stats.error++;
 
     // Undecided, or a hallucinated service → deterministic fallback.
     if (outcome.rootCause === null) return results;

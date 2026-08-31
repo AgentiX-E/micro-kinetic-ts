@@ -9,7 +9,11 @@ export { buildSystemPrompt, executeAction, parseAgentResponse } from './agent-co
 export type { AgentAction, AgentAnswer, AgentTool, ParsedStep } from './agent-core.js';
 
 export { ReActInvestigatorAgent } from './investigator-agent.js';
-export type { InvestigationResult, InvestigatorAgent } from './investigator-agent.js';
+export type {
+  InvestigationResult,
+  InvestigationTermination,
+  InvestigatorAgent,
+} from './investigator-agent.js';
 
 export { createInvestigatorFromEnv } from './env-investigator.js';
 export type { EnvInvestigatorConfig } from './env-investigator.js';

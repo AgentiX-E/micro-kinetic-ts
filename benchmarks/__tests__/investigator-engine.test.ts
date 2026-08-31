@@ -93,7 +93,13 @@ function innerEngine(results: RootCauseResult[]): IRCAEngine {
 function stubAgent(rootCause: string | null, confidence = 0.8): InvestigatorAgent {
   return {
     modelId: 'stub',
-    investigate: vi.fn(async () => ({ rootCause, confidence, reasoning: '', hopsUsed: 0 })),
+    investigate: vi.fn(async () => ({
+      rootCause,
+      confidence,
+      reasoning: '',
+      hopsUsed: 0,
+      termination: rootCause === null ? 'invalid' : 'answer',
+    })),
   };
 }
 
@@ -207,7 +213,14 @@ describe('InvestigatorEngine', () => {
     );
 
     await engine.analyze(threeNodeGraph(), 2);
-    expect(engine.stats).toEqual({ triggered: 1, concluded: 1, changed: 1 });
+    expect(engine.stats).toEqual({
+      triggered: 1,
+      concluded: 1,
+      changed: 1,
+      invalid: 0,
+      budget: 0,
+      error: 0,
+    });
 
     // Wide gap → the agent is never consulted, triggered stays unchanged.
     const wide = new InvestigatorEngine(
@@ -217,6 +230,57 @@ describe('InvestigatorEngine', () => {
     );
     await wide.analyze(threeNodeGraph(), 2);
     expect(wide.stats.triggered).toBe(0);
+  });
+
+  it('counts an invalid termination in the diagnostic stats', async () => {
+    const agent = stubAgent(null); // terminates 'invalid'
+    const engine = new InvestigatorEngine(
+      innerEngine([result('sym1', 1.0, 1), result('sym2', 0.9, 2)]),
+      agent,
+      0.2,
+    );
+
+    await engine.analyze(threeNodeGraph(), 2);
+    expect(engine.stats.invalid).toBe(1);
+    expect(engine.stats.concluded).toBe(0);
+  });
+
+  it('counts budget and error terminations in the diagnostic stats', async () => {
+    const budgetAgent: InvestigatorAgent = {
+      modelId: 'stub',
+      investigate: vi.fn(async () => ({
+        rootCause: null,
+        confidence: 0,
+        reasoning: '',
+        hopsUsed: 4,
+        termination: 'budget',
+      })),
+    };
+    const budgetEngine = new InvestigatorEngine(
+      innerEngine([result('sym1', 1.0, 1), result('sym2', 0.9, 2)]),
+      budgetAgent,
+      0.2,
+    );
+    await budgetEngine.analyze(threeNodeGraph(), 2);
+    expect(budgetEngine.stats.budget).toBe(1);
+
+    const errorAgent: InvestigatorAgent = {
+      modelId: 'stub',
+      investigate: vi.fn(async () => ({
+        rootCause: null,
+        confidence: 0,
+        reasoning: '',
+        hopsUsed: 0,
+        termination: 'error',
+      })),
+    };
+    const errorEngine = new InvestigatorEngine(
+      innerEngine([result('sym1', 1.0, 1), result('sym2', 0.9, 2)]),
+      errorAgent,
+      0.2,
+    );
+    await errorEngine.analyze(threeNodeGraph(), 2);
+    expect(errorEngine.stats.error).toBe(1);
   });
 
   it('skips the agent when there are no logic exceptions (resource fault)', async () => {

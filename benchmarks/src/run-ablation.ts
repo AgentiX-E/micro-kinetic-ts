@@ -832,7 +832,8 @@ async function main(): Promise<void> {
       if (inv) {
         const s = inv.stats;
         console.log(
-          `  [agentic] triggered=${s.triggered} concluded=${s.concluded} changed=${s.changed}`,
+          `  [agentic] triggered=${s.triggered} concluded=${s.concluded} changed=${s.changed} ` +
+            `invalid=${s.invalid} budget=${s.budget} error=${s.error}`,
         );
       }
 
