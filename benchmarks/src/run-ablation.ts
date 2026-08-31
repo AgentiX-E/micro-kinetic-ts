@@ -573,7 +573,7 @@ async function main(): Promise<void> {
    */
   function buildContainer(flags: FeatureFlags): {
     container: Container;
-    investigator: InvestigatorEngine | null;
+    getInvestigator: () => InvestigatorEngine | null;
   } {
     const c = new Container();
     let investigator: InvestigatorEngine | null = null;
@@ -604,7 +604,9 @@ async function main(): Promise<void> {
       return new RerankingEngine(pruner, reranker, LLM_RERANK_GAP_THRESHOLD);
     });
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
-    return { container: c, investigator };
+    // The engine is constructed lazily when the runner first resolves
+    // RCA_ENGINE, so expose a getter that reads the variable AFTER that point.
+    return { container: c, getInvestigator: () => investigator };
   }
 
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
@@ -714,7 +716,7 @@ async function main(): Promise<void> {
       // ── Wire feature flags into this config's engine ──
       // Collision aggregation: toggles TreePruner.enableCollisionAggregation.
       // The three ranking signals map to collisionWeight/topoWeight/logWeight.
-      const { container, investigator } = buildContainer(config.flags);
+      const { container, getInvestigator } = buildContainer(config.flags);
       // Self-learning: a SHARED calibrator across this config's reps/Fts so
       // weight updates from earlier cases feed back into later ones.
       const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;
@@ -826,8 +828,9 @@ async function main(): Promise<void> {
           `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
 
-      if (investigator) {
-        const s = investigator.stats;
+      const inv = getInvestigator();
+      if (inv) {
+        const s = inv.stats;
         console.log(
           `  [agentic] triggered=${s.triggered} concluded=${s.concluded} changed=${s.changed}`,
         );
