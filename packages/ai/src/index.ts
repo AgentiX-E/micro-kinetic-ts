@@ -23,12 +23,11 @@ export type {
 } from './interfaces/reranker.js';
 
 // ── Providers ───────────────────────────────────────────
-export { TfIdfEmbeddingProvider, tokenizeServiceName } from './providers/tfidf-embedding.js';
-
 export {
   DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
   SemanticAlignmentProvider,
 } from './providers/semantic-alignment.js';
+export { TfIdfEmbeddingProvider, tokenizeServiceName } from './providers/tfidf-embedding.js';
 
 export type { SemanticAlignmentConfig } from './providers/semantic-alignment.js';
 
@@ -72,3 +71,11 @@ export {
   jaccardSimilarity,
   normalizeL2,
 } from './utils/similarity.js';
+
+// ── Agent (GALA+ phase-III) ─────────────────────────────
+export {
+  GraphInvestigatorToolkit,
+  buildAdjacency,
+  buildCandidateEvidence,
+} from './agent/investigator-toolkit.js';
+export type { InvestigatorToolkit } from './agent/investigator-toolkit.js';

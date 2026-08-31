@@ -16,8 +16,8 @@
  * @module benchmarks/reranking-engine
  */
 
-import type { CandidateEvidence, IRootCauseReranker } from '../../packages/ai/src/index.js';
-import { shouldRerank } from '../../packages/ai/src/index.js';
+import type { IRootCauseReranker } from '../../packages/ai/src/index.js';
+import { buildCandidateEvidence, shouldRerank } from '../../packages/ai/src/index.js';
 import type {
   BuildFaultGraphOptions,
   FaultPropagationGraph,
@@ -25,7 +25,6 @@ import type {
   MetricMap,
   RootCauseResult,
   ServiceCallGraph,
-  ServiceId,
 } from '../../packages/core/src/index.js';
 
 /**
@@ -77,7 +76,7 @@ export class RerankingEngine implements IRCAEngine {
     )
       return results;
 
-    const candidates = results.map((r) => toEvidence(r.serviceId, graph));
+    const candidates = results.map((r) => buildCandidateEvidence(r.serviceId, graph));
     const { order } = await this.reranker.rerank({ candidates });
 
     // Re-order the results by the reranker's permutation and refresh ranks.
@@ -95,47 +94,4 @@ export class RerankingEngine implements IRCAEngine {
 
     return reordered.map((r, i) => ({ ...r, rank: i + 1 }));
   }
-}
-
-/**
- * Build per-candidate evidence from the fault graph for one service.
- */
-function toEvidence(serviceId: ServiceId, graph: FaultPropagationGraph): CandidateEvidence {
-  const node = graph.callGraph.nodes.get(serviceId);
-  const dominant = graph.dominantMetrics?.get(serviceId);
-  const anomaly = graph.anomalyScores.get(serviceId);
-
-  const evidence: CandidateEvidence = {
-    serviceId,
-    name: node?.name,
-    anomalyScore: anomaly,
-    dominantMetric: dominant?.label,
-    metricShift:
-      dominant && (dominant.head.length > 0 || dominant.tail.length > 0)
-        ? `head=[${dominant.head.join(',')}] tail=[${dominant.tail.join(',')}]`
-        : undefined,
-    breakdown: dominant?.breakdown,
-    deepestLogException: graph.deepestExceptions?.get(serviceId),
-    adjacency: buildAdjacency(serviceId, graph.callGraph),
-  };
-
-  return evidence;
-}
-
-/**
- * Compact adjacency summary for a service: its upstream and downstream
- * neighbours in the call graph.
- */
-function buildAdjacency(id: ServiceId, callGraph: ServiceCallGraph): string | undefined {
-  const upstream: string[] = [];
-  const downstream: string[] = [];
-  for (const e of callGraph.edges) {
-    if (e.to === id) upstream.push(e.from);
-    if (e.from === id) downstream.push(e.to);
-  }
-  if (upstream.length === 0 && downstream.length === 0) return undefined;
-  const parts: string[] = [];
-  if (upstream.length > 0) parts.push(`upstream=[${upstream.join(',')}]`);
-  if (downstream.length > 0) parts.push(`downstream=[${downstream.join(',')}]`);
-  return parts.join(' ');
 }
