@@ -194,4 +194,26 @@ describe('InvestigatorEngine', () => {
     engine.getCycleContributionBound(graph);
     expect(inner.getCycleContributionBound).toHaveBeenCalledTimes(1);
   });
+
+  it('tracks triggered/concluded/changed diagnostic counters', async () => {
+    // Narrow gap, agent concludes a DIFFERENT root cause → all three count.
+    const agent = stubAgent('src', 0.6);
+    const engine = new InvestigatorEngine(
+      innerEngine([result('sym1', 1.0, 1), result('sym2', 0.9, 2)]),
+      agent,
+      0.2,
+    );
+
+    await engine.analyze(threeNodeGraph(), 2);
+    expect(engine.stats).toEqual({ triggered: 1, concluded: 1, changed: 1 });
+
+    // Wide gap → the agent is never consulted, triggered stays unchanged.
+    const wide = new InvestigatorEngine(
+      innerEngine([result('sym1', 0.6, 1), result('sym2', 0.4, 2)]),
+      stubAgent('src'),
+      0.1,
+    );
+    await wide.analyze(threeNodeGraph(), 2);
+    expect(wide.stats.triggered).toBe(0);
+  });
 });

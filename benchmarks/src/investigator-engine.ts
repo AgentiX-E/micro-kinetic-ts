@@ -38,6 +38,13 @@ type DeterministicEngine = Omit<IRCAEngine, 'analyze'> & {
  * Wraps a deterministic engine with an optional graph-guided investigator.
  */
 export class InvestigatorEngine implements IRCAEngine {
+  /**
+   * Diagnostic counters, aggregated by the ablation runner to tell whether the
+   * agent is firing at all (`triggered`), reaching a conclusion (`concluded`),
+   * or actually changing the deterministic top-1 (`changed`).
+   */
+  public readonly stats = { triggered: 0, concluded: 0, changed: 0 };
+
   constructor(
     private readonly inner: DeterministicEngine,
     private readonly agent: InvestigatorAgent | null,
@@ -68,6 +75,8 @@ export class InvestigatorEngine implements IRCAEngine {
     )
       return results;
 
+    this.stats.triggered++;
+
     // Seed the toolkit with the deterministic top-K and let the agent walk the
     // graph upstream from those symptoms.
     const seeds = results.map((r) => r.serviceId);
@@ -77,6 +86,9 @@ export class InvestigatorEngine implements IRCAEngine {
     // Undecided, or a hallucinated service → deterministic fallback.
     if (outcome.rootCause === null) return results;
     if (!graph.callGraph.nodes.has(outcome.rootCause)) return results;
+
+    this.stats.concluded++;
+    if (outcome.rootCause !== results[0]!.serviceId) this.stats.changed++;
 
     return promoteRootCause(results, outcome.rootCause, outcome.confidence);
   }

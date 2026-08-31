@@ -571,8 +571,12 @@ async function main(): Promise<void> {
    * enabled). Each config gets its own container so the flags are wired
    * directly into the engine registered under RCA_ENGINE.
    */
-  function buildContainer(flags: FeatureFlags): Container {
+  function buildContainer(flags: FeatureFlags): {
+    container: Container;
+    investigator: InvestigatorEngine | null;
+  } {
     const c = new Container();
+    let investigator: InvestigatorEngine | null = null;
     c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
     c.register(DI_TOKENS.RCA_ENGINE, () => {
       const pruner = new TreePruner(
@@ -589,7 +593,8 @@ async function main(): Promise<void> {
         // Graph-guided ReAct investigator (DeepSeek). Null factory → the
         // wrapper falls back to the deterministic order (no-op slice).
         const agent = createInvestigatorFromEnv();
-        return new InvestigatorEngine(pruner, agent, AGENTIC_GAP_THRESHOLD);
+        investigator = new InvestigatorEngine(pruner, agent, AGENTIC_GAP_THRESHOLD);
+        return investigator;
       }
       if (!flags.llmReranker) return pruner;
       // Evidence-grounded reranker (DeepSeek). When the API key is absent the
@@ -599,7 +604,7 @@ async function main(): Promise<void> {
       return new RerankingEngine(pruner, reranker, LLM_RERANK_GAP_THRESHOLD);
     });
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
-    return c;
+    return { container: c, investigator };
   }
 
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
@@ -709,7 +714,7 @@ async function main(): Promise<void> {
       // ── Wire feature flags into this config's engine ──
       // Collision aggregation: toggles TreePruner.enableCollisionAggregation.
       // The three ranking signals map to collisionWeight/topoWeight/logWeight.
-      const container = buildContainer(config.flags);
+      const { container, investigator } = buildContainer(config.flags);
       // Self-learning: a SHARED calibrator across this config's reps/Fts so
       // weight updates from earlier cases feed back into later ones.
       const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;
@@ -820,6 +825,13 @@ async function main(): Promise<void> {
           `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
           `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
+
+      if (investigator) {
+        const s = investigator.stats;
+        console.log(
+          `  [agentic] triggered=${s.triggered} concluded=${s.concluded} changed=${s.changed}`,
+        );
+      }
 
       // Yield to event loop after each config so GC can collect temporary
       // BenchmarkSuite / RunResult objects before the next config starts.
