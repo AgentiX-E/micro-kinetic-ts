@@ -43,7 +43,7 @@ import { WeightCalibrator } from '../../packages/kinetic/src/signals/weight-cali
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { InvestigatorEngine } from './investigator-engine.js';
+import { InvestigatorEngine, type InvestigatorDecision } from './investigator-engine.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
@@ -484,6 +484,76 @@ function discoverAllCases(dataDir: string): CaseMeta[] {
   return cases;
 }
 
+// ── Agentic decision diagnostics ──────────────────────────
+
+/**
+ * Correlate the investigator's per-call decision trace with the per-case
+ * ground-truth list (both index-aligned to `runSuite` call order) and print a
+ * confusion matrix that distinguishes the agent FIXING a case (wrong→correct)
+ * from merely shuffling one wrong symptom for another (wrong→wrong) or
+ * regressing a previously-correct top-1 (correct→wrong).
+ */
+function dumpAgenticDecisions(
+  decisions: readonly InvestigatorDecision[],
+  caseOrder: ReadonlyArray<{ caseId: string; groundTruthService: string }>,
+): void {
+  if (decisions.length !== caseOrder.length) {
+    console.log(
+      `  [agentic diagnosis] MISMATCH decisions=${decisions.length} cases=${caseOrder.length} ` +
+        `— cannot align (skipping per-case breakdown)`,
+    );
+    return;
+  }
+
+  let wrongToWrong = 0;
+  let wrongToCorrect = 0;
+  let correctToWrong = 0;
+  let correctToCorrect = 0;
+  const changedRows: string[] = [];
+
+  for (let i = 0; i < decisions.length; i++) {
+    const d = decisions[i]!;
+    const c = caseOrder[i]!;
+    const baseline = d.baselineTop1;
+    // The effective final top-1: the agent's conclusion only when it was
+    // actually promoted; a hallucinated service (not in the call graph) is
+    // discarded and the deterministic top-1 is kept.
+    const final = d.promoted ? d.agentRootCause : baseline;
+    const baselineCorrect = baseline !== null && baseline === c.groundTruthService;
+    const finalCorrect = final !== null && final === c.groundTruthService;
+
+    if (baselineCorrect && finalCorrect) correctToCorrect++;
+    else if (baselineCorrect && !finalCorrect) correctToWrong++;
+    else if (!baselineCorrect && finalCorrect) wrongToCorrect++;
+    else wrongToWrong++;
+
+    // Surface every case where the agent altered the picture relative to the
+    // deterministic top-1: a promoted change (FIXED / REGRESSED / STILL-WRONG)
+    // or a discarded hallucination (HALLUCINATED).
+    const agentDiffered = d.agentRootCause !== null && d.agentRootCause !== baseline;
+    if (agentDiffered) {
+      let tag: string;
+      if (!d.promoted) tag = 'HALLUCINATED';
+      else if (finalCorrect) tag = 'FIXED';
+      else if (baselineCorrect) tag = 'REGRESSED';
+      else tag = 'STILL-WRONG';
+      changedRows.push(
+        `    ${c.caseId}  baseline=${baseline ?? '-'}  agent=${d.agentRootCause ?? '-'}  ` +
+          `GT=${c.groundTruthService}  ${tag}`,
+      );
+    }
+  }
+
+  const changed = decisions.filter((d) => d.changed).length;
+  console.log(
+    `  [agentic diagnosis] confusion: wrong→wrong=${wrongToWrong} ` +
+      `wrong→correct=${wrongToCorrect} correct→wrong=${correctToWrong} ` +
+      `correct→correct=${correctToCorrect}`,
+  );
+  console.log(`  [agentic diagnosis] changed=${changed} cases:`);
+  for (const row of changedRows) console.log(row);
+}
+
 // ── Main ──────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -720,6 +790,10 @@ async function main(): Promise<void> {
       // Self-learning: a SHARED calibrator across this config's reps/Fts so
       // weight updates from earlier cases feed back into later ones.
       const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;
+      // Per-case ground-truth list, pushed in the exact `runSuite` call order,
+      // so it can be zipped against the InvestigatorEngine's per-call decision
+      // trace (index-aligned) to build the agentic confusion matrix.
+      const agenticCaseOrder: Array<{ caseId: string; groundTruthService: string }> = [];
 
       let allA1 = 0,
         allA5 = 0,
@@ -769,6 +843,12 @@ async function main(): Promise<void> {
             cases: suiteCases,
             totalCases: suiteCases.length,
           };
+
+          // Record every case this suite will analyze, in order, for the
+          // agentic decision trace's ground-truth correlation.
+          for (const c of suite.cases) {
+            agenticCaseOrder.push({ caseId: c.id, groundTruthService: c.groundTruth.serviceId });
+          }
 
           const runner = new BenchmarkRunner(container, classifier, traceOpts, calibrator);
 
@@ -835,6 +915,7 @@ async function main(): Promise<void> {
           `  [agentic] triggered=${s.triggered} concluded=${s.concluded} changed=${s.changed} ` +
             `invalid=${s.invalid} budget=${s.budget} error=${s.error}`,
         );
+        dumpAgenticDecisions(inv.decisions, agenticCaseOrder);
       }
 
       // Yield to event loop after each config so GC can collect temporary

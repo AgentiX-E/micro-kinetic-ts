@@ -157,6 +157,16 @@ describe('InvestigatorEngine', () => {
 
     const out = await engine.analyze(minimalGraph(), 2);
     expect(out.map((r) => r.serviceId)).toEqual(['sym', 'src']);
+    // The hallucinated conclusion is recorded but NOT promoted: `promoted`
+    // stays false, so the effective final answer remains the baseline top-1.
+    expect(engine.decisions[0]).toMatchObject({
+      baselineTop1: 'sym',
+      agentRootCause: 'ghost',
+      triggered: true,
+      changed: false,
+      promoted: false,
+      termination: 'answer',
+    });
   });
 
   it('skips the agent when the top-1/top-2 gap meets the threshold', async () => {
@@ -300,5 +310,58 @@ describe('InvestigatorEngine', () => {
     expect(out.map((r) => r.serviceId)).toEqual(['sym1', 'sym2']);
     expect(agent.investigate).not.toHaveBeenCalled();
     expect(engine.stats.triggered).toBe(0);
+  });
+
+  it('records a triggered decision with the agent conclusion and change flag', async () => {
+    const agent = stubAgent('src', 0.6);
+    const engine = new InvestigatorEngine(
+      innerEngine([result('sym1', 1.0, 1), result('sym2', 0.9, 2)]),
+      agent,
+      0.2,
+    );
+
+    await engine.analyze(threeNodeGraph(), 2);
+    expect(engine.decisions).toHaveLength(1);
+    expect(engine.decisions[0]).toMatchObject({
+      baselineTop1: 'sym1',
+      agentRootCause: 'src',
+      triggered: true,
+      changed: true,
+      promoted: true,
+      termination: 'answer',
+    });
+  });
+
+  it('records a gated decision (wide gap) with triggered=false', async () => {
+    const engine = new InvestigatorEngine(
+      innerEngine([result('sym1', 0.6, 1), result('sym2', 0.4, 2)]),
+      stubAgent('src'),
+      0.1,
+    );
+
+    await engine.analyze(threeNodeGraph(), 2);
+    expect(engine.decisions).toHaveLength(1);
+    expect(engine.decisions[0]).toMatchObject({
+      baselineTop1: 'sym1',
+      agentRootCause: null,
+      triggered: false,
+      changed: false,
+    });
+  });
+
+  it('records a decision with null baseline when the inner engine returns nothing', async () => {
+    const engine = new InvestigatorEngine(
+      innerEngine([]),
+      stubAgent('src'),
+      0.2,
+    );
+
+    await engine.analyze(minimalGraph(), 1);
+    expect(engine.decisions).toHaveLength(1);
+    expect(engine.decisions[0]).toMatchObject({
+      baselineTop1: null,
+      triggered: false,
+      changed: false,
+    });
   });
 });
