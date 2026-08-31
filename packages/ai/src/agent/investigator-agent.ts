@@ -70,6 +70,16 @@ export class ReActInvestigatorAgent implements InvestigatorAgent {
     let hopsUsed = 0;
     try {
       while (toolkit.remainingHops() > 0) {
+        // On the final hop, nudge the model to conclude instead of acting again
+        // (the first agentic run showed the model exhausted the budget by
+        // exploring without ever emitting an answer).
+        if (toolkit.remainingHops() === 1) {
+          messages.push({
+            role: 'user',
+            content: 'You have one tool call left. Conclude with the answer now.',
+          });
+        }
+
         const response = await this.provider.complete(messages);
         const step = parseAgentResponse(response);
 

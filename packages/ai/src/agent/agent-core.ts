@@ -41,7 +41,8 @@ export type ParsedStep =
 export function buildSystemPrompt(): string {
   return [
     'You are a root-cause analysis agent for microservice systems. You investigate a fault',
-    'by walking the service dependency graph, ONE tool call per step.',
+    'by walking the service dependency graph, ONE tool call per step. You have a SMALL tool',
+    'budget, so conclude as soon as you have identified the likely source.',
     '',
     'Tools (call exactly one per step):',
     '- get_evidence(serviceId): the service anomaly, dominant metric head/tail shift,',
@@ -56,6 +57,12 @@ export function buildSystemPrompt(): string {
     '  MalformedJwtException means it received a bad token) and may COLLAPSE as it',
     '  stops receiving traffic.',
     '- If a service exception implies bad INPUT, walk UPSTREAM to find the producer.',
+    '',
+    'Investigation strategy:',
+    '1. Inspect the top symptom evidence.',
+    '2. Walk UPSTREAM to its producers and inspect the most likely one.',
+    '3. CONCLUDE immediately once you have found the source. Do NOT keep exploring —',
+    '   if you are uncertain, still emit your best guess as the answer.',
     '',
     'Respond with ONE JSON object. To act:',
     '  {"action": "get_evidence", "serviceId": "<id>"}',
