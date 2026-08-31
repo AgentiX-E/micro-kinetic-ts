@@ -75,7 +75,21 @@ export {
 // ── Agent (GALA+ phase-III) ─────────────────────────────
 export {
   GraphInvestigatorToolkit,
+  ReActInvestigatorAgent,
   buildAdjacency,
   buildCandidateEvidence,
-} from './agent/investigator-toolkit.js';
-export type { InvestigatorToolkit } from './agent/investigator-toolkit.js';
+  buildSystemPrompt,
+  createInvestigatorFromEnv,
+  executeAction,
+  parseAgentResponse,
+} from './agent/index.js';
+export type {
+  AgentAction,
+  AgentAnswer,
+  AgentTool,
+  EnvInvestigatorConfig,
+  InvestigationResult,
+  InvestigatorAgent,
+  InvestigatorToolkit,
+  ParsedStep,
+} from './agent/index.js';
