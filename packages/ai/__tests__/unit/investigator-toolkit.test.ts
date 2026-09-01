@@ -88,6 +88,30 @@ describe('buildCandidateEvidence', () => {
     expect(e.metricShift).toBeUndefined();
     expect(e.deepestLogException).toBe('MalformedJwtException');
   });
+
+  it('tags a logic-exception service as the symptom with an upstream-walk hint', () => {
+    const g = graph();
+    const e = buildCandidateEvidence('leaf', g);
+    expect(e.faultRole).toBe('symptom');
+    expect(e.interpretation).toContain('SYMPTOM');
+    expect(e.interpretation).toContain('MalformedJwtException');
+    expect(e.interpretation).toContain('UPSTREAM');
+  });
+
+  it('tags the silent upstream producer as a source candidate naming its symptom', () => {
+    const g = graph();
+    const e = buildCandidateEvidence('mid', g);
+    expect(e.faultRole).toBe('silent-source-candidate');
+    expect(e.interpretation).toContain('SILENT SOURCE');
+    expect(e.interpretation).toContain('leaf');
+  });
+
+  it('leaves a multi-hop-upstream service unclassified with no interpretation', () => {
+    const g = graph();
+    const e = buildCandidateEvidence('src', g);
+    expect(e.faultRole).toBe('unclassified');
+    expect(e.interpretation).toBeUndefined();
+  });
 });
 
 // ── GraphInvestigatorToolkit ──────────────────────────────

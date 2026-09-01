@@ -49,6 +49,14 @@ describe('buildSystemPrompt', () => {
     expect(p).toContain('JsonMappingException');
     expect(p).toContain('conclude the upstream producer');
   });
+
+  it('warns against the anomaly-magnitude prior and trusts the fault role', () => {
+    const p = buildSystemPrompt();
+    expect(p).toContain('LARGEST anomaly is usually the SYMPTOM');
+    expect(p).toContain('highest-anomaly service');
+    expect(p).toContain('faultRole');
+    expect(p).toContain('silent-source-candidate');
+  });
 });
 
 // ── parseAgentResponse ────────────────────────────────────

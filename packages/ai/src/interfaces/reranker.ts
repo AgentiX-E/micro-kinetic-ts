@@ -13,6 +13,8 @@
  * @module ai/interfaces
  */
 
+import type { FaultRole } from '../agent/fault-role.js';
+
 /**
  * Per-candidate evidence the reranker reasons over.
  *
@@ -50,6 +52,19 @@ export interface CandidateEvidence {
   readonly logVolume?: number;
   /** Compact adjacency summary, e.g. "upstream=[a,b] downstream=[c]". */
   readonly adjacency?: string;
+  /**
+   * Deterministic fault role (symptom vs silent-source candidate), derived
+   * from graph structure. Populated by the investigator's evidence builder to
+   * counter the model's "biggest anomaly = root cause" prior on wrong-value
+   * faults. Absent for the single-shot reranker (which ranks by other signals).
+   */
+  readonly faultRole?: FaultRole;
+  /**
+   * Concise natural-language interpretation of the fault role, spelling out the
+   * causal chain (e.g. "SYMPTOM: throws X = received bad input; walk upstream").
+   * Absent when the role is `unclassified` or the field is not populated.
+   */
+  readonly interpretation?: string;
 }
 
 /**
