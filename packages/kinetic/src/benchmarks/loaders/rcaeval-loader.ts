@@ -25,6 +25,7 @@ import type {
   ServiceCallGraph,
   ServiceNode,
   TimeSeries,
+  TraceActivityCounts,
 } from '@agentix-e/micro-kinetic-core';
 
 import type {
@@ -148,6 +149,33 @@ const SERVICE_COLUMN_ALIASES = new Set([
   'source_service',
   'name',
 ]);
+
+/**
+ * Normalise a trace span's raw start-time cells to Unix milliseconds.
+ *
+ * Jaeger traces.csv carries BOTH `startTimeMillis` (milliseconds, ~1.7e12) and
+ * `startTime` (microseconds, ~1.7e15). Prefer `startTimeMillis` (already ms);
+ * otherwise `startTime`/`start_time` are microseconds and must be divided by
+ * 1000. A bare `timestamp` column is magnitude-inferred: >1e15 is nanoseconds
+ * (÷1e6); anything else is already milliseconds.
+ */
+function normalizeTraceStartTimeMs(row: Record<string, string>): number {
+  if (row.startTimeMillis !== undefined && row.startTimeMillis !== '') {
+    return parseInt(row.startTimeMillis, 10);
+  }
+  if (row.startTime !== undefined && row.startTime !== '') {
+    return Math.floor(parseInt(row.startTime, 10) / 1000);
+  }
+  if (row.start_time !== undefined && row.start_time !== '') {
+    return Math.floor(parseInt(row.start_time, 10) / 1000);
+  }
+  if (row.timestamp !== undefined && row.timestamp !== '') {
+    const ts = parseInt(row.timestamp, 10);
+    if (ts > 1e15) return Math.floor(ts / 1e6); // ns → ms
+    return ts; // already ms
+  }
+  return 0;
+}
 
 /**
  * Header aliases for the trace span's ERROR-INDICATOR column. RCAEval stores
@@ -635,12 +663,16 @@ export class RCAEvalLoader {
         const message = msgCol ? (row[msgCol] ?? '') : '';
         const explicitLevel = lvlCol ? (row[lvlCol] ?? '').toUpperCase() : '';
         const level = classifyLogLevel(explicitLevel, message);
+        // RCAEval logs.csv timestamps are Unix SECONDS (same domain as
+        // inject_time) but some cases carry NANOSECONDS (~1.7e18). The unified
+        // BenchmarkCase carries time in MILLISECONDS, so magnitude-detect:
+        // |ts| > 1e15 is nanoseconds → divide by 1e6 (ns→ms); otherwise treat
+        // as seconds → multiply by 1000. This keeps the post-injection filter
+        // (`timestamp >= injectTimeMs`) comparing like-for-like.
+        const rawTs = tsCol ? parseInt(row[tsCol] ?? '0', 10) : 0;
+        const timestampMs = Math.abs(rawTs) > 1e15 ? Math.floor(rawTs / 1e6) : rawTs * 1000;
         return {
-          // RCAEval timestamps are Unix SECONDS (same domain as inject_time),
-          // while the unified BenchmarkCase carries time in MILLISECONDS.
-          // Convert to ms so the log signal's post-injection filter
-          // (`timestamp >= injectTimeMs`) compares like-for-like.
-          timestamp: (tsCol ? parseInt(row[tsCol] ?? '0', 10) : 0) * 1000,
+          timestamp: timestampMs,
           service: svcCol ? (row[svcCol] ?? 'unknown') : 'unknown',
           message,
           level,
@@ -706,7 +738,7 @@ export class RCAEvalLoader {
             undefined,
           service,
           operationName: row.operation ?? row.operationName ?? 'unknown',
-          startTime: parseInt(row.start_time ?? row.startTime ?? row.timestamp ?? '0', 10),
+          startTime: normalizeTraceStartTimeMs(row),
           duration: parseInt(row.duration ?? '0', 10),
           status: normalizeSpanStatus(statusCol ? row[statusCol] : undefined),
         };
@@ -848,6 +880,62 @@ interface RCAEvalMetricPoint {
   timestamp: number;
   value: number;
   metric_name: string;
+}
+
+/**
+ * Stream-scan the ENTIRE traces.csv and return per-service pre/post span
+ * counts without retaining raw spans.
+ *
+ * Unlike tryLoadTraces (which uses readFilePrefix + maxSpans and therefore
+ * truncates before the post-injection window), this reads the WHOLE file (up
+ * to ~27MB / ~178k spans) so the trace-activity rise signal sees the full
+ * post-injection window. Each span is reduced to its service id + start time
+ * and discarded, collapsing ~178k spans to a handful of {pre, post} pairs.
+ *
+ * @param tracesPath - Absolute path to traces.csv.
+ * @param injectTimeMs - Fault injection time in Unix milliseconds.
+ * @returns A map from service id to {pre, post} span counts (empty on error).
+ */
+export async function countTraceActivityByService(
+  tracesPath: string,
+  injectTimeMs: number,
+): Promise<ReadonlyMap<string, TraceActivityCounts>> {
+  const counts = new Map<string, { pre: number; post: number }>();
+
+  let content: string;
+  try {
+    content = await fs.promises.readFile(tracesPath, 'utf-8');
+  } catch {
+    return counts;
+  }
+
+  const lines = content.split('\n');
+  if (lines.length < 2) return counts;
+
+  // Same service-column extraction as tryLoadTraces: header alias detection,
+  // falling back to 'unknown' when the column is absent or empty.
+  const header = lines[0]!.split(',').map((h) => h.trim());
+  const svcCol = header.find((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.trim() === '') continue;
+    const values = line.split(',').map((v) => v.trim());
+    const row: Record<string, string> = {};
+    for (let j = 0; j < header.length; j++) {
+      row[header[j]!] = values[j] ?? '';
+    }
+
+    const service = svcCol ? (row[svcCol] ?? 'unknown') : 'unknown';
+    const startTimeMs = normalizeTraceStartTimeMs(row);
+
+    const entry = counts.get(service) ?? { pre: 0, post: 0 };
+    if (startTimeMs < injectTimeMs) entry.pre += 1;
+    else entry.post += 1;
+    counts.set(service, entry);
+  }
+
+  return counts;
 }
 
 /**

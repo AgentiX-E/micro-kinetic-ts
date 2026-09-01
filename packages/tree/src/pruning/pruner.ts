@@ -60,6 +60,7 @@ import {
   computeLogScores,
   computeRiseScores,
   computeTopoSourceScores,
+  computeTraceActivityScores,
   gatedRiseContribution,
 } from './ranking-signals.js';
 
@@ -207,6 +208,25 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Default 0 (opt-in).
    */
   readonly riseWeight: number;
+  /**
+   * Weight of the trace-activity signal: reward the UNIQUE service whose
+   * post-injection trace span count rises significantly above its pre-injection
+   * count.
+   *
+   *   finalScore(v) += traceWeight × traceActivity(v)
+   *
+   * `traceActivity(v)` is `1` only when exactly one graph service qualifies as
+   * a significant riser (pre ≥ 500, post ≥ 1, post/pre ≥ 1.15), and `0` for
+   * every service otherwise — see computeTraceActivityScores. This is the
+   * deterministic signature of a SILENT-SOURCE fault (RCAEval RE3 "wrong
+   * value", e.g. TrainTicket's `ts-auth-service`), which emits no exception
+   * and no error span, only a workload rise visible in the span counts. The
+   * uniqueness gate keeps route/latency cases (whose GT does not rise) neutral
+   * so the signal cannot misfire onto a low-volume edge service.
+   *
+   * Default: 0 (opt-in).
+   */
+  readonly traceWeight: number;
 }
 
 /**
@@ -224,6 +244,7 @@ export function toRankingWeights(
     | 'topoWeight'
     | 'logWeight'
     | 'riseWeight'
+    | 'traceWeight'
   >,
 ): RankingWeights {
   return {
@@ -233,6 +254,7 @@ export function toRankingWeights(
     topoWeight: options.topoWeight,
     logWeight: options.logWeight,
     riseWeight: options.riseWeight,
+    traceWeight: options.traceWeight,
   };
 }
 
@@ -250,6 +272,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   logWeight: 1.0,
   logSignalMode: 'count',
   riseWeight: 0.0,
+  traceWeight: 0.0,
 };
 
 /**
@@ -469,6 +492,15 @@ export class TreePruner {
       new Set(callGraph.nodes.keys()),
       injectTimeMs,
     );
+    // The trace-activity signal is the deterministic signature of a
+    // SILENT-SOURCE fault: it rewards the UNIQUE service whose post-injection
+    // span count rises significantly above its pre-injection count. The counts
+    // are pre-computed by the loader (see TraceActivityCounts) so the engine
+    // never holds raw spans — only per-service {pre, post} integers.
+    const traceActivityScores = computeTraceActivityScores(
+      options?.traceActivity,
+      new Set(callGraph.nodes.keys()),
+    );
 
     return {
       callGraph: topologyGraph,
@@ -486,6 +518,7 @@ export class TreePruner {
       topoScores,
       riseScores,
       deepestExceptions,
+      traceActivityScores,
     };
   }
 
@@ -544,6 +577,7 @@ export class TreePruner {
       graph.logScores,
       graph.topoScores,
       graph.riseScores,
+      graph.traceActivityScores,
     );
 
     return results;
@@ -719,6 +753,7 @@ function performTreeRCA(
   logScores?: ReadonlyMap<ServiceId, number>,
   topoScores?: ReadonlyMap<ServiceId, number>,
   riseScores?: ReadonlyMap<ServiceId, number>,
+  traceActivityScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -930,7 +965,7 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with four causal priors (all opt-in, default 0):
+  // Rank by self anomaly combined with seven causal priors (all opt-in except log):
   //
   // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
   //    node's neighbours whose index-based onset is later.
@@ -947,6 +982,8 @@ function performTreeRCA(
   //    rises post-injection (source does more work); penalise a collapse ONLY
   //    when the service emitted no logic exception (silent symptom), never
   //    when it did (source crash) — see gatedRiseContribution.
+  // 7. A TRACE-ACTIVITY prior (`traceWeight`) — reward the UNIQUE service whose
+  //    post-injection span count rises significantly (silent-source signature).
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -963,6 +1000,7 @@ function performTreeRCA(
   //                 + topoWeight      × topoSource(v)
   //                 + logWeight       × logScore(v)
   //                 + riseWeight      × gatedRiseContribution(dir(v), hasLogicException(v))
+  //                 + traceWeight     × traceActivity(v)
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
@@ -980,6 +1018,11 @@ function performTreeRCA(
   // logic exception (silent symptom), never when it did (source crash).
   const riseTerm = (id: ServiceId): number =>
     riseWeight * gatedRiseContribution(riseScores?.get(id) ?? 0.5, (logScores?.get(id) ?? 0) > 0);
+  // The trace-activity signal rewards the unique significant span-count riser
+  // (silent-source signature). It is a pure {0,1} indicator per service, so
+  // the term is simply the weight applied to whichever service was flagged.
+  const traceWeight = weights.traceWeight ?? 0;
+  const traceTerm = (id: ServiceId): number => traceWeight * (traceActivityScores?.get(id) ?? 0);
   scoredNodes.sort((a, b) => {
     const aScore =
       Math.log(a.score) +
@@ -988,7 +1031,8 @@ function performTreeRCA(
       weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
       weights.logWeight * (logScores?.get(a.serviceId) ?? 0) +
-      riseTerm(a.serviceId);
+      riseTerm(a.serviceId) +
+      traceTerm(a.serviceId);
     const bScore =
       Math.log(b.score) +
       weights.sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
@@ -996,7 +1040,8 @@ function performTreeRCA(
       weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
       weights.logWeight * (logScores?.get(b.serviceId) ?? 0) +
-      riseTerm(b.serviceId);
+      riseTerm(b.serviceId) +
+      traceTerm(b.serviceId);
     if (bScore !== aScore) return bScore - aScore;
     if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;

@@ -7,7 +7,11 @@
  * @module benchmarks/loaders/types
  */
 
-import type { MetricMap, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
+import type {
+  MetricMap,
+  ServiceCallGraph,
+  TraceActivityCounts,
+} from '@agentix-e/micro-kinetic-core';
 
 // ── Common Benchmark Types ────────────────────────────────
 
@@ -53,6 +57,8 @@ export interface BenchmarkCase {
   readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
   /** Optional trace spans (RE2, RE3, AIOps2025). */
   readonly traces?: ReadonlyArray<BenchmarkTraceSpan>;
+  /** Optional per-service pre/post span counts (trace-activity rise signal). */
+  readonly traceActivity?: ReadonlyMap<string, TraceActivityCounts>;
   /** Optional structured event records (RCA100). */
   readonly events?: ReadonlyArray<BenchmarkEvent>;
   /** Optional alert data (RCA100). */
@@ -82,7 +88,7 @@ export interface BenchmarkTraceSpan {
   readonly parentSpanId?: string;
   readonly service: string;
   readonly operationName: string;
-  readonly startTime: number;
+  readonly startTime: number; // Unix milliseconds
   readonly duration: number;
   readonly status: 'OK' | 'ERROR';
 }

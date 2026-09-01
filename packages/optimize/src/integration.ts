@@ -31,6 +31,8 @@ export function configToPrunerOptions(config: RCAConfiguration): Partial<TreePru
     collisionWeight: config.ranking.collisionWeight,
     topoWeight: config.ranking.topoWeight,
     logWeight: config.ranking.logWeight,
+    riseWeight: config.ranking.riseWeight ?? 0,
+    traceWeight: config.ranking.traceWeight ?? 0,
   };
 }
 

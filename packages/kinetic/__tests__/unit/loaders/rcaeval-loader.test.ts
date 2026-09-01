@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   RCAEvalLoader,
   classifyLogLevel,
+  countTraceActivityByService,
   extractDeepestExceptionClass,
   extractExceptionNames,
   extractSpringBootLevel,
@@ -1025,6 +1026,137 @@ describe('RCAEvalLoader', () => {
       const benchSuite = loader.toBenchmarkSuite(suite, callGraphs);
       expect(benchSuite.name).toBe('rcaeval-re3');
     });
+  });
+});
+
+describe('trace start-time normalization', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('reads the startTimeMillis column directly as milliseconds (no ×1000)', () => {
+    const tracesContent = [
+      'traceId,spanId,serviceName,startTimeMillis,startTime,duration',
+      't1,s1,svc-a,1700000000000,1700000000000000,100',
+      't2,s2,svc-b,1700000001000,1700000001000000,200',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces).toBeDefined();
+    // startTimeMillis is already ms; the µs startTime column must be ignored.
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+    expect(result.traces![1]!.startTime).toBe(1700000001000);
+  });
+
+  it('divides a microsecond startTime fallback by 1000', () => {
+    const tracesContent = [
+      'traceId,spanId,serviceName,startTime,duration',
+      't1,s1,svc-a,1700000000000000,100',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+  });
+});
+
+describe('log timestamp normalization', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('converts nanosecond timestamps to ms and keeps seconds→ms', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      logs: [
+        'timestamp,service,message,level',
+        '1700000000000000000,cartservice,ns event,INFO',
+        '1000,cartservice,second event,INFO',
+      ].join('\n'),
+    });
+
+    const result = loader.loadCase(casePath);
+    // Nanoseconds (~1.7e18) → milliseconds (~1.7e12).
+    expect(result.logs![0]!.timestamp).toBe(1700000000000);
+    // Seconds stay on the existing ×1000 path.
+    expect(result.logs![1]!.timestamp).toBe(1000 * 1000);
+  });
+});
+
+describe('countTraceActivityByService', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('counts pre/post spans per service at the injection boundary', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,startTimeMillis,duration',
+        't1,s1,svc-a,500,10',
+        't2,s2,svc-a,1500,10',
+        't3,s3,svc-b,800,10',
+        't4,s4,svc-b,1000,10',
+        't5,s5,svc-b,2000,10',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1000);
+    expect(counts.size).toBe(2);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+    expect(counts.get('svc-b')).toEqual({ pre: 1, post: 2 });
+  });
+
+  it('returns an empty map when the traces file is missing', async () => {
+    const counts = await countTraceActivityByService(path.join(tempDir, 'missing.csv'), 1000);
+    expect(counts.size).toBe(0);
   });
 });
 

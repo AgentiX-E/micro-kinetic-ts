@@ -14,6 +14,7 @@ export { RCA100Loader } from './loaders/rca100-loader.js';
 export {
   RCAEvalLoader,
   classifyLogLevel,
+  countTraceActivityByService,
   extractDeepestExceptionClass,
   extractExceptionNames,
   extractSpringBootLevel,

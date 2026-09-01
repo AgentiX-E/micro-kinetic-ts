@@ -153,6 +153,14 @@ export interface FailedCase {
     readonly gtTopoSource?: number;
     readonly topTopoSource?: number;
     /**
+     * Trace span-activity rise signal diagnostics: the ground-truth service's
+     * pre/post span counts and its rise ratio, plus the service with the
+     * highest post/pre ratio (the signal's top candidate). Absent when the
+     * case carried no trace-activity counts.
+     */
+    readonly gtTraceActivity?: { pre: number; post: number; ratio: number };
+    readonly topTraceActivity?: { service: string; pre: number; post: number; ratio: number };
+    /**
      * Raw feature-score decomposition of the GT / top-1 anomaly service's
      * dominant metric (deviation / trend / cv / burst / riseRatio / dropRatio
      * / baselineMean). Preformatted for the failure diagnostic — reveals WHY
@@ -352,6 +360,7 @@ export class BenchmarkRunner {
         const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics, {
           injectTimeMs: this.useInjectTime ? benchCase.injectTime : 0,
           logs: benchCase.logs,
+          traceActivity: benchCase.traceActivity,
         });
         const results = await engine.analyze(faultGraph, topK);
 
@@ -439,6 +448,42 @@ export class BenchmarkRunner {
         )?.ratioContrib;
         const gtTopoSource = faultGraph.topoScores?.get(benchCase.groundTruth.serviceId);
         const topTopoSource = faultGraph.topoScores?.get(topAnomaly[0]?.serviceId ?? '');
+        // Trace span-activity rise diagnostics: the GT's pre/post span counts
+        // and rise ratio, plus the highest-ratio service (the signal's top
+        // candidate). Only populated when the case carries trace-activity
+        // counts; defensive against an empty map.
+        let gtTraceActivity: { pre: number; post: number; ratio: number } | undefined;
+        let topTraceActivity:
+          { service: string; pre: number; post: number; ratio: number } | undefined;
+        if (benchCase.traceActivity && benchCase.traceActivity.size > 0) {
+          const gtCounts = benchCase.traceActivity.get(benchCase.groundTruth.serviceId);
+          if (gtCounts) {
+            gtTraceActivity = {
+              pre: gtCounts.pre,
+              post: gtCounts.post,
+              ratio: gtCounts.pre > 0 ? gtCounts.post / gtCounts.pre : gtCounts.post,
+            };
+          }
+          let bestService = '';
+          let bestCounts: { pre: number; post: number } | undefined;
+          let bestRatio = -1;
+          for (const [service, counts] of benchCase.traceActivity) {
+            const ratio = counts.pre > 0 ? counts.post / counts.pre : counts.post;
+            if (ratio > bestRatio) {
+              bestRatio = ratio;
+              bestService = service;
+              bestCounts = counts;
+            }
+          }
+          if (bestCounts) {
+            topTraceActivity = {
+              service: bestService,
+              pre: bestCounts.pre,
+              post: bestCounts.post,
+              ratio: bestCounts.pre > 0 ? bestCounts.post / bestCounts.pre : bestCounts.post,
+            };
+          }
+        }
 
         // ── Enrich predictions with classifier-generated fault types ──
         const enrichedResults = this.classifier
@@ -513,6 +558,8 @@ export class BenchmarkRunner {
               topRatioContrib,
               gtTopoSource,
               topTopoSource,
+              gtTraceActivity,
+              topTraceActivity,
               gtBreakdown,
               top1Breakdown,
             },

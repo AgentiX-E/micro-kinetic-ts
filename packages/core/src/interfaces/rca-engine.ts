@@ -14,7 +14,7 @@
  */
 
 import type { MetricMap, RootCauseResult } from '../types/faults.js';
-import type { FaultPropagationGraph, ServiceCallGraph } from '../types/graph.js';
+import type { FaultPropagationGraph, ServiceCallGraph, ServiceId } from '../types/graph.js';
 
 /**
  * Core RCA engine interface.
@@ -86,6 +86,23 @@ export interface FaultLogEntry {
 }
 
 /**
+ * Per-service trace span activity, split by the fault injection instant.
+ *
+ * The trace-activity signal (a silent-source fault makes its SOURCE service
+ * emit MORE spans after injection — a workload rise with no error/log
+ * signature) needs only the pre/post span COUNTS per service, not the raw
+ * span tree. Keeping counts instead of spans is the memory-safe contract: a
+ * TrainTicket case carries 178K+ spans, but a per-service `{pre, post}` pair
+ * collapses them to two integers per service (≈70 services).
+ */
+export interface TraceActivityCounts {
+  /** Number of spans emitted BEFORE the fault injection time. */
+  readonly pre: number;
+  /** Number of spans emitted AT or AFTER the fault injection time. */
+  readonly post: number;
+}
+
+/**
  * Optional inputs to {@link IRCAEngine.buildFaultGraph}.
  *
  * These carry case-level temporal context that is independent of the call
@@ -105,6 +122,15 @@ export interface BuildFaultGraphOptions {
    * Absent logs simply disable that signal (neutral for every service).
    */
   readonly logs?: ReadonlyArray<FaultLogEntry>;
+  /**
+   * Per-service trace span activity (pre/post fault-injection counts). Drives
+   * the trace-activity signal: a silent-source fault (RCAEval RE3, e.g.
+   * TrainTicket's `ts-auth-service` "wrong value" fault) emits no exception
+   * and no error span, only a mild workload rise, so its span count RISES
+   * after injection while every other service's stays flat or falls. Absent
+   * counts disable that signal (neutral for every service).
+   */
+  readonly traceActivity?: ReadonlyMap<ServiceId, TraceActivityCounts>;
 }
 
 export interface IRCAEngine {

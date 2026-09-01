@@ -37,6 +37,7 @@ function makeCfg(overrides?: Partial<HistoricalConfig>): HistoricalConfig {
     collisionWeight: 0,
     topoWeight: 0,
     logWeight: 1.0,
+    traceWeight: 0,
     ...overrides,
   };
 }

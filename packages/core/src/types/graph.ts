@@ -207,6 +207,15 @@ export interface FaultPropagationGraph {
    * exceptions.
    */
   readonly deepestExceptions?: ReadonlyMap<ServiceId, string>;
+  /**
+   * Per-service trace-activity score (sparse, `{service: 1}` or empty). A
+   * silent-source fault (RCAEval RE3) makes its source service the UNIQUE
+   * significant span-count riser (post-injection count ≫ pre-injection count),
+   * so the signal emits exactly one entry `{source: 1}`; when zero or
+   * multiple services qualify it is empty (neutral). Feeds the (opt-in)
+   * traceWeight ranking signal.
+   */
+  readonly traceActivityScores?: ReadonlyMap<ServiceId, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

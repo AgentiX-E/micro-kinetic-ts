@@ -31,6 +31,7 @@ import {
 } from '../../packages/core/src/index.js';
 import {
   BenchmarkRunner,
+  countTraceActivityByService,
   extractExceptionNames,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
@@ -151,6 +152,13 @@ interface CliOptions {
   /** Log signal scoring mode: 'count' (default) or 'novelty' (IDF-weighted). */
   logSignalMode: 'count' | 'novelty';
   /**
+   * Strength of the trace span-activity rise signal in the ranking. Default 0
+   * (disabled). When > 0, the loader computes per-service pre/post span counts
+   * from traces.csv and the TreePruner's `traceWeight` rewards the service
+   * whose span activity rises most after injection.
+   */
+  traceWeight: number;
+  /**
    * Direction-aware deviation: discount the DROP component of a metric's
    * deviation by this factor (0 = symmetric, 1 = ignore drops entirely). A
    * traffic-loss collapse (symptom) is discounted so it cannot out-rank an
@@ -173,6 +181,7 @@ function parseArgs(): CliOptions {
     logWeight: 1.0,
     logSignalMode: 'count',
     collapseDiscount: 0,
+    traceWeight: 0,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -189,6 +198,8 @@ function parseArgs(): CliOptions {
       opts.topoWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--log-weight' && i + 1 < args.length)
       opts.logWeight = parseFloat(args[++i]!) || 0;
+    else if (args[i] === '--trace-weight' && i + 1 < args.length)
+      opts.traceWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--log-signal-mode' && i + 1 < args.length) {
       const mode = args[++i]!;
       opts.logSignalMode = mode === 'novelty' ? 'novelty' : 'count';
@@ -209,6 +220,7 @@ function createContainer(weights: {
   logWeight: number;
   logSignalMode: 'count' | 'novelty';
   collapseDiscount: number;
+  traceWeight: number;
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
@@ -404,6 +416,8 @@ interface LoadStats {
   cases: BenchmarkCase[];
   errors: string[];
   errorSamples: Map<string, number>; // error message → count
+  /** Number of cases that got per-service trace-activity counts computed. */
+  traceActivityCases: number;
   traceStats: {
     total: number;
     pruned: number;
@@ -453,6 +467,7 @@ async function loadSingleCase(
   meta: CaseMeta,
   loader: RCAEvalLoader,
   semanticConfig?: { embeddingProvider: any; llmProvider: any; alignmentConfig: any },
+  computeTraceActivity = false,
 ): Promise<{
   benchCase: BenchmarkCase;
   traceUsed: boolean;
@@ -487,7 +502,7 @@ async function loadSingleCase(
       duration: t.duration,
       statusCode: t.status === 'ERROR' ? 500 : 200,
       isError: t.status === 'ERROR',
-      startTime: t.startTime * 1000,
+      startTime: t.startTime,
     }));
     callGraph = augmentTopologyWithTraces(callGraph, spans, {
       minCallFrequency: 1,
@@ -503,7 +518,20 @@ async function loadSingleCase(
         ? ('rcaeval-re2' as const)
         : ('rcaeval-re3' as const);
 
-  const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
+  let benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
+
+  // Trace span-activity rise signal: compute per-service pre/post span counts
+  // only when requested (traceWeight > 0) — this performs a full streaming
+  // scan of traces.csv, which is expensive across 270+ RE2/RE3 cases.
+  if (computeTraceActivity) {
+    benchCase = {
+      ...benchCase,
+      traceActivity: await countTraceActivityByService(
+        join(meta.dirPath, 'traces.csv'),
+        benchCase.injectTime,
+      ),
+    };
+  }
 
   // Free trace data after augmentation — prevents OOM on RE2 (270+ cases
   // each with 100K+ trace spans).  The benchmark runner does not use
@@ -528,10 +556,12 @@ async function loadCases(
   loader: RCAEvalLoader,
   maxCases: number,
   semanticConfig?: { embeddingProvider: any; llmProvider: any; alignmentConfig: any },
+  computeTraceActivity = false,
 ): Promise<LoadStats> {
   const loaded: BenchmarkCase[] = [];
   const errors: string[] = [];
   const errorSamples = new Map<string, number>();
+  let traceActivityCases = 0;
   const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
   let traceCount = 0,
     prunedCount = 0,
@@ -560,7 +590,9 @@ async function loadCases(
         meta,
         loader,
         semanticConfig,
+        computeTraceActivity,
       );
+      if (benchCase.traceActivity) traceActivityCases++;
 
       // Collect semantic stats from diagnostic labels on the call graph
       const firstNode = benchCase.callGraph.nodes.values().next().value;
@@ -641,6 +673,7 @@ async function loadCases(
     cases: loaded,
     errors,
     errorSamples,
+    traceActivityCases,
     traceStats: {
       total: traceCount,
       pruned: prunedCount,
@@ -1030,7 +1063,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1097,6 +1130,7 @@ async function main(): Promise<void> {
     logWeight: opts.logWeight,
     logSignalMode: opts.logSignalMode,
     collapseDiscount: opts.collapseDiscount,
+    traceWeight: opts.traceWeight,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(
@@ -1127,7 +1161,13 @@ async function main(): Promise<void> {
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
-    const stats = await loadCases(metas, loader, caseLimit, semanticConfig);
+    const stats = await loadCases(
+      metas,
+      loader,
+      caseLimit,
+      semanticConfig,
+      opts.traceWeight > 0,
+    );
 
     // ── Report load errors with comprehensive diagnostics ──
     reportLoadErrors(systemName, suiteName, stats);

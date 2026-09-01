@@ -5,6 +5,7 @@ import {
   computeLogScores,
   computeRiseScores,
   computeTopoSourceScores,
+  computeTraceActivityScores,
   gatedRiseContribution,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
@@ -446,5 +447,83 @@ describe('computeDeepestExceptions', () => {
   it('returns an empty map for undefined logs or empty nodeIds', () => {
     expect(computeDeepestExceptions(undefined, nodes, 0).size).toBe(0);
     expect(computeDeepestExceptions([], new Set(), 0).size).toBe(0);
+  });
+});
+
+describe('computeTraceActivityScores', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  function countsOf(
+    ...entries: Array<[string, { pre: number; post: number }]>
+  ): Map<ServiceId, { pre: number; post: number }> {
+    return new Map(entries);
+  }
+
+  it('returns an empty map for undefined or empty counts', () => {
+    expect(computeTraceActivityScores(undefined, nodes).size).toBe(0);
+    expect(computeTraceActivityScores(new Map(), nodes).size).toBe(0);
+  });
+
+  it('returns {svc: 1} for exactly one qualifying candidate (pre>=500, post>=1, ratio>=1.15)', () => {
+    const counts = countsOf(['a', { pre: 500, post: 575 }]); // ratio 1.15
+    const scores = computeTraceActivityScores(counts, nodes);
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.size).toBe(1);
+  });
+
+  it('returns an empty map when zero candidates qualify', () => {
+    const counts = countsOf(
+      ['a', { pre: 100, post: 100 }], // pre < 500
+      ['b', { pre: 300, post: 100 }], // ratio < 1.15 and pre < 500
+    );
+    expect(computeTraceActivityScores(counts, nodes).size).toBe(0);
+  });
+
+  it('returns an empty map when multiple candidates qualify', () => {
+    const counts = countsOf(
+      ['a', { pre: 500, post: 575 }], // ratio 1.15
+      ['b', { pre: 1000, post: 1200 }], // ratio 1.2
+    );
+    expect(computeTraceActivityScores(counts, nodes).size).toBe(0);
+  });
+
+  it('rejects a service with pre < minPreCount', () => {
+    const counts = countsOf(['a', { pre: 499, post: 600 }]); // ratio > 1.15 but pre too low
+    expect(computeTraceActivityScores(counts, nodes).size).toBe(0);
+  });
+
+  it('rejects a service with post < minPostCount', () => {
+    const counts = countsOf(['a', { pre: 500, post: 0 }]);
+    expect(computeTraceActivityScores(counts, nodes).size).toBe(0);
+  });
+
+  it('rejects a service with ratio < riseThreshold', () => {
+    const counts = countsOf(['a', { pre: 500, post: 570 }]); // ratio 1.14 < 1.15
+    expect(computeTraceActivityScores(counts, nodes).size).toBe(0);
+  });
+
+  it('rejects a service with pre === 0 (division-by-zero guard)', () => {
+    const counts = countsOf(['a', { pre: 0, post: 10 }]);
+    expect(computeTraceActivityScores(counts, nodes).size).toBe(0);
+  });
+
+  it('rejects a service not in counts (not a member)', () => {
+    const counts = countsOf(['a', { pre: 500, post: 575 }]);
+    const scores = computeTraceActivityScores(counts, new Set<ServiceId>(['ghost']));
+    expect(scores.size).toBe(0);
+  });
+
+  it('honours custom options overriding the defaults', () => {
+    // Default riseThreshold 1.15 rejects ratio 1.0; a custom threshold accepts it.
+    const counts = countsOf(['a', { pre: 2, post: 2 }]); // ratio 1.0, pre < 500
+    const scores = computeTraceActivityScores(counts, nodes, {
+      minPreCount: 1,
+      minPostCount: 1,
+      riseThreshold: 1.0,
+    });
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.size).toBe(1);
   });
 });

@@ -30,7 +30,11 @@ import {
   DI_TOKENS,
   RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
-import { BenchmarkRunner, RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
+import {
+  BenchmarkRunner,
+  countTraceActivityByService,
+  RCAEvalLoader,
+} from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
   BenchmarkCase,
   BenchmarkSuite,
@@ -67,6 +71,8 @@ interface FeatureFlags {
   collapseDiscount: boolean;
   /** Metric-direction signal: reward source RISE, penalise symptom COLLAPSE (riseWeight). */
   riseSignal: boolean;
+  /** Trace span-activity rise signal: reward the service whose spans rise post-injection. */
+  traceSignal: boolean;
 }
 
 interface AblationRun {
@@ -107,6 +113,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -121,6 +128,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -134,6 +142,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Trace Topo',
   },
@@ -147,6 +156,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+SelfLearn',
   },
@@ -161,6 +171,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Collision+Trace',
   },
@@ -174,6 +185,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -187,6 +199,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -201,6 +214,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -219,6 +233,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Log Signal',
   },
@@ -232,6 +247,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Topo Signal',
   },
@@ -249,6 +265,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: true,
       collapseDiscount: false,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Collision Signal',
   },
@@ -262,6 +279,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: true,
       riseSignal: false,
+      traceSignal: false,
     },
     label: '+Collapse Discount',
   },
@@ -275,8 +293,23 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collisionSignal: false,
       collapseDiscount: false,
       riseSignal: true,
+      traceSignal: false,
     },
     label: '+Rise Signal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+    },
+    label: '+Trace Activity Signal',
   },
 ];
 
@@ -507,6 +540,7 @@ async function main(): Promise<void> {
           topoWeight: flags.topoSignal ? 1.0 : 0.0,
           logWeight: flags.logSignal ? 1.0 : 0.0,
           riseWeight: flags.riseSignal ? 1.0 : 0.0,
+          traceWeight: flags.traceSignal ? 1.0 : 0.0,
         },
         { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
       );
@@ -539,6 +573,12 @@ async function main(): Promise<void> {
     const cases: BenchmarkCase[] = [];
     const caseDirMap = new Map<string, string>();
     const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
+    // Trace-activity rise signal: compute per-service pre/post span counts
+    // ONCE per system (not per config/rep) because each case's full
+    // traces.csv scan is expensive (~27MB). Gated on any config enabling the
+    // trace signal; the counts are config-independent (anchored to injectTime),
+    // so the +Trace Activity slice reuses them across its repetitions.
+    const needsTraceActivity = CONFIGS.some((c) => c.flags.traceSignal);
     for (const meta of selected) {
       try {
         const rawCase = loader.loadCase(meta.dirPath);
@@ -558,7 +598,16 @@ async function main(): Promise<void> {
               ? ('rcaeval-re2' as const)
               : ('rcaeval-re3' as const);
 
-        const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
+        let benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
+        if (needsTraceActivity) {
+          benchCase = {
+            ...benchCase,
+            traceActivity: await countTraceActivityByService(
+              join(meta.dirPath, 'traces.csv'),
+              benchCase.injectTime,
+            ),
+          };
+        }
         // Do NOT retain per-case traces here — RE2 traces.csv files are
         // large enough that holding all 50 cases' spans at once OOMs.
         // Record the directory path so the traceAugmentation config can

@@ -3,8 +3,8 @@
  *
  * Defines the search space boundaries, parameter types, and sampling
  * strategies used by the Gaussian Process surrogate.  Five tree-decay
- * continuous parameters + five ranking-fusion weights map to a unit-cube
- * [0,1]¹⁰ via affine transforms; five discrete parameters are enumerated
+ * continuous parameters + six ranking-fusion weights map to a unit-cube
+ * [0,1]¹¹ via affine transforms; five discrete parameters are enumerated
  * as integer indices 0..|options|-1.
  *
  * Total search space: |Θ_continuous| × ∏|Θ_discrete_i| ≈ 4000 configurations.
@@ -32,8 +32,8 @@ export interface ContinuousParam {
 /**
  * Configuration space definition.
  * The `fromVector` / `toVector` methods convert between the GP's
- * internal representation (5 tree + 5 ranking continuous + 5 one-hot
- * discrete = 10 + Σ|D_k| dims) and typed RCAConfiguration objects.
+ * internal representation (5 tree + 6 ranking continuous + 5 one-hot
+ * discrete = 11 + Σ|D_k| dims) and typed RCAConfiguration objects.
  */
 export interface ConfigSpace {
   readonly continuous: readonly ContinuousParam[];
@@ -125,7 +125,7 @@ const CONTINUOUS: readonly ContinuousParam[] = [
 ];
 
 /**
- * Ranking fusion weights — the five log-space priors blended into the root
+ * Ranking fusion weights — the six log-space priors blended into the root
  * cause ordering. All are dimensionless with range [0, 3] (linear). A weight
  * of 0 disables a signal; 1.0 makes it comparable to the self-anomaly term
  * (log(selfAnomaly) ∈ (−∞, 0]); 3.0 lets it dominate (the ablation's strong
@@ -163,6 +163,13 @@ const RANKING: readonly ContinuousParam[] = [
   },
   {
     name: 'logWeight',
+    min: 0,
+    max: 3,
+    fromUnit: (u) => u * 3,
+    toUnit: (v) => v / 3,
+  },
+  {
+    name: 'traceWeight',
     min: 0,
     max: 3,
     fromUnit: (u) => u * 3,
@@ -214,7 +221,7 @@ function continuousToVector(cfg: RCAConfiguration['continuous']): Float64Array {
 }
 
 /**
- * Map `RankingWeights` to its unit-cube [0,1]⁵ representation.
+ * Map `RankingWeights` to its unit-cube [0,1]⁶ representation.
  * Exported so the L2 coordinate-descent harness can translate between the
  * tunable weight vector and the typed `RankingWeights` contract.
  */
@@ -225,6 +232,7 @@ export function rankingToVector(cfg: RCAConfiguration['ranking']): Float64Array 
   v[2] = RANKING[2]!.toUnit(cfg.collisionWeight);
   v[3] = RANKING[3]!.toUnit(cfg.topoWeight);
   v[4] = RANKING[4]!.toUnit(cfg.logWeight);
+  v[5] = RANKING[5]!.toUnit(cfg.traceWeight ?? 0);
   return v;
 }
 
@@ -253,7 +261,7 @@ function vectorToContinuous(u: Float64Array): RCAConfiguration['continuous'] {
 }
 
 /**
- * Inverse of `rankingToVector`: map a unit-cube [0,1]⁵ vector back to typed
+ * Inverse of `rankingToVector`: map a unit-cube [0,1]⁶ vector back to typed
  * `RankingWeights`.
  */
 export function vectorToRanking(u: Float64Array): RCAConfiguration['ranking'] {
@@ -263,6 +271,7 @@ export function vectorToRanking(u: Float64Array): RCAConfiguration['ranking'] {
     collisionWeight: RANKING[2]!.fromUnit(u[2]!),
     topoWeight: RANKING[3]!.fromUnit(u[3]!),
     logWeight: RANKING[4]!.fromUnit(u[4]!),
+    traceWeight: RANKING[5]!.fromUnit(u[5]!),
   };
 }
 
@@ -367,13 +376,14 @@ export const DEFAULT_CONFIG: RCAConfiguration = {
   },
   ranking: {
     // The log signal ships enabled (benchmark #220 proved it net-positive);
-    // the other four causal priors default to 0 (opt-in / empirically
+    // the other five priors default to 0 (opt-in / empirically
     // regressed — see RankingWeights).
     sourceWeight: 0.0,
     temporalWeight: 0.0,
     collisionWeight: 0.0,
     topoWeight: 0.0,
     logWeight: 1.0,
+    traceWeight: 0.0,
   },
   discrete: {
     baselineStrategy: 'auto',

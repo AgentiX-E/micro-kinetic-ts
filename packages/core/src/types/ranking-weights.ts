@@ -23,6 +23,7 @@
  *                 + topoWeight      × topoSource(v)
  *                 + logWeight       × logScore(v)
  *                 + riseWeight      × 2 × (riseScore(v) − 0.5)
+ *                 + traceWeight     × traceActivity(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -63,4 +64,11 @@ export interface RankingWeights {
    * the node emitted no logic exception. OPTIONAL: absent means 0 (disabled).
    */
   readonly riseWeight?: number;
+  /**
+   * Trace-activity prior: rewards the UNIQUE service whose post-injection
+   * trace span count rises significantly above its pre-injection count — the
+   * silent-source signature (RCAEval RE3 "wrong value" faults emit no
+   * exception, only a workload rise). OPTIONAL: absent means 0 (disabled).
+   */
+  readonly traceWeight?: number;
 }

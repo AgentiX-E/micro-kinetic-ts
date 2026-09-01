@@ -27,7 +27,12 @@
  * @module pruning/ranking-signals
  */
 
-import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
+import type {
+  CallEdge,
+  FaultLogEntry,
+  ServiceId,
+  TraceActivityCounts,
+} from '@agentix-e/micro-kinetic-core';
 
 /**
  * The log signal's scoring mode.
@@ -406,4 +411,119 @@ export function computeDeepestExceptions(
     if (best !== undefined) result.set(svc, best);
   }
   return result;
+}
+
+/**
+ * Tunable thresholds for {@link computeTraceActivityScores}.
+ *
+ * The signal's job is to name the UNIQUE silent-source service with high
+ * confidence, and stay NEUTRAL (empty map) otherwise — a false positive on a
+ * route/latency fault (whose GT does not rise) is worse than no signal, since
+ * the other causal priors already rank such cases. The three thresholds are
+ * tuned against the measured TrainTicket RE3 span counts (see the signal's
+ * documentation for the empirical basis).
+ */
+export interface TraceActivityOptions {
+  /**
+   * Minimum PRE-injection span count a service must have to be a candidate.
+   * Filters low-volume services whose tiny pre baseline makes a small absolute
+   * post gain look like a spurious "rise" (a 30→60 span doubling on an
+   * idle-payment edge is not a fault signature). Default 500.
+   */
+  readonly minPreCount: number;
+  /**
+   * Minimum POST-injection span count a candidate must have. Guards against a
+   * pure collapse (post → 0) being read as a "rise" when `pre` is also tiny.
+   * Default 1.
+   */
+  readonly minPostCount: number;
+  /**
+   * Minimum post/pre count ratio to be a "significant riser". A flat service
+   * sits at ≈1.00–1.02 (post ≈ pre); a real silent-source rise is ≥1.15.
+   * Default 1.15.
+   */
+  readonly riseThreshold: number;
+}
+
+/** Default thresholds for {@link computeTraceActivityScores}. */
+export const DEFAULT_TRACE_ACTIVITY_OPTIONS: TraceActivityOptions = {
+  minPreCount: 500,
+  minPostCount: 1,
+  riseThreshold: 1.15,
+};
+
+/**
+ * Compute the trace-activity score: the UNIQUE significant span-count riser,
+ * or nothing.
+ *
+ * ## Motivation — the silent-source ceiling
+ *
+ * TrainTicket RE3's `ts-auth-service` "wrong value" fault (RCAEval RE3) is
+ * the case that defeats every prior ranking signal: the faulting service
+ * throws NO exception (no log signal), emits NO error span (no status signal),
+ * and its metric only rises mildly (a 3.5× workload rise that the metric-shape
+ * signals cannot separate from symptoms). The ONE deterministic signature it
+ * leaves is a RISE IN SPAN COUNT — the wrong value makes the service do MORE
+ * work per request, so it emits more spans after injection while its peers
+ * stay flat or fall (route/latency symptoms actually COLLAPSE).
+ *
+ * Measured per-service pre/post span counts across the TrainTicket RE3 sample
+ * (window is symmetric ≈900s/900s, so the count ratio is the rate ratio):
+ *
+ * - `ts-auth-service` (GT, auth faults) is the ONLY service with post/pre >
+ *   1.15 (1.398 / 1.408 / 2.178); every non-GT service is ≤ 0.20.
+ * - route f1's GT does NOT rise (post/pre ≈ 0.90), but three low-volume edge
+ *   services spuriously rise 1.4–2.0× on a tiny pre baseline (30–76 spans),
+ *   and several mid-volume services sit at ≈1.00–1.02 (flat, not rising).
+ *
+ * The thresholds therefore encode the split: `minPreCount = 500` rejects the
+ * low-volume spurious risers (pre = 30–76) while the auth GT (pre = 1770–1895)
+ * passes; `riseThreshold = 1.15` rejects the ≈1.00–1.02 flat services; and the
+ * UNIQUENESS rule makes the route case (GT flat + no qualifying service) yield
+ * an empty map — neutral, no misfire — rather than a wrong winner.
+ *
+ * ## Gate
+ *
+ * A service is a CANDIDATE iff it is a graph member, has `pre ≥ minPreCount`,
+ * `post ≥ minPostCount`, and `post / pre ≥ riseThreshold`. The signal returns
+ * `{candidate: 1}` only when EXACTLY ONE candidate exists, otherwise an empty
+ * map (neutral). This is the binary dual of {@link gatedRiseContribution}'s
+ * three-state gate: here a single high-confidence vote, not a graded reward.
+ *
+ * @param counts - Per-service pre/post span counts (may be undefined → empty).
+ * @param nodeIds - Services present in the call graph.
+ * @param options - Threshold overrides (merged over the defaults).
+ * @returns Sparse `{service: 1}` map, or empty when no unique significant riser.
+ */
+export function computeTraceActivityScores(
+  counts: ReadonlyMap<ServiceId, TraceActivityCounts> | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+  options?: Partial<TraceActivityOptions>,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (!counts || counts.size === 0 || nodeIds.size === 0) return scores;
+
+  const { minPreCount, minPostCount, riseThreshold } = {
+    ...DEFAULT_TRACE_ACTIVITY_OPTIONS,
+    ...options,
+  };
+
+  let candidate: ServiceId | undefined;
+  let candidateCount = 0;
+  for (const nodeId of nodeIds) {
+    const c = counts.get(nodeId);
+    if (!c) continue;
+    if (c.pre < minPreCount || c.post < minPostCount) continue;
+    if (c.pre <= 0) continue;
+    if (c.post / c.pre < riseThreshold) continue;
+    candidateCount++;
+    candidate = nodeId;
+  }
+
+  // Only a UNIQUE qualifying riser is a confident silent-source vote; zero or
+  // multiple candidates carry no discriminative information and stay neutral.
+  if (candidateCount === 1 && candidate !== undefined) {
+    scores.set(candidate, 1);
+  }
+  return scores;
 }

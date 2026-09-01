@@ -52,14 +52,16 @@ export { TreePruner, toRankingWeights } from './pruning/pruner.js';
 export type { TreePrunerOptions } from './pruning/pruner.js';
 
 export {
+  DEFAULT_TRACE_ACTIVITY_OPTIONS,
   computeDeepestExceptions,
   computeLogNoveltyScores,
   computeLogScores,
   computeRiseScores,
   computeTopoSourceScores,
+  computeTraceActivityScores,
   gatedRiseContribution,
 } from './pruning/ranking-signals.js';
-export type { LogSignalMode } from './pruning/ranking-signals.js';
+export type { LogSignalMode, TraceActivityOptions } from './pruning/ranking-signals.js';
 
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';

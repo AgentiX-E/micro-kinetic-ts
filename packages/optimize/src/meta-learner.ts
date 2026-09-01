@@ -48,6 +48,7 @@ export interface HistoricalConfig {
   readonly collisionWeight: number;
   readonly topoWeight: number;
   readonly logWeight: number;
+  readonly traceWeight: number;
 }
 
 export interface MetaLearnerOptions {
@@ -164,6 +165,7 @@ export class MetaLearner {
     let collisionWeight = 0;
     let topoWeight = 0;
     let logWeight = 0;
+    let traceWeight = 0;
 
     for (let i = 0; i < k; i++) {
       const cfg = records[neighbors[i]!]!.config;
@@ -177,6 +179,7 @@ export class MetaLearner {
       collisionWeight += weights[i]! * cfg.collisionWeight;
       topoWeight += weights[i]! * cfg.topoWeight;
       logWeight += weights[i]! * cfg.logWeight;
+      traceWeight += weights[i]! * cfg.traceWeight;
     }
 
     // ── Discrete params: weighted voting ──
@@ -214,6 +217,7 @@ export class MetaLearner {
         collisionWeight,
         topoWeight,
         logWeight,
+        traceWeight,
       },
       discrete: {
         baselineStrategy: bestBaseline as RCAConfiguration['discrete']['baselineStrategy'],
