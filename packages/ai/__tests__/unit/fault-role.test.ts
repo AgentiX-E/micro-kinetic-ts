@@ -101,8 +101,50 @@ describe('upstreamNeighbors / downstreamNeighbors', () => {
 // ── classifyFaultRole ─────────────────────────────────────
 
 describe('classifyFaultRole', () => {
-  it('tags a service with a logic exception as the symptom', () => {
+  it('tags a service with a bad-input exception as the symptom', () => {
     expect(classifyFaultRole('order', directGraph())).toBe('symptom');
+  });
+
+  it('leaves a source-side logic exception (NPE) unclassified, not a symptom', () => {
+    // A NullPointerException is the SOURCE's own bug, not a victim of bad
+    // upstream input — tagging it "symptom" would mislead the walk upstream.
+    const g = directGraph();
+    (g as { deepestExceptions?: Map<string, string> }).deepestExceptions = new Map([
+      ['auth', 'NullPointerException'],
+    ]);
+    expect(classifyFaultRole('auth', g)).toBe('unclassified');
+  });
+
+  it('distinguishes bad-input from source-side exceptions across the boundary', () => {
+    const badInput = [
+      'JsonMappingException',
+      'TokenException',
+      'ExpiredJwtException',
+      'HttpMessageNotReadableException',
+      'JsonParseException',
+    ];
+    for (const ex of badInput) {
+      const g = directGraph();
+      (g as { deepestExceptions?: Map<string, string> }).deepestExceptions = new Map([
+        ['order', ex],
+      ]);
+      expect(classifyFaultRole('order', g)).toBe('symptom');
+    }
+
+    const sourceSide = [
+      'NullPointerException',
+      'IllegalArgumentException',
+      'IllegalStateException',
+      'ArithmeticException',
+      'ClassCastException',
+    ];
+    for (const ex of sourceSide) {
+      const g = directGraph();
+      (g as { deepestExceptions?: Map<string, string> }).deepestExceptions = new Map([
+        ['order', ex],
+      ]);
+      expect(classifyFaultRole('order', g)).toBe('unclassified');
+    }
   });
 
   it('tags the silent upstream producer of a symptom as a source candidate', () => {
@@ -163,6 +205,6 @@ describe('buildFaultRoleInterpretation', () => {
     const g = directGraph();
     delete (g as { deepestExceptions?: unknown }).deepestExceptions;
     const text = buildFaultRoleInterpretation('order', 'symptom', g);
-    expect(text).toContain('a logic exception');
+    expect(text).toContain('a bad-input exception');
   });
 });

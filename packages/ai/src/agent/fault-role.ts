@@ -13,6 +13,13 @@
  * injects next to the raw numbers, so the model sees the causal chain spelled
  * out rather than having to infer it from a 30-line system prompt.
  *
+ * The symptom signal is deliberately NARROW: only BAD-INPUT exceptions
+ * (token/JWT, JSON/serialization — matching the prompt's "Semantic clues")
+ * mark a symptom. A source-side logic exception (NullPointerException,
+ * IllegalArgumentException, …) is thrown by the SOURCE on its own bug, not by a
+ * victim of bad upstream input — tagging it "symptom" would mislead the walk
+ * upstream and regress the RE3 OnlineBoutique NPE cases.
+ *
  * Everything here is pure and deterministic over a {@link FaultPropagationGraph},
  * so it is exhaustively unit-testable without a network.
  *
@@ -27,6 +34,33 @@ import type {
 
 /** The deterministic fault role of a service, derived from graph structure. */
 export type FaultRole = 'symptom' | 'silent-source-candidate' | 'unclassified';
+
+/**
+ * Exception-class substrings that mark a BAD-INPUT exception: thrown by a
+ * SYMPTOM while it processes malformed output from an upstream producer. These
+ * mirror the prompt's "Semantic clues" (token/JWT and JSON/serialization).
+ * Source-side logic exceptions (NullPointerException, IllegalArgumentException,
+ * …) are deliberately NOT listed — they are the source's own bug, not bad input.
+ */
+const BAD_INPUT_EXCEPTION_HINTS = [
+  'jwt', // MalformedJwtException, ExpiredJwtException
+  'token', // TokenException
+  'json', // JsonMappingException, JsonParseException
+  'mapping', // JsonMappingException
+  'notreadable', // HttpMessageNotReadableException
+  'httpmessage', // HttpMessageNotReadableException
+  'deserializ', // JsonDeserializationException
+  'unmarshal', // UnmarshalException
+  'parse', // JsonParseException, ParseException
+  'serializ', // SerializationException
+] as const;
+
+/** Whether the exception class marks a bad-input (upstream) exception. */
+function isBadInputException(exceptionClass: string | undefined): boolean {
+  if (!exceptionClass) return false;
+  const lower = exceptionClass.toLowerCase();
+  return BAD_INPUT_EXCEPTION_HINTS.some((h) => lower.includes(h));
+}
 
 /** Services that CALL INTO `id` (edge `from → id`). */
 export function upstreamNeighbors(id: ServiceId, callGraph: ServiceCallGraph): ServiceId[] {
@@ -46,25 +80,26 @@ export function downstreamNeighbors(id: ServiceId, callGraph: ServiceCallGraph):
   return downstream;
 }
 
-/** Whether the service carries a logic exception (it threw on bad input). */
-function hasLogicException(id: ServiceId, graph: FaultPropagationGraph): boolean {
-  return graph.deepestExceptions?.has(id) ?? false;
+/** Whether the service carries a bad-input exception (it threw on bad input). */
+function hasBadInputException(id: ServiceId, graph: FaultPropagationGraph): boolean {
+  return isBadInputException(graph.deepestExceptions?.get(id));
 }
 
 /**
  * Classify a service's fault role from graph structure:
- * - `symptom`: it carries a logic exception (it threw while processing bad
- *   input) — the source is an upstream producer, not this service.
- * - `silent-source-candidate`: it has no logic exception but a DIRECT
+ * - `symptom`: it carries a BAD-INPUT exception (it threw while processing
+ *   malformed upstream output) — the source is an upstream producer, not this
+ *   service.
+ * - `silent-source-candidate`: it has no bad-input exception but a DIRECT
  *   downstream neighbour does — it may be producing the bad input the symptom
  *   throws on.
- * - `unclassified`: neither (a healthy, connectivity-only, or multi-hop-upstream
- *   service; the stepwise walk reaches deeper sources one hop at a time).
+ * - `unclassified`: neither (healthy, a source-side logic exception like an
+ *   NPE, or a multi-hop-upstream service reached one hop at a time).
  */
 export function classifyFaultRole(serviceId: ServiceId, graph: FaultPropagationGraph): FaultRole {
-  if (hasLogicException(serviceId, graph)) return 'symptom';
+  if (hasBadInputException(serviceId, graph)) return 'symptom';
   const downstream = downstreamNeighbors(serviceId, graph.callGraph);
-  if (downstream.some((d) => hasLogicException(d, graph))) return 'silent-source-candidate';
+  if (downstream.some((d) => hasBadInputException(d, graph))) return 'silent-source-candidate';
   return 'unclassified';
 }
 
@@ -80,12 +115,12 @@ export function buildFaultRoleInterpretation(
   graph: FaultPropagationGraph,
 ): string | undefined {
   if (role === 'symptom') {
-    const exception = graph.deepestExceptions?.get(serviceId) ?? 'a logic exception';
+    const exception = graph.deepestExceptions?.get(serviceId) ?? 'a bad-input exception';
     return `SYMPTOM: throws ${exception} = received bad input; the root cause is an UPSTREAM producer, not this service.`;
   }
   if (role === 'silent-source-candidate') {
     const symptoms = downstreamNeighbors(serviceId, graph.callGraph).filter((d) =>
-      hasLogicException(d, graph),
+      hasBadInputException(d, graph),
     );
     return `SILENT SOURCE candidate: no exception, but downstream ${symptoms.join(
       ',',
