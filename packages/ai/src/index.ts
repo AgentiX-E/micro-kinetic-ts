@@ -15,13 +15,6 @@ export type {
   SingleEntityAlignmentResult,
 } from './interfaces/llm-provider.js';
 
-export type {
-  CandidateEvidence,
-  IRootCauseReranker,
-  RerankRequest,
-  RerankResult,
-} from './interfaces/reranker.js';
-
 // ── Providers ───────────────────────────────────────────
 export {
   DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
@@ -32,21 +25,6 @@ export { TfIdfEmbeddingProvider, tokenizeServiceName } from './providers/tfidf-e
 export type { SemanticAlignmentConfig } from './providers/semantic-alignment.js';
 
 export { ApiEmbeddingProvider } from './providers/api-embedding.js';
-
-export { ApiChatProvider } from './providers/api-llm.js';
-export type { ChatCompletionOptions, ChatMessage, IChatProvider } from './providers/api-llm.js';
-
-export { EvidenceGroundedReranker } from './providers/evidence-reranker.js';
-
-export { createEvidenceRerankerFromEnv } from './providers/env-reranker.js';
-export type { EnvRerankerConfig } from './providers/env-reranker.js';
-
-export {
-  MAX_RERANK_CANDIDATES,
-  buildRerankPrompt,
-  parseRerankOrder,
-  shouldRerank,
-} from './providers/reranker-core.js';
 
 export { createApiEmbeddingFromEnv } from './providers/env-embedding.js';
 
@@ -71,26 +49,3 @@ export {
   jaccardSimilarity,
   normalizeL2,
 } from './utils/similarity.js';
-
-// ── Agent (GALA+ phase-III) ─────────────────────────────
-export {
-  GraphInvestigatorToolkit,
-  ReActInvestigatorAgent,
-  buildAdjacency,
-  buildCandidateEvidence,
-  buildSystemPrompt,
-  createInvestigatorFromEnv,
-  executeAction,
-  parseAgentResponse,
-} from './agent/index.js';
-export type {
-  AgentAction,
-  AgentAnswer,
-  AgentTool,
-  EnvInvestigatorConfig,
-  InvestigationResult,
-  InvestigationTermination,
-  InvestigatorAgent,
-  InvestigatorToolkit,
-  ParsedStep,
-} from './agent/index.js';

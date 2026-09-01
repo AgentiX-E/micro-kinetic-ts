@@ -25,10 +25,6 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  createEvidenceRerankerFromEnv,
-  createInvestigatorFromEnv,
-} from '../../packages/ai/src/index.js';
-import {
   Container,
   DEFAULT_CLASSIFICATION_RULES,
   DI_TOKENS,
@@ -43,14 +39,12 @@ import { WeightCalibrator } from '../../packages/kinetic/src/signals/weight-cali
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { InvestigatorEngine, type InvestigatorDecision } from './investigator-engine.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
   initRCAEvalTopology,
   isRCAEvalTopologyInitialized,
 } from './rcaeval-topology.js';
-import { RerankingEngine } from './reranking-engine.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -71,12 +65,8 @@ interface FeatureFlags {
   collisionSignal: boolean;
   /** Direction-aware deviation: discount the DROP component (collapseDiscount). */
   collapseDiscount: boolean;
-  /** Evidence-grounded LLM reranker (gap-triggered, DeepSeek). */
-  llmReranker: boolean;
   /** Metric-direction signal: reward source RISE, penalise symptom COLLAPSE (riseWeight). */
   riseSignal: boolean;
-  /** Graph-guided ReAct investigator (gap-triggered, walks upstream). */
-  agenticInvestigation: boolean;
 }
 
 interface AblationRun {
@@ -116,9 +106,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -132,9 +120,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -147,9 +133,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Trace Topo',
   },
@@ -162,9 +146,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+SelfLearn',
   },
@@ -178,9 +160,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Collision+Trace',
   },
@@ -193,9 +173,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -208,9 +186,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -224,9 +200,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -244,9 +218,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Log Signal',
   },
@@ -259,9 +231,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: true,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Topo Signal',
   },
@@ -278,9 +248,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: true,
       collapseDiscount: false,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Collision Signal',
   },
@@ -293,9 +261,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: true,
-      llmReranker: false,
       riseSignal: false,
-      agenticInvestigation: false,
     },
     label: '+Collapse Discount',
   },
@@ -308,55 +274,14 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       topoSignal: false,
       collisionSignal: false,
       collapseDiscount: false,
-      llmReranker: true,
-      riseSignal: false,
-      agenticInvestigation: false,
-    },
-    label: '+LLM Reranker',
-  },
-  {
-    flags: {
-      collisionAggregation: false,
-      traceAugmentation: false,
-      selfLearning: false,
-      logSignal: false,
-      topoSignal: false,
-      collisionSignal: false,
-      collapseDiscount: false,
-      llmReranker: false,
       riseSignal: true,
-      agenticInvestigation: false,
     },
     label: '+Rise Signal',
-  },
-  {
-    flags: {
-      collisionAggregation: false,
-      traceAugmentation: false,
-      selfLearning: false,
-      logSignal: false,
-      topoSignal: false,
-      collisionSignal: false,
-      collapseDiscount: false,
-      llmReranker: false,
-      riseSignal: false,
-      agenticInvestigation: true,
-    },
-    label: '+Agentic Investigation',
   },
 ];
 
 // Default to 3 repetitions for statistical significance
 const REPETITIONS = 3;
-
-// Gap threshold for the evidence-grounded reranker: the LLM is only consulted
-// when the deterministic top-1 and top-2 confidence scores are within this gap,
-// so a confidently-ranked case never pays for an LLM round-trip.
-const LLM_RERANK_GAP_THRESHOLD = 0.1;
-
-// Gap threshold for the graph-guided investigator, kept identical so the two
-// LLM slices differ only in the reasoning strategy (rerank vs graph walk).
-const AGENTIC_GAP_THRESHOLD = 0.1;
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -484,76 +409,6 @@ function discoverAllCases(dataDir: string): CaseMeta[] {
   return cases;
 }
 
-// ── Agentic decision diagnostics ──────────────────────────
-
-/**
- * Correlate the investigator's per-call decision trace with the per-case
- * ground-truth list (both index-aligned to `runSuite` call order) and print a
- * confusion matrix that distinguishes the agent FIXING a case (wrong→correct)
- * from merely shuffling one wrong symptom for another (wrong→wrong) or
- * regressing a previously-correct top-1 (correct→wrong).
- */
-function dumpAgenticDecisions(
-  decisions: readonly InvestigatorDecision[],
-  caseOrder: ReadonlyArray<{ caseId: string; groundTruthService: string }>,
-): void {
-  if (decisions.length !== caseOrder.length) {
-    console.log(
-      `  [agentic diagnosis] MISMATCH decisions=${decisions.length} cases=${caseOrder.length} ` +
-        `— cannot align (skipping per-case breakdown)`,
-    );
-    return;
-  }
-
-  let wrongToWrong = 0;
-  let wrongToCorrect = 0;
-  let correctToWrong = 0;
-  let correctToCorrect = 0;
-  const changedRows: string[] = [];
-
-  for (let i = 0; i < decisions.length; i++) {
-    const d = decisions[i]!;
-    const c = caseOrder[i]!;
-    const baseline = d.baselineTop1;
-    // The effective final top-1: the agent's conclusion only when it was
-    // actually promoted; a hallucinated service (not in the call graph) is
-    // discarded and the deterministic top-1 is kept.
-    const final = d.promoted ? d.agentRootCause : baseline;
-    const baselineCorrect = baseline !== null && baseline === c.groundTruthService;
-    const finalCorrect = final !== null && final === c.groundTruthService;
-
-    if (baselineCorrect && finalCorrect) correctToCorrect++;
-    else if (baselineCorrect && !finalCorrect) correctToWrong++;
-    else if (!baselineCorrect && finalCorrect) wrongToCorrect++;
-    else wrongToWrong++;
-
-    // Surface every case where the agent altered the picture relative to the
-    // deterministic top-1: a promoted change (FIXED / REGRESSED / STILL-WRONG)
-    // or a discarded hallucination (HALLUCINATED).
-    const agentDiffered = d.agentRootCause !== null && d.agentRootCause !== baseline;
-    if (agentDiffered) {
-      let tag: string;
-      if (!d.promoted) tag = 'HALLUCINATED';
-      else if (finalCorrect) tag = 'FIXED';
-      else if (baselineCorrect) tag = 'REGRESSED';
-      else tag = 'STILL-WRONG';
-      changedRows.push(
-        `    ${c.caseId}  baseline=${baseline ?? '-'}  agent=${d.agentRootCause ?? '-'}  ` +
-          `GT=${c.groundTruthService}  ${tag}`,
-      );
-    }
-  }
-
-  const changed = decisions.filter((d) => d.changed).length;
-  console.log(
-    `  [agentic diagnosis] confusion: wrong→wrong=${wrongToWrong} ` +
-      `wrong→correct=${wrongToCorrect} correct→wrong=${correctToWrong} ` +
-      `correct→correct=${correctToCorrect}`,
-  );
-  console.log(`  [agentic diagnosis] changed=${changed} cases:`);
-  for (const row of changedRows) console.log(row);
-}
-
 // ── Main ──────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -641,15 +496,11 @@ async function main(): Promise<void> {
    * enabled). Each config gets its own container so the flags are wired
    * directly into the engine registered under RCA_ENGINE.
    */
-  function buildContainer(flags: FeatureFlags): {
-    container: Container;
-    getInvestigator: () => InvestigatorEngine | null;
-  } {
+  function buildContainer(flags: FeatureFlags): Container {
     const c = new Container();
-    let investigator: InvestigatorEngine | null = null;
     c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
     c.register(DI_TOKENS.RCA_ENGINE, () => {
-      const pruner = new TreePruner(
+      return new TreePruner(
         {
           enableCollisionAggregation: flags.collisionAggregation,
           collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
@@ -659,24 +510,9 @@ async function main(): Promise<void> {
         },
         { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
       );
-      if (flags.agenticInvestigation) {
-        // Graph-guided ReAct investigator (DeepSeek). Null factory → the
-        // wrapper falls back to the deterministic order (no-op slice).
-        const agent = createInvestigatorFromEnv();
-        investigator = new InvestigatorEngine(pruner, agent, AGENTIC_GAP_THRESHOLD);
-        return investigator;
-      }
-      if (!flags.llmReranker) return pruner;
-      // Evidence-grounded reranker (DeepSeek). When the API key is absent the
-      // factory returns null and the wrapper falls back to the deterministic
-      // order, so the ablation still runs (no-op slice) without a key.
-      const reranker = createEvidenceRerankerFromEnv();
-      return new RerankingEngine(pruner, reranker, LLM_RERANK_GAP_THRESHOLD);
     });
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
-    // The engine is constructed lazily when the runner first resolves
-    // RCA_ENGINE, so expose a getter that reads the variable AFTER that point.
-    return { container: c, getInvestigator: () => investigator };
+    return c;
   }
 
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
@@ -786,14 +622,10 @@ async function main(): Promise<void> {
       // ── Wire feature flags into this config's engine ──
       // Collision aggregation: toggles TreePruner.enableCollisionAggregation.
       // The three ranking signals map to collisionWeight/topoWeight/logWeight.
-      const { container, getInvestigator } = buildContainer(config.flags);
+      const container = buildContainer(config.flags);
       // Self-learning: a SHARED calibrator across this config's reps/Fts so
       // weight updates from earlier cases feed back into later ones.
       const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;
-      // Per-case ground-truth list, pushed in the exact `runSuite` call order,
-      // so it can be zipped against the InvestigatorEngine's per-call decision
-      // trace (index-aligned) to build the agentic confusion matrix.
-      const agenticCaseOrder: Array<{ caseId: string; groundTruthService: string }> = [];
 
       let allA1 = 0,
         allA5 = 0,
@@ -843,12 +675,6 @@ async function main(): Promise<void> {
             cases: suiteCases,
             totalCases: suiteCases.length,
           };
-
-          // Record every case this suite will analyze, in order, for the
-          // agentic decision trace's ground-truth correlation.
-          for (const c of suite.cases) {
-            agenticCaseOrder.push({ caseId: c.id, groundTruthService: c.groundTruth.serviceId });
-          }
 
           const runner = new BenchmarkRunner(container, classifier, traceOpts, calibrator);
 
@@ -907,16 +733,6 @@ async function main(): Promise<void> {
           `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
           `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
       );
-
-      const inv = getInvestigator();
-      if (inv) {
-        const s = inv.stats;
-        console.log(
-          `  [agentic] triggered=${s.triggered} concluded=${s.concluded} changed=${s.changed} ` +
-            `invalid=${s.invalid} budget=${s.budget} error=${s.error}`,
-        );
-        dumpAgenticDecisions(inv.decisions, agenticCaseOrder);
-      }
 
       // Yield to event loop after each config so GC can collect temporary
       // BenchmarkSuite / RunResult objects before the next config starts.

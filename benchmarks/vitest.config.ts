@@ -27,8 +27,6 @@ export default defineConfig({
       include: [
         'src/rcaeval-topology.ts',
         'src/rcaeval-semantic.ts',
-        'src/reranking-engine.ts',
-        'src/investigator-engine.ts',
       ],
       exclude: ['__tests__/integration/**'],
       thresholds: {
@@ -37,10 +35,16 @@ export default defineConfig({
         // tested indirectly through integration (buildRCAEvalCallGraph
         // exercises them via exact-match and ring-connect paths).
         // Semantic enhancement paths are fully covered.
-        statements: 83,
+        //
+        // The LLM reranking layer (reranking-engine.ts + investigator-engine.ts)
+        // was retired as net-negative dead code; those two files were ~100%
+        // covered and previously padded this aggregate above 83%. With them
+        // gone, the honest floor is the rcaeval-topology-dominated ~82.9% —
+        // no remaining line lost coverage, the scope simply shrank.
+        statements: 82,
         branches: 77,
         functions: 80,
-        lines: 83,
+        lines: 82,
       },
     },
   },
