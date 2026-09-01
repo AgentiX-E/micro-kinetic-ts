@@ -212,8 +212,9 @@ export interface FaultPropagationGraph {
    * silent-source fault (RCAEval RE3) makes its source service the UNIQUE
    * significant span-count riser (post-injection count ≫ pre-injection count),
    * so the signal emits exactly one entry `{source: 1}`; when zero or
-   * multiple services qualify it is empty (neutral). Feeds the (opt-in)
-   * traceWeight ranking signal.
+   * multiple services qualify — or when any service emitted a self-caused
+   * logic exception (the case is not a silent-source fault) — it is empty
+   * (neutral). Feeds the (opt-in) traceWeight ranking signal.
    */
   readonly traceActivityScores?: ReadonlyMap<ServiceId, number>;
 }

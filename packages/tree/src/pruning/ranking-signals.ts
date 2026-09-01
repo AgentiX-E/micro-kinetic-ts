@@ -490,18 +490,36 @@ export const DEFAULT_TRACE_ACTIVITY_OPTIONS: TraceActivityOptions = {
  * map (neutral). This is the binary dual of {@link gatedRiseContribution}'s
  * three-state gate: here a single high-confidence vote, not a graded reward.
  *
+ * ## Silent-source condition
+ *
+ * The signal is a SILENT-SOURCE detector, so it must defer to any competing
+ * exception evidence. When `hasLogicExceptionEvidence` is true (any graph
+ * service emitted a self-caused logic exception), the case is NOT a
+ * silent-source fault — the log signal already carries discriminative
+ * evidence — and the unique-riser heuristic misfires onto the wrong service
+ * for exception-type resource faults (OnlineBoutique RE3 f4, TrainTicket RE2
+ * mem). The signal therefore returns an empty (neutral) map in that case,
+ * regardless of how many span-count risers qualify.
+ *
  * @param counts - Per-service pre/post span counts (may be undefined → empty).
  * @param nodeIds - Services present in the call graph.
  * @param options - Threshold overrides (merged over the defaults).
- * @returns Sparse `{service: 1}` map, or empty when no unique significant riser.
+ * @param hasLogicExceptionEvidence - Whether any graph service emitted a
+ *   self-caused logic exception (suppresses the vote when true). Default false.
+ * @returns Sparse `{service: 1}` map, or empty when no unique significant riser
+ *   or when the case is not a silent-source fault.
  */
 export function computeTraceActivityScores(
   counts: ReadonlyMap<ServiceId, TraceActivityCounts> | undefined,
   nodeIds: ReadonlySet<ServiceId>,
   options?: Partial<TraceActivityOptions>,
+  hasLogicExceptionEvidence = false,
 ): Map<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   if (!counts || counts.size === 0 || nodeIds.size === 0) return scores;
+  // A silent-source fault leaves no exception; if one exists, this is not that
+  // fault, and the log signal (always on) already ranks it. Suppress the vote.
+  if (hasLogicExceptionEvidence) return scores;
 
   const { minPreCount, minPostCount, riseThreshold } = {
     ...DEFAULT_TRACE_ACTIVITY_OPTIONS,

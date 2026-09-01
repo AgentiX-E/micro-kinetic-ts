@@ -526,4 +526,36 @@ describe('computeTraceActivityScores', () => {
     expect(scores.get('a')).toBe(1);
     expect(scores.size).toBe(1);
   });
+
+  it('votes for the unique riser when no logic-exception evidence (silent source)', () => {
+    // A silent-source fault leaves no exception behind, so the trace-activity
+    // signal is the ONLY lever and may vote for the unique significant riser.
+    const counts = countsOf(['a', { pre: 500, post: 575 }]); // ratio 1.15
+    const scores = computeTraceActivityScores(counts, nodes, undefined, false);
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.size).toBe(1);
+  });
+
+  it('suppresses the vote when logic-exception evidence is present (non-silent case)', () => {
+    // When a logic exception exists anywhere in the graph, the case is NOT a
+    // silent-source fault: the log signal already has discriminative evidence,
+    // and the unique-riser heuristic misfires onto the wrong service for
+    // exception-type resource faults (OB RE3 f4, RE2 TT mem). The signal must
+    // defer to the log signal and stay neutral — even with a unique riser.
+    const counts = countsOf(['a', { pre: 500, post: 575 }]); // unique riser
+    const scores = computeTraceActivityScores(counts, nodes, undefined, true);
+
+    expect(scores.size).toBe(0);
+  });
+
+  it('defaults the evidence gate to false (backward-compatible behaviour)', () => {
+    // Callers that omit the gate keep the original silent-source vote, so
+    // existing behaviour is unchanged unless the caller opts into suppression.
+    const counts = countsOf(['a', { pre: 500, post: 575 }]);
+    const scores = computeTraceActivityScores(counts, nodes);
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.size).toBe(1);
+  });
 });

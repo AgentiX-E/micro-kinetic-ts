@@ -216,13 +216,17 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *   finalScore(v) += traceWeight × traceActivity(v)
    *
    * `traceActivity(v)` is `1` only when exactly one graph service qualifies as
-   * a significant riser (pre ≥ 500, post ≥ 1, post/pre ≥ 1.15), and `0` for
-   * every service otherwise — see computeTraceActivityScores. This is the
-   * deterministic signature of a SILENT-SOURCE fault (RCAEval RE3 "wrong
-   * value", e.g. TrainTicket's `ts-auth-service`), which emits no exception
-   * and no error span, only a workload rise visible in the span counts. The
-   * uniqueness gate keeps route/latency cases (whose GT does not rise) neutral
-   * so the signal cannot misfire onto a low-volume edge service.
+   * a significant riser (pre ≥ 500, post ≥ 1, post/pre ≥ 1.15) AND the case is
+   * a genuine silent-source fault (no graph service emitted a self-caused logic
+   * exception), and `0` for every service otherwise — see
+   * computeTraceActivityScores. This is the deterministic signature of a
+   * SILENT-SOURCE fault (RCAEval RE3 "wrong value", e.g. TrainTicket's
+   * `ts-auth-service`), which emits no exception and no error span, only a
+   * workload rise visible in the span counts. The uniqueness gate keeps
+   * route/latency cases (whose GT does not rise) neutral; the silent-source
+   * gate keeps exception-type resource faults (OB RE3 f4, RE2 TT mem) neutral
+   * so the signal defers to the log signal instead of misfiring onto a wrong
+   * service.
    *
    * Default: 0 (opt-in).
    */
@@ -497,9 +501,17 @@ export class TreePruner {
     // span count rises significantly above its pre-injection count. The counts
     // are pre-computed by the loader (see TraceActivityCounts) so the engine
     // never holds raw spans — only per-service {pre, post} integers.
+    //
+    // It is gated on "no logic-exception evidence": `logScores` is non-empty
+    // iff at least one graph service emitted a self-caused logic exception
+    // (see computeLogScores). When one did, the case is NOT silent, the log
+    // signal already ranks it, and the unique-riser heuristic would misfire
+    // onto a wrong service (OB RE3 f4, RE2 TT mem) — so the vote is suppressed.
     const traceActivityScores = computeTraceActivityScores(
       options?.traceActivity,
       new Set(callGraph.nodes.keys()),
+      undefined,
+      logScores.size > 0,
     );
 
     return {

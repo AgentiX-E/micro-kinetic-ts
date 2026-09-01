@@ -1160,6 +1160,46 @@ describe('TreePruner', () => {
     });
   });
 
+  describe('trace-activity signal silent-source gate', () => {
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
+    const metrics = makeMetrics({
+      A: [1, 1, 1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      B: [1, 1, 1, 1, 1, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5],
+      C: [1, 1, 1, 1, 1, 1, 1, 3.2, 3.2, 3.2, 3.2, 3.2],
+    });
+    // A is the UNIQUE significant span-count riser (pre 500, post 600 → 1.2×).
+    const traceActivity = new Map<string, { pre: number; post: number }>([
+      ['A', { pre: 500, post: 600 }],
+    ]);
+
+    it('emits a vote for the unique riser when the case is silent (no logic exception)', () => {
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { traceActivity });
+
+      expect(graph.traceActivityScores?.get('A')).toBe(1);
+      expect(graph.traceActivityScores?.size).toBe(1);
+    });
+
+    it('suppresses the vote when any service emits a logic exception', () => {
+      // A logic exception anywhere means the case is NOT a silent-source fault:
+      // the trace-activity signal must defer to the log signal and stay neutral,
+      // even though A is a unique significant riser.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        traceActivity,
+        logs: [{ timestamp: 0, service: 'B', level: 'ERROR', isLogicException: true }],
+      });
+
+      expect(graph.traceActivityScores?.size).toBe(0);
+    });
+  });
+
   describe('collision-energy signal ranking (opt-in)', () => {
     const callGraph = makeCallGraph(
       ['A', 'B', 'C'],
