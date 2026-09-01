@@ -18,12 +18,6 @@ import type {
   ServiceId,
 } from '@agentix-e/micro-kinetic-core';
 import type { CandidateEvidence } from '../interfaces/reranker.js';
-import {
-  buildFaultRoleInterpretation,
-  classifyFaultRole,
-  downstreamNeighbors,
-  upstreamNeighbors,
-} from './fault-role.js';
 
 /**
  * Compact adjacency summary for a service: its upstream and downstream
@@ -34,8 +28,12 @@ import {
  * @returns The summary, or undefined when the service has no neighbours.
  */
 export function buildAdjacency(id: ServiceId, callGraph: ServiceCallGraph): string | undefined {
-  const upstream = upstreamNeighbors(id, callGraph);
-  const downstream = downstreamNeighbors(id, callGraph);
+  const upstream: string[] = [];
+  const downstream: string[] = [];
+  for (const e of callGraph.edges) {
+    if (e.to === id) upstream.push(e.from);
+    if (e.from === id) downstream.push(e.to);
+  }
   if (upstream.length === 0 && downstream.length === 0) return undefined;
   const parts: string[] = [];
   if (upstream.length > 0) parts.push(`upstream=[${upstream.join(',')}]`);
@@ -59,7 +57,6 @@ export function buildCandidateEvidence(
   const node = graph.callGraph.nodes.get(serviceId);
   const dominant = graph.dominantMetrics?.get(serviceId);
   const anomaly = graph.anomalyScores.get(serviceId);
-  const faultRole = classifyFaultRole(serviceId, graph);
 
   return {
     serviceId,
@@ -73,8 +70,6 @@ export function buildCandidateEvidence(
     breakdown: dominant?.breakdown,
     deepestLogException: graph.deepestExceptions?.get(serviceId),
     adjacency: buildAdjacency(serviceId, graph.callGraph),
-    faultRole,
-    interpretation: buildFaultRoleInterpretation(serviceId, faultRole, graph),
   };
 }
 

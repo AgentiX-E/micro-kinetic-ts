@@ -5,14 +5,6 @@ export {
 } from './investigator-toolkit.js';
 export type { InvestigatorToolkit } from './investigator-toolkit.js';
 
-export {
-  buildFaultRoleInterpretation,
-  classifyFaultRole,
-  downstreamNeighbors,
-  upstreamNeighbors,
-} from './fault-role.js';
-export type { FaultRole } from './fault-role.js';
-
 export { buildSystemPrompt, executeAction, parseAgentResponse } from './agent-core.js';
 export type { AgentAction, AgentAnswer, AgentTool, ParsedStep } from './agent-core.js';
 
