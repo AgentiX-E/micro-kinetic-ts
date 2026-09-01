@@ -1158,6 +1158,42 @@ describe('countTraceActivityByService', () => {
     const counts = await countTraceActivityByService(path.join(tempDir, 'missing.csv'), 1000);
     expect(counts.size).toBe(0);
   });
+
+  it('resolves a microsecond startTime column through the streaming path', async () => {
+    // The streaming counter must divide the Jaeger `startTime` microseconds by
+    // 1000 (1_000_000 us = 1000 ms), so a span at 1.5 s straddles the
+    // injection boundary correctly.
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,startTime,duration',
+        't1,s1,svc-a,1000000,10',
+        't2,s2,svc-a,2000000,10',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1500);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+  });
+
+  it('resolves a nanosecond bare timestamp column through the streaming path', async () => {
+    // A bare `timestamp` column above 1e15 is nanoseconds and is divided by
+    // 1e6: 1.4e18 ns → 1.4e12 ms (pre), 1.6e18 ns → 1.6e12 ms (post) against
+    // an injection time of 1.5e12 ms.
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,timestamp',
+        't1,s1,svc-a,1400000000000000000',
+        't2,s2,svc-a,1600000000000000000',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1500000000000);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+  });
 });
 
 describe('normalizeSpanStatus', () => {

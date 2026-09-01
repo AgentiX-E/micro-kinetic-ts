@@ -461,28 +461,19 @@ export class BenchmarkRunner {
             gtTraceActivity = {
               pre: gtCounts.pre,
               post: gtCounts.post,
-              ratio: gtCounts.pre > 0 ? gtCounts.post / gtCounts.pre : gtCounts.post,
+              ratio: traceActivityRiseRatio(gtCounts),
             };
           }
-          let bestService = '';
-          let bestCounts: { pre: number; post: number } | undefined;
-          let bestRatio = -1;
+          let best: { service: string; pre: number; post: number; ratio: number } | undefined;
           for (const [service, counts] of benchCase.traceActivity) {
-            const ratio = counts.pre > 0 ? counts.post / counts.pre : counts.post;
-            if (ratio > bestRatio) {
-              bestRatio = ratio;
-              bestService = service;
-              bestCounts = counts;
+            const ratio = traceActivityRiseRatio(counts);
+            if (!best || ratio > best.ratio) {
+              best = { service, pre: counts.pre, post: counts.post, ratio };
             }
           }
-          if (bestCounts) {
-            topTraceActivity = {
-              service: bestService,
-              pre: bestCounts.pre,
-              post: bestCounts.post,
-              ratio: bestCounts.pre > 0 ? bestCounts.post / bestCounts.pre : bestCounts.post,
-            };
-          }
+          // The map is non-empty here (size > 0 guard above) and every ratio
+          // is >= 0, so the first iteration always selects a winner.
+          topTraceActivity = best;
         }
 
         // ── Enrich predictions with classifier-generated fault types ──
@@ -996,6 +987,16 @@ function formatFaultType(ft: FaultType): string {
     return `${ft.category}-${ft.subType}`;
   }
   return ft.category;
+}
+
+/**
+ * Post/pre span-count rise ratio for the trace-activity signal. When the
+ * pre-injection count is zero the ratio degenerates to the post count itself
+ * (a service that emitted no spans before the fault and then went active is
+ * the strongest possible riser).
+ */
+function traceActivityRiseRatio(counts: { pre: number; post: number }): number {
+  return counts.pre > 0 ? counts.post / counts.pre : counts.post;
 }
 
 function escapeHtml(text: string): string {

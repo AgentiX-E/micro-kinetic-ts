@@ -18,6 +18,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createInterface } from 'node:readline';
 
 import type {
   CallEdge,
@@ -158,19 +159,40 @@ const SERVICE_COLUMN_ALIASES = new Set([
  * otherwise `startTime`/`start_time` are microseconds and must be divided by
  * 1000. A bare `timestamp` column is magnitude-inferred: >1e15 is nanoseconds
  * (÷1e6); anything else is already milliseconds.
+ *
+ * The column values are read from the four candidate columns as pre-trimmed
+ * strings (or undefined when a column is absent), so the streaming counter
+ * can reuse the exact same normalisation without materialising a row object.
  */
 function normalizeTraceStartTimeMs(row: Record<string, string>): number {
-  if (row.startTimeMillis !== undefined && row.startTimeMillis !== '') {
-    return parseInt(row.startTimeMillis, 10);
+  return normalizeTraceStartTime(row.startTimeMillis, row.startTime, row.start_time, row.timestamp);
+}
+
+/**
+ * Shared start-time normalisation core (see {@link normalizeTraceStartTimeMs}).
+ *
+ * @param startTimeMillis - `startTimeMillis` cell (already milliseconds).
+ * @param startTime - `startTime` cell (microseconds).
+ * @param startTimeSnake - `start_time` cell (microseconds).
+ * @param timestamp - bare `timestamp` cell (magnitude-inferred).
+ */
+function normalizeTraceStartTime(
+  startTimeMillis: string | undefined,
+  startTime: string | undefined,
+  startTimeSnake: string | undefined,
+  timestamp: string | undefined,
+): number {
+  if (startTimeMillis !== undefined && startTimeMillis !== '') {
+    return parseInt(startTimeMillis, 10);
   }
-  if (row.startTime !== undefined && row.startTime !== '') {
-    return Math.floor(parseInt(row.startTime, 10) / 1000);
+  if (startTime !== undefined && startTime !== '') {
+    return Math.floor(parseInt(startTime, 10) / 1000);
   }
-  if (row.start_time !== undefined && row.start_time !== '') {
-    return Math.floor(parseInt(row.start_time, 10) / 1000);
+  if (startTimeSnake !== undefined && startTimeSnake !== '') {
+    return Math.floor(parseInt(startTimeSnake, 10) / 1000);
   }
-  if (row.timestamp !== undefined && row.timestamp !== '') {
-    const ts = parseInt(row.timestamp, 10);
+  if (timestamp !== undefined && timestamp !== '') {
+    const ts = parseInt(timestamp, 10);
     if (ts > 1e15) return Math.floor(ts / 1e6); // ns → ms
     return ts; // already ms
   }
@@ -887,10 +909,16 @@ interface RCAEvalMetricPoint {
  * counts without retaining raw spans.
  *
  * Unlike tryLoadTraces (which uses readFilePrefix + maxSpans and therefore
- * truncates before the post-injection window), this reads the WHOLE file (up
- * to ~27MB / ~178k spans) so the trace-activity rise signal sees the full
- * post-injection window. Each span is reduced to its service id + start time
- * and discarded, collapsing ~178k spans to a handful of {pre, post} pairs.
+ * truncates before the post-injection window), this reads the WHOLE file so
+ * the trace-activity rise signal sees the full post-injection window. Each
+ * span is reduced to its service id + start time and discarded, collapsing
+ * hundreds of thousands of spans to a handful of {pre, post} pairs.
+ *
+ * Streaming is load-bearing: RCAEval TrainTicket traces.csv files can exceed
+ * a million spans (~150 MB+). Materialising the whole file (readFile →
+ * split('\n') → per-line arrays) spikes the heap past the runner's budget
+ * and OOMs during ablation; reading line-by-line keeps peak memory at O(line)
+ * instead of O(file).
  *
  * @param tracesPath - Absolute path to traces.csv.
  * @param injectTimeMs - Fault injection time in Unix milliseconds.
@@ -902,40 +930,66 @@ export async function countTraceActivityByService(
 ): Promise<ReadonlyMap<string, TraceActivityCounts>> {
   const counts = new Map<string, { pre: number; post: number }>();
 
-  let content: string;
-  try {
-    content = await fs.promises.readFile(tracesPath, 'utf-8');
-  } catch {
-    return counts;
-  }
+  // Fast path: `createReadStream` opens lazily and reports a missing file as
+  // an async 'error' event (not a sync throw), so short-circuit on absence.
+  if (!fs.existsSync(tracesPath)) return counts;
 
-  const lines = content.split('\n');
-  if (lines.length < 2) return counts;
+  const lines = createInterface({
+    input: fs.createReadStream(tracesPath, { encoding: 'utf-8' }),
+    crlfDelay: Infinity,
+  });
 
   // Same service-column extraction as tryLoadTraces: header alias detection,
-  // falling back to 'unknown' when the column is absent or empty.
-  const header = lines[0]!.split(',').map((h) => h.trim());
-  const svcCol = header.find((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+  // falling back to 'unknown' when the column is absent or empty. Column
+  // indexes for the four start-time candidates are resolved once from the
+  // header so each row needs only two cells extracted, never a full object.
+  let svcIdx = -1;
+  let startMillisIdx = -1;
+  let startIdx = -1;
+  let startSnakeIdx = -1;
+  let timestampIdx = -1;
+  let isHeader = true;
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (line.trim() === '') continue;
-    const values = line.split(',').map((v) => v.trim());
-    const row: Record<string, string> = {};
-    for (let j = 0; j < header.length; j++) {
-      row[header[j]!] = values[j] ?? '';
+  try {
+    for await (const rawLine of lines) {
+      if (isHeader) {
+        const header = rawLine.split(',').map((h) => h.trim());
+        svcIdx = header.findIndex((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+        startMillisIdx = header.indexOf('startTimeMillis');
+        startIdx = header.indexOf('startTime');
+        startSnakeIdx = header.indexOf('start_time');
+        timestampIdx = header.indexOf('timestamp');
+        isHeader = false;
+        continue;
+      }
+
+      if (rawLine.trim() === '') continue;
+      const cells = rawLine.split(',');
+      const service = svcIdx >= 0 ? (cells[svcIdx] ?? '').trim() || 'unknown' : 'unknown';
+      const startTimeMs = normalizeTraceStartTime(
+        cell(cells, startMillisIdx),
+        cell(cells, startIdx),
+        cell(cells, startSnakeIdx),
+        cell(cells, timestampIdx),
+      );
+
+      const entry = counts.get(service) ?? { pre: 0, post: 0 };
+      if (startTimeMs < injectTimeMs) entry.pre += 1;
+      else entry.post += 1;
+      counts.set(service, entry);
     }
-
-    const service = svcCol ? (row[svcCol] ?? 'unknown') : 'unknown';
-    const startTimeMs = normalizeTraceStartTimeMs(row);
-
-    const entry = counts.get(service) ?? { pre: 0, post: 0 };
-    if (startTimeMs < injectTimeMs) entry.pre += 1;
-    else entry.post += 1;
-    counts.set(service, entry);
+  } catch {
+    // A mid-stream read error surfaces as an async iterator rejection; return
+    // whatever counts were accumulated before the failure (empty for a file
+    // that vanished between the existsSync check and the first read).
   }
 
   return counts;
+}
+
+/** Read a trimmed cell by index, or undefined when the column is absent. */
+function cell(cells: readonly string[], idx: number): string | undefined {
+  return idx >= 0 ? (cells[idx] ?? '').trim() : undefined;
 }
 
 /**

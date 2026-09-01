@@ -807,6 +807,41 @@ describe('BenchmarkRunner', () => {
 describe('RCA Engine Integration', () => {
   const generator = new SyntheticBenchmarkGenerator(42);
 
+  /**
+   * Build a spy engine that always predicts `frontend` as top-1 with a flat
+   * anomaly score, so a case whose ground truth is `cartservice` fails and
+   * exercises the failure-diagnostics path (including the trace-activity
+   * rise signal block) without touching the real RCA engine.
+   */
+  function createFrontendSpyEngine(): IRCAEngine {
+    return {
+      buildFaultGraph: (callGraph) => ({
+        callGraph,
+        propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+        anomalyScores: new Map(
+          [...callGraph.nodes.keys()].map((id) => [id, id === 'frontend' ? 0.9 : 0.1]),
+        ),
+        anomalyOnsetTimes: new Map(),
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+      }),
+      analyze: async () => [
+        {
+          serviceId: 'frontend',
+          faultType: { category: 'UNKNOWN', subType: '', severity: 'info' as const },
+          confidence: 0.5,
+          rank: 1,
+          evidenceMetrics: [],
+          propagationDepth: 0,
+          propagationErrorBound: 0,
+          viaTreeSearch: false,
+        },
+      ],
+      getCycleContributionBound: () => 0,
+    };
+  }
+
   it('should achieve high Avg@1 on CPU fault data', async () => {
     const container = createContainer();
     const runner = new BenchmarkRunner(container);
@@ -939,7 +974,8 @@ describe('RCA Engine Integration', () => {
     // signal (post-injection ERROR/FATAL volume) can be derived. A spy engine
     // records the options object and the test asserts it carries the logs.
     const container = new Container();
-    let receivedLogs: ReadonlyArray<{ timestamp: number; service: string; level: string }> | undefined;
+    let receivedLogs:
+      ReadonlyArray<{ timestamp: number; service: string; level: string }> | undefined;
     const spyEngine: IRCAEngine = {
       buildFaultGraph: (callGraph, _metrics, options) => {
         receivedLogs = options?.logs;
@@ -1053,6 +1089,95 @@ describe('RCA Engine Integration', () => {
     expect(diag!.topRatioContrib).toBe(0);
     expect(diag!.gtTopoSource).toBe(0.5);
     expect(diag!.topTopoSource).toBe(1);
+  });
+
+  it('exposes the trace-activity rise diagnostics in the failure output', async () => {
+    // When a case carries per-service span-activity counts, the runner must
+    // record the GT's pre/post counts and ratio, plus the service with the
+    // highest post/pre ratio (the trace-activity signal's top candidate), so
+    // the benchmark artifacts can reveal whether the signal isolates the
+    // silent-source fault.
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createFrontendSpyEngine());
+    const runner = new BenchmarkRunner(container);
+
+    // GT 'cartservice' rises 2×; 'frontend' rises 5× → the signal's top
+    // candidate is 'frontend', while the GT diagnostic reports 'cartservice'.
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const benchCase = {
+      ...base,
+      groundTruth: { ...base.groundTruth, serviceId: 'cartservice' },
+      traceActivity: new Map([
+        ['cartservice', { pre: 100, post: 200 }],
+        ['frontend', { pre: 100, post: 500 }],
+      ]),
+    };
+    const result = await runner.runSuite({ name: 'trace-diag', cases: [benchCase], totalCases: 1 });
+
+    expect(result.failures).toHaveLength(1);
+    const diag = result.failures[0]!.diag;
+    expect(diag).toBeDefined();
+    expect(diag!.gtTraceActivity).toEqual({ pre: 100, post: 200, ratio: 2 });
+    expect(diag!.topTraceActivity).toEqual({ service: 'frontend', pre: 100, post: 500, ratio: 5 });
+  });
+
+  it('handles GT-absent, zero-pre, and non-rising services in trace-activity diagnostics', async () => {
+    // Exercise the remaining branch shapes of the trace-activity diagnostic:
+    // the GT service missing from the activity map (gtTraceActivity stays
+    // undefined), a service with zero pre-injection spans (ratio = post), and
+    // a service whose ratio does NOT outrank the current best (the
+    // ratio > bestRatio false branch).
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createFrontendSpyEngine());
+    const runner = new BenchmarkRunner(container);
+
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const benchCase = {
+      ...base,
+      groundTruth: { ...base.groundTruth, serviceId: 'cartservice' },
+      // 'checkout' (pre=0 → ratio 30) outranks 'frontend' (ratio 5), so the
+      // top candidate is 'checkout'; 'cartservice' is absent from the map.
+      traceActivity: new Map([
+        ['checkout', { pre: 0, post: 30 }],
+        ['frontend', { pre: 100, post: 500 }],
+      ]),
+    };
+    const result = await runner.runSuite({
+      name: 'trace-diag-zero-pre',
+      cases: [benchCase],
+      totalCases: 1,
+    });
+
+    expect(result.failures).toHaveLength(1);
+    const diag = result.failures[0]!.diag;
+    expect(diag!.gtTraceActivity).toBeUndefined();
+    expect(diag!.topTraceActivity).toEqual({ service: 'checkout', pre: 0, post: 30, ratio: 30 });
+  });
+
+  it('leaves trace-activity diagnostics absent for an empty activity map', async () => {
+    // A present-but-empty activity map must not populate the diagnostics
+    // (size === 0 short-circuits the block), keeping gt/topTraceActivity
+    // undefined rather than emitting a spurious candidate.
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => createFrontendSpyEngine());
+    const runner = new BenchmarkRunner(container);
+
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const benchCase = {
+      ...base,
+      groundTruth: { ...base.groundTruth, serviceId: 'cartservice' },
+      traceActivity: new Map(),
+    };
+    const result = await runner.runSuite({
+      name: 'trace-diag-empty',
+      cases: [benchCase],
+      totalCases: 1,
+    });
+
+    expect(result.failures).toHaveLength(1);
+    const diag = result.failures[0]!.diag;
+    expect(diag!.gtTraceActivity).toBeUndefined();
+    expect(diag!.topTraceActivity).toBeUndefined();
   });
 });
 
