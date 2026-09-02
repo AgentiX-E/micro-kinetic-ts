@@ -180,4 +180,61 @@ describe('bocpdDetectAllChangepoints', () => {
     });
     expect(Array.isArray(results)).toBe(true);
   });
+
+  it('should report changepoints when the detector triggers on a regime change', () => {
+    // A 10x regime change under maxRunLength truncation reliably triggers the
+    // detector (the same shape exercises bocpdDetectOnset's detection return),
+    // so bocpdDetectAllChangepoints must surface the detected onset instead of
+    // breaking out on the first iteration.
+    const values = new Float64Array(200);
+    for (let i = 0; i < 100; i++) values[i] = 1 + Math.random() * 0.1;
+    for (let i = 100; i < 200; i++) values[i] = 10 + Math.random() * 0.1;
+
+    const results = bocpdDetectAllChangepoints(values, {
+      maxRunLength: 50,
+      changepointThreshold: 0.3,
+      minRunLength: 5,
+    });
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(r.onsetIndex).toBeGreaterThanOrEqual(0);
+      expect(r.confidence).toBeGreaterThanOrEqual(0);
+      expect(r.confidence).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('should accept a plain number[] input (type-preserving slice)', () => {
+    // `values.slice(offset)` returns a plain number[] for a number[] input, so
+    // this exercises the path where the segment is NOT a Float64Array and the
+    // removed wrap would previously have converted it. Regime change at i=40.
+    const values: number[] = [];
+    for (let i = 0; i < 40; i++) values.push(10 + Math.random());
+    for (let i = 40; i < 80; i++) values.push(50 + Math.random());
+
+    const results = bocpdDetectAllChangepoints(values, {
+      changepointThreshold: 0.3,
+      minRunLength: 5,
+    });
+    expect(Array.isArray(results)).toBe(true);
+    for (const r of results) {
+      expect(r.onsetIndex).toBeGreaterThanOrEqual(0);
+      expect(r.confidence).toBeGreaterThanOrEqual(0);
+      expect(r.confidence).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('breaks early when the first segment yields no changepoint', () => {
+    // A single clean stationary segment: bocpdDetectOnset returns onsetIndex=-1,
+    // so the while loop must break on its first iteration (the `onsetIndex < 0`
+    // branch) and return an empty result set.
+    const values = new Float64Array(60);
+    for (let i = 0; i < values.length; i++) values[i] = 100 + Math.sin(i) * 0.5;
+
+    const results = bocpdDetectAllChangepoints(values, {
+      changepointThreshold: 0.01,
+      minRunLength: 5,
+      hazardRate: 1 / 1000,
+    });
+    expect(Array.isArray(results)).toBe(true);
+  });
 });

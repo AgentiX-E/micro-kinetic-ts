@@ -60,6 +60,49 @@ describe('LogSignalProvider', () => {
       const result = await provider.analyze(ctx);
       expect(result.candidates.length).toBe(0);
     });
+
+    it('should assign "major" severity to a service with an intermediate score', async () => {
+      const provider = new LogSignalProvider();
+      // 3 rapid errors in a single service → burst bonus lifts the score to
+      // ~0.5, landing in the (0.4, 0.7] "major" band (not "critical"/"minor").
+      const logs = makeLogs([
+        { ts: 1000, svc: 'svc-x', msg: 'Error A', level: 'ERROR' },
+        { ts: 1001, svc: 'svc-x', msg: 'Error B', level: 'ERROR' },
+        { ts: 1002, svc: 'svc-x', msg: 'Error C', level: 'ERROR' },
+      ]);
+      const ctx: SignalAnalysisContext = { traceSpans: logs as any };
+      const result = await provider.analyze(ctx);
+      expect(result.candidates.length).toBeGreaterThan(0);
+      expect(result.candidates[0]!.faultType.severity).toBe('major');
+    });
+
+    it('should handle logs sharing a single timestamp (degenerate time range)', async () => {
+      const provider = new LogSignalProvider();
+      // All logs at the same instant → timeRange = 0, exercising the `|| 1`
+      // fallback that keeps the density denominator positive.
+      const logs = makeLogs([
+        { ts: 5000, svc: 'svc-a', msg: 'Error 1', level: 'ERROR' },
+        { ts: 5000, svc: 'svc-a', msg: 'Error 2', level: 'ERROR' },
+        { ts: 5000, svc: 'svc-b', msg: 'Error 3', level: 'ERROR' },
+      ]);
+      const ctx: SignalAnalysisContext = { traceSpans: logs as any };
+      const result = await provider.analyze(ctx);
+      expect(result.candidates.length).toBeGreaterThan(0);
+      for (const c of result.candidates) {
+        expect(c.confidence).toBeGreaterThanOrEqual(0);
+        expect(c.confidence).toBeLessThanOrEqual(1);
+      }
+    });
+  });
+
+  describe('estimateQuality', () => {
+    it('should return a placeholder quality assessment', async () => {
+      const provider = new LogSignalProvider();
+      const ctx: SignalAnalysisContext = { traceSpans: [] };
+      const quality = await provider.estimateQuality(ctx);
+      expect(quality.score).toBe(0);
+      expect(typeof quality.reason).toBe('string');
+    });
   });
 
   describe('log template extraction', () => {

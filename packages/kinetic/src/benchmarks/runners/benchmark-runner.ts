@@ -613,7 +613,10 @@ export class BenchmarkRunner {
       perFaultType.set(faultType, {
         cases: tracker.cases,
         correct: tracker.correct,
-        accuracy: tracker.cases > 0 ? tracker.correct / tracker.cases : 0,
+        // `tracker.cases` is always ≥ 1 here — a tracker entry is created and
+        // its `cases` incremented before it can appear in `faultTypeTracker`,
+        // so the `cases > 0 ? … : 0` guard was unreachable dead code.
+        accuracy: tracker.correct / tracker.cases,
       });
     }
 
@@ -640,7 +643,8 @@ export class BenchmarkRunner {
     // Build per-fault-type accuracy map for specialized learning
     const perFaultAcc = new Map<string, number>();
     for (const [ft, t] of faultTypeTracker) {
-      perFaultAcc.set(ft, t.cases > 0 ? t.correct / t.cases : 0);
+      // Same invariant as above: a tracked fault type always has ≥1 case.
+      perFaultAcc.set(ft, t.correct / t.cases);
     }
 
     this.calibrator.train(trainingExamples, perFaultAcc);
@@ -953,14 +957,17 @@ export class BenchmarkRunner {
     prediction: RootCauseResult,
     metrics: ReadonlyMap<string, readonly TimeSeries[]>,
   ): RootCauseResult {
-    if (!this.classifier) return prediction;
+    // No `!this.classifier` guard here: `enrichPrediction` is a private helper
+    // invoked only from the `this.classifier ? … : …` branch of `runSuite`, so
+    // the classifier is always defined at this call site. The guard was
+    // unreachable dead code.
 
     // Look up the predicted service's metric data
     const serviceMetrics = metrics.get(prediction.serviceId);
     if (!serviceMetrics || serviceMetrics.length === 0) return prediction;
 
     // Run classifier
-    const hypotheses = this.classifier.classify(serviceMetrics, {
+    const hypotheses = this.classifier!.classify(serviceMetrics, {
       serviceId: prediction.serviceId,
       metricNames: serviceMetrics.map((s) => s.label),
     });

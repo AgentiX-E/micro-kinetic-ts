@@ -27,8 +27,9 @@ import type { CallEdge, ServiceCallGraph, ServiceNode } from '@agentix-e/micro-k
 /**
  * Minimal span shape required for topology augmentation.
  *
- * `augmentTopologyWithTraces` and `canValidateWithTraces` only read the
- * caller→callee relationship encoded by `spanId`/`parentSpanId`/`service`.
+ * `augmentTopologyWithTraces` (and `trace-validator.ts`'s
+ * `canValidateWithTraces`) only read the caller→callee relationship encoded
+ * by `spanId`/`parentSpanId`/`service`.
  * Accepting this structural subset (rather than the full `TraceSpan`) lets
  * both the core `TraceSpan` and the benchmark `BenchmarkTraceSpan` flow
  * through without a lossy conversion layer.
@@ -166,16 +167,4 @@ export function augmentTopologyWithTraces(
     edges: validatedEdges,
     systemLoad: callGraph.systemLoad,
   };
-}
-
-/**
- * Quick check: can trace data validate this topology?
- * Returns true if traces contain meaningful call patterns.
- */
-export function canValidateWithTraces(spans: readonly TraceSpanLike[]): boolean {
-  const uniqueParents = new Set<string>();
-  for (const span of spans) {
-    if (span.parentSpanId) uniqueParents.add(span.parentSpanId);
-  }
-  return uniqueParents.size > 0 && spans.length >= 10;
 }

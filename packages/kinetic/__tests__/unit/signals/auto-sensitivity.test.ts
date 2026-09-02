@@ -173,4 +173,25 @@ describe('AutoSensitivity — edge cases', () => {
     expect(result.optimalK).toBeGreaterThanOrEqual(1.0);
     expect(result.optimalK).toBeLessThanOrEqual(1.5);
   });
+
+  it('should return confidence 0.5 when sparse data has zero anomaly rate', () => {
+    // All-equal values → MAD = 0 → anomalyRateAtK returns 0 → confidence 0.5.
+    const values = new Float64Array([5, 5, 5]);
+    const result = computeAutoSensitivity(values, { minDataPoints: 5, sparseK: 5.0 });
+    expect(result.usedSparseFallback).toBe(true);
+    expect(result.achievedRate).toBe(0);
+    expect(result.confidence).toBe(0.5);
+  });
+
+  it('should compute a positive confidence when sparse data has a detectable anomaly', () => {
+    // A clear outlier in an otherwise-flat small sample → anomalyRateAtK > 0,
+    // so the sparse-fallback confidence takes the `targetAnomalyRate / rate`
+    // branch (rate > 0) rather than the zero-rate 0.5 fallback.
+    const values = new Float64Array([1, 2, 3, 10]);
+    const result = computeAutoSensitivity(values, { minDataPoints: 5, sparseK: 2.0 });
+    expect(result.usedSparseFallback).toBe(true);
+    expect(result.achievedRate).toBeGreaterThan(0);
+    expect(result.confidence).toBeGreaterThan(0);
+    expect(result.confidence).toBeLessThanOrEqual(1);
+  });
 });

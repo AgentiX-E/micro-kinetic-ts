@@ -140,7 +140,7 @@ function studentTLogPredictive(
     return (
       -0.5 * (dof + 1) * Math.log(1 + (error * error) / (dof * scaledVar)) -
       0.5 * Math.log(dof * Math.PI * scaledVar) -
-      lgammaRatio(dof, dof + 1)
+      lgammaRatio(dof)
     );
   }
 
@@ -179,37 +179,20 @@ function studentTLogPredictive(
   return (
     -0.5 * (dofN + 1) * Math.log(1 + (error * error) / (dofN * predictiveVar)) -
     0.5 * Math.log(dofN * Math.PI * predictiveVar) -
-    lgammaRatio(dofN, dofN + 1)
+    lgammaRatio(dofN)
   );
 }
 
 /**
- * Log-gamma ratio: log(Γ(a) / Γ(b)).
+ * Log-gamma ratio: log(Γ(a) / Γ(a+1)).
  *
- * Avoids computing full Γ values; uses recurrence or lookup
- * for small integer arguments.
+ * Both call sites pass consecutive arguments — `(dof, dof+1)` and
+ * `(dofN, dofN+1)` — so the gamma recurrence Γ(a+1) = a·Γ(a) gives the exact
+ * closed form -log(a). The `a === b` early-return and the Stirling-approximation
+ * fallback were unreachable dead code (a = dof > 0, so the log is well-defined).
  */
-function lgammaRatio(a: number, b: number): number {
-  // For integer args, use product relationship
-  if (a === b) return 0;
-  if (b - a === 1) return -Math.log(a); // log(Γ(a) / Γ(a+1)) = -log(a)
-  // Fallback: use built-in lgamma
-  // Note: Math.lgamma is not standard; fall back to approximation
-  return simpleLgammaApprox(a) - simpleLgammaApprox(b);
-}
-
-/**
- * Simple log-gamma approximation using Stirling's formula.
- * Accurate enough for BOCPD's likelihood comparison.
- */
-function simpleLgammaApprox(z: number): number {
-  if (z <= 0) return 0;
-  if (z < 0.5) {
-    // Reflection formula not needed for BOCPD (dof ≥ 1)
-    return 0;
-  }
-  // Stirling: log(Γ(z)) ≈ (z - 0.5)log(z) - z + 0.5log(2π)
-  return (z - 0.5) * Math.log(z) - z + 0.9189385332046727; // 0.5*log(2π)
+function lgammaRatio(a: number): number {
+  return -Math.log(a);
 }
 
 /**
@@ -390,9 +373,12 @@ export function bocpdDetectOnset(
   }
 
   // No changepoint detected — return best guess from final distribution
-  // Confidence based on how peaked the distribution is
+  // Confidence based on how peaked the distribution is. `runLengths` always
+  // holds ≥ minRunLength entries here (the loop above ran at least that many
+  // times — n >= minRunLength is guaranteed by the early return), so the
+  // `length === 1` branch was unreachable dead code.
   const finalMaxProb = Math.max(...runLengths);
-  const finalConfidence = runLengths.length > 1 ? 1 - finalMaxProb : 0;
+  const finalConfidence = 1 - finalMaxProb;
 
   return {
     onsetIndex: -1,
@@ -419,12 +405,11 @@ export function bocpdDetectAllChangepoints(
   let offset = 0;
 
   while (offset < values.length) {
+    // `values.slice(offset)` preserves the input element type (Float64Array or
+    // number[]), which `bocpdDetectOnset` accepts directly — the extra
+    // Float64Array wrap was a needless copy for plain-array inputs.
     const segment = values.slice(offset);
-    // Wrap as Float64Array to avoid copy overhead in bocpdDetectOnset
-    const segmentArray = Array.isArray(segment)
-      ? new Float64Array(segment)
-      : (segment as Float64Array);
-    const result = bocpdDetectOnset(segmentArray, merged);
+    const result = bocpdDetectOnset(segment, merged);
 
     if (result.onsetIndex < 0) break;
 

@@ -238,8 +238,10 @@ export function computeMetricAutoSensitivity(
   metricType: MetricTypeHint,
   config: Partial<AutoSensitivityConfig> = {},
 ): AutoSensitivityResult {
-  // Metric-type-aware prior narrows the search range
-  const priorRange = METRIC_TYPE_PRIORS[metricType] ?? { min: 2.0, max: 7.0 };
+  // Metric-type-aware prior narrows the search range. `METRIC_TYPE_PRIORS` is a
+  // complete Record over the `MetricTypeHint` union, so the lookup is always
+  // defined and the `?? fallback` branch is unreachable.
+  const priorRange = METRIC_TYPE_PRIORS[metricType]!;
 
   const effectiveConfig = {
     ...config,

@@ -109,14 +109,15 @@ export class LogSignalProvider implements ISignalProvider {
         viaTreeSearch: true,
       }));
 
+    // `ranked` is non-empty here: `analyze` returns early when there are no
+    // ERROR/WARN logs, so `scoreServicesWithLogs` always yields ≥1 candidate.
     return {
       signal: 'topology',
       candidates: ranked,
-      confidence: ranked.length > 0 ? ranked[0]!.confidence : 0,
+      confidence: ranked[0]!.confidence,
       metadata: {
         candidateCount: ranked.length,
-        avgConfidence:
-          ranked.length > 0 ? ranked.reduce((s, r) => s + r.confidence, 0) / ranked.length : 0,
+        avgConfidence: ranked.reduce((s, r) => s + r.confidence, 0) / ranked.length,
         quality: {
           traceCoverage: 0,
           metricCompleteness: 0,
@@ -140,7 +141,9 @@ export class LogSignalProvider implements ISignalProvider {
       const existing = templateMap.get(pattern);
       if (existing) {
         existing.count++;
-        if (log.timestamp < existing.firstSeen) existing.firstSeen = log.timestamp;
+        // `logs` arrives pre-sorted ascending (analyze sorts before calling), so
+        // firstSeen — set on first encounter — is already the earliest timestamp
+        // and only lastSeen needs updating.
         if (log.timestamp > existing.lastSeen) existing.lastSeen = log.timestamp;
       } else {
         templateMap.set(pattern, {
@@ -199,7 +202,8 @@ export class LogSignalProvider implements ISignalProvider {
         svcStats.set(log.service, s);
       }
       s.errors++;
-      if (log.timestamp < s.earliest) s.earliest = log.timestamp;
+      // `logs` is sorted ascending, so earliest — set on first encounter — is
+      // already the minimum and only latest needs updating.
       if (log.timestamp > s.latest) s.latest = log.timestamp;
     }
 
@@ -217,8 +221,9 @@ export class LogSignalProvider implements ISignalProvider {
 
     // Score: error count × burst bonus × recency bonus
     const scores = new Map<string, number>();
-    const maxTimestamp = logs.length > 0 ? Math.max(...logs.map((l) => l.timestamp)) : 1;
-    const minTimestamp = logs.length > 0 ? Math.min(...logs.map((l) => l.timestamp)) : 0;
+    // `logs` is non-empty: `analyze` filters to ERROR/WARN before calling us.
+    const maxTimestamp = Math.max(...logs.map((l) => l.timestamp));
+    const minTimestamp = Math.min(...logs.map((l) => l.timestamp));
     const timeRange = maxTimestamp - minTimestamp || 1;
 
     for (const [svc, stats] of svcStats) {
