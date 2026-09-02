@@ -372,11 +372,16 @@ export function bocpdDetectOnset(
     }
   }
 
-  // No changepoint detected — return best guess from final distribution
-  // Confidence based on how peaked the distribution is. `runLengths` always
-  // holds ≥ minRunLength entries here (the loop above ran at least that many
-  // times — n >= minRunLength is guaranteed by the early return), so the
-  // `length === 1` branch was unreachable dead code.
+  // No changepoint detected — return best guess from final distribution.
+  // Confidence based on how peaked the distribution is.
+  //
+  // `runLengths` always holds ≥ 2 entries at this point, so the removed
+  // `length === 1 ? … : 0` guard was unreachable: each iteration pushes
+  // `min(len, maxRunLength - 1) ≥ 1` growth entries (maxRunLength ≥ 2 in every
+  // meaningful config — default 1000, no caller passes a degenerate value that
+  // would collapse the posterior to a changepoint-only hypothesis) plus one
+  // `unshift` of the changepoint mass, and `n >= minRunLength` guarantees at
+  // least one iteration. `Math.max` therefore never operates on a singleton.
   const finalMaxProb = Math.max(...runLengths);
   const finalConfidence = 1 - finalMaxProb;
 
