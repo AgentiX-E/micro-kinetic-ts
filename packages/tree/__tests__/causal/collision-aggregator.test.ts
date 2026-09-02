@@ -125,6 +125,18 @@ describe('computeBoltzmannCollisionGain', () => {
     expect(cycleGain).toBeGreaterThan(chainGain);
   });
 
+  it('applies fan-in amplification (Φ=1.2) between chain and cycle', () => {
+    // Same parents, but fan-in amplification Φ=1.2 redistributes the base gain
+    // between the linear chain (Φ=1.0) and the self-reinforcing cycle (Φ=1.8).
+    const edges = [makeEdge('A', 'C', 0.8), makeEdge('B', 'C', 0.7)];
+    const parentEnergies = new Map([['A', 1.0], ['B', 1.0]]);
+    const chainGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'chain');
+    const fanInGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'fan-in');
+    const cycleGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'cycle');
+    expect(fanInGain).toBeGreaterThan(chainGain);
+    expect(fanInGain).toBeLessThan(cycleGain);
+  });
+
   it('ignores parents with zero energy', () => {
     const edges = [
       makeEdge('A', 'B', 0.9),
@@ -289,5 +301,20 @@ describe('aggregateFaultEnergy (end-to-end)', () => {
     // Alpha=0.4: E = 0.4 × local = 0.4 × 0.5 = 0.2, 0.4 × 0.7 = 0.28
     expect(result.get('X')!.totalEnergy).toBeCloseTo(0.2, 1);
     expect(result.get('Y')!.totalEnergy).toBeCloseTo(0.28, 1);
+  });
+
+  it('falls back to isolated handling for an all-cyclic graph with no cycle membership', () => {
+    // A ↔ B forms a cycle with no zero in-degree node, so Kahn's algorithm
+    // yields an empty order. Without cycleMembership (default empty map), both
+    // nodes fall into the isolated/cyclic fallback and keep their local score.
+    const edges = [makeEdge('A', 'B', 0.9), makeEdge('B', 'A', 0.3)];
+    const localScores = new Map([['A', 0.5], ['B', 0.5]]);
+    const result = aggregateFaultEnergy(edges, localScores);
+
+    expect(result.size).toBe(2);
+    expect(result.get('A')!.totalEnergy).toBeCloseTo(0.5, 10);
+    expect(result.get('B')!.totalEnergy).toBeCloseTo(0.5, 10);
+    expect(result.get('A')!.collisionType).toBe('chain');
+    expect(result.get('B')!.collisionType).toBe('chain');
   });
 });

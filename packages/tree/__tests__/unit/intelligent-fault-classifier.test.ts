@@ -717,3 +717,211 @@ describe('IntelligentFaultClassifier — All RCAEval Fault Types', () => {
     expect(r.category).toBe('F5');
   });
 });
+
+// ── Remaining Reachable Branches ─────────────────────────────
+
+describe('IntelligentFaultClassifier — Remaining Reachable Branches', () => {
+  it('computeSlope returns 0 when timestamps are identical (division-by-zero guard)', async () => {
+    // Identical timestamps collapse the linear-regression denominator to zero;
+    // the guard must return 0 instead of surfacing NaN/Infinity.
+    const classifier = createClassifier();
+    const metrics = [makeTimeSeries('cpu', 0, 0, 2, [0.9, 0.9])];
+    const result = await classifier.classify(metrics);
+    expect(result.category).toBeDefined();
+    expect(Number.isFinite(result.confidence)).toBe(true);
+  });
+
+  it('mean returns 0 for an empty metric and the summary reports a zero peak', async () => {
+    const classifier = createClassifier();
+    const metrics = [makeTimeSeries('empty_metric', 0, 1000, 0, [])];
+    const result = await classifier.classify(metrics);
+    expect(result.category).toBeDefined();
+    expect(result.source).toBe('heuristic');
+  });
+
+  it('rejects a metric whose absolute slope is below minSlopeAbs', async () => {
+    // CPU signature requires |slope| >= 0.0005; a 0.2→0.21 ramp over 300s has
+    // slope ≈ 3.3e-5, so the slope guard must reject it.
+    const classifier = createClassifier();
+    const metrics = [risingTS('cpu', 0, 300_000, 100, 0.2, 0.21)];
+    const result = await classifier.classify(metrics);
+    expect(result.category).toBeDefined();
+    expect(result.source).toBe('heuristic');
+  });
+
+  it('rejects a metric whose fault/baseline ratio is below minRatioToBaseline', async () => {
+    const classifier = createClassifier({
+      baselineMetrics: new Map([
+        ['baseline', [flatTS('container_cpu_usage', -300_000, 0, 50, 0.9)]],
+      ]),
+    });
+    // Fault rises 0.7→0.9 (ratio ~0.89) against baseline 0.9 → below the 2.0
+    // threshold, so the ratio guard rejects the CPU match.
+    const metrics = [risingTS('container_cpu_usage', 0, 300_000, 100, 0.7, 0.9)];
+    const result = await classifier.classify(metrics);
+    expect(result.source).toBe('heuristic');
+  });
+
+  it('runs the spike check for the DELAY signature when a baseline is present', async () => {
+    const classifier = createClassifier({
+      baselineMetrics: new Map([
+        [
+          'baseline',
+          [
+            flatTS('p99_latency', -300_000, 0, 50, 5),
+            flatTS('error_rate', -300_000, 0, 50, 0.01),
+          ],
+        ],
+      ]),
+    });
+    const metrics = [
+      risingTS('p99_latency', 0, 300_000, 100, 5, 100),
+      flatTS('error_rate', 0, 300_000, 100, 0.01),
+    ];
+    const result = await classifier.classify(metrics);
+    expect(result.category).toBe('DELAY');
+  });
+
+  it('findBaseline returns undefined when no baseline metric label matches', async () => {
+    const classifier = createClassifier({
+      baselineMetrics: new Map([
+        ['baseline', [flatTS('memory_usage', -300_000, 0, 50, 0.5)]],
+      ]),
+    });
+    // No baseline for 'cpu_usage' → the ratio check is skipped, CPU is still
+    // detected from the fault signature alone.
+    const metrics = [risingTS('cpu_usage', 0, 300_000, 100, 0.2, 0.95)];
+    const result = await classifier.classify(metrics);
+    expect(result.category).toBe('CPU');
+  });
+
+  it('buildLLMPrompt emits the empty-metrics placeholder', async () => {
+    let capturedPrompt = '';
+    const classifier = createClassifier({
+      llmProvider: {
+        async complete(prompt: string): Promise<string> {
+          capturedPrompt = prompt;
+          return '{"category":"CPU","confidence":0.9,"reasoning":"x"}';
+        },
+      },
+    });
+    await classifier.classify([]);
+    expect(capturedPrompt).toContain('(no metrics available)');
+  });
+
+  it('LLM response missing category falls back to empty and is rejected', async () => {
+    const classifier = createClassifier({
+      llmProvider: {
+        async complete(): Promise<string> {
+          return '{"confidence": 0.9}';
+        },
+      },
+    });
+    const result = await classifier.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
+    expect(result.source).not.toBe('llm');
+  });
+
+  it('LLM response missing confidence and reasoning falls back to defaults', async () => {
+    const classifier = createClassifier({
+      llmProvider: {
+        async complete(): Promise<string> {
+          return '{"category": "CPU"}';
+        },
+      },
+    });
+    const result = await classifier.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
+    expect(result.category).toBe('CPU');
+    expect(result.confidence).toBeCloseTo(0.5);
+    expect(result.source).toBe('llm');
+  });
+
+  it('reports a falling trend in the metric summary', async () => {
+    const classifier = createClassifier();
+    const metrics = [risingTS('falling_metric', 0, 300_000, 100, 1.0, 0.0)];
+    const result = await classifier.classify(metrics);
+    expect(result.category).toBeDefined();
+  });
+
+  it('forwards logs and traces into the LLM prompt', async () => {
+    let capturedPrompt = '';
+    const classifier = createClassifier({
+      logs: ['ERROR NullPointerException at line 42'],
+      traces: [{ operation: 'getUser', duration: 5000, status: 'ERROR' }],
+      llmProvider: {
+        async complete(prompt: string): Promise<string> {
+          capturedPrompt = prompt;
+          return '{"category":"F2","confidence":0.9,"reasoning":"null pointer"}';
+        },
+      },
+    });
+    await classifier.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
+    expect(capturedPrompt).toContain('NullPointerException');
+    expect(capturedPrompt).toContain('getUser: 5000ms ERROR');
+  });
+
+  it('returns a low-confidence metric-signature result when it is the only match', async () => {
+    const classifier = createClassifier();
+    // 'socket_connections' matches SOCKET's 'socket' requirement but not its
+    // 'error' requirement → score 0.5, below the 0.7 early-return threshold.
+    const metrics = [risingTS('socket_connections', 0, 300_000, 100, 0.01, 100)];
+    const result = await classifier.classify(metrics);
+    expect(result.source).toBe('metric-signature');
+    expect(result.category).toBe('SOCKET');
+    expect(result.confidence).toBeCloseTo(0.5);
+  });
+
+  it('heuristic: severe score (>=0.8) computes the child ratio and labels a cascaded anomaly', async () => {
+    const classifier = createClassifier();
+    const metrics = [flatTS('x', 0, 300_000, 50, 0.5)];
+    const result = await classifier.classify(metrics, 0.9, 0, 0.45);
+    expect(result.source).toBe('heuristic');
+    expect(result.confidence).toBeCloseTo(0.4);
+    expect(result.description).toContain('cascaded');
+  });
+
+  it('heuristic: significant score (>=0.6) labels a significant anomaly', async () => {
+    const classifier = createClassifier();
+    const metrics = [flatTS('x', 0, 300_000, 50, 0.5)];
+    const result = await classifier.classify(metrics, 0.7);
+    expect(result.source).toBe('heuristic');
+    expect(result.confidence).toBeCloseTo(0.3);
+  });
+
+  it('heuristic: moderate score (>=0.3) labels a moderate anomaly', async () => {
+    const classifier = createClassifier();
+    const metrics = [flatTS('x', 0, 300_000, 50, 0.5)];
+    const result = await classifier.classify(metrics, 0.5);
+    expect(result.source).toBe('heuristic');
+    expect(result.confidence).toBeCloseTo(0.1);
+    expect(result.description).toBe('Moderate anomaly');
+  });
+
+  it('heuristic: severe score with low child ratio labels a local anomaly', async () => {
+    // childContrib 0 → childRatio 0 (< 0.3) → the "local" branch of the
+    // severe heuristic must be selected rather than "cascaded".
+    const classifier = createClassifier();
+    const metrics = [flatTS('x', 0, 300_000, 50, 0.5)];
+    const result = await classifier.classify(metrics, 0.9, 0, 0);
+    expect(result.source).toBe('heuristic');
+    expect(result.description).toContain('local');
+  });
+
+  it('spike check rejects a latency metric whose baseline mean is non-positive', async () => {
+    // A baseline latency of 0 gives the spike detector a non-positive mean,
+    // forcing the `bl <= 0` guard in hasSpike (and the subsequent `return false`
+    // in the spike requirement) — the latency spike must NOT be credited.
+    const classifier = createClassifier({
+      baselineMetrics: new Map([
+        ['baseline', [flatTS('p99_latency', -300_000, 0, 50, 0)]],
+      ]),
+    });
+    // Only a latency metric is provided (no error metric). The DELAY signature
+    // requires a latency *spike*; because the baseline mean is zero, `hasSpike`
+    // short-circuits on `bl <= 0` and the spike is not credited, so the latency
+    // metric cannot satisfy DELAY's requirement.
+    const metrics = [risingTS('p99_latency', 0, 300_000, 100, 0, 100)];
+    const result = await classifier.classify(metrics);
+    expect(result.category).toBeDefined();
+    expect(result.category).not.toBe('DELAY');
+  });
+});

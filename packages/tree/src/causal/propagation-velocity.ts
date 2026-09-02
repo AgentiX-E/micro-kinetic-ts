@@ -37,8 +37,14 @@ import { computeMADThreshold } from '../../../kinetic/src/signals/mad-threshold.
  * Configuration for the propagation velocity model.
  */
 export interface PropagationVelocityConfig {
-  /** BOCPD configuration for onset detection. */
-  bocpd: BOCPDConfig;
+  /**
+   * BOCPD configuration for onset detection.
+   *
+   * Partial: `bocpdDetectOnset` fills any missing fields from its own
+   * `DEFAULT_BOCPD_CONFIG`, so callers need only override the knobs that
+   * matter (e.g. a higher `hazardRate` for short series).
+   */
+  bocpd: Partial<BOCPDConfig>;
 
   /** AutoSensitivity configuration for threshold tuning. */
   autoSensitivity: AutoSensitivityConfig;
@@ -168,7 +174,7 @@ function detectMADOnset(
   }
 
   const { optimalK } = computeAutoSensitivity(values, config);
-  const { median, threshold, usedSparseFallback } = computeMADThreshold(values, {
+  const { median, threshold } = computeMADThreshold(values, {
     multiplier: optimalK,
     minDataPoints: config.minDataPoints,
   });
@@ -181,7 +187,11 @@ function detectMADOnset(
     if (deviation > threshold) {
       // Confidence based on how far above threshold
       const confidence = Math.min(1, deviation / threshold - 1);
-      return { onsetIndex: i, confidence: usedSparseFallback ? confidence * 0.5 : confidence };
+      // The sparse-fallback halving is omitted: `detectMADOnset` already returns
+      // early when `values.length < minDataPoints`, so `computeMADThreshold` is
+      // only reached with `values.length >= minDataPoints`, making its
+      // `usedSparseFallback` (`values.length < minDataPoints`) always false.
+      return { onsetIndex: i, confidence };
     }
   }
 

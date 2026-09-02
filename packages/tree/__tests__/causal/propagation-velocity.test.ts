@@ -8,6 +8,26 @@
 import { describe, it, expect } from 'vitest';
 import { computePropagationVelocity } from '../../src/causal/propagation-velocity.js';
 
+/**
+ * Deterministic step series: a low-variance baseline (ripple around 10) that
+ * jumps to a high plateau (ripple around 100) at `onset`. The ripple gives the
+ * baseline non-zero MAD so onset detection has a real threshold to exceed,
+ * while the plateau stays far above it. Unlike the `Math.random()` noise used
+ * in the legacy cases, this is fully reproducible.
+ */
+function deterministicStep(length: number, onset: number): Float64Array {
+  const values = new Float64Array(length);
+  for (let i = 0; i < length; i++) {
+    const ripple = (i % 3) - 1; // -1, 0, 1 → deterministic baseline dispersion
+    values[i] = i < onset ? 10 + ripple * 0.5 : 100 + ripple * 0.5;
+  }
+  return values;
+}
+
+/** Aggressive BOCPD tuning that reliably detects a changepoint on short series. */
+const SENSITIVE_BOCPD = { hazardRate: 0.3, changepointThreshold: 0.7, minRunLength: 10 };
+
+
 describe('computePropagationVelocity — basic cases', () => {
   it('should detect forward propagation (source fails first)', () => {
     // Source: baseline with variance, then sustained spike
@@ -120,6 +140,55 @@ describe('computePropagationVelocity — edge cases', () => {
     expect(result.propagationProbability).toBeGreaterThanOrEqual(0);
     expect(result.propagationProbability).toBeLessThanOrEqual(1);
   });
+
+  it('computes forward BOCPD propagation probability (deterministic)', () => {
+    // Source faults at 15, target at 30 — a positive, direct propagation delay.
+    const source = deterministicStep(60, 15);
+    const target = deterministicStep(60, 30);
+    const result = computePropagationVelocity(source, target, {
+      useBOCPD: true,
+      expectedDirectLatency: 10,
+      bocpd: SENSITIVE_BOCPD,
+    });
+
+    expect(result.usedBOCPD).toBe(true);
+    expect(result.method).toBe('bocpd');
+    expect(result.propagationDelay).toBeGreaterThan(0);
+    expect(result.propagationProbability).toBeGreaterThan(0);
+  });
+
+  it('returns zero probability for BOCPD-detected reverse propagation', () => {
+    // Source faults at 30 but target at 15 — target anomaly precedes source,
+    // so propagation is reversed/coincidental and must score zero.
+    const source = deterministicStep(60, 30);
+    const target = deterministicStep(60, 15);
+    const result = computePropagationVelocity(source, target, {
+      useBOCPD: true,
+      expectedDirectLatency: 10,
+      bocpd: SENSITIVE_BOCPD,
+    });
+
+    expect(result.usedBOCPD).toBe(true);
+    expect(result.method).toBe('bocpd');
+    expect(result.propagationDelay).toBeLessThan(0);
+    expect(result.propagationProbability).toBe(0);
+    expect(result.isDirectPropagation).toBe(false);
+  });
+
+  it('returns zero-lag probability for coincident BOCPD onsets', () => {
+    // Identical data → identical BOCPD onset → zero propagation delay.
+    const values = deterministicStep(60, 30);
+    const result = computePropagationVelocity(values, values, {
+      useBOCPD: true,
+      expectedDirectLatency: 10,
+      bocpd: SENSITIVE_BOCPD,
+    });
+
+    expect(result.usedBOCPD).toBe(true);
+    expect(result.method).toBe('bocpd');
+    expect(result.propagationDelay).toBe(0);
+    expect(result.propagationProbability).toBe(0.1);
+  });
 });
 
 describe('computePropagationVelocity — latency matching', () => {
@@ -162,5 +231,50 @@ describe('computePropagationVelocity — latency matching', () => {
     });
 
     expect(result.isDirectPropagation).toBe(false);
+  });
+
+  it('returns zero-lag probability for coincident onsets (deterministic)', () => {
+    // Identical data → identical detected onset → zero propagation delay.
+    const values = deterministicStep(40, 30);
+    const result = computePropagationVelocity(values, values, { useBOCPD: false });
+
+    expect(result.sourceOnsetIndex).toBe(30);
+    expect(result.targetOnsetIndex).toBe(30);
+    expect(result.propagationDelay).toBe(0);
+    expect(result.propagationProbability).toBe(0.1);
+    expect(result.isDirectPropagation).toBe(false);
+  });
+
+  it('rejects any mismatched delay when latencyStddevMultiplier is 0', () => {
+    // σ = 0 collapses the Gaussian kernel to a Kronecker delta: only a delay
+    // EXACTLY equal to the expected latency is accepted. A 5-step delay against
+    // an expected latency of 3 must therefore be rejected.
+    const source = deterministicStep(40, 25);
+    const target = deterministicStep(40, 30);
+    const result = computePropagationVelocity(source, target, {
+      useBOCPD: false,
+      expectedDirectLatency: 3,
+      latencyStddevMultiplier: 0,
+    });
+
+    expect(result.propagationDelay).toBeGreaterThan(0);
+    expect(result.propagationProbability).toBe(0);
+    expect(result.isDirectPropagation).toBe(false);
+  });
+
+  it('accepts an exact delay when latencyStddevMultiplier is 0 (delta kernel)', () => {
+    // With σ = 0 the kernel is a Kronecker delta: the only accepted delay is the
+    // one EXACTLY equal to the expected latency. Here delay = 5 = expected latency.
+    const source = deterministicStep(40, 25);
+    const target = deterministicStep(40, 30);
+    const result = computePropagationVelocity(source, target, {
+      useBOCPD: false,
+      expectedDirectLatency: 5,
+      latencyStddevMultiplier: 0,
+    });
+
+    expect(result.propagationDelay).toBe(5);
+    expect(result.propagationProbability).toBeGreaterThan(0);
+    expect(result.isDirectPropagation).toBe(true);
   });
 });

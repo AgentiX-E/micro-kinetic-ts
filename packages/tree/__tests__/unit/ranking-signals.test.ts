@@ -323,6 +323,25 @@ describe('computeTopoSourceScores', () => {
     const scores = computeTopoSourceScores([], new Float64Array(0), new Map([['x', 0.9]]));
     expect(scores.get('x')).toBe(1);
   });
+
+  it('falls back to weight 0 when propagationWeights is shorter than edges', () => {
+    // A caller passing a weight array shorter than the edge list must not crash:
+    // the missing weight defaults to 0, so the child is treated as unexplained.
+    const edges = [makeEdge('a', 'b'), makeEdge('b', 'c')];
+    const weights = new Float64Array([0.5]); // only one weight for two edges
+    const anomaly = new Map<ServiceId, number>([
+      ['a', 0.8],
+      ['b', 0.6],
+      ['c', 0.5],
+    ]);
+
+    const scores = computeTopoSourceScores(edges, weights, anomaly);
+
+    // b explained by a: 0.5 × 0.8 = 0.4 → 1 − 0.4 = 0.6.
+    expect(scores.get('b')).toBeCloseTo(0.6, 10);
+    // c's parent edge (b→c) has no weight → explanation 0 → score 1.
+    expect(scores.get('c')).toBe(1);
+  });
 });
 
 describe('computeRiseScores', () => {
@@ -448,6 +467,20 @@ describe('computeDeepestExceptions', () => {
     expect(computeDeepestExceptions(undefined, nodes, 0).size).toBe(0);
     expect(computeDeepestExceptions([], new Set(), 0).size).toBe(0);
   });
+
+  it('ignores non-ERROR/FATAL lines when computing deepest exceptions', () => {
+    // Only ERROR/FATAL lines carry a fault signature; WARN/INFO lines must be
+    // skipped rather than polluting the rarest-class selection.
+    const logs = [
+      makeLog('a', 'WARN', 100, true, 'NullPointerException'), // skipped
+      makeLog('b', 'ERROR', 100, true, 'TypeError'),
+    ];
+    const result = computeDeepestExceptions(logs, nodes, 0);
+
+    expect(result.size).toBe(1);
+    expect(result.get('a')).toBeUndefined();
+    expect(result.get('b')).toBe('TypeError');
+  });
 });
 
 describe('computeTraceActivityScores', () => {
@@ -506,6 +539,16 @@ describe('computeTraceActivityScores', () => {
   it('rejects a service with pre === 0 (division-by-zero guard)', () => {
     const counts = countsOf(['a', { pre: 0, post: 10 }]);
     expect(computeTraceActivityScores(counts, nodes).size).toBe(0);
+  });
+
+  it('rejects a zero-pre candidate even when minPreCount is lowered to 0', () => {
+    // With minPreCount = 0, the `pre < minPreCount` filter no longer rejects a
+    // pre === 0 service, so the explicit `pre <= 0` division-by-zero guard must
+    // still drop it (post/pre would otherwise be Infinity).
+    const counts = countsOf(['a', { pre: 0, post: 10 }]);
+    const scores = computeTraceActivityScores(counts, nodes, { minPreCount: 0 });
+
+    expect(scores.size).toBe(0);
   });
 
   it('rejects a service not in counts (not a member)', () => {

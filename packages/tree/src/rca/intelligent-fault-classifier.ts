@@ -74,7 +74,7 @@ interface FaultSignature {
     /** Metric name pattern (case-insensitive substring match). */
     readonly namePattern: string;
     /** Expected trend direction. */
-    readonly trend: 'rising' | 'falling' | 'spike' | 'stable';
+    readonly trend: 'rising' | 'spike' | 'stable';
     /** Minimum absolute slope (units per second × threshold). */
     readonly minSlopeAbs?: number;
     /** Value must exceed this threshold at injection time. */
@@ -246,7 +246,6 @@ function matchMetricRequirement(
 
   // Trend check
   if (req.trend === 'rising' && slope <= 0) return false;
-  if (req.trend === 'falling' && slope >= 0) return false;
   // Stable: slope must be near-zero (|slope| < 0.001, i.e. ~no trend)
   if (req.trend === 'stable' && Math.abs(slope) >= 0.001) return false;
 
@@ -583,7 +582,7 @@ async function classifyByLLM(
  * Build a concise summary of metric behaviour across all services
  * for the root cause service's time series.
  */
-function buildMetricSummary(rootServiceMetrics: readonly TimeSeries[], includeAll = false): string {
+function buildMetricSummary(rootServiceMetrics: readonly TimeSeries[]): string {
   const lines: string[] = [];
   for (const ts of rootServiceMetrics) {
     const vals = Array.from(ts.values);
@@ -594,7 +593,6 @@ function buildMetricSummary(rootServiceMetrics: readonly TimeSeries[], includeAl
     lines.push(
       `  ${ts.label}: avg=${avg.toFixed(3)}, peak=${peak.toFixed(3)}, slope=${slope.toFixed(4)}/s ${direction}`,
     );
-    if (!includeAll && lines.length >= 5) break;
   }
   return lines.join('\n');
 }
@@ -677,7 +675,7 @@ export class IntelligentFaultClassifier {
     }
 
     // Tier 2: Embedding similarity
-    const metricSummary = buildMetricSummary(rootServiceMetrics, true);
+    const metricSummary = buildMetricSummary(rootServiceMetrics);
     const embResult = await classifyByEmbedding(metricSummary, this.options.embeddingProvider);
     if (embResult && embResult.confidence >= 0.6) {
       return embResult;
@@ -698,17 +696,11 @@ export class IntelligentFaultClassifier {
       logSummary,
       traceSummary,
     );
+    // `embResult` is always null here: `classifyByEmbedding` only returns a
+    // result when its confidence is >= 0.6, and that case is already returned
+    // above — so there is no embedding result left to fuse or fall back on.
     if (llmResult) {
-      // If embedding also had a (low-confidence) result, fuse them
-      if (embResult) {
-        return fuseResults(llmResult, embResult);
-      }
       return llmResult;
-    }
-
-    // If embedding produced a result but LLM didn't, use embedding
-    if (embResult) {
-      return embResult;
     }
 
     // If metric signature had a low-confidence result, use it
@@ -719,25 +711,6 @@ export class IntelligentFaultClassifier {
     // Fallback: heuristic classification from score/depth
     return classifyByHeuristic(anomalyScore, propagationDepth, childContribution);
   }
-}
-
-/**
- * Fuse two classification results by weighted averaging.
- */
-function fuseResults(
-  primary: FaultClassification,
-  secondary: FaultClassification,
-): FaultClassification {
-  // If they agree on category, boost confidence
-  if (primary.category === secondary.category) {
-    return {
-      ...primary,
-      confidence: Math.min(1, primary.confidence * 0.7 + secondary.confidence * 0.3 + 0.1),
-      evidence: [...primary.evidence, ...secondary.evidence],
-    };
-  }
-  // Otherwise, keep the higher confidence result
-  return primary.confidence >= secondary.confidence ? primary : secondary;
 }
 
 /**

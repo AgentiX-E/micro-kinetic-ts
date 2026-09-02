@@ -1240,4 +1240,157 @@ describe('TreePruner', () => {
       expect(graph.collisionEnergy?.get('B')?.ratioContrib).toBe(0);
     });
   });
+
+  describe('injectTimeMs handling', () => {
+    it('forwards an explicit injectTimeMs onto the built graph', () => {
+      const pruner = new TreePruner();
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      const metrics = makeMetrics({ A: [10, 10, 10], B: [10, 10, 10] });
+
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 1_000_000 });
+
+      expect(graph.injectTimeMs).toBe(1_000_000);
+    });
+
+    it('resolves injectTimeMs from the topology config when the per-call option omits it', () => {
+      // The injection time resolves as options.injectTimeMs ?? topologyConfig
+      // .injectTimeMs ?? 0. A non-null topology config is the second fallback;
+      // the per-call options are omitted here so the config is consulted.
+      const pruner = new TreePruner(undefined, { injectTimeMs: 2_000_000 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      const metrics = makeMetrics({ A: [10, 10, 10], B: [10, 10, 10] });
+
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      expect(graph.injectTimeMs).toBe(2_000_000);
+    });
+
+    it('analyzes a graph whose injectTimeMs is undefined (temporal signal disabled)', () => {
+      // `injectTimeMs` is optional on the graph type, so analyze must tolerate a
+      // graph built externally that omits it (undefined ⇒ "unknown" ⇒ neutral).
+      const pruner = new TreePruner({ defaultTopK: 3 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const noInject = { ...graph, injectTimeMs: undefined };
+
+      const results = pruner.analyze(noInject, 3);
+
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it('analyzes a graph with all optional ranking signals absent', () => {
+      // topoScores / riseScores / logScores / traceActivityScores are optional
+      // graph fields; analyze must rank purely on self-anomaly when they are
+      // all stripped (each signal's lookup falls back to neutral).
+      const pruner = new TreePruner({ defaultTopK: 3 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const stripped = {
+        ...graph,
+        topoScores: undefined,
+        riseScores: undefined,
+        logScores: undefined,
+        traceActivityScores: undefined,
+      };
+
+      const results = pruner.analyze(stripped, 3);
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0]!.serviceId).toBe('A');
+    });
+  });
+
+  describe('topology edge cases', () => {
+    it('falls back to fewest-children leaves when pruning leaves no true leaf', () => {
+      // A ring with no detected cycles survives pruning intact (no weakest edge
+      // is broken), leaving every node with out-degree ≥ 1 — i.e. no true leaf.
+      // performTreeRCA must fall back to the fewest-children heuristic rather
+      // than starting the bottom-up pass from an empty leaf set.
+      const pruner = new TreePruner({ defaultTopK: 3 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+          ['C', 'A'],
+        ],
+      );
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
+        C: [10, 10, 10, 10, 30],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+      const noCycles = { ...graph, detectedCycles: [] };
+
+      const results = pruner.analyze(noCycles, 3);
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.every((r) => r.serviceId)).toBe(true);
+    });
+
+    it('scores an isolated node (no edges) with a neutral source prior', () => {
+      // A service present in the call graph and metrics but connected by no
+      // edge has zero causal neighbours; its source-likelihood prior must be
+      // neutral (0) rather than dividing by zero.
+      const pruner = new TreePruner({ defaultTopK: 5 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C'],
+        [['A', 'B']],
+      );
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 50],
+        C: [10, 10, 10, 10, 10],
+      });
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      const results = pruner.analyze(graph, 5);
+
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.every((r) => r.serviceId)).toBe(true);
+    });
+
+    it('classifies a 3-parent convergence node as a bottleneck', () => {
+      // A node with inDegree ≥ 3 and outDegree/inDegree ≤ 0.5 is a bottleneck
+      // (many inputs, few outputs). The collision aggregator must label it as
+      // such, and analyze must elevate its severity from the raw self-anomaly
+      // band (D's own metric barely deviates → 'minor') to 'major', because a
+      // convergence point has systemic impact even when its own metric is quiet.
+      const pruner = new TreePruner({ defaultTopK: 5 });
+      const callGraph = makeCallGraph(
+        ['A', 'B', 'C', 'D', 'E'],
+        [
+          ['A', 'D'],
+          ['B', 'D'],
+          ['C', 'D'],
+          ['D', 'E'],
+        ],
+      );
+      const metrics = makeMetrics({
+        A: [10, 11, 12, 10, 100],
+        B: [10, 11, 12, 10, 90],
+        C: [10, 11, 12, 10, 80],
+        D: [10, 10, 10, 10, 12],
+        E: [10, 10, 10, 10, 40],
+      });
+
+      const graph = pruner.buildFaultGraph(callGraph, metrics);
+
+      expect(graph.collisionEnergy?.get('D')?.collisionType).toBe('bottleneck');
+
+      const results = pruner.analyze(graph, 5);
+      const dResult = results.find((r) => r.serviceId === 'D');
+      expect(dResult).toBeDefined();
+      expect(dResult!.faultType.severity).toBe('major');
+    });
+  });
 });

@@ -47,11 +47,9 @@ import type {
   ServiceId,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
+import type { BOCPDConfig } from '../../../kinetic/src/signals/bocpd-detector.js';
 
-import {
-  computePropagationVelocity,
-  type PropagationVelocityResult,
-} from './propagation-velocity.js';
+import { computePropagationVelocity } from './propagation-velocity.js';
 
 /**
  * Configuration for the topology-preserving fault graph builder.
@@ -119,6 +117,17 @@ export interface TopologyFaultGraphConfig {
     readonly useBOCPD?: boolean;
     /** Expected direct-call latency in time-index units. Default: 1.0. */
     readonly expectedDirectLatency?: number;
+    /**
+     * BOCPD onset-detection tuning. Only consulted when `useBOCPD` is true.
+     *
+     * The default BOCPD config (`hazardRate: 1/250`) is deliberately
+     * conservative — tuned for ~250-observation segments — so it never fires
+     * on the short (≤100-point) series a fault graph sees. Callers enabling
+     * `useBOCPD` must therefore raise `hazardRate` (e.g. 0.3) to detect a
+     * changepoint; without it the BOCPD path yields `propagationProbability 0`
+     * and the edge falls through to the anomaly-similarity tier.
+     */
+    readonly bocpd?: Partial<BOCPDConfig>;
   };
   /**
    * Fault injection time in Unix milliseconds (case-level temporal anchor).
@@ -318,7 +327,9 @@ export function buildTopologyFaultGraph(
   const logAnomalyDistribution = process.env['BENCHMARK_ANOMALY_DIAG'] === '1';
   if (logAnomalyDistribution && callGraph.nodes.size >= 30) {
     const sampleId = diagSampleIds[0] ?? [...callGraph.nodes.keys()][0]!;
-    const sysName = callGraph.nodes.get(sampleId)?.namespace ?? '?';
+    // `sampleId` is always a valid graph node, and `ServiceNode.namespace` is
+    // required, so the lookup is always defined.
+    const sysName = callGraph.nodes.get(sampleId)!.namespace;
     // Raw score spread (before normalization) — reveals whether the fault
     // signal is distinguishable from the noise floor.
     let rawMin = Infinity;
@@ -845,7 +856,9 @@ function computePostInjectOnsetDelay(
 function medianOfRange(values: Float64Array, start: number, end: number): number {
   const slice = Array.from(values.slice(start, end)).sort((a, b) => a - b);
   const n = slice.length;
-  if (n === 0) return NaN;
+  // `n` is always >= 2 here: the sole caller (`computePostInjectOnsetDelay`)
+  // returns early when `boundary < 2`, and `medianOfRange(values, 0, boundary)`
+  // slices exactly `boundary` elements. The former `n === 0` guard was dead code.
   const mid = Math.floor(n / 2);
   if (n % 2 === 1) return slice[mid]!;
   return (slice[mid - 1]! + slice[mid]!) / 2;
@@ -892,8 +905,8 @@ function computeEdgePropagationWeight(
 
     if (corrWeight !== null) {
       // Apply temporal causality bonus
-      const sourceOnset = anomalyOnsetTimes.get(edge.from) ?? Number.MAX_SAFE_INTEGER;
-      const targetOnset = anomalyOnsetTimes.get(edge.to) ?? Number.MAX_SAFE_INTEGER;
+      const sourceOnset = anomalyOnsetTimes.get(edge.from)!;
+      const targetOnset = anomalyOnsetTimes.get(edge.to)!;
       const temporalBonus =
         cfg.useTemporalCausality && sourceOnset < targetOnset ? cfg.temporalBonus : 0;
 
@@ -921,32 +934,23 @@ function computeEdgePropagationWeight(
       const useBOCPD = cfg.propagationVelocity?.useBOCPD ?? false;
       const expectedDirectLatency = cfg.propagationVelocity?.expectedDirectLatency ?? 1.0;
 
-      let velocityResult: PropagationVelocityResult;
-      try {
-        velocityResult = computePropagationVelocity(sourceValues, targetValues, {
-          useBOCPD,
-          expectedDirectLatency,
-        });
-      } catch {
-        // Velocity computation can fail for pathological data (e.g. all zeros).
-        // Fall through to tier 3.
-        velocityResult = {
-          propagationProbability: 0,
-          propagationDelay: 0,
-          sourceOnsetIndex: -1,
-          targetOnsetIndex: -1,
-          sourceConfidence: 0,
-          targetConfidence: 0,
-          isDirectPropagation: false,
-          usedBOCPD: false,
-          method: 'mad',
-          onsetDelta: 0,
-        };
-      }
+      // `computePropagationVelocity` and its entire call chain
+      // (`bocpdDetectOnset`, `computeAutoSensitivity`, `computeMADThreshold`,
+      // `detectMADOnset`) contain no `throw` statements — they degrade
+      // gracefully to `propagationProbability: 0` for pathological input
+      // (e.g. all-zero series) rather than raising. The former try/catch
+      // fallback was therefore unreachable dead code.
+      const velocityResult = computePropagationVelocity(sourceValues, targetValues, {
+        useBOCPD,
+        expectedDirectLatency,
+        // Only forward the BOCPD tuning when present: spreading `undefined`
+        // would overwrite the merged default config with `bocpd: undefined`.
+        ...(cfg.propagationVelocity?.bocpd ? { bocpd: cfg.propagationVelocity.bocpd } : {}),
+      });
 
       if (velocityResult.propagationProbability > 0) {
-        const sourceScore = anomalyScores.get(edge.from) ?? 0;
-        const targetScore = anomalyScores.get(edge.to) ?? 0;
+        const sourceScore = anomalyScores.get(edge.from)!;
+        const targetScore = anomalyScores.get(edge.to)!;
         const anomalyCorrelation = 1 - Math.abs(sourceScore - targetScore);
 
         // Edge weight = anomaly correlation × propagation probability
@@ -968,7 +972,9 @@ function computeEdgePropagationWeight(
 
   // ── Tier 3: Data-adaptive anomaly score similarity ──────
   const sourceScore = anomalyScores.get(edge.from) ?? 0;
-  const targetScore = anomalyScores.get(edge.to) ?? 0;
+  // `edge.to` is always a graph node (tier 3 is only reached for real edges),
+  // so the target score lookup is always defined.
+  const targetScore = anomalyScores.get(edge.to)!;
 
   // Anomaly score difference as weak proxy for correlation
   const correlationProxy = 1 - Math.abs(sourceScore - targetScore);
@@ -1023,8 +1029,11 @@ function computeMaxSpearmanCorrelation(
     for (const tgtTs of targetMetrics) {
       if (tgtTs.values.length < minDataPoints) continue;
 
+      // `minLen` is always >= `minDataPoints` here: both outer loops
+      // `continue` when either `srcTs.values.length` or `tgtTs.values.length`
+      // is below `minDataPoints`, so their minimum cannot be. The former
+      // `minLen < minDataPoints` guard was unreachable dead code.
       const minLen = Math.min(srcTs.values.length, tgtTs.values.length);
-      if (minLen < minDataPoints) continue;
 
       const r = spearmanCorrelation(srcTs.values, tgtTs.values, minLen);
       if (r !== null) {
@@ -1128,9 +1137,11 @@ function computeMaxPearsonCorrelation(
     for (const tgtTs of targetMetrics) {
       if (tgtTs.values.length < minDataPoints) continue;
 
-      // Align time-series to the minimum common length
+      // Align time-series to the minimum common length. `minLen` is always
+      // >= `minDataPoints` here (both outer loops already `continue` on short
+      // series), so the former `minLen < minDataPoints` guard was unreachable
+      // dead code.
       const minLen = Math.min(srcTs.values.length, tgtTs.values.length);
-      if (minLen < minDataPoints) continue;
 
       const r = pearsonCorrelation(srcTs.values, tgtTs.values, minLen);
       if (r !== null) {

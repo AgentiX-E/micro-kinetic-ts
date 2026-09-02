@@ -1821,3 +1821,204 @@ describe('buildTopologyFaultGraph — post-inject onset delay', () => {
     expect(result.postInjectOnsetDelays.get(id)).toBe(-1);
   });
 });
+
+// ── Tests: Remaining Reachable Branches ──────────────────
+
+/** Aggressive BOCPD tuning that detects a changepoint on a short series. */
+const SENSITIVE_BOCPD = { hazardRate: 0.3, changepointThreshold: 0.7, minRunLength: 10 };
+
+/**
+ * Deterministic clean step series: 10 → 110 at `onset`.
+ *
+ * Deliberately ripple-free: BOCPD detects the changepoint at a well-defined
+ * index, so the source→target onset delay lands close to the configured
+ * `expectedDirectLatency` and the Gaussian kernel yields a propagation
+ * probability large enough for `velocityWeight > 0.05` (the tier-2 gate).
+ */
+function deterministicStep(length: number, onset: number): number[] {
+  const values: number[] = [];
+  for (let i = 0; i < length; i++) {
+    values.push(i < onset ? 10 : 110);
+  }
+  return values;
+}
+
+describe('buildTopologyFaultGraph — Remaining Reachable Branches', () => {
+  it('resets a negative pre-change baseline to the full mean', () => {
+    // changePt=5 with a pre-change sum of -8 → baselineMean = -1.6, which the
+    // `baselineMean <= 0` guard resets to the full mean (26.875) so the
+    // deviation is computed against a positive baseline rather than a negative
+    // one. The negative excursion is a genuine crash-shaped signal, not an idle
+    // metric (only 2 of 8 samples are near-zero).
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries('cpu', [9, 1, -9, 6, -15, 149, 4, 70]);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]));
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+  });
+
+  it('returns -1 when timestamps do not align with the value count', () => {
+    // 4 values vs 3 timestamps trips the `timestamps.length !== values.length`
+    // arm of the `||` guard (the first arm, `values.length < 3`, is false).
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries('cpu', [1, 2, 3, 4], [0, 1000, 2000]);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 1000,
+    });
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+    expect(result.postInjectOnsetDelays.get(id)).toBe(-1);
+  });
+
+  it('returns -1 when the pre-inject baseline median is non-positive', () => {
+    // Two clean pre-inject samples of 0 → median 0 → `baseline <= 0`. The two
+    // zero samples are only 2/6 of the series (≤ 40%), so the idle-metric guard
+    // does NOT discard the metric, and it is still scored.
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries('cpu', [0, 0, 10, 10, 10, 10], [0, 1000, 2000, 3000, 4000, 5000]);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 2000,
+    });
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+    expect(result.postInjectOnsetDelays.get(id)).toBe(-1);
+  });
+
+  it('returns -1 when no post-inject sample deviates beyond 30%', () => {
+    // A subtle 1.0 → 1.1 rise is scored (deviation > 1e-6) but every post-inject
+    // sample stays within 30% of the pre-inject median (1.0), so the deviation
+    // loop exhausts and the delay resolves to -1.
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries(
+      'cpu',
+      [1, 1, 1, 1, 1.1, 1.1, 1.1, 1.1],
+      [0, 1000, 2000, 3000, 4000, 5000, 6000, 7000],
+    );
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 4000,
+    });
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+    expect(result.postInjectOnsetDelays.get(id)).toBe(-1);
+  });
+
+  it('coalesces an unset useBOCPD to false', () => {
+    // `propagationVelocity` is present but omits `useBOCPD`, so the `?? false`
+    // fallback fires (the default config is NOT merged into the partial, so the
+    // field is genuinely undefined here).
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
+    const metrics = makeMetrics([
+      ['A', [makeTimeSeries('latency', [10, 12, 9, 11, 10, 13, 8, 50, 10, 9])]],
+      ['B', [makeTimeSeries('latency', [11, 10, 12, 9, 11, 10, 12, 9, 50, 10])]],
+    ]);
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      minDataPoints: 11,
+      usePropagationVelocity: true,
+      propagationVelocity: { expectedDirectLatency: 5 },
+    });
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+    expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
+  });
+
+  it('coalesces an unset expectedDirectLatency to 1.0', () => {
+    // `propagationVelocity` omits `expectedDirectLatency`, so the `?? 1.0`
+    // fallback fires.
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
+    const metrics = makeMetrics([
+      ['A', [makeTimeSeries('latency', [10, 12, 9, 11, 10, 13, 8, 50, 10, 9])]],
+      ['B', [makeTimeSeries('latency', [11, 10, 12, 9, 11, 10, 12, 9, 50, 10])]],
+    ]);
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      minDataPoints: 11,
+      usePropagationVelocity: true,
+      propagationVelocity: { useBOCPD: false },
+    });
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0);
+    expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
+  });
+
+  it('produces a bocpd_velocity edge when BOCPD is enabled and tuned', () => {
+    // `minDataPoints` above the series length forces Tier 1 (correlation) to
+    // return null. Tier 2 then runs BOCPD with an aggressive hazardRate that
+    // detects the source (onset ~21) → target (onset ~34) step; the resulting
+    // `method === 'bocpd'` selects the `bocpd_velocity` label and a real
+    // velocity weight (the `useBOCPD` option is only functional with this
+    // tuning — the conservative default never fires on a 60-point series).
+    //
+    // The weight lands ~0.07 = anomalyCorrelation (0.81) × propagation
+    // probability (0.087). We assert it is well below 0.15 to prove the tier-2
+    // velocity path was taken: the tier-3 anomaly-similarity fallback would
+    // instead return ~0.81 (correlationProxy with a saturated gain), which the
+    // `> 0.05` lower bound alone cannot distinguish.
+    const graph = makeCallGraph(['A', 'B'], [{ from: 'A', to: 'B' }]);
+    const metrics = makeMetrics([
+      ['A', [makeTimeSeries('latency', deterministicStep(60, 15))]],
+      ['B', [makeTimeSeries('latency', deterministicStep(60, 30))]],
+    ]);
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      minDataPoints: 61,
+      usePropagationVelocity: true,
+      propagationVelocity: { useBOCPD: true, expectedDirectLatency: 15, bocpd: SENSITIVE_BOCPD },
+    });
+    expect(result.pearsonEdgeCount).toBe(0);
+    expect(result.fallbackEdgeCount).toBe(1);
+    expect(result.propagationWeights[0]).toBeGreaterThan(0.05);
+    expect(result.propagationWeights[0]).toBeLessThan(0.15);
+  });
+
+  it('skips a short target metric in Spearman correlation', () => {
+    // Source is long enough but the target is shorter than minDataPoints, so the
+    // INNER Spearman loop `continue`s (the outer source loop still enters).
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 2, 3, 4, 5])]],
+      ['svc-b', [makeTimeSeries('cpu', [1, 2])]],
+    ]);
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      correlationMethod: 'spearman',
+      usePropagationVelocity: false,
+    });
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
+    expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
+  });
+
+  it('returns null when the target metric ranks are degenerate', () => {
+    // Source is non-degenerate (xRanks valid) but the target is all-identical,
+    // so `rankValues` returns null for the target → `!yRanks` → Spearman null.
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('cpu', [1, 2, 3, 4])]],
+      ['svc-b', [makeTimeSeries('cpu', [5, 5, 5, 5])]],
+    ]);
+    const result = buildTopologyFaultGraph(graph, metrics, {
+      correlationMethod: 'spearman',
+      usePropagationVelocity: false,
+    });
+    expect(result.propagationWeights[0]).toBeGreaterThanOrEqual(0.04);
+    expect(result.propagationWeights[0]).toBeLessThanOrEqual(1);
+  });
+
+  it('falls back to the mean when the q25 high-mean is near zero', () => {
+    // A drop whose top-quartile mean is ≤ 0.001 → `highMean : fallbackMean`
+    // returns the full mean instead of a ~0 baseline.
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries('cpu', [0.001, 0.001, 0.001, 0.001, 0.0005, 0.0005, 0.0005, 0.0005]);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      baselineStrategy: 'q25',
+    });
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+  });
+
+  it('falls back to the mean when the sliding-window extreme is near zero', () => {
+    // A rise whose minimum-mean window is ≤ 0.001 → `extremeWinMean : fallbackMean`
+    // returns the full mean instead of a ~0 baseline.
+    const id: ServiceId = 'svc';
+    const graph = makeCallGraph([id], []);
+    const ts = makeTimeSeries('cpu', [0.0005, 0.0005, 0.0005, 0.0005, 0.001, 0.001, 0.001, 0.001]);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      baselineStrategy: 'sliding-window',
+    });
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+  });
+});

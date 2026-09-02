@@ -328,7 +328,8 @@ export function computeTopologicalOrder(
   for (const e of allEdges) {
     if (nodeIds.has(e.from) && nodeIds.has(e.to)) {
       children.get(e.from)!.push(e.to);
-      inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1);
+      // Both endpoints are graph members, so `e.to` was initialised above.
+      inDegree.set(e.to, inDegree.get(e.to)! + 1);
     }
   }
 
@@ -342,8 +343,10 @@ export function computeTopologicalOrder(
   while (queue.length > 0) {
     const node = queue.shift()!;
     result.push(node);
-    for (const child of children.get(node) ?? []) {
-      const newDeg = (inDegree.get(child) ?? 1) - 1;
+    // `node` and every `child` are graph members, so the adjacency and in-degree
+    // lookups are always defined (both maps were pre-populated for all members).
+    for (const child of children.get(node)!) {
+      const newDeg = inDegree.get(child)! - 1;
       inDegree.set(child, newDeg);
       if (newDeg === 0) queue.push(child);
     }
@@ -391,7 +394,8 @@ export function aggregateFaultEnergy(
   const results = new Map<ServiceId, CollisionResult>();
 
   for (const serviceId of order) {
-    const localScore = localScores.get(serviceId) ?? 0;
+    // `order` is a subset of `localScores.keys()`, so the lookup is always defined.
+    const localScore = localScores.get(serviceId)!;
     const incomingEdges = incomingMap.get(serviceId) ?? [];
     const od = outDegree.get(serviceId) ?? 0;
     const cycleCount = cycleMembership.get(serviceId) ?? 0;
@@ -420,7 +424,8 @@ export function aggregateFaultEnergy(
   // Handle any nodes not in topological order (isolated or all-cyclic)
   for (const serviceId of nodeIds) {
     if (!results.has(serviceId)) {
-      const localScore = localScores.get(serviceId) ?? 0;
+      // `nodeIds` is derived from `localScores.keys()`, so the lookup is defined.
+      const localScore = localScores.get(serviceId)!;
       const cycleCount = cycleMembership.get(serviceId) ?? 0;
       const collisionType = classifyCollisionType(0, 0, cycleCount, config);
       results.set(serviceId, {

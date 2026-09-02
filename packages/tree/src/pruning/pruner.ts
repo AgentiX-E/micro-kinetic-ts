@@ -396,7 +396,7 @@ export class TreePruner {
     let totalCycleContribution = 0;
     for (const cycle of cycles) {
       const key = cycleKey(cycle.nodePath);
-      const contrib = contributions.get(key) ?? 0;
+      const contrib = contributions.get(key)!;
       totalCycleContribution += contrib;
     }
 
@@ -404,7 +404,7 @@ export class TreePruner {
     const classifiedCycles: DetectedCycle[] = [];
     for (const cycle of cycles) {
       const key = cycleKey(cycle.nodePath);
-      const contrib = contributions.get(key) ?? 0;
+      const contrib = contributions.get(key)!;
       classifiedCycles.push({
         nodePath: cycle.nodePath,
         contribution: contrib,
@@ -439,7 +439,7 @@ export class TreePruner {
       const faultEdges: FaultGraphEdge[] = topologyGraph.edges.map((e, i) => ({
         from: e.from,
         to: e.to,
-        weight: propagationWeights[i] ?? 0.5,
+        weight: propagationWeights[i]!,
       }));
 
       collisionEnergy = new Map(
@@ -672,7 +672,7 @@ function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCyc
       const u = path[i]!;
       const v = path[(i + 1) % n]!;
       const key = `${u}→${v}`;
-      const w = weightMap.get(key) ?? 0;
+      const w = weightMap.get(key)!;
       if (w < weakestWeight) {
         weakestWeight = w;
         weakestEdge = [u, v];
@@ -704,7 +704,7 @@ function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCyc
   // Build initial node scores (just anomaly, no child propagation yet)
   const nodes = new Map<ServiceId, TreeNodeScore>();
   for (const [nodeId, _node] of graph.callGraph.nodes) {
-    const anomalyScore = graph.anomalyScores.get(nodeId) ?? 0;
+    const anomalyScore = graph.anomalyScores.get(nodeId)!;
     nodes.set(nodeId, {
       nodeId,
       anomalyScore,
@@ -827,10 +827,7 @@ function performTreeRCA(
     const ce = collisionResult?.totalEnergy;
     // Use collision energy only when it adds signal (> 0).
     // Falls back to raw anomaly score when totalEnergy is 0 or undefined.
-    scores.set(
-      nodeId,
-      ce !== null && ce !== undefined && ce > 0 ? ce : (anomalyScores.get(nodeId) ?? 0),
-    );
+    scores.set(nodeId, ce !== null && ce !== undefined && ce > 0 ? ce : anomalyScores.get(nodeId)!);
     collisionTypes.set(nodeId, collisionResult?.collisionType ?? 'chain');
     depths.set(nodeId, 0);
   }
@@ -857,16 +854,16 @@ function performTreeRCA(
   // from dataset metadata such as inject_time.
   const sourceScores = new Map<ServiceId, number>();
   for (const [nodeId] of allNodes) {
-    const myOnset = anomalyOnsetTimes.get(nodeId) ?? Number.MAX_SAFE_INTEGER;
+    const myOnset = anomalyOnsetTimes.get(nodeId)!;
     let later = 0;
     let neighbours = 0;
-    for (const { child } of children.get(nodeId) ?? []) {
+    for (const { child } of children.get(nodeId)!) {
       neighbours++;
-      if ((anomalyOnsetTimes.get(child) ?? Number.MAX_SAFE_INTEGER) > myOnset) later++;
+      if (anomalyOnsetTimes.get(child)! > myOnset) later++;
     }
-    for (const parent of reverseAdj.get(nodeId) ?? []) {
+    for (const parent of reverseAdj.get(nodeId)!) {
       neighbours++;
-      if ((anomalyOnsetTimes.get(parent) ?? Number.MAX_SAFE_INTEGER) > myOnset) later++;
+      if (anomalyOnsetTimes.get(parent)! > myOnset) later++;
     }
     sourceScores.set(nodeId, neighbours > 0 ? later / neighbours : 0);
   }
@@ -886,15 +883,16 @@ function performTreeRCA(
 
   while (processQueue.length > 0) {
     const node = processQueue.shift()!;
-    if (processed.has(node)) continue;
+    // `node` is enqueued exactly once (see the `!processed.has(p)` guard when
+    // parents are pushed), so it can never already be processed here.
     processed.add(node);
 
     // Use collision-enhanced energy when available, falling back to raw anomaly.
     // Collision energy is the Boltzmann Q(f,f) aggregate of upstream fault signals,
     // which captures propagation dynamics that raw anomaly scores miss.
     const collisionResult = collisionEnergy?.get(node);
-    const nodeEnergy = collisionResult?.totalEnergy ?? anomalyScores.get(node) ?? 0;
-    const nodeAnomaly = anomalyScores.get(node) ?? 0;
+    const nodeEnergy = collisionResult?.totalEnergy ?? anomalyScores.get(node)!;
+    const nodeAnomaly = anomalyScores.get(node)!;
     let childContrib = 0;
     let maxChildDepth = 0;
 
@@ -1022,9 +1020,9 @@ function performTreeRCA(
   // comparison.
   const ratioContrib = new Map<ServiceId, number>();
   for (const [id, ce] of collisionEnergy ?? []) {
-    ratioContrib.set(id, ce.ratioContrib ?? 0);
+    ratioContrib.set(id, ce.ratioContrib);
   }
-  const riseWeight = weights.riseWeight ?? 0;
+  const riseWeight = options.riseWeight;
   // Gate the collapse half of the rise signal by the log signal: a RISE is
   // always rewarded; a COLLAPSE is penalised only when the service emitted NO
   // logic exception (silent symptom), never when it did (source crash).
@@ -1033,12 +1031,18 @@ function performTreeRCA(
   // The trace-activity signal rewards the unique significant span-count riser
   // (silent-source signature). It is a pure {0,1} indicator per service, so
   // the term is simply the weight applied to whichever service was flagged.
-  const traceWeight = weights.traceWeight ?? 0;
+  const traceWeight = options.traceWeight;
   const traceTerm = (id: ServiceId): number => traceWeight * (traceActivityScores?.get(id) ?? 0);
+  // `sourceScores` is populated for every node in `allNodes` (see its
+  // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
+  // its lookup never falls back. The `temporalEarliness`, `topoScores`,
+  // `logScores`, `riseScores` and `ratioContrib` maps, in contrast, are derived
+  // from OPTIONAL graph fields (or are empty when the injection time is
+  // unknown), so their lookups keep a neutral fallback.
   scoredNodes.sort((a, b) => {
     const aScore =
       Math.log(a.score) +
-      weights.sourceWeight * (sourceScores.get(a.serviceId) ?? 0) +
+      weights.sourceWeight * sourceScores.get(a.serviceId)! +
       weights.temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
@@ -1047,7 +1051,7 @@ function performTreeRCA(
       traceTerm(a.serviceId);
     const bScore =
       Math.log(b.score) +
-      weights.sourceWeight * (sourceScores.get(b.serviceId) ?? 0) +
+      weights.sourceWeight * sourceScores.get(b.serviceId)! +
       weights.temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5) -
       weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
       weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
@@ -1055,7 +1059,6 @@ function performTreeRCA(
       riseTerm(b.serviceId) +
       traceTerm(b.serviceId);
     if (bScore !== aScore) return bScore - aScore;
-    if (a.serviceId === b.serviceId) return 0;
     return a.serviceId < b.serviceId ? -1 : 1;
   });
 

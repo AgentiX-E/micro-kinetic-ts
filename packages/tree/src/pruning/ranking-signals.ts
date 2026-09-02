@@ -194,7 +194,9 @@ export function computeLogNoveltyScores(
     }
   }
   const n = nodeIds.size;
-  const idf = (cls: string): number => Math.log(1 + n / (1 + (df.get(cls) ?? 0)));
+  // Every class referenced in pass 3 was written into `df` during pass 2, so the
+  // document-frequency lookup is always defined.
+  const idf = (cls: string): number => Math.log(1 + n / (1 + df.get(cls)!));
 
   // Pass 3: raw score per service, then max-normalise.
   const raw = new Map<ServiceId, number>();

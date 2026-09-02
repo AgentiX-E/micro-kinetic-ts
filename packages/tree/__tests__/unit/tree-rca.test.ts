@@ -374,6 +374,35 @@ describe('TreeRCAEngine', () => {
       expect(results[0]!.faultType.category).toBe('CODE_ERROR');
     });
 
+    it('classifies deep propagation anomaly when a mid score has depth > 2', () => {
+      // A 4-level chain (Root → Mid1 → Mid2 → Leaf) puts Root at depth 3, and a
+      // moderate Root anomaly (0.5) with faint child contribution keeps its score
+      // in [0.4, 0.6) → CODE_ERROR with the deep_propagation_anomaly subtype.
+      const engine = new TreeRCAEngine({ decayAlpha: 0.8, tauMs: 100000 });
+      const ids = ['Root', 'Mid1', 'Mid2', 'Leaf'];
+      const edges: [string, string][] = [
+        ['Root', 'Mid1'],
+        ['Mid1', 'Mid2'],
+        ['Mid2', 'Leaf'],
+      ];
+      const allEdges = edges.map(([f, t]) => makeEdge(f, t));
+      const anomalyScores = new Map<string, number>([
+        ['Root', 0.5],
+        ['Mid1', 0.1],
+        ['Mid2', 0.1],
+        ['Leaf', 0.1],
+      ]);
+      const tree = makePrunedTree(ids, edges, anomalyScores);
+      const propWeights = new Float64Array([0.3, 0.3, 0.3]);
+
+      const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 4);
+      const root = results.find((r) => r.serviceId === 'Root')!;
+
+      expect(root.faultType.category).toBe('CODE_ERROR');
+      expect(root.faultType.subType).toBe('deep_propagation_anomaly');
+      expect(root.propagationDepth).toBe(3);
+    });
+
     it('classifies UNKNOWN at score < 0.4', () => {
       const engine = new TreeRCAEngine();
       const anomalyScores = new Map<string, number>([['X', 0.25]]);
@@ -473,6 +502,33 @@ describe('TreeRCAEngine', () => {
     const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 1);
     expect(results.length).toBe(1);
     expect(results[0]!.serviceId).toBe('D');
+  });
+
+  it('caps child contribution at the max child anomaly (collision bound)', () => {
+    // Root has two fully-anomalous children (0.9 each) at weight 1.0, so the raw
+    // child contribution ≈ 1.8 exceeds the cap max(anomaly(Root)=0.1, maxChild=0.9)
+    // = 0.9. With decayAlpha = 1.0 the capped contribution keeps Root's score at
+    // 0.1 × (1 + 0.9) = 0.19, instead of the uncapped 0.1 × (1 + 1.8) = 0.28.
+    const engine = new TreeRCAEngine({ decayAlpha: 1.0, tauMs: 100000 });
+    const ids = ['Root', 'A', 'B'];
+    const edges: [string, string][] = [
+      ['Root', 'A'],
+      ['Root', 'B'],
+    ];
+    const allEdges = edges.map(([f, t]) => makeEdge(f, t));
+    const anomalyScores = new Map<string, number>([
+      ['Root', 0.1],
+      ['A', 0.9],
+      ['B', 0.9],
+    ]);
+    const tree = makePrunedTree(ids, edges, anomalyScores);
+    const propWeights = new Float64Array([1.0, 1.0]);
+
+    const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 3);
+    const root = results.find((r) => r.serviceId === 'Root')!;
+    const total = root.evidenceMetrics.find((m) => m.metric === 'total_rca_score')!;
+
+    expect(total.value).toBeCloseTo(0.19, 2);
   });
 
   it('ranks correctly on small topology with distributed anomalies after normalization', () => {
