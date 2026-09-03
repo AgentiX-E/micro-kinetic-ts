@@ -340,6 +340,97 @@ describe('ApiEmbeddingProvider', () => {
         /Embedding API error 502/,
       );
     });
+
+    it('should retry on transient network errors before succeeding', async () => {
+      let callCount = 0;
+      const mockFetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount < 3) {
+          // Reject with a network error (not an HTTP response)
+          return Promise.reject(new Error('connection reset'));
+        }
+        return Promise.resolve(
+          jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0]])),
+        );
+      });
+
+      const p = new ApiEmbeddingProvider({
+        ...DIM_4_CONFIG,
+        retry: {
+          maxAttempts: 5,
+          initialDelayMs: 10,
+          backoffMultiplier: 2.0,
+          retryableStatuses: [429, 502, 503],
+        },
+      });
+      p._setFetch(mockFetch);
+
+      const result = await p.embed(['service-a']);
+      expect(callCount).toBe(3);
+      expect(result.vectors).toHaveLength(1);
+    });
+
+    it('should throw the last network error after retries are exhausted', async () => {
+      const mockFetch = vi.fn().mockRejectedValue(new Error('DNS lookup failed'));
+
+      const p = new ApiEmbeddingProvider({
+        ...DIM_4_CONFIG,
+        retry: {
+          maxAttempts: 2,
+          initialDelayMs: 10,
+          backoffMultiplier: 2.0,
+          retryableStatuses: [429, 502, 503],
+        },
+      });
+      p._setFetch(mockFetch);
+
+      // Both attempts reject → the final (non-abort) error is re-thrown on the last attempt
+      await expect(p.embed(['service-a'])).rejects.toThrow('DNS lookup failed');
+    });
+
+    it('should throw immediately on abort (timeout) without retrying', async () => {
+      const abortError = Object.assign(new Error('The operation was aborted.'), {
+        name: 'AbortError',
+      });
+      const mockFetch = vi.fn().mockRejectedValue(abortError);
+
+      const p = new ApiEmbeddingProvider({
+        ...DIM_4_CONFIG,
+        timeoutMs: 1234,
+        retry: {
+          maxAttempts: 5,
+          initialDelayMs: 10,
+          backoffMultiplier: 2.0,
+          retryableStatuses: [429, 502, 503],
+        },
+      });
+      p._setFetch(mockFetch);
+
+      // AbortError is detected and re-thrown as a timeout on the first attempt
+      await expect(p.embed(['service-a'])).rejects.toThrow(
+        'Embedding API timeout after 1234ms',
+      );
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should normalize a non-Error rejection into an Error', async () => {
+      // Fetch rejects with a plain string (not an Error instance)
+      const mockFetch = vi.fn().mockRejectedValue('malformed response');
+
+      const p = new ApiEmbeddingProvider({
+        ...DIM_4_CONFIG,
+        retry: {
+          maxAttempts: 1,
+          initialDelayMs: 10,
+          backoffMultiplier: 2.0,
+          retryableStatuses: [429, 502, 503],
+        },
+      });
+      p._setFetch(mockFetch);
+
+      // Non-Error rejection → wrapped via `new Error(String(err))` → re-thrown
+      await expect(p.embed(['service-a'])).rejects.toThrow('malformed response');
+    });
   });
 });
 

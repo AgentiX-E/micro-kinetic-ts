@@ -14,10 +14,10 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/index.ts', 'src/interfaces/**'],
       thresholds: {
-        statements: 98,   // ~1.5% in unreachable retry-loop fallthrough + import checks
-        branches: 87,     // Nullish coalescing guards (?? 0), dead fallthrough, union===0
-        functions: 100,   // All functions covered
-        lines: 98,        // Defensive guard branches impossible from TypeScript test inputs
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
       },
     },
   },

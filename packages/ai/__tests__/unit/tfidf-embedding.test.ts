@@ -591,11 +591,9 @@ describe('TfIdfEmbeddingProvider', () => {
       expect(cosineSimilarity(a, b)).toBeCloseTo(1, 5);
     });
 
-    it('should handle sparse arrays for nullish coalescing guards (?? 0)', () => {
-      // JavaScript allows sparse arrays — ?? 0 guards at elements that are undefined
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // TypeScript will infer these as number[], vitest coerces to dense
-      // Force coverage of the ?? 0 branches via explicit undefined access
+    it('should handle dense arrays of plain numbers', () => {
+      // similarity.ts operates on dense `number[]` / `Float32Array` inputs.
+      // Plain JS arrays and typed arrays both satisfy the dense-array contract.
       const a = [1, 0, 0] as number[];
       const b = [1, 0, 0] as number[];
       // Normal case

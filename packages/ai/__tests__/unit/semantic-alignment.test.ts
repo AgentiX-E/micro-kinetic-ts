@@ -17,6 +17,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import type { Mock } from 'vitest';
 import type {
   IEmbeddingProvider,
   ServiceDescriptor,
@@ -104,6 +105,8 @@ interface MockLLMConfig {
   confidences: Record<string, number>;
   /** Whether the mock should throw */
   shouldThrow?: boolean;
+  /** When true, omit the `usage` field from alignment results. */
+  omitUsage?: boolean;
 }
 
 function makeMockLLM(config: MockLLMConfig): ILLMProvider {
@@ -118,10 +121,9 @@ function makeMockLLM(config: MockLLMConfig): ILLMProvider {
         topologyId,
         confidence,
         reasoning: `Matched ${spanService} to ${topologyId ?? 'null'} with confidence ${confidence}`,
-        usage: {
-          promptTokens: 100,
-          completionTokens: 20,
-        },
+        ...(config.omitUsage
+          ? {}
+          : { usage: { promptTokens: 100, completionTokens: 20 } }),
       };
     }),
   };
@@ -315,6 +317,28 @@ describe('SemanticAlignmentProvider', () => {
       // Strategy 'none': LLM low confidence → no match
       expect(result.matches.size).toBe(0);
     });
+
+    it('should pass an empty labels array when a descriptor has no labels', async () => {
+      const config: SemanticAlignmentConfig = {
+        ...DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
+        embeddingThreshold: 0.99,
+        llmThreshold: 0.6,
+      };
+      const llm = makeMockLLM({
+        mappings: { 'svc-a': 'frontend' },
+        confidences: { 'svc-a': 0.8 },
+      });
+      // Topology descriptor without labels/namespace → `t.labels ?? []` yields []
+      const noLabelsTopology: ServiceDescriptor[] = [{ id: 'frontend', name: 'frontend' }];
+      const provider = new SemanticAlignmentProvider(embeddingProvider, llm, config);
+
+      await provider.align(['svc-a'], noLabelsTopology);
+
+      // The candidate passed to the LLM must carry an empty labels array
+      const alignEntity = llm.alignEntity as Mock;
+      const candidates = alignEntity.mock.calls[0]![1] as readonly EntityAlignmentCandidate[];
+      expect(candidates[0]!.labels).toEqual([]);
+    });
   });
 
   // ── Caching ─────────────────────────────────────────────
@@ -385,6 +409,47 @@ describe('SemanticAlignmentProvider', () => {
       const finalCost = provider.totalDailyCost;
       // 2 LLM calls at 100 input + 20 completion each
       expect(finalCost).toBeCloseTo(2 * (100 * 0.27e-6 + 20 * 1.10e-6), 8);
+    });
+
+    it('should stop matching when the daily budget is exhausted', async () => {
+      const config: SemanticAlignmentConfig = {
+        ...DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
+        embeddingThreshold: 0.99,
+        llmThreshold: 0.6,
+        // Cap far below a single LLM call cost (~4.9e-5) → budget breaks after first call
+        dailyCostCapUSD: 1e-9,
+      };
+      const llm = makeMockLLM({
+        mappings: { 'svc-a': 'frontend' },
+        confidences: { 'svc-a': 0.8 },
+      });
+      const provider = new SemanticAlignmentProvider(embeddingProvider, llm, config);
+
+      const result = await provider.align(['svc-a'], TOPOLOGY_SERVICES);
+
+      // The LLM ran once, but the cost pushed us over budget before the match was recorded
+      expect(llm.alignEntity).toHaveBeenCalledTimes(1);
+      expect(result.matches.size).toBe(0);
+    });
+
+    it('should skip cost tracking when the LLM returns no usage info', async () => {
+      const config: SemanticAlignmentConfig = {
+        ...DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
+        embeddingThreshold: 0.99,
+        llmThreshold: 0.6,
+      };
+      const llm = makeMockLLM({
+        mappings: { 'svc-a': 'frontend' },
+        confidences: { 'svc-a': 0.8 },
+        omitUsage: true,
+      });
+      const provider = new SemanticAlignmentProvider(embeddingProvider, llm, config);
+
+      const result = await provider.align(['svc-a'], TOPOLOGY_SERVICES);
+
+      // Match is recorded normally; no usage → no cost accrued
+      expect(result.matches.get('svc-a')).toBe('frontend');
+      expect(provider.totalDailyCost).toBe(0);
     });
   });
 

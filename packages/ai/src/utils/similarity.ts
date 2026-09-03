@@ -15,7 +15,9 @@ export function cosineSimilarity(
   const len = Math.min(a.length, b.length);
   let dotProduct = 0;
   for (let i = 0; i < len; i++) {
-    dotProduct += (a[i] ?? 0) * (b[i] ?? 0);
+    // Dense-array contract: both inputs are plain `number[]` or `Float32Array`,
+    // so every index in `[0, len)` holds a defined value.
+    dotProduct += a[i]! * b[i]!;
   }
   // Clamp to [0, 1] to handle float precision edge cases
   return Math.max(0, Math.min(1, dotProduct));
@@ -53,7 +55,9 @@ export function jaccardSimilarity(a: readonly string[], b: readonly string[]): n
     if (setB.has(item)) intersection++;
   }
   const union = setA.size + setB.size - intersection;
-  return union === 0 ? 0 : intersection / union;
+  // Union is always ≥ 1 here: the early return above handles the both-empty
+  // case, so at least one set is non-empty and `intersection ≤ min(sizeA, sizeB)`.
+  return intersection / union;
 }
 
 /**
@@ -64,14 +68,15 @@ export function jaccardSimilarity(a: readonly string[], b: readonly string[]): n
  *
  * Returns a new Float32Array (does not mutate input).
  *
- * @param vec - Input vector.
+ * @param vec - Input vector (a dense `number[]` or `Float32Array`).
  * @returns L2-normalized vector (new allocation).
  */
 export function normalizeL2(vec: readonly number[] | Float32Array): Float32Array {
   const len = vec.length;
   let sumSquares = 0;
   for (let i = 0; i < len; i++) {
-    const val = vec[i] ?? 0;
+    // Dense-array contract: `vec` is a plain `number[]` or `Float32Array`.
+    const val = vec[i]!;
     sumSquares += val * val;
   }
   const norm = Math.sqrt(sumSquares);
@@ -80,7 +85,7 @@ export function normalizeL2(vec: readonly number[] | Float32Array): Float32Array
     return result; // zero vector → return zeros
   }
   for (let i = 0; i < len; i++) {
-    result[i] = (vec[i] ?? 0) / norm;
+    result[i] = vec[i]! / norm;
   }
   return result;
 }

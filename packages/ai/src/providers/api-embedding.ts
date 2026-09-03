@@ -111,7 +111,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
       return { vectors: [] };
     }
 
-    const maxBatch = this.config.maxBatchSize ?? 32;
+    const maxBatch = this.config.maxBatchSize;
     const chunks: Array<readonly string[]> = [];
 
     for (let i = 0; i < texts.length; i += maxBatch) {
@@ -137,7 +137,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
     const results = await this.requestWithRetry(texts);
     const parsed = this.parseResponse(results);
 
-    if (this.config.normalize !== false) {
+    if (this.config.normalize) {
       return parsed.map((v) => normalizeL2(v));
     }
     return parsed;
@@ -147,13 +147,13 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
    * Send API request with exponential backoff retry.
    */
   private async requestWithRetry(texts: readonly string[]): Promise<unknown> {
-    const retry = this.config.retry ?? DEFAULT_RETRY_CONFIG_INTERNAL;
+    const retry = this.config.retry;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < retry.maxAttempts; attempt++) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.config.timeoutMs ?? 30000);
+        const timeoutId = setTimeout(() => controller.abort(), this.config.timeoutMs);
 
         const response = await this._fetch(this.config.endpoint, {
           method: 'POST',
@@ -201,17 +201,20 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
       }
     }
 
-    // Unreachable — loop always throws or returns before exhausting.
-    // Retryable status on last attempt throws, non-retryable status throws
-    // immediately, success returns. This is a type-check safety net.
-    throw lastError ?? new Error('Embedding API request failed');
+    // Unreachable — the loop always returns or throws before exhausting:
+    //   * retryable status on the last attempt throws
+    //   * non-retryable status throws immediately
+    //   * success returns
+    //   * network/parse errors throw on the last attempt
+    // This statement exists only to satisfy TypeScript's exhaustiveness check.
+    throw new Error('Embedding API request failed');
   }
 
   /**
    * Build the request body for the embedding API.
    */
   private buildRequestBody(texts: readonly string[]): unknown {
-    const format = this.config.format ?? 'openai-compatible';
+    const format = this.config.format;
 
     if (format === 'custom' && this.config.mapRequest) {
       return this.config.mapRequest(texts);
@@ -228,7 +231,7 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
    * Parse the API response into Float32Array vectors.
    */
   private parseResponse(data: unknown): Float32Array[] {
-    const format = this.config.format ?? 'openai-compatible';
+    const format = this.config.format;
 
     if (format === 'custom' && this.config.mapResponse) {
       return this.config.mapResponse(data);
@@ -258,30 +261,13 @@ export class ApiEmbeddingProvider implements IEmbeddingProvider {
    * Check if an HTTP status is retryable.
    */
   private isRetryableStatus(status: number): boolean {
-    const retryable =
-      this.config.retry?.retryableStatuses ?? DEFAULT_RETRY_CONFIG.retryableStatuses;
+    const retryable = this.config.retry.retryableStatuses;
     return retryable.includes(status);
   }
 }
 
 // ── Helpers ───────────────────────────────────────────────
 
-/** Internal default — same as the exported one. */
-const DEFAULT_RETRY_CONFIG_INNER = {
-  maxAttempts: 3,
-  initialDelayMs: 1000,
-  backoffMultiplier: 2.0,
-  retryableStatuses: [429, 502, 503],
-} as const;
-
-const DEFAULT_RETRY_CONFIG_INTERNAL = DEFAULT_RETRY_CONFIG_INNER;
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-// Import the exported default to satisfy TS (symbolic link)
-import { DEFAULT_RETRY_CONFIG } from './api-embedding-config.js';
-
-// Verify internal matches exported
-void (DEFAULT_RETRY_CONFIG as typeof DEFAULT_RETRY_CONFIG_INNER);

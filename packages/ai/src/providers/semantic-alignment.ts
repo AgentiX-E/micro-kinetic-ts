@@ -248,7 +248,9 @@ export class SemanticAlignmentProvider {
   ): Promise<Map<string, { topologyId: string; confidence: number }>> {
     const result = new Map<string, { topologyId: string; confidence: number }>();
 
-    if (!this.llmProvider) return result;
+    // Invariant: `alignByLLM` is only invoked from `align()` after the guard
+    // `this.llmProvider && remaining.length > 0`, so the provider is non-null here.
+    const llm = this.llmProvider!;
 
     for (const spanSvc of spanServices) {
       // Check cache first
@@ -266,7 +268,7 @@ export class SemanticAlignmentProvider {
 
       // Invoke LLM
       try {
-        const llmResult = await this.llmProvider.alignEntity(
+        const llmResult = await llm.alignEntity(
           spanSvc,
           topologyServices.map((t) => ({
             id: t.id,
@@ -335,12 +337,12 @@ export class SemanticAlignmentProvider {
   /**
    * Track LLM usage cost and rollover to new day if needed.
    */
-  private trackCost(usage?: { promptTokens?: number; completionTokens?: number }): void {
+  private trackCost(usage?: { promptTokens: number; completionTokens: number }): void {
     if (!usage) return;
 
     // DeepSeek pricing: ~$0.27/1M input, ~$1.10/1M output
-    const inputCost = (usage.promptTokens ?? 0) * (0.27 / 1_000_000);
-    const outputCost = (usage.completionTokens ?? 0) * (1.1 / 1_000_000);
+    const inputCost = usage.promptTokens * (0.27 / 1_000_000);
+    const outputCost = usage.completionTokens * (1.1 / 1_000_000);
 
     this.rolloverDayCheck();
     this.dailyCost += inputCost + outputCost;

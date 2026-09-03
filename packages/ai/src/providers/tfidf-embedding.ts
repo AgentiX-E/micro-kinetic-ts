@@ -216,7 +216,6 @@ export class TfIdfEmbeddingProvider implements IEmbeddingProvider {
     const vec = new Float32Array(vocabSize);
 
     const tokens = tokenizeServiceName(text);
-    if (tokens.length === 0) return vec;
 
     // Compute term frequency
     const tf = new Map<number, number>();

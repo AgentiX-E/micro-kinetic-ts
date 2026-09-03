@@ -52,19 +52,20 @@ export const DEFAULT_RETRY_CONFIG: EmbeddingRetryConfig = {
  *
  * Example (Zhipu GLM embedding-3):
  * ```typescript
- * const config: ApiEmbeddingConfig = {
+ * const config: ApiEmbeddingConfigInput = {
  *   endpoint: 'https://open.bigmodel.cn/api/paas/v4/embeddings',
  *   model: 'embedding-3',
+ *   dimension: 2048,
  *   headers: { Authorization: `Bearer ${process.env.ZHIPU_API_KEY}` },
- *   format: 'openai-compatible',
  * };
  * ```
  *
  * Example (custom vendor):
  * ```typescript
- * const config: ApiEmbeddingConfig = {
+ * const config: ApiEmbeddingConfigInput = {
  *   endpoint: 'https://api.example.com/v1/embed',
  *   model: 'example-model',
+ *   dimension: 768,
  *   headers: { 'X-API-Key': process.env.EXAMPLE_KEY! },
  *   format: 'custom',
  *   mapRequest: (texts) => ({ texts, model: 'example-model' }),
@@ -81,16 +82,16 @@ export interface ApiEmbeddingConfig {
   readonly dimension: number;
   /** Arbitrary HTTP headers (auth tokens, content type, etc.). */
   readonly headers?: Readonly<Record<string, string>>;
-  /** Request/response format. Defaults to "openai-compatible". */
-  readonly format?: EmbeddingApiFormat;
-  /** Request timeout in milliseconds (default: 30000). */
-  readonly timeoutMs?: number;
-  /** Retry configuration for transient failures. */
-  readonly retry?: EmbeddingRetryConfig;
-  /** Whether to L2-normalize output vectors (default: true). */
-  readonly normalize?: boolean;
-  /** Maximum batch size (texts per API call). Default: 32. */
-  readonly maxBatchSize?: number;
+  /** Request/response format. Filled by `resolveApiEmbeddingConfig`. */
+  readonly format: EmbeddingApiFormat;
+  /** Request timeout in milliseconds. Filled by `resolveApiEmbeddingConfig`. */
+  readonly timeoutMs: number;
+  /** Retry configuration for transient failures. Filled by `resolveApiEmbeddingConfig`. */
+  readonly retry: EmbeddingRetryConfig;
+  /** Whether to L2-normalize output vectors. Filled by `resolveApiEmbeddingConfig`. */
+  readonly normalize: boolean;
+  /** Maximum batch size (texts per API call). Filled by `resolveApiEmbeddingConfig`. */
+  readonly maxBatchSize: number;
   /**
    * Custom request body mapper.
    *
