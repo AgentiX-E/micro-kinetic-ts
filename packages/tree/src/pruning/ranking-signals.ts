@@ -494,34 +494,40 @@ export const DEFAULT_TRACE_ACTIVITY_OPTIONS: TraceActivityOptions = {
  *
  * ## Silent-source condition
  *
- * The signal is a SILENT-SOURCE detector, so it must defer to any competing
- * exception evidence. When `hasLogicExceptionEvidence` is true (any graph
- * service emitted a self-caused logic exception), the case is NOT a
- * silent-source fault — the log signal already carries discriminative
- * evidence — and the unique-riser heuristic misfires onto the wrong service
- * for exception-type resource faults (OnlineBoutique RE3 f4, TrainTicket RE2
- * mem). The signal therefore returns an empty (neutral) map in that case,
- * regardless of how many span-count risers qualify.
+ * The signal is a SILENT-SOURCE detector: it must defer to exception evidence
+ * ONLY about the candidate itself, never about unrelated graph services. When
+ * the unique riser is a member of `logicExceptionServices` (it emitted a
+ * self-caused logic exception), that service is NOT silent — the log signal
+ * (always on) already ranks it — and the vote is suppressed.
+ *
+ * The gate is deliberately PER-CANDIDATE rather than case-level. The previous
+ * case-level gate (`hasLogicExceptionEvidence: boolean`) suppressed the vote
+ * whenever ANY graph service threw, which is precisely wrong for the silent
+ * wrong-value fault (TrainTicket RE3 f2): there the SOURCE
+ * (`ts-auth-service`) is silent, while a DOWNSTREAM WRAPPER
+ * (`ts-order-other-service`) throws `IllegalArgumentException: Invalid UUID
+ * string`. The wrapper's exception is a SYMPTOM of the wrong value, not
+ * evidence the case is non-silent — yet the case-level gate used it to
+ * suppress the ONLY signal that names the source. The per-candidate gate
+ * votes the silent riser and only defers when the riser ITSELF threw.
  *
  * @param counts - Per-service pre/post span counts (may be undefined → empty).
  * @param nodeIds - Services present in the call graph.
  * @param options - Threshold overrides (merged over the defaults).
- * @param hasLogicExceptionEvidence - Whether any graph service emitted a
- *   self-caused logic exception (suppresses the vote when true). Default false.
+ * @param logicExceptionServices - The set of services that emitted a
+ *   self-caused logic exception. Suppresses the vote ONLY when the unique
+ *   significant riser is itself a member. Default empty.
  * @returns Sparse `{service: 1}` map, or empty when no unique significant riser
- *   or when the case is not a silent-source fault.
+ *   or when the unique riser itself threw a logic exception.
  */
 export function computeTraceActivityScores(
   counts: ReadonlyMap<ServiceId, TraceActivityCounts> | undefined,
   nodeIds: ReadonlySet<ServiceId>,
   options?: Partial<TraceActivityOptions>,
-  hasLogicExceptionEvidence = false,
+  logicExceptionServices: ReadonlySet<ServiceId> = new Set(),
 ): Map<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   if (!counts || counts.size === 0 || nodeIds.size === 0) return scores;
-  // A silent-source fault leaves no exception; if one exists, this is not that
-  // fault, and the log signal (always on) already ranks it. Suppress the vote.
-  if (hasLogicExceptionEvidence) return scores;
 
   const { minPreCount, minPostCount, riseThreshold } = {
     ...DEFAULT_TRACE_ACTIVITY_OPTIONS,
@@ -542,8 +548,15 @@ export function computeTraceActivityScores(
 
   // Only a UNIQUE qualifying riser is a confident silent-source vote; zero or
   // multiple candidates carry no discriminative information and stay neutral.
+  // The per-candidate gate is applied to the WINNER only — a throwing riser is
+  // still counted toward uniqueness, so a throwing-riser + silent-riser pair
+  // stays neutral rather than collapsing into a single (possibly wrong) vote.
   if (candidateCount === 1 && candidate !== undefined) {
-    scores.set(candidate, 1);
+    // A riser that itself threw a logic exception is not silent — the log
+    // signal already ranks it, so defer rather than double-reward.
+    if (!logicExceptionServices.has(candidate)) {
+      scores.set(candidate, 1);
+    }
   }
   return scores;
 }

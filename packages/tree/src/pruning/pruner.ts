@@ -502,16 +502,20 @@ export class TreePruner {
     // are pre-computed by the loader (see TraceActivityCounts) so the engine
     // never holds raw spans — only per-service {pre, post} integers.
     //
-    // It is gated on "no logic-exception evidence": `logScores` is non-empty
-    // iff at least one graph service emitted a self-caused logic exception
-    // (see computeLogScores). When one did, the case is NOT silent, the log
-    // signal already ranks it, and the unique-riser heuristic would misfire
-    // onto a wrong service (OB RE3 f4, RE2 TT mem) — so the vote is suppressed.
+    // It is gated PER-CANDIDATE on the services that actually threw a
+    // self-caused logic exception (the `deepestExceptions` keys — a service is
+    // a key iff it emitted ≥1 post-injection logic-exception line, see
+    // computeDeepestExceptions). A throwing WRAPPER must NOT suppress a silent
+    // source: in TrainTicket RE3 f2 the source (ts-auth-service) is silent
+    // while a downstream wrapper throws `IllegalArgumentException`, and a
+    // case-level gate wrongly suppressed the only signal that names the
+    // source. The gate therefore only defers when the UNIQUE RISER ITSELF
+    // threw — the log signal already ranks a self-throwing riser.
     const traceActivityScores = computeTraceActivityScores(
       options?.traceActivity,
       new Set(callGraph.nodes.keys()),
       undefined,
-      logScores.size > 0,
+      new Set(deepestExceptions.keys()),
     );
 
     return {

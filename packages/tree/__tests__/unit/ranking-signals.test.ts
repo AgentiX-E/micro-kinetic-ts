@@ -570,31 +570,77 @@ describe('computeTraceActivityScores', () => {
     expect(scores.size).toBe(1);
   });
 
-  it('votes for the unique riser when no logic-exception evidence (silent source)', () => {
+  it('votes for the unique riser when no service threw a logic exception (silent source)', () => {
     // A silent-source fault leaves no exception behind, so the trace-activity
     // signal is the ONLY lever and may vote for the unique significant riser.
     const counts = countsOf(['a', { pre: 500, post: 575 }]); // ratio 1.15
-    const scores = computeTraceActivityScores(counts, nodes, undefined, false);
+    const scores = computeTraceActivityScores(counts, nodes, undefined, new Set());
 
     expect(scores.get('a')).toBe(1);
     expect(scores.size).toBe(1);
   });
 
-  it('suppresses the vote when logic-exception evidence is present (non-silent case)', () => {
-    // When a logic exception exists anywhere in the graph, the case is NOT a
-    // silent-source fault: the log signal already has discriminative evidence,
-    // and the unique-riser heuristic misfires onto the wrong service for
-    // exception-type resource faults (OB RE3 f4, RE2 TT mem). The signal must
-    // defer to the log signal and stay neutral — even with a unique riser.
+  it('suppresses the vote when the UNIQUE riser ITSELF threw a logic exception', () => {
+    // A service that threw a self-caused logic exception is NOT a silent
+    // source — the log signal (always on) already ranks it. The trace-activity
+    // signal must defer and stay neutral rather than double-reward it.
     const counts = countsOf(['a', { pre: 500, post: 575 }]); // unique riser
-    const scores = computeTraceActivityScores(counts, nodes, undefined, true);
+    const scores = computeTraceActivityScores(
+      counts,
+      nodes,
+      undefined,
+      new Set<ServiceId>(['a']), // the riser itself threw
+    );
 
     expect(scores.size).toBe(0);
   });
 
-  it('defaults the evidence gate to false (backward-compatible behaviour)', () => {
-    // Callers that omit the gate keep the original silent-source vote, so
-    // existing behaviour is unchanged unless the caller opts into suppression.
+  it('votes the silent-source riser when a DIFFERENT service threw (throwing wrapper)', () => {
+    // TrainTicket RE3 f2: the faulting service (ts-auth-service) is SILENT —
+    // it returns a wrong value without throwing — while a DOWNSTREAM wrapper
+    // throws `IllegalArgumentException: Invalid UUID string`. The case-level
+    // gate used to treat the wrapper's exception as "evidence the case is not
+    // silent" and suppressed the ONLY signal that names the silent source.
+    // The gate must be PER-CANDIDATE: a wrapper's exception must NOT suppress
+    // a riser that never threw.
+    const counts = countsOf(
+      ['a', { pre: 500, post: 575 }], // silent riser (post/pre = 1.15)
+      ['b', { pre: 1000, post: 200 }], // throwing wrapper (collapsing, not a riser)
+    );
+    const scores = computeTraceActivityScores(
+      counts,
+      nodes,
+      undefined,
+      new Set<ServiceId>(['b']), // only the wrapper threw
+    );
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.size).toBe(1);
+  });
+
+  it('keeps the uniqueness rule when a throwing service is ALSO a riser', () => {
+    // A throwing riser is still a CANDIDATE for the uniqueness count — the
+    // gate only suppresses the FINAL vote when the unique winner itself threw.
+    // This prevents a throwing-riser + silent-riser pair from collapsing into
+    // a single confident (and possibly wrong) vote for the silent one.
+    const counts = countsOf(
+      ['a', { pre: 500, post: 575 }], // silent riser
+      ['b', { pre: 1000, post: 1200 }], // throwing riser
+    );
+    const scores = computeTraceActivityScores(
+      counts,
+      nodes,
+      undefined,
+      new Set<ServiceId>(['b']),
+    );
+
+    expect(scores.size).toBe(0); // two candidates → neutral, thrower still counted
+  });
+
+  it('defaults the thrower set to empty (backward-compatible behaviour)', () => {
+    // Callers that omit the thrower set keep the original silent-source vote,
+    // so existing behaviour is unchanged unless the caller opts into
+    // per-candidate suppression.
     const counts = countsOf(['a', { pre: 500, post: 575 }]);
     const scores = computeTraceActivityScores(counts, nodes);
 

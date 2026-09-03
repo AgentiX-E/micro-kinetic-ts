@@ -1186,14 +1186,29 @@ describe('TreePruner', () => {
       expect(graph.traceActivityScores?.size).toBe(1);
     });
 
-    it('suppresses the vote when any service emits a logic exception', () => {
-      // A logic exception anywhere means the case is NOT a silent-source fault:
-      // the trace-activity signal must defer to the log signal and stay neutral,
-      // even though A is a unique significant riser.
+    it('votes the silent riser when a DIFFERENT service throws (throwing wrapper)', () => {
+      // TrainTicket RE3 f2: the source is silent while a downstream wrapper
+      // throws a logic exception. The wrapper's exception is a SYMPTOM of the
+      // wrong value, not evidence the case is non-silent — the per-candidate
+      // gate must NOT suppress the silent-source riser.
       const pruner = new TreePruner();
       const graph = pruner.buildFaultGraph(callGraph, metrics, {
         traceActivity,
         logs: [{ timestamp: 0, service: 'B', level: 'ERROR', isLogicException: true }],
+      });
+
+      expect(graph.traceActivityScores?.get('A')).toBe(1);
+      expect(graph.traceActivityScores?.size).toBe(1);
+    });
+
+    it('suppresses the vote when the RISER ITSELF throws a logic exception', () => {
+      // A service that threw a self-caused logic exception is not silent: the
+      // log signal already ranks it, so the trace-activity signal must defer
+      // rather than double-reward it.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        traceActivity,
+        logs: [{ timestamp: 0, service: 'A', level: 'ERROR', isLogicException: true }],
       });
 
       expect(graph.traceActivityScores?.size).toBe(0);
