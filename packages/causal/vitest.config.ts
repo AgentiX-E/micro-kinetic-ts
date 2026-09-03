@@ -13,10 +13,10 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/index.ts'],
       thresholds: {
-        statements: 92,   // Math-heavy package with F-dist approx + YAML parser
-        branches: 87,     // Rare error-prop + F-test edge + ring-connect guard branches
-        functions: 100,   // All functions 100% covered
-        lines: 92,        // Combinatorically rare arithmetic + defensive guard branches
+        statements: 95,
+        branches: 95,
+        functions: 100,
+        lines: 95,
       },
     },
   },

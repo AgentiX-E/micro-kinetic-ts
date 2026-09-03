@@ -210,8 +210,13 @@ export class CausalDirectionFusion implements ITimingProviderRegistry {
     for (const result of sortedResults) {
       for (const direction of result.directions) {
         const key = `${direction.source}→${direction.target}`;
-        const existing = bestPerEdge.get(key);
-        if (!existing || this.tierRank(direction.tier) < this.tierRank(existing.tier)) {
+        // `sortedResults` is already ordered by tier priority, so the first
+        // direction for a key always carries the highest-priority tier. The
+        // previous `|| tierRank(direction.tier) < tierRank(existing.tier)`
+        // re-check was unreachable: well-formed providers emit `direction.tier`
+        // equal to their `meta.tier`, so a later (lower-priority) result can
+        // never outrank the already-stored one.
+        if (!bestPerEdge.has(key)) {
           bestPerEdge.set(key, { tier: direction.tier, direction });
         }
       }

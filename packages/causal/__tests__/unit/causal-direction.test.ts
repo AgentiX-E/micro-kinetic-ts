@@ -27,6 +27,8 @@ import type {
   CausalDirection,
   TemporalContext,
   ServiceTiming,
+  ConfidenceTier,
+  ITimingProvider,
 } from '@agentix-e/micro-kinetic-core';
 import type { SpanTiming, LogAnomalyPoint } from '../../src/types';
 
@@ -95,6 +97,29 @@ function makeContext(overrides: Partial<TemporalContext> = {}): TemporalContext 
   };
 }
 
+/**
+ * Minimal ITimingProvider fixture declaring a fixed confidence tier.
+ *
+ * Used only to exercise the fusion orchestrator's tier-rank ordering switch —
+ * the provider's inference methods are irrelevant to `tierRank`, which reads
+ * `meta.tier` alone. There is no real provider for the 'llm'/'none' tiers, so
+ * a plain data fixture (not a behavioral mock) is the honest way to supply
+ * those inputs.
+ */
+function makeTierProvider(tier: ConfidenceTier): ITimingProvider {
+  return {
+    meta: {
+      id: `test-${tier}`,
+      description: `Test provider for the ${tier} tier`,
+      tier,
+      availability: 'conditional',
+    },
+    canInfer: async () => false,
+    inferDirection: async () => [],
+    estimateConfidence: async () => 0,
+  };
+}
+
 // =============================================================================
 // TraceTimingProvider
 // =============================================================================
@@ -143,6 +168,21 @@ describe('TraceTimingProvider', () => {
       });
       const conf = await provider.estimateConfidence(ctx);
       expect(conf).toBeGreaterThan(0.5);
+    });
+
+    it('should return baseline confidence without caller/callee data', async () => {
+      const ctx = makeContext({
+        metadata: {
+          spans: [
+            makeSpanTiming({ service: 'a', spanCount: 50, callers: [], callees: [] }),
+            makeSpanTiming({ service: 'b', spanCount: 50, callers: [], callees: [] }),
+          ],
+        },
+      });
+      const conf = await provider.estimateConfidence(ctx);
+      // No caller/callee data → no +0.3 bonus, but still above the 0.5 floor.
+      expect(conf).toBeGreaterThanOrEqual(0.5);
+      expect(conf).toBeLessThan(1);
     });
   });
 
@@ -275,6 +315,10 @@ describe('TraceTimingProvider', () => {
         metadata: { spans: [makeSpanTiming({ service: 'svc-a' })] },
       });
       expect(await provider.inferDirection([], ctx)).toHaveLength(0);
+    });
+
+    it('should return empty when no span data is present', async () => {
+      expect(await provider.inferDirection([makeEdge('svc-a', 'svc-b')], makeContext())).toHaveLength(0);
     });
 
     it('should infer reverse direction when to has caller data pointing from', async () => {
@@ -474,6 +518,21 @@ describe('LogTimingProvider', () => {
       const conf = await provider.estimateConfidence(ctx);
       expect(conf).toBeLessThanOrEqual(0.3);
     });
+
+    it('should scale confidence linearly for spread below 1000ms', async () => {
+      const ctx = makeContext({
+        metadata: {
+          logAnomalyPoints: [
+            makeLogPoint({ service: 'a', firstAnomalyMs: 1000 }),
+            makeLogPoint({ service: 'b', firstAnomalyMs: 1500 }),
+          ],
+        },
+      });
+      const conf = await provider.estimateConfidence(ctx);
+      // range = 500ms → spreadConfidence = (500 / 1000) * 0.8 = 0.4;
+      // countWeight = tanh(2 / 10) ≈ 0.197; conf = 0.3 * 0.197 + 0.7 * 0.4 ≈ 0.339
+      expect(conf).toBeCloseTo(0.339, 2);
+    });
   });
 
   describe('inferDirection', () => {
@@ -548,6 +607,10 @@ describe('LogTimingProvider', () => {
         },
       });
       expect(await provider.inferDirection([], ctx)).toHaveLength(0);
+    });
+
+    it('should return empty when no anomaly points are present', async () => {
+      expect(await provider.inferDirection([makeEdge('svc-a', 'svc-b')], makeContext())).toHaveLength(0);
     });
 
     it('should skip edge with missing anomaly data for one side', async () => {
@@ -904,6 +967,17 @@ describe('StaticDirectionProvider', () => {
       const edges = [makeEdge('unknown-a', 'unknown-b')];
       expect(await provider.inferDirection(edges, makeContext())).toHaveLength(0);
     });
+
+    it('should return empty when source is mapped but target is not', async () => {
+      provider.addDirection({
+        source: 'svc-a', target: 'svc-b',
+        tier: 'static', confidence: 0.5,
+        reasoning: 'test', provider: 'static-direction',
+      });
+      // svc-a has a configured direction, but only toward svc-b — not svc-c
+      const edges = [makeEdge('svc-a', 'svc-c')];
+      expect(await provider.inferDirection(edges, makeContext())).toHaveLength(0);
+    });
   });
 
   describe('CRUD operations', () => {
@@ -1072,6 +1146,105 @@ describe('GrangerCausalityProvider — edge cases', () => {
 });
 
 // =============================================================================
+// GrangerCausalityProvider — deterministic statistics
+//
+// These tests use fully deterministic time-series (no Math.random) so that the
+// exact branch paths of the F-statistic pipeline are reliably exercised:
+//   - lag-1 copy → forward significant / reverse not (direction resolution)
+//   - constant series → RSSu === 0 early return
+//   - unrelated sine/cosine → negative z in the normal-CDF approximation
+// =============================================================================
+
+describe('GrangerCausalityProvider — deterministic statistics', () => {
+  let provider: GrangerCausalityProvider;
+
+  beforeEach(() => {
+    provider = new GrangerCausalityProvider();
+  });
+
+  describe('direction resolution', () => {
+    it('should resolve forward when cause lag-1 determines effect', async () => {
+      const n = 50;
+      const cause = Array.from({ length: n }, (_, i) => Math.sin(i * 0.1));
+      const effect = Array.from({ length: n }, (_, i) => (i === 0 ? 0 : cause[i - 1]!));
+      const ts = new Map<string, readonly number[]>([
+        ['svc-a', cause],
+        ['svc-b', effect],
+      ]);
+      const ctx = makeContext({ metadata: { metricTimeSeries: ts } });
+      const results = await provider.inferDirection([makeEdge('svc-a', 'svc-b')], ctx);
+
+      // cause → effect is significant (F ≈ 138, p ≈ 8.9e-14); reverse is not.
+      expect(results).toHaveLength(1);
+      expect(results[0]!.source).toBe('svc-a');
+      expect(results[0]!.target).toBe('svc-b');
+      expect(results[0]!.tier).toBe('granger');
+    });
+
+    it('should resolve reverse when dependence is lagged the other way', async () => {
+      const n = 50;
+      const b = Array.from({ length: n }, (_, i) => Math.sin(i * 0.1));
+      const a = Array.from({ length: n }, (_, i) => (i === 0 ? 0 : b[i - 1]!));
+      const ts = new Map<string, readonly number[]>([
+        ['svc-a', a],
+        ['svc-b', b],
+      ]);
+      const ctx = makeContext({ metadata: { metricTimeSeries: ts } });
+      const results = await provider.inferDirection([makeEdge('svc-a', 'svc-b')], ctx);
+
+      // a depends on b's past → Granger(b → a) significant, forward not.
+      expect(results).toHaveLength(1);
+      expect(results[0]!.source).toBe('svc-b');
+      expect(results[0]!.target).toBe('svc-a');
+    });
+
+    it('should return no direction when both series are below the minimum length', async () => {
+      const short = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+      const ts = new Map<string, readonly number[]>([
+        ['svc-a', short],
+        ['svc-b', [...short]],
+      ]);
+      const ctx = makeContext({ metadata: { metricTimeSeries: ts } });
+      const results = await provider.inferDirection([makeEdge('svc-a', 'svc-b')], ctx);
+      expect(results).toHaveLength(0);
+    });
+  });
+
+  describe('F-statistic edge cases', () => {
+    it('should return a non-significant result for constant series (zero residual)', () => {
+      const n = 50;
+      const constant = Array.from({ length: n }, () => 40);
+      const result = provider.grangerTest(constant, [...constant]);
+      expect(result).not.toBeNull();
+      expect(result!.fStatistic).toBe(0);
+      expect(result!.pValue).toBe(1);
+      expect(result!.significant).toBe(false);
+    });
+
+    it('should compute a non-significant p-value for unrelated series', () => {
+      const n = 50;
+      const cause = Array.from({ length: n }, (_, i) => Math.sin(i * 0.1));
+      const effect = Array.from(
+        { length: n },
+        (_, i) => Math.sin(i * 0.1) + 10 * Math.cos(i * 0.31),
+      );
+      const result = provider.grangerTest(cause, effect);
+      expect(result).not.toBeNull();
+      expect(result!.significant).toBe(false);
+    });
+  });
+
+  describe('estimateConfidence', () => {
+    it('should return 0 when fewer than two services have sufficient data', async () => {
+      const long = Array.from({ length: 30 }, (_, i) => i);
+      const ts = new Map<string, readonly number[]>([['a', long]]);
+      const ctx = makeContext({ metadata: { metricTimeSeries: ts } });
+      expect(await provider.estimateConfidence(ctx)).toBe(0);
+    });
+  });
+});
+
+// =============================================================================
 // CausalDirectionFusion
 // =============================================================================
 
@@ -1102,6 +1275,17 @@ describe('CausalDirectionFusion', () => {
       expect(providers[0]!.meta.tier).toBe('trace');
       expect(providers[1]!.meta.tier).toBe('log');
       expect(providers[2]!.meta.tier).toBe('static');
+    });
+
+    it('should rank all six confidence tiers in priority order', () => {
+      // Register in reverse order to prove the sort (not insertion order) wins.
+      const tiers: ConfidenceTier[] = ['none', 'llm', 'static', 'granger', 'log', 'trace'];
+      for (const tier of tiers) {
+        fusion.register(makeTierProvider(tier));
+      }
+      expect(fusion.providers.map((p) => p.meta.tier)).toEqual([
+        'trace', 'log', 'granger', 'static', 'llm', 'none',
+      ]);
     });
 
     it('should replace provider with same ID', () => {
@@ -1147,6 +1331,20 @@ describe('CausalDirectionFusion', () => {
       expect(result.directions).toHaveLength(0);
       expect(result.coverage).toBe(0);
       expect(result.acceptedTier).toBe('none');
+    });
+
+    it('should compute zero coverage for empty edges even with an available provider', async () => {
+      const static_ = new StaticDirectionProvider();
+      static_.addDirection({
+        source: 'a', target: 'b',
+        tier: 'static', confidence: 0.5,
+        reasoning: 'config', provider: 'static-direction',
+      });
+      fusion.register(static_);
+
+      const result = await fusion.inferDirections([], makeContext());
+      expect(result.edgesResolved).toBe(0);
+      expect(result.coverage).toBe(0);
     });
 
     it('should accept trace tier when available', async () => {

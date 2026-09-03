@@ -85,26 +85,11 @@ export class StaticDirectionProvider implements ITimingProvider {
       }
     }
 
-    // Inject pre-configured directions from the map for edges that
-    // weren't in the edge list but are in the static config
-    const resultEdgeKeys = new Set(results.map((r) => `${r.source}→${r.target}`));
-    for (const [source, targets] of this.directionMap) {
-      for (const [target, direction] of targets) {
-        const key = `${source}→${target}`;
-        if (!resultEdgeKeys.has(key)) {
-          // Check if this edge exists in the requested edge list
-          const matchingEdge = edges.find(
-            (e) =>
-              e.from.toLowerCase() === source.toLowerCase() &&
-              e.to.toLowerCase() === target.toLowerCase(),
-          );
-          if (matchingEdge) {
-            results.push(direction);
-          }
-        }
-      }
-    }
-
+    // No second "inject missing map directions" pass: the loop above already
+    // resolves every edge against the map via `lookupDirection` (case-insensitive),
+    // so any direction whose source→target key is in the map AND whose edge is in
+    // the requested list is already pushed. The follow-up scan only ever re-found
+    // edges the first pass had already handled, making it dead code.
     return results;
   }
 

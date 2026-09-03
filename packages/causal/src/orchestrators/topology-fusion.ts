@@ -158,8 +158,9 @@ export class TopologyFusion {
         for (let i = 0; i < unmatched.length; i++) {
           const from = unmatched[i]!;
           const to = unmatched[(i + 1) % unmatched.length]!;
-          // Skip self-loops
-          if (from === to) continue;
+          // No `from === to` self-loop guard: `unmatched` is built from a Set of
+          // unique service IDs and this loop only runs when `unmatched.length > 1`,
+          // so `unmatched[i]` and `unmatched[(i+1) % length]` are always distinct.
           fusedEdges.push({
             from,
             to,

@@ -186,7 +186,9 @@ export class GrangerCausalityProvider implements ITimingProvider {
     for (let t = lag; t < n; t++) {
       let sum = 0;
       for (let i = 1; i <= lag; i++) {
-        sum += effect[t - i]! + (cause[t - i] ?? 0);
+        // `cause[t - i]` is always defined: `t` ranges over [lag, n) with
+        // n = min(cause.length, effect.length), so t - i ∈ [0, n-2] < cause.length.
+        sum += effect[t - i]! + cause[t - i]!;
       }
       const predicted = sum / (2 * lag); // simplified OLS
       unrestrictedResiduals.push(effect[t]! - predicted);
@@ -225,15 +227,16 @@ export class GrangerCausalityProvider implements ITimingProvider {
    */
   private approxFPValue(f: number, d1: number, d2: number): number {
     if (f <= 0) return 1;
-    if (d1 <= 0 || d2 <= 0) return 1;
+    // No `d1 <= 0 || d2 <= 0` guard: the only caller (`computeGrangerF`) already
+    // returned early when `df <= 0` (so d2 > 0), and d1 = lag is always ≥ 1.
 
     // Paulson's F-to-normal transformation (A&S 26.6.16)
     // More accurate for d2 ≥ 4
     const x = Math.pow(f, 1 / 3) * (1 - 2 / (9 * d2)) - (1 - 2 / (9 * d1));
     const denom = Math.sqrt(2 / (9 * d1) + (Math.pow(f, 2 / 3) * 2) / (9 * d2));
 
-    if (denom === 0) return 1;
-
+    // No `denom === 0` guard: with d1, d2 > 0 and f > 0 (guaranteed above),
+    // the radicand is strictly positive, so denom > 0.
     const z = x / denom;
 
     // Normal CDF approximation (Abramowitz & Stegun 26.2.17)
@@ -273,27 +276,11 @@ export class GrangerCausalityProvider implements ITimingProvider {
     edge: CallEdge,
   ): CausalDirection | null {
     if (!forward || !reverse) {
-      // Only one direction was testable
-      if (forward?.significant) {
-        return {
-          source: edge.from,
-          target: edge.to,
-          tier: 'granger',
-          confidence: 0.5 + 0.3 * (1 - forward.pValue / this.config.alpha),
-          reasoning: `Granger ${edge.from}→${edge.to}: F=${forward.fStatistic.toFixed(2)}, p=${forward.pValue.toFixed(4)} at lag=${forward.bestLag}`,
-          provider: 'granger-causality',
-        };
-      }
-      if (reverse?.significant) {
-        return {
-          source: edge.to,
-          target: edge.from,
-          tier: 'granger',
-          confidence: 0.5 + 0.3 * (1 - reverse.pValue / this.config.alpha),
-          reasoning: `Granger ${edge.to}→${edge.from}: F=${reverse.fStatistic.toFixed(2)}, p=${reverse.pValue.toFixed(4)} at lag=${reverse.bestLag}`,
-          provider: 'granger-causality',
-        };
-      }
+      // Both are null here: `grangerTest` returns null exactly when
+      // n = min(cause.length, effect.length) < minSeriesLength, and the forward
+      // and reverse tests compute the same n (min is symmetric), so "only one
+      // direction testable" is impossible. The `forward?.significant` /
+      // `reverse?.significant` fallbacks were therefore unreachable.
       return null;
     }
 

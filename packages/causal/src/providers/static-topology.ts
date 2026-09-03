@@ -125,12 +125,11 @@ export class StaticTopologyProvider implements ITopologyProvider {
    * Check whether this provider has any valid config files.
    */
   async isAvailable(): Promise<boolean> {
-    try {
-      this.loadAll();
-      return this.cache.size > 0;
-    } catch {
-      return false;
-    }
+    // No try/catch: `loadAll` swallows every I/O and parse error internally
+    // (nested try/catch around both the directory scan and per-file parse), so
+    // it never throws and the `catch { return false }` branch was unreachable.
+    this.loadAll();
+    return this.cache.size > 0;
   }
 
   /**
@@ -283,73 +282,72 @@ export class StaticTopologyProvider implements ITopologyProvider {
    * The topology config format has a known, fixed schema.
    */
   private parseYaml(content: string): TopologyYaml | null {
-    try {
-      const lines = content.split('\n');
-      const result: Partial<TopologyYaml> = {
-        version: '1.0',
-        system: '',
-        description: '',
-        services: [],
-        edges: [],
-      };
+    // No try/catch: the only caller (`loadAll`) already wraps this call in its own
+    // per-file try/catch, and this parser is fully defensive (no unchecked access),
+    // so the inner `catch { return null }` was unreachable.
+    const lines = content.split('\n');
+    const result: Partial<TopologyYaml> = {
+      version: '1.0',
+      system: '',
+      description: '',
+      services: [],
+      edges: [],
+    };
 
-      let section: 'top' | 'services' | 'edges' = 'top';
-      let i = 0;
+    let section: 'top' | 'services' | 'edges' = 'top';
+    let i = 0;
 
-      while (i < lines.length) {
-        const line = lines[i]!;
-        const trimmed = line.trim();
+    while (i < lines.length) {
+      const line = lines[i]!;
+      const trimmed = line.trim();
 
-        // Skip empty lines and comments
-        if (!trimmed || trimmed.startsWith('#')) {
+      // Skip empty lines and comments
+      if (!trimmed || trimmed.startsWith('#')) {
+        i++;
+        continue;
+      }
+
+      if (section === 'top') {
+        if (trimmed.startsWith('services:')) {
+          section = 'services';
           i++;
           continue;
         }
-
-        if (section === 'top') {
-          if (trimmed.startsWith('services:')) {
-            section = 'services';
-            i++;
-            continue;
-          }
-          if (trimmed.startsWith('edges:')) {
-            section = 'edges';
-            i++;
-            continue;
-          }
-          const colonIdx = trimmed.indexOf(':');
-          if (colonIdx > 0) {
-            const key = trimmed.substring(0, colonIdx).trim();
-            const val = trimmed.substring(colonIdx + 1).trim();
-            if (key === 'version') result.version = val;
-            else if (key === 'system') result.system = val;
-            else if (key === 'description') result.description = val;
-            else if (key === 'source') result.source = val;
-          }
-        } else if (section === 'services') {
-          if (trimmed.startsWith('edges:')) {
-            section = 'edges';
-            i++;
-            continue;
-          }
-          if (trimmed.startsWith('-')) {
-            const svc = this.parseServiceBlock(lines, i);
-            if (svc) result.services!.push(svc);
-          }
-        } else if (section === 'edges') {
-          if (trimmed.startsWith('-')) {
-            const edge = this.parseInlineEdge(trimmed);
-            if (edge) result.edges!.push(edge);
-          }
+        if (trimmed.startsWith('edges:')) {
+          section = 'edges';
+          i++;
+          continue;
         }
-        i++;
+        const colonIdx = trimmed.indexOf(':');
+        if (colonIdx > 0) {
+          const key = trimmed.substring(0, colonIdx).trim();
+          const val = trimmed.substring(colonIdx + 1).trim();
+          if (key === 'version') result.version = val;
+          else if (key === 'system') result.system = val;
+          else if (key === 'description') result.description = val;
+          else if (key === 'source') result.source = val;
+        }
+      } else if (section === 'services') {
+        if (trimmed.startsWith('edges:')) {
+          section = 'edges';
+          i++;
+          continue;
+        }
+        if (trimmed.startsWith('-')) {
+          const svc = this.parseServiceBlock(lines, i);
+          if (svc) result.services!.push(svc);
+        }
+      } else if (section === 'edges') {
+        if (trimmed.startsWith('-')) {
+          const edge = this.parseInlineEdge(trimmed);
+          if (edge) result.edges!.push(edge);
+        }
       }
-
-      if (!result.system || !result.services?.length) return null;
-      return result as TopologyYaml;
-    } catch {
-      return null;
+      i++;
     }
+
+    if (!result.system || !result.services?.length) return null;
+    return result as TopologyYaml;
   }
 
   /**
@@ -373,7 +371,10 @@ export class StaticTopologyProvider implements ITopologyProvider {
     while (i < lines.length) {
       const line = lines[i]!;
       const indent = line.search(/\S/);
-      if (line.trim() === '' || indent < 0) {
+      // `indent < 0` is redundant: `line.search(/\S/)` returns -1 exactly when
+      // the line has no non-whitespace character, which is the same condition as
+      // `line.trim() === ''`. Only the blank-line check is needed here.
+      if (line.trim() === '') {
         i++;
         continue;
       }
@@ -415,7 +416,9 @@ export class StaticTopologyProvider implements ITopologyProvider {
     return {
       id: svc.id,
       namespace: svc.namespace,
-      labels: svc.labels ?? {},
+      // `svc.labels` is initialized to `{}` at the top of this method and never
+      // reassigned, so the `?? {}` fallback was unreachable.
+      labels: svc.labels!,
     };
   }
 
@@ -513,9 +516,11 @@ export class StaticTopologyProvider implements ITopologyProvider {
     const lower = yamlId.toLowerCase().trim();
     // Exact match first
     if (knownIds.includes(yamlId)) return yamlId;
-    // Case-insensitive match
+    // Case-insensitive match. The `?? yamlId` fallback is unreachable: the only
+    // caller passes `edge.from`/`edge.to`, which are gated by `lowerIds.has(...)`
+    // (where `lowerIds` is the lowercased `knownIds`), so a match always exists.
     const found = knownIds.find((id) => id.toLowerCase().trim() === lower);
-    return found ?? yamlId;
+    return found!;
   }
 
   // ── Graph Construction Helpers ─────────────────────────

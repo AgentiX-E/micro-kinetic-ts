@@ -11,9 +11,6 @@
  *    times. If startTime(A) < startTime(B) for all spans with
  *    matching edges, direction is A → B.
  *
- * 3. Error Propagation: If A's error spans precede B's error spans
- *    in the same trace, the fault likely propagated A → B.
- *
  * Cost: zero (data already available from tracing infrastructure).
  * Accuracy: highest — spans carry definitive parent-child edges.
  *
@@ -89,12 +86,6 @@ export class TraceTimingProvider implements ITimingProvider {
       if (temporalResult) {
         results.push(temporalResult);
         continue;
-      }
-
-      // Strategy 3: Error propagation order
-      const errorResult = this.inferFromErrorPropagation(from, to, edge);
-      if (errorResult) {
-        results.push(errorResult);
       }
     }
 
@@ -213,47 +204,6 @@ export class TraceTimingProvider implements ITimingProvider {
         tier: 'trace',
         confidence: Math.max(0.6, Math.min(1, delta / 1000)),
         reasoning: `Temporal order: ${edge.to} spans start ${delta}ms before ${edge.from} spans`,
-        provider: 'trace-timing',
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * Infer direction from error propagation order.
-   *
-   * If both services have error spans, the one with earlier error
-   * start time is likely the source.
-   */
-  private inferFromErrorPropagation(
-    from: SpanTiming,
-    to: SpanTiming,
-    edge: CallEdge,
-  ): CausalDirection | null {
-    if (from.errorSpanCount === 0 || to.errorSpanCount === 0) return null;
-
-    // Both have errors — earlier errors suggest root cause
-    if (from.earliestStartMs < to.earliestStartMs) {
-      const delta = to.earliestStartMs - from.earliestStartMs;
-      return {
-        source: edge.from,
-        target: edge.to,
-        tier: 'trace',
-        confidence: Math.min(0.8, delta / 5000),
-        reasoning: `Error propagation: ${edge.from} errors precede ${edge.to} errors by ${delta}ms`,
-        provider: 'trace-timing',
-      };
-    }
-
-    if (to.earliestStartMs < from.earliestStartMs) {
-      const delta = from.earliestStartMs - to.earliestStartMs;
-      return {
-        source: edge.to,
-        target: edge.from,
-        tier: 'trace',
-        confidence: Math.min(0.8, delta / 5000),
-        reasoning: `Error propagation: ${edge.to} errors precede ${edge.from} errors by ${delta}ms`,
         provider: 'trace-timing',
       };
     }

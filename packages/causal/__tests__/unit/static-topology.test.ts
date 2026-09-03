@@ -532,4 +532,238 @@ edges:
       expect(graph.edges.length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe('edge type normalization — remaining variants', () => {
+    const EXTRA_TYPES_YAML = `
+version: "1.0"
+system: ExtraTypes
+services:
+  - id: a
+    namespace: test
+  - id: b
+    namespace: test
+  - id: c
+    namespace: test
+  - id: d
+    namespace: test
+edges:
+  - { from: a, to: b, type: mq, callRate: 1, p99Latency: 1, errorRate: 0 }
+  - { from: b, to: c, type: rabbitmq, callRate: 1, p99Latency: 1, errorRate: 0 }
+  - { from: c, to: d, type: websocket, callRate: 1, p99Latency: 1, errorRate: 0 }
+`;
+
+    it('should normalize mq to MQ', async () => {
+      setupConfigDir(EXTRA_TYPES_YAML);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['a', 'b', 'c', 'd'] });
+      const edge = graph.edges.find((e) => e.from === 'a' && e.to === 'b');
+      expect(edge!.type).toBe('MQ');
+    });
+
+    it('should normalize rabbitmq to MQ', async () => {
+      setupConfigDir(EXTRA_TYPES_YAML);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['a', 'b', 'c', 'd'] });
+      const edge = graph.edges.find((e) => e.from === 'b' && e.to === 'c');
+      expect(edge!.type).toBe('MQ');
+    });
+
+    it('should fall back to REST for unknown edge types', async () => {
+      setupConfigDir(EXTRA_TYPES_YAML);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['a', 'b', 'c', 'd'] });
+      const edge = graph.edges.find((e) => e.from === 'c' && e.to === 'd');
+      expect(edge!.type).toBe('REST');
+    });
+  });
+
+  describe('inline edge attribute defaults', () => {
+    const MINIMAL_EDGE_YAML = `
+version: "1.0"
+system: MinimalEdge
+services:
+  - id: a
+    namespace: test
+  - id: b
+    namespace: test
+edges:
+  - { from: a, to: b }
+`;
+
+    it('should apply default type/callRate/p99Latency/errorRate', async () => {
+      setupConfigDir(MINIMAL_EDGE_YAML);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['a', 'b'] });
+
+      expect(graph.edges).toHaveLength(1);
+      const edge = graph.edges[0]!;
+      expect(edge.type).toBe('REST');
+      expect(edge.callRate).toBe(100);
+      expect(edge.p99Latency).toBe(50);
+      expect(edge.errorRate).toBe(0.01);
+    });
+
+    it('should coerce non-numeric numeric attributes to 0', async () => {
+      const nonNumeric = `
+version: "1.0"
+system: NonNumeric
+services:
+  - id: a
+    namespace: test
+  - id: b
+    namespace: test
+edges:
+  - { from: a, to: b, type: REST, callRate: abc, p99Latency: xyz, errorRate: n/a }
+`;
+      setupConfigDir(nonNumeric);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['a', 'b'] });
+      const edge = graph.edges[0]!;
+      expect(edge.callRate).toBe(0);
+      expect(edge.p99Latency).toBe(0);
+      expect(edge.errorRate).toBe(0);
+    });
+
+    it('should ignore edges missing a from or to endpoint', async () => {
+      const missingEndpoint = `
+version: "1.0"
+system: MissingEndpoint
+services:
+  - id: a
+    namespace: test
+edges:
+  - { from: a }
+`;
+      setupConfigDir(missingEndpoint);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['a'] });
+      // Malformed edge (missing `to`) is dropped; single unmatched service has
+      // no connected neighbours, so no ring edge is added either.
+      expect(graph.edges).toHaveLength(0);
+    });
+  });
+
+  describe('service block parsing variants', () => {
+    const SEPARATE_LINE_YAML = `
+version: "1.0"
+system: SeparateLines
+services:
+  - namespace: test
+    id: svc-a
+    labels:
+      tier: backend
+  - id: svc-b
+    namespace: test
+edges:
+  - { from: svc-a, to: svc-b, type: REST, callRate: 1, p99Latency: 1, errorRate: 0 }
+`;
+
+    it('should parse service blocks with id/namespace on separate lines', async () => {
+      setupConfigDir(SEPARATE_LINE_YAML);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['svc-a', 'svc-b'] });
+      expect(graph.nodes.get('svc-a')!.namespace).toBe('test');
+      expect(graph.nodes.get('svc-b')!.namespace).toBe('test');
+      expect(graph.edges).toHaveLength(1);
+    });
+
+    it('should treat direct key-value lines (not id/namespace) as labels', async () => {
+      const directLabel = `
+version: "1.0"
+system: DirectLabel
+services:
+  - id: svc-a
+    namespace: test
+    tier: backend
+  - id: svc-b
+    namespace: test
+edges:
+  - { from: svc-a, to: svc-b, type: REST, callRate: 1, p99Latency: 1, errorRate: 0 }
+`;
+      setupConfigDir(directLabel);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['svc-a', 'svc-b'] });
+      expect(graph.nodes.get('svc-a')!.labels.tier).toBe('backend');
+    });
+
+    it('should skip service blocks missing a required field', async () => {
+      const missingNamespace = `
+version: "1.0"
+system: MissingNs
+services:
+  - id: svc-a
+  - id: svc-b
+    namespace: test
+edges:
+  - { from: svc-b, to: svc-b, type: REST, callRate: 1, p99Latency: 1, errorRate: 0 }
+`;
+      setupConfigDir(missingNamespace);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['svc-a', 'svc-b'] });
+      // svc-a lacks a namespace → dropped; svc-b is valid.
+      expect(graph.nodes.has('svc-a')).toBe(false);
+      expect(graph.nodes.has('svc-b')).toBe(true);
+    });
+
+    it('should tolerate blank lines inside a service block', async () => {
+      const blankLine = `
+version: "1.0"
+system: BlankLine
+services:
+  - id: svc-a
+    namespace: test
+
+    labels:
+      tier: backend
+  - id: svc-b
+    namespace: test
+edges:
+  - { from: svc-a, to: svc-b, type: REST, callRate: 1, p99Latency: 1, errorRate: 0 }
+`;
+      setupConfigDir(blankLine);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      const graph = await provider.discover({ knownServiceIds: ['svc-a', 'svc-b'] });
+      // The blank line between `namespace` and `labels` is skipped, not treated
+      // as a block terminator.
+      expect(graph.nodes.get('svc-a')!.namespace).toBe('test');
+      expect(graph.nodes.get('svc-a')!.labels.tier).toBe('backend');
+      expect(graph.edges).toHaveLength(1);
+    });
+  });
+
+  describe('YAML loading error handling', () => {
+    it('should skip a directory masquerading as a .yaml file', () => {
+      setupConfigDir(MINIMAL_YAML);
+      mkdirSync(join(TEST_CONFIG_DIR, 'bad.yaml'));
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      // Valid file loads; the directory entry throws EISDIR on read and is skipped.
+      expect(provider.configCount).toBe(1);
+    });
+
+    it('should tolerate a configDir path that is a file, not a directory', () => {
+      setupConfigDir();
+      const filePath = join(TEST_CONFIG_DIR, 'not-a-dir.yaml');
+      writeFileSync(filePath, 'not a directory', 'utf-8');
+      const provider = new StaticTopologyProvider(filePath);
+      // readdirSync on a file throws ENOTDIR → swallowed by the outer catch.
+      expect(provider.configCount).toBe(0);
+    });
+
+    it('should reject YAML whose edges section precedes services', () => {
+      const edgesFirst = `
+version: "1.0"
+system: EdgeFirst
+edges:
+  - { from: a, to: b, type: REST, callRate: 1, p99Latency: 1, errorRate: 0 }
+services:
+  - id: a
+    namespace: test
+`;
+      setupConfigDir(edgesFirst);
+      const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
+      // The parser switches to the edges section before parsing any service, so
+      // services end up empty and the config is rejected.
+      expect(provider.configCount).toBe(0);
+    });
+  });
 });
