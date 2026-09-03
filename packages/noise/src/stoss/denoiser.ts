@@ -159,9 +159,13 @@ export class StossDenoiser {
           const alertsA = windowAlerts.filter((a) => a.serviceId === serviceIA);
           const alertsB = windowAlerts.filter((a) => a.serviceId === serviceJB);
 
-          // Map service IDs to coupling matrix indices via deterministic map
-          const idxA = serviceIndexMap.get(serviceIA) ?? 0;
-          const idxB = serviceIndexMap.get(serviceJB) ?? 0;
+          // Map service IDs to coupling matrix indices via deterministic map.
+          // `serviceIndexMap` is built from every unique service ID in `alerts`,
+          // and `serviceIA`/`serviceJB` come from `services` (unique services in
+          // this window, a subset of `alerts`), so the keys are always present
+          // and the `?? 0` fallback was unreachable.
+          const idxA = serviceIndexMap.get(serviceIA)!;
+          const idxB = serviceIndexMap.get(serviceJB)!;
 
           const result = this.independenceChecker.testIndependence(
             alertsA,
@@ -218,7 +222,9 @@ export class StossDenoiser {
     // Step 4: Compute false positive reduction
     const totalAlerts = alerts.length;
     const coincidentalCount = coincidentalAlarmsList.length;
-    const falsePositiveReduction = totalAlerts > 0 ? coincidentalCount / totalAlerts : 0;
+    // `totalAlerts > 0` is guaranteed: `denoise` calls `invariantNonEmpty(alerts)`
+    // at the top, so the `totalAlerts > 0 ? … : 0` guard was unreachable.
+    const falsePositiveReduction = coincidentalCount / totalAlerts;
 
     return {
       trueAlarms: trueAlarmsList,
@@ -239,8 +245,8 @@ export class StossDenoiser {
    * @returns Array of alert groups within time windows
    */
   private groupByTimeWindows(alerts: readonly AlertRecord[]): readonly AlertRecord[][] {
-    if (alerts.length === 0) return [];
-
+    // No `alerts.length === 0` early-return: this private helper is only called
+    // from `denoise`, which already guarantees non-empty via `invariantNonEmpty`.
     const sorted = [...alerts].sort((a, b) => a.timestamp - b.timestamp);
     const windows: AlertRecord[][] = [];
     const windowMs = 60000; // 1 minute window
@@ -316,8 +322,10 @@ export class StossDenoiser {
    * @returns Maximum coupling strength
    */
   private computeMaxCoupling(cluster: string[], coupling: CouplingSparsityMatrix): number {
+    // No `k <= 1` early-return: `computeMaxCoupling` is only invoked from the
+    // `cluster.length !== 1` (multi-service) branch of `denoise`, so every
+    // cluster passed here has ≥ 2 services and the guard was unreachable.
     const k = cluster.length;
-    if (k <= 1) return 0;
 
     let maxCoupling = 0;
     const N = coupling.dimension;
@@ -330,7 +338,10 @@ export class StossDenoiser {
         const hashB = this.hashServiceId(cluster[j]!);
         const idxB = hashB % N;
 
-        const c = Math.abs(coupling.matrix[idxA * N + idxB] ?? 0);
+        // `idxA * N + idxB` is always in [0, N²): both indices are `hash % N`
+        // in [0, N), and `coupling.matrix` has exactly N² entries, so the
+        // `?? 0` fallback was unreachable.
+        const c = Math.abs(coupling.matrix[idxA * N + idxB]!);
         if (c > maxCoupling) {
           maxCoupling = c;
         }

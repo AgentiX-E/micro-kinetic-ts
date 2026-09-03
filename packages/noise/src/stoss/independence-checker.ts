@@ -105,10 +105,12 @@ export class IndependenceChecker {
     const alignedB = valuesB.slice(0, minLen);
 
     // Step 3: Compute coupling strength from the coupling matrix
+    // `serviceIndexA * round(sqrt(len)) + serviceIndexB` is always in-bounds:
+    // the matrix is a flattened N×N array (len = N²), both indices are < N
+    // (row/column indices), and round(sqrt(N²)) = N exactly, so the `?? 0`
+    // fallback was unreachable.
     const couplingStrength = Math.abs(
-      couplingMatrix[
-        serviceIndexA * Math.round(Math.sqrt(couplingMatrix.length)) + serviceIndexB
-      ] ?? 0,
+      couplingMatrix[serviceIndexA * Math.round(Math.sqrt(couplingMatrix.length)) + serviceIndexB]!,
     );
 
     // Step 4: Compute decomposition error
