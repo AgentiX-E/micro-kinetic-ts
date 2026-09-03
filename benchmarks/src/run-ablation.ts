@@ -311,6 +311,30 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
     },
     label: '+Trace Activity Signal',
   },
+  {
+    // Combined slice: the production log signal + the trace-activity
+    // backstop. The 1-D slices above measure each signal's MARGINAL effect in
+    // isolation, but the real deployment question is whether the trace
+    // signal's silent-source gains SURVIVE on top of the log signal. The log
+    // signal alone names exception-type faults (OB f4 → 100%) but is blind to
+    // silent wrong-value faults (TT f2 → 0%); the trace signal alone names TT
+    // f2 (43%) but misfires onto OB f4 (67% → 50%) and RE2 TT mem (75% →
+    // 63%). Whether the log signal's correct answer survives the trace vote's
+    // interference (and vice versa) is a fusion-level question that no 1-D
+    // slice can answer — it must be measured directly.
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+    },
+    label: '+Log +Trace Activity',
+  },
 ];
 
 // Default to 3 repetitions for statistical significance
