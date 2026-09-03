@@ -17,7 +17,7 @@ export interface GPState {
   readonly y: readonly number[];
   /** GP hyper-parameters */
   readonly options: {
-    readonly lengthScale: number;
+    readonly lengthScale: number | readonly number[];
     readonly signalVariance: number;
     readonly noiseVariance: number;
   };
@@ -59,15 +59,16 @@ export class GPStateStore {
 
 /** Extract GP state from a GaussianProcess instance (snapshot). */
 export function extractGPState(gp: GaussianProcess): GPState {
-  // Access private fields via prototype — GaussianProcess must expose
-  // these via public getters or we add a toState() method.
+  // Read the true hyperparameters and observations through the public
+  // accessors (GaussianProcess exposes lengthScale / signalVariance /
+  // noiseVariance / observationXs / observationYs for persistence).
   return {
-    X: (gp as unknown as { X: readonly (readonly number[])[] }).X,
-    y: (gp as unknown as { y: readonly number[] }).y,
+    X: gp.observationXs.map((x) => Array.from(x)),
+    y: Array.from(gp.observationYs),
     options: {
-      lengthScale: (gp as unknown as { lengthScale: number }).lengthScale,
-      signalVariance: (gp as unknown as { signalVariance: number }).signalVariance,
-      noiseVariance: (gp as unknown as { noiseVariance: number }).noiseVariance,
+      lengthScale: gp.lengthScale,
+      signalVariance: gp.signalVariance,
+      noiseVariance: gp.noiseVariance,
     },
   };
 }

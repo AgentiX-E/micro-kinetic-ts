@@ -81,6 +81,31 @@ export class GaussianProcess {
     return this.X.length;
   }
 
+  /** Observation inputs (snapshot accessor for persistence). */
+  get observationXs(): readonly Float64Array[] {
+    return this.X;
+  }
+
+  /** Observation targets (snapshot accessor for persistence). */
+  get observationYs(): Float64Array {
+    return this.y;
+  }
+
+  /** Kernel length-scale hyperparameter (scalar or per-dimension array). */
+  get lengthScale(): number | readonly number[] {
+    return this.options.lengthScale;
+  }
+
+  /** Kernel signal variance (amplitude σ²). */
+  get signalVariance(): number {
+    return this.options.signalVariance;
+  }
+
+  /** Observation noise variance σₙ². */
+  get noiseVariance(): number {
+    return this.options.noiseVariance;
+  }
+
   /** Add a single observation and update posterior */
   addObservation(x: Float64Array, y: number): void {
     this.X.push(new Float64Array(x));
@@ -201,9 +226,9 @@ export class GaussianProcess {
 
     let sqDist = 0;
     for (let i = 0; i < this.dim; i++) {
-      const diff =
-        (x1[i]! - x2[i]!) /
-        (typeof scaleArr === 'number' ? scaleArr : (scaleArr as Float64Array)[i]!);
+      // `scaleArr` is already normalized to an array above, so the scalar
+      // branch is unreachable here — index it directly.
+      const diff = (x1[i]! - x2[i]!) / scaleArr[i]!;
       sqDist += diff * diff;
     }
 

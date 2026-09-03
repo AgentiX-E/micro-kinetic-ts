@@ -152,16 +152,37 @@ describe('ModelStore', () => {
     await ms.save([makeRecord()]);
     expect((await ms.load())!.version).toBe(1);
   });
+
+  it('should default to a FileSystemStore when none is provided', () => {
+    // The `?? new FileSystemStore()` fallback in the constructor.
+    const ms = new ModelStore();
+    expect(ms).toBeInstanceOf(ModelStore);
+  });
+
+  it('should increment the version on a second unnamed save', async () => {
+    await store.save([makeRecord({ system: 'A' })]); // version 1
+    await store.save([makeRecord({ system: 'B' })]); // version 2 (existing + 1)
+
+    const v2 = await store.loadVersion(2);
+    expect(v2).not.toBeNull();
+    expect(v2!.version).toBe(2);
+    expect(v2!.records[0]!.system).toBe('B');
+  });
 });
 
 describe('saveModel / loadModel', () => {
-  it('should save and load to default FileSystemStore', async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), 'save-model-'));
-    const fs = new FileSystemStore({ baseDir: tmpDir });
-    const ms = new ModelStore(fs);
-    await ms.save([makeRecord()]);
-    const loaded = await ms.load();
+  it('should round-trip through the default FileSystemStore', async () => {
+    const model = await saveModel([makeRecord({ system: 'saveModel-test' })]);
+    expect(model.version).toBe(1);
+
+    const loaded = await loadModel();
     expect(loaded).not.toBeNull();
-    rmSync(tmpDir, { recursive: true, force: true });
+    expect(loaded!.records).toHaveLength(1);
+    expect(loaded!.records[0]!.system).toBe('saveModel-test');
+
+    // Clean up the library's own default store to avoid leaving artifacts.
+    const defaultStore = new FileSystemStore();
+    await defaultStore.delete('optimizer-latest');
+    await defaultStore.delete('optimizer-v1');
   });
 });

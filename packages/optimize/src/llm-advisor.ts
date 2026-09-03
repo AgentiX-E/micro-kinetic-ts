@@ -265,8 +265,11 @@ export class LLMAdvisor {
         confidence: Math.min(1, Math.max(0, json.confidence || 0.5)),
       };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to parse LLM response: ${msg}`);
+      // Every throw inside the try block is an Error (SyntaxError from
+      // JSON.parse, TypeError from spreading a non-array ranking, or the
+      // explicit ranking-validation Error), so the non-Error fallback branch
+      // is unreachable here.
+      throw new Error(`Failed to parse LLM response: ${(err as Error).message}`);
     }
   }
 

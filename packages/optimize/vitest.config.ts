@@ -22,7 +22,15 @@ export default defineConfig({
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.spec.ts'],
     coverage: {
       provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/index.ts', 'src/types.ts'],
       reporter: ['text', 'json', 'html'],
+      thresholds: {
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
+      },
     },
   },
 });

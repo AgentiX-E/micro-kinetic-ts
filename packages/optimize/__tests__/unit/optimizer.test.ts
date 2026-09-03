@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdaptiveConfigOptimizer } from '../../src/optimizer.js';
 import type { RCAConfiguration } from '../../src/config-space.js';
+import { DEFAULT_CONFIG } from '../../src/config-space.js';
+import type { HistoricalRecord } from '../../src/meta-learner.js';
+import type { SystemContext } from '../../src/types.js';
 import type { ServiceCallGraph, ServiceNode, CallEdge, MetricMap, TimeSeries } from '@agentix-e/micro-kinetic-core';
 
 function makeNode(id: string): ServiceNode {
@@ -31,6 +34,51 @@ function makeMetrics(entries: Array<[string, number[]]>): MetricMap {
     m.set(svc, [makeTS('cpu', values)]);
   }
   return m;
+}
+
+function makeCtx(overrides?: Partial<SystemContext>): SystemContext {
+  return {
+    serviceCount: 3,
+    graphDensity: 0.5,
+    degreeCV: 0.4,
+    maxDepth: 3,
+    traceCoverage: 0,
+    metricCV: 0.4,
+    spikeDominanceRatio: 0.3,
+    anomalyConcentration: 0.4,
+    systemLoad: 0.5,
+    faultTypeCount: 3,
+    avgCasesPerType: 5,
+    ...overrides,
+  };
+}
+
+function makeHistoricalRecord(overrides?: Partial<HistoricalRecord>): HistoricalRecord {
+  return {
+    system: 'ob',
+    suite: 're1',
+    context: makeCtx(),
+    config: {
+      baselineStrategy: 'q25',
+      correlationMethod: 'pearson',
+      propagationMode: 'additive',
+      enableCollisionAggregation: true,
+      useTemporalCausality: true,
+      decayAlpha: 0.85,
+      pruneEpsilon: 0.001,
+      temporalBonus: 0.15,
+      defaultWeight: 0.05,
+      childContributionCap: 1.0,
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 1.0,
+      traceWeight: 0,
+    },
+    accuracy: 0.9,
+    ...overrides,
+  };
 }
 
 describe('AdaptiveConfigOptimizer', () => {
@@ -183,5 +231,163 @@ describe('AdaptiveConfigOptimizer on known function', () => {
     expect(result.bestAccuracy).toBeGreaterThan(0.6);
     // The optimizer should prefer q25 strategy
     expect(result.history.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('AdaptiveConfigOptimizer prior fallback', () => {
+  it('falls back to the prior config when no experiment improves on it', async () => {
+    const graph = makeGraph([makeNode('A')], []);
+    const metrics = makeMetrics([['A', [1, 2, 3]]]);
+    // Every experiment scores 0, which is worse than the 0.6 soft prior, so
+    // the best GP observation is the prior itself and the result must be the
+    // prior configuration (DEFAULT_CONFIG when there is no meta-learner).
+    const oracle = async () => 0;
+
+    const opt = new AdaptiveConfigOptimizer([], undefined, {
+      maxIterations: 2,
+      useLLM: false,
+    });
+
+    const result = await opt.optimize(graph, metrics, oracle);
+
+    expect(result.config).toEqual(DEFAULT_CONFIG);
+    expect(result.bestAccuracy).toBe(0);
+  });
+});
+
+describe('AdaptiveConfigOptimizer with LLM advisor', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('consults the LLM advisor once history exceeds one experiment', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test-key';
+    const res = new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                ranking: [4, 3, 2, 1, 0],
+                reasoning: 'domain ranking',
+                confidence: 0.8,
+              }),
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res));
+
+    const graph = makeGraph(
+      [makeNode('A'), makeNode('B')],
+      [makeEdge('A', 'B')],
+    );
+    const metrics = makeMetrics([
+      ['A', [10, 20, 30]],
+      ['B', [5, 15, 25]],
+    ]);
+
+    const opt = new AdaptiveConfigOptimizer([], undefined, {
+      maxIterations: 4,
+      candidateCount: 5,
+      useLLM: true,
+      // Disable early convergence so the loop runs to completion.
+      convergence: { epsilonVariance: 1e-6, epsilonMean: 1e-6, patience: 100 },
+    });
+
+    const result = await opt.optimize(graph, metrics, async () => 0.75);
+
+    // The LLM advisor is only consulted from the third iteration onward
+    // (history length > 1), and its confidence (> 0) marks those iterations.
+    expect(result.history.some((h) => h.llmConsulted)).toBe(true);
+
+    delete process.env.DEEPSEEK_API_KEY;
+  });
+});
+
+describe('AdaptiveConfigOptimizer progress + convergence', () => {
+  it('invokes the onProgress callback once per completed iteration', async () => {
+    const graph = makeGraph([makeNode('A')], []);
+    const metrics = makeMetrics([['A', [1, 2, 3]]]);
+    const calls: Array<{ iteration: number; accuracy: number }> = [];
+    const onProgress = (
+      iteration: number,
+      _config: RCAConfiguration,
+      accuracy: number,
+    ): void => {
+      calls.push({ iteration, accuracy });
+    };
+
+    const opt = new AdaptiveConfigOptimizer([], undefined, {
+      maxIterations: 3,
+      useLLM: false,
+      onProgress,
+    });
+
+    const result = await opt.optimize(graph, metrics, async () => 0.8);
+
+    expect(calls.length).toBe(result.iterations);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0]!.iteration).toBe(1);
+    expect(calls[0]!.accuracy).toBe(0.8);
+  });
+
+  it('terminates early when the posterior variance collapses below the threshold', async () => {
+    const graph = makeGraph([makeNode('A')], []);
+    const metrics = makeMetrics([['A', [1, 2, 3]]]);
+
+    const opt = new AdaptiveConfigOptimizer([], undefined, {
+      maxIterations: 5,
+      useLLM: false,
+      // A zero-amplitude, zero-noise kernel makes the posterior variance at
+      // every test point collapse to ~1e-12, so the variance criterion is met
+      // on the first iteration and the loop breaks immediately.
+      gpOptions: { signalVariance: 0, noiseVariance: 0 },
+      convergence: { epsilonVariance: 0.005, epsilonMean: 0.01, patience: 1 },
+    });
+
+    const result = await opt.optimize(graph, metrics, async () => 0.8);
+
+    expect(result.converged).toBe(true);
+    expect(result.iterations).toBeLessThan(5);
+  });
+});
+
+describe('AdaptiveConfigOptimizer with meta-learner prior', () => {
+  it('seeds the GP with a meta-learner prior from historical records', async () => {
+    const historical: HistoricalRecord[] = [
+      makeHistoricalRecord({ accuracy: 0.9 }),
+      makeHistoricalRecord({
+        accuracy: 0.85,
+        config: { ...makeHistoricalRecord().config, decayAlpha: 0.9 },
+      }),
+      makeHistoricalRecord({ accuracy: 0.8 }),
+    ];
+
+    const graph = makeGraph(
+      [makeNode('A'), makeNode('B')],
+      [makeEdge('A', 'B')],
+    );
+    const metrics = makeMetrics([
+      ['A', [10, 20, 30]],
+      ['B', [5, 15, 25]],
+    ]);
+
+    const opt = new AdaptiveConfigOptimizer(historical, undefined, {
+      maxIterations: 3,
+      useLLM: false,
+    });
+
+    const result = await opt.optimize(graph, metrics, async () => 0.8);
+
+    expect(result.bestAccuracy).toBeGreaterThan(0.5);
+    expect(result.config).toBeDefined();
+    expect(result.config.continuous.decayAlpha).toBeGreaterThanOrEqual(0.5);
+    expect(result.config.continuous.decayAlpha).toBeLessThanOrEqual(0.95);
+    expect(['q25', 'sliding-window', 'auto']).toContain(
+      result.config.discrete.baselineStrategy,
+    );
   });
 });

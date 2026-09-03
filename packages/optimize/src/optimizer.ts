@@ -229,12 +229,13 @@ export class AdaptiveConfigOptimizer {
       if (converged) break;
     }
 
-    // Step 5: Return best configuration
+    // Step 5: Return best configuration.
+    // GP observation 0 is the soft prior (accuracy 0.6); observation i (i ≥ 1)
+    // is experiment i, which lives at experimentHistory[i - 1]. When no
+    // experiment improves on the prior, the best observation is the prior
+    // itself (idx 0) and we fall back to priorConfig.
     const best = gp.bestObservation;
-    const bestConfig =
-      best.idx >= 0 && best.idx < experimentHistory.length
-        ? experimentHistory[best.idx]!.config
-        : priorConfig;
+    const bestConfig = best.idx >= 1 ? experimentHistory[best.idx - 1]!.config : priorConfig;
 
     return {
       config: bestConfig,

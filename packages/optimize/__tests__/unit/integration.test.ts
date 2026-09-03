@@ -40,6 +40,22 @@ describe('configToPrunerOptions', () => {
     const opts = configToPrunerOptions(DEFAULT_CONFIG);
     expect(opts.criticalLoadThreshold).toBe(0.7);
   });
+
+  it('should default missing riseWeight and traceWeight to 0', () => {
+    const cfg: RCAConfiguration = {
+      ...DEFAULT_CONFIG,
+      ranking: {
+        sourceWeight: 0,
+        temporalWeight: 0,
+        collisionWeight: 0,
+        topoWeight: 0,
+        logWeight: 1.0,
+      },
+    };
+    const opts = configToPrunerOptions(cfg);
+    expect(opts.riseWeight).toBe(0);
+    expect(opts.traceWeight).toBe(0);
+  });
 });
 
 describe('configToTopologyConfig', () => {

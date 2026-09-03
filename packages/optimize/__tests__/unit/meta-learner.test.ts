@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MetaLearner } from '../../src/meta-learner.js';
+import { MetaLearner, loadMetaLearner } from '../../src/meta-learner.js';
 import type { HistoricalRecord, HistoricalConfig } from '../../src/meta-learner.js';
 import type { SystemContext } from '../../src/types.js';
 
@@ -176,5 +176,14 @@ describe('MetaLearner', () => {
     // k=1: should match the single nearest neighbor's config
     expect(pred.continuous.decayAlpha).toBeGreaterThanOrEqual(0.5);
     expect(pred.continuous.decayAlpha).toBeLessThanOrEqual(0.7);
+  });
+});
+
+describe('loadMetaLearner', () => {
+  it('should wrap records in a MetaLearner', () => {
+    const rec = makeRecord({ config: makeCfg({ baselineStrategy: 'q25', decayAlpha: 0.9 }) });
+    const ml = loadMetaLearner([rec]);
+    expect(ml.recordCount).toBe(1);
+    expect(ml.predict(makeCtx()).discrete.baselineStrategy).toBe('q25');
   });
 });

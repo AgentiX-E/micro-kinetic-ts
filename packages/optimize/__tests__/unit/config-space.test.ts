@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG_SPACE, DEFAULT_CONFIG } from '../../src/config-space.js';
+import { DEFAULT_CONFIG_SPACE, DEFAULT_CONFIG, rankingToVector } from '../../src/config-space.js';
 import type { RCAConfiguration } from '../../src/config-space.js';
 
 const RANKING_ZERO = {
@@ -78,6 +78,43 @@ describe('DEFAULT_CONFIG_SPACE', () => {
       expect(s[0]).toBeGreaterThanOrEqual(0);
       expect(s[0]).toBeLessThanOrEqual(1);
     }
+  });
+
+  it('Thompson sampling guards against rng returning 0 (Box-Muller log(0))', () => {
+    const samples = DEFAULT_CONFIG_SPACE.sampleThompson(
+      new Float64Array(22).fill(0.5),
+      new Float64Array(22).fill(0.01),
+      2,
+      () => 0,
+    );
+    expect(samples).toHaveLength(2);
+    for (const s of samples) {
+      for (let i = 0; i < s.length; i++) {
+        expect(Number.isFinite(s[i])).toBe(true);
+        expect(s[i]).toBeGreaterThanOrEqual(0);
+        expect(s[i]).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('rankingToVector defaults a missing traceWeight to 0', () => {
+    const without = rankingToVector({
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 0,
+    });
+    const withZero = rankingToVector({
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 0,
+      traceWeight: 0,
+    });
+    expect(without).toEqual(withZero);
+    expect(without[5]).toBe(0);
   });
 
   it('decayAlpha unit mapping', () => {

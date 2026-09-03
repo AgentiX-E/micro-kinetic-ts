@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { GPStateStore, extractGPState } from '../../src/gp-state-store.js';
 import type { GPState } from '../../src/gp-state-store.js';
+import { GaussianProcess } from '../../src/gaussian-process.js';
 import type { IKeyValueStore } from '@agentix-e/micro-kinetic-core';
 
 function makeMemoryStore(): IKeyValueStore {
@@ -118,5 +119,40 @@ describe('GPStateStore', () => {
     const loaded = await store.load('empty');
     expect(loaded?.X).toEqual([]);
     expect(loaded?.y).toEqual([]);
+  });
+});
+
+describe('extractGPState', () => {
+  it('should snapshot a GaussianProcess (scalar lengthScale)', () => {
+    const gp = new GaussianProcess(2, {
+      lengthScale: 0.3,
+      signalVariance: 0.5,
+      noiseVariance: 0.01,
+    });
+    gp.addObservation(new Float64Array([0.1, 0.2]), 0.8);
+    gp.addObservation(new Float64Array([0.9, 0.8]), 0.95);
+
+    const state = extractGPState(gp);
+    expect(state.X).toHaveLength(2);
+    expect(state.X[0]).toEqual([0.1, 0.2]);
+    expect(state.X[1]).toEqual([0.9, 0.8]);
+    expect(state.y).toEqual([0.8, 0.95]);
+    expect(state.options.lengthScale).toBe(0.3);
+    expect(state.options.signalVariance).toBe(0.5);
+    expect(state.options.noiseVariance).toBe(0.01);
+  });
+
+  it('should preserve an array lengthScale', () => {
+    const gp = new GaussianProcess(2, { lengthScale: [0.1, 0.9] });
+    const state = extractGPState(gp);
+    expect(state.options.lengthScale).toEqual([0.1, 0.9]);
+  });
+
+  it('should snapshot an empty GP', () => {
+    const gp = new GaussianProcess(2);
+    const state = extractGPState(gp);
+    expect(state.X).toEqual([]);
+    expect(state.y).toEqual([]);
+    expect(state.options.signalVariance).toBe(0.5);
   });
 });

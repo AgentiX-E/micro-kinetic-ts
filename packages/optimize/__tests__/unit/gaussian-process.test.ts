@@ -197,6 +197,67 @@ describe('GaussianProcess', () => {
     expect(Number.isFinite(near.mean)).toBe(true);
     expect(Number.isFinite(far.mean)).toBe(true);
   });
+
+  it('bestObservation returns a sentinel on an empty GP', () => {
+    const gp = new GaussianProcess(2);
+    expect(gp.bestObservation).toEqual({ mean: 0, idx: -1 });
+  });
+
+  it('logMarginalLikelihood returns 0 on an empty GP', () => {
+    const gp = new GaussianProcess(2);
+    expect(gp.logMarginalLikelihood()).toBe(0);
+  });
+
+  it('addObservations with an empty batch is a no-op', () => {
+    const gp = new GaussianProcess(2);
+    gp.addObservations([], []);
+    expect(gp.observationCount).toBe(0);
+    expect(gp.predict(new Float64Array([0.5, 0.5])).mean).toBe(0.6);
+  });
+
+  it('recovers from a singular kernel matrix via jitter (duplicate points, zero noise)', () => {
+    const gp = new GaussianProcess(1, { noiseVariance: 0 });
+    gp.addObservation(new Float64Array([0.5]), 0.7);
+    gp.addObservation(new Float64Array([0.5]), 0.8);
+
+    const pred = gp.predict(new Float64Array([0.5]));
+    expect(Number.isFinite(pred.mean)).toBe(true);
+    expect(Number.isFinite(pred.variance)).toBe(true);
+  });
+
+  it('recovers from an exactly-singular (zero-amplitude) kernel via jitter', () => {
+    // A zero signal variance makes every kernel entry 0, so the covariance
+    // matrix K is the all-zero matrix — exactly singular. The Cholesky step
+    // then fails on its first diagonal, which deterministically exercises the
+    // jitter-and-retry path that adds 1e-6 to the diagonal.
+    const gp = new GaussianProcess(2, { signalVariance: 0, noiseVariance: 0 });
+    gp.addObservation(new Float64Array([0.3, 0.7]), 0.6);
+    gp.addObservation(new Float64Array([0.8, 0.2]), 0.9);
+
+    const pred = gp.predict(new Float64Array([0.5, 0.5]));
+    expect(Number.isFinite(pred.mean)).toBe(true);
+    expect(Number.isFinite(pred.variance)).toBe(true);
+  });
+
+  it('exposes hyperparameters and observations via accessors', () => {
+    const gp = new GaussianProcess(2, {
+      signalVariance: 0.7,
+      lengthScale: 0.4,
+      noiseVariance: 0.02,
+    });
+    gp.addObservation(new Float64Array([0.2, 0.8]), 0.75);
+
+    expect(gp.signalVariance).toBe(0.7);
+    expect(gp.lengthScale).toBe(0.4);
+    expect(gp.noiseVariance).toBe(0.02);
+    expect(gp.observationXs).toHaveLength(1);
+    expect(Array.from(gp.observationYs)).toEqual([0.75]);
+  });
+
+  it('exposes array lengthScale via accessor', () => {
+    const gp = new GaussianProcess(2, { lengthScale: [0.1, 1.0] });
+    expect(gp.lengthScale).toEqual([0.1, 1.0]);
+  });
 });
 
 describe('GaussianProcess with DEFAULT_CONFIG_SPACE', () => {

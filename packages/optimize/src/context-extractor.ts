@@ -24,7 +24,9 @@ export function extractSystemContext(
     outDegrees.set(nodeId, 0);
   }
   for (const edge of callGraph.edges) {
-    const current = outDegrees.get(edge.from) ?? 0;
+    // Every edge endpoint is a declared node (seeded above), so `get` never
+    // returns undefined here.
+    const current = outDegrees.get(edge.from)!;
     outDegrees.set(edge.from, current + 1);
   }
   const degreeCV = computeCV(Array.from(outDegrees.values()));
@@ -35,7 +37,9 @@ export function extractSystemContext(
     inDegree.set(nodeId, 0);
   }
   for (const edge of callGraph.edges) {
-    const current = inDegree.get(edge.to) ?? 0;
+    // Every edge endpoint is a declared node (seeded above), so `get` never
+    // returns undefined here.
+    const current = inDegree.get(edge.to)!;
     inDegree.set(edge.to, current + 1);
   }
   const roots: string[] = [];
@@ -122,8 +126,9 @@ function computeCV(values: number[]): number {
 
 /** Compute CV for a TimeSeries based on its values */
 function computeCVForTimeSeries(ts: TimeSeries): number {
+  // The extractor only calls this for series with ≥2 values (shorter series
+  // are skipped upstream), so the sample size is always ≥2.
   const n = ts.values.length;
-  if (n < 2) return 0;
   let sum = 0;
   for (let i = 0; i < n; i++) sum += ts.values[i]!;
   const avg = sum / n;
@@ -151,7 +156,8 @@ function isSpikeDominated(ts: TimeSeries): boolean {
 
 /** Mean of number array */
 function mean(values: number[]): number {
-  if (values.length === 0) return 0;
+  // Callers guard against empty input (cvValues.length > 0 and
+  // values.length ≥ 2), so the reduction below never divides by zero.
   return values.reduce((s, v) => s + v, 0) / values.length;
 }
 
@@ -206,7 +212,9 @@ function bfsMaxDepth(
 
     if (depth > maxDepth) maxDepth = depth;
 
-    const children = forwardAdj.get(node) ?? [];
+    // Every node is seeded into `forwardAdj` above, so `get` never returns
+    // undefined here.
+    const children = forwardAdj.get(node)!;
     for (const child of children) {
       if (!localVisited.has(child)) {
         queue.push({ node: child, depth: depth + 1 });

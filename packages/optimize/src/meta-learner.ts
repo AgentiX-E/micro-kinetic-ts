@@ -199,9 +199,9 @@ export class MetaLearner {
       if (cfg.useTemporalCausality) tempTrue += w;
     }
 
-    const bestBaseline = argmax(baselineVotes) ?? 'auto';
-    const bestCorr = argmax(corrVotes) ?? 'pearson';
-    const bestProp = argmax(propVotes) ?? 'additive';
+    const bestBaseline = argmax(baselineVotes);
+    const bestCorr = argmax(corrVotes);
+    const bestProp = argmax(propVotes);
 
     return {
       continuous: {
@@ -246,8 +246,15 @@ export class MetaLearner {
 
 // ── Helpers ──
 
-/** Find key with maximum value in a Map */
-function argmax(map: Map<string, number>): string | undefined {
+/**
+ * Find key with maximum value in a Map.
+ *
+ * Invariant: every vote map passed here is non-empty, because `predict`
+ * returns early on empty records and always selects k ≥ 1 neighbours. The
+ * loop therefore always assigns `bestKey`, so the trailing non-null assertion
+ * is safe — an empty map cannot reach this function.
+ */
+function argmax(map: Map<string, number>): string {
   let bestKey: string | undefined;
   let bestVal = -Infinity;
   for (const [key, val] of map) {
@@ -256,7 +263,7 @@ function argmax(map: Map<string, number>): string | undefined {
       bestKey = key;
     }
   }
-  return bestKey;
+  return bestKey!;
 }
 
 /** Load MetaLearner from JSON data */

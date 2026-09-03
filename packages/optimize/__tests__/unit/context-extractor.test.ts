@@ -195,6 +195,12 @@ describe('extractSystemContext', () => {
     expect(ctx.systemLoad).toBe(0.75);
   });
 
+  it('clamps a negative systemLoad to 0', () => {
+    const g = makeGraph([makeNode('A', 't')], [], -0.5);
+    const ctx = extractSystemContext(g, makeMetrics([]));
+    expect(ctx.systemLoad).toBe(0);
+  });
+
   it('all features clamped', () => {
     const g = makeGraph(
       [makeNode('A', 't'), makeNode('B', 't')],
@@ -272,6 +278,11 @@ describe('expectCloseTo', () => {
     const m = expectCloseTo.primitive(0.174, 0.1);
     expect(expectCloseTo(0.18, m)).toBe(true);
     expect(expectCloseTo(0.30, m)).toBe(false);
+  });
+
+  it('defaults to 0.1 tolerance when omitted', () => {
+    expect(expectCloseTo(0.18, 0.174)).toBe(true);
+    expect(expectCloseTo(0.30, 0.174)).toBe(false);
   });
 
   it('zero denominator ok', () => {
