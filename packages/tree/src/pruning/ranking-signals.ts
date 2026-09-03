@@ -495,30 +495,38 @@ export const DEFAULT_TRACE_ACTIVITY_OPTIONS: TraceActivityOptions = {
  * ## Silent-source condition
  *
  * The signal is a SILENT-SOURCE detector: it must defer to exception evidence
- * ONLY about the candidate itself, never about unrelated graph services. When
- * the unique riser is a member of `logicExceptionServices` (it emitted a
- * self-caused logic exception), that service is NOT silent — the log signal
- * (always on) already ranks it — and the vote is suppressed.
+ * about the WHOLE case. When ANY graph service emitted a self-caused logic
+ * exception (`logicExceptionServices` is non-empty), the case is NOT silent —
+ * the log signal (always on) already ranks that thrower — and the vote is
+ * suppressed.
  *
- * The gate is deliberately PER-CANDIDATE rather than case-level. The previous
- * case-level gate (`hasLogicExceptionEvidence: boolean`) suppressed the vote
- * whenever ANY graph service threw, which is precisely wrong for the silent
- * wrong-value fault (TrainTicket RE3 f2): there the SOURCE
- * (`ts-auth-service`) is silent, while a DOWNSTREAM WRAPPER
- * (`ts-order-other-service`) throws `IllegalArgumentException: Invalid UUID
- * string`. The wrapper's exception is a SYMPTOM of the wrong value, not
- * evidence the case is non-silent — yet the case-level gate used it to
- * suppress the ONLY signal that names the source. The per-candidate gate
- * votes the silent riser and only defers when the riser ITSELF threw.
+ * The gate is deliberately CASE-LEVEL. The previous per-candidate gate (commit
+ * `56ddf7a`) suppressed the vote only when the WINNER itself threw, which was
+ * needed to work around the loader's misclassification of a downstream WRAPPER's
+ * `IllegalArgumentException: Invalid UUID string` (an empty-value parse failure)
+ * as self-caused. That misclassification is now fixed in the loader: an
+ * empty-value parse failure is a PROPAGATED wrong-value symptom and is flagged
+ * `isLogicException === false`, so the wrapper no longer appears in
+ * `logicExceptionServices`. With the wrapper excluded, a case-level gate is
+ * once again correct:
+ *
+ * - TrainTicket RE3 f2 (silent source + throwing wrapper): the wrapper is
+ *   excluded, so `logicExceptionServices` is empty and the silent
+ *   `ts-auth-service` riser receives the vote.
+ * - OnlineBoutique RE3 f4 (throwing source): the source emits a self-caused
+ *   NullPointerException, so `logicExceptionServices` is non-empty and the
+ *   detector defers to the log signal — no trace/log interference.
+ * - RE2 memory faults (throwing source): likewise non-empty → defer, so trace
+ *   no longer misfires on the resource-fault suite.
  *
  * @param counts - Per-service pre/post span counts (may be undefined → empty).
  * @param nodeIds - Services present in the call graph.
  * @param options - Threshold overrides (merged over the defaults).
  * @param logicExceptionServices - The set of services that emitted a
- *   self-caused logic exception. Suppresses the vote ONLY when the unique
- *   significant riser is itself a member. Default empty.
+ *   self-caused logic exception. Suppresses the vote whenever the set is
+ *   non-empty (the case is not silent). Default empty.
  * @returns Sparse `{service: 1}` map, or empty when no unique significant riser
- *   or when the unique riser itself threw a logic exception.
+ *   or when any service threw a self-caused logic exception.
  */
 export function computeTraceActivityScores(
   counts: ReadonlyMap<ServiceId, TraceActivityCounts> | undefined,
@@ -548,15 +556,16 @@ export function computeTraceActivityScores(
 
   // Only a UNIQUE qualifying riser is a confident silent-source vote; zero or
   // multiple candidates carry no discriminative information and stay neutral.
-  // The per-candidate gate is applied to the WINNER only — a throwing riser is
-  // still counted toward uniqueness, so a throwing-riser + silent-riser pair
-  // stays neutral rather than collapsing into a single (possibly wrong) vote.
-  if (candidateCount === 1 && candidate !== undefined) {
-    // A riser that itself threw a logic exception is not silent — the log
-    // signal already ranks it, so defer rather than double-reward.
-    if (!logicExceptionServices.has(candidate)) {
-      scores.set(candidate, 1);
-    }
-  }
+  if (candidateCount !== 1 || candidate === undefined) return scores;
+
+  // CASE-LEVEL gate: when ANY graph service emitted a self-caused logic
+  // exception, the case is NOT silent — the always-on log signal already ranks
+  // that thrower — so this silent-source detector defers ENTIRELY. A
+  // downstream wrapper throwing a PROPAGATED empty-value parse failure is NOT
+  // in `logicExceptionServices` (`isLogicException` now excludes it, see the
+  // loader), so the silent wrong-value source still receives the vote.
+  if (logicExceptionServices.size > 0) return scores;
+
+  scores.set(candidate, 1);
   return scores;
 }

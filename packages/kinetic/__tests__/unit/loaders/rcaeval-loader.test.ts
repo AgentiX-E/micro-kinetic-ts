@@ -20,6 +20,7 @@ import {
   extractExceptionNames,
   extractSpringBootLevel,
   isLogicExceptionMessage,
+  isPropagatedExceptionMessage,
   isStackTraceMessage,
   normalizeSpanStatus,
 } from '../../../src/benchmarks/loaders/rcaeval-loader.js';
@@ -227,6 +228,41 @@ describe('isLogicExceptionMessage', () => {
     expect(isLogicExceptionMessage('connection refused')).toBe(false);
     expect(isLogicExceptionMessage('request completed in 12ms')).toBe(false);
     expect(isLogicExceptionMessage('ProcessingException: unexpected')).toBe(false);
+  });
+
+  it('rejects PROPAGATED empty-value parse failures (silent wrong-value symptoms)', () => {
+    // A downstream wrapper parsing an EMPTY value the silent source emitted
+    // throws IllegalArgumentException/NumberFormatException — these are
+    // symptoms of a wrong-value fault, NOT self-caused programming errors.
+    expect(isLogicExceptionMessage('IllegalArgumentException: Invalid UUID string: ')).toBe(false);
+    expect(isLogicExceptionMessage('IllegalArgumentException: Invalid UUID string: ""')).toBe(
+      false,
+    );
+    expect(isLogicExceptionMessage('NumberFormatException: For input string: ""')).toBe(false);
+    expect(isLogicExceptionMessage('NumberFormatException: For input string: ')).toBe(false);
+    expect(isLogicExceptionMessage('Cannot parse empty string')).toBe(false);
+  });
+});
+
+describe('isPropagatedExceptionMessage', () => {
+  it('flags empty-value parse failures as propagated symptoms', () => {
+    expect(isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: ')).toBe(
+      true,
+    );
+    expect(isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: ""')).toBe(
+      true,
+    );
+    expect(isPropagatedExceptionMessage('NumberFormatException: For input string: ""')).toBe(true);
+    expect(isPropagatedExceptionMessage('NumberFormatException: For input string: ')).toBe(true);
+    expect(isPropagatedExceptionMessage('Cannot parse empty string')).toBe(true);
+  });
+
+  it('does NOT flag genuine self-caused logic errors as propagated', () => {
+    expect(isPropagatedExceptionMessage('IllegalArgumentException: invalid argument')).toBe(false);
+    expect(isPropagatedExceptionMessage('java.lang.NullPointerException: null')).toBe(false);
+    expect(isPropagatedExceptionMessage('NumberFormatException: For input string: "42a"')).toBe(
+      false,
+    );
   });
 });
 

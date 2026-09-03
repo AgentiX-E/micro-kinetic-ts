@@ -154,8 +154,11 @@ interface CliOptions {
   /**
    * Strength of the trace span-activity rise signal in the ranking. Default 0
    * (disabled). When > 0, the loader computes per-service pre/post span counts
-   * from traces.csv and the TreePruner's `traceWeight` rewards the service
-   * whose span activity rises most after injection.
+   * from traces.csv — SCOPED to the RE3 suite only, because the "more spans ⇒
+   * source" mechanism holds only for RE3 code-level faults (the source does
+   * MORE work). On RE1/RE2 (route / latency / memory / resource faults) a span
+   * rise is not a source signature, so the expensive traces.csv scan is skipped
+   * and the signal stays neutral there.
    */
   traceWeight: number;
   /**
@@ -521,9 +524,14 @@ async function loadSingleCase(
   let benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
 
   // Trace span-activity rise signal: compute per-service pre/post span counts
-  // only when requested (traceWeight > 0) — this performs a full streaming
-  // scan of traces.csv, which is expensive across 270+ RE2/RE3 cases.
-  if (computeTraceActivity) {
+  // only when requested (traceWeight > 0) AND scoped to the RE3 suite — the
+  // "more spans ⇒ source" mechanism holds only for RE3 code-level faults,
+  // where the SOURCE service does MORE work (its dominant metric RISES). On
+  // RE1/RE2 (route / latency / memory / resource faults) a span rise is NOT a
+  // source signature, so running the expensive full streaming scan of
+  // traces.csv there would both waste a pass and risk a trace misfire (see the
+  // RE2 memory regression when trace fired un-scoped).
+  if (computeTraceActivity && meta.suite === 'RE3') {
     benchCase = {
       ...benchCase,
       traceActivity: await countTraceActivityByService(

@@ -359,9 +359,42 @@ const LOGIC_EXCEPTION_PATTERN =
   /(?:NullPointer|IllegalArgument|IllegalState|ArrayIndex|IndexOutOfBounds|ClassCast|ConcurrentModification|NumberFormat|Arithmetic|NoSuchElement|UnsupportedOperation|ClassNotFound|NoSuchMethod|NoSuchField|JsonMapping|JsonParse|JsonProcessing|HttpMessageNotReadable|MalformedJwt|AttributeError|TypeError|NameError|IndexError|ValueError|KeyError|ZeroDivisionError|TokenException)/i;
 
 /**
+ * Signatures of PROPAGATED parse failures — exceptions a DOWNSTREAM wrapper
+ * throws when it consumes an EMPTY value that a silent upstream source emitted.
+ *
+ * A wrong-value fault (RCAEval RE3 "error value") makes the SOURCE service
+ * return an empty UUID / blank string WITHOUT logging any error itself (its log
+ * stays all-INFO). The first downstream wrapper that parses that empty value
+ * then throws `IllegalArgumentException: Invalid UUID string: ` (Java
+ * `UUID.fromString("")`) or `NumberFormatException: For input string: ""`
+ * (Java `Long.valueOf("")`). Naming the exception class alone (see
+ * LOGIC_EXCEPTION_PATTERN) would wrongly reward that wrapper — the SYMPTOM —
+ * instead of the silent source. The discriminator is therefore the EMPTY-PAYLOAD
+ * marker after the parse verb: the value being parsed is missing/blank.
+ *
+ * Each clause is anchored to end-of-string so a NON-empty parse failure (e.g.
+ * `For input string: "42a"`, a genuine bad-argument bug) is NOT flagged.
+ */
+const PROPAGATED_EXCEPTION_PATTERN =
+  /(?:Invalid UUID string:\s*["']{0,2}\s*$|For input string:\s*["']{0,2}\s*$|Cannot parse\s+empty)/i;
+
+/**
+ * Determine whether a log message is a PROPAGATED parse failure — a wrapper
+ * failing to parse an EMPTY value produced by a silent upstream source.
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message carries an empty-payload parse-failure
+ *   signature (a wrong-value symptom, not a self-caused programming error).
+ */
+export function isPropagatedExceptionMessage(message: string): boolean {
+  return PROPAGATED_EXCEPTION_PATTERN.test(message);
+}
+
+/**
  * Determine whether a log message is a SELF-CAUSED logic exception — the
- * signature of a code-level fault — as opposed to a PROPAGATED connectivity
- * exception (a resource/network cascade) or a non-error line.
+ * signature of a code-level fault — as opposed to a PROPAGATED exception
+ * (a resource/network cascade OR an empty-value parse failure) or a non-error
+ * line.
  *
  * This is the causal discriminator behind the log signal (benchmark #219):
  *
@@ -371,18 +404,22 @@ const LOGIC_EXCEPTION_PATTERN =
  * - RE2 resource faults flood CONNECTIVITY exceptions (ConnectionException,
  *   SocketTimeoutException, MongoSocketException, UnknownHostException, …)
  *   in the SYMPTOM services — these are PROPAGATED, not self-caused.
+ * - RE3 wrong-value faults leave the SOURCE silent and make a downstream
+ *   WRAPPER throw an empty-value parse failure (see
+ *   PROPAGATED_EXCEPTION_PATTERN) — also PROPAGATED, not self-caused.
  *
- * Counting only logic exceptions therefore points at the source for code-level
- * faults and stays neutral for resource cascades. A logic exception is a
+ * Counting only self-caused logic exceptions therefore points at the source for
+ * code-level faults, stays neutral for resource cascades, and does NOT reward
+ * the wrapper symptom of a wrong-value fault. A logic exception is a
  * programming error (null dereference / bad argument / invalid state /
- * malformed payload); a connectivity exception is an environmental condition
- * (unreachable dependency / timeout).
+ * malformed payload); a propagated exception is an environmental condition
+ * (unreachable dependency / timeout) or an empty-value parse failure.
  *
  * @param message - The raw log message text.
  * @returns True when the message names a self-caused logic exception.
  */
 export function isLogicExceptionMessage(message: string): boolean {
-  return LOGIC_EXCEPTION_PATTERN.test(message);
+  return !isPropagatedExceptionMessage(message) && LOGIC_EXCEPTION_PATTERN.test(message);
 }
 
 export class RCAEvalLoader {

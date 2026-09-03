@@ -502,15 +502,18 @@ export class TreePruner {
     // are pre-computed by the loader (see TraceActivityCounts) so the engine
     // never holds raw spans — only per-service {pre, post} integers.
     //
-    // It is gated PER-CANDIDATE on the services that actually threw a
-    // self-caused logic exception (the `deepestExceptions` keys — a service is
-    // a key iff it emitted ≥1 post-injection logic-exception line, see
-    // computeDeepestExceptions). A throwing WRAPPER must NOT suppress a silent
-    // source: in TrainTicket RE3 f2 the source (ts-auth-service) is silent
-    // while a downstream wrapper throws `IllegalArgumentException`, and a
-    // case-level gate wrongly suppressed the only signal that names the
-    // source. The gate therefore only defers when the UNIQUE RISER ITSELF
-    // threw — the log signal already ranks a self-throwing riser.
+    // It is gated CASE-LEVEL on the services that actually threw a self-caused
+    // logic exception (the `deepestExceptions` keys — a service is a key iff it
+    // emitted ≥1 post-injection logic-exception line, see
+    // computeDeepestExceptions). A silent wrong-value source still votes because
+    // a downstream wrapper's PROPAGATED empty-value parse failure is NOT in
+    // `deepestExceptions` (the loader flags it `isLogicException === false`):
+    // in TrainTicket RE3 f2 the source (ts-auth-service) is silent while the
+    // wrapper throws `IllegalArgumentException: Invalid UUID string`, and the
+    // wrapper is therefore excluded — the silent riser receives the vote. When a
+    // self-caused thrower IS present (OB f4 NullPointerException, RE2 memory
+    // faults), the case is not silent and the log signal already ranks it, so
+    // trace defers entirely.
     const traceActivityScores = computeTraceActivityScores(
       options?.traceActivity,
       new Set(callGraph.nodes.keys()),

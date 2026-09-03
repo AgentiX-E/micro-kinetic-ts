@@ -623,7 +623,10 @@ async function main(): Promise<void> {
               : ('rcaeval-re3' as const);
 
         let benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
-        if (needsTraceActivity) {
+        // Trace-activity is scoped to RE3: the "more spans ⇒ source" mechanism
+        // holds only for RE3 code-level faults, so RE1/RE2 skip the expensive
+        // traces.csv scan (and cannot misfire on those suites).
+        if (needsTraceActivity && meta.suite === 'RE3') {
           benchCase = {
             ...benchCase,
             traceActivity: await countTraceActivityByService(

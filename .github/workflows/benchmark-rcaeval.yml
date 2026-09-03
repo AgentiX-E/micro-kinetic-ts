@@ -187,7 +187,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --temporal-weight 0.5 2>&1 | tee rcaeval-re3-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --temporal-weight 0.5 --trace-weight 1 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
         if: always()
         uses: actions/upload-artifact@v4

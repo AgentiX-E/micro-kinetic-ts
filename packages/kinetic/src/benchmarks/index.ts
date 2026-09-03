@@ -19,6 +19,7 @@ export {
   extractExceptionNames,
   extractSpringBootLevel,
   isLogicExceptionMessage,
+  isPropagatedExceptionMessage,
   isStackTraceMessage,
 } from './loaders/rcaeval-loader.js';
 

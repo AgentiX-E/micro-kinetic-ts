@@ -1186,15 +1186,30 @@ describe('TreePruner', () => {
       expect(graph.traceActivityScores?.size).toBe(1);
     });
 
-    it('votes the silent riser when a DIFFERENT service throws (throwing wrapper)', () => {
-      // TrainTicket RE3 f2: the source is silent while a downstream wrapper
-      // throws a logic exception. The wrapper's exception is a SYMPTOM of the
-      // wrong value, not evidence the case is non-silent — the per-candidate
-      // gate must NOT suppress the silent-source riser.
+    it('suppresses the vote when a DIFFERENT service throws a self-caused logic exception', () => {
+      // When ANY service emitted a self-caused logic exception, the case is not
+      // silent — the always-on log signal already ranks that thrower. The
+      // case-level gate defers entirely, even when the thrower is a different
+      // (collapsing) service than the unique riser.
       const pruner = new TreePruner();
       const graph = pruner.buildFaultGraph(callGraph, metrics, {
         traceActivity,
         logs: [{ timestamp: 0, service: 'B', level: 'ERROR', isLogicException: true }],
+      });
+
+      expect(graph.traceActivityScores?.size).toBe(0);
+    });
+
+    it('votes the silent riser when a wrapper throws a PROPAGATED parse failure', () => {
+      // TrainTicket RE3 f2: the source is silent while a downstream wrapper
+      // throws an empty-value parse failure (e.g. `IllegalArgumentException:
+      // Invalid UUID string: `). The loader flags that as `isLogicException:
+      // false` (a PROPAGATED symptom, not self-caused), so it is EXCLUDED from
+      // the thrower set — the silent-source riser must still receive the vote.
+      const pruner = new TreePruner();
+      const graph = pruner.buildFaultGraph(callGraph, metrics, {
+        traceActivity,
+        logs: [{ timestamp: 0, service: 'B', level: 'ERROR', isLogicException: false }],
       });
 
       expect(graph.traceActivityScores?.get('A')).toBe(1);
