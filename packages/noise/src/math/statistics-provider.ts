@@ -130,14 +130,18 @@ export class StatisticsProvider implements IStatistics {
     const arrX = Array.from(x);
     const arrY = Array.from(y);
 
-    // Use Hoeffding's D for nonparametric independence testing
+    // Use Hoeffding's D for nonparametric independence testing.
+    // D = 0 in expectation under independence, and |D| → 1 as dependence
+    // strengthens regardless of whether the relationship is monotone
+    // increasing or decreasing, so the statistic uses the magnitude of D.
     const d = computeHoeffdingD(arrX, arrY);
     const n = arrX.length;
-    const statistic = n * d;
+    const statistic = n * Math.abs(d);
 
-    // Approximate p-value from chi-squared approximation
-    // Under independence, n * D is approximately chi-squared with some df
-    const df = 5; // heuristic for continuous
+    // Approximate p-value from a chi-squared approximation.
+    // Under independence n·|D| is approximately chi-squared for continuous
+    // data; df = 5 is the standard heuristic (Hoeffding, 1948).
+    const df = 5;
     const pValue = 1 - chiSquaredCDF(statistic, df);
     const significant = pValue < 0.05;
 
@@ -290,55 +294,78 @@ function discretize(data: Float64Array, bins: number): Int32Array {
 /**
  * Compute Hoeffding's D statistic for independence testing.
  *
- * D measures the distance between the joint CDF and the
- * product of marginal CDFs:
- *   ∫|F(x,y) - F(x)F(y)|² dF(x)dF(y)
+ * D is a nonparametric measure of bivariate dependence equal to the
+ * L² distance between the joint CDF and the product of the marginal CDFs:
+ *
+ *   D = ∫∫ [F(x,y) − F(x)·F(y)]² dF(x) dF(y)
+ *
+ * The finite-sample estimator (Hoeffding, 1948) is
+ *
+ *   D = 30 · [(n−2)(n−3)·D1 + D2 − 2(n−2)·D3]
+ *        / [n(n−1)(n−2)(n−3)(n−4)]
+ *
+ * with
+ *   D1 = Σᵢ (Qᵢ − 1)(Qᵢ − 2)
+ *   D2 = Σᵢ (Rᵢ − 1)(Rᵢ − 2)(Sᵢ − 1)(Sᵢ − 2)
+ *   D3 = Σᵢ (Rᵢ − 2)(Sᵢ − 2)(Qᵢ − 1)
+ *
+ * where Rᵢ and Sᵢ are the (average) ranks of xᵢ and yᵢ, and Qᵢ counts the
+ * points lying strictly south-west of (xᵢ, yᵢ). Ties contribute 1/2 when
+ * tied on a single axis and 1/4 when tied on both (Wilding & Mudholkar, 2008).
+ *
+ * For continuous data D ∈ [−1/60, 1]: D = 1 iff the relationship is strictly
+ * monotone, and E[D] = 0 under independence. Returns 0 when n < 5, where the
+ * denominator is undefined.
  *
  * Maps to Deng Yu's sup-norm bound in Stosszahlansatz.
  */
-function computeHoeffdingD(x: number[], y: number[]): number {
+export function computeHoeffdingD(x: readonly number[], y: readonly number[]): number {
   const n = x.length;
+  if (n < 5) return 0;
 
-  // Compute ranks
   const xRanks = computeRanks(x);
   const yRanks = computeRanks(y);
 
-  // Build 5 auxiliary arrays
-  const q: number[] = Array.from({ length: n }, () => 0);
-
+  // Qᵢ = 1 + #{j : x_j < x_i and y_j < y_i}, with 1/2 (single-axis) and
+  // 1/4 (double-axis) tie corrections. The self pair (j = i) is excluded.
+  const q = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     let count = 0;
     for (let j = 0; j < n; j++) {
-      if (x[j]! <= x[i]! && y[j]! <= y[i]!) {
-        count++;
-      }
+      if (j === i) continue;
+      const xLess = x[j]! < x[i]!;
+      const yLess = y[j]! < y[i]!;
+      const xEq = x[j]! === x[i]!;
+      const yEq = y[j]! === y[i]!;
+      if (xLess && yLess) count += 1;
+      else if (xLess && yEq) count += 0.5;
+      else if (xEq && yLess) count += 0.5;
+      else if (xEq && yEq) count += 0.25;
     }
-    q[i] = count;
+    q[i] = 1 + count;
   }
 
-  // Compute D
-  let d1 = 0,
-    d2 = 0,
-    d3 = 0;
-
+  let d1 = 0;
+  let d2 = 0;
+  let d3 = 0;
   for (let i = 0; i < n; i++) {
     const qi = q[i]!;
-    d1 += qi * (qi - 1);
-    d2 += (xRanks[i]! - 1) * (qi - 1);
-    d3 += (yRanks[i]! - 1) * (qi - 1);
+    const ri = xRanks[i]!;
+    const si = yRanks[i]!;
+    d1 += (qi - 1) * (qi - 2);
+    d2 += (ri - 1) * (ri - 2) * (si - 1) * (si - 2);
+    d3 += (ri - 2) * (si - 2) * (qi - 1);
   }
 
+  // `n >= 5` guarantees a positive denominator.
   const denom = n * (n - 1) * (n - 2) * (n - 3) * (n - 4);
-  if (denom === 0) return 0;
-
-  const D = (d1 - 2 * d2 - 2 * d3) / denom;
-  return Math.abs(D);
+  return (30 * ((n - 2) * (n - 3) * d1 + d2 - 2 * (n - 2) * d3)) / denom;
 }
 
 /**
  * Compute ranks for an array (1-based, average for ties).
  */
-function computeRanks(values: number[]): number[] {
+function computeRanks(values: readonly number[]): number[] {
   const n = values.length;
   const indexed = values.map((v, i) => ({ value: v, index: i }));
   indexed.sort((a, b) => a.value - b.value);

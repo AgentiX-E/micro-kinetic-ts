@@ -25,13 +25,15 @@ function makeAlert(serviceId: string, timestamp: number, value: number): AlertRe
   };
 }
 
-function makeCouplingMatrix(dimension: number, sparsityScore: number = 0.8): CouplingSparsityMatrix {
+function makeCouplingMatrix(serviceIds: string[], sparsityScore: number = 0.8): CouplingSparsityMatrix {
+  const dimension = serviceIds.length;
   const matrix = new Float64Array(dimension * dimension);
   for (let i = 0; i < dimension; i++) {
     matrix[i * dimension + i] = 1;
   }
   return {
     dimension,
+    serviceIds: [...serviceIds],
     matrix,
     sparsityScore,
     threshold: 0.7,
@@ -48,7 +50,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 1000, 0.9),
         makeAlert('svc_b', 1500, 0.5),
       ];
-      const coupling = makeCouplingMatrix(2, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       expect(result).toHaveProperty('trueAlarms');
@@ -64,7 +66,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 1000, 0.9),
         makeAlert('svc_b', 1500, 0.5),
       ];
-      const coupling = makeCouplingMatrix(2, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       expect(result.falsePositiveReduction).toBeGreaterThanOrEqual(0);
@@ -74,7 +76,7 @@ describe('StossDenoiser', () => {
     it('should handle single alert', () => {
       const denoiser = new StossDenoiser();
       const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9)];
-      const coupling = makeCouplingMatrix(5, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       expect(result.trueAlarms.length + result.coincidentalAlarms.length + result.groupedAlarms.length).toBe(1);
@@ -85,6 +87,7 @@ describe('StossDenoiser', () => {
       const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9)];
       const emptyCoupling: CouplingSparsityMatrix = {
         dimension: 0,
+        serviceIds: [],
         matrix: new Float64Array(0),
         sparsityScore: 0,
         threshold: 0.7,
@@ -97,7 +100,7 @@ describe('StossDenoiser', () => {
 
     it('should throw for empty alerts', () => {
       const denoiser = new StossDenoiser();
-      const coupling = makeCouplingMatrix(2, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
       expect(() => denoiser.denoise([], coupling)).toThrow();
     });
 
@@ -107,7 +110,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 1000, 0.9),
         makeAlert('svc_a', 70000, 0.85), // outside 1-min window
       ];
-      const coupling = makeCouplingMatrix(2, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       expect(result.trueAlarms.length + result.coincidentalAlarms.length).toBe(2);
@@ -120,7 +123,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 2000, 0.85),
         makeAlert('svc_a', 3000, 0.92),
       ];
-      const coupling = makeCouplingMatrix(2, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       // Same service, multiple alerts → all true alarms
@@ -158,7 +161,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 1000, 0.9),
         makeAlert('svc_b', 1500, 0.5),
       ];
-      const coupling = makeCouplingMatrix(2, 0.75);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.75);
 
       const result = denoiser.denoise(alerts, coupling);
       expect(result.sparsityScore).toBe(0.75);
@@ -173,7 +176,7 @@ describe('StossDenoiser', () => {
       // Create sparse coupling with zero non-diagonal
       const matrix = new Float64Array([1, 0, 0, 1]);
       const coupling: CouplingSparsityMatrix = {
-        dimension: 2, matrix, sparsityScore: 1.0, threshold: 0.7,
+        dimension: 2, serviceIds: ['svc_a', 'svc_b'], matrix, sparsityScore: 1.0, threshold: 0.7,
         satisfiesStosszahlansatz: false, independentGroups: [],
       };
 
@@ -193,7 +196,7 @@ describe('StossDenoiser', () => {
       // Highly coupled matrix
       const matrix = new Float64Array([1, 0.9, 0.9, 1]);
       const coupling: CouplingSparsityMatrix = {
-        dimension: 2, matrix, sparsityScore: 0.5, threshold: 0.7,
+        dimension: 2, serviceIds: ['svc_a', 'svc_b'], matrix, sparsityScore: 0.5, threshold: 0.7,
         satisfiesStosszahlansatz: false, independentGroups: [],
       };
 
@@ -216,7 +219,8 @@ describe('StossDenoiser', () => {
       // Set some coupling
       matrix[0 * N + 1] = 0.5; matrix[1 * N + 0] = 0.5;
       const coupling: CouplingSparsityMatrix = {
-        dimension: N, matrix, sparsityScore: 0.6, threshold: 0.7,
+        dimension: N, serviceIds: ['svc_a', 'svc_b', 'svc_c'], matrix,
+        sparsityScore: 0.6, threshold: 0.7,
         satisfiesStosszahlansatz: false, independentGroups: [],
       };
 
@@ -233,12 +237,13 @@ describe('StossDenoiser', () => {
         makeAlert('svc_b', 1100, 0.89),
         makeAlert('svc_c', 1200, 0.88),
       ];
-      const N = 5;
+      const N = 3;
       const matrix = new Float64Array(N * N);
       for (let i = 0; i < N; i++) { matrix[i * N + i] = 1; }
       matrix[0 * N + 1] = 0.5; matrix[1 * N + 0] = 0.5;
       const coupling: CouplingSparsityMatrix = {
-        dimension: N, matrix, sparsityScore: 0.6, threshold: 0.7,
+        dimension: N, serviceIds: ['svc_a', 'svc_b', 'svc_c'], matrix,
+        sparsityScore: 0.6, threshold: 0.7,
         satisfiesStosszahlansatz: false, independentGroups: [],
       };
 
@@ -255,7 +260,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 1000, 0.9),
         makeAlert('svc_b', 200000, 0.5), // far apart in time
       ];
-      const coupling = makeCouplingMatrix(2, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       const total = result.trueAlarms.length + result.coincidentalAlarms.length
@@ -271,7 +276,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 1000, 0.9),
         makeAlert('svc_b', 1500, 0.5),
       ];
-      const coupling = makeCouplingMatrix(2, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       expect(result).toHaveProperty('trueAlarms');
@@ -286,7 +291,7 @@ describe('StossDenoiser', () => {
         makeAlert('svc_a', 70000, 0.85),
         makeAlert('svc_b', 72000, 0.55),
       ];
-      const coupling = makeCouplingMatrix(5, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b', 'svc_c'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
       const total = result.trueAlarms.length + result.coincidentalAlarms.length
@@ -305,7 +310,8 @@ describe('StossDenoiser', () => {
       const matrix = new Float64Array(N * N);
       for (let i = 0; i < N; i++) { matrix[i * N + i] = 1; }
       const coupling: CouplingSparsityMatrix = {
-        dimension: N, matrix, sparsityScore: 0.9, threshold: 0.7,
+        dimension: N, serviceIds: ['svc_a', 'svc_b', 'svc_c'], matrix,
+        sparsityScore: 0.9, threshold: 0.7,
         satisfiesStosszahlansatz: false, independentGroups: [],
       };
 
@@ -314,41 +320,47 @@ describe('StossDenoiser', () => {
       expect(result.falsePositiveReduction).toBeLessThanOrEqual(1);
     });
 
-    it('should deterministically map service IDs to matrix indices via sorted order', () => {
+    it('should read coupling values from indices given by coupling.serviceIds', () => {
       const denoiser = new StossDenoiser();
-      // Services in unsorted order — the denoiser MUST sort them
-      // to produce deterministic indices regardless of input order.
+      // serviceIds ordering: index 0 → svc_z, 1 → svc_a, 2 → svc_m. The strong
+      // coupling lives at matrix[0][2] (svc_z ↔ svc_m), NOT at sorted positions.
+      // A sort- or hash-based mapping would misread this relationship.
       const alerts: AlertRecord[] = [
         makeAlert('svc_z', 1000, 0.9),
-        makeAlert('svc_a', 1100, 0.8),
-        makeAlert('svc_m', 1200, 0.7),
+        makeAlert('svc_a', 1100, 0.1),
+        makeAlert('svc_m', 1200, 0.9),
       ];
-      const coupling = makeCouplingMatrix(3, 0.9);
+      const N = 3;
+      const matrix = new Float64Array(N * N);
+      for (let i = 0; i < N; i++) { matrix[i * N + i] = 1; }
+      matrix[0 * N + 2] = 0.9; matrix[2 * N + 0] = 0.9; // svc_z ↔ svc_m coupled
+      const coupling: CouplingSparsityMatrix = {
+        dimension: N, serviceIds: ['svc_z', 'svc_a', 'svc_m'], matrix,
+        sparsityScore: 0.5, threshold: 0.7,
+        satisfiesStosszahlansatz: false, independentGroups: [],
+      };
 
       const result = denoiser.denoise(alerts, coupling);
-      // Classification must cover all 3 alerts
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
-      expect(total).toBe(3);
+      const groupedIds = result.groupedAlarms.flatMap((g) => g.alerts.map((a) => a.serviceId));
+      expect(groupedIds).toContain('svc_z');
+      expect(groupedIds).toContain('svc_m');
+      expect(groupedIds).not.toContain('svc_a');
     });
 
-    it('should handle service count exceeding coupling matrix dimension via modulo', () => {
+    it('should throw when an alert service ID is absent from coupling.serviceIds', () => {
       const denoiser = new StossDenoiser();
-      // 6 services but matrix dimension is only 3 → indices wrap via modulo
+      // Two services in the matrix, but the alerts reference a third, unknown
+      // service — a genuine invariant violation, not a modulo index wrap.
       const alerts: AlertRecord[] = [
         makeAlert('svc_a', 1000, 0.9),
         makeAlert('svc_b', 1100, 0.8),
-        makeAlert('svc_c', 1200, 0.7),
-        makeAlert('svc_d', 1300, 0.6),
-        makeAlert('svc_e', 1400, 0.5),
-        makeAlert('svc_f', 1500, 0.4),
+        makeAlert('svc_unknown', 1200, 0.7),
       ];
-      const coupling = makeCouplingMatrix(3, 0.9);
+      const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
-      const result = denoiser.denoise(alerts, coupling);
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
-      expect(total).toBe(6);
+      expect(() => denoiser.denoise(alerts, coupling)).toThrow(
+        /not present in the coupling matrix serviceIds/,
+      );
     });
   });
 

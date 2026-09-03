@@ -29,7 +29,7 @@
 
 // ── Math Providers ────────────────────────────────────────
 export { DecimalProvider } from './math/decimal-provider.js';
-export { StatisticsProvider } from './math/statistics-provider.js';
+export { StatisticsProvider, computeHoeffdingD } from './math/statistics-provider.js';
 
 // ── Stosszahlansatz Components ────────────────────────────
 export { CouplingSparsityAnalyzer } from './stoss/coupling-analyzer.js';

@@ -62,6 +62,7 @@ describe('Alert types - CouplingSparsityMatrix', () => {
   it('should accept a matrix that satisfies Stosszahlansatz', () => {
     const matrix: CouplingSparsityMatrix = {
       dimension: 10,
+      serviceIds: Array.from({ length: 10 }, (_, i) => `svc-${i}`),
       matrix: new Float64Array(100).fill(0),
       sparsityScore: 0.9,
       threshold: 0.7,
@@ -75,6 +76,7 @@ describe('Alert types - CouplingSparsityMatrix', () => {
   it('should accept a matrix that does not satisfy Stosszahlansatz', () => {
     const matrix: CouplingSparsityMatrix = {
       dimension: 5,
+      serviceIds: Array.from({ length: 5 }, (_, i) => `svc-${i}`),
       matrix: new Float64Array(25).fill(0.5),
       sparsityScore: 0.3,
       threshold: 0.7,
@@ -88,6 +90,7 @@ describe('Alert types - CouplingSparsityMatrix', () => {
     const dim = 4;
     const matrix: CouplingSparsityMatrix = {
       dimension: dim,
+      serviceIds: Array.from({ length: dim }, (_, i) => `svc-${i}`),
       matrix: new Float64Array(dim * dim),
       sparsityScore: 1,
       threshold: 0.7,

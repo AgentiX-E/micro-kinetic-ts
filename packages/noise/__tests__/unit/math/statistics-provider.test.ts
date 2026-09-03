@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StatisticsProvider } from '../../../src/math/statistics-provider.js';
+import { StatisticsProvider, computeHoeffdingD } from '../../../src/math/statistics-provider.js';
 
 function makeArray(data: number[]): Float64Array {
   return new Float64Array(data);
@@ -281,5 +281,44 @@ describe('StatisticsProvider', () => {
       const corr = stats.correlation(x, x);
       expect(corr).toBeCloseTo(1, 5);
     });
+  });
+});
+
+describe('computeHoeffdingD', () => {
+  it('should return exactly 1 for a strictly increasing monotone relationship', () => {
+    expect(computeHoeffdingD([1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6])).toBeCloseTo(1, 12);
+  });
+
+  it('should return exactly 1 for a strictly decreasing monotone relationship', () => {
+    expect(computeHoeffdingD([1, 2, 3, 4, 5, 6], [6, 5, 4, 3, 2, 1])).toBeCloseTo(1, 12);
+  });
+
+  it('should return exactly 0 for a block permutation (independence pattern)', () => {
+    // The permutation [1,2,5,6,3,4] is non-monotone and yields D = 0 exactly.
+    expect(computeHoeffdingD([1, 2, 3, 4, 5, 6], [1, 2, 5, 6, 3, 4])).toBeCloseTo(0, 12);
+  });
+
+  it('should return 0 for n < 5 (undefined denominator)', () => {
+    expect(computeHoeffdingD([1, 2, 3, 4], [4, 3, 2, 1])).toBe(0);
+    expect(computeHoeffdingD([], [])).toBe(0);
+  });
+
+  it('should apply tie corrections, yielding a signed value below the continuous lower bound', () => {
+    // Constant y exercises the tie branches. The 1/2 and 1/4 corrections let D
+    // drop to −5/8, below the continuous lower bound −1/60.
+    expect(computeHoeffdingD([1, 2, 3, 4, 5, 6], [5, 5, 5, 5, 5, 5])).toBeCloseTo(-0.625, 12);
+  });
+
+  it('should handle monotone data with ties on both axes', () => {
+    // D = 31/192 for the monotone, tie-ridden sequence below (verified against
+    // the canonical 1948 estimator with Wilding & Mudholkar tie corrections).
+    expect(computeHoeffdingD([1, 1, 2, 2, 3, 3], [1, 1, 2, 2, 3, 3])).toBeCloseTo(31 / 192, 10);
+  });
+
+  it('should be symmetric in the tie handling of single-axis ties', () => {
+    // Duplicate x with increasing y exercises the `xEq && yLess` branch;
+    // duplicate y with increasing x exercises the `xLess && yEq` branch.
+    expect(computeHoeffdingD([1, 1, 1, 2, 2, 3], [1, 2, 3, 4, 5, 6])).toBeCloseTo(0.0625, 10);
+    expect(computeHoeffdingD([1, 2, 3, 4, 5, 6], [1, 1, 1, 2, 2, 3])).toBeCloseTo(0.0625, 10);
   });
 });

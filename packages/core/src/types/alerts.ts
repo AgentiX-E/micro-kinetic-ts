@@ -55,6 +55,13 @@ export interface AlertGroup {
 export interface CouplingSparsityMatrix {
   /** Number of services N */
   readonly dimension: number;
+  /**
+   * Service IDs in matrix row/column order: row/column index `i` of the
+   * flattened N×N matrix corresponds to service `serviceIds[i]`. This is the
+   * single source of truth for index semantics — consumers must map a service
+   * ID to its index through this array, never through sorting or hashing.
+   */
+  readonly serviceIds: readonly string[];
   /** Flattened N×N coupling matrix (row-major) */
   readonly matrix: Float64Array;
   /** Coupling sparsity score S ∈ [0, 1] */

@@ -111,14 +111,28 @@ export class StossDenoiser {
     invariant(coupling.matrix.length > 0, 'Coupling matrix must not be empty');
 
     const N = coupling.dimension;
+    invariant(
+      coupling.serviceIds.length === N,
+      'coupling.serviceIds length must equal coupling.dimension',
+    );
 
-    // Build deterministic service ID → matrix index mapping.
-    // All unique service IDs across the entire alert batch are mapped
-    // to stable indices via sorted order, avoiding hash collisions.
-    const allServiceIds = [...new Set(alerts.map((a) => a.serviceId))].sort();
+    // The coupling matrix's own `serviceIds` array is the single source of
+    // truth for row/column semantics: index i of the flattened N×N matrix
+    // corresponds to service `serviceIds[i]`. Mapping through this array (not
+    // sorting or hashing) keeps the denoiser consistent with the analyzer that
+    // produced the matrix.
     const serviceIndexMap = new Map<string, number>();
-    for (let i = 0; i < allServiceIds.length; i++) {
-      serviceIndexMap.set(allServiceIds[i]!, i % N);
+    coupling.serviceIds.forEach((id, i) => serviceIndexMap.set(id, i));
+
+    // Every alert service must be present in the matrix's serviceIds. A
+    // missing ID means the coupling matrix was built from a different service
+    // graph; fail loudly rather than silently wrapping an index (the previous
+    // implementation used `i % N`, which silently misindexed rows/columns).
+    for (const alert of alerts) {
+      invariant(
+        serviceIndexMap.has(alert.serviceId),
+        `service '${alert.serviceId}' is not present in the coupling matrix serviceIds`,
+      );
     }
 
     // Step 1: Group alerts by time proximity and service
@@ -159,11 +173,9 @@ export class StossDenoiser {
           const alertsA = windowAlerts.filter((a) => a.serviceId === serviceIA);
           const alertsB = windowAlerts.filter((a) => a.serviceId === serviceJB);
 
-          // Map service IDs to coupling matrix indices via deterministic map.
-          // `serviceIndexMap` is built from every unique service ID in `alerts`,
-          // and `serviceIA`/`serviceJB` come from `services` (unique services in
-          // this window, a subset of `alerts`), so the keys are always present
-          // and the `?? 0` fallback was unreachable.
+          // Map service IDs to coupling matrix indices through the matrix's own
+          // `serviceIds` ordering. Both IDs were validated against
+          // `serviceIndexMap` upfront, so the `?? 0` fallback is unreachable.
           const idxA = serviceIndexMap.get(serviceIA)!;
           const idxB = serviceIndexMap.get(serviceJB)!;
 
@@ -211,7 +223,7 @@ export class StossDenoiser {
                 id: `group_${groupId}`,
                 timeWindow: [Math.min(...timestamps), Math.max(...timestamps)],
                 alerts: clusterAlerts,
-                maxCouplingStrength: this.computeMaxCoupling(cluster, coupling),
+                maxCouplingStrength: this.computeMaxCoupling(cluster, coupling, serviceIndexMap),
               });
             }
           }
@@ -319,28 +331,34 @@ export class StossDenoiser {
    *
    * @param cluster - Service IDs in the cluster
    * @param coupling - Coupling sparsity matrix
+   * @param serviceIndexMap - Service ID → matrix index mapping (from `coupling.serviceIds`)
    * @returns Maximum coupling strength
    */
-  private computeMaxCoupling(cluster: string[], coupling: CouplingSparsityMatrix): number {
+  private computeMaxCoupling(
+    cluster: string[],
+    coupling: CouplingSparsityMatrix,
+    serviceIndexMap: ReadonlyMap<string, number>,
+  ): number {
     // No `k <= 1` early-return: `computeMaxCoupling` is only invoked from the
     // `cluster.length !== 1` (multi-service) branch of `denoise`, so every
     // cluster passed here has ≥ 2 services and the guard was unreachable.
     const k = cluster.length;
-
-    let maxCoupling = 0;
     const N = coupling.dimension;
 
+    let maxCoupling = 0;
+
     for (let i = 0; i < k; i++) {
-      const hashA = this.hashServiceId(cluster[i]!);
-      const idxA = hashA % N;
+      // Every service in `cluster` was validated against `serviceIndexMap` in
+      // `denoise` before clustering, so the lookup is always defined and the
+      // `?? 0` fallback would be unreachable.
+      const idxA = serviceIndexMap.get(cluster[i]!)!;
 
       for (let j = i + 1; j < k; j++) {
-        const hashB = this.hashServiceId(cluster[j]!);
-        const idxB = hashB % N;
+        const idxB = serviceIndexMap.get(cluster[j]!)!;
 
-        // `idxA * N + idxB` is always in [0, N²): both indices are `hash % N`
-        // in [0, N), and `coupling.matrix` has exactly N² entries, so the
-        // `?? 0` fallback was unreachable.
+        // `idxA`/`idxB` are both in [0, N) (they come from `serviceIds`, which
+        // has exactly N entries), so `idxA * N + idxB` is always in [0, N²) and
+        // the `?? 0` fallback was unreachable.
         const c = Math.abs(coupling.matrix[idxA * N + idxB]!);
         if (c > maxCoupling) {
           maxCoupling = c;
@@ -349,17 +367,5 @@ export class StossDenoiser {
     }
 
     return maxCoupling;
-  }
-
-  /**
-   * Hash a service ID string to an integer.
-   */
-  private hashServiceId(id: string): number {
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-      hash = (hash << 5) - hash + id.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash);
   }
 }

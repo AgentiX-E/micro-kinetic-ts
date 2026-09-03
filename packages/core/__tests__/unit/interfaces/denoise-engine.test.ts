@@ -19,6 +19,7 @@ describe('Denoise Engine interfaces - interface type usage', () => {
   it('should construct CouplingSparsityMatrix for independence testing', () => {
     const matrix: CouplingSparsityMatrix = {
       dimension: 20,
+      serviceIds: Array.from({ length: 20 }, (_, i) => `svc-${i}`),
       matrix: new Float64Array(400),
       sparsityScore: 0.85,
       threshold: 0.7,

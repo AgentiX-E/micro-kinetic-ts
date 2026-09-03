@@ -155,7 +155,7 @@ export class CouplingSparsityAnalyzer {
 
     // Step 5: Identify independent groups
     const satisfies = sparsityScore >= threshold;
-    const independentGroups = this.findIndependentGroups(matrix, N, threshold);
+    const independentGroups = this.findIndependentGroups(matrix, N, threshold, serviceIds);
 
     // Step 6: Validate against Deng Yu's minimum system scale
     const minSystemSize = DEFAULT_STOSS_PARAMS.minSystemSize;
@@ -166,6 +166,7 @@ export class CouplingSparsityAnalyzer {
 
     return {
       dimension: N,
+      serviceIds,
       matrix,
       sparsityScore,
       threshold,
@@ -185,11 +186,13 @@ export class CouplingSparsityAnalyzer {
    * @param matrix - Flattened N×N coupling matrix (row-major)
    * @param N - Number of services
    * @param threshold - Coupling significance threshold ε
+   * @param serviceIds - Service IDs in matrix row/column order
    */
   private findIndependentGroups(
     matrix: Float64Array,
     N: number,
     threshold: number,
+    serviceIds: readonly string[],
   ): ReadonlyArray<readonly string[]> {
     // Union-find data structure
     const parent = Array.from({ length: N }, (_, i) => i);
@@ -239,8 +242,8 @@ export class CouplingSparsityAnalyzer {
       group.push(i);
     }
 
-    // Note: independent groups are individual services that aren't
-    // in any coupled group (singleton groups)
-    return Array.from(groups.values()).map((indices) => indices.map((i) => `service_${i}`));
+    // Independent groups are individual services that aren't in any coupled
+    // group (singleton groups). Map matrix indices back to real service IDs.
+    return Array.from(groups.values()).map((indices) => indices.map((i) => serviceIds[i]!));
   }
 }
