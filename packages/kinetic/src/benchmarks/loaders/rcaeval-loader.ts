@@ -354,9 +354,18 @@ export function extractDeepestExceptionClass(message: string): string | undefine
  * a code-level fault (RCAEval RE3). These arise from an internal bug (a null
  * dereference, a bad argument, an invalid state, a malformed payload) and
  * therefore identify the SOURCE service, not a downstream symptom.
+ *
+ * TOKEN-VALIDATION exceptions (`MalformedJwtException`, `TokenException`) are
+ * deliberately EXCLUDED: they are thrown by a DOWNSTREAM consumer that fails
+ * to validate a token an upstream auth service produced, so they name the
+ * SYMPTOM, not the source. In TrainTicket RE3 the auth source returns a wrong
+ * token while staying silent, and the first downstream wrapper throws
+ * `MalformedJwtException`/`TokenException` — rewarding that wrapper would
+ * invert the ranking exactly like an empty-value parse failure (see
+ * PROPAGATED_EXCEPTION_PATTERN).
  */
 const LOGIC_EXCEPTION_PATTERN =
-  /(?:NullPointer|IllegalArgument|IllegalState|ArrayIndex|IndexOutOfBounds|ClassCast|ConcurrentModification|NumberFormat|Arithmetic|NoSuchElement|UnsupportedOperation|ClassNotFound|NoSuchMethod|NoSuchField|JsonMapping|JsonParse|JsonProcessing|HttpMessageNotReadable|MalformedJwt|AttributeError|TypeError|NameError|IndexError|ValueError|KeyError|ZeroDivisionError|TokenException)/i;
+  /(?:NullPointer|IllegalArgument|IllegalState|ArrayIndex|IndexOutOfBounds|ClassCast|ConcurrentModification|NumberFormat|Arithmetic|NoSuchElement|UnsupportedOperation|ClassNotFound|NoSuchMethod|NoSuchField|JsonMapping|JsonParse|JsonProcessing|HttpMessageNotReadable|AttributeError|TypeError|NameError|IndexError|ValueError|KeyError|ZeroDivisionError)/i;
 
 /**
  * Signatures of PROPAGATED parse failures — exceptions a DOWNSTREAM wrapper
@@ -393,27 +402,30 @@ export function isPropagatedExceptionMessage(message: string): boolean {
 /**
  * Determine whether a log message is a SELF-CAUSED logic exception — the
  * signature of a code-level fault — as opposed to a PROPAGATED exception
- * (a resource/network cascade OR an empty-value parse failure) or a non-error
- * line.
+ * (a resource/network cascade, an empty-value parse failure, OR a
+ * token-validation failure) or a non-error line.
  *
  * This is the causal discriminator behind the log signal (benchmark #219):
  *
  * - RE3 code-level faults flood LOGIC exceptions (NullPointerException,
  *   ConcurrentModificationException, JsonMappingException, AttributeError,
- *   TypeError, MalformedJwtException, …) in the SOURCE service.
+ *   TypeError, …) in the SOURCE service.
  * - RE2 resource faults flood CONNECTIVITY exceptions (ConnectionException,
  *   SocketTimeoutException, MongoSocketException, UnknownHostException, …)
  *   in the SYMPTOM services — these are PROPAGATED, not self-caused.
  * - RE3 wrong-value faults leave the SOURCE silent and make a downstream
  *   WRAPPER throw an empty-value parse failure (see
- *   PROPAGATED_EXCEPTION_PATTERN) — also PROPAGATED, not self-caused.
+ *   PROPAGATED_EXCEPTION_PATTERN) or a token-validation failure
+ *   (`MalformedJwtException` / `TokenException`) — both PROPAGATED, not
+ *   self-caused.
  *
  * Counting only self-caused logic exceptions therefore points at the source for
  * code-level faults, stays neutral for resource cascades, and does NOT reward
  * the wrapper symptom of a wrong-value fault. A logic exception is a
  * programming error (null dereference / bad argument / invalid state /
  * malformed payload); a propagated exception is an environmental condition
- * (unreachable dependency / timeout) or an empty-value parse failure.
+ * (unreachable dependency / timeout), an empty-value parse failure, or a
+ * token-validation failure.
  *
  * @param message - The raw log message text.
  * @returns True when the message names a self-caused logic exception.

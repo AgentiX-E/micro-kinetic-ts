@@ -209,8 +209,16 @@ describe('isLogicExceptionMessage', () => {
     expect(isLogicExceptionMessage("TypeError: cannot read property 'foo' of undefined")).toBe(
       true,
     );
-    expect(isLogicExceptionMessage('MalformedJwtException: invalid token')).toBe(true);
     expect(isLogicExceptionMessage('ArrayIndexOutOfBoundsException: index 5')).toBe(true);
+  });
+
+  it('rejects token-validation failures as PROPAGATED symptoms (downstream auth consumer)', () => {
+    // A downstream service validating an INVALID token the silent auth source
+    // returned throws MalformedJwtException/TokenException — a wrong-value
+    // (F1 incorrect param / F4 wrong return) symptom, NOT a self-caused bug.
+    expect(isLogicExceptionMessage('MalformedJwtException: invalid token')).toBe(false);
+    expect(isLogicExceptionMessage('TokenException: token verification failed')).toBe(false);
+    expect(isLogicExceptionMessage('InvalidBearerTokenException: Malformed JWT')).toBe(false);
   });
 
   it('rejects connectivity/IO exceptions (propagated cascade signatures)', () => {
