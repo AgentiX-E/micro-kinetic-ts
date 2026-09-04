@@ -869,6 +869,21 @@ function printFailureDiagnostics(
           `    topoSource GT=${d.gtTopoSource?.toFixed(3) ?? '-'} top1=${d.topTopoSource?.toFixed(3) ?? '-'}`,
         );
       }
+      // Trace span-activity rise diagnostics. The signal awards one vote to the
+      // UNIQUE riser satisfying `pre >= 500` AND `post/pre >= 1.15` AND
+      // `post >= 1` (see DEFAULT_TRACE_ACTIVITY_OPTIONS), so printing the raw
+      // pre/post/ratio triple for the ground truth and for the highest-ratio
+      // service reveals WHY the vote landed where it did: a GT that misses a
+      // threshold is a RECALL failure, while a qualifying non-GT riser is a
+      // PRECISION failure.
+      if (d.gtTraceActivity !== undefined || d.topTraceActivity !== undefined) {
+        const gt = d.gtTraceActivity;
+        const top = d.topTraceActivity;
+        console.log(
+          `    traceActivity GT=${gt ? `pre=${gt.pre} post=${gt.post} ratio=${gt.ratio.toFixed(3)}` : '-'}` +
+            ` top=${top ? `${top.service} pre=${top.pre} post=${top.post} ratio=${top.ratio.toFixed(3)}` : '-'}`,
+        );
+      }
       console.log(`    Reason: ${f.reason}`);
       console.log(
         `    Top-K: ${d.topK.map((t) => `${t.serviceId}(${t.confidence.toFixed(2)},d${t.depth})`).join(' | ')}`,
