@@ -250,6 +250,28 @@ describe('isLogicExceptionMessage', () => {
     expect(isLogicExceptionMessage('NumberFormatException: For input string: ')).toBe(false);
     expect(isLogicExceptionMessage('Cannot parse empty string')).toBe(false);
   });
+
+  it('rejects empty-value parse failures with a trailing stack trace or Spring suffix', () => {
+    // Real RCAEval data: the empty UUID is NOT followed by end-of-string. The
+    // wrapper's IllegalArgumentException carries either a Java stack trace
+    // (`\n\tat ...`) or Spring's `] with root cause` wrapper. The `$` anchor
+    // must NOT be the discriminator — the EMPTY PAYLOAD is.
+    expect(
+      isLogicExceptionMessage(
+        'java.lang.IllegalArgumentException: Invalid UUID string: \n\tat java.util.UUID.fromString(UUID.java:194)',
+      ),
+    ).toBe(false);
+    expect(
+      isLogicExceptionMessage(
+        'nested exception is java.lang.IllegalArgumentException: Invalid UUID string: ] with root cause',
+      ),
+    ).toBe(false);
+    expect(
+      isLogicExceptionMessage(
+        'java.lang.NumberFormatException: For input string: ""\n\tat java.lang.Long.parseLong(Long.java:776)',
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('isPropagatedExceptionMessage', () => {
@@ -265,10 +287,31 @@ describe('isPropagatedExceptionMessage', () => {
     expect(isPropagatedExceptionMessage('Cannot parse empty string')).toBe(true);
   });
 
+  it('flags empty-value parse failures followed by a stack trace or Spring suffix', () => {
+    expect(
+      isPropagatedExceptionMessage(
+        'java.lang.IllegalArgumentException: Invalid UUID string: \n\tat java.util.UUID.fromString(UUID.java:194)',
+      ),
+    ).toBe(true);
+    expect(
+      isPropagatedExceptionMessage(
+        'nested exception is java.lang.IllegalArgumentException: Invalid UUID string: ] with root cause',
+      ),
+    ).toBe(true);
+    expect(
+      isPropagatedExceptionMessage(
+        'java.lang.NumberFormatException: For input string: ""\n\tat java.lang.Long.parseLong(Long.java:776)',
+      ),
+    ).toBe(true);
+  });
+
   it('does NOT flag genuine self-caused logic errors as propagated', () => {
     expect(isPropagatedExceptionMessage('IllegalArgumentException: invalid argument')).toBe(false);
     expect(isPropagatedExceptionMessage('java.lang.NullPointerException: null')).toBe(false);
     expect(isPropagatedExceptionMessage('NumberFormatException: For input string: "42a"')).toBe(
+      false,
+    );
+    expect(isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: abc-123')).toBe(
       false,
     );
   });

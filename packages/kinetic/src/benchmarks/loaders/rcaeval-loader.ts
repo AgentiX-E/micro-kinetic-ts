@@ -381,11 +381,17 @@ const LOGIC_EXCEPTION_PATTERN =
  * instead of the silent source. The discriminator is therefore the EMPTY-PAYLOAD
  * marker after the parse verb: the value being parsed is missing/blank.
  *
- * Each clause is anchored to end-of-string so a NON-empty parse failure (e.g.
- * `For input string: "42a"`, a genuine bad-argument bug) is NOT flagged.
+ * The EMPTY-PAYLOAD marker is what follows the parse verb, NOT end-of-string:
+ * real logs append either a Java stack trace (`\n\tat …`), Spring's
+ * `] with root cause` wrapper, an empty quote pair (`""`), or nothing at all.
+ * Each clause therefore matches a value that is BLANK — either an empty quote
+ * pair, or a position whose next character is a newline / a closing delimiter
+ * (`]` `)` `}`) / end-of-input — while a NON-empty parse failure (e.g.
+ * `For input string: "42a"` or `Invalid UUID string: abc-123`, a genuine
+ * bad-argument bug) has an alphanumeric value and is NOT flagged.
  */
 const PROPAGATED_EXCEPTION_PATTERN =
-  /(?:Invalid UUID string:\s*["']{0,2}\s*$|For input string:\s*["']{0,2}\s*$|Cannot parse\s+empty)/i;
+  /(?:Invalid UUID string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|For input string:\s*(?:"\s*"|'\s*'|(?=[\n\])}]|$))|Cannot parse\s+empty)/i;
 
 /**
  * Determine whether a log message is a PROPAGATED parse failure — a wrapper
