@@ -537,6 +537,27 @@ function computeAnomalyFeatures(
     const mean = sum / n;
     if (mean <= 0) continue;
 
+    // Pre-injection baseline: the clean pre-fault level. When the injection
+    // time is known, this is a far more reliable reference than the
+    // shape-based heuristic below — the latter DILUTES the pre-fault level
+    // when the pre-fault period is SHORT (a crash fault whose high plateau
+    // occupies only a few percent of the series), re-scoring the drop as a
+    // spurious rise. `NaN` = injection time unknown or window too thin.
+    let preInjectBaseline = NaN;
+    const injectTimeMs = cfg.injectTimeMs ?? 0;
+    if (injectTimeMs > 0 && ts.timestamps && ts.timestamps.length === n) {
+      let boundary = -1;
+      for (let i = 0; i < n; i++) {
+        if (ts.timestamps[i]! >= injectTimeMs) {
+          boundary = i;
+          break;
+        }
+      }
+      if (boundary >= 2 && boundary < n) {
+        preInjectBaseline = medianOfRange(ts.values, 0, boundary);
+      }
+    }
+
     // Idle-metric guard: a metric that sits at ~0 for MOST of its history
     // (e.g. a latency percentile that is 0 whenever there is no traffic) is an
     // event/activity metric. Its idle→active transition yields an unbounded
@@ -560,6 +581,22 @@ function computeAnomalyFeatures(
       if (ts.values[i]! <= max * 0.001) nearZeroCount++;
     }
     if (nearZeroCount > n * 0.4) continue;
+
+    // Idle pre-injection guard: a LATENCY percentile (unit 'ms') whose
+    // PRE-FAULT level is near-zero was idle before the fault — its value is 0
+    // whenever there is no traffic. Its post-fault "rise" is a 0→traffic
+    // artifact, not a fault, yet its unbounded relative ratio dominates
+    // min-max normalization and drowns the genuine signal. Skip it. Other
+    // metrics (cpu/mem/workload) are NOT idle in the same way — a running
+    // service always carries a non-zero level — so they are left alone (and
+    // an event metric's zero→burst transition IS the fault, never skipped).
+    if (
+      ts.unit === 'ms' &&
+      Number.isFinite(preInjectBaseline) &&
+      preInjectBaseline <= max * 0.001
+    ) {
+      continue;
+    }
 
     // Transient-spike guard: a metric that spikes and then RETURNS to (or
     // near) its starting level over a NON-ZERO baseline is a transient
@@ -627,6 +664,20 @@ function computeAnomalyFeatures(
           : cfg.baselineStrategy;
 
       baselineMean = computeRobustBaseline(ts.values, n, strategy, mean);
+    }
+
+    // Drop-baseline anchoring: a DROP's pre-anomaly level is the HIGH side.
+    // The shape-based strategies (top-quartile mean / max-mean window) dilute
+    // that high side when the pre-drop plateau is SHORT, so anchor it to the
+    // pre-injection median (the clean high level) when known, else the global
+    // maximum. This keeps a crash fault's drop bounded (~100%) instead of
+    // re-scoring it as a spurious unbounded rise.
+    if (detectDropDirection(ts.values, n)) {
+      if (Number.isFinite(preInjectBaseline) && preInjectBaseline > 0) {
+        baselineMean = preInjectBaseline;
+      } else {
+        baselineMean = max;
+      }
     }
 
     // Deviation — log₁₀ compression for score differentiation.
@@ -1248,19 +1299,31 @@ function detectBaselineStrategy(values: Float64Array, n: number): 'q25' | 'slidi
  *
  * @internal
  */
+/**
+ * Detect the trend direction from the two halves of the series: a drop's
+ * first half is higher than its second half, a rise's first half is lower.
+ *
+ * Shared by `computeRobustBaseline` (baseline side selection) and
+ * `computeAnomalyFeatures` (drop-baseline anchoring), so the two never drift.
+ *
+ * @internal
+ */
+function detectDropDirection(values: Float64Array, n: number): boolean {
+  const half = Math.floor(n / 2);
+  let firstSum = 0;
+  for (let i = 0; i < half; i++) firstSum += values[i]!;
+  let secondSum = 0;
+  for (let i = half; i < n; i++) secondSum += values[i]!;
+  return firstSum / half > secondSum / (n - half);
+}
+
 function computeRobustBaseline(
   values: Float64Array,
   n: number,
   strategy: 'q25' | 'sliding-window',
   fallbackMean: number,
 ): number {
-  // Trend direction from the two halves: a drop's first half is higher.
-  const half = Math.floor(n / 2);
-  let firstSum = 0;
-  for (let i = 0; i < half; i++) firstSum += values[i]!;
-  let secondSum = 0;
-  for (let i = half; i < n; i++) secondSum += values[i]!;
-  const isDrop = firstSum / half > secondSum / (n - half);
+  const isDrop = detectDropDirection(values, n);
 
   if (strategy === 'q25') {
     const sorted = Array.from(values.slice(0, n)).sort((a, b) => a - b);

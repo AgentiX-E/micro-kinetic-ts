@@ -41,13 +41,18 @@ function makeCallGraph(
 }
 
 /** Create a TimeSeries with given values and optional timestamps. */
-function makeTimeSeries(label: string, values: number[], timestamps?: number[]): TimeSeries {
+function makeTimeSeries(
+  label: string,
+  values: number[],
+  timestamps?: number[],
+  unit = 'percent',
+): TimeSeries {
   const ts = timestamps ?? values.map((_, i) => i * 1000);
   return {
     label,
     timestamps: ts,
     values: new Float64Array(values),
-    unit: 'percent',
+    unit,
   };
 }
 
@@ -2019,6 +2024,124 @@ describe('buildTopologyFaultGraph — Remaining Reachable Branches', () => {
     const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
       baselineStrategy: 'sliding-window',
     });
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+  });
+});
+
+describe('buildTopologyFaultGraph — Pre-injection Baseline Anchoring', () => {
+  it('anchors a short pre-drop plateau to the pre-injection median (crash fault)', () => {
+    // Regression (TrainTicket RE3 F3): a crash fault's cpu metric holds a HIGH
+    // plateau for only ~2% of the series (the service dies early), then sits at
+    // ~0. The shape-based baseline (top-quartile mean / max-mean window) DILUTES
+    // that short high cluster with the long low tail, producing a spuriously LOW
+    // baseline (~0.45) that re-scores the drop as a ~9× "rise" — letting the
+    // crash symptom outrank the fault source's genuine signal. The pre-injection
+    // median (the clean pre-fault level) must anchor the baseline to the HIGH
+    // side, keeping the drop bounded (~100%) with rise ≈ 0.
+    const id: ServiceId = 'svc';
+    const values = [...Array<number>(41).fill(4.5), ...Array<number>(1760).fill(0.046)];
+    const ts = makeTimeSeries(
+      'cpu',
+      values,
+      values.map((_, i) => i * 1000),
+    );
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 41 * 1000,
+    });
+
+    const breakdown = result.dominantMetrics.get(id)?.breakdown;
+    expect(breakdown?.baselineMean).toBeGreaterThan(4.0);
+    expect(breakdown?.riseRatio).toBeLessThan(0.01);
+    expect(breakdown?.dropRatio).toBeGreaterThan(0.9);
+  });
+
+  it('anchors a drop to the global maximum when the injection time is unknown', () => {
+    // The same crash shape WITHOUT an injection time falls back to the global
+    // maximum as the pre-drop HIGH anchor, so the drop stays bounded instead of
+    // re-scoring as a spurious rise.
+    const id: ServiceId = 'svc';
+    const values = [...Array<number>(41).fill(4.5), ...Array<number>(1760).fill(0.046)];
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(
+      graph,
+      makeMetrics([[id, [makeTimeSeries('cpu', values)]]]),
+    );
+
+    const breakdown = result.dominantMetrics.get(id)?.breakdown;
+    expect(breakdown?.baselineMean).toBeGreaterThan(4.0);
+    expect(breakdown?.riseRatio).toBeLessThan(0.01);
+    expect(breakdown?.dropRatio).toBeGreaterThan(0.9);
+  });
+
+  it('skips an idle latency metric whose pre-fault level is near-zero', () => {
+    // Regression (TrainTicket RE3): a latency percentile that is 0 whenever
+    // there is no traffic has a near-zero PRE-FAULT baseline. Its post-fault
+    // "rise" (0 → 0.0235) is a 0→traffic artifact, not a fault, yet its
+    // unbounded relative ratio dominates min-max normalization and drowns the
+    // genuine fault signal. It must be skipped.
+    //
+    // NOTE the pre-fault idle window is only ~33% of the series here, so the
+    // ">40% near-zero" sample-count idle guard does NOT fire — this test
+    // exercises the PRE-INJECTION idle guard specifically (the sample-count
+    // guard would already have skipped a 94%-zero series, masking the new path).
+    const id: ServiceId = 'svc';
+    const values = [...Array<number>(600).fill(0), ...Array<number>(1201).fill(0.0235)];
+    const ts = makeTimeSeries(
+      'latency-90',
+      values,
+      values.map((_, i) => i * 1000),
+      'ms',
+    );
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 600 * 1000,
+    });
+
+    expect(result.anomalyScores.get(id)).toBe(0);
+  });
+
+  it('keeps a latency metric whose pre-fault level is NOT near-zero', () => {
+    // Guard: only an IDLE (near-zero pre-fault) latency is skipped. A latency
+    // that already carries a real pre-fault level (0.054 ms) must still be
+    // scored (here as a bounded drop, not a spurious rise).
+    const id: ServiceId = 'svc';
+    const values = [...Array<number>(1700).fill(0.054), ...Array<number>(101).fill(0.0074)];
+    const ts = makeTimeSeries(
+      'latency-90',
+      values,
+      values.map((_, i) => i * 1000),
+      'ms',
+    );
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 1700 * 1000,
+    });
+
+    expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+    expect(result.dominantMetrics.get(id)?.breakdown?.riseRatio).toBeLessThan(0.01);
+  });
+
+  it('keeps an event (error) metric even when its pre-fault level is near-zero', () => {
+    // Guard (#199 RE3 OnlineBoutique): an ERROR metric's zero→burst transition
+    // IS the fault itself, so the idle pre-injection guard must NOT discard it
+    // even though its pre-fault level is near-zero. The guard is scoped to
+    // latency ('ms') only, so a 'rate' event metric always survives. (8 of 24
+    // samples are near-zero — 33% — so the sample-count idle guard also leaves
+    // it alone; only an un-scoped pre-injection guard would wrongly skip it.)
+    const id: ServiceId = 'svc';
+    const values = [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0];
+    const ts = makeTimeSeries(
+      'error',
+      values,
+      values.map((_, i) => i * 1000),
+      'rate',
+    );
+    const graph = makeCallGraph([id], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([[id, [ts]]]), {
+      injectTimeMs: 4 * 1000,
+    });
+
     expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
   });
 });
