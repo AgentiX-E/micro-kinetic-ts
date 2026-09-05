@@ -40,14 +40,19 @@ function makeCallGraph(
   };
 }
 
-/** Create a TimeSeries with given values and optional timestamps. */
-function makeTimeSeries(label: string, values: number[], timestamps?: number[]): TimeSeries {
+/** Create a TimeSeries with given values, optional timestamps, and unit. */
+function makeTimeSeries(
+  label: string,
+  values: number[],
+  timestamps?: number[],
+  unit = 'percent',
+): TimeSeries {
   const ts = timestamps ?? values.map((_, i) => i * 1000);
   return {
     label,
     timestamps: ts,
     values: new Float64Array(values),
-    unit: 'percent',
+    unit,
   };
 }
 
@@ -1286,9 +1291,14 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
           // Long error burst: only 8/24 = 33% samples are near-zero, so the
           // sample-count idle guard misses it; the zero baseline means the
           // transient-spike guard must ALSO keep it (it is an event fault).
+          // The 'rate' unit marks it as an EVENT metric (error/loss), whose
+          // zero→burst→zero transition IS the fault — the zero-baseline
+          // exemption is scoped to event metrics only.
           makeTimeSeries(
             'error',
             [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
+            undefined,
+            'rate',
           ),
         ],
       ],
@@ -1427,6 +1437,95 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(riseScore).toBeGreaterThan(dropScore);
     // The drop is still detected (a drop-type fault is not ignored).
     expect(dropScore).toBeGreaterThan(0);
+  });
+
+  it('anchors a crash to the pre-injection high when the pre-inject window is short', () => {
+    // TrainTicket RE3 F3 signature: a symptom service's cpu holds its normal
+    // high level (4.5) through a SHORT pre-injection window, then crashes to
+    // ~0.05 for the long post-injection tail. The robust-baseline high-side
+    // window is the top 25% of the WHOLE series, so it sweeps in crash samples
+    // and dilutes the baseline LOW (~1.8) — re-scoring the crash as a ~1.5×
+    // rise and drowning the source's genuine signal. The inject-anchored
+    // baseline must use ONLY the clean pre-injection window, anchoring to ~4.5
+    // so the drop is bounded (~99%) and the rise ≈ 0.
+    const preInject = [4.5, 4.5, 4.5, 4.5];
+    const postInject = Array.from({ length: 36 }, () => 0.046);
+    const values = [...preInject, ...postInject];
+    const timestamps = values.map((_, i) => i * 1000);
+    const graph = makeCallGraph(['svc'], []);
+    const result = buildTopologyFaultGraph(
+      graph,
+      makeMetrics([['svc', [makeTimeSeries('cpu', values, timestamps)]]]),
+      { injectTimeMs: preInject.length * 1000 },
+    );
+
+    const breakdown = result.dominantMetrics.get('svc')?.breakdown;
+    expect(breakdown).toBeDefined();
+    expect(breakdown!.baselineMean).toBeGreaterThan(4.0);
+    expect(breakdown!.riseRatio).toBeLessThan(0.1);
+    expect(breakdown!.dropRatio).toBeGreaterThan(0.9);
+  });
+
+  it('anchors a flat-then-crash drop to the pre-injection high', () => {
+    // TrainTicket RE3 F3 signature: a symptom service's cpu holds a flat high
+    // (~4.82) then crashes to ~0.1 after injection. The direction must read as
+    // a drop and anchor the baseline to the high plateau, so the drop is
+    // bounded (~98%) and the rise ≈ 0 — not a spurious ~30× rise.
+    const preInject = Array.from({ length: 16 }, () => 4.82);
+    const postInject = [0.098, 0.098, 0.098, 0.098];
+    const values = [...preInject, ...postInject];
+    const timestamps = values.map((_, i) => i * 1000);
+    const graph = makeCallGraph(['svc'], []);
+    const result = buildTopologyFaultGraph(
+      graph,
+      makeMetrics([['svc', [makeTimeSeries('cpu', values, timestamps)]]]),
+      { injectTimeMs: preInject.length * 1000 },
+    );
+
+    const breakdown = result.dominantMetrics.get('svc')?.breakdown;
+    expect(breakdown).toBeDefined();
+    expect(breakdown!.riseRatio).toBeLessThan(0.1);
+    expect(breakdown!.dropRatio).toBeGreaterThan(0.9);
+    expect(breakdown!.baselineMean).toBeGreaterThan(4.0);
+  });
+
+  it('anchors a genuine rise to the pre-injection low', () => {
+    // Guard: the inject-anchored baseline must NOT distort a genuine rise.
+    // A workload 0.4 → 1.4 (3.5× rise) anchors to the clean pre-injection low
+    // (0.4), so its rise stays unbounded (~2.5) and its drop ≈ 0.
+    const preInject = Array.from({ length: 16 }, () => 0.4);
+    const postInject = [1.4, 1.4, 1.4, 1.4];
+    const values = [...preInject, ...postInject];
+    const timestamps = values.map((_, i) => i * 1000);
+    const graph = makeCallGraph(['svc'], []);
+    const result = buildTopologyFaultGraph(
+      graph,
+      makeMetrics([['svc', [makeTimeSeries('workload', values, timestamps)]]]),
+      { injectTimeMs: preInject.length * 1000 },
+    );
+
+    const breakdown = result.dominantMetrics.get('svc')?.breakdown;
+    expect(breakdown).toBeDefined();
+    expect(breakdown!.riseRatio).toBeGreaterThan(2.0);
+    expect(breakdown!.dropRatio).toBeLessThan(0.1);
+  });
+
+  it('skips a zero-baseline transient latency spike (resource symptom)', () => {
+    // TrainTicket RE3 F3 signature: a symptom service's latency-50 starts at 0
+    // (idle pre-inject), spikes to ~1.8, then settles back to ~0.01. The head
+    // and tail are both near-zero relative to the spike, so it is a TRANSIENT
+    // excursion — a symptom, not a source. The zero-baseline exemption was
+    // previously unconditional, so this resource transient escaped the guard
+    // and its ~99× rise drowned the genuine fault. Scoping the exemption to
+    // EVENT metrics (unit 'rate'/'count') skips it.
+    const values = [0, 0, 0, 0, 0, 0, 1.8, 1.8, 1.8, 1.8, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01];
+    const graph = makeCallGraph(['svc'], []);
+    const result = buildTopologyFaultGraph(
+      graph,
+      makeMetrics([['svc', [makeTimeSeries('latency-50', values, undefined, 'ms')]]]),
+    );
+
+    expect(result.anomalyScores.get('svc')).toBe(0);
   });
 
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {

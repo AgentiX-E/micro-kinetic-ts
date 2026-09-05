@@ -573,12 +573,19 @@ function computeAnomalyFeatures(
     //   • permanent rise (workload 0.4 → 1.4): spread ≈ range → keep.
     //   • permanent drop / crash (mem 171MB → 0): spread ≈ range → keep.
     //
-    // The NON-ZERO-baseline requirement is what separates a transient RESOURCE
+    // The NON-ZERO-baseline exemption is what separates a transient RESOURCE
     // symptom from a transient EVENT fault: an error burst (0 → spike → 0) is
     // the fault ITSELF, so its zero baseline must NOT trigger the guard (the
     // #199 RE3 OnlineBoutique regression). The ">40% near-zero" idle guard
     // above already discards the mostly-idle metrics; a LONG event burst must
     // survive to be scored.
+    //
+    // The exemption is scoped to EVENT metrics (error/loss, unit 'rate' /
+    // 'count') only. A RESOURCE metric (cpu/latency/mem) that starts and ends
+    // near zero with a mid-series spike is a transient symptom — NOT the fault
+    // source — and must be skipped even though its baseline is zero: the
+    // TrainTicket RE3 F3 latency-90 0 → 1.8 → 0.02 signature, whose ~99× rise
+    // otherwise drowns the genuine fault.
     //
     // The 0.3 threshold means the metric must return to within 30% of its
     // spike height from where it started to count as transient; a permanent
@@ -589,7 +596,8 @@ function computeAnomalyFeatures(
     const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
     const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-    if (nonZeroBaseline && permanence < 0.3) {
+    const isEventMetric = ts.unit === 'rate' || ts.unit === 'count';
+    if (permanence < 0.3 && (nonZeroBaseline || !isEventMetric)) {
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.
@@ -597,36 +605,47 @@ function computeAnomalyFeatures(
       continue;
     }
 
-    // Baseline from pre-change period.
-    // Use median when change point detection fails — spike-inflated mean
-    // and stddev create a threshold too high for shorter spikes,
-    // causing changePt=n and baselineMean=mean (which includes the spike).
+    // Baseline from the pre-anomaly period.
+    //
+    // The inject-anchored baseline (the pre-injection median) is the ground
+    // truth and takes precedence whenever the fault injection time is known:
+    // a rise starts from that low level, a drop falls from that high level.
+    // The change-point / robust-baseline inference below is only a fallback for
+    // when the injection instant is unknown (synthetic data, or the
+    // dataset-decoupled regime). Its high-side window (the top 25% of the WHOLE
+    // series) sweeps in post-fault crash samples and dilutes the baseline LOW
+    // whenever the pre-injection window is short, re-scoring a ~4.5 → 0.05
+    // crash as a ~9× "rise" (the TrainTicket RE3 F3 failure signature).
     let baselineMean = mean;
     let changePt = n;
-
-    // Change point detection: first point > mean + 1.5σ
-    const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
-    const fullStd = Math.sqrt(fullVariance);
-    for (let i = 1; i < n; i++) {
-      if (ts.values[0 + i]! > mean + 1.5 * fullStd) {
-        changePt = i;
-        break;
-      }
-    }
-
-    if (changePt < n && changePt > 2) {
-      let bs = 0;
-      for (let i = 0; i < changePt; i++) bs += ts.values[0 + i]!;
-      baselineMean = bs / changePt;
-      if (baselineMean <= 0) baselineMean = mean;
+    const injectBaseline = resolveInjectBaseline(ts, cfg.injectTimeMs ?? 0);
+    if (injectBaseline !== null) {
+      baselineMean = injectBaseline;
     } else {
-      // Fallback: choose baseline strategy based on config.
-      const strategy =
-        cfg.baselineStrategy === 'auto'
-          ? detectBaselineStrategy(ts.values, n)
-          : cfg.baselineStrategy;
+      // Change point detection: first point > mean + 1.5σ
+      const fullVariance = ts.values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+      const fullStd = Math.sqrt(fullVariance);
+      for (let i = 1; i < n; i++) {
+        if (ts.values[0 + i]! > mean + 1.5 * fullStd) {
+          changePt = i;
+          break;
+        }
+      }
 
-      baselineMean = computeRobustBaseline(ts.values, n, strategy, mean);
+      if (changePt < n && changePt > 2) {
+        let bs = 0;
+        for (let i = 0; i < changePt; i++) bs += ts.values[0 + i]!;
+        baselineMean = bs / changePt;
+        if (baselineMean <= 0) baselineMean = mean;
+      } else {
+        // Fallback: choose baseline strategy based on config.
+        const strategy =
+          cfg.baselineStrategy === 'auto'
+            ? detectBaselineStrategy(ts.values, n)
+            : cfg.baselineStrategy;
+
+        baselineMean = computeRobustBaseline(ts.values, n, strategy, mean);
+      }
     }
 
     // Deviation — log₁₀ compression for score differentiation.
@@ -822,13 +841,7 @@ function computePostInjectOnsetDelay(
   if (values.length < 3 || timestamps.length !== values.length) return -1;
 
   // First sample at/after the injection instant — the inject boundary.
-  let boundary = -1;
-  for (let i = 0; i < timestamps.length; i++) {
-    if (timestamps[i]! >= injectTimeMs) {
-      boundary = i;
-      break;
-    }
-  }
+  const boundary = findInjectBoundary(timestamps, injectTimeMs);
   // Need at least two clean pre-inject samples and one post-inject sample.
   if (boundary < 2 || boundary >= values.length) return -1;
 
@@ -862,6 +875,58 @@ function medianOfRange(values: Float64Array, start: number, end: number): number
   const mid = Math.floor(n / 2);
   if (n % 2 === 1) return slice[mid]!;
   return (slice[mid - 1]! + slice[mid]!) / 2;
+}
+
+/**
+ * Find the index of the first sample at/after the fault injection instant.
+ *
+ * This is the single source of truth for splitting a metric series into its
+ * pre-injection (clean) and post-injection windows. Sharing it between the
+ * onset-delay computation and the baseline anchoring keeps the two views of
+ * "when the fault happened" from ever drifting apart.
+ *
+ * @param timestamps - Unix-ms timestamps aligned with the metric values.
+ * @param injectTimeMs - Fault injection time in Unix ms.
+ * @returns The boundary index, or -1 when the injection instant falls after
+ *   every sample.
+ * @internal
+ */
+function findInjectBoundary(timestamps: readonly number[], injectTimeMs: number): number {
+  for (let i = 0; i < timestamps.length; i++) {
+    if (timestamps[i]! >= injectTimeMs) return i;
+  }
+  return -1;
+}
+
+/**
+ * Resolve the inject-anchored baseline: the median of the pre-injection window
+ * when the fault injection time is known and the window is clean.
+ *
+ * The pre-injection window is the ground-truth "normal" level, so its median is
+ * the correct pre-fault baseline for BOTH directions — a rise starts from this
+ * low level, a drop falls from this high level. This supersedes the
+ * change-point / robust-baseline inference, whose high-side window (the top 25%
+ * of the WHOLE series) sweeps in post-fault crash samples and dilutes the
+ * baseline LOW whenever the pre-injection window is short — the TrainTicket RE3
+ * F3 failure signature (a ~4.5 → 0.05 crash re-scored as a ~9× "rise").
+ *
+ * Returns null when the anchor is unavailable: unknown inject time, no aligned
+ * timestamps, too few pre-inject samples, or a non-positive pre-inject median.
+ * A non-positive median is an idle metric whose 0→traffic transition is handled
+ * by the idle / transient guards, not by baseline anchoring.
+ *
+ * @internal
+ */
+function resolveInjectBaseline(ts: TimeSeries, injectTimeMs: number): number | null {
+  if (injectTimeMs <= 0) return null;
+  if (!ts.timestamps || ts.timestamps.length !== ts.values.length) return null;
+
+  const boundary = findInjectBoundary(ts.timestamps, injectTimeMs);
+  if (boundary < 2 || boundary >= ts.values.length) return null;
+
+  const preMedian = medianOfRange(ts.values, 0, boundary);
+  if (!Number.isFinite(preMedian) || preMedian <= 0) return null;
+  return preMedian;
 }
 
 // ── Edge Propagation Weight ───────────────────────────────
