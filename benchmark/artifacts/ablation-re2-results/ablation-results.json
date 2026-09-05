@@ -1,0 +1,2053 @@
+{
+  "timestamp": "2026-09-05T14:46:43.287Z",
+  "systemFilter": "all",
+  "repetitions": 3,
+  "totalCases": 270,
+  "datasets": [
+    "OnlineBoutique",
+    "SockShop",
+    "TrainTicket"
+  ],
+  "runs": [
+    {
+      "label": "BASELINE (all OFF)",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 2038,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1763,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10747,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision Q(f,f)",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1944,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1751,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 12646,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Trace Topo",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": true,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 216487,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1770,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 265380,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+SelfLearn",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 2799,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1740,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 12669,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision+Trace",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": true,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 259091,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1771,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 266231,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision+SelfLearn",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": false,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 2790,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1750,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10757,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Trace+SelfLearn",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": true,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 259377,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1742,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 264153,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "FULL STACK (all ON)",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": true,
+        "selfLearning": true,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 256465,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1730,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 260881,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Log Signal",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": true,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1779,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1739,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10248,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Topo Signal",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": true,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.6,
+          "aTop5": 0.98,
+          "la": 0.6,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1765,
+          "failures": 60,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.5
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.5
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.66,
+          "aTop5": 0.98,
+          "la": 0.66,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1745,
+          "failures": 51,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.5
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.32,
+          "aTop5": 0.62,
+          "la": 0.32,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10267,
+          "failures": 102,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.4444444444444444
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.4444444444444444
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.1111111111111111
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collision Signal",
+      "flags": {
+        "collisionAggregation": true,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": true,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.76,
+          "aTop5": 0.96,
+          "la": 0.76,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1766,
+          "failures": 36,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.625
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.78,
+          "aTop5": 0.96,
+          "la": 0.78,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1742,
+          "failures": 33,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.4444444444444444
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.52,
+          "aTop5": 0.66,
+          "la": 0.52,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10304,
+          "failures": 72,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.625
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Collapse Discount",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": true,
+        "riseSignal": false,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1776,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1729,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10598,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Rise Signal",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": true,
+        "traceSignal": false
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.88,
+          "aTop5": 0.98,
+          "la": 0.88,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1784,
+          "failures": 18,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.86,
+          "aTop5": 0.98,
+          "la": 0.86,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1735,
+          "failures": 21,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.4444444444444444
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.8,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10454,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Trace Activity Signal",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": false,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": true
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1765,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1743,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10486,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "+Log +Trace Activity",
+      "flags": {
+        "collisionAggregation": false,
+        "traceAugmentation": false,
+        "selfLearning": false,
+        "logSignal": true,
+        "topoSignal": false,
+        "collisionSignal": false,
+        "collapseDiscount": false,
+        "riseSignal": false,
+        "traceSignal": true
+      },
+      "results": {
+        "OnlineBoutique": {
+          "aTop1": 0.84,
+          "aTop5": 0.98,
+          "la": 0.84,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1773,
+          "failures": 24,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.8333333333333334
+            }
+          }
+        },
+        "SockShop": {
+          "aTop1": 0.8,
+          "aTop5": 1,
+          "la": 0.8,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 1729,
+          "failures": 30,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 1
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.5555555555555556
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.8888888888888888
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 0.75
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 0.6666666666666666
+            }
+          }
+        },
+        "TrainTicket": {
+          "aTop1": 0.64,
+          "aTop5": 0.76,
+          "la": 0.64,
+          "ta": 0.18,
+          "totalCases": 150,
+          "duration": 10605,
+          "failures": 54,
+          "reps": [
+            0,
+            0,
+            0
+          ],
+          "perFaultType": {
+            "cpu": {
+              "cases": 27,
+              "accuracy": 0.6666666666666666
+            },
+            "delay": {
+              "cases": 27,
+              "accuracy": 0.7777777777777778
+            },
+            "disk": {
+              "cases": 27,
+              "accuracy": 0.3333333333333333
+            },
+            "loss": {
+              "cases": 27,
+              "accuracy": 0.2222222222222222
+            },
+            "mem": {
+              "cases": 24,
+              "accuracy": 1
+            },
+            "socket": {
+              "cases": 18,
+              "accuracy": 1
+            }
+          }
+        }
+      }
+    }
+  ]
+}

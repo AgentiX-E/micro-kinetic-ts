@@ -1,0 +1,2305 @@
+=== RCAEval RE1 ===
+Micro-Kinetic — RCAEval Industry-Standard Benchmark
+═════════════════════════════════════════════════════════════════
+Data:  /home/runner/RCAEval-json
+Filter: system=all, suite=re1
+injectTime: ON (RCAEval baseline protocol) | temporalWeight: 0
+signals: collisionWeight=0 topoWeight=0 logWeight=1 logSignalMode=count collapseDiscount=0 traceWeight=0
+Cases discovered: 735
+
+Scanned 735 directories with metrics.json
+Case distribution:
+  OnlineBoutique:RE1: 125 cases
+  OnlineBoutique:RE2: 90 cases
+  OnlineBoutique:RE3: 30 cases
+  SockShop:RE1: 125 cases
+  SockShop:RE2: 90 cases
+  SockShop:RE3: 30 cases
+  TrainTicket:RE1: 125 cases
+  TrainTicket:RE2: 90 cases
+  TrainTicket:RE3: 30 cases
+
+Groups to evaluate: 3
+═════════════════════════════════════════════════════════════════
+Topology: YAML v2 (loaded) + semantic enhancement (Zhipu embedding-3)
+═════════════════════════════════════════════════════════════════
+  [semantic] 130/1681 services resolved (7.7%) — embedding=130, llm=0, exact=1551
+  [trace] No trace data available for 125 cases
+  [log] No log data available for 125 cases
+  [topo] system=OnlineBoutique, edges=13 exact + 1 emb + 0 llm, svcs=undefined, unconnected=3
+
+════════════════════════════════════════════════════════════════════════════════
+║  OnlineBoutique                 RE1             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  84.0% |  84.0% |  96.0% |  40.0% |  96.0% |  80.0% ║
+║ Micro-Kinetic       | Avg@5  |  84.0% |  84.0% |  96.0% |  40.0% |  96.0% |  80.0% ║
+║ Micro-Kinetic       | LA     |  84.0% |  84.0% |  96.0% |  40.0% |  96.0% |  80.0% ║
+║ Micro-Kinetic       | TA     |  84.0% |  84.0% |  96.0% |  40.0% |  96.0% |  80.0% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: OnlineBoutique/RE1 (top 4/fault type) ──
+  Case: rcaeval-re1_re1ob_checkoutservice_cpu_4
+    Expected: checkoutservice  →  Predicted: shippingservice
+    GT anomaly=0.2115  max=0.9471  inGraph=true  edges=22
+    GT metric=cpu head=[1.8196139352737735,1.8196139352737735,1.8196139352737735,1.8196139352737735,1.8196139352737735,1.8000436740268027] tail=[0,0,0,0]
+    GT dominant=mem head=[12136448,12136448,12136448,12136448,12136448,12132352] tail=[16609280,16609280,16609280,16609280]
+    GT breakdown=dev=0.161 trend=0.051 cv=0.000 burst=0.000 rise=0.448 drop=0.040 base=12288000.000
+    GT transientSkipped=[cpu,latency]
+    topAnomaly: shippingservice(0.947) | frontend-external(0.797) | adservice(0.764)
+    top1 metric=load head=[40,36,22,32,32,44] tail=[0,0,0,0]
+    top1 breakdown=dev=0.805 trend=0.025 cv=0.037 burst=0.080 rise=5.381 drop=1.000 base=19.431
+    top1 transientSkipped=[latency]
+    onset GT=2104 top1=0 (source later ✗)
+    injectDelay GT=4000 top1=0 (source later ✗)
+    ratioContrib GT=0.648 top1=0.517
+    topoSource GT=0.248 top1=0.317
+    Reason: Top prediction "shippingservice" does not match ground truth "checkoutservice"
+    Top-K: shippingservice(0.95,d0) | frontend-external(0.24,d2) | adservice(0.76,d0) | frontend(0.23,d2) | cartservice(0.71,d0)
+  Case: rcaeval-re1_re1ob_currencyservice_cpu_1
+    Expected: currencyservice  →  Predicted: cartservice
+    GT anomaly=2.1385  max=2.8456  inGraph=true  edges=22
+    GT metric=load head=[332,288,448,464,232,342] tail=[108.873,251.279,259.159,124.249]
+    GT dominant=latency head=[0.006518913418048493,0.0065189070886644595,0.006503164989610692,0.006503158574392544,0.006615901778154109,0.0066158966102624036] tail=[0.1499846625766871,0.14998479506694934,0.16159542323349635,0.1653975525764738]
+    GT breakdown=dev=1.522 trend=0.542 cv=0.075 burst=0.000 rise=32.239 drop=0.289 base=0.007
+    GT transientSkipped=[mem,load]
+    topAnomaly: cartservice(2.846) | productcatalogservice(2.598) | adservice(2.352)
+    top1 metric=latency head=[0.004910820303366025,0.004910819536006491,0.00490981854980248,0.004909817812304283,0.00493003819505774,0.00493003751903022] tail=[0.18122706422018348,0.18122711409874054,0.18872722070978068,0.19012531949591174]
+    top1 breakdown=dev=2.034 trend=0.533 cv=0.075 burst=0.203 rise=107.098 drop=0.044 base=0.005
+    top1 transientSkipped=[cpu,mem]
+    onset GT=1516 top1=154 (source later ✗)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.411 top1=0.343
+    topoSource GT=0.000 top1=0.000
+    Reason: Top prediction "cartservice" does not match ground truth "currencyservice"
+    Top-K: cartservice(1.00,d0) | productcatalogservice(1.00,d0) | adservice(1.00,d0) | frontend(0.71,d2) | recommendationservice(1.00,d1)
+  Case: rcaeval-re1_re1ob_productcatalogservice_cpu_3
+    Expected: productcatalogservice  →  Predicted: paymentservice
+    GT anomaly=0.2239  max=0.7084  inGraph=true  edges=40
+    GT metric=load head=[564,264,842,510,678,648] tail=[582,688,518,372]
+    GT dominant=load head=[564,264,842,510,678,648] tail=[582,688,518,372]
+    GT breakdown=dev=0.224 trend=0.000 cv=0.000 burst=0.000 rise=0.674 drop=0.511 base=539.875
+    topAnomaly: paymentservice(0.708) | productcatalogservice(0.224) | cartservice(0.167)
+    top1 metric=load head=[0,0,0,8,4,4] tail=[0,0,4,4]
+    top1 breakdown=dev=0.544 trend=0.113 cv=0.051 burst=0.000 rise=2.501 drop=1.000 base=2.856
+    top1 transientSkipped=[mem]
+    onset GT=1 top1=0 (source later ✗)
+    injectDelay GT=undef top1=undef (undetermined)
+    ratioContrib GT=0.472 top1=0.105
+    topoSource GT=0.973 top1=0.874
+    Reason: Top prediction "paymentservice" does not match ground truth "productcatalogservice"
+    Top-K: paymentservice(0.71,d0) | productcatalogservice(0.22,d0) | cartservice(0.17,d0) | checkoutservice(0.07,d1) | currencyservice(0.13,d0)
+  Case: rcaeval-re1_re1ob_productcatalogservice_cpu_4
+    Expected: productcatalogservice  →  Predicted: recommendationservice
+    GT anomaly=0.7144  max=0.7328  inGraph=true  edges=22
+    GT metric=load head=[728,642,592,292,720,548] tail=[346.162,408.787,380.205,121.34]
+    GT dominant=load head=[728,642,592,292,720,548] tail=[346.162,408.787,380.205,121.34]
+    GT breakdown=dev=0.627 trend=0.025 cv=0.000 burst=0.063 rise=3.235 drop=1.000 base=388.383
+    GT transientSkipped=[cpu,latency]
+    topAnomaly: recommendationservice(0.733) | productcatalogservice(0.714) | currencyservice(0.621)
+    top1 metric=load head=[84,86,74,42,104,68] tail=[91.933,56.756,84.252,16.058]
+    top1 breakdown=dev=0.614 trend=0.027 cv=0.031 burst=0.061 rise=3.107 drop=1.000 base=52.409
+    top1 transientSkipped=[mem,latency]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.541 top1=0.137
+    topoSource GT=0.321 top1=0.710
+    Reason: Top prediction "recommendationservice" does not match ground truth "productcatalogservice"
+    Top-K: recommendationservice(0.35,d1) | productcatalogservice(0.71,d0) | currencyservice(0.62,d0) | redis(0.18,d1) | checkoutservice(0.17,d1)
+  Case: rcaeval-re1_re1ob_adservice_delay_3
+    Expected: adservice  →  Predicted: cartservice
+    GT anomaly=0.8128  max=1.8205  inGraph=true  edges=21
+    GT metric=workload head=[6,4,4,0,14,4] tail=[6,6,4,0]
+    GT dominant=workload head=[6,4,4,0,14,4] tail=[6,6,4,0]
+    GT breakdown=dev=0.699 trend=0.000 cv=0.044 burst=0.070 rise=4.000 drop=1.000 base=4.000
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: cartservice(1.820) | checkoutservice(1.095) | emailservice(0.843)
+    top1 metric=latency-90 head=[0.0933783783783799,0.0933783783783799,0.0933783783783799,0.0923529411764707,0.037333333333334,0.0356666666666673] tail=[0.005445205479452,0.0057752613240418,0.005856401384083,0.0054642857142857]
+    top1 breakdown=dev=1.354 trend=0.256 cv=0.075 burst=0.135 rise=21.587 drop=0.055 base=0.005
+    top1 transientSkipped=[workload]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=200000 (source earlier ✓)
+    ratioContrib GT=0.082 top1=0.293
+    topoSource GT=0.819 top1=0.518
+    Reason: Top prediction "cartservice" does not match ground truth "adservice"
+    Top-K: cartservice(1.00,d0) | checkoutservice(0.52,d1) | emailservice(0.84,d0) | adservice(0.81,d0) | frontend(0.16,d2)
+  Case: rcaeval-re1_re1ob_adservice_delay_4
+    Expected: adservice  →  Predicted: checkoutservice
+    GT anomaly=0.1496  max=1.1267  inGraph=true  edges=21
+    GT metric=workload head=[8,6,2,0,6,8] tail=[10,4,4,2]
+    GT dominant=cpu head=[0.2817938554412381,0.285117616306971,0.3369133671546817,0.3369133671546817,0.3369133671546817,0.3369133671546817] tail=[0.3899557776707056,0.3899557776707056,0.3729421097917739,0.3729421097917739]
+    GT breakdown=dev=0.150 trend=0.000 cv=0.000 burst=0.000 rise=0.161 drop=0.411 base=0.355
+    GT transientSkipped=[workload,latency-50,latency-90]
+    topAnomaly: checkoutservice(1.127) | shippingservice(0.612) | frontend(0.586)
+    top1 metric=latency-50 head=[0.0411057692307692,0.0404605263157894,0.039,0.039,0.039,0.0373999999999999] tail=[0.1781380753138075,0.1779527559055118,0.1779527559055118,0.1779527559055118]
+    top1 breakdown=dev=0.758 trend=0.332 cv=0.037 burst=0.000 rise=4.728 drop=0.117 base=0.032
+    top1 transientSkipped=[mem,workload,latency-90]
+    onset GT=309 top1=386 (source earlier ✓)
+    injectDelay GT=undef top1=26000 (undetermined)
+    ratioContrib GT=0.535 top1=0.120
+    topoSource GT=0.570 top1=0.614
+    Reason: Top prediction "checkoutservice" does not match ground truth "adservice"
+    Top-K: checkoutservice(0.53,d1) | shippingservice(0.61,d0) | frontend(0.18,d2) | recommendationservice(0.08,d1) | productcatalogservice(0.17,d0)
+  Case: rcaeval-re1_re1ob_currencyservice_delay_3
+    Expected: currencyservice  →  Predicted: cartservice
+    GT anomaly=2.4288  max=2.6903  inGraph=true  edges=21
+    GT metric=latency-50 head=[0.0015350343473994115,0.001509703979611841,0.001509703979611841,0.00151266008407469,0.0015157576348912088,0.0015157576348912088] tail=[0.10052286423254164,0.004342134213421341,0.10049627791563275,0.10049627791563275]
+    GT dominant=latency-50 head=[0.0015350343473994115,0.001509703979611841,0.001509703979611841,0.00151266008407469,0.0015157576348912088,0.0015157576348912088] tail=[0.10052286423254164,0.004342134213421341,0.10049627791563275,0.10049627791563275]
+    GT breakdown=dev=1.850 trend=0.509 cv=0.070 burst=0.000 rise=69.748 drop=0.182 base=0.001
+    GT transientSkipped=[cpu,workload]
+    topAnomaly: cartservice(2.690) | currencyservice(2.429) | checkoutservice(2.181)
+    top1 metric=latency-90 head=[0.4060885109213089,0.40611023390780576,0.4061310182313442,0.355751914315176,0.3469160762321702,0.3469391870242468] tail=[0.004666542980828695,0.004627390009923917,0.0045896136012364775,0.0045896136012364775]
+    top1 breakdown=dev=1.942 trend=0.479 cv=0.075 burst=0.194 rise=86.496 drop=0.058 base=0.005
+    top1 transientSkipped=[cpu,workload]
+    onset GT=396 top1=0 (source later ✗)
+    injectDelay GT=36000 top1=53000 (source earlier ✓)
+    ratioContrib GT=0.382 top1=0.302
+    topoSource GT=0.000 top1=0.000
+    Reason: Top prediction "cartservice" does not match ground truth "currencyservice"
+    Top-K: cartservice(1.00,d0) | currencyservice(1.00,d0) | checkoutservice(1.00,d1) | frontend(0.56,d2) | emailservice(1.00,d0)
+  Case: rcaeval-re1_re1ob_productcatalogservice_delay_1
+    Expected: productcatalogservice  →  Predicted: frontend
+    GT anomaly=2.3040  max=2.3773  inGraph=true  edges=21
+    GT metric=latency-50 head=[0.0004426054526748971,0.00042747747747747753,0.00040337626669192163,0.0004010678094516526,0.00040298560469741456,0.00040331707548063275] tail=[0.10005677517032552,0.10005677517032552,0.008571428571428917,0.009642857142856022]
+    GT dominant=latency-90 head=[0.04939843750000002,0.03188596491228066,0.006208154506437758,0.004980930133786368,0.00496703479891644,0.004965967172241845] tail=[0.2200113550340651,0.2200113550340651,0.21999090357792603,0.21999431602879876]
+    GT breakdown=dev=1.787 trend=0.466 cv=0.051 burst=0.000 rise=60.255 drop=0.131 base=0.004
+    GT transientSkipped=[mem,workload,latency-50]
+    topAnomaly: frontend(2.377) | productcatalogservice(2.304) | recommendationservice(2.294)
+    top1 metric=latency-50 head=[0.02968455743879473,0.024573940486925155,0.02418291649003815,0.02418291649003815,0.02418291649003815,0.02418291649003815] tail=[1.4555281485780616,1.4555281485780616,1.4555281485780616,1.4555281485780616]
+    top1 breakdown=dev=1.827 trend=0.496 cv=0.055 burst=0.000 rise=66.091 drop=0.092 base=0.022
+    top1 transientSkipped=[cpu,workload]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=17000 top1=26000 (source earlier ✓)
+    ratioContrib GT=0.394 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "frontend" does not match ground truth "productcatalogservice"
+    Top-K: frontend(0.72,d2) | productcatalogservice(1.00,d0) | recommendationservice(1.00,d1) | checkoutservice(0.99,d1) | emailservice(0.77,d0)
+  Case: rcaeval-re1_re1ob_cartservice_disk_3
+    Expected: cartservice  →  Predicted: emailservice
+    GT anomaly=1.0460  max=1.1521  inGraph=true  edges=28
+    GT metric=workload head=[131.265,116.327,95.299,107.764,109.116,126.951] tail=[108,78,90,76]
+    GT dominant=latency-50 head=[0.003871106294685194,0.0038773696137358016,0.00394570320731656,0.003930002356823003,0.003930028256618695,0.003930028256618695] tail=[0.014149269311064718,0.013163109756097562,0.013163109756097562,0.013163109756097562]
+    GT breakdown=dev=0.729 trend=0.284 cv=0.033 burst=0.000 rise=4.356 drop=0.125 base=0.004
+    GT transientSkipped=[workload,latency-90]
+    topAnomaly: emailservice(1.152) | cartservice(1.046) | shippingservice(0.684)
+    top1 metric=workload head=[18,20,2,7.976,8,16] tail=[6,0,6,2]
+    top1 breakdown=dev=1.000 trend=0.000 cv=0.052 burst=0.100 rise=9.000 drop=1.000 base=2.000
+    top1 transientSkipped=[mem]
+    onset GT=392 top1=0 (source later ✗)
+    injectDelay GT=32000 top1=0 (source later ✗)
+    ratioContrib GT=0.478 top1=0.247
+    topoSource GT=0.611 top1=0.654
+    Reason: Top prediction "emailservice" does not match ground truth "cartservice"
+    Top-K: emailservice(1.00,d0) | cartservice(1.00,d0) | shippingservice(0.68,d0) | recommendationservice(0.25,d1) | productcatalogservice(0.45,d0)
+  Case: rcaeval-re1_re1ob_adservice_loss_2
+    Expected: adservice  →  Predicted: emailservice
+    GT anomaly=0.8621  max=1.0133  inGraph=true  edges=21
+    GT metric=workload head=[14,2,0,4,4,2] tail=[2,0,8,2]
+    GT dominant=workload head=[14,2,0,4,4,2] tail=[2,0,8,2]
+    GT breakdown=dev=0.740 trend=0.000 cv=0.048 burst=0.074 rise=4.500 drop=1.000 base=4.000
+    GT transientSkipped=[cpu]
+    topAnomaly: emailservice(1.013) | adservice(0.862) | checkoutservice(0.830)
+    top1 metric=workload head=[16,4,0,4,4,2] tail=[4,0,8,4]
+    top1 breakdown=dev=0.875 trend=0.000 cv=0.051 burst=0.088 rise=6.500 drop=1.000 base=4.000
+    top1 transientSkipped=[cpu,mem]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=1000 top1=1000 (tie)
+    ratioContrib GT=0.005 top1=0.225
+    topoSource GT=0.988 top1=0.272
+    Reason: Top prediction "emailservice" does not match ground truth "adservice"
+    Top-K: emailservice(1.00,d0) | adservice(0.86,d0) | checkoutservice(0.39,d1) | main(0.09,d1) | recommendationservice(0.08,d1)
+  Case: rcaeval-re1_re1ob_adservice_loss_3
+    Expected: adservice  →  Predicted: checkoutservice
+    GT anomaly=0.8847  max=0.9144  inGraph=true  edges=21
+    GT metric=workload head=[8,0,4,2,0,2] tail=[0,0,4,0]
+    GT dominant=workload head=[8,0,4,2,0,2] tail=[0,0,4,0]
+    GT breakdown=dev=0.757 trend=0.000 cv=0.052 burst=0.076 rise=4.716 drop=1.000 base=3.849
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: checkoutservice(0.914) | adservice(0.885) | cartservice(0.191)
+    top1 metric=workload head=[8,2,6,2,0,2] tail=[0,2,2,0]
+    top1 breakdown=dev=0.788 trend=0.000 cv=0.047 burst=0.079 rise=5.140 drop=1.000 base=3.583
+    top1 transientSkipped=[cpu,mem,latency-50,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.028 top1=0.030
+    topoSource GT=0.936 top1=0.930
+    Reason: Top prediction "checkoutservice" does not match ground truth "adservice"
+    Top-K: checkoutservice(0.43,d1) | adservice(0.88,d0) | cartservice(0.19,d0) | recommendationservice(0.07,d1) | main(0.07,d1)
+  Case: rcaeval-re1_re1ob_adservice_loss_4
+    Expected: adservice  →  Predicted: checkoutservice
+    GT anomaly=0.0000  max=0.2394  inGraph=true  edges=21
+    GT metric=workload head=[2,0,4,0,4,4] tail=[4,0,1.887,4.564]
+    GT transientSkipped=[cpu,mem,workload,latency-50,latency-90]
+    topAnomaly: checkoutservice(0.239) | recommendationservice(0.179) | currencyservice(0.163)
+    top1 metric=latency-50 head=[0.3951612903225806,0.396551724137931,0.3939393939393938,0.3916666666666667,0.3825757575757575,0.3825757575757575] tail=[0.6319444444444444,0.6231343283582089,0.6029401882550585,0.6029400648028198]
+    top1 breakdown=dev=0.184 trend=0.056 cv=0.000 burst=0.000 rise=0.526 drop=0.282 base=0.430
+    top1 transientSkipped=[cpu,mem,latency-90]
+    onset GT=9007199254740991 top1=439 (source later ✗)
+    injectDelay GT=undef top1=79000 (undetermined)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "checkoutservice" does not match ground truth "adservice"
+    Top-K: checkoutservice(0.11,d1) | recommendationservice(0.08,d1) | currencyservice(0.16,d0) | main(0.07,d1) | shippingservice(0.03,d0)
+  Case: rcaeval-re1_re1ob_cartservice_loss_4
+    Expected: cartservice  →  Predicted: paymentservice
+    GT anomaly=0.1390  max=1.0421  inGraph=true  edges=21
+    GT metric=workload head=[86,64,158,20,94,74] tail=[48,60,102,108]
+    GT dominant=cpu head=[3.802152885193993,3.802152885193993,3.802152885193993,3.802152885193993,3.802152885193993,3.802152885193993] tail=[4.321448352973389,4.321448352973389,4.321448352973389,4.574754434587233]
+    GT breakdown=dev=0.139 trend=0.000 cv=0.000 burst=0.000 rise=0.258 drop=0.377 base=4.055
+    GT transientSkipped=[mem,workload,latency-50,latency-90]
+    topAnomaly: paymentservice(1.042) | redis(0.191) | checkoutservice(0.175)
+    top1 metric=workload head=[4,0,2,0,2,0] tail=[0,4,2,0]
+    top1 breakdown=dev=0.903 trend=0.000 cv=0.049 burst=0.090 rise=7.000 drop=1.000 base=2.000
+    top1 transientSkipped=[cpu,latency-50,latency-90]
+    onset GT=7 top1=0 (source later ✗)
+    injectDelay GT=72000 top1=0 (source later ✗)
+    ratioContrib GT=0.653 top1=0.049
+    topoSource GT=0.830 top1=0.871
+    Reason: Top prediction "paymentservice" does not match ground truth "cartservice"
+    Top-K: paymentservice(1.00,d0) | redis(0.19,d0) | checkoutservice(0.08,d1) | main(0.07,d1) | cartservice(0.14,d0)
+  Case: rcaeval-re1_re1ob_checkoutservice_loss_1
+    Expected: checkoutservice  →  Predicted: cartservice
+    GT anomaly=1.1422  max=2.3452  inGraph=true  edges=21
+    GT metric=workload head=[0,8,0,0,0,4] tail=[2,6,0,0]
+    GT dominant=cpu head=[8.35063978772367,0.7954739191729105,0.7954739191729105,0.7954739191729105,0.7954739191729105,0.7954739191729105] tail=[0.7289569770428981,0.7289569770428981,0.7289569770428981,0.6247950996649433]
+    GT breakdown=dev=1.013 trend=0.028 cv=0.000 burst=0.101 rise=9.294 drop=0.486 base=0.811
+    GT transientSkipped=[latency-90]
+    topAnomaly: cartservice(2.345) | checkoutservice(1.142) | recommendationservice(0.332)
+    top1 metric=latency-90 head=[0.0044974957118353335,0.004503591262495373,0.00448877516206073,0.00448877516206073,0.004486163307140418,0.004486163307140418] tail=[0.10651639344262265,0.10651639344262265,0.11097560975609796,0.11097560975609796]
+    top1 breakdown=dev=1.616 trend=0.492 cv=0.075 burst=0.162 rise=40.339 drop=0.036 base=0.005
+    top1 transientSkipped=[mem,workload]
+    onset GT=0 top1=647 (source earlier ✓)
+    injectDelay GT=8000 top1=287000 (source earlier ✓)
+    ratioContrib GT=0.004 top1=0.228
+    topoSource GT=0.989 top1=0.224
+    Reason: Top prediction "cartservice" does not match ground truth "checkoutservice"
+    Top-K: cartservice(1.00,d0) | checkoutservice(0.54,d1) | recommendationservice(0.16,d1) | redis(0.14,d0) | adservice(0.07,d0)
+  Case: rcaeval-re1_re1ob_productcatalogservice_mem_1
+    Expected: productcatalogservice  →  Predicted: recommendationservice
+    GT anomaly=2.8543  max=3.4074  inGraph=true  edges=22
+    GT metric=load head=[608,254,966,626,432,684] tail=[1078,464,160,96]
+    GT dominant=latency head=[0.0049298386614440096,0.00492983411237343,0.00492982972815565,0.004929960611137082,0.004925164931616415,0.0049251609531657985] tail=[0.721379703534777,0.721379703534777,0.721379703534777,0.7363849765258212]
+    GT breakdown=dev=2.322 trend=0.477 cv=0.056 burst=0.000 rise=208.881 drop=0.037 base=0.005
+    GT transientSkipped=[load]
+    topAnomaly: recommendationservice(3.407) | cartservice(2.935) | productcatalogservice(2.854)
+    top1 metric=latency head=[0.009740437158469945,0.009740437158469947,0.009740437158469945,0.009799625468164794,0.009799625468164794,0.009799625468164794] tail=[1.4453488372093033,1.4453488372093033,1.4453488372093033,1.563385826771654]
+    top1 breakdown=dev=2.599 trend=0.484 cv=0.064 burst=0.260 rise=396.332 drop=0.083 base=0.010
+    top1 transientSkipped=[cpu,mem,load]
+    onset GT=209 top1=169 (source later ✗)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.344 top1=0.200
+    topoSource GT=0.000 top1=0.000
+    Reason: Top prediction "recommendationservice" does not match ground truth "productcatalogservice"
+    Top-K: recommendationservice(1.00,d1) | cartservice(1.00,d0) | productcatalogservice(1.00,d0) | checkoutservice(1.00,d1) | frontend(0.65,d2)
+  [semantic] 375/1876 services resolved (20.0%) — embedding=375, llm=0, exact=1501
+  [trace] No trace data available for 125 cases
+  [log] No log data available for 125 cases
+  [topo] system=SockShop, edges=13 exact + 3 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  SockShop                       RE1             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   | 100.0% | 100.0% |  96.0% |  76.0% |  96.0% |  93.6% ║
+║ Micro-Kinetic       | Avg@5  | 100.0% | 100.0% |  96.0% |  76.0% |  96.0% |  93.6% ║
+║ Micro-Kinetic       | LA     | 100.0% | 100.0% |  96.0% |  76.0% |  96.0% |  93.6% ║
+║ Micro-Kinetic       | TA     | 100.0% | 100.0% |  96.0% |  76.0% |  96.0% |  93.6% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: SockShop/RE1 (top 1/fault type) ──
+  Case: rcaeval-re1_re1ss_catalogue_disk_4
+    Expected: catalogue  →  Predicted: front-end
+    GT anomaly=2.1062  max=2.9522  inGraph=true  edges=16
+    GT metric=error head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=cpu head=[1.2527035760445477,1.2527035760445477,1.219923278328945,1.219923278328945,1.219923278328945,1.219923278328945] tail=[49.36451139518025,49.36451139518025,49.36451139518025,49.360855629257]
+    GT breakdown=dev=1.592 trend=0.463 cv=0.051 burst=0.000 rise=38.052 drop=0.585 base=1.264
+    GT transientSkipped=[mem,workload,latency-90]
+    topAnomaly: front-end(2.952) | user(2.311) | orders(2.252)
+    top1 metric=latency-50 head=[0.026102532913028227,0.026102508289199484,0.026102443311188977,0.026102587538829772,0.02610268103201415,0.02526292023216925] tail=[0.00025029171528588096,0.00025029171528588096,0.00025029171528588096,0.00025057736720554276]
+    top1 breakdown=dev=2.000 trend=0.677 cv=0.075 burst=0.200 rise=98.972 drop=0.221 base=0.000
+    top1 transientSkipped=[error]
+    onset GT=71 top1=0 (source later ✗)
+    injectDelay GT=0 top1=105000 (source earlier ✓)
+    ratioContrib GT=0.296 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "catalogue"
+    Top-K: front-end(0.46,d4) | user(1.00,d1) | orders(0.48,d3) | catalogue(1.00,d1) | carts-db(0.96,d0)
+  Case: rcaeval-re1_re1ss_payment_loss_1
+    Expected: payment  →  Predicted: queue-master
+    GT anomaly=0.1626  max=0.7239  inGraph=true  edges=16
+    GT metric=workload head=[8,14,12.016,20,4,8] tail=[4,8,18,4]
+    GT dominant=latency-90 head=[0.003437333333333333,0.0034346666666666666,0.0034346666666666666,0.0033616438356164386,0.0033616438356164386,0.0033616438356164386] tail=[0.0040359640560542935,0.004101298701298699,0.004101298701298699,0.004101298701298699]
+    GT breakdown=dev=0.119 trend=0.043 cv=0.000 burst=0.000 rise=0.316 drop=0.055 base=0.003
+    GT transientSkipped=[cpu,mem,workload]
+    topAnomaly: queue-master(0.724) | orders(0.611) | catalogue(0.386)
+    top1 metric=latency-90 head=[0.0012999999999999989,0.0004995412844036697,0.0004995412844036697,0.0004995412844036697,0.0004995412844036697,0.0004949999999999999] tail=[0.0004778761061946903,0.00047787610619469027,0.00047787610619469027,0.00047596153846153844]
+    top1 breakdown=dev=0.653 trend=0.039 cv=0.032 burst=0.000 rise=3.500 drop=0.053 base=0.001
+    top1 transientSkipped=[mem,workload]
+    onset GT=428 top1=0 (source later ✗)
+    injectDelay GT=68000 top1=41000 (source later ✗)
+    ratioContrib GT=0.623 top1=0.126
+    topoSource GT=0.389 top1=0.762
+    Reason: Top prediction "queue-master" does not match ground truth "payment"
+    Top-K: queue-master(0.72,d0) | orders(0.13,d3) | catalogue(0.18,d1) | carts(0.11,d2) | shipping(0.25,d0)
+  Case: rcaeval-re1_re1ss_payment_loss_2
+    Expected: payment  →  Predicted: rabbitmq-exporter
+    GT anomaly=0.1331  max=0.3520  inGraph=true  edges=16
+    GT metric=workload head=[6.05,8.073,14,10,16,8] tail=[6,12,16,11.906]
+    GT dominant=latency-90 head=[0.0035795119828849237,0.0035797468354430376,0.0035797468354430376,0.0035873417721518984,0.0035873417721518984,0.00350566037735849] tail=[0.004014285714285715,0.00400609260978972,0.004005518043451925,0.004001021775920383]
+    GT breakdown=dev=0.098 trend=0.035 cv=0.000 burst=0.000 rise=0.254 drop=0.046 base=0.003
+    GT transientSkipped=[cpu,workload,latency-50]
+    topAnomaly: rabbitmq-exporter(0.352) | carts(0.208) | front-end(0.157)
+    top1 metric=cpu head=[0,0,0,0,0,0] tail=[0.00005736364917555229,0.00005736364917555229,0.0000573636491755523,0.0000573636491755523]
+    top1 breakdown=dev=0.301 trend=0.016 cv=0.035 burst=0.000 rise=0.849 drop=1.000 base=0.000
+    onset GT=9007199254740991 top1=0 (source later ✗)
+    injectDelay GT=undef top1=0 (undetermined)
+    ratioContrib GT=0.384 top1=0.017
+    topoSource GT=0.873 top1=0.991
+    Reason: Top prediction "rabbitmq-exporter" does not match ground truth "payment"
+    Top-K: rabbitmq-exporter(0.35,d0) | carts(0.06,d2) | front-end(0.02,d4) | orders-db(0.15,d0) | catalogue(0.07,d1)
+  Case: rcaeval-re1_re1ss_payment_loss_3
+    Expected: payment  →  Predicted: orders
+    GT anomaly=0.0850  max=1.2102  inGraph=true  edges=16
+    GT metric=workload head=[8,8,14,10,6,14] tail=[16,14,10,14]
+    GT dominant=latency-90 head=[0.004348189415041783,0.004348189415041783,0.004348189415041783,0.004348189415041783,0.004353678474114441,0.004342779291553135] tail=[0.004910543130990415,0.004910543130990415,0.004911977647150663,0.004949501661129567]
+    GT breakdown=dev=0.061 trend=0.024 cv=0.000 burst=0.000 rise=0.151 drop=0.003 base=0.004
+    GT transientSkipped=[cpu,workload]
+    topAnomaly: orders(1.210) | shipping(0.509) | carts-db(0.499)
+    top1 metric=latency-90 head=[0.04504098360655739,0.04504098360655739,0.04504098360655739,0.04504098360655739,0.04383928571428572,0.04383928571428572] tail=[0.19040540540540524,0.19040540540540524,0.18493243243243251,0.18653846153846138]
+    top1 breakdown=dev=0.839 trend=0.333 cv=0.038 burst=0.000 rise=5.908 drop=0.149 base=0.028
+    top1 transientSkipped=[latency-50]
+    onset GT=9007199254740991 top1=0 (source later ✗)
+    injectDelay GT=undef top1=24000 (undetermined)
+    ratioContrib GT=0.855 top1=0.021
+    topoSource GT=0.000 top1=0.935
+    Reason: Top prediction "orders" does not match ground truth "payment"
+    Top-K: orders(0.26,d3) | shipping(0.51,d0) | carts-db(0.50,d0) | user(0.23,d1) | carts(0.14,d2)
+  Case: rcaeval-re1_re1ss_payment_loss_4
+    Expected: payment  →  Predicted: shipping
+    GT anomaly=0.1295  max=0.8018  inGraph=true  edges=16
+    GT metric=workload head=[10,8,8,12,10,12] tail=[12.036,10,14,4]
+    GT dominant=latency-90 head=[0.00339448275862069,0.00339448275862069,0.003402721088435374,0.003402721088435374,0.003402721088435374,0.0033809523809523808] tail=[0.003873677548554531,0.003874010333866787,0.003873906140605224,0.0038712865015771082]
+    GT breakdown=dev=0.097 trend=0.033 cv=0.000 burst=0.000 rise=0.249 drop=0.078 base=0.003
+    GT transientSkipped=[cpu,mem,workload]
+    topAnomaly: shipping(0.802) | user(0.430) | carts-db(0.184)
+    top1 metric=cpu head=[1.8725125734162988,1.8136878059402302,1.8136878059402302,1.8136878059402302,1.8136878059402302,1.8136878059402302] tail=[0.6486568864356536,0.6486568864356536,0.6486568864356536,0.6368064521425035]
+    top1 breakdown=dev=0.605 trend=0.108 cv=0.029 burst=0.060 rise=3.026 drop=0.364 base=0.717
+    top1 transientSkipped=[workload,latency-90]
+    onset GT=9007199254740991 top1=0 (source later ✗)
+    injectDelay GT=undef top1=67000 (undetermined)
+    ratioContrib GT=0.090 top1=0.016
+    topoSource GT=0.976 top1=0.976
+    Reason: Top prediction "shipping" does not match ground truth "payment"
+    Top-K: shipping(0.80,d0) | user(0.20,d1) | carts-db(0.18,d0) | payment(0.13,d0) | orders-db(0.10,d0)
+  Case: rcaeval-re1_re1ss_payment_loss_5
+    Expected: payment  →  Predicted: queue-master
+    GT anomaly=0.1495  max=0.4172  inGraph=true  edges=16
+    GT metric=workload head=[10,14,7.929,12.048,6,18] tail=[6,10,16,18]
+    GT dominant=latency-90 head=[0.003517006802721088,0.0035224489795918365,0.003520545442772263,0.0035061224489795913,0.0035061224489795913,0.0035061224489795913] tail=[0.004077333333333334,0.004082666666666667,0.004082666666666667,0.004082666666666667]
+    GT breakdown=dev=0.107 trend=0.042 cv=0.000 burst=0.000 rise=0.280 drop=0.030 base=0.003
+    GT transientSkipped=[cpu,workload]
+    topAnomaly: queue-master(0.417) | carts-db(0.198) | rabbitmq(0.155)
+    top1 metric=latency-90 head=[0.0033703703703703704,0.0035000000000000005,0.0035000000000000005,0.003500000000000001,0.0035000000000000005,0.0034827586206896545] tail=[0.0021764705882352958,0.0021764705882352958,0.0021764705882352958,0.0016153846153846136]
+    top1 breakdown=dev=0.263 trend=0.154 cv=0.000 burst=0.000 rise=0.373 drop=0.833 base=0.003
+    top1 transientSkipped=[cpu,mem,workload]
+    onset GT=9007199254740991 top1=40 (source later ✗)
+    injectDelay GT=undef top1=70000 (undetermined)
+    ratioContrib GT=0.172 top1=0.059
+    topoSource GT=0.974 top1=0.978
+    Reason: Top prediction "queue-master" does not match ground truth "payment"
+    Top-K: queue-master(0.42,d0) | carts-db(0.20,d0) | rabbitmq(0.16,d0) | payment(0.15,d0) | user(0.05,d1)
+  Case: rcaeval-re1_re1ss_orders_mem_3
+    Expected: orders  →  Predicted: catalogue
+    GT anomaly=1.7181  max=2.1190  inGraph=true  edges=16
+    GT metric=workload head=[10,10,12,6,8,16] tail=[8,2,10,2]
+    GT dominant=cpu head=[4.522890324293571,4.522890324293571,4.522890324293571,5.585576346058646,5.585576346058646,5.585576346058646] tail=[49.3799008674985,49.3799008674985,49.3799008674985,49.3799008674985]
+    GT breakdown=dev=1.250 trend=0.421 cv=0.047 burst=0.000 rise=16.790 drop=0.293 base=2.805
+    GT transientSkipped=[workload,latency-50,latency-90]
+    topAnomaly: catalogue(2.119) | orders(1.718) | carts(0.443)
+    top1 metric=latency-90 head=[0.19944196428571423,0.19944196428571423,0.17834394904458598,0.16955414012738845,0.16955414012738845,0.16955414012738845] tail=[0.004830578512396695,0.0047964912280701755,0.0047964912280701755,0.0047964912280701755]
+    top1 breakdown=dev=1.633 trend=0.248 cv=0.075 burst=0.163 rise=41.932 drop=0.005 base=0.005
+    top1 transientSkipped=[cpu,workload]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=undef (undetermined)
+    ratioContrib GT=0.076 top1=0.237
+    topoSource GT=0.648 top1=0.563
+    Reason: Top prediction "catalogue" does not match ground truth "orders"
+    Top-K: catalogue(1.00,d1) | orders(0.37,d3) | carts(0.14,d2) | rabbitmq-exporter(0.41,d0) | front-end(0.06,d4)
+  [semantic] 3500/8000 services resolved (43.8%) — embedding=3500, llm=0, exact=4500
+  [trace] No trace data available for 125 cases
+  [log] No log data available for 125 cases
+  [topo] system=TrainTicket, edges=51 exact + 28 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  TrainTicket                    RE1             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  80.0% |  72.0% |  52.0% |  52.0% |  68.0% |  64.8% ║
+║ Micro-Kinetic       | Avg@5  |  80.0% |  72.0% |  52.0% |  52.0% |  68.0% |  64.8% ║
+║ Micro-Kinetic       | LA     |  80.0% |  72.0% |  52.0% |  52.0% |  68.0% |  64.8% ║
+║ Micro-Kinetic       | TA     |  80.0% |  72.0% |  52.0% |  52.0% |  68.0% |  64.8% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: TrainTicket/RE1 (top 5/fault type) ──
+  Case: rcaeval-re1_re1tt_ts-auth-service_cpu_1
+    Expected: ts-auth-service  →  Predicted: ts-food-map-service
+    GT anomaly=0.8198  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[2,3,2,5,8,9] tail=[3,8,5,6]
+    GT dominant=latency-90 head=[0.41194029850746255,0.41142857142857153,0.41142857142857153,0.41142857142857153,0.4007246376811595,0.38333333333333336] tail=[1.9156250000000004,1.9156250000000004,1.93125,1.9187499999999997]
+    GT breakdown=dev=0.666 trend=0.222 cv=0.027 burst=0.000 rise=3.639 drop=0.165 base=0.418
+    GT transientSkipped=[workload]
+    topAnomaly: ts-food-map-service(1.000) | ts-order-service(0.971) | ts-travel-service(0.964)
+    top1 metric=cpu head=[8.04146482567469,8.04146482567469,6.930765850459116,6.930765850459116,6.930765850459116,6.930765850459116] tail=[0.6218891913376191,0.6218891913376191,0.6218891913376191,0.6218891913376191]
+    top1 breakdown=dev=0.797 trend=0.193 cv=0.047 burst=0.080 rise=5.270 drop=0.862 base=1.283
+    onset GT=231 top1=0 (source later ✗)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.552 top1=0.084
+    topoSource GT=0.233 top1=0.770
+    Reason: Top prediction "ts-food-map-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-food-map-service(1.00,d0) | ts-order-service(0.11,d5) | ts-travel-service(0.29,d2) | ts-contacts-service(0.44,d1) | ts-assurance-service(0.14,d4)
+  Case: rcaeval-re1_re1tt_ts-auth-service_cpu_2
+    Expected: ts-auth-service  →  Predicted: ts-food-map-service
+    GT anomaly=0.6847  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[9.374,3.994,3.992,14.056,4.01,2] tail=[4.028,4,8,1.935]
+    GT dominant=latency-90 head=[0.32950000423725245,0.3294999830514221,0.3239135480662068,0.3296875000000002,0.34553571428571445,0.34553571428571445] tail=[0.8144736842105265,0.8065789473684211,0.7826086604064751,0.7781711543664709]
+    GT breakdown=dev=0.692 trend=0.200 cv=0.027 burst=0.000 rise=3.922 drop=0.248 base=0.316
+    topAnomaly: ts-food-map-service(1.000) | ts-order-service(0.890) | ts-travel-service(0.741)
+    top1 metric=cpu head=[8.795038458432074,8.97028962992505,9.145540801418024,10.515070289578453,9.399200141466615,9.399200141466615] tail=[0.7011515977892078,1.060388896054176,1.060388896054176,1.060388896054176]
+    top1 breakdown=dev=1.032 trend=0.146 cv=0.062 burst=0.103 rise=9.763 drop=0.605 base=1.051
+    onset GT=104 top1=0 (source later ✗)
+    injectDelay GT=14000 top1=33000 (source earlier ✓)
+    ratioContrib GT=0.563 top1=0.102
+    topoSource GT=0.561 top1=0.717
+    Reason: Top prediction "ts-food-map-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-food-map-service(1.00,d0) | ts-order-service(0.10,d5) | ts-travel-service(0.23,d2) | ts-auth-service(0.68,d0) | ts-assurance-service(0.09,d4)
+  Case: rcaeval-re1_re1tt_ts-auth-service_cpu_3
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.4731  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[2,11,10,8,1,13] tail=[7.012,12,7.976,1.003]
+    GT dominant=latency-90 head=[0.4934782608695651,0.49222972972972967,0.49222972972972967,0.49222972972972967,0.49673913043478246,0.5026315789473685] tail=[0.9654362416107383,0.9654362416107383,0.9700704225352113,0.9708904109589044]
+    GT breakdown=dev=0.602 trend=0.164 cv=0.000 burst=0.060 rise=2.999 drop=0.190 base=0.471
+    GT transientSkipped=[workload]
+    topAnomaly: ts-order-service(1.000) | ts-station-service(0.593) | ts-config-service(0.568)
+    top1 metric=latency-90 head=[0.3250000000000085,0.4000000000000039,0.412500000000002,0.4000000000000013,0.2875000000000019,0.5156248940606152] tail=[0.022674994978562492,0.022675000000000004,0.022449948519566804,0.021836957591044894]
+    top1 breakdown=dev=1.376 trend=0.158 cv=0.075 burst=0.138 rise=22.753 drop=0.157 base=0.023
+    top1 transientSkipped=[cpu,latency-50]
+    onset GT=51 top1=0 (source later ✗)
+    injectDelay GT=10000 top1=undef (undetermined)
+    ratioContrib GT=0.626 top1=0.000
+    topoSource GT=0.558 top1=0.791
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-station-service(0.59,d0) | ts-config-service(0.27,d1) | ts-basic-service(0.17,d2) | ts-admin-basic-info-service(0.10,d3)
+  Case: rcaeval-re1_re1tt_ts-route-service_cpu_3
+    Expected: ts-route-service  →  Predicted: ts-order-other-service
+    GT anomaly=0.9848  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[43.126,62,65.936,20.02,15,26] tail=[21,39,86.781,71.175]
+    GT dominant=cpu head=[4.7793795579227245,4.87293847979198,5.613535312155368,5.613535312155368,5.6568116881220165,5.6568116881220165] tail=[69.4802721678517,69.4802721678517,69.4802721678517,69.4802721678517]
+    GT breakdown=dev=1.091 trend=0.399 cv=0.044 burst=0.000 rise=11.324 drop=0.368 base=5.657
+    GT transientSkipped=[workload]
+    topAnomaly: ts-order-other-service(1.000) | ts-route-service(0.985) | ts-order-service(0.706)
+    top1 metric=cpu head=[5.007567258905294,5.007567258905294,5.007567258905294,5.007567258905294,5.007567258905294,5.007567258905294] tail=[0.9197169182862779,0.9197169182862779,0.9197169182862779,0.9197169182862779]
+    top1 breakdown=dev=1.112 trend=0.264 cv=0.071 burst=0.111 rise=11.934 drop=0.671 base=0.460
+    top1 transientSkipped=[latency-50,latency-90]
+    onset GT=139 top1=0 (source later ✗)
+    injectDelay GT=14000 top1=102000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.009
+    topoSource GT=0.566 top1=0.978
+    Reason: Top prediction "ts-order-other-service" does not match ground truth "ts-route-service"
+    Top-K: ts-order-other-service(0.09,d6) | ts-route-service(0.98,d0) | ts-order-service(0.08,d5) | ts-config-service(0.29,d1) | ts-travel-service(0.19,d2)
+  Case: rcaeval-re1_re1tt_ts-travel-service_cpu_5
+    Expected: ts-travel-service  →  Predicted: ts-consign-price-service
+    GT anomaly=0.9884  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[4,4.992,9.016,8,7.742,3.148] tail=[3,11,4,3]
+    GT dominant=cpu head=[4.683601320620834,4.683601320620834,4.683601320620834,4.063344183920883,4.063344183920883,4.063344183920883] tail=[40.02231506486634,40.014464453950296,40.014464453950296,40.04254906609772]
+    GT breakdown=dev=1.209 trend=0.414 cv=0.046 burst=0.000 rise=15.185 drop=0.327 base=2.474
+    GT transientSkipped=[workload,latency-90]
+    topAnomaly: ts-consign-price-service(1.000) | ts-travel-service(0.988) | ts-price-service(0.449)
+    top1 metric=cpu head=[2.8722120885967923,2.8155296586828995,2.417517963227355,2.417517963227355,2.750701235397234,2.808877119400771] tail=[0.2965577647983661,0.2965577647983661,0.2965577647983661,0.2965577647983661]
+    top1 breakdown=dev=1.214 trend=0.278 cv=0.075 burst=0.121 rise=15.365 drop=0.587 base=0.213
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=22000 top1=2000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.289
+    topoSource GT=0.733 top1=0.782
+    Reason: Top prediction "ts-consign-price-service" does not match ground truth "ts-travel-service"
+    Top-K: ts-consign-price-service(1.00,d0) | ts-travel-service(0.30,d2) | ts-price-service(0.45,d0) | ts-admin-basic-info-service(0.09,d3) | ts-config-service(0.20,d1)
+  Case: rcaeval-re1_re1tt_ts-auth-service_delay_1
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.7997  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[5,6,13,10,7,8] tail=[2,6,4,5]
+    GT dominant=latency-50 head=[0.19507042253521126,0.19507042253521126,0.1934782608695652,0.1935483870967742,0.19375,0.19375001959053179] tail=[0.7608695652173912,0.7616822429906542,0.7607758620689654,0.7607758620689654]
+    GT breakdown=dev=0.595 trend=0.275 cv=0.030 burst=0.000 rise=2.932 drop=0.056 base=0.195
+    GT transientSkipped=[cpu,mem,workload]
+    topAnomaly: ts-order-service(1.000) | ts-travel-service(0.912) | ts-price-service(0.874)
+    top1 metric=workload head=[0,0,0,1,1,3] tail=[27,2,0,2]
+    top1 breakdown=dev=0.944 trend=0.035 cv=0.051 burst=0.094 rise=7.800 drop=1.000 base=5.000
+    top1 transientSkipped=[cpu,latency-50,latency-90]
+    onset GT=513 top1=0 (source later ✗)
+    injectDelay GT=33000 top1=0 (source later ✗)
+    ratioContrib GT=0.561 top1=0.000
+    topoSource GT=0.267 top1=0.735
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-travel-service(0.28,d2) | ts-price-service(0.87,d0) | ts-auth-service(0.80,d0) | ts-admin-basic-info-service(0.17,d3)
+  Case: rcaeval-re1_re1tt_ts-auth-service_delay_2
+    Expected: ts-auth-service  →  Predicted: ts-payment-service
+    GT anomaly=0.4541  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[1,4,12,9,4,12] tail=[6,4,3,8]
+    GT dominant=latency-50 head=[0.1965034965034965,0.19617346938775512,0.19407665505226485,0.19580479452054794,0.19580479452054794,0.19394736842105265] tail=[0.7645772594752186,0.7638121546961326,0.7638121546961326,0.7629310344827586]
+    GT breakdown=dev=0.604 trend=0.275 cv=0.030 burst=0.000 rise=3.014 drop=0.056 base=0.194
+    GT transientSkipped=[cpu]
+    topAnomaly: ts-payment-service(1.000) | ts-security-service(0.678) | ts-seat-service(0.639)
+    top1 metric=cpu head=[0.2861263641067856,0.2861263641067856,0.2861263641067856,0.2861263641067856,0.26196868331998296,0.26196868331998296] tail=[0.09622395312771907,3.5499892199758603,3.5499892199758603,3.5499892199758603]
+    top1 breakdown=dev=1.500 trend=0.278 cv=0.075 burst=0.150 rise=30.607 drop=0.613 base=0.218
+    top1 transientSkipped=[mem,latency-50]
+    onset GT=501 top1=0 (source later ✗)
+    injectDelay GT=21000 top1=1000 (source later ✗)
+    ratioContrib GT=0.605 top1=0.000
+    topoSource GT=0.688 top1=0.780
+    Reason: Top prediction "ts-payment-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-payment-service(0.47,d1) | ts-security-service(0.68,d0) | ts-seat-service(0.64,d0) | ts-consign-service(0.28,d1) | ts-food-map-service(0.54,d0)
+  Case: rcaeval-re1_re1tt_ts-auth-service_delay_3
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.6879  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[8,16,6,8,4,10] tail=[4,2,9.985,10]
+    GT dominant=latency-50 head=[0.18807829181494662,0.18807829181494662,0.18685661764705885,0.18902877697841727,0.1888679245283019,0.19271217712177122] tail=[0.7670118343195266,0.7676056338028169,0.7682746122075497,0.7674092196402493]
+    GT breakdown=dev=0.598 trend=0.275 cv=0.030 burst=0.000 rise=2.966 drop=0.071 base=0.195
+    GT transientSkipped=[cpu,workload]
+    topAnomaly: ts-order-service(1.000) | ts-contacts-service(0.905) | ts-assurance-service(0.710)
+    top1 metric=workload head=[0,0,0,0,6.976,11.012] tail=[3,0,0,2]
+    top1 breakdown=dev=1.106 trend=0.036 cv=0.061 burst=0.111 rise=11.750 drop=1.000 base=4.000
+    top1 transientSkipped=[latency-90]
+    onset GT=507 top1=0 (source later ✗)
+    injectDelay GT=27000 top1=0 (source later ✗)
+    ratioContrib GT=0.462 top1=0.000
+    topoSource GT=0.557 top1=0.568
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-contacts-service(0.43,d1) | ts-assurance-service(0.11,d4) | ts-auth-service(0.69,d0) | ts-ui-dashboard(0.03,d7)
+  Case: rcaeval-re1_re1tt_ts-order-service_delay_3
+    Expected: ts-order-service  →  Predicted: ts-inside-payment-service
+    GT anomaly=0.9282  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[0,0,0,0,0,0] tail=[2.006,0,0,0]
+    GT dominant=latency-90 head=[0.04845238095238096,0.048684241747380556,0.048750010590841414,0.0486764705882353,0.04867655812237655,0.04897062562122962] tail=[0.9055555555555556,0.9166666666666666,0.9166534575974752,0.9208359815172321]
+    GT breakdown=dev=1.511 trend=0.426 cv=0.049 burst=0.000 rise=31.432 drop=0.149 base=0.049
+    GT transientSkipped=[cpu]
+    topAnomaly: ts-inside-payment-service(1.000) | ts-order-service(0.928) | ts-price-service(0.437)
+    top1 metric=latency-50 head=[0.018653846153846153,0.018571428571428572,0.018863642666962506,0.019545454545454546,0.019545486063493576,0.019166713746581996] tail=[0.28125,0.2777777777777778,0.2777777777777778,0.2656254965309041]
+    top1 breakdown=dev=1.503 trend=0.432 cv=0.055 burst=0.150 rise=30.823 drop=0.257 base=0.024
+    onset GT=33 top1=132 (source earlier ✓)
+    injectDelay GT=38000 top1=57000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.889 top1=0.886
+    Reason: Top prediction "ts-inside-payment-service" does not match ground truth "ts-order-service"
+    Top-K: ts-inside-payment-service(1.00,d0) | ts-order-service(0.11,d5) | ts-price-service(0.44,d0) | ts-config-service(0.20,d1) | ts-train-service(0.15,d1)
+  Case: rcaeval-re1_re1tt_ts-order-service_delay_4
+    Expected: ts-order-service  →  Predicted: ts-inside-payment-service
+    GT anomaly=0.9311  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=latency-90 head=[0.06000000000000004,0.06000000000000004,0.06000000000000004,0.06000000000000004,0.05999940670927057,0.05999940670927057] tail=[0.8694444444444446,0.8777777777777779,0.8749961854708824,0.8750030978770277]
+    GT breakdown=dev=1.548 trend=0.415 cv=0.048 burst=0.000 rise=34.337 drop=0.227 base=0.045
+    GT transientSkipped=[mem]
+    topAnomaly: ts-inside-payment-service(1.000) | ts-order-service(0.931) | ts-travel-service(0.271)
+    top1 metric=latency-90 head=[0.0235,0.0235,0.0235,0.0235,0.0235,0.0235] tail=[0.5,0.5,0.5999999999999999,0.6000000000000001]
+    top1 breakdown=dev=1.671 trend=0.439 cv=0.051 burst=0.000 rise=45.865 drop=0.042 base=0.025
+    top1 transientSkipped=[cpu]
+    onset GT=0 top1=44 (source earlier ✓)
+    injectDelay GT=15000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.853 top1=0.971
+    Reason: Top prediction "ts-inside-payment-service" does not match ground truth "ts-order-service"
+    Top-K: ts-inside-payment-service(1.00,d0) | ts-order-service(0.11,d5) | ts-travel-service(0.08,d2) | ts-consign-price-service(0.20,d0) | ts-order-other-service(0.01,d6)
+  Case: rcaeval-re1_re1tt_ts-auth-service_disk_1
+    Expected: ts-auth-service  →  Predicted: ts-preserve-service
+    GT anomaly=0.8077  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[12,7.836,8,8,0,12] tail=[12,12,8,8]
+    GT dominant=latency-90 head=[0.7238091802618557,0.7238090302668541,0.7238092067792795,0.7437506381574549,0.7543750307015729,0.7543750295586323] tail=[1.8733050847457626,1.841891891891892,1.807692307692308,1.807692307692308]
+    GT breakdown=dev=0.339 trend=0.132 cv=0.000 burst=0.000 rise=1.180 drop=0.235 base=0.946
+    GT transientSkipped=[workload]
+    topAnomaly: ts-preserve-service(1.000) | ts-auth-service(0.808) | ts-inside-payment-service(0.684)
+    top1 metric=latency-90 head=[13.000467476108103,13.000540711315299,13.000449930542432,13.000441642987418,13.000433655474726,13.00042595198768] tail=[7.2500000000000036,7.0000000000000036,7.000000000000003,7.0000000000000036]
+    top1 breakdown=dev=0.450 trend=0.087 cv=0.000 burst=0.045 rise=1.820 drop=0.527 base=4.964
+    top1 transientSkipped=[cpu,mem,latency-50]
+    onset GT=98 top1=0 (source later ✗)
+    injectDelay GT=9000 top1=28000 (source earlier ✓)
+    ratioContrib GT=0.490 top1=0.077
+    topoSource GT=0.460 top1=0.793
+    Reason: Top prediction "ts-preserve-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-service(0.21,d3) | ts-auth-service(0.81,d0) | ts-inside-payment-service(0.68,d0) | ts-contacts-service(0.26,d1) | ts-ui-dashboard(0.06,d5)
+  Case: rcaeval-re1_re1tt_ts-auth-service_disk_2
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.3566  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[4,16.048,10,0,4,14] tail=[4,0,7.993,8.057]
+    GT dominant=latency-50 head=[0.3906250769146625,0.3906250753150399,0.3906250737800331,0.39062507230583093,0.3890724250599716,0.3928555083000334] tail=[0.6926467421630276,0.6926465310472604,0.6735296967108665,0.6651785714285713]
+    GT breakdown=dev=0.355 trend=0.109 cv=0.000 burst=0.000 rise=1.262 drop=0.248 base=0.325
+    GT transientSkipped=[workload]
+    topAnomaly: ts-order-service(1.000) | ts-travel-service(0.883) | ts-admin-basic-info-service(0.633)
+    top1 metric=workload head=[2,14.024,10,0,0,18.199] tail=[45.826,11.984,21.973,38.016]
+    top1 breakdown=dev=1.108 trend=0.028 cv=0.055 burst=0.111 rise=11.818 drop=1.000 base=4.094
+    top1 transientSkipped=[cpu,latency-50,latency-90]
+    onset GT=370 top1=0 (source later ✗)
+    injectDelay GT=10000 top1=0 (source later ✗)
+    ratioContrib GT=0.705 top1=0.000
+    topoSource GT=0.397 top1=0.648
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-travel-service(0.27,d2) | ts-admin-basic-info-service(0.14,d3) | ts-preserve-other-service(0.13,d3) | ts-order-other-service(0.05,d6)
+  Case: rcaeval-re1_re1tt_ts-auth-service_disk_3
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.5545  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[4.028,7.937,8,8,10.073,12.288] tail=[2,8,6.032,0]
+    GT dominant=workload head=[4.028,7.937,8,8,10.073,12.288] tail=[2,8,6.032,0]
+    GT breakdown=dev=0.574 trend=0.000 cv=0.027 burst=0.057 rise=2.750 drop=1.000 base=8.000
+    GT transientSkipped=[latency-90]
+    topAnomaly: ts-order-service(1.000) | ts-travel-service(0.805) | ts-admin-travel-service(0.752)
+    top1 metric=workload head=[6.028,0,0,0,5.943,0] tail=[0,20.06,12.13,44]
+    top1 breakdown=dev=1.027 trend=0.000 cv=0.058 burst=0.103 rise=9.639 drop=1.000 base=6.000
+    top1 transientSkipped=[cpu,mem,latency-50]
+    onset GT=0 top1=1 (source earlier ✓)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.606 top1=0.000
+    topoSource GT=0.455 top1=0.793
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-travel-service(0.25,d2) | ts-admin-travel-service(0.16,d3) | ts-admin-basic-info-service(0.15,d3) | ts-consign-service(0.28,d1)
+  Case: rcaeval-re1_re1tt_ts-auth-service_disk_4
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.3676  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[11.992,10,14.081,9.905,6.048,10] tail=[7.996,12.073,4.004,10.024]
+    GT dominant=latency-90 head=[0.8218171537436865,0.8218171315210171,0.8036373942494778,0.8036373510535507,0.8036373570151343,0.8036373393891011] tail=[1.2868416350590155,1.2868421052631582,1.286844926977208,1.2868414783294793]
+    GT breakdown=dev=0.340 trend=0.083 cv=0.000 burst=0.000 rise=1.188 drop=0.288 base=0.970
+    GT transientSkipped=[workload]
+    topAnomaly: ts-order-service(1.000) | ts-seat-service(0.590) | ts-ticketinfo-service(0.557)
+    top1 metric=workload head=[0,0,0,1.965,20.081,22.016] tail=[6.024,18.082,18.09,0]
+    top1 breakdown=dev=0.993 trend=0.000 cv=0.058 burst=0.099 rise=8.833 drop=1.000 base=5.917
+    top1 transientSkipped=[latency-50,latency-90]
+    onset GT=72 top1=0 (source later ✗)
+    injectDelay GT=37000 top1=0 (source later ✗)
+    ratioContrib GT=0.584 top1=0.000
+    topoSource GT=0.690 top1=0.690
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-seat-service(0.59,d0) | ts-ticketinfo-service(0.05,d6) | ts-order-other-service(0.05,d6) | ts-basic-service(0.15,d2)
+  Case: rcaeval-re1_re1tt_ts-auth-service_disk_5
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.4581  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[7.964,4,8,9.839,16.316,6.081] tail=[18.032,8,2,14]
+    GT dominant=latency-50 head=[0.3019653172193241,0.30196535636305916,0.30196537187041916,0.31489984370397356,0.33173495556275917,0.3317348894006172] tail=[0.5044910179640718,0.5141509433962264,0.5397058823529413,0.5397058823529413]
+    GT breakdown=dev=0.335 trend=0.117 cv=0.000 burst=0.000 rise=1.161 drop=0.302 base=0.356
+    GT transientSkipped=[workload]
+    topAnomaly: ts-order-service(1.000) | ts-preserve-other-service(0.978) | ts-admin-travel-service(0.893)
+    top1 metric=workload head=[0,8,8,0,16.057,20] tail=[10.061,24,0,0]
+    top1 breakdown=dev=0.846 trend=0.000 cv=0.055 burst=0.085 rise=6.018 drop=1.000 base=7.996
+    top1 transientSkipped=[cpu,mem,latency-50,latency-90]
+    onset GT=58 top1=0 (source later ✗)
+    injectDelay GT=18000 top1=2000 (source later ✗)
+    ratioContrib GT=0.650 top1=0.000
+    topoSource GT=0.331 top1=0.659
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-preserve-other-service(0.21,d3) | ts-admin-travel-service(0.19,d3) | ts-notification-service(0.83,d0) | ts-seat-service(0.73,d0)
+  Case: rcaeval-re1_re1tt_ts-auth-service_loss_1
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.5610  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[3.002,6,3,4,7,7] tail=[4.002,4,5,5]
+    GT dominant=latency-90 head=[0.47314814814814815,0.47314814814814815,0.47314814814814815,0.48125,0.47575,0.47575] tail=[0.9601851851851855,0.9168421052631579,0.9112460678084585,0.9117346938775513]
+    GT breakdown=dev=0.444 trend=0.196 cv=0.000 burst=0.000 rise=1.777 drop=0.268 base=0.380
+    GT transientSkipped=[cpu,workload]
+    topAnomaly: ts-order-service(1.000) | ts-travel-service(0.890) | ts-admin-basic-info-service(0.591)
+    top1 metric=workload head=[0,0,10,17,17,6] tail=[15,20,26,4]
+    top1 breakdown=dev=0.973 trend=0.016 cv=0.053 burst=0.097 rise=8.400 drop=1.000 base=5.000
+    top1 transientSkipped=[cpu,latency-90]
+    onset GT=494 top1=0 (source later ✗)
+    injectDelay GT=14000 top1=0 (source later ✗)
+    ratioContrib GT=0.629 top1=0.000
+    topoSource GT=0.409 top1=0.687
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.12,d5) | ts-travel-service(0.27,d2) | ts-admin-basic-info-service(0.13,d3) | ts-admin-travel-service(0.13,d3) | ts-auth-service(0.56,d0)
+  Case: rcaeval-re1_re1tt_ts-auth-service_loss_2
+    Expected: ts-auth-service  →  Predicted: ts-food-map-service
+    GT anomaly=0.4655  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[8,2,4,4,6,12] tail=[9,10.496,4.004,4.004]
+    GT dominant=latency-50 head=[0.21284722222222222,0.21151315789473685,0.21151315789473685,0.213013698630137,0.21135371179039303,0.21301386525373084] tail=[0.3701348043024168,0.3704545454545455,0.3739316239316239,0.3768524119159232]
+    GT breakdown=dev=0.454 trend=0.139 cv=0.000 burst=0.000 rise=1.843 drop=0.089 base=0.200
+    GT transientSkipped=[cpu,workload,latency-90]
+    topAnomaly: ts-food-map-service(1.000) | ts-contacts-service(0.844) | ts-consign-price-service(0.716)
+    top1 metric=cpu head=[3.454954895527095,3.454954895527095,3.454954895527095,3.454954895527095,3.454954895527095,3.454954895527095] tail=[0.7926822578091403,0.7926822578091403,0.7926822578091403,0.7926822578091403]
+    top1 breakdown=dev=0.839 trend=0.294 cv=0.056 burst=0.084 rise=5.908 drop=0.733 base=1.133
+    onset GT=521 top1=0 (source later ✗)
+    injectDelay GT=41000 top1=3000 (source later ✗)
+    ratioContrib GT=0.589 top1=0.054
+    topoSource GT=0.661 top1=0.857
+    Reason: Top prediction "ts-food-map-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-food-map-service(1.00,d0) | ts-contacts-service(0.40,d1) | ts-consign-price-service(0.72,d0) | ts-preserve-service(0.14,d3) | ts-order-service(0.08,d5)
+  Case: rcaeval-re1_re1tt_ts-auth-service_loss_3
+    Expected: ts-auth-service  →  Predicted: ts-food-map-service
+    GT anomaly=0.5763  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[0,7.996,8.01,4,6,13] tail=[8.016,9.016,6.495,2.003]
+    GT dominant=latency-90 head=[0.3984848484848486,0.3913794327754053,0.38425925925925924,0.38620689655172413,0.38620689655172413,0.38620689655172413] tail=[0.971961656001475,0.9717199999999998,0.9684692639042789,0.968469263944726]
+    GT breakdown=dev=0.557 trend=0.206 cv=0.000 burst=0.000 rise=2.609 drop=0.322 base=0.462
+    GT transientSkipped=[cpu]
+    topAnomaly: ts-food-map-service(1.000) | ts-order-service(0.902) | ts-consign-price-service(0.747)
+    top1 metric=cpu head=[4.234232163873049,4.234232163873049,4.234232163873049,4.234232163873049,4.234232163873049,3.6848871441106024] tail=[0.8019975432332862,0.8019975432332862,0.8019975432332862,1.2777251596288814]
+    top1 breakdown=dev=1.064 trend=0.092 cv=0.062 burst=0.106 rise=10.601 drop=0.635 base=0.864
+    onset GT=117 top1=0 (source later ✗)
+    injectDelay GT=7000 top1=6000 (source later ✗)
+    ratioContrib GT=0.611 top1=0.117
+    topoSource GT=0.457 top1=0.668
+    Reason: Top prediction "ts-food-map-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-food-map-service(1.00,d0) | ts-order-service(0.11,d5) | ts-consign-price-service(0.75,d0) | ts-basic-service(0.19,d2) | ts-auth-service(0.58,d0)
+  Case: rcaeval-re1_re1tt_ts-auth-service_loss_4
+    Expected: ts-auth-service  →  Predicted: ts-price-service
+    GT anomaly=0.7676  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[2.004,5.994,9.015,9.042,9,6] tail=[9.959,2.031,5,6.985]
+    GT dominant=latency-90 head=[0.6599999999999997,0.6600002033794897,0.6675919558718524,0.6758620689655175,0.6758620689655175,0.6758620689655175] tail=[1.3904913776116656,1.5018181818181837,1.501821473080067,1.5018148906455508]
+    GT breakdown=dev=0.461 trend=0.154 cv=0.000 burst=0.000 rise=1.888 drop=0.227 base=0.549
+    topAnomaly: ts-price-service(1.000) | ts-train-service(0.948) | ts-admin-travel-service(0.918)
+    top1 metric=workload head=[0,2,7,6,4.985,2.005] tail=[10,2,2,0]
+    top1 breakdown=dev=0.697 trend=0.000 cv=0.034 burst=0.070 rise=3.976 drop=1.000 base=3.000
+    top1 transientSkipped=[cpu,latency-50]
+    onset GT=283 top1=0 (source later ✗)
+    injectDelay GT=12000 top1=0 (source later ✗)
+    ratioContrib GT=0.607 top1=0.000
+    topoSource GT=0.083 top1=0.405
+    Reason: Top prediction "ts-price-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-price-service(1.00,d0) | ts-train-service(0.45,d1) | ts-admin-travel-service(0.20,d3) | ts-config-service(0.43,d1) | ts-admin-basic-info-service(0.20,d3)
+  Case: rcaeval-re1_re1tt_ts-auth-service_loss_5
+    Expected: ts-auth-service  →  Predicted: ts-price-service
+    GT anomaly=0.6389  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[6.984,11.02,3,7,2.994,9.012] tail=[13.018,3,4.96,1.996]
+    GT dominant=latency-50 head=[0.3031914509991721,0.3031914893617021,0.3031914893617021,0.28737113402061853,0.2704080984105039,0.2704081632653061] tail=[0.3986456926414032,0.398231478288495,0.40752196299217724,0.4086129123092279]
+    GT breakdown=dev=0.335 trend=0.135 cv=0.000 burst=0.000 rise=1.165 drop=0.109 base=0.211
+    GT transientSkipped=[workload,latency-90]
+    topAnomaly: ts-price-service(1.000) | ts-config-service(0.999) | ts-train-service(0.915)
+    top1 metric=workload head=[5,7,3,3,0,4] tail=[6,0.996,4.018,0]
+    top1 breakdown=dev=0.637 trend=0.000 cv=0.035 burst=0.064 rise=3.333 drop=1.000 base=3.000
+    top1 transientSkipped=[latency-50,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=39000 top1=1000 (source later ✗)
+    ratioContrib GT=0.536 top1=0.000
+    topoSource GT=0.198 top1=0.339
+    Reason: Top prediction "ts-price-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-price-service(1.00,d0) | ts-config-service(0.47,d1) | ts-train-service(0.43,d1) | ts-food-map-service(0.86,d0) | ts-travel-service(0.25,d2)
+  Case: rcaeval-re1_re1tt_ts-auth-service_mem_2
+    Expected: ts-auth-service  →  Predicted: ts-ui-dashboard
+    GT anomaly=0.9168  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[4,13,0,8,7,5.991] tail=[1,14,2,14.979]
+    GT dominant=latency-50 head=[0.1895569620253165,0.19163306451612902,0.19163306451612902,0.18943514644351467,0.19078947368421054,0.19088978449719002] tail=[0.8066860465116281,0.8066856232591576,0.8195266272189349,0.832848922714996]
+    GT breakdown=dev=0.701 trend=0.285 cv=0.032 burst=0.000 rise=4.025 drop=0.077 base=0.196
+    topAnomaly: ts-ui-dashboard(1.000) | ts-food-service(0.941) | ts-auth-service(0.917)
+    top1 metric=latency-90 head=[0.23946511627906975,0.2429746835443038,0.2429746835443038,0.2429746835443038,0.2429746835443038,0.24342857142857147] tail=[0.9868131868131867,0.9868131868131867,0.9868131868131867,0.9977011494252872]
+    top1 breakdown=dev=0.801 trend=0.276 cv=0.033 burst=0.000 rise=5.326 drop=0.062 base=0.247
+    top1 transientSkipped=[cpu,mem,workload]
+    onset GT=503 top1=121 (source later ✗)
+    injectDelay GT=23000 top1=11000 (source later ✗)
+    ratioContrib GT=0.518 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "ts-ui-dashboard" does not match ground truth "ts-auth-service"
+    Top-K: ts-ui-dashboard(0.07,d7) | ts-food-service(0.94,d0) | ts-auth-service(0.92,d0) | ts-ticketinfo-service(0.06,d6) | ts-admin-travel-service(0.12,d3)
+  Case: rcaeval-re1_re1tt_ts-auth-service_mem_5
+    Expected: ts-auth-service  →  Predicted: ts-consign-price-service
+    GT anomaly=0.5977  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[4,11,12,12,9.98,6.008] tail=[8,9,2.944,7.059]
+    GT dominant=latency-90 head=[0.44142857142857167,0.43966666666666665,0.4396667019214775,0.4446666666666669,0.46265363591395636,0.4669753086419753] tail=[2.058139534883721,2.0712590076695325,2.0569764554922734,2.0712598425196855]
+    GT breakdown=dev=0.737 trend=0.315 cv=0.035 burst=0.000 rise=4.456 drop=0.387 base=0.407
+    GT transientSkipped=[workload]
+    topAnomaly: ts-consign-price-service(1.000) | ts-consign-service(0.702) | ts-inside-payment-service(0.663)
+    top1 metric=latency-90 head=[0.024500000000000004,0.024500000000000004,0.024500000000000004,0.024357142857142862,0.024357142857142862,0.024357142857142862] tail=[0.39999999999999997,0.39999999999999997,0.4,0.4250000000000001]
+    top1 breakdown=dev=1.275 trend=0.341 cv=0.075 burst=0.128 rise=17.837 drop=0.069 base=0.023
+    top1 transientSkipped=[cpu]
+    onset GT=201 top1=568 (source earlier ✓)
+    injectDelay GT=16000 top1=88000 (source earlier ✓)
+    ratioContrib GT=0.544 top1=0.480
+    topoSource GT=0.397 top1=0.298
+    Reason: Top prediction "ts-consign-price-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-consign-price-service(1.00,d0) | ts-consign-service(0.33,d1) | ts-inside-payment-service(0.66,d0) | ts-food-service(0.65,d0) | ts-ui-dashboard(0.07,d5)
+  Case: rcaeval-re1_re1tt_ts-route-service_mem_4
+    Expected: ts-route-service  →  Predicted: ts-consign-price-service
+    GT anomaly=0.8899  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[51,63,34,33,23,6] tail=[28.282,43,33,57]
+    GT dominant=latency-90 head=[0.016540302267002528,0.01635,0.01647407407407409,0.01647407407407409,0.016637700534759367,0.016444881889763785] tail=[0.09331395348837206,0.09379310344827582,0.09379281140327365,0.09386454183266935]
+    GT breakdown=dev=1.160 trend=0.364 cv=0.044 burst=0.000 rise=13.457 drop=0.081 base=0.011
+    GT transientSkipped=[workload,latency-50]
+    topAnomaly: ts-consign-price-service(1.000) | ts-route-service(0.890) | ts-price-service(0.743)
+    top1 metric=latency-90 head=[0.04333334745714835,0.04333330979151365,0.04083333333333333,0.04083333333333333,0.04083333333333333,0.03916666666666667] tail=[0.43124973518071275,0.41875,0.4187492583865882,0.4125]
+    top1 breakdown=dev=1.263 trend=0.303 cv=0.070 burst=0.126 rise=17.315 drop=1.000 base=0.024
+    top1 transientSkipped=[cpu,latency-50]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=10000 top1=104000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.458
+    topoSource GT=0.475 top1=0.362
+    Reason: Top prediction "ts-consign-price-service" does not match ground truth "ts-route-service"
+    Top-K: ts-consign-price-service(1.00,d0) | ts-route-service(0.89,d0) | ts-price-service(0.74,d0) | ts-consign-service(0.30,d1) | ts-admin-travel-service(0.13,d3)
+  Case: rcaeval-re1_re1tt_ts-route-service_mem_5
+    Expected: ts-route-service  →  Predicted: ts-consign-price-service
+    GT anomaly=0.9081  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[58,29,70,59,63,33] tail=[47.974,5.002,21,51]
+    GT dominant=latency-90 head=[0.011602389078498318,0.01161960132890368,0.01161960132890368,0.011779659711020123,0.011388513513513537,0.011319587628866002] tail=[0.2831887057949855,0.2831896551724134,0.28864942528735615,0.2838983050847457]
+    GT breakdown=dev=1.552 trend=0.439 cv=0.050 burst=0.000 rise=34.669 drop=0.021 base=0.010
+    GT transientSkipped=[workload]
+    topAnomaly: ts-consign-price-service(1.000) | ts-route-service(0.908) | ts-consign-service(0.762)
+    top1 metric=latency-90 head=[0.021333333333333336,0.02166666666666667,0.0215,0.021863636363636363,0.021863636363636363,0.021863636363636363] tail=[0.3750000000000001,0.3750000000000001,0.3750000000000001,0.3750000000000001]
+    top1 breakdown=dev=1.518 trend=0.515 cv=0.064 burst=0.152 rise=31.955 drop=0.153 base=0.022
+    top1 transientSkipped=[latency-50]
+    onset GT=489 top1=172 (source later ✗)
+    injectDelay GT=9000 top1=137000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.476
+    topoSource GT=0.466 top1=0.263
+    Reason: Top prediction "ts-consign-price-service" does not match ground truth "ts-route-service"
+    Top-K: ts-consign-price-service(1.00,d0) | ts-route-service(0.91,d0) | ts-consign-service(0.36,d1) | ts-food-service(0.62,d0) | ts-admin-travel-service(0.13,d3)
+  Case: rcaeval-re1_re1tt_ts-train-service_mem_3
+    Expected: ts-train-service  →  Predicted: ts-order-service
+    GT anomaly=0.9552  max=1.0000  inGraph=true  edges=175
+    GT metric=workload head=[70,30.745,39.731,56.612,57,96] tail=[35.886,77.587,29.227,27]
+    GT dominant=cpu head=[8.296805175600754,8.296805175600754,8.296805175600754,8.296805175600754,8.296805175600754,8.296805175600754] tail=[67.48984058537168,67.48984058537168,67.48984058537168,67.48984058537168]
+    GT breakdown=dev=1.120 trend=0.403 cv=0.045 burst=0.000 rise=12.174 drop=0.304 base=5.154
+    topAnomaly: ts-order-service(1.000) | ts-train-service(0.955) | ts-order-other-service(0.861)
+    top1 metric=latency-90 head=[0.023006533297064195,0.02334871021087551,0.023389381398979735,0.023248569961136313,0.023573077030347632,0.023264890531724505] tail=[0.3009948432671037,0.28717907365128786,0.28946556016939706,0.2588323438902206]
+    top1 breakdown=dev=1.156 trend=0.309 cv=0.061 burst=0.116 rise=13.309 drop=0.063 base=0.023
+    onset GT=0 top1=508 (source earlier ✓)
+    injectDelay GT=16000 top1=28000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.449 top1=0.428
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-train-service"
+    Top-K: ts-order-service(0.21,d3) | ts-train-service(0.45,d1) | ts-order-other-service(0.14,d4) | ts-seat-service(0.74,d0) | ts-admin-travel-service(0.16,d3)
+
+Total duration: 263613ms
+
+=== RCAEval RE2 ===
+Micro-Kinetic — RCAEval Industry-Standard Benchmark
+═════════════════════════════════════════════════════════════════
+Data:  /home/runner/RCAEval-json
+Filter: system=all, suite=re2 (max 50 cases)
+injectTime: ON (RCAEval baseline protocol) | temporalWeight: 0
+signals: collisionWeight=0 topoWeight=0 logWeight=1 logSignalMode=count collapseDiscount=0 traceWeight=0
+Cases discovered: 735
+
+Scanned 735 directories with metrics.json
+Case distribution:
+  OnlineBoutique:RE1: 125 cases
+  OnlineBoutique:RE2: 90 cases
+  OnlineBoutique:RE3: 30 cases
+  SockShop:RE1: 125 cases
+  SockShop:RE2: 90 cases
+  SockShop:RE3: 30 cases
+  TrainTicket:RE1: 125 cases
+  TrainTicket:RE2: 90 cases
+  TrainTicket:RE3: 30 cases
+
+Groups to evaluate: 3
+═════════════════════════════════════════════════════════════════
+Topology: YAML v2 (loaded) + semantic enhancement (Zhipu embedding-3)
+═════════════════════════════════════════════════════════════════
+  [semantic] 49/652 services resolved (7.5%) — embedding=49, llm=0, exact=603
+  [trace] 50/50 cases with traces, 50 pruned, avg edges: 20 → 9 (55% reduction)
+  [trace] header: time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode
+  [log] 50/50 cases with logs, 2723 ERROR/FATAL entries, 0 stack-trace entries
+  [log] header: timestamp,container_name,message
+  [log] sample: ts=1705353846000 level=INFO svc=currencyservice msg="conversion request successful"
+  [topo] system=OnlineBoutique, edges=13 exact + 1 emb + 0 llm, svcs=undefined, unconnected=1
+
+════════════════════════════════════════════════════════════════════════════════
+║  OnlineBoutique                 RE2             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | SOCKET | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   | 100.0% |  66.7% | 100.0% |  55.6% | 100.0% |  83.3% |  84.3% ║
+║ Micro-Kinetic       | Avg@5  | 100.0% |  66.7% | 100.0% |  55.6% | 100.0% |  83.3% |  84.3% ║
+║ Micro-Kinetic       | LA     | 100.0% |  66.7% | 100.0% |  55.6% | 100.0% |  83.3% |  84.3% ║
+║ Micro-Kinetic       | TA     | 100.0% |  66.7% | 100.0% |  55.6% | 100.0% |  83.3% |  84.3% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: OnlineBoutique/RE2 (top 3/fault type) ──
+  Case: rcaeval-re2_re2ob_checkoutservice_delay_1
+    Expected: checkoutservice  →  Predicted: emailservice
+    GT anomaly=1.9109  max=2.1804  inGraph=true  edges=9
+    GT metric=latency-50 head=[0.14054054054054052,0.14054054054054052,0.14054054054054052,0.14054054054054052,0.14054054054054052,0.146875] tail=[2.32,2.32,2.32,2.32]
+    GT dominant=latency-50 head=[0.14054054054054052,0.14054054054054052,0.14054054054054052,0.14054054054054052,0.14054054054054052,0.146875] tail=[2.32,2.32,2.32,2.32]
+    GT breakdown=dev=1.432 trend=0.431 cv=0.048 burst=0.000 rise=26.057 drop=0.324 base=0.104
+    GT transientSkipped=[cpu,workload]
+    topAnomaly: emailservice(2.180) | paymentservice(2.138) | shippingservice(2.022)
+    top1 metric=latency-90 head=[0.0046,0.0046,0.0046,0.0046,0.0046,0.0046] tail=[0.220625,0.220625,0.220625,0.220625]
+    top1 breakdown=dev=1.688 trend=0.444 cv=0.049 burst=0.000 rise=47.704 drop=0.000 base=0.005
+    top1 transientSkipped=[cpu,mem,workload]
+    onset GT=0 top1=732 (source earlier ✓)
+    injectDelay GT=27000 top1=12000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.260
+    topoSource GT=1.000 top1=0.000
+    Reason: Top prediction "emailservice" does not match ground truth "checkoutservice"
+    Top-K: emailservice(1.00,d0) | paymentservice(1.00,d0) | shippingservice(1.00,d0) | checkoutservice(0.90,d1) | cartservice(0.23,d0)
+  Case: rcaeval-re2_re2ob_checkoutservice_delay_2
+    Expected: checkoutservice  →  Predicted: emailservice
+    GT anomaly=1.9662  max=2.1895  inGraph=true  edges=9
+    GT metric=latency-50 head=[0.11363636363636366,0.11363636363636366,0.12142857142857144,0.12142857142857144,0.12142857142857144,0.12142857142857144] tail=[2.33695652173913,2.33695652173913,2.33695652173913,2.33695652173913]
+    GT dominant=latency-50 head=[0.11363636363636366,0.11363636363636366,0.12142857142857144,0.12142857142857144,0.12142857142857144,0.12142857142857144] tail=[2.33695652173913,2.33695652173913,2.33695652173913,2.33695652173913]
+    GT breakdown=dev=1.469 trend=0.448 cv=0.049 burst=0.000 rise=28.470 drop=0.340 base=0.110
+    GT transientSkipped=[cpu]
+    topAnomaly: emailservice(2.189) | paymentservice(2.108) | shippingservice(2.018)
+    top1 metric=latency-90 head=[0.0046,0.0046,0.004705882352941178,0.004705882352941178,0.004705882352941178,0.004705882352941178] tail=[0.22000000000000003,0.22000000000000003,0.22000000000000003,0.22000000000000003]
+    top1 breakdown=dev=1.689 trend=0.451 cv=0.050 burst=0.000 rise=47.856 drop=0.000 base=0.005
+    top1 transientSkipped=[cpu,mem,workload,latency-50]
+    onset GT=257 top1=752 (source earlier ✓)
+    injectDelay GT=25000 top1=32000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.264
+    topoSource GT=1.000 top1=0.000
+    Reason: Top prediction "emailservice" does not match ground truth "checkoutservice"
+    Top-K: emailservice(1.00,d0) | paymentservice(1.00,d0) | shippingservice(1.00,d0) | checkoutservice(0.93,d1) | cartservice(0.10,d0)
+  Case: rcaeval-re2_re2ob_checkoutservice_delay_3
+    Expected: checkoutservice  →  Predicted: emailservice
+    GT anomaly=1.9851  max=2.1886  inGraph=true  edges=9
+    GT metric=latency-50 head=[0.15089285714285713,0.15089285714285713,0.15089285714285713,0.15089285714285713,0.14285714285714285,0.14285714285714285] tail=[2.1,2.1,2.1,2.1]
+    GT dominant=latency-50 head=[0.15089285714285713,0.15089285714285713,0.15089285714285713,0.15089285714285713,0.14285714285714285,0.14285714285714285] tail=[2.1,2.1,2.1,2.1]
+    GT breakdown=dev=1.517 trend=0.419 cv=0.049 burst=0.000 rise=31.915 drop=0.329 base=0.098
+    GT transientSkipped=[cpu,mem]
+    topAnomaly: emailservice(2.189) | paymentservice(2.104) | shippingservice(2.066)
+    top1 metric=latency-90 head=[0.0046,0.0046,0.0046,0.0046,0.0046,0.0046] tail=[0.219375,0.219375,0.219375,0.219375]
+    top1 breakdown=dev=1.691 trend=0.448 cv=0.050 burst=0.000 rise=48.049 drop=0.000 base=0.005
+    top1 transientSkipped=[cpu,workload,latency-50]
+    onset GT=0 top1=746 (source earlier ✓)
+    injectDelay GT=19000 top1=26000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.266
+    topoSource GT=1.000 top1=0.000
+    Reason: Top prediction "emailservice" does not match ground truth "checkoutservice"
+    Top-K: emailservice(1.00,d0) | paymentservice(1.00,d0) | shippingservice(1.00,d0) | checkoutservice(0.94,d1) | productcatalogservice(0.21,d0)
+  Case: rcaeval-re2_re2ob_checkoutservice_loss_3
+    Expected: checkoutservice  →  Predicted: cartservice
+    GT anomaly=0.5032  max=1.0975  inGraph=true  edges=9
+    GT metric=latency-90 head=[0,0,0,0,0,0] tail=[2.377272727272727,2.377272727272727,2.377272727272727,2.377272727272727]
+    GT dominant=workload head=[0,0,0,0,0,0] tail=[0.467,0.467,0.467,0.467]
+    GT breakdown=dev=0.301 trend=0.174 cv=0.028 burst=0.000 rise=0.677 drop=1.000 base=1.034
+    GT transientSkipped=[cpu,mem,socket,latency-50,latency-90]
+    topAnomaly: cartservice(1.098) | adservice(0.808) | checkoutservice(0.503)
+    top1 metric=latency-90 head=[0.04129647264214578,0.04107431320579331,0.04087341075721513,0.04069085367941651,0.040524238884825765,0.04037156543840021] tail=[0.0049289527720739225,0.0049289527720739225,0.0049289527720739225,0.0049289527720739225]
+    top1 breakdown=dev=0.828 trend=0.148 cv=0.038 burst=0.083 rise=5.732 drop=0.259 base=0.007
+    top1 transientSkipped=[cpu]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=undef (undetermined)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "cartservice" does not match ground truth "checkoutservice"
+    Top-K: cartservice(1.00,d0) | adservice(0.81,d0) | checkoutservice(0.24,d1) | paymentservice(0.50,d0) | emailservice(0.50,d0)
+  Case: rcaeval-re2_re2ob_currencyservice_loss_2
+    Expected: currencyservice  →  Predicted: checkoutservice
+    GT anomaly=0.6492  max=1.9417  inGraph=true  edges=9
+    GT metric=workload head=[75.667,75.667,75.667,75.667,75.667,74.867] tail=[63.933,63.933,63.933,63.933]
+    GT dominant=cpu head=[11.413129320908267,11.413129320908267,11.413129320908267,11.413129320908267,6.757186914486603,6.920478930496044] tail=[23.089889859142566,23.089889859142566,23.089889859142566,23.089889859142566]
+    GT breakdown=dev=0.480 trend=0.169 cv=0.000 burst=0.000 rise=2.019 drop=1.000 base=10.208
+    GT transientSkipped=[socket,workload,latency-50,latency-90]
+    topAnomaly: checkoutservice(1.942) | frontend(1.809) | currencyservice(0.649)
+    top1 metric=latency-90 head=[0.09285714285714289,0.09285714285714289,0.09285714285714289,0.09285714285714289,0.09285714285714289,0.09269230769230768] tail=[1.1874999999999996,1.1874999999999996,1.1874999999999996,1.1874999999999996]
+    top1 breakdown=dev=1.457 trend=0.432 cv=0.053 burst=0.000 rise=27.659 drop=0.197 base=0.082
+    top1 transientSkipped=[cpu,mem,workload]
+    onset GT=4 top1=755 (source earlier ✓)
+    injectDelay GT=117000 top1=35000 (source later ✗)
+    ratioContrib GT=0.483 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "checkoutservice" does not match ground truth "currencyservice"
+    Top-K: checkoutservice(0.92,d1) | frontend(1.00,d0) | currencyservice(0.65,d0) | productcatalogservice(0.39,d0) | cartservice(0.37,d0)
+  Case: rcaeval-re2_re2ob_currencyservice_loss_3
+    Expected: currencyservice  →  Predicted: frontend
+    GT anomaly=0.0000  max=0.4351  inGraph=true  edges=9
+    GT metric=workload head=[71.8,71.8,71.8,71.8,71.8,72.4] tail=[30.733,35.8,35.8,68.511]
+    GT transientSkipped=[cpu,mem,workload,latency-50,latency-90]
+    topAnomaly: frontend(0.435) | productcatalogservice(0.430) | cartservice(0.404)
+    top1 metric=cpu head=[8.546428384803603,8.546428384803603,8.546428384803603,8.762813883064464,8.762813883064464,8.762813883064464] tail=[5.409350684807795,5.409350684807795,5.409350684807795,5.409350684807795]
+    top1 breakdown=dev=0.300 trend=0.135 cv=0.000 burst=0.000 rise=0.090 drop=0.996 base=8.433
+    top1 transientSkipped=[mem,workload,latency-50,latency-90]
+    onset GT=9007199254740991 top1=158 (source later ✗)
+    injectDelay GT=undef top1=30000 (undetermined)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "frontend" does not match ground truth "currencyservice"
+    Top-K: frontend(0.44,d0) | productcatalogservice(0.43,d0) | cartservice(0.40,d0) | shippingservice(0.36,d0) | redis(0.24,d0)
+  Case: rcaeval-re2_re2ob_emailservice_loss_3
+    Expected: emailservice  →  Predicted: checkoutservice
+    GT anomaly=0.8865  max=1.2835  inGraph=true  edges=9
+    GT metric=cpu head=[0.3299162148841802,0.3299162148841802,0.3299162148841802,0.3299162148841802,0.3299162148841802,0.3313561048485679] tail=[0.22865140328307623,0.2333033753141043,0.2791183218616843,0.2791183218616843]
+    GT dominant=socket head=[3,3,3,3,3,3] tail=[10,10,10,10]
+    GT breakdown=dev=0.637 trend=0.221 cv=0.029 burst=0.000 rise=3.333 drop=0.000 base=3.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: checkoutservice(1.284) | emailservice(0.887) | paymentservice(0.242)
+    top1 metric=latency-90 head=[0.2328571428571429,0.2328571428571429,0.2328571428571429,0.2328571428571429,0.2328571428571429,0.2328571428571429] tail=[0.5250000000000001,0.5250000000000001,1.3299999999999994,1.3299999999999994]
+    top1 breakdown=dev=0.951 trend=0.203 cv=0.035 burst=0.095 rise=7.932 drop=0.148 base=0.221
+    top1 transientSkipped=[mem,workload]
+    onset GT=762 top1=749 (source later ✗)
+    injectDelay GT=42000 top1=29000 (source later ✗)
+    ratioContrib GT=0.367 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "checkoutservice" does not match ground truth "emailservice"
+    Top-K: checkoutservice(0.61,d1) | emailservice(0.89,d0) | paymentservice(0.24,d0) | recommendationservice(0.09,d1) | frontend(0.10,d0)
+  Case: rcaeval-re2_re2ob_checkoutservice_socket_1
+    Expected: checkoutservice  →  Predicted: adservice
+    GT anomaly=0.5968  max=0.6638  inGraph=true  edges=9
+    GT metric=cpu head=[0.14385178802240411,0.18614723531527438,0.18614723531527438,0.18614723531527438,0.18614723531527438,0.18614723531527438] tail=[0.32303809411487405,0.32303809411487405,0.361509327602308,0.36150932760230786]
+    GT dominant=socket head=[9,9,9,9,9,9] tail=[22,22,22,22]
+    GT breakdown=dev=0.407 trend=0.189 cv=0.000 burst=0.000 rise=1.556 drop=0.000 base=9.000
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: adservice(0.664) | cartservice(0.627) | checkoutservice(0.597)
+    top1 metric=diskio head=[246884.27299703268,246884.27299703268,246884.27299703268,246884.27299703268,209379.8785431912,213858.64042392126] tail=[61262.33921627281,61262.33921627281,61262.33921627281,41528.946567981344]
+    top1 breakdown=dev=0.603 trend=0.000 cv=0.000 burst=0.060 rise=3.013 drop=1.000 base=61523.056
+    top1 transientSkipped=[cpu]
+    onset GT=727 top1=0 (source later ✗)
+    injectDelay GT=7000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "adservice" does not match ground truth "checkoutservice"
+    Top-K: adservice(0.66,d0) | cartservice(0.63,d0) | checkoutservice(0.28,d1) | frontend(0.44,d0) | paymentservice(0.34,d0)
+  [semantic] 150/751 services resolved (20.0%) — embedding=150, llm=0, exact=601
+  [trace] No trace data available for 50 cases
+  [log] 50/50 cases with logs, 73640 ERROR/FATAL entries, 73034 stack-trace entries
+  [log] header: timestamp,container_name,message
+  [log] sample: ts=1705595459000 level=INFO svc=catalogue msg="ts=2024-01-18T16:30:59Z caller=logging.go:36 method=List tags= order=id pageNum="
+  [log] stacktrace sample: "2024-01-18 16:30:59.617 ERROR 8 --- [ool-6-thread-49] w.weave.socks.queuemaster.DockerSpawner  : Exception trying to lau"
+  [log] exception types: ProcessingException, AFUNIXSocketException, UnknownHostException, MongoSocketReadException, TimeoutException, SyntaxError, ShutdownSignalException, EOFException, AmqpIOException, convertRabbitAccessException, MongoSocketException, ListenerExecutionFailedException
+  [topo] system=SockShop, edges=13 exact + 3 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  SockShop                       RE2             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | SOCKET | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   | 100.0% |  55.6% |  88.9% |  88.9% |  75.0% |  66.7% |  79.2% ║
+║ Micro-Kinetic       | Avg@5  | 100.0% |  55.6% |  88.9% |  88.9% |  75.0% |  66.7% |  79.2% ║
+║ Micro-Kinetic       | LA     | 100.0% |  55.6% |  88.9% |  88.9% |  75.0% |  66.7% |  79.2% ║
+║ Micro-Kinetic       | TA     | 100.0% |  55.6% |  88.9% |  88.9% |  75.0% |  66.7% |  79.2% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: SockShop/RE2 (top 4/fault type) ──
+  Case: rcaeval-re2_re2ss_catalogue_delay_3
+    Expected: catalogue  →  Predicted: orders
+    GT anomaly=0.6332  max=1.6081  inGraph=true  edges=16
+    GT metric=workload head=[2.4,2.4,2.4,2.4,2.4,2.4] tail=[0,0,0,0]
+    GT dominant=cpu head=[0.21588737359680854,0.21588737359680854,0.21588737359680854,0.18443525541935601,0.18851500447469763,0.5521947960818465] tail=[0.0018233200184777723,0.0018233200184777723,0.0018233200184777723,0.0015887347037671193]
+    GT breakdown=dev=0.531 trend=0.049 cv=0.000 burst=0.053 rise=2.396 drop=1.000 base=0.206
+    GT transientSkipped=[socket,latency-50,latency-90]
+    topAnomaly: orders(1.608) | queue-master(1.322) | shipping(0.841)
+    top1 metric=latency-90 head=[0.9646533333333308,0.9113200000000042,0.8579866666666697,0.6932933333333327,0.406599999999999,0.24065586296020275] tail=[0,0,0,0]
+    top1 breakdown=dev=1.301 trend=0.131 cv=0.046 burst=0.130 rise=18.999 drop=1.000 base=0.048
+    onset GT=5 top1=0 (source later ✗)
+    injectDelay GT=40000 top1=658000 (source earlier ✓)
+    ratioContrib GT=0.536 top1=0.085
+    topoSource GT=0.374 top1=0.629
+    Reason: Top prediction "orders" does not match ground truth "catalogue"
+    Top-K: orders(0.35,d3) | queue-master(1.00,d0) | shipping(0.84,d0) | catalogue(0.30,d1) | carts(0.19,d2)
+  Case: rcaeval-re2_re2ss_orders_delay_1
+    Expected: orders  →  Predicted: shipping
+    GT anomaly=1.0767  max=2.1857  inGraph=true  edges=16
+    GT metric=latency-50 head=[0.43499999999999994,0.43499999999999994,0.43499999999999994,0.43499999999999994,0.43499999999999994,0.43499999999999994] tail=[1.6645569620253164,1.6645569620253164,1.6645569620253164,1.6645569620253164]
+    GT dominant=latency-50 head=[0.43499999999999994,0.43499999999999994,0.43499999999999994,0.43499999999999994,0.43499999999999994,0.43499999999999994] tail=[1.6645569620253164,1.6645569620253164,1.6645569620253164,1.6645569620253164]
+    GT breakdown=dev=0.750 trend=0.293 cv=0.033 burst=0.000 rise=4.627 drop=0.756 base=0.339
+    GT transientSkipped=[cpu,mem,socket,workload,latency-90]
+    topAnomaly: shipping(2.186) | payment(2.177) | user(1.776)
+    top1 metric=latency-90 head=[0.004682758620689655,0.004682758620689655,0.004682758620689655,0.004682758620689655,0.004682758620689655,0.004682758620689655] tail=[0.21967391304347825,0.21967391304347825,0.21967391304347825,0.21967391304347825]
+    top1 breakdown=dev=1.691 trend=0.445 cv=0.049 burst=0.000 rise=48.125 drop=0.009 base=0.005
+    top1 transientSkipped=[cpu,mem,socket,workload,latency-50]
+    onset GT=6 top1=741 (source earlier ✓)
+    injectDelay GT=6000 top1=21000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.165
+    topoSource GT=1.000 top1=0.000
+    Reason: Top prediction "shipping" does not match ground truth "orders"
+    Top-K: shipping(1.00,d0) | payment(1.00,d0) | user(0.84,d1) | orders(0.23,d3) | catalogue(0.14,d1)
+  Case: rcaeval-re2_re2ss_orders_delay_2
+    Expected: orders  →  Predicted: payment
+    GT anomaly=2.1570  max=2.1948  inGraph=true  edges=16
+    GT metric=latency-90 head=[0.24578971405991396,0.24262946844799765,0.23962412249410428,0.23676256000255133,0.2340347035827573,0.2314313960744126] tail=[2.2339622641509433,2.2339622641509433,2.2339622641509433,2.2339622641509433]
+    GT dominant=latency-90 head=[0.24578971405991396,0.24262946844799765,0.23962412249410428,0.23676256000255133,0.2340347035827573,0.2314313960744126] tail=[2.2339622641509433,2.2339622641509433,2.2339622641509433,2.2339622641509433]
+    GT breakdown=dev=1.669 trend=0.439 cv=0.049 burst=0.000 rise=45.633 drop=0.020 base=0.048
+    GT transientSkipped=[workload]
+    topAnomaly: payment(2.195) | orders(2.157) | shipping(1.886)
+    top1 metric=latency-90 head=[0.0047739773272882525,0.004767481301748504,0.004761302333364711,0.004755417762788467,0.004749807039645789,0.004744451482755596] tail=[0.22,0.22,0.22,0.22]
+    top1 breakdown=dev=1.698 trend=0.447 cv=0.050 burst=0.000 rise=48.864 drop=0.018 base=0.005
+    top1 transientSkipped=[workload,latency-50]
+    onset GT=0 top1=745 (source earlier ✓)
+    injectDelay GT=25000 top1=25000 (tie)
+    ratioContrib GT=0.019 top1=0.288
+    topoSource GT=0.898 top1=0.000
+    Reason: Top prediction "payment" does not match ground truth "orders"
+    Top-K: payment(1.00,d0) | orders(0.46,d3) | shipping(1.00,d0) | user(0.82,d1) | queue-master(1.00,d0)
+  Case: rcaeval-re2_re2ss_orders_delay_3
+    Expected: orders  →  Predicted: payment
+    GT anomaly=2.1731  max=2.1931  inGraph=true  edges=16
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=latency-90 head=[0.04779605263157895,0.04779605263157895,0.04779605263157895,0.04779605263157895,0.04779605263157895,0.04779605263157895] tail=[2.212765957446809,2.212765957446809,2.212765957446809,2.212765957446809]
+    GT breakdown=dev=1.676 trend=0.448 cv=0.050 burst=0.000 rise=46.396 drop=0.014 base=0.047
+    GT transientSkipped=[cpu,mem,workload]
+    topAnomaly: payment(2.193) | orders(2.173) | shipping(2.172)
+    top1 metric=latency-90 head=[0.004541176470588235,0.004541176470588235,0.004541176470588235,0.004541176470588235,0.004541176470588235,0.004541176470588235] tail=[0.22,0.22,0.22,0.22]
+    top1 breakdown=dev=1.695 trend=0.449 cv=0.050 burst=0.000 rise=48.497 drop=0.021 base=0.005
+    top1 transientSkipped=[cpu,workload,latency-50]
+    onset GT=746 top1=746 (tie)
+    injectDelay GT=26000 top1=26000 (tie)
+    ratioContrib GT=0.021 top1=0.290
+    topoSource GT=0.886 top1=0.000
+    Reason: Top prediction "payment" does not match ground truth "orders"
+    Top-K: payment(1.00,d0) | orders(0.47,d3) | shipping(1.00,d0) | user(0.82,d1) | carts(0.35,d2)
+  Case: rcaeval-re2_re2ss_orders_disk_2
+    Expected: orders  →  Predicted: shipping
+    GT anomaly=0.7378  max=1.4188  inGraph=true  edges=16
+    GT metric=error head=[9,9,9,9,9,9] tail=[0,0,0,0]
+    GT dominant=latency-90 head=[0.13503043984136892,0.1375373447362058,0.13668170506308855,0.13585463582634907,0.135054729542693,0.13428066968551367] tail=[0.046228813559322034,0.046228813559322034,0.046228813559322034,0.046228813559322034]
+    GT breakdown=dev=0.642 trend=0.031 cv=0.000 burst=0.064 rise=3.390 drop=0.405 base=0.047
+    GT transientSkipped=[cpu,mem,socket,workload]
+    topAnomaly: shipping(1.419) | queue-master(1.398) | carts(0.925)
+    top1 metric=cpu head=[12.188514548238896,12.188514548238896,12.188514548238896,12.188514548238896,12.188514548238896,8.980161413677898] tail=[0.6438070776256023,0.6438070776256023,0.6438070776256023,0.5343813346651708]
+    top1 breakdown=dev=1.024 trend=0.235 cv=0.057 burst=0.102 rise=9.580 drop=0.926 base=1.152
+    top1 transientSkipped=[socket,workload]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=23000 top1=0 (source later ✗)
+    ratioContrib GT=0.124 top1=0.118
+    topoSource GT=0.738 top1=0.608
+    Reason: Top prediction "shipping" does not match ground truth "orders"
+    Top-K: shipping(1.00,d0) | queue-master(1.00,d0) | carts(0.28,d2) | orders(0.16,d3) | carts-db(0.40,d0)
+  Case: rcaeval-re2_re2ss_catalogue_loss_1
+    Expected: catalogue  →  Predicted: front-end
+    GT anomaly=0.6746  max=1.0745  inGraph=true  edges=16
+    GT metric=workload head=[4,4,3.733,3.733,3.733,3.8] tail=[0,0,0,0]
+    GT dominant=socket head=[6,6,6,6,6,6] tail=[14,14,14,14]
+    GT breakdown=dev=0.501 trend=0.174 cv=0.000 burst=0.000 rise=2.167 drop=0.000 base=6.000
+    GT transientSkipped=[mem,latency-50,latency-90]
+    topAnomaly: front-end(1.074) | catalogue(0.675) | orders(0.652)
+    top1 metric=socket head=[8,8,8,8,8,8] tail=[36,36,36,36]
+    top1 breakdown=dev=0.730 trend=0.309 cv=0.035 burst=0.000 rise=4.375 drop=0.125 base=8.000
+    top1 transientSkipped=[cpu,workload,latency-50,latency-90]
+    onset GT=937 top1=761 (source later ✗)
+    injectDelay GT=217000 top1=41000 (source later ✗)
+    ratioContrib GT=0.538 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "catalogue"
+    Top-K: front-end(0.17,d4) | catalogue(0.32,d1) | orders(0.14,d3) | shipping(0.63,d0) | payment(0.63,d0)
+  Case: rcaeval-re2_re2ss_carts_mem_1
+    Expected: carts  →  Predicted: shipping
+    GT anomaly=1.7695  max=3.9647  inGraph=true  edges=16
+    GT metric=cpu head=[19.583288071861286,19.583288071861286,19.583288071861286,19.583288071861286,19.583288071861286,19.583288071861286] tail=[78.2926394909354,78.22539148623436,78.22539148623436,78.22539148623436]
+    GT dominant=cpu head=[19.583288071861286,19.583288071861286,19.583288071861286,19.583288071861286,19.583288071861286,19.583288071861286] tail=[78.2926394909354,78.22539148623436,78.22539148623436,78.22539148623436]
+    GT breakdown=dev=1.316 trend=0.407 cv=0.046 burst=0.000 rise=19.715 drop=0.657 base=3.820
+    GT transientSkipped=[latency-50,latency-90]
+    topAnomaly: shipping(3.965) | carts(1.769) | queue-master(1.436)
+    top1 metric=latency-50 head=[2.5,2.5,2.5,2.5,2.5,2.5] tail=[0.003657142857142857,0.0036133333333333334,0.0036133333333333334,0.0035945945945945945]
+    top1 breakdown=dev=2.837 trend=0.770 cv=0.075 burst=0.284 rise=685.288 drop=0.100 base=0.004
+    top1 transientSkipped=[socket]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=undef (undetermined)
+    ratioContrib GT=0.236 top1=0.115
+    topoSource GT=0.000 top1=0.000
+    Reason: Top prediction "shipping" does not match ground truth "carts"
+    Top-K: shipping(1.00,d0) | carts(0.54,d2) | queue-master(1.00,d0) | orders(0.28,d3) | carts-db(0.42,d0)
+  Case: rcaeval-re2_re2ss_orders_mem_1
+    Expected: orders  →  Predicted: catalogue
+    GT anomaly=2.3254  max=3.2152  inGraph=true  edges=16
+    GT metric=cpu head=[1.0882553488496765,0.9468274974720872,0.9286899083245925,1.4692979813196905,1.4692979813196905,1.4692979813196905] tail=[66.42428439578953,77.39477938862946,77.39477938862946,77.39477938862946]
+    GT dominant=cpu head=[1.0882553488496765,0.9468274974720872,0.9286899083245925,1.4692979813196905,1.4692979813196905,1.4692979813196905] tail=[66.42428439578953,77.39477938862946,77.39477938862946,77.39477938862946]
+    GT breakdown=dev=1.820 trend=0.455 cv=0.050 burst=0.000 rise=65.064 drop=0.408 base=1.193
+    GT transientSkipped=[latency-50]
+    topAnomaly: catalogue(3.215) | orders(2.325) | queue-master(0.512)
+    top1 metric=cpu head=[26.588420752781218,31.31201166861167,31.31201166861167,31.31201166861167,31.31201166861167,31.31201166861167] tail=[0.1550788932083088,0.1550788932083088,0.1550788932083088,0.1550788932083088]
+    top1 breakdown=dev=2.293 trend=0.617 cv=0.075 burst=0.229 rise=195.507 drop=0.455 base=0.159
+    top1 transientSkipped=[mem,workload]
+    onset GT=20 top1=0 (source later ✗)
+    injectDelay GT=3000 top1=406000 (source earlier ✓)
+    ratioContrib GT=0.025 top1=0.121
+    topoSource GT=0.852 top1=0.897
+    Reason: Top prediction "catalogue" does not match ground truth "orders"
+    Top-K: catalogue(1.00,d1) | orders(0.50,d3) | queue-master(0.51,d0) | carts-db(0.24,d0) | orders-db(0.22,d0)
+  Case: rcaeval-re2_re2ss_carts_socket_1
+    Expected: carts  →  Predicted: orders
+    GT anomaly=0.6538  max=0.8484  inGraph=true  edges=16
+    GT metric=error head=[1.733,1.533,1.533,1.533,1.533,1.533] tail=[0,0,0,0]
+    GT dominant=latency-50 head=[0.000371342512908778,0.0003747848537005164,0.0003747848537005164,0.0003747848537005164,0.0003747848537005164,0.0003747848537005164] tail=[0.3105670103092783,0.3105670103092783,0.3105670103092783,0.3105670103092783]
+    GT breakdown=dev=0.496 trend=0.158 cv=0.000 burst=0.000 rise=2.133 drop=0.998 base=0.150
+    GT transientSkipped=[cpu,socket,workload]
+    topAnomaly: orders(0.848) | carts(0.654) | front-end(0.626)
+    top1 metric=latency-50 head=[0.065,0.07702702702702703,0.07702702702702703,0.07702702702702703,0.07702702702702703,0.07702702702702703] tail=[0.187890625,0.187890625,0.187890625,0.187890625]
+    top1 breakdown=dev=0.602 trend=0.221 cv=0.026 burst=0.000 rise=2.996 drop=0.218 base=0.056
+    top1 transientSkipped=[cpu,mem,workload,latency-90]
+    onset GT=0 top1=1 (source earlier ✓)
+    injectDelay GT=7000 top1=1000 (source later ✗)
+    ratioContrib GT=0.466 top1=0.213
+    topoSource GT=0.218 top1=0.425
+    Reason: Top prediction "orders" does not match ground truth "carts"
+    Top-K: orders(0.18,d3) | carts(0.20,d2) | front-end(0.10,d4) | queue-master(0.51,d0) | carts-db(0.30,d0)
+  Case: rcaeval-re2_re2ss_carts_socket_2
+    Expected: carts  →  Predicted: shipping
+    GT anomaly=0.5778  max=0.8985  inGraph=true  edges=16
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=socket head=[12,12,12,12,12,12] tail=[24,24,24,24]
+    GT breakdown=dev=0.406 trend=0.172 cv=0.000 burst=0.000 rise=1.545 drop=0.091 base=11.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: shipping(0.899) | carts(0.578) | orders(0.285)
+    top1 metric=cpu head=[1.534111832753853,1.534111832753853,1.534111832753853,1.534111832753853,1.534111832753853,1.534111832753853] tail=[0.33970116960259816,0.33970116960259816,0.33970116960259816,0.33970116960259816]
+    top1 breakdown=dev=0.680 trend=0.120 cv=0.031 burst=0.068 rise=3.785 drop=0.576 base=0.424
+    top1 transientSkipped=[socket,workload]
+    onset GT=722 top1=0 (source later ✗)
+    injectDelay GT=2000 top1=0 (source later ✗)
+    ratioContrib GT=0.165 top1=0.108
+    topoSource GT=0.715 top1=0.729
+    Reason: Top prediction "shipping" does not match ground truth "carts"
+    Top-K: shipping(0.90,d0) | carts(0.18,d2) | orders(0.06,d3) | user-db(0.22,d0) | carts-db(0.17,d0)
+  [semantic] 1600/3403 services resolved (47.0%) — embedding=1600, llm=0, exact=1803
+  [trace] 50/50 cases with traces, 50 pruned, avg edges: 218 → 39 (82% reduction)
+  [trace] header: time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode
+  [log] 49/50 cases with logs, 1413 ERROR/FATAL entries, 1371 stack-trace entries
+  [log] header: timestamp,container_name,message
+  [log] sample: ts=1706022891000 level=INFO svc=ts-auth-service msg="2024-01-23 15:14:51.239  INFO 1 --- [io-12340-exec-2] auth.service.impl.TokenSer"
+  [log] stacktrace sample: "2024-01-23 15:34:29.347 ERROR 1 --- [o-12345-exec-13] o.a.c.c.C.[.[.[/].[dispatcherServlet]    : Servlet.service() for s"
+  [log] exception types: UncategorizedMongoDbException, MongoSocketReadException, HttpServerErrorException, handleError, IllegalArgumentException
+  [topo] system=TrainTicket, edges=51 exact + 32 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  TrainTicket                    RE2             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | CPU    | DELAY  | DISK   | LOSS   | MEM    | SOCKET | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  66.7% |  77.8% |  33.3% |  22.2% | 100.0% | 100.0% |  66.7% ║
+║ Micro-Kinetic       | Avg@5  |  66.7% |  77.8% |  33.3% |  22.2% | 100.0% | 100.0% |  66.7% ║
+║ Micro-Kinetic       | LA     |  66.7% |  77.8% |  33.3% |  22.2% | 100.0% | 100.0% |  66.7% ║
+║ Micro-Kinetic       | TA     |  66.7% |  77.8% |  33.3% |  22.2% | 100.0% | 100.0% |  66.7% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: TrainTicket/RE2 (top 3/fault type) ──
+  Case: rcaeval-re2_re2tt_ts-auth-service_cpu_2
+    Expected: ts-auth-service  →  Predicted: ts-payment-service
+    GT anomaly=0.9114  max=1.0000  inGraph=true  edges=49
+    GT metric=diskio head=[70803.8029386344,70803.8029386344,70803.8029386344,70803.8029386344,48489.15327473438,180459.4566243575] tail=[34387.61981258367,57869.454648205705,57869.454648205705,57869.454648205705]
+    GT dominant=latency-90 head=[0.6416671296553511,0.6416671296553511,0.6416671296553511,0.6416671296553511,0.6416671296553511,0.6416671296553511] tail=[1.8555555555555556,1.8555555555555556,1.78125,1.78125]
+    GT breakdown=dev=0.677 trend=0.247 cv=0.028 burst=0.000 rise=3.757 drop=0.160 base=0.498
+    GT transientSkipped=[diskio,workload]
+    topAnomaly: ts-payment-service(1.000) | ts-contacts-service(0.949) | ts-auth-service(0.911)
+    top1 metric=workload head=[0,0,0,0,0.067,0.067] tail=[0,0,0,0]
+    top1 breakdown=dev=0.843 trend=0.067 cv=0.051 burst=0.084 rise=5.970 drop=1.000 base=0.067
+    top1 transientSkipped=[cpu,latency-50,latency-90]
+    onset GT=8 top1=0 (source later ✗)
+    injectDelay GT=14000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "ts-payment-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-payment-service(1.00,d0) | ts-contacts-service(0.95,d0) | ts-auth-service(0.91,d0) | ts-price-mongo(0.85,d0) | ts-assurance-service(0.80,d0)
+  Case: rcaeval-re2_re2tt_ts-auth-service_cpu_3
+    Expected: ts-auth-service  →  Predicted: ts-preserve-service
+    GT anomaly=0.7313  max=1.0000  inGraph=true  edges=43
+    GT metric=diskio head=[70929.47746655699,70929.47746655699,48595.580602105874,48595.580602105874,48595.580602105874,48595.580602105874] tail=[70874.24838863175,70874.24838863173,70874.24838863173,70874.24838863173]
+    GT dominant=latency-50 head=[0.20075757575757575,0.20075757575757575,0.20075757575757575,0.20075757575757575,0.20075757575757575,0.20075757575757575] tail=[0.9166666666666667,0.9166666666666667,0.9166666666666667,0.9080882352941175]
+    GT breakdown=dev=0.625 trend=0.262 cv=0.029 burst=0.000 rise=3.214 drop=0.126 base=0.230
+    GT transientSkipped=[diskio,workload]
+    topAnomaly: ts-preserve-service(1.000) | ts-assurance-service(0.764) | ts-auth-service(0.731)
+    top1 metric=cpu head=[1.4879153793542397,1.4879153793542397,1.2665094378080528,1.2417108481521488,2.6138100110855187,2.6138100110855187] tail=[0.21599205653875234,0.21599205653875234,0.21599205653875234,0.21599205653875234]
+    top1 breakdown=dev=1.042 trend=0.053 cv=0.052 burst=0.104 rise=10.028 drop=0.797 base=0.251
+    top1 transientSkipped=[mem,diskio,socket]
+    onset GT=399 top1=0 (source later ✗)
+    injectDelay GT=24000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "ts-preserve-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-service(1.00,d0) | ts-assurance-service(0.76,d0) | ts-auth-service(0.73,d0) | ts-user-service(0.68,d0) | ts-travel-service(0.07,d5)
+  Case: rcaeval-re2_re2tt_ts-order-service_cpu_1
+    Expected: ts-order-service  →  Predicted: ts-consign-price-service
+    GT anomaly=0.3942  max=1.0000  inGraph=true  edges=48
+    GT metric=diskio head=[70044.03403018256,70044.03403018256,70044.03403018256,70044.03403018256,70044.03403018256,62615.15144673966] tail=[36832.04819818808,36832.04819818808,36832.04819818808,36832.04819818808]
+    GT dominant=cpu head=[9.117611474498734,9.117611474498734,9.117611474498734,9.117611474498734,9.117611474498734,8.702176090604636] tail=[39.96472360227506,39.96472360227506,39.96472360227506,39.96472360227506]
+    GT breakdown=dev=0.926 trend=0.341 cv=0.040 burst=0.000 rise=7.427 drop=0.666 base=4.752
+    GT transientSkipped=[diskio,workload,latency-90]
+    topAnomaly: ts-consign-price-service(1.000) | ts-admin-basic-info-service(0.940) | ts-consign-service(0.838)
+    top1 metric=latency-90 head=[4.62446246467625,4.624487644923294,4.62451057165231,4.624531534425528,4.6245507752335975,4.624568497879475] tail=[0.02333333333333333,0.02333333333333333,0.02333333333333333,0.02333333333333333]
+    top1 breakdown=dev=2.294 trend=0.715 cv=0.075 burst=0.229 rise=195.793 drop=1.000 base=0.024
+    top1 transientSkipped=[diskio]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=15000 top1=undef (undetermined)
+    ratioContrib GT=0.000 top1=0.249
+    topoSource GT=0.369 top1=0.173
+    Reason: Top prediction "ts-consign-price-service" does not match ground truth "ts-order-service"
+    Top-K: ts-consign-price-service(1.00,d0) | ts-admin-basic-info-service(0.44,d1) | ts-consign-service(0.40,d1) | ts-inside-payment-service(0.22,d2) | ts-ui-dashboard(0.69,d0)
+  Case: rcaeval-re2_re2tt_ts-auth-service_delay_2
+    Expected: ts-auth-service  →  Predicted: ts-preserve-service
+    GT anomaly=0.7442  max=1.0000  inGraph=true  edges=32
+    GT metric=diskio head=[37015.114203736746,37015.114203736746,37015.114203736746,37015.11420373675,37015.11420373675,37015.11420373675] tail=[66272.95526251922,66272.95526251922,66272.95526251922,66272.95526251922]
+    GT dominant=latency-50 head=[0.43333333333333335,0.43333333333333335,0.43333333333333335,0.4807692307692307,0.5397726010072951,0.5397726010072951] tail=[0.7782608695652173,0.7782608695652173,0.7782608695652173,0.7782608695652173]
+    GT breakdown=dev=0.616 trend=0.229 cv=0.026 burst=0.000 rise=3.135 drop=0.118 base=0.239
+    GT transientSkipped=[diskio,socket]
+    topAnomaly: ts-preserve-service(1.000) | ts-payment-service(0.940) | ts-inside-payment-service(0.821)
+    top1 metric=cpu head=[0.32355558907828313,0.2586837574786472,0.1409345553117389,0.1409345553117389,0.1409345553117389,0.1409345553117389] tail=[5.829545834494293,5.829545834494293,5.829545834494293,5.829545834494293]
+    top1 breakdown=dev=1.006 trend=0.024 cv=0.042 burst=0.101 rise=9.137 drop=0.842 base=0.575
+    top1 transientSkipped=[socket]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=33000 top1=8000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "ts-preserve-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-service(1.00,d0) | ts-payment-service(0.94,d0) | ts-inside-payment-service(0.25,d2) | ts-food-map-service(0.80,d0) | ts-auth-service(0.74,d0)
+  Case: rcaeval-re2_re2tt_ts-auth-service_delay_3
+    Expected: ts-auth-service  →  Predicted: ts-user-service
+    GT anomaly=0.2372  max=1.0000  inGraph=true  edges=51
+    GT metric=diskio head=[45726.195026958885,46648.31256542735,55327.05230810792,55327.05230810792,46872.38712727518,45950.26958880671] tail=[48254.940653255966,48254.940653255966,48254.940653255966,32871.215617037495]
+    GT dominant=latency-50 head=[0.30416666666666664,0.30416666666666664,0.30416666666666664,0.30416666666666664,0.30416666666666664,0.30416666666666664] tail=[0.7850467289719627,0.7850467289719627,0.7850467289719627,0.7850467289719627]
+    GT breakdown=dev=0.536 trend=0.217 cv=0.025 burst=0.000 rise=2.439 drop=0.183 base=0.252
+    GT transientSkipped=[cpu,diskio,socket]
+    topAnomaly: ts-user-service(1.000) | ts-assurance-service(0.815) | ts-contacts-service(0.795)
+    top1 metric=latency-90 head=[4.5,4.5,4.5,4.5,4.5,4.5] tail=[0.02275,0.02275,0.02275,0.02275]
+    top1 breakdown=dev=2.282 trend=0.698 cv=0.075 burst=0.228 rise=190.489 drop=0.251 base=0.024
+    top1 transientSkipped=[diskio]
+    onset GT=7 top1=0 (source later ✗)
+    injectDelay GT=7000 top1=37000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.269
+    topoSource GT=1.000 top1=0.394
+    Reason: Top prediction "ts-user-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-user-service(1.00,d0) | ts-assurance-service(0.81,d0) | ts-contacts-service(0.80,d0) | ts-payment-service(0.78,d0) | ts-security-service(0.23,d2)
+  Case: rcaeval-re2_re2tt_ts-auth-service_disk_1
+    Expected: ts-auth-service  →  Predicted: ts-assurance-service
+    GT anomaly=0.3351  max=1.0000  inGraph=true  edges=25
+    GT metric=latency-90 head=[0.95,0.95,0.95,0.95,0.95,0] tail=[2.171153846153846,2.171153846153846,2.171153846153846,2.171153846153846]
+    GT dominant=mem head=[376471552,376471552,376471552,376471552,376471552,376471552] tail=[524144640,524144640,524144640,524144640]
+    GT breakdown=dev=0.336 trend=0.082 cv=0.000 burst=0.000 rise=1.170 drop=0.038 base=241590272.000
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: ts-assurance-service(1.000) | ts-contacts-service(0.983) | ts-consign-service(0.781)
+    top1 metric=latency-90 head=[0.19446855283421935,0.19451793539348727,0.20899181720550758,0.20881052108476503,0.2086348564151149,0.20846456482175357] tail=[0.016,0.016,0.016,0.016]
+    top1 breakdown=dev=0.999 trend=0.102 cv=0.047 burst=0.100 rise=8.987 drop=0.569 base=0.021
+    top1 transientSkipped=[diskio,socket,workload]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=13000 top1=54000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "ts-assurance-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-assurance-service(1.00,d0) | ts-contacts-service(0.98,d0) | ts-consign-service(0.78,d0) | ts-preserve-other-service(0.74,d0) | ts-admin-travel-service(0.67,d0)
+  Case: rcaeval-re2_re2tt_ts-auth-service_disk_2
+    Expected: ts-auth-service  →  Predicted: ts-train-service
+    GT anomaly=0.8822  max=1.0000  inGraph=true  edges=44
+    GT metric=diskio head=[43027.59996836265,42101.98162774143,41176.36328712021,4958222.589800944,4958222.589800944,4958222.589800944] tail=[8896250733.499153,9078112138.275522,10911684286.582052,10911684286.582052]
+    GT dominant=latency-50 head=[0.25735294117647056,0.25735294117647056,0.25735294117647056,0.25735294117647056,0.25735294117647056,0.25735294117647056] tail=[0.9523809523809523,0.9523809523809523,0.9523809523809523,0.9523809523809523]
+    GT breakdown=dev=0.740 trend=0.255 cv=0.031 burst=0.000 rise=4.490 drop=0.101 base=0.249
+    topAnomaly: ts-train-service(1.000) | ts-preserve-other-service(0.973) | ts-ticketinfo-service(0.909)
+    top1 metric=latency-90 head=[0.04535714285714289,0.04535714285714289,0.04535714285714289,0.053493975903614474,0.053493975903614474,0.053433734939759045] tail=[0.009354591836734693,0.009354591836734693,0.00936046511627907,0.009357260726072607]
+    top1 breakdown=dev=0.818 trend=0.220 cv=0.042 burst=0.082 rise=5.579 drop=0.040 base=0.010
+    top1 transientSkipped=[mem,diskio]
+    onset GT=39 top1=0 (source later ✗)
+    injectDelay GT=23000 top1=undef (undetermined)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=0.534
+    Reason: Top prediction "ts-train-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-train-service(1.00,d0) | ts-preserve-other-service(0.07,d7) | ts-ticketinfo-service(0.28,d2) | ts-config-service(0.90,d0) | ts-auth-service(0.88,d0)
+  Case: rcaeval-re2_re2tt_ts-auth-service_disk_3
+    Expected: ts-auth-service  →  Predicted: ts-route-plan-service
+    GT anomaly=0.9693  max=1.0000  inGraph=true  edges=43
+    GT metric=diskio head=[149091.15726732946,149091.15726732946,149091.15726732946,149091.1572673294,149091.1572673294,149091.1572673294] tail=[12446005901.99246,12446005901.99246,12446005901.99246,12446005901.99246]
+    GT dominant=latency-50 head=[0.21761363636363637,0.21761363636363637,0.21761363636363637,0.21761363636363637,0.21761363636363637,0.21761363636363637] tail=[0.9268292682926829,0.9268292682926829,0.9268292682926829,0.9268292682926829]
+    GT breakdown=dev=0.762 trend=0.292 cv=0.033 burst=0.000 rise=4.778 drop=0.128 base=0.230
+    topAnomaly: ts-route-plan-service(1.000) | ts-auth-service(0.969) | ts-admin-route-service(0.881)
+    top1 metric=diskio head=[23776.169652877208,23776.169652877208,23776.169652877208,23776.169652877208,23776.169652877208,23776.169652877208] tail=[213463.84791425918,213463.84791425918,213463.84791425918,213463.84791425918]
+    top1 breakdown=dev=0.782 trend=0.228 cv=0.033 burst=0.078 rise=5.049 drop=1.000 base=37527.486
+    top1 transientSkipped=[cpu,socket]
+    onset GT=172 top1=0 (source later ✗)
+    injectDelay GT=21000 top1=2000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "ts-route-plan-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-route-plan-service(1.00,d0) | ts-auth-service(0.97,d0) | ts-admin-route-service(0.88,d0) | ts-ticketinfo-service(0.27,d2) | ts-assurance-service(0.86,d0)
+  Case: rcaeval-re2_re2tt_ts-order-service_disk_2
+    Expected: ts-order-service  →  Predicted: ts-basic-service
+    GT anomaly=0.4051  max=1.0000  inGraph=true  edges=20
+    GT metric=diskio head=[69047.76955981203,69047.76955981203,48650.41422929596,4750638.942561885,4843720.639552143,4936802.336542403] tail=[17637567500.449165,14528051471.707024,14824101264.295757,17762987555.324135]
+    GT dominant=socket head=[19,19,19,26,26,26] tail=[12,12,12,12]
+    GT breakdown=dev=0.415 trend=0.048 cv=0.000 burst=0.041 rise=1.600 drop=0.200 base=10.000
+    GT transientSkipped=[cpu,mem,latency-50,latency-90]
+    topAnomaly: ts-basic-service(1.000) | ts-admin-travel-service(0.917) | ts-config-service(0.900)
+    top1 metric=diskio head=[36446.44369796991,35648.819434302124,34851.19517063434,0,38674.34614295156,38674.34614295156] tail=[200548.37446141796,200548.37446141796,200548.37446141796,200548.37446141796]
+    top1 breakdown=dev=0.856 trend=0.270 cv=0.034 burst=0.086 rise=6.184 drop=1.000 base=48868.076
+    top1 transientSkipped=[cpu,workload]
+    onset GT=0 top1=3 (source earlier ✓)
+    injectDelay GT=383000 top1=0 (source later ✗)
+    ratioContrib GT=0.395 top1=0.331
+    topoSource GT=0.338 top1=0.265
+    Reason: Top prediction "ts-basic-service" does not match ground truth "ts-order-service"
+    Top-K: ts-basic-service(0.47,d1) | ts-admin-travel-service(0.14,d4) | ts-config-service(0.90,d0) | ts-inside-payment-service(0.26,d2) | ts-security-service(0.83,d0)
+  Case: rcaeval-re2_re2tt_ts-route-service_disk_1
+    Expected: ts-route-service  →  Predicted: ts-order-service
+    GT anomaly=0.1051  max=1.0000  inGraph=true  edges=15
+    GT metric=diskio head=[288396.54524971836,288396.54524971836,288396.54524971836,288396.54524971836,288396.54524971836,288396.54524971836] tail=[13942639078.914192,13942639078.914192,13942639078.914192,13942639078.914192]
+    GT dominant=workload head=[0,0,0,0,0,0] tail=[33.736,33.736,33.736,33.736]
+    GT breakdown=dev=0.301 trend=0.050 cv=0.000 burst=0.000 rise=0.379 drop=1.000 base=32.733
+    GT transientSkipped=[cpu,mem,latency-50,latency-90]
+    topAnomaly: ts-order-service(1.000) | ts-order-other-service(0.811) | ts-auth-service(0.351)
+    top1 metric=latency-50 head=[1.5357142857142858,1.5357142857142858,1.5357142857142858,1.75,1.75,1.75] tail=[0.012068879316091572,0.012068879316091572,0.012068879316091572,0.012068879316091572]
+    top1 breakdown=dev=2.278 trend=0.756 cv=0.075 burst=0.228 rise=188.583 drop=0.153 base=0.009
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=334000 top1=48000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.068
+    topoSource GT=1.000 top1=0.818
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-route-service"
+    Top-K: ts-order-service(0.47,d1) | ts-order-other-service(0.38,d1) | ts-auth-service(0.35,d0) | ts-admin-travel-service(0.05,d4) | ts-food-map-service(0.32,d0)
+  Case: rcaeval-re2_re2tt_ts-auth-service_loss_1
+    Expected: ts-auth-service  →  Predicted: ts-preserve-other-service
+    GT anomaly=0.4029  max=1.0000  inGraph=true  edges=43
+    GT metric=diskio head=[67764.08305070725,67764.08305070725,67764.08305070725,67764.08305070725,44708.752751443826,53559.98692383132] tail=[70072.49321044415,70072.49321044415,70072.49321044415,70072.49321044415]
+    GT dominant=latency-50 head=[0.41776315789473684,0.41776315789473684,0.41776315789473684,0.38081395348837216,0.38081395348837216,0.38081395348837216] tail=[0.3009259259259259,0.3009259259259259,0.3009259259259259,0.3009259259259259]
+    GT breakdown=dev=0.304 trend=0.054 cv=0.000 burst=0.030 rise=1.015 drop=0.137 base=0.231
+    GT transientSkipped=[mem,diskio,socket]
+    topAnomaly: ts-preserve-other-service(1.000) | ts-assurance-service(0.894) | ts-preserve-service(0.828)
+    top1 metric=workload head=[0.133,0.133,0.133,0.133,0.133,0.133] tail=[0,0,0,0]
+    top1 breakdown=dev=0.776 trend=0.059 cv=0.053 burst=0.078 rise=4.970 drop=1.000 base=0.067
+    top1 transientSkipped=[cpu,diskio]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=108000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    Reason: Top prediction "ts-preserve-other-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-other-service(0.12,d5) | ts-assurance-service(0.89,d0) | ts-preserve-service(0.83,d0) | ts-inside-payment-service(0.22,d2) | ts-payment-service(0.70,d0)
+  Case: rcaeval-re2_re2tt_ts-auth-service_loss_2
+    Expected: ts-auth-service  →  Predicted: ts-payment-service
+    GT anomaly=0.3257  max=1.0000  inGraph=true  edges=53
+    GT metric=diskio head=[38983.53478633292,38983.53478633292,38983.53478633292,33109.79896999883,32460.07339022662,40960] tail=[39743.10910615441,38982.710713832654,38222.31232151089,37461.91392918914]
+    GT dominant=latency-50 head=[0.22570422535211268,0.22570422535211268,0.22570422535211268,0.23945312499999996,0.2589285714285714,0.2589285714285714] tail=[0.3333333333333333,0.3333333333333333,0.3333333333333333,0.3333333333333333]
+    GT breakdown=dev=0.264 trend=0.036 cv=0.000 burst=0.026 rise=0.838 drop=0.096 base=0.235
+    GT transientSkipped=[cpu,mem,diskio,socket,latency-90]
+    topAnomaly: ts-payment-service(1.000) | ts-inside-payment-service(0.765) | ts-assurance-service(0.695)
+    top1 metric=cpu head=[1.4372539772369959,1.4372539772369959,1.0400551373131108,1.0400551373131108,1.0400551373131108,1.0400551373131108] tail=[0.14231329014583938,0.14231329014583938,0.18363274950304148,0.18363274950304148]
+    top1 breakdown=dev=0.736 trend=0.155 cv=0.039 burst=0.074 rise=4.446 drop=1.000 base=0.264
+    top1 transientSkipped=[diskio]
+    onset GT=19 top1=0 (source later ✗)
+    injectDelay GT=124000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.183
+    topoSource GT=1.000 top1=0.438
+    Reason: Top prediction "ts-payment-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-payment-service(1.00,d0) | ts-inside-payment-service(0.23,d2) | ts-assurance-service(0.69,d0) | ts-ticket-office-service(0.65,d0) | ts-preserve-service(0.05,d6)
+  Case: rcaeval-re2_re2tt_ts-auth-service_loss_3
+    Expected: ts-auth-service  →  Predicted: ts-assurance-service
+    GT anomaly=0.3717  max=1.0000  inGraph=true  edges=48
+    GT metric=diskio head=[53193.07814681341,44586.65974048462,43700.10843803773,42813.55713559084,41927.00583314394,41040.454530697054] tail=[63112.48073959938,63112.48073959938,63112.48073959938,63112.48073959938]
+    GT dominant=latency-50 head=[0.222,0.21499990516855103,0.21499990516855103,0.21499990516855103,0.21499990516855103,0.21499990516855103] tail=[0.4242424242424242,0.4242424242424242,0.4242424242424242,0.40086206896551724]
+    GT breakdown=dev=0.289 trend=0.032 cv=0.000 burst=0.029 rise=0.947 drop=0.168 base=0.229
+    GT transientSkipped=[cpu,mem,diskio,workload]
+    topAnomaly: ts-assurance-service(1.000) | ts-payment-service(0.816) | ts-preserve-service(0.769)
+    top1 metric=latency-90 head=[0.06249999999999997,0.06249999999999997,0.06249999999999997,0.06750000000000005,0.06750000000000005,0.06750000000000005] tail=[0.016,0.016,0.016,0.0175]
+    top1 breakdown=dev=0.829 trend=0.000 cv=0.030 burst=0.083 rise=5.750 drop=1.000 base=0.010
+    top1 transientSkipped=[mem,diskio,latency-50]
+    onset GT=315 top1=0 (source later ✗)
+    injectDelay GT=46000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.236
+    topoSource GT=1.000 top1=0.466
+    Reason: Top prediction "ts-assurance-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-assurance-service(1.00,d0) | ts-payment-service(0.82,d0) | ts-preserve-service(0.05,d7) | ts-inside-payment-service(0.18,d2) | ts-order-service(0.27,d1)
+  Case: rcaeval-re2_re2tt_ts-order-service_loss_1
+    Expected: ts-order-service  →  Predicted: ts-preserve-other-service
+    GT anomaly=0.4401  max=1.0000  inGraph=true  edges=33
+    GT metric=diskio head=[39421.57310940546,33750.67031324773,33093.64409475764,32436.617876267548,231109.50618398483,231109.50618398483] tail=[37787.51708936692,38549.400593361424,39311.284097355914,40073.16760135041]
+    GT dominant=cpu head=[5.9532903443131575,5.0968929913660865,4.997671485627533,4.898449979888981,4.491893111853423,4.491893111853423] tail=[2.392662037889585,2.440903623410823,2.4891452089320603,2.537386794453298]
+    GT breakdown=dev=0.348 trend=0.047 cv=0.000 burst=0.035 rise=1.230 drop=0.719 base=2.897
+    GT transientSkipped=[diskio,socket,workload,latency-50,latency-90]
+    topAnomaly: ts-preserve-other-service(1.000) | ts-config-service(0.878) | ts-preserve-service(0.849)
+    top1 metric=workload head=[0.133,0.133,0.133,0.133,0.133,0.067] tail=[0,0,0,0]
+    top1 breakdown=dev=0.843 trend=0.000 cv=0.050 burst=0.084 rise=5.970 drop=1.000 base=0.067
+    top1 transientSkipped=[diskio,latency-50,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=33000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.297 top1=1.000
+    Reason: Top prediction "ts-preserve-other-service" does not match ground truth "ts-order-service"
+    Top-K: ts-preserve-other-service(1.00,d0) | ts-config-service(0.88,d0) | ts-preserve-service(0.85,d0) | ts-assurance-service(0.77,d0) | ts-travel-service(0.09,d5)
+  Case: rcaeval-re2_re2tt_ts-order-service_loss_2
+    Expected: ts-order-service  →  Predicted: ts-consign-price-service
+    GT anomaly=0.7241  max=1.0000  inGraph=true  edges=20
+    GT metric=diskio head=[74633.8685798884,74633.8685798884,54893.28910778301,45851.220781541415,44936.33262974503,44021.44447794865] tail=[44533.731227594224,52914.76924070664,52914.76924070664,52914.76924070664]
+    GT dominant=workload head=[0.133,0.133,0.133,0,0,0] tail=[0.8,0.8,0.8,0.867]
+    GT breakdown=dev=0.477 trend=0.018 cv=0.032 burst=0.048 rise=2.000 drop=1.000 base=0.400
+    GT transientSkipped=[cpu,diskio,socket,latency-50,latency-90]
+    topAnomaly: ts-consign-price-service(1.000) | ts-order-other-service(0.890) | ts-consign-service(0.844)
+    top1 metric=workload head=[0.4,0.4,0.4,0.4,0.4,0.4] tail=[0.267,0.267,0,0]
+    top1 breakdown=dev=0.700 trend=0.057 cv=0.035 burst=0.000 rise=4.015 drop=1.000 base=0.133
+    top1 transientSkipped=[cpu,socket,latency-50]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.148 top1=0.251
+    topoSource GT=0.685 top1=0.164
+    Reason: Top prediction "ts-consign-price-service" does not match ground truth "ts-order-service"
+    Top-K: ts-consign-price-service(1.00,d0) | ts-order-other-service(0.42,d1) | ts-consign-service(0.40,d1) | ts-order-service(0.34,d1) | ts-verification-code-service(0.69,d0)
+
+Total duration: 225887ms
+
+=== RCAEval RE3 ===
+Micro-Kinetic — RCAEval Industry-Standard Benchmark
+═════════════════════════════════════════════════════════════════
+Data:  /home/runner/RCAEval-json
+Filter: system=all, suite=re3
+injectTime: ON (RCAEval baseline protocol) | temporalWeight: 0
+signals: collisionWeight=0 topoWeight=0 logWeight=1 logSignalMode=count collapseDiscount=0 traceWeight=1
+Cases discovered: 735
+
+Scanned 735 directories with metrics.json
+Case distribution:
+  OnlineBoutique:RE1: 125 cases
+  OnlineBoutique:RE2: 90 cases
+  OnlineBoutique:RE3: 30 cases
+  SockShop:RE1: 125 cases
+  SockShop:RE2: 90 cases
+  SockShop:RE3: 30 cases
+  TrainTicket:RE1: 125 cases
+  TrainTicket:RE2: 90 cases
+  TrainTicket:RE3: 30 cases
+
+Groups to evaluate: 3
+═════════════════════════════════════════════════════════════════
+Topology: YAML v2 (loaded) + semantic enhancement (Zhipu embedding-3)
+═════════════════════════════════════════════════════════════════
+  [semantic] 52/392 services resolved (13.3%) — embedding=52, llm=0, exact=340
+  [trace] 30/30 cases with traces, 30 pruned, avg edges: 23 → 9 (61% reduction)
+  [trace] header: time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode
+  [log] 30/30 cases with logs, 41401 ERROR/FATAL entries, 5343 stack-trace entries
+  [log] header: timestamp,container_name,message
+  [log] sample: ts=1731903240000 level=INFO svc=frontend msg="request started"
+  [log] stacktrace sample: ""java.lang.NullPointerException: Cannot invoke ""java.util.Collection.toArray()"" because ""<parameter1>"" is null"
+  [log] exception types: NullPointerException, IOException, BindException, AttributeError, TypeError
+  [topo] system=OnlineBoutique, edges=13 exact + 1 emb + 0 llm, svcs=undefined, unconnected=1
+
+════════════════════════════════════════════════════════════════════════════════
+║  OnlineBoutique                 RE3             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | F3     | F4     | F5     | F1     | F2     | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  83.3% |  66.7% | 100.0% |  33.3% | 100.0% |  76.7% ║
+║ Micro-Kinetic       | Avg@5  |  83.3% |  66.7% | 100.0% |  33.3% | 100.0% |  76.7% ║
+║ Micro-Kinetic       | LA     |  83.3% |  66.7% | 100.0% |  33.3% | 100.0% |  76.7% ║
+║ Micro-Kinetic       | TA     |  83.3% |  66.7% | 100.0% |  33.3% | 100.0% |  76.7% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: OnlineBoutique/RE3 (top 1/fault type) ──
+  Case: rcaeval-re3_re3ob_adservice_f3_2
+    Expected: adservice  →  Predicted: paymentservice
+    GT anomaly=0.4738  max=1.0000  inGraph=true  edges=9
+    GT metric=error head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=latency-50 head=[0.003984293193717277,0.003984293193717277,0.003984293193717277,0.003984293193717277,0.003984293193717277,0.0038910891089108915] tail=[0.0004948979591836735,0.0004948979591836735,0.0004948979591836735,0.0004948979591836735]
+    GT breakdown=dev=0.265 trend=0.144 cv=0.000 burst=0.000 rise=0.275 drop=0.842 base=0.003
+    GT transientSkipped=[cpu,mem,socket,workload,latency-90]
+    topAnomaly: paymentservice(1.000) | checkoutservice(0.611) | emailservice(0.572)
+    top1 metric=cpu head=[0.33796295455754344,0.48336860788614855,0.48336860788614855,0.48336860788614855,0.48336860788614855,0.48336860788614855] tail=[0.09428325726195708,0.09428325726195708,0.09428325726195708,0.09428325726195708]
+    top1 breakdown=dev=0.699 trend=0.068 cv=0.028 burst=0.070 rise=3.996 drop=0.887 base=0.097
+    onset GT=1085 top1=0 (source later ✗)
+    injectDelay GT=365000 top1=32000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.209
+    topoSource GT=1.000 top1=0.480
+    traceActivity GT=- top=emailservice pre=124 post=142 ratio=1.145
+    Reason: Top prediction "paymentservice" does not match ground truth "adservice"
+    Top-K: paymentservice(1.00,d0) | checkoutservice(0.29,d1) | emailservice(0.57,d0) | adservice(0.47,d0) | frontend(0.11,d2)
+  Case: rcaeval-re3_re3ob_emailservice_f4_1
+    Expected: emailservice  →  Predicted: checkoutservice
+    GT anomaly=0.3617  max=0.3617  inGraph=true  edges=9
+    GT metric=workload head=[0.333,0.333,0.333,0.333,0.333,0.2] tail=[0.133,0.133,0.133,0.133]
+    GT dominant=mem head=[88264704,88264704,88264704,88264704,88264704,88264704] tail=[44961792,44961792,44961792,44961792]
+    GT breakdown=dev=0.306 trend=0.055 cv=0.000 burst=0.000 rise=1.025 drop=0.001 base=43819008.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: emailservice(0.362) | checkoutservice(0.273) | paymentservice(0.264)
+    top1 metric=mem head=[88264704,88264704,88264704,88264704,88264704,88264704] tail=[44961792,44961792,44961792,44961792]
+    top1 breakdown=dev=0.306 trend=0.055 cv=0.000 burst=0.000 rise=1.025 drop=0.001 base=43819008.000
+    top1 transientSkipped=[cpu,workload,latency-50,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=19000 top1=19000 (tie)
+    ratioContrib GT=0.210 top1=0.210
+    topoSource GT=0.766 top1=0.766
+    traceActivity GT=pre=122 post=147 ratio=1.205 top=paymentservice pre=122 post=150 ratio=1.230
+    Reason: Top prediction "checkoutservice" does not match ground truth "emailservice"
+    Top-K: checkoutservice(0.13,d1) | emailservice(0.36,d0) | paymentservice(0.26,d0) | currencyservice(0.26,d0) | shippingservice(0.22,d0)
+  Case: rcaeval-re3_re3ob_emailservice_f4_3
+    Expected: emailservice  →  Predicted: paymentservice
+    GT anomaly=0.3553  max=0.4177  inGraph=true  edges=9
+    GT metric=workload head=[0.267,0.267,0.6,0.6,0.6,0.6] tail=[0.133,0.133,0.133,0.133]
+    GT dominant=mem head=[88276992,88276992,88276992,88276992,88276992,88276992] tail=[44953600,44953600,44953600,44953600]
+    GT breakdown=dev=0.307 trend=0.049 cv=0.000 burst=0.000 rise=1.026 drop=0.001 base=43823104.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: paymentservice(0.418) | emailservice(0.355) | checkoutservice(0.264)
+    top1 metric=cpu head=[0.09804389412725535,0.10003155239215622,0.1020192106570571,0.11925949589405227,0.11925949589405227,0.11925949589405227] tail=[0.03430207371421685,0.03430207371421685,0.03430207371421685,0.03430207371421685]
+    top1 breakdown=dev=0.347 trend=0.037 cv=0.000 burst=0.035 rise=1.221 drop=0.800 base=0.071
+    top1 transientSkipped=[mem,workload,latency-50]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=22000 top1=7000 (source later ✗)
+    ratioContrib GT=0.214 top1=0.187
+    topoSource GT=0.766 top1=0.768
+    traceActivity GT=pre=145 post=131 ratio=0.903 top=productcatalogservice pre=20871 post=20916 ratio=1.002
+    Reason: Top prediction "paymentservice" does not match ground truth "emailservice"
+    Top-K: paymentservice(0.42,d0) | emailservice(0.36,d0) | checkoutservice(0.12,d1) | shippingservice(0.20,d0) | cartservice(0.20,d0)
+  Case: rcaeval-re3_re3ob_cartservice_f1_1
+    Expected: cartservice  →  Predicted: adservice
+    GT anomaly=0.2058  max=0.6240  inGraph=true  edges=9
+    GT metric=cpu head=[0.9459673802805069,0.9459673802805069,0.9459673802805069,0.9459673802805069,0.9459673802805069,0.9459673802805069] tail=[0.6916994591269672,0.6916994591269672,0.6916994591269672,0.6916994591269672]
+    GT dominant=latency-50 head=[0.005379746835443038,0.005379746835443038,0.005157563025210085,0.005095744680851064,0.004900414937759337,0.004900414937759337] tail=[0.0033739376770538245,0.0033739376770538245,0.0033739376770538245,0.0033739376770538245]
+    GT breakdown=dev=0.125 trend=0.081 cv=0.000 burst=0.000 rise=0.081 drop=0.334 base=0.005
+    GT transientSkipped=[cpu,mem,socket,latency-90]
+    topAnomaly: adservice(0.624) | paymentservice(0.582) | currencyservice(0.360)
+    top1 metric=cpu head=[1.8014314727843306,1.8014314727843306,1.8014314727843306,1.8014314727843306,1.8014314727843306,1.8014314727843306] tail=[0.4016385997910122,0.4016385997910122,0.4016385997910122,0.4016385997910122]
+    top1 breakdown=dev=0.387 trend=0.172 cv=0.026 burst=0.039 rise=1.439 drop=0.773 base=0.812
+    onset GT=859 top1=0 (source later ✗)
+    injectDelay GT=139000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=- top=emailservice pre=127 post=129 ratio=1.016
+    Reason: Top prediction "adservice" does not match ground truth "cartservice"
+    Top-K: adservice(0.62,d0) | paymentservice(0.58,d0) | currencyservice(0.36,d0) | shippingservice(0.32,d0) | checkoutservice(0.15,d1)
+  Case: rcaeval-re3_re3ob_cartservice_f1_2
+    Expected: cartservice  →  Predicted: adservice
+    GT anomaly=0.0853  max=0.5531  inGraph=true  edges=9
+    GT metric=cpu head=[0.9072044140296828,0.9072044140296828,0.9072044140296828,0.7786453431425028,0.7944266687117033,0.810207994280904] tail=[0.7221295009097418,0.7221295009097418,0.7221295009097418,0.7221295009097418]
+    GT dominant=latency-50 head=[0.0032660136446223554,0.0032660136446223554,0.0032660136446223554,0.0032660136446223554,0.0032660136446223554,0.0032660136446223554] tail=[0.003020151133501259,0.0030257731958762885,0.0030259067357512955,0.0030259067357512955]
+    GT breakdown=dev=0.064 trend=0.015 cv=0.000 burst=0.006 rise=0.157 drop=0.080 base=0.003
+    GT transientSkipped=[cpu,mem,socket,workload,latency-90]
+    topAnomaly: adservice(0.553) | frontend(0.209) | currencyservice(0.205)
+    top1 metric=cpu head=[1.986847053658935,1.7548249557130209,1.7548249557130209,1.7548249557130209,1.7548249557130209,1.7548249557130209] tail=[0.46139457073682927,0.46139457073682927,0.42698231318281504,0.42698231318281504]
+    top1 breakdown=dev=0.350 trend=0.169 cv=0.000 burst=0.035 rise=1.237 drop=0.689 base=0.888
+    onset GT=9007199254740991 top1=0 (source later ✗)
+    injectDelay GT=undef top1=0 (undetermined)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=- top=paymentservice pre=141 post=128 ratio=0.908
+    Reason: Top prediction "adservice" does not match ground truth "cartservice"
+    Top-K: adservice(0.55,d0) | frontend(0.06,d2) | currencyservice(0.21,d0) | productcatalogservice(0.18,d0) | emailservice(0.18,d0)
+  Case: rcaeval-re3_re3ob_cartservice_f1_3
+    Expected: cartservice  →  Predicted: adservice
+    GT anomaly=0.1571  max=0.6073  inGraph=true  edges=9
+    GT metric=cpu head=[0.9747516141917392,0.9747516141917392,0.9747516141917392,0.9747516141917392,0.8269846847670171,0.8107388245304881] tail=[0.8557900974745274,0.8557900974745274,0.7439050510085938,0.7296418827173516]
+    GT dominant=workload head=[12.6,12.6,12.6,12.6,11.733,11.733] tail=[9.733,9.733,9.733,9.733]
+    GT breakdown=dev=0.116 trend=0.030 cv=0.000 burst=0.012 rise=0.306 drop=0.293 base=10.467
+    GT transientSkipped=[cpu,mem,socket,latency-50,latency-90]
+    topAnomaly: adservice(0.607) | shippingservice(0.371) | currencyservice(0.242)
+    top1 metric=cpu head=[2.0032982733076516,2.0032982733076516,2.0032982733076516,2.0032982733076516,2.0032982733076516,1.85036981168369] tail=[0.4628477241439623,0.4628477241439623,0.49452716167501015,0.3534038796499874]
+    top1 breakdown=dev=0.354 trend=0.193 cv=0.026 burst=0.035 rise=1.257 drop=0.784 base=0.888
+    top1 transientSkipped=[workload]
+    onset GT=761 top1=0 (source later ✗)
+    injectDelay GT=41000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=- top=paymentservice pre=146 post=138 ratio=0.945
+    Reason: Top prediction "adservice" does not match ground truth "cartservice"
+    Top-K: adservice(0.61,d0) | shippingservice(0.37,d0) | currencyservice(0.24,d0) | productcatalogservice(0.19,d0) | recommendationservice(0.08,d1)
+  Case: rcaeval-re3_re3ob_currencyservice_f1_1
+    Expected: currencyservice  →  Predicted: paymentservice
+    GT anomaly=0.3270  max=0.8527  inGraph=true  edges=9
+    GT metric=cpu head=[2.517729996643049,2.517729996643049,2.517729996643049,2.517729996643049,2.517729996643049,2.517729996643049] tail=[1.3141687730018747,1.3413061620967275,1.3684435511915798,1.3955809402864325]
+    GT dominant=workload head=[31.267,31.8,31.8,31.8,31.8,31.267] tail=[18.067,18.067,18.733,18.733]
+    GT breakdown=dev=0.194 trend=0.133 cv=0.000 burst=0.000 rise=0.230 drop=0.562 base=32.400
+    GT transientSkipped=[cpu,mem,socket,latency-50,latency-90]
+    topAnomaly: paymentservice(0.853) | productcatalogservice(0.578) | recommendationservice(0.544)
+    top1 metric=cpu head=[0.07873775391758309,0.07873775391758309,0.07873775391758309,0.07873775391758309,0.07873775391758309,0.07873775391758309] tail=[0.0010991585714627264,0.0010991585714627264,0.0010991585714627264,0.0010991585714627264]
+    top1 breakdown=dev=0.373 trend=0.428 cv=0.052 burst=0.000 rise=1.359 drop=0.994 base=0.052
+    onset GT=781 top1=0 (source later ✗)
+    injectDelay GT=61000 top1=0 (source later ✗)
+    ratioContrib GT=0.553 top1=0.239
+    topoSource GT=0.540 top1=0.566
+    traceActivity GT=pre=11551 post=6221 ratio=0.539 top=currencyservice pre=11551 post=6221 ratio=0.539
+    Reason: Top prediction "paymentservice" does not match ground truth "currencyservice"
+    Top-K: paymentservice(0.85,d0) | productcatalogservice(0.58,d0) | recommendationservice(0.26,d1) | checkoutservice(0.22,d1) | frontend(0.13,d2)
+  Case: rcaeval-re3_re3ob_currencyservice_f1_2
+    Expected: currencyservice  →  Predicted: productcatalogservice
+    GT anomaly=0.3355  max=0.5609  inGraph=true  edges=9
+    GT metric=cpu head=[2.4399003577013643,2.4399003577013643,2.4399003577013643,2.4399003577013643,2.4399003577013643,2.4399003577013643] tail=[1.77580932948228,1.77580932948228,1.77580932948228,1.77580932948228]
+    GT dominant=workload head=[27.933,27.933,27.933,34.467,34.467,34.467] tail=[16.533,16.533,16.533,16.8]
+    GT breakdown=dev=0.197 trend=0.138 cv=0.000 burst=0.000 rise=0.200 drop=0.575 base=32.600
+    GT transientSkipped=[cpu,mem,socket,latency-50,latency-90]
+    topAnomaly: productcatalogservice(0.561) | frontend(0.529) | recommendationservice(0.529)
+    top1 metric=workload head=[58.133,58.133,58.133,58.133,58.133,58.133] tail=[11.133,11.133,11.733,12]
+    top1 breakdown=dev=0.264 trend=0.268 cv=0.029 burst=0.000 rise=0.256 drop=0.838 base=58.900
+    top1 transientSkipped=[cpu,mem]
+    onset GT=744 top1=744 (tie)
+    injectDelay GT=24000 top1=24000 (tie)
+    ratioContrib GT=0.569 top1=0.664
+    topoSource GT=0.509 top1=0.478
+    traceActivity GT=pre=11662 post=6276 ratio=0.538 top=currencyservice pre=11662 post=6276 ratio=0.538
+    Reason: Top prediction "productcatalogservice" does not match ground truth "currencyservice"
+    Top-K: productcatalogservice(0.56,d0) | frontend(0.16,d2) | recommendationservice(0.25,d1) | checkoutservice(0.24,d1) | cartservice(0.41,d0)
+  [semantic] 97/461 services resolved (21.0%) — embedding=97, llm=0, exact=364
+  [trace] No trace data available for 30 cases
+  [log] 30/30 cases with logs, 43102 ERROR/FATAL entries, 37966 stack-trace entries
+  [log] header: timestamp,container_name,message
+  [log] sample: ts=1732242483000 level=INFO svc=front-end msg=""Posting Address: {""number"":""123"""
+  [log] stacktrace sample: ""org.springframework.web.client.HttpServerErrorException: 503 Service Unavailable"
+  [log] exception types: HttpServerErrorException, TimeoutException, AFUNIXSocketException, ListenerExecutionFailedException, RuntimeException, ProcessingException, MongoSocketOpenException, ConnectException, ConcurrentModificationException, MongoSocketReadException, HttpMessageNotReadableException, JsonMappingException
+  [topo] system=SockShop, edges=13 exact + 3 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  SockShop                       RE3             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | F1     | F3     | F4     | F2     | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  60.0% |  30.0% |  14.3% | 100.0% |  51.1% ║
+║ Micro-Kinetic       | Avg@5  |  60.0% |  30.0% |  14.3% | 100.0% |  51.1% ║
+║ Micro-Kinetic       | LA     |  60.0% |  30.0% |  14.3% | 100.0% |  51.1% ║
+║ Micro-Kinetic       | TA     |  60.0% |  30.0% |  14.3% | 100.0% |  51.1% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: SockShop/RE3 (top 4/fault type) ──
+  Case: rcaeval-re3_re3ss_carts_f1_1
+    Expected: carts  →  Predicted: queue-master
+    GT anomaly=0.9069  max=3.7263  inGraph=true  edges=16
+    GT metric=error head=[10.133,10.133,10.133,10.133,10.133,10.133] tail=[1.533,1.533,1.533,1.533]
+    GT dominant=cpu head=[29.979079729014952,29.95202204155593,29.95202204155593,29.95202204155593,29.95202204155593,29.95202204155593] tail=[7.7068575527088345,7.7068575527088345,7.7068575527088345,7.7068575527088345]
+    GT breakdown=dev=0.751 trend=0.107 cv=0.050 burst=0.000 rise=4.632 drop=0.793 base=5.338
+    GT transientSkipped=[socket,workload,latency-50,latency-90]
+    topAnomaly: queue-master(3.726) | front-end(2.249) | shipping(1.904)
+    top1 metric=latency-90 head=[2.0020300000000004,1.9920300000000002,1.98203,1.9720299999999997,1.96203,1.95203] tail=[0.0046,0.0046,0.0046,0.0046]
+    top1 breakdown=dev=2.639 trend=0.749 cv=0.075 burst=0.264 rise=434.224 drop=0.000 base=0.005
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=17000 top1=undef (undetermined)
+    ratioContrib GT=0.520 top1=0.187
+    topoSource GT=0.000 top1=0.061
+    Reason: Top prediction "queue-master" does not match ground truth "carts"
+    Top-K: queue-master(1.00,d0) | front-end(0.35,d4) | shipping(1.00,d0) | rabbitmq-exporter(1.00,d0) | orders(0.21,d3)
+  Case: rcaeval-re3_re3ss_carts_f1_2
+    Expected: carts  →  Predicted: queue-master
+    GT anomaly=0.9789  max=3.6401  inGraph=true  edges=16
+    GT metric=error head=[0,0,0,0,0,0] tail=[2.267,2.267,2.267,2.267]
+    GT dominant=cpu head=[25.77285326552462,21.813140726313048,19.439452448890442,20.0828233862594,20.0828233862594,20.0828233862594] tail=[5.619054189245518,5.619054189245518,5.619054189245518,5.619054189245518]
+    GT breakdown=dev=0.922 trend=0.000 cv=0.057 burst=0.000 rise=7.352 drop=0.720 base=3.596
+    GT transientSkipped=[workload,latency-90]
+    topAnomaly: queue-master(3.640) | orders(2.269) | shipping(2.065)
+    top1 metric=latency-90 head=[1.93362,1.92362,1.91362,1.9036200000000003,1.8733463305946247,1.8264481365065113] tail=[0.0046,0.0046,0.0046,0.0046]
+    top1 breakdown=dev=2.624 trend=0.679 cv=0.075 burst=0.262 rise=419.352 drop=0.000 base=0.005
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=4000 (source earlier ✓)
+    ratioContrib GT=0.469 top1=0.211
+    topoSource GT=0.000 top1=0.000
+    Reason: Top prediction "queue-master" does not match ground truth "carts"
+    Top-K: queue-master(1.00,d0) | orders(0.49,d3) | shipping(1.00,d0) | carts(0.30,d2) | catalogue(0.27,d1)
+  Case: rcaeval-re3_re3ss_carts_f1_3
+    Expected: carts  →  Predicted: queue-master
+    GT anomaly=0.2789  max=1.0000  inGraph=true  edges=32
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=cpu head=[30.006293805254643,30.006293805254643,30.006293805254643,30.006293805254643,30.006293805254643,30.006293805254643] tail=[3.9938239272919627,3.9938239272919627,3.9938239272919627,3.9938239272919627]
+    GT breakdown=dev=0.931 trend=0.078 cv=0.058 burst=0.000 rise=7.539 drop=0.657 base=3.518
+    GT transientSkipped=[mem,socket,workload,latency-90]
+    topAnomaly: queue-master(1.000) | shipping(0.573) | front-end(0.525)
+    top1 metric=latency-90 head=[1.958278383495463,1.982285346571061,2.003519662759139,2.0224354424851234,2.0393927628513744,2.0546808091745823] tail=[0.0046,0.0046,0.0046,0.0046]
+    top1 breakdown=dev=2.669 trend=0.816 cv=0.075 burst=0.267 rise=465.378 drop=0.000 base=0.005
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=13000 top1=undef (undetermined)
+    ratioContrib GT=0.739 top1=0.181
+    topoSource GT=0.502 top1=0.677
+    Reason: Top prediction "queue-master" does not match ground truth "carts"
+    Top-K: queue-master(1.00,d0) | shipping(0.57,d0) | front-end(0.08,d4) | orders(0.08,d3) | carts(0.09,d2)
+  Case: rcaeval-re3_re3ss_carts_f1_4
+    Expected: carts  →  Predicted: queue-master
+    GT anomaly=1.0387  max=4.1726  inGraph=true  edges=16
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=cpu head=[29.926068224963554,29.926068224963554,29.926068224963554,29.926068224963554,29.926068224963554,29.926068224963554] tail=[2.210510831731391,2.210510831731391,2.210510831731391,2.210510831731391]
+    GT breakdown=dev=0.856 trend=0.126 cv=0.056 burst=0.000 rise=6.181 drop=0.812 base=4.188
+    GT transientSkipped=[mem,workload,latency-90]
+    topAnomaly: queue-master(4.173) | front-end(2.318) | shipping(2.194)
+    top1 metric=latency-90 head=[4.0313,4.014633333333334,3.9979666666666662,3.9813,3.9646333333333335,3.947966666666668] tail=[0.0046,0.0046,0.0046,0.0046]
+    top1 breakdown=dev=2.965 trend=0.836 cv=0.075 burst=0.297 rise=922.471 drop=0.000 base=0.005
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=undef (undetermined)
+    ratioContrib GT=0.486 top1=0.182
+    topoSource GT=0.000 top1=0.000
+    Reason: Top prediction "queue-master" does not match ground truth "carts"
+    Top-K: queue-master(1.00,d0) | front-end(0.36,d4) | shipping(1.00,d0) | orders(0.35,d3) | carts(0.32,d2)
+  Case: rcaeval-re3_re3ss_carts_f3_1
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=1.0162  max=1.7290  inGraph=true  edges=16
+    GT metric=error head=[8.667,8.667,7.533,7.533,7.533,7.533] tail=[2.2,2.2,2.2,2.2]
+    GT dominant=cpu head=[24.870749889977454,25.370771667979653,25.870793445981853,30.00130668013203,30.00130668013203,30.00130668013203] tail=[4.127994006607978,4.127994006607978,3.45198521937165,3.45198521937165]
+    GT breakdown=dev=0.794 trend=0.172 cv=0.051 burst=0.000 rise=5.218 drop=0.733 base=4.832
+    GT transientSkipped=[socket,workload,latency-50,latency-90]
+    topAnomaly: front-end(1.729) | carts(1.016) | payment(0.891)
+    top1 metric=error head=[6.133,6.133,6.133,6.133,6.133,6.133] tail=[2.333,2.333,2.333,2.333]
+    top1 breakdown=dev=1.587 trend=0.088 cv=0.054 burst=0.000 rise=37.665 drop=1.000 base=0.200
+    top1 transientSkipped=[cpu,socket,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=17000 top1=8000 (source later ✗)
+    ratioContrib GT=0.455 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.27,d4) | carts(0.31,d2) | payment(0.89,d0) | queue-master(0.79,d0) | orders(0.11,d3)
+  Case: rcaeval-re3_re3ss_carts_f3_2
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=1.0919  max=1.7525  inGraph=true  edges=16
+    GT metric=cpu head=[30.017416679701597,30.017416679701597,30.017416679701597,29.973147801769283,29.973147801769283,29.973147801769283] tail=[5.043324246815631,5.043324246815631,4.244210242261905,4.244210242261905]
+    GT dominant=cpu head=[30.017416679701597,30.017416679701597,30.017416679701597,29.973147801769283,29.973147801769283,29.973147801769283] tail=[5.043324246815631,5.043324246815631,4.244210242261905,4.244210242261905]
+    GT breakdown=dev=0.931 trend=0.103 cv=0.057 burst=0.000 rise=7.536 drop=1.000 base=3.518
+    GT transientSkipped=[socket,workload,latency-90]
+    topAnomaly: front-end(1.752) | carts(1.092) | carts-db(0.722)
+    top1 metric=error head=[5.8,5.8,5.8,5.8,5.8,6] tail=[2,2,2,2]
+    top1 breakdown=dev=1.531 trend=0.164 cv=0.057 burst=0.000 rise=33.000 drop=1.000 base=0.200
+    top1 transientSkipped=[cpu,socket,workload,latency-50,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=16000 top1=0 (source later ✗)
+    ratioContrib GT=0.428 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.28,d4) | carts(0.33,d2) | carts-db(0.72,d0) | catalogue(0.16,d1) | payment(0.33,d0)
+  Case: rcaeval-re3_re3ss_carts_f3_3
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=1.1115  max=2.1561  inGraph=true  edges=16
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=cpu head=[29.98103033448673,29.98103033448673,29.98103033448673,29.98103033448673,29.98103033448673,29.942961508888978] tail=[3.067095058016874,3.067095058016874,3.067095058016874,3.067095058016874]
+    GT breakdown=dev=0.892 trend=0.162 cv=0.057 burst=0.000 rise=6.798 drop=0.717 base=3.852
+    GT transientSkipped=[socket,workload,latency-90]
+    topAnomaly: front-end(2.156) | carts(1.111) | payment(0.485)
+    top1 metric=error head=[5.933,5.933,5.933,5.933,5.933,5.933] tail=[2,2,2,2]
+    top1 breakdown=dev=1.757 trend=0.168 cv=0.056 burst=0.176 rise=56.143 drop=1.000 base=0.133
+    top1 transientSkipped=[cpu,mem,socket,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=7000 (source earlier ✓)
+    ratioContrib GT=0.457 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.34,d4) | carts(0.34,d2) | payment(0.48,d0) | orders(0.08,d3) | shipping(0.34,d0)
+  Case: rcaeval-re3_re3ss_carts_f3_4
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=1.0972  max=1.9137  inGraph=true  edges=16
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=cpu head=[29.960880668444155,29.960880668444155,29.96318942066969,29.96318942066969,29.96318942066969,29.96318942066969] tail=[2.7341469634946507,2.7341469634946507,2.7341469634946507,2.7341469634946507]
+    GT breakdown=dev=0.872 trend=0.168 cv=0.057 burst=0.000 rise=6.447 drop=0.699 base=4.072
+    GT transientSkipped=[socket,workload,latency-90]
+    topAnomaly: front-end(1.914) | carts(1.097) | orders-db(0.382)
+    top1 metric=error head=[8.933,5.067,5.067,5.067,5.067,5.067] tail=[2.533,2.533,2.533,2.533]
+    top1 breakdown=dev=1.524 trend=0.181 cv=0.056 burst=0.152 rise=32.457 drop=1.000 base=0.267
+    top1 transientSkipped=[cpu,socket,workload,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=0 (tie)
+    ratioContrib GT=0.443 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.30,d4) | carts(0.33,d2) | orders-db(0.38,d0) | payment(0.38,d0) | orders(0.08,d3)
+  Case: rcaeval-re3_re3ss_front-end_f3_1
+    Expected: front-end  →  Predicted: rabbitmq-exporter
+    GT anomaly=1.3653  max=3.7903  inGraph=true  edges=16
+    GT metric=error head=[2.4,2.4,2.4,2.4,2.4,2.4] tail=[0,0,0,0]
+    GT dominant=socket head=[12,12,12,12,12,12] tail=[52,52,52,52]
+    GT breakdown=dev=0.985 trend=0.340 cv=0.040 burst=0.000 rise=8.667 drop=0.333 base=6.000
+    GT transientSkipped=[latency-50]
+    topAnomaly: rabbitmq-exporter(3.790) | queue-master(2.588) | shipping(2.405)
+    top1 metric=cpu head=[0.03952376506383486,0.032607106177663756,0.03194837675993318,0.031289647342202596,0.030630917924472013,0.029972188506741434] tail=[0.00011571863890299494,0,0,0]
+    top1 breakdown=dev=2.755 trend=0.685 cv=0.075 burst=0.276 rise=568.247 drop=1.000 base=0.000
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=26000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.195
+    topoSource GT=1.000 top1=0.000
+    Reason: Top prediction "rabbitmq-exporter" does not match ground truth "front-end"
+    Top-K: rabbitmq-exporter(1.00,d0) | queue-master(1.00,d0) | shipping(1.00,d0) | orders(0.45,d3) | catalogue-db(1.00,d0)
+  Case: rcaeval-re3_re3ss_carts_f4_1
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=0.9797  max=1.8724  inGraph=true  edges=16
+    GT metric=error head=[7.2,7.2,7.2,7.2,7.2,8.133] tail=[0,0,0,0]
+    GT dominant=cpu head=[29.926281177180797,29.926281177180797,29.926281177180797,29.926281177180797,29.926281177180797,29.975121444156272] tail=[2.5576306100071537,2.5576306100071537,2.5576306100071537,2.5576306100071537]
+    GT breakdown=dev=0.793 trend=0.137 cv=0.049 burst=0.000 rise=5.212 drop=0.705 base=4.867
+    GT transientSkipped=[socket,workload,latency-50,latency-90]
+    topAnomaly: front-end(1.872) | rabbitmq-exporter(1.611) | orders(1.296)
+    top1 metric=error head=[5.8,5.8,5.8,5.8,5.8,5.8] tail=[0.133,0.133,0.133,0.133]
+    top1 breakdown=dev=1.458 trend=0.193 cv=0.075 burst=0.146 rise=27.715 drop=1.000 base=0.267
+    top1 transientSkipped=[cpu,mem,socket,workload,latency-50,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=7000 (source earlier ✓)
+    ratioContrib GT=0.498 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.29,d4) | rabbitmq-exporter(1.00,d0) | orders(0.28,d3) | carts(0.30,d2) | payment(0.49,d0)
+  Case: rcaeval-re3_re3ss_carts_f4_2
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=0.9743  max=1.9124  inGraph=true  edges=16
+    GT metric=cpu head=[29.98815730620521,29.98815730620521,29.98815730620521,29.98815730620521,29.98815730620521,29.98815730620521] tail=[1.8921299474291984,1.3056256129185648,1.3377866517499557,1.3699476905813468]
+    GT dominant=cpu head=[29.98815730620521,29.98815730620521,29.98815730620521,29.98815730620521,29.98815730620521,29.98815730620521] tail=[1.8921299474291984,1.3056256129185648,1.3377866517499557,1.3699476905813468]
+    GT breakdown=dev=0.833 trend=0.092 cv=0.049 burst=0.000 rise=5.809 drop=1.000 base=4.413
+    GT transientSkipped=[socket,workload,latency-50,latency-90]
+    topAnomaly: front-end(1.912) | orders(1.363) | carts(0.974)
+    top1 metric=error head=[6.4,6.4,6.4,6.4,6.4,6.4] tail=[0.2,0.2,0.2,0.2]
+    top1 breakdown=dev=1.572 trend=0.108 cv=0.075 burst=0.157 rise=36.335 drop=1.000 base=0.200
+    top1 transientSkipped=[cpu,mem,socket,latency-50,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=23000 top1=0 (source later ✗)
+    ratioContrib GT=0.504 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.30,d4) | orders(0.29,d3) | carts(0.30,d2) | orders-db(0.39,d0) | carts-db(0.35,d0)
+  Case: rcaeval-re3_re3ss_carts_f4_3
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=1.0990  max=1.9996  inGraph=true  edges=16
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=cpu head=[29.960087664858285,29.960087664858285,29.960087664858285,29.960087664858285,29.960087664858285,29.960087664858285] tail=[2.3658235274346655,2.3658235274346655,2.3658235274346655,2.3658235274346655]
+    GT breakdown=dev=0.862 trend=0.184 cv=0.053 burst=0.000 rise=6.282 drop=1.000 base=4.128
+    GT transientSkipped=[socket,workload,latency-90]
+    topAnomaly: front-end(2.000) | orders(1.434) | carts(1.099)
+    top1 metric=error head=[4.933,4.933,4.933,4.933,4.933,4.933] tail=[0.267,0.267,0.267,0.267]
+    top1 breakdown=dev=1.556 trend=0.213 cv=0.075 burst=0.156 rise=35.000 drop=1.000 base=0.200
+    top1 transientSkipped=[cpu,socket,workload,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=12000 top1=0 (source later ✗)
+    ratioContrib GT=0.472 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.31,d4) | orders(0.31,d3) | carts(0.34,d2) | payment(0.53,d0) | carts-db(0.35,d0)
+  Case: rcaeval-re3_re3ss_carts_f4_4
+    Expected: carts  →  Predicted: front-end
+    GT anomaly=1.0522  max=1.7593  inGraph=true  edges=16
+    GT metric=diskio head=[0,0,0,0,0,0] tail=[0,0,0,0]
+    GT dominant=cpu head=[30.026335042006863,30.026335042006863,30.026335042006863,30.026335042006863,30.026335042006863,30.026335042006863] tail=[3.246053644938513,3.1465339530919025,3.2106516647217127,3.2747693763515247]
+    GT breakdown=dev=0.855 trend=0.144 cv=0.053 burst=0.000 rise=6.166 drop=0.664 base=4.206
+    GT transientSkipped=[socket,workload,latency-50,latency-90]
+    topAnomaly: front-end(1.759) | orders(1.331) | carts(1.052)
+    top1 metric=error head=[5.933,5.933,5.667,5.667,5.667,5.667] tail=[0.267,0.267,0.267,0.267]
+    top1 breakdown=dev=1.414 trend=0.128 cv=0.075 burst=0.141 rise=24.966 drop=1.000 base=0.267
+    top1 transientSkipped=[cpu,mem,socket,workload,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=11000 top1=0 (source later ✗)
+    ratioContrib GT=0.478 top1=0.000
+    topoSource GT=0.000 top1=1.000
+    Reason: Top prediction "front-end" does not match ground truth "carts"
+    Top-K: front-end(0.28,d4) | orders(0.29,d3) | carts(0.32,d2) | carts-db(0.34,d0) | orders-db(0.33,d0)
+  Case: rcaeval-re3_re3ss_orders_f4_1
+    Expected: orders  →  Predicted: front-end
+    GT anomaly=1.6256  max=1.6256  inGraph=true  edges=16
+    GT metric=error head=[2.267,2.267,2.267,2.267,1.933,1.933] tail=[0,0,0,0]
+    GT dominant=cpu head=[49.935492551433434,49.935492551433434,49.935492551433434,49.935492551433434,49.935492551433434,49.935492551433434] tail=[0.34120219670494056,0.34120219670494056,0.34120219670494056,0.34120219670494056]
+    GT breakdown=dev=1.142 trend=0.294 cv=0.075 burst=0.114 rise=12.879 drop=0.964 base=3.608
+    GT transientSkipped=[socket,latency-90]
+    topAnomaly: orders(1.626) | front-end(1.190) | user(0.692)
+    top1 metric=cpu head=[49.935492551433434,49.935492551433434,49.935492551433434,49.935492551433434,49.935492551433434,49.935492551433434] tail=[0.34120219670494056,0.34120219670494056,0.34120219670494056,0.34120219670494056]
+    top1 breakdown=dev=1.142 trend=0.294 cv=0.075 burst=0.114 rise=12.879 drop=0.964 base=3.608
+    top1 transientSkipped=[socket,latency-90]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=1000 top1=1000 (tie)
+    logScore GT=0.000 top1=0.000
+    ratioContrib GT=0.202 top1=0.202
+    topoSource GT=0.000 top1=0.000
+    Reason: Top prediction "front-end" does not match ground truth "orders"
+    Top-K: front-end(0.19,d4) | orders(0.35,d3) | user(0.33,d1) | carts(0.20,d2) | carts-db(0.60,d0)
+  [semantic] 960/2047 services resolved (46.9%) — embedding=960, llm=0, exact=1087
+  [trace] 30/30 cases with traces, 30 pruned, avg edges: 218 → 41 (81% reduction)
+  [trace] header: time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode
+  [log] 30/30 cases with logs, 12313 ERROR/FATAL entries, 8550 stack-trace entries
+  [log] header: timestamp,container_name,message
+  [log] sample: ts=1733591048000 level=INFO svc=ts-admin-basic-info-service msg="2024-12-07 17:04:07.852  INFO 1 --- [io-18767-exec-9] a.controller.AdminBasicInf"
+  [log] stacktrace sample: ""2024-12-07 17:20:09.351 ERROR 1 --- [io-12031-exec-5] o.a.c.c.C.[.[.[/].[dispatcherServlet]    : Servlet.service() for "
+  [log] exception types: IllegalArgumentException, MalformedJwtException, TokenException, HttpServerErrorException
+  [topo] system=TrainTicket, edges=51 exact + 32 emb + 0 llm, svcs=undefined, unconnected=0
+
+════════════════════════════════════════════════════════════════════════════════
+║  TrainTicket                    RE3             Micro-Kinetic        ║
+════════════════════════════════════════════════════════════════════════════════
+║ Method              | Metric | F1     | F2     | F3     | F4     | AVERAGE ║
+════════════════════════════════════════════════════════════════════════════════
+║ Micro-Kinetic       | AC@1   |  28.6% |  42.9% |   0.0% |   0.0% |  17.9% ║
+║ Micro-Kinetic       | Avg@5  |  28.6% |  42.9% |   0.0% |   0.0% |  17.9% ║
+║ Micro-Kinetic       | LA     |  28.6% |  42.9% |   0.0% |   0.0% |  17.9% ║
+║ Micro-Kinetic       | TA     |  28.6% |  42.9% |   0.0% |   0.0% |  17.9% ║
+════════════════════════════════════════════════════════════════════════════════
+
+── Failure Diagnostics: TrainTicket/RE3 (top 5/fault type) ──
+  Case: rcaeval-re3_re3tt_ts-auth-service_f1_1
+    Expected: ts-auth-service  →  Predicted: ts-preserve-other-service
+    GT anomaly=0.2355  max=1.0000  inGraph=true  edges=43
+    GT metric=workload head=[0.4,0.4,0.4,0.4,0.4,0.4] tail=[1.4,1.4,1.4,1.4]
+    GT dominant=workload head=[0.4,0.4,0.4,0.4,0.4,0.4] tail=[1.4,1.4,1.4,1.4]
+    GT breakdown=dev=0.383 trend=0.168 cv=0.000 burst=0.000 rise=1.416 drop=1.000 base=0.800
+    GT transientSkipped=[cpu,mem,socket,latency-50,latency-90]
+    topAnomaly: ts-preserve-other-service(1.000) | ts-assurance-service(0.928) | ts-food-service(0.775)
+    top1 metric=cpu head=[3.554234729452136,3.6295927247618764,3.7049507200716167,3.7803087153813566,3.855666710691098,4.521479718584423] tail=[0.046069752500006445,0.046069752500006445,0.046069752500006445,0.06179161558908879]
+    top1 breakdown=dev=1.693 trend=0.403 cv=0.075 burst=0.169 rise=48.339 drop=0.627 base=0.092
+    top1 transientSkipped=[socket]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=41000 top1=89000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=pre=1800 post=2734 ratio=1.519 top=ts-auth-service pre=1800 post=2734 ratio=1.519
+    Reason: Top prediction "ts-preserve-other-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-other-service(1.00,d0) | ts-assurance-service(0.93,d0) | ts-food-service(0.07,d6) | ts-user-service(0.76,d0) | ts-security-service(0.22,d2)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f1_3
+    Expected: ts-auth-service  →  Predicted: ts-consign-service
+    GT anomaly=0.2632  max=1.0000  inGraph=true  edges=52
+    GT metric=cpu head=[4.975139742363027,4.975139742363027,4.975139742363027,4.53780598884181,4.53780598884181,4.53780598884181] tail=[6.914695489040085,6.914695489040085,6.914695489040085,7.6636846682367725]
+    GT dominant=workload head=[0.6,0.6,0.6,0.6,0.533,0.533] tail=[1.467,1.467,1.467,1.467]
+    GT breakdown=dev=0.412 trend=0.162 cv=0.000 burst=0.000 rise=1.584 drop=1.000 base=0.800
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: ts-consign-service(1.000) | ts-consign-price-service(0.828) | ts-inside-payment-service(0.717)
+    top1 metric=cpu head=[4.8177327371336265,4.8177327371336265,4.8177327371336265,4.8177327371336265,4.8177327371336265,4.8177327371336265] tail=[0.09849363005021393,0.09849363005021393,0.09849363005021393,0.09849363005021393]
+    top1 breakdown=dev=1.497 trend=0.459 cv=0.075 burst=0.150 rise=30.417 drop=0.738 base=0.198
+    onset GT=4 top1=0 (source later ✗)
+    injectDelay GT=34000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=pre=1835 post=2737 ratio=1.492 top=ts-auth-service pre=1835 post=2737 ratio=1.492
+    Reason: Top prediction "ts-consign-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-consign-service(0.47,d1) | ts-consign-price-service(0.83,d0) | ts-inside-payment-service(0.22,d2) | ts-auth-service(0.26,d0) | ts-food-map-service(0.63,d0)
+  Case: rcaeval-re3_re3tt_ts-route-service_f1_1
+    Expected: ts-route-service  →  Predicted: ts-preserve-other-service
+    GT anomaly=0.2317  max=1.0000  inGraph=true  edges=34
+    GT metric=workload head=[8.733,8.733,8.333,9.6,9.6,9.6] tail=[9.733,9.733,9.733,9.533]
+    GT dominant=socket head=[16,16,16,16,16,16] tail=[11,11,11,11]
+    GT breakdown=dev=0.388 trend=0.038 cv=0.000 burst=0.039 rise=1.444 drop=0.111 base=9.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-preserve-other-service(1.000) | ts-user-service(0.815) | ts-assurance-service(0.790)
+    top1 metric=cpu head=[3.8656061654135363,3.8656061654135363,3.8656061654135363,3.8656061654135363,3.8656061654135363,3.8656061654135363] tail=[0.06398976346753137,0.06264671979482055,0.061303676122109726,0.04129108999999075]
+    top1 breakdown=dev=1.603 trend=0.171 cv=0.075 burst=0.160 rise=39.053 drop=0.606 base=0.097
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=93000 top1=20000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.630 top1=1.000
+    traceActivity GT=pre=12441 post=11233 ratio=0.903 top=ts-payment-service pre=30 post=60 ratio=2.000
+    Reason: Top prediction "ts-preserve-other-service" does not match ground truth "ts-route-service"
+    Top-K: ts-preserve-other-service(0.16,d4) | ts-user-service(0.81,d0) | ts-assurance-service(0.79,d0) | ts-security-service(0.23,d2) | ts-order-other-service(0.32,d1)
+  Case: rcaeval-re3_re3tt_ts-route-service_f1_2
+    Expected: ts-route-service  →  Predicted: ts-order-service
+    GT anomaly=0.1233  max=1.0000  inGraph=true  edges=29
+    GT metric=cpu head=[5.689258056724918,5.801855316765982,6.755835602463906,6.755835602463906,6.755835602463906,6.755835602463906] tail=[1.4360802252429181,1.456295205994057,1.456295205994057,1.456295205994057]
+    GT dominant=mem head=[494870528,494870528,494870528,494870528,494870528,494870528] tail=[247803904,247816192,247816192,247816192]
+    GT breakdown=dev=0.296 trend=0.018 cv=0.000 burst=0.000 rise=0.978 drop=0.045 base=253083648.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-order-service(1.000) | ts-food-map-service(0.899) | ts-preserve-other-service(0.790)
+    top1 metric=latency-90 head=[2.05,2.05,2.05,2.0500000000000003,2.05,2.05] tail=[0.02285714285714284,0.02285714285714284,0.02285714285714284,0.02285714285714284]
+    top1 breakdown=dev=1.933 trend=0.350 cv=0.075 burst=0.193 rise=84.720 drop=1.000 base=0.024
+    top1 transientSkipped=[cpu,socket]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=52000 top1=40000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.581 top1=0.486
+    traceActivity GT=pre=12648 post=11452 ratio=0.905 top=ts-consign-service pre=90 post=108 ratio=1.200
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-route-service"
+    Top-K: ts-order-service(1.00,d0) | ts-food-map-service(0.90,d0) | ts-preserve-other-service(0.79,d0) | ts-food-service(0.06,d6) | ts-consign-service(0.32,d1)
+  Case: rcaeval-re3_re3tt_ts-route-service_f1_3
+    Expected: ts-route-service  →  Predicted: ts-contacts-service
+    GT anomaly=0.1179  max=1.0000  inGraph=true  edges=50
+    GT metric=workload head=[9.667,9.667,9.667,9.8,9.8,9.8] tail=[8,8,8,8.067]
+    GT dominant=socket head=[20,20,20,20,20,20] tail=[9,9,9,9]
+    GT breakdown=dev=0.347 trend=0.000 cv=0.000 burst=0.000 rise=1.222 drop=0.111 base=9.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-contacts-service(1.000) | ts-assurance-service(0.987) | ts-inside-payment-service(0.960)
+    top1 metric=latency-90 head=[2.35,2.35,2.35,2.35,2.35,2.35] tail=[0.021,0.021,0.021,0.021]
+    top1 breakdown=dev=2.006 trend=0.661 cv=0.075 burst=0.201 rise=100.349 drop=1.000 base=0.023
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=85000 top1=29000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.232
+    topoSource GT=0.745 top1=0.396
+    traceActivity GT=pre=12231 post=11224 ratio=0.918 top=ts-preserve-other-service pre=67 post=112 ratio=1.672
+    Reason: Top prediction "ts-contacts-service" does not match ground truth "ts-route-service"
+    Top-K: ts-contacts-service(1.00,d0) | ts-assurance-service(0.99,d0) | ts-inside-payment-service(0.29,d2) | ts-preserve-service(0.05,d7) | ts-food-service(0.05,d6)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f2_2
+    Expected: ts-auth-service  →  Predicted: ts-consign-service
+    GT anomaly=0.2563  max=1.0000  inGraph=true  edges=42
+    GT metric=latency-90 head=[0.45714285714285724,0.45714285714285724,0.45714285714285724,0.45714285714285724,0.45714285714285724,0.45714285714285724] tail=[0.2999999999999998,0.2999999999999998,0.2999999999999998,0.2999999999999998]
+    GT dominant=workload head=[0.533,0.533,0.533,0.533,0.533,0.533] tail=[1.533,1.533,1.533,1.533]
+    GT breakdown=dev=0.426 trend=0.161 cv=0.000 burst=0.000 rise=1.666 drop=1.000 base=0.800
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: ts-consign-service(1.000) | ts-preserve-service(0.972) | ts-inside-payment-service(0.795)
+    top1 metric=cpu head=[2.58227634850748,2.58227634850748,2.58227634850748,2.58227634850748,2.58227634850748,2.58227634850748] tail=[0.10662590863367565,0.10662590863367565,0.10662590863367565,0.10662590863367565]
+    top1 breakdown=dev=1.618 trend=0.435 cv=0.075 burst=0.162 rise=40.522 drop=0.575 base=0.141
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=0 top1=7000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=pre=1788 post=2718 ratio=1.520 top=ts-auth-service pre=1788 post=2718 ratio=1.520
+    Reason: Top prediction "ts-consign-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-consign-service(0.47,d1) | ts-preserve-service(0.09,d6) | ts-inside-payment-service(0.24,d2) | ts-assurance-service(0.79,d0) | ts-security-service(0.24,d2)
+  Case: rcaeval-re3_re3tt_ts-route-service_f2_1
+    Expected: ts-route-service  →  Predicted: ts-food-map-service
+    GT anomaly=0.1584  max=1.0000  inGraph=true  edges=42
+    GT metric=workload head=[7.2,7.2,7.8,7.8,7.8,7.8] tail=[7.133,7.133,7.467,7.467]
+    GT dominant=socket head=[18,18,18,18,18,18] tail=[11,11,11,11]
+    GT breakdown=dev=0.342 trend=0.026 cv=0.000 burst=0.000 rise=1.200 drop=0.100 base=10.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-food-map-service(1.000) | ts-food-service(0.969) | ts-order-service(0.827)
+    top1 metric=latency-90 head=[1.4408165933156134,1.4277441282844576,1.414671663253301,1.4015991982221458,0.17083574940123533,0.1609349052708839] tail=[0.06,0.05499999999999997,0.05499999999999997,0.05499999999999997]
+    top1 breakdown=dev=1.766 trend=0.309 cv=0.075 burst=0.177 rise=57.333 drop=1.000 base=0.025
+    top1 transientSkipped=[cpu,workload]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=87000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.243
+    topoSource GT=0.605 top1=0.195
+    traceActivity GT=pre=12603 post=11356 ratio=0.901 top=ts-preserve-other-service pre=64 post=107 ratio=1.672
+    Reason: Top prediction "ts-food-map-service" does not match ground truth "ts-route-service"
+    Top-K: ts-food-map-service(1.00,d0) | ts-food-service(0.09,d6) | ts-order-service(0.39,d1) | ts-inside-payment-service(0.20,d2) | ts-security-service(0.17,d2)
+  Case: rcaeval-re3_re3tt_ts-route-service_f2_2
+    Expected: ts-route-service  →  Predicted: ts-order-other-service
+    GT anomaly=0.2287  max=1.0000  inGraph=true  edges=42
+    GT metric=workload head=[6.733,6.867,6.867,6.867,6.867,6.867] tail=[10.6,10.6,10.6,10.6]
+    GT dominant=socket head=[18,18,18,18,18,18] tail=[11,11,11,11]
+    GT breakdown=dev=0.368 trend=0.031 cv=0.000 burst=0.000 rise=1.333 drop=0.111 base=9.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-user-service(1.000) | ts-food-map-service(0.921) | ts-order-service(0.884)
+    top1 metric=cpu head=[4.3561199285973276,4.3561199285973276,3.7680074372372836,3.695405438427328,3.1145920157016684,3.1145920157016684] tail=[0.2380954403218647,0.2380954403218647,0.2380954403218647,0.2380954403218647]
+    top1 breakdown=dev=1.401 trend=0.132 cv=0.070 burst=0.140 rise=24.189 drop=0.696 base=0.173
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=71000 top1=11000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.204
+    topoSource GT=0.476 top1=0.359
+    traceActivity GT=pre=12027 post=11002 ratio=0.915 top=ts-payment-service pre=30 post=60 ratio=2.000
+    Reason: Top prediction "ts-order-other-service" does not match ground truth "ts-route-service"
+    Top-K: ts-order-other-service(0.63,d0) | ts-user-service(1.00,d0) | ts-food-map-service(0.92,d0) | ts-order-service(0.42,d1) | ts-inside-payment-service(0.25,d2)
+  Case: rcaeval-re3_re3tt_ts-route-service_f2_3
+    Expected: ts-route-service  →  Predicted: ts-station-service
+    GT anomaly=0.6542  max=1.0000  inGraph=true  edges=31
+    GT metric=workload head=[10.067,10.067,10.067,10.067,8.933,8.867] tail=[10.4,10.4,10.4,10.533]
+    GT dominant=latency-90 head=[0.05392857142857143,0.05392857142857143,0.05392857142857143,0.05392857142857143,0.051176325413661766,0.04366640384615387] tail=[0.007415384615384615,0.007415384615384615,0.007415384615384615,0.007189393939393942]
+    GT breakdown=dev=0.972 trend=0.062 cv=0.054 burst=0.097 rise=8.374 drop=1.000 base=0.010
+    GT transientSkipped=[cpu,workload,latency-50]
+    topAnomaly: ts-consign-service(1.000) | ts-consign-price-service(0.789) | ts-contacts-service(0.772)
+    top1 metric=cpu head=[3.945146526002126,3.945146526002126,3.945146526002126,3.945146526002126,3.945146526002126,3.945146526002126] tail=[0.22577474131910658,0.19210121224434665,0.19210121224434665,0.19210121224434665]
+    top1 breakdown=dev=1.419 trend=0.177 cv=0.074 burst=0.142 rise=25.257 drop=0.677 base=0.150
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=83000 top1=10000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.507 top1=1.000
+    traceActivity GT=pre=12261 post=11482 ratio=0.936 top=ts-preserve-other-service pre=23 post=99 ratio=4.304
+    Reason: Top prediction "ts-station-service" does not match ground truth "ts-route-service"
+    Top-K: ts-station-service(0.68,d0) | ts-consign-service(0.47,d1) | ts-consign-price-service(0.79,d0) | ts-contacts-service(0.77,d0) | ts-admin-travel-service(0.07,d6)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f3_1
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.1862  max=1.0000  inGraph=true  edges=42
+    GT metric=latency-90 head=[0.4150000000000001,0.4150000000000001,0.4150000000000001,0.4150000000000001,0.4150000000000001,0.4150000000000001] tail=[0.23846153846153847,0.23846153846153847,0.23846153846153847,0.23846153846153847]
+    GT dominant=mem head=[441319424,441319424,441319424,441319424,441319424,441319424] tail=[224501760,224501760,224501760,224501760]
+    GT breakdown=dev=0.423 trend=0.028 cv=0.000 burst=0.000 rise=1.649 drop=0.041 base=224653312.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-order-service(1.000) | ts-preserve-service(0.905) | ts-food-service(0.731)
+    top1 metric=latency-90 head=[1.5330078265240208,1.4928034845171743,1.367342482844664,1.1496525175444554,1.1622194680779818,0.08041963911036511] tail=[0.009,0.009,0.009,0.009]
+    top1 breakdown=dev=1.782 trend=0.387 cv=0.075 burst=0.178 rise=59.584 drop=1.000 base=0.025
+    top1 transientSkipped=[cpu]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=33000 top1=50000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=0.262
+    traceActivity GT=pre=1815 post=2167 ratio=1.194 top=ts-auth-service pre=1815 post=2167 ratio=1.194
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(1.00,d0) | ts-preserve-service(0.06,d7) | ts-food-service(0.07,d6) | ts-security-service(0.21,d2) | ts-admin-travel-service(0.06,d6)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f3_2
+    Expected: ts-auth-service  →  Predicted: ts-preserve-service
+    GT anomaly=0.2778  max=1.0000  inGraph=true  edges=44
+    GT metric=latency-90 head=[0.40714285714285725,0.40714285714285725,0.40714285714285725,0.40714285714285725,0.40714285714285725,0.40714285714285725] tail=[0.2687500000000001,0.2687500000000001,0.2687500000000001,0.2687500000000004]
+    GT dominant=socket head=[18,18,18,18,18,18] tail=[8,8,8,8]
+    GT breakdown=dev=0.439 trend=0.052 cv=0.000 burst=0.044 rise=1.750 drop=0.125 base=8.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-preserve-service(1.000) | ts-assurance-service(0.947) | ts-user-service(0.911)
+    top1 metric=cpu head=[4.472838739168998,4.472838739168998,4.472838739168998,4.472838739168998,4.472838739168998,4.472838739168998] tail=[0.10174346884667307,0.10174346884667307,0.10174346884667307,0.10174346884667307]
+    top1 breakdown=dev=1.376 trend=0.336 cv=0.075 burst=0.138 rise=22.793 drop=0.682 base=0.188
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=26000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=pre=1770 post=2161 ratio=1.221 top=ts-auth-service pre=1770 post=2161 ratio=1.221
+    Reason: Top prediction "ts-preserve-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-service(0.07,d7) | ts-assurance-service(0.95,d0) | ts-user-service(0.91,d0) | ts-order-service(0.36,d1) | ts-auth-service(0.28,d0)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f3_3
+    Expected: ts-auth-service  →  Predicted: ts-food-service
+    GT anomaly=0.2108  max=1.0000  inGraph=true  edges=40
+    GT metric=latency-90 head=[0.4313275902851431,0.4289419455695303,0.426384583295844,0.42363627107426793,0.42067479309341865,0.4174743482765893] tail=[0.24318181818181822,0.24318181818181822,0.24318181818181822,0.24318181818181822]
+    GT dominant=mem head=[439148544,439148544,439148544,439148544,439148544,439148544] tail=[222273536,222474240,222474240,222474240]
+    GT breakdown=dev=0.424 trend=0.038 cv=0.000 burst=0.000 rise=1.654 drop=0.036 base=220065792.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-food-service(1.000) | ts-assurance-service(0.831) | ts-config-service(0.723)
+    top1 metric=latency-90 head=[5.182657567242065,0.24788443105573052,0.24523286565959923,0.24267471046721562,0.2458697257288984,0.2432892851456774] tail=[0.009166666666666667,0.009166666666666667,0.009166666666666667,0.009166666666666667]
+    top1 breakdown=dev=1.553 trend=0.405 cv=0.075 burst=0.155 rise=34.742 drop=1.000 base=0.145
+    top1 transientSkipped=[cpu]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=29000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.071
+    topoSource GT=1.000 top1=0.809
+    traceActivity GT=pre=1745 post=2137 ratio=1.225 top=ts-auth-service pre=1745 post=2137 ratio=1.225
+    Reason: Top prediction "ts-food-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-food-service(0.09,d6) | ts-assurance-service(0.83,d0) | ts-config-service(0.72,d0) | ts-order-service(0.32,d1) | ts-contacts-service(0.65,d0)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f3_4
+    Expected: ts-auth-service  →  Predicted: ts-order-service
+    GT anomaly=0.1492  max=1.0000  inGraph=true  edges=20
+    GT metric=latency-90 head=[0.2425,0.2425,0.2425,0.24657142857142855,0.24657142857142855,0.24657142857142855] tail=[0.2425,0.2425,0.2425,0.2425]
+    GT dominant=mem head=[451665920,452083712,220565504,220565504,220565504,220565504] tail=[229146624,229146624,229146624,229146624]
+    GT breakdown=dev=0.415 trend=0.037 cv=0.000 burst=0.000 rise=1.603 drop=0.038 base=229224448.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-order-service(1.000) | ts-consign-service(0.632) | ts-consign-price-service(0.496)
+    top1 metric=latency-90 head=[4.62355107400037,4.623608182409396,4.623660959748213,4.623709880715343,4.623755353083199,4.623797729091126] tail=[0.022,0.022,0.022,0.022]
+    top1 breakdown=dev=1.988 trend=0.771 cv=0.075 burst=0.199 rise=96.355 drop=1.000 base=0.048
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=27000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.054
+    topoSource GT=1.000 top1=0.856
+    traceActivity GT=pre=1817 post=2131 ratio=1.173 top=ts-assurance-service pre=16 post=19 ratio=1.188
+    Reason: Top prediction "ts-order-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-order-service(0.47,d1) | ts-consign-service(0.30,d1) | ts-consign-price-service(0.50,d0) | ts-food-map-service(0.43,d0) | ts-station-service(0.42,d0)
+  Case: rcaeval-re3_re3tt_ts-route-service_f3_1
+    Expected: ts-route-service  →  Predicted: ts-assurance-service
+    GT anomaly=0.1107  max=1.0000  inGraph=true  edges=44
+    GT metric=workload head=[6.6,6.6,6.6,6.6,7.933,7.933] tail=[12.067,12.067,12.067,12.067]
+    GT dominant=socket head=[23,23,23,23,23,23] tail=[9,9,9,9]
+    GT breakdown=dev=0.320 trend=0.000 cv=0.000 burst=0.032 rise=1.091 drop=0.182 base=11.000
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: ts-assurance-service(1.000) | ts-contacts-service(0.936) | ts-user-service(0.921)
+    top1 metric=latency-90 head=[0.95,0.95,0.95,0.95,0.95,0.95] tail=[0.02125,0.02125,0.02125,0.02125]
+    top1 breakdown=dev=2.238 trend=0.647 cv=0.075 burst=0.224 rise=171.924 drop=1.000 base=0.009
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=90000 top1=1000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.033
+    topoSource GT=0.587 top1=0.914
+    traceActivity GT=pre=12753 post=11482 ratio=0.900 top=ts-preserve-other-service pre=43 post=88 ratio=2.047
+    Reason: Top prediction "ts-assurance-service" does not match ground truth "ts-route-service"
+    Top-K: ts-assurance-service(1.00,d0) | ts-contacts-service(0.94,d0) | ts-user-service(0.92,d0) | ts-inside-payment-service(0.27,d2) | ts-preserve-other-service(0.62,d0)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f4_1
+    Expected: ts-auth-service  →  Predicted: ts-consign-service
+    GT anomaly=0.2827  max=1.0000  inGraph=true  edges=43
+    GT metric=latency-90 head=[0.3874999999999999,0.3874999999999999,0.3874999999999999,0.24691176470588236,0.24691176470588236,0.24691176470588236] tail=[0.45833333333333337,0.45833333333333337,0.45833333333333337,0.45833333333333337]
+    GT dominant=workload head=[0.867,0.867,0.867,0.6,0.6,0.6] tail=[1.533,1.533,1.533,1.533]
+    GT breakdown=dev=0.398 trend=0.161 cv=0.000 burst=0.000 rise=1.500 drop=1.000 base=0.800
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: ts-consign-service(1.000) | ts-consign-price-service(0.759) | ts-order-other-service(0.714)
+    top1 metric=cpu head=[4.53054652142937,4.6203272791185235,4.7101080368076795,5.3868454613493,5.3868454613493,5.3868454613493] tail=[0.23166106871541167,0.23166106871541167,0.23465856645205513,0.23934389766020794]
+    top1 breakdown=dev=1.344 trend=0.423 cv=0.075 burst=0.134 rise=21.091 drop=0.707 base=0.244
+    top1 transientSkipped=[mem]
+    onset GT=24 top1=0 (source later ✗)
+    injectDelay GT=48000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=pre=1770 post=3853 ratio=2.177 top=ts-auth-service pre=1770 post=3853 ratio=2.177
+    Reason: Top prediction "ts-consign-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-consign-service(0.47,d1) | ts-auth-service(0.28,d0) | ts-consign-price-service(0.76,d0) | ts-order-other-service(0.34,d1) | ts-contacts-service(0.71,d0)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f4_2
+    Expected: ts-auth-service  →  Predicted: ts-preserve-other-service
+    GT anomaly=0.2273  max=1.0000  inGraph=true  edges=53
+    GT metric=workload head=[0.533,0.533,0.533,0.533,0.533,0.533] tail=[1.533,1.533,1.533,1.533]
+    GT dominant=workload head=[0.533,0.533,0.533,0.533,0.533,0.533] tail=[1.533,1.533,1.533,1.533]
+    GT breakdown=dev=0.398 trend=0.158 cv=0.000 burst=0.000 rise=1.500 drop=1.000 base=0.800
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: ts-preserve-other-service(1.000) | ts-contacts-service(0.701) | ts-security-service(0.676)
+    top1 metric=cpu head=[2.0981378335351355,2.0981378335351355,2.0981378335351355,2.0981378335351355,2.0981378335351355,2.0981378335351355] tail=[0.09879872344244886,0.09879872344244886,0.09879872344244886,0.09879872344244886]
+    top1 breakdown=dev=1.726 trend=0.472 cv=0.075 burst=0.173 rise=52.209 drop=0.474 base=0.116
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=42000 top1=269000 (source earlier ✓)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=pre=1780 post=3951 ratio=2.220 top=ts-auth-service pre=1780 post=3951 ratio=2.220
+    Reason: Top prediction "ts-preserve-other-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-other-service(0.12,d5) | ts-contacts-service(0.70,d0) | ts-security-service(0.21,d2) | ts-auth-service(0.23,d0) | ts-station-service(0.61,d0)
+  Case: rcaeval-re3_re3tt_ts-auth-service_f4_3
+    Expected: ts-auth-service  →  Predicted: ts-preserve-other-service
+    GT anomaly=0.2485  max=1.0000  inGraph=true  edges=53
+    GT metric=cpu head=[3.963389401757634,3.963389401757634,3.963389401757634,3.963389401757634,3.963389401757634,4.006495191587223] tail=[7.822191306699638,7.822191306699638,7.822191306699638,7.822191306699638]
+    GT dominant=workload head=[0.667,0.667,0.667,0.667,0.667,0.667] tail=[1.733,1.733,1.733,1.733]
+    GT breakdown=dev=0.412 trend=0.146 cv=0.000 burst=0.000 rise=1.584 drop=1.000 base=0.800
+    GT transientSkipped=[cpu,latency-50,latency-90]
+    topAnomaly: ts-preserve-other-service(1.000) | ts-payment-service(0.866) | ts-security-service(0.858)
+    top1 metric=cpu head=[5.3940638185018805,5.3940638185018805,5.3940638185018805,5.3940638185018805,5.3940638185018805,5.3940638185018805] tail=[0.1069934560885305,0.1069934560885305,0.1069934560885305,0.10084107436858773]
+    top1 breakdown=dev=1.624 trend=0.386 cv=0.075 burst=0.162 rise=41.047 drop=0.673 base=0.134
+    onset GT=165 top1=0 (source later ✗)
+    injectDelay GT=45000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=1.000 top1=1.000
+    traceActivity GT=pre=1845 post=3811 ratio=2.066 top=ts-auth-service pre=1845 post=3811 ratio=2.066
+    Reason: Top prediction "ts-preserve-other-service" does not match ground truth "ts-auth-service"
+    Top-K: ts-preserve-other-service(0.07,d7) | ts-payment-service(0.87,d0) | ts-security-service(0.26,d2) | ts-assurance-service(0.85,d0) | ts-user-service(0.82,d0)
+  Case: rcaeval-re3_re3tt_ts-route-service_f4_1
+    Expected: ts-route-service  →  Predicted: ts-consign-service
+    GT anomaly=0.1233  max=1.0000  inGraph=true  edges=30
+    GT metric=workload head=[9.933,9.933,9.933,9.933,9.933,9.933] tail=[7.133,8.133,9.2,9.2]
+    GT dominant=socket head=[18,18,18,18,18,18] tail=[10,10,10,10]
+    GT breakdown=dev=0.362 trend=0.017 cv=0.000 burst=0.036 rise=1.300 drop=0.100 base=10.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-consign-service(1.000) | ts-preserve-other-service(0.690) | ts-food-service(0.646)
+    top1 metric=latency-90 head=[9.5,9.5,9.5,9.5,9.5,9.5] tail=[0.045,0.045,0.045,0.045]
+    top1 breakdown=dev=2.301 trend=0.757 cv=0.075 burst=0.230 rise=199.000 drop=1.000 base=0.048
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=89000 top1=17000 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.777 top1=1.000
+    traceActivity GT=pre=11931 post=10855 ratio=0.910 top=ts-preserve-other-service pre=44 post=77 ratio=1.750
+    Reason: Top prediction "ts-consign-service" does not match ground truth "ts-route-service"
+    Top-K: ts-consign-service(0.47,d1) | ts-preserve-other-service(0.69,d0) | ts-food-service(0.06,d6) | ts-preserve-service(0.57,d0) | ts-food-map-service(0.51,d0)
+  Case: rcaeval-re3_re3tt_ts-route-service_f4_2
+    Expected: ts-route-service  →  Predicted: ts-station-service
+    GT anomaly=0.1887  max=1.0000  inGraph=true  edges=50
+    GT metric=workload head=[5.533,5.533,5.533,5.533,5.533,5.533] tail=[6.733,6.733,8.333,8.333]
+    GT dominant=socket head=[23,23,23,23,23,23] tail=[11,11,11,11]
+    GT breakdown=dev=0.320 trend=0.000 cv=0.000 burst=0.032 rise=1.091 drop=0.182 base=11.000
+    GT transientSkipped=[cpu,workload,latency-50,latency-90]
+    topAnomaly: ts-order-service(1.000) | ts-inside-payment-service(0.993) | ts-food-map-service(0.933)
+    top1 metric=latency-90 head=[0.32584799886460436,0.30360828336354634,0.2821306195175445,0.26137649912410743,0.08780337769824402,0.08573912088716466] tail=[0.022394736842105266,0.022394736842105266,0.022394736842105266,0.022333333333333337]
+    top1 breakdown=dev=1.587 trend=0.047 cv=0.075 burst=0.159 rise=37.637 drop=1.000 base=0.025
+    top1 transientSkipped=[cpu,workload,latency-50]
+    onset GT=0 top1=0 (tie)
+    injectDelay GT=88000 top1=0 (source later ✗)
+    ratioContrib GT=0.000 top1=0.000
+    topoSource GT=0.519 top1=0.484
+    traceActivity GT=pre=12006 post=11209 ratio=0.934 top=ts-food-map-service pre=240 post=300 ratio=1.250
+    Reason: Top prediction "ts-station-service" does not match ground truth "ts-route-service"
+    Top-K: ts-station-service(0.54,d0) | ts-order-service(0.47,d1) | ts-inside-payment-service(0.30,d2) | ts-food-map-service(0.93,d0) | ts-consign-service(0.85,d0)
+
+Total duration: 122758ms

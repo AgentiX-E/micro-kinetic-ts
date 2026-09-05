@@ -1,0 +1,26 @@
+{
+  "name": "@agentix-e/micro-kinetic-benchmarks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run": "tsx src/run-all.ts"
+  },
+  "dependencies": {
+    "@agentix-e/micro-kinetic-core": "workspace:^",
+    "@agentix-e/micro-kinetic-ai": "workspace:^",
+    "@agentix-e/micro-kinetic-causal": "workspace:^",
+    "@agentix-e/micro-kinetic-tree": "workspace:^",
+    "@agentix-e/micro-kinetic-cutting": "workspace:^",
+    "@agentix-e/micro-kinetic-noise": "workspace:^",
+    "@agentix-e/micro-kinetic-scaling": "workspace:^",
+    "@agentix-e/micro-kinetic-wave": "workspace:^",
+    "benny": "^3.7.0",
+    "numpy-ts": "^1.4.0",
+    "ubique": "^1.0.2",
+    "mathjs": "^13.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

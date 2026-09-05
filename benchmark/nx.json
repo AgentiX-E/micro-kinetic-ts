@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "tasksRunnerOptions": {
+    "default": {
+      "runner": "nx/tasks-runners/default",
+      "options": {
+        "cacheableOperations": ["build", "test", "lint", "typecheck", "clean"]
+      }
+    }
+  },
+  "targetDefaults": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json"],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/tsconfig.json"]
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["{projectRoot}/src/**/*", "{projectRoot}/__tests__/**/*"]
+    },
+    "clean": {
+      "outputs": ["{projectRoot}/dist", "{projectRoot}/coverage", "{projectRoot}/.tsup"]
+    }
+  }
+}
