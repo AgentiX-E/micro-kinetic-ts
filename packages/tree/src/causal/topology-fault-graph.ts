@@ -1252,11 +1252,19 @@ function detectBaselineStrategy(values: Float64Array, n: number): 'q25' | 'slidi
  * dominates both half-means (a noise-level coin flip that flips the drop into
  * a "rise") and the 25% anchor window (diluting the baseline low and
  * re-scoring the drop as a 13x-200x rise — the TT RE3 F3/F4 signature, base
- * 0.025-0.244 in the wild). A crash is recognised unambiguously by its
- * collapsed tail (median < 10% of the head median); we anchor it directly to
- * the head's upper quartile instead of running the half-mean / window
- * inference. Everything else keeps the original inference, so a long-plateau
- * drop (OB/SS RE3) is untouched.
+ * 0.025-0.244 in the wild).
+ *
+ * A bare collapsed tail is NOT sufficient to call a crash: a LONG-plateau drop
+ * (OB/SS RE3 source) also collapses its tail below 10% of its head, yet its
+ * whole-series 25% window/quantile still finds the high plateau, so the
+ * half-mean / window inference below is ALREADY correct there. Re-anchoring
+ * such a drop to the 5-sample head upper-quartile under-anchors the baseline
+ * and inflates the drop ratio — the SS RE3 F3/F4 regression. The crash anchor
+ * is only correct when the pre-crash head is SO SHORT that the 25% window is
+ * diluted by the tail. We therefore gate the crash on the fraction of the
+ * series at/above HALF the head median: below 25% the high segment is a tiny
+ * prefix (a genuine crash victim) and the whole-series baseline is unreliable;
+ * at/above 25% the original inference is trusted.
  *
  * @internal
  */
@@ -1271,12 +1279,25 @@ function computeRobustBaseline(
   const headMedian = medianOfRange(values, 0, headWin);
   const tailMedian = medianOfRange(values, n - tailWin, n);
 
-  // Crash-victim signature: the tail collapsed to < 10% of the head level.
+  // Crash-victim signature: the tail collapsed to < 10% of the head level AND
+  // the high (pre-crash) segment is a tiny prefix (< 25% of the series), so
+  // the whole-series 25% window/quantile is diluted by the near-zero tail.
   // Anchor directly to the head upper quartile (the pre-crash level) — the
   // half-mean / window inference below is defeated by the long near-zero tail.
   // The upper quartile (not the median/max) sits near the pre-crash peak and
   // tolerates a single low outlier in the head.
-  const isCrash = headMedian > 0.001 && tailMedian < headMedian * 0.1;
+  let isCrash = false;
+  if (headMedian > 0.001 && tailMedian < headMedian * 0.1) {
+    // Count the points at/above half the head median — the "high" pre-crash
+    // level (the tail is < 10% of the head, so the two levels are well
+    // separated and a 0.5× threshold cleanly splits them).
+    const highThreshold = headMedian * 0.5;
+    let highCount = 0;
+    for (let i = 0; i < n; i++) {
+      if (values[i]! >= highThreshold) highCount++;
+    }
+    isCrash = highCount / n < 0.25;
+  }
   if (isCrash) {
     const headSorted = Array.from(values.slice(0, headWin)).sort((a, b) => a - b);
     const upperIdx = Math.min(headSorted.length - 1, Math.ceil(headSorted.length * 0.75) - 1);
