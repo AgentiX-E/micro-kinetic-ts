@@ -16,7 +16,7 @@
  * @module scripts/dump-re3-metrics
  */
 
-import { existsSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
@@ -90,7 +90,11 @@ function main(): void {
       const name = basename(cur);
       // Flat names look like re3ss_carts_f1_1; the suite digit is at index 2.
       const m = name.match(/^re[123](ob|ss|tt)_/i);
-      if (m && `re${name[2]}`.toLowerCase() === opts.suite.toLowerCase() && m[1]!.toLowerCase() === opts.system) {
+      if (
+        m &&
+        `re${name[2]}`.toLowerCase() === opts.suite.toLowerCase() &&
+        m[1]!.toLowerCase() === opts.system
+      ) {
         cases.push({ dir: cur, name });
       }
       continue;
