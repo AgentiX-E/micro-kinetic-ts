@@ -1241,10 +1241,13 @@ function detectBaselineStrategy(values: Float64Array, n: number): 'q25' | 'slidi
  * window unconditionally (the previous behaviour) inverted a drop — the low
  * tail became the "baseline" and the high pre-drop level became a spurious
  * 142× "rise", letting a symptom that merely fell to ~0 outrank the fault's
- * genuine percentage increase. We therefore detect the trend direction from
- * the two halves of the series and select the extreme window on the
- * pre-anomaly side: minimum-mean windows for a rise, maximum-mean windows
- * for a drop.
+ * genuine percentage increase.
+ *
+ * Direction is detected from the HEAD vs TAIL medians, not the two half-means.
+ * A crash victim's series is a SHORT pre-crash head (5-9 high samples) followed
+ * by a LONG near-zero tail; the half-means are both dominated by the tail, so
+ * their comparison is a noise-level coin flip that turns a drop into a spurious
+ * "rise". The head/tail medians are robust to that shape.
  *
  * @internal
  */
@@ -1254,24 +1257,35 @@ function computeRobustBaseline(
   strategy: 'q25' | 'sliding-window',
   fallbackMean: number,
 ): number {
-  // Trend direction from the two halves: a drop's first half is higher.
-  const half = Math.floor(n / 2);
-  let firstSum = 0;
-  for (let i = 0; i < half; i++) firstSum += values[i]!;
-  let secondSum = 0;
-  for (let i = half; i < n; i++) secondSum += values[i]!;
-  const isDrop = firstSum / half > secondSum / (n - half);
+  // Direction from the head/tail medians (robust to a short pre-crash head).
+  const headWin = Math.max(2, Math.min(5, n));
+  const tailWin = Math.max(2, Math.min(5, n));
+  const headMedian = medianOfRange(values, 0, headWin);
+  const tailMedian = medianOfRange(values, n - tailWin, n);
+  const isDrop = headMedian > tailMedian;
 
+  if (isDrop) {
+    // Pre-drop baseline = the head window's upper quartile (the 75th
+    // percentile sample). The plain median under-anchors a head that ramps up
+    // before the crash (its median sits below the pre-crash peak), while the
+    // max over-anchors a noisy head; the upper quartile sits near the peak and
+    // tolerates a single low outlier. It also replaces the q25 high-quartile /
+    // sliding-window max-mean, which span 25% of the WHOLE series: a crash
+    // victim's short head (5-9 samples) is diluted by its long near-zero tail,
+    // collapsing the baseline low and re-scoring the drop as a spurious
+    // 13x-200x rise (TT RE3 F3/F4 signature: base 0.025-0.244, rise 22x-199x).
+    // The head upper quartile is the correct pre-crash anchor regardless of
+    // plateau length.
+    const headSorted = Array.from(values.slice(0, headWin)).sort((a, b) => a - b);
+    const upperIdx = Math.min(headSorted.length - 1, Math.ceil(headSorted.length * 0.75) - 1);
+    const upperQuartile = headSorted[upperIdx]!;
+    return upperQuartile > 0.001 ? upperQuartile : fallbackMean;
+  }
+
+  // Rise: keep the minimum-side selection (q25 low-quartile for a bimodal
+  // series, sliding-window minimum-mean otherwise).
   if (strategy === 'q25') {
     const sorted = Array.from(values.slice(0, n)).sort((a, b) => a - b);
-    if (isDrop) {
-      // Pre-drop baseline is the HIGH quarter of the distribution.
-      const lo = Math.floor(n * 0.75);
-      let sum = 0;
-      for (let k = lo; k < n; k++) sum += sorted[k]!;
-      const highMean = sum / (n - lo);
-      return highMean > 0.001 ? highMean : fallbackMean;
-    }
     const q25Idx = Math.max(1, Math.floor(n * 0.25));
     let sum = 0;
     for (let k = 0; k < q25Idx; k++) sum += sorted[k]!;
@@ -1279,16 +1293,13 @@ function computeRobustBaseline(
     return q25Mean > 0.001 ? q25Mean : fallbackMean;
   }
 
-  // sliding-window: minimum-mean window for a rise, maximum-mean for a drop.
   const winSize = Math.max(2, Math.ceil(n * 0.25));
-  let extremeWinMean = isDrop ? -Infinity : Infinity;
+  let minWinMean = Infinity;
   for (let w = 0; w <= n - winSize; w++) {
     let winSum = 0;
     for (let k = 0; k < winSize; k++) winSum += values[w + k]!;
     const winMean = winSum / winSize;
-    if (isDrop ? winMean > extremeWinMean : winMean < extremeWinMean) {
-      extremeWinMean = winMean;
-    }
+    if (winMean < minWinMean) minWinMean = winMean;
   }
-  return extremeWinMean > 0.001 ? extremeWinMean : fallbackMean;
+  return minWinMean > 0.001 ? minWinMean : fallbackMean;
 }

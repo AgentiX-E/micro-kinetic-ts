@@ -1429,6 +1429,47 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(dropScore).toBeGreaterThan(0);
   });
 
+  it('anchors a crash-victim drop to its short pre-crash head, not the long tail', () => {
+    // Regression (TT RE3 F3/F4): a crash victim's cpu/latency collapses from a
+    // SHORT pre-crash head (5-9 high samples) to a LONG near-zero tail. The
+    // first/second-half MEAN comparison is dominated by the tail on BOTH sides,
+    // so it flips the direction, and the sliding-window/q25 baseline (25% of the
+    // WHOLE series) is diluted by the tail to a low anchor. The drop is then
+    // re-scored as a spurious 13x-200x "rise" (base 0.025-0.244 in the wild)
+    // that drowns the genuine source (anomaly 0.11-0.28). The head MEDIAN must
+    // anchor the drop to the pre-crash high level, so the drop is recognised as
+    // a drop rather than a rise.
+    const graph = makeCallGraph(['svc-crash'], []);
+    const metrics = makeMetrics([
+      [
+        'svc-crash',
+        [
+          makeTimeSeries('cpu', [
+            4.5,
+            4.5,
+            4.5,
+            4.5,
+            4.5,
+            4.5,
+            4.5,
+            4.5,
+            4.5,
+            ...Array.from({ length: 70 }, () => 0.1),
+          ]),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const breakdown = result.dominantMetrics.get('svc-crash')?.breakdown;
+    expect(breakdown).toBeDefined();
+    // The crash is a drop: rise ≈ 0, drop ≈ (4.5 - 0.1) / 4.5 ≈ 0.98, and the
+    // baseline sits at the pre-crash high (4.5), not the diluted tail (~2.1).
+    expect(breakdown!.riseRatio).toBeLessThan(breakdown!.dropRatio);
+    expect(breakdown!.baselineMean).toBeGreaterThan(4.0);
+  });
+
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
     // Regression: a previous hard noise-floor threshold discarded any
     // metric with < 4.7% relative deviation, zeroing the entire anomaly
