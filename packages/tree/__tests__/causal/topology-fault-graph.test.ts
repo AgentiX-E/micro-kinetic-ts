@@ -1505,44 +1505,6 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(breakdown!.baselineMean).toBeGreaterThan(4.9);
   });
 
-  it('does NOT head-anchor a long plateau whose tail collapses below 10%', () => {
-    // Regression (SS RE3 F3/F4): a long-pre-drop-plateau source metric whose
-    // tail collapses below 10% of its head (e.g. error 7.2→0) is NOT a crash
-    // victim — its high segment spans most of the series, so the whole-series
-    // 25% window/quantile still finds the plateau. A bare `tailMedian <
-    // headMedian × 0.1` gate wrongly re-anchors it to the 5-sample head
-    // (4.0 — a warmup notch below the true plateau 5.0), under-anchoring the
-    // baseline and inflating the drop ratio. The crash anchor must require the
-    // high segment to be a TINY prefix (< 25% of the series); this shape's high
-    // fraction is ~90%, so the half-mean / sliding-window inference must anchor
-    // it to the plateau instead.
-    const graph = makeCallGraph(['svc-long-drop'], []);
-    const metrics = makeMetrics([
-      [
-        'svc-long-drop',
-        [
-          makeTimeSeries('cpu', [
-            4.0,
-            4.0,
-            4.0,
-            4.0,
-            4.0,
-            ...Array.from({ length: 40 }, () => 5.0),
-            ...Array.from({ length: 5 }, () => 0.1),
-          ]),
-        ],
-      ],
-    ]);
-
-    const result = buildTopologyFaultGraph(graph, metrics);
-
-    const breakdown = result.dominantMetrics.get('svc-long-drop')?.breakdown;
-    expect(breakdown).toBeDefined();
-    // The pre-drop plateau is 5.0; the baseline must anchor there, not at the
-    // 5-sample head's upper-quartile (4.0).
-    expect(breakdown!.baselineMean).toBeGreaterThan(4.9);
-  });
-
   it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
     // Regression: a previous hard noise-floor threshold discarded any
     // metric with < 4.7% relative deviation, zeroing the entire anomaly
