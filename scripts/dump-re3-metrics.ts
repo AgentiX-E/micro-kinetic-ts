@@ -83,7 +83,9 @@ interface BaselineBreakdown {
   headLevel: number;
   tailLevel: number;
   permanence: number;
+  hasSpike: boolean;
   transientSkipped: boolean;
+  oldTransientSkipped: boolean;
   changePt: number;
   baselineMean: number;
   strategy: 'q25' | 'sliding-window';
@@ -111,14 +113,23 @@ function computeBaselineBreakdown(values: Float64Array): BaselineBreakdown {
   let nearZeroCount = 0;
   for (let i = 0; i < n; i++) if (values[i]! <= max * 0.001) nearZeroCount++;
 
-  // Transient guard.
+  // Transient guard (spike + return, matching the tree package).
   const headLevel = values[0]!;
   const tailLevel = values[n - 1]!;
-  const range = max - min;
   const headTailSpread = Math.abs(headLevel - tailLevel);
   const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
-  const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-  const transientSkipped = nonZeroBaseline && permanence < 0.3;
+  const envelopeHigh = Math.max(headLevel, tailLevel);
+  const envelopeLow = Math.min(headLevel, tailLevel);
+  const permanence = envelopeHigh > max * 1e-6 ? headTailSpread / envelopeHigh : 1;
+  const returned = headTailSpread < envelopeHigh * 0.3;
+  const spikeExcursion = max - envelopeHigh + (envelopeLow - min);
+  const hasSpike = spikeExcursion > envelopeHigh * 0.3;
+  const transientSkipped = nonZeroBaseline && hasSpike && returned;
+  // The PREVIOUS (range-based) permanence, to expose which metrics the
+  // spike+return fix newly keeps (old-skipped but new-kept).
+  const range = max - min;
+  const oldPermanence = range > max * 1e-6 ? headTailSpread / range : 1;
+  const oldTransientSkipped = nonZeroBaseline && oldPermanence < 0.3;
 
   // Change-point detection.
   let baselineMean = mean;
@@ -207,7 +218,9 @@ function computeBaselineBreakdown(values: Float64Array): BaselineBreakdown {
     headLevel,
     tailLevel,
     permanence,
+    hasSpike,
     transientSkipped,
+    oldTransientSkipped,
     changePt,
     baselineMean,
     strategy: detectBaselineStrategy(values, n),
@@ -288,7 +301,7 @@ function main(): void {
     // Collect every metric (across all services) with its baseline breakdown
     // and guard state, mirroring buildTopologyFaultGraph's skip sequence:
     //   mean <= 0  ->  idle (nearZero > 0.4n)  ->  transient (nonZeroBaseline &
-    //   permanence < 0.3)  ->  change-point  ->  robust baseline  ->  deviation.
+    //   spike & return)  ->  change-point  ->  robust baseline  ->  deviation.
     const ranked: RankedMetric[] = [];
     for (const svc of Object.keys(raw.metrics)) {
       const byMetric = new Map<string, number[]>();
@@ -357,8 +370,31 @@ function main(): void {
           `  #${String(i + 1).padStart(2)} ${r.svc}::${r.metric} dev=${r.b.deviation.toFixed(3)}` +
             ` rise=${r.b.riseRatio.toFixed(2)} drop=${r.b.dropRatio.toFixed(2)}` +
             ` nearZero=${r.b.nearZeroCount}/${r.n} head=${r.b.headLevel.toFixed(4)} tail=${r.b.tailLevel.toFixed(4)}` +
-            ` perm=${r.b.permanence.toFixed(3)} changePt=${r.b.changePt} strat=${r.b.strategy}` +
+            ` perm=${r.b.permanence.toFixed(3)} spike=${r.b.hasSpike} changePt=${r.b.changePt} strat=${r.b.strategy}` +
             ` isDrop=${r.b.isDrop} isCrash=${r.b.isCrash}`,
+        );
+      }
+    }
+
+    // Metrics the spike+return fix newly KEEPS (old range-based permanence
+    // would have skipped them, the new spike+return guard keeps them). Sorted
+    // by deviation: if a victim's spike+shift dev exceeds the GT's, the fix
+    // would bury the GT source deeper instead of surfacing it.
+    const newlyKept = ranked
+      .filter((r) => r.b.oldTransientSkipped && !r.b.transientSkipped)
+      .sort((a, b) => b.b.deviation - a.b.deviation);
+    if (!opts.gtOnly && newlyKept.length > 0) {
+      const limit = Math.min(newlyKept.length, 30);
+      console.log(
+        `  --- ${newlyKept.length} metrics newly KEPT by spike+return (showing ${limit}) ---`,
+      );
+      for (let i = 0; i < limit; i++) {
+        const r = newlyKept[i]!;
+        console.log(
+          `  *${String(i + 1).padStart(2)} ${r.svc}::${r.metric} dev=${r.b.deviation.toFixed(3)}` +
+            ` rise=${r.b.riseRatio.toFixed(2)} drop=${r.b.dropRatio.toFixed(2)}` +
+            ` head=${r.b.headLevel.toFixed(4)} tail=${r.b.tailLevel.toFixed(4)}` +
+            ` perm=${r.b.permanence.toFixed(3)} spike=${r.b.hasSpike}${r.svc === gt ? '  <GT>' : ''}`,
         );
       }
     }
@@ -370,7 +406,7 @@ function main(): void {
         `  [GT] ${r.svc}::${r.metric} dev=${b.deviation.toFixed(3)}` +
           ` mean=${b.mean.toFixed(4)} max=${b.max.toFixed(4)} min=${b.min.toFixed(4)}` +
           ` nearZero=${b.nearZeroCount}/${r.n} head=${b.headLevel.toFixed(4)} tail=${b.tailLevel.toFixed(4)}` +
-          ` permanence=${b.permanence.toFixed(3)} transientSkip=${b.transientSkipped}` +
+          ` permanence=${b.permanence.toFixed(3)} spike=${b.hasSpike} transientSkip=${b.transientSkipped}` +
           ` changePt=${b.changePt} strategy=${b.strategy} isDrop=${b.isDrop} isCrash=${b.isCrash}` +
           ` base=${b.baselineMean.toFixed(4)} rise=${b.riseRatio.toFixed(3)} drop=${b.dropRatio.toFixed(3)}` +
           `${r.active ? '' : '  (guard-skipped)'}`,

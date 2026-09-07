@@ -647,14 +647,31 @@ function computeAnomalyFeatures(
     // Transient-spike guard: a metric that spikes and then RETURNS to (or
     // near) its starting level over a NON-ZERO baseline is a transient
     // excursion — a symptom of fault propagation, not the source. The fault
-    // source's shift is PERMANENT (its head ≠ tail). Measuring the head↔tail
-    // spread against the full range captures this:
+    // source's shift is PERMANENT (its head ≠ tail). Transience is the
+    // CONJUNCTION of two facts:
     //
-    //   • transient spike over a real operating level (cpu 0.133 → pulse →
-    //     0.107, #197 RE3 TrainTicket): head ≈ tail, range ≈ pulse height →
-    //     spread/range ≈ 0 → skip (a resource briefly overloaded = symptom).
-    //   • permanent rise (workload 0.4 → 1.4): spread ≈ range → keep.
-    //   • permanent drop / crash (mem 171MB → 0): spread ≈ range → keep.
+    //   1. "spike"  — an excursion BEYOND the head↔tail envelope: a peak far
+    //      above the higher steady state, or a trough far below the lower one.
+    //   2. "return" — the head and tail are (near) the same level, i.e. the
+    //      metric came back to where it started.
+    //
+    //   • transient spike over a real operating level (cpu 0.133 → 2.0 pulse →
+    //     0.107, #197 RE3 TrainTicket): spike AND return → skip (a resource
+    //     briefly overloaded = symptom).
+    //   • permanent rise (workload 0.4 → 1.4): no spike → keep.
+    //   • permanent drop / crash (mem 171MB → 0): no spike → keep.
+    //   • spike + permanent shift (cpu 9.6 → 49.9 pulse → 1.53): spike, but the
+    //     head↔tail shift (9.6 → 1.53, an 84% drop) means it did NOT return →
+    //     keep (the fault source's own cpu burn followed by idle — NOT a
+    //     transient symptom).
+    //   • subtle monotonic ramp (100 → 101, 1%): no spike → keep (a permanent
+    //     shift, however small — must not be mistaken for a transient).
+    //
+    // The OLD "permanence = spread / range" measured the shift against the
+    // full range, which a spike inflates: a genuine permanent shift (9.6 →
+    // 1.53) read spread/range ≈ 0.16 and was wrongly discarded. Measuring
+    // "return" against the OPERATING level (the larger steady state) instead
+    // keeps the shift visible independent of the spike's height.
     //
     // The NON-ZERO-baseline requirement is what separates a transient RESOURCE
     // symptom from a transient EVENT fault: an error burst (0 → spike → 0) is
@@ -663,23 +680,35 @@ function computeAnomalyFeatures(
     // above already discards the mostly-idle metrics; a LONG event burst must
     // survive to be scored.
     //
-    // The 0.3 threshold means the metric must return to within 30% of its
-    // spike height from where it started to count as transient; a permanent
-    // shift of any magnitude (even 40%) has spread/range ≈ 1 and is kept.
+    // Both thresholds are 0.3 of the operating level: the head↔tail spread is
+    // "small" (returned) below 30%, and an excursion beyond the envelope is a
+    // "spike" above 30%.
     const headLevel = ts.values[0]!;
     const tailLevel = ts.values[n - 1]!;
-    const range = max - min;
     const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
-    const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-    // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
-    // transient excursion. A duty-cycled metric that was IDLE before the fault
-    // and only became active during it — its relative rise over the near-zero
-    // baseline is an artifact (latency-90 0 → 0.091 s over 0.2 s = 19×). The
-    // NON-zero-tail requirement keeps the zero→burst→zero EVENT fault (#199).
+    const envelopeHigh = Math.max(headLevel, tailLevel);
+    const envelopeLow = Math.min(headLevel, tailLevel);
+    // "Returned": the head and tail sit at (near) the same level, measured
+    // against the operating level (the larger steady state) so a spike's height
+    // cannot mask a genuine head↔tail shift.
+    const returned = headTailSpread < envelopeHigh * 0.3;
+    // "Spike": a transient excursion beyond the head↔tail envelope.
+    const spikeExcursion = max - envelopeHigh + (envelopeLow - min);
+    const hasSpike = spikeExcursion > envelopeHigh * 0.3;
+    // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail
+    // that settled near idle after a pulse. A duty-cycled metric that was IDLE
+    // before the fault and only briefly became active — its relative rise over
+    // the near-zero baseline is an artifact (latency-90 0 → 0.091 s over
+    // 0.2 s = 19×). The tail-vs-peak test (NOT the returned-to-baseline
+    // "returned" above, which is ≈ false whenever head ≈ 0) keeps the
+    // zero→burst→zero EVENT fault (#199, its tail returns to zero).
     const idleStartTransient =
-      cfg.suppressIdleTransients && headLevel <= max * 0.001 && tailLevel > max * 0.001;
-    if ((nonZeroBaseline || idleStartTransient) && permanence < 0.3) {
+      cfg.suppressIdleTransients &&
+      headLevel <= max * 0.001 &&
+      tailLevel > max * 0.001 &&
+      tailLevel < max * 0.3;
+    if ((nonZeroBaseline && hasSpike && returned) || idleStartTransient) {
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.
