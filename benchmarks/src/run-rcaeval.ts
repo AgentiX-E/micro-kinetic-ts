@@ -13,6 +13,7 @@
  *
  * Usage:
  *   pnpm exec tsx benchmarks/src/run-rcaeval.ts [--data-dir <path>] [--suite re1|re2|re3] [--system ob|ss|tt] [--max-cases <n>]
+ *   [--trace-weight <w>] [--log-weight <w>] [--rank-normalization|--no-rank-normalization]
  *
  * @module benchmarks/run-rcaeval
  */
@@ -191,7 +192,13 @@ function parseArgs(): CliOptions {
     logSignalMode: 'count',
     collapseDiscount: 0,
     traceWeight: 0,
-    rankNormalization: false,
+    // Rank/quantile normalization of per-service anomaly scores is the default:
+    // it is robust to a single near-zero-baseline symptom spike that would
+    // otherwise set the min-max range max and crush the genuine source toward
+    // ~0. Monotonic, so it is a no-op on small graphs (<20 nodes) and whenever
+    // traceWeight is 0; it only materialises when a downstream causal signal
+    // (trace/topo) can exploit the compressed anomaly gap.
+    rankNormalization: true,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -218,6 +225,8 @@ function parseArgs(): CliOptions {
       opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;
     } else if (args[i] === '--rank-normalization') {
       opts.rankNormalization = true;
+    } else if (args[i] === '--no-rank-normalization') {
+      opts.rankNormalization = false;
     }
   }
   return opts;
