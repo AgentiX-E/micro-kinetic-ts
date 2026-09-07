@@ -73,6 +73,8 @@ interface FeatureFlags {
   riseSignal: boolean;
   /** Trace span-activity rise signal: reward the service whose spans rise post-injection. */
   traceSignal: boolean;
+  /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
+  rankNormalization: boolean;
 }
 
 interface AblationRun {
@@ -114,6 +116,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -129,6 +132,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -143,6 +147,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Trace Topo',
   },
@@ -157,6 +162,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+SelfLearn',
   },
@@ -172,6 +178,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Collision+Trace',
   },
@@ -186,6 +193,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -200,6 +208,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -215,6 +224,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -234,6 +244,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Log Signal',
   },
@@ -248,6 +259,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Topo Signal',
   },
@@ -266,6 +278,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Collision Signal',
   },
@@ -280,6 +293,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: true,
       riseSignal: false,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Collapse Discount',
   },
@@ -294,6 +308,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: true,
       traceSignal: false,
+      rankNormalization: false,
     },
     label: '+Rise Signal',
   },
@@ -308,6 +323,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: true,
+      rankNormalization: false,
     },
     label: '+Trace Activity Signal',
   },
@@ -332,8 +348,32 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: true,
+      rankNormalization: false,
     },
     label: '+Log +Trace Activity',
+  },
+  {
+    // Rank-based anomaly-score normalization (rankNormalization), the P1 fix
+    // for the near-zero-baseline spike pathology. A symptom metric (latency-90
+    // rising 41–764× over a ~0 baseline) sets the min-max range's max and
+    // crushes the genuine source's modest deviation to ~0, so the symptom wins
+    // the log-domain anomaly term by ~1.7. Rank normalization maps the outlier
+    // and the second-ranked source to ≈1.0 vs ≈0.98 — semantic-agnostic — so
+    // the deterministic trace/topo signals that already point at the silent
+    // source can tip the ranking. Affects only large topologies (≥ 20 nodes).
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: true,
+    },
+    label: '+Rank Normalization',
   },
 ];
 
@@ -566,7 +606,10 @@ async function main(): Promise<void> {
           riseWeight: flags.riseSignal ? 1.0 : 0.0,
           traceWeight: flags.traceSignal ? 1.0 : 0.0,
         },
-        { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
+        {
+          collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
+          rankNormalization: flags.rankNormalization,
+        },
       );
     });
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());

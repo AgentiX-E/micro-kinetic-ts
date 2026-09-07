@@ -167,6 +167,21 @@ export interface TopologyFaultGraphConfig {
    * this against real RE1/RE2 data before the default is changed.
    */
   readonly collapseDiscount: number;
+  /**
+   * Rank-based anomaly-score normalization for large topologies (≥ 20 nodes).
+   *
+   * When `true`, the min-max rescale of `anomalyScores` is replaced by a
+   * uniform-rank mapping (average rank / (n − 1), ties averaged). Min-max is
+   * not robust to a single outlier: a near-zero-baseline spike (a symptom
+   * metric like latency-90 rising 41–764×) sets the range's max, crushing the
+   * genuine source's modest deviation toward zero and letting the symptom win
+   * the log-domain anomaly term by a ~1.7 margin. Rank normalization is
+   * metric-semantics-agnostic — it maps the outlier and the second-ranked
+   * source to ≈1.0 vs ≈0.98, so the deterministic causal signals (trace/topo)
+   * that already point at the silent source can tip the ranking. Default:
+   * `false` (bit-identical to shipped min-max behaviour).
+   */
+  readonly rankNormalization: boolean;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -184,6 +199,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   },
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
   collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
+  rankNormalization: false, // min-max rescale (shipped behaviour)
 };
 
 /**
@@ -256,6 +272,45 @@ export interface TopologyFaultGraphResult {
   readonly temporalEdgeCount: number;
   /** Computed decayAlpha when adaptiveDecay is enabled. */
   readonly computedDecayAlpha: number;
+}
+
+/**
+ * Rank-normalize a per-service anomaly score map to a uniform [0, 1] spread.
+ *
+ * Each entry is mapped to its AVERAGE rank (0-indexed, ties averaged) divided
+ * by (n − 1). Unlike min-max rescaling, this is robust to a single outlier: a
+ * near-zero-baseline spike (a symptom metric rising 41–764×) no longer sets the
+ * range's max and crushes the genuine source's modest deviation. The outlier
+ * and the second-ranked source land at ≈1.0 vs ≈(n−2)/(n−1), so downstream
+ * causal signals can decide between them. Metric-semantics-agnostic — it never
+ * inspects labels, only relative order.
+ *
+ * @param scores - Per-service anomaly scores (any non-negative reals).
+ * @returns A new map with the rank-normalized scores; the input is untouched.
+ *   Empty/single-entry maps are returned as a shallow copy (no meaningful rank).
+ */
+export function rankNormalizeScores(
+  scores: ReadonlyMap<ServiceId, number>,
+): Map<ServiceId, number> {
+  const result = new Map<ServiceId, number>();
+  const n = scores.size;
+  if (n < 2) {
+    for (const [id, score] of scores) result.set(id, score);
+    return result;
+  }
+  const entries = [...scores.entries()].sort((a, b) => a[1] - b[1]);
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && entries[j + 1]![1] === entries[i]![1]) j++;
+    // Average 0-indexed rank across the tie group, scaled to [0, 1].
+    const normalized = (i + j) / 2 / (n - 1);
+    for (let k = i; k <= j; k++) {
+      result.set(entries[k]![0], normalized);
+    }
+    i = j + 1;
+  }
+  return result;
 }
 
 /**
@@ -368,19 +423,27 @@ export function buildTopologyFaultGraph(
   // 20 services and the overhead of an extra pass is negligible.
   const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
   if (callGraph.nodes.size >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
-    let minScore = Infinity;
-    let maxScore = -Infinity;
-    for (const score of anomalyScores.values()) {
-      if (score < minScore) minScore = score;
-      if (score > maxScore) maxScore = score;
-    }
-    const range = maxScore - minScore;
-    if (range > 1e-10) {
-      for (const [sid, score] of anomalyScores) {
-        anomalyScores.set(sid, (score - minScore) / range);
+    if (cfg.rankNormalization) {
+      // Rank normalization: robust to a single outlier, semantics-agnostic.
+      const ranked = rankNormalizeScores(anomalyScores);
+      for (const [sid, score] of ranked) {
+        anomalyScores.set(sid, score);
       }
+    } else {
+      let minScore = Infinity;
+      let maxScore = -Infinity;
+      for (const score of anomalyScores.values()) {
+        if (score < minScore) minScore = score;
+        if (score > maxScore) maxScore = score;
+      }
+      const range = maxScore - minScore;
+      if (range > 1e-10) {
+        for (const [sid, score] of anomalyScores) {
+          anomalyScores.set(sid, (score - minScore) / range);
+        }
+      }
+      // range ≈ 0 → all scores identical; no signal to amplify, skip.
     }
-    // range ≈ 0 → all scores identical; no signal to amplify, skip.
   }
 
   // Step 2: Compute propagation weights for each topology edge

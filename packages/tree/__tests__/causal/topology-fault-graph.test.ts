@@ -10,7 +10,10 @@
 import type { ServiceCallGraph, ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildTopologyFaultGraph } from '../../src/causal/topology-fault-graph.js';
+import {
+  buildTopologyFaultGraph,
+  rankNormalizeScores,
+} from '../../src/causal/topology-fault-graph.js';
 
 // ── Test Helpers ──────────────────────────────────────────
 
@@ -2096,5 +2099,97 @@ describe('buildTopologyFaultGraph — Remaining Reachable Branches', () => {
       baselineStrategy: 'sliding-window',
     });
     expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
+  });
+});
+
+describe('rankNormalizeScores', () => {
+  it('maps a single outlier without crushing the second-highest score', () => {
+    const scores = new Map<ServiceId, number>([
+      ['low', 0.1],
+      ['mid', 0.2],
+      ['outlier', 2.88],
+    ]);
+    const ranked = rankNormalizeScores(scores);
+    expect(ranked.get('outlier')).toBeCloseTo(1.0);
+    // Under min-max, `mid` would collapse to 0.2/2.88 ≈ 0.069. Rank keeps it
+    // at the uniform 0.5, so a modest-but-real anomaly stays competitive with
+    // the single outlier instead of being crushed toward the noise floor.
+    expect(ranked.get('mid')).toBeCloseTo(0.5);
+    expect(ranked.get('low')).toBeCloseTo(0.0);
+  });
+
+  it('assigns the average rank to tied scores', () => {
+    const scores = new Map<ServiceId, number>([
+      ['a', 0],
+      ['b', 0],
+      ['c', 1],
+    ]);
+    const ranked = rankNormalizeScores(scores);
+    // a and b tie at average rank (0+1)/2 = 0.5 → 0.5 / 2 = 0.25.
+    expect(ranked.get('a')).toBeCloseTo(0.25);
+    expect(ranked.get('b')).toBeCloseTo(0.25);
+    expect(ranked.get('c')).toBeCloseTo(1.0);
+  });
+
+  it('is a no-op for empty or single-entry maps (returns a copy)', () => {
+    const empty = rankNormalizeScores(new Map());
+    expect(empty.size).toBe(0);
+    const single = rankNormalizeScores(new Map<ServiceId, number>([['only', 0.42]]));
+    expect(single.get('only')).toBeCloseTo(0.42);
+  });
+
+  it('does not mutate the input map', () => {
+    const scores = new Map<ServiceId, number>([
+      ['a', 0.1],
+      ['b', 2.0],
+    ]);
+    rankNormalizeScores(scores);
+    expect(scores.get('a')).toBeCloseTo(0.1);
+    expect(scores.get('b')).toBeCloseTo(2.0);
+  });
+});
+
+describe('buildTopologyFaultGraph — rank normalization', () => {
+  it('keeps the second-highest service competitive with a single near-zero outlier', () => {
+    // 20 nodes: 18 flat (score 0), 1 modest rise (source), 1 near-zero spike
+    // (outlier). The outlier's near-zero baseline (0.01 → 3.0) yields a ~299×
+    // rise (deviation ≈2.48) that stretches the min-max range, crushing the
+    // modest source (1.0 → 1.5, deviation ≈0.18) to ~0.07. Rank normalization
+    // maps them to ~0.95 vs 1.0 instead. The 0.01 head stays above the
+    // near-zero guard threshold (max×0.001 = 0.003), so the outlier survives
+    // the idle guard and is scored.
+    const ids: ServiceId[] = Array.from({ length: 20 }, (_, i) => `svc-${i}`);
+    const entries: Array<[ServiceId, TimeSeries[]]> = [];
+    for (let i = 0; i < 18; i++) {
+      entries.push([
+        ids[i]!,
+        [
+          makeTimeSeries(
+            'cpu',
+            Array.from({ length: 8 }, () => 1.0),
+          ),
+        ],
+      ]);
+    }
+    entries.push([ids[18]!, [makeTimeSeries('cpu', [1.0, 1.0, 1.0, 1.0, 1.5, 1.5, 1.5, 1.5])]]);
+    entries.push([ids[19]!, [makeTimeSeries('cpu', [0.01, 0.01, 0.01, 0.01, 3.0, 3.0, 3.0, 3.0])]]);
+    const graph = makeCallGraph(ids, []);
+    const metrics = makeMetrics(entries);
+
+    const minmax = buildTopologyFaultGraph(graph, metrics);
+    const ranked = buildTopologyFaultGraph(graph, metrics, { rankNormalization: true });
+
+    const minmaxOutlier = minmax.anomalyScores.get(ids[19]!)!;
+    const minmaxSource = minmax.anomalyScores.get(ids[18]!)!;
+    const rankOutlier = ranked.anomalyScores.get(ids[19]!)!;
+    const rankSource = ranked.anomalyScores.get(ids[18]!)!;
+
+    // min-max: the outlier owns the range; the source is crushed toward 0.
+    expect(minmaxOutlier).toBeCloseTo(1.0);
+    expect(minmaxSource).toBeLessThan(0.3);
+    // rank: the source stays within a hair of the outlier, so downstream
+    // causal signals (trace/topo) can tip the ranking toward the true source.
+    expect(rankOutlier).toBeCloseTo(1.0);
+    expect(rankSource).toBeGreaterThan(0.9);
   });
 });

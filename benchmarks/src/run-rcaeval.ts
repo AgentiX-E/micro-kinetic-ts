@@ -168,6 +168,12 @@ interface CliOptions {
    * equivalent rise (source). Opt-in; default 0.
    */
   collapseDiscount: number;
+  /**
+   * Rank-based anomaly-score normalization on large topologies (≥ 20 nodes).
+   * Robust to a single near-zero-baseline outlier that would otherwise stretch
+   * the min-max range. Opt-in; default false.
+   */
+  rankNormalization: boolean;
 }
 
 function parseArgs(): CliOptions {
@@ -185,6 +191,7 @@ function parseArgs(): CliOptions {
     logSignalMode: 'count',
     collapseDiscount: 0,
     traceWeight: 0,
+    rankNormalization: false,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -209,6 +216,8 @@ function parseArgs(): CliOptions {
     } else if (args[i] === '--collapse-discount' && i + 1 < args.length) {
       const d = parseFloat(args[++i]!);
       opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;
+    } else if (args[i] === '--rank-normalization') {
+      opts.rankNormalization = true;
     }
   }
   return opts;
@@ -224,12 +233,17 @@ function createContainer(weights: {
   logSignalMode: 'count' | 'novelty';
   collapseDiscount: number;
   traceWeight: number;
+  rankNormalization: boolean;
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
   container.register(
     DI_TOKENS.RCA_ENGINE,
-    () => new TreePruner(weights, { collapseDiscount: weights.collapseDiscount }),
+    () =>
+      new TreePruner(weights, {
+        collapseDiscount: weights.collapseDiscount,
+        rankNormalization: weights.rankNormalization,
+      }),
   );
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   return container;
@@ -1086,7 +1100,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} rankNormalization=${opts.rankNormalization}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1154,6 +1168,7 @@ async function main(): Promise<void> {
     logSignalMode: opts.logSignalMode,
     collapseDiscount: opts.collapseDiscount,
     traceWeight: opts.traceWeight,
+    rankNormalization: opts.rankNormalization,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(
