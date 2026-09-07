@@ -1400,6 +1400,86 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(result.dominantMetrics.get('svc')?.label).toBe('workload');
   });
 
+  it('suppresses an idle-start transient spike (0 → pulse → non-zero tail) behind the flag', () => {
+    // The ts-route-service RE3 failure signature: the VICTIM's latency-90
+    // starts IDLE (head ≈ 0), pulses transiently (e.g. 4.07 s) and settles at a
+    // small NON-ZERO tail (0.091 s). Its relative rise over the near-zero
+    // baseline is a measurement artifact (~19×), yet the transient-spike guard
+    // only discards excursions over a NON-ZERO baseline (head > 0), so the
+    // zero-head symptom escapes and outranks the genuine permanent socket drop.
+    // suppressIdleTransients extends the guard to a zero head that settles
+    // NON-zero (an idle→active duty-cycle transition), while still keeping a
+    // zero→burst→zero event fault (the #199 case — see the companion test).
+    const graph = makeCallGraph(
+      ['svc-source', 'svc-symptom'],
+      [{ from: 'svc-source', to: 'svc-symptom' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-source',
+        [
+          makeTimeSeries(
+            'socket',
+            [23, 23, 23, 23, 23, 23, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
+          ),
+        ],
+      ],
+      [
+        'svc-symptom',
+        [
+          makeTimeSeries(
+            'latency-90',
+            [
+              0, 0, 0, 0, 4.07, 4.07, 4.07, 4.07, 0.091, 0.091, 0.091, 0.091, 0.091, 0.091, 0.091,
+              0.091, 0.091, 0.091, 0.091, 0.091,
+            ],
+          ),
+        ],
+      ],
+    ]);
+
+    const off = buildTopologyFaultGraph(graph, metrics);
+    const on = buildTopologyFaultGraph(graph, metrics, { suppressIdleTransients: true });
+
+    // Default (flag off): the idle-start transient is kept, so the symptom is
+    // scored (the behaviour this flag corrects).
+    expect(off.anomalyScores.get('svc-symptom') ?? 0).toBeGreaterThan(0);
+    // Flag on: the idle-start transient is skipped; only the source scores.
+    expect(on.anomalyScores.get('svc-symptom') ?? 0).toBe(0);
+    expect(on.anomalyScores.get('svc-source') ?? 0).toBeGreaterThan(0);
+  });
+
+  it('keeps a zero-baseline event burst even with idle-transient suppression on', () => {
+    // The zero→burst→zero error event (the #199 RE3 OnlineBoutique fault) must
+    // survive the idle-transient guard even with suppressIdleTransients=true:
+    // it is the fault ITSELF, not a duty-cycled symptom. Its tail returns to
+    // ZERO, unlike the idle-start transient which settles at a NON-zero level.
+    const graph = makeCallGraph(
+      ['svc-fault', 'svc-burst'],
+      [{ from: 'svc-fault', to: 'svc-burst' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-fault',
+        [makeTimeSeries('workload', [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4])],
+      ],
+      [
+        'svc-burst',
+        [
+          makeTimeSeries(
+            'error',
+            [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
+          ),
+        ],
+      ],
+    ]);
+
+    const on = buildTopologyFaultGraph(graph, metrics, { suppressIdleTransients: true });
+
+    // The error burst survives (it is the fault itself, tail returns to zero).
+    expect(on.anomalyScores.get('svc-burst') ?? 0).toBeGreaterThan(0);
+  });
+
   it('bounds a drop while leaving a rise unbounded (direction-aware deviation)', () => {
     // Regression: measuring the drop against the post-drop MINIMUM made a
     // 28× drop symmetric with a 28× rise, but re-exploded drop-noise — a

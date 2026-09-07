@@ -75,6 +75,8 @@ interface FeatureFlags {
   traceSignal: boolean;
   /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
   rankNormalization: boolean;
+  /** Extend the transient guard to idle-start transients (near-zero-baseline latency spike). */
+  suppressIdleTransients: boolean;
 }
 
 interface AblationRun {
@@ -117,6 +119,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -133,6 +136,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -148,6 +152,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Trace Topo',
   },
@@ -163,6 +168,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+SelfLearn',
   },
@@ -179,6 +185,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Collision+Trace',
   },
@@ -194,6 +201,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -209,6 +217,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -225,6 +234,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -245,6 +255,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Log Signal',
   },
@@ -260,6 +271,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Topo Signal',
   },
@@ -279,6 +291,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Collision Signal',
   },
@@ -294,6 +307,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Collapse Discount',
   },
@@ -309,6 +323,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: true,
       traceSignal: false,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Rise Signal',
   },
@@ -324,6 +339,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: true,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Trace Activity Signal',
   },
@@ -349,6 +365,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: true,
       rankNormalization: false,
+      suppressIdleTransients: false,
     },
     label: '+Log +Trace Activity',
   },
@@ -375,6 +392,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: true,
       rankNormalization: true,
+      suppressIdleTransients: false,
     },
     label: '+Trace Activity +Rank',
   },
@@ -395,6 +413,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: true,
       rankNormalization: true,
+      suppressIdleTransients: false,
     },
     label: '+Log +Trace Activity +Rank',
   },
@@ -421,8 +440,54 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       riseSignal: false,
       traceSignal: false,
       rankNormalization: true,
+      suppressIdleTransients: false,
     },
     label: '+Rank Normalization',
+  },
+  {
+    // Idle-start transient suppression (suppressIdleTransients), the P2 fix for
+    // the ts-route-service socket-drop failures. Unlike rank normalization
+    // (monotonic, a no-op in isolation), this guard REMOVES metrics from
+    // scoring, so its isolated slice IS meaningful: it suppresses the victim's
+    // near-zero-baseline latency-90 spike (head ≈ 0 → pulse → non-zero tail),
+    // whose relative rise is a measurement artifact, so the genuine permanent
+    // socket drop (23 → 9) survives as the top anomaly. Semantic-agnostic: the
+    // NON-zero-tail requirement keeps a zero→burst→zero event fault (#199).
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: true,
+    },
+    label: '+Idle Transient Suppression',
+  },
+  {
+    // Production configuration + the idle-transient suppression. The main
+    // benchmark ships logWeight=1 + traceWeight=1 + rankNormalization=true;
+    // this slice adds suppressIdleTransients on top to answer whether the P2
+    // fix lifts the production TT RE3 (f3 target) without regressing
+    // OB/SS/RE1/RE2.
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: true,
+      suppressIdleTransients: true,
+    },
+    label: '+Log +Trace Activity +Rank +Idle Transient',
   },
 ];
 
@@ -658,6 +723,7 @@ async function main(): Promise<void> {
         {
           collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
           rankNormalization: flags.rankNormalization,
+          suppressIdleTransients: flags.suppressIdleTransients,
         },
       );
     });

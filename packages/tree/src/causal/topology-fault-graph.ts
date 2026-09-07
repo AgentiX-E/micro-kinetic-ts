@@ -182,6 +182,25 @@ export interface TopologyFaultGraphConfig {
    * `false` (bit-identical to shipped min-max behaviour).
    */
   readonly rankNormalization: boolean;
+  /**
+   * Whether to extend the transient-spike guard to an IDLE-start transient:
+   * a metric that starts at ~0 (head ≤ max × 0.001), has a transient excursion
+   * (permanence < 0.3) and settles at a NON-zero tail (tail > max × 0.001).
+   *
+   * Such a metric is a duty-cycled event/resource that was IDLE before the
+   * fault and only became active during it (e.g. a latency percentile that is
+   * 0 with no traffic, then pulses when the fault propagates). Its relative
+   * RISE over the near-zero baseline is a measurement artifact — latency-90
+   * rising 0 → 0.091 s over a 0.201 s baseline reads as a 19× "rise" that
+   * outranks the genuine permanent drop (the ts-route-service RE3 signature).
+   *
+   * The guard is deliberately conservative: it only fires when the head is
+   * near-zero AND the tail is NON-zero, so a zero→burst→zero EVENT fault (the
+   * #199 RE3 OnlineBoutique error-burst regression, whose tail returns to
+   * zero) is still kept — its spike is the fault itself, not a symptom.
+   * Default: `false` (bit-identical to the shipped transient-spike guard).
+   */
+  readonly suppressIdleTransients: boolean;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -200,6 +219,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
   collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
   rankNormalization: false, // min-max rescale (shipped behaviour)
+  suppressIdleTransients: false, // non-zero-baseline transient guard only (shipped)
 };
 
 /**
@@ -652,7 +672,14 @@ function computeAnomalyFeatures(
     const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
     const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-    if (nonZeroBaseline && permanence < 0.3) {
+    // Idle-start transient (suppressIdleTransients): head ≈ 0, NON-zero tail,
+    // transient excursion. A duty-cycled metric that was IDLE before the fault
+    // and only became active during it — its relative rise over the near-zero
+    // baseline is an artifact (latency-90 0 → 0.091 s over 0.2 s = 19×). The
+    // NON-zero-tail requirement keeps the zero→burst→zero EVENT fault (#199).
+    const idleStartTransient =
+      cfg.suppressIdleTransients && headLevel <= max * 0.001 && tailLevel > max * 0.001;
+    if ((nonZeroBaseline || idleStartTransient) && permanence < 0.3) {
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.
