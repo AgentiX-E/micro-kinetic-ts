@@ -353,6 +353,52 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
     label: '+Log +Trace Activity',
   },
   {
+    // Combination slice: rank normalization is a MONOTONIC transform, so in
+    // isolation it is a provable no-op (identical ordering, all weights 0) —
+    // the isolated +Rank Normalization slice above confirms it is bit-identical
+    // to BASELINE. Its value only materialises when a downstream causal signal
+    // (trace/topo) can exploit the COMPRESSED anomaly gap. Under min-max, a
+    // near-zero-baseline symptom spike (latency-90 rising 41–764×) sets the
+    // range max and crushes the silent source's modest deviation to ~0, so
+    // log(source) ≈ −1.77 and the trace vote (+1.0) cannot overcome it. Under
+    // rank, the outlier and the second-ranked source land at ≈1.0 vs ≈0.98, so
+    // log(source) ≈ −0.02 and the trace vote flips the ranking. This slice
+    // measures whether rank + trace beats trace alone (TT f3 is the target).
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: true,
+    },
+    label: '+Trace Activity +Rank',
+  },
+  {
+    // Combination slice: the production log + trace backstop, plus rank
+    // normalization. The main benchmark ships logWeight=1 + traceWeight=1
+    // (production defaults); this slice mirrors that on top of rank
+    // normalization to answer whether rank lifts the production configuration's
+    // TT RE3 (currently f3 = 10%) without regressing OB/SS/RE1/RE2.
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: true,
+    },
+    label: '+Log +Trace Activity +Rank',
+  },
+  {
     // Rank-based anomaly-score normalization (rankNormalization), the P1 fix
     // for the near-zero-baseline spike pathology. A symptom metric (latency-90
     // rising 41–764× over a ~0 baseline) sets the min-max range's max and
@@ -361,6 +407,9 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
     // and the second-ranked source to ≈1.0 vs ≈0.98 — semantic-agnostic — so
     // the deterministic trace/topo signals that already point at the silent
     // source can tip the ranking. Affects only large topologies (≥ 20 nodes).
+    // NOTE: in isolation this slice is a no-op (monotonic transform, all
+    // weights 0); the +Trace Activity +Rank and +Log +Trace Activity +Rank
+    // slices above are where its effect is actually measured.
     flags: {
       collisionAggregation: false,
       traceAugmentation: false,
