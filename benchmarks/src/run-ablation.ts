@@ -73,12 +73,6 @@ interface FeatureFlags {
   riseSignal: boolean;
   /** Trace span-activity rise signal: reward the service whose spans rise post-injection. */
   traceSignal: boolean;
-  /**
-   * Suppress symptom-type transient spikes over a near-zero baseline (an
-   * idle→pulse→idle latency/cpu excursion that slips past the NON-ZERO-baseline
-   * transient guard and dominates min-max normalization).
-   */
-  symptomTransientSuppression: boolean;
 }
 
 interface AblationRun {
@@ -120,7 +114,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -136,7 +129,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -151,7 +143,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Trace Topo',
   },
@@ -166,7 +157,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+SelfLearn',
   },
@@ -182,7 +172,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Collision+Trace',
   },
@@ -197,7 +186,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -212,7 +200,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -228,7 +215,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -248,7 +234,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Log Signal',
   },
@@ -263,7 +248,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Topo Signal',
   },
@@ -282,7 +266,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Collision Signal',
   },
@@ -297,7 +280,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: true,
       riseSignal: false,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Collapse Discount',
   },
@@ -312,7 +294,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: true,
       traceSignal: false,
-      symptomTransientSuppression: false,
     },
     label: '+Rise Signal',
   },
@@ -327,7 +308,6 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: true,
-      symptomTransientSuppression: false,
     },
     label: '+Trace Activity Signal',
   },
@@ -352,34 +332,8 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       collapseDiscount: false,
       riseSignal: false,
       traceSignal: true,
-      symptomTransientSuppression: false,
     },
     label: '+Log +Trace Activity',
-  },
-  {
-    // Suppress symptom-type transient spikes over a near-zero baseline (an
-    // idle→pulse→idle latency/cpu excursion). The transient guard's
-    // NON-ZERO-baseline requirement was built to preserve an EVENT fault
-    // (error burst, 0 → spike → 0), but it also lets a SYMPTOM metric through:
-    // a latency-90 whose head sample is 0. Its unbounded relative rise (base
-    // 0.002 → 764×) then dominates min-max normalization and drowns the
-    // source's subtle drop (TT RE3 socket 17→9, SS RE3 cpu 30→2.5). This
-    // slice measures the flag's MARGINAL effect in isolation — whether
-    // discarding those symptom pulses recovers TT/SS RE3 without regressing
-    // the error-burst fault (OB RE3 #199).
-    flags: {
-      collisionAggregation: false,
-      traceAugmentation: false,
-      selfLearning: false,
-      logSignal: false,
-      topoSignal: false,
-      collisionSignal: false,
-      collapseDiscount: false,
-      riseSignal: false,
-      traceSignal: false,
-      symptomTransientSuppression: true,
-    },
-    label: '+Symptom Transient Suppression',
   },
 ];
 
@@ -612,10 +566,7 @@ async function main(): Promise<void> {
           riseWeight: flags.riseSignal ? 1.0 : 0.0,
           traceWeight: flags.traceSignal ? 1.0 : 0.0,
         },
-        {
-          collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
-          symptomTransientSuppression: flags.symptomTransientSuppression,
-        },
+        { collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0 },
       );
     });
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());

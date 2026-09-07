@@ -167,30 +167,6 @@ export interface TopologyFaultGraphConfig {
    * this against real RE1/RE2 data before the default is changed.
    */
   readonly collapseDiscount: number;
-  /**
-   * Whether to suppress a SYMPTOM-type transient spike that sits over a
-   * NEAR-ZERO baseline (an idle→pulse→idle excursion).
-   *
-   * The transient-spike guard discards an excursion that returns to (or near)
-   * its starting level (`permanence < 0.3`) over a NON-ZERO baseline — such a
-   * spike is a propagated symptom, not the source. The NON-ZERO-baseline
-   * requirement is what keeps an EVENT fault (an error burst, 0 → spike → 0)
-   * scored: its zero baseline must NOT trip the guard (#199 RE3
-   * OnlineBoutique). But that requirement ALSO lets a SYMPTOM metric — a
-   * latency percentile (or cpu/disk/mem) that sits idle at ~0 and briefly
-   * pulses — through: its head sample is 0, so the guard's `nonZeroBaseline`
-   * check is false and the metric survives. Its unbounded relative rise
-   * (base 0.002 → 764×) then dominates min-max normalization and drowns the
-   * source's subtle drop (TrainTicket RE3 socket 17→9, SS RE3 cpu 30→2.5).
-   *
-   * Enabling this flag relaxes the guard to skip a transient spike when the
-   * baseline is non-zero OR the metric is SYMPTOM-type (see
-   * {@link isEventMetricLabel}) — so an idle latency/cpu pulse is discarded
-   * while an error/loss burst is preserved. `false` (default) is bit-identical
-   * to the shipped behaviour; the ablation must confirm the symptom-type
-   * relaxation before the default is changed.
-   */
-  readonly symptomTransientSuppression: boolean;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -208,7 +184,6 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   },
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
   collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
-  symptomTransientSuppression: false, // opt-in — ablate before flipping default
 };
 
 /**
@@ -507,32 +482,6 @@ interface EdgeWeightResult {
 // ── Anomaly Score Computation ─────────────────────────────
 
 /**
- * Whether a metric label denotes an EVENT metric — a counter of discrete
- * fault occurrences (errors, exceptions, packet loss, failures) — rather than
- * a CONTINUOUS resource/performance metric (cpu, latency, memory, disk,
- * workload, socket) whose reading is a *level*, not an occurrence count.
- *
- * The distinction drives the transient-spike guard: an EVENT metric's burst
- * (0 → spike → 0) IS the fault itself, so it must be scored over a zero
- * baseline; a CONTINUOUS metric's near-zero-baseline pulse is a propagated
- * SYMPTOM (an idle latency percentile briefly spiking), which must be
- * discarded. This mirrors `RCAEvalLoader.inferUnit`'s `loss`/`error` → `rate`
- * branch: those are the metrics a fault manifests on as a discrete burst.
- *
- * @param label - The metric label (e.g. "error", "latency-90", "cpu_usage").
- * @returns `true` for event/counter metrics, `false` for continuous metrics.
- */
-export function isEventMetricLabel(label: string): boolean {
-  const lower = label.toLowerCase();
-  return (
-    lower.includes('error') ||
-    lower.includes('loss') ||
-    lower.includes('exception') ||
-    lower.includes('fail')
-  );
-}
-
-/**
  * Compute per-service anomaly features: score and onset index.
  *
  * Score: maximum feature-weighted anomaly across all metrics (0-1).
@@ -640,17 +589,7 @@ function computeAnomalyFeatures(
     const headTailSpread = Math.abs(headLevel - tailLevel);
     const nonZeroBaseline = headLevel > max * 0.001 && tailLevel > max * 0.001;
     const permanence = range > max * 1e-6 ? headTailSpread / range : 1;
-    // Symptom-type transient suppression (opt-in): a SYMPTOM metric (NOT an
-    // event metric — see isEventMetricLabel) that pulses over a NEAR-ZERO
-    // baseline is an idle→pulse→idle excursion — indistinguishable in SHAPE
-    // from an error burst, but semantically a propagated symptom (an idle
-    // latency/cpu briefly spiking). With the flag on, such a metric is
-    // discarded even though its baseline is zero; with the flag off (default)
-    // the guard is bit-identical to the NON-ZERO-baseline-only behaviour. An
-    // EVENT metric (error/loss) keeps the original non-zero-baseline
-    // requirement, so its zero-baseline burst still survives to be scored.
-    const symptomTransient = cfg.symptomTransientSuppression && !isEventMetricLabel(ts.label);
-    if ((nonZeroBaseline || symptomTransient) && permanence < 0.3) {
+    if (nonZeroBaseline && permanence < 0.3) {
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.

@@ -10,10 +10,7 @@
 import type { ServiceCallGraph, ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  buildTopologyFaultGraph,
-  isEventMetricLabel,
-} from '../../src/causal/topology-fault-graph.js';
+import { buildTopologyFaultGraph } from '../../src/causal/topology-fault-graph.js';
 
 // ── Test Helpers ──────────────────────────────────────────
 
@@ -1304,110 +1301,6 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(burstScore).toBeGreaterThan(0);
   });
 
-  it('skips a symptom-type transient spike over a near-zero baseline when suppression is ON', () => {
-    // Regression (TT RE3 F1/F2/F3 + SS RE3 F4): a latency percentile that sits
-    // idle at ~0 and briefly spikes (0 → pulse → 0) is a propagated SYMPTOM, not
-    // the fault source. Its head sample is 0, so the transient-spike guard's
-    // NON-ZERO-baseline requirement skips it — the guard was built that way to
-    // preserve an EVENT fault (an error burst is also 0 → spike → 0). But the
-    // symptom's unbounded relative rise (base 0.002 → 764×) then dominates
-    // min-max normalization and drowns the source's subtle drop (socket 17→9).
-    // `symptomTransientSuppression` relaxes the guard so a symptom-type metric
-    // (latency/cpu/mem/disk — NOT error/loss) is skipped even over a near-zero
-    // baseline, leaving the genuine source to stand out.
-    const graph = makeCallGraph(
-      ['svc-source', 'svc-symptom'],
-      [{ from: 'svc-source', to: 'svc-symptom' }],
-    );
-    const metrics = makeMetrics([
-      [
-        'svc-source',
-        [
-          makeTimeSeries(
-            'workload',
-            [
-              0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
-              1.4, 1.4, 1.4,
-            ],
-          ),
-        ],
-      ],
-      [
-        'svc-symptom',
-        [
-          // Idle latency-90: 0 at head and tail, a mid-series pulse. Only 8/24 =
-          // 33% samples are near-zero, so the idle-metric guard (>40%) does NOT
-          // fire — this must reach the transient guard and be skipped there.
-          makeTimeSeries(
-            'latency-90',
-            [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
-          ),
-        ],
-      ],
-    ]);
-
-    const result = buildTopologyFaultGraph(graph, metrics, { symptomTransientSuppression: true });
-
-    const symptomScore = result.anomalyScores.get('svc-symptom') ?? 0;
-    const sourceScore = result.anomalyScores.get('svc-source') ?? 0;
-    // The symptom-type near-zero transient spike is skipped (its ratio is
-    // meaningless), so the symptom service contributes nothing and the source
-    // stands out.
-    expect(symptomScore).toBe(0);
-    expect(sourceScore).toBeGreaterThan(0);
-    // The transient guard records what it discarded for diagnostics.
-    expect(result.dominantMetrics.get('svc-symptom')?.transientSkipped).toContain('latency-90');
-  });
-
-  it('keeps an event-type zero-baseline burst when suppression is ON', () => {
-    // Guard: the symptom/suppression distinction must NOT discard an EVENT
-    // fault. An error metric that is 0 → spike → 0 is the fault ITSELF, so it
-    // must survive even with `symptomTransientSuppression` enabled. The flag
-    // only widens the guard for symptom-type metrics; event metrics (error/loss)
-    // keep the original NON-ZERO-baseline requirement.
-    const graph = makeCallGraph(['svc'], []);
-    const metrics = makeMetrics([
-      [
-        'svc',
-        [
-          // Same 0 → burst → 0 shape as the latency symptom, but an ERROR event.
-          makeTimeSeries(
-            'error',
-            [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
-          ),
-        ],
-      ],
-    ]);
-
-    const result = buildTopologyFaultGraph(graph, metrics, { symptomTransientSuppression: true });
-
-    expect(result.anomalyScores.get('svc')).toBeGreaterThan(0);
-  });
-
-  it('keeps a symptom-type near-zero transient spike when suppression is OFF (default)', () => {
-    // Bit-identical default: with the flag OFF (the shipped behaviour), the
-    // symptom-type near-zero transient spike is NOT skipped — the transient
-    // guard still requires a NON-ZERO baseline for every metric type. The flag
-    // is opt-in so the ablation can quantify its contribution before the
-    // default is changed.
-    const graph = makeCallGraph(['svc'], []);
-    const metrics = makeMetrics([
-      [
-        'svc',
-        [
-          makeTimeSeries(
-            'latency-90',
-            [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
-          ),
-        ],
-      ],
-    ]);
-
-    const result = buildTopologyFaultGraph(graph, metrics);
-
-    expect(result.anomalyScores.get('svc')).toBeGreaterThan(0);
-  });
-
   it('skips a transient spike that returns to a NON-ZERO baseline', () => {
     // Regression (#197 RE3 TrainTicket): the top-anomaly service's cpu carried
     // a transient mid-series pulse over a NON-ZERO baseline (~0.13), so the
@@ -2203,35 +2096,5 @@ describe('buildTopologyFaultGraph — Remaining Reachable Branches', () => {
       baselineStrategy: 'sliding-window',
     });
     expect(result.anomalyScores.get(id)).toBeGreaterThan(0);
-  });
-});
-
-describe('isEventMetricLabel', () => {
-  it('classifies error/loss/exception/failure metrics as event-type', () => {
-    expect(isEventMetricLabel('error')).toBe(true);
-    expect(isEventMetricLabel('error_rate')).toBe(true);
-    expect(isEventMetricLabel('network_errors')).toBe(true);
-    expect(isEventMetricLabel('packet_loss')).toBe(true);
-    expect(isEventMetricLabel('exception_count')).toBe(true);
-    expect(isEventMetricLabel('failed_requests')).toBe(true);
-  });
-
-  it('classifies continuous resource/performance metrics as symptom-type', () => {
-    expect(isEventMetricLabel('cpu')).toBe(false);
-    expect(isEventMetricLabel('cpu_usage')).toBe(false);
-    expect(isEventMetricLabel('latency-90')).toBe(false);
-    expect(isEventMetricLabel('latency_ms')).toBe(false);
-    expect(isEventMetricLabel('mem_usage')).toBe(false);
-    expect(isEventMetricLabel('diskio')).toBe(false);
-    expect(isEventMetricLabel('disk_io')).toBe(false);
-    expect(isEventMetricLabel('workload')).toBe(false);
-    expect(isEventMetricLabel('socket')).toBe(false);
-    expect(isEventMetricLabel('response_time_ms')).toBe(false);
-  });
-
-  it('is case-insensitive', () => {
-    expect(isEventMetricLabel('ERROR')).toBe(true);
-    expect(isEventMetricLabel('NetworkLoss')).toBe(true);
-    expect(isEventMetricLabel('CPU')).toBe(false);
   });
 });
