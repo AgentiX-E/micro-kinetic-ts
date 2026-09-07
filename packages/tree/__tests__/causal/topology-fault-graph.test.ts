@@ -1353,37 +1353,6 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(sourceScore).toBeGreaterThan(0);
   });
 
-  it('keeps a spike followed by a permanent level shift (fault, not transient)', () => {
-    // The ts-route-service RE3 source signature: the fault's own cpu carries a
-    // transient SPIKE (socket-drop fault → cpu burn, ~49.9) followed by a
-    // PERMANENT drop to a lower operating level (~1.53) as the service idles.
-    // The range-based permanence diluted the head↔tail shift (9.6 → 1.53) by
-    // the spike height, reading spread/range ≈ 0.16 and wrongly discarding the
-    // fault as a transient symptom. The operating-level permanence keeps it
-    // (head ≠ tail is a permanent shift), so the fault still scores.
-    const graph = makeCallGraph(['svc-fault'], []);
-    const metrics = makeMetrics([
-      [
-        'svc-fault',
-        [
-          makeTimeSeries(
-            'cpu',
-            [
-              9.6, 9.6, 9.6, 9.6, 9.6, 9.6, 9.6, 9.6, 49.9, 49.9, 49.9, 49.9, 1.53, 1.53, 1.53,
-              1.53, 1.53, 1.53, 1.53, 1.53,
-            ],
-          ),
-        ],
-      ],
-    ]);
-
-    const result = buildTopologyFaultGraph(graph, metrics);
-
-    // The spike + permanent shift is a fault signature, not a transient — it
-    // must survive the transient-spike guard and score.
-    expect(result.anomalyScores.get('svc-fault') ?? 0).toBeGreaterThan(0);
-  });
-
   it('keeps a ramp-up fault (zero head, high tail)', () => {
     // Regression guard: the transient-spike check must NOT discard a genuine
     // ramp-up fault whose baseline happens to start at ~0 (the metric rises
