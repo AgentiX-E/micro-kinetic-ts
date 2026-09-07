@@ -1,11 +1,15 @@
 /**
- * Diagnostic dump: full metric-series shape for a target system's RE3 cases.
+ * Diagnostic dump: global metric-ranking + guard-leak analysis for a target
+ * system's RE3 cases.
  *
- * Purpose: pin down the exact head/tail shape that the crash-victim baseline
- * gate (`computeRobustBaseline`) must distinguish. It dumps, per metric, the
- * head/tail medians, the fraction of the series sitting at the "high" (head)
- * level, whether the current crash gate (`tailMedian < headMedian × 0.1`)
- * would fire, and the full compressed value series.
+ * Purpose: reveal WHY the ground-truth (GT) source is buried beneath false
+ * near-zero-baseline spikes. For every case it collects every metric across
+ * all services, reproduces `buildTopologyFaultGraph`'s guard sequence
+ * (mean <= 0 -> idle -> transient -> change-point -> robust baseline ->
+ * deviation), then prints the GT source's rank and every ACTIVE metric ranked
+ * ABOVE it with full guard telemetry (head/tail/permanence/nearZero/changePt/
+ * isDrop/isCrash). The leak — whether the idle guard or the transient guard
+ * failed to discard the false spikes — is directly visible.
  *
  * Usage:
  *   pnpm exec tsx scripts/dump-re3-metrics.ts [--data-dir <path>] \
@@ -44,30 +48,6 @@ function parseArgs(): CliOptions {
     else if (args[i] === '--gt-only') opts.gtOnly = true;
   }
   return opts;
-}
-
-function median(sorted: number[]): number {
-  const n = sorted.length;
-  if (n === 0) return 0;
-  const mid = Math.floor(n / 2);
-  return n % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
-
-function medianOf(values: Float64Array, start: number, end: number): number {
-  return median(Array.from(values.slice(start, end)).sort((a, b) => a - b));
-}
-
-/** Downsample a long series to ~40 representative points for a compact dump. */
-function summarize(values: Float64Array): string {
-  const n = values.length;
-  if (n <= 40) return Array.from(values).join(',');
-  // Keep first 12, middle 16, last 12 — enough to see the head/tail/transition.
-  const step = Math.floor((n - 24) / 16) || 1;
-  const out: number[] = [];
-  for (let i = 0; i < 12; i++) out.push(values[i]!);
-  for (let k = 0; k < 16; k++) out.push(values[12 + k * step]!);
-  for (let i = n - 12; i < n; i++) out.push(values[i]!);
-  return out.join(',');
 }
 
 /**
@@ -239,6 +219,22 @@ function computeBaselineBreakdown(values: Float64Array): BaselineBreakdown {
   };
 }
 
+/** Guard state mirroring buildTopologyFaultGraph's skip sequence. */
+interface GuardState {
+  meanNonPositive: boolean;
+  idleSkipped: boolean;
+  transientSkipped: boolean;
+}
+
+interface RankedMetric {
+  svc: string;
+  metric: string;
+  n: number;
+  b: BaselineBreakdown;
+  guard: GuardState;
+  active: boolean;
+}
+
 function main(): void {
   const opts = parseArgs();
   const loader = new RCAEvalLoader();
@@ -289,10 +285,12 @@ function main(): void {
     const inject = raw.injectTime;
     console.log(`\n[${c.name}] gt=${gt} inject=${inject} fault=${raw.groundTruth.faultType}`);
 
-    const serviceNames = Object.keys(raw.metrics);
-    for (const svc of serviceNames) {
-      if (opts.gtOnly && svc !== gt) continue;
-      // Group points by metric_name.
+    // Collect every metric (across all services) with its baseline breakdown
+    // and guard state, mirroring buildTopologyFaultGraph's skip sequence:
+    //   mean <= 0  ->  idle (nearZero > 0.4n)  ->  transient (nonZeroBaseline &
+    //   permanence < 0.3)  ->  change-point  ->  robust baseline  ->  deviation.
+    const ranked: RankedMetric[] = [];
+    for (const svc of Object.keys(raw.metrics)) {
       const byMetric = new Map<string, number[]>();
       for (const p of raw.metrics[svc]!) {
         let arr = byMetric.get(p.metric_name);
@@ -306,38 +304,77 @@ function main(): void {
         const vals = new Float64Array(valsArr);
         const n = vals.length;
         if (n < 5) continue;
-        const headMedian = medianOf(vals, 0, Math.min(5, n));
-        const tailMedian = medianOf(vals, n - Math.min(5, n), n);
-        // "high" = points at/above half the head median (the pre-crash level).
-        let highCount = 0;
-        for (let i = 0; i < n; i++) if (vals[i]! >= headMedian * 0.5) highCount++;
-        const highFraction = highCount / n;
-        const crashFires = headMedian > 0.001 && tailMedian < headMedian * 0.1;
-        const marker = crashFires ? 'CRASH-GATE-FIRES' : 'no-fire';
-        const gtTag = svc === gt ? '  <GT>' : '';
-        console.log(
-          `  ${svc}${gtTag} :: ${metric} n=${n} headMedian=${headMedian.toFixed(4)}` +
-            ` tailMedian=${tailMedian.toFixed(4)} tail/head=${(headMedian > 0 ? tailMedian / headMedian : 0).toFixed(3)}` +
-            ` highFraction=${(highFraction * 100).toFixed(1)}% ${marker}`,
-        );
-        // Dump the series only for crash-gated metrics and GT metrics (the
-        // shapes that matter for the fix).
-        if (crashFires || svc === gt) {
-          console.log(`      series=[${summarize(vals)}]`);
-        }
-        // For GT metrics, emit the full baseline breakdown so the socket-drop
-        // under-scoring mechanism (base anchored to the wrong side) is visible.
-        if (svc === gt) {
-          const b = computeBaselineBreakdown(vals);
-          console.log(
-            `      breakdown: mean=${b.mean.toFixed(4)} max=${b.max.toFixed(4)} min=${b.min.toFixed(4)}` +
-              ` nearZero=${b.nearZeroCount}/${n} head=${b.headLevel.toFixed(4)} tail=${b.tailLevel.toFixed(4)}` +
-              ` permanence=${b.permanence.toFixed(3)} transientSkip=${b.transientSkipped}` +
-              ` changePt=${b.changePt} strategy=${b.strategy} isDrop=${b.isDrop} isCrash=${b.isCrash}` +
-              ` base=${b.baselineMean.toFixed(4)} rise=${b.riseRatio.toFixed(3)} drop=${b.dropRatio.toFixed(3)} dev=${b.deviation.toFixed(3)}`,
-          );
-        }
+        const b = computeBaselineBreakdown(vals);
+        const guard: GuardState = {
+          meanNonPositive: b.mean <= 0,
+          idleSkipped: b.nearZeroCount > n * 0.4,
+          transientSkipped: b.transientSkipped,
+        };
+        const active = !guard.meanNonPositive && !guard.idleSkipped && !guard.transientSkipped;
+        ranked.push({ svc, metric, n, b, guard, active });
       }
+    }
+
+    // Active metrics only — the ranking set the pipeline actually scores.
+    const active = ranked.filter((r) => r.active).sort((a, b) => b.b.deviation - a.b.deviation);
+
+    // GT source = the GT service's highest-deviation active metric.
+    const gtActive = ranked.filter((r) => r.svc === gt && r.active);
+    const gtSource =
+      gtActive.length > 0
+        ? gtActive.reduce((best, r) => (r.b.deviation > best.b.deviation ? r : best))
+        : undefined;
+
+    const total = active.length;
+    const skipped = ranked.length - total;
+    console.log(
+      `  Active metrics (not guard-skipped): ${total}; guard-skipped: ${skipped}` +
+        ` (idle=${ranked.filter((r) => r.guard.idleSkipped).length}` +
+        ` transient=${ranked.filter((r) => r.guard.transientSkipped).length}` +
+        ` meanNonPositive=${ranked.filter((r) => r.guard.meanNonPositive).length})`,
+    );
+    if (gtSource) {
+      const gtRank = active.indexOf(gtSource) + 1;
+      console.log(
+        `  GT source: ${gtSource.svc}::${gtSource.metric} dev=${gtSource.b.deviation.toFixed(3)}` +
+          ` (rank ${gtRank}/${total})`,
+      );
+    } else {
+      console.log(`  GT source: NONE (GT service has no active metric — all guard-skipped)`);
+    }
+
+    // Dump every active metric ranked ABOVE the GT source — these are the
+    // false signals that bury the socket-drop source. Print their guard
+    // telemetry so the leak (why the idle/transient guards missed them) is
+    // visible.
+    const above = gtSource ? active.slice(0, active.indexOf(gtSource)) : [];
+    if (!opts.gtOnly) {
+      const limit = Math.min(above.length, 50);
+      console.log(`  --- ${above.length} active metrics ranked ABOVE GT (showing ${limit}) ---`);
+      for (let i = 0; i < limit; i++) {
+        const r = above[i]!;
+        console.log(
+          `  #${String(i + 1).padStart(2)} ${r.svc}::${r.metric} dev=${r.b.deviation.toFixed(3)}` +
+            ` rise=${r.b.riseRatio.toFixed(2)} drop=${r.b.dropRatio.toFixed(2)}` +
+            ` nearZero=${r.b.nearZeroCount}/${r.n} head=${r.b.headLevel.toFixed(4)} tail=${r.b.tailLevel.toFixed(4)}` +
+            ` perm=${r.b.permanence.toFixed(3)} changePt=${r.b.changePt} strat=${r.b.strategy}` +
+            ` isDrop=${r.b.isDrop} isCrash=${r.b.isCrash}`,
+        );
+      }
+    }
+
+    // Keep the GT-service per-metric breakdown for the socket-drop mechanism.
+    for (const r of ranked.filter((x) => x.svc === gt)) {
+      const b = r.b;
+      console.log(
+        `  [GT] ${r.svc}::${r.metric} dev=${b.deviation.toFixed(3)}` +
+          ` mean=${b.mean.toFixed(4)} max=${b.max.toFixed(4)} min=${b.min.toFixed(4)}` +
+          ` nearZero=${b.nearZeroCount}/${r.n} head=${b.headLevel.toFixed(4)} tail=${b.tailLevel.toFixed(4)}` +
+          ` permanence=${b.permanence.toFixed(3)} transientSkip=${b.transientSkipped}` +
+          ` changePt=${b.changePt} strategy=${b.strategy} isDrop=${b.isDrop} isCrash=${b.isCrash}` +
+          ` base=${b.baselineMean.toFixed(4)} rise=${b.riseRatio.toFixed(3)} drop=${b.dropRatio.toFixed(3)}` +
+          `${r.active ? '' : '  (guard-skipped)'}`,
+      );
     }
   }
 }
