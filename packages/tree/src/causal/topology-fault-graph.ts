@@ -1374,13 +1374,20 @@ function computeRobustBaseline(
     return upperQuartile > 0.001 ? upperQuartile : fallbackMean;
   }
 
-  // Trend direction from the two halves: a drop's first half is higher.
-  const half = Math.floor(n / 2);
-  let firstSum = 0;
-  for (let i = 0; i < half; i++) firstSum += values[i]!;
-  let secondSum = 0;
-  for (let i = half; i < n; i++) secondSum += values[i]!;
-  const isDrop = firstSum / half > secondSum / (n - half);
+  // Trend direction from the head vs tail medians: a drop starts high and ends
+  // low (head median > tail median); a rise starts low and ends high. The
+  // previous half-mean comparison (`first half mean > second half mean`) is
+  // fragile to a crash-victim shape whose series is a SHORT high head followed
+  // by a LONG low stretch with a PARTIAL recovery (SS RE3 `front-end::error`:
+  // head 7.87 → near-zero middle → tail 2.0). The low stretch drags the first
+  // half's mean below the second half's and flips a genuine drop into a "rise",
+  // anchoring the baseline to the near-zero dip (base 0.156) and re-scoring the
+  // drop as a spurious 52× rise. The 5-sample head/tail MEDIANS are robust to
+  // both a single head outlier and a near-zero middle stretch, and are the same
+  // statistics the crash gate above already relies on. For a clean drop/rise or
+  // a plateau drop the two detectors agree, so only the ambiguous crash-victim
+  // shape changes direction.
+  const isDrop = headMedian > tailMedian;
 
   if (strategy === 'q25') {
     const sorted = Array.from(values.slice(0, n)).sort((a, b) => a - b);
