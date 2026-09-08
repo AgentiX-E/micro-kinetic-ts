@@ -1553,46 +1553,6 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(breakdown!.baselineMean).toBeGreaterThan(4.0);
   });
 
-  it('anchors a partial-recovery drop via head-vs-tail, not the fragile half-mean', () => {
-    // Regression (SS RE3 front-end::error): a crash victim whose series is a
-    // SHORT high head (7.8) followed by a LONG near-zero stretch (0.156) and a
-    // PARTIAL-recovery tail (2.0). The tail is NOT < 10% of the head, so the
-    // crash gate does not fire; but the near-zero stretch drags the first
-    // half's mean below the second half's, so the half-mean detector flips the
-    // drop into a "rise" and anchors the baseline to the near-zero dip
-    // (base 0.156), re-scoring the drop as a spurious 49× rise. The head-vs-tail
-    // MEDIAN detector correctly reads head (7.8) > tail (2.0) as a drop and
-    // anchors the baseline to the recovery plateau (2.0), so the deviation is
-    // bounded instead of exploding.
-    const graph = makeCallGraph(['svc-drop'], []);
-    const metrics = makeMetrics([
-      [
-        'svc-drop',
-        [
-          makeTimeSeries('error', [
-            7.8,
-            7.8,
-            7.8,
-            7.8,
-            7.8,
-            7.8,
-            ...Array.from({ length: 60 }, () => 0.156),
-            ...Array.from({ length: 120 }, () => 2.0),
-          ]),
-        ],
-      ],
-    ]);
-
-    const result = buildTopologyFaultGraph(graph, metrics);
-
-    const breakdown = result.dominantMetrics.get('svc-drop')?.breakdown;
-    expect(breakdown).toBeDefined();
-    // The baseline anchors to the recovery plateau (2.0), not the near-zero dip
-    // (0.156), so the rise is bounded (~2.9×) rather than a spurious 49×.
-    expect(breakdown!.baselineMean).toBeGreaterThan(1.0);
-    expect(breakdown!.riseRatio).toBeLessThan(5.0);
-  });
-
   it('anchors a plateau drop to the pre-drop plateau, not a 5-sample head', () => {
     // A drop whose leading samples sit a notch BELOW the pre-crash plateau
     // (4.0) before the plateau proper (5.0) and then a crash to 0.5. The

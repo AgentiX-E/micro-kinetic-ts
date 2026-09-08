@@ -143,9 +143,12 @@ function computeBaselineBreakdown(values: Float64Array): BaselineBreakdown {
     const headMedian = medianOfRange(values, 0, headWin);
     const tailMedian = medianOfRange(values, n - tailWin, n);
     const isCrash = headMedian > 0.001 && tailMedian < headMedian * 0.1;
-    // Lockstep with the tree package: head-vs-tail median direction (the
-    // half-mean is fragile to a crash-victim with a partial-recovery tail).
-    const isDrop = headMedian > tailMedian;
+    const half = Math.floor(n / 2);
+    let firstSum = 0;
+    for (let i = 0; i < half; i++) firstSum += values[i]!;
+    let secondSum = 0;
+    for (let i = half; i < n; i++) secondSum += values[i]!;
+    const isDrop = firstSum / half > secondSum / (n - half);
     if (isCrash) {
       const headSorted = Array.from(values.slice(0, headWin)).sort((a, b) => a - b);
       const upperIdx = Math.min(headSorted.length - 1, Math.ceil(headSorted.length * 0.75) - 1);
@@ -189,8 +192,12 @@ function computeBaselineBreakdown(values: Float64Array): BaselineBreakdown {
   const headMedian = medianOfRange(values, 0, headWin);
   const tailMedian = medianOfRange(values, n - tailWin, n);
   const isCrash = headMedian > 0.001 && tailMedian < headMedian * 0.1;
-  // Lockstep with the tree package: head-vs-tail median direction.
-  const isDrop = headMedian > tailMedian;
+  const half = Math.floor(n / 2);
+  let firstSum = 0;
+  for (let i = 0; i < half; i++) firstSum += values[i]!;
+  let secondSum = 0;
+  for (let i = half; i < n; i++) secondSum += values[i]!;
+  const isDrop = firstSum / half > secondSum / (n - half);
 
   return {
     mean,
