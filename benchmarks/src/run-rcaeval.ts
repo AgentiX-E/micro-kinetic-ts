@@ -182,6 +182,13 @@ interface CliOptions {
    * permanent drop (ts-route-service RE3). Opt-in; default false.
    */
   suppressIdleTransients: boolean;
+  /**
+   * Suppress a metric whose baseline is essentially zero (≤ 0.001) from scoring
+   * its RISE: a near-zero-baseline cpu/diskio fluctuation reads as a spurious
+   * 32× "rise" and outranks a genuine crash drop (dev capped at ≈0.301). Opt-in;
+   * default false.
+   */
+  suppressNearZeroBaselineRise: boolean;
 }
 
 function parseArgs(): CliOptions {
@@ -207,6 +214,7 @@ function parseArgs(): CliOptions {
     // (trace/topo) can exploit the compressed anomaly gap.
     rankNormalization: true,
     suppressIdleTransients: false,
+    suppressNearZeroBaselineRise: false,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -239,6 +247,10 @@ function parseArgs(): CliOptions {
       opts.suppressIdleTransients = true;
     } else if (args[i] === '--no-suppress-idle-transients') {
       opts.suppressIdleTransients = false;
+    } else if (args[i] === '--suppress-near-zero-baseline-rise') {
+      opts.suppressNearZeroBaselineRise = true;
+    } else if (args[i] === '--no-suppress-near-zero-baseline-rise') {
+      opts.suppressNearZeroBaselineRise = false;
     }
   }
   return opts;
@@ -256,6 +268,7 @@ function createContainer(weights: {
   traceWeight: number;
   rankNormalization: boolean;
   suppressIdleTransients: boolean;
+  suppressNearZeroBaselineRise: boolean;
 }): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
@@ -266,6 +279,7 @@ function createContainer(weights: {
         collapseDiscount: weights.collapseDiscount,
         rankNormalization: weights.rankNormalization,
         suppressIdleTransients: weights.suppressIdleTransients,
+        suppressNearZeroBaselineRise: weights.suppressNearZeroBaselineRise,
       }),
   );
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
@@ -1123,7 +1137,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients} suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1193,6 +1207,7 @@ async function main(): Promise<void> {
     traceWeight: opts.traceWeight,
     rankNormalization: opts.rankNormalization,
     suppressIdleTransients: opts.suppressIdleTransients,
+    suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
   });
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(

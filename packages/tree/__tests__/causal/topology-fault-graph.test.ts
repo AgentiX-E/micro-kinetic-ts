@@ -2273,3 +2273,96 @@ describe('buildTopologyFaultGraph — rank normalization', () => {
     expect(rankSource).toBeGreaterThan(0.9);
   });
 });
+
+describe('buildTopologyFaultGraph — suppressNearZeroBaselineRise', () => {
+  it('skips a near-zero-baseline rise behind the flag, leaving the crash drop to score', () => {
+    // The SS RE3 rabbitmq-exporter::cpu signature: a metric whose baseline is
+    // ~0.0001 (near-zero but NOT exactly zero) rises to ~0.005 — a 49× "rise"
+    // (dev ≈ 1.70) that outranks a genuine crash drop whose dev is hard-capped
+    // at log10(2) ≈ 0.30. The baseline escapes both the change-point path's
+    // exact-zero reset (0.0001 > 0) and the idle guard (> 40% near-zero), so it
+    // is the near-zero-baseline leak this flag closes.
+    const graph = makeCallGraph(
+      ['svc-noise', 'svc-source'],
+      [{ from: 'svc-noise', to: 'svc-source' }],
+    );
+    const metrics = makeMetrics([
+      [
+        'svc-noise',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: 30 }, () => 0.0001),
+            ...Array.from({ length: 10 }, () => 0.005),
+          ]),
+        ],
+      ],
+      [
+        'svc-source',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: 8 }, () => 30),
+            ...Array.from({ length: 8 }, () => 0.3),
+          ]),
+        ],
+      ],
+    ]);
+
+    const off = buildTopologyFaultGraph(graph, metrics);
+    const on = buildTopologyFaultGraph(graph, metrics, { suppressNearZeroBaselineRise: true });
+
+    // Flag off: the near-zero-baseline rise is scored and outranks the crash.
+    expect(off.anomalyScores.get('svc-noise') ?? 0).toBeGreaterThan(0);
+    expect(off.anomalyScores.get('svc-noise') ?? 0).toBeGreaterThan(
+      off.anomalyScores.get('svc-source') ?? 0,
+    );
+    // Flag on: the near-zero-baseline rise is skipped (score 0); the crash drop
+    // survives as the sole remaining anomaly.
+    expect(on.anomalyScores.get('svc-noise') ?? 0).toBe(0);
+    expect(on.anomalyScores.get('svc-source') ?? 0).toBeGreaterThan(0);
+  });
+
+  it('keeps a crash drop (high baseline → near-zero tail) with the flag on', () => {
+    // A genuine crash: cpu 30 → 0.3. Its baseline is the high pre-crash level
+    // (30), far above the 0.001 floor, so the near-zero-baseline suppression
+    // must NOT touch it — the drop is a legitimate source signature, merely
+    // bounded at dev ≈ 0.30 by the drop/rise asymmetry.
+    const graph = makeCallGraph(['svc-crash'], []);
+    const metrics = makeMetrics([
+      [
+        'svc-crash',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: 8 }, () => 30),
+            ...Array.from({ length: 8 }, () => 0.3),
+          ]),
+        ],
+      ],
+    ]);
+
+    const on = buildTopologyFaultGraph(graph, metrics, { suppressNearZeroBaselineRise: true });
+
+    expect(on.anomalyScores.get('svc-crash') ?? 0).toBeGreaterThan(0);
+  });
+
+  it('keeps a zero→burst→zero event fault with the flag on', () => {
+    // The #199 RE3 OnlineBoutique error burst: 0 → spike → 0. Its exact-zero
+    // baseline is reset to the full mean (raised above 0.001 by the burst), so
+    // the near-zero-baseline suppression must NOT discard the fault itself.
+    const graph = makeCallGraph(['svc-event'], []);
+    const metrics = makeMetrics([
+      [
+        'svc-event',
+        [
+          makeTimeSeries(
+            'error',
+            [0, 0, 0, 0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0],
+          ),
+        ],
+      ],
+    ]);
+
+    const on = buildTopologyFaultGraph(graph, metrics, { suppressNearZeroBaselineRise: true });
+
+    expect(on.anomalyScores.get('svc-event') ?? 0).toBeGreaterThan(0);
+  });
+});

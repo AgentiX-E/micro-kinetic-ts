@@ -1,0 +1,125 @@
+name: Benchmark — Near-Zero-Baseline Rise Suppression
+
+# Readback workflow for the opt-in `suppressNearZeroBaselineRise` signal: run
+# RE1/RE2/RE3 with the flag ON and upload the results, so the flag's net effect
+# (RE3 gain vs RE1/RE2 regression) can be measured against the golden baseline
+# (flag OFF). Dispatched manually; the OFF baseline is already known, so only
+# the ON numbers need to be collected.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rcaeval-re1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Run RCAEval — RE1 with near-zero-baseline-rise suppression ON
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --suppress-near-zero-baseline-rise 2>&1 | tee rcaeval-re1-nzr.txt
+      - name: Upload RE1 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re1-nzr
+          path: rcaeval-re1-nzr.txt
+
+  rcaeval-re2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Run RCAEval — RE2 with near-zero-baseline-rise suppression ON
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --suppress-near-zero-baseline-rise 2>&1 | tee rcaeval-re2-nzr.txt
+      - name: Upload RE2 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re2-nzr
+          path: rcaeval-re2-nzr.txt
+
+  rcaeval-re3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Run RCAEval — RE3 with near-zero-baseline-rise suppression ON
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 --suppress-near-zero-baseline-rise 2>&1 | tee rcaeval-re3-nzr.txt
+      - name: Upload RE3 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re3-nzr
+          path: rcaeval-re3-nzr.txt

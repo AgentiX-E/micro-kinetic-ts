@@ -201,6 +201,30 @@ export interface TopologyFaultGraphConfig {
    * Default: `false` (bit-identical to the shipped transient-spike guard).
    */
   readonly suppressIdleTransients: boolean;
+  /**
+   * Suppress a metric whose baseline is essentially ZERO (≤ `0.001`) from
+   * scoring its RISE.
+   *
+   * A relative rise is `|max − baseline| / baseline`; when the baseline is
+   * near-zero the ratio explodes for a meaningless absolute excursion — a
+   * `rabbitmq-exporter::cpu` baseline of 0.0001 rising to 0.003 reads as a
+   * 32× "rise" (dev ≈ 1.5) and outranks a genuine crash drop, whose dev is
+   * hard-capped at `log10(2) ≈ 0.301` (the drop/rise asymmetry in
+   * `docs/re3-fault-ceiling.md`). The offending baseline is near-zero but NOT
+   * exactly zero, so it escapes both the change-point path's exact-zero reset
+   * and the idle guard's `> 40% near-zero` fraction (the leak sits at 30–39%).
+   *
+   * The `0.001` epsilon is the SAME absolute floor used by
+   * `computeRobustBaseline` (`> 0.001` meaningful baseline) and `isCrash`
+   * (`headMedian > 0.001`), so a genuinely idle metric is treated uniformly.
+   * A zero→burst→zero EVENT fault keeps its exact-zero baseline (reset to the
+   * full mean, which the burst raises well above 0.001) and is untouched.
+   *
+   * Default: `false` (bit-identical to shipped behaviour). Opt-in — the
+   * ablation must confirm a net RE3 gain with zero RE1/RE2 regression before
+   * the default is changed.
+   */
+  readonly suppressNearZeroBaselineRise: boolean;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -220,6 +244,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
   rankNormalization: false, // min-max rescale (shipped behaviour)
   suppressIdleTransients: false, // non-zero-baseline transient guard only (shipped)
+  suppressNearZeroBaselineRise: false, // near-zero-baseline rise suppression (opt-in)
 };
 
 /**
@@ -718,6 +743,17 @@ function computeAnomalyFeatures(
 
       baselineMean = computeRobustBaseline(ts.values, n, strategy, mean);
     }
+
+    // Near-zero-baseline rise suppression: a metric whose baseline is
+    // essentially zero has an undefined relative RISE — a 0.0001 → 0.003 cpu
+    // fluctuation reads as a 32× "rise" that outranks a genuine crash drop
+    // (dev hard-capped at log10(2) ≈ 0.301). Skip it so the metric-shape
+    // competition happens between real operating levels. The 0.001 epsilon is
+    // the SAME floor computeRobustBaseline and isCrash already use, so a
+    // genuinely idle metric is treated uniformly. A zero→burst→zero event
+    // fault resets its exact-zero baseline to the full mean (raised above
+    // 0.001 by the burst) and is therefore untouched.
+    if (cfg.suppressNearZeroBaselineRise && baselineMean <= 0.001) continue;
 
     // Deviation — log₁₀ compression for score differentiation.
     // Linear ratio (max/baseline − 1) saturates at 1.0 for any >2x spike,
