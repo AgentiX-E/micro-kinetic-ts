@@ -41,6 +41,35 @@ export type {
   RCAEvalSuite,
 } from './loaders/types.js';
 
+// ── SOTA Leaderboard ──────────────────────────────────────
+
+export {
+  SOTA_LEADERBOARD_VERSION,
+  VALIDATION_CODES,
+  createSotaLeaderboard,
+  entriesByCohort,
+  isOursMeasured,
+  isPublished,
+  marginTo,
+  requireComparable,
+  validateLeaderboard,
+} from './leaderboard/sota-leaderboard.js';
+
+export type {
+  Cohort,
+  EntryMargin,
+  LeaderboardEntry,
+  LeaderboardTable,
+  OursMeasuredProvenance,
+  Paradigm,
+  Provenance,
+  PublishedProvenance,
+  ValidationCode,
+  ValidationIssue,
+  ValidationReport,
+  ValidationSeverity,
+} from './leaderboard/sota-leaderboard.js';
+
 // ── Synthetic Data Generator ──────────────────────────────
 
 export { SyntheticBenchmarkGenerator } from './synthetic/data-generator.js';
