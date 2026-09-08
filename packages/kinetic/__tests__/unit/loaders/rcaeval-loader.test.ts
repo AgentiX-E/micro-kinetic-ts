@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   RCAEvalLoader,
+  classifyExceptionKind,
   classifyLogLevel,
   countTraceActivityByService,
   extractDeepestExceptionClass,
@@ -311,9 +312,66 @@ describe('isPropagatedExceptionMessage', () => {
     expect(isPropagatedExceptionMessage('NumberFormatException: For input string: "42a"')).toBe(
       false,
     );
-    expect(isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: abc-123')).toBe(
-      false,
+    expect(
+      isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: abc-123'),
+    ).toBe(false);
+  });
+});
+
+describe('classifyExceptionKind', () => {
+  it('classifies self-caused logic exceptions as "logic"', () => {
+    expect(classifyExceptionKind('java.lang.NullPointerException: null')).toBe('logic');
+    expect(classifyExceptionKind('IllegalArgumentException: invalid argument')).toBe('logic');
+    expect(classifyExceptionKind('ConcurrentModificationException at runtime')).toBe('logic');
+    expect(classifyExceptionKind("TypeError: cannot read property 'foo' of undefined")).toBe(
+      'logic',
     );
+  });
+
+  it('classifies empty-payload parse failures as "propagated" (beats the logic whitelist)', () => {
+    expect(classifyExceptionKind('IllegalArgumentException: Invalid UUID string: ')).toBe(
+      'propagated',
+    );
+    expect(classifyExceptionKind('NumberFormatException: For input string: ""')).toBe('propagated');
+    expect(classifyExceptionKind('Cannot parse empty string')).toBe('propagated');
+  });
+
+  it('classifies out-of-whitelist exception names as "unclassified" (the semantic gap)', () => {
+    // Connectivity / IO exceptions are correctly ignored by the whitelist but
+    // are NOT empty-payload parse failures, so they land in the gap bucket.
+    expect(classifyExceptionKind('java.net.SocketTimeoutException: Read timed out')).toBe(
+      'unclassified',
+    );
+    expect(classifyExceptionKind('RedisConnectionFailureException: connection refused')).toBe(
+      'unclassified',
+    );
+    // Token-validation failures are downstream wrapper symptoms.
+    expect(classifyExceptionKind('MalformedJwtException: invalid token')).toBe('unclassified');
+    // A genuinely-missed logic exception (not in the whitelist) also lands here
+    // — this is the LLM-recoverable headroom the bucket is meant to reveal.
+    expect(classifyExceptionKind('ProcessingException: unexpected')).toBe('unclassified');
+  });
+
+  it('classifies messages with no exception class as "none"', () => {
+    expect(classifyExceptionKind('connection refused')).toBe('none');
+    expect(classifyExceptionKind('request completed in 12ms')).toBe('none');
+    expect(classifyExceptionKind('INFO 200 GET /health')).toBe('none');
+  });
+
+  it('is consistent with isLogicExceptionMessage and isPropagatedExceptionMessage', () => {
+    const samples = [
+      'NullPointerException: null',
+      'Invalid UUID string: ',
+      'SocketTimeoutException: read timed out',
+      'just a plain line',
+      'MalformedJwtException: bad',
+      'JsonMappingException: cannot deserialize',
+    ];
+    for (const msg of samples) {
+      const kind = classifyExceptionKind(msg);
+      expect(kind === 'logic').toBe(isLogicExceptionMessage(msg));
+      expect(kind === 'propagated').toBe(isPropagatedExceptionMessage(msg));
+    }
   });
 });
 

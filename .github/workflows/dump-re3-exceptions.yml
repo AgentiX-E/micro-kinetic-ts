@@ -1,0 +1,57 @@
+name: Dump RE3 Exception Semantics
+
+# One-off diagnostic: sample the exception-semantics inventory of the RE3
+# code-level cases (logic / propagated / unclassified / none per service) so the
+# "does an LLM classifier have headroom over the deterministic logic whitelist"
+# question can be settled against the REAL exception names instead of an
+# extrapolated shape. Dispatched manually; uploads a text artifact for readback.
+
+on:
+  workflow_dispatch:
+    inputs:
+      system:
+        description: 'System code (ob | ss | tt | all)'
+        required: true
+        default: 'all'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Dump RE3 exception semantics
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/dump-re3-exceptions.ts \
+            --data-dir ~/RCAEval-json \
+            --system "${{ inputs.system }}" \
+            --suite re3 2>&1 | tee dump-re3-exceptions.txt
+      - name: Upload dump artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dump-re3-exceptions
+          path: dump-re3-exceptions.txt

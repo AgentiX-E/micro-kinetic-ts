@@ -440,6 +440,52 @@ export function isLogicExceptionMessage(message: string): boolean {
   return !isPropagatedExceptionMessage(message) && LOGIC_EXCEPTION_PATTERN.test(message);
 }
 
+/**
+ * The exception-semantics taxonomy of a raw log message, as seen by the log
+ * signal's causal discriminator.
+ *
+ * - `logic` — a self-caused programming error (matches {@link LOGIC_EXCEPTION_PATTERN}
+ *   and is not an empty-payload parse failure). The SOURCE signature.
+ * - `propagated` — an empty-payload parse failure (matches
+ *   {@link PROPAGATED_EXCEPTION_PATTERN}): a wrong-value SYMPTOM wrapper.
+ * - `unclassified` — the message names an exception/error class that matches
+ *   NEITHER the logic whitelist NOR the propagated pattern. This is the
+ *   semantic GAP the whitelist deliberately leaves open: connectivity /
+ *   token-validation exceptions (correctly ignored by the count/novelty
+ *   signals) and any GENUINELY-MISSED logic exception (a potential
+ *   LLM-recoverable source signal) both land here. Inspecting the raw class
+ *   names in this bucket is what settles whether an LLM classifier has
+ *   headroom over the deterministic whitelist.
+ * - `none` — no exception/error class name in the message.
+ */
+export type ExceptionKind = 'logic' | 'propagated' | 'unclassified' | 'none';
+
+/**
+ * Classify a raw log message into the four-way exception-semantics taxonomy.
+ *
+ * This is the reusable, testable discriminator behind the diagnostic dump that
+ * measures whether a semantic (LLM) classifier could recover failing code-level
+ * faults the deterministic whitelist currently misses. It is a pure projection
+ * of {@link isPropagatedExceptionMessage}, {@link LOGIC_EXCEPTION_PATTERN}, and
+ * the exception-class detector, so its verdict is consistent with the existing
+ * `isLogicException` flag carried on {@link BenchmarkLogEntry}.
+ *
+ * Precedence: `propagated` (empty-payload parse failure) beats `logic`, because
+ * a wrapper's `NumberFormatException: For input string: ""` names a logic class
+ * but is a silent-source SYMPTOM, not the source. Then a whitelist hit is
+ * `logic`; then any other exception/error class is `unclassified`; otherwise
+ * `none`.
+ *
+ * @param message - The raw log message text.
+ * @returns The exception kind of the message.
+ */
+export function classifyExceptionKind(message: string): ExceptionKind {
+  if (isPropagatedExceptionMessage(message)) return 'propagated';
+  if (LOGIC_EXCEPTION_PATTERN.test(message)) return 'logic';
+  if (EXCEPTION_CLASS_RE.test(message)) return 'unclassified';
+  return 'none';
+}
+
 export class RCAEvalLoader {
   /**
    * Raw header of the last logs.csv parsed (comma-joined column names).
