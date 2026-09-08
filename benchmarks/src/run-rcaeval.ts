@@ -18,7 +18,7 @@
  * @module benchmarks/run-rcaeval
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,8 +30,12 @@ import {
   DI_TOKENS,
   RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
+import type { FusionCasePrediction } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
   BenchmarkRunner,
+  computeFusionCeiling,
+  computeFusionCeilingByCell,
+  computePrismRanking,
   countTraceActivityByService,
   extractExceptionNames,
   RCAEvalLoader,
@@ -189,6 +193,12 @@ interface CliOptions {
    * default false.
    */
   suppressNearZeroBaselineRise: boolean;
+  /**
+   * When set, compute the PRISM graph-free baseline on the SAME loaded cases
+   * and emit the fusion-ceiling analysis (engine vs PRISM union of correct
+   * cases) as JSON to this path, in addition to the normal benchmark table.
+   */
+  fusionCeiling: string;
 }
 
 function parseArgs(): CliOptions {
@@ -215,6 +225,7 @@ function parseArgs(): CliOptions {
     rankNormalization: true,
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
+    fusionCeiling: '',
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -251,6 +262,8 @@ function parseArgs(): CliOptions {
       opts.suppressNearZeroBaselineRise = true;
     } else if (args[i] === '--no-suppress-near-zero-baseline-rise') {
       opts.suppressNearZeroBaselineRise = false;
+    } else if (args[i] === '--fusion-ceiling' && i + 1 < args.length) {
+      opts.fusionCeiling = args[++i]!;
     }
   }
   return opts;
@@ -1235,6 +1248,12 @@ async function main(): Promise<void> {
   );
   console.log('═'.repeat(65));
 
+  // ── Fusion-ceiling accumulation (engine vs PRISM) ──
+  // One record per case, populated across the group loop; consumed by the
+  // report emitted after the loop. Always declared so the emit step below can
+  // reference it unconditionally.
+  const fusionRecords: FusionCasePrediction[] = [];
+
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
@@ -1268,6 +1287,20 @@ async function main(): Promise<void> {
     reportLogDiagnostics(systemName, suiteName, stats);
     reportDeepestExceptionDiagnostics(systemName, suiteName, stats);
 
+    // ── PRISM graph-free baseline (for the fusion ceiling) ──
+    // PRISM runs on the SAME loaded BenchmarkCase metrics (timestamps in ms,
+    // injectTime in ms), so no extra loading pass is needed. This is the
+    // graph-free internal/external asymmetry scorer from arXiv:2601.21359.
+    const prismTop1ByCaseId = new Map<string, string | undefined>();
+    if (opts.fusionCeiling) {
+      for (const c of stats.cases) {
+        prismTop1ByCaseId.set(
+          c.id,
+          computePrismRanking(c.metrics, c.injectTime, { pooling: 'additive' })[0]?.serviceId,
+        );
+      }
+    }
+
     // Split by fault type (matching paper's Table 6 format)
     const byFaultType = new Map<string, BenchmarkCase[]>();
     for (const c of stats.cases) {
@@ -1297,6 +1330,28 @@ async function main(): Promise<void> {
       results.set(ft, await runner.runSuite(suite));
     }
 
+    // ── Fusion-ceiling records for this group ──
+    // Join the engine's per-case top-1 (from the runner) with PRISM's, keyed
+    // by the shared case id, and record one entry per case.
+    if (opts.fusionCeiling) {
+      const engineTop1ByCaseId = new Map<string, string | undefined>();
+      for (const r of results.values()) {
+        for (const p of r.casePredictions) {
+          engineTop1ByCaseId.set(p.caseId, p.top1);
+        }
+      }
+      const cell = `${suiteName}:${systemName}`;
+      for (const c of stats.cases) {
+        fusionRecords.push({
+          caseId: c.id,
+          cell,
+          truth: c.groundTruth.serviceId,
+          engineTop1: engineTop1ByCaseId.get(c.id),
+          prismTop1: prismTop1ByCaseId.get(c.id),
+        });
+      }
+    }
+
     printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
     printFailureDiagnostics(systemName, suiteName, results);
 
@@ -1309,6 +1364,59 @@ async function main(): Promise<void> {
     results.clear();
     if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  // ── Fusion-ceiling report ──
+  if (opts.fusionCeiling) {
+    const ceiling = computeFusionCeiling(fusionRecords);
+    const byCell = computeFusionCeilingByCell(fusionRecords);
+    const report = {
+      aggregate: ceiling,
+      perCell: Object.fromEntries(
+        [...byCell.entries()].map(([cell, c]) => [
+          cell,
+          {
+            total: c.total,
+            engineCorrect: c.engineCorrect,
+            prismCorrect: c.prismCorrect,
+            bothCorrect: c.bothCorrect,
+            engineOnly: c.engineOnly,
+            prismOnly: c.prismOnly,
+            bothWrong: c.bothWrong,
+            union: c.union,
+            unionRate: c.unionRate,
+          },
+        ]),
+      ),
+      cases: fusionRecords.map((r) => ({
+        caseId: r.caseId,
+        cell: r.cell,
+        truth: r.truth,
+        engineTop1: r.engineTop1 ?? null,
+        prismTop1: r.prismTop1 ?? null,
+        engineCorrect: r.engineTop1 !== undefined && r.engineTop1 === r.truth,
+        prismCorrect: r.prismTop1 !== undefined && r.prismTop1 === r.truth,
+      })),
+    };
+    writeFileSync(opts.fusionCeiling, JSON.stringify(report, null, 2));
+    console.log('\n════════════════════════════════════════════════════════════');
+    console.log('Fusion ceiling — engine vs PRISM (union of correct cases)');
+    console.log('════════════════════════════════════════════════════════════');
+    console.log(
+      `  total=${ceiling.total} engine=${ceiling.engineCorrect} prism=${ceiling.prismCorrect}`,
+    );
+    console.log(
+      `  bothCorrect=${ceiling.bothCorrect} engineOnly=${ceiling.engineOnly} ` +
+        `prismOnly=${ceiling.prismOnly} bothWrong=${ceiling.bothWrong}`,
+    );
+    console.log(`  UNION=${ceiling.union} (${(ceiling.unionRate * 100).toFixed(1)}%)`);
+    for (const [cell, c] of byCell) {
+      console.log(
+        `    ${cell.padEnd(22)} union=${c.union}/${c.total} (${(c.unionRate * 100).toFixed(1)}%)` +
+          `  engine=${c.engineCorrect} prism=${c.prismCorrect}`,
+      );
+    }
+    console.log('════════════════════════════════════════════════════════════');
   }
 
   console.log(`\nTotal duration: ${Date.now() - startTime}ms`);

@@ -565,6 +565,20 @@ describe('BenchmarkRunner', () => {
     it('should have failures array (possibly empty)', () => {
       expect(Array.isArray(result.failures)).toBe(true);
     });
+
+    it('exposes per-case top-1 predictions aligned with the cases', () => {
+      expect(result.casePredictions).toHaveLength(6);
+      for (const p of result.casePredictions) {
+        expect(p.caseId).toBeTruthy();
+        expect(p.truth).toBeTruthy();
+        expect(typeof p.correct).toBe('boolean');
+        // `correct` is exactly "top-1 equals ground truth".
+        expect(p.correct).toBe(p.top1 === p.truth);
+      }
+      // The number of correct predictions must reconcile with avgTop1.
+      const correctCount = result.casePredictions.filter((p) => p.correct).length;
+      expect(correctCount / result.casePredictions.length).toBeCloseTo(result.avgTop1, 10);
+    });
   });
 
   describe('runAll', () => {

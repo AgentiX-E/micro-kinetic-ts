@@ -79,6 +79,10 @@ export {
 
 export type { MetricChannel, PrismPooling, PrismServiceScore } from './leaderboard/prism.js';
 
+export { computeFusionCeiling, computeFusionCeilingByCell } from './leaderboard/fusion-ceiling.js';
+
+export type { FusionCasePrediction, FusionCeiling } from './leaderboard/fusion-ceiling.js';
+
 // ── Synthetic Data Generator ──────────────────────────────
 
 export { SyntheticBenchmarkGenerator } from './synthetic/data-generator.js';
@@ -106,6 +110,7 @@ export {
 export { BenchmarkRunner } from './runners/benchmark-runner.js';
 
 export type {
+  CasePrediction,
   CompleteBenchmarkReport,
   FailedCase,
   FaultTypeMetric,

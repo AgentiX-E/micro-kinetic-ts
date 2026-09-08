@@ -172,6 +172,18 @@ export interface FailedCase {
   };
 }
 
+/** A single case's top-1 prediction, for downstream fusion analysis. */
+export interface CasePrediction {
+  /** Case identifier. */
+  readonly caseId: string;
+  /** Ground-truth service id. */
+  readonly truth: string;
+  /** The engine's top-1 prediction, or `undefined` when analysis threw. */
+  readonly top1: string | undefined;
+  /** Whether `top1` matches `truth`. */
+  readonly correct: boolean;
+}
+
 /** Result of running a single benchmark suite. */
 export interface RunResult {
   /** Suite name. */
@@ -192,6 +204,8 @@ export interface RunResult {
   readonly perFaultType: Map<string, FaultTypeMetric>;
   /** Cases that failed. */
   readonly failures: readonly FailedCase[];
+  /** Per-case top-1 predictions, aligned with case order. */
+  readonly casePredictions: readonly CasePrediction[];
   /** Total execution time in milliseconds. */
   readonly duration: number;
 }
@@ -330,6 +344,11 @@ export class BenchmarkRunner {
     // Full ranked service-ID list per case (for correct Avg@K computation).
     // Aligned with `predictions` and `truthServiceIds` by push order.
     const caseRankedPredictions: string[][] = [];
+    // Per-case top-1 record (caseId / truth / top1), aligned with the cases,
+    // for downstream fusion-ceiling analysis. Populated once per case — in the
+    // success path and in the catch path — so the length always equals
+    // `suite.cases.length`.
+    const casePredictionRecords: CasePrediction[] = [];
 
     // Per-fault-type tracking
     const faultTypeTracker = new Map<string, { cases: number; correct: number }>();
@@ -366,6 +385,16 @@ export class BenchmarkRunner {
 
         // Capture the full ranked service-ID list for correct Avg@K.
         caseRankedPredictions.push(results.slice(0, topK).map((r) => r.serviceId));
+
+        // Per-case top-1 record for fusion analysis (success path).
+        const caseTruth = benchCase.groundTruth.serviceId;
+        const predTop1 = results[0]?.serviceId;
+        casePredictionRecords.push({
+          caseId: benchCase.id,
+          truth: caseTruth,
+          top1: predTop1,
+          correct: predTop1 !== undefined && predTop1 === caseTruth,
+        });
 
         // ── Diagnostic snapshot for failing cases ──────────────────
         gtAnomaly = faultGraph.anomalyScores.get(benchCase.groundTruth.serviceId) ?? 0;
@@ -566,6 +595,14 @@ export class BenchmarkRunner {
       } catch (err) {
         // Keep index alignment with truthServiceIds for this failed case.
         caseRankedPredictions.push([]);
+        // Per-case top-1 record for fusion analysis (error path): analysis
+        // threw before producing a ranking, so the prediction is undefined.
+        casePredictionRecords.push({
+          caseId: benchCase.id,
+          truth: benchCase.groundTruth.serviceId,
+          top1: undefined,
+          correct: false,
+        });
         failures.push({
           caseId: benchCase.id,
           expectedService: benchCase.groundTruth.serviceId,
@@ -659,6 +696,7 @@ export class BenchmarkRunner {
       typeAccuracy,
       perFaultType,
       failures,
+      casePredictions: casePredictionRecords,
       duration,
     };
   }

@@ -1,0 +1,136 @@
+name: Benchmark — Fusion Ceiling (engine vs PRISM)
+
+# Readback workflow for the fusion-ceiling analysis: run the deterministic
+# engine (golden config) and, on the SAME loaded cases, the PRISM graph-free
+# baseline (arXiv:2601.21359), emitting the union of the two engines' correct
+# sets (the perfect-oracle ceiling) plus per-cell and per-case breakdowns.
+#
+# The engine CLI computes PRISM inline on the identical BenchmarkCase objects it
+# analyzes, so the two engines are compared on exactly the same case set (no
+# cross-artifact join, no case-id normalization). Each suite is a separate
+# parallel job (matching the golden-baseline case counts), and the three JSON
+# payloads are merged locally after readback.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rcaeval-re1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Run fusion ceiling — RE1
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --fusion-ceiling fusion-ceiling-re1.json 2>&1 | tee rcaeval-re1-results.txt
+      - name: Upload RE1 fusion-ceiling results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusion-ceiling-re1
+          path: |
+            fusion-ceiling-re1.json
+            rcaeval-re1-results.txt
+
+  rcaeval-re2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Run fusion ceiling — RE2
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --fusion-ceiling fusion-ceiling-re2.json 2>&1 | tee rcaeval-re2-results.txt
+      - name: Upload RE2 fusion-ceiling results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusion-ceiling-re2
+          path: |
+            fusion-ceiling-re2.json
+            rcaeval-re2-results.txt
+
+  rcaeval-re3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Run fusion ceiling — RE3
+        env:
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 --fusion-ceiling fusion-ceiling-re3.json 2>&1 | tee rcaeval-re3-results.txt
+      - name: Upload RE3 fusion-ceiling results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusion-ceiling-re3
+          path: |
+            fusion-ceiling-re3.json
+            rcaeval-re3-results.txt
