@@ -70,6 +70,15 @@ export type {
   ValidationSeverity,
 } from './leaderboard/sota-leaderboard.js';
 
+export {
+  classifyMetricChannel,
+  computePrismRanking,
+  deviationZScore,
+  prismTop1,
+} from './leaderboard/prism.js';
+
+export type { MetricChannel, PrismPooling, PrismServiceScore } from './leaderboard/prism.js';
+
 // ── Synthetic Data Generator ──────────────────────────────
 
 export { SyntheticBenchmarkGenerator } from './synthetic/data-generator.js';

@@ -1,0 +1,57 @@
+name: Benchmark — PRISM head-to-head
+
+# Readback workflow for the PRISM reimplementation (arXiv:2601.21359). Runs
+# the graph-free internal/external-asymmetry scorer on the SAME 735 RCAEval
+# cases the production engine evaluates, under both the paper's default
+# additive combination and the conjunctive alternative, and uploads the 9-cell
+# (RE1/RE2/RE3 x OB/SS/TT) AC@1 table for direct comparison. Dispatched
+# manually; PRISM is pure-metric and needs no embedding/LLM secrets.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Run PRISM — additive pooling (paper default)
+        env:
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/run-prism.ts --pooling additive 2>&1 | tee prism-additive.txt
+      - name: Run PRISM — conjunctive pooling
+        env:
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/run-prism.ts --pooling conjunctive 2>&1 | tee prism-conjunctive.txt
+      - name: Upload PRISM results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prism-results
+          path: |
+            prism-additive.txt
+            prism-conjunctive.txt
