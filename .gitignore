@@ -6,6 +6,7 @@ tsup.config.bundled_*.mjs
 *.tsbuildinfo
 .cache/
 benchmark-results/
+artifacts/
 *.log
 # pnpm-lock.yaml — committed for CI reproducibility
 .nx/
