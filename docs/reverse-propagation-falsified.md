@@ -72,13 +72,18 @@ topology:
 
 - The GT source (`carts::cpu`/`orders::cpu` f4) is `isCrash=true` — a genuine
   drop-to-near-zero, `dev` hard-capped at `log10(2) ≈ 0.301`.
-- The outranking victims are near-zero-baseline RISE artifacts
-  (`head ≈ 0.0001–0.067 → tail`, `rise` 4–52×) with `dev` up to 1.76.
+- The ranking winner (production readback `34227145755`) is
+  `front-end::error` (`base ≈ 0.17`, `dev ≈ 1.6–1.76`, an upstream-caller
+  error DROP) plus `*-db::diskio` (million-scale baseline RISE). The
+  near-zero-baseline rise (`rabbitmq-exporter::cpu`, `head ≈ 0.0001`) wins the
+  RAW deviation race but is demoted below top-1 by rank normalization +
+  trace/topo fusion — it never appears first (see
+  `docs/near-zero-rise-suppression-falsified.md`).
 
-This is the drop/rise asymmetry of `docs/re3-fault-ceiling.md`, now localised to
-its exact leak: the near-zero-baseline rise is only PARTIALLY guarded (the
-`>40% near-zero` idle guard at `topology-fault-graph.ts:645` leaks at 30–38%,
-and the near-zero-HEAD permanent-rise shape is unguarded).
+The raw-deviation vs. ranking distinction matters: the drop/rise asymmetry of
+`docs/re3-fault-ceiling.md` leaks in the RAW view (near-zero rise `dev ≈ 1.5`
+vs. capped crash drop `0.301`), but the PRODUCTION top1 that actually outranks
+GT is `front-end::error` at `base ≈ 0.17` — not a near-zero baseline.
 
 ## Conclusion
 
