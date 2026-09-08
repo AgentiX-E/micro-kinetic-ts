@@ -321,7 +321,7 @@ async function main(): Promise<void> {
   // Coordinate descent on the TRAIN split only.
   const oracle = makeOracle(trainCases);
   // Step length in unit space must match the ranking-vector dimension; derive
-  // it from `initial` so adding a weight (5 → 6) cannot desynchronise them.
+  // it from `initial` so adding a weight cannot desynchronise them.
   const step = new Float64Array(initial.length).fill(0.25); // weight step 0.75 in [0,3] space
   const result = await coordinateDescent(oracle, {
     initial,
@@ -340,7 +340,7 @@ async function main(): Promise<void> {
   console.log(`iterations: ${result.rounds} sweeps, ${result.evaluations} oracle evaluations`);
   console.log(`best train: ${formatPct(result.bestScore)}`);
   console.log(
-    `tuned weights: source=${bestWeights.sourceWeight.toFixed(2)} temporal=${bestWeights.temporalWeight.toFixed(2)} collision=${bestWeights.collisionWeight.toFixed(2)} topo=${bestWeights.topoWeight.toFixed(2)} log=${bestWeights.logWeight.toFixed(2)}`,
+    `tuned weights: source=${bestWeights.sourceWeight.toFixed(2)} temporal=${bestWeights.temporalWeight.toFixed(2)} collision=${bestWeights.collisionWeight.toFixed(2)} topo=${bestWeights.topoWeight.toFixed(2)} log=${bestWeights.logWeight.toFixed(2)} trace=${(bestWeights.traceWeight ?? 0).toFixed(2)} prism=${(bestWeights.prismWeight ?? 0).toFixed(2)}`,
   );
 
   console.log('\n=== Generalization (held-out) ===');

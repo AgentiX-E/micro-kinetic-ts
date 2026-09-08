@@ -72,6 +72,7 @@ export type {
 
 export {
   classifyMetricChannel,
+  combinePrismScore,
   computePrismRanking,
   deviationZScore,
   prismTop1,

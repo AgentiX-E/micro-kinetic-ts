@@ -167,6 +167,15 @@ interface CliOptions {
    */
   traceWeight: number;
   /**
+   * Strength of the PRISM graph-free internal/external asymmetry signal in the
+   * ranking. Default 0 (disabled). When > 0, the engine computes PRISM's
+   * root-cause score M(C) per service (max-pooled internal/external deviation
+   * z-scores, combined additively) and max-normalises it to [0, 1], rewarding
+   * the node anomalous in BOTH channels. Genuinely complementary to the
+   * topology-aware priors (fusion ceiling union 87.5%).
+   */
+  prismWeight: number;
+  /**
    * Direction-aware deviation: discount the DROP component of a metric's
    * deviation by this factor (0 = symmetric, 1 = ignore drops entirely). A
    * traffic-loss collapse (symptom) is discounted so it cannot out-rank an
@@ -216,6 +225,7 @@ function parseArgs(): CliOptions {
     logSignalMode: 'count',
     collapseDiscount: 0,
     traceWeight: 0,
+    prismWeight: 0,
     // Rank/quantile normalization of per-service anomaly scores is the default:
     // it is robust to a single near-zero-baseline symptom spike that would
     // otherwise set the min-max range max and crush the genuine source toward
@@ -244,6 +254,8 @@ function parseArgs(): CliOptions {
       opts.logWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--trace-weight' && i + 1 < args.length)
       opts.traceWeight = parseFloat(args[++i]!) || 0;
+    else if (args[i] === '--prism-weight' && i + 1 < args.length)
+      opts.prismWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--log-signal-mode' && i + 1 < args.length) {
       const mode = args[++i]!;
       opts.logSignalMode = mode === 'novelty' ? 'novelty' : 'count';
@@ -279,6 +291,7 @@ function createContainer(weights: {
   logSignalMode: 'count' | 'novelty';
   collapseDiscount: number;
   traceWeight: number;
+  prismWeight: number;
   rankNormalization: boolean;
   suppressIdleTransients: boolean;
   suppressNearZeroBaselineRise: boolean;
@@ -1150,7 +1163,7 @@ async function main(): Promise<void> {
     : 'ON (RCAEval baseline protocol)';
   console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients} suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`,
+    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients} suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1218,6 +1231,7 @@ async function main(): Promise<void> {
     logSignalMode: opts.logSignalMode,
     collapseDiscount: opts.collapseDiscount,
     traceWeight: opts.traceWeight,
+    prismWeight: opts.prismWeight,
     rankNormalization: opts.rankNormalization,
     suppressIdleTransients: opts.suppressIdleTransients,
     suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,

@@ -217,6 +217,18 @@ export interface FaultPropagationGraph {
    * (neutral). Feeds the (opt-in) traceWeight ranking signal.
    */
   readonly traceActivityScores?: ReadonlyMap<ServiceId, number>;
+  /**
+   * Per-service PRISM graph-free score (0-1) — PRISM's M-score (additive
+   * combination of the max-pooled internal S^I and external S^E deviation
+   * z-scores), max-normalised so the top service scores 1. PRISM
+   * (arXiv:2601.21359) encodes the internal/external asymmetry: a root cause
+   * is anomalous in BOTH channels, a downstream symptom external-only. It is
+   * topology-free and uses a DIFFERENT anomaly scorer than the engine's own
+   * deviation/trend/cv/burst pipeline, so it contributes a genuinely
+   * complementary signal. Optional: absent when the injection time is unknown
+   * or no service is anomalous. Feeds the (opt-in) prismWeight signal.
+   */
+  readonly prismScores?: ReadonlyMap<ServiceId, number>;
 }
 
 /** A pruned edge record — documents why an edge was removed. */

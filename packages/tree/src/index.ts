@@ -63,6 +63,8 @@ export {
 } from './pruning/ranking-signals.js';
 export type { LogSignalMode, TraceActivityOptions } from './pruning/ranking-signals.js';
 
+export { computePrismScores } from './pruning/prism-signal.js';
+
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';
 export type { TreeRCAOptions } from './rca/tree-rca.js';

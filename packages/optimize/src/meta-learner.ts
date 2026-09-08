@@ -49,6 +49,7 @@ export interface HistoricalConfig {
   readonly topoWeight: number;
   readonly logWeight: number;
   readonly traceWeight: number;
+  readonly prismWeight: number;
 }
 
 export interface MetaLearnerOptions {
@@ -166,6 +167,7 @@ export class MetaLearner {
     let topoWeight = 0;
     let logWeight = 0;
     let traceWeight = 0;
+    let prismWeight = 0;
 
     for (let i = 0; i < k; i++) {
       const cfg = records[neighbors[i]!]!.config;
@@ -180,6 +182,7 @@ export class MetaLearner {
       topoWeight += weights[i]! * cfg.topoWeight;
       logWeight += weights[i]! * cfg.logWeight;
       traceWeight += weights[i]! * cfg.traceWeight;
+      prismWeight += weights[i]! * cfg.prismWeight;
     }
 
     // ── Discrete params: weighted voting ──
@@ -218,6 +221,7 @@ export class MetaLearner {
         topoWeight,
         logWeight,
         traceWeight,
+        prismWeight,
       },
       discrete: {
         baselineStrategy: bestBaseline as RCAConfiguration['discrete']['baselineStrategy'],

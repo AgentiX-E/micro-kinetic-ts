@@ -41,7 +41,7 @@ describe('configToPrunerOptions', () => {
     expect(opts.criticalLoadThreshold).toBe(0.7);
   });
 
-  it('should default missing riseWeight and traceWeight to 0', () => {
+  it('should default missing riseWeight, traceWeight and prismWeight to 0', () => {
     const cfg: RCAConfiguration = {
       ...DEFAULT_CONFIG,
       ranking: {
@@ -55,6 +55,7 @@ describe('configToPrunerOptions', () => {
     const opts = configToPrunerOptions(cfg);
     expect(opts.riseWeight).toBe(0);
     expect(opts.traceWeight).toBe(0);
+    expect(opts.prismWeight).toBe(0);
   });
 });
 

@@ -38,6 +38,7 @@ function makeCfg(overrides?: Partial<HistoricalConfig>): HistoricalConfig {
     topoWeight: 0,
     logWeight: 1.0,
     traceWeight: 0,
+    prismWeight: 0,
     ...overrides,
   };
 }

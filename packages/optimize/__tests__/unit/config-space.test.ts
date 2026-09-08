@@ -9,19 +9,20 @@ const RANKING_ZERO = {
   topoWeight: 0,
   logWeight: 0,
   traceWeight: 0,
+  prismWeight: 0,
 };
 
 describe('DEFAULT_CONFIG_SPACE', () => {
   it('correct dimension', () => {
-    expect(DEFAULT_CONFIG_SPACE.dimension).toBe(22);
+    expect(DEFAULT_CONFIG_SPACE.dimension).toBe(23);
   });
 
   it('5 continuous params', () => {
     expect(DEFAULT_CONFIG_SPACE.continuous).toHaveLength(5);
   });
 
-  it('6 ranking params', () => {
-    expect(DEFAULT_CONFIG_SPACE.ranking).toHaveLength(6);
+  it('7 ranking params', () => {
+    expect(DEFAULT_CONFIG_SPACE.ranking).toHaveLength(7);
   });
 
   it('5 discrete params', () => {
@@ -72,7 +73,7 @@ describe('DEFAULT_CONFIG_SPACE', () => {
   });
 
   it('Thompson sampling around center', () => {
-    const samples = DEFAULT_CONFIG_SPACE.sampleThompson(new Float64Array(22).fill(0.5), new Float64Array(22).fill(0.01), 10, () => 0.5);
+    const samples = DEFAULT_CONFIG_SPACE.sampleThompson(new Float64Array(23).fill(0.5), new Float64Array(23).fill(0.01), 10, () => 0.5);
     expect(samples).toHaveLength(10);
     for (const s of samples) {
       expect(s[0]).toBeGreaterThanOrEqual(0);
@@ -82,8 +83,8 @@ describe('DEFAULT_CONFIG_SPACE', () => {
 
   it('Thompson sampling guards against rng returning 0 (Box-Muller log(0))', () => {
     const samples = DEFAULT_CONFIG_SPACE.sampleThompson(
-      new Float64Array(22).fill(0.5),
-      new Float64Array(22).fill(0.01),
+      new Float64Array(23).fill(0.5),
+      new Float64Array(23).fill(0.01),
       2,
       () => 0,
     );
@@ -97,7 +98,7 @@ describe('DEFAULT_CONFIG_SPACE', () => {
     }
   });
 
-  it('rankingToVector defaults a missing traceWeight to 0', () => {
+  it('rankingToVector defaults a missing traceWeight and prismWeight to 0', () => {
     const without = rankingToVector({
       sourceWeight: 0,
       temporalWeight: 0,
@@ -112,9 +113,11 @@ describe('DEFAULT_CONFIG_SPACE', () => {
       topoWeight: 0,
       logWeight: 0,
       traceWeight: 0,
+      prismWeight: 0,
     });
     expect(without).toEqual(withZero);
     expect(without[5]).toBe(0);
+    expect(without[6]).toBe(0);
   });
 
   it('decayAlpha unit mapping', () => {
@@ -142,6 +145,14 @@ describe('DEFAULT_CONFIG_SPACE', () => {
   it('traceWeight linear mapping [0, 3]', () => {
     const p = DEFAULT_CONFIG_SPACE.ranking[5]!; // traceWeight
     expect(p.name).toBe('traceWeight');
+    expect(p.fromUnit(0)).toBeCloseTo(0);
+    expect(p.fromUnit(1)).toBeCloseTo(3);
+    expect(p.toUnit(1.5)).toBeCloseTo(0.5);
+  });
+
+  it('prismWeight linear mapping [0, 3]', () => {
+    const p = DEFAULT_CONFIG_SPACE.ranking[6]!; // prismWeight
+    expect(p.name).toBe('prismWeight');
     expect(p.fromUnit(0)).toBeCloseTo(0);
     expect(p.fromUnit(1)).toBeCloseTo(3);
     expect(p.toUnit(1.5)).toBeCloseTo(0.5);

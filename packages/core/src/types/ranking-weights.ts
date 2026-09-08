@@ -24,6 +24,7 @@
  *                 + logWeight       × logScore(v)
  *                 + riseWeight      × 2 × (riseScore(v) − 0.5)
  *                 + traceWeight     × traceActivity(v)
+ *                 + prismWeight     × prismScore(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -71,4 +72,14 @@ export interface RankingWeights {
    * exception, only a workload rise). OPTIONAL: absent means 0 (disabled).
    */
   readonly traceWeight?: number;
+  /**
+   * PRISM graph-free prior: rewards a service that is anomalous in BOTH its
+   * internal (cpu/memory/disk/socket) AND external (latency/error/throughput)
+   * properties, the internal/external asymmetry of PRISM (arXiv:2601.21359).
+   * A root cause is anomalous in both channels; a downstream symptom is
+   * external-only. `prismScore(v)` is PRISM's M-score (additive combination),
+   * max-normalised to [0, 1] — see `computePrismScores`. OPTIONAL: absent
+   * means 0 (disabled).
+   */
+  readonly prismWeight?: number;
 }

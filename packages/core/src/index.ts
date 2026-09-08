@@ -101,6 +101,10 @@ export {
 export { StatisticalAnalyzer } from './utils/classifiers/statistical-analyzer.js';
 export type { StatisticalAnalyzerConfig } from './utils/classifiers/statistical-analyzer.js';
 
+// ── Anomaly Primitives (PRISM graph-free scoring) ─────────
+export { classifyMetricChannel, combinePrismScore, deviationZScore } from './anomaly/prism.js';
+export type { MetricChannel, PrismPooling } from './anomaly/prism.js';
+
 // ── Constants ────────────────────────────────────────────
 export { DEFAULT_STOSS_PARAMS } from './types/alerts.js';
 export { DEFAULT_BBGKY_OPTIONS } from './types/coupling.js';

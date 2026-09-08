@@ -24,111 +24,33 @@
  *      (conjunctive alternative: M(C) = min(S^I, S^E)).
  *   5. Rank components by M descending; the top component is the root cause.
  *
+ * The scoring primitives (channel classification, deviation z-score, and the
+ * M-score combination) are the shared source of truth in
+ * `@agentix-e/micro-kinetic-core` (`anomaly/prism`), so the standalone
+ * evaluator here and the ranking-fusion signal in the tree engine never
+ * drift apart. This module only adds the per-component pooling and ranking
+ * on top of those primitives.
+ *
  * This module is an independent baseline evaluator. It does NOT touch the
  * production ranking pipeline (TreePruner).
  *
  * @module benchmarks/leaderboard/prism
  */
 
+import {
+  classifyMetricChannel,
+  combinePrismScore,
+  deviationZScore,
+  type MetricChannel,
+  type PrismPooling,
+} from '@agentix-e/micro-kinetic-core';
+
 import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
 
-/** Which PRISM property class a metric belongs to. */
-export type MetricChannel = 'internal' | 'external';
-
-/** PRISM's component-level score combination function. */
-export type PrismPooling = 'additive' | 'conjunctive';
-
-/**
- * Classify a metric name as an internal or external property.
- *
- * Internal properties are local resource states not directly observable by
- * other components: CPU usage, memory utilization, disk I/O, and socket
- * count. External properties are observable at component boundaries:
- * response time (latency/delay), error rate, throughput/workload, and
- * network loss. The classification is keyword-based and case-insensitive so
- * it is robust to the varied metric-name spellings across RCAEval systems
- * (`cpu`, `cpu_usage`, `memory_rss_bytes`, `disk_write_iops`, `socket_count`,
- * `latency_ms`, `error_rate`, `throughput`, `workload`, `loss`).
- */
-export function classifyMetricChannel(metricName: string): MetricChannel {
-  const lower = metricName.toLowerCase();
-  if (
-    lower.includes('cpu') ||
-    lower.includes('mem') ||
-    lower.includes('memory') ||
-    lower.includes('disk') ||
-    lower.includes('socket')
-  ) {
-    return 'internal';
-  }
-  // Everything else is boundary-observable: latency/delay, error, loss,
-  // throughput, workload, request/response counts.
-  return 'external';
-}
-
-/**
- * Deviation-based anomaly score for a single metric time series.
- *
- * Uses the pre-injection window as the reference distribution and the
- * post-injection window as the fault observation. The score is the absolute
- * standardized mean shift (a robust z-score / Cohen's-d form):
- *
- *   S(P) = |mean_fault − mean_baseline| / scale
- *
- * where `scale` is the baseline standard deviation when it is positive,
- * otherwise the baseline mean magnitude (a relative change) when non-zero,
- * and otherwise 1 (absolute change — the degenerate exactly-zero baseline).
- *
- * Returns 0 when either window is empty (no change to measure).
- */
-export function deviationZScore(ts: TimeSeries, injectTimeMs: number): number {
-  const { timestamps, values } = ts;
-  let baseSum = 0;
-  let baseCount = 0;
-  let faultSum = 0;
-  let faultCount = 0;
-
-  for (let i = 0; i < values.length; i++) {
-    // `timestamps` and `values` are aligned by construction, so the `!`
-    // non-null assertions are safe within the `i < values.length` bound.
-    const t = timestamps[i]!;
-    const v = values[i]!;
-    if (t < injectTimeMs) {
-      baseSum += v;
-      baseCount++;
-    } else {
-      faultSum += v;
-      faultCount++;
-    }
-  }
-
-  if (baseCount === 0 || faultCount === 0) return 0;
-
-  const baseMean = baseSum / baseCount;
-  const faultMean = faultSum / faultCount;
-
-  // Standard deviation over the baseline window.
-  let varSum = 0;
-  for (let i = 0; i < values.length; i++) {
-    const t = timestamps[i]!;
-    if (t < injectTimeMs) {
-      const d = values[i]! - baseMean;
-      varSum += d * d;
-    }
-  }
-  const std = Math.sqrt(varSum / baseCount);
-
-  let scale: number;
-  if (std > 1e-9) {
-    scale = std;
-  } else if (Math.abs(baseMean) > 1e-9) {
-    scale = Math.abs(baseMean);
-  } else {
-    scale = 1;
-  }
-
-  return Math.abs(faultMean - baseMean) / scale;
-}
+// Re-export the shared primitives so the benchmark barrel remains the single
+// import site for PRISM without exposing which package owns the formula.
+export { classifyMetricChannel, combinePrismScore, deviationZScore };
+export type { MetricChannel, PrismPooling };
 
 /** PRISM's per-component score. */
 export interface PrismServiceScore {
@@ -174,17 +96,16 @@ export function computePrismRanking(
       }
     }
 
-    const sum = internalScore + externalScore;
-    const score =
-      pooling === 'conjunctive' ? Math.min(internalScore, externalScore) : sum - Math.log1p(sum);
+    const score = combinePrismScore(internalScore, externalScore, pooling);
 
     scores.push({ serviceId, internalScore, externalScore, score });
   }
 
   scores.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
-    // Deterministic tie-break.
-    return a.serviceId < b.serviceId ? -1 : a.serviceId > b.serviceId ? 1 : 0;
+    // Deterministic tie-break. Service ids are unique Map keys, so the
+    // two-way comparison is total (no equal-id branch is reachable).
+    return a.serviceId < b.serviceId ? -1 : 1;
   });
 
   return scores;

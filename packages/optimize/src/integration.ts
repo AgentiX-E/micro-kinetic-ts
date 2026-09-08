@@ -33,6 +33,7 @@ export function configToPrunerOptions(config: RCAConfiguration): Partial<TreePru
     logWeight: config.ranking.logWeight,
     riseWeight: config.ranking.riseWeight ?? 0,
     traceWeight: config.ranking.traceWeight ?? 0,
+    prismWeight: config.ranking.prismWeight ?? 0,
   };
 }
 

@@ -132,7 +132,7 @@ describe('AdaptiveConfigOptimizer E2E', () => {
 
     // Config should be valid
     const vec = DEFAULT_CONFIG_SPACE.toVector(result.config);
-    expect(vec).toHaveLength(22);
+    expect(vec).toHaveLength(23);
     for (let i = 0; i < vec.length; i++) {
       expect(vec[i]).toBeGreaterThanOrEqual(0);
       expect(vec[i]).toBeLessThanOrEqual(1);

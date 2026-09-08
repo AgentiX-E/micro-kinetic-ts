@@ -77,6 +77,8 @@ interface FeatureFlags {
   rankNormalization: boolean;
   /** Extend the transient guard to idle-start transients (near-zero-baseline latency spike). */
   suppressIdleTransients: boolean;
+  /** PRISM graph-free signal: reward the node anomalous in BOTH internal and external channels. */
+  prismSignal: boolean;
 }
 
 interface AblationRun {
@@ -120,6 +122,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: 'BASELINE (all OFF)',
   },
@@ -137,6 +140,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Collision Q(f,f)',
   },
@@ -153,6 +157,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Trace Topo',
   },
@@ -169,6 +174,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+SelfLearn',
   },
@@ -186,6 +192,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Collision+Trace',
   },
@@ -202,6 +209,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Collision+SelfLearn',
   },
@@ -218,6 +226,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Trace+SelfLearn',
   },
@@ -235,6 +244,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: 'FULL STACK (all ON)',
   },
@@ -256,6 +266,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Log Signal',
   },
@@ -272,6 +283,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Topo Signal',
   },
@@ -292,6 +304,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Collision Signal',
   },
@@ -308,6 +321,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Collapse Discount',
   },
@@ -324,6 +338,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Rise Signal',
   },
@@ -340,6 +355,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: true,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Trace Activity Signal',
   },
@@ -366,6 +382,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: true,
       rankNormalization: false,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Log +Trace Activity',
   },
@@ -393,6 +410,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: true,
       rankNormalization: true,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Trace Activity +Rank',
   },
@@ -414,6 +432,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: true,
       rankNormalization: true,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Log +Trace Activity +Rank',
   },
@@ -441,6 +460,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: true,
       suppressIdleTransients: false,
+      prismSignal: false,
     },
     label: '+Rank Normalization',
   },
@@ -465,6 +485,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: false,
       rankNormalization: false,
       suppressIdleTransients: true,
+      prismSignal: false,
     },
     label: '+Idle Transient Suppression',
   },
@@ -486,8 +507,60 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       traceSignal: true,
       rankNormalization: true,
       suppressIdleTransients: true,
+      prismSignal: false,
     },
     label: '+Log +Trace Activity +Rank +Idle Transient',
+  },
+  {
+    // 1-D slice: the PRISM graph-free internal/external asymmetry signal in
+    // isolation. PRISM scores a root cause as anomalous in BOTH internal
+    // (cpu/mem/disk/socket) and external (latency/error/throughput) channels,
+    // using a DIFFERENT anomaly scorer (a standardized mean shift over the
+    // pre/post-inject windows) than the engine's own feature pipeline. The
+    // fusion ceiling showed it is strongly complementary (union 87.5% vs
+    // 76.1% engine / 76.7% PRISM separately), with the strongest complement in
+    // RE2 resource faults and RE3. This slice measures PRISM's marginal effect
+    // alone; the +Log +Trace Activity +Rank +PRISM slice measures whether the
+    // gain survives on top of the production configuration.
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: true,
+    },
+    label: '+PRISM Signal',
+  },
+  {
+    // Combination slice: the production configuration (logWeight=1 +
+    // traceWeight=1 + rankNormalization=true) plus the PRISM signal. This is
+    // the fusion answer the ceiling motivates: the engine and PRISM are
+    // complementary, so PRISM should add cases the engine misses (RE2 resource
+    // faults, some RE3) without regressing the cells the log/trace signals
+    // already own. This slice is the one that decides whether prismWeight
+    // ships enabled.
+    flags: {
+      collisionAggregation: false,
+      traceAugmentation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: true,
+      suppressIdleTransients: false,
+      prismSignal: true,
+    },
+    label: '+Log +Trace Activity +Rank +PRISM',
   },
 ];
 
@@ -719,6 +792,7 @@ async function main(): Promise<void> {
           logWeight: flags.logSignal ? 1.0 : 0.0,
           riseWeight: flags.riseSignal ? 1.0 : 0.0,
           traceWeight: flags.traceSignal ? 1.0 : 0.0,
+          prismWeight: flags.prismSignal ? 1.0 : 0.0,
         },
         {
           collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,

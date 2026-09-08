@@ -55,6 +55,7 @@ import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js
 import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
+import { computePrismScores } from './prism-signal.js';
 import {
   computeDeepestExceptions,
   computeLogScores,
@@ -231,6 +232,30 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Default: 0 (opt-in).
    */
   readonly traceWeight: number;
+  /**
+   * Weight of the PRISM graph-free signal: reward a node that is anomalous in
+   * BOTH its internal (cpu/memory/disk/socket) AND external (latency/error/
+   * throughput) properties.
+   *
+   *   finalScore(v) += prismWeight × prismScore(v)
+   *
+   * `prismScore(v)` is PRISM's root-cause score (arXiv:2601.21359) — the
+   * additive combination of the max-pooled internal S^I and external S^E
+   * deviation z-scores, max-normalised to [0, 1] (see computePrismScores).
+   * PRISM encodes the internal/external asymmetry: a root cause is anomalous
+   * in BOTH channels while a downstream symptom is external-only, so it is
+   * genuinely complementary to the topology-aware priors. It uses a DIFFERENT
+   * anomaly scorer (a simple standardized mean shift over the pre/post-inject
+   * windows) than the engine's own deviation/trend/cv/burst pipeline, so it
+   * surfaces faults the engine's self-anomaly term cannot see.
+   *
+   * Default: 0 (opt-in). The fusion ceiling (union of engine + PRISM correct
+   * cases = 87.5% vs 76.1%/76.7% separately) shows the two are strongly
+   * complementary, so this is the highest-value fusion candidate — but it must
+   * be ablated and read back net-positive with zero regression before the
+   * default is flipped.
+   */
+  readonly prismWeight: number;
 }
 
 /**
@@ -249,6 +274,7 @@ export function toRankingWeights(
     | 'logWeight'
     | 'riseWeight'
     | 'traceWeight'
+    | 'prismWeight'
   >,
 ): RankingWeights {
   return {
@@ -259,6 +285,7 @@ export function toRankingWeights(
     logWeight: options.logWeight,
     riseWeight: options.riseWeight,
     traceWeight: options.traceWeight,
+    prismWeight: options.prismWeight,
   };
 }
 
@@ -277,6 +304,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   logSignalMode: 'count',
   riseWeight: 0.0,
   traceWeight: 0.0,
+  prismWeight: 0.0,
 };
 
 /**
@@ -521,6 +549,16 @@ export class TreePruner {
       new Set(deepestExceptions.keys()),
     );
 
+    // The PRISM graph-free signal: for each graph member, compute PRISM's
+    // root-cause score (max-pooled internal/external deviation z-scores,
+    // combined additively) and max-normalise to [0, 1]. It is topology-free
+    // and uses a DIFFERENT anomaly scorer than the engine's own feature
+    // pipeline, so it is genuinely complementary to the collision/topo/log/
+    // trace priors — the fusion ceiling showed the two engines agree on only
+    // 402/615 cases, with 70 cases PRISM alone gets right. Empty (neutral)
+    // when the injection time is unknown or no service is anomalous.
+    const prismScores = computePrismScores(metrics, new Set(callGraph.nodes.keys()), injectTimeMs);
+
     return {
       callGraph: topologyGraph,
       propagationWeights,
@@ -538,6 +576,7 @@ export class TreePruner {
       riseScores,
       deepestExceptions,
       traceActivityScores,
+      prismScores,
     };
   }
 
@@ -597,6 +636,7 @@ export class TreePruner {
       graph.topoScores,
       graph.riseScores,
       graph.traceActivityScores,
+      graph.prismScores,
     );
 
     return results;
@@ -773,6 +813,7 @@ function performTreeRCA(
   topoScores?: ReadonlyMap<ServiceId, number>,
   riseScores?: ReadonlyMap<ServiceId, number>,
   traceActivityScores?: ReadonlyMap<ServiceId, number>,
+  prismScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -982,7 +1023,7 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with seven causal priors (all opt-in except log):
+  // Rank by self anomaly combined with eight causal priors (all opt-in except log):
   //
   // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
   //    node's neighbours whose index-based onset is later.
@@ -1001,6 +1042,9 @@ function performTreeRCA(
   //    when it did (source crash) — see gatedRiseContribution.
   // 7. A TRACE-ACTIVITY prior (`traceWeight`) — reward the UNIQUE service whose
   //    post-injection span count rises significantly (silent-source signature).
+  // 8. A PRISM prior (`prismWeight`) — reward the service anomalous in BOTH its
+  //    internal and external properties (the graph-free internal/external
+  //    asymmetry of PRISM).
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -1018,6 +1062,7 @@ function performTreeRCA(
   //                 + logWeight       × logScore(v)
   //                 + riseWeight      × gatedRiseContribution(dir(v), hasLogicException(v))
   //                 + traceWeight     × traceActivity(v)
+  //                 + prismWeight     × prismScore(v)
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
@@ -1040,6 +1085,13 @@ function performTreeRCA(
   // the term is simply the weight applied to whichever service was flagged.
   const traceWeight = options.traceWeight;
   const traceTerm = (id: ServiceId): number => traceWeight * (traceActivityScores?.get(id) ?? 0);
+  // The PRISM graph-free signal rewards the node anomalous in BOTH its internal
+  // (cpu/mem/disk/socket) and external (latency/error/throughput) channels —
+  // the internal/external asymmetry of PRISM. `prismScore` is the max-normalised
+  // PRISM M-score in [0, 1], so the term is simply the weight applied to the
+  // service's normalised score (0 when the signal is absent/neutral).
+  const prismWeight = options.prismWeight;
+  const prismTerm = (id: ServiceId): number => prismWeight * (prismScores?.get(id) ?? 0);
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `temporalEarliness`, `topoScores`,
@@ -1055,7 +1107,8 @@ function performTreeRCA(
       weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
       weights.logWeight * (logScores?.get(a.serviceId) ?? 0) +
       riseTerm(a.serviceId) +
-      traceTerm(a.serviceId);
+      traceTerm(a.serviceId) +
+      prismTerm(a.serviceId);
     const bScore =
       Math.log(b.score) +
       weights.sourceWeight * sourceScores.get(b.serviceId)! +
@@ -1064,7 +1117,8 @@ function performTreeRCA(
       weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
       weights.logWeight * (logScores?.get(b.serviceId) ?? 0) +
       riseTerm(b.serviceId) +
-      traceTerm(b.serviceId);
+      traceTerm(b.serviceId) +
+      prismTerm(b.serviceId);
     if (bScore !== aScore) return bScore - aScore;
     return a.serviceId < b.serviceId ? -1 : 1;
   });
