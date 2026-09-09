@@ -30,8 +30,12 @@ import {
   DI_TOKENS,
   RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
-import type { FusionCasePrediction } from '../../packages/kinetic/src/benchmarks/index.js';
+import type {
+  FusionCasePrediction,
+  RoutingProbeRecord,
+} from '../../packages/kinetic/src/benchmarks/index.js';
 import {
+  analyzeRoutingProbe,
   BenchmarkRunner,
   computeFusionCeiling,
   computeFusionCeilingByCell,
@@ -44,7 +48,10 @@ import type {
   BenchmarkCase,
   BenchmarkSuite,
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
-import type { RunResult } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+import type {
+  CasePrediction,
+  RunResult,
+} from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
@@ -208,6 +215,13 @@ interface CliOptions {
    * cases) as JSON to this path, in addition to the normal benchmark table.
    */
   fusionCeiling: string;
+  /**
+   * When set, emit a per-case routing-feasibility probe to this path: for each
+   * case it records the engine's top-1/top-2 ranking scores and PRISM's
+   * top-1/top-2 M-scores, plus the fault type, so the zero-regression routing
+   * frontier can be derived offline. Pairs with the benchmark table.
+   */
+  routingProbe: string;
 }
 
 function parseArgs(): CliOptions {
@@ -236,6 +250,7 @@ function parseArgs(): CliOptions {
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
     fusionCeiling: '',
+    routingProbe: '',
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -276,6 +291,8 @@ function parseArgs(): CliOptions {
       opts.suppressNearZeroBaselineRise = false;
     } else if (args[i] === '--fusion-ceiling' && i + 1 < args.length) {
       opts.fusionCeiling = args[++i]!;
+    } else if (args[i] === '--routing-probe' && i + 1 < args.length) {
+      opts.routingProbe = args[++i]!;
     }
   }
   return opts;
@@ -1267,6 +1284,9 @@ async function main(): Promise<void> {
   // report emitted after the loop. Always declared so the emit step below can
   // reference it unconditionally.
   const fusionRecords: FusionCasePrediction[] = [];
+  // Per-case routing-feasibility records (engine ranking scores + PRISM
+  // M-scores), consumed by the routing-probe report emitted after the loop.
+  const routingRecords: RoutingProbeRecord[] = [];
 
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
@@ -1301,18 +1321,24 @@ async function main(): Promise<void> {
     reportLogDiagnostics(systemName, suiteName, stats);
     reportDeepestExceptionDiagnostics(systemName, suiteName, stats);
 
-    // ── PRISM graph-free baseline (for the fusion ceiling) ──
+    // ── PRISM graph-free baseline (for the fusion ceiling + routing probe) ──
     // PRISM runs on the SAME loaded BenchmarkCase metrics (timestamps in ms,
     // injectTime in ms), so no extra loading pass is needed. This is the
-    // graph-free internal/external asymmetry scorer from arXiv:2601.21359.
-    const prismTop1ByCaseId = new Map<string, string | undefined>();
-    if (opts.fusionCeiling) {
+    // graph-free internal/external asymmetry scorer from arXiv:2601.21359. The
+    // full ranking (not just top-1) is kept so the routing probe can record
+    // PRISM's top-2 M-score margin.
+    const prismRankingByCaseId = new Map<string, ReturnType<typeof computePrismRanking>>();
+    if (opts.fusionCeiling || opts.routingProbe) {
       for (const c of stats.cases) {
-        prismTop1ByCaseId.set(
+        prismRankingByCaseId.set(
           c.id,
-          computePrismRanking(c.metrics, c.injectTime, { pooling: 'additive' })[0]?.serviceId,
+          computePrismRanking(c.metrics, c.injectTime, { pooling: 'additive' }),
         );
       }
+    }
+    const prismTop1ByCaseId = new Map<string, string | undefined>();
+    for (const [id, ranking] of prismRankingByCaseId) {
+      prismTop1ByCaseId.set(id, ranking[0]?.serviceId);
     }
 
     // Split by fault type (matching paper's Table 6 format)
@@ -1362,6 +1388,38 @@ async function main(): Promise<void> {
           truth: c.groundTruth.serviceId,
           engineTop1: engineTop1ByCaseId.get(c.id),
           prismTop1: prismTop1ByCaseId.get(c.id),
+        });
+      }
+    }
+
+    // ── Routing-probe records for this group ──
+    // Join the engine's per-case top-2 ranking scores (now carried by the
+    // runner's case predictions) with PRISM's top-2 M-scores, so the offline
+    // frontier analysis can test engine-margin / prism-margin routers.
+    if (opts.routingProbe) {
+      const engineByCaseId = new Map<string, CasePrediction>();
+      for (const r of results.values()) {
+        for (const p of r.casePredictions) {
+          engineByCaseId.set(p.caseId, p);
+        }
+      }
+      const cell = `${suiteName}:${systemName}`;
+      for (const c of stats.cases) {
+        const ep = engineByCaseId.get(c.id);
+        const ranking = prismRankingByCaseId.get(c.id) ?? [];
+        routingRecords.push({
+          caseId: c.id,
+          cell,
+          faultType: c.groundTruth?.faultType?.toLowerCase() ?? 'unknown',
+          truth: c.groundTruth.serviceId,
+          engineTop1: ep?.top1,
+          engineTop1Score: ep?.top1Score,
+          engineTop2: ep?.top2,
+          engineTop2Score: ep?.top2Score,
+          prismTop1: ranking[0]?.serviceId,
+          prismTop1Score: ranking[0]?.score,
+          prismTop2: ranking[1]?.serviceId,
+          prismTop2Score: ranking[1]?.score,
         });
       }
     }
@@ -1429,6 +1487,65 @@ async function main(): Promise<void> {
         `    ${cell.padEnd(22)} union=${c.union}/${c.total} (${(c.unionRate * 100).toFixed(1)}%)` +
           `  engine=${c.engineCorrect} prism=${c.prismCorrect}`,
       );
+    }
+    console.log('════════════════════════════════════════════════════════════');
+  }
+
+  // ── Routing-probe report ──
+  if (opts.routingProbe) {
+    const analysis = analyzeRoutingProbe(routingRecords);
+    const report = {
+      suite: opts.suite,
+      records: routingRecords,
+      aggregate: {
+        total: analysis.total,
+        engineCorrect: analysis.engineCorrect,
+        prismCorrect: analysis.prismCorrect,
+        disagreement: analysis.disagreement,
+        engineOnly: analysis.engineOnly,
+        prismOnly: analysis.prismOnly,
+        bothWrong: analysis.bothWrong,
+        union: analysis.union,
+        unionRate: analysis.unionRate,
+        baselineAccuracy: analysis.baselineAccuracy,
+      },
+      bestZeroRegression: analysis.bestZeroRegression,
+    };
+    writeFileSync(opts.routingProbe, JSON.stringify(report, null, 2));
+    console.log('\n════════════════════════════════════════════════════════════');
+    console.log('Routing probe — engine vs PRISM (zero-regression frontier)');
+    console.log('════════════════════════════════════════════════════════════');
+    console.log(
+      `  total=${analysis.total} engine=${analysis.engineCorrect} prism=${analysis.prismCorrect}` +
+        ` disagree=${analysis.disagreement}`,
+    );
+    console.log(
+      `  engineOnly=${analysis.engineOnly} prismOnly=${analysis.prismOnly} ` +
+        `bothWrong=${analysis.bothWrong}`,
+    );
+    console.log(`  UNION=${analysis.union} (${(analysis.unionRate * 100).toFixed(1)}%)`);
+    console.log(`  baseline(always-engine)=${(analysis.baselineAccuracy * 100).toFixed(1)}%`);
+    const refs = analysis.rules.filter(
+      (r) =>
+        r.name === 'always-prism' ||
+        r.name === 'resource-fault->prism' ||
+        r.name === 'per-cell-oracle',
+    );
+    for (const r of refs) {
+      const reg = r.regressingCells.length > 0 ? ` [regress ${r.regressingCells.length}]` : '';
+      console.log(
+        `    ${r.name.padEnd(26)} acc=${(r.accuracy * 100).toFixed(1)}%` +
+          ` (gain ${(r.gain >= 0 ? '+' : '') + (r.gain * 100).toFixed(1)}pp)${reg}`,
+      );
+    }
+    if (analysis.bestZeroRegression) {
+      const b = analysis.bestZeroRegression;
+      console.log(
+        `  BEST zero-regression: ${b.name} = ${(b.accuracy * 100).toFixed(1)}% ` +
+          `(gain ${(b.gain >= 0 ? '+' : '') + (b.gain * 100).toFixed(1)}pp)`,
+      );
+    } else {
+      console.log('  BEST zero-regression: none (empty input)');
     }
     console.log('════════════════════════════════════════════════════════════');
   }

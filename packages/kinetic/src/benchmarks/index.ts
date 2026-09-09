@@ -88,6 +88,21 @@ export { analyzePrismSweep } from './leaderboard/prism-sweep.js';
 
 export type { PrismSweepAnalysis, SweepCell, SweepPoint } from './leaderboard/prism-sweep.js';
 
+export {
+  RESOURCE_FAULT_TYPES,
+  analyzeRoutingProbe,
+  engineMargin,
+  prismMargin,
+  regressionCellKey,
+} from './leaderboard/routing-probe.js';
+
+export type {
+  RoutingDecision,
+  RoutingProbeAnalysis,
+  RoutingProbeRecord,
+  RuleResult,
+} from './leaderboard/routing-probe.js';
+
 // ── Synthetic Data Generator ──────────────────────────────
 
 export { SyntheticBenchmarkGenerator } from './synthetic/data-generator.js';

@@ -1098,28 +1098,33 @@ function performTreeRCA(
   // `logScores`, `riseScores` and `ratioContrib` maps, in contrast, are derived
   // from OPTIONAL graph fields (or are empty when the injection time is
   // unknown), so their lookups keep a neutral fallback.
+  // Compute the ranking score for every candidate exactly once, so the sort
+  // comparator and the emitted results share a single source of truth. The
+  // formula matches the `finalScore(v)` documented on the ranking weights; the
+  // log term reads `selfScores` directly because `scoredNodes[i].score` is that
+  // same value (each scored node was pushed with its `selfScores` entry).
+  const finalScores = new Map<ServiceId, number>();
+  const finalScoreOf = (id: ServiceId): number => {
+    let s = finalScores.get(id);
+    if (s === undefined) {
+      s =
+        Math.log(selfScores.get(id)!) +
+        weights.sourceWeight * sourceScores.get(id)! +
+        weights.temporalWeight * 2 * ((temporalEarliness.get(id) ?? 0.5) - 0.5) -
+        weights.collisionWeight * (ratioContrib.get(id) ?? 0) +
+        weights.topoWeight * (topoScores?.get(id) ?? 0) +
+        weights.logWeight * (logScores?.get(id) ?? 0) +
+        riseTerm(id) +
+        traceTerm(id) +
+        prismTerm(id);
+      finalScores.set(id, s);
+    }
+    return s;
+  };
+
   scoredNodes.sort((a, b) => {
-    const aScore =
-      Math.log(a.score) +
-      weights.sourceWeight * sourceScores.get(a.serviceId)! +
-      weights.temporalWeight * 2 * ((temporalEarliness.get(a.serviceId) ?? 0.5) - 0.5) -
-      weights.collisionWeight * (ratioContrib.get(a.serviceId) ?? 0) +
-      weights.topoWeight * (topoScores?.get(a.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(a.serviceId) ?? 0) +
-      riseTerm(a.serviceId) +
-      traceTerm(a.serviceId) +
-      prismTerm(a.serviceId);
-    const bScore =
-      Math.log(b.score) +
-      weights.sourceWeight * sourceScores.get(b.serviceId)! +
-      weights.temporalWeight * 2 * ((temporalEarliness.get(b.serviceId) ?? 0.5) - 0.5) -
-      weights.collisionWeight * (ratioContrib.get(b.serviceId) ?? 0) +
-      weights.topoWeight * (topoScores?.get(b.serviceId) ?? 0) +
-      weights.logWeight * (logScores?.get(b.serviceId) ?? 0) +
-      riseTerm(b.serviceId) +
-      traceTerm(b.serviceId) +
-      prismTerm(b.serviceId);
-    if (bScore !== aScore) return bScore - aScore;
+    const d = finalScoreOf(b.serviceId) - finalScoreOf(a.serviceId);
+    if (d !== 0) return d;
     return a.serviceId < b.serviceId ? -1 : 1;
   });
 
@@ -1145,6 +1150,7 @@ function performTreeRCA(
         severity: severityLabel as 'critical' | 'major' | 'minor',
       },
       confidence: computeConfidence(node.score, node.depth, errorBound),
+      finalScore: finalScoreOf(node.serviceId),
       rank: i + 1,
       evidenceMetrics: [
         { metric: 'rca_score', value: node.score, threshold: 0.1 },

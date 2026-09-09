@@ -59,6 +59,19 @@ export interface RootCauseResult {
   readonly confidence: number;
   /** Rank in Top-K results (1-based) */
   readonly rank: number;
+  /**
+   * The raw ranking score this result was ordered by, in the (log-space)
+   * `finalScore` produced by the tree pruner:
+   *
+   *   finalScore(v) = log(selfAnomaly(v)) + Σ signalWeight × signal(v)
+   *
+   * Unlike `confidence` — which folds in propagation-depth and error-bound
+   * penalties for display — `finalScore` is the exact value the sort uses, so
+   * the gap between two candidates' `finalScore` values is the engine's true
+   * ranking margin. It is only populated by the tree pruner; other producers
+   * (log/trace/fusion providers) leave it `undefined`.
+   */
+  readonly finalScore?: number;
   /** Time of root cause event (Unix ms) */
   readonly timestamp?: number;
   /** Supporting evidence metrics */

@@ -182,6 +182,16 @@ export interface CasePrediction {
   readonly top1: string | undefined;
   /** Whether `top1` matches `truth`. */
   readonly correct: boolean;
+  /**
+   * The engine's top-2 prediction, or `undefined` when fewer than two
+   * candidates were ranked. Used by routing analysis to measure the engine's
+   * ranking margin.
+   */
+  readonly top2?: string | undefined;
+  /** The engine's top-1 ranking `finalScore` (the raw sort value). */
+  readonly top1Score?: number;
+  /** The engine's top-2 ranking `finalScore`, when a top-2 exists. */
+  readonly top2Score?: number;
 }
 
 /** Result of running a single benchmark suite. */
@@ -394,6 +404,9 @@ export class BenchmarkRunner {
           truth: caseTruth,
           top1: predTop1,
           correct: predTop1 !== undefined && predTop1 === caseTruth,
+          top2: results[1]?.serviceId,
+          top1Score: results[0]?.finalScore,
+          top2Score: results[1]?.finalScore,
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────
