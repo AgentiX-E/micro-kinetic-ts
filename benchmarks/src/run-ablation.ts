@@ -966,6 +966,14 @@ async function main(): Promise<void> {
           console.log(`  [w=${weight.toFixed(2)}] ${key}: ${(result.avgTop1 * 100).toFixed(1)}%`);
         }
       }
+
+      // Release this system's bundle before loading the next. RE2 cases hold
+      // large call graphs + embeddings; holding multiple systems at once OOMs
+      // at the 12GB heap cap (mirrors the ablation main loop's release).
+      bundle.cases.length = 0;
+      byFT.clear();
+      if (typeof globalThis.gc === 'function') globalThis.gc();
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
     const cellList = [...cells.values()].sort((a, b) => a.key.localeCompare(b.key));
