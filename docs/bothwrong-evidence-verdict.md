@@ -120,3 +120,32 @@ contain no signal a human or LLM could use. The exceptions are almost entirely
 2. Implement the base-term fix (smallest, most principled change).
 3. Ablation slice (`+Rank Base Fix`) and read back the 615-case delta vs the
    76.1% / 81.3% baselines.
+
+---
+
+## Follow-up (2026-09-09): rank-collapse falsified + LLM ceiling re-measured
+
+The `log1p` fix proposed above was implemented (commit `6129b53`) and read back on
+the golden 9-cell benchmark (run `34350966725`): **all 9 cells byte-identical, zero
+delta**. See `docs/rank-collapse-falsified.md`. `log` and `log1p` are both strictly
+increasing on `(0,1]`, so the base-term-induced ranking is invariant; the "0-score
+zombie" was a monotonic-invariance artifact, not a ranking bug.
+
+Re-measuring the LLM judge ceiling on the same 39-case evidence with a raw
+"max-dev + fault-type-direction-match" rule (the strongest signal an LLM could read
+without the engine's feature aggregation):
+
+- **8/39 GT absent** (true information wall — no signal for any reader).
+- **2/39 recoverable** (`ts-auth-service_loss_1`, `ts-order-service_loss_1`: GT raw
+  dev is rank-1 AND direction matches the fault type).
+- **29/39 weak-source** (GT raw dev rank > 1 — the victim's latency/dev exceeds the
+  source's, so a magnitude-based reader also picks the victim).
+
+Of the 10 "rank-1" cases, 8 are **direction-mismatch** (a DROP on a `delay` fault, or
+ambiguous f-fault direction) — the full-drop diskio ambiguity already documented in
+`delay-exhausted-verdict.md` — not a fixable ranking collapse.
+
+**Verdict: the gated LLM judge is not viable.** Its ceiling is ~2/39 (≈0.3pp on the
+615-case set), and those two are recoverable by a deterministic max-dev rule that
+would regress elsewhere. The information wall (service-granularity metrics with no
+inbound/outbound decomposition) applies equally to deterministic engines and LLMs.
