@@ -31,6 +31,7 @@ import {
   RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
 import {
+  analyzePrismSweep,
   BenchmarkRunner,
   countTraceActivityByService,
   RCAEvalLoader,
@@ -567,6 +568,37 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
 // Default to 3 repetitions for statistical significance
 const REPETITIONS = 3;
 
+// ── PRISM Weight Sweep ────────────────────────────────────
+//
+// The fusion ceiling showed PRISM is strongly complementary to the production
+// engine, but a fixed prismWeight=1 is net-positive (+5.18pp) yet violates
+// zero-regression (5 cells regress — delay/socket + already-100% cells, where
+// PRISM's max-normalised score overrides the engine's correct top-1). The
+// sweep answers whether a SINGLE GLOBAL weight is both net-positive and
+// zero-regression. The weight range is concentrated low because prismScore is
+// max-normalised to [0,1] while the engine's log(selfAnomaly) term spans only
+// ~[−2, 0], so weight 1 injects up to +1.0 — far above the natural log-space
+// gaps that separate the true source from a large symptom.
+const PRISM_SWEEP_WEIGHTS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0];
+
+// The production configuration (logWeight=1 + traceWeight=1 + rankNorm=true),
+// whose prismWeight the sweep varies. Mirrors the '+Log +Trace Activity +Rank'
+// ablation slice.
+const PRISM_SWEEP_FLAGS: FeatureFlags = {
+  collisionAggregation: false,
+  traceAugmentation: false,
+  selfLearning: false,
+  logSignal: true,
+  topoSignal: false,
+  collisionSignal: false,
+  collapseDiscount: false,
+  riseSignal: false,
+  traceSignal: true,
+  rankNormalization: true,
+  suppressIdleTransients: false,
+  prismSignal: false,
+};
+
 // ── Helpers ───────────────────────────────────────────────
 
 function loadEnvFile(): void {
@@ -701,6 +733,7 @@ async function main(): Promise<void> {
   let systemFilter = 'all';
   let suiteFilter = 'all';
   let maxCases = 0;
+  let prismSweep = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) dataDir = args[++i]!;
@@ -708,6 +741,7 @@ async function main(): Promise<void> {
     else if (args[i] === '--suite' && i + 1 < args.length) suiteFilter = args[++i]!;
     else if (args[i] === '--max-cases' && i + 1 < args.length)
       maxCases = parseInt(args[++i]!, 10) || 0;
+    else if (args[i] === '--prism-sweep') prismSweep = true;
   }
 
   console.log('═'.repeat(80));
@@ -780,7 +814,7 @@ async function main(): Promise<void> {
    * enabled). Each config gets its own container so the flags are wired
    * directly into the engine registered under RCA_ENGINE.
    */
-  function buildContainer(flags: FeatureFlags): Container {
+  function buildContainer(flags: FeatureFlags, prismWeightOverride?: number): Container {
     const c = new Container();
     c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
     c.register(DI_TOKENS.RCA_ENGINE, () => {
@@ -792,7 +826,7 @@ async function main(): Promise<void> {
           logWeight: flags.logSignal ? 1.0 : 0.0,
           riseWeight: flags.riseSignal ? 1.0 : 0.0,
           traceWeight: flags.traceSignal ? 1.0 : 0.0,
-          prismWeight: flags.prismSignal ? 1.0 : 0.0,
+          prismWeight: prismWeightOverride ?? (flags.prismSignal ? 1.0 : 0.0),
         },
         {
           collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
@@ -834,7 +868,8 @@ async function main(): Promise<void> {
     // traces.csv scan is expensive (~27MB). Gated on any config enabling the
     // trace signal; the counts are config-independent (anchored to injectTime),
     // so the +Trace Activity slice reuses them across its repetitions.
-    const needsTraceActivity = CONFIGS.some((c) => c.flags.traceSignal);
+    const needsTraceActivity =
+      CONFIGS.some((c) => c.flags.traceSignal) || PRISM_SWEEP_FLAGS.traceSignal;
     for (const meta of selected) {
       try {
         const rawCase = loader.loadCase(meta.dirPath);
@@ -880,6 +915,121 @@ async function main(): Promise<void> {
       }
     }
     return { systemName, cases, caseDirMap };
+  }
+
+  /**
+   * PRISM weight sweep — run the production configuration (log + trace + rank)
+   * at a continuum of prismWeight values and report the zero-regression
+   * frontier: the set of weights where NO (system, fault-type) cell's AC@1
+   * falls below its weight-0 baseline. This is the gating experiment for the
+   * default-flip decision: a single global weight that is both net-positive
+   * and zero-regression flips the default; otherwise per-context routing is
+   * required.
+   */
+  async function runPrismSweep(): Promise<void> {
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log('PRISM Weight Sweep — zero-regression frontier');
+    console.log(`Weights: ${PRISM_SWEEP_WEIGHTS.join(', ')}`);
+    console.log('═'.repeat(80));
+
+    // Per-cell accumulator: key → { key, cases, accuracy[weight index] }.
+    const cells = new Map<string, { key: string; cases: number; accuracy: number[] }>();
+
+    for (const [systemName, metas] of systemGroups) {
+      const bundle = await loadSystemBundle(systemName, metas);
+      const suite = (metas[0]?.suite ?? 'unknown').toLowerCase();
+
+      // Group by fault type (stable across weights).
+      const byFT = new Map<string, BenchmarkCase[]>();
+      for (const c of bundle.cases) {
+        const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
+        if (!byFT.has(ft)) byFT.set(ft, []);
+        byFT.get(ft)!.push(c);
+      }
+
+      for (let wi = 0; wi < PRISM_SWEEP_WEIGHTS.length; wi++) {
+        const weight = PRISM_SWEEP_WEIGHTS[wi]!;
+        const container = buildContainer(PRISM_SWEEP_FLAGS, weight);
+        for (const [ft, ftCases] of byFT) {
+          if (ftCases.length === 0) continue;
+          const key = `${suite}/${systemName}/${ft}`;
+          const runner = new BenchmarkRunner(container, classifier);
+          const suiteBundle: BenchmarkSuite = {
+            name: `${systemName}-${ft}`,
+            cases: ftCases,
+            totalCases: ftCases.length,
+          };
+          const result = await runner.runSuite(suiteBundle);
+          const existing = cells.get(key) ?? { key, cases: ftCases.length, accuracy: [] };
+          existing.accuracy[wi] = result.avgTop1;
+          cells.set(key, existing);
+          console.log(`  [w=${weight.toFixed(2)}] ${key}: ${(result.avgTop1 * 100).toFixed(1)}%`);
+        }
+      }
+    }
+
+    const cellList = [...cells.values()].sort((a, b) => a.key.localeCompare(b.key));
+    const analysis = analyzePrismSweep(PRISM_SWEEP_WEIGHTS, cellList);
+
+    // ── Per-cell AC@1 table ──
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log('PRISM SWEEP — Per-Cell AC@1');
+    console.log('═'.repeat(80));
+    let header = 'Cell'.padEnd(34);
+    for (const w of PRISM_SWEEP_WEIGHTS) header += ` w=${w}`.padEnd(9);
+    console.log(header);
+    console.log('─'.repeat(header.length));
+    for (const c of cellList) {
+      let row = c.key.padEnd(34);
+      for (const a of c.accuracy) row += ` ${`${(a * 100).toFixed(0)}%`.padStart(4)}`.padEnd(9);
+      console.log(row);
+    }
+
+    // ── Weighted overall + zero-regression frontier ──
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log('PRISM SWEEP — Weighted Overall + Zero-Regression Frontier');
+    console.log('═'.repeat(80));
+    for (const p of analysis.points) {
+      const tag =
+        p.regressingCells.length === 0
+          ? 'ZERO-REGRESSION'
+          : `regress: ${p.regressingCells.join(', ')}`;
+      console.log(
+        `  w=${`${p.weight.toFixed(2)}`.padStart(4)}  overall=${`${(p.overall * 100).toFixed(2)}%`.padStart(7)}  ${tag}`,
+      );
+    }
+    if (analysis.bestZeroRegression) {
+      const b = analysis.bestZeroRegression;
+      console.log(
+        `\n  BEST zero-regression weight: prismWeight=${b.weight}  overall=${(b.overall * 100).toFixed(2)}%  gain=${`${(b.gain * 100).toFixed(2)}pp`}`,
+      );
+    } else {
+      console.log('\n  No zero-regression weight (empty input).');
+    }
+
+    // ── JSON for artifact upload + local merge ──
+    const output = {
+      suite: suiteFilter,
+      weights: PRISM_SWEEP_WEIGHTS,
+      cells: cellList,
+      analysis: {
+        overall: analysis.overall,
+        zeroRegressionWeights: analysis.zeroRegressionWeights,
+        bestZeroRegression: analysis.bestZeroRegression,
+      },
+    };
+    const outputPath = join(__dirname, '..', '..', `prism-sweep-${suiteFilter}.json`);
+    writeFileSync(outputPath, JSON.stringify(output, null, 2));
+    console.log(`\nResults saved: ${outputPath}`);
+  }
+
+  if (prismSweep) {
+    if (systemGroups.size === 0) {
+      console.log('No benchmark cases discovered. Exiting.');
+      return;
+    }
+    await runPrismSweep();
+    return;
   }
 
   console.log('\n═'.repeat(80));

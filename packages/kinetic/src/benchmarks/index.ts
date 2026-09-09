@@ -84,6 +84,10 @@ export { computeFusionCeiling, computeFusionCeilingByCell } from './leaderboard/
 
 export type { FusionCasePrediction, FusionCeiling } from './leaderboard/fusion-ceiling.js';
 
+export { analyzePrismSweep } from './leaderboard/prism-sweep.js';
+
+export type { PrismSweepAnalysis, SweepCell, SweepPoint } from './leaderboard/prism-sweep.js';
+
 // ── Synthetic Data Generator ──────────────────────────────
 
 export { SyntheticBenchmarkGenerator } from './synthetic/data-generator.js';
