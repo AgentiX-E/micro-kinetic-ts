@@ -81,6 +81,7 @@ def stream_convert_tar(
 
     ok = 0
     failed = 0
+    sizes: list[int] = []
     started = 0
     current_name: str | None = None
     tmp = tempfile.TemporaryDirectory()
@@ -88,7 +89,7 @@ def stream_convert_tar(
 
     def finalize() -> None:
         """Convert (or skip) the just-finished datapack and clear its temp files."""
-        nonlocal ok, failed, current_name
+        nonlocal ok, failed, current_name, sizes
         if current_name is None:
             return
         src = tmp_root / current_name
@@ -97,12 +98,19 @@ def stream_convert_tar(
             if not (src / "injection.json").exists():
                 pass  # top-level dir that is not a datapack (e.g. README/)
             elif (dst / "case.json").exists() and not force:
+                size = (dst / "case.json").stat().st_size
+                sizes.append(size)
                 ok += 1
-                print(f"SKIP {current_name} (already converted)", flush=True)
+                print(
+                    f"SKIP {current_name} ({conv.format_bytes(size)}, already converted)",
+                    flush=True,
+                )
             else:
                 conv.convert_datapack(src, dst)
+                size = (dst / "case.json").stat().st_size
+                sizes.append(size)
                 ok += 1
-                print(f"OK   {current_name}", flush=True)
+                print(f"OK   {current_name} ({conv.format_bytes(size)})", flush=True)
         except Exception as exc:  # noqa: BLE001 - report per-datapack failures and continue
             failed += 1
             print(f"FAIL {current_name}: {exc}", file=sys.stderr, flush=True)
@@ -141,6 +149,7 @@ def stream_convert_tar(
         finalize()
         tmp.cleanup()
 
+    print(conv.summarize_sizes(sizes), flush=True)
     return ok, failed
 
 

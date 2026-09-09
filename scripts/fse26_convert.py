@@ -13,11 +13,17 @@ The archive's Parquet is ALREADY the platform's normalised view — i.e. the
 output of the platform's own `convert_metrics` / `convert_traces` /
 `convert_logs` (see its `v2/sources/rcabench.py`), NOT the raw OpenTelemetry
 export. Columns are therefore `time` (Datetime), `metric` / `value` /
-`service_name`, `trace_id` / `span_id` / `duration` / `attr.status_code`, and
+`service_name`, `trace_id` / `span_id` / `parent_span_id` / `service_name`, and
 `level` / `message` — the bridge reads those names directly and only performs
-unit normalisation (Datetime → epoch-ms, nanoseconds → milliseconds, the OTel
-StatusCode enum → OK/ERROR), so the TypeScript `FSE26Loader` consumes the exact
-same normalised view the benchmark's evaluator uses.
+unit normalisation (Datetime → epoch-ms, nanoseconds → milliseconds), so the
+TypeScript `FSE26Loader` consumes the exact same normalised view the
+benchmark's evaluator uses.
+
+Trace spans are NOT serialised in full: a single datapack can contain millions
+of spans (~86 MB as raw JSON), but the engine only consumes the call-graph
+edges they imply. The bridge therefore resolves each span's parent service via
+a polars self-join and emits the DISTINCT caller → callee edges as `traceEdges`
+instead, shrinking the per-case document by ~3 orders of magnitude.
 
 Output `case.json` schema (per datapack):
 
@@ -31,18 +37,15 @@ Output `case.json` schema (per datapack):
           {"metric": "container.cpu.usage", "timestamps": [1756998000000], "values": [0.1]}
         ]
       },
-      "traces": [
-        {"traceId": "...", "spanId": "...", "parentSpanId": "...", "service": "...",
-         "operationName": "...", "startTime": 1756998000000, "duration": 12.5, "status": "OK"}
+      "traceEdges": [
+        ["ts-ui-dashboard", "ts-order-service"]
       ],
       "logs": [
         {"timestamp": 1756998000000, "service": "...", "level": "ERROR", "message": "..."}
       ]
     }
 
-All timestamps are Unix milliseconds, all durations milliseconds, log levels are
-upper-cased, and trace status is normalised to OK/ERROR (the OTel StatusCode enum
-2 = Error; everything else, including unset, is OK).
+All timestamps are Unix milliseconds and log levels are upper-cased.
 
 Ground truth follows the benchmark's dual-label convention: network faults
 (`NetworkDelay` / `NetworkLoss` / …) are injected on an EDGE, so both the
@@ -173,9 +176,37 @@ def compute_inject_time_ms(env: dict[str, Any]) -> int:
     return inject_seconds * 1000
 
 
-def status_code_to_status(status_code: Any) -> str:
-    """Map the OTel StatusCode enum (0=Unset, 1=Ok, 2=Error) to OK/ERROR."""
-    return "ERROR" if status_code == 2 else "OK"
+def format_bytes(num_bytes: float) -> str:
+    """Format a non-negative byte count as a compact human-readable string."""
+    if num_bytes < 0:
+        raise ValueError(f"Negative byte count: {num_bytes}")
+    value = float(num_bytes)
+    unit = "B"
+    for candidate in ("KB", "MB", "GB", "TB", "PB"):
+        if value < 1024.0:
+            break
+        value /= 1024.0
+        unit = candidate
+    return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+
+
+def summarize_sizes(sizes: list[int]) -> str:
+    """
+    Return a one-line aggregate of per-case output sizes.
+
+    Both converter drivers report total / average / min / max case volume so a
+    subset run can measure real per-case bytes before choosing fault-category
+    shard sizes for the `rcabench-data` release assets.
+    """
+    if not sizes:
+        return "Size: 0 cases"
+    total = sum(sizes)
+    avg = total / len(sizes)
+    return (
+        f"Size: {len(sizes)} cases, {format_bytes(total)} total, "
+        f"avg {format_bytes(avg)}/case, "
+        f"min {format_bytes(min(sizes))}, max {format_bytes(max(sizes))}"
+    )
 
 
 # ── Parquet readers (polars) ─────────────────────────────────────────────
@@ -266,15 +297,19 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
     return out
 
 
-def read_traces(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
+def read_trace_edges(normal_path: Path, abnormal_path: Path) -> list[list[str]]:
     """
-    Read normal + abnormal trace spans and normalise to the loader's schema.
+    Read normal + abnormal trace spans and emit DISTINCT caller → callee edges.
 
-    The archive's Parquet is ALREADY the platform's normalised view (the output
-    of its `convert_traces`): `time` (Datetime), `trace_id`, `span_id`,
-    `parent_span_id`, `span_name`, `service_name`, `duration` (nanoseconds),
-    `attr.status_code` (OTel enum 0/1/2). `parentSpanId` is omitted for root
-    spans (empty/null parent); `duration` is converted to milliseconds.
+    The engine never consumes per-span details (start time, duration, status,
+    operation name) — it only needs the call graph the spans imply. A datapack
+    can hold millions of spans (~86 MB serialised), so this reader resolves each
+    span's parent service via a polars self-join and returns the distinct
+    ``[parent_service, service]`` edges instead of the span list.
+
+    Root spans (empty/null `parent_span_id`) and spans whose parent id cannot be
+    resolved (e.g. the parent was filtered out) contribute no edge; self-calls
+    (same service on both ends) are dropped, matching the platform's evaluator.
     """
     frames: list[pl.DataFrame] = []
     for path in (normal_path, abnormal_path):
@@ -283,49 +318,34 @@ def read_traces(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
         frames.append(
             pl.read_parquet(
                 path,
-                columns=[
-                    "time",
-                    "trace_id",
-                    "span_id",
-                    "parent_span_id",
-                    "span_name",
-                    "service_name",
-                    "duration",
-                    "attr.status_code",
-                ],
+                columns=["trace_id", "span_id", "parent_span_id", "service_name"],
             )
         )
     if not frames:
         return []
 
     df = pl.concat(frames)
-    df = df.rename({"service_name": "service", "attr.status_code": "status_code"})
-    df = df.with_columns(
-        _epoch_ms(df, "time").alias("time"),
-        (pl.col("duration").cast(pl.Float64) / 1_000_000.0).alias("duration"),
-    )
+    df = df.rename({"service_name": "service"})
     df = df.filter(
         pl.col("service").is_not_null()
         & pl.col("span_id").is_not_null()
         & pl.col("trace_id").is_not_null()
     )
-    df = df.sort("time")
 
-    out: list[dict[str, Any]] = []
-    for row in df.iter_rows(named=True):
-        entry: dict[str, Any] = {
-            "traceId": row["trace_id"],
-            "spanId": row["span_id"],
-            "service": row["service"],
-            "operationName": row["span_name"] if row["span_name"] else "",
-            "startTime": row["time"],
-            "duration": row["duration"],
-            "status": status_code_to_status(row["status_code"]),
-        }
-        if row["parent_span_id"]:
-            entry["parentSpanId"] = row["parent_span_id"]
-        out.append(entry)
-    return out
+    # Map each span id to its service, then join on parent_span_id to resolve
+    # the caller service. Root spans (empty parent id) never match.
+    parents = df.select(
+        pl.col("span_id").alias("parent_span_id"),
+        pl.col("service").alias("parent_service"),
+    )
+    joined = df.join(parents, on="parent_span_id", how="inner")
+
+    edges_df = joined.filter(pl.col("parent_service") != pl.col("service"))
+    edges_df = edges_df.select(["parent_service", "service"]).unique()
+
+    return [
+        [row["parent_service"], row["service"]] for row in edges_df.iter_rows(named=True)
+    ]
 
 
 def read_logs(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
@@ -399,9 +419,11 @@ def convert_datapack(src_dir: Path, dst_dir: Path) -> Path:
         ),
     }
 
-    traces = read_traces(src_dir / "normal_traces.parquet", src_dir / "abnormal_traces.parquet")
-    if traces:
-        case["traces"] = traces
+    trace_edges = read_trace_edges(
+        src_dir / "normal_traces.parquet", src_dir / "abnormal_traces.parquet"
+    )
+    if trace_edges:
+        case["traceEdges"] = trace_edges
 
     logs = read_logs(src_dir / "normal_logs.parquet", src_dir / "abnormal_logs.parquet")
     if logs:
@@ -459,22 +481,32 @@ def main(argv: list[str] | None = None) -> int:
 
     ok = 0
     failed = 0
+    sizes: list[int] = []
     for index, datapack in enumerate(datapacks, start=1):
         dst_dir = out_dir / datapack.name
         case_path = dst_dir / "case.json"
         if case_path.exists() and not args.force:
-            print(f"[{index}/{total}] SKIP {datapack.name} (already converted)", flush=True)
+            size = case_path.stat().st_size
+            sizes.append(size)
+            print(
+                f"[{index}/{total}] SKIP {datapack.name} "
+                f"({format_bytes(size)}, already converted)",
+                flush=True,
+            )
             ok += 1
             continue
         try:
             convert_datapack(datapack, dst_dir)
+            size = case_path.stat().st_size
+            sizes.append(size)
             ok += 1
-            print(f"[{index}/{total}] OK   {datapack.name}", flush=True)
+            print(f"[{index}/{total}] OK   {datapack.name} ({format_bytes(size)})", flush=True)
         except Exception as exc:  # noqa: BLE001 - report per-datapack failures and continue
             failed += 1
             print(f"[{index}/{total}] FAIL {datapack.name}: {exc}", file=sys.stderr, flush=True)
 
     print(f"Done: {ok} converted/skipped, {failed} failed", flush=True)
+    print(summarize_sizes(sizes), flush=True)
     return 0 if failed == 0 else 1
 
 

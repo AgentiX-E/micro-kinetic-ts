@@ -19,40 +19,13 @@ import {
   FSE26Loader,
   buildFSE26CallGraph,
   buildFSE26StaticEdges,
-  buildFSE26TraceEdges,
   resolveFSE26GroundTruth,
   toFSE26LogEntry,
   toFSE26MetricMap,
+  traceEdgesToCallEdges,
 } from '../../../src/benchmarks/loaders/fse26-loader.js';
 
 // ── Fixtures ──────────────────────────────────────────────
-
-function makeSpan(
-  traceId: string,
-  spanId: string,
-  service: string,
-  parentSpanId?: string,
-): {
-  traceId: string;
-  spanId: string;
-  parentSpanId?: string;
-  service: string;
-  operationName: string;
-  startTime: number;
-  duration: number;
-  status: 'OK' | 'ERROR';
-} {
-  return {
-    traceId,
-    spanId,
-    parentSpanId,
-    service,
-    operationName: 'GET /x',
-    startTime: 1756998000000,
-    duration: 12.5,
-    status: 'OK',
-  };
-}
 
 function makeRawCase(overrides: Partial<FSE26RawCase> = {}): FSE26RawCase {
   return {
@@ -112,46 +85,30 @@ describe('buildFSE26StaticEdges', () => {
   });
 });
 
-// ── buildFSE26TraceEdges ──────────────────────────────────
+// ── traceEdgesToCallEdges ─────────────────────────────────
 
-describe('buildFSE26TraceEdges', () => {
-  it('derives caller→callee edges from parent span relationships', () => {
-    const spans = [
-      makeSpan('t1', 's0', 'ts-ui-dashboard'),
-      makeSpan('t1', 's1', 'ts-order-service', 's0'),
-    ];
-    const edges = buildFSE26TraceEdges(spans);
+describe('traceEdgesToCallEdges', () => {
+  it('wraps [caller, callee] pairs into CallEdges', () => {
+    const edges = traceEdgesToCallEdges([['ts-ui-dashboard', 'ts-order-service']]);
     expect(edges).toHaveLength(1);
     expect(edges[0]!.from).toBe('ts-ui-dashboard');
     expect(edges[0]!.to).toBe('ts-order-service');
   });
 
   it('excludes self-calls (same service on both ends)', () => {
-    const spans = [
-      makeSpan('t1', 's0', 'ts-order-service'),
-      makeSpan('t1', 's1', 'ts-order-service', 's0'),
-    ];
-    expect(buildFSE26TraceEdges(spans)).toEqual([]);
+    expect(traceEdgesToCallEdges([['ts-order-service', 'ts-order-service']])).toEqual([]);
   });
 
-  it('ignores spans without a resolvable parent', () => {
-    const spans = [
-      makeSpan('t1', 's0', 'ts-order-service'),
-      makeSpan('t1', 's1', 'ts-station-service', 'unknown-parent'),
-    ];
-    // The second span's parent id is not any span's id, so no edge.
-    expect(buildFSE26TraceEdges(spans)).toEqual([]);
-  });
-
-  it('deduplicates repeated edges across traces', () => {
-    const spans = [
-      makeSpan('t1', 'a', 'ts-order-service'),
-      makeSpan('t1', 'b', 'ts-station-service', 'a'),
-      makeSpan('t2', 'c', 'ts-order-service'),
-      makeSpan('t2', 'd', 'ts-station-service', 'c'),
-    ];
-    const edges = buildFSE26TraceEdges(spans);
+  it('deduplicates repeated edges', () => {
+    const edges = traceEdgesToCallEdges([
+      ['ts-order-service', 'ts-station-service'],
+      ['ts-order-service', 'ts-station-service'],
+    ]);
     expect(edges).toHaveLength(1);
+  });
+
+  it('returns empty for empty input', () => {
+    expect(traceEdgesToCallEdges([])).toEqual([]);
   });
 });
 
@@ -160,11 +117,8 @@ describe('buildFSE26TraceEdges', () => {
 describe('buildFSE26CallGraph', () => {
   it('creates a node per service and merges static + trace edges', () => {
     const services = ['ts-ui-dashboard', 'ts-order-service', 'ts-station-service'];
-    const traces = [
-      makeSpan('t1', 's0', 'ts-ui-dashboard'),
-      makeSpan('t1', 's1', 'ts-order-service', 's0'),
-    ];
-    const graph = buildFSE26CallGraph(services, traces);
+    const traceEdges: Array<readonly [string, string]> = [['ts-ui-dashboard', 'ts-order-service']];
+    const graph = buildFSE26CallGraph(services, traceEdges);
 
     expect(graph.nodes.size).toBe(3);
     expect([...graph.nodes.keys()].sort()).toEqual([...services].sort());
@@ -180,16 +134,15 @@ describe('buildFSE26CallGraph', () => {
 
   it('deduplicates trace edges that overlap static edges', () => {
     const services = ['ts-order-service', 'ts-station-service'];
-    const traces = [
-      makeSpan('t1', 'a', 'ts-order-service'),
-      makeSpan('t1', 'b', 'ts-station-service', 'a'),
+    const traceEdges: Array<readonly [string, string]> = [
+      ['ts-order-service', 'ts-station-service'],
     ];
-    const graph = buildFSE26CallGraph(services, traces);
+    const graph = buildFSE26CallGraph(services, traceEdges);
     const keys = graph.edges.map((e) => `${e.from}->${e.to}`);
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('handles absent traces gracefully', () => {
+  it('handles absent trace edges gracefully', () => {
     const graph = buildFSE26CallGraph(['ts-order-service'], undefined);
     expect(graph.nodes.size).toBe(1);
     // With no present neighbour and no mysql node, no edge survives.
@@ -197,14 +150,11 @@ describe('buildFSE26CallGraph', () => {
   });
 
   it('drops trace edges whose endpoint is not a present node', () => {
-    // ts-ui-dashboard appears only in traces (not metrics); its fan-out edge
-    // into ts-order-service must not survive the both-endpoints filter.
+    // ts-ui-dashboard appears only in trace edges (not metrics); its fan-out
+    // edge into ts-order-service must not survive the both-endpoints filter.
     const services = ['ts-order-service', 'ts-station-service'];
-    const traces = [
-      makeSpan('t1', 's0', 'ts-ui-dashboard'),
-      makeSpan('t1', 's1', 'ts-order-service', 's0'),
-    ];
-    const graph = buildFSE26CallGraph(services, traces);
+    const traceEdges: Array<readonly [string, string]> = [['ts-ui-dashboard', 'ts-order-service']];
+    const graph = buildFSE26CallGraph(services, traceEdges);
     const pairs = graph.edges.map((e) => `${e.from}->${e.to}`);
     expect(pairs).not.toContain('ts-ui-dashboard->ts-order-service');
   });
@@ -313,10 +263,7 @@ describe('FSE26Loader', () => {
   it('toBenchmarkCase converts a raw case into a unified BenchmarkCase', () => {
     const loader = new FSE26Loader();
     const raw = makeRawCase({
-      traces: [
-        makeSpan('t1', 's0', 'ts-order-service'),
-        makeSpan('t1', 's1', 'ts-station-service', 's0'),
-      ],
+      traceEdges: [['ts-order-service', 'ts-station-service']],
       logs: [
         {
           timestamp: 1757000000000,
@@ -338,19 +285,14 @@ describe('FSE26Loader', () => {
     expect(bench.callGraph.nodes.size).toBe(2);
     expect(bench.logs).toHaveLength(1);
     expect(bench.logs![0]!.isLogicException).toBe(true);
-    expect(bench.traces).toHaveLength(2);
-    expect(bench.traces![0]!.status).toBe('OK');
   });
 
   it('does not add trace/log-only services as nodes', () => {
     const loader = new FSE26Loader();
     const raw = makeRawCase({
-      // ts-ui-dashboard and ts-route-service appear only in traces/logs, not
-      // metrics — they must NOT become rankable nodes.
-      traces: [
-        makeSpan('t1', 's0', 'ts-ui-dashboard'),
-        makeSpan('t1', 's1', 'ts-order-service', 's0'),
-      ],
+      // ts-ui-dashboard and ts-route-service appear only in trace edges/logs,
+      // not metrics — they must NOT become rankable nodes.
+      traceEdges: [['ts-ui-dashboard', 'ts-order-service']],
       logs: [
         {
           timestamp: 1,
@@ -372,11 +314,10 @@ describe('FSE26Loader', () => {
     ).toBe(false);
   });
 
-  it('leaves logs and traces undefined when absent', () => {
+  it('leaves logs undefined when absent', () => {
     const loader = new FSE26Loader();
     const bench = loader.toBenchmarkCase(makeRawCase());
     expect(bench.logs).toBeUndefined();
-    expect(bench.traces).toBeUndefined();
   });
 
   it('loadCase reads and parses the normalised case.json document', () => {

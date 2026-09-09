@@ -34,9 +34,8 @@
  *       { "metric": "container.cpu.usage", "timestamps": [1756998000000], "values": [0.1] }
  *     ]
  *   },
- *   "traces": [
- *     { "traceId": "abc", "spanId": "s1", "parentSpanId": "s0", "service": "ts-order-service",
- *       "operationName": "GET /orders", "startTime": 1756998000000, "duration": 12.5, "status": "OK" }
+ *   "traceEdges": [
+ *     ["ts-ui-dashboard", "ts-order-service"]
  *   ],
  *   "logs": [
  *     { "timestamp": 1756998000000, "service": "ts-order-service", "level": "ERROR", "message": "..." }
@@ -44,10 +43,11 @@
  * }
  * ```
  *
- * All timestamps are Unix milliseconds, all durations milliseconds, log levels
- * are already upper-cased, and trace status is already normalised to OK/ERROR
- * by the bridge. Service names are used directly as service IDs (FSE'26 names
- * are already unique, so no semantic alignment is needed, unlike RCAEval).
+ * All timestamps are Unix milliseconds and log levels are already upper-cased.
+ * Trace spans are pre-aggregated by the bridge into distinct caller → callee
+ * `traceEdges` (the engine consumes only the call graph, never per-span
+ * details). Service names are used directly as service IDs (FSE'26 names are
+ * already unique, so no semantic alignment is needed, unlike RCAEval).
  *
  * ## Ground truth
  *
@@ -71,12 +71,7 @@ import type {
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
 
-import type {
-  BenchmarkCase,
-  BenchmarkGroundTruth,
-  BenchmarkLogEntry,
-  BenchmarkTraceSpan,
-} from './types.js';
+import type { BenchmarkCase, BenchmarkGroundTruth, BenchmarkLogEntry } from './types.js';
 
 import {
   classifyLogLevel,
@@ -252,17 +247,8 @@ interface FSE26MetricSeries {
   readonly values: readonly number[];
 }
 
-/** A normalised trace span from the bridge JSON. */
-interface FSE26TraceSpan {
-  readonly traceId: string;
-  readonly spanId: string;
-  readonly parentSpanId?: string;
-  readonly service: string;
-  readonly operationName: string;
-  readonly startTime: number;
-  readonly duration: number;
-  readonly status: 'OK' | 'ERROR';
-}
+/** A directed caller → callee edge, pre-aggregated by the bridge from spans. */
+type FSE26TraceEdge = readonly [string, string];
 
 /** A normalised log entry from the bridge JSON. */
 interface FSE26LogEntry {
@@ -279,7 +265,7 @@ export interface FSE26RawCase {
   readonly groundTruthServices: readonly string[];
   readonly injectTimeMs: number;
   readonly metrics: Readonly<Record<string, readonly FSE26MetricSeries[]>>;
-  readonly traces?: readonly FSE26TraceSpan[];
+  readonly traceEdges?: readonly FSE26TraceEdge[];
   readonly logs?: readonly FSE26LogEntry[];
 }
 
@@ -335,43 +321,39 @@ export function buildFSE26StaticEdges(serviceNames: readonly string[]): CallEdge
 }
 
 /**
- * Derive caller → callee call edges from trace span parent relationships.
+ * Convert bridge-pre-aggregated trace edges into {@link CallEdge}s.
  *
- * A span's `parentSpanId` links it to the span that invoked it; mapping each
- * span id and parent id to their services yields the observed call edges.
- * Self-calls (same service on both ends) are excluded, matching the platform.
+ * The bridge already resolved each span's parent service (via a polars
+ * self-join) and emitted distinct `[caller, callee]` pairs, so the loader just
+ * wraps them. The self-call and de-duplication guards are retained here so the
+ * semantics stay robust to any bridge that skips either step.
  *
- * @param traces - The normalised trace spans of the case.
- * @returns A deduplicated directed edge list (from = parent service, to = child service).
+ * @param traceEdges - The `[caller, callee]` pairs emitted by the bridge.
+ * @returns A deduplicated directed edge list.
  */
-export function buildFSE26TraceEdges(traces: readonly FSE26TraceSpan[]): CallEdge[] {
-  const serviceBySpan = new Map<string, string>();
-  for (const span of traces) {
-    if (span.spanId && span.service) serviceBySpan.set(span.spanId, span.service);
-  }
-
+export function traceEdgesToCallEdges(
+  traceEdges: readonly (readonly [string, string])[],
+): CallEdge[] {
   const seen = new Set<string>();
   const edges: CallEdge[] = [];
-  for (const span of traces) {
-    if (!span.parentSpanId) continue;
-    const parentService = serviceBySpan.get(span.parentSpanId);
-    if (!parentService) continue;
-    addDeduplicatedEdge(edges, seen, parentService, span.service);
+  for (const [from, to] of traceEdges) {
+    addDeduplicatedEdge(edges, seen, from, to);
   }
   return edges;
 }
 
 /**
  * Assemble the case's service call graph from the static Train Ticket topology
- * layered with trace-derived edges.
+ * layered with bridge-derived trace edges.
  *
  * @param serviceNames - The services observed in the case.
- * @param traces - The normalised trace spans (optional, may be empty).
+ * @param traceEdges - The `[caller, callee]` pairs emitted by the bridge
+ *   (optional, may be empty).
  * @returns A {@link ServiceCallGraph} with every observed service as a node.
  */
 export function buildFSE26CallGraph(
   serviceNames: readonly string[],
-  traces?: readonly FSE26TraceSpan[],
+  traceEdges?: readonly (readonly [string, string])[],
 ): ServiceCallGraph {
   const nodes = new Map<string, ServiceNode>();
   for (const name of serviceNames) {
@@ -379,7 +361,7 @@ export function buildFSE26CallGraph(
   }
 
   const present = new Set(serviceNames);
-  const edges = [...buildFSE26StaticEdges(serviceNames), ...buildFSE26TraceEdges(traces ?? [])]
+  const edges = [...buildFSE26StaticEdges(serviceNames), ...traceEdgesToCallEdges(traceEdges ?? [])]
     // The static builder already drops edges with an absent endpoint; this
     // filter applies the same invariant to trace-derived edges, which may
     // reference trace-only services (e.g. the load generator) that have no
@@ -489,29 +471,16 @@ export class FSE26Loader {
   toBenchmarkCase(raw: FSE26RawCase): BenchmarkCase {
     const metrics = toFSE26MetricMap(raw.metrics);
     // Nodes are exactly the services with metric series (the engine can only
-    // score services it has metrics for). Traces may reference other services
-    // (e.g. the load generator), but those are dropped by the both-endpoints
-    // edge filter, matching the RCAEval loader's metric-keyed convention.
+    // score services it has metrics for). Trace edges may reference other
+    // services (e.g. the load generator), but those are dropped by the
+    // both-endpoints edge filter, matching the RCAEval loader's metric-keyed
+    // convention.
     const serviceNames = [...metrics.keys()];
 
-    const callGraph = buildFSE26CallGraph(serviceNames, raw.traces);
+    const callGraph = buildFSE26CallGraph(serviceNames, raw.traceEdges);
 
     const logs: ReadonlyArray<BenchmarkLogEntry> | undefined =
       raw.logs && raw.logs.length > 0 ? raw.logs.map(toFSE26LogEntry) : undefined;
-
-    const traces: ReadonlyArray<BenchmarkTraceSpan> | undefined =
-      raw.traces && raw.traces.length > 0
-        ? raw.traces.map((s) => ({
-            traceId: s.traceId,
-            spanId: s.spanId,
-            parentSpanId: s.parentSpanId,
-            service: s.service,
-            operationName: s.operationName,
-            startTime: s.startTime,
-            duration: s.duration,
-            status: s.status,
-          }))
-        : undefined;
 
     return {
       id: `fse26_${raw.datapack}`,
@@ -521,7 +490,6 @@ export class FSE26Loader {
       injectTime: raw.injectTimeMs,
       groundTruth: resolveFSE26GroundTruth(raw),
       logs,
-      traces,
     };
   }
 }

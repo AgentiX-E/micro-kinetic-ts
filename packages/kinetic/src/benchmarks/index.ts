@@ -14,10 +14,10 @@ export {
   FSE26Loader,
   buildFSE26CallGraph,
   buildFSE26StaticEdges,
-  buildFSE26TraceEdges,
   resolveFSE26GroundTruth,
   toFSE26LogEntry,
   toFSE26MetricMap,
+  traceEdgesToCallEdges,
 } from './loaders/fse26-loader.js';
 export type { FSE26RawCase } from './loaders/fse26-loader.js';
 export { RCA100Loader } from './loaders/rca100-loader.js';

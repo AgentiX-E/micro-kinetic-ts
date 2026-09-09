@@ -9,9 +9,8 @@ The pure helpers are exercised directly; the Parquet readers are exercised
 end-to-end against synthetic Parquet files that mirror the RCABench NORMALISED
 schema (the archive is the platform's own converted output, not the raw OTel
 export): `time` Datetime, `metric`/`value`/`service_name`, `trace_id`/`span_id`/
-`duration` (ns), `attr.status_code` (OTel enum), and `level`/`message`. The
-unit-normalisation and epoch conversion are verified without the 13.4 GB
-download.
+`parent_span_id`/`service_name`, and `level`/`message`. The unit-normalisation
+and epoch conversion are verified without the 13.4 GB download.
 """
 
 from __future__ import annotations
@@ -99,14 +98,50 @@ class TestComputeInjectTimeMs(unittest.TestCase):
             conv.compute_inject_time_ms(env)
 
 
-class TestStatusCodeToStatus(unittest.TestCase):
-    def test_enum_mapping(self) -> None:
-        self.assertEqual(conv.status_code_to_status(0), "OK")
-        self.assertEqual(conv.status_code_to_status(1), "OK")
-        self.assertEqual(conv.status_code_to_status(2), "ERROR")
+class TestFormatBytes(unittest.TestCase):
+    """`format_bytes` reports a compact, human-readable byte count."""
 
-    def test_null_treated_as_ok(self) -> None:
-        self.assertEqual(conv.status_code_to_status(None), "OK")
+    def test_zero(self) -> None:
+        self.assertEqual(conv.format_bytes(0), "0 B")
+
+    def test_under_one_kib(self) -> None:
+        self.assertEqual(conv.format_bytes(1), "1 B")
+        self.assertEqual(conv.format_bytes(1023), "1023 B")
+
+    def test_exact_kib_boundary(self) -> None:
+        self.assertEqual(conv.format_bytes(1024), "1.0 KB")
+
+    def test_megabytes(self) -> None:
+        self.assertEqual(conv.format_bytes(90_000_000), "85.8 MB")
+
+    def test_gigabytes(self) -> None:
+        self.assertEqual(conv.format_bytes(3 * 1024**3), "3.0 GB")
+
+    def test_float_average(self) -> None:
+        self.assertEqual(conv.format_bytes(1536.0), "1.5 KB")
+
+    def test_negative_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            conv.format_bytes(-1)
+
+
+class TestSummarizeSizes(unittest.TestCase):
+    """`summarize_sizes` aggregates per-case volumes into a single line."""
+
+    def test_empty(self) -> None:
+        self.assertEqual(conv.summarize_sizes([]), "Size: 0 cases")
+
+    def test_single_case(self) -> None:
+        self.assertEqual(
+            conv.summarize_sizes([1024]),
+            "Size: 1 cases, 1.0 KB total, avg 1.0 KB/case, min 1.0 KB, max 1.0 KB",
+        )
+
+    def test_multiple_cases_reports_min_max(self) -> None:
+        self.assertEqual(
+            conv.summarize_sizes([100, 300]),
+            "Size: 2 cases, 400 B total, avg 200 B/case, min 100 B, max 300 B",
+        )
 
 
 class TestEpochMs(unittest.TestCase):
@@ -159,6 +194,82 @@ class TestNonFiniteSanitization(unittest.TestCase):
         self.assertEqual(series[0]["timestamps"], [(NORMAL_START + 0) * 1000, (NORMAL_START + 3) * 1000])
 
 
+class TestReadTraceEdges(unittest.TestCase):
+    """`read_trace_edges` resolves each span's parent service and emits the
+    distinct caller → callee edges (self-calls and unresolvable parents dropped)."""
+
+    def _write_traces(self, root: Path, name: str, rows: list[tuple[str, str, str, str]]) -> Path:
+        """Write a traces Parquet from (trace_id, span_id, parent_span_id, service) rows."""
+        path = root / name
+        pl.DataFrame(
+            {
+                "trace_id": [r[0] for r in rows],
+                "span_id": [r[1] for r in rows],
+                "parent_span_id": [r[2] for r in rows],
+                "service_name": [r[3] for r in rows],
+            }
+        ).write_parquet(path)
+        return path
+
+    def test_resolves_parent_across_normal_and_abnormal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [("t1", "s0", "", "ts-ui-dashboard"), ("t1", "s1", "s0", "ts-order-service")],
+            )
+            abnormal = self._write_traces(
+                root, "abnormal_traces.parquet", [("t2", "s2", "", "ts-order-service")]
+            )
+            edges = conv.read_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service"]])
+
+    def test_excludes_self_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [("t1", "s0", "", "ts-order-service"), ("t1", "s1", "s0", "ts-order-service")],
+            )
+            edges = conv.read_trace_edges(normal, root / "missing.parquet")
+        self.assertEqual(edges, [])
+
+    def test_ignores_unresolvable_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [("t1", "s0", "", "ts-order-service"), ("t1", "s1", "ghost", "ts-station-service")],
+            )
+            edges = conv.read_trace_edges(normal, root / "missing.parquet")
+        self.assertEqual(edges, [])
+
+    def test_deduplicates_repeated_edges(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-order-service"),
+                    ("t1", "b", "a", "ts-station-service"),
+                    ("t2", "c", "", "ts-order-service"),
+                    ("t2", "d", "c", "ts-station-service"),
+                ],
+            )
+            edges = conv.read_trace_edges(normal, root / "missing.parquet")
+        self.assertEqual(edges, [["ts-order-service", "ts-station-service"]])
+
+    def test_empty_when_no_trace_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            edges = conv.read_trace_edges(root / "missing1.parquet", root / "missing2.parquet")
+        self.assertEqual(edges, [])
+
+
 # ── End-to-end synthetic datapack ────────────────────────────────────────
 
 # Window boundaries (Unix seconds, UTC).
@@ -196,7 +307,9 @@ def _build_synthetic_datapack(root: Path, datapack_name: str) -> Path:
         }
     ).write_parquet(src / "abnormal_metrics.parquet")
 
-    # Traces: root span (empty parent), an ERROR child, and an unset-status span.
+    # Traces: a root span (empty parent) and a child span. Extra span columns
+    # (span_name/duration/attr.status_code) are present but ignored by the edge
+    # reader, which reads only the four edge-relevant columns.
     pl.DataFrame(
         {
             "time": [_dt(NORMAL_START + 2), _dt(NORMAL_END - 2)],
@@ -298,18 +411,8 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
         self.assertEqual(mem["timestamps"], [(ABNORMAL_START + 1) * 1000])
         self.assertEqual(mem["values"], [512.0])
 
-        # Traces: epoch-ms start times, ns→ms duration, status enum, parent omitted for roots.
-        traces = {t["spanId"]: t for t in case["traces"]}
-        self.assertEqual(traces["s0"]["status"], "OK")
-        self.assertNotIn("parentSpanId", traces["s0"])
-        self.assertEqual(traces["s0"]["duration"], 1.0)
-
-        self.assertEqual(traces["s1"]["status"], "ERROR")
-        self.assertEqual(traces["s1"]["parentSpanId"], "s0")
-        self.assertEqual(traces["s1"]["duration"], 2.5)
-
-        self.assertEqual(traces["s2"]["status"], "OK")
-        self.assertEqual(traces["s2"]["duration"], 0.5)
+        # Trace edges: parent→child resolved, root spans contribute no edge.
+        self.assertEqual(case["traceEdges"], [["ts-ui-dashboard", "ts-order-service"]])
 
         # Logs: upper-cased level, ui-dashboard filtered, null level → INFO.
         self.assertEqual(len(case["logs"]), 2)
