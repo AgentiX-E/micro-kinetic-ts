@@ -19,6 +19,7 @@ import {
   FSE26Loader,
   buildFSE26CallGraph,
   buildFSE26StaticEdges,
+  expandMetricTimestamps,
   resolveFSE26GroundTruth,
   toFSE26LogEntry,
   toFSE26MetricMap,
@@ -160,6 +161,32 @@ describe('buildFSE26CallGraph', () => {
   });
 });
 
+// ── expandMetricTimestamps ────────────────────────────────
+
+describe('expandMetricTimestamps', () => {
+  it('expands start + step into an ascending timestamp array', () => {
+    expect(
+      expandMetricTimestamps({ metric: 'm', start: 1000, step: 500, values: [1, 2, 3] }),
+    ).toEqual([1000, 1500, 2000]);
+  });
+
+  it('expands a zero step into repeated timestamps', () => {
+    expect(expandMetricTimestamps({ metric: 'm', start: 500, step: 0, values: [1, 2, 3] })).toEqual(
+      [500, 500, 500],
+    );
+  });
+
+  it('passes through an explicit timestamps list', () => {
+    expect(
+      expandMetricTimestamps({ metric: 'm', timestamps: [1000, 2000, 2500], values: [1, 2, 3] }),
+    ).toEqual([1000, 2000, 2500]);
+  });
+
+  it('returns empty when neither form is present (malformed)', () => {
+    expect(expandMetricTimestamps({ metric: 'm', values: [1, 2] })).toEqual([]);
+  });
+});
+
 // ── toFSE26MetricMap ──────────────────────────────────────
 
 describe('toFSE26MetricMap', () => {
@@ -178,6 +205,19 @@ describe('toFSE26MetricMap', () => {
     expect(series[0]!.timestamps).toEqual([1, 2]);
     expect(series[0]!.values).toBeInstanceOf(Float64Array);
     expect([...series[0]!.values]).toEqual([0.1, 0.2]);
+  });
+
+  it('reconstructs timestamps from the compact start + step form', () => {
+    const map = toFSE26MetricMap({
+      'ts-order-service': [
+        { metric: 'container.cpu.usage', start: 1000, step: 1000, values: [0.1, 0.2, 0.3] },
+      ],
+    });
+
+    const series = map.get('ts-order-service')!;
+    expect(series).toHaveLength(1);
+    expect(series[0]!.timestamps).toEqual([1000, 2000, 3000]);
+    expect([...series[0]!.values]).toEqual([0.1, 0.2, 0.3]);
   });
 
   it('skips services with zero metric series', () => {

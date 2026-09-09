@@ -37,7 +37,7 @@ Output `case.json` schema (per datapack):
       "injectTimeMs": 1757000000000,
       "metrics": {
         "ts-order-service": [
-          {"metric": "container.cpu.usage", "timestamps": [1756998000000], "values": [0.1]}
+          {"metric": "container.cpu.usage", "start": 1756998000000, "step": 5000, "values": [0.1, 0.2]}
         ]
       },
       "traceEdges": [
@@ -179,6 +179,22 @@ def compute_inject_time_ms(env: dict[str, Any]) -> int:
     return inject_seconds * 1000
 
 
+def compact_metric_series(timestamps: list[int], values: list[float]) -> dict[str, Any]:
+    """
+    Compact a metric series to ``{start, step, values}`` when uniformly sampled.
+
+    Prometheus-style scrapes produce a constant timestamp delta, so storing the
+    start + step instead of the full timestamp list roughly halves the serialised
+    size. Irregular series (fewer than two samples or a non-constant delta) fall
+    back to the explicit ``timestamps`` list.
+    """
+    if len(timestamps) >= 2:
+        step = timestamps[1] - timestamps[0]
+        if all(timestamps[i] - timestamps[i - 1] == step for i in range(2, len(timestamps))):
+            return {"start": timestamps[0], "step": step, "values": values}
+    return {"timestamps": timestamps, "values": values}
+
+
 def format_bytes(num_bytes: float) -> str:
     """Format a non-negative byte count as a compact human-readable string."""
     if num_bytes < 0:
@@ -250,8 +266,9 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
 
     The archive's Parquet is ALREADY the platform's normalised view (the output
     of its `convert_metrics`): columns `time` (Datetime), `metric`, `value`,
-    `service_name`, plus `attr.*`. Returns
-    ``{service: [{"metric", "timestamps", "values"}, ...]}`` with each series
+    `service_name`, plus `attr.*`. Returns ``{service: [series, ...]}`` where
+    each uniformly sampled series is ``{"metric", "start", "step", "values"}``
+    and each irregular series is ``{"metric", "timestamps", "values"}``, each
     sorted by ascending timestamp.
     """
     frames: list[pl.DataFrame] = []
@@ -288,13 +305,9 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
         series: list[dict[str, Any]] = []
         for (metric,), metric_df in service_df.group_by("metric", maintain_order=False):
             metric_df = metric_df.sort("time")
-            series.append(
-                {
-                    "metric": metric,
-                    "timestamps": metric_df["time"].to_list(),
-                    "values": metric_df["value"].to_list(),
-                }
-            )
+            timestamps = metric_df["time"].to_list()
+            values = metric_df["value"].to_list()
+            series.append({"metric": metric, **compact_metric_series(timestamps, values)})
         if series:
             out[service] = series
     return out

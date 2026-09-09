@@ -144,6 +144,49 @@ class TestSummarizeSizes(unittest.TestCase):
         )
 
 
+class TestCompactMetricSeries(unittest.TestCase):
+    """`compact_metric_series` collapses uniformly sampled timestamps to a
+    `start` + `step` representation, falling back to the explicit list when the
+    sampling is irregular (or too short to infer a step)."""
+
+    def test_uniform_series_compacts(self) -> None:
+        self.assertEqual(
+            conv.compact_metric_series([1000, 2000, 3000], [0.1, 0.2, 0.3]),
+            {"start": 1000, "step": 1000, "values": [0.1, 0.2, 0.3]},
+        )
+
+    def test_two_sample_uniform_series_compacts(self) -> None:
+        self.assertEqual(
+            conv.compact_metric_series([1000, 1500], [1.0, 2.0]),
+            {"start": 1000, "step": 500, "values": [1.0, 2.0]},
+        )
+
+    def test_zero_step_uniform_series_compacts(self) -> None:
+        # All samples at one timestamp is still "uniform" (step = 0).
+        self.assertEqual(
+            conv.compact_metric_series([500, 500, 500], [1.0, 2.0, 3.0]),
+            {"start": 500, "step": 0, "values": [1.0, 2.0, 3.0]},
+        )
+
+    def test_single_sample_falls_back(self) -> None:
+        self.assertEqual(
+            conv.compact_metric_series([1000], [0.5]),
+            {"timestamps": [1000], "values": [0.5]},
+        )
+
+    def test_irregular_series_falls_back(self) -> None:
+        self.assertEqual(
+            conv.compact_metric_series([1000, 2000, 2500], [1.0, 2.0, 3.0]),
+            {"timestamps": [1000, 2000, 2500], "values": [1.0, 2.0, 3.0]},
+        )
+
+    def test_empty_series_falls_back(self) -> None:
+        self.assertEqual(
+            conv.compact_metric_series([], []),
+            {"timestamps": [], "values": []},
+        )
+
+
 class TestEpochMs(unittest.TestCase):
     """`_epoch_ms` must normalise both Datetime and integer-epoch time columns."""
 
@@ -191,7 +234,9 @@ class TestNonFiniteSanitization(unittest.TestCase):
         series = result["svc"]
         self.assertEqual(len(series), 1)
         self.assertEqual(series[0]["values"], [0.1, 0.2])
-        self.assertEqual(series[0]["timestamps"], [(NORMAL_START + 0) * 1000, (NORMAL_START + 3) * 1000])
+        # Two surviving samples (t0 and t3) → uniform → start + step (3 s gap).
+        self.assertEqual(series[0]["start"], (NORMAL_START + 0) * 1000)
+        self.assertEqual(series[0]["step"], 3 * 1000)
 
 
 class TestReadTraceEdges(unittest.TestCase):
@@ -404,10 +449,13 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
         self.assertIn("container.memory.usage", by_metric)
 
         cpu = by_metric["container.cpu.usage"]
-        self.assertEqual(cpu["timestamps"], [(NORMAL_START + 1) * 1000, (NORMAL_END - 1) * 1000])
+        # Two samples → uniform → compacted to start + step (58 s gap in ms).
+        self.assertEqual(cpu["start"], (NORMAL_START + 1) * 1000)
+        self.assertEqual(cpu["step"], (NORMAL_END - NORMAL_START - 2) * 1000)
         self.assertEqual(cpu["values"], [0.1, 0.2])
 
         mem = by_metric["container.memory.usage"]
+        # One sample → falls back to the explicit timestamps list.
         self.assertEqual(mem["timestamps"], [(ABNORMAL_START + 1) * 1000])
         self.assertEqual(mem["values"], [512.0])
 

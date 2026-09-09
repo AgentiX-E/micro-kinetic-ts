@@ -31,7 +31,7 @@
  *   "injectTimeMs": 1757000000000,
  *   "metrics": {
  *     "ts-order-service": [
- *       { "metric": "container.cpu.usage", "timestamps": [1756998000000], "values": [0.1] }
+ *       { "metric": "container.cpu.usage", "start": 1756998000000, "step": 5000, "values": [0.1, 0.2] }
  *     ]
  *   },
  *   "traceEdges": [
@@ -46,8 +46,11 @@
  * All timestamps are Unix milliseconds and log levels are already upper-cased.
  * Trace spans are pre-aggregated by the bridge into distinct caller → callee
  * `traceEdges` (the engine consumes only the call graph, never per-span
- * details). Service names are used directly as service IDs (FSE'26 names are
- * already unique, so no semantic alignment is needed, unlike RCAEval).
+ * details). Metric series are stored compactly when uniformly sampled:
+ * `{ start, step, values }` instead of the full `timestamps` list (irregular
+ * series keep `timestamps`). Service names are used directly as service IDs
+ * (FSE'26 names are already unique, so no semantic alignment is needed, unlike
+ * RCAEval).
  *
  * ## Ground truth
  *
@@ -240,10 +243,19 @@ const MYSQL_CONNECTED_SERVICES: readonly string[] = [
 
 // ── Raw bridge types ─────────────────────────────────────
 
-/** A normalised metric time series (service-scoped) from the bridge JSON. */
-interface FSE26MetricSeries {
+/**
+ * A normalised metric time series (service-scoped) from the bridge JSON.
+ *
+ * Uniformly sampled series are stored compactly as `start` + `step` (the bridge
+ * drops the full timestamp list to roughly halve the serialised size); irregular
+ * series (or single samples) carry an explicit `timestamps` list. Exactly one of
+ * the two forms is present.
+ */
+export interface FSE26MetricSeries {
   readonly metric: string;
-  readonly timestamps: readonly number[];
+  readonly timestamps?: readonly number[];
+  readonly start?: number;
+  readonly step?: number;
   readonly values: readonly number[];
 }
 
@@ -378,6 +390,28 @@ export function buildFSE26CallGraph(
 }
 
 /**
+ * Reconstruct a metric series' timestamps from the bridge's compact form.
+ *
+ * Uniformly sampled series carry `start` + `step` (the bridge drops the full
+ * timestamp list to roughly halve the serialised size); irregular series carry
+ * an explicit `timestamps` list. This normalises either form back to a full
+ * ascending timestamp array for the engine.
+ */
+export function expandMetricTimestamps(series: FSE26MetricSeries): readonly number[] {
+  if (series.timestamps) return series.timestamps;
+  if (series.start !== undefined && series.step !== undefined) {
+    const start = series.start;
+    const step = series.step;
+    const out: number[] = [];
+    for (let i = 0; i < series.values.length; i++) {
+      out.push(start + i * step);
+    }
+    return out;
+  }
+  return [];
+}
+
+/**
  * Convert the bridge's metric JSON into the engine's {@link MetricMap}.
  *
  * Each (service, metric) pair becomes one {@link TimeSeries}; the bridge
@@ -394,7 +428,7 @@ export function toFSE26MetricMap(
   for (const [service, seriesList] of Object.entries(metrics)) {
     const series: TimeSeries[] = seriesList.map((s) => ({
       label: s.metric,
-      timestamps: s.timestamps,
+      timestamps: expandMetricTimestamps(s),
       values: new Float64Array(s.values),
       unit: 'count',
     }));
