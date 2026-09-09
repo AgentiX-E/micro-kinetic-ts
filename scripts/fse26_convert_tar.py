@@ -29,6 +29,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 import tarfile
@@ -82,6 +83,7 @@ def stream_convert_tar(
     ok = 0
     failed = 0
     sizes: list[int] = []
+    measurements: list[dict] = []
     started = 0
     current_name: str | None = None
     tmp = tempfile.TemporaryDirectory()
@@ -89,7 +91,7 @@ def stream_convert_tar(
 
     def finalize() -> None:
         """Convert (or skip) the just-finished datapack and clear its temp files."""
-        nonlocal ok, failed, current_name, sizes
+        nonlocal ok, failed, current_name, sizes, measurements
         if current_name is None:
             return
         src = tmp_root / current_name
@@ -100,15 +102,20 @@ def stream_convert_tar(
             elif (dst / "case.json").exists() and not force:
                 size = (dst / "case.json").stat().st_size
                 sizes.append(size)
+                measurements.append(
+                    conv.measure_case(json.loads((dst / "case.json").read_text("utf-8")))
+                )
                 ok += 1
                 print(
                     f"SKIP {current_name} ({conv.format_bytes(size)}, already converted)",
                     flush=True,
                 )
             else:
-                conv.convert_datapack(src, dst)
+                case = conv.build_case(src)
+                conv.write_case(case, dst)
                 size = (dst / "case.json").stat().st_size
                 sizes.append(size)
+                measurements.append(conv.measure_case(case))
                 ok += 1
                 print(f"OK   {current_name} ({conv.format_bytes(size)})", flush=True)
         except Exception as exc:  # noqa: BLE001 - report per-datapack failures and continue
@@ -150,6 +157,7 @@ def stream_convert_tar(
         tmp.cleanup()
 
     print(conv.summarize_sizes(sizes), flush=True)
+    print(conv.summarize_measurements(measurements), flush=True)
     return ok, failed
 
 

@@ -144,6 +144,83 @@ class TestSummarizeSizes(unittest.TestCase):
         )
 
 
+class TestMeasureCase(unittest.TestCase):
+    """`measure_case` reports a byte-level breakdown of a case document."""
+
+    @staticmethod
+    def _case() -> dict:
+        return {
+            "datapack": "ts5-ts-order-service-stress-svfvxk",
+            "faultType": "CPUStress",
+            "groundTruthServices": ["ts-order-service"],
+            "injectTimeMs": 1757000000000,
+            "metrics": {
+                "ts-order-service": [
+                    {"metric": "container.cpu.usage", "start": 1000, "step": 1000, "values": [1.0, 2.0, 3.0]},
+                    {"metric": "container.memory.usage", "timestamps": [1, 5, 6], "values": [512.0, 513.0, 514.0]},
+                ]
+            },
+            "traceEdges": [["ts-ui-dashboard", "ts-order-service"]],
+            "logs": [{"timestamp": 1, "service": "ts-order-service", "level": "ERROR", "message": "boom"}],
+        }
+
+    def test_sections_partition_total(self) -> None:
+        case = self._case()
+        m = conv.measure_case(case)
+        self.assertEqual(m["total"], len(json.dumps(case, separators=(",", ":"), allow_nan=False)))
+        # The four section budgets are a lower bound on `total`; the remainder
+        # is just the top-level key names (`"metrics":` / `"logs":` /
+        # `"traceEdges":`) and their separators.
+        overhead = m["total"] - (m["metrics"] + m["logs"] + m["edges"] + m["meta"])
+        self.assertGreaterEqual(overhead, 0)
+        self.assertLess(overhead, 64)
+
+    def test_metric_series_statistics(self) -> None:
+        m = conv.measure_case(self._case())
+        self.assertEqual(m["series"], 2)
+        self.assertEqual(m["uniform"], 1)  # cpu compacts; memory is irregular
+        self.assertEqual(m["samples"], 6)  # 3 + 3
+        self.assertGreater(m["ts_bytes"], 0)
+        self.assertGreater(m["val_bytes"], 0)
+        # Timestamp + value budgets are a strict subset of the metrics section
+        # (the section also carries the metric/service key names).
+        self.assertLess(m["ts_bytes"] + m["val_bytes"], m["metrics"])
+
+    def test_gzip_is_a_positive_int(self) -> None:
+        m = conv.measure_case(self._case())
+        self.assertIsInstance(m["gzip"], int)
+        self.assertGreater(m["gzip"], 0)
+
+    def test_header_only_case_has_zero_data_sections(self) -> None:
+        case = {"datapack": "dp", "faultType": "CPUStress", "groundTruthServices": ["s"], "injectTimeMs": 1}
+        m = conv.measure_case(case)
+        self.assertEqual(m["metrics"], 0)
+        self.assertEqual(m["logs"], 0)
+        self.assertEqual(m["edges"], 0)
+        self.assertEqual(m["series"], 0)
+        self.assertEqual(m["samples"], 0)
+        self.assertEqual(m["total"], m["meta"])
+
+
+class TestSummarizeMeasurements(unittest.TestCase):
+    """`summarize_measurements` aggregates per-case breakdowns into a summary."""
+
+    def test_empty(self) -> None:
+        self.assertEqual(conv.summarize_measurements([]), "Breakdown: 0 cases")
+
+    def test_aggregates_totals(self) -> None:
+        m = conv.measure_case(TestMeasureCase._case())
+        summary = conv.summarize_measurements([m, m])
+        self.assertIn("2 cases", summary)
+        self.assertIn("total", summary)
+        self.assertIn("gzip", summary)
+        self.assertIn("metrics", summary)
+        self.assertIn("logs", summary)
+        self.assertIn("edges", summary)
+        self.assertIn("series", summary)
+        self.assertIn("uniform", summary)
+
+
 class TestCompactMetricSeries(unittest.TestCase):
     """`compact_metric_series` collapses uniformly sampled timestamps to a
     `start` + `step` representation, falling back to the explicit list when the

@@ -63,6 +63,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import re
 import sys
@@ -225,6 +226,102 @@ def summarize_sizes(sizes: list[int]) -> str:
         f"Size: {len(sizes)} cases, {format_bytes(total)} total, "
         f"avg {format_bytes(avg)}/case, "
         f"min {format_bytes(min(sizes))}, max {format_bytes(max(sizes))}"
+    )
+
+
+def _json_bytes(obj: Any) -> int:
+    """Return the compact-JSON byte size of an object."""
+    return len(json.dumps(obj, separators=(",", ":"), allow_nan=False))
+
+
+def measure_case(case: dict[str, Any]) -> dict[str, Any]:
+    """
+    Return a byte-level size breakdown of a case document.
+
+    Reports the total compact-JSON size, the gzip-compressed size (level 5), and
+    the per-section split (metrics / logs / traceEdges / header), plus metric-
+    series statistics (series count, uniformly-sampled count, sample count, and
+    the timestamp vs value byte budgets). A subset run can therefore identify
+    the dominant component before choosing a compression + sharding scheme for
+    the `rcabench-data` release assets.
+    """
+    metrics = case.get("metrics") or {}
+    logs = case.get("logs") or []
+    edges = case.get("traceEdges") or []
+    meta = {k: v for k, v in case.items() if k not in ("metrics", "logs", "traceEdges")}
+
+    n_series = 0
+    n_uniform = 0
+    n_samples = 0
+    ts_bytes = 0
+    val_bytes = 0
+    for series_list in metrics.values():
+        for s in series_list:
+            n_series += 1
+            if "start" in s:
+                n_uniform += 1
+            values = s["values"]
+            n_samples += len(values)
+            val_bytes += _json_bytes(values)
+            if "timestamps" in s:
+                ts_bytes += _json_bytes(s["timestamps"])
+            else:
+                ts_bytes += _json_bytes([s["start"], s["step"]])
+
+    total = _json_bytes(case)
+    gzip_bytes = len(
+        gzip.compress(
+            json.dumps(case, separators=(",", ":"), allow_nan=False).encode("utf-8"),
+            compresslevel=5,
+        )
+    )
+
+    return {
+        "total": total,
+        "gzip": gzip_bytes,
+        "metrics": _json_bytes(metrics) if metrics else 0,
+        "logs": _json_bytes(logs) if logs else 0,
+        "edges": _json_bytes(edges) if edges else 0,
+        "meta": _json_bytes(meta),
+        "series": n_series,
+        "uniform": n_uniform,
+        "samples": n_samples,
+        "ts_bytes": ts_bytes,
+        "val_bytes": val_bytes,
+    }
+
+
+def summarize_measurements(rows: list[dict[str, Any]]) -> str:
+    """
+    Aggregate per-case :func:`measure_case` results into a readable summary.
+
+    Emits the total + gzip ratio, the per-section split, and the metric-series
+    statistics, so a subset run reveals exactly which component dominates the
+    serialised size (and therefore which compression lever is worth pursuing).
+    """
+    if not rows:
+        return "Breakdown: 0 cases"
+    total = sum(r["total"] for r in rows)
+    gzip_bytes = sum(r["gzip"] for r in rows)
+    metrics = sum(r["metrics"] for r in rows)
+    logs = sum(r["logs"] for r in rows)
+    edges = sum(r["edges"] for r in rows)
+    meta = sum(r["meta"] for r in rows)
+    series = sum(r["series"] for r in rows)
+    uniform = sum(r["uniform"] for r in rows)
+    samples = sum(r["samples"] for r in rows)
+    ts_bytes = sum(r["ts_bytes"] for r in rows)
+    val_bytes = sum(r["val_bytes"] for r in rows)
+    ratio = (total / gzip_bytes) if gzip_bytes else 0.0
+    return "\n".join(
+        [
+            f"Breakdown ({len(rows)} cases): total {format_bytes(total)}, "
+            f"gzip {format_bytes(gzip_bytes)} ({ratio:.1f}x)",
+            f"  metrics {format_bytes(metrics)}, logs {format_bytes(logs)}, "
+            f"edges {format_bytes(edges)}, meta {format_bytes(meta)}",
+            f"  metric series {series} ({uniform} uniform), samples {samples}",
+            f"  metric timestamps {format_bytes(ts_bytes)}, values {format_bytes(val_bytes)}",
+        ]
     )
 
 
@@ -409,11 +506,8 @@ def read_logs(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
 # ── Datapack converter ───────────────────────────────────────────────────
 
 
-def convert_datapack(src_dir: Path, dst_dir: Path) -> Path:
-    """Convert a single datapack directory into ``<dst_dir>/case.json``."""
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    out_path = dst_dir / "case.json"
-
+def build_case(src_dir: Path) -> dict[str, Any]:
+    """Build the normalised case document for a datapack (no disk write)."""
     injection = json.loads((src_dir / "injection.json").read_text("utf-8"))
     env = json.loads((src_dir / "env.json").read_text("utf-8"))
 
@@ -445,13 +539,28 @@ def convert_datapack(src_dir: Path, dst_dir: Path) -> Path:
     if logs:
         case["logs"] = logs
 
-    # `allow_nan=False` guarantees the emitted document is strict JSON: a
-    # surviving NaN/Infinity (which JS `JSON.parse` rejects) raises here instead
-    # of producing an unparseable `case.json`.
+    return case
+
+
+def write_case(case: dict[str, Any], dst_dir: Path) -> Path:
+    """
+    Write `case` to ``<dst_dir>/case.json`` and return the output path.
+
+    `allow_nan=False` guarantees the emitted document is strict JSON: a
+    surviving NaN/Infinity (which JS `JSON.parse` rejects) raises here instead
+    of producing an unparseable `case.json`.
+    """
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    out_path = dst_dir / "case.json"
     out_path.write_text(
         json.dumps(case, separators=(",", ":"), allow_nan=False), "utf-8"
     )
     return out_path
+
+
+def convert_datapack(src_dir: Path, dst_dir: Path) -> Path:
+    """Convert a single datapack directory into ``<dst_dir>/case.json``."""
+    return write_case(build_case(src_dir), dst_dir)
 
 
 def _discover_datapacks(data_dir: Path) -> list[Path]:
@@ -498,12 +607,14 @@ def main(argv: list[str] | None = None) -> int:
     ok = 0
     failed = 0
     sizes: list[int] = []
+    measurements: list[dict[str, Any]] = []
     for index, datapack in enumerate(datapacks, start=1):
         dst_dir = out_dir / datapack.name
         case_path = dst_dir / "case.json"
         if case_path.exists() and not args.force:
             size = case_path.stat().st_size
             sizes.append(size)
+            measurements.append(measure_case(json.loads(case_path.read_text("utf-8"))))
             print(
                 f"[{index}/{total}] SKIP {datapack.name} "
                 f"({format_bytes(size)}, already converted)",
@@ -512,9 +623,11 @@ def main(argv: list[str] | None = None) -> int:
             ok += 1
             continue
         try:
-            convert_datapack(datapack, dst_dir)
+            case = build_case(datapack)
+            write_case(case, dst_dir)
             size = case_path.stat().st_size
             sizes.append(size)
+            measurements.append(measure_case(case))
             ok += 1
             print(f"[{index}/{total}] OK   {datapack.name} ({format_bytes(size)})", flush=True)
         except Exception as exc:  # noqa: BLE001 - report per-datapack failures and continue
@@ -523,6 +636,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Done: {ok} converted/skipped, {failed} failed", flush=True)
     print(summarize_sizes(sizes), flush=True)
+    print(summarize_measurements(measurements), flush=True)
     return 0 if failed == 0 else 1
 
 
