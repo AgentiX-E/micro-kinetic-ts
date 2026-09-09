@@ -1,14 +1,22 @@
-name: Dump Loss Metric Signature
+name: Dump Fault Metric Signature
 
-# One-off diagnostic: characterize the network-loss ("loss") fault signature
-# across RE1/RE2. The routing probe showed `loss` is the largest bothWrong
-# contributor (34/77) with the worst union rate (66.7%; engine 55.9% / PRISM
-# 52.0%). This dump answers whether the GT source shows ANY metric deviation
-# and in what direction (rise vs drop) and metric name, deciding whether loss
-# is deterministically crackable. Dispatched manually; uploads a text artifact.
+# One-off diagnostic: characterize a fault type's metric signature across
+# RE1/RE2. The routing probe showed `loss` is the largest bothWrong contributor
+# (34/77) with the worst union rate (66.7%; engine 55.9% / PRISM 52.0%); the
+# same dump now generalises to any fault type (e.g. `delay`, the last fault type
+# with deterministic headroom). This dump answers whether the GT source shows
+# ANY metric deviation and in what direction (rise vs drop) and metric name,
+# deciding whether the fault type is deterministically crackable. Dispatched
+# manually; uploads a text artifact.
 
 on:
   workflow_dispatch:
+    inputs:
+      fault_type:
+        description: 'Fault type to dump (loss, delay, cpu, mem, disk, socket)'
+        required: false
+        default: 'loss'
+        type: string
 
 permissions:
   contents: read
@@ -35,16 +43,17 @@ jobs:
           key: RCAEvalJSON
           restore-keys: |
             RCAEval-json-
-      - name: Dump loss metric signature
+      - name: Dump ${{ inputs.fault_type }} metric signature
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
           set -o pipefail
           pnpm exec tsx scripts/dump-loss-metrics.ts \
-            --data-dir ~/RCAEval-json 2>&1 | tee dump-loss-metrics.txt
+            --data-dir ~/RCAEval-json \
+            --fault-type "${{ inputs.fault_type }}" 2>&1 | tee "dump-${{ inputs.fault_type }}-metrics.txt"
       - name: Upload dump artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dump-loss-metrics
-          path: dump-loss-metrics.txt
+          name: dump-${{ inputs.fault_type }}-metrics
+          path: dump-${{ inputs.fault_type }}-metrics.txt

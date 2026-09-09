@@ -20,6 +20,7 @@
  *
  * Usage:
  *   pnpm exec tsx scripts/dump-loss-metrics.ts [--data-dir <path>] [--limit N]
+ *                                              [--fault-type <type>]
  *
  * Read-only: never writes to the data directory.
  *
@@ -35,6 +36,7 @@ import { RCAEvalLoader } from '../packages/kinetic/src/benchmarks/loaders/rcaeva
 interface CliOptions {
   dataDir: string;
   limit: number;
+  faultType: string;
 }
 
 function parseArgs(): CliOptions {
@@ -42,10 +44,12 @@ function parseArgs(): CliOptions {
   const opts: CliOptions = {
     dataDir: join(homedir(), 'RCAEval-json'),
     limit: Number.POSITIVE_INFINITY,
+    faultType: 'loss',
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
     else if (args[i] === '--limit' && i + 1 < args.length) opts.limit = Number(args[++i]!);
+    else if (args[i] === '--fault-type' && i + 1 < args.length) opts.faultType = args[++i]!;
   }
   return opts;
 }
@@ -245,7 +249,10 @@ function main(): void {
     const hasMetrics = entries.some((e) => e.isFile() && e.name === 'metrics.json');
     if (hasMetrics) {
       const name = basename(cur);
-      if (/^re[12](ob|ss|tt)_.*_loss_\d+$/i.test(name)) {
+      // Escape the fault type so it is matched literally (fault types are
+      // simple identifiers, but never interpolate user input unescaped).
+      const ftPattern = opts.faultType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`^re[12](ob|ss|tt)_.*_${ftPattern}_\\d+$`, 'i').test(name)) {
         cases.push({ dir: cur, name });
       }
       continue;
@@ -256,7 +263,7 @@ function main(): void {
   }
   cases.sort((a, b) => a.name.localeCompare(b.name));
 
-  console.log(`Dumping ${cases.length} loss cases (limit ${opts.limit})`);
+  console.log(`Dumping ${cases.length} ${opts.faultType} cases (limit ${opts.limit})`);
   console.log('='.repeat(100));
 
   for (const c of cases.slice(0, opts.limit)) {
@@ -336,7 +343,7 @@ function main(): void {
   }
 
   console.log('\n' + '='.repeat(100));
-  console.log('AGGREGATE LOSS SIGNATURE');
+  console.log(`AGGREGATE ${opts.faultType.toUpperCase()} SIGNATURE`);
   console.log('='.repeat(100));
   console.log(`  cases: ${agg.cases}`);
   console.log(
