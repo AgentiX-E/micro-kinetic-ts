@@ -23,7 +23,10 @@ Trace spans are NOT serialised in full: a single datapack can contain millions
 of spans (~86 MB as raw JSON), but the engine only consumes the call-graph
 edges they imply. The bridge therefore resolves each span's parent service via
 a polars self-join and emits the DISTINCT caller → callee edges as `traceEdges`
-instead, shrinking the per-case document by ~3 orders of magnitude.
+instead, shrinking the trace component by ~3 orders of magnitude. Metric time
+series remain the dominant per-case size (~34 MB/case measured on a 500 MB
+prefix subset), so `case.json` is far smaller than the span list but still
+substantial.
 
 Output `case.json` schema (per datapack):
 
