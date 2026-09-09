@@ -16,7 +16,7 @@
 /**
  * The ranking fusion weights applied in log space:
  *
- *   finalScore(v) = log(selfAnomaly(v))
+ *   finalScore(v) = log1p(selfAnomaly(v))
  *                 + sourceWeight    × sourceScore(v)
  *                 + temporalWeight  × 2 × (earliness(v) − 0.5)
  *                 − collisionWeight × ratioContrib(v)

@@ -1372,10 +1372,7 @@ describe('TreePruner', () => {
       // edge has zero causal neighbours; its source-likelihood prior must be
       // neutral (0) rather than dividing by zero.
       const pruner = new TreePruner({ defaultTopK: 5 });
-      const callGraph = makeCallGraph(
-        ['A', 'B', 'C'],
-        [['A', 'B']],
-      );
+      const callGraph = makeCallGraph(['A', 'B', 'C'], [['A', 'B']]);
       const metrics = makeMetrics({
         A: [10, 11, 12, 10, 100],
         B: [10, 11, 12, 10, 50],
@@ -1421,6 +1418,36 @@ describe('TreePruner', () => {
       const dResult = results.find((r) => r.serviceId === 'D');
       expect(dResult).toBeDefined();
       expect(dResult!.faultType.severity).toBe('major');
+    });
+  });
+
+  describe('rank-normalized self-anomaly base term', () => {
+    it('gives the top-anomaly service a strictly positive finalScore under rank normalization', () => {
+      // TrainTicket-style topologies (≥20 nodes) rank-normalize anomaly scores
+      // to [0,1]; the top service maps to exactly 1.0. `Math.log(1.0) === 0`
+      // used to collapse the base term so the strongest signal contributed
+      // nothing and the ranking fell back to secondary signals or a
+      // service-id tiebreak (the "0-score zombie" bothWrong failure). The base
+      // term must stay strictly positive for the top anomaly so the magnitude
+      // winner keeps a real advantage over its neighbours.
+      const ids = Array.from({ length: 20 }, (_, i) => `svc-${i}`);
+      const nodeData: Record<string, number[]> = {};
+      for (let i = 0; i < 19; i++) {
+        nodeData[ids[i]!] = [1, 1, 1, 1, 1, 1, 1, 1];
+      }
+      nodeData[ids[19]!] = [1, 1, 1, 1, 5, 5, 5, 5];
+
+      const pruner = new TreePruner(undefined, { rankNormalization: true });
+      const graph = pruner.buildFaultGraph(
+        makeCallGraph(ids, [['svc-0', 'svc-1']]),
+        makeMetrics(nodeData),
+      );
+      const results = pruner.analyze(graph, 20);
+
+      const top = results[0]!;
+      expect(top.serviceId).toBe('svc-19');
+      expect(top.finalScore).toBeDefined();
+      expect(top.finalScore!).toBeGreaterThan(0);
     });
   });
 });

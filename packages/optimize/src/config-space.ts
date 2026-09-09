@@ -128,7 +128,7 @@ const CONTINUOUS: readonly ContinuousParam[] = [
  * Ranking fusion weights — the seven log-space priors blended into the root
  * cause ordering. All are dimensionless with range [0, 3] (linear). A weight
  * of 0 disables a signal; 1.0 makes it comparable to the self-anomaly term
- * (log(selfAnomaly) ∈ (−∞, 0]); 3.0 lets it dominate (the ablation's strong
+ * (log1p(selfAnomaly) ∈ [0, log1p(max)]); 3.0 lets it dominate (the ablation's strong
  * signal strength). This is the search space the L2 optimizer tunes directly
  * — the same RankingWeights contract the tree engine consumes.
  */

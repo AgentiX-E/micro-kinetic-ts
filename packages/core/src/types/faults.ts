@@ -63,7 +63,7 @@ export interface RootCauseResult {
    * The raw ranking score this result was ordered by, in the (log-space)
    * `finalScore` produced by the tree pruner:
    *
-   *   finalScore(v) = log(selfAnomaly(v)) + Σ signalWeight × signal(v)
+   *   finalScore(v) = log1p(selfAnomaly(v)) + Σ signalWeight × signal(v)
    *
    * Unlike `confidence` — which folds in propagation-depth and error-bound
    * penalties for display — `finalScore` is the exact value the sort uses, so

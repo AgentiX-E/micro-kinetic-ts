@@ -111,9 +111,9 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * the fault INJECTION time: each service's onset delay after injection is
    * computed from a clean pre-injection baseline, then min-max normalised
    * into an earliness score (earliest = 1, latest = 0, undetermined = 0.5).
-   * The combination is in log space:
+   * The combination is in log1p space:
    *
-   *   finalScore(v) = log(selfAnomaly(v)) + temporalWeight × 2 × (earliness − 0.5)
+   *   finalScore(v) = log1p(selfAnomaly(v)) + temporalWeight × 2 × (earliness − 0.5)
    *
    * so a source (earliness → 1) gains up to `+temporalWeight` while a symptom
    * (earliness → 0) loses up to `−temporalWeight`, and an undetermined onset
@@ -1050,11 +1050,18 @@ function performTreeRCA(
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
   // parent must not accumulate its faulted children's anomaly (childContrib)
   // and outrank the actual source, and propagation DEPTH is not used
-  // (RCAEval injects faults at arbitrary depths). The combination is in LOG
-  // space so a strong causal signal can overcome a moderately larger symptom
-  // anomaly without unbounded amplification:
+  // (RCAEval injects faults at arbitrary depths). The combination is in
+  // log1p space so a strong causal signal can overcome a moderately larger
+  // symptom anomaly without unbounded amplification. `log1p` (not `log`) is
+  // used because rank-normalized self anomalies live in [0, 1] — the top
+  // service maps to exactly 1.0, and `log(1.0) === 0` would collapse the
+  // base term to zero for the STRONGEST signal (the "0-score zombie"
+  // bothWrong failure), leaving the ranking to secondary signals or a
+  // service-id tiebreak. `log1p` keeps the base term strictly positive and
+  // monotonic (top → log1p(1.0) = 0.693) and also maps a zero-anomaly service
+  // to 0 instead of `log(0) = -Infinity`:
   //
-  //   finalScore(v) = log(selfAnomaly(v))
+  //   finalScore(v) = log1p(selfAnomaly(v))
   //                 + sourceWeight    × sourceScore(v)
   //                 + temporalWeight  × 2 × (earliness(v) − 0.5)
   //                 − collisionWeight × ratioContrib(v)
@@ -1108,7 +1115,7 @@ function performTreeRCA(
     let s = finalScores.get(id);
     if (s === undefined) {
       s =
-        Math.log(selfScores.get(id)!) +
+        Math.log1p(selfScores.get(id)!) +
         weights.sourceWeight * sourceScores.get(id)! +
         weights.temporalWeight * 2 * ((temporalEarliness.get(id) ?? 0.5) - 0.5) -
         weights.collisionWeight * (ratioContrib.get(id) ?? 0) +
