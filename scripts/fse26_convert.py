@@ -7,9 +7,16 @@ collected on Train Ticket. The `rcabench-absolute_anomaly.tar.gz` artifact
 (13.4 GB) contains one directory per datapack with `normal_*.parquet` /
 `abnormal_*.parquet` observability slices plus `injection.json` and `env.json`.
 This bridge reads those Parquet files and emits a single `case.json` per
-datapack, mirroring the column mapping of the RCABench platform's own
-`convert_metrics` / `convert_traces` / `convert_logs` (see the platform's
-`v2/sources/rcabench.py`) so the TypeScript `FSE26Loader` consumes the exact
+datapack.
+
+The archive's Parquet is ALREADY the platform's normalised view — i.e. the
+output of the platform's own `convert_metrics` / `convert_traces` /
+`convert_logs` (see its `v2/sources/rcabench.py`), NOT the raw OpenTelemetry
+export. Columns are therefore `time` (Datetime), `metric` / `value` /
+`service_name`, `trace_id` / `span_id` / `duration` / `attr.status_code`, and
+`level` / `message` — the bridge reads those names directly and only performs
+unit normalisation (Datetime → epoch-ms, nanoseconds → milliseconds, the OTel
+StatusCode enum → OK/ERROR), so the TypeScript `FSE26Loader` consumes the exact
 same normalised view the benchmark's evaluator uses.
 
 Output `case.json` schema (per datapack):
@@ -207,33 +214,29 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
     """
     Read normal + abnormal metrics and group into per-service time series.
 
-    Returns ``{service: [{"metric", "timestamps", "values"}, ...]}`` with each
-    series sorted by ascending timestamp.
+    The archive's Parquet is ALREADY the platform's normalised view (the output
+    of its `convert_metrics`): columns `time` (Datetime), `metric`, `value`,
+    `service_name`, plus `attr.*`. Returns
+    ``{service: [{"metric", "timestamps", "values"}, ...]}`` with each series
+    sorted by ascending timestamp.
     """
     frames: list[pl.DataFrame] = []
     for path in (normal_path, abnormal_path):
         if not path.exists():
             continue
         schema = pl.scan_parquet(path).collect_schema()
-        if "ServiceName" not in schema:
+        if "service_name" not in schema:
             # Infra-level metrics (node/hubble) lack a service attribution and
             # cannot inform service-level RCA, so they are dropped.
             continue
         frames.append(
-            pl.read_parquet(path, columns=["TimeUnix", "MetricName", "Value", "ServiceName"])
+            pl.read_parquet(path, columns=["time", "metric", "value", "service_name"])
         )
     if not frames:
         return {}
 
     df = pl.concat(frames)
-    df = df.rename(
-        {
-            "TimeUnix": "time",
-            "MetricName": "metric",
-            "Value": "value",
-            "ServiceName": "service",
-        }
-    )
+    df = df.rename({"service_name": "service"})
     df = df.with_columns(
         _epoch_ms(df, "time").alias("time"),
         pl.col("value").cast(pl.Float64),
@@ -266,8 +269,11 @@ def read_traces(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
     """
     Read normal + abnormal trace spans and normalise to the loader's schema.
 
-    `parentSpanId` is omitted for root spans (empty/null parent). `Duration` is
-    converted from nanoseconds to milliseconds.
+    The archive's Parquet is ALREADY the platform's normalised view (the output
+    of its `convert_traces`): `time` (Datetime), `trace_id`, `span_id`,
+    `parent_span_id`, `span_name`, `service_name`, `duration` (nanoseconds),
+    `attr.status_code` (OTel enum 0/1/2). `parentSpanId` is omitted for root
+    spans (empty/null parent); `duration` is converted to milliseconds.
     """
     frames: list[pl.DataFrame] = []
     for path in (normal_path, abnormal_path):
@@ -277,14 +283,14 @@ def read_traces(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
             pl.read_parquet(
                 path,
                 columns=[
-                    "Timestamp",
-                    "TraceId",
-                    "SpanId",
-                    "ParentSpanId",
-                    "SpanName",
-                    "ServiceName",
-                    "Duration",
-                    "StatusCode",
+                    "time",
+                    "trace_id",
+                    "span_id",
+                    "parent_span_id",
+                    "span_name",
+                    "service_name",
+                    "duration",
+                    "attr.status_code",
                 ],
             )
         )
@@ -292,18 +298,7 @@ def read_traces(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
         return []
 
     df = pl.concat(frames)
-    df = df.rename(
-        {
-            "Timestamp": "time",
-            "TraceId": "trace_id",
-            "SpanId": "span_id",
-            "ParentSpanId": "parent_span_id",
-            "SpanName": "span_name",
-            "ServiceName": "service",
-            "Duration": "duration",
-            "StatusCode": "status_code",
-        }
-    )
+    df = df.rename({"service_name": "service", "attr.status_code": "status_code"})
     df = df.with_columns(
         _epoch_ms(df, "time").alias("time"),
         (pl.col("duration").cast(pl.Float64) / 1_000_000.0).alias("duration"),
@@ -333,26 +328,25 @@ def read_traces(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
 
 
 def read_logs(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
-    """Read normal + abnormal logs and normalise to the loader's schema."""
+    """
+    Read normal + abnormal logs and normalise to the loader's schema.
+
+    The archive's Parquet is ALREADY the platform's normalised view (the output
+    of its `convert_logs`): `time` (Datetime), `service_name`, `level`
+    (already upper-cased), `message`.
+    """
     frames: list[pl.DataFrame] = []
     for path in (normal_path, abnormal_path):
         if not path.exists():
             continue
         frames.append(
-            pl.read_parquet(path, columns=["Timestamp", "SeverityText", "ServiceName", "Body"])
+            pl.read_parquet(path, columns=["time", "service_name", "level", "message"])
         )
     if not frames:
         return []
 
     df = pl.concat(frames)
-    df = df.rename(
-        {
-            "Timestamp": "time",
-            "SeverityText": "level",
-            "ServiceName": "service",
-            "Body": "message",
-        }
-    )
+    df = df.rename({"service_name": "service"})
     df = df.with_columns(
         _epoch_ms(df, "time").alias("time"),
         pl.col("level").str.to_uppercase().fill_null(""),

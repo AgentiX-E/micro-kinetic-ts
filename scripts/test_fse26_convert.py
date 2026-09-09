@@ -6,9 +6,11 @@ Run with::
     python3 -m unittest discover -s scripts -p 'test_fse26_convert.py'
 
 The pure helpers are exercised directly; the Parquet readers are exercised
-end-to-end against synthetic Parquet files that mirror the RCABench schema
-(Datetime time columns, nanosecond `Duration`, integer OTel `StatusCode` enum),
-so the unit-normalisation and epoch conversion are verified without the 13.4 GB
+end-to-end against synthetic Parquet files that mirror the RCABench NORMALISED
+schema (the archive is the platform's own converted output, not the raw OTel
+export): `time` Datetime, `metric`/`value`/`service_name`, `trace_id`/`span_id`/
+`duration` (ns), `attr.status_code` (OTel enum), and `level`/`message`. The
+unit-normalisation and epoch conversion are verified without the 13.4 GB
 download.
 """
 
@@ -155,62 +157,62 @@ def _build_synthetic_datapack(root: Path, datapack_name: str) -> Path:
     # Metrics: one service, two metrics, spanning normal + abnormal windows.
     pl.DataFrame(
         {
-            "TimeUnix": [_dt(NORMAL_START + 1), _dt(NORMAL_END - 1)],
-            "MetricName": ["container.cpu.usage", "container.cpu.usage"],
-            "Value": [0.1, 0.2],
-            "ServiceName": ["ts-order-service", "ts-order-service"],
+            "time": [_dt(NORMAL_START + 1), _dt(NORMAL_END - 1)],
+            "metric": ["container.cpu.usage", "container.cpu.usage"],
+            "value": [0.1, 0.2],
+            "service_name": ["ts-order-service", "ts-order-service"],
         }
     ).write_parquet(src / "normal_metrics.parquet")
     pl.DataFrame(
         {
-            "TimeUnix": [_dt(ABNORMAL_START + 1)],
-            "MetricName": ["container.memory.usage"],
-            "Value": [512.0],
-            "ServiceName": ["ts-order-service"],
+            "time": [_dt(ABNORMAL_START + 1)],
+            "metric": ["container.memory.usage"],
+            "value": [512.0],
+            "service_name": ["ts-order-service"],
         }
     ).write_parquet(src / "abnormal_metrics.parquet")
 
     # Traces: root span (empty parent), an ERROR child, and an unset-status span.
     pl.DataFrame(
         {
-            "Timestamp": [_dt(NORMAL_START + 2), _dt(NORMAL_END - 2)],
-            "TraceId": ["t1", "t1"],
-            "SpanId": ["s0", "s1"],
-            "ParentSpanId": ["", "s0"],
-            "SpanName": ["GET /orders", "db query"],
-            "ServiceName": ["ts-ui-dashboard", "ts-order-service"],
-            "Duration": [1_000_000, 2_500_000],
-            "StatusCode": [1, 2],
+            "time": [_dt(NORMAL_START + 2), _dt(NORMAL_END - 2)],
+            "trace_id": ["t1", "t1"],
+            "span_id": ["s0", "s1"],
+            "parent_span_id": ["", "s0"],
+            "span_name": ["GET /orders", "db query"],
+            "service_name": ["ts-ui-dashboard", "ts-order-service"],
+            "duration": [1_000_000, 2_500_000],
+            "attr.status_code": [1, 2],
         }
     ).write_parquet(src / "normal_traces.parquet")
     pl.DataFrame(
         {
-            "Timestamp": [_dt(ABNORMAL_START + 2)],
-            "TraceId": ["t2"],
-            "SpanId": ["s2"],
-            "ParentSpanId": [""],
-            "SpanName": ["GET /health"],
-            "ServiceName": ["ts-order-service"],
-            "Duration": [500_000],
-            "StatusCode": [0],
+            "time": [_dt(ABNORMAL_START + 2)],
+            "trace_id": ["t2"],
+            "span_id": ["s2"],
+            "parent_span_id": [""],
+            "span_name": ["GET /health"],
+            "service_name": ["ts-order-service"],
+            "duration": [500_000],
+            "attr.status_code": [0],
         }
     ).write_parquet(src / "abnormal_traces.parquet")
 
     # Logs: one error, one ui-dashboard (filtered), one null-level (→ INFO).
     pl.DataFrame(
         {
-            "Timestamp": [_dt(NORMAL_START + 3), _dt(NORMAL_END - 3)],
-            "SeverityText": ["error", "WARN"],
-            "ServiceName": ["ts-order-service", "ts-ui-dashboard"],
-            "Body": ["Connection refused", "high latency"],
+            "time": [_dt(NORMAL_START + 3), _dt(NORMAL_END - 3)],
+            "level": ["error", "WARN"],
+            "service_name": ["ts-order-service", "ts-ui-dashboard"],
+            "message": ["Connection refused", "high latency"],
         }
     ).write_parquet(src / "normal_logs.parquet")
     pl.DataFrame(
         {
-            "Timestamp": [_dt(ABNORMAL_START + 3)],
-            "SeverityText": [None],
-            "ServiceName": ["ts-order-service"],
-            "Body": ["null-level log"],
+            "time": [_dt(ABNORMAL_START + 3)],
+            "level": [None],
+            "service_name": ["ts-order-service"],
+            "message": ["null-level log"],
         }
     ).write_parquet(src / "abnormal_logs.parquet")
 
