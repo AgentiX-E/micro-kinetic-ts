@@ -135,6 +135,30 @@ class TestEpochMs(unittest.TestCase):
         self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
 
 
+class TestNonFiniteSanitization(unittest.TestCase):
+    """NaN/Infinity metric values must be dropped (else `json.dumps` emits
+    `NaN`/`Infinity` tokens that JS `JSON.parse` rejects as invalid JSON)."""
+
+    def test_non_finite_metric_values_dropped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + i) for i in range(4)],
+                    "metric": ["m", "m", "m", "m"],
+                    "value": [0.1, float("nan"), float("inf"), 0.2],
+                    "service_name": ["svc", "svc", "svc", "svc"],
+                }
+            ).write_parquet(root / "normal_metrics.parquet")
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        series = result["svc"]
+        self.assertEqual(len(series), 1)
+        self.assertEqual(series[0]["values"], [0.1, 0.2])
+        self.assertEqual(series[0]["timestamps"], [(NORMAL_START + 0) * 1000, (NORMAL_START + 3) * 1000])
+
+
 # ── End-to-end synthetic datapack ────────────────────────────────────────
 
 # Window boundaries (Unix seconds, UTC).

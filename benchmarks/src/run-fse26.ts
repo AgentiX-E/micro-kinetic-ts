@@ -147,8 +147,13 @@ async function main(): Promise<void> {
     let raw;
     try {
       raw = loader.loadCase(dir);
-    } catch {
+    } catch (err) {
       loadErrors++;
+      // Surface the first few failures verbatim — a silent count hides the
+      // root cause (e.g. non-finite values producing unparseable JSON).
+      if (loadErrors <= 3) {
+        console.error(`[loadError] ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+      }
       continue;
     }
     const benchCase = loader.toBenchmarkCase(raw);

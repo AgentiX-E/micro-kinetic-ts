@@ -246,6 +246,7 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
         & pl.col("metric").is_not_null()
         & pl.col("service").is_not_null()
         & pl.col("value").is_not_null()
+        & pl.col("value").is_finite()
     )
 
     out: dict[str, list[dict[str, Any]]] = {}
@@ -406,7 +407,12 @@ def convert_datapack(src_dir: Path, dst_dir: Path) -> Path:
     if logs:
         case["logs"] = logs
 
-    out_path.write_text(json.dumps(case, separators=(",", ":")), "utf-8")
+    # `allow_nan=False` guarantees the emitted document is strict JSON: a
+    # surviving NaN/Infinity (which JS `JSON.parse` rejects) raises here instead
+    # of producing an unparseable `case.json`.
+    out_path.write_text(
+        json.dumps(case, separators=(",", ":"), allow_nan=False), "utf-8"
+    )
     return out_path
 
 
