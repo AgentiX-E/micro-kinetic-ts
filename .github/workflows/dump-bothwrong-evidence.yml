@@ -1,0 +1,56 @@
+name: Dump BothWrong Evidence
+
+# Diagnostic probe for the gated LLM judge design. The fusion-ceiling readback
+# fixed the deterministic frontier at ~82% and left 77 bothWrong cases (12.5%)
+# that neither the engine nor PRISM recovers. This dump answers whether the
+# MULTIMODAL evidence (trace call graph + deepest exception classes) carries
+# information the metric-only signals cannot, such that an LLM judge could
+# disambiguate source from victim. Dispatched manually; uploads a text artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: 'Comma-separated case dir names (RE2/RE3 bothWrong)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Dump bothWrong evidence
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/dump-bothwrong-evidence.ts \
+            --data-dir ~/RCAEval-json \
+            --cases "${{ inputs.cases }}" 2>&1 | tee dump-bothwrong-evidence.txt
+      - name: Upload dump artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dump-bothwrong-evidence
+          path: dump-bothwrong-evidence.txt
