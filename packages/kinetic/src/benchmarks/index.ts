@@ -10,6 +10,16 @@
 // ── Loaders ───────────────────────────────────────────────
 
 export { AIOps2025Loader } from './loaders/aiops2025-loader.js';
+export {
+  FSE26Loader,
+  buildFSE26CallGraph,
+  buildFSE26StaticEdges,
+  buildFSE26TraceEdges,
+  resolveFSE26GroundTruth,
+  toFSE26LogEntry,
+  toFSE26MetricMap,
+} from './loaders/fse26-loader.js';
+export type { FSE26RawCase } from './loaders/fse26-loader.js';
 export { RCA100Loader } from './loaders/rca100-loader.js';
 export {
   RCAEvalLoader,

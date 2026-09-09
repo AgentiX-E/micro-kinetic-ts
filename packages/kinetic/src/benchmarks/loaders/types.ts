@@ -19,6 +19,18 @@ import type {
 export interface BenchmarkGroundTruth {
   /** The service ID that is the actual root cause. */
   readonly serviceId: string;
+  /**
+   * The full set of accepted root-cause service IDs (multi-label).
+   *
+   * Some benchmarks mark MULTIPLE services as correct for a single case. FSE'26
+   * network faults (`NetworkDelay`, `NetworkLoss`, …) are injected on an EDGE,
+   * so both the `source_service` and `target_service` of the injection point are
+   * valid answers (see the benchmark's dual-label convention). When present,
+   * `serviceIds` is the complete accepted set and `serviceId` is its first
+   * member; when absent, `{serviceId}` is the accepted set. Ranking is scored
+   * against the accepted set, not against `serviceId` alone.
+   */
+  readonly serviceIds?: readonly string[];
   /** The fault type that was injected. */
   readonly faultType: string;
   /** The metric that indicates the fault (if known). */
@@ -44,7 +56,8 @@ export interface BenchmarkCase {
   /** Unique case identifier within the dataset. */
   readonly id: string;
   /** Which benchmark dataset this belongs to. */
-  readonly datasetName: 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100';
+  readonly datasetName:
+    'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100' | 'fse26';
   /** The service call graph for this case. */
   readonly callGraph: ServiceCallGraph;
   /** Time-series metrics, keyed by service ID. */

@@ -9,7 +9,7 @@
 
 /** Identifier for a benchmark dataset. */
 export type BenchmarkDatasetId =
-  'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100';
+  'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3' | 'aiops2025' | 'rca100' | 'fse26';
 
 /** A single benchmark test case. */
 export interface BenchmarkCase {
