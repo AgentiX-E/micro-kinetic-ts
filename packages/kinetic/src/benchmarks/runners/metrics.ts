@@ -51,6 +51,52 @@ export function computeAvgAtK(
   return correct / predictionsPerCase.length;
 }
 
+/**
+ * Average accuracy at K against a MULTI-LABEL accepted set: 1 when ANY of the
+ * accepted ground-truth service IDs appears within the top-K predictions.
+ *
+ * FSE'26 network faults (`NetworkDelay`, `NetworkLoss`, …) are injected on an
+ * EDGE, so the benchmark accepts BOTH the injection point's source and target
+ * service as correct (dual-label). Single-label scoring against `serviceId`
+ * alone would mark a target-service prediction wrong even though the benchmark
+ * accepts it, under-counting Top@1 against the published anchor.
+ *
+ * @param predicted - Ordered list of predicted service IDs (best first).
+ * @param acceptedLabels - The complete set of accepted ground-truth labels.
+ * @param k - The cutoff rank.
+ * @returns 1 if any accepted label is in the first K predictions, else 0.
+ */
+export function avgAtKMultiLabel(
+  predicted: readonly string[],
+  acceptedLabels: readonly string[],
+  k: number,
+): number {
+  if (k <= 0 || predicted.length === 0 || acceptedLabels.length === 0) return 0;
+  const topK = predicted.slice(0, k);
+  return topK.some((id) => acceptedLabels.includes(id)) ? 1 : 0;
+}
+
+/**
+ * Aggregate multi-label Avg@K across multiple cases.
+ *
+ * @param predictionsPerCase - List of predictions for each case.
+ * @param acceptedPerCase - Corresponding accepted label sets for each case.
+ * @param k - The cutoff rank.
+ * @returns Average accuracy across all cases (0-1).
+ */
+export function computeAvgAtKMultiLabel(
+  predictionsPerCase: ReadonlyArray<readonly string[]>,
+  acceptedPerCase: ReadonlyArray<readonly string[]>,
+  k: number,
+): number {
+  if (predictionsPerCase.length === 0) return 0;
+  let correct = 0;
+  for (let i = 0; i < predictionsPerCase.length; i++) {
+    correct += avgAtKMultiLabel(predictionsPerCase[i]!, acceptedPerCase[i] ?? [], k);
+  }
+  return correct / predictionsPerCase.length;
+}
+
 // ── Precision@K ───────────────────────────────────────────
 
 /**

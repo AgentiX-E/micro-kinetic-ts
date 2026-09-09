@@ -12,11 +12,13 @@ import { BenchmarkRunner, type RunResult } from '../../src/benchmarks/runners/be
 
 import {
   avgAtK,
+  avgAtKMultiLabel,
   computeAggregateLA,
   computeAggregateMRR,
   computeAggregateTA,
   computeAIOps2025CompositeScore,
   computeAvgAtK,
+  computeAvgAtKMultiLabel,
   computeF1Score,
   computeLA,
   computeMRR,
@@ -126,6 +128,44 @@ describe('Standalone Metrics', () => {
 
     it('should handle empty arrays', () => {
       expect(computeAvgAtK([], [], 5)).toBe(0);
+    });
+  });
+
+  describe('avgAtKMultiLabel', () => {
+    it('should return 1 when ANY accepted label is in top-K', () => {
+      // Network fault: both source and target are accepted; top-1 = target.
+      expect(avgAtKMultiLabel(['target', 'svc_b'], ['source', 'target'], 1)).toBe(1);
+      expect(avgAtKMultiLabel(['svc_a', 'source'], ['source', 'target'], 2)).toBe(1);
+    });
+
+    it('should return 1 for a single-label accepted set', () => {
+      expect(avgAtKMultiLabel(['svc_a', 'svc_b'], ['svc_a'], 1)).toBe(1);
+    });
+
+    it('should return 0 when no accepted label is in top-K', () => {
+      expect(avgAtKMultiLabel(['svc_a', 'svc_b'], ['source', 'target'], 2)).toBe(0);
+    });
+
+    it('should return 0 for empty accepted set or predictions', () => {
+      expect(avgAtKMultiLabel([], ['svc_a'], 5)).toBe(0);
+      expect(avgAtKMultiLabel(['svc_a'], [], 5)).toBe(0);
+    });
+
+    it('should return 0 for k <= 0', () => {
+      expect(avgAtKMultiLabel(['svc_a'], ['svc_a'], 0)).toBe(0);
+    });
+  });
+
+  describe('computeAvgAtKMultiLabel', () => {
+    it('should aggregate across cases with per-case accepted sets', () => {
+      const predictions = [['target'], ['wrong'], ['correct']];
+      const accepted = [['source', 'target'], ['source', 'target'], ['correct']];
+      // Case 1 correct (target in accepted), case 2 wrong, case 3 correct → 2/3.
+      expect(computeAvgAtKMultiLabel(predictions, accepted, 1)).toBeCloseTo(2 / 3);
+    });
+
+    it('should handle empty arrays', () => {
+      expect(computeAvgAtKMultiLabel([], [], 5)).toBe(0);
     });
   });
 

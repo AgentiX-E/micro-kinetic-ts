@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,7 @@ from pathlib import Path
 import polars as pl
 
 import fse26_convert as conv
+import fse26_convert_tar as conv_tar
 
 
 # ── Pure helpers ─────────────────────────────────────────────────────────
@@ -275,6 +277,64 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
 
         self.assertEqual(case["faultType"], "CPUStress")
         self.assertEqual(case["groundTruthServices"], ["ts-order-service"])
+
+
+# ── Streaming tar conversion ─────────────────────────────────────────────
+
+
+def _build_tar(root: Path, tar_path: Path) -> None:
+    """Tar+gzip the synthetic datapacks under `root` into `tar_path`."""
+    with tarfile.open(tar_path, "w:gz") as tf:
+        for datapack in sorted(p for p in root.iterdir() if p.is_dir()):
+            tf.add(datapack, arcname=datapack.name)
+
+
+class TestStreamConvertTar(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_stream_convert_two_datapacks(self) -> None:
+        _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
+        _build_synthetic_datapack(self.root, "ts5-ts-order-service-stress-svfvxk")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(self.root, tar_path)
+
+        out = self.root / "out"
+        ok, failed = conv_tar.stream_convert_tar(tar_path, out)
+
+        self.assertEqual((ok, failed), (2, 0))
+        self.assertTrue((out / "ts5-ts-order-service-network-svfvxk" / "case.json").exists())
+        self.assertTrue((out / "ts5-ts-order-service-stress-svfvxk" / "case.json").exists())
+
+    def test_limit_converts_only_prefix(self) -> None:
+        _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
+        _build_synthetic_datapack(self.root, "ts5-ts-order-service-stress-svfvxk")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(self.root, tar_path)
+
+        out = self.root / "out"
+        ok, failed = conv_tar.stream_convert_tar(tar_path, out, limit=1)
+
+        self.assertEqual((ok, failed), (1, 0))
+        # The datapack dirs sort lexicographically; only the first converts.
+        converted = [p.name for p in out.iterdir() if (p / "case.json").exists()]
+        self.assertEqual(len(converted), 1)
+
+    def test_iter_datapack_dirs_skips_non_datapacks(self) -> None:
+        # A stray top-level file must not be mistaken for a datapack dir.
+        stray = self.root / "README.txt"
+        stray.write_text("not a datapack", "utf-8")
+        _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(self.root, tar_path)
+
+        with tarfile.open(tar_path, "r:gz") as tf:
+            dirs = conv_tar.iter_datapack_dirs(tf)
+        self.assertEqual(dirs, ["ts5-ts-order-service-network-svfvxk"])
 
 
 if __name__ == "__main__":

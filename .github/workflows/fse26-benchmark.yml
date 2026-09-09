@@ -1,0 +1,91 @@
+name: Benchmark — FSE'26 RCABench
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_cases:
+        description: 'Number of datapacks to convert + evaluate (0 = full 1430)'
+        required: false
+        default: '0'
+      log_weight:
+        description: 'Log-signal weight (production default 1.0)'
+        required: false
+        default: '1.0'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python: polars for the Parquet bridge ──
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install polars
+        run: pip install polars
+
+      # ── Download the 13.4 GB absolute_anomaly archive ──
+      - name: Download RCABench archive (13.4 GB)
+        run: |
+          mkdir -p "$HOME/rcabench"
+          curl -L --retry 3 --retry-delay 5 -C - \
+            -o "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz" \
+            "https://zenodo.org/records/17105974/files/rcabench-absolute_anomaly.tar.gz?download=1"
+          ls -lh "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz"
+
+      # ── Stream-convert Parquet → normalised case.json ──
+      #   The archive is streamed so it is never fully materialised on disk:
+      #   each datapack is extracted to a temp dir, converted, then removed.
+      - name: Convert Parquet to JSON (streaming)
+        run: |
+          LIMIT_ARG=()
+          if [ "${{ inputs.max_cases }}" != "0" ]; then
+            LIMIT_ARG=(--limit "${{ inputs.max_cases }}")
+          fi
+          python3 scripts/fse26_convert_tar.py \
+            --tar "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz" \
+            --out-dir "$HOME/rcabench/json" \
+            "${LIMIT_ARG[@]}"
+
+      # ── TypeScript engine ──
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Run FSE'26 benchmark
+        env:
+          NODE_OPTIONS: --max-old-space-size=12288
+          ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY || '' }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY || '' }}
+        run: |
+          set -o pipefail
+          MAX_CASES_ARG=()
+          if [ "${{ inputs.max_cases }}" != "0" ]; then
+            MAX_CASES_ARG=(--max-cases "${{ inputs.max_cases }}")
+          fi
+          pnpm exec tsx benchmarks/src/run-fse26.ts \
+            --data-dir "$HOME/rcabench/json" \
+            --log-weight "${{ inputs.log_weight }}" \
+            "${MAX_CASES_ARG[@]}" \
+            --output fse26-results.json 2>&1 | tee fse26-results.txt
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fse26-results
+          path: |
+            fse26-results.txt
+            fse26-results.json

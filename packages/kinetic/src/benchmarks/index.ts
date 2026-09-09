@@ -121,11 +121,13 @@ export { SyntheticBenchmarkGenerator } from './synthetic/data-generator.js';
 
 export {
   avgAtK,
+  avgAtKMultiLabel,
   computeAIOps2025CompositeScore,
   computeAggregateLA,
   computeAggregateMRR,
   computeAggregateTA,
   computeAvgAtK,
+  computeAvgAtKMultiLabel,
   computeF1Score,
   computeLA,
   computeMRR,
