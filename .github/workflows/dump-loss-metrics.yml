@@ -1,0 +1,50 @@
+name: Dump Loss Metric Signature
+
+# One-off diagnostic: characterize the network-loss ("loss") fault signature
+# across RE1/RE2. The routing probe showed `loss` is the largest bothWrong
+# contributor (34/77) with the worst union rate (66.7%; engine 55.9% / PRISM
+# 52.0%). This dump answers whether the GT source shows ANY metric deviation
+# and in what direction (rise vs drop) and metric name, deciding whether loss
+# is deterministically crackable. Dispatched manually; uploads a text artifact.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Restore cached RCAEval JSON
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/RCAEval-json
+          key: RCAEvalJSON
+          restore-keys: |
+            RCAEval-json-
+      - name: Dump loss metric signature
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/dump-loss-metrics.ts \
+            --data-dir ~/RCAEval-json 2>&1 | tee dump-loss-metrics.txt
+      - name: Upload dump artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dump-loss-metrics
+          path: dump-loss-metrics.txt
