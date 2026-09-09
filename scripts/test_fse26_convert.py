@@ -107,6 +107,32 @@ class TestStatusCodeToStatus(unittest.TestCase):
         self.assertEqual(conv.status_code_to_status(None), "OK")
 
 
+class TestEpochMs(unittest.TestCase):
+    """`_epoch_ms` must normalise both Datetime and integer-epoch time columns."""
+
+    def _apply(self, values: pl.Series) -> list[int]:
+        df = pl.DataFrame({"t": values})
+        return df.select(conv._epoch_ms(df, "t").alias("ms"))["ms"].to_list()
+
+    def test_datetime_column(self) -> None:
+        vals = pl.Series("t", [_dt(NORMAL_START + 1)], dtype=pl.Datetime("ns"))
+        self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
+
+    def test_int64_nanoseconds(self) -> None:
+        ns = (NORMAL_START + 1) * 10**9
+        vals = pl.Series("t", [ns], dtype=pl.Int64)
+        self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
+
+    def test_int64_milliseconds(self) -> None:
+        ms = (NORMAL_START + 1) * 1000
+        vals = pl.Series("t", [ms], dtype=pl.Int64)
+        self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
+
+    def test_int64_seconds(self) -> None:
+        vals = pl.Series("t", [NORMAL_START + 1], dtype=pl.Int64)
+        self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
+
+
 # ── End-to-end synthetic datapack ────────────────────────────────────────
 
 # Window boundaries (Unix seconds, UTC).

@@ -7,6 +7,10 @@ on:
         description: 'Number of datapacks to convert + evaluate (0 = full 1430)'
         required: false
         default: '0'
+      download_prefix_bytes:
+        description: 'Download only the first N bytes (0 = full 13.4 GB). For subset validation.'
+        required: false
+        default: '0'
       log_weight:
         description: 'Log-signal weight (production default 1.0)'
         required: false
@@ -30,13 +34,25 @@ jobs:
         run: pip install polars
 
       # ── Download the 13.4 GB absolute_anomaly archive ──
+      #   Zenodo serves this object from cold storage: the first request may
+      #   504 ("server didn't respond in time") while the archive spools, and
+      #   mid-stream connection drops are common. The `/content` API endpoint
+      #   (unlike `?download=1`) reliably honours `Range`/resume, so we retry
+      #   aggressively on ALL errors and resume with `-C -`.
       - name: Download RCABench archive (13.4 GB)
         run: |
           mkdir -p "$HOME/rcabench"
-          curl -L --retry 3 --retry-delay 5 -C - \
+          RANGE_ARG=()
+          if [ "${{ inputs.download_prefix_bytes }}" != "0" ]; then
+            RANGE_ARG=(-r "0-${{ inputs.download_prefix_bytes }}")
+          fi
+          curl -L --fail --retry 30 --retry-all-errors --retry-delay 20 \
+            --connect-timeout 60 --speed-limit 1024 --speed-time 90 \
+            -C - "${RANGE_ARG[@]}" \
             -o "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz" \
-            "https://zenodo.org/records/17105974/files/rcabench-absolute_anomaly.tar.gz?download=1"
+            "https://zenodo.org/api/records/17105974/files/rcabench-absolute_anomaly.tar.gz/content"
           ls -lh "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz"
+          df -h "$HOME"
 
       # ── Stream-convert Parquet → normalised case.json ──
       #   The archive is streamed so it is never fully materialised on disk:
@@ -51,6 +67,16 @@ jobs:
             --tar "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz" \
             --out-dir "$HOME/rcabench/json" \
             "${LIMIT_ARG[@]}"
+
+      # ── Free the 13.4 GB archive before installing node deps ──
+      #   The runner has ~22 GB free; the archive plus node_modules would
+      #   otherwise exhaust it. The JSON output is small relative to the
+      #   archive, so the archive is safe to drop once converted.
+      - name: Free archive disk space
+        if: always()
+        run: |
+          rm -f "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz"
+          df -h "$HOME"
 
       # ── TypeScript engine ──
       - uses: pnpm/action-setup@v4

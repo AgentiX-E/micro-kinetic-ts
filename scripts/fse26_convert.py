@@ -175,11 +175,32 @@ def status_code_to_status(status_code: Any) -> str:
 
 
 def _epoch_ms(df: pl.DataFrame, col: str) -> pl.Expr:
-    """Return an expression converting a Datetime column to Unix milliseconds."""
+    """
+    Return an expression converting a time column to Unix milliseconds.
+
+    Accepts either a polars Datetime column (the common OTel-export case, where
+    `Timestamp`/`TimeUnix` carry a TIMESTAMP logical type) or a raw integer
+    epoch column (OTel's `TimeUnixNano` convention). Integer epochs are unit-
+    inferred from their magnitude — `>= 1e17` → nanoseconds, `>= 1e14` →
+    microseconds, `>= 1e11` → milliseconds, otherwise seconds — so the bridge
+    is robust to either serialisation without silently mis-scaling.
+    """
     dtype = df[col].dtype
     if isinstance(dtype, pl.Datetime):
         return pl.col(col).dt.epoch("ms")
-    raise TypeError(f"Expected Datetime column `{col}`, got {dtype}")
+    if dtype.is_integer():
+        first = df[col].drop_nulls().head(1)
+        if first.is_empty():
+            return pl.col(col).cast(pl.Int64)
+        magnitude = abs(int(first.item()))
+        if magnitude >= 10**17:
+            return pl.col(col).cast(pl.Int64) // 10**6  # ns -> ms
+        if magnitude >= 10**14:
+            return pl.col(col).cast(pl.Int64) // 10**3  # us -> ms
+        if magnitude >= 10**11:
+            return pl.col(col).cast(pl.Int64)  # already ms
+        return pl.col(col).cast(pl.Int64) * 1000  # s -> ms
+    raise TypeError(f"Expected Datetime or integer time column `{col}`, got {dtype}")
 
 
 def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[str, Any]]]:
