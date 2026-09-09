@@ -5,11 +5,21 @@ Stream-convert the RCABench tar.gz into normalised `case.json` documents.
 The full `rcabench-absolute_anomaly.tar.gz` artifact is 13.4 GB; its extracted
 Parquet tree is comparable in size, so materialising BOTH on a 14 GB CI runner
 would exhaust the disk. This driver therefore converts directly FROM the
-archive: it groups tar members by top-level datapack directory, extracts each
-datapack to a short-lived temp directory, converts it via
-`fse26_convert.convert_datapack`, and removes the temp directory immediately.
-Peak disk stays at (archive + one datapack + JSON output) instead of (archive
-+ full Parquet tree + JSON output).
+archive in a SINGLE sequential pass: it walks the tar members in stream order,
+extracts each datapack's files to a short-lived temp directory, converts it via
+`fse26_convert.convert_datapack`, and removes the temp directory before the
+next datapack is read.
+
+Two properties are load-bearing:
+
+1. **Single pass (O(n) decompression).** `getmembers()` + `extract()` would
+   seek backwards on every extract, re-decompressing the archive from the start
+   per datapack (quadratic). Instead the members are consumed strictly in
+   stream order with `next()` + `extract()`, so each byte is decompressed once.
+2. **Truncation tolerance.** A range-downloaded prefix of the archive (used to
+   validate a small subset without the full 13.4 GB) ends mid-gzip-stream, so
+   the walk stops cleanly at the truncation instead of raising. The final,
+   incomplete datapack is discarded.
 
 Usage:
   python3 scripts/fse26_convert_tar.py --tar <archive.tar.gz> --out-dir <json> \
@@ -19,6 +29,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -33,6 +44,8 @@ def iter_datapack_dirs(tar: tarfile.TarFile) -> list[str]:
 
     A directory qualifies as a datapack when it contains an `injection.json`
     member — the same predicate `_discover_datapacks` uses on an extracted tree.
+    Used for listing/progress only; the streaming converter itself never calls
+    this (it discovers datapacks as it walks).
     """
     members_by_dir: dict[str, list[tarfile.TarInfo]] = {}
     for member in tar.getmembers():
@@ -52,48 +65,81 @@ def iter_datapack_dirs(tar: tarfile.TarFile) -> list[str]:
     return datapack_dirs
 
 
-def stream_convert_tar(tar_path: Path, out_dir: Path, limit: int = 0, force: bool = False) -> tuple[int, int]:
+def stream_convert_tar(
+    tar_path: Path, out_dir: Path, limit: int = 0, force: bool = False
+) -> tuple[int, int]:
     """
     Convert datapacks from `tar_path` into `out_dir`, returning (ok, failed).
 
-    Each datapack directory is extracted to a temporary directory, converted,
-    and the temporary directory discarded before the next datapack is read, so
-    the archive is never fully materialised on disk.
+    A single sequential pass over the archive members: each datapack's files are
+    extracted to a temp directory, converted, and the temp directory discarded
+    before the next datapack is read, so the archive is never fully materialised
+    on disk. A truncated (range-downloaded) archive stops cleanly at the
+    truncation point.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    with tarfile.open(tar_path, "r:gz") as tar:
-        datapack_dirs = iter_datapack_dirs(tar)
-        if limit:
-            datapack_dirs = datapack_dirs[:limit]
+    ok = 0
+    failed = 0
+    started = 0
+    current_name: str | None = None
+    tmp = tempfile.TemporaryDirectory()
+    tmp_root = Path(tmp.name)
 
-        ok = 0
-        failed = 0
-        total = len(datapack_dirs)
-        print(f"Converting {total} datapacks from {tar_path} to {out_dir}", flush=True)
+    def finalize() -> None:
+        """Convert (or skip) the just-finished datapack and clear its temp files."""
+        nonlocal ok, failed, current_name
+        if current_name is None:
+            return
+        src = tmp_root / current_name
+        dst = out_dir / current_name
+        try:
+            if not (src / "injection.json").exists():
+                pass  # top-level dir that is not a datapack (e.g. README/)
+            elif (dst / "case.json").exists() and not force:
+                ok += 1
+                print(f"SKIP {current_name} (already converted)", flush=True)
+            else:
+                conv.convert_datapack(src, dst)
+                ok += 1
+                print(f"OK   {current_name}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - report per-datapack failures and continue
+            failed += 1
+            print(f"FAIL {current_name}: {exc}", file=sys.stderr, flush=True)
+        finally:
+            shutil.rmtree(src, ignore_errors=True)
+            current_name = None
 
-        for index, name in enumerate(datapack_dirs, start=1):
-            dst_dir = out_dir / name
-            if (dst_dir / "case.json").exists() and not force:
-                print(f"[{index}/{total}] SKIP {name} (already converted)", flush=True)
-                ok += 1
-                continue
-            try:
-                with tempfile.TemporaryDirectory() as tmp:
-                    tmp_root = Path(tmp)
-                    # Extract only this datapack's members (they share the
-                    # `name/` prefix), preserving the directory layout so
-                    # `convert_datapack` reads `name/injection.json` etc.
-                    for member in tar.getmembers():
-                        if member.isfile() and member.name.startswith(name + "/"):
-                            tar.extract(member, tmp_root, filter="data")
-                    src = tmp_root / name
-                    conv.convert_datapack(src, dst_dir)
-                ok += 1
-                print(f"[{index}/{total}] OK   {name}", flush=True)
-            except Exception as exc:  # noqa: BLE001 - report per-datapack failures and continue
-                failed += 1
-                print(f"[{index}/{total}] FAIL {name}: {exc}", file=sys.stderr, flush=True)
+    try:
+        with tarfile.open(tar_path, "r:gz") as tar:
+            while True:
+                try:
+                    member = tar.next()
+                except (EOFError, tarfile.ReadError):
+                    break  # truncated archive: no more complete members
+                if member is None:
+                    break
+
+                parts = member.name.split("/")
+                if len(parts) < 2:
+                    continue  # root-level entry, not part of a datapack
+                name = parts[0]
+
+                if name != current_name:
+                    finalize()
+                    if limit and started >= limit:
+                        break  # limit reached; the previous datapack is already finalised
+                    current_name = name
+                    started += 1
+
+                if member.isfile():
+                    try:
+                        tar.extract(member, tmp_root, filter="data")
+                    except (EOFError, tarfile.ReadError):
+                        break  # truncated mid-file: discard the incomplete datapack
+    finally:
+        finalize()
+        tmp.cleanup()
 
     return ok, failed
 

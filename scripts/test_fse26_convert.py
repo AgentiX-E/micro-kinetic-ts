@@ -336,6 +336,32 @@ class TestStreamConvertTar(unittest.TestCase):
             dirs = conv_tar.iter_datapack_dirs(tf)
         self.assertEqual(dirs, ["ts5-ts-order-service-network-svfvxk"])
 
+    def test_truncated_archive_stops_cleanly(self) -> None:
+        # A range-downloaded prefix ends mid-gzip-stream. The streaming walk
+        # must convert the complete datapacks and discard the incomplete one
+        # without raising. (The synthetic parquet compresses ~13x, so a
+        # near-full truncation is used to guarantee the first datapack is
+        # complete while the second is cut.)
+        _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
+        _build_synthetic_datapack(self.root, "ts5-ts-order-service-stress-svfvxk")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(self.root, tar_path)
+
+        data = tar_path.read_bytes()
+        truncated = tar_path.with_name("rcabench-truncated.tar.gz")
+        truncated.write_bytes(data[: int(len(data) * 0.95)])
+
+        out = self.root / "out"
+        ok, failed = conv_tar.stream_convert_tar(truncated, out)
+
+        # The complete first datapack converts; the truncated second is
+        # discarded or fails, and the walk never raises.
+        first = out / "ts5-ts-order-service-network-svfvxk" / "case.json"
+        self.assertTrue(first.exists(), "the complete first datapack must convert")
+        json.loads(first.read_text("utf-8"))  # valid JSON
+        self.assertEqual(ok, 1)
+        self.assertLessEqual(failed, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
