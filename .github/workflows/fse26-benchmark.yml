@@ -3,12 +3,12 @@ name: Benchmark — FSE'26 RCABench
 on:
   workflow_dispatch:
     inputs:
-      max_cases:
-        description: 'Number of datapacks to convert + evaluate (0 = full 1430)'
+      categories:
+        description: 'Comma-separated fault categories to download (empty = all 7)'
         required: false
-        default: '0'
-      download_prefix_bytes:
-        description: 'Download only the first N bytes (0 = full 13.4 GB). For subset validation.'
+        default: ''
+      max_cases:
+        description: 'Number of datapacks to evaluate (0 = all downloaded)'
         required: false
         default: '0'
       log_weight:
@@ -26,56 +26,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ── Python: polars for the Parquet bridge ──
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install polars
-        run: pip install polars
-
-      # ── Download the 13.4 GB absolute_anomaly archive ──
-      #   Zenodo serves this object from cold storage: the first request may
-      #   504 ("server didn't respond in time") while the archive spools, and
-      #   mid-stream connection drops are common. The `/content` API endpoint
-      #   (unlike `?download=1`) reliably honours `Range`/resume, so we retry
-      #   aggressively on ALL errors and resume with `-C -`.
-      - name: Download RCABench archive (13.4 GB)
+      # ── Download pre-built per-category shards from rcabench-data ──
+      #   The converted case.json output is pre-split into 7 fault-category
+      #   shards and hosted as Release assets on AgentiX-E/rcabench-data, so
+      #   the benchmark no longer downloads the 13.4 GB archive or re-runs the
+      #   Parquet conversion.
+      - name: Download shards from rcabench-data
         run: |
-          mkdir -p "$HOME/rcabench"
-          RANGE_ARG=()
-          if [ "${{ inputs.download_prefix_bytes }}" != "0" ]; then
-            RANGE_ARG=(-r "0-${{ inputs.download_prefix_bytes }}")
+          mkdir -p "$HOME/rcabench/json"
+          curl -L --fail --retry 10 --retry-all-errors \
+            -o "$HOME/rcabench/manifest.json" \
+            "https://github.com/AgentiX-E/rcabench-data/releases/latest/download/manifest.json"
+          if [ -n "${{ inputs.categories }}" ]; then
+            CATS=$(echo "${{ inputs.categories }}" | tr ',' ' ')
+          else
+            CATS=$(python3 -c "import json; print(' '.join(s['category'] for s in json.load(open('$HOME/rcabench/manifest.json'))['shards']))")
           fi
-          curl -L --fail --retry 30 --retry-all-errors --retry-delay 20 \
-            --connect-timeout 60 --speed-limit 1024 --speed-time 90 \
-            -C - "${RANGE_ARG[@]}" \
-            -o "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz" \
-            "https://zenodo.org/api/records/17105974/files/rcabench-absolute_anomaly.tar.gz/content"
-          ls -lh "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz"
-          df -h "$HOME"
-
-      # ── Stream-convert Parquet → normalised case.json ──
-      #   The archive is streamed so it is never fully materialised on disk:
-      #   each datapack is extracted to a temp dir, converted, then removed.
-      - name: Convert Parquet to JSON (streaming)
-        run: |
-          LIMIT_ARG=()
-          if [ "${{ inputs.max_cases }}" != "0" ]; then
-            LIMIT_ARG=(--limit "${{ inputs.max_cases }}")
-          fi
-          python3 scripts/fse26_convert_tar.py \
-            --tar "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz" \
-            --out-dir "$HOME/rcabench/json" \
-            "${LIMIT_ARG[@]}"
-
-      # ── Free the 13.4 GB archive before installing node deps ──
-      #   The runner has ~22 GB free; the archive plus node_modules would
-      #   otherwise exhaust it. The JSON output is small relative to the
-      #   archive, so the archive is safe to drop once converted.
-      - name: Free archive disk space
-        if: always()
-        run: |
-          rm -f "$HOME/rcabench/rcabench-absolute_anomaly.tar.gz"
+          for cat in $CATS; do
+            curl -L --fail --retry 10 --retry-all-errors \
+              -o "$HOME/rcabench/rcabench-$cat.tar.gz" \
+              "https://github.com/AgentiX-E/rcabench-data/releases/latest/download/rcabench-$cat.tar.gz"
+            tar xzf "$HOME/rcabench/rcabench-$cat.tar.gz" -C "$HOME/rcabench/json"
+          done
+          echo "Downloaded categories: $CATS"
+          echo "case.json count: $(find "$HOME/rcabench/json" -name case.json | wc -l)"
           df -h "$HOME"
 
       # ── TypeScript engine ──
