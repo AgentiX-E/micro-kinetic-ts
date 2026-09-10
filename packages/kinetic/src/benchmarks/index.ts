@@ -114,6 +114,11 @@ export type {
   RuleResult,
 } from './leaderboard/routing-probe.js';
 
+// ── FSE'26 diagnostic formatter ───────────────────────────
+
+export { formatFSE26Diagnostic } from './fse26-diagnose.js';
+export type { FSE26DiagnosticInput, FSE26DiagnosticService } from './fse26-diagnose.js';
+
 // ── Synthetic Data Generator ──────────────────────────────
 
 export { SyntheticBenchmarkGenerator } from './synthetic/data-generator.js';

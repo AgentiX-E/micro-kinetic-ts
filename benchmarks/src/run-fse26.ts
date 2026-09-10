@@ -31,11 +31,17 @@ import { readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import type { RootCauseResult } from '../../packages/core/src/index.js';
+import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
 
+import type {
+  BenchmarkCase,
+  FSE26DiagnosticService,
+  FSE26RawCase,
+} from '../../packages/kinetic/src/benchmarks/index.js';
 import {
   FSE26Loader,
   computeAvgAtKMultiLabel,
+  formatFSE26Diagnostic,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
@@ -48,6 +54,10 @@ interface CliOptions {
   rankNormalization: boolean;
   /** Emit a JSON result document to this path (optional). */
   output: string;
+  /** Fault types to dump a per-service signal diagnostic for (empty = none). */
+  diagnose: string[];
+  /** Max diagnostic dumps per matching fault type (0 = unlimited). */
+  diagnoseLimit: number;
 }
 
 function parseArgs(): CliOptions {
@@ -58,6 +68,8 @@ function parseArgs(): CliOptions {
     logWeight: 1.0,
     rankNormalization: true,
     output: '',
+    diagnose: [],
+    diagnoseLimit: 3,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -67,6 +79,12 @@ function parseArgs(): CliOptions {
       opts.logWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--no-rank-normalization') opts.rankNormalization = false;
     else if (args[i] === '--output' && i + 1 < args.length) opts.output = args[++i]!;
+    else if (args[i] === '--diagnose' && i + 1 < args.length)
+      opts.diagnose = args[++i]!.split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    else if (args[i] === '--diagnose-limit' && i + 1 < args.length)
+      opts.diagnoseLimit = parseInt(args[++i]!, 10) || 0;
   }
   return opts;
 }
@@ -110,6 +128,66 @@ interface FaultCell {
   correct: number;
 }
 
+/**
+ * Assemble a per-service signal diagnostic for one case, for the `--diagnose`
+ * flag. It reads the raw case, the loaded {@link BenchmarkCase}, and the built
+ * fault graph — the exact inventory the engine scored — so a weak fault type
+ * can be traced to whether the source's signature is present in the data and
+ * rewarded by a ranking signal.
+ */
+function buildDiagnostic(
+  raw: FSE26RawCase,
+  benchCase: BenchmarkCase,
+  faultGraph: FaultPropagationGraph,
+  ranking: RootCauseResult[],
+): string {
+  const injectTime = benchCase.injectTime;
+  const services: FSE26DiagnosticService[] = [];
+  for (const serviceId of benchCase.callGraph.nodes.keys()) {
+    const series = benchCase.metrics.get(serviceId) ?? [];
+    const metricNames = [...new Set(series.map((s) => s.label))].sort();
+    const dominantMetric = faultGraph.dominantMetrics?.get(serviceId)?.label;
+    const selfAnomaly = faultGraph.anomalyScores.get(serviceId) ?? 0;
+    const logScore = faultGraph.logScores?.get(serviceId) ?? 0;
+
+    let errorCount = 0;
+    let fatalCount = 0;
+    let logicExceptionCount = 0;
+    const sampleErrorMessages: string[] = [];
+    if (benchCase.logs) {
+      for (const log of benchCase.logs) {
+        if (log.service !== serviceId) continue;
+        if (injectTime > 0 && log.timestamp < injectTime) continue;
+        const isError = log.level === 'ERROR' || log.level === 'FATAL';
+        if (log.level === 'ERROR') errorCount++;
+        else if (log.level === 'FATAL') fatalCount++;
+        if (isError && log.isLogicException) logicExceptionCount++;
+        if (isError && sampleErrorMessages.length < 3) sampleErrorMessages.push(log.message);
+      }
+    }
+
+    services.push({
+      serviceId,
+      metricNames,
+      dominantMetric,
+      selfAnomaly,
+      logScore,
+      errorCount,
+      fatalCount,
+      logicExceptionCount,
+      sampleErrorMessages,
+    });
+  }
+
+  return formatFSE26Diagnostic({
+    datapack: raw.datapack,
+    faultType: raw.faultType,
+    groundTruthServices: raw.groundTruthServices,
+    services,
+    topPredictions: ranking.map((r) => r.serviceId),
+  });
+}
+
 async function main(): Promise<void> {
   const opts = parseArgs();
   const loader = new FSE26Loader();
@@ -142,6 +220,7 @@ async function main(): Promise<void> {
   let loadErrors = 0;
   let engineErrors = 0;
   let emptyGraphs = 0;
+  const diagnosed = new Map<string, number>();
 
   for (const dir of selected) {
     let raw;
@@ -166,12 +245,13 @@ async function main(): Promise<void> {
     const faultType = benchCase.groundTruth.faultType ?? 'unknown';
 
     let ranking: RootCauseResult[] = [];
+    let faultGraph: FaultPropagationGraph | undefined;
     try {
       if (benchCase.callGraph.edges.length === 0) {
         // The engine requires ≥ 1 edge; a single-service case is degenerate.
         emptyGraphs++;
       } else {
-        const faultGraph = pruner.buildFaultGraph(benchCase.callGraph, benchCase.metrics, {
+        faultGraph = pruner.buildFaultGraph(benchCase.callGraph, benchCase.metrics, {
           injectTimeMs: benchCase.injectTime,
           logs: benchCase.logs,
         });
@@ -179,6 +259,20 @@ async function main(): Promise<void> {
       }
     } catch {
       engineErrors++;
+    }
+
+    // ── Optional per-case signal diagnostic (--diagnose) ──
+    // Dump the source vs symptom signal inventory for a weak fault type so its
+    // gap can be traced to a data gap or a signal gap.
+    if (opts.diagnose.includes(faultType)) {
+      const dumped = diagnosed.get(faultType) ?? 0;
+      const unlimited = opts.diagnoseLimit === 0;
+      if (unlimited || dumped < opts.diagnoseLimit) {
+        diagnosed.set(faultType, dumped + 1);
+        if (faultGraph) {
+          console.log(buildDiagnostic(raw, benchCase, faultGraph, ranking));
+        }
+      }
     }
 
     predictionsPerCase.push(ranking.map((r) => r.serviceId));

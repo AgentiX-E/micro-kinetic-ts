@@ -15,6 +15,14 @@ on:
         description: 'Log-signal weight (production default 1.0)'
         required: false
         default: '1.0'
+      diagnose:
+        description: 'Comma-separated fault types to dump a per-service signal diagnostic for (empty = none)'
+        required: false
+        default: ''
+      diagnose_limit:
+        description: 'Max diagnostic dumps per matching fault type (0 = unlimited)'
+        required: false
+        default: '3'
 
 permissions:
   contents: read
@@ -74,10 +82,15 @@ jobs:
           if [ "${{ inputs.max_cases }}" != "0" ]; then
             MAX_CASES_ARG=(--max-cases "${{ inputs.max_cases }}")
           fi
+          DIAGNOSE_ARG=()
+          if [ -n "${{ inputs.diagnose }}" ]; then
+            DIAGNOSE_ARG=(--diagnose "${{ inputs.diagnose }}" --diagnose-limit "${{ inputs.diagnose_limit }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --log-weight "${{ inputs.log_weight }}" \
             "${MAX_CASES_ARG[@]}" \
+            "${DIAGNOSE_ARG[@]}" \
             --output fse26-results.json 2>&1 | tee fse26-results.txt
 
       - name: Upload results
