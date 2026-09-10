@@ -92,6 +92,26 @@ raising the gain +18.3 → +30.0 pp. The remaining 15 cases are the irreducible
 residue of the **direction-symmetric** HTTP exceptions above, which no log-only
 gate can resolve.
 
+## Discriminator evidence (diagnostic run 34471223487)
+
+The targeted diagnostic of the 5 regressed types surfaced the exact
+`{logic, exceptionClass}` signature split between source and victim:
+
+| Emitter | `logic` | exception classes | Fault type |
+|---|---|---|---|
+| **source** | `≈ err` (hundreds) | `RestClientException`, `ResourceAccessException` | HTTPResponseReplaceBody |
+| **source** | `= 0` | `HttpServerErrorException` (flooded 1560–3564) | HTTPResponseReplaceCode |
+| **victim** | `= 0` | `HttpServerErrorException` only | JVMMemoryStress / NetworkBandwidth / JVMException |
+
+The decisive observation: a **victim** always carries `logic = 0` and floods
+**only** `HttpServerErrorException` (it received a 5xx from the failed source),
+whereas a replace-body **source** carries `logic ≈ err` (it throws its own
+logic exceptions on the malformed body) plus `RestClientException`. The
+hard, symmetric case is `HTTPResponseReplaceCode` — its source floods
+`HttpServerErrorException` with `logic = 0`, *identically* to a memory/bandwidth
+victim. No log-only gate can separate those two; they differ only in call-graph
+direction (whose callee is anomalous), which is exactly lever #2.
+
 ## Next steps
 
 1. **(P1c lever #2) joint log × topology signal** — reward a framework HTTP
