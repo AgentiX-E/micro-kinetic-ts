@@ -77,6 +77,34 @@ class TestResolveGroundTruthServices(unittest.TestCase):
         self.assertEqual(result, ["ts-order-service"])
 
 
+class TestFaultCategory(unittest.TestCase):
+    """`fault_category` maps each fault type to one of the 7 benchmark categories
+    (Pod/Resource/HTTP/DNS/Time/Network/JVM), ported from the platform's
+    `FAULT_TYPE_MAPPING`."""
+
+    CATEGORIES = {"Pod", "Resource", "HTTP", "DNS", "Time", "Network", "JVM"}
+
+    def test_every_fault_type_is_mapped(self) -> None:
+        self.assertEqual(set(conv.FAULT_TYPES), set(conv.FAULT_CATEGORY.keys()))
+
+    def test_all_categories_are_valid(self) -> None:
+        for category in conv.FAULT_CATEGORY.values():
+            self.assertIn(category, self.CATEGORIES)
+
+    def test_spot_check_mapping(self) -> None:
+        self.assertEqual(conv.fault_category("PodKill"), "Pod")
+        self.assertEqual(conv.fault_category("CPUStress"), "Resource")
+        self.assertEqual(conv.fault_category("HTTPRequestDelay"), "HTTP")
+        self.assertEqual(conv.fault_category("DNSError"), "DNS")
+        self.assertEqual(conv.fault_category("TimeSkew"), "Time")
+        self.assertEqual(conv.fault_category("NetworkDelay"), "Network")
+        self.assertEqual(conv.fault_category("JVMLatency"), "JVM")
+
+    def test_unknown_fault_type_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            conv.fault_category("NotAFault")
+
+
 class TestComputeInjectTimeMs(unittest.TestCase):
     def test_gap_uses_midpoint(self) -> None:
         env = {"NORMAL_START": 100, "NORMAL_END": 120, "ABNORMAL_START": 200, "ABNORMAL_END": 220}
@@ -515,6 +543,7 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
         # Header fields.
         self.assertEqual(case["datapack"], "ts5-ts-order-service-network-svfvxk")
         self.assertEqual(case["faultType"], "NetworkDelay")
+        self.assertEqual(case["faultCategory"], "Network")
         self.assertEqual(case["groundTruthServices"], ["ts-order-service", "ts-travel-service"])
         expected_inject_ms = ((NORMAL_END + ABNORMAL_START) // 2) * 1000
         self.assertEqual(case["injectTimeMs"], expected_inject_ms)
@@ -556,6 +585,7 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
         case = json.loads(out_path.read_text("utf-8"))
 
         self.assertEqual(case["faultType"], "CPUStress")
+        self.assertEqual(case["faultCategory"], "Resource")
         self.assertEqual(case["groundTruthServices"], ["ts-order-service"])
 
 

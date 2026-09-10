@@ -33,6 +33,7 @@ Output `case.json` schema (per datapack):
     {
       "datapack": "ts5-ts-order-service-stress-svfvxk",
       "faultType": "CPUStress",
+      "faultCategory": "Resource",
       "groundTruthServices": ["ts-order-service"],
       "injectTimeMs": 1757000000000,
       "metrics": {
@@ -111,6 +112,44 @@ FAULT_TYPES: list[str] = [
     "JVMMySQLException",
 ]
 
+# Fault type → benchmark category, ported verbatim from the platform's
+# `v2/analysis/aggregation.py:FAULT_TYPE_MAPPING`. The 31 fault types collapse
+# into 7 categories used for release-asset sharding: Pod / Resource / HTTP /
+# DNS / Time / Network / JVM.
+FAULT_CATEGORY: dict[str, str] = {
+    "PodKill": "Pod",
+    "PodFailure": "Pod",
+    "ContainerKill": "Pod",
+    "MemoryStress": "Resource",
+    "CPUStress": "Resource",
+    "JVMCPUStress": "Resource",
+    "JVMMemoryStress": "Resource",
+    "HTTPRequestAbort": "HTTP",
+    "HTTPResponseAbort": "HTTP",
+    "HTTPRequestDelay": "HTTP",
+    "HTTPResponseDelay": "HTTP",
+    "HTTPResponseReplaceBody": "HTTP",
+    "HTTPResponsePatchBody": "HTTP",
+    "HTTPRequestReplacePath": "HTTP",
+    "HTTPRequestReplaceMethod": "HTTP",
+    "HTTPResponseReplaceCode": "HTTP",
+    "DNSError": "DNS",
+    "DNSRandom": "DNS",
+    "TimeSkew": "Time",
+    "NetworkDelay": "Network",
+    "NetworkLoss": "Network",
+    "NetworkDuplicate": "Network",
+    "NetworkCorrupt": "Network",
+    "NetworkBandwidth": "Network",
+    "NetworkPartition": "Network",
+    "JVMLatency": "JVM",
+    "JVMReturn": "JVM",
+    "JVMException": "JVM",
+    "JVMGarbageCollector": "JVM",
+    "JVMMySQLLatency": "JVM",
+    "JVMMySQLException": "JVM",
+}
+
 # Datapack-name pattern used by the platform to recover the injected service
 # (`datasets/rcabench.py:rcabench_get_service_name`). group(2) is the service.
 DATAPACK_PATTERN = re.compile(
@@ -131,6 +170,21 @@ def get_service_name(datapack_name: str) -> str:
     if match is None:
         raise ValueError(f"Invalid datapack name: `{datapack_name}`")
     return match.group(2)
+
+
+def fault_category(fault_type: str) -> str:
+    """
+    Return the benchmark category for a fault type.
+
+    The 31 fault types collapse into 7 categories (Pod / Resource / HTTP / DNS
+    / Time / Network / JVM) used to shard the converted output into release
+    assets. Raises on an unknown fault type (the mapping is total over
+    :data:`FAULT_TYPES`).
+    """
+    category = FAULT_CATEGORY.get(fault_type)
+    if category is None:
+        raise ValueError(f"Unknown fault type: `{fault_type}`")
+    return category
 
 
 def resolve_ground_truth_services(
@@ -522,6 +576,7 @@ def build_case(src_dir: Path) -> dict[str, Any]:
     case: dict[str, Any] = {
         "datapack": src_dir.name,
         "faultType": fault_type,
+        "faultCategory": fault_category(fault_type),
         "groundTruthServices": ground_truth,
         "injectTimeMs": inject_time_ms,
         "metrics": read_metrics(
