@@ -27,6 +27,7 @@ function service(overrides: Partial<FSE26DiagnosticService>): FSE26DiagnosticSer
     fatalCount: 0,
     logicExceptionCount: 0,
     sampleErrorMessages: [],
+    exceptionClasses: [],
     ...overrides,
   };
 }
@@ -144,6 +145,27 @@ describe('formatFSE26Diagnostic', () => {
       }),
     );
     expect(out).toContain('ERR: Connection refused');
+  });
+
+  it('renders the distinct exception classes and omits the line when empty', () => {
+    const withClasses = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-basic-service',
+            selfAnomaly: 0.1,
+            exceptionClasses: ['HttpClientErrorException', 'HttpServerErrorException'],
+          }),
+          service({ serviceId: 'ts-order-service', selfAnomaly: 0.05, exceptionClasses: [] }),
+        ],
+      }),
+    );
+    expect(withClasses).toContain(
+      'exc(2): HttpClientErrorException,HttpServerErrorException',
+    );
+    // Only the service WITH exception classes emits an exc line — the empty one
+    // contributes nothing, so exactly one exc line exists in the whole output.
+    expect(withClasses.split('exc(').length - 1).toBe(1);
   });
 
   it('guards against non-finite self-anomaly values', () => {

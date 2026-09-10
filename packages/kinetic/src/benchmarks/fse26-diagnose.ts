@@ -38,6 +38,14 @@ export interface FSE26DiagnosticService {
   readonly logicExceptionCount: number;
   /** A small sample of the service's ERROR/FATAL messages (truncated). */
   readonly sampleErrorMessages: readonly string[];
+  /**
+   * The DISTINCT deepest `Caused by:` exception classes of the service's
+   * post-injection ERROR/FATAL lines, sorted ascending. Reveals the actual
+   * exception signature (e.g. `HttpServerErrorException`) that the log signal's
+   * `isLogicException` gate may or may not recognise — the causal discriminator
+   * behind a weak fault type.
+   */
+  readonly exceptionClasses: readonly string[];
 }
 
 /** Input to {@link formatFSE26Diagnostic}. */
@@ -117,6 +125,9 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
     lines.push(`    metrics(${service.metricNames.length}): ${metricList}`);
     for (const sample of service.sampleErrorMessages) {
       lines.push(`    ERR: ${truncate(sample, 160)}`);
+    }
+    if (service.exceptionClasses.length > 0) {
+      lines.push(`    exc(${service.exceptionClasses.length}): ${service.exceptionClasses.join(',')}`);
     }
   }
 

@@ -160,6 +160,7 @@ function buildDiagnostic(
     let fatalCount = 0;
     let logicExceptionCount = 0;
     const sampleErrorMessages: string[] = [];
+    const exceptionClassSet = new Set<string>();
     if (benchCase.logs) {
       for (const log of benchCase.logs) {
         if (log.service !== serviceId) continue;
@@ -169,6 +170,7 @@ function buildDiagnostic(
         else if (log.level === 'FATAL') fatalCount++;
         if (isError && log.isLogicException) logicExceptionCount++;
         if (isError && sampleErrorMessages.length < 3) sampleErrorMessages.push(log.message);
+        if (isError && log.deepestExceptionClass) exceptionClassSet.add(log.deepestExceptionClass);
       }
     }
 
@@ -182,6 +184,7 @@ function buildDiagnostic(
       fatalCount,
       logicExceptionCount,
       sampleErrorMessages,
+      exceptionClasses: [...exceptionClassSet].sort(),
     });
   }
 
