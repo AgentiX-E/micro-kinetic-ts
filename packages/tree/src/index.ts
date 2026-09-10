@@ -52,8 +52,10 @@ export { TreePruner, toRankingWeights } from './pruning/pruner.js';
 export type { TreePrunerOptions } from './pruning/pruner.js';
 
 export {
+  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
   computeDeepestExceptions,
+  computeHttpEmitterDominance,
   computeHttpVictimSet,
   computeLogNoveltyScores,
   computeLogScores,
@@ -63,6 +65,7 @@ export {
   gatedRiseContribution,
 } from './pruning/ranking-signals.js';
 export type {
+  HttpEmitterDominance,
   HttpSourceJointContext,
   LogSignalMode,
   TraceActivityOptions,

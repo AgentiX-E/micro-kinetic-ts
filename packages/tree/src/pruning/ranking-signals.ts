@@ -63,6 +63,25 @@ import type {
  *   framework-HTTP count for a service that has a MORE-anomalous callee (that
  *   callee is the source, so the emitter is the victim), keeping the
  *   replace-code gain while removing the resource/network regression.
+ *   **Falsified** (run 34478297401, −19.4pp vs `logicHttp`): the relative
+ *   callee comparison operates on RANK-NORMALISED scores (rank positions, not
+ *   anomaly magnitudes), so a cascade that raises every service's latency puts
+ *   the source's own callees above it and wrongly suppresses the source. See
+ *   docs/fse26-logicHttpJoint-falsified.md.
+ * - `logicHttpDominant`: like `logicHttp`, but the framework-HTTP half is gated
+ *   by EMITTER CONCENTRATION, not topology. A framework-HTTP flood is a source
+ *   signature only when it is CONCENTRATED on one emitter — the source's own
+ *   downstream calls all fail, so one service dominates at 10–16× the victim
+ *   rate. A SPREAD flood across many callers is a victim cascade (each victim
+ *   reports the same broken callee). The mode measures
+ *   `dominance = topEmitterHttpCount / totalHttpCount` and suppresses the
+ *   framework-HTTP half ENTIRELY when `dominance < httpDominanceThreshold`
+ *   (spread → cascade), keeping it when concentrated. Unlike `logicHttpJoint`
+ *   this never compares anomaly scores, so it is rank-normalisation-proof.
+ *   **Falsified** (run 34482091814, diagnosed BEFORE ablation): the victim
+ *   flood in the source-silent types is itself concentrated ~70% of the time
+ *   (dominance ≥ 0.5 on a high-traffic VICTIM), so concentration does NOT
+ *   separate source from victim. See docs/fse26-emitter-dominance-falsified.md.
  * - `all`: the max-normalised count of EVERY ERROR/FATAL line (the
  *   `isLogicException` gate is dropped). Targets fault classes where the SOURCE
  *   — not the symptom — floods errors with a non-logic exception (e.g. FSE'26
@@ -71,7 +90,8 @@ import type {
  *   for resource/network faults the symptom floods, so `all` misfires and must
  *   be ablated against `count` before it can ship.
  */
-export type LogSignalMode = 'count' | 'novelty' | 'logicHttp' | 'logicHttpJoint' | 'all';
+export type LogSignalMode =
+  'count' | 'novelty' | 'logicHttp' | 'logicHttpJoint' | 'logicHttpDominant' | 'all';
 
 /**
  * The call-graph context the `logicHttpJoint` mode needs to disambiguate a
@@ -118,6 +138,93 @@ export function computeHttpVictimSet(
     if (toAnomaly > fromAnomaly) victims.add(edge.from);
   }
   return victims;
+}
+
+/**
+ * The framework-HTTP emitter concentration of a case.
+ *
+ * A framework-HTTP exception is DIRECTION-SYMMETRIC: a source floods it when
+ * the fault breaks ITS OWN downstream calls, while a victim floods the SAME
+ * exception when its callee (the silent source) breaks. The distinguishing
+ * feature is not "which service is more anomalous" but "is the flood
+ * CONCENTRATED on one emitter (a source) or SPREAD across many callers (a
+ * cascade)". This measure operationalises that split.
+ */
+export interface HttpEmitterDominance {
+  /** The service with the most framework-HTTP lines (undefined when none). */
+  readonly topEmitter: ServiceId | undefined;
+  /** The top emitter's framework-HTTP line count. */
+  readonly topCount: number;
+  /** The framework-HTTP line count summed across all services. */
+  readonly totalCount: number;
+  /**
+   * `topCount / totalCount` ∈ [0, 1] — the top emitter's share of the flood.
+   * 0 when `totalCount` is 0 (no framework-HTTP lines).
+   */
+  readonly dominance: number;
+}
+
+/**
+ * Default `dominance` threshold for the `logicHttpDominant` mode: the top
+ * emitter must own at least half the framework-HTTP flood for it to be read as
+ * a concentrated source signature rather than a spread victim cascade. Tuned
+ * against the measured FSE'26 replace-code source at 10–16× the victim rate
+ * (dominance ≈ 0.6–0.9) vs the memory/bandwidth/kill cascade spread across
+ * many callers (dominance ≈ 1/N ≲ 0.3). Subject to ablation.
+ */
+export const DEFAULT_HTTP_DOMINANCE_THRESHOLD = 0.5;
+
+/**
+ * Compute the framework-HTTP emitter concentration of a case.
+ *
+ * Counts post-injection ERROR/FATAL lines flagged `isHttpException` per
+ * in-graph service, then returns the top emitter, its count, the total, and
+ * the `dominance` ratio. A high dominance means ONE service floods the
+ * exception (a source whose own downstream calls failed); a low dominance
+ * means the flood is SPREAD (a cascade where many callers each report the same
+ * broken callee).
+ *
+ * @param logs - Raw log lines (may be undefined → zeroed result).
+ * @param nodeIds - Services present in the call graph.
+ * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
+ * @returns The emitter concentration summary (all-zero when no framework-HTTP
+ *   line survives filtering).
+ */
+export function computeHttpEmitterDominance(
+  logs: readonly FaultLogEntry[] | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+  injectTimeMs: number,
+): HttpEmitterDominance {
+  if (!logs || logs.length === 0 || nodeIds.size === 0) {
+    return { topEmitter: undefined, topCount: 0, totalCount: 0, dominance: 0 };
+  }
+
+  const counts = new Map<ServiceId, number>();
+  for (const log of logs) {
+    if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
+    if (!nodeIds.has(log.service)) continue;
+    if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
+    if (log.isHttpException !== true) continue;
+    counts.set(log.service, (counts.get(log.service) ?? 0) + 1);
+  }
+
+  let topEmitter: ServiceId | undefined;
+  let topCount = 0;
+  let totalCount = 0;
+  for (const [service, count] of counts) {
+    totalCount += count;
+    if (count > topCount) {
+      topCount = count;
+      topEmitter = service;
+    }
+  }
+
+  return {
+    topEmitter,
+    topCount,
+    totalCount,
+    dominance: totalCount > 0 ? topCount / totalCount : 0,
+  };
 }
 
 /**
@@ -169,10 +276,16 @@ export function computeHttpVictimSet(
  * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
  * @param mode - Scoring mode (`count` default; `novelty` for IDF weighting;
  *   `logicHttp` for logic + framework HTTP exceptions; `logicHttpJoint` for
- *   logic + topology-gated framework HTTP; `all` for every error).
+ *   logic + topology-gated framework HTTP; `logicHttpDominant` for logic +
+ *   concentration-gated framework HTTP; `all` for every error).
  * @param joint - Call-graph context for `logicHttpJoint` (ignored otherwise):
  *   the framework-HTTP half is suppressed for a service that has a
  *   more-anomalous callee (see {@link computeHttpVictimSet}).
+ * @param httpDominanceThreshold - Concentration threshold for
+ *   `logicHttpDominant` (ignored otherwise): the framework-HTTP half is
+ *   suppressed ENTIRELY when the top emitter's share of the flood is below
+ *   this value (see {@link computeHttpEmitterDominance}). Default
+ *   {@link DEFAULT_HTTP_DOMINANCE_THRESHOLD}.
  * @returns Per-service log score in [0, 1]; empty when no signal.
  */
 export function computeLogScores(
@@ -181,6 +294,7 @@ export function computeLogScores(
   injectTimeMs: number,
   mode: LogSignalMode = 'count',
   joint?: HttpSourceJointContext,
+  httpDominanceThreshold: number = DEFAULT_HTTP_DOMINANCE_THRESHOLD,
 ): Map<ServiceId, number> {
   if (mode === 'novelty') return computeLogNoveltyScores(logs, nodeIds, injectTimeMs);
 
@@ -191,22 +305,33 @@ export function computeLogScores(
   // logic exceptions PLUS framework HTTP exceptions (both source signatures);
   // `logicHttpJoint` additionally suppresses the framework-HTTP half for a
   // service whose callee is MORE anomalous (that callee is the source, so the
-  // emitter is a victim); `all` counts every error line so a source that floods
-  // a propagated HTTP error still scores.
+  // emitter is a victim); `logicHttpDominant` suppresses the framework-HTTP half
+  // ENTIRELY when the flood is SPREAD across many callers (a victim cascade)
+  // rather than concentrated on one emitter (a source); `all` counts every error
+  // line so a source that floods a propagated HTTP error still scores.
   const victims =
     mode === 'logicHttpJoint' && joint
       ? computeHttpVictimSet(joint.edges, joint.anomalyScores)
       : new Set<ServiceId>();
+  // For `logicHttpDominant`, the framework-HTTP half is case-level: kept only
+  // when ONE emitter owns ≥ the threshold share of the flood (concentrated
+  // source), suppressed entirely otherwise (spread cascade). This never
+  // compares anomaly scores, so it is immune to the rank-normalisation defeat
+  // that falsified `logicHttpJoint`.
+  const concentrated =
+    mode === 'logicHttpDominant'
+      ? computeHttpEmitterDominance(logs, nodeIds, injectTimeMs).dominance >= httpDominanceThreshold
+      : false;
   const gate = (log: FaultLogEntry): boolean => {
     if (mode === 'all') return true;
     // A self-caused logic exception is ALWAYS a source signature — count it
     // in every non-`all` mode.
     if (log.isLogicException === true) return true;
-    // A framework HTTP exception is source-only in `logicHttp`/`logicHttpJoint`;
-    // the joint mode suppresses it for a topology-confirmed victim.
+    // A framework HTTP exception is source-only in the `logicHttp*` modes.
     if (log.isHttpException === true) {
       if (mode === 'logicHttp') return true;
       if (mode === 'logicHttpJoint') return !victims.has(log.service);
+      if (mode === 'logicHttpDominant') return concentrated;
     }
     return false;
   };

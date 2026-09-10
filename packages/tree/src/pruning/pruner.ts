@@ -201,13 +201,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *   framework-HTTP half is suppressed for a service whose callee is MORE
    *   anomalous (that callee is the real source, so the emitter is a victim).
    *   Separates the replace-code source (healthy callee) from the
-   *   memory/bandwidth/killed-source victim (anomalous callee).
+   *   memory/bandwidth/killed-source victim (anomalous callee). FALSIFIED
+   *   (rank-normalised scores defeat the relative comparison — see
+   *   docs/fse26-logicHttpJoint-falsified.md).
+   * - `logicHttpDominant`: `logicHttp` plus an EMITTER-CONCENTRATION gate — the
+   *   framework-HTTP half is suppressed ENTIRELY when the flood is SPREAD
+   *   across many callers (a victim cascade) rather than concentrated on one
+   *   emitter (a source). Rank-normalisation-proof (never compares anomaly
+   *   scores). FALSIFIED before ablation (run 34482091814): the victim flood is
+   *   itself concentrated ~70% of the time, so concentration does not separate
+   *   source from victim — see docs/fse26-emitter-dominance-falsified.md.
    * - `all`: the max-normalised count of EVERY ERROR/FATAL line (no
    *   logic-exception gate). Targets fault classes whose SOURCE floods a
    *   propagated HTTP error (e.g. FSE'26 HTTPResponseReplaceCode).
    *
-   * `novelty`, `logicHttp`, `logicHttpJoint` and `all` are opt-in until
-   * benchmarked; `count` is the shipped default.
+   * `novelty`, `logicHttp`, `logicHttpJoint`, `logicHttpDominant` and `all` are
+   * opt-in until benchmarked; `count` is the shipped default.
    */
   readonly logSignalMode: LogSignalMode;
   /**

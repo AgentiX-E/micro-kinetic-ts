@@ -1,6 +1,8 @@
 import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 import {
+  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   computeDeepestExceptions,
+  computeHttpEmitterDominance,
   computeHttpVictimSet,
   computeLogNoveltyScores,
   computeLogScores,
@@ -334,6 +336,91 @@ describe('computeHttpVictimSet', () => {
   });
 });
 
+describe('computeHttpEmitterDominance', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  it('returns a zeroed result for absent or empty logs', () => {
+    const empty = { topEmitter: undefined, topCount: 0, totalCount: 0, dominance: 0 };
+    expect(computeHttpEmitterDominance(undefined, nodes, 0)).toEqual(empty);
+    expect(computeHttpEmitterDominance([], nodes, 0)).toEqual(empty);
+  });
+
+  it('measures a CONCENTRATED flood (single dominant emitter) at high dominance', () => {
+    // FSE'26 replace-code: the source (a) floods the framework HTTP exception at
+    // 10× the victim rate, so a owns most of the flood.
+    const logs = [
+      ...Array.from({ length: 10 }, () =>
+        makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      ),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const d = computeHttpEmitterDominance(logs, nodes, 0);
+
+    expect(d.topEmitter).toBe('a');
+    expect(d.topCount).toBe(10);
+    expect(d.totalCount).toBe(11);
+    expect(d.dominance).toBeCloseTo(10 / 11, 10);
+  });
+
+  it('measures a SPREAD flood (cascade) at low dominance', () => {
+    // FSE'26 memory/bandwidth/kill: many victims each report the same broken
+    // callee, so no single emitter owns a large share.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('c', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const d = computeHttpEmitterDominance(logs, nodes, 0);
+
+    expect(d.topCount).toBe(1);
+    expect(d.totalCount).toBe(3);
+    expect(d.dominance).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('counts only in-graph, post-inject, ERROR/FATAL framework-HTTP lines', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 300, false, 'HttpServerErrorException', true), // post, counted
+      makeLog('a', 'ERROR', 100, false, 'HttpServerErrorException', true), // pre — filtered
+      makeLog('ghost', 'ERROR', 300, false, 'HttpServerErrorException', true), // not in graph
+      makeLog('b', 'INFO', 300, false, 'HttpServerErrorException', true), // non-error level
+      makeLog('b', 'ERROR', 300, false, 'ConnectException', false), // not framework HTTP
+      makeLog('c', 'ERROR', 300, true, 'NullPointerException', false), // logic, not HTTP
+    ];
+    const d = computeHttpEmitterDominance(logs, nodes, 200);
+
+    expect(d.topEmitter).toBe('a');
+    expect(d.topCount).toBe(1);
+    expect(d.totalCount).toBe(1);
+    expect(d.dominance).toBe(1);
+  });
+
+  it('breaks a count tie deterministically by first-seen order', () => {
+    // Two emitters tie at 1 each; the first encountered wins the top spot.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const d = computeHttpEmitterDominance(logs, nodes, 0);
+
+    expect(d.topCount).toBe(1);
+    expect(d.totalCount).toBe(2);
+    expect(d.dominance).toBeCloseTo(0.5, 10);
+    expect(['a', 'b']).toContain(d.topEmitter);
+  });
+
+  it('returns zeroed dominance when no framework-HTTP line survives filtering', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 0, true, 'NullPointerException', false), // logic, not HTTP
+      makeLog('b', 'ERROR', 0, false), // business error, not HTTP
+    ];
+    const d = computeHttpEmitterDominance(logs, nodes, 0);
+
+    expect(d.topEmitter).toBeUndefined();
+    expect(d.totalCount).toBe(0);
+    expect(d.dominance).toBe(0);
+  });
+});
+
 describe('computeLogScores — logicHttpJoint mode', () => {
   const nodes = new Set<ServiceId>(['src', 'vic', 'down']);
 
@@ -396,6 +483,108 @@ describe('computeLogScores — logicHttpJoint mode', () => {
     const logs = [makeLog('vic', 'ERROR', 0, false, 'HttpServerErrorException', true)];
     const scores = computeLogScores(logs, nodes, 0, 'logicHttpJoint');
     expect(scores.get('vic')).toBe(1);
+  });
+});
+
+describe('computeLogScores — logicHttpDominant mode', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  it('counts a CONCENTRATED framework-HTTP flood as a source signature', () => {
+    // FSE'26 replace-code: one emitter (a) dominates the framework-HTTP flood
+    // at 10× the victim rate → dominance ≥ threshold → framework HTTP counted,
+    // so a scores 1.
+    const logs = [
+      ...Array.from({ length: 10 }, () =>
+        makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      ),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttpDominant');
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBeCloseTo(0.1, 10);
+    expect(scores.get('c')).toBe(0);
+  });
+
+  it('suppresses a SPREAD framework-HTTP flood (victim cascade)', () => {
+    // FSE'26 memory/bandwidth/kill: no single emitter dominates → the flood is a
+    // victim cascade → framework HTTP is suppressed entirely, so the signal is
+    // empty (neutral), exactly like `count` on a resource cascade.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('c', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttpDominant');
+
+    expect(scores.size).toBe(0);
+  });
+
+  it('still counts logic exceptions regardless of concentration', () => {
+    // A self-caused logic exception is always a source signature, even when the
+    // framework-HTTP flood is spread (the logic half is never gated). Use four
+    // nodes so the HTTP flood spreads across three emitters (dominance 1/3).
+    const four = new Set<ServiceId>(['a', 'b', 'c', 'd']);
+    const logs = [
+      makeLog('a', 'ERROR', 0, true, 'NullPointerException', false),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('c', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('d', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const scores = computeLogScores(logs, four, 0, 'logicHttpDominant');
+
+    // Only the logic exception survives (the spread HTTP half is suppressed).
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBe(0);
+    expect(scores.get('c')).toBe(0);
+    expect(scores.get('d')).toBe(0);
+  });
+
+  it('honours a custom dominance threshold', () => {
+    // With a lowered threshold the spread flood (dominance 1/3) becomes
+    // "concentrated", so framework HTTP is counted again.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('c', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const low = computeLogScores(logs, nodes, 0, 'logicHttpDominant', undefined, 0.3);
+    expect(low.size).toBeGreaterThan(0); // 1/3 ≥ 0.3 → counted
+
+    // At the default threshold the same flood is spread → suppressed.
+    const def = computeLogScores(logs, nodes, 0, 'logicHttpDominant');
+    expect(def.size).toBe(0);
+  });
+
+  it('counts framework HTTP when dominance exactly meets the threshold', () => {
+    // dominance = 2/3 ≥ 0.5 → concentrated. a (2 lines) dominates b (1 line).
+    const logs = [
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttpDominant');
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBeCloseTo(0.5, 10);
+  });
+
+  it('still filters membership, injection time, and level', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 300, false, 'HttpServerErrorException', true), // post
+      makeLog('a', 'ERROR', 100, false, 'HttpServerErrorException', true), // pre — filtered
+      makeLog('ghost', 'ERROR', 300, false, 'HttpServerErrorException', true), // not in graph
+      makeLog('b', 'INFO', 300, false, 'HttpServerErrorException', true), // non-error level
+    ];
+    const scores = computeLogScores(logs, nodes, 200, 'logicHttpDominant');
+
+    expect(scores.get('ghost')).toBeUndefined();
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBe(0);
+  });
+
+  it('exposes the default threshold as a named constant for ablation', () => {
+    expect(DEFAULT_HTTP_DOMINANCE_THRESHOLD).toBe(0.5);
   });
 });
 
