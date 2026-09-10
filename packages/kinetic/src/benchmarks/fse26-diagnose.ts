@@ -127,7 +127,9 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
       lines.push(`    ERR: ${truncate(sample, 160)}`);
     }
     if (service.exceptionClasses.length > 0) {
-      lines.push(`    exc(${service.exceptionClasses.length}): ${service.exceptionClasses.join(',')}`);
+      lines.push(
+        `    exc(${service.exceptionClasses.length}): ${service.exceptionClasses.join(',')}`,
+      );
     }
   }
 

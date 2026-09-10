@@ -160,9 +160,7 @@ describe('formatFSE26Diagnostic', () => {
         ],
       }),
     );
-    expect(withClasses).toContain(
-      'exc(2): HttpClientErrorException,HttpServerErrorException',
-    );
+    expect(withClasses).toContain('exc(2): HttpClientErrorException,HttpServerErrorException');
     // Only the service WITH exception classes emits an exc line — the empty one
     // contributes nothing, so exactly one exc line exists in the whole output.
     expect(withClasses.split('exc(').length - 1).toBe(1);
