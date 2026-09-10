@@ -36,6 +36,14 @@ export interface FSE26DiagnosticService {
   readonly fatalCount: number;
   /** Count of post-injection self-caused logic-exception lines. */
   readonly logicExceptionCount: number;
+  /**
+   * Count of post-injection framework-HTTP exception lines
+   * (`HttpServerErrorException`/`ResourceAccessException`/`RestClientException`
+   * kin) — the `logicHttp` mode's second source signature. Reveals whether a
+   * service is a DOMINANT framework-HTTP emitter (the replace-code source) or a
+   * SPREAD cascade victim (the source-silent fault's caller).
+   */
+  readonly httpExceptionCount: number;
   /** A small sample of the service's ERROR/FATAL messages (truncated). */
   readonly sampleErrorMessages: readonly string[];
   /**
@@ -120,7 +128,8 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
     lines.push(
       `  ${service.serviceId}${tag} selfAnomaly=${fmt(service.selfAnomaly)} ` +
         `logScore=${fmt(service.logScore)} dominant=${service.dominantMetric ?? '-'} ` +
-        `err=${service.errorCount} fatal=${service.fatalCount} logic=${service.logicExceptionCount}`,
+        `err=${service.errorCount} fatal=${service.fatalCount} logic=${service.logicExceptionCount} ` +
+        `http=${service.httpExceptionCount}`,
     );
     lines.push(`    metrics(${service.metricNames.length}): ${metricList}`);
     for (const sample of service.sampleErrorMessages) {

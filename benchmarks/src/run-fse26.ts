@@ -164,6 +164,7 @@ function buildDiagnostic(
     let errorCount = 0;
     let fatalCount = 0;
     let logicExceptionCount = 0;
+    let httpExceptionCount = 0;
     const sampleErrorMessages: string[] = [];
     const exceptionClassSet = new Set<string>();
     if (benchCase.logs) {
@@ -174,6 +175,7 @@ function buildDiagnostic(
         if (log.level === 'ERROR') errorCount++;
         else if (log.level === 'FATAL') fatalCount++;
         if (isError && log.isLogicException) logicExceptionCount++;
+        if (isError && log.isHttpException) httpExceptionCount++;
         if (isError && sampleErrorMessages.length < 3) sampleErrorMessages.push(log.message);
         if (isError && log.deepestExceptionClass) exceptionClassSet.add(log.deepestExceptionClass);
       }
@@ -188,6 +190,7 @@ function buildDiagnostic(
       errorCount,
       fatalCount,
       logicExceptionCount,
+      httpExceptionCount,
       sampleErrorMessages,
       exceptionClasses: [...exceptionClassSet].sort(),
     });

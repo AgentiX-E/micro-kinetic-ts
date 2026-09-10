@@ -26,6 +26,7 @@ function service(overrides: Partial<FSE26DiagnosticService>): FSE26DiagnosticSer
     errorCount: 0,
     fatalCount: 0,
     logicExceptionCount: 0,
+    httpExceptionCount: 0,
     sampleErrorMessages: [],
     exceptionClasses: [],
     ...overrides,
@@ -130,6 +131,25 @@ describe('formatFSE26Diagnostic', () => {
     expect(out).toContain('err=3 fatal=1 logic=2');
     // Truncated to 160 chars + ellipsis.
     expect(out).toContain(`ERR: ${'x'.repeat(160)}…`);
+  });
+
+  it('renders the framework-HTTP exception count on the service line', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-basic-service',
+            selfAnomaly: 0.1,
+            errorCount: 1560,
+            logicExceptionCount: 0,
+            httpExceptionCount: 1560,
+          }),
+        ],
+      }),
+    );
+    // err/logic/http are all rendered on the single service line, so the count
+    // is directly observable (distinct from `err` and `logic`).
+    expect(out).toContain('err=1560 fatal=0 logic=0 http=1560');
   });
 
   it('leaves a short sample message untruncated', () => {
