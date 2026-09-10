@@ -15,6 +15,10 @@ on:
         description: 'Log-signal weight (production default 1.0)'
         required: false
         default: '1.0'
+      log_mode:
+        description: 'Log-signal scoring mode (count = logic-exception only, all = every error)'
+        required: false
+        default: 'count'
       diagnose:
         description: 'Comma-separated fault types to dump a per-service signal diagnostic for (empty = none)'
         required: false
@@ -89,6 +93,7 @@ jobs:
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --log-weight "${{ inputs.log_weight }}" \
+            --log-mode "${{ inputs.log_mode }}" \
             "${MAX_CASES_ARG[@]}" \
             "${DIAGNOSE_ARG[@]}" \
             --output fse26-results.json 2>&1 | tee fse26-results.txt
