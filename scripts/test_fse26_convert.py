@@ -420,6 +420,175 @@ class TestReadTraceEdges(unittest.TestCase):
         self.assertEqual(edges, [])
 
 
+class TestReadMetricsHistogram(unittest.TestCase):
+    """`read_metrics_histogram` emits a `{metric}.max` series per histogram metric
+    (the peak per-scrape value), ignoring `count`/`sum`/`min`."""
+
+    def test_emits_max_series_per_metric(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1), _dt(NORMAL_START + 6)],
+                    "metric": ["jvm.gc.duration", "jvm.gc.duration"],
+                    "service_name": ["svc", "svc"],
+                    "count": [10, 20],
+                    "sum": [100.0, 200.0],
+                    "min": [1.0, 1.0],
+                    "max": [12.0, 25.0],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        series = result["svc"]
+        self.assertEqual(len(series), 1)
+        self.assertEqual(series[0]["metric"], "jvm.gc.duration.max")
+        # Two uniform samples (5 s apart) → compacted to start + step.
+        self.assertEqual(series[0]["values"], [12.0, 25.0])
+        self.assertEqual(series[0]["start"], (NORMAL_START + 1) * 1000)
+        self.assertEqual(series[0]["step"], 5 * 1000)
+
+    def test_ignores_sum_count_min_columns(self) -> None:
+        # Only the `max` column is consumed; the others never produce a series.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1)],
+                    "metric": ["jvm.memory.used"],
+                    "service_name": ["svc"],
+                    "count": [1],
+                    "sum": [512.0],
+                    "min": [512.0],
+                    "max": [512.0],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        self.assertEqual([s["metric"] for s in result["svc"]], ["jvm.memory.used.max"])
+
+    def test_missing_max_column_is_graceful(self) -> None:
+        # A histogram Parquet without a `max` column (schema drift) contributes
+        # nothing rather than raising.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1)],
+                    "metric": ["jvm.gc.duration"],
+                    "service_name": ["svc"],
+                    "count": [1],
+                    "sum": [10.0],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        self.assertEqual(result, {})
+
+    def test_empty_when_no_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = conv.read_metrics_histogram(root / "a.parquet", root / "b.parquet")
+        self.assertEqual(result, {})
+
+
+class TestReadTraceDerivedMetrics(unittest.TestCase):
+    """`read_trace_derived_metrics` derives per-service latency + error-rate series
+    from trace spans, bucketed into 10 s windows."""
+
+    @staticmethod
+    def _write_traces(root: Path, name: str) -> None:
+        """Two services in one 10 s window; svc-a has two spans (mean 2 ms, one
+        500 → 50% error), svc-b has one span (5 ms, 200 → 0% error)."""
+        pl.DataFrame(
+            {
+                "time": [_dt(NORMAL_START + 1), _dt(NORMAL_START + 5), _dt(NORMAL_START + 3)],
+                "service_name": ["svc-a", "svc-a", "svc-b"],
+                "duration": [1_000_000, 3_000_000, 5_000_000],
+                "attr.http.response.status_code": [200, 500, 200],
+            }
+        ).write_parquet(root / name)
+
+    def test_derives_latency_and_error_rate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_traces(root, "normal_traces.parquet")
+
+            result = conv.read_trace_derived_metrics(
+                root / "normal_traces.parquet", root / "missing.parquet"
+            )
+
+        by_metric = {s["metric"]: s for s in result["svc-a"]}
+        self.assertIn("http.server.request.duration", by_metric)
+        self.assertIn("http.response.error_rate", by_metric)
+        # mean(1 ms, 3 ms) = 2.0 ms; one window → explicit timestamps.
+        self.assertEqual(by_metric["http.server.request.duration"]["values"], [2.0])
+        self.assertEqual(by_metric["http.response.error_rate"]["values"], [50.0])
+
+        # svc-b: single span, all 200 → 0% error.
+        by_metric_b = {s["metric"]: s for s in result["svc-b"]}
+        self.assertEqual(by_metric_b["http.server.request.duration"]["values"], [5.0])
+        self.assertEqual(by_metric_b["http.response.error_rate"]["values"], [0.0])
+
+    def test_skips_error_rate_without_status_column(self) -> None:
+        # Without `attr.http.response.status_code`, only latency is derived.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1)],
+                    "service_name": ["svc-a"],
+                    "duration": [2_000_000],
+                }
+            ).write_parquet(root / "normal_traces.parquet")
+
+            result = conv.read_trace_derived_metrics(
+                root / "normal_traces.parquet", root / "missing.parquet"
+            )
+
+        metrics = [s["metric"] for s in result["svc-a"]]
+        self.assertEqual(metrics, ["http.server.request.duration"])
+
+    def test_empty_when_no_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = conv.read_trace_derived_metrics(root / "a.parquet", root / "b.parquet")
+        self.assertEqual(result, {})
+
+
+class TestMergeMetricMaps(unittest.TestCase):
+    """`merge_metric_maps` concatenates per-service series lists."""
+
+    def test_concatenates_per_service(self) -> None:
+        merged = conv.merge_metric_maps(
+            {"svc": [{"metric": "m1"}]},
+            {"svc": [{"metric": "m2"}], "other": [{"metric": "m3"}]},
+        )
+        self.assertEqual(merged["svc"], [{"metric": "m1"}, {"metric": "m2"}])
+        self.assertEqual(merged["other"], [{"metric": "m3"}])
+
+    def test_empty_inputs(self) -> None:
+        self.assertEqual(conv.merge_metric_maps(), {})
+        self.assertEqual(conv.merge_metric_maps({}, {}), {})
+
+    def test_preserves_duplicate_metric_names(self) -> None:
+        # Duplicate names within a service are preserved (each series is scored
+        # independently by the engine).
+        merged = conv.merge_metric_maps(
+            {"svc": [{"metric": "m1"}]}, {"svc": [{"metric": "m1"}]}
+        )
+        self.assertEqual(merged["svc"], [{"metric": "m1"}, {"metric": "m1"}])
+
+
 # ── End-to-end synthetic datapack ────────────────────────────────────────
 
 # Window boundaries (Unix seconds, UTC).
@@ -587,6 +756,69 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
         self.assertEqual(case["faultType"], "CPUStress")
         self.assertEqual(case["faultCategory"], "Resource")
         self.assertEqual(case["groundTruthServices"], ["ts-order-service"])
+
+    def test_derived_metrics_round_trip(self) -> None:
+        """`build_case` merges gauge + summary + histogram + trace-derived series
+        into one per-service metric map."""
+        src = _build_synthetic_datapack(self.root, "ts5-ts-order-service-stress-svfvxk")
+
+        # Histogram: jvm.gc.duration peak → `jvm.gc.duration.max`.
+        pl.DataFrame(
+            {
+                "time": [_dt(NORMAL_START + 1)],
+                "metric": ["jvm.gc.duration"],
+                "service_name": ["ts-order-service"],
+                "count": [10],
+                "sum": [100.0],
+                "min": [1.0],
+                "max": [12.0],
+            }
+        ).write_parquet(src / "normal_metrics_histogram.parquet")
+
+        # Summary: an app-level latency summary (same normalised schema).
+        pl.DataFrame(
+            {
+                "time": [_dt(NORMAL_START + 1)],
+                "metric": ["http.client.request.duration"],
+                "value": [4.5],
+                "service_name": ["ts-order-service"],
+            }
+        ).write_parquet(src / "normal_metrics_sum.parquet")
+
+        # Traces: add HTTP status codes so error_rate is derivable (keep the
+        # edge-relevant columns so `read_trace_edges` still resolves callers).
+        pl.DataFrame(
+            {
+                "time": [_dt(NORMAL_START + 1), _dt(NORMAL_START + 3)],
+                "trace_id": ["t1", "t1"],
+                "span_id": ["s0", "s1"],
+                "parent_span_id": ["", "s0"],
+                "service_name": ["ts-order-service", "ts-order-service"],
+                "duration": [1_000_000, 3_000_000],
+                "attr.http.response.status_code": [200, 500],
+            }
+        ).write_parquet(src / "normal_traces.parquet")
+
+        dst = self.root / "out"
+        out_path = conv.convert_datapack(src, dst / src.name)
+        case = json.loads(out_path.read_text("utf-8"))
+
+        by_metric = {m["metric"]: m for m in case["metrics"]["ts-order-service"]}
+        # Gauge, summary, histogram, and both trace-derived signals all present.
+        self.assertIn("container.cpu.usage", by_metric)
+        self.assertIn("container.memory.usage", by_metric)
+        self.assertIn("http.client.request.duration", by_metric)
+        self.assertIn("jvm.gc.duration.max", by_metric)
+        self.assertIn("http.server.request.duration", by_metric)
+        self.assertIn("http.response.error_rate", by_metric)
+
+        self.assertEqual(by_metric["jvm.gc.duration.max"]["values"], [12.0])
+        self.assertEqual(by_metric["http.client.request.duration"]["values"], [4.5])
+        # Two windows: normal (two spans → mean 2 ms) then abnormal (one span,
+        # 0.5 ms from the synthetic builder). Error rate only exists in the
+        # normal window (the abnormal trace lacks the status column) → 50%.
+        self.assertEqual(by_metric["http.server.request.duration"]["values"], [2.0, 0.5])
+        self.assertEqual(by_metric["http.response.error_rate"]["values"], [50.0])
 
 
 # ── Streaming tar conversion ─────────────────────────────────────────────

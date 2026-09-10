@@ -38,7 +38,10 @@ Output `case.json` schema (per datapack):
       "injectTimeMs": 1757000000000,
       "metrics": {
         "ts-order-service": [
-          {"metric": "container.cpu.usage", "start": 1756998000000, "step": 5000, "values": [0.1, 0.2]}
+          {"metric": "container.cpu.usage", "start": 1756998000000, "step": 5000, "values": [0.1, 0.2]},
+          {"metric": "jvm.gc.duration.max", "start": 1756998000000, "step": 5000, "values": [12.0]},
+          {"metric": "http.server.request.duration", "start": 1756998000000, "step": 10000, "values": [8.5]},
+          {"metric": "http.response.error_rate", "start": 1756998000000, "step": 10000, "values": [0.0]}
         ]
       },
       "traceEdges": [
@@ -50,6 +53,16 @@ Output `case.json` schema (per datapack):
     }
 
 All timestamps are Unix milliseconds and log levels are upper-cased.
+
+The metric map merges four sources (each optional): the gauge metrics
+(`normal_metrics.parquet`), the summary metrics (`normal_metrics_sum.parquet`,
+same normalised schema), the histogram metrics (`normal_metrics_histogram.parquet`,
+emitting `{metric}.max` for `jvm.gc.duration` / `jvm.memory.used`), and the
+trace-derived golden signals (`http.server.request.duration` mean latency and
+`http.response.error_rate`, bucketed into 10-second windows). These are the
+signals the platform's own reference analyzer consumes; without them the engine
+cannot see a JVM fault's GC/heap signature nor a replace-code source's error-rate
+spike.
 
 Ground truth follows the benchmark's dual-label convention: network faults
 (`NetworkDelay` / `NetworkLoss` / …) are injected on an EDGE, so both the
@@ -464,6 +477,202 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
     return out
 
 
+def read_metrics_histogram(
+    normal_path: Path, abnormal_path: Path
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Read normal + abnormal HISTOGRAM metrics and group into per-service series.
+
+    The archive's histogram Parquet is the platform's ``convert_metrics_histogram``
+    output: columns ``time`` (Datetime), ``metric``, ``service_name``, ``count``,
+    ``sum``, ``min``, ``max`` (bucket arrays are already dropped), plus ``attr.*``.
+    Histograms carry the JVM source signatures that the gauge reader
+    (:func:`read_metrics`) cannot see — ``jvm.gc.duration`` (garbage-collection
+    time) and ``jvm.memory.used`` (heap pressure). A GC-thrashing source shows a
+    sharp ``max`` spike that its victims do not, so each histogram metric emits a
+    single ``{metric}.max`` series (the peak per-scrape value).
+    """
+    frames: list[pl.DataFrame] = []
+    for path in (normal_path, abnormal_path):
+        if not path.exists():
+            continue
+        schema = pl.scan_parquet(path).collect_schema()
+        if "service_name" not in schema or "max" not in schema:
+            continue
+        frames.append(
+            pl.read_parquet(path, columns=["time", "metric", "service_name", "max"])
+        )
+    if not frames:
+        return {}
+
+    df = pl.concat(frames)
+    df = df.rename({"service_name": "service", "max": "max_value"})
+    df = df.with_columns(
+        _epoch_ms(df, "time").alias("time"),
+        pl.col("max_value").cast(pl.Float64),
+    )
+    df = df.filter(
+        pl.col("time").is_not_null()
+        & pl.col("metric").is_not_null()
+        & pl.col("service").is_not_null()
+        & pl.col("max_value").is_not_null()
+        & pl.col("max_value").is_finite()
+    )
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    for (service,), service_df in df.group_by("service", maintain_order=False):
+        series: list[dict[str, Any]] = []
+        for (metric,), metric_df in service_df.group_by("metric", maintain_order=False):
+            metric_df = metric_df.sort("time")
+            series.append(
+                {
+                    "metric": f"{metric}.max",
+                    **compact_metric_series(
+                        metric_df["time"].to_list(), metric_df["max_value"].to_list()
+                    ),
+                }
+            )
+        if series:
+            out[service] = series
+    return out
+
+
+def read_trace_derived_metrics(
+    normal_path: Path, abnormal_path: Path, window_ms: int = 10_000
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Derive per-service latency + error-rate series from trace spans.
+
+    Mirrors the platform's ``_calculate_duration_metrics`` and
+    ``_calculate_http_error_rate``: spans are bucketed into ``window_ms`` windows
+    per service. Two series are emitted:
+
+    * ``http.server.request.duration`` — mean span duration in milliseconds
+      (``duration`` is always present, nanosecond precision).
+    * ``http.response.error_rate`` — percentage of spans whose HTTP response
+      status is >= 400 (only when ``attr.http.response.status_code`` is present).
+
+    These are the app-level golden signals the gauge metrics cannot express: the
+    replace-code source spikes ``error_rate`` (its responses are rewritten), while
+    a memory / bandwidth / killed source spikes its own response duration. A
+    single lazy aggregation pass is used, so the multi-million-span trace Parquet
+    is never materialised in full.
+    """
+    paths = [p for p in (normal_path, abnormal_path) if p.exists()]
+    if not paths:
+        return {}
+
+    # The HTTP status column is OPTIONAL and may differ between the normal and
+    # abnormal trace files (one window can carry spans with the attribute while
+    # the other does not). Read each file with a consistent schema, padding a
+    # null status column when it is absent, so `pl.concat` never mismatches.
+    any_status = False
+    frames: list[pl.DataFrame] = []
+    for path in paths:
+        schema = pl.scan_parquet(path).collect_schema()
+        has_status = "attr.http.response.status_code" in schema
+        if has_status:
+            any_status = True
+        columns = ["time", "service_name", "duration"]
+        if has_status:
+            columns.append("attr.http.response.status_code")
+        frame = pl.read_parquet(path, columns=columns)
+        if has_status:
+            frame = frame.with_columns(
+                pl.col("attr.http.response.status_code").cast(pl.Int32)
+            )
+        else:
+            frame = frame.with_columns(
+                pl.lit(None, dtype=pl.Int32).alias("attr.http.response.status_code")
+            )
+        frames.append(frame)
+
+    df = pl.concat(frames)
+    df = df.rename({"service_name": "service"})
+    df = df.with_columns(
+        _epoch_ms(df, "time").alias("time"),
+        pl.col("duration").cast(pl.Float64) / 1_000_000.0,  # ns -> ms
+    )
+    df = df.filter(
+        pl.col("time").is_not_null()
+        & pl.col("service").is_not_null()
+        & pl.col("duration").is_not_null()
+        & pl.col("duration").is_finite()
+        & (pl.col("duration") > 0.0)
+    )
+    df = df.with_columns(((pl.col("time") // window_ms) * window_ms).alias("window"))
+
+    out: dict[str, list[dict[str, Any]]] = {}
+
+    # Latency: mean span duration per service per window.
+    latency = (
+        df.group_by(["service", "window"])
+        .agg(pl.col("duration").mean().alias("mean_ms"))
+        .sort("window")
+    )
+    for (service,), group in latency.group_by("service", maintain_order=False):
+        out.setdefault(service, []).append(
+            {
+                "metric": "http.server.request.duration",
+                **compact_metric_series(
+                    group["window"].to_list(), group["mean_ms"].to_list()
+                ),
+            }
+        )
+
+    # Error rate: fraction of >= 400 HTTP statuses per service per window.
+    if any_status:
+        status_df = df.filter(pl.col("attr.http.response.status_code").is_not_null())
+        if status_df.height > 0:
+            error = (
+                status_df.with_columns(
+                    (pl.col("attr.http.response.status_code") >= 400).alias("is_error")
+                )
+                .group_by(["service", "window"])
+                .agg(
+                    [
+                        pl.col("is_error").sum().alias("error_count"),
+                        pl.col("is_error").count().alias("total_count"),
+                    ]
+                )
+                .with_columns(
+                    (
+                        pl.col("error_count").cast(pl.Float64)
+                        / pl.col("total_count")
+                        * 100.0
+                    ).alias("error_rate")
+                )
+                .sort("window")
+            )
+            for (service,), group in error.group_by("service", maintain_order=False):
+                out.setdefault(service, []).append(
+                    {
+                        "metric": "http.response.error_rate",
+                        **compact_metric_series(
+                            group["window"].to_list(), group["error_rate"].to_list()
+                        ),
+                    }
+                )
+
+    return out
+
+
+def merge_metric_maps(*maps: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    """
+    Merge per-service metric maps, concatenating the series lists per service.
+
+    Each argument maps a service to its metric series; the result preserves every
+    series (duplicate metric names within a service are harmless — the engine
+    scores each series independently and takes the max anomaly). Services absent
+    from a map simply contribute no series.
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    for metric_map in maps:
+        for service, series in metric_map.items():
+            out.setdefault(service, []).extend(series)
+    return out
+
+
 def read_trace_edges(normal_path: Path, abnormal_path: Path) -> list[list[str]]:
     """
     Read normal + abnormal trace spans and emit DISTINCT caller → callee edges.
@@ -573,15 +782,35 @@ def build_case(src_dir: Path) -> dict[str, Any]:
     ground_truth = resolve_ground_truth_services(fault_type, display_config, src_dir.name)
     inject_time_ms = compute_inject_time_ms(env)
 
+    # Merge every observability source into one per-service metric map: the gauge
+    # metrics, the summary metrics (same normalised schema), the histogram metrics
+    # (jvm.gc.duration / jvm.memory.used peaks), and the trace-derived golden
+    # signals (latency + error rate). Each source is optional — a missing file or
+    # a schema without the expected column contributes nothing — so the bridge
+    # stays robust to per-datapack telemetry differences.
+    metrics = merge_metric_maps(
+        read_metrics(
+            src_dir / "normal_metrics.parquet", src_dir / "abnormal_metrics.parquet"
+        ),
+        read_metrics(
+            src_dir / "normal_metrics_sum.parquet", src_dir / "abnormal_metrics_sum.parquet"
+        ),
+        read_metrics_histogram(
+            src_dir / "normal_metrics_histogram.parquet",
+            src_dir / "abnormal_metrics_histogram.parquet",
+        ),
+        read_trace_derived_metrics(
+            src_dir / "normal_traces.parquet", src_dir / "abnormal_traces.parquet"
+        ),
+    )
+
     case: dict[str, Any] = {
         "datapack": src_dir.name,
         "faultType": fault_type,
         "faultCategory": fault_category(fault_type),
         "groundTruthServices": ground_truth,
         "injectTimeMs": inject_time_ms,
-        "metrics": read_metrics(
-            src_dir / "normal_metrics.parquet", src_dir / "abnormal_metrics.parquet"
-        ),
+        "metrics": metrics,
     }
 
     trace_edges = read_trace_edges(
