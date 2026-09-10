@@ -44,8 +44,15 @@ import type {
  *   emitting a rare, specific root-cause exception out-scores one emitting a
  *   shared wrapper. Targets the code-level fault whose error signature is
  *   otherwise indistinguishable from the propagated 5xx cascade.
+ * - `all`: the max-normalised count of EVERY ERROR/FATAL line (the
+ *   `isLogicException` gate is dropped). Targets fault classes where the SOURCE
+ *   — not the symptom — floods errors with a non-logic exception (e.g. FSE'26
+ *   HTTPResponseReplaceCode, whose source storms `HttpClientErrorException`
+ *   lines while the logic-exception discriminator scores it 0). It is opt-in:
+ *   for resource/network faults the symptom floods, so `all` misfires and must
+ *   be ablated against `count` before it can ship.
  */
-export type LogSignalMode = 'count' | 'novelty';
+export type LogSignalMode = 'count' | 'novelty' | 'all';
 
 /**
  * Compute the log signal score for each service: the SELF-CAUSED logic-exception
@@ -76,15 +83,26 @@ export type LogSignalMode = 'count' | 'novelty';
  *   SocketTimeoutException, MongoSocketException, UnknownHostException, …)
  *   in the SYMPTOMS — a connection failure is PROPAGATED.
  *
- * The signal therefore counts only lines flagged `isLogicException` (self-caused)
- * and ignores connectivity/other errors. A resource cascade with no logic
- * exceptions yields an empty map (neutral); a code-level fault concentrates the
- * count on the source.
+ * The `count` mode therefore counts only lines flagged `isLogicException`
+ * (self-caused) and ignores connectivity/other errors. A resource cascade with
+ * no logic exceptions yields an empty map (neutral); a code-level fault
+ * concentrates the count on the source.
+ *
+ * ## `all` mode
+ *
+ * The `all` mode drops the logic-exception gate and counts every ERROR/FATAL
+ * line. This is the right discriminator for fault classes where the SOURCE is
+ * the error emitter with a NON-logic exception — FSE'26 HTTPResponseReplaceCode
+ * storms `HttpClientErrorException` in the source (the code replacement makes
+ * the source's downstream calls fail) at 10–16× the victim rate. It is opt-in
+ * because it inverts the discriminator for resource/network faults (there the
+ * symptom is the emitter), so it must be ablated net-positive before shipping.
  *
  * @param logs - Raw log lines (may be undefined → empty map).
  * @param nodeIds - Services present in the call graph.
  * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
- * @param mode - Scoring mode (`count` default; `novelty` for IDF weighting).
+ * @param mode - Scoring mode (`count` default; `novelty` for IDF weighting;
+ *   `all` for every error line).
  * @returns Per-service log score in [0, 1]; empty when no signal.
  */
 export function computeLogScores(
@@ -98,19 +116,25 @@ export function computeLogScores(
   const scores = new Map<ServiceId, number>();
   if (!logs || logs.length === 0 || nodeIds.size === 0) return scores;
 
-  // Count only SELF-CAUSED logic exceptions per service, filtered by time and
-  // membership. Connectivity exceptions (propagated cascade noise) and non-
-  // error lines are ignored — they would misfire max-count onto symptoms.
+  // `count` gates on `isLogicException` (self-caused only); `all` counts every
+  // error line so a source that floods a propagated HTTP error still scores.
+  const gateLogic = mode !== 'all';
+
+  // Count ERROR/FATAL lines per service, filtered by time and membership. The
+  // logic-exception gate (when `gateLogic`) ignores propagated cascade noise and
+  // non-error lines — they would misfire max-count onto symptoms.
   const counts = new Map<ServiceId, number>();
   for (const log of logs) {
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
     if (!nodeIds.has(log.service)) continue;
     if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
-    if (!log.isLogicException) continue;
+    if (gateLogic && !log.isLogicException) continue;
     counts.set(log.service, (counts.get(log.service) ?? 0) + 1);
   }
 
-  // No self-caused logic errors → no signal (a resource cascade is neutral).
+  // No matching error lines → no signal (a resource cascade is neutral in
+  // `count` mode; `all` mode never triggers this path unless every line is
+  // filtered by time/membership).
   if (counts.size === 0) return scores;
 
   let max = 0;

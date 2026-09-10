@@ -127,6 +127,83 @@ describe('computeLogScores', () => {
   });
 });
 
+describe('computeLogScores — all mode', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  it('counts propagated (non-logic) errors that count mode ignores', () => {
+    // FSE'26 HTTPResponseReplaceCode: the source floods HttpClientErrorException
+    // (isLogicException=false) while the logic gate gives it 0. `all` must count
+    // every ERROR/FATAL line regardless of the logic-exception flag.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false),
+      makeLog('a', 'ERROR', 0, false),
+      makeLog('a', 'FATAL', 0, false),
+      makeLog('b', 'ERROR', 0, false),
+    ];
+    const countScores = computeLogScores(logs, nodes, 0, 'count');
+    const allScores = computeLogScores(logs, nodes, 0, 'all');
+
+    // count mode: no logic exception → empty (neutral).
+    expect(countScores.size).toBe(0);
+    // all mode: a has 3 errors (max → 1), b has 1 (→ 1/3), c has 0 (→ 0).
+    expect(allScores.get('a')).toBe(1);
+    expect(allScores.get('b')).toBeCloseTo(1 / 3, 10);
+    expect(allScores.get('c')).toBe(0);
+  });
+
+  it('max-normalises a source error flood against a smaller victim flood', () => {
+    // The replace-code signature: source (a) storms errors 10–16× the victim
+    // rate. `all` concentrates the score on the source.
+    const logs = [
+      ...Array.from({ length: 10 }, () => makeLog('a', 'ERROR', 0, false)),
+      makeLog('b', 'ERROR', 0, false),
+    ];
+    const scores = computeLogScores(logs, nodes, 0, 'all');
+
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBeCloseTo(0.1, 10);
+    expect(scores.get('c')).toBe(0);
+  });
+
+  it('still filters membership, injection time, and level', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 300, false), // post-inject
+      makeLog('a', 'ERROR', 100, false), // pre-inject — filtered
+      makeLog('ghost', 'ERROR', 300, false), // not in nodes — filtered
+      makeLog('b', 'INFO', 300, false), // non-error level — filtered
+      makeLog('b', 'ERROR', 300, false),
+    ];
+    const scores = computeLogScores(logs, nodes, 200, 'all');
+
+    expect(scores.get('ghost')).toBeUndefined();
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBe(1);
+    expect(scores.get('c')).toBe(0);
+  });
+
+  it('returns an empty map when no ERROR/FATAL line survives filtering', () => {
+    expect(computeLogScores(undefined, nodes, 0, 'all').size).toBe(0);
+    expect(computeLogScores([], nodes, 0, 'all').size).toBe(0);
+    expect(computeLogScores([makeLog('a', 'INFO', 0, false)], nodes, 0, 'all').size).toBe(0);
+  });
+
+  it('inverts the discriminator on a resource cascade (why all is opt-in)', () => {
+    // A resource/network fault: the SYMPTOM (b) floods connectivity errors while
+    // the source (a) is silent. `all` boosts b (the symptom) — the exact
+    // regression the logic gate prevents. This is the reason `all` must be
+    // ablated net-positive before shipping, not a bug to fix here.
+    const logs = [
+      makeLog('b', 'ERROR', 0, false),
+      makeLog('b', 'ERROR', 0, false),
+      makeLog('b', 'ERROR', 0, false),
+    ];
+    const scores = computeLogScores(logs, nodes, 0, 'all');
+
+    expect(scores.get('a')).toBe(0); // silent source is NOT boosted
+    expect(scores.get('b')).toBe(1); // symptom wins (the known risk)
+  });
+});
+
 describe('computeLogNoveltyScores', () => {
   const nodes = new Set<ServiceId>(['a', 'b', 'c']);
 
@@ -621,12 +698,7 @@ describe('computeTraceActivityScores', () => {
       ['a', { pre: 500, post: 575 }], // silent riser
       ['b', { pre: 1000, post: 1200 }], // throwing riser
     );
-    const scores = computeTraceActivityScores(
-      counts,
-      nodes,
-      undefined,
-      new Set<ServiceId>(['b']),
-    );
+    const scores = computeTraceActivityScores(counts, nodes, undefined, new Set<ServiceId>(['b']));
 
     expect(scores.size).toBe(0); // two candidates → neutral
   });

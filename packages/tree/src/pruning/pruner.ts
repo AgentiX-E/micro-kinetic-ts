@@ -56,6 +56,7 @@ import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { computePrismScores } from './prism-signal.js';
+import type { LogSignalMode } from './ranking-signals.js';
 import {
   computeDeepestExceptions,
   computeLogScores,
@@ -191,10 +192,14 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *   frequency of its DEEPEST `Caused by:` exception class, so a service
    *   emitting a rare, specific root cause out-scores one emitting a shared
    *   HTTP wrapper (e.g. Spring's `HttpServerErrorException`).
+   * - `all`: the max-normalised count of EVERY ERROR/FATAL line (no
+   *   logic-exception gate). Targets fault classes whose SOURCE floods a
+   *   propagated HTTP error (e.g. FSE'26 HTTPResponseReplaceCode).
    *
-   * `novelty` is opt-in until benchmarked; `count` is the shipped default.
+   * `novelty` and `all` are opt-in until benchmarked; `count` is the shipped
+   * default.
    */
-  readonly logSignalMode: 'count' | 'novelty';
+  readonly logSignalMode: LogSignalMode;
   /**
    * Weight of the metric-direction (RISE) signal: reward a node whose DOMINANT
    * metric rises post-injection; penalise a COLLAPSE only when the node
