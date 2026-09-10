@@ -50,8 +50,9 @@ interface CliOptions {
   maxCases: number;
   /** Strength of the log signal (self-caused logic-exception volume). */
   logWeight: number;
-  /** Log signal scoring mode (count = logic-exception only, all = every error). */
-  logMode: 'count' | 'novelty' | 'all';
+  /** Log signal scoring mode (count = logic-exception only, logicHttp = logic +
+   *   framework HTTP, all = every error). */
+  logMode: 'count' | 'novelty' | 'logicHttp' | 'all';
   /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
   rankNormalization: boolean;
   /** Emit a JSON result document to this path (optional). */
@@ -82,7 +83,7 @@ function parseArgs(): CliOptions {
       opts.logWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--log-mode' && i + 1 < args.length) {
       const mode = args[++i]!;
-      opts.logMode = mode === 'novelty' || mode === 'all' ? mode : 'count';
+      opts.logMode = mode === 'novelty' || mode === 'all' || mode === 'logicHttp' ? mode : 'count';
     } else if (args[i] === '--no-rank-normalization') opts.rankNormalization = false;
     else if (args[i] === '--output' && i + 1 < args.length) opts.output = args[++i]!;
     else if (args[i] === '--diagnose' && i + 1 < args.length)

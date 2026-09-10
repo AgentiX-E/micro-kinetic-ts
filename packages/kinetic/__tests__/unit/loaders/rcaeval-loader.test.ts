@@ -20,6 +20,7 @@ import {
   extractDeepestExceptionClass,
   extractExceptionNames,
   extractSpringBootLevel,
+  isHttpExceptionMessage,
   isLogicExceptionMessage,
   isPropagatedExceptionMessage,
   isStackTraceMessage,
@@ -272,6 +273,50 @@ describe('isLogicExceptionMessage', () => {
         'java.lang.NumberFormatException: For input string: ""\n\tat java.lang.Long.parseLong(Long.java:776)',
       ),
     ).toBe(false);
+  });
+});
+
+describe('isHttpExceptionMessage', () => {
+  it('flags Spring Web framework HTTP exceptions', () => {
+    expect(
+      isHttpExceptionMessage('org.springframework.web.client.HttpClientErrorException: 404'),
+    ).toBe(true);
+    expect(
+      isHttpExceptionMessage('org.springframework.web.client.HttpServerErrorException: 500'),
+    ).toBe(true);
+    expect(
+      isHttpExceptionMessage('org.springframework.web.client.ResourceAccessException: timeout'),
+    ).toBe(true);
+    expect(isHttpExceptionMessage('HttpClientErrorException: 400 Bad Request')).toBe(true);
+    expect(isHttpExceptionMessage('HttpServerErrorException: 500 Internal Server Error')).toBe(
+      true,
+    );
+    expect(isHttpExceptionMessage('UnknownHttpStatusCodeException: 599')).toBe(true);
+  });
+
+  it('does NOT flag logic exceptions, connectivity, business, or AMQP text', () => {
+    // Logic exceptions stay in the isLogicException bucket.
+    expect(isHttpExceptionMessage('java.lang.NullPointerException: null')).toBe(false);
+    expect(isHttpExceptionMessage('IllegalArgumentException: invalid argument')).toBe(false);
+    // Connectivity exceptions are the VICTIM signature — not framework HTTP.
+    expect(isHttpExceptionMessage('java.net.SocketTimeoutException: Read timed out')).toBe(false);
+    expect(isHttpExceptionMessage('UnknownHostException: host not found')).toBe(false);
+    expect(isHttpExceptionMessage('RedisConnectionFailureException: connection refused')).toBe(
+      false,
+    );
+    // Business / AMQP text has no exception class at all.
+    expect(isHttpExceptionMessage('[create][Order Create Fail][Order already exists]')).toBe(false);
+    expect(isHttpExceptionMessage('Failed to check/redeclare auto-delete queue(s).')).toBe(false);
+    // The Servlet.service wrapper alone (without the nested HTTP class) is not a hit.
+    expect(isHttpExceptionMessage('Servlet.service() threw exception')).toBe(false);
+  });
+
+  it('recognises the full Servlet.service + nested exception signature', () => {
+    const message =
+      'Servlet.service() for servlet [dispatcherServlet] threw exception ' +
+      '[Request processing failed; nested exception is ' +
+      'org.springframework.web.client.HttpServerErrorException: 500]';
+    expect(isHttpExceptionMessage(message)).toBe(true);
   });
 });
 

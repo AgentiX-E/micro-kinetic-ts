@@ -90,6 +90,8 @@ export interface BenchmarkLogEntry {
   readonly isStackTrace?: boolean;
   /** Whether the message is a self-caused logic exception (source signal). */
   readonly isLogicException?: boolean;
+  /** Whether the message names a framework HTTP exception (source signal). */
+  readonly isHttpException?: boolean;
   /** Simple class name of the deepest `Caused by:` exception (root cause). */
   readonly deepestExceptionClass?: string;
 }

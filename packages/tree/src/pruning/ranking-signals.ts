@@ -44,6 +44,15 @@ import type {
  *   emitting a rare, specific root-cause exception out-scores one emitting a
  *   shared wrapper. Targets the code-level fault whose error signature is
  *   otherwise indistinguishable from the propagated 5xx cascade.
+ * - `logicHttp`: counts logic exceptions PLUS framework HTTP exceptions
+ *   (`isHttpException` — Spring's `HttpClientErrorException`/`HttpServerErrorException`/
+ *   `ResourceAccessException` kin). Both are SOURCE signatures: a programming
+ *   error is self-caused, and a framework HTTP exception means the service's
+ *   own downstream calls failed (FSE'26 fault-injection floods this in the
+ *   SOURCE at 10–16× the victim rate). Business/AMQP text and connectivity
+ *   exceptions (which victims flood) are still excluded. Ablated against
+ *   `count` and `all` (run 34450240928) as the zero-regression refinement of
+ *   the blunt `all` mode.
  * - `all`: the max-normalised count of EVERY ERROR/FATAL line (the
  *   `isLogicException` gate is dropped). Targets fault classes where the SOURCE
  *   — not the symptom — floods errors with a non-logic exception (e.g. FSE'26
@@ -52,7 +61,7 @@ import type {
  *   for resource/network faults the symptom floods, so `all` misfires and must
  *   be ablated against `count` before it can ship.
  */
-export type LogSignalMode = 'count' | 'novelty' | 'all';
+export type LogSignalMode = 'count' | 'novelty' | 'logicHttp' | 'all';
 
 /**
  * Compute the log signal score for each service: the SELF-CAUSED logic-exception
@@ -102,7 +111,7 @@ export type LogSignalMode = 'count' | 'novelty' | 'all';
  * @param nodeIds - Services present in the call graph.
  * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
  * @param mode - Scoring mode (`count` default; `novelty` for IDF weighting;
- *   `all` for every error line).
+ *   `logicHttp` for logic + framework HTTP exceptions; `all` for every error).
  * @returns Per-service log score in [0, 1]; empty when no signal.
  */
 export function computeLogScores(
@@ -116,19 +125,28 @@ export function computeLogScores(
   const scores = new Map<ServiceId, number>();
   if (!logs || logs.length === 0 || nodeIds.size === 0) return scores;
 
-  // `count` gates on `isLogicException` (self-caused only); `all` counts every
-  // error line so a source that floods a propagated HTTP error still scores.
-  const gateLogic = mode !== 'all';
+  // `count` gates on `isLogicException` (self-caused only); `logicHttp` counts
+  // logic exceptions PLUS framework HTTP exceptions (both source signatures);
+  // `all` counts every error line so a source that floods a propagated HTTP
+  // error still scores.
+  const gate =
+    mode === 'all'
+      ? (_log: FaultLogEntry): boolean => true
+      : mode === 'logicHttp'
+        ? (log: FaultLogEntry): boolean =>
+            log.isLogicException === true || log.isHttpException === true
+        : (log: FaultLogEntry): boolean => log.isLogicException === true;
 
-  // Count ERROR/FATAL lines per service, filtered by time and membership. The
-  // logic-exception gate (when `gateLogic`) ignores propagated cascade noise and
-  // non-error lines — they would misfire max-count onto symptoms.
+  // Count ERROR/FATAL lines per service, filtered by time, membership, and the
+  // mode's source-signature gate. The logic-exception gate (when not `all`)
+  // ignores propagated cascade noise and non-error lines — they would misfire
+  // max-count onto symptoms.
   const counts = new Map<ServiceId, number>();
   for (const log of logs) {
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
     if (!nodeIds.has(log.service)) continue;
     if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
-    if (gateLogic && !log.isLogicException) continue;
+    if (!gate(log)) continue;
     counts.set(log.service, (counts.get(log.service) ?? 0) + 1);
   }
 

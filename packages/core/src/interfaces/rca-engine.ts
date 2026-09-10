@@ -73,6 +73,21 @@ export interface FaultLogEntry {
    */
   readonly isLogicException?: boolean;
   /**
+   * Whether the log line names a FRAMEWORK HTTP exception — Spring Web's
+   * `HttpClientErrorException` / `HttpServerErrorException` (and their
+   * `ResourceAccessException` / `RestClient*Exception` kin), the signature of a
+   * fault-injection fault that makes the SOURCE's outgoing REST calls fail.
+   *
+   * Distinct from {@link isLogicException} (a programming error) and from a
+   * propagated connectivity exception: an HTTP-status exception means the
+   * emitting service observed a 4xx/5xx from a downstream dependency. On
+   * FSE'26 this storms the SOURCE at 10–16× the victim rate, so it is a
+   * source signal there — but only when counted separately from the business/
+   * AMQP errors that victims flood. Optional — absent means "not a framework
+   * HTTP exception".
+   */
+  readonly isHttpException?: boolean;
+  /**
    * The simple class name of the DEEPEST exception in the message's `Caused by:`
    * chain (the root cause), or of the leading exception when there is no chain.
    *

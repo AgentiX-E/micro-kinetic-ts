@@ -282,6 +282,32 @@ describe('toFSE26LogEntry', () => {
     expect(entry.isStackTrace).toBe(true);
     expect(entry.isLogicException).toBe(false);
     expect(entry.deepestExceptionClass).toBe('ConnectionException');
+    expect(entry.isHttpException).toBe(false);
+  });
+
+  it('flags a framework HTTP exception on an ERROR line', () => {
+    const entry = toFSE26LogEntry({
+      timestamp: 1,
+      service: 'ts-basic-service',
+      level: 'ERROR',
+      message:
+        'Servlet.service() threw exception [Request processing failed; nested exception is ' +
+        'org.springframework.web.client.HttpServerErrorException: 500]',
+    });
+    expect(entry.isLogicException).toBe(false);
+    expect(entry.isHttpException).toBe(true);
+    expect(entry.deepestExceptionClass).toBe('HttpServerErrorException');
+  });
+
+  it('does NOT flag an HTTP exception on a non-error level', () => {
+    const entry = toFSE26LogEntry({
+      timestamp: 1,
+      service: 'ts-basic-service',
+      level: 'WARN',
+      message: 'org.springframework.web.client.HttpClientErrorException: 404',
+    });
+    expect(entry.level).toBe('WARN');
+    expect(entry.isHttpException).toBe(false);
   });
 
   it('defaults an unrecognised level to INFO', () => {
@@ -294,6 +320,7 @@ describe('toFSE26LogEntry', () => {
     expect(entry.level).toBe('INFO');
     expect(entry.isStackTrace).toBe(false);
     expect(entry.isLogicException).toBe(false);
+    expect(entry.isHttpException).toBe(false);
   });
 });
 

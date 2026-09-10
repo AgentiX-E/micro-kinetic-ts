@@ -79,6 +79,7 @@ import type { BenchmarkCase, BenchmarkGroundTruth, BenchmarkLogEntry } from './t
 import {
   classifyLogLevel,
   extractDeepestExceptionClass,
+  isHttpExceptionMessage,
   isLogicExceptionMessage,
   isStackTraceMessage,
 } from './rcaeval-loader.js';
@@ -463,14 +464,17 @@ export function resolveFSE26GroundTruth(raw: FSE26RawCase): BenchmarkGroundTruth
  * same logic-exception / stack-trace signals.
  */
 export function toFSE26LogEntry(entry: FSE26LogEntry): BenchmarkLogEntry {
+  const level = classifyLogLevel(entry.level, entry.message);
   return {
     timestamp: entry.timestamp,
     service: entry.service,
     message: entry.message,
-    level: classifyLogLevel(entry.level, entry.message),
+    level,
     isStackTrace: isStackTraceMessage(entry.message),
     isLogicException: isLogicExceptionMessage(entry.message),
     deepestExceptionClass: extractDeepestExceptionClass(entry.message),
+    isHttpException:
+      (level === 'ERROR' || level === 'FATAL') && isHttpExceptionMessage(entry.message),
   };
 }
 

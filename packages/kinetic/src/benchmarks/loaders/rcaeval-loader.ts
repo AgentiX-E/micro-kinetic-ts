@@ -441,6 +441,49 @@ export function isLogicExceptionMessage(message: string): boolean {
 }
 
 /**
+ * Names of FRAMEWORK HTTP exceptions — Spring Web's `RestTemplate`/`WebClient`
+ * client-side exceptions thrown when a service receives a 4xx/5xx from a
+ * downstream dependency (or fails to reach it).
+ *
+ * These are NOT self-caused programming errors ({@link LOGIC_EXCEPTION_PATTERN})
+ * and NOT propagated connectivity errors (`ConnectionException`,
+ * `SocketTimeoutException`) — they are a THIRD category: the emitting service
+ * observed an HTTP status it did not cause. On FSE'26 fault-injection (e.g.
+ * `HTTPResponseReplaceCode`) this storms the SOURCE service (whose downstream
+ * calls now fail) at 10–16× the victim rate, so it is a source signal there;
+ * the victim's own flood is business/AMQP text (`Order Create Fail`,
+ * `auto-delete queue`) with no exception class at all.
+ *
+ * `ResourceAccessException` is included deliberately: it is the I/O/timeout
+ * wrapper `RestTemplate` raises for a failed connection, and on the delay fault
+ * types it is the SOURCE's only signature (the source's own downstream calls
+ * time out). It is kept here rather than in the connectivity bucket because the
+ * diagnostic evidence shows the source — not a victim — emits it in the delay
+ * cases the engine currently misses.
+ */
+const HTTP_EXCEPTION_PATTERN =
+  /(?:HttpClientErrorException|HttpServerErrorException|ResourceAccessException|RestClientException|RestClientResponseException|HttpStatusCodeException|UnknownHttpStatusCodeException|UnknownContentTypeException)/;
+
+/**
+ * Determine whether a log message names a FRAMEWORK HTTP exception — a
+ * Spring Web client exception that indicates the emitting service observed an
+ * HTTP status (or failed connection) from a downstream dependency.
+ *
+ * This is the discriminator behind the log signal's `logicHttp` mode, which
+ * counts logic exceptions PLUS framework HTTP exceptions (both source
+ * signatures) while still excluding the business/AMQP text and connectivity
+ * exceptions that victims flood. It is distinct from {@link isLogicExceptionMessage}
+ * (a programming error) and from `isPropagatedExceptionMessage` (an
+ * empty-value parse failure), and does not overlap {@link LOGIC_EXCEPTION_PATTERN}.
+ *
+ * @param message - The raw log message text.
+ * @returns True when the message names a framework HTTP exception.
+ */
+export function isHttpExceptionMessage(message: string): boolean {
+  return HTTP_EXCEPTION_PATTERN.test(message);
+}
+
+/**
  * The exception-semantics taxonomy of a raw log message, as seen by the log
  * signal's causal discriminator.
  *
@@ -808,6 +851,8 @@ export class RCAEvalLoader {
             level === 'ERROR' || level === 'FATAL'
               ? extractDeepestExceptionClass(message)
               : undefined,
+          isHttpException:
+            (level === 'ERROR' || level === 'FATAL') && isHttpExceptionMessage(message),
         };
       });
     } catch {

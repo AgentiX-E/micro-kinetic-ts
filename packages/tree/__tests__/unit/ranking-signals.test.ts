@@ -20,8 +20,9 @@ function makeLog(
   timestamp = 0,
   isLogicException = true,
   deepestExceptionClass?: string,
+  isHttpException = false,
 ): FaultLogEntry {
-  return { service, level, timestamp, isLogicException, deepestExceptionClass };
+  return { service, level, timestamp, isLogicException, deepestExceptionClass, isHttpException };
 }
 
 describe('computeLogScores', () => {
@@ -201,6 +202,84 @@ describe('computeLogScores — all mode', () => {
 
     expect(scores.get('a')).toBe(0); // silent source is NOT boosted
     expect(scores.get('b')).toBe(1); // symptom wins (the known risk)
+  });
+});
+
+describe('computeLogScores — logicHttp mode', () => {
+  const nodes = new Set<ServiceId>(['a', 'b', 'c']);
+
+  it('counts framework HTTP exceptions that count mode ignores', () => {
+    // FSE'26 delay/replace-code: the SOURCE (a) emits a framework HTTP exception
+    // (isHttpException=true, isLogicException=false) that the logic gate drops.
+    // `logicHttp` must count it, like `all`, without counting victim noise.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('b', 'ERROR', 0, false), // victim business error — not HTTP
+    ];
+    const countScores = computeLogScores(logs, nodes, 0, 'count');
+    const httpScores = computeLogScores(logs, nodes, 0, 'logicHttp');
+
+    // count mode: no logic exception → empty (neutral).
+    expect(countScores.size).toBe(0);
+    // logicHttp: a has 2 framework-HTTP errors (max → 1), b has 0 (→ 0).
+    expect(httpScores.get('a')).toBe(1);
+    expect(httpScores.get('b')).toBe(0);
+    expect(httpScores.get('c')).toBe(0);
+  });
+
+  it('counts logic exceptions AND framework HTTP exceptions together', () => {
+    // A service emitting both a programming error and an HTTP failure must
+    // accumulate both, since both are source signatures.
+    const logs = [
+      makeLog('a', 'ERROR', 0, true, 'NullPointerException', false),
+      makeLog('a', 'ERROR', 0, false, 'HttpClientErrorException', true),
+      makeLog('b', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttp');
+
+    expect(scores.get('a')).toBe(1); // 2 source-signature lines
+    expect(scores.get('b')).toBeCloseTo(0.5, 10); // 1 line
+  });
+
+  it('excludes non-HTTP victim errors (business/AMQP) that all mode misfires on', () => {
+    // The discriminating property vs `all`: a victim (b) flooding business/AMQP
+    // text (no exception class, no HTTP flag) is NOT counted. This is what
+    // prevents the delay/memory regression that `all` suffered.
+    const logs = [
+      makeLog('a', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('b', 'ERROR', 0, false),
+      makeLog('b', 'ERROR', 0, false),
+      makeLog('b', 'ERROR', 0, false),
+    ];
+    const httpScores = computeLogScores(logs, nodes, 0, 'logicHttp');
+    const allScores = computeLogScores(logs, nodes, 0, 'all');
+
+    expect(httpScores.get('a')).toBe(1); // source wins
+    expect(httpScores.get('b')).toBe(0);
+    // Contrast: `all` boosts the victim.
+    expect(allScores.get('b')).toBe(1);
+  });
+
+  it('stays neutral (empty map) when no source-signature line survives', () => {
+    // Only victim business/AMQP errors → logicHttp yields nothing (like count).
+    const logs = [makeLog('b', 'ERROR', 0, false), makeLog('b', 'FATAL', 0, false)];
+    expect(computeLogScores(logs, nodes, 0, 'logicHttp').size).toBe(0);
+  });
+
+  it('still filters membership, injection time, and level', () => {
+    const logs = [
+      makeLog('a', 'ERROR', 300, false, 'HttpServerErrorException', true), // post
+      makeLog('a', 'ERROR', 100, false, 'HttpServerErrorException', true), // pre — filtered
+      makeLog('ghost', 'ERROR', 300, false, 'HttpServerErrorException', true), // not in nodes
+      makeLog('b', 'INFO', 300, false, 'HttpServerErrorException', true), // non-error level
+      makeLog('b', 'ERROR', 300, false, 'HttpServerErrorException', true),
+    ];
+    const scores = computeLogScores(logs, nodes, 200, 'logicHttp');
+
+    expect(scores.get('ghost')).toBeUndefined();
+    expect(scores.get('a')).toBe(1);
+    expect(scores.get('b')).toBe(1);
   });
 });
 
