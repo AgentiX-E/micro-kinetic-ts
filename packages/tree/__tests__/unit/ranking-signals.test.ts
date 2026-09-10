@@ -1,6 +1,7 @@
 import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
 import {
   computeDeepestExceptions,
+  computeHttpVictimSet,
   computeLogNoveltyScores,
   computeLogScores,
   computeRiseScores,
@@ -280,6 +281,121 @@ describe('computeLogScores — logicHttp mode', () => {
     expect(scores.get('ghost')).toBeUndefined();
     expect(scores.get('a')).toBe(1);
     expect(scores.get('b')).toBe(1);
+  });
+});
+
+describe('computeHttpVictimSet', () => {
+  it('flags a service whose callee is more anomalous than itself', () => {
+    // `a → c`: a calls c. c (0.8) is more anomalous than a (0.5) → a is a victim.
+    const victims = computeHttpVictimSet(
+      [makeEdge('a', 'c')],
+      new Map<ServiceId, number>([
+        ['a', 0.5],
+        ['c', 0.8],
+      ]),
+    );
+    expect(victims.has('a')).toBe(true);
+    expect(victims.has('c')).toBe(false);
+  });
+
+  it('does NOT flag a service whose callee is not more anomalous', () => {
+    // `a → c`: c (0.2) is LESS anomalous than a (0.9) → a is the source.
+    const victims = computeHttpVictimSet(
+      [makeEdge('a', 'c')],
+      new Map<ServiceId, number>([
+        ['a', 0.9],
+        ['c', 0.2],
+      ]),
+    );
+    expect(victims.size).toBe(0);
+  });
+
+  it('treats a missing anomaly score as 0', () => {
+    // `a → ghost`: ghost has no score → 0, never more anomalous than a.
+    const victims = computeHttpVictimSet(
+      [makeEdge('a', 'ghost')],
+      new Map<ServiceId, number>([['a', 0.9]]),
+    );
+    expect(victims.size).toBe(0);
+  });
+
+  it('treats a missing caller (from) anomaly as 0 too', () => {
+    // `ghost → a`: the caller has no score → 0, so the callee a (0.9) IS more
+    // anomalous → the caller is a victim. Covers the `from ?? 0` fallback.
+    const victims = computeHttpVictimSet(
+      [makeEdge('ghost', 'a')],
+      new Map<ServiceId, number>([['a', 0.9]]),
+    );
+    expect(victims.has('ghost')).toBe(true);
+  });
+
+  it('returns an empty set for no edges', () => {
+    expect(computeHttpVictimSet([], new Map([['a', 0.5]]))).toEqual(new Set());
+  });
+});
+
+describe('computeLogScores — logicHttpJoint mode', () => {
+  const nodes = new Set<ServiceId>(['src', 'vic', 'down']);
+
+  it('counts a framework HTTP source whose callee is healthy', () => {
+    // FSE'26 replace-code: src floods framework HTTP, its callee `down` is NOT
+    // more anomalous → src is the source and its lines are counted.
+    const logs = [
+      makeLog('src', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('src', 'ERROR', 0, false, 'ResourceAccessException', true),
+    ];
+    const joint = {
+      edges: [makeEdge('src', 'down')],
+      anomalyScores: new Map<ServiceId, number>([
+        ['src', 0.9],
+        ['down', 0.2],
+      ]),
+    };
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttpJoint', joint);
+    expect(scores.get('src')).toBe(1);
+    expect(scores.get('down')).toBe(0);
+  });
+
+  it('suppresses a framework HTTP victim whose callee is more anomalous', () => {
+    // FSE'26 memory stress: vic emits framework HTTP because its callee `src`
+    // (the silent source, anomaly 0.9) is broken. vic (0.4) is a victim → its
+    // HTTP lines are NOT counted, so the signal stays neutral (empty map).
+    const logs = [
+      makeLog('vic', 'ERROR', 0, false, 'HttpServerErrorException', true),
+      makeLog('vic', 'ERROR', 0, false, 'HttpServerErrorException', true),
+    ];
+    const joint = {
+      edges: [makeEdge('vic', 'src')],
+      anomalyScores: new Map<ServiceId, number>([
+        ['vic', 0.4],
+        ['src', 0.9],
+      ]),
+    };
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttpJoint', joint);
+    expect(scores.size).toBe(0);
+  });
+
+  it('still counts a victim logic exception (logic half is never gated)', () => {
+    // A programming error is self-caused and must count even when the service
+    // is topology-confirmed a victim of its callee's HTTP failure.
+    const logs = [makeLog('vic', 'ERROR', 0, true, 'NullPointerException', false)];
+    const joint = {
+      edges: [makeEdge('vic', 'src')],
+      anomalyScores: new Map<ServiceId, number>([
+        ['vic', 0.4],
+        ['src', 0.9],
+      ]),
+    };
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttpJoint', joint);
+    expect(scores.get('vic')).toBe(1);
+  });
+
+  it('degrades to logicHttp behaviour when no joint context is supplied', () => {
+    // Without edges/anomaly scores, the victim set is empty, so framework HTTP
+    // is counted exactly as `logicHttp` (opt-in safety: no silent suppression).
+    const logs = [makeLog('vic', 'ERROR', 0, false, 'HttpServerErrorException', true)];
+    const scores = computeLogScores(logs, nodes, 0, 'logicHttpJoint');
+    expect(scores.get('vic')).toBe(1);
   });
 });
 

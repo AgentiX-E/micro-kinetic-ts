@@ -192,12 +192,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    *   frequency of its DEEPEST `Caused by:` exception class, so a service
    *   emitting a rare, specific root cause out-scores one emitting a shared
    *   HTTP wrapper (e.g. Spring's `HttpServerErrorException`).
+   * - `logicHttp`: counts logic exceptions PLUS framework HTTP exceptions —
+   *   the source signature of FSE'26 `HTTPResponseReplaceCode`, whose source
+   *   floods `HttpClientErrorException`/`HttpServerErrorException` while the
+   *   logic gate scores it 0. Lifted Top@1 +30.0pp but regressed 15 cases
+   *   where a VICTIM floods the same direction-symmetric exception.
+   * - `logicHttpJoint`: `logicHttp` plus a call-graph TOPOLOGY gate — the
+   *   framework-HTTP half is suppressed for a service whose callee is MORE
+   *   anomalous (that callee is the real source, so the emitter is a victim).
+   *   Separates the replace-code source (healthy callee) from the
+   *   memory/bandwidth/killed-source victim (anomalous callee).
    * - `all`: the max-normalised count of EVERY ERROR/FATAL line (no
    *   logic-exception gate). Targets fault classes whose SOURCE floods a
    *   propagated HTTP error (e.g. FSE'26 HTTPResponseReplaceCode).
    *
-   * `novelty` and `all` are opt-in until benchmarked; `count` is the shipped
-   * default.
+   * `novelty`, `logicHttp`, `logicHttpJoint` and `all` are opt-in until
+   * benchmarked; `count` is the shipped default.
    */
   readonly logSignalMode: LogSignalMode;
   /**
@@ -517,6 +527,7 @@ export class TreePruner {
       new Set(callGraph.nodes.keys()),
       injectTimeMs,
       this.options.logSignalMode,
+      { edges: topologyGraph.edges, anomalyScores },
     );
     const topoScores = computeTopoSourceScores(
       topologyGraph.edges,

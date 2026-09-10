@@ -53,6 +53,16 @@ import type {
  *   exceptions (which victims flood) are still excluded. Ablated against
  *   `count` and `all` (run 34450240928) as the zero-regression refinement of
  *   the blunt `all` mode.
+ * - `logicHttpJoint`: like `logicHttp`, but the framework-HTTP half is gated
+ *   by call-graph TOPOLOGY. A framework HTTP exception is DIRECTION-SYMMETRIC:
+ *   the source emits it when the fault breaks ITS outgoing REST calls (its
+ *   downstream — the callee — stays healthy), while a victim emits the SAME
+ *   exception when its callee (the silent memory/bandwidth/killed source) is
+ *   genuinely broken. `logicHttp` therefore regressed 15 cases by boosting
+ *   victims whose callee was the real source. The joint mode suppresses the
+ *   framework-HTTP count for a service that has a MORE-anomalous callee (that
+ *   callee is the source, so the emitter is the victim), keeping the
+ *   replace-code gain while removing the resource/network regression.
  * - `all`: the max-normalised count of EVERY ERROR/FATAL line (the
  *   `isLogicException` gate is dropped). Targets fault classes where the SOURCE
  *   — not the symptom — floods errors with a non-logic exception (e.g. FSE'26
@@ -61,7 +71,54 @@ import type {
  *   for resource/network faults the symptom floods, so `all` misfires and must
  *   be ablated against `count` before it can ship.
  */
-export type LogSignalMode = 'count' | 'novelty' | 'logicHttp' | 'all';
+export type LogSignalMode = 'count' | 'novelty' | 'logicHttp' | 'logicHttpJoint' | 'all';
+
+/**
+ * The call-graph context the `logicHttpJoint` mode needs to disambiguate a
+ * framework HTTP exception's DIRECTION: whether the emitter is the source
+ * (its own downstream calls failed) or a victim (its callee is the broken
+ * source).
+ */
+export interface HttpSourceJointContext {
+  /** Call graph edges, `from` = caller, `to` = callee. */
+  readonly edges: readonly CallEdge[];
+  /** Per-service anomaly score (max-normalised to [0, 1]). */
+  readonly anomalyScores: ReadonlyMap<ServiceId, number>;
+}
+
+/**
+ * Compute the set of services whose framework-HTTP exception is a VICTIM
+ * signature, not a source signature.
+ *
+ * A framework HTTP exception means "the emitting service observed a 4xx/5xx
+ * (or a failed connection) from a downstream dependency it called". That
+ * observation is ambiguous about WHO broke:
+ *
+ * - If the emitter's callee (the service it called) is NOT more anomalous than
+ *   the emitter, the emitter's own fault broke the call → the emitter is the
+ *   SOURCE (FSE'26 `HTTPResponseReplaceCode`).
+ * - If the emitter's callee IS more anomalous than the emitter, the callee is
+ *   the real fault source and the emitter merely reports it → the emitter is a
+ *   VICTIM (FSE'26 `JVMMemoryStress`/`ContainerKill`/`NetworkBandwidth`, whose
+ *   silent source drives the victim's `HttpServerErrorException` flood).
+ *
+ * @param edges - Call graph edges (from = caller, to = callee).
+ * @param anomalyScores - Per-service anomaly score in [0, 1].
+ * @returns The services that have at least one callee more anomalous than
+ *   themselves — the victim set whose framework-HTTP count should be suppressed.
+ */
+export function computeHttpVictimSet(
+  edges: readonly CallEdge[],
+  anomalyScores: ReadonlyMap<ServiceId, number>,
+): Set<ServiceId> {
+  const victims = new Set<ServiceId>();
+  for (const edge of edges) {
+    const fromAnomaly = anomalyScores.get(edge.from) ?? 0;
+    const toAnomaly = anomalyScores.get(edge.to) ?? 0;
+    if (toAnomaly > fromAnomaly) victims.add(edge.from);
+  }
+  return victims;
+}
 
 /**
  * Compute the log signal score for each service: the SELF-CAUSED logic-exception
@@ -111,7 +168,11 @@ export type LogSignalMode = 'count' | 'novelty' | 'logicHttp' | 'all';
  * @param nodeIds - Services present in the call graph.
  * @param injectTimeMs - Fault injection time (0 = unknown → no time filter).
  * @param mode - Scoring mode (`count` default; `novelty` for IDF weighting;
- *   `logicHttp` for logic + framework HTTP exceptions; `all` for every error).
+ *   `logicHttp` for logic + framework HTTP exceptions; `logicHttpJoint` for
+ *   logic + topology-gated framework HTTP; `all` for every error).
+ * @param joint - Call-graph context for `logicHttpJoint` (ignored otherwise):
+ *   the framework-HTTP half is suppressed for a service that has a
+ *   more-anomalous callee (see {@link computeHttpVictimSet}).
  * @returns Per-service log score in [0, 1]; empty when no signal.
  */
 export function computeLogScores(
@@ -119,6 +180,7 @@ export function computeLogScores(
   nodeIds: ReadonlySet<ServiceId>,
   injectTimeMs: number,
   mode: LogSignalMode = 'count',
+  joint?: HttpSourceJointContext,
 ): Map<ServiceId, number> {
   if (mode === 'novelty') return computeLogNoveltyScores(logs, nodeIds, injectTimeMs);
 
@@ -127,15 +189,27 @@ export function computeLogScores(
 
   // `count` gates on `isLogicException` (self-caused only); `logicHttp` counts
   // logic exceptions PLUS framework HTTP exceptions (both source signatures);
-  // `all` counts every error line so a source that floods a propagated HTTP
-  // error still scores.
-  const gate =
-    mode === 'all'
-      ? (_log: FaultLogEntry): boolean => true
-      : mode === 'logicHttp'
-        ? (log: FaultLogEntry): boolean =>
-            log.isLogicException === true || log.isHttpException === true
-        : (log: FaultLogEntry): boolean => log.isLogicException === true;
+  // `logicHttpJoint` additionally suppresses the framework-HTTP half for a
+  // service whose callee is MORE anomalous (that callee is the source, so the
+  // emitter is a victim); `all` counts every error line so a source that floods
+  // a propagated HTTP error still scores.
+  const victims =
+    mode === 'logicHttpJoint' && joint
+      ? computeHttpVictimSet(joint.edges, joint.anomalyScores)
+      : new Set<ServiceId>();
+  const gate = (log: FaultLogEntry): boolean => {
+    if (mode === 'all') return true;
+    // A self-caused logic exception is ALWAYS a source signature — count it
+    // in every non-`all` mode.
+    if (log.isLogicException === true) return true;
+    // A framework HTTP exception is source-only in `logicHttp`/`logicHttpJoint`;
+    // the joint mode suppresses it for a topology-confirmed victim.
+    if (log.isHttpException === true) {
+      if (mode === 'logicHttp') return true;
+      if (mode === 'logicHttpJoint') return !victims.has(log.service);
+    }
+    return false;
+  };
 
   // Count ERROR/FATAL lines per service, filtered by time, membership, and the
   // mode's source-signature gate. The logic-exception gate (when not `all`)

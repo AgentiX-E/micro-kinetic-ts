@@ -54,6 +54,7 @@ export type { TreePrunerOptions } from './pruning/pruner.js';
 export {
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
   computeDeepestExceptions,
+  computeHttpVictimSet,
   computeLogNoveltyScores,
   computeLogScores,
   computeRiseScores,
@@ -61,7 +62,11 @@ export {
   computeTraceActivityScores,
   gatedRiseContribution,
 } from './pruning/ranking-signals.js';
-export type { LogSignalMode, TraceActivityOptions } from './pruning/ranking-signals.js';
+export type {
+  HttpSourceJointContext,
+  LogSignalMode,
+  TraceActivityOptions,
+} from './pruning/ranking-signals.js';
 
 export { computePrismScores } from './pruning/prism-signal.js';
 

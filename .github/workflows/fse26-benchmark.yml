@@ -16,7 +16,7 @@ on:
         required: false
         default: '1.0'
       log_mode:
-        description: 'Log-signal scoring mode (count = logic-exception, logicHttp = logic + framework HTTP, all = every error)'
+        description: 'Log-signal scoring mode (count = logic-exception, logicHttp = logic + framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP, all = every error)'
         required: false
         default: 'count'
       diagnose:
