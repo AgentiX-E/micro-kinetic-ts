@@ -1,5 +1,14 @@
 # FSE'26 `logicHttpDominant` — falsified before ablation (emitter-dominance ≠ source)
 
+> **Correction (2026-09-10)**: this doc's source-silent evidence (Facts 1-3) is
+> correct, but the _replace-code cross-check_ implied the source is also
+> log-silent there — that was wrong. The diagnostic parser dropped every
+> `[GT,#N]` service line, fabricating `gt_http=0` on the source-active side. The
+> replace-code source actually floods framework-HTTP at 10-100x the source-silent
+> victim and is the top emitter 94% of the time. See
+> `docs/fse26-framework-http-direction-verdict.md` for the clean re-parse. The
+> core verdict (concentration carries no directional information) is unchanged.
+
 ## Verdict
 
 The emitter-dominance discriminator — the hypothesis that a framework-HTTP flood
