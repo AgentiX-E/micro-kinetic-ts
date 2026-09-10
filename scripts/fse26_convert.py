@@ -491,25 +491,52 @@ def read_metrics_histogram(
     time) and ``jvm.memory.used`` (heap pressure). A GC-thrashing source shows a
     sharp ``max`` spike that its victims do not, so each histogram metric emits a
     single ``{metric}.max`` series (the peak per-scrape value).
+
+    Service attribution is coalesced across two columns: hubble histogram metrics
+    carry ``service_name`` directly, while k8s metrics (the JVM signatures) carry
+    it in ``attr.k8s.service.name`` with a NULL ``service_name``. A single OTel
+    histogram metric also fans out into one row per GC collector / memory pool
+    per scrape (all sharing the same timestamp), so the peak is taken per
+    ``(service, metric, time)`` to yield one clean, strictly-increasing series.
     """
     frames: list[pl.DataFrame] = []
     for path in (normal_path, abnormal_path):
         if not path.exists():
             continue
         schema = pl.scan_parquet(path).collect_schema()
-        if "service_name" not in schema or "max" not in schema:
+        if "max" not in schema:
             continue
-        frames.append(
-            pl.read_parquet(path, columns=["time", "metric", "service_name", "max"])
-        )
+        has_service = "service_name" in schema
+        has_k8s_service = "attr.k8s.service.name" in schema
+        if not has_service and not has_k8s_service:
+            continue
+        columns = ["time", "metric", "max"]
+        if has_service:
+            columns.append("service_name")
+        if has_k8s_service:
+            columns.append("attr.k8s.service.name")
+        frame = pl.read_parquet(path, columns=columns)
+        if has_service and has_k8s_service:
+            frame = frame.with_columns(
+                pl.coalesce(
+                    pl.col("service_name").cast(pl.String),
+                    pl.col("attr.k8s.service.name").cast(pl.String),
+                ).alias("service")
+            )
+        elif has_service:
+            frame = frame.rename({"service_name": "service"})
+        else:
+            frame = frame.rename({"attr.k8s.service.name": "service"})
+        frames.append(frame.select(["time", "metric", "service", "max"]))
     if not frames:
         return {}
 
     df = pl.concat(frames)
-    df = df.rename({"service_name": "service", "max": "max_value"})
+    df = df.rename({"max": "max_value"})
     df = df.with_columns(
         _epoch_ms(df, "time").alias("time"),
         pl.col("max_value").cast(pl.Float64),
+        pl.col("service").cast(pl.String),
     )
     df = df.filter(
         pl.col("time").is_not_null()
@@ -517,6 +544,13 @@ def read_metrics_histogram(
         & pl.col("service").is_not_null()
         & pl.col("max_value").is_not_null()
         & pl.col("max_value").is_finite()
+    )
+    # Collapse per-scrape fan-out (GC collector / memory pool rows sharing a
+    # timestamp) to a single peak value, so each metric emits one clean series.
+    df = (
+        df.group_by(["service", "metric", "time"])
+        .agg(pl.col("max_value").max())
+        .sort(["service", "metric", "time"])
     )
 
     out: dict[str, list[dict[str, Any]]] = {}

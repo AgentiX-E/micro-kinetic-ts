@@ -473,6 +473,85 @@ class TestReadMetricsHistogram(unittest.TestCase):
 
         self.assertEqual([s["metric"] for s in result["svc"]], ["jvm.memory.used.max"])
 
+    def test_k8s_service_attribution_via_attr(self) -> None:
+        # k8s histogram metrics (`jvm.gc.duration` / `jvm.memory.used`) carry the
+        # service in `attr.k8s.service.name`, leaving `service_name` NULL. The
+        # reader must coalesce the two so JVM source signatures survive.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1), _dt(NORMAL_START + 6)],
+                    "metric": ["jvm.gc.duration", "jvm.gc.duration"],
+                    "service_name": [None, None],
+                    "attr.k8s.service.name": ["ts-travel-service", "ts-travel-service"],
+                    "max": [12.0, 25.0],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        series = result["ts-travel-service"]
+        self.assertEqual([s["metric"] for s in series], ["jvm.gc.duration.max"])
+        self.assertEqual(series[0]["values"], [12.0, 25.0])
+
+    def test_coalesce_prefers_service_name_over_attr(self) -> None:
+        # When both columns are present, a non-null `service_name` wins (hubble
+        # metrics); a NULL `service_name` falls back to `attr.k8s.service.name`.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1), _dt(NORMAL_START + 6)],
+                    "metric": ["jvm.memory.used", "jvm.memory.used"],
+                    "service_name": ["svc-a", None],
+                    "attr.k8s.service.name": [None, "ts-travel-service"],
+                    "max": [512.0, 768.0],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        self.assertEqual(set(result.keys()), {"svc-a", "ts-travel-service"})
+
+    def test_deduplicates_gc_collector_variants(self) -> None:
+        # A single OTel histogram metric fans out into one row per GC collector
+        # (or memory pool) per scrape; all share the same timestamp. The reader
+        # must take the peak per timestamp so `compact_metric_series` never sees
+        # duplicate timestamps.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [
+                        _dt(NORMAL_START + 1),
+                        _dt(NORMAL_START + 1),
+                        _dt(NORMAL_START + 6),
+                        _dt(NORMAL_START + 6),
+                    ],
+                    "metric": ["jvm.gc.duration"] * 4,
+                    "service_name": ["svc"] * 4,
+                    "attr.jvm.gc.name": ["young", "old", "young", "old"],
+                    "max": [5.0, 12.0, 7.0, 20.0],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        series = result["svc"]
+        self.assertEqual(len(series), 1)
+        self.assertEqual(series[0]["metric"], "jvm.gc.duration.max")
+        # Peak per timestamp: max(5, 12) = 12, max(7, 20) = 20.
+        self.assertEqual(series[0]["values"], [12.0, 20.0])
+        self.assertEqual(series[0]["start"], (NORMAL_START + 1) * 1000)
+        self.assertEqual(series[0]["step"], 5 * 1000)
+
     def test_missing_max_column_is_graceful(self) -> None:
         # A histogram Parquet without a `max` column (schema drift) contributes
         # nothing rather than raising.
