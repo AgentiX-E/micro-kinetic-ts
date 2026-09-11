@@ -124,3 +124,26 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           comment-on-alert: true
           alert-threshold: 105%
+
+  # The Parquet → JSON bridge and the sharder decide every published benchmark
+  # number, and they are plain Python: gate them on their own unit tests, which
+  # run against synthetic Parquet/JSON in about a second and need no download.
+  # Branch coverage is enforced, not just line coverage.
+  converter-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: scripts/requirements-fse26.txt
+      - name: Install converter dependencies
+        run: python -m pip install -r scripts/requirements-fse26.txt
+      - name: Run converter + sharder tests with branch coverage
+        working-directory: scripts
+        run: |
+          coverage run --branch --source=. \
+            --omit='test_*,convert-parquet-to-json.py,download-and-benchmark.py,evaluate-openrca.py' \
+            -m unittest discover -s . -p 'test_*.py'
+          coverage report --fail-under=95 --precision=2

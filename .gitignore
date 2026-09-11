@@ -13,3 +13,9 @@ artifacts/
 .env
 temp/
 _tmp_*
+
+# Python tooling artifacts (scripts/ converter tests, coverage runs)
+.coverage
+.coverage.*
+__pycache__/
+*.pyc
