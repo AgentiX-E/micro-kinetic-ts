@@ -14,6 +14,7 @@ export {
   FSE26Loader,
   buildFSE26CallGraph,
   buildFSE26StaticEdges,
+  dropFSE26MetricNames,
   expandMetricTimestamps,
   resolveFSE26GroundTruth,
   toFSE26LogEntry,

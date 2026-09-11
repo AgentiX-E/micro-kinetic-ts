@@ -20,8 +20,12 @@
  *
  * Usage:
  *   pnpm exec tsx benchmarks/src/run-fse26.ts [--data-dir <json-root>] \
- *     [--max-cases N] [--log-weight <w>] [--no-rank-normalization] [--output <path>]
+ *     [--max-cases N] [--log-weight <w>] [--no-rank-normalization] [--output <path>] \
+ *     [--diagnose <fault-types>] [--diagnose-limit N] [--drop-metrics <names>]
  *
+ * `--drop-metrics` is the component-ablation switch: it filters the named
+ * metric series out of every case before scoring, so a ranking change can be
+ * attributed to one of the bridge's metric sources without a cache rebuild.
  * Read-only: never writes to the data directory.
  *
  * @module benchmarks/run-fse26
@@ -41,6 +45,7 @@ import type {
 import {
   FSE26Loader,
   computeAvgAtKMultiLabel,
+  dropFSE26MetricNames,
   formatFSE26Diagnostic,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
@@ -63,6 +68,13 @@ interface CliOptions {
   diagnose: string[];
   /** Max diagnostic dumps per matching fault type (0 = unlimited). */
   diagnoseLimit: number;
+  /**
+   * Metric names to filter out of every case before scoring (empty = none).
+   * Component-ablation switch: the bridge merges four metric sources into one
+   * map, so removing a source's names here re-scores the same cases as if the
+   * bridge had never emitted that source — without rebuilding the cache.
+   */
+  dropMetrics: string[];
 }
 
 function parseArgs(): CliOptions {
@@ -76,6 +88,7 @@ function parseArgs(): CliOptions {
     output: '',
     diagnose: [],
     diagnoseLimit: 3,
+    dropMetrics: [],
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -101,6 +114,10 @@ function parseArgs(): CliOptions {
         .filter((s) => s.length > 0);
     else if (args[i] === '--diagnose-limit' && i + 1 < args.length)
       opts.diagnoseLimit = parseInt(args[++i]!, 10) || 0;
+    else if (args[i] === '--drop-metrics' && i + 1 < args.length)
+      opts.dropMetrics = args[++i]!.split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
   }
   return opts;
 }
@@ -213,6 +230,7 @@ function buildDiagnostic(
 async function main(): Promise<void> {
   const opts = parseArgs();
   const loader = new FSE26Loader();
+  const dropSet = new Set(opts.dropMetrics);
 
   // Production ranking config: the log signal is shipped enabled (benchmark
   // #220 net-positive, zero regression); every other causal prior is opt-in.
@@ -228,6 +246,9 @@ async function main(): Promise<void> {
   console.log(
     `Config: logWeight=${opts.logWeight} logMode=${opts.logMode} rankNormalization=${opts.rankNormalization}`,
   );
+  if (opts.dropMetrics.length > 0) {
+    console.log(`Ablation: dropping metric names [${opts.dropMetrics.join(', ')}]`);
+  }
   console.log(`Anchor: SOTA avg=${ANCHOR_AVG} best=${ANCHOR_BEST} Top@1`);
   console.log('═'.repeat(65));
 
@@ -247,7 +268,7 @@ async function main(): Promise<void> {
   const diagnosed = new Map<string, number>();
 
   for (const dir of selected) {
-    let raw;
+    let raw: FSE26RawCase;
     try {
       raw = loader.loadCase(dir);
     } catch (err) {
@@ -259,6 +280,7 @@ async function main(): Promise<void> {
       }
       continue;
     }
+    if (dropSet.size > 0) raw = dropFSE26MetricNames(raw, dropSet);
     const benchCase = loader.toBenchmarkCase(raw);
     // Dual-label accepted set: the raw case's full ground-truth list (two
     // labels for network faults, one otherwise).

@@ -19,6 +19,7 @@ import {
   FSE26Loader,
   buildFSE26CallGraph,
   buildFSE26StaticEdges,
+  dropFSE26MetricNames,
   expandMetricTimestamps,
   resolveFSE26GroundTruth,
   toFSE26LogEntry,
@@ -227,6 +228,81 @@ describe('toFSE26MetricMap', () => {
 
   it('returns an empty map for empty input', () => {
     expect(toFSE26MetricMap({}).size).toBe(0);
+  });
+});
+
+// ── dropFSE26MetricNames (component ablation) ─────────────
+
+describe('dropFSE26MetricNames', () => {
+  it('removes every series whose name is in the drop set, preserving order', () => {
+    const raw = makeRawCase({
+      metrics: {
+        'ts-order-service': [
+          { metric: 'container.cpu.usage', timestamps: [1, 2], values: [0.1, 0.2] },
+          { metric: 'http.response.error_rate', timestamps: [1, 2], values: [0, 50] },
+          { metric: 'jvm.gc.duration.max', timestamps: [1, 2], values: [3, 4] },
+        ],
+      },
+    });
+
+    const out = dropFSE26MetricNames(raw, new Set(['http.response.error_rate']));
+
+    expect(out.metrics['ts-order-service']!.map((s) => s.metric)).toEqual([
+      'container.cpu.usage',
+      'jvm.gc.duration.max',
+    ]);
+  });
+
+  it('drops matching series across every service in one pass', () => {
+    const raw = makeRawCase({
+      metrics: {
+        'svc-a': [
+          { metric: 'container.cpu.usage', timestamps: [1], values: [1] },
+          { metric: 'hubble_http_requests_total', timestamps: [1], values: [7] },
+        ],
+        'svc-b': [{ metric: 'hubble_http_requests_total', timestamps: [1], values: [9] }],
+      },
+    });
+
+    const out = dropFSE26MetricNames(raw, new Set(['hubble_http_requests_total']));
+
+    expect(out.metrics['svc-a']!.map((s) => s.metric)).toEqual(['container.cpu.usage']);
+    expect(out.metrics['svc-b']).toEqual([]);
+  });
+
+  it('keeps a service key with an empty list when all its series drop', () => {
+    const raw = makeRawCase({
+      metrics: {
+        'ts-empty': [
+          { metric: 'http.response.error_rate', timestamps: [1], values: [1] },
+        ],
+      },
+    });
+
+    const out = dropFSE26MetricNames(raw, new Set(['http.response.error_rate']));
+
+    expect(out.metrics['ts-empty']).toEqual([]);
+  });
+
+  it('returns the input unchanged when the drop set is empty', () => {
+    const raw = makeRawCase();
+    expect(dropFSE26MetricNames(raw, new Set())).toBe(raw);
+  });
+
+  it('preserves every non-metric field', () => {
+    const raw = makeRawCase({
+      traceEdges: [['ts-ui-dashboard', 'ts-order-service']],
+      logs: [{ timestamp: 5, service: 'ts-order-service', level: 'ERROR', message: 'boom' }],
+    });
+
+    const out = dropFSE26MetricNames(raw, new Set(['container.cpu.usage']));
+
+    expect(out.datapack).toBe(raw.datapack);
+    expect(out.faultType).toBe(raw.faultType);
+    expect(out.injectTimeMs).toBe(raw.injectTimeMs);
+    expect(out.groundTruthServices).toBe(raw.groundTruthServices);
+    expect(out.traceEdges).toBe(raw.traceEdges);
+    expect(out.logs).toBe(raw.logs);
   });
 });
 

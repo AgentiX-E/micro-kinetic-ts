@@ -439,6 +439,38 @@ export function toFSE26MetricMap(
 }
 
 /**
+ * Return a copy of `raw` with every metric series whose name is in `drop`
+ * removed.
+ *
+ * This is the component-ablation primitive for the Parquet bridge's metric
+ * sources: the bridge merges four independent sources into one metric map
+ * (gauges, counters, histograms, trace-derived golden signals), and the only
+ * way to attribute a ranking change to a specific source without rebuilding
+ * the 13.4 GB cache is to re-score the same cases with that source's series
+ * filtered out. Filtering here — rather than in the bridge — keeps the
+ * ablation byte-identical to a bridge that never emitted those names.
+ *
+ * Service keys are preserved: a service whose series all drop keeps an empty
+ * list, so downstream node derivation still keys off the same metric map and
+ * the surviving call graph is unchanged.
+ *
+ * @param raw - The normalised raw case.
+ * @param drop - Metric names to remove (exact match).
+ * @returns The filtered case (the input itself when `drop` is empty).
+ */
+export function dropFSE26MetricNames(
+  raw: FSE26RawCase,
+  drop: ReadonlySet<string>,
+): FSE26RawCase {
+  if (drop.size === 0) return raw;
+  const metrics: Record<string, readonly FSE26MetricSeries[]> = {};
+  for (const [service, seriesList] of Object.entries(raw.metrics)) {
+    metrics[service] = seriesList.filter((s) => !drop.has(s.metric));
+  }
+  return { ...raw, metrics };
+}
+
+/**
  * Resolve the case's ground-truth labels into a {@link BenchmarkGroundTruth}.
  *
  * FSE'26 network faults carry TWO valid labels (the injection point's source
