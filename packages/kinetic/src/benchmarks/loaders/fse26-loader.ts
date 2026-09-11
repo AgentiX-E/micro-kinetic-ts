@@ -458,10 +458,7 @@ export function toFSE26MetricMap(
  * @param drop - Metric names to remove (exact match).
  * @returns The filtered case (the input itself when `drop` is empty).
  */
-export function dropFSE26MetricNames(
-  raw: FSE26RawCase,
-  drop: ReadonlySet<string>,
-): FSE26RawCase {
+export function dropFSE26MetricNames(raw: FSE26RawCase, drop: ReadonlySet<string>): FSE26RawCase {
   if (drop.size === 0) return raw;
   const metrics: Record<string, readonly FSE26MetricSeries[]> = {};
   for (const [service, seriesList] of Object.entries(raw.metrics)) {
