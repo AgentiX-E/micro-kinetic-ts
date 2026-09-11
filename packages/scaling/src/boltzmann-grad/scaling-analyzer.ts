@@ -42,6 +42,7 @@ import type {
   BBGKYHierarchy,
   BBGKYOptions,
   BoltzmannGradResult,
+  IScalingAnalyzer,
   MicroserviceState,
   ServiceCallGraph,
 } from '@agentix-e/micro-kinetic-core';
@@ -54,8 +55,14 @@ import { HierarchyTruncator } from '../bbgky/truncator.js';
  *
  * Implements IScalingAnalyzer.estimateFaultProbability() to compute
  * scaling behavior using the Boltzmann-Grad asymptotic expansion.
+ *
+ * The `implements` clause is load-bearing, not decoration: this is the only
+ * class that satisfies the whole interface, so it is the only place where a
+ * change to `IScalingAnalyzer` is caught at compile time. Because
+ * `computeBBGKYHierarchy` forwards to `HierarchyBuilder` with typed
+ * arguments, the clause also pins the builder's signature transitively.
  */
-export class BoltzmannGradAnalyzer {
+export class BoltzmannGradAnalyzer implements IScalingAnalyzer {
   private readonly hierarchyBuilder: HierarchyBuilder;
   private readonly truncator: HierarchyTruncator;
 

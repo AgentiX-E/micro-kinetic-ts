@@ -1,6 +1,13 @@
 /**
  * Integration test: Full AIOps-Kinetic pipeline validation.
  */
+import type {
+  ICuttingEngine,
+  IDenoiseEngine,
+  IRCAEngine,
+  IScalingAnalyzer,
+  IWavePropagationModel,
+} from '@agentix-e/micro-kinetic-core';
 import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import { registerCuttingFactories } from '@agentix-e/micro-kinetic-cutting';
 import { registerNoiseFactories } from '@agentix-e/micro-kinetic-noise';
@@ -156,7 +163,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerTreeModule(container);
 
-    const engine = container.resolve(DI_TOKENS.RCA_ENGINE);
+    const engine = container.resolve<IRCAEngine>(DI_TOKENS.RCA_ENGINE);
     const callGraph = createTestGraph();
     const metrics = createTestMetrics();
 
@@ -173,7 +180,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerTreeModule(container);
 
-    const engine = container.resolve(DI_TOKENS.RCA_ENGINE);
+    const engine = container.resolve<IRCAEngine>(DI_TOKENS.RCA_ENGINE);
     // Use a DAG (no cycles) for deterministic tree RCA
     const dagGraph = {
       ...createTestGraph(),
@@ -198,7 +205,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerTreeModule(container);
 
-    const engine = container.resolve(DI_TOKENS.RCA_ENGINE);
+    const engine = container.resolve<IRCAEngine>(DI_TOKENS.RCA_ENGINE);
     const callGraph = createTestGraph();
     const metrics = createTestMetrics();
 
@@ -213,7 +220,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerCuttingFactories(container);
 
-    const engine = container.resolve(DI_TOKENS.CUTTING_ENGINE);
+    const engine = container.resolve<ICuttingEngine>(DI_TOKENS.CUTTING_ENGINE);
     const points = 60; // 1 hour at 1 point/min
     const timestamps = Array.from({ length: points }, (_, i) => i * 60_000);
     const values = new Float64Array(points);
@@ -238,7 +245,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerNoiseFactories(container);
 
-    const engine = container.resolve(DI_TOKENS.DENOISE_ENGINE);
+    const engine = container.resolve<IDenoiseEngine>(DI_TOKENS.DENOISE_ENGINE);
     const callGraph = createTestGraph();
 
     const history = [
@@ -283,7 +290,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerScalingFactories(container);
 
-    const analyzer = container.resolve(DI_TOKENS.SCALING_ANALYZER);
+    const analyzer = container.resolve<IScalingAnalyzer>(DI_TOKENS.SCALING_ANALYZER);
     const states = [
       {
         serviceId: 'svc-a',
@@ -320,7 +327,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerScalingFactories(container);
 
-    const analyzer = container.resolve(DI_TOKENS.SCALING_ANALYZER);
+    const analyzer = container.resolve<IScalingAnalyzer>(DI_TOKENS.SCALING_ANALYZER);
     const result = analyzer.estimateFaultProbability(100, 0.1);
 
     expect(result.serviceCount).toBe(100);
@@ -333,7 +340,7 @@ describe('Full Pipeline Integration', () => {
     const container = new Container();
     registerWaveFactories(container);
 
-    const model = container.resolve(DI_TOKENS.WAVE_PROPAGATION_MODEL);
+    const model = container.resolve<IWavePropagationModel>(DI_TOKENS.WAVE_PROPAGATION_MODEL);
     const callGraph = createTestGraph();
 
     const result = model.simulateCascade('svc-a', callGraph, {

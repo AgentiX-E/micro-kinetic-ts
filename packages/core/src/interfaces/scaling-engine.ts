@@ -26,6 +26,7 @@ import type {
   BoltzmannGradResult,
   MicroserviceState,
 } from '../types/coupling.js';
+import type { ServiceCallGraph } from '../types/graph.js';
 
 /**
  * Scaling analyzer interface.
@@ -38,9 +39,16 @@ export interface IScalingAnalyzer {
    * f₂: pairwise fault correlation
    * ...
    * f_k: k-service joint fault correlation
+   *
+   * `serviceGraph` is the coupling structure the hierarchy is built over: the
+   * system size N is `serviceGraph.nodes.size`, and pairwise correlation is
+   * weighted by the edges between services. It is required, not optional —
+   * every implementation reads `serviceGraph.nodes.size` before doing any
+   * work, so a caller that omits it fails rather than silently degrades.
    */
   computeBBGKYHierarchy(
     states: readonly MicroserviceState[],
+    serviceGraph: ServiceCallGraph,
     options?: BBGKYOptions,
   ): BBGKYHierarchy;
 
