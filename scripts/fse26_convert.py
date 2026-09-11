@@ -488,9 +488,13 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
     )
 
     out: dict[str, list[dict[str, Any]]] = {}
-    for (service,), service_df in df.group_by("service", maintain_order=False):
+    # `maintain_order=True` keeps the series in the frame's sorted
+    # (service, metric) order: the default hash-table order is not stable
+    # between calls, which would make an identical datapack convert to a
+    # different `case.json` on every run.
+    for (service,), service_df in df.group_by("service", maintain_order=True):
         series: list[dict[str, Any]] = []
-        for (metric,), metric_df in service_df.group_by("metric", maintain_order=False):
+        for (metric,), metric_df in service_df.group_by("metric", maintain_order=True):
             series.append(
                 {
                     "metric": metric,
@@ -499,8 +503,9 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
                     ),
                 }
             )
-        if series:
-            out[service] = series
+        # A service group always carries at least one metric group, so `series`
+        # is never empty here.
+        out[service] = series
     return out
 
 
@@ -581,9 +586,10 @@ def read_metrics_histogram(
     )
 
     out: dict[str, list[dict[str, Any]]] = {}
-    for (service,), service_df in df.group_by("service", maintain_order=False):
+    # Sorted (service, metric) frame order, kept stable across runs.
+    for (service,), service_df in df.group_by("service", maintain_order=True):
         series: list[dict[str, Any]] = []
-        for (metric,), metric_df in service_df.group_by("metric", maintain_order=False):
+        for (metric,), metric_df in service_df.group_by("metric", maintain_order=True):
             metric_df = metric_df.sort("time")
             series.append(
                 {
@@ -593,8 +599,9 @@ def read_metrics_histogram(
                     ),
                 }
             )
-        if series:
-            out[service] = series
+        # A service group always carries at least one metric group, so `series`
+        # is never empty here.
+        out[service] = series
     return out
 
 
@@ -669,9 +676,9 @@ def read_trace_derived_metrics(
     latency = (
         df.group_by(["service", "window"])
         .agg(pl.col("duration").mean().alias("mean_ms"))
-        .sort("window")
+        .sort(["service", "window"])
     )
-    for (service,), group in latency.group_by("service", maintain_order=False):
+    for (service,), group in latency.group_by("service", maintain_order=True):
         out.setdefault(service, []).append(
             {
                 "metric": "http.server.request.duration",
@@ -703,9 +710,9 @@ def read_trace_derived_metrics(
                         * 100.0
                     ).alias("error_rate")
                 )
-                .sort("window")
+                .sort(["service", "window"])
             )
-            for (service,), group in error.group_by("service", maintain_order=False):
+            for (service,), group in error.group_by("service", maintain_order=True):
                 out.setdefault(service, []).append(
                     {
                         "metric": "http.response.error_rate",
@@ -778,7 +785,12 @@ def read_trace_edges(normal_path: Path, abnormal_path: Path) -> list[list[str]]:
     joined = df.join(parents, on="parent_span_id", how="inner")
 
     edges_df = joined.filter(pl.col("parent_service") != pl.col("service"))
-    edges_df = edges_df.select(["parent_service", "service"]).unique()
+    # Deduplicate and impose a total order: polars' `unique` keeps no stable
+    # order, so an identical datapack could otherwise emit the edges in a
+    # different sequence on each run.
+    edges_df = edges_df.select(["parent_service", "service"]).unique().sort(
+        ["parent_service", "service"]
+    )
 
     return [
         [row["parent_service"], row["service"]] for row in edges_df.iter_rows(named=True)
@@ -812,7 +824,9 @@ def read_logs(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
     # The platform filters ts-ui-dashboard logs out of the dataset.
     df = df.filter(pl.col("service") != "ts-ui-dashboard")
     df = df.filter(pl.col("service").is_not_null() & pl.col("message").is_not_null())
-    df = df.sort("time")
+    # A total order (not just `time`): records sharing a timestamp would
+    # otherwise be emitted in an unspecified sequence.
+    df = df.sort(["time", "service", "level", "message"])
 
     out: list[dict[str, Any]] = []
     for row in df.iter_rows(named=True):

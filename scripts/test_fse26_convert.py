@@ -15,8 +15,13 @@ and epoch conversion are verified without the 13.4 GB download.
 
 from __future__ import annotations
 
+import contextlib
 import datetime
+import io
 import json
+import os
+import runpy
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -144,6 +149,11 @@ class TestFormatBytes(unittest.TestCase):
 
     def test_gigabytes(self) -> None:
         self.assertEqual(conv.format_bytes(3 * 1024**3), "3.0 GB")
+
+    def test_petabytes_exhaust_the_unit_scale(self) -> None:
+        # Past the largest unit the loop runs to exhaustion rather than
+        # breaking, so the value stays in PB.
+        self.assertEqual(conv.format_bytes(2 * 1024**5), "2.0 PB")
 
     def test_float_average(self) -> None:
         self.assertEqual(conv.format_bytes(1536.0), "1.5 KB")
@@ -313,9 +323,29 @@ class TestEpochMs(unittest.TestCase):
         vals = pl.Series("t", [ms], dtype=pl.Int64)
         self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
 
+    def test_int64_microseconds(self) -> None:
+        # OTel's `TimeUnix` is microseconds; `>= 1e14` selects the us branch.
+        us = (NORMAL_START + 1) * 10**6
+        vals = pl.Series("t", [us], dtype=pl.Int64)
+        self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
+
     def test_int64_seconds(self) -> None:
         vals = pl.Series("t", [NORMAL_START + 1], dtype=pl.Int64)
         self.assertEqual(self._apply(vals), [(NORMAL_START + 1) * 1000])
+
+    def test_all_null_integer_column_passes_through(self) -> None:
+        # No sample carries a magnitude to infer the unit from: the column is
+        # cast unchanged rather than raising or guessing a scale.
+        vals = pl.Series("t", [None, None], dtype=pl.Int64)
+        self.assertEqual(self._apply(vals), [None, None])
+
+    def test_unsupported_dtype_raises(self) -> None:
+        # A string time column is a schema violation, not a unit ambiguity:
+        # it must fail loudly instead of silently mis-scaling every sample.
+        vals = pl.Series("t", ["2026-09-11T00:00:00Z"], dtype=pl.String)
+        with self.assertRaises(TypeError) as ctx:
+            self._apply(vals)
+        self.assertIn("Expected Datetime or integer time column `t`", str(ctx.exception))
 
 
 class TestNonFiniteSanitization(unittest.TestCase):
@@ -461,6 +491,121 @@ class TestReadMetricsFanOut(unittest.TestCase):
             )
 
         self.assertEqual(result["svc"][0]["values"], [1.0, 1.0, 2.0])
+
+
+class TestOptionalSourceGates(unittest.TestCase):
+    """Every telemetry source is optional, and the bridge decides per file.
+
+    A source contributes nothing (rather than raising) when its file is absent,
+    when its schema lacks the expected payload column, or when it carries no
+    service attribution at all. The archive really does vary per datapack: the
+    gauge/counter metrics carry `service_name`, the k8s histogram metrics carry
+    the service in `attr.k8s.service.name`, and infra-level files (node/hubble
+    without a service dimension) carry neither — and those cannot inform
+    service-level RCA.
+    """
+
+    def test_metrics_without_service_column_are_dropped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1)],
+                    "metric": ["node.cpu.usage"],
+                    "value": [0.5],
+                }
+            ).write_parquet(root / "normal_metrics.parquet")
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        self.assertEqual(result, {})
+
+    def test_histogram_without_any_service_column_is_dropped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1)],
+                    "metric": ["infra.duration"],
+                    "max": [1.0],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        self.assertEqual(result, {})
+
+    def test_histogram_k8s_only_service_column_is_used(self) -> None:
+        # The k8s histogram metrics (jvm.gc.duration) carry the service in
+        # `attr.k8s.service.name` and have no `service_name` column at all, so
+        # that column must be renamed into place on its own.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1)],
+                    "metric": ["jvm.gc.duration"],
+                    "max": [12.0],
+                    "attr.k8s.service.name": ["ts-order-service"],
+                }
+            ).write_parquet(root / "normal_metrics_histogram.parquet")
+
+            result = conv.read_metrics_histogram(
+                root / "normal_metrics_histogram.parquet", root / "missing.parquet"
+            )
+
+        series = result["ts-order-service"]
+        self.assertEqual([s["metric"] for s in series], ["jvm.gc.duration.max"])
+        self.assertEqual(series[0]["values"], [12.0])
+
+    def test_logs_with_no_files_return_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(conv.read_logs(root / "n.parquet", root / "a.parquet"), [])
+
+    def test_logs_from_one_window(self) -> None:
+        # Only the abnormal window exists: the missing normal file must be
+        # skipped and the single window still read.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(ABNORMAL_START + 1)],
+                    "level": ["warn"],
+                    "service_name": ["ts-order-service"],
+                    "message": ["slow"],
+                }
+            ).write_parquet(root / "abnormal_logs.parquet")
+
+            logs = conv.read_logs(root / "normal_logs.parquet", root / "abnormal_logs.parquet")
+
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]["service"], "ts-order-service")
+        self.assertEqual(logs[0]["level"], "WARN")
+        self.assertEqual(logs[0]["timestamp"], (ABNORMAL_START + 1) * 1000)
+
+
+class TestDiscoverDatapacks(unittest.TestCase):
+    """`_discover_datapacks` selects the convertible datapack directories."""
+
+    def test_only_sorted_dirs_containing_injection_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("zeta", "alpha"):
+                (root / name).mkdir()
+                (root / name / "injection.json").write_text("{}", "utf-8")
+            (root / "not-a-datapack").mkdir()
+            (root / "stray.txt").write_text("x", "utf-8")
+
+            names = [p.name for p in conv._discover_datapacks(root)]
+
+        self.assertEqual(names, ["alpha", "zeta"])
+
+    def test_empty_dir_returns_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(conv._discover_datapacks(Path(tmp)), [])
 
 
 class TestReadTraceEdges(unittest.TestCase):
@@ -756,6 +901,27 @@ class TestReadTraceDerivedMetrics(unittest.TestCase):
         metrics = [s["metric"] for s in result["svc-a"]]
         self.assertEqual(metrics, ["http.server.request.duration"])
 
+    def test_skips_error_rate_when_status_column_is_all_null(self) -> None:
+        # The column exists but carries no observation: the error rate cannot be
+        # computed, so only latency is derived.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pl.DataFrame(
+                {
+                    "time": [_dt(NORMAL_START + 1)],
+                    "service_name": ["svc-a"],
+                    "duration": [2_000_000],
+                    "attr.http.response.status_code": [None],
+                }
+            ).write_parquet(root / "normal_traces.parquet")
+
+            result = conv.read_trace_derived_metrics(
+                root / "normal_traces.parquet", root / "missing.parquet"
+            )
+
+        metrics = [s["metric"] for s in result["svc-a"]]
+        self.assertEqual(metrics, ["http.server.request.duration"])
+
     def test_empty_when_no_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1018,15 +1184,174 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
         self.assertEqual(by_metric["http.server.request.duration"]["values"], [2.0, 0.5])
         self.assertEqual(by_metric["http.response.error_rate"]["values"], [50.0])
 
+    def test_conversion_is_deterministic(self) -> None:
+        # The cache shards must be reproducible: converting the same datapack
+        # twice has to yield the same document, byte for byte. Group-by and
+        # unique keep no stable order by default, which previously reordered a
+        # service's metric series (and the edge list) from run to run.
+        src = _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
+
+        first = json.dumps(conv.build_case(src), separators=(",", ":"))
+        for _ in range(5):
+            self.assertEqual(json.dumps(conv.build_case(src), separators=(",", ":")), first)
+
+    def test_display_config_object_is_accepted(self) -> None:
+        # The platform serialises `display_config` as a JSON string, but the
+        # archive can also carry it as an object; both must resolve.
+        src = _build_synthetic_datapack(self.root, "ts5-ts-order-service-stress-svfvxk")
+        injection = json.loads((src / "injection.json").read_text("utf-8"))
+        injection["fault_type"] = 1  # PodFailure → non-Network, single label
+        injection["display_config"] = {"injection_point": {"source_service": "ts-order-service"}}
+        (src / "injection.json").write_text(json.dumps(injection), "utf-8")
+
+        case = conv.build_case(src)
+
+        self.assertEqual(case["faultType"], "PodFailure")
+        self.assertEqual(case["faultCategory"], "Pod")
+        self.assertEqual(case["groundTruthServices"], ["ts-order-service"])
+
+
+# ── Converter CLI ────────────────────────────────────────────────────────
+
+class TestConvertMain(unittest.TestCase):
+    """`main` drives the batch conversion over a datapack tree: it reports a
+    missing root, honours --limit/--include/--force, skips already-converted
+    datapacks, and exits non-zero when any datapack failed."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.src = self.root / "data"
+        self.out = self.root / "out"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_missing_data_dir_returns_one(self) -> None:
+        rc = conv.main(["--data-dir", str(self.root / "nope"), "--out-dir", str(self.out)])
+        self.assertEqual(rc, 1)
+        self.assertFalse(self.out.exists())
+
+    def test_converts_all_datapacks(self) -> None:
+        _build_synthetic_datapack(self.src, "ts5-ts-order-service-network-svfvxk")
+        _build_synthetic_datapack(self.src, "ts5-ts-order-service-stress-svfvxk")
+
+        rc = conv.main(["--data-dir", str(self.src), "--out-dir", str(self.out)])
+
+        self.assertEqual(rc, 0)
+        converted = sorted(p.parent.name for p in self.out.glob("*/case.json"))
+        self.assertEqual(
+            converted,
+            ["ts5-ts-order-service-network-svfvxk", "ts5-ts-order-service-stress-svfvxk"],
+        )
+
+    def test_limit_converts_only_the_prefix(self) -> None:
+        _build_synthetic_datapack(self.src, "ts5-ts-order-service-network-svfvxk")
+        _build_synthetic_datapack(self.src, "ts5-ts-order-service-stress-svfvxk")
+
+        rc = conv.main(
+            ["--data-dir", str(self.src), "--out-dir", str(self.out), "--limit", "1"]
+        )
+
+        self.assertEqual(rc, 0)
+        # Datapack dirs are sorted by name; only the first is converted.
+        converted = sorted(p.parent.name for p in self.out.glob("*/case.json"))
+        self.assertEqual(converted, ["ts5-ts-order-service-network-svfvxk"])
+
+    def test_include_overrides_limit(self) -> None:
+        _build_synthetic_datapack(self.src, "ts5-ts-order-service-network-svfvxk")
+        _build_synthetic_datapack(self.src, "ts5-ts-order-service-stress-svfvxk")
+
+        rc = conv.main(
+            [
+                "--data-dir",
+                str(self.src),
+                "--out-dir",
+                str(self.out),
+                "--include",
+                "ts5-ts-order-service-stress-svfvxk,,",
+                "--limit",
+                "1",
+            ]
+        )
+
+        self.assertEqual(rc, 0)
+        converted = sorted(p.parent.name for p in self.out.glob("*/case.json"))
+        self.assertEqual(converted, ["ts5-ts-order-service-stress-svfvxk"])
+
+    def test_existing_output_is_skipped_unless_forced(self) -> None:
+        src = _build_synthetic_datapack(self.src, "ts5-ts-order-service-network-svfvxk")
+        args = ["--data-dir", str(self.src), "--out-dir", str(self.out)]
+        self.assertEqual(conv.main(args), 0)
+        case_path = self.out / src.name / "case.json"
+        first = json.loads(case_path.read_text("utf-8"))
+
+        # Without --force the recorded output is reused, so a changed source
+        # must NOT be picked up. (Shift the abnormal window without changing its
+        # length, so the env ordering stays valid and only injectTimeMs moves.)
+        env = json.loads((src / "env.json").read_text("utf-8"))
+        env["ABNORMAL_START"] += 60
+        env["ABNORMAL_END"] += 60
+        (src / "env.json").write_text(json.dumps(env), "utf-8")
+        self.assertEqual(conv.main(args), 0)
+        self.assertEqual(json.loads(case_path.read_text("utf-8")), first)
+
+        # With --force it is rebuilt from the changed source.
+        self.assertEqual(conv.main([*args, "--force"]), 0)
+        second = json.loads(case_path.read_text("utf-8"))
+        self.assertNotEqual(second, first)
+        self.assertEqual(second["injectTimeMs"], first["injectTimeMs"] + 30_000)
+
+    def test_failing_datapack_is_reported_and_returns_one(self) -> None:
+        broken = self.src / "ts5-ts-order-service-broken-svfvxk"
+        broken.mkdir(parents=True)
+        # A datapack with no env.json cannot be converted.
+        (broken / "injection.json").write_text("{}", "utf-8")
+        _build_synthetic_datapack(self.src, "ts5-ts-order-service-stress-svfvxk")
+
+        rc = conv.main(["--data-dir", str(self.src), "--out-dir", str(self.out)])
+
+        self.assertEqual(rc, 1)
+        # The healthy datapack is still converted.
+        self.assertTrue(
+            (self.out / "ts5-ts-order-service-stress-svfvxk" / "case.json").exists()
+        )
+        self.assertFalse((self.out / broken.name / "case.json").exists())
+
 
 # ── Streaming tar conversion ─────────────────────────────────────────────
 
 
 def _build_tar(root: Path, tar_path: Path) -> None:
-    """Tar+gzip the synthetic datapacks under `root` into `tar_path`."""
+    """Tar+gzip the synthetic datapacks under `root` into `tar_path`.
+
+    Root-level files are archived too (the real archive carries non-datapack
+    entries), so the datapack predicate is exercised against them rather than
+    trivially never seeing one.
+    """
+    with tarfile.open(tar_path, "w:gz") as tf:
+        for entry in sorted(root.iterdir()):
+            if entry == tar_path:
+                continue
+            tf.add(entry, arcname=entry.name)
+
+
+def _build_tar_with_trailing_member(
+    root: Path, tar_path: Path, arcname: str, payload: bytes
+) -> None:
+    """Tar+gzip `root`'s datapacks, then one extra member of incompressible data.
+
+    The trailing member makes the compressed size track its payload, so a
+    truncation placed a fixed distance from the end lands *inside* a member
+    (rather than exactly on an archive boundary) — the real shape of a
+    partially downloaded archive, whose gzip stream simply stops.
+    """
     with tarfile.open(tar_path, "w:gz") as tf:
         for datapack in sorted(p for p in root.iterdir() if p.is_dir()):
             tf.add(datapack, arcname=datapack.name)
+        info = tarfile.TarInfo(arcname)
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
 
 
 class TestStreamConvertTar(unittest.TestCase):
@@ -1065,9 +1390,12 @@ class TestStreamConvertTar(unittest.TestCase):
         self.assertEqual(len(converted), 1)
 
     def test_iter_datapack_dirs_skips_non_datapacks(self) -> None:
-        # A stray top-level file must not be mistaken for a datapack dir.
-        stray = self.root / "README.txt"
-        stray.write_text("not a datapack", "utf-8")
+        # Neither a stray top-level file nor a top-level directory without an
+        # injection.json is a datapack.
+        (self.root / "README.txt").write_text("not a datapack", "utf-8")
+        docs = self.root / "docs"
+        docs.mkdir()
+        (docs / "readme.md").write_text("not a datapack", "utf-8")
         _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
         tar_path = self.root / "rcabench.tar.gz"
         _build_tar(self.root, tar_path)
@@ -1075,6 +1403,25 @@ class TestStreamConvertTar(unittest.TestCase):
         with tarfile.open(tar_path, "r:gz") as tf:
             dirs = conv_tar.iter_datapack_dirs(tf)
         self.assertEqual(dirs, ["ts5-ts-order-service-network-svfvxk"])
+
+    def test_nested_directory_inside_a_datapack_is_skipped(self) -> None:
+        # Only file members are extracted; a nested directory member inside a
+        # datapack is not a datapack of its own.
+        src = self.root / "dp"
+        name = "ts5-ts-order-service-network-svfvxk"
+        _build_synthetic_datapack(src, name)
+        nested = src / name / "nested"
+        nested.mkdir()
+        (nested / "extra.txt").write_text("ignored", "utf-8")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(src, tar_path)
+
+        out = self.root / "out"
+        ok, failed = conv_tar.stream_convert_tar(tar_path, out)
+
+        self.assertEqual((ok, failed), (1, 0))
+        self.assertTrue((out / name / "case.json").exists())
+        self.assertFalse((out / "nested" / "case.json").exists())
 
     def test_truncated_archive_stops_cleanly(self) -> None:
         # A range-downloaded prefix ends mid-gzip-stream. The streaming walk
@@ -1095,12 +1442,204 @@ class TestStreamConvertTar(unittest.TestCase):
         ok, failed = conv_tar.stream_convert_tar(truncated, out)
 
         # The complete first datapack converts; the truncated second is
-        # discarded or fails, and the walk never raises.
+        # discarded, not counted as a failure.
         first = out / "ts5-ts-order-service-network-svfvxk" / "case.json"
         self.assertTrue(first.exists(), "the complete first datapack must convert")
         json.loads(first.read_text("utf-8"))  # valid JSON
-        self.assertEqual(ok, 1)
-        self.assertLessEqual(failed, 1)
+        self.assertEqual((ok, failed), (1, 0))
+
+    def test_truncated_mid_member_discards_the_incomplete_datapack(self) -> None:
+        # A download that stops *inside* a member: every earlier member of the
+        # in-flight datapack is already on disk, including injection.json and
+        # env.json, so `build_case` would happily convert it. The result is a
+        # valid-looking case.json missing its whole abnormal window (and its
+        # traces and logs) that the driver still counts as a success — a
+        # silently deficient benchmark case with no signal that it is truncated.
+        # The in-flight datapack must be discarded instead.
+        src = self.root / "dp"
+        complete = "ts5-ts-order-service-network-svfvxk"
+        _build_synthetic_datapack(src, complete)
+
+        cut = src / "ts5-ts-order-service-stress-svfvxk"
+        cut.mkdir(parents=True)
+        for name in ("injection.json", "env.json", "normal_metrics.parquet"):
+            (cut / name).write_bytes((src / complete / name).read_bytes())
+
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar_with_trailing_member(
+            src,
+            tar_path,
+            arcname=f"{cut.name}/filler.bin",
+            payload=os.urandom(2 * 1024 * 1024),
+        )
+
+        # Reference: the complete archive converts both datapacks.
+        reference_out = self.root / "reference"
+        conv_tar.stream_convert_tar(tar_path, reference_out)
+        reference = json.loads((reference_out / complete / "case.json").read_text("utf-8"))
+
+        data = tar_path.read_bytes()
+        truncated = tar_path.with_name("rcabench-cut.tar.gz")
+        truncated.write_bytes(data[: len(data) - 1024 * 1024])
+
+        out = self.root / "out"
+        ok, failed = conv_tar.stream_convert_tar(truncated, out)
+
+        self.assertEqual((ok, failed), (1, 0))
+        produced = sorted(p.parent.name for p in out.glob("*/case.json"))
+        self.assertEqual(produced, [complete])
+        # The surviving case is identical to the complete conversion.
+        self.assertEqual(
+            json.loads((out / complete / "case.json").read_text("utf-8")), reference
+        )
+
+    def test_non_datapack_directory_is_not_converted(self) -> None:
+        # The archive carries top-level directories that are not datapacks
+        # (docs/README). They are neither converted nor counted.
+        src = self.root / "dp"
+        _build_synthetic_datapack(src, "ts5-ts-order-service-network-svfvxk")
+        # Sorts first, so it is finalised at the datapack boundary.
+        docs = src / "aaa-docs"
+        docs.mkdir()
+        (docs / "readme.md").write_text("not a datapack", "utf-8")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(src, tar_path)
+
+        out = self.root / "out"
+        ok, failed = conv_tar.stream_convert_tar(tar_path, out)
+
+        self.assertEqual((ok, failed), (1, 0))
+        self.assertFalse((out / docs.name / "case.json").exists())
+        self.assertTrue((out / "ts5-ts-order-service-network-svfvxk" / "case.json").exists())
+
+    def test_existing_output_is_skipped_unless_forced(self) -> None:
+        src = self.root / "dp"
+        name = "ts5-ts-order-service-network-svfvxk"
+        _build_synthetic_datapack(src, name)
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(src, tar_path)
+        out = self.root / "out"
+
+        def run(force: bool) -> str:
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                counts = conv_tar.stream_convert_tar(tar_path, out, force=force)
+            self.assertEqual(counts, (1, 0))
+            return buffer.getvalue()
+
+        self.assertIn(f"OK   {name}", run(False))
+        # A second pass reuses the recorded output instead of reconverting it.
+        self.assertIn(f"SKIP {name}", run(False))
+        # --force reconverts.
+        self.assertIn(f"OK   {name}", run(True))
+
+    def test_failing_datapack_is_counted_and_does_not_stop_the_walk(self) -> None:
+        src = self.root / "dp"
+        broken = src / "ts5-ts-order-service-broken-svfvxk"
+        broken.mkdir(parents=True)
+        # No env.json: build_case raises for this datapack only.
+        (broken / "injection.json").write_text("{}", "utf-8")
+        _build_synthetic_datapack(src, "ts5-ts-order-service-network-svfvxk")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(src, tar_path)
+
+        out = self.root / "out"
+        ok, failed = conv_tar.stream_convert_tar(tar_path, out)
+
+        self.assertEqual((ok, failed), (1, 1))
+        self.assertFalse((out / broken.name / "case.json").exists())
+        self.assertTrue((out / "ts5-ts-order-service-network-svfvxk" / "case.json").exists())
+
+
+class TestStreamConvertTarMain(unittest.TestCase):
+    """`main` is the process entry point: it validates the archive path and
+    propagates the per-datapack failure count into the exit status."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.out = self.root / "out"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_missing_archive_returns_one(self) -> None:
+        rc = conv_tar.main(["--tar", str(self.root / "nope.tar.gz"), "--out-dir", str(self.out)])
+        self.assertEqual(rc, 1)
+
+    def test_successful_conversion_returns_zero(self) -> None:
+        src = self.root / "dp"
+        _build_synthetic_datapack(src, "ts5-ts-order-service-network-svfvxk")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(src, tar_path)
+
+        rc = conv_tar.main(["--tar", str(tar_path), "--out-dir", str(self.out)])
+
+        self.assertEqual(rc, 0)
+        self.assertTrue((self.out / "ts5-ts-order-service-network-svfvxk" / "case.json").exists())
+
+    def test_failing_datapack_returns_one(self) -> None:
+        src = self.root / "dp"
+        broken = src / "ts5-ts-order-service-broken-svfvxk"
+        broken.mkdir(parents=True)
+        (broken / "injection.json").write_text("{}", "utf-8")
+        tar_path = self.root / "rcabench.tar.gz"
+        _build_tar(src, tar_path)
+
+        rc = conv_tar.main(["--tar", str(tar_path), "--out-dir", str(self.out)])
+
+        self.assertEqual(rc, 1)
+
+
+# ── Module entry points ──────────────────────────────────────────────────
+
+
+SCRIPTS = Path(__file__).resolve().parent
+
+
+class TestModuleEntrypoints(unittest.TestCase):
+    """Each script is also invoked as `python3 scripts/<script>.py`, so its
+    `if __name__ == "__main__": sys.exit(main())` guard is part of the contract:
+    the process exit status must be `main`'s return value."""
+
+    def _run_as_main(self, script: str, argv: list[str]) -> int:
+        saved = sys.argv
+        sys.argv = [script, *argv]
+        try:
+            with self.assertRaises(SystemExit) as ctx:
+                runpy.run_path(str(SCRIPTS / script), run_name="__main__")
+        finally:
+            sys.argv = saved
+        return ctx.exception.code
+
+    def test_convert_reports_a_missing_data_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code = self._run_as_main(
+                "fse26_convert.py",
+                ["--data-dir", str(root / "nope"), "--out-dir", str(root / "out")],
+            )
+        self.assertEqual(code, 1)
+
+    def test_convert_rejects_missing_required_arguments(self) -> None:
+        # argparse exits 2 on a usage error.
+        self.assertEqual(self._run_as_main("fse26_convert.py", []), 2)
+
+    def test_convert_tar_reports_a_missing_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code = self._run_as_main(
+                "fse26_convert_tar.py",
+                ["--tar", str(root / "nope.tar.gz"), "--out-dir", str(root / "out")],
+            )
+        self.assertEqual(code, 1)
+
+    def test_shard_reports_a_missing_output_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code = self._run_as_main(
+                "fse26_shard.py", ["--out-dir", str(Path(tmp) / "nope")]
+            )
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":

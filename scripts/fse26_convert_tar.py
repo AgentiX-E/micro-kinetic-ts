@@ -76,7 +76,8 @@ def stream_convert_tar(
     extracted to a temp directory, converted, and the temp directory discarded
     before the next datapack is read, so the archive is never fully materialised
     on disk. A truncated (range-downloaded) archive stops cleanly at the
-    truncation point.
+    truncation point, and the datapack it stopped inside is discarded rather
+    than converted from a partial file set.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -85,19 +86,35 @@ def stream_convert_tar(
     sizes: list[int] = []
     measurements: list[dict] = []
     started = 0
+    truncated = False
     current_name: str | None = None
     tmp = tempfile.TemporaryDirectory()
     tmp_root = Path(tmp.name)
 
-    def finalize() -> None:
-        """Convert (or skip) the just-finished datapack and clear its temp files."""
+    def finalize(convert: bool = True) -> None:
+        """Convert (or skip) the just-finished datapack and clear its temp files.
+
+        `convert=False` discards the datapack unread. Only the datapack in
+        flight when the stream ends early is discarded: the members after the
+        truncation point were never read, so what is on disk is a prefix of its
+        real telemetry set. `build_case` treats every telemetry source as
+        optional, so converting that prefix emits a valid-looking `case.json`
+        missing its whole abnormal window (and its traces and logs) — and counts
+        it as a success, silently injecting a deficient benchmark case.
+        """
         nonlocal ok, failed, current_name, sizes, measurements
         if current_name is None:
             return
         src = tmp_root / current_name
         dst = out_dir / current_name
         try:
-            if not (src / "injection.json").exists():
+            if not convert:
+                print(
+                    f"DISCARD {current_name} (archive truncated mid-datapack)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            elif not (src / "injection.json").exists():
                 pass  # top-level dir that is not a datapack (e.g. README/)
             elif (dst / "case.json").exists() and not force:
                 size = (dst / "case.json").stat().st_size
@@ -131,6 +148,7 @@ def stream_convert_tar(
                 try:
                     member = tar.next()
                 except (EOFError, tarfile.ReadError):
+                    truncated = True
                     break  # truncated archive: no more complete members
                 if member is None:
                     break
@@ -151,9 +169,12 @@ def stream_convert_tar(
                     try:
                         tar.extract(member, tmp_root, filter="data")
                     except (EOFError, tarfile.ReadError):
+                        truncated = True
                         break  # truncated mid-file: discard the incomplete datapack
     finally:
-        finalize()
+        # Datapacks completed before the truncation point are intact and were
+        # already finalised on the way, so only the one in flight is at risk.
+        finalize(convert=not truncated)
         tmp.cleanup()
 
     print(conv.summarize_sizes(sizes), flush=True)

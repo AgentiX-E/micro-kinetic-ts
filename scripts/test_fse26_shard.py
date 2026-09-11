@@ -14,7 +14,11 @@ synthetic JSON documents — no 13.4 GB download.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import runpy
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -115,6 +119,55 @@ class TestShard(unittest.TestCase):
             manifest = shard.shard(Path(tmp))
         self.assertEqual(manifest["shards"], [])
         self.assertEqual(manifest["totalCases"], 0)
+
+
+class TestShardMain(unittest.TestCase):
+    """`main` validates the converted-JSON root and reports the emitted shards."""
+
+    def test_missing_output_dir_returns_one(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            rc = shard.main(["--out-dir", str(Path(tmp) / "nope")])
+        self.assertEqual(rc, 1)
+
+    def test_reports_and_returns_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, "dp-http-1", "HTTP")
+            _write_case(root, "dp-res-1", "Resource")
+
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                rc = shard.main(["--out-dir", str(root)])
+
+            self.assertEqual(rc, 0)
+            self.assertTrue((root / "manifest.json").exists())
+            self.assertTrue((root / "rcabench-HTTP.tar.gz").exists())
+            report = buffer.getvalue()
+        self.assertIn("HTTP: 1 cases -> rcabench-HTTP.tar.gz", report)
+        self.assertIn("Sharded 2 cases into 2 shards", report)
+
+    def test_empty_root_returns_zero_with_no_shards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                rc = shard.main(["--out-dir", tmp])
+        self.assertEqual(rc, 0)
+        self.assertIn("Sharded 0 cases into 0 shards", buffer.getvalue())
+
+
+class TestShardEntrypoint(unittest.TestCase):
+    """The `if __name__ == "__main__"` guard must exit with `main`'s status."""
+
+    def test_missing_output_dir_exits_with_one(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = sys.argv
+            sys.argv = ["fse26_shard.py", "--out-dir", str(Path(tmp) / "nope")]
+            try:
+                with self.assertRaises(SystemExit) as ctx:
+                    runpy.run_path(str(Path(__file__).resolve().parent / "fse26_shard.py"), run_name="__main__")
+            finally:
+                sys.argv = saved
+        self.assertEqual(ctx.exception.code, 1)
 
 
 if __name__ == "__main__":
