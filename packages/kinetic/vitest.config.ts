@@ -27,8 +27,17 @@ export default defineConfig({
       exclude: [
         'src/index.ts',
         'src/**/index.ts',
-        // Benchmark loaders — tested via integration/benchmark pipelines, not unit tests
-        'src/benchmarks/loaders/**',
+        // Type-only module: every export is an `interface`/`type` declaration, so
+        // it emits no runtime code and can never contribute a covered statement.
+        'src/benchmarks/loaders/types.ts',
+        // The two dataset-gated loaders have no unit tests yet. They are
+        // exercised only by the FSE'26 pipeline, so including them would report
+        // ~6% statements for ~1000 lines of real parsing logic. This is an
+        // outstanding gap, not a justification: both take a directory path and
+        // are therefore testable from synthetic fixtures, exactly like
+        // `fse26-loader.ts` (100%) and `rcaeval-loader.ts` (100% statements).
+        'src/benchmarks/loaders/aiops2025-loader.ts',
+        'src/benchmarks/loaders/rca100-loader.ts',
         'src/benchmarks/synthetic/**',
         // LLM classifier — requires DEEPSEEK_API_KEY, prompt builder tested via integration
         'src/classifiers/llm-classifier.ts',
@@ -37,8 +46,8 @@ export default defineConfig({
         'src/signals/fusion-engine.ts',
       ],
       // Kinetic is an umbrella/integration package — covers DI wiring, CLI, pipeline,
-      // benchmark runner, and metrics. Benchmark loaders and synthetic generators are
-      // tested via full integration/benchmark pipelines rather than per-function unit tests.
+      // benchmark runner, and metrics. Every loader that has a dataset available in
+      // CI is measured; see the exclusion list above for what is not, and why.
       thresholds: {
         statements: 95,
         branches: 95,

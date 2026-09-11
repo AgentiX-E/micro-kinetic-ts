@@ -1409,3 +1409,548 @@ describe('normalizeSpanStatus', () => {
     expect(normalizeSpanStatus('302')).toBe('OK');
   });
 });
+
+// ── Remaining private paths ───────────────────────────────
+//
+// The blocks above exercise the public surface. These pin the private branches
+// that the earlier tests reached only through their happy path: the snake_case
+// and millisecond start-time fallbacks, the directory-name fallback parser and
+// its two throws, the metrics-file validation guards, the unit inference
+// default, the synthesised call graph used when a benchmark ships no topology,
+// and the four `catch` blocks that turn an unreadable file into a benign
+// `undefined` / `0` instead of crashing a suite load.
+
+describe('rcaeval start-time fallbacks', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('divides a snake_case start_time column by 1000', () => {
+    const tracesContent = [
+      'traceId,spanId,serviceName,start_time,duration',
+      't1,s1,svc-a,1700000000000000,100',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+  });
+
+  it('treats a bare timestamp column below 1e15 as milliseconds', () => {
+    // 1.7e12 is already ms; only a value above 1e15 is re-scaled from ns.
+    const tracesContent = [
+      'traceId,spanId,serviceName,timestamp,duration',
+      't1,s1,svc-a,1700000000000,100',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+  });
+
+  it('defaults to 0 when every start-time column is absent', () => {
+    const tracesContent = ['traceId,spanId,serviceName,duration', 't1,s1,svc-a,100'].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    expect(loader.loadCase(casePath).traces![0]!.startTime).toBe(0);
+  });
+
+  it('reads the snake_case start_time column through the streaming counter too', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,start_time',
+        't1,s1,svc-a,1700000000000000',
+        't2,s2,svc-a,1700000002000000',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1700000001000);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+  });
+
+  it('buckets every span under "unknown" when there is no service column', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      ['startTimeMillis,duration', '1700000000000,100', '1700000002000,100'].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1700000001000);
+    expect(counts.get('unknown')).toEqual({ pre: 1, post: 1 });
+  });
+
+  it('skips blank lines, maps an empty service cell to "unknown", and survives short rows', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'service,startTime,duration',
+        'svc-a,1700000000000000,100',
+        '',
+        ',1700000000000000,100',
+        'x',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1700000001000);
+    // The blank line contributes nothing; the empty service cell is attributed
+    // to "unknown"; the short row has no start-time cell and defaults to 0.
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 0 });
+    expect(counts.get('unknown')).toEqual({ pre: 1, post: 0 });
+    expect(counts.get('x')).toEqual({ pre: 1, post: 0 });
+    expect(counts.size).toBe(3);
+  });
+});
+
+describe('rcaeval directory-name fallback', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('splits a non-canonical name whose benchmark segment contains underscores', () => {
+    // Uppercase service/fault defeat the canonical regex, so the underscore
+    // splitter runs: benchmark='RE2', service='OnlineBoutique', fault='CPUStress'.
+    const casePath = createCaseDir(tempDir, 'RE2_OnlineBoutique_CPUStress_1', {
+      metrics: { OnlineBoutique: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+    });
+
+    const gt = loader.loadCase(casePath).groundTruth;
+    expect(gt.serviceId).toBe('OnlineBoutique');
+    expect(gt.faultType).toBe('CPUStress');
+  });
+
+  it('throws when the instance suffix is not a number', () => {
+    const casePath = path.join(tempDir, 're2_re_ss_cpu_abc');
+    fs.mkdirSync(casePath, { recursive: true });
+    writeJson(path.join(casePath, 'metrics.json'), {
+      svc: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+    });
+
+    expect(() => loader.loadCase(casePath)).toThrow(/Instance is not a number/);
+  });
+
+  it('throws when the name has too few underscore-separated parts', () => {
+    const casePath = path.join(tempDir, 're2ob');
+    fs.mkdirSync(casePath, { recursive: true });
+    writeJson(path.join(casePath, 'metrics.json'), {
+      svc: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+    });
+
+    expect(() => loader.loadCase(casePath)).toThrow(/Invalid RCAEval directory name/);
+  });
+});
+
+describe('rcaeval ground-truth fallbacks', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('falls back to "unknown" when the JSON carries no fault field and no dir name', () => {
+    // The one-argument overload is public and has no parsed directory name to
+    // fall back on, so a ground-truth file without a fault field must yield
+    // 'unknown' rather than an empty string.
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+      groundTruth: { root_cause_service: 'svc-a' },
+    });
+
+    const gt = loader.getGroundTruth(casePath);
+    expect(gt.serviceId).toBe('svc-a');
+    expect(gt.faultType).toBe('unknown');
+  });
+
+  it('falls back to the directory name when ground_truth.json is malformed', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.writeFileSync(path.join(casePath, 'ground_truth.json'), '{ not json');
+
+    const gt = loader.loadCase(casePath).groundTruth;
+    expect(gt.serviceId).toBe('cartservice');
+    expect(gt.faultType).toBe('cpu');
+  });
+});
+
+describe('rcaeval metrics-file validation', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  function caseWithRawMetrics(name: string, raw: string): string {
+    const casePath = path.join(tempDir, name);
+    fs.mkdirSync(casePath, { recursive: true });
+    fs.writeFileSync(path.join(casePath, 'metrics.json'), raw);
+    return casePath;
+  }
+
+  it('rejects an empty object', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '{}');
+    expect(() => loader.loadCase(casePath)).toThrow(/empty or has unexpected format/);
+  });
+
+  it('rejects an array-shaped document', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '[1,2,3]');
+    expect(() => loader.loadCase(casePath)).toThrow(/empty or has unexpected format/);
+  });
+
+  it('rejects a document whose every service has an empty series list', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '{"svc-a":[]}');
+    expect(() => loader.loadCase(casePath)).toThrow(/no valid service entries/);
+  });
+
+  it('reports malformed JSON as invalid JSON rather than a raw SyntaxError', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '{oops');
+    expect(() => loader.loadCase(casePath)).toThrow(/is not valid JSON/);
+  });
+});
+
+describe('rcaeval unit inference', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  const emptyGraph = { nodes: new Map(), edges: [], systemLoad: 0 };
+
+  it('falls back to "count" for a metric name with no known keyword', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 7, metric_name: 'requests_total' }] },
+    });
+
+    const unified = loader.toBenchmarkCase(loader.loadCase(casePath), emptyGraph, 'rcaeval-re2');
+    expect(unified.metrics.get('cartservice')![0]!.unit).toBe('count');
+  });
+
+  it('names the unit for the recognised keyword families', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: {
+        cartservice: [
+          { timestamp: 1, value: 1, metric_name: 'cpu_usage' },
+          { timestamp: 1, value: 1, metric_name: 'memory_used' },
+          { timestamp: 1, value: 1, metric_name: 'disk_io' },
+          { timestamp: 1, value: 1, metric_name: 'latency_p99' },
+          { timestamp: 1, value: 1, metric_name: 'error_rate' },
+        ],
+      },
+    });
+
+    const unified = loader.toBenchmarkCase(loader.loadCase(casePath), emptyGraph, 'rcaeval-re2');
+    expect(unified.metrics.get('cartservice')!.map((s) => s.unit)).toEqual([
+      'percent',
+      'bytes',
+      'iops',
+      'ms',
+      'rate',
+    ]);
+  });
+});
+
+describe('rcaeval synthesised call graph', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('chains services into a call graph when the benchmark ships no topology', () => {
+    createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: {
+        a: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+        b: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+        c: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+      },
+    });
+
+    const suite = loader.loadSuite(tempDir, 'RE2');
+    // No call graph is supplied for 're2ob', so the fallback must chain a→b→c.
+    const unified = loader.toBenchmarkSuite(suite, {});
+    const graph = unified.cases[0]!.callGraph;
+
+    expect([...graph.nodes.keys()].sort()).toEqual(['a', 'b', 'c']);
+    expect(graph.edges.map((e) => `${e.from}->${e.to}`)).toEqual(['a->b', 'b->c']);
+    expect(graph.systemLoad).toBe(0.5);
+  });
+
+  it('produces a node with no edges for a single-service case', () => {
+    createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { solo: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+
+    const suite = loader.loadSuite(tempDir, 'RE2');
+    const unified = loader.toBenchmarkSuite(suite, {});
+    const graph = unified.cases[0]!.callGraph;
+
+    expect([...graph.nodes.keys()]).toEqual(['solo']);
+    expect(graph.edges).toEqual([]);
+  });
+
+  it('prefers a supplied call graph over the fallback', () => {
+    createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { a: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+
+    const suite = loader.loadSuite(tempDir, 'RE2');
+    const supplied = {
+      nodes: new Map([['a', { id: 'a', name: 'a', namespace: 'X', labels: {} }]]),
+      edges: [],
+      systemLoad: 0.9,
+    };
+    const unified = loader.toBenchmarkSuite(suite, { re2ob: supplied });
+
+    expect(unified.cases[0]!.callGraph.systemLoad).toBe(0.9);
+  });
+});
+
+describe('rcaeval defensive degradation', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /**
+   * A directory named `logs.csv`/`traces.csv` passes `existsSync` and then fails
+   * the read (EISDIR) — the same shape as an unreadable or half-written file,
+   * without having to fight the filesystem for permissions that CI runs as root.
+   */
+  it('survives a logs.csv that exists but cannot be read', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.mkdirSync(path.join(casePath, 'logs.csv'));
+
+    expect(loader.loadCase(casePath).logs).toBeUndefined();
+  });
+
+  it('survives a traces.csv that exists but cannot be read', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.mkdirSync(path.join(casePath, 'traces.csv'));
+
+    expect(loader.loadCase(casePath).traces).toBeUndefined();
+    expect(loader.loadTraces(casePath)).toBeUndefined();
+  });
+
+  it('returns the counts accumulated before a mid-stream read failure', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.mkdirSync(tracesPath);
+
+    // The file "exists" per existsSync, then the stream errors: the counter must
+    // surface an empty map rather than rejecting.
+    await expect(countTraceActivityByService(tracesPath, 1000)).resolves.toEqual(new Map());
+  });
+
+  it('defaults the inject time to 0 when the file is not a number', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.writeFileSync(path.join(casePath, 'inject_time.txt'), 'not-a-timestamp');
+
+    expect(loader.loadCase(casePath).injectTime).toBe(0);
+  });
+
+  it('defaults the inject time to 0 when the file exists but cannot be read', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.mkdirSync(path.join(casePath, 'inject_time.txt'));
+
+    expect(loader.loadCase(casePath).injectTime).toBe(0);
+  });
+});
+
+describe('rcaeval absent-column handling', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /**
+   * A CSV is located by header alias, not by position, so a file carrying none
+   * of the expected columns must degrade to an empty message / INFO / 0ms /
+   * "unknown" instead of reading arbitrary cells as if they were the right ones.
+   */
+  it('degrades a logs.csv that carries none of the expected columns', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      logs: ['alpha,beta', '1,2'].join('\n'),
+    });
+
+    const logs = loader.loadCase(casePath).logs!;
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.message).toBe('');
+    expect(logs[0]!.level).toBe('INFO');
+    expect(logs[0]!.timestamp).toBe(0);
+    expect(logs[0]!.service).toBe('unknown');
+  });
+
+  it('treats a header-only logs.csv as no logs at all', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      logs: 'timestamp,service,message',
+    });
+
+    expect(loader.loadCase(casePath).logs).toBeUndefined();
+  });
+
+  it('pads a ragged log row with empty strings rather than undefined', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      logs: ['timestamp,service,message', '1700000000,svc-a'].join('\n'),
+    });
+
+    const logs = loader.loadCase(casePath).logs!;
+    expect(logs[0]!.service).toBe('svc-a');
+    expect(logs[0]!.message).toBe('');
+  });
+
+  it('treats a header-only traces.csv as no traces at all', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      traces: 'traceId,spanId,serviceName,duration',
+    });
+
+    expect(loader.loadCase(casePath).traces).toBeUndefined();
+  });
+
+  it('attributes a serviceless traces.csv to "unknown"', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      traces: ['traceId,spanId,duration', 't1,s1,100'].join('\n'),
+    });
+
+    expect(loader.loadCase(casePath).traces![0]!.service).toBe('unknown');
+  });
+
+  it('resolves the directory name itself when getGroundTruth is called without one', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+
+    // No ground_truth.json and no parsed name: the loader must parse the basename.
+    const gt = loader.getGroundTruth(casePath);
+    expect(gt.serviceId).toBe('cartservice');
+    expect(gt.faultType).toBe('cpu');
+  });
+
+  it('maps a row shorter than the service column to "unknown"', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    // `service` is the SECOND column, so a one-cell row has no service cell.
+    fs.writeFileSync(
+      tracesPath,
+      ['duration,service,timestamp', '100,svc-a,1700000002000', '200'].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1000);
+    expect(counts.get('svc-a')).toEqual({ pre: 0, post: 1 });
+    expect(counts.get('unknown')).toEqual({ pre: 1, post: 0 });
+  });
+});

@@ -690,13 +690,21 @@ export class RCAEvalLoader {
     suite: RCAEvalSuite,
     callGraphs: Record<string, ServiceCallGraph>,
   ): BenchmarkSuite {
-    const suiteNameMap: Record<string, 'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3'> = {
+    // Keyed by the closed union rather than `string`, so the lookup below is
+    // proven total by the type system. Typing it as `Record<string, ...>` would
+    // admit a missing key and force a `?? 'rcaeval-re1'` default that no input
+    // can ever reach — a branch that could never be tested, papering over a
+    // mapping the compiler can already verify.
+    const suiteNameMap: Record<
+      RCAEvalSuite['suiteName'],
+      'rcaeval-re1' | 'rcaeval-re2' | 'rcaeval-re3'
+    > = {
       RE1: 'rcaeval-re1',
       RE2: 'rcaeval-re2',
       RE3: 'rcaeval-re3',
     };
 
-    const datasetName = suiteNameMap[suite.suiteName] ?? 'rcaeval-re1';
+    const datasetName = suiteNameMap[suite.suiteName];
     const cases = suite.cases.map((c) => {
       const graph = callGraphs[c.benchmark] ?? this.buildFallbackCallGraph(c);
       return this.toBenchmarkCase(c, graph, datasetName);
@@ -775,18 +783,15 @@ export class RCAEvalLoader {
     }
   }
 
-  private loadInjectTime(injectTimePath: string): number {
-    if (!fs.existsSync(injectTimePath)) {
-      throw new Error(`Inject time file not found: ${injectTimePath}`);
-    }
-    const raw = fs.readFileSync(injectTimePath, 'utf-8').trim();
-    const time = parseInt(raw, 10);
-    if (isNaN(time)) {
-      throw new Error(`Invalid inject time: ${raw}`);
-    }
-    return time;
-  }
-
+  /**
+   * Read `inject_time.txt` if present, returning 0 when it is absent or
+   * unparseable.
+   *
+   * Deliberately lenient, unlike the equivalent strict reader that used to sit
+   * beside it and was never called: a case with a missing or corrupt inject time
+   * is still worth loading (several signals do not need the injection boundary),
+   * so this degrades to 0 rather than throwing.
+   */
   private tryLoadInjectTime(casePath: string): number {
     const injectTimePath = path.join(casePath, 'inject_time.txt');
     if (!fs.existsSync(injectTimePath)) return 0;
