@@ -1,11 +1,18 @@
-# Dependencies for the FSE'26 RCABench bridge and its tests.
+# Runtime dependencies for the FSE'26 RCABench bridge.
 #
-#   fse26_convert.py      Parquet -> normalised case.json  (polars)
+#   fse26_convert.py      Parquet -> normalised case.json   (polars)
 #   fse26_convert_tar.py  streaming conversion of the archive
 #   fse26_shard.py        per-category tarballs
 #
-# Used by the `converter-tests` job in .github/workflows/ci.yml and by
-# rcabench-data's cache build. Pinned so the converted output is reproducible:
-# polars reads and writes the Parquet, so a version change can move the numbers.
+# Installed by rcabench-data's cache build and by the `converter-tests` job in
+# .github/workflows/ci.yml.
+#
+# Pinned twice over: polars reads and writes the Parquet, so a version change can
+# move the converted bytes and therefore the benchmark numbers. This file is also
+# part of `scripts/fse26_provenance.py`'s digest, so editing it invalidates every
+# cached shard and forces a rebuild -- deliberately, because the cache would
+# otherwise be produced by a toolchain nobody agreed on.
+#
+# Test-only tooling lives in requirements-fse26-dev.txt so that a test-runner
+# bump cannot trip the cache gate.
 polars==1.33.1
-coverage==7.16.0

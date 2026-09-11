@@ -23,8 +23,12 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import fse26_provenance as provenance
 import fse26_shard as shard
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
 
 
 def _write_case(root: Path, datapack: str, category: str) -> Path:
@@ -119,6 +123,72 @@ class TestShard(unittest.TestCase):
             manifest = shard.shard(Path(tmp))
         self.assertEqual(manifest["shards"], [])
         self.assertEqual(manifest["totalCases"], 0)
+
+
+class TestManifestProvenance(unittest.TestCase):
+    """
+    The manifest must let a consumer prove which converter produced the shards.
+
+    Without this, a cache built from an older converter is indistinguishable from
+    a current one and is consumed silently — which is how a stale release served
+    pre-fix shards to a full CI benchmark run.
+    """
+
+    def test_records_provenance_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, "dp-http-1", "HTTP")
+            manifest = shard.shard(root)
+
+        self.assertEqual(manifest["schemaVersion"], provenance.SCHEMA_VERSION)
+        self.assertEqual(manifest["converterDigest"], provenance.converter_digest(SCRIPTS_DIR))
+        self.assertTrue(manifest["builtAt"].endswith("Z"), manifest["builtAt"])
+        self.assertIn("converterRevision", manifest)
+
+    def test_emitted_manifest_verifies_against_this_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, "dp-http-1", "HTTP")
+            manifest = shard.shard(root)
+
+        self.assertEqual(provenance.verify_provenance(manifest, SCRIPTS_DIR), [])
+
+    def test_records_shard_size_and_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, "dp-http-1", "HTTP")
+            manifest = shard.shard(root)
+            entry = manifest["shards"][0]
+            shard_path = root / entry["shard"]
+
+            self.assertEqual(entry["bytes"], shard_path.stat().st_size)
+            self.assertEqual(entry["sha256"], provenance.sha256_file(shard_path))
+            self.assertEqual(provenance.verify_shards(manifest, root, ["HTTP"]), [])
+
+    def test_explicit_revision_is_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, "dp-http-1", "HTTP")
+            manifest = shard.shard(root, revision="deadbeef")
+        self.assertEqual(manifest["converterRevision"], "deadbeef")
+
+    def test_revision_defaults_to_the_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, "dp-http-1", "HTTP")
+            with mock.patch.object(shard.provenance, "converter_revision", return_value="auto"):
+                manifest = shard.shard(root)
+        self.assertEqual(manifest["converterRevision"], "auto")
+
+    def test_cli_records_the_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_case(root, "dp-http-1", "HTTP")
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = shard.main(["--out-dir", str(root), "--converter-revision", "abc123"])
+            manifest = json.loads((root / "manifest.json").read_text("utf-8"))
+        self.assertEqual(rc, 0)
+        self.assertEqual(manifest["converterRevision"], "abc123")
 
 
 class TestShardMain(unittest.TestCase):

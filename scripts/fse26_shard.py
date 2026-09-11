@@ -13,8 +13,15 @@ Each tarball archives its cases at ``<datapack>/case.json``, so extracting a
 shard reproduces the exact flat layout the FSE'26 runner discovers — no
 conversion is re-run and no TypeScript change is required.
 
+The ``manifest.json`` also carries a provenance block (``schemaVersion``,
+``builtAt``, ``converterRevision``, ``converterDigest``) and a ``bytes`` +
+``sha256`` for every shard. Shards are consumed without re-conversion, so
+without provenance a cache built from an older converter is indistinguishable
+from a current one; ``fse26_provenance.py`` verifies both halves at the consumer.
+
 Usage:
   python3 scripts/fse26_shard.py --out-dir <converted-json-root>
+  python3 scripts/fse26_shard.py --out-dir <root> --converter-revision <sha>
 """
 
 from __future__ import annotations
@@ -25,6 +32,12 @@ import sys
 import tarfile
 from pathlib import Path
 from typing import Any
+
+import fse26_provenance as provenance
+
+# The converter sources live beside this module — both in this repo and in the
+# cache-build checkout, which copies the three files flat into its own root.
+CONVERTER_ROOT = Path(__file__).resolve().parent
 
 
 def discover_case_paths(out_dir: Path) -> list[Path]:
@@ -55,12 +68,13 @@ def write_shard(shard_path: Path, case_paths: list[Path], base: Path) -> None:
             tar.add(case_path, arcname=str(case_path.relative_to(base)))
 
 
-def shard(out_dir: Path) -> dict[str, Any]:
+def shard(out_dir: Path, *, revision: str | None = None) -> dict[str, Any]:
     """
     Group the converted cases by ``faultCategory`` and emit per-category shards.
 
     Writes ``<out>/rcabench-<category>.tar.gz`` for each non-empty category and a
     ``<out>/manifest.json`` describing the shards, then returns the manifest.
+    `revision` overrides the discovered converter revision stamped into it.
     """
     groups: dict[str, list[Path]] = {}
     for case_path in discover_case_paths(out_dir):
@@ -77,10 +91,14 @@ def shard(out_dir: Path) -> dict[str, Any]:
                 "cases": len(case_paths),
                 "shard": shard_path.name,
                 "bytes": shard_path.stat().st_size,
+                # The digest is what actually pins the consumer's asset; `bytes`
+                # is the cheap first look at a truncated download.
+                "sha256": provenance.sha256_file(shard_path),
             }
         )
 
     manifest: dict[str, Any] = {
+        **provenance.provenance(CONVERTER_ROOT, revision),
         "totalCases": sum(s["cases"] for s in shards),
         "shards": shards,
     }
@@ -95,6 +113,10 @@ def main(argv: list[str] | None = None) -> int:
         description="Shard converted FSE'26 case.json files by fault category."
     )
     parser.add_argument("--out-dir", required=True, help="Converted JSON output root.")
+    parser.add_argument(
+        "--converter-revision",
+        help="Revision to stamp into the manifest (default: discover from the checkout).",
+    )
     args = parser.parse_args(argv)
 
     out_dir = Path(args.out_dir)
@@ -102,14 +124,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: output directory not found: {out_dir}", file=sys.stderr)
         return 1
 
-    manifest = shard(out_dir)
+    manifest = shard(out_dir, revision=args.converter_revision)
     for entry in manifest["shards"]:
         print(
             f"{entry['category']}: {entry['cases']} cases -> "
             f"{entry['shard']} ({entry['bytes']} bytes)",
             flush=True,
         )
-    print(f"Sharded {manifest['totalCases']} cases into {len(manifest['shards'])} shards", flush=True)
+    print(
+        f"Sharded {manifest['totalCases']} cases into {len(manifest['shards'])} shards "
+        f"(converter {manifest['converterRevision']} {manifest['converterDigest']})",
+        flush=True,
+    )
     return 0
 
 

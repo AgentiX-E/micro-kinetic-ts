@@ -3,6 +3,10 @@ name: Benchmark — FSE'26 RCABench
 on:
   workflow_dispatch:
     inputs:
+      shard_tag:
+        description: 'rcabench-data release tag holding the shards (explicit; never `latest`)'
+        required: false
+        default: 'rcabench-full'
       categories:
         description: 'Comma-separated fault categories to download (empty = all 7)'
         required: false
@@ -43,12 +47,22 @@ jobs:
       #   shards and hosted as Release assets on AgentiX-E/rcabench-data, so
       #   the benchmark no longer downloads the 13.4 GB archive or re-runs the
       #   Parquet conversion.
+      #
+      #   The tag is explicit, never `releases/latest`. Re-uploading assets with
+      #   `gh release upload --clobber` does not refresh a release's
+      #   `published_at`, so `latest` keeps pointing at whichever release was
+      #   *created* most recently and silently serves a superseded set. That is
+      #   not hypothetical: `latest` resolved to `rcabench-full-v2`, whose assets
+      #   predate the label fan-out fix, while the rebuilt shards sat on
+      #   `rcabench-full` -- and a full run was dispatched against the stale set.
       - name: Download shards from rcabench-data
+        env:
+          SHARD_TAG: ${{ inputs.shard_tag }}
         run: |
           mkdir -p "$HOME/rcabench/json"
+          BASE="https://github.com/AgentiX-E/rcabench-data/releases/download/$SHARD_TAG"
           curl -L --fail --retry 10 --retry-all-errors \
-            -o "$HOME/rcabench/manifest.json" \
-            "https://github.com/AgentiX-E/rcabench-data/releases/latest/download/manifest.json"
+            -o "$HOME/rcabench/manifest.json" "$BASE/manifest.json"
           if [ -n "${{ inputs.categories }}" ]; then
             CATS=$(echo "${{ inputs.categories }}" | tr ',' ' ')
           else
@@ -57,12 +71,32 @@ jobs:
           for cat in $CATS; do
             curl -L --fail --retry 10 --retry-all-errors \
               -o "$HOME/rcabench/rcabench-$cat.tar.gz" \
-              "https://github.com/AgentiX-E/rcabench-data/releases/latest/download/rcabench-$cat.tar.gz"
+              "$BASE/rcabench-$cat.tar.gz"
             tar xzf "$HOME/rcabench/rcabench-$cat.tar.gz" -C "$HOME/rcabench/json"
           done
+          echo "Shard tag: $SHARD_TAG"
           echo "Downloaded categories: $CATS"
           echo "case.json count: $(find "$HOME/rcabench/json" -name case.json | wc -l)"
           df -h "$HOME"
+          echo "RCABENCH_CATEGORIES=$(echo $CATS | tr ' ' ',')" >> "$GITHUB_ENV"
+
+      # ── Provenance gate ──
+      #   A cache is consumed without re-conversion, so nothing in the data
+      #   reveals which converter produced it: a set built from an older
+      #   revision is byte-indistinguishable from a current one and publishes a
+      #   wrong score with no error. Refuse to run unless the manifest's
+      #   converter digest matches this checkout, and each downloaded shard
+      #   matches the size + sha256 the manifest recorded. Copy the manifest
+      #   into the run artifact so every published number is traceable to the
+      #   exact cache it came from.
+      - name: Verify cache provenance
+        run: |
+          python3 scripts/fse26_provenance.py \
+            --root scripts \
+            --manifest "$HOME/rcabench/manifest.json" \
+            --shard-dir "$HOME/rcabench" \
+            --categories "$RCABENCH_CATEGORIES"
+          cp "$HOME/rcabench/manifest.json" manifest.json
 
       # ── TypeScript engine ──
       - uses: pnpm/action-setup@v4
@@ -106,3 +140,4 @@ jobs:
           path: |
             fse26-results.txt
             fse26-results.json
+            manifest.json

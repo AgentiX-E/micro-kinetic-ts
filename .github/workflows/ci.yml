@@ -137,9 +137,11 @@ jobs:
         with:
           python-version: '3.13'
           cache: pip
-          cache-dependency-path: scripts/requirements-fse26.txt
+          cache-dependency-path: |
+            scripts/requirements-fse26.txt
+            scripts/requirements-fse26-dev.txt
       - name: Install converter dependencies
-        run: python -m pip install -r scripts/requirements-fse26.txt
+        run: python -m pip install -r scripts/requirements-fse26-dev.txt
       - name: Run converter + sharder tests with branch coverage
         working-directory: scripts
         run: |
