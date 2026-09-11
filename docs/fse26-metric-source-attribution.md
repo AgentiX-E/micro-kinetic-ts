@@ -281,6 +281,10 @@ shards, so the sum is exact rather than extrapolated.
 - **Land the fix in CI**: the published `rcabench-data` shards were built with the
   buggy converter, so a cache rebuild (then an `fse26-benchmark` dispatch) is needed
   for the published numbers to reflect it. Until then the shards understate the engine.
+  Dispatched: `AgentiX-E/rcabench-data` run **34563132915** (`build-cache.yml`,
+  full 13.4 GB, `release_tag=rcabench-full`); the single upload step runs last with
+  `--clobber`, so a failed rebuild leaves the current shards untouched. The follow-up
+  `fse26-benchmark` dispatch must wait for it to publish.
 - **Re-audit every earlier "ceiling" measurement** taken on this cache. Any conclusion
   drawn from metric-series shape (not just from logs or topology) may have been
   affected at the same ~656 corrupted series per case. `docs/re3-fault-ceiling.md`,
