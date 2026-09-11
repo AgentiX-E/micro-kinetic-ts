@@ -1,8 +1,10 @@
 import {
   Container,
   DI_TOKENS,
+  type FaultCategory,
   type IContainer,
   type IRCAEngine,
+  type TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -1356,6 +1358,461 @@ describe('BenchmarkRunner with Fault Classifier', () => {
     const result = await runner.runSuite(suite);
     // Should still complete without errors — classifier returns UNKNOWN
     expect(result.typeAccuracy).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── Prediction enrichment ─────────────────────────────────
+
+/**
+ * An engine whose top-1 service, fault type and metric decomposition are all
+ * scripted by the test.
+ *
+ * `createMockEngine` always answers `service_1`, but the synthetic generator
+ * keys metrics by `SERVICE_NAMES` (`frontend`, `cartservice`, …) and never
+ * produces a `service_1`. `enrichPrediction` therefore returned at its
+ * `!serviceMetrics` guard on every existing test and the classifier path was
+ * never executed — while the tests that claimed to exercise it only asserted
+ * that type accuracy stayed within [0, 1]. The cases below put the predicted
+ * service INTO the metric map so the enrichment actually runs.
+ */
+function createScriptedEngine(options: {
+  serviceId: string;
+  category: FaultCategory;
+  subType?: string;
+  emptyResults?: boolean;
+  omitDominantMetrics?: boolean;
+  breakdown?: {
+    deviation: number;
+    trend: number;
+    cv: number;
+    burst: number;
+    riseRatio: number;
+    dropRatio: number;
+    baselineMean: number;
+  };
+}): IRCAEngine {
+  return {
+    buildFaultGraph: (callGraph) => {
+      const ids = [...callGraph.nodes.keys()];
+      // `dominantMetrics` is optional on the graph type, so an engine may
+      // legitimately omit it. The diagnostic reader must cope both ways.
+      const dominant = options.omitDominantMetrics
+        ? {}
+        : {
+            dominantMetrics: new Map(
+              ids.map((id) => [
+                id,
+                {
+                  label: 'cpu_usage_percent',
+                  head: [0.1, 0.2, 0.3],
+                  tail: [0.8, 0.9],
+                  transientSkipped: [],
+                  breakdown: options.breakdown,
+                },
+              ]),
+            ),
+          };
+      return {
+        callGraph,
+        propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+        anomalyScores: new Map(ids.map((id) => [id, id === options.serviceId ? 0.9 : 0.1])),
+        anomalyOnsetTimes: new Map(ids.map((id) => [id, 2])),
+        // The optional ranking signals are POPULATED here. `createMockEngine`
+        // omits all of them, so the `?.` arms that read them from a graph that
+        // actually carries them were permanently untaken.
+        logScores: new Map(ids.map((id) => [id, 0.5])),
+        collisionEnergy: new Map(
+          ids.map((id) => [
+            id,
+            { totalEnergy: 1, collisionType: 'elastic', collisionGain: 0.5, ratioContrib: 0.25 },
+          ]),
+        ),
+        topoScores: new Map(ids.map((id) => [id, 0.75])),
+        riseScores: new Map(ids.map((id) => [id, 0.5])),
+        postInjectOnsetDelays: new Map(ids.map((id) => [id, 120])),
+        ...dominant,
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+      };
+    },
+    analyze: async () =>
+      options.emptyResults
+        ? []
+        : [
+            {
+              serviceId: options.serviceId,
+              faultType: {
+                category: options.category,
+                subType: options.subType ?? '',
+                severity: 'major' as const,
+              },
+              confidence: 0.75,
+              rank: 1,
+              timestamp: Date.now(),
+              evidenceMetrics: [],
+              propagationDepth: 1,
+              propagationErrorBound: 0.01,
+              viaTreeSearch: true,
+            },
+          ],
+    getCycleContributionBound: () => 0,
+  };
+}
+
+function createScriptedContainer(engine: IRCAEngine): IContainer {
+  const container = new Container();
+  container.register(DI_TOKENS.RCA_ENGINE, () => engine);
+  return container;
+}
+
+describe('BenchmarkRunner prediction enrichment', () => {
+  const generator = new SyntheticBenchmarkGenerator(7);
+
+  /**
+   * A case whose metric map contains the service the scripted engine predicts,
+   * labelled with the given metric names so the classifier has something to
+   * match on.
+   */
+  function caseWithPredictedService(
+    faultType: string,
+    labels: readonly string[],
+  ): ReturnType<typeof generator.generateRCAEvalCase> {
+    const base = generator.generateRCAEvalCase(faultType, 3);
+    const metrics = new Map<string, readonly TimeSeries[]>(base.metrics);
+    metrics.set(
+      'service_1',
+      labels.map((label) => ({
+        label,
+        timestamps: [0, 1000, 2000, 3000],
+        values: new Float64Array([1, 1, 1, 9]),
+        unit: 'percent',
+      })),
+    );
+    return { ...base, metrics };
+  }
+
+  const engineAs = (category: FaultCategory) =>
+    createScriptedContainer(createScriptedEngine({ serviceId: 'service_1', category }));
+
+  const series = (label: string, values: number[]): TimeSeries => ({
+    label,
+    timestamps: values.map((_, i) => i * 1000),
+    values: new Float64Array(values),
+    unit: 'count',
+  });
+
+  const oneCaseSuite = (
+    name: string,
+    cases: readonly ReturnType<typeof generator.generateRCAEvalCase>[],
+  ) => ({
+    name,
+    cases,
+    totalCases: cases.length,
+  });
+
+  it('scores the CLASSIFIED fault type, not the engine default', async () => {
+    // The engine answers service_1 as CPU, but service_1's metric is
+    // memory-labelled. The classifier must override the category to MEM, which
+    // is what the ground truth asks for, so Type Accuracy moves 0 -> 1.
+    const suite = oneCaseSuite('enrich-mem', [
+      caseWithPredictedService('MEM', ['memory_rss_bytes']),
+    ]);
+
+    const withoutClassifier = await new BenchmarkRunner(engineAs('CPU')).runSuite(suite);
+    const withClassifier = await new BenchmarkRunner(
+      engineAs('CPU'),
+      new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES),
+    ).runSuite(suite);
+
+    expect(withoutClassifier.typeAccuracy).toBe(0);
+    expect(withClassifier.typeAccuracy).toBe(1);
+    // And the classified type is what the failure diagnostic reports.
+    expect(withClassifier.failures[0]!.actualFaultType).toBe('MEM');
+  });
+
+  it('keeps the engine fault type when the classifier cannot classify', async () => {
+    // No rule matches this metric name, so the classifier returns UNKNOWN and
+    // the engine's type must survive untouched.
+    const suite = oneCaseSuite('enrich-unknown', [
+      caseWithPredictedService('CPU', ['zzz_unmapped_metric']),
+    ]);
+
+    const result = await new BenchmarkRunner(
+      engineAs('CPU'),
+      new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES),
+    ).runSuite(suite);
+
+    expect(result.typeAccuracy).toBe(1);
+    expect(result.failures[0]!.actualFaultType).toBe('CPU');
+  });
+
+  it('reports a sub-typed fault type as category-subType', async () => {
+    const suite = oneCaseSuite('enrich-subtype', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+
+    const result = await new BenchmarkRunner(
+      createScriptedContainer(
+        createScriptedEngine({ serviceId: 'service_1', category: 'CPU', subType: 'saturation' }),
+      ),
+    ).runSuite(suite);
+
+    expect(result.failures[0]!.actualFaultType).toBe('CPU-saturation');
+  });
+
+  it('formats the dominant metric decomposition into the failure diagnostic', async () => {
+    const suite = oneCaseSuite('enrich-breakdown', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+    const expected = 'dev=0.500 trend=0.250 cv=0.125 burst=0.000 rise=2.500 drop=0.000 base=0.400';
+
+    const result = await new BenchmarkRunner(
+      createScriptedContainer(
+        createScriptedEngine({
+          serviceId: 'service_1',
+          category: 'CPU',
+          breakdown: {
+            deviation: 0.5,
+            trend: 0.25,
+            cv: 0.125,
+            burst: 0,
+            riseRatio: 2.5,
+            dropRatio: 0,
+            baselineMean: 0.4,
+          },
+        }),
+      ),
+    ).runSuite(suite);
+
+    expect(result.failures[0]!.diag!.top1Breakdown).toBe(expected);
+    expect(result.failures[0]!.diag!.gtBreakdown).toBe(expected);
+  });
+
+  it('records an explicit failure when the engine returns no predictions at all', async () => {
+    const suite = oneCaseSuite('enrich-empty', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+
+    const result = await new BenchmarkRunner(
+      createScriptedContainer(
+        createScriptedEngine({ serviceId: 'service_1', category: 'CPU', emptyResults: true }),
+      ),
+    ).runSuite(suite);
+
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]!.reason).toBe('No predictions generated');
+    // The placeholder keeps the per-case arrays index-aligned with the truth.
+    expect(result.casePredictions[0]!.top1).toBeUndefined();
+    expect(result.casePredictions[0]!.correct).toBe(false);
+    expect(result.avgTop1).toBe(0);
+    expect(result.typeAccuracy).toBe(0);
+  });
+
+  it('reports every optional ranking signal when the graph actually carries them', async () => {
+    const suite = oneCaseSuite('diag-signals', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+
+    const diag = (await new BenchmarkRunner(engineAs('CPU')).runSuite(suite)).failures[0]!.diag!;
+
+    expect(diag.gtLogScore).toBe(0.5);
+    expect(diag.topLogScore).toBe(0.5);
+    expect(diag.gtRatioContrib).toBe(0.25);
+    expect(diag.topRatioContrib).toBe(0.25);
+    expect(diag.gtTopoSource).toBe(0.75);
+    expect(diag.topTopoSource).toBe(0.75);
+    expect(diag.gtInjectDelay).toBe(120);
+    expect(diag.topInjectDelay).toBe(120);
+  });
+
+  it('picks the ground-truth metric by relative swing when no metric name is given', async () => {
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const metrics = new Map<string, readonly TimeSeries[]>(base.metrics);
+    metrics.set('frontend', [
+      // All non-positive: the relative-swing denominator degenerates to zero.
+      series('idle_negative', [-5, -4, -3, -2]),
+      // Crosses zero: the denominator falls back to the epsilon.
+      series('crossing_zero', [-1, -2, 5, 6]),
+      // A quiet series after the winner, so the "not better" arm is taken too.
+      series('quiet', [10, 11, 12, 13]),
+      // A one-point series carries no swing and must be skipped, not scored.
+      series('too_short', [99]),
+    ]);
+    const suite = oneCaseSuite('diag-swing', [{ ...base, metrics }]);
+
+    const diag = (await new BenchmarkRunner(engineAs('CPU')).runSuite(suite)).failures[0]!.diag!;
+
+    expect(diag.gtMetric).toBe('crossing_zero');
+  });
+
+  it('survives an engine that throws a non-Error', async () => {
+    const engine = createScriptedEngine({ serviceId: 'service_1', category: 'CPU' });
+    engine.analyze = async () => {
+      throw 'engine exploded';
+    };
+    const suite = oneCaseSuite('throw-string', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+
+    const result = await new BenchmarkRunner(createScriptedContainer(engine)).runSuite(suite);
+
+    expect(result.failures[0]!.reason).toBe('engine exploded');
+    expect(result.casePredictions[0]!.top1).toBeUndefined();
+    expect(result.casePredictions[0]!.correct).toBe(false);
+  });
+
+  it('generates all three report formats for an empty suite without dividing by zero', async () => {
+    const runner = new BenchmarkRunner(engineAs('CPU'));
+    const empty = await runner.runSuite({ name: 'empty-suite', cases: [], totalCases: 0 });
+
+    expect(empty.totalCases).toBe(0);
+
+    const json = JSON.parse(runner.generateReport([empty], 'json')) as {
+      summary: {
+        totalCases: number;
+        totalFailures: number;
+        weightedAvgTop1: number;
+        weightedAvgTop5: number;
+      };
+    };
+    expect(json.summary).toEqual({
+      totalCases: 0,
+      totalFailures: 0,
+      weightedAvgTop1: 0,
+      weightedAvgTop5: 0,
+    });
+
+    const html = runner.generateReport([empty], 'html');
+    expect(html).toContain('<!DOCTYPE html>');
+    expect(html).toContain('empty-suite');
+    expect(runner.generateReport([empty], 'text')).toContain('Micro-Kinetic Benchmark Report');
+  });
+
+  it('records the message and first stack frame when the engine throws an Error', async () => {
+    const engine = createScriptedEngine({ serviceId: 'service_1', category: 'CPU' });
+    engine.analyze = async () => {
+      throw new Error('engine failed hard');
+    };
+    const suite = oneCaseSuite('throw-error', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+
+    const result = await new BenchmarkRunner(createScriptedContainer(engine)).runSuite(suite);
+
+    expect(result.failures[0]!.reason).toMatch(/^engine failed hard\nat /);
+    expect(result.casePredictions[0]!.top1).toBeUndefined();
+  });
+
+  it('handles a call graph with no nodes without fabricating a top anomaly', async () => {
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const suite = oneCaseSuite('empty-graph', [
+      { ...base, callGraph: { nodes: new Map(), edges: [], systemLoad: 0.5 } },
+    ]);
+
+    const diag = (await new BenchmarkRunner(engineAs('CPU')).runSuite(suite)).failures[0]!.diag!;
+
+    expect(diag.topAnomaly).toEqual([]);
+    expect(diag.edges).toBe(0);
+    expect(diag.topLogScore).toBeUndefined();
+    expect(diag.topTopoSource).toBeUndefined();
+    expect(diag.top1MetricLabel).toBe('');
+  });
+
+  it('handles a ground-truth service that is absent from the metric map', async () => {
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const suite = oneCaseSuite('gt-absent', [
+      {
+        ...base,
+        groundTruth: {
+          ...base.groundTruth,
+          serviceId: 'not_in_metrics',
+          metric: 'cpu_usage_percent',
+        },
+        metrics: new Map([['only_service', base.metrics.get('frontend')!]]),
+      },
+    ]);
+
+    const diag = (await new BenchmarkRunner(engineAs('CPU')).runSuite(suite)).failures[0]!.diag!;
+
+    // The name is reported verbatim even though the service is absent, so the
+    // diagnostic still says WHICH metric the case blamed; only the signature
+    // (head/tail) is empty, because there is no series to read.
+    expect(diag.gtMetric).toBe('cpu_usage_percent');
+    expect(diag.gtMetricHead).toEqual([]);
+    expect(diag.gtMetricTail).toEqual([]);
+  });
+
+  it('handles a ground-truth service that has no metric series at all', async () => {
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const metrics = new Map<string, readonly TimeSeries[]>(base.metrics);
+    metrics.set('frontend', []);
+    const suite = oneCaseSuite('gt-no-series', [{ ...base, metrics }]);
+
+    const diag = (await new BenchmarkRunner(engineAs('CPU')).runSuite(suite)).failures[0]!.diag!;
+
+    expect(diag.gtMetric).toBe('');
+    expect(diag.gtMetricTail).toEqual([]);
+  });
+
+  it('leaves the dominant-metric diagnostics empty when the engine reports none', async () => {
+    const suite = oneCaseSuite('no-dominant', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+
+    const result = await new BenchmarkRunner(
+      createScriptedContainer(
+        createScriptedEngine({
+          serviceId: 'service_1',
+          category: 'CPU',
+          omitDominantMetrics: true,
+        }),
+      ),
+    ).runSuite(suite);
+
+    const diag = result.failures[0]!.diag!;
+    expect(diag.gtDominantLabel).toBe('');
+    expect(diag.top1MetricLabel).toBe('');
+    expect(diag.top1Breakdown).toBe('');
+    expect(diag.top1MetricHead).toEqual([]);
+  });
+
+  it('uses the named ground-truth metric series when it exists', async () => {
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const metrics = new Map<string, readonly TimeSeries[]>(base.metrics);
+    // The swing pick would choose `spiky_swing` (ratio 100). Naming the FLAT
+    // series therefore proves the by-name lookup ran and skipped the fallback.
+    metrics.set('frontend', [
+      series('flat_named', [50, 50, 50, 50, 50, 50, 50, 50]),
+      series('spiky_swing', [1, 1, 1, 100]),
+    ]);
+    const suite = oneCaseSuite('gt-named', [
+      { ...base, metrics, groundTruth: { ...base.groundTruth, metric: 'flat_named' } },
+    ]);
+
+    const diag = (await new BenchmarkRunner(engineAs('CPU')).runSuite(suite)).failures[0]!.diag!;
+
+    expect(diag.gtMetric).toBe('flat_named');
+    expect(diag.gtMetricHead).toEqual([50, 50, 50, 50, 50, 50]);
+    expect(diag.gtMetricTail).toEqual([50, 50, 50, 50]);
+  });
+
+  it('falls back to the bare message when the thrown Error carries no stack', async () => {
+    const engine = createScriptedEngine({ serviceId: 'service_1', category: 'CPU' });
+    engine.analyze = async () => {
+      const err = new Error('stackless failure');
+      // Minified/bundled environments can drop the stack; the reason string
+      // must degrade to the message instead of the text "undefined".
+      err.stack = '';
+      throw err;
+    };
+    const suite = oneCaseSuite('throw-stackless', [
+      caseWithPredictedService('CPU', ['cpu_usage_percent']),
+    ]);
+
+    const result = await new BenchmarkRunner(createScriptedContainer(engine)).runSuite(suite);
+
+    expect(result.failures[0]!.reason).toBe('stackless failure\n');
   });
 });
 
