@@ -1,5 +1,15 @@
 # FSE'26 — Metric-Gap Fix Verdict (P1c-metric readback)
 
+> **Superseded in part — see `docs/fse26-metric-source-attribution.md` (P1c-abl).**
+> The *numbers* below are correct and reproduced exactly by the later ablation. But
+> §3's mechanism (victim-outranks-silent-source from trace-derived error rate) is
+> **falsified**: the Network gains come from the **histogram `.max` peak** source, and
+> the losses came from a **data-integrity defect** in `read_metrics` that was
+> interleaving each metric's label fan-out into a synthetic sawtooth. With that
+> defect fixed the benchmark goes 18.85% → 23.07% Top@1 (one regressed case), so §4's
+> "the metric lever is exhausted / the source-silent ceiling is unchanged" also does
+> not hold.
+
 > Empirical readback of the derived-metric converter fix (`b811812` + `070f84f`) on
 > the full 1422-case RCABench. **Net positive, direction-asymmetric** — the headline
 > is a real +2.3pp, but the per-type split is the actual finding.

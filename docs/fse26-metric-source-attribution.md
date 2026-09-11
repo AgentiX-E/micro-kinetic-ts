@@ -1,11 +1,27 @@
 # FSE'26 — Metric Source Attribution & Fan-Out Verdict (P1c-abl)
 
 > Runs the decisive **component ablation** that `docs/fse26-metric-gap-verdict.md`
-> §5 flagged as the remaining question, and lands on two results that reframe the
-> earlier verdict: (a) the productive lever is the **histogram peak** source, not
-> the trace-derived latency/error-rate the earlier doc credited; (b) underneath
-> both, `read_metrics` had a **data-integrity defect** that interleaved a metric's
-> label fan-out into a synthetic sawtooth — fixed here.
+> §5 flagged as the remaining question, and lands on three results that reframe the
+> earlier verdict: (a) the productive lever is the **histogram peak** source, not the
+> trace-derived latency/error-rate the earlier doc credited; (b) underneath both,
+> `read_metrics` had a **data-integrity defect** that interleaved a metric's label
+> fan-out into a synthetic sawtooth — fixed here; (c) that defect was **suppressing
+> the engine on both shards**, and repairing it moves the full 1422-case benchmark
+> from **18.85% to 23.07% Top@1** (+60 cases, one regression), i.e. from *below* the
+> RCABench SOTA average (21%) to **above** it.
+
+## 0. Headline
+
+| | Top@1 | correct | Δ |
+|---|---|---|---|
+| pre-fix (shipped state, `5bef29a`) | 18.85% | 268 / 1422 | — |
+| post-fix (fan-out rolled up) | **23.07%** | **328 / 1422** | **+60 (+4.22pp)** |
+| RCABench SOTA average / best | 21% / 37% | — | +2.07pp vs avg |
+
+Shard split: non-HTTP 159 → 179 (+20), HTTP 109 → **149 (+40)**. Ten of eleven
+non-HTTP movements are gains; **every one of the nine HTTP fault types is flat or
+up** — there is no offsetting regression.
+
 
 ## 1. Method — a local 1422-case harness that is byte-exact with CI
 
@@ -163,9 +179,9 @@ correct and are reproduced exactly here.
    (−17 / −4 if kept).
 2. **A real data-integrity defect was found and fixed** in the bridge, with TDD.
    The result has been captured without a CI rebuild.
-3. **The regression is therefore not a "direction ambiguity" ceiling** — it is
-   partly a bug, and the remaining question is whether the *repaired* counter source
-   is neutral or positive. Measurement follows in §7.
+3. **The regression was not a "direction ambiguity" ceiling — it was a bug.** It is
+   fully removed by the fix: the full benchmark goes 18.85% → **23.07%**, past the
+   SOTA average, with a single regressed case. Measured in §7.
 
 ## 7. Post-fix measurement — the defect was the cause
 
@@ -220,11 +236,57 @@ Two conclusions follow, and they are the point of the whole ablation:
 
 The CI confirmation path is a `rcabench-data` cache rebuild (its `build-cache.yml`
 clones micro-kinetic-ts and copies the converter), then an `fse26-benchmark`
-dispatch; the local harness has already been shown byte-exact with CI on this
-subset, so the direction and magnitude are not in doubt.
+dispatch; the local harness has already been shown byte-exact with CI on all 25
+fault types, so the direction and magnitude are not in doubt.
+
+### 7b. The HTTP shard — where the earlier verdict saw a regression
+
+The same in-place repair applied to the 796 HTTP cases (534,643 series rolled up,
+≈672 per case — the HTTP shard is if anything more corrupted than non-HTTP).
+
+| variant | pre-fix | post-fix | Δ |
+|---|---|---|---|
+| OLD config (gauge only) | 16.71% (133) | 18.47% (147) | **+14** |
+| all sources | 13.69% (109) | **18.72% (149)** | **+40** |
+
+| fault type | n | pre | post | Δ |
+|---|---|---|---|---|
+| HTTPResponseDelay | 89 | 1 | 12 | **+11** |
+| HTTPRequestDelay | 88 | 4 | 13 | **+9** |
+| HTTPResponseReplaceCode | 231 | 4 | 11 | **+7** |
+| HTTPRequestAbort | 60 | 1 | 7 | **+6** |
+| HTTPRequestReplaceMethod | 190 | 46 | 52 | **+6** |
+| HTTPRequestReplacePath | 39 | 0 | 1 | +1 |
+| HTTPResponseReplaceBody | 51 | 50 | 50 | 0 |
+| HTTPResponseAbort | 44 | 1 | 1 | 0 |
+| HTTPResponsePatchBody | 4 | 2 | 2 | 0 |
+
+**Every HTTP type is flat or up.** The two delay types (`HTTPResponseDelay`
+1 → 12, `HTTPRequestDelay` 4 → 13) and `HTTPResponseReplaceCode` (4 → 11) — all
+previously filed as source-silent, sub-2% types — are the largest movers. The
+`-24` "direction-asymmetry regression" the earlier verdict was built on was
+**entirely this defect**: no direction gate is needed to explain it.
+
+### 7c. Full benchmark, post-fix
+
+Non-HTTP post-fix (179) + HTTP post-fix (149) = **328 / 1422 = 23.07% Top@1**,
+against 268 / 1422 = 18.85% shipped, and versus the RCABench SOTA average of 21%.
+**+60 cases, +4.22pp, one regressed case in the whole benchmark.**
+
+Both halves were scored with identical production defaults on the two disjoint
+shards, so the sum is exact rather than extrapolated.
 
 ## 8. Next steps
 
+- **Land the fix in CI**: the published `rcabench-data` shards were built with the
+  buggy converter, so a cache rebuild (then an `fse26-benchmark` dispatch) is needed
+  for the published numbers to reflect it. Until then the shards understate the engine.
+- **Re-audit every earlier "ceiling" measurement** taken on this cache. Any conclusion
+  drawn from metric-series shape (not just from logs or topology) may have been
+  affected at the same ~656 corrupted series per case. `docs/re3-fault-ceiling.md`,
+  `docs/loss-weak-source-verdict.md` and `docs/silent-source-ceiling.md` are the
+  candidates; their reasoning is not automatically wrong, but it has not been
+  re-derived on repaired data.
 - Drop or re-derive the trace-derived source before it is allowed back on: both
   the log-side (`logicHttp`) and the metric-side (`http.response.error_rate`) mean
   interface signals are net-negative.
