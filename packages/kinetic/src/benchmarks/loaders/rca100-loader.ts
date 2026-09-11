@@ -298,16 +298,25 @@ export class RCA100Loader {
     return this.loadJSONArray<BenchmarkTraceSpan>(
       casePath,
       'traces.json',
-      (item: Record<string, unknown>) => ({
-        traceId: String(item.traceId ?? item.trace_id ?? 'unknown'),
-        spanId: String(item.spanId ?? item.span_id ?? `${item.traceId}_${item.service}`),
-        parentSpanId: (item.parentSpanId ?? item.parent_span) as string | undefined,
-        service: String(item.service ?? item.serviceId ?? 'unknown'),
-        operationName: String(item.operationName ?? item.operation ?? 'unknown'),
-        startTime: Number(item.startTime ?? item.start_time ?? 0),
-        duration: Number(item.duration ?? 0),
-        status: String(item.status ?? 'OK').toUpperCase() === 'ERROR' ? 'ERROR' : 'OK',
-      }),
+      (item: Record<string, unknown>) => {
+        // Resolve the identity fields first. The derived span id must be built
+        // from the SAME values the span is labelled with: deriving it from the
+        // raw camelCase aliases makes every snake_case span (`trace_id` +
+        // `serviceId`) collapse onto "undefined_<service>", so distinct spans
+        // become indistinguishable and the derived topology is destroyed.
+        const traceId = String(item.traceId ?? item.trace_id ?? 'unknown');
+        const service = String(item.service ?? item.serviceId ?? 'unknown');
+        return {
+          traceId,
+          spanId: String(item.spanId ?? item.span_id ?? `${traceId}_${service}`),
+          parentSpanId: (item.parentSpanId ?? item.parent_span) as string | undefined,
+          service,
+          operationName: String(item.operationName ?? item.operation ?? 'unknown'),
+          startTime: Number(item.startTime ?? item.start_time ?? 0),
+          duration: Number(item.duration ?? 0),
+          status: String(item.status ?? 'OK').toUpperCase() === 'ERROR' ? 'ERROR' : 'OK',
+        };
+      },
     );
   }
 
@@ -315,17 +324,21 @@ export class RCA100Loader {
     return this.loadJSONArray<BenchmarkEvent>(
       casePath,
       'events.json',
-      (item: Record<string, unknown>) => ({
-        eventId: String(
-          item.eventId ?? item.event_id ?? item.id ?? `${item.timestamp}_${item.service}`,
-        ),
-        timestamp: Number(item.timestamp ?? 0),
-        service: String(item.service ?? item.serviceId ?? 'unknown'),
-        eventType: String(item.eventType ?? item.event_type ?? item.type ?? 'unknown'),
-        severity: this.normalizeSeverity(String(item.severity ?? 'info')),
-        description: String(item.description ?? ''),
-        tags: (item.tags ?? {}) as Readonly<Record<string, string>>,
-      }),
+      (item: Record<string, unknown>) => {
+        // Same rule as loadTraces: the fallback id must be built from the
+        // resolved values, not from the raw aliases.
+        const timestamp = Number(item.timestamp ?? 0);
+        const service = String(item.service ?? item.serviceId ?? 'unknown');
+        return {
+          eventId: String(item.eventId ?? item.event_id ?? item.id ?? `${timestamp}_${service}`),
+          timestamp,
+          service,
+          eventType: String(item.eventType ?? item.event_type ?? item.type ?? 'unknown'),
+          severity: this.normalizeSeverity(String(item.severity ?? 'info')),
+          description: String(item.description ?? ''),
+          tags: (item.tags ?? {}) as Readonly<Record<string, string>>,
+        };
+      },
     );
   }
 
@@ -333,17 +346,21 @@ export class RCA100Loader {
     return this.loadJSONArray<BenchmarkAlert>(
       casePath,
       'alerts.json',
-      (item: Record<string, unknown>) => ({
-        alertId: String(
-          item.alertId ?? item.alert_id ?? item.id ?? `${item.timestamp}_${item.service}`,
-        ),
-        timestamp: Number(item.timestamp ?? 0),
-        service: String(item.service ?? item.serviceId ?? 'unknown'),
-        alertName: String(item.alertName ?? item.alert_name ?? item.name ?? 'unknown'),
-        severity: this.normalizeSeverity(String(item.severity ?? 'warning')),
-        value: Number(item.value ?? 0),
-        threshold: Number(item.threshold ?? 0),
-      }),
+      (item: Record<string, unknown>) => {
+        // Same rule as loadTraces: the fallback id must be built from the
+        // resolved values, not from the raw aliases.
+        const timestamp = Number(item.timestamp ?? 0);
+        const service = String(item.service ?? item.serviceId ?? 'unknown');
+        return {
+          alertId: String(item.alertId ?? item.alert_id ?? item.id ?? `${timestamp}_${service}`),
+          timestamp,
+          service,
+          alertName: String(item.alertName ?? item.alert_name ?? item.name ?? 'unknown'),
+          severity: this.normalizeSeverity(String(item.severity ?? 'warning')),
+          value: Number(item.value ?? 0),
+          threshold: Number(item.threshold ?? 0),
+        };
+      },
     );
   }
 
@@ -402,11 +419,14 @@ export class RCA100Loader {
     topology: Record<string, readonly string[]>,
     metrics: MetricMap,
   ): ServiceCallGraph {
-    // Collect all nodes: from topology keys + metric services
+    // Collect all nodes: from topology keys + metric services. Iterating
+    // entries rather than keys keeps the downstream list provably present: a
+    // key lookup is `| undefined` under `noUncheckedIndexedAccess`, which
+    // forces a `?? []` fallback that no input can ever reach.
     const allServiceIds = new Set<string>();
-    for (const key of Object.keys(topology)) {
-      allServiceIds.add(key);
-      for (const dep of topology[key] ?? []) {
+    for (const [id, downstream] of Object.entries(topology)) {
+      allServiceIds.add(id);
+      for (const dep of downstream) {
         allServiceIds.add(dep);
       }
     }

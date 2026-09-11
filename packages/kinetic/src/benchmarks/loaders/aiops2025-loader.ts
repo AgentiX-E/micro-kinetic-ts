@@ -313,17 +313,28 @@ export class AIOps2025Loader {
       try {
         const raw = JSON.parse(fs.readFileSync(tracesPath, 'utf-8'));
         if (Array.isArray(raw)) {
-          return raw.map((span: Record<string, unknown>) => ({
-            traceId: String(span.traceId ?? span.trace_id ?? 'unknown'),
-            spanId: String(span.spanId ?? span.span_id ?? `${span.traceId}_${span.service}`),
-            parentSpanId:
-              (span.parentSpanId as string | undefined) ?? (span.parent_span as string | undefined),
-            service: String(span.service ?? span.serviceId ?? 'unknown'),
-            operationName: String(span.operationName ?? span.operation ?? 'unknown'),
-            startTime: Number(span.startTime ?? span.start_time ?? 0),
-            duration: Number(span.duration ?? 0),
-            status: String(span.status ?? 'OK').toUpperCase() === 'ERROR' ? 'ERROR' : 'OK',
-          }));
+          return raw.map((span: Record<string, unknown>) => {
+            // Resolve the identity fields first. The derived span id must be
+            // built from the SAME values the span is labelled with: deriving it
+            // from the raw camelCase aliases makes every snake_case span
+            // (`trace_id` + `serviceId`) collapse onto "undefined_<service>",
+            // so distinct spans become indistinguishable and the derived
+            // parent/child topology is destroyed.
+            const traceId = String(span.traceId ?? span.trace_id ?? 'unknown');
+            const service = String(span.service ?? span.serviceId ?? 'unknown');
+            return {
+              traceId,
+              spanId: String(span.spanId ?? span.span_id ?? `${traceId}_${service}`),
+              parentSpanId:
+                (span.parentSpanId as string | undefined) ??
+                (span.parent_span as string | undefined),
+              service,
+              operationName: String(span.operationName ?? span.operation ?? 'unknown'),
+              startTime: Number(span.startTime ?? span.start_time ?? 0),
+              duration: Number(span.duration ?? 0),
+              status: String(span.status ?? 'OK').toUpperCase() === 'ERROR' ? 'ERROR' : 'OK',
+            };
+          });
         }
       } catch {
         // Skip
@@ -335,16 +346,21 @@ export class AIOps2025Loader {
     if (fs.existsSync(csvPath)) {
       try {
         const content = fs.readFileSync(csvPath, 'utf-8');
-        return this.parseCSV(content).map((row) => ({
-          traceId: row.trace_id ?? row.traceId ?? 'unknown',
-          spanId: row.span_id ?? row.spanId ?? `${row.trace_id}_${row.service}`,
-          parentSpanId: row.parent_span ?? row.parentSpanId,
-          service: row.service ?? 'unknown',
-          operationName: row.operation ?? row.operationName ?? 'unknown',
-          startTime: parseInt(row.start_time ?? row.startTime ?? '0', 10),
-          duration: parseInt(row.duration ?? '0', 10),
-          status: (row.status ?? 'OK').toUpperCase() === 'ERROR' ? 'ERROR' : 'OK',
-        }));
+        return this.parseCSV(content).map((row) => {
+          // Same rule as the JSON path: derive from the resolved values.
+          const traceId = row.trace_id ?? row.traceId ?? 'unknown';
+          const service = row.service ?? 'unknown';
+          return {
+            traceId,
+            spanId: row.span_id ?? row.spanId ?? `${traceId}_${service}`,
+            parentSpanId: row.parent_span ?? row.parentSpanId,
+            service,
+            operationName: row.operation ?? row.operationName ?? 'unknown',
+            startTime: parseInt(row.start_time ?? row.startTime ?? '0', 10),
+            duration: parseInt(row.duration ?? '0', 10),
+            status: (row.status ?? 'OK').toUpperCase() === 'ERROR' ? 'ERROR' : 'OK',
+          };
+        });
       } catch {
         // Skip
       }
