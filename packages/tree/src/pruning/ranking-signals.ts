@@ -63,11 +63,20 @@ import type {
  *   framework-HTTP count for a service that has a MORE-anomalous callee (that
  *   callee is the source, so the emitter is the victim), keeping the
  *   replace-code gain while removing the resource/network regression.
- *   **Falsified** (run 34478297401, −19.4pp vs `logicHttp`): the relative
- *   callee comparison operates on RANK-NORMALISED scores (rank positions, not
- *   anomaly magnitudes), so a cascade that raises every service's latency puts
- *   the source's own callees above it and wrongly suppresses the source. See
- *   docs/fse26-logicHttpJoint-falsified.md.
+ *   **Falsified as measured** (run 34478297401, −19.4pp vs `logicHttp`), but
+ *   the cause is NOT the one originally recorded. That record blamed
+ *   `rankNormalization` ("the comparison operates on rank positions, not anomaly
+ *   magnitudes, so a cascade puts the source's own callees above it"). That is
+ *   impossible: `computeHttpVictimSet` evaluates only `callee > emitter`, and
+ *   both rescales the builder ships (min-max, average-rank) are strictly
+ *   monotone, so neither can change a strict inequality — the victim set is
+ *   provably identical under raw, min-max and rank inputs (see the invariance
+ *   suite in `ranking-signals.test.ts`). The real cause is still open; what IS
+ *   fixed is the gate's denominator, which used to be taken after suppression
+ *   and so let a withdrawal PROMOTE a mid-tier emitter to 1.0 — i.e. a
+ *   supposedly subtractive gate could re-rank the case onto a service it never
+ *   selected. Do not re-attempt this mode without a fresh ablation on current
+ *   data. See docs/fse26-logicHttpJoint-falsified.md.
  * - `logicHttpDominant`: like `logicHttp`, but the framework-HTTP half is gated
  *   by EMITTER CONCENTRATION, not topology. A framework-HTTP flood is a source
  *   signature only when it is CONCENTRATED on one emitter — the source's own
@@ -102,7 +111,13 @@ export type LogSignalMode =
 export interface HttpSourceJointContext {
   /** Call graph edges, `from` = caller, `to` = callee. */
   readonly edges: readonly CallEdge[];
-  /** Per-service anomaly score (max-normalised to [0, 1]). */
+  /**
+   * Per-service anomaly score. Only the ORDER of these values is ever read, so
+   * any strictly monotone rescale is equivalent: the shipped `rankNormalization`
+   * (average rank over ties) and the min-max default produce identical victim
+   * sets, as does the raw pre-normalisation score. See the invariance suite in
+   * `ranking-signals.test.ts`.
+   */
   readonly anomalyScores: ReadonlyMap<ServiceId, number>;
 }
 
@@ -123,9 +138,18 @@ export interface HttpSourceJointContext {
  *   silent source drives the victim's `HttpServerErrorException` flood).
  *
  * @param edges - Call graph edges (from = caller, to = callee).
- * @param anomalyScores - Per-service anomaly score in [0, 1].
+ * @param anomalyScores - Per-service anomaly score. Read by ORDER only
+ *   (`callee > emitter`), so the result is identical for raw, min-max and rank
+ *   inputs — a strictly monotone rescale cannot change a strict inequality.
  * @returns The services that have at least one callee more anomalous than
  *   themselves — the victim set whose framework-HTTP count should be suppressed.
+ *
+ * @remarks
+ * The predicate is EXISTENTIAL over a service's callees, so its selectivity
+ * depends on graph density: on a dense cascade most services have at least one
+ * more-anomalous callee, and the victim set approaches the whole graph. That is
+ * the leading open candidate for why `logicHttpJoint` cost 98 replace-code cases
+ * (`docs/fse26-logicHttpJoint-falsified.md`) — normalisation is ruled out above.
  */
 export function computeHttpVictimSet(
   edges: readonly CallEdge[],
@@ -322,40 +346,73 @@ export function computeLogScores(
     mode === 'logicHttpDominant'
       ? computeHttpEmitterDominance(logs, nodeIds, injectTimeMs).dominance >= httpDominanceThreshold
       : false;
-  const gate = (log: FaultLogEntry): boolean => {
+  // The gate is split in two levels, and the split is load-bearing rather than
+  // cosmetic. Level 1 is the mode's SOURCE-SIGNATURE filter and it defines the
+  // scale of the signal; level 2 is the mode's DIRECTION gate and it may only
+  // withdraw a line level 1 already admitted.
+  //
+  // Level 1 — source signatures. `count` admits self-caused logic exceptions.
+  // `logicHttp`, `logicHttpJoint` and `logicHttpDominant` admit logic exceptions
+  // PLUS framework HTTP exceptions (both are source signatures). `all` admits
+  // every ERROR/FATAL line so a source that floods a propagated HTTP error still
+  // scores.
+  const isSourceSignature = (log: FaultLogEntry): boolean => {
     if (mode === 'all') return true;
-    // A self-caused logic exception is ALWAYS a source signature — count it
-    // in every non-`all` mode.
     if (log.isLogicException === true) return true;
-    // A framework HTTP exception is source-only in the `logicHttp*` modes.
     if (log.isHttpException === true) {
-      if (mode === 'logicHttp') return true;
-      if (mode === 'logicHttpJoint') return !victims.has(log.service);
-      if (mode === 'logicHttpDominant') return concentrated;
+      return mode === 'logicHttp' || mode === 'logicHttpJoint' || mode === 'logicHttpDominant';
     }
     return false;
   };
+  // Level 2 — direction. `logicHttpJoint` withdraws the framework-HTTP half for a
+  // service whose callee is MORE anomalous (that callee is the source, so the
+  // emitter is a victim); `logicHttpDominant` withdraws it ENTIRELY when the
+  // flood is SPREAD across many callers (a victim cascade) rather than
+  // concentrated on one emitter (a source). A self-caused logic exception is
+  // never withdrawn: it is self-evidently a source signature.
+  const isSuppressed = (log: FaultLogEntry): boolean => {
+    if (log.isLogicException === true) return false;
+    if (log.isHttpException !== true) return false;
+    if (mode === 'logicHttpJoint') return victims.has(log.service);
+    if (mode === 'logicHttpDominant') return !concentrated;
+    return false;
+  };
 
-  // Count ERROR/FATAL lines per service, filtered by time, membership, and the
-  // mode's source-signature gate. The logic-exception gate (when not `all`)
-  // ignores propagated cascade noise and non-error lines — they would misfire
-  // max-count onto symptoms.
+  // Count ERROR/FATAL lines per service, filtered by time and membership. The
+  // logic-exception gate (when not `all`) ignores propagated cascade noise and
+  // non-error lines — they would misfire max-count onto symptoms.
+  //
+  // `admitted` and `counts` are accumulated together but kept apart on purpose.
+  // `counts` is the NUMERATOR (what the mode believes is a source signature) and
+  // `admitted` sets the DENOMINATOR (the case-wide flood). Deriving the
+  // denominator from the post-suppression counts would make the gate
+  // scale-dependent: withdrawing the top emitter would shrink the denominator and
+  // promote a mid-tier emitter to 1.0, so a subtractive gate would end up
+  // manufacturing signal and re-ranking the case onto a service it never
+  // selected. Keeping the denominator on level 1 makes withdrawal monotone — a
+  // suppressing mode can only ever lower a score, never raise one.
   const counts = new Map<ServiceId, number>();
+  const admitted = new Map<ServiceId, number>();
   for (const log of logs) {
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
     if (!nodeIds.has(log.service)) continue;
     if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
-    if (!gate(log)) continue;
+    if (!isSourceSignature(log)) continue;
+    admitted.set(log.service, (admitted.get(log.service) ?? 0) + 1);
+    if (isSuppressed(log)) continue;
     counts.set(log.service, (counts.get(log.service) ?? 0) + 1);
   }
 
-  // No matching error lines → no signal (a resource cascade is neutral in
-  // `count` mode; `all` mode never triggers this path unless every line is
-  // filtered by time/membership).
+  // No matching signature lines → no signal (a resource cascade is neutral in
+  // `count` mode; the suppressing modes reach this when they withdraw every
+  // framework-HTTP line, which must stay neutral rather than promote a survivor).
   if (counts.size === 0) return scores;
 
+  // The denominator is the level-1 max, so it is independent of the mode's
+  // direction gate. `max >= 1` is guaranteed here: `counts` is non-empty and
+  // `counts` is a sub-multiset of `admitted`, so `admitted` is non-empty too.
   let max = 0;
-  for (const count of counts.values()) {
+  for (const count of admitted.values()) {
     if (count > max) max = count;
   }
 

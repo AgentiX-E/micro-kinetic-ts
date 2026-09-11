@@ -10,6 +10,7 @@ import {
   computeTopoSourceScores,
   computeTraceActivityScores,
   gatedRiseContribution,
+  rankNormalizeScores,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
@@ -1095,5 +1096,170 @@ describe('computeTraceActivityScores', () => {
 
     expect(scores.get('a')).toBe(1);
     expect(scores.size).toBe(1);
+  });
+});
+
+describe('computeLogScores — a suppression must never manufacture signal', () => {
+  // The max-normalisation denominator must be the case-wide SOURCE-SIGNATURE max,
+  // computed before the mode's suppression is applied. If it is taken from the
+  // post-suppression counts instead, deleting the top emitter shrinks the
+  // denominator and PROMOTES a mid-tier emitter to 1.0 — so a decision that is
+  // supposed to remove one service's evidence instead hands its rank to another.
+  //
+  // This is a live correctness requirement, not a hypothetical: the two gating
+  // modes exist to *subtract* a direction-symmetric signature, and a subtractive
+  // gate that can also add signal is unfalsifiable as a ranking signal.
+  const nodes = new Set<ServiceId>(['src', 'mid', 'down']);
+
+  const flood = (service: string, n: number): FaultLogEntry[] =>
+    Array.from({ length: n }, () =>
+      makeLog(service, 'ERROR', 0, false, 'HttpServerErrorException', true),
+    );
+
+  // `src` owns the flood (300 lines) but its callee `down` outranks it, so the
+  // joint gate suppresses `src`. `mid` emits a token volume and has no callee.
+  const logs = (): FaultLogEntry[] => [...flood('src', 300), ...flood('mid', 3)];
+  const joint = {
+    edges: [makeEdge('src', 'down')],
+    anomalyScores: new Map<ServiceId, number>([
+      ['src', 0.4],
+      ['down', 0.9],
+    ]),
+  };
+
+  it('scales the surviving counts against the suppressed flood, not against themselves', () => {
+    const scores = computeLogScores(logs(), nodes, 0, 'logicHttpJoint', joint);
+
+    expect(scores.get('src')).toBe(0); // suppressed: its direction is victim
+    expect(scores.get('mid')).toBeCloseTo(3 / 300); // 0.01, and NOT 1.0
+  });
+
+  it('never scores a service above what the ungated mode gives it', () => {
+    const gated = computeLogScores(logs(), nodes, 0, 'logicHttpJoint', joint);
+    const ungated = computeLogScores(logs(), nodes, 0, 'logicHttp');
+
+    expect(ungated.get('src')).toBe(1);
+    expect(ungated.get('mid')).toBeCloseTo(3 / 300);
+    for (const id of nodes) {
+      expect(gated.get(id) ?? 0).toBeLessThanOrEqual(ungated.get(id) ?? 0);
+    }
+  });
+
+  it('never promotes a lone logic emitter above the flood it was selected out of', () => {
+    // A spread framework-HTTP flood (dominance 5/12 = 0.42 < 0.5) is read as a
+    // victim cascade, so EVERY framework-HTTP line is dropped, leaving one logic
+    // line. That survivor must still be scaled against the flood.
+    const spread = new Set<ServiceId>(['a', 'b', 'c', 'd']);
+    const rows = [
+      ...flood('a', 5),
+      ...flood('b', 4),
+      ...flood('c', 3),
+      makeLog('d', 'ERROR', 0, true, 'NullPointerException', false),
+    ];
+    const scores = computeLogScores(rows, spread, 0, 'logicHttpDominant');
+
+    expect(scores.get('d')).toBeCloseTo(1 / 5); // 0.2, and NOT 1.0
+    expect(scores.get('a')).toBe(0);
+    expect(scores.get('b')).toBe(0);
+    expect(scores.get('c')).toBe(0);
+  });
+
+  it('leaves the non-suppressing modes unchanged (the two-level split is inert)', () => {
+    // `count` does not admit framework-HTTP at all, so the fixture yields no
+    // signal; `logicHttp` and `all` admit it and perform no suppression, so for
+    // them the numerator and the denominator come from the same map.
+    expect(computeLogScores(logs(), nodes, 0, 'count').size).toBe(0);
+
+    const http = computeLogScores(logs(), nodes, 0, 'logicHttp');
+    expect(http.get('src')).toBe(1);
+    expect(http.get('mid')).toBeCloseTo(3 / 300);
+    expect(http.get('down')).toBe(0);
+
+    const all = computeLogScores(logs(), nodes, 0, 'all');
+    expect(all.get('src')).toBe(1);
+    expect(all.get('mid')).toBeCloseTo(3 / 300);
+  });
+});
+
+describe('computeHttpVictimSet — invariant under monotone rescaling', () => {
+  // `docs/fse26-logicHttpJoint-falsified.md` attributes the mode's -19.4 pp to
+  // `rankNormalization`: "the relative callee comparison operates on
+  // RANK-NORMALISED scores (rank positions, not anomaly magnitudes), so a
+  // cascade that raises every service's latency puts the source's own callees
+  // above it and wrongly suppresses the source".
+  //
+  // That attribution is impossible. Both rescales the builder ships — min-max
+  // and average-rank — are strictly monotone in the raw score (equal inputs map
+  // to equal outputs; ordered inputs keep their order), and
+  // `computeHttpVictimSet` evaluates nothing but `callee > self`. A strictly
+  // monotone transform cannot change any strict inequality, so it cannot change
+  // the victim set. These tests are the proof, kept in the suite so the same
+  // mis-attribution is not made a second time.
+  const chain = (n: number): { ids: string[]; edges: CallEdge[] } => {
+    const ids = Array.from({ length: n }, (_, i) => 'svc' + String(i).padStart(2, '0'));
+    const edges = ids.slice(0, -1).map((from, i) => makeEdge(from, ids[i + 1]!));
+    return { ids, edges };
+  };
+
+  const minmax = (m: ReadonlyMap<ServiceId, number>): Map<ServiceId, number> => {
+    const values = [...m.values()];
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    return new Map([...m].map(([k, v]) => [k, hi - lo > 1e-10 ? (v - lo) / (hi - lo) : v]));
+  };
+
+  const same = (a: Set<ServiceId>, b: Set<ServiceId>): boolean =>
+    a.size === b.size && [...a].every((x) => b.has(x));
+
+  it('returns identical victims on the replace-code shape (the emitter holds the max)', () => {
+    const { ids, edges } = chain(50);
+    // Magnitude decays downstream, so the head emitter is the top-anomaly
+    // service and no callee outranks it: nothing is a victim.
+    const raw = new Map(ids.map((id, i) => [id, 1 - i / (ids.length - 1)]));
+
+    expect(computeHttpVictimSet(edges, raw).size).toBe(0);
+    expect(
+      same(computeHttpVictimSet(edges, raw), computeHttpVictimSet(edges, rankNormalizeScores(raw))),
+    ).toBe(true);
+    expect(same(computeHttpVictimSet(edges, raw), computeHttpVictimSet(edges, minmax(raw)))).toBe(
+      true,
+    );
+  });
+
+  it('returns identical victims on the source-silent shape (the callee holds the max)', () => {
+    const { ids, edges } = chain(50);
+    // The silent source is the last link; every upstream emitter has a
+    // more-anomalous callee, so the whole upstream chain is a victim set.
+    const raw = new Map(ids.map((id, i) => [id, i / (ids.length - 1)]));
+
+    expect(computeHttpVictimSet(edges, raw).size).toBe(ids.length - 1);
+    expect(
+      same(computeHttpVictimSet(edges, raw), computeHttpVictimSet(edges, rankNormalizeScores(raw))),
+    ).toBe(true);
+    expect(same(computeHttpVictimSet(edges, raw), computeHttpVictimSet(edges, minmax(raw)))).toBe(
+      true,
+    );
+  });
+
+  it('agrees with the raw victim set across 2000 randomised orderings', () => {
+    const { ids, edges } = chain(50);
+    let seed = 123456789;
+    const next = (): number => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+
+    let mismatches = 0;
+    for (let t = 0; t < 2000; t++) {
+      // Signed values stress the rank implementation's sort and tie handling.
+      const raw = new Map(ids.map((id) => [id, next() * 10 - 5]));
+      if (
+        !same(
+          computeHttpVictimSet(edges, raw),
+          computeHttpVictimSet(edges, rankNormalizeScores(raw)),
+        )
+      ) {
+        mismatches++;
+      }
+    }
+
+    expect(mismatches).toBe(0);
   });
 });

@@ -1,5 +1,48 @@
 # FSE'26 `logicHttpJoint` — falsified (relative callee-anomaly gate)
 
+## Correction (2026-09-11) — the recorded root cause is impossible
+
+This doc's verdict stands: the mode was measured at 27.1% and is a net negative.
+Its **explanation** does not. §"Root cause" attributes the −19.4 pp to
+`rankNormalization` — "the score is the service's rank position `i/(n−1)`, NOT an
+absolute deviation magnitude". That cannot be the mechanism.
+
+`computeHttpVictimSet` evaluates exactly one thing: `calleeAnomaly >
+emitterAnomaly`. Both rescales the builder ships are **strictly monotone**:
+
+- min-max (`rankNormalization=false`) is strictly increasing, and
+- `rankNormalizeScores` sorts then assigns the **average rank of each tie group**,
+  so equal inputs map to equal outputs and ordered inputs keep their order.
+
+A strictly monotone transform cannot change any strict inequality, and
+`computeHttpVictimSet` reads nothing else. The victim set is therefore
+**provably identical** under raw, min-max and rank inputs. Verified empirically
+with the shipped implementation over 20,000 randomised orderings (0 mismatches)
+and on the two documented topologies; the proof is kept as the invariance suite
+in `packages/tree/__tests__/unit/ranking-signals.test.ts` and exported as the
+`HttpSourceJointContext.anomalyScores` contract.
+
+**What survives.** The §"Root cause" observation is real — in that replace-code
+case the source (`ts-basic-service`) does sit below several of its own callees,
+so the gate does flag it. But that shape is a property of the **raw** scores; rank
+normalisation only displays it as "rank #8". Feeding the gate absolute deviations
+instead of ranks is a **no-op**, so the two places this doc recommends "an
+absolute callee anomaly" (below) are dead ends and must not be attempted.
+
+**What was actually fixed** (same commit as this notice):
+`computeLogScores` derived its max-normalisation denominator from the
+**post-suppression** counts, so withdrawing the top emitter shrank the
+denominator and **promoted a mid-tier emitter to 1.0** — a supposedly subtractive
+gate could re-rank a case onto a service it had just rejected. The denominator is
+now taken from the level-1 source-signature counts, making withdrawal monotone
+(a suppressing mode can only lower a score, never raise one). The fix is inert
+for `count`/`all`/`logicHttp`, which perform no suppression.
+
+**Status of the real cause: open.** The leading candidate is now the predicate's
+_shape_ rather than its input — "∃ any callee more anomalous" is existential over
+the callee set, so on a dense cascade it approaches the whole graph. That needs
+the diagnostic in §"Next step", not a code change.
+
 ## Verdict
 
 The `logicHttpJoint` mode — a topology gate that suppresses the framework-HTTP
@@ -17,7 +60,12 @@ it forfeits most of the +30pp gain:
 replace-code cases (`HTTPResponseReplaceCode` 69.7% → 27.3%), for a net
 **−276 correct cases** vs `logicHttp` (661 → 385). The gate is a net negative.
 
-## Root cause — rank-normalised anomaly defeats the relative comparison
+## Root cause — ~~rank-normalised anomaly defeats the relative comparison~~ (superseded)
+
+> **Superseded by the correction notice above.** The observation below is real
+> (the source does sit below its own callees in that case); the _mechanism_ it
+> attributes to `rankNormalization` is impossible, and the fix it implies —
+> feeding absolute deviations — is a no-op. Kept for the record.
 
 The gate's predicate is `callee.anomaly > emitter.anomaly` (relative). But the
 `anomalyScores` fed to the joint context are **rank-normalised**
@@ -61,8 +109,9 @@ single "framework-HTTP victim" mechanism the joint gate assumed:
    source-silent regressions are cases where a victim DOES flood a
    framework-HTTP exception (`HttpServerErrorException`/`ResourceAccessException`)
    while the source stays silent. These are the cases the gate must separate
-   from the replace-code source, but with a discriminator that survives rank
-   normalisation — an **absolute** callee anomaly, not a relative rank.
+   from the replace-code source. The discriminator must NOT be "an absolute
+   callee anomaly": that is provably the same predicate as the relative one (see
+   the correction notice), so switching to deviations would change nothing.
 
 ## Why the direction is genuinely symmetric
 
@@ -77,8 +126,15 @@ DIRECTION-SYMMETRIC by construction:
 
 The distinguishing feature is not "which service is more anomalous" but "is the
 framework-HTTP flood CONCENTRATED on one emitter (source) or SPREAD across many
-callers (cascade)". A rank-based callee comparison cannot see this; an absolute
-callee anomaly or an emitter-dominance ratio can.
+callers (cascade)".
+
+> **Both discriminators proposed here were then tested and rejected.**
+> "An absolute callee anomaly" is the same predicate as the relative one
+> (correction notice above) — a no-op. The emitter-dominance ratio was built as
+> `logicHttpDominant` and diagnosed _before_ ablation: the victim flood in the
+> source-silent types is itself concentrated ~70% of the time (dominance ≥ 0.5 on
+> a high-traffic victim), so concentration carries no directional information
+> either. See `docs/fse26-emitter-dominance-falsified.md`.
 
 ## Next step
 
@@ -88,3 +144,15 @@ cases of the three source-silent types (`JVMMemoryStress`/`ContainerKill`/
 `NetworkBandwidth`), and read back the framework-HTTP count distribution to
 select the discriminator: absolute callee-anomaly threshold vs emitter-dominance
 ratio. The joint gate stays OFF until the discriminator is ablated zero-regression.
+
+> **Revised (2026-09-11).** "Absolute callee-anomaly threshold vs
+> emitter-dominance ratio" is no longer the choice — the first is a no-op and the
+> second is falsified (see the notices above). The diagnostic is still the right
+> instrument, but the question it must answer is now: **how large is the victim
+> set on a real case, and is the flagged set the source's callers or the whole
+> graph?** `computeHttpVictimSet` is existential over a service's callees, so on a
+> dense cascade the set can approach every node in the graph — which would make
+> the gate indiscriminate regardless of how the scores are scaled. Measure that
+> first (a flagged-fraction histogram per fault type); only then design a
+> predicate. Also note the 27.1% figure predates the denominator fix, so any
+> re-attempt must be re-measured, not compared against it.

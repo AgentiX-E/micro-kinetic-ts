@@ -44,6 +44,14 @@ export {
 } from './graph/cycle-detector.js';
 export type { JohnsonCycleOptions } from './graph/cycle-detector.js';
 
+// Causal (topology fault graph)
+// `rankNormalizeScores` is public because it defines the contract of
+// `HttpSourceJointContext.anomalyScores`: the joint gate compares callee against
+// emitter, and that comparison is provably invariant under any strictly monotone
+// rescale (rank or min-max). Consumers need to be able to verify that property
+// rather than infer it — see the invariance suite in `ranking-signals.test.ts`.
+export { rankNormalizeScores } from './causal/topology-fault-graph.js';
+
 // Pruning
 export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';
 export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';

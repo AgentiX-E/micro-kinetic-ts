@@ -1406,8 +1406,12 @@ function computeRobustBaseline(
   if (isCrash) {
     const headSorted = Array.from(values.slice(0, headWin)).sort((a, b) => a - b);
     const upperIdx = Math.min(headSorted.length - 1, Math.ceil(headSorted.length * 0.75) - 1);
-    const upperQuartile = headSorted[upperIdx]!;
-    return upperQuartile > 0.001 ? upperQuartile : fallbackMean;
+    // `upperIdx` is at or above the median index of the head window, so
+    // `headSorted[upperIdx] >= headMedian`, and reaching this branch already
+    // requires `headMedian > 0.001`. The upper quartile is therefore always a
+    // usable baseline here — a `> 0.001 ? … : fallbackMean` guard would carry a
+    // permanently unreachable arm, so the value is returned directly.
+    return headSorted[upperIdx]!;
   }
 
   // Trend direction from the two halves: a drop's first half is higher.
