@@ -434,9 +434,23 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
     each uniformly sampled series is ``{"metric", "start", "step", "values"}``
     and each irregular series is ``{"metric", "timestamps", "values"}``, each
     sorted by ascending timestamp.
+
+    A metric fans out into one row per label set sharing a timestamp, because
+    the platform keeps the label dimensions as `attr.*` columns (hubble carries
+    `source`/`destination` per network flow, k8s carries the pod attributes).
+    The bridge models exactly one time series per ``(service, metric)``, so the
+    rows are rolled up with a per-timestamp ``sum`` — the service-level
+    aggregate over the label partitions. Concatenating them instead would
+    interleave the distinct label series into a sawtooth and destroy the time
+    axis (real data: ``[1, 4, 1, 4, …]``, ``[1, 149, 954, 954, 1, 149, …]``),
+    fabricating a huge relative deviation on every service emitting the metric.
+
+    The roll-up is scoped per source file: the normal (baseline) and abnormal
+    (injection) windows are distinct samples even when a timestamp coincides,
+    so they must never be summed together.
     """
     frames: list[pl.DataFrame] = []
-    for path in (normal_path, abnormal_path):
+    for source_index, path in enumerate((normal_path, abnormal_path)):
         if not path.exists():
             continue
         schema = pl.scan_parquet(path).collect_schema()
@@ -444,9 +458,10 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
             # Infra-level metrics (node/hubble) lack a service attribution and
             # cannot inform service-level RCA, so they are dropped.
             continue
-        frames.append(
-            pl.read_parquet(path, columns=["time", "metric", "value", "service_name"])
-        )
+        frame = pl.read_parquet(
+            path, columns=["time", "metric", "value", "service_name"]
+        ).with_columns(pl.lit(source_index, dtype=pl.Int8).alias("__source"))
+        frames.append(frame)
     if not frames:
         return {}
 
@@ -463,15 +478,27 @@ def read_metrics(normal_path: Path, abnormal_path: Path) -> dict[str, list[dict[
         & pl.col("value").is_not_null()
         & pl.col("value").is_finite()
     )
+    # Roll up the label fan-out into one sample per (service, metric, time).
+    # `__source` stays in the group key (windows never merge) and in the sort
+    # (deterministic order for coinciding timestamps), but drops out here.
+    df = (
+        df.group_by(["service", "metric", "__source", "time"])
+        .agg(pl.col("value").sum())
+        .sort(["service", "metric", "time", "__source"])
+    )
 
     out: dict[str, list[dict[str, Any]]] = {}
     for (service,), service_df in df.group_by("service", maintain_order=False):
         series: list[dict[str, Any]] = []
         for (metric,), metric_df in service_df.group_by("metric", maintain_order=False):
-            metric_df = metric_df.sort("time")
-            timestamps = metric_df["time"].to_list()
-            values = metric_df["value"].to_list()
-            series.append({"metric": metric, **compact_metric_series(timestamps, values)})
+            series.append(
+                {
+                    "metric": metric,
+                    **compact_metric_series(
+                        metric_df["time"].to_list(), metric_df["value"].to_list()
+                    ),
+                }
+            )
         if series:
             out[service] = series
     return out

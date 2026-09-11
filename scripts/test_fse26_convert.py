@@ -344,6 +344,125 @@ class TestNonFiniteSanitization(unittest.TestCase):
         self.assertEqual(series[0]["step"], 3 * 1000)
 
 
+class TestReadMetricsFanOut(unittest.TestCase):
+    """`read_metrics` must roll up a metric's per-timestamp fan-out into ONE
+    value per sample.
+
+    A single metric fans out into one row per label set sharing a timestamp:
+    the platform's normalised Parquet keeps the label dimensions as `attr.*`
+    columns (hubble carries `source`/`destination`, k8s carries the pod
+    attributes). The bridge models exactly one time series per
+    ``(service, metric)``, so reading those rows as a single time-sorted list
+    interleaves the distinct label series into a sawtooth and destroys the time
+    axis (observed on real data: ``[1, 4, 1, 4, …]`` and
+    ``[1, 149, 954, 954, 1, 149, 1095, 1096, …]``), fabricating a huge
+    relative deviation on every service that emits the metric.
+    """
+
+    def _write(self, root: Path, name: str, rows: list[tuple[int, str, float, str]]) -> None:
+        pl.DataFrame(
+            {
+                "time": [_dt(NORMAL_START + r[0]) for r in rows],
+                "metric": [r[1] for r in rows],
+                "value": [r[2] for r in rows],
+                "service_name": [r[3] for r in rows],
+            }
+        ).write_parquet(root / name)
+
+    def test_fanout_rows_are_summed_per_timestamp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(
+                root,
+                "normal_metrics.parquet",
+                [
+                    (1, "hubble_http_requests_total", 1.0, "svc"),
+                    (1, "hubble_http_requests_total", 4.0, "svc"),
+                    (6, "hubble_http_requests_total", 1.0, "svc"),
+                    (6, "hubble_http_requests_total", 4.0, "svc"),
+                ],
+            )
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        series = result["svc"]
+        self.assertEqual([s["metric"] for s in series], ["hubble_http_requests_total"])
+        # Two label series (1 and 4) rolled up to their service-level sum.
+        self.assertEqual(series[0]["values"], [5.0, 5.0])
+        self.assertEqual(series[0]["start"], (NORMAL_START + 1) * 1000)
+        self.assertEqual(series[0]["step"], 5 * 1000)
+
+    def test_single_row_per_timestamp_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(
+                root,
+                "normal_metrics.parquet",
+                [(1, "m", 2.5, "svc"), (6, "m", 7.5, "svc")],
+            )
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        self.assertEqual(result["svc"][0]["values"], [2.5, 7.5])
+
+    def test_fanout_is_scoped_per_service(self) -> None:
+        # Rows of the same metric+timestamp but different services must not be
+        # merged with one another.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(
+                root,
+                "normal_metrics.parquet",
+                [
+                    (1, "m", 1.0, "a"),
+                    (1, "m", 2.0, "a"),
+                    (1, "m", 10.0, "b"),
+                ],
+            )
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        self.assertEqual(result["a"][0]["values"], [3.0])
+        self.assertEqual(result["b"][0]["values"], [10.0])
+
+    def test_fanout_is_scoped_per_metric(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(
+                root,
+                "normal_metrics.parquet",
+                [
+                    (1, "m1", 1.0, "svc"),
+                    (1, "m1", 2.0, "svc"),
+                    (1, "m2", 100.0, "svc"),
+                ],
+            )
+
+            result = conv.read_metrics(root / "normal_metrics.parquet", root / "missing.parquet")
+
+        by_metric = {s["metric"]: s["values"] for s in result["svc"]}
+        self.assertEqual(by_metric, {"m1": [3.0], "m2": [100.0]})
+
+    def test_normal_and_abnormal_windows_are_not_merged(self) -> None:
+        # The normal (baseline) and abnormal (injection) windows are read from
+        # two files. A shared timestamp denotes two distinct samples in two
+        # windows, not two labels of one sample, so it must stay two samples.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, "normal_metrics.parquet", [(1, "m", 1.0, "svc")])
+            self._write(
+                root,
+                "abnormal_metrics.parquet",
+                [(-59, "m", 1.0, "svc"), (1, "m", 2.0, "svc")],
+            )
+
+            result = conv.read_metrics(
+                root / "normal_metrics.parquet", root / "abnormal_metrics.parquet"
+            )
+
+        self.assertEqual(result["svc"][0]["values"], [1.0, 1.0, 2.0])
+
+
 class TestReadTraceEdges(unittest.TestCase):
     """`read_trace_edges` resolves each span's parent service and emits the
     distinct caller → callee edges (self-calls and unresolvable parents dropped)."""
