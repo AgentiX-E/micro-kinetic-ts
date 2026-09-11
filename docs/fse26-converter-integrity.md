@@ -296,10 +296,31 @@ present and deletes a fallback no input can reach.
 `build` green (the build forced with `--skip-nx-cache`, since Nx otherwise
 reports a cached result).
 
-Two things for the next increment. `benchmarks/runners/benchmark-runner.ts` is
-now the weakest file in the package at 93.5% statements / 86.6% branches, and
-the only one materially below what the gate is trying to enforce.
-`__tests__/**` is also excluded from every `tsconfig.json`, so test files are
-transpiled by Vitest but never type-checked by CI — the two new files were
-verified with an ad-hoc strict `tsc` run instead, and that check belongs in the
-pipeline.
+`benchmark-runner.ts` then became the weakest file in the package, at 93.5%
+statements / 86.6% branches — and it turned out to be a coverage illusion rather
+than a defect. `createMockEngine` always answers `service_1`, the synthetic
+generator keys metrics by `SERVICE_NAMES`, so `enrichPrediction` returned at its
+`!serviceMetrics` guard on every run; the five tests that claimed to cover the
+classifier asserted only that type accuracy stayed within `[0, 1]`, which holds
+whether or not the classifier is ever consulted. Cases whose metric map contains
+the predicted service make the claim checkable: the classifier overrides the
+engine's CPU answer to MEM and type accuracy moves **0 → 1** (`f8a9a884`).
+
+| dimension | kinetic package | `benchmark-runner.ts` |
+|---|---|---|
+| statements | 100% | 100% |
+| branches | 99.46% | 100% |
+| functions | 100% | 100% |
+
+`__tests__/**` is the gap that remains, and it is larger than it looks: it is
+excluded from every `tsconfig.json`, so CI transpiles the tests but never
+type-checks them. A probe carrying the workspace path mappings and
+`types: ["node", "vitest/globals"]` reports **178 errors across 67 of the test
+files** — 72 `TS2345` (argument types), 37 `TS18046` (possibly-undefined: the
+`noUncheckedIndexedAccess` discipline the source follows and the tests do not),
+16 `TS7006` (implicit `any`), 9 `TS2532`, 9 `TS2322`, 6 `TS2739`, plus 3 `TS2834`
+(relative imports missing the `.js` extension, which resolves under Vitest's
+bundler resolution but not under `nodenext`). The two test files added in
+`b5e3186` type-check clean, and the 457 lines added to `benchmark-runner.test.ts`
+in `f8a9a884` contribute none of that file's 30 errors — that is the standard the
+other 67 files need to reach before a `typecheck-tests` job can be wired in.
