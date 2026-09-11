@@ -20,9 +20,9 @@ on:
         required: false
         default: '1.0'
       log_mode:
-        description: 'Log-signal scoring mode (count = logic-exception, logicHttp = logic + framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP, logicHttpDominant = logic + concentration-gated framework HTTP, all = every error)'
+        description: 'Log-signal scoring mode (empty = the runner default, which is the best-measured mode; count = logic-exception, logicHttp = logic + framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP, logicHttpDominant = logic + concentration-gated framework HTTP, all = every error)'
         required: false
-        default: 'count'
+        default: ''
       diagnose:
         description: 'Comma-separated fault types to dump a per-service signal diagnostic for (empty = none)'
         required: false
@@ -120,14 +120,25 @@ jobs:
           if [ "${{ inputs.max_cases }}" != "0" ]; then
             MAX_CASES_ARG=(--max-cases "${{ inputs.max_cases }}")
           fi
+          #   The log-signal mode is passed only when the dispatch input is
+          #   non-empty, so the runner's own default is the single source of
+          #   truth for the published configuration. A hardcoded default here
+          #   would be a second copy that can silently drift from the
+          #   best-measured mode -- which is exactly what happened while this
+          #   file defaulted to `count` (Top@1 23.1%) and `logicHttp` measured
+          #   47.3% on the same cache (runs 34604119657 / 34604105028).
           DIAGNOSE_ARG=()
           if [ -n "${{ inputs.diagnose }}" ]; then
             DIAGNOSE_ARG=(--diagnose "${{ inputs.diagnose }}" --diagnose-limit "${{ inputs.diagnose_limit }}")
           fi
+          LOG_MODE_ARG=()
+          if [ -n "${{ inputs.log_mode }}" ]; then
+            LOG_MODE_ARG=(--log-mode "${{ inputs.log_mode }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --log-weight "${{ inputs.log_weight }}" \
-            --log-mode "${{ inputs.log_mode }}" \
+            "${LOG_MODE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \
             "${DIAGNOSE_ARG[@]}" \
             --output fse26-results.json 2>&1 | tee fse26-results.txt

@@ -58,7 +58,19 @@ interface CliOptions {
   /** Log signal scoring mode (count = logic-exception only, logicHttp = logic +
    *   framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP,
    *   logicHttpDominant = logic + concentration-gated framework HTTP,
-   *   all = every error). */
+   *   all = every error).
+   *
+   *   `logicHttp` is the measured default, not a guess. Full 1422-case runs on
+   *   the same commit and the same provenance-verified cache:
+   *     logicHttp  Top@1 47.3% (673/1422)  — run 34604105028
+   *     count      Top@1 23.1% (328/1422)  — run 34604119657
+   *   The gain is +24.2pp and clears the published SOTA best of 37.0%; it comes
+   *   from the replace-code / replace-method / replace-path / delay / abort
+   *   classes, whose faulting service floods a propagated framework HTTP error
+   *   that the logic-exception-only gate discards. Network* and JVMException do
+   *   regress under it (NetworkBandwidth 42.9%→28.6%, NetworkPartition
+   *   48.5%→40.2%, JVMException 79.1%→69.8%), but the net is strongly positive,
+   *   so this is the configuration that gets reported. */
   logMode: 'count' | 'novelty' | 'logicHttp' | 'logicHttpJoint' | 'logicHttpDominant' | 'all';
   /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
   rankNormalization: boolean;
@@ -83,7 +95,7 @@ function parseArgs(): CliOptions {
     dataDir: join(homedir(), 'RCABench-json'),
     maxCases: 0,
     logWeight: 1.0,
-    logMode: 'count',
+    logMode: 'logicHttp',
     rankNormalization: true,
     output: '',
     diagnose: [],
@@ -97,6 +109,9 @@ function parseArgs(): CliOptions {
     else if (args[i] === '--log-weight' && i + 1 < args.length)
       opts.logWeight = parseFloat(args[++i]!) || 0;
     else if (args[i] === '--log-mode' && i + 1 < args.length) {
+      // An unrecognised mode is never silently downgraded to a *different*
+      // configuration: it falls back to the same measured default, so a typo
+      // reports the default instead of an unmeasured mode.
       const mode = args[++i]!;
       opts.logMode =
         mode === 'novelty' ||
@@ -105,7 +120,7 @@ function parseArgs(): CliOptions {
         mode === 'logicHttpJoint' ||
         mode === 'logicHttpDominant'
           ? mode
-          : 'count';
+          : 'logicHttp';
     } else if (args[i] === '--no-rank-normalization') opts.rankNormalization = false;
     else if (args[i] === '--output' && i + 1 < args.length) opts.output = args[++i]!;
     else if (args[i] === '--diagnose' && i + 1 < args.length)

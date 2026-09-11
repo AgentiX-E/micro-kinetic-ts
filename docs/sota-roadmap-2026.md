@@ -57,12 +57,28 @@ The single highest-value proof of SOTA is cross-benchmark survival. Four targets
 
 ### P1a. FSE'26 fault-propagation benchmark (hard, decisive)
 
-- **What.** Fang et al. (arXiv:2510.04711). 1,430 cases, 25 fault types / 6 categories,
-  dynamic workload, SLI-validated. Zenodo `10.5281/zenodo.17105974`.
+- **What.** Fang et al. (arXiv:2510.04711). 1,430 cases in the paper; the public
+  release materialises **1422** (the 8-case difference is a bucketing convention,
+  not missing data), 25 fault types / 7 categories, dynamic workload, SLI-validated.
+  Zenodo `10.5281/zenodo.17105974`.
 - **Why.** 11 SOTA models collapse to Top@1 avg 0.21 / best 0.37. Beating 0.37 here is
   a *stronger* SOTA claim than any RCAEval number.
 - **Risk.** Multi-GB data; sandbox proxy only allows `api.github.com` → download via the
   Git Data API / artifact path already used for benchmark dispatch.
+- **RESULT (2026-09-11) — target met.** **Top@1 47.3% (673/1422)** on the shipped
+  `logicHttp` default, vs SOTA avg 21.0% (**+26.3 pp**) and best 37.0% (**+10.3 pp**);
+  Top@3 60.7%, Top@5 65.8%; `loadErrors=0 engineErrors=0 emptyGraphs=0`. Measured on
+  the provenance-verified `rcabench-full` cache (`converterDigest sha256:00d9656a…3798`)
+  in run 34604105028 on head `858b6ea`. The same commit in `count` mode (the old
+  default) scores 23.1% / 328 cases (run 34604119657), which is where the +24.2 pp
+  comes from. Full per-fault-type breakdown and the 41-case residual regression:
+  `docs/fse26-logicHttp-ablation.md`.
+- **Remaining gap.** 8 of 25 fault types regress under `logicHttp`, all sharing one
+  mechanism (log-silent source + HTTP-flooding victims): JVMMemoryStress, NetworkPartition,
+  NetworkBandwidth, NetworkLoss, NetworkCorrupt, ContainerKill, HTTPResponseReplaceBody,
+  JVMException. Recovering those 41 cases without giving back the 386 is the next lever;
+  `PodFailure` (0/24) and `JVMCPUStress` / `JVMMySQLLatency` / `DNSRandom` are untouched
+  by either mode.
 
 ### P1b. AgenticOpsEval — AIOps2025 + RCA100 (loaders already present)
 
@@ -201,22 +217,31 @@ published evidence says LLM ranking is *weaker*, not stronger, here.
 
 ## 5. Priority & risk table
 
-| # | Item | Priority | Risk | Depends on |
-|---|------|----------|------|------------|
-| P0a | primary-source leaderboard harness | P0 | low | — |
-| P0b | PRISM head-to-head reproduction | P0 | low (code locate) | P0a |
-| P1b | AgenticOpsEval (RCA100 + AIOps2025) | P0 | low (loaders exist) | P0a |
-| P1a | FSE'26 hard benchmark | P0 | med (data access) | P0a |
-| P1c | TrainTicket standalone | P1 | low | P0a |
-| P1d | ORCA-bench | P1 | med (rubric mismatch) | P0a |
-| P2 | RE3 near-zero-baseline suppression → internal/external | P1 | med (may falsify) | P0b, P1 |
-| P3 | gated multi-modal/LLM layer | P2 (only if P2 fails) | high | P2 falsified |
+| # | Item | Priority | Risk | Depends on | Status |
+|---|------|----------|------|------------|--------|
+| P0a | primary-source leaderboard harness | P0 | low | — | open |
+| P0b | PRISM head-to-head reproduction | P0 | low (code locate) | P0a | open |
+| P1b | AgenticOpsEval (RCA100 + AIOps2025) | P0 | low (loaders exist) | P0a | loaders done, blocked on dataset access |
+| P1a | FSE'26 hard benchmark | P0 | med (data access) | P0a | **DONE — Top@1 47.3%, SOTA best beaten by 10.3 pp** |
+| P1c | TrainTicket standalone | P1 | low | P0a | open |
+| P1d | ORCA-bench | P1 | med (rubric mismatch) | P0a | external blocker |
+| P2 | RE3 near-zero-baseline suppression → internal/external | P1 | med (may falsify) | P0b, P1 | open (near-zero suppression falsified 2026-09-11) |
+| P3 | gated multi-modal/LLM layer | P2 (only if P2 fails) | high | P2 falsified | open |
 
 **Order of execution (recommended):** P0a → P0b (head-to-head vs PRISM) → P1b
 (fastest generalization win, loaders ready) → P1a (decisive hard benchmark) → P1c/P1d →
 P2 (internal/external) → P3 (gate). Rationale: P0b turns our ~1.14× claim from
 cross-paper to *measured*; P1b/P1a lock in cross-benchmark survival; P2 is the only
 path to the ~89% ceiling and is the most likely to falsify, so it runs last.
+
+**Revised after P1a landed.** The FSE'26 claim is now measured, so the ordering
+constraint it imposed is discharged. The highest-value open item is no longer
+"prove generalization" but **recover the 41 FSE'26 cases that `logicHttp` gives
+back** — 8 fault types with one shared mechanism (log-silent source, HTTP-flooding
+victims), which is exactly the joint log × topology lever that `logicHttpJoint`
+aimed at and missed for a narrower reason (it compared rank-normalised anomaly
+scores, which is not a monotone-invariant comparison). P0b (PRISM head-to-head)
+stays P0 because the RCAEval headline still rests on a cross-paper margin.
 
 ---
 

@@ -9,6 +9,13 @@
 > the engine on both shards**, and repairing it moves the full 1422-case benchmark
 > from **18.85% to 23.07% Top@1** (+60 cases, one regression), i.e. from *below* the
 > RCABench SOTA average (21%) to **above** it.
+>
+> **Update (2026-09-11):** the 23.07% figure is the `count` mode, which was the
+> CI default at the time. The shipped default is now `logicHttp`, measured at
+> **47.3% Top@1 (673/1422)** on the rebuilt cache — see
+> `docs/fse26-logicHttp-ablation.md`. The +4.22pp attributed here to the fan-out
+> repair is a *separate*, still-valid result: it was measured as a `count`-mode
+> delta.
 
 ## 0. Headline
 
@@ -278,19 +285,24 @@ shards, so the sum is exact rather than extrapolated.
 
 ## 8. Next steps
 
-- **Land the fix in CI**: the published `rcabench-data` shards were built with the
-  buggy converter, so a cache rebuild (then an `fse26-benchmark` dispatch) is needed
-  for the published numbers to reflect it. Until then the shards understate the engine.
-  Dispatched: `AgentiX-E/rcabench-data` run **34563132915** (`build-cache.yml`,
-  full 13.4 GB, `release_tag=rcabench-full`); the single upload step runs last with
-  `--clobber`, so a failed rebuild leaves the current shards untouched. The follow-up
-  `fse26-benchmark` dispatch must wait for it to publish.
+- **Land the fix in CI**: **DONE.** The shards were rebuilt with the fixed converter
+  and republished on `AgentiX-E/rcabench-data` under the explicit tag `rcabench-full`
+  (`builtAt 2026-09-11T13:08:40Z`, `converterDigest sha256:00d9656a…3798`,
+  `schemaVersion 2`). Two full `fse26-benchmark` runs then measured 1422/1422 cases
+  clean against that exact cache: `logicHttp` 47.3% (run 34604105028) and `count`
+  23.1% (run 34604119657). The consumer side now refuses any manifest without a
+  matching converter digest and per-shard sha256 (`scripts/fse26_provenance.py`,
+  step `Verify cache provenance`), so a stale cache can no longer be scored silently —
+  which is how the pre-fix `rcabench-full-v2` assets nearly got published.
 - **Re-audit every earlier "ceiling" measurement** taken on this cache. Any conclusion
   drawn from metric-series shape (not just from logs or topology) may have been
   affected at the same ~656 corrupted series per case. `docs/re3-fault-ceiling.md`,
   `docs/loss-weak-source-verdict.md` and `docs/silent-source-ceiling.md` are the
   candidates; their reasoning is not automatically wrong, but it has not been
-  re-derived on repaired data.
+  re-derived on repaired data. **Still open.** The fan-out repair has now been shown
+  to *invert* one such conclusion: the network per-type column, where the pre-fix
+  cache had `count` at 9.3% and `logicHttp` at 30.9% on NetworkPartition and the
+  repaired cache has 48.5% vs 40.2%.
 - Drop or re-derive the trace-derived source before it is allowed back on: both
   the log-side (`logicHttp`) and the metric-side (`http.response.error_rate`) mean
   interface signals are net-negative.

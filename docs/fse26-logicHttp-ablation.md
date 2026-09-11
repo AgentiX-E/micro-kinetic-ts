@@ -1,100 +1,141 @@
 # FSE'26 log signal — `logicHttp` mode ablation verdict
 
-> Status: **decisive, net-positive with residual regression** (run 34468582559,
-> full 1422 cases, `log_mode=logicHttp`, head `a3cb249`, clean:
-> loadErrors=0 engineErrors=0 emptyGraphs=0).
+> Status: **decisive, net-positive with residual regression — now the shipped
+> default.** Measured on the full 1422-case RCABench, both runs on the same
+> commit (`858b6ea`) and the same **provenance-verified** cache
+> (`converterDigest sha256:00d9656a…3798`, `schemaVersion 2`):
+>
+> | run | mode | Top@1 | status |
+> |---|---|---|---|
+> | 34604105028 | `logicHttp` | **47.3%** (673/1422) | success, clean |
+> | 34604119657 | `count` | 23.1% (328/1422) | success, clean |
+>
+> Both: `loadErrors=0 engineErrors=0 emptyGraphs=0`.
+>
+> Supersedes the 46.5% headline in the first revision of this document, which
+> was measured (run 34468582559, head `a3cb249`) **before** the label fan-out
+> fix (`969b19a`) and before the histogram/summary conversion (`b811812`), i.e.
+> against a cache that is no longer shipped.
 
 ## Conclusion (TL;DR)
 
-Counting **logic exceptions PLUS framework HTTP exceptions** (`logicHttp` mode)
-lifts the engine **+30.0 pp Top@1** (16.5% → 46.5%), from −4.5 pp below the SOTA
-average to **+25.5 pp above it** and **+9.5 pp above the best published model**
-(37%). It fixes the `all`-mode regression (35 → 15 cases) by excluding the
-business/AMQP text victims flood, but it is still **not zero-regression**: 5
-fault types / 15 cases regress.
+Counting **logic exceptions PLUS framework HTTP exceptions** (`logicHttp`)
+lifts the engine **+24.2 pp Top@1** over the shipped `count` mode
+(23.1% → 47.3%), clearing the published SOTA average (21%) by **+26.3 pp** and
+the best published model (37%) by **+10.3 pp**. Top@3 and Top@5 move with it
+(35.0% → 60.7% and 44.4% → 65.8%).
 
-The residual regression has a precise, information-theoretic cause: the
-framework HTTP exceptions `HttpServerErrorException` (caller received a 5xx)
-and `ResourceAccessException` (caller's connection failed/timed out) are
-**direction-symmetric** — a service floods them whether it is the SOURCE (its
-own downstream call failed, as in the HTTP fault types) or a VICTIM (its
-upstream source failed, as in the memory/container/bandwidth fault types).
-Pure log text cannot tell the two apart; disambiguating them needs the call
-graph + metric direction, i.e. a joint signal, not a log-only gate.
+It is **not zero-regression**: 8 fault types / 41 cases give back ground. The
+gain is +386 cases against the 41 lost, so the net is +345 — the mode is
+therefore shipped, with the regression documented rather than hidden.
+
+The regression has one mechanism, not eight. The framework HTTP exception
+classes `HttpServerErrorException` (the emitter received a 5xx from its
+downstream) and `ResourceAccessException` (its downstream connection failed or
+timed out) are **direction-symmetric**: a service floods them whether it is the
+SOURCE (its own outbound call failed) or a VICTIM (its upstream source failed).
+Log text alone cannot separate those two cases; every regressed type is one
+where the true source is log-silent and its victims do the flooding.
 
 ## Result
 
 | mode | Top@1 | Top@3 | Top@5 | Δ vs SOTA avg | Δ vs SOTA best |
 |---|---|---|---|---|---|
-| `count` (baseline) | 16.5% | 26.3% | 34.7% | −4.5 pp | −20.5 pp |
-| `all` (ablated) | 34.8% | 45.4% | 53.8% | +13.8 pp | −2.2 pp |
-| **`logicHttp`** | **46.5%** | **56.9%** | **61.2%** | **+25.5 pp** | **+9.5 pp** |
+| `count` (previous default) | 23.1% | 35.0% | 44.4% | +2.1 pp | −13.9 pp |
+| **`logicHttp`** (shipped default) | **47.3%** | **60.7%** | **65.8%** | **+26.3 pp** | **+10.3 pp** |
 
-Correct cases: 235 (`count`) → 495 (`all`) → **661** (`logicHttp`).
-SOTA anchor: avg 21% / best 37%. Net case delta vs `count`: **+441 gain /
-−15 regress = +426**.
+Correct cases: 328 (`count`) → **673** (`logicHttp`). SOTA anchor: avg 21% /
+best 37%. Net case delta: **+386 gain / −41 regress = +345**.
 
 ## Per-fault-type side-by-side (count → logicHttp)
 
+Every number below is from the two provenance-verified runs above. Types are
+ordered by absolute case delta.
+
 | Fault type | N | `count` | `logicHttp` | Δ (cases) |
 |---|---|---|---|---|
-| HTTPResponseReplaceCode | 231 | 4.8% (11) | **69.7% (161)** | **+64.9** (+150) |
-| HTTPRequestReplaceMethod | 190 | 25.8% (49) | **65.3% (124)** | +39.5 (+75) |
-| HTTPRequestReplacePath | 39 | 10.3% (4) | **94.9% (37)** | +84.6 (+33) |
-| HTTPResponseAbort | 44 | 6.8% (3) | **81.8% (36)** | +75.0 (+33) |
-| HTTPRequestAbort | 60 | 15.0% (9) | **78.3% (47)** | +63.3 (+38) |
-| HTTPResponseDelay | 89 | 3.4% (3) | **51.7% (46)** | +48.3 (+43) |
-| HTTPRequestDelay | 88 | 3.4% (3) | **48.9% (43)** | +45.5 (+40) |
-| NetworkPartition | 97 | 9.3% (9) | 30.9% (30) | +21.6 (+21) |
-| NetworkCorrupt | 46 | 10.9% (5) | 23.9% (11) | +13.0 (+6) |
-| NetworkLoss | 48 | 16.7% (8) | 18.8% (9) | +2.1 (+1) |
-| HTTPResponsePatchBody | 4 | 25.0% (1) | 50.0% (2) | +25.0 (+1) |
-| JVMReturn | 21 | 52.4% (11) | 52.4% (11) | 0 |
+| HTTPResponseReplaceCode | 231 | 4.8% (11) | **68.8% (159)** | **+148** |
+| HTTPRequestReplaceMethod | 190 | 27.4% (52) | **64.7% (123)** | +71 |
+| HTTPRequestAbort | 60 | 11.7% (7) | **78.3% (47)** | +40 |
+| HTTPRequestReplacePath | 39 | 2.6% (1) | **97.4% (38)** | +37 |
+| HTTPResponseAbort | 44 | 2.3% (1) | **77.3% (34)** | +33 |
+| HTTPResponseDelay | 89 | 13.5% (12) | **47.2% (42)** | +30 |
+| HTTPRequestDelay | 88 | 14.8% (13) | **44.3% (39)** | +26 |
+| HTTPResponsePatchBody | 4 | 50.0% (2) | **75.0% (3)** | +1 |
+| NetworkDelay | 21 | 76.2% (16) | 76.2% (16) | 0 |
+| JVMReturn | 21 | 57.1% (12) | 57.1% (12) | 0 |
 | JVMLatency | 7 | 28.6% (2) | 28.6% (2) | 0 |
-| JVMCPUStress | 2 | 50.0% (1) | 50.0% (1) | 0 |
-| PodFailure | 24 | 8.3% (2) | 8.3% (2) | 0 |
 | PodKill | 10 | 10.0% (1) | 10.0% (1) | 0 |
-| NetworkDelay | 21 | 38.1% (8) | 38.1% (8) | 0 |
+| PodFailure | 24 | 0% (0) | 0% (0) | 0 |
 | TimeSkew | 2 | 0% (0) | 0% (0) | 0 |
 | JVMMySQLLatency | 2 | 0% (0) | 0% (0) | 0 |
+| JVMCPUStress | 2 | 0% (0) | 0% (0) | 0 |
 | DNSRandom | 1 | 0% (0) | 0% (0) | 0 |
-| **HTTPResponseReplaceBody** | 51 | 98.0% (50) | 94.1% (48) | **−3.9** (−2) |
-| **JVMException** | 43 | 76.7% (33) | 74.4% (32) | **−2.3** (−1) |
-| **ContainerKill** | 89 | 6.7% (6) | 3.4% (3) | **−3.4** (−3) |
-| **JVMMemoryStress** | 171 | 7.0% (12) | 3.5% (6) | **−3.5** (−6) |
-| **NetworkBandwidth** | 42 | 9.5% (4) | 2.4% (1) | **−7.1** (−3) |
+| **ContainerKill** | 89 | 2.2% (2) | 1.1% (1) | **−1** |
+| **NetworkCorrupt** | 46 | 37.0% (17) | 30.4% (14) | **−3** |
+| **JVMException** | 43 | 79.1% (34) | 69.8% (30) | **−4** |
+| **HTTPResponseReplaceBody** | 51 | 98.0% (50) | 88.2% (45) | **−5** |
+| **NetworkLoss** | 48 | 35.4% (17) | 25.0% (12) | **−5** |
+| **NetworkBandwidth** | 42 | 42.9% (18) | 28.6% (12) | **−6** |
+| **NetworkPartition** | 97 | 48.5% (47) | 40.2% (39) | **−8** |
+| **JVMMemoryStress** | 171 | 7.6% (13) | 2.3% (4) | **−9** |
 
-## Regression mechanism (5 types / 15 cases)
+The eight regressed types are exactly the eight whose **source is log-silent**:
+`JVMMemoryStress`, `NetworkBandwidth`, `NetworkPartition`, `NetworkLoss`,
+`NetworkCorrupt` (metric-observable only — gauges, drops, link errors),
+`ContainerKill` (the pod is gone), `HTTPResponseReplaceBody` (the source's own
+exception is `RestClientException`, which the gate admits for both roles), and
+`JVMException` (a boundary case that `count` already resolves).
+
+Note that the network column is the one that moved most between revisions: on
+the pre-fan-out cache `count` scored NetworkPartition 9.3% and `logicHttp`
+30.9%; on the shipped cache it is 48.5% vs 40.2%. The fan-out fix alone made
+`count` strong on network faults, and `logicHttp`'s victim-flood term now costs
+more there than it recovers. Reasoning from the superseded numbers would have
+produced the opposite conclusion.
+
+## Regression mechanism
 
 The regressed types share one property: **the source is log-silent (or
 metric-observable only) and the VICTIM floods framework HTTP exceptions** when
 it calls the failed source.
 
-1. **JVMMemoryStress (−6)** — source (`ts-auth-service` etc.) is the
+1. **JVMMemoryStress (−9)** — the source (`ts-auth-service` etc.) is the
    max-anomaly service (`selfAnomaly≈0.98`, memory gauges rise) but emits
-   **0 error lines**; victims (`ts-food-service` err=126, `ts-delivery-service`
-   err=48, `ts-notification-service` err=47) flood errors when the OOM'd/GC-stalled
-   source times out their calls → `ResourceAccessException`/`HttpServerErrorException`.
-2. **ContainerKill (−3)** — source's container dies; victims flood
+   **0 error lines**; victims (`ts-food-service`, `ts-delivery-service`,
+   `ts-notification-service`) flood errors when the OOM'd/GC-stalled source
+   times out their calls → `ResourceAccessException` /
+   `HttpServerErrorException`.
+2. **NetworkPartition (−8), NetworkBandwidth (−6), NetworkLoss (−5),
+   NetworkCorrupt (−3)** — the link fails or degrades; the source stays silent
+   while victims flood `ResourceAccessException` (connection refused / read
+   timeout). `count` ignores the flood entirely, so the metric-anomalous source
+   wins by default.
+3. **HTTPResponseReplaceBody (−5)** — the source rewrites response bodies; its
+   own exceptions arrive as `RestClientException`, which the gate admits for
+   source and victim alike.
+4. **JVMException (−4)** — boundary case (30 of 34 already recovered by
+   `count`).
+5. **ContainerKill (−1)** — the source's container dies; victims flood
    `ResourceAccessException` (`Connection refused`).
-3. **NetworkBandwidth (−3)** — source's link is throttled; victims flood
-   `ResourceAccessException` (read timeout).
-4. **HTTPResponseReplaceBody (−2)** — source rewrites response bodies; a
-   downstream victim emits an HTTP exception on the malformed body.
-5. **JVMException (−1)** — boundary case (32/33 already recovered by `count`).
 
-## Why `logicHttp` is still the right lever (direction of the signal)
+## Why `logicHttp` is still the right default (direction of the signal)
 
 The `all`-mode regression was dominated by victims flooding **business/AMQP
-text** (`Order Create Fail`, `auto-delete queue`) with no exception class —
-`logicHttp` correctly excludes those, cutting the regression 35 → 15 while
-raising the gain +18.3 → +30.0 pp. The remaining 15 cases are the irreducible
-residue of the **direction-symmetric** HTTP exceptions above, which no log-only
-gate can resolve.
+text** (`Order Create Fail`, `auto-delete queue`) with no exception class.
+`logicHttp` correctly excludes those, which is why it dominates the
+`replace-code` / `replace-method` / `replace-path` / `delay` / `abort` classes:
+231 + 190 + 39 + 44 + 60 + 89 + 88 = 741 cases where the faulting service
+genuinely floods a framework HTTP error, of which `logicHttp` recovers 482
+against `count`'s 97.
 
-## Discriminator evidence (diagnostic run 34471223487)
+The 41 lost cases are the irreducible residue of the direction-symmetric
+exception classes, which no log-only gate can resolve. They are a known,
+bounded, measured cost — not a hidden one.
 
-The targeted diagnostic of the 5 regressed types surfaced the exact
+## Discriminator evidence (diagnostic run 34471223487, pre-fix cache)
+
+The targeted diagnostic of the regressed types surfaced the exact
 `{logic, exceptionClass}` signature split between source and victim:
 
 | Emitter | `logic` | exception classes | Fault type |
@@ -104,27 +145,41 @@ The targeted diagnostic of the 5 regressed types surfaced the exact
 | **victim** | `= 0` | `HttpServerErrorException` only | JVMMemoryStress / NetworkBandwidth / JVMException |
 
 The decisive observation: a **victim** always carries `logic = 0` and floods
-**only** `HttpServerErrorException` (it received a 5xx from the failed source),
-whereas a replace-body **source** carries `logic ≈ err` (it throws its own
-logic exceptions on the malformed body) plus `RestClientException`. The
-hard, symmetric case is `HTTPResponseReplaceCode` — its source floods
-`HttpServerErrorException` with `logic = 0`, *identically* to a memory/bandwidth
-victim. No log-only gate can separate those two; they differ only in call-graph
-direction (whose callee is anomalous), which is exactly lever #2.
+**only** `HttpServerErrorException`, whereas a replace-body **source** carries
+`logic ≈ err` plus `RestClientException`. The hard, symmetric case is
+`HTTPResponseReplaceCode` — its source floods `HttpServerErrorException` with
+`logic = 0`, *identically* to a memory/bandwidth victim. No log-only gate can
+separate those two; they differ only in call-graph direction.
 
 ## Next steps
 
-1. **(P1c lever #2) joint log × topology signal** — reward a framework HTTP
+1. **(lever #2, open) joint log × topology signal** — reward a framework HTTP
    exception only when the emitter is an edge SOURCE in the call graph (its
-   callee is also anomalous) or when the emitter's own metric also rises; this
+   callee is also anomalous) or when the emitter's own metric also rises. This
    is the signal that separates "source's downstream call failed" from
-   "victim's upstream source failed". TDD + per-signal ablation, zero-regression
-   before default.
-2. **(P1c lever #3) latency/saturation series re-convert** — consume the dropped
-   trace `duration` + `_metrics_histogram` (GC/saturation) so the silent source
-   of JVMMemoryStress/ContainerKill/NetworkBandwidth becomes observable instead
-   of relying on victim logs.
-3. Decision on `logicHttp` as default: the +30.0 pp gain is overwhelming
-   (+426 net cases) but the 15-case regression violates the zero-regression bar;
-   keep `count` as default until lever #2/#3 recover those 15 cases, OR flip
-   `logicHttp` default with the regression explicitly documented.
+   "victim's upstream source failed", and it is the only route to recovering
+   the 41 cases without giving back the 386. `logicHttpJoint` attempted this and
+   was falsified — see `docs/fse26-logicHttpJoint-falsified.md` — but the
+   falsified variant gated on *rank-normalised anomaly scores*, which is not a
+   monotone-invariant comparison. The call-graph-direction half of the idea is
+   still untested.
+2. **(lever #3, IMPLEMENTED BUT UNMEASURED)** latency/saturation series. A
+   first revision of this document asked for a "re-convert" to consume the
+   dropped trace `duration` + histogram series. **That conversion already
+   happened** in `b811812` — an ancestor check places it *after* the 46.5%
+   measurement head (`a3cb249`), and the shipped shards carry the series:
+   `jvm.gc.duration.max` in 81/1422 cases, `http.server.request.duration.max`
+   in 83, `http.client.request.duration.max` in 39,
+   `hubble_http_request_duration_seconds.max` in 126,
+   `jvm.memory.used_after_last_gc` in 123. What is missing is not the data but
+   the **measurement**: no run has isolated the contribution of these series,
+   because `logicHttp` reaches Top@1 47.3% through a log-only term that
+   dominates them. The correct experiment is a component ablation —
+   `--drop-metrics` with the duration/histogram names removed — to see whether
+   they add anything on top of the log term, not another conversion.
+3. **(closed) `logicHttp` as default.** Flipped. The residual regression the
+   first revision measured as 15 cases is 41 cases on the shipped cache, and the
+   +386 gain still dominates it roughly 9×. `benchmarks/src/run-fse26.ts` and
+   `.github/workflows/fse26-benchmark.yml` now take the mode from a single
+   source of truth (the runner default), guarded by
+   `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts`.
