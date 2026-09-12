@@ -11,13 +11,10 @@
  *   5. Edge cases (empty metrics, all-zero, single point, unknown patterns)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { IntelligentFaultClassifier } from '../../src/rca/intelligent-fault-classifier.js';
-import type {
-  FaultClassification,
-  IntelligentClassifierOptions,
-} from '../../src/rca/intelligent-fault-classifier.js';
 import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import { beforeEach, describe, expect, it } from 'vitest';
+import type { IntelligentClassifierOptions } from '../../src/rca/intelligent-fault-classifier.js';
+import { IntelligentFaultClassifier } from '../../src/rca/intelligent-fault-classifier.js';
 
 // ── Test Helpers ────────────────────────────────────────────
 
@@ -90,9 +87,7 @@ describe('IntelligentFaultClassifier — Tier 1 (Metric Signature)', () => {
 
   it('classifies sustained high CPU as CPU fault', async () => {
     // CPU rises from 0.2 to 0.95 over 5 minutes
-    const metrics = [
-      risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95),
-    ];
+    const metrics = [risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95)];
     const result = await classifier.classify(metrics);
     expect(result.category).toBe('CPU');
     expect(result.confidence).toBeGreaterThanOrEqual(0.7);
@@ -101,9 +96,7 @@ describe('IntelligentFaultClassifier — Tier 1 (Metric Signature)', () => {
 
   it('classifies monotonically increasing memory as MEM fault', async () => {
     // Memory rises from 0.3 to 0.85 over 5 minutes
-    const metrics = [
-      risingTS('container_memory_usage', 0, 300_000, 100, 0.3, 0.85),
-    ];
+    const metrics = [risingTS('container_memory_usage', 0, 300_000, 100, 0.3, 0.85)];
     const result = await classifier.classify(metrics);
     expect(result.category).toBe('MEM');
     expect(result.confidence).toBeGreaterThanOrEqual(0.7);
@@ -111,9 +104,7 @@ describe('IntelligentFaultClassifier — Tier 1 (Metric Signature)', () => {
   });
 
   it('classifies disk I/O saturation as DISK fault', async () => {
-    const metrics = [
-      risingTS('disk_io_usage', 0, 300_000, 100, 0.3, 0.85),
-    ];
+    const metrics = [risingTS('disk_io_usage', 0, 300_000, 100, 0.3, 0.85)];
     const result = await classifier.classify(metrics);
     expect(result.category).toBe('DISK');
     expect(result.confidence).toBeGreaterThanOrEqual(0.7);
@@ -153,9 +144,7 @@ describe('IntelligentFaultClassifier — Tier 1 (Metric Signature)', () => {
 
   it('falls to heuristic for unrecognised patterns', async () => {
     // Random noise — no known signature matches
-    const metrics = [
-      flatTS('random_metric', 0, 300_000, 100, 0.5),
-    ];
+    const metrics = [flatTS('random_metric', 0, 300_000, 100, 0.5)];
     const result = await classifier.classify(metrics);
     expect(result.source).toBe('heuristic');
     expect(result.confidence).toBeLessThan(0.5);
@@ -168,9 +157,7 @@ describe('IntelligentFaultClassifier — Tier 1 (Metric Signature)', () => {
   });
 
   it('classifies correctly with single-point metrics', async () => {
-    const metrics = [
-      makeTimeSeries('cpu', 0, 0, 1, [0.95]),
-    ];
+    const metrics = [makeTimeSeries('cpu', 0, 0, 1, [0.95])];
     const result = await classifier.classify(metrics);
     expect(result.category).toBeDefined();
   });
@@ -241,9 +228,7 @@ describe('IntelligentFaultClassifier — Tier 2 (Embedding)', () => {
       },
     });
 
-    const metrics = [
-      risingTS('mixed_metric', 0, 300_000, 50, 0.3, 0.6),
-    ];
+    const metrics = [risingTS('mixed_metric', 0, 300_000, 50, 0.3, 0.6)];
 
     const result = await classifier.classify(metrics);
     // Should NOT throw, should fall through to heuristic
@@ -285,9 +270,7 @@ describe('IntelligentFaultClassifier — Tier 2 (Embedding)', () => {
 // ── Tier 3: LLM Tests ───────────────────────────────────────
 
 describe('IntelligentFaultClassifier — Tier 3 (LLM)', () => {
-  function makeMockLLM(
-    response: string,
-  ): IntelligentClassifierOptions['llmProvider'] {
+  function makeMockLLM(response: string): IntelligentClassifierOptions['llmProvider'] {
     return {
       async complete(_prompt: string): Promise<string> {
         return response;
@@ -303,9 +286,7 @@ describe('IntelligentFaultClassifier — Tier 3 (LLM)', () => {
     });
 
     // Neutral metrics — no strong signature
-    const metrics = [
-      flatTS('generic_metric', 0, 300_000, 50, 0.5),
-    ];
+    const metrics = [flatTS('generic_metric', 0, 300_000, 50, 0.5)];
 
     const result = await classifier.classify(metrics);
     expect(result.category).toBe('F1');
@@ -322,9 +303,7 @@ describe('IntelligentFaultClassifier — Tier 3 (LLM)', () => {
       },
     });
 
-    const metrics = [
-      flatTS('random_metric', 0, 300_000, 50, 0.5),
-    ];
+    const metrics = [flatTS('random_metric', 0, 300_000, 50, 0.5)];
 
     const result = await classifier.classify(metrics);
     // Should NOT throw
@@ -423,9 +402,7 @@ describe('IntelligentFaultClassifier — Fusion & Fallback', () => {
     });
 
     // Memory metric with marginal slope — won't trigger strong signature
-    const metrics = [
-      risingTS('container_memory_marginal', 0, 300_000, 50, 0.3, 0.45),
-    ];
+    const metrics = [risingTS('container_memory_marginal', 0, 300_000, 50, 0.3, 0.45)];
 
     const result = await classifier.classify(metrics);
     expect(result.category).toBeDefined();
@@ -463,9 +440,7 @@ describe('IntelligentFaultClassifier — Fusion & Fallback', () => {
 
   it('provides evidence in all classification results', async () => {
     const classifier = createClassifier();
-    const metrics = [
-      risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95),
-    ];
+    const metrics = [risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95)];
     const result = await classifier.classify(metrics);
     expect(result.evidence.length).toBeGreaterThan(0);
     expect(result.evidence[0]!.metric).toBeDefined();
@@ -474,9 +449,7 @@ describe('IntelligentFaultClassifier — Fusion & Fallback', () => {
 
   it('returns deterministic results for the same inputs', async () => {
     const classifier = createClassifier();
-    const metrics = [
-      risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95),
-    ];
+    const metrics = [risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95)];
 
     const r1 = await classifier.classify(metrics);
     const r2 = await classifier.classify(metrics);
@@ -489,16 +462,11 @@ describe('IntelligentFaultClassifier — Fusion & Fallback', () => {
   it('handles baseline metrics for ratio comparison', async () => {
     const classifier = createClassifier({
       baselineMetrics: new Map([
-        [
-          'baseline',
-          [flatTS('container_cpu_usage', -300_000, 0, 50, 0.1)],
-        ],
+        ['baseline', [flatTS('container_cpu_usage', -300_000, 0, 50, 0.1)]],
       ]),
     });
 
-    const metrics = [
-      risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95),
-    ];
+    const metrics = [risingTS('container_cpu_usage', 0, 300_000, 100, 0.2, 0.95)];
 
     const result = await classifier.classify(metrics);
     expect(result.category).toBe('CPU');
@@ -510,9 +478,7 @@ describe('IntelligentFaultClassifier — Fusion & Fallback', () => {
 describe('IntelligentFaultClassifier — Edge Cases', () => {
   it('handles very short time series (2 points)', async () => {
     const classifier = createClassifier();
-    const metrics = [
-      makeTimeSeries('cpu', 0, 1000, 2, [0.2, 0.95]),
-    ];
+    const metrics = [makeTimeSeries('cpu', 0, 1000, 2, [0.2, 0.95])];
     const result = await classifier.classify(metrics);
     expect(result.category).toBeDefined();
   });
@@ -540,18 +506,14 @@ describe('IntelligentFaultClassifier — Edge Cases', () => {
     const classifier = createClassifier();
     const values = Array(100).fill(NaN);
     values[50] = 0.5;
-    const metrics = [
-      makeTimeSeries('partial_nan', 0, 300_000, 100, values),
-    ];
+    const metrics = [makeTimeSeries('partial_nan', 0, 300_000, 100, values)];
     const result = await classifier.classify(metrics);
     expect(result.category).toBeDefined();
   });
 
   it('handles negative values', async () => {
     const classifier = createClassifier();
-    const metrics = [
-      makeTimeSeries('negative_metric', 0, 300_000, 100, Array(100).fill(-1)),
-    ];
+    const metrics = [makeTimeSeries('negative_metric', 0, 300_000, 100, Array(100).fill(-1))];
     const result = await classifier.classify(metrics);
     expect(result.category).toBeDefined();
   });
@@ -560,9 +522,7 @@ describe('IntelligentFaultClassifier — Edge Cases', () => {
     const classifier = createClassifier();
     const values: number[] = [];
     for (let i = 0; i < 100; i++) values.push(i * 1e6);
-    const metrics = [
-      makeTimeSeries('huge_metric', 0, 300_000, 100, values),
-    ];
+    const metrics = [makeTimeSeries('huge_metric', 0, 300_000, 100, values)];
     const result = await classifier.classify(metrics);
     expect(result.category).toBeDefined();
   });
@@ -614,8 +574,16 @@ describe('IntelligentFaultClassifier — Construction', () => {
 
   it('constructs with all provider options', () => {
     const classifier = new IntelligentFaultClassifier({
-      embeddingProvider: { async embed() { return []; } },
-      llmProvider: { async complete() { return ''; } },
+      embeddingProvider: {
+        async embed() {
+          return [];
+        },
+      },
+      llmProvider: {
+        async complete() {
+          return '';
+        },
+      },
     });
     expect(classifier).toBeDefined();
   });
@@ -679,7 +647,11 @@ describe('IntelligentFaultClassifier — All RCAEval Fault Types', () => {
 
   it('covers F1 via LLM', async () => {
     const c = createClassifier({
-      llmProvider: { async complete() { return '{"category":"F1","confidence":0.9,"reasoning":"test"}'; } },
+      llmProvider: {
+        async complete() {
+          return '{"category":"F1","confidence":0.9,"reasoning":"test"}';
+        },
+      },
     });
     const r = await c.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
     expect(r.category).toBe('F1');
@@ -687,7 +659,11 @@ describe('IntelligentFaultClassifier — All RCAEval Fault Types', () => {
 
   it('covers F2 via LLM', async () => {
     const c = createClassifier({
-      llmProvider: { async complete() { return '{"category":"F2","confidence":0.9,"reasoning":"test"}'; } },
+      llmProvider: {
+        async complete() {
+          return '{"category":"F2","confidence":0.9,"reasoning":"test"}';
+        },
+      },
     });
     const r = await c.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
     expect(r.category).toBe('F2');
@@ -695,7 +671,11 @@ describe('IntelligentFaultClassifier — All RCAEval Fault Types', () => {
 
   it('covers F3 via LLM', async () => {
     const c = createClassifier({
-      llmProvider: { async complete() { return '{"category":"F3","confidence":0.9,"reasoning":"test"}'; } },
+      llmProvider: {
+        async complete() {
+          return '{"category":"F3","confidence":0.9,"reasoning":"test"}';
+        },
+      },
     });
     const r = await c.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
     expect(r.category).toBe('F3');
@@ -703,7 +683,11 @@ describe('IntelligentFaultClassifier — All RCAEval Fault Types', () => {
 
   it('covers F4 via LLM', async () => {
     const c = createClassifier({
-      llmProvider: { async complete() { return '{"category":"F4","confidence":0.9,"reasoning":"test"}'; } },
+      llmProvider: {
+        async complete() {
+          return '{"category":"F4","confidence":0.9,"reasoning":"test"}';
+        },
+      },
     });
     const r = await c.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
     expect(r.category).toBe('F4');
@@ -711,7 +695,11 @@ describe('IntelligentFaultClassifier — All RCAEval Fault Types', () => {
 
   it('covers F5 via LLM', async () => {
     const c = createClassifier({
-      llmProvider: { async complete() { return '{"category":"F5","confidence":0.9,"reasoning":"test"}'; } },
+      llmProvider: {
+        async complete() {
+          return '{"category":"F5","confidence":0.9,"reasoning":"test"}';
+        },
+      },
     });
     const r = await c.classify([flatTS('x', 0, 300_000, 50, 0.5)]);
     expect(r.category).toBe('F5');
@@ -767,10 +755,7 @@ describe('IntelligentFaultClassifier — Remaining Reachable Branches', () => {
       baselineMetrics: new Map([
         [
           'baseline',
-          [
-            flatTS('p99_latency', -300_000, 0, 50, 5),
-            flatTS('error_rate', -300_000, 0, 50, 0.01),
-          ],
+          [flatTS('p99_latency', -300_000, 0, 50, 5), flatTS('error_rate', -300_000, 0, 50, 0.01)],
         ],
       ]),
     });
@@ -784,9 +769,7 @@ describe('IntelligentFaultClassifier — Remaining Reachable Branches', () => {
 
   it('findBaseline returns undefined when no baseline metric label matches', async () => {
     const classifier = createClassifier({
-      baselineMetrics: new Map([
-        ['baseline', [flatTS('memory_usage', -300_000, 0, 50, 0.5)]],
-      ]),
+      baselineMetrics: new Map([['baseline', [flatTS('memory_usage', -300_000, 0, 50, 0.5)]]]),
     });
     // No baseline for 'cpu_usage' → the ratio check is skipped, CPU is still
     // detected from the fault signature alone.
@@ -911,9 +894,7 @@ describe('IntelligentFaultClassifier — Remaining Reachable Branches', () => {
     // forcing the `bl <= 0` guard in hasSpike (and the subsequent `return false`
     // in the spike requirement) — the latency spike must NOT be credited.
     const classifier = createClassifier({
-      baselineMetrics: new Map([
-        ['baseline', [flatTS('p99_latency', -300_000, 0, 50, 0)]],
-      ]),
+      baselineMetrics: new Map([['baseline', [flatTS('p99_latency', -300_000, 0, 50, 0)]]]),
     });
     // Only a latency metric is provided (no error metric). The DELAY signature
     // requires a latency *spike*; because the baseline mean is zero, `hasSpike`

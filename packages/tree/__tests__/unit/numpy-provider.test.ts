@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
 import { NumpyTsMatrixOps } from '@agentix-e/micro-kinetic-tree';
+import { describe, expect, it, vi } from 'vitest';
 
 // Mock numpy-ts
 vi.mock('numpy-ts', () => {
@@ -61,16 +61,22 @@ vi.mock('numpy-ts', () => {
     return createMockNDArray(result, [m, n]);
   }
 
-  function polyfit(x: any, y: any, degree: number) {
+  function polyfit(x: any, y: any, _degree: number) {
     // Simple linear regression
     const xData = x.data as Float64Array;
     const yData = y.data as Float64Array;
     const n = xData.length;
-    let sx = 0, sy = 0, sxy = 0, sx2 = 0;
+    let sx = 0,
+      sy = 0,
+      sxy = 0,
+      sx2 = 0;
     for (let i = 0; i < n; i++) {
       const xi = xData[i]!;
       const yi = yData[i]!;
-      sx += xi; sy += yi; sxy += xi * yi; sx2 += xi * xi;
+      sx += xi;
+      sy += yi;
+      sxy += xi * yi;
+      sx2 += xi * xi;
     }
     const denom = n * sx2 - sx * sx;
     if (Math.abs(denom) < 1e-12) {
@@ -153,8 +159,7 @@ vi.mock('numpy-ts', () => {
         const tr = a11 + a22;
         const det = a11 * a22 - a12 * a12;
         const disc = Math.sqrt(Math.max(0, tr * tr - 4 * det));
-        sigVals = [Math.max(0, (tr + disc) / 2), Math.max(0, (tr - disc) / 2)]
-          .map(Math.sqrt);
+        sigVals = [Math.max(0, (tr + disc) / 2), Math.max(0, (tr - disc) / 2)].map(Math.sqrt);
       } else {
         sigVals = [];
         for (let i = 0; i < cols; i++) {
@@ -169,7 +174,11 @@ vi.mock('numpy-ts', () => {
       for (let i = 0; i < cols; i++) vt[i + i * cols] = 1;
 
       return {
-        u: (() => { const a = createMockNDArray(u, [rows, rows]); a.flags = { C_CONTIGUOUS: true }; return a; })(),
+        u: (() => {
+          const a = createMockNDArray(u, [rows, rows]);
+          a.flags = { C_CONTIGUOUS: true };
+          return a;
+        })(),
         s: createMockNDArray(new Float64Array(sigVals)),
         vt: createMockNDArray(vt, [cols, cols]),
       };
@@ -226,7 +235,7 @@ describe('NumpyTsMatrixOps', () => {
 
     it('multiplies 3×2 by 2×3', () => {
       const a = new Float64Array([1, 4, 7, 2, 5, 8]); // 3x2
-      const b = new Float64Array([1, 3, 2, 4]);       // 2x2
+      const b = new Float64Array([1, 3, 2, 4]); // 2x2
       const c = ops.multiply(a, b, 3, 2, 2);
       expect(c.length).toBe(6);
     });

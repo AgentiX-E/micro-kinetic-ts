@@ -1,11 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import type {
-  FactoryFn,
-  MathBackendFactory,
-  EngineFactory,
-} from '@agentix-e/micro-kinetic-core';
-import { IContainer } from '@agentix-e/micro-kinetic-core';
-import { Container } from '@agentix-e/micro-kinetic-core';
+import type { FactoryFn } from '@agentix-e/micro-kinetic-core';
+import { Container, IContainer } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Registry types', () => {
   it('should verify FactoryFn type is usable', () => {

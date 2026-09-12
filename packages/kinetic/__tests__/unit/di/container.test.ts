@@ -1,14 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Mock sub-package constructors ─────────────────────────
 const mockInstances: Record<string, unknown> = {};
 
-function makeMock<T>(name: string): { new(...args: unknown[]): T } {
-  const ctor = vi.fn(function (this: unknown, ...args: unknown[]) {
+function makeMock<T>(name: string): { new (...args: unknown[]): T } {
+  const ctor = vi.fn(function (this: unknown) {
     mockInstances[name] = this;
     return this;
-  }) as unknown as { new(...args: unknown[]): T };
+  }) as unknown as { new (...args: unknown[]): T };
   return ctor;
 }
 

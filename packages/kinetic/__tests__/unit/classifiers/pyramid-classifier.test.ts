@@ -1,6 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { FaultClassifierContext, FaultTypeHypothesis, IFaultClassifier, ILLMFaultClassifier, IStatisticalAnalyzer } from '@agentix-e/micro-kinetic-core';
-import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import type {
+  FaultClassifierContext,
+  FaultTypeHypothesis,
+  IFaultClassifier,
+  ILLMFaultClassifier,
+  IStatisticalAnalyzer,
+  TimeSeries,
+} from '@agentix-e/micro-kinetic-core';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PyramidFaultClassifier } from '../../../src/classifiers/pyramid-classifier.js';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -38,9 +44,7 @@ function createMockRuleEngine(confidences: Record<string, number>): IFaultClassi
   return {
     method: 'rule',
     classify: vi.fn(() =>
-      Object.entries(confidences).map(([cat, conf]) =>
-        makeHypothesis(cat, conf, 'rule'),
-      ),
+      Object.entries(confidences).map(([cat, conf]) => makeHypothesis(cat, conf, 'rule')),
     ),
   };
 }
@@ -50,9 +54,7 @@ function createMockStatAnalyzer(confidences: Record<string, number>): IStatistic
     method: 'statistical',
     extractFeatures: vi.fn(),
     classify: vi.fn(() =>
-      Object.entries(confidences).map(([cat, conf]) =>
-        makeHypothesis(cat, conf, 'statistical'),
-      ),
+      Object.entries(confidences).map(([cat, conf]) => makeHypothesis(cat, conf, 'statistical')),
     ),
   };
 }
@@ -61,9 +63,7 @@ function createMockLLMClassifier(): ILLMFaultClassifier {
   return {
     method: 'llm',
     classify: vi.fn(() => [makeHypothesis('UNKNOWN', 0, 'llm')]),
-    classifyWithContext: vi.fn(() =>
-      Promise.resolve([makeHypothesis('MEM', 0.9, 'llm')]),
-    ),
+    classifyWithContext: vi.fn(() => Promise.resolve([makeHypothesis('MEM', 0.9, 'llm')])),
   };
 }
 

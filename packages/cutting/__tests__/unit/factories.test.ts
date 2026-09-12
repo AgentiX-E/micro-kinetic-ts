@@ -57,7 +57,7 @@ vi.mock('numpy-ts', () => {
   return { array, polyfit, polyval, NDArray, default: { array, polyfit, polyval, NDArray } };
 });
 
-import type { IContainer, IConvergenceProver, ICuttingEngine } from '@agentix-e/micro-kinetic-core';
+import type { IConvergenceProver, ICuttingEngine } from '@agentix-e/micro-kinetic-core';
 import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
 import {
   AdaptiveWindowCutter,
@@ -91,7 +91,7 @@ describe('registerCuttingFactories', () => {
 
   it('does not overwrite existing', () => {
     const container = new Container();
-    container.register(DI_TOKENS.CUTTING_ENGINE, (c: IContainer) => ({ __custom: true }));
+    container.register(DI_TOKENS.CUTTING_ENGINE, () => ({ __custom: true }));
     registerCuttingFactories(container);
     expect((container.resolve(DI_TOKENS.CUTTING_ENGINE) as any).__custom).toBe(true);
   });

@@ -7,7 +7,7 @@
  * @module kinetic/__tests__/unit/rcaeval-benchmark-helpers
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 // We test the actual implementations by importing the source files directly.
 // parseCaseDir and buildRCAEvalCallGraph are in benchmarks/src/ which is not
@@ -25,12 +25,7 @@ function parseCaseDir(dirPath: string): Record<string, string | number> | null {
   const sysCode = match[2]!;
   return {
     suite: `RE${suiteNum}`,
-    system:
-      sysCode === 'ob'
-        ? 'OnlineBoutique'
-        : sysCode === 'ss'
-          ? 'SockShop'
-          : 'TrainTicket',
+    system: sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket',
     service: match[3]!,
     faultType: match[4]!.toLowerCase(),
     instance: parseInt(match[5]!, 10),
@@ -135,7 +130,7 @@ describe('parseCaseDir', () => {
     // This is a known limitation — services with underscores misparse
     const result = parseCaseDir('/data/re3tt_ts_admin_basic_info_service_cpu_1');
     // The regex: re3tt_ (service) _ (fault) _ (instance)
-    // (.+?) matches non-greedy: "ts" then _admin... 
+    // (.+?) matches non-greedy: "ts" then _admin...
     expect(result).not.toBeNull();
     // Service will be truncated due to non-greedy match
     // This is acceptable behavior — the system mapping works via benchmark prefix
@@ -149,9 +144,7 @@ describe('parseCaseDir', () => {
   });
 
   it('should handle filesystem paths with nested directories', () => {
-    const result = parseCaseDir(
-      '/home/user/RCAEval-json/OnlineBoutique/re2ob_frontend_loss_5',
-    );
+    const result = parseCaseDir('/home/user/RCAEval-json/OnlineBoutique/re2ob_frontend_loss_5');
     expect(result).not.toBeNull();
     expect(result!.suite).toBe('RE2');
     expect(result!.system).toBe('OnlineBoutique');
@@ -163,9 +156,7 @@ describe('parseCaseDir', () => {
 
 describe('identifyBenchmarkSystem', () => {
   it('should identify RE1 OnlineBoutique by prefix', () => {
-    expect(identifyBenchmarkSystem('re1ob_cartservice_cpu_1')).toBe(
-      'OnlineBoutique',
-    );
+    expect(identifyBenchmarkSystem('re1ob_cartservice_cpu_1')).toBe('OnlineBoutique');
   });
 
   it('should identify RE2 SockShop by prefix', () => {
@@ -177,9 +168,7 @@ describe('identifyBenchmarkSystem', () => {
   });
 
   it('should identify RE2 OnlineBoutique (re2ob) by ob inclusion', () => {
-    expect(identifyBenchmarkSystem('re2ob_frontend_delay_1')).toBe(
-      'OnlineBoutique',
-    );
+    expect(identifyBenchmarkSystem('re2ob_frontend_delay_1')).toBe('OnlineBoutique');
   });
 
   it('should identify RE3 SockShop (re3ss) by ss inclusion', () => {
@@ -219,9 +208,7 @@ describe('identifyBenchmarkSystem', () => {
   });
 
   it('should handle case-insensitive input', () => {
-    expect(identifyBenchmarkSystem('RE1OB_CARTSERVICE_CPU_1')).toBe(
-      'OnlineBoutique',
-    );
+    expect(identifyBenchmarkSystem('RE1OB_CARTSERVICE_CPU_1')).toBe('OnlineBoutique');
     expect(identifyBenchmarkSystem('RE2SS_CARTS_DELAY_1')).toBe('SockShop');
     expect(identifyBenchmarkSystem('RE3TT_TS-UI_CRASH_1')).toBe('TrainTicket');
   });

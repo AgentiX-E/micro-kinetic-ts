@@ -13,19 +13,6 @@ function makeEdge(from: string, to: string, p99Latency = 50): CallEdge {
   };
 }
 
-function makeNodeScore(id: string, anomalyScore: number, depth = 0): [string, TreeNodeScore] {
-  return [
-    id,
-    {
-      nodeId: id,
-      anomalyScore,
-      childPropagationScore: 0,
-      totalScore: anomalyScore,
-      depth,
-    },
-  ];
-}
-
 function makePrunedTree(
   nodeIds: string[],
   edges: [string, string][],

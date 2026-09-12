@@ -2,8 +2,12 @@
  * Unit tests for MAD threshold computation.
  */
 
-import { describe, it, expect } from 'vitest';
-import { computeMADThreshold, detectMADAnomalies, DEFAULT_MAD_CONFIG } from '../../../src/signals/mad-threshold.js';
+import { describe, expect, it } from 'vitest';
+import {
+  computeMADThreshold,
+  DEFAULT_MAD_CONFIG,
+  detectMADAnomalies,
+} from '../../../src/signals/mad-threshold.js';
 
 describe('computeMADThreshold — basic cases', () => {
   it('should compute MAD threshold for normal-ish data', () => {

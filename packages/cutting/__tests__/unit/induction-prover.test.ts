@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { ConvergenceTimeoutError } from '@agentix-e/micro-kinetic-core';
 import { InductionProver } from '@agentix-e/micro-kinetic-cutting';
-import { InductionError, ConvergenceTimeoutError } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('InductionProver', () => {
   const prover = new InductionProver();

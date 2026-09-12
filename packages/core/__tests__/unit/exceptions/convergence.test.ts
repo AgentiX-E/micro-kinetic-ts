@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
 import {
-  InductionError,
   ConvergenceTimeoutError,
+  InductionError,
   InvalidWindowError,
   KineticError,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('InductionError', () => {
   it('should create with failedStep, accumulatedError, and tolerance', () => {

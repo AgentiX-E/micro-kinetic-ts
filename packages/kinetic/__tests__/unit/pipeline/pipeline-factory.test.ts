@@ -1,12 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import {
-  createPipeline,
-  createAcutePipeline,
-  createChronicPipeline,
-  createAlertStormPipeline,
-  createFullPipeline,
-} from '../../../src/pipeline/pipeline-factory.js';
 import { Container } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
+import {
+  createAcutePipeline,
+  createAlertStormPipeline,
+  createChronicPipeline,
+  createFullPipeline,
+  createPipeline,
+} from '../../../src/pipeline/pipeline-factory.js';
 
 describe('PipelineFactory', () => {
   let container: Container;
@@ -15,11 +15,31 @@ describe('PipelineFactory', () => {
     container = new Container();
     // Register minimal required tokens
     container.register(Symbol.for('micro-kinetic:RCAEngine'), () => ({ analyze: () => [] }), false);
-    container.register(Symbol.for('micro-kinetic:CuttingEngine'), () => ({ segment: () => [], estimateLocalBounds: () => [] }), false);
-    container.register(Symbol.for('micro-kinetic:ConvergenceProver'), () => ({ prove: () => ({ converged: true }) }), false);
-    container.register(Symbol.for('micro-kinetic:DenoiseEngine'), () => ({ computeCouplingSparsity: () => ({}), denoise: () => ({}) }), false);
-    container.register(Symbol.for('micro-kinetic:ScalingAnalyzer'), () => ({ estimateFaultProbability: () => ({}) }), false);
-    container.register(Symbol.for('micro-kinetic:WavePropagationModel'), () => ({ simulateCascade: () => ({}) }), false);
+    container.register(
+      Symbol.for('micro-kinetic:CuttingEngine'),
+      () => ({ segment: () => [], estimateLocalBounds: () => [] }),
+      false,
+    );
+    container.register(
+      Symbol.for('micro-kinetic:ConvergenceProver'),
+      () => ({ prove: () => ({ converged: true }) }),
+      false,
+    );
+    container.register(
+      Symbol.for('micro-kinetic:DenoiseEngine'),
+      () => ({ computeCouplingSparsity: () => ({}), denoise: () => ({}) }),
+      false,
+    );
+    container.register(
+      Symbol.for('micro-kinetic:ScalingAnalyzer'),
+      () => ({ estimateFaultProbability: () => ({}) }),
+      false,
+    );
+    container.register(
+      Symbol.for('micro-kinetic:WavePropagationModel'),
+      () => ({ simulateCascade: () => ({}) }),
+      false,
+    );
   });
 
   describe('createPipeline', () => {

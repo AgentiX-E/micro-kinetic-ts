@@ -1,12 +1,12 @@
-import { describe, it, expect } from 'vitest';
 import {
   invariant,
   invariantFinite,
-  invariantRange,
   invariantNonEmpty,
   invariantPositiveInt,
+  invariantRange,
   KineticValidationError,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('invariant', () => {
   it('should not throw when condition is truthy', () => {
@@ -190,7 +190,9 @@ describe('invariantNonEmpty', () => {
   });
 
   it('should throw for empty Float64Array', () => {
-    expect(() => invariantNonEmpty(new Float64Array(0), 'empty_f64')).toThrow(KineticValidationError);
+    expect(() => invariantNonEmpty(new Float64Array(0), 'empty_f64')).toThrow(
+      KineticValidationError,
+    );
   });
 
   it('should include label in error message for empty array', () => {
@@ -198,7 +200,9 @@ describe('invariantNonEmpty', () => {
   });
 
   it('should include label in error message for empty Float64Array', () => {
-    expect(() => invariantNonEmpty(new Float64Array(0), 'myBuffer')).toThrow('myBuffer must not be empty');
+    expect(() => invariantNonEmpty(new Float64Array(0), 'myBuffer')).toThrow(
+      'myBuffer must not be empty',
+    );
   });
 
   it('should not throw for Int32Array with elements', () => {

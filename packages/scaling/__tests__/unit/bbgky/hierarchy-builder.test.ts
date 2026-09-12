@@ -1,6 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import type {
+  CallEdge,
+  MicroserviceState,
+  ServiceCallGraph,
+  ServiceNode,
+} from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { HierarchyBuilder } from '../../../src/bbgky/hierarchy-builder.js';
-import type { MicroserviceState, ServiceCallGraph, ServiceNode, CallEdge } from '@agentix-e/micro-kinetic-core';
 
 function makeServiceGraph(serviceIds: string[], edges: CallEdge[] = []): ServiceCallGraph {
   const nodes = new Map<string, ServiceNode>();
@@ -40,7 +45,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.systemSize).toBe(2);
     });
 
@@ -52,40 +60,49 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states.length).toBeGreaterThanOrEqual(1);
     });
 
     // ── N=3, maxOrder=2 ─────────────────────────────────
     it('should set systemSize=3 for N=3 graph', () => {
       const builder = new HierarchyBuilder();
-      const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c'], [
-        makeEdge('svc_a', 'svc_b', 100),
-        makeEdge('svc_b', 'svc_c', 50),
-      ]);
+      const graph = makeServiceGraph(
+        ['svc_a', 'svc_b', 'svc_c'],
+        [makeEdge('svc_a', 'svc_b', 100), makeEdge('svc_b', 'svc_c', 50)],
+      );
       const states: MicroserviceState[] = [
         makeState('svc_a', 0.5, 0.1),
         makeState('svc_b', 0.3, 0.05),
         makeState('svc_c', 0.2, 0.02),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.systemSize).toBe(3);
     });
 
     it('should produce at least 2 states for N=3 maxOrder=2', () => {
       const builder = new HierarchyBuilder();
-      const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c'], [
-        makeEdge('svc_a', 'svc_b', 100),
-        makeEdge('svc_b', 'svc_c', 50),
-      ]);
+      const graph = makeServiceGraph(
+        ['svc_a', 'svc_b', 'svc_c'],
+        [makeEdge('svc_a', 'svc_b', 100), makeEdge('svc_b', 'svc_c', 50)],
+      );
       const states: MicroserviceState[] = [
         makeState('svc_a', 0.5, 0.1),
         makeState('svc_b', 0.3, 0.05),
         makeState('svc_c', 0.2, 0.02),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -103,7 +120,10 @@ describe('HierarchyBuilder', () => {
         makeState(id, 0.5 - i * 0.05, 0.1 - i * 0.01),
       );
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.systemSize).toBe(5);
     });
 
@@ -120,7 +140,10 @@ describe('HierarchyBuilder', () => {
         makeState(id, 0.5 - i * 0.05, 0.1 - i * 0.01),
       );
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.states.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -130,7 +153,10 @@ describe('HierarchyBuilder', () => {
       const graph = makeServiceGraph(serviceIds);
       const states: MicroserviceState[] = serviceIds.map((id) => makeState(id, 0.2, 0.05));
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.truncationOrder).toBeGreaterThanOrEqual(1);
     });
 
@@ -143,7 +169,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states[0]!.order).toBe(1);
     });
 
@@ -155,7 +184,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states[0]!.isSignificant).toBe(true);
     });
 
@@ -167,7 +199,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states[0]!.correlationEnergy).toBeGreaterThan(0);
     });
 
@@ -180,7 +215,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.states[1]!.order).toBe(2);
     });
 
@@ -192,7 +230,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.states[1]!.tensor.length).toBe(4);
     });
 
@@ -205,7 +246,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       for (const state of result.states) {
         expect(state.correlationEnergy).toBeGreaterThanOrEqual(0);
       }
@@ -219,7 +263,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.energyRatios.length).toBeGreaterThanOrEqual(0);
     });
 
@@ -231,7 +278,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.truncationError).toBeGreaterThanOrEqual(0);
     });
 
@@ -243,7 +293,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.truncationOrder).toBeGreaterThanOrEqual(1);
     });
 
@@ -256,7 +309,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 3, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 3,
+        truncationEta: 0.01,
+      });
       expect(result.states.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -266,7 +322,10 @@ describe('HierarchyBuilder', () => {
       const graph = makeServiceGraph(['svc_only']);
       const states: MicroserviceState[] = [makeState('svc_only', 0.5, 0.1)];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 1, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 1,
+        truncationEta: 0.01,
+      });
       expect(result.systemSize).toBe(1);
     });
 
@@ -275,7 +334,10 @@ describe('HierarchyBuilder', () => {
       const graph = makeServiceGraph(['svc_only']);
       const states: MicroserviceState[] = [makeState('svc_only', 0.5, 0.1)];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 1, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 1,
+        truncationEta: 0.01,
+      });
       expect(result.states.length).toBe(1);
     });
 
@@ -284,7 +346,10 @@ describe('HierarchyBuilder', () => {
       const graph = makeServiceGraph(['svc_only']);
       const states: MicroserviceState[] = [makeState('svc_only', 0.5, 0.1)];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 1, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 1,
+        truncationEta: 0.01,
+      });
       expect(result.states[0]!.order).toBe(1);
     });
 
@@ -297,7 +362,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 5, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 5,
+        truncationEta: 0.01,
+      });
       expect(result.systemSize).toBe(2);
     });
 
@@ -309,7 +377,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 5, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 5,
+        truncationEta: 0.01,
+      });
       // With small coupling, higher orders may truncate early due to energy decay
       expect(result.states.length).toBeGreaterThanOrEqual(1);
     });
@@ -322,7 +393,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 5, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 5,
+        truncationEta: 0.01,
+      });
       expect(result.truncationOrder).toBeGreaterThanOrEqual(1);
     });
 
@@ -336,7 +410,10 @@ describe('HierarchyBuilder', () => {
       ];
 
       // eta=0 ensures no early truncation, forcing k>3 recursive path
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 4, truncationEta: 0 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 4,
+        truncationEta: 0,
+      });
       expect(result.states.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -348,7 +425,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 4, truncationEta: 0 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 4,
+        truncationEta: 0,
+      });
       // f4 should have tensor of size N^k = 2^4 = 16
       const f4 = result.states[3]; // index 3 = order 4
       expect(f4!.tensor.length).toBe(16);
@@ -363,7 +443,10 @@ describe('HierarchyBuilder', () => {
       ];
 
       // Force through the decodeMultiIndex path for k>3
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 5, truncationEta: 0 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 5,
+        truncationEta: 0,
+      });
       expect(result.systemSize).toBe(2);
     });
 
@@ -375,7 +458,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.05),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 5, truncationEta: 0 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 5,
+        truncationEta: 0,
+      });
       expect(result.states.length).toBe(5);
     });
 
@@ -415,7 +501,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_b', 0.3, 0.1),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states[0]!.serviceIds).toContain('svc_a');
     });
 
@@ -428,7 +517,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_c', 0.2, 0.02),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states[0]!.tensor.length).toBe(3);
     });
 
@@ -436,12 +528,12 @@ describe('HierarchyBuilder', () => {
     it('should handle states with zero anomaly and zero fault probability', () => {
       const builder = new HierarchyBuilder();
       const graph = makeServiceGraph(['svc_a', 'svc_b']);
-      const states: MicroserviceState[] = [
-        makeState('svc_a', 0, 0),
-        makeState('svc_b', 0, 0),
-      ];
+      const states: MicroserviceState[] = [makeState('svc_a', 0, 0), makeState('svc_b', 0, 0)];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       expect(result.states[0]!.correlationEnergy).toBe(0);
     });
 
@@ -454,7 +546,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_a', 0.9, 0.5, 2000),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 1, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 1,
+        truncationEta: 0.01,
+      });
       // Should pick the 2000-timestamp entry (anomaly=0.9, fault=0.5)
       expect(result.states[0]!.correlationEnergy).toBeGreaterThan(0);
     });
@@ -468,7 +563,10 @@ describe('HierarchyBuilder', () => {
         makeState('svc_unknown', 0.9, 0.8),
       ];
 
-      const result = builder.computeBBGKYHierarchy(states, graph, { maxOrder: 2, truncationEta: 0.01 });
+      const result = builder.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 2,
+        truncationEta: 0.01,
+      });
       // svc_b not in states → its f1 value is 0
       expect(result.systemSize).toBe(2);
     });

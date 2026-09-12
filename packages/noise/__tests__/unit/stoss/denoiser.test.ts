@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { StossDenoiser } from '../../../src/stoss/denoiser.js';
+import type {
+  AlertRecord,
+  CouplingSparsityMatrix,
+  ServiceCallGraph,
+  ServiceNode,
+} from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { CouplingSparsityAnalyzer } from '../../../src/stoss/coupling-analyzer.js';
+import { StossDenoiser } from '../../../src/stoss/denoiser.js';
 import { IndependenceChecker } from '../../../src/stoss/independence-checker.js';
-import type { AlertRecord, ServiceCallGraph, ServiceNode, CouplingSparsityMatrix } from '@agentix-e/micro-kinetic-core';
 
 function makeServiceGraph(serviceIds: string[]): ServiceCallGraph {
   const nodes = new Map<string, ServiceNode>();
@@ -25,7 +30,10 @@ function makeAlert(serviceId: string, timestamp: number, value: number): AlertRe
   };
 }
 
-function makeCouplingMatrix(serviceIds: string[], sparsityScore: number = 0.8): CouplingSparsityMatrix {
+function makeCouplingMatrix(
+  serviceIds: string[],
+  sparsityScore: number = 0.8,
+): CouplingSparsityMatrix {
   const dimension = serviceIds.length;
   const matrix = new Float64Array(dimension * dimension);
   for (let i = 0; i < dimension; i++) {
@@ -46,10 +54,7 @@ describe('StossDenoiser', () => {
   describe('denoise', () => {
     it('should classify alerts into true, coincidental, and grouped', () => {
       const denoiser = new StossDenoiser();
-      const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9),
-        makeAlert('svc_b', 1500, 0.5),
-      ];
+      const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9), makeAlert('svc_b', 1500, 0.5)];
       const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
@@ -62,10 +67,7 @@ describe('StossDenoiser', () => {
 
     it('should compute falsePositiveReduction as coincidental/total', () => {
       const denoiser = new StossDenoiser();
-      const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9),
-        makeAlert('svc_b', 1500, 0.5),
-      ];
+      const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9), makeAlert('svc_b', 1500, 0.5)];
       const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
@@ -79,7 +81,9 @@ describe('StossDenoiser', () => {
       const coupling = makeCouplingMatrix(['svc_a'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
-      expect(result.trueAlarms.length + result.coincidentalAlarms.length + result.groupedAlarms.length).toBe(1);
+      expect(
+        result.trueAlarms.length + result.coincidentalAlarms.length + result.groupedAlarms.length,
+      ).toBe(1);
     });
 
     it('should handle empty coupling matrix gracefully (should throw)', () => {
@@ -135,14 +139,20 @@ describe('StossDenoiser', () => {
       const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c']);
       const analyzer = new CouplingSparsityAnalyzer();
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
-        makeAlert('svc_b', 3500, 0.52), makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
         makeAlert('svc_b', 5500, 0.51),
-        makeAlert('svc_c', 1200, 0.3), makeAlert('svc_c', 2200, 0.35),
-        makeAlert('svc_c', 3200, 0.32), makeAlert('svc_c', 4200, 0.28),
+        makeAlert('svc_c', 1200, 0.3),
+        makeAlert('svc_c', 2200, 0.35),
+        makeAlert('svc_c', 3200, 0.32),
+        makeAlert('svc_c', 4200, 0.28),
         makeAlert('svc_c', 5200, 0.31),
       ];
 
@@ -150,17 +160,16 @@ describe('StossDenoiser', () => {
       const coupling = analyzer.computeCouplingSparsity(alerts, graph);
 
       const result = denoiser.denoise(alerts, coupling);
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      const total =
+        result.trueAlarms.length +
+        result.coincidentalAlarms.length +
+        result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
       expect(total).toBe(alerts.length);
     });
 
     it('should have sparsityScore in result', () => {
       const denoiser = new StossDenoiser();
-      const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9),
-        makeAlert('svc_b', 1500, 0.5),
-      ];
+      const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9), makeAlert('svc_b', 1500, 0.5)];
       const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.75);
 
       const result = denoiser.denoise(alerts, coupling);
@@ -169,40 +178,48 @@ describe('StossDenoiser', () => {
 
     it('should classify all independent pairs as coincidental', () => {
       const denoiser = new StossDenoiser();
-      const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9),
-        makeAlert('svc_b', 1100, 0.1),
-      ];
+      const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9), makeAlert('svc_b', 1100, 0.1)];
       // Create sparse coupling with zero non-diagonal
       const matrix = new Float64Array([1, 0, 0, 1]);
       const coupling: CouplingSparsityMatrix = {
-        dimension: 2, serviceIds: ['svc_a', 'svc_b'], matrix, sparsityScore: 1.0, threshold: 0.7,
-        satisfiesStosszahlansatz: false, independentGroups: [],
+        dimension: 2,
+        serviceIds: ['svc_a', 'svc_b'],
+        matrix,
+        sparsityScore: 1.0,
+        threshold: 0.7,
+        satisfiesStosszahlansatz: false,
+        independentGroups: [],
       };
 
       const result = denoiser.denoise(alerts, coupling);
       // Total classification equals input
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      const total =
+        result.trueAlarms.length +
+        result.coincidentalAlarms.length +
+        result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
       expect(total).toBe(2);
     });
 
     it('should handle tightly coupled alert pairs', () => {
       const denoiser = new StossDenoiser();
-      const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9),
-        makeAlert('svc_b', 1100, 0.89),
-      ];
+      const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9), makeAlert('svc_b', 1100, 0.89)];
       // Highly coupled matrix
       const matrix = new Float64Array([1, 0.9, 0.9, 1]);
       const coupling: CouplingSparsityMatrix = {
-        dimension: 2, serviceIds: ['svc_a', 'svc_b'], matrix, sparsityScore: 0.5, threshold: 0.7,
-        satisfiesStosszahlansatz: false, independentGroups: [],
+        dimension: 2,
+        serviceIds: ['svc_a', 'svc_b'],
+        matrix,
+        sparsityScore: 0.5,
+        threshold: 0.7,
+        satisfiesStosszahlansatz: false,
+        independentGroups: [],
       };
 
       const result = denoiser.denoise(alerts, coupling);
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      const total =
+        result.trueAlarms.length +
+        result.coincidentalAlarms.length +
+        result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
       expect(total).toBe(2);
     });
 
@@ -215,18 +232,28 @@ describe('StossDenoiser', () => {
       ];
       const N = 3;
       const matrix = new Float64Array(N * N);
-      for (let i = 0; i < N; i++) { matrix[i * N + i] = 1; }
+      for (let i = 0; i < N; i++) {
+        matrix[i * N + i] = 1;
+      }
       // Set some coupling
-      matrix[0 * N + 1] = 0.5; matrix[1 * N + 0] = 0.5;
+      // Row 0, col 1 and row 1, col 0.
+      matrix[1] = 0.5;
+      matrix[1 * N + 0] = 0.5;
       const coupling: CouplingSparsityMatrix = {
-        dimension: N, serviceIds: ['svc_a', 'svc_b', 'svc_c'], matrix,
-        sparsityScore: 0.6, threshold: 0.7,
-        satisfiesStosszahlansatz: false, independentGroups: [],
+        dimension: N,
+        serviceIds: ['svc_a', 'svc_b', 'svc_c'],
+        matrix,
+        sparsityScore: 0.6,
+        threshold: 0.7,
+        satisfiesStosszahlansatz: false,
+        independentGroups: [],
       };
 
       const result = denoiser.denoise(alerts, coupling);
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      const total =
+        result.trueAlarms.length +
+        result.coincidentalAlarms.length +
+        result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
       expect(total).toBe(alerts.length);
     });
 
@@ -239,12 +266,20 @@ describe('StossDenoiser', () => {
       ];
       const N = 3;
       const matrix = new Float64Array(N * N);
-      for (let i = 0; i < N; i++) { matrix[i * N + i] = 1; }
-      matrix[0 * N + 1] = 0.5; matrix[1 * N + 0] = 0.5;
+      for (let i = 0; i < N; i++) {
+        matrix[i * N + i] = 1;
+      }
+      // Row 0, col 1 and row 1, col 0.
+      matrix[1] = 0.5;
+      matrix[1 * N + 0] = 0.5;
       const coupling: CouplingSparsityMatrix = {
-        dimension: N, serviceIds: ['svc_a', 'svc_b', 'svc_c'], matrix,
-        sparsityScore: 0.6, threshold: 0.7,
-        satisfiesStosszahlansatz: false, independentGroups: [],
+        dimension: N,
+        serviceIds: ['svc_a', 'svc_b', 'svc_c'],
+        matrix,
+        sparsityScore: 0.6,
+        threshold: 0.7,
+        satisfiesStosszahlansatz: false,
+        independentGroups: [],
       };
 
       const result = denoiser.denoise(alerts, coupling);
@@ -263,8 +298,10 @@ describe('StossDenoiser', () => {
       const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      const total =
+        result.trueAlarms.length +
+        result.coincidentalAlarms.length +
+        result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
       expect(total).toBe(2);
     });
 
@@ -272,10 +309,7 @@ describe('StossDenoiser', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const checker = new IndependenceChecker();
       const denoiser = new StossDenoiser(analyzer, checker);
-      const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9),
-        makeAlert('svc_b', 1500, 0.5),
-      ];
+      const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9), makeAlert('svc_b', 1500, 0.5)];
       const coupling = makeCouplingMatrix(['svc_a', 'svc_b'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
@@ -294,8 +328,10 @@ describe('StossDenoiser', () => {
       const coupling = makeCouplingMatrix(['svc_a', 'svc_b', 'svc_c'], 0.9);
 
       const result = denoiser.denoise(alerts, coupling);
-      const total = result.trueAlarms.length + result.coincidentalAlarms.length
-        + result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
+      const total =
+        result.trueAlarms.length +
+        result.coincidentalAlarms.length +
+        result.groupedAlarms.reduce((s, g) => s + g.alerts.length, 0);
       expect(total).toBe(5);
     });
 
@@ -308,11 +344,17 @@ describe('StossDenoiser', () => {
       ];
       const N = 3;
       const matrix = new Float64Array(N * N);
-      for (let i = 0; i < N; i++) { matrix[i * N + i] = 1; }
+      for (let i = 0; i < N; i++) {
+        matrix[i * N + i] = 1;
+      }
       const coupling: CouplingSparsityMatrix = {
-        dimension: N, serviceIds: ['svc_a', 'svc_b', 'svc_c'], matrix,
-        sparsityScore: 0.9, threshold: 0.7,
-        satisfiesStosszahlansatz: false, independentGroups: [],
+        dimension: N,
+        serviceIds: ['svc_a', 'svc_b', 'svc_c'],
+        matrix,
+        sparsityScore: 0.9,
+        threshold: 0.7,
+        satisfiesStosszahlansatz: false,
+        independentGroups: [],
       };
 
       const result = denoiser.denoise(alerts, coupling);
@@ -332,12 +374,19 @@ describe('StossDenoiser', () => {
       ];
       const N = 3;
       const matrix = new Float64Array(N * N);
-      for (let i = 0; i < N; i++) { matrix[i * N + i] = 1; }
-      matrix[0 * N + 2] = 0.9; matrix[2 * N + 0] = 0.9; // svc_z ↔ svc_m coupled
+      for (let i = 0; i < N; i++) {
+        matrix[i * N + i] = 1;
+      }
+      matrix[2] = 0.9; // row 0, col 2
+      matrix[2 * N + 0] = 0.9; // svc_z ↔ svc_m coupled
       const coupling: CouplingSparsityMatrix = {
-        dimension: N, serviceIds: ['svc_z', 'svc_a', 'svc_m'], matrix,
-        sparsityScore: 0.5, threshold: 0.7,
-        satisfiesStosszahlansatz: false, independentGroups: [],
+        dimension: N,
+        serviceIds: ['svc_z', 'svc_a', 'svc_m'],
+        matrix,
+        sparsityScore: 0.5,
+        threshold: 0.7,
+        satisfiesStosszahlansatz: false,
+        independentGroups: [],
       };
 
       const result = denoiser.denoise(alerts, coupling);
@@ -370,11 +419,15 @@ describe('StossDenoiser', () => {
       const denoiser = new StossDenoiser(analyzer);
       const graph = makeServiceGraph(['svc_a', 'svc_b']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
-        makeAlert('svc_b', 3500, 0.52), makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
         makeAlert('svc_b', 5500, 0.51),
       ];
 
@@ -386,11 +439,15 @@ describe('StossDenoiser', () => {
       const denoiser = new StossDenoiser();
       const graph = makeServiceGraph(['svc_a', 'svc_b']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
-        makeAlert('svc_b', 3500, 0.52), makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
         makeAlert('svc_b', 5500, 0.51),
       ];
 

@@ -1,13 +1,13 @@
-import { describe, it, expect } from 'vitest';
 import type {
-  SVDResult,
-  LUResult,
-  RollingStatsResult,
-  KDEResult,
-  TestResult,
   CouplingParams,
   GraphSpectrum,
+  KDEResult,
+  LUResult,
+  RollingStatsResult,
+  SVDResult,
+  TestResult,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Math Provider interfaces - SVDResult', () => {
   it('should construct SVDResult', () => {

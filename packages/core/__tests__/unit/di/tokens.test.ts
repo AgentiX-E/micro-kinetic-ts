@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
 import { DI_TOKENS } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('DI_TOKENS', () => {
   it('should export DI_TOKENS', () => {

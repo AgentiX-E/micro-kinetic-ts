@@ -1,24 +1,42 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('numpy-ts', () => {
   class NDArray {
     data: Float64Array;
     flags = { C_CONTIGUOUS: true };
     _shape: number[];
-    constructor(data: Float64Array, shape?: number[]) { this.data = data; this._shape = shape || [data.length]; }
-    tolist(): number[] { return Array.from(this.data); }
-    copy() { return new NDArray(new Float64Array(this.data), this._shape); }
-    reshape(shape: number[]) { return new NDArray(this.data, shape); }
+    constructor(data: Float64Array, shape?: number[]) {
+      this.data = data;
+      this._shape = shape || [data.length];
+    }
+    tolist(): number[] {
+      return Array.from(this.data);
+    }
+    copy() {
+      return new NDArray(new Float64Array(this.data), this._shape);
+    }
+    reshape(shape: number[]) {
+      return new NDArray(this.data, shape);
+    }
   }
   function array(data: Float64Array | number[]) {
     return new NDArray(data instanceof Float64Array ? data : new Float64Array(data), [data.length]);
   }
   function polyfit(x: NDArray, y: NDArray): NDArray {
-    const xd = x.data; const yd = y.data; const n = xd.length;
-    let sx = 0, sy = 0, sxy = 0, sx2 = 0;
+    const xd = x.data;
+    const yd = y.data;
+    const n = xd.length;
+    let sx = 0,
+      sy = 0,
+      sxy = 0,
+      sx2 = 0;
     for (let i = 0; i < n; i++) {
-      const xi = xd[i]!, yi = yd[i]!;
-      sx += xi; sy += yi; sxy += xi * yi; sx2 += xi * xi;
+      const xi = xd[i]!,
+        yi = yd[i]!;
+      sx += xi;
+      sy += yi;
+      sxy += xi * yi;
+      sx2 += xi * xi;
     }
     const denom = n * sx2 - sx * sx;
     const slope = Math.abs(denom) < 1e-12 ? 0 : (n * sxy - sx * sy) / denom;
@@ -26,7 +44,8 @@ vi.mock('numpy-ts', () => {
     return new NDArray(new Float64Array([slope, intercept]), [2]);
   }
   function polyval(coeffs: NDArray, x: NDArray): NDArray {
-    const c = coeffs.data; const xd = x.data;
+    const c = coeffs.data;
+    const xd = x.data;
     const result = new Float64Array(xd.length);
     for (let i = 0; i < xd.length; i++) {
       let val = 0;
@@ -38,8 +57,8 @@ vi.mock('numpy-ts', () => {
   return { array, polyfit, polyval, NDArray, default: { array, polyfit, polyval, NDArray } };
 });
 
-import { DegradationCurveAnalyzer, CurveModel } from '@agentix-e/micro-kinetic-cutting';
 import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import { CurveModel, DegradationCurveAnalyzer } from '@agentix-e/micro-kinetic-cutting';
 
 function makeTS(label: string, timestamps: number[], values: number[]): TimeSeries {
   return { label, timestamps, values: new Float64Array(values), unit: 'count' };
@@ -50,8 +69,11 @@ describe('DegradationCurveAnalyzer', () => {
 
   describe('analyze', () => {
     it('analyzes linear data', () => {
-      const ts = makeTS('metric', [0, 3600000, 7200000, 10800000, 14400000, 18000000, 21600000, 25200000, 28800000, 32400000],
-        [10, 12, 14, 16, 18, 20, 22, 24, 26, 28]);
+      const ts = makeTS(
+        'metric',
+        [0, 3600000, 7200000, 10800000, 14400000, 18000000, 21600000, 25200000, 28800000, 32400000],
+        [10, 12, 14, 16, 18, 20, 22, 24, 26, 28],
+      );
       const result = analyzer.analyze(ts, { minRSquared: 0.5 });
       expect(result.input).toBe(ts);
       expect(result.timeHours.length).toBe(10);
@@ -61,7 +83,11 @@ describe('DegradationCurveAnalyzer', () => {
 
     it('computes time-to-threshold', () => {
       const vals = Array.from({ length: 10 }, (_, i) => 10 + i * 2);
-      const ts = makeTS('metric', vals.map((_, i) => i * 3600000), vals);
+      const ts = makeTS(
+        'metric',
+        vals.map((_, i) => i * 3600000),
+        vals,
+      );
       const result = analyzer.analyze(ts, { failureThreshold: 50 });
       expect(result.hoursToThreshold).toBeDefined();
     });
@@ -72,7 +98,12 @@ describe('DegradationCurveAnalyzer', () => {
     });
 
     it('throws on mismatched lengths', () => {
-      const ts: TimeSeries = { label: 'test', timestamps: [0, 1000, 2000], values: new Float64Array([10, 20]), unit: 'count' };
+      const ts: TimeSeries = {
+        label: 'test',
+        timestamps: [0, 1000, 2000],
+        values: new Float64Array([10, 20]),
+        unit: 'count',
+      };
       expect(() => analyzer.analyze(ts)).toThrow();
     });
 
@@ -143,8 +174,8 @@ describe('DegradationCurveAnalyzer', () => {
       const fits: Record<CurveModel, any> = {
         [CurveModel.LINEAR]: { adjustedRSquared: 0.95 },
         [CurveModel.EXPONENTIAL]: { adjustedRSquared: 0.85 },
-        [CurveModel.LOGARITHMIC]: { adjustedRSquared: 0.80 },
-        [CurveModel.POWER_LAW]: { adjustedRSquared: 0.70 },
+        [CurveModel.LOGARITHMIC]: { adjustedRSquared: 0.8 },
+        [CurveModel.POWER_LAW]: { adjustedRSquared: 0.7 },
       } as any;
       expect(analyzer.selectBestModel(fits, 0.7)).toBe(CurveModel.LINEAR);
     });

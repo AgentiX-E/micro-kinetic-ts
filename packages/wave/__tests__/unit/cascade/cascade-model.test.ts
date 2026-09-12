@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import type { CallEdge, ServiceCallGraph, ServiceNode } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { WaveCascadeModel } from '../../../src/cascade/cascade-model.js';
-import type { ServiceCallGraph, ServiceNode, CallEdge } from '@agentix-e/micro-kinetic-core';
 
 // ── Test Helpers ────────────────────────────────────────────
 
@@ -16,7 +16,13 @@ function makeServiceGraph(serviceIds: string[], edges: CallEdge[] = []): Service
   return { nodes, edges, systemLoad: 0.5 };
 }
 
-function makeEdge(from: string, to: string, callRate = 100, p99Latency = 100, errorRate = 0.01): CallEdge {
+function makeEdge(
+  from: string,
+  to: string,
+  callRate = 100,
+  p99Latency = 100,
+  errorRate = 0.01,
+): CallEdge {
   return { from, to, type: 'REST', callRate, p99Latency, errorRate };
 }
 
@@ -107,16 +113,14 @@ describe('WaveCascadeModel.simulateCascade', () => {
   // ── Edge: Very long decay (may not dissipate) ─────────────
 
   describe('very long decay time', () => {
-    const graph = makeServiceGraph(['svc-a', 'svc-b'], [
-      makeEdge('svc-a', 'svc-b', 100),
-    ]);
+    const graph = makeServiceGraph(['svc-a', 'svc-b'], [makeEdge('svc-a', 'svc-b', 100)]);
     const model = new WaveCascadeModel();
     const result = model.simulateCascade('svc-a', graph, {
       couplingStrength: 0.5,
       propagationSpeed: 1.0,
       decayTimeConstant: 600000, // very slow decay
       cascadeThreshold: 0.01,
-      timeHorizon: 5000,  // short horizon
+      timeHorizon: 5000, // short horizon
     });
 
     it('should have dissipated as boolean', () => {
@@ -136,9 +140,9 @@ describe('WaveCascadeModel.simulateCascade', () => {
     const result = model.simulateCascade('svc-a', isolated, {
       couplingStrength: 0.5,
       propagationSpeed: 1.0,
-      decayTimeConstant: 900000,  // very slow decay
+      decayTimeConstant: 900000, // very slow decay
       cascadeThreshold: 0.02,
-      timeHorizon: 5000,  // very short horizon
+      timeHorizon: 5000, // very short horizon
     });
 
     it('should have sourceServiceId svc-a', () => {
@@ -200,11 +204,17 @@ describe('WaveCascadeModel.simulateCascade', () => {
   // ── Edge: Fully connected graph ───────────────────────────
 
   describe('fully connected graph', () => {
-    const fullyConnected = makeServiceGraph(['a', 'b', 'c'], [
-      makeEdge('a', 'b', 100), makeEdge('b', 'a', 100),
-      makeEdge('a', 'c', 100), makeEdge('c', 'a', 100),
-      makeEdge('b', 'c', 100), makeEdge('c', 'b', 100),
-    ]);
+    const fullyConnected = makeServiceGraph(
+      ['a', 'b', 'c'],
+      [
+        makeEdge('a', 'b', 100),
+        makeEdge('b', 'a', 100),
+        makeEdge('a', 'c', 100),
+        makeEdge('c', 'a', 100),
+        makeEdge('b', 'c', 100),
+        makeEdge('c', 'b', 100),
+      ],
+    );
     const result = run(fullyConnected, 'a');
 
     it('should include all 3 services', () => {
@@ -223,9 +233,7 @@ describe('WaveCascadeModel.simulateCascade', () => {
   // ── Edge: Max coupling (1.0) ──────────────────────────────
 
   describe('max coupling 1.0', () => {
-    const graph = makeServiceGraph(['svc-a', 'svc-b'], [
-      makeEdge('svc-a', 'svc-b', 1000),
-    ]);
+    const graph = makeServiceGraph(['svc-a', 'svc-b'], [makeEdge('svc-a', 'svc-b', 1000)]);
     const model = new WaveCascadeModel();
     const result = model.simulateCascade('svc-a', graph, {
       couplingStrength: 1.0,
@@ -252,9 +260,7 @@ describe('WaveCascadeModel.simulateCascade', () => {
   // ── Edge: Zero coupling (0.0) ─────────────────────────────
 
   describe('zero coupling 0.0', () => {
-    const graph = makeServiceGraph(['svc-a', 'svc-b'], [
-      makeEdge('svc-a', 'svc-b', 100),
-    ]);
+    const graph = makeServiceGraph(['svc-a', 'svc-b'], [makeEdge('svc-a', 'svc-b', 100)]);
     const model = new WaveCascadeModel();
     const result = model.simulateCascade('svc-a', graph, {
       couplingStrength: 0.0,
@@ -270,7 +276,7 @@ describe('WaveCascadeModel.simulateCascade', () => {
 
     it('should keep svc-b intensity near 0 (no coupling)', () => {
       const traj = result.intensityTrajectories.get('svc-b')!;
-      const maxB = Math.max(...traj.map(t => t.intensity));
+      const maxB = Math.max(...traj.map((t) => t.intensity));
       expect(maxB).toBe(0);
     });
   });
@@ -295,10 +301,10 @@ describe('WaveCascadeModel.simulateCascade', () => {
 // ── computeDecayCurve ────────────────────────────────────────
 
 describe('WaveCascadeModel.computeDecayCurve', () => {
-  const graph = makeServiceGraph(['svc-a', 'svc-b', 'svc-c'], [
-    makeEdge('svc-a', 'svc-b', 100),
-    makeEdge('svc-b', 'svc-c', 50),
-  ]);
+  const graph = makeServiceGraph(
+    ['svc-a', 'svc-b', 'svc-c'],
+    [makeEdge('svc-a', 'svc-b', 100), makeEdge('svc-b', 'svc-c', 50)],
+  );
 
   it('should have 100 time points', () => {
     const curve = new WaveCascadeModel().computeDecayCurve(graph, 60000);

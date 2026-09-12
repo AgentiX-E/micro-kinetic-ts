@@ -1,16 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import {
-  DEFAULT_RCA_OPTIONS,
-} from '@agentix-e/micro-kinetic-core';
 import type {
-  FaultSeverity,
-  FaultCategory,
-  FaultType,
   ChronicFaultIndicator,
-  RootCauseResult,
-  RCAEngineOptions,
+  FaultCategory,
+  FaultSeverity,
+  FaultType,
   MetricMap,
+  RootCauseResult,
 } from '@agentix-e/micro-kinetic-core';
+import { DEFAULT_RCA_OPTIONS } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Fault types - FaultType', () => {
   it('should accept a valid FaultType', () => {
@@ -25,9 +22,21 @@ describe('Fault types - FaultType', () => {
 
   it('should support all fault categories', () => {
     const categories: FaultCategory[] = [
-      'CPU', 'MEMORY', 'DISK', 'NETWORK_DELAY', 'NETWORK_LOSS',
-      'SOCKET', 'JVM_GC', 'JVM_OOM', 'CONNECTION_POOL', 'MEMORY_LEAK',
-      'DATA_SKEW', 'CODE_ERROR', 'MISCONFIGURATION', 'DNS_FAILURE', 'UNKNOWN',
+      'CPU',
+      'MEMORY',
+      'DISK',
+      'NETWORK_DELAY',
+      'NETWORK_LOSS',
+      'SOCKET',
+      'JVM_GC',
+      'JVM_OOM',
+      'CONNECTION_POOL',
+      'MEMORY_LEAK',
+      'DATA_SKEW',
+      'CODE_ERROR',
+      'MISCONFIGURATION',
+      'DNS_FAILURE',
+      'UNKNOWN',
     ];
     for (const cat of categories) {
       const ft: FaultType = { category: cat, subType: 'test', severity: 'warning' };
@@ -132,7 +141,10 @@ describe('Fault types - DEFAULT_RCA_OPTIONS', () => {
 describe('Fault types - MetricMap type usage', () => {
   it('should construct a valid MetricMap', () => {
     const ts: import('@agentix-e/micro-kinetic-core').TimeSeries = {
-      label: 'cpu', timestamps: [1], values: new Float64Array([50]), unit: '%',
+      label: 'cpu',
+      timestamps: [1],
+      values: new Float64Array([50]),
+      unit: '%',
     };
     const map: MetricMap = new Map([['svc-a', [ts]]]);
     expect(map.size).toBe(1);

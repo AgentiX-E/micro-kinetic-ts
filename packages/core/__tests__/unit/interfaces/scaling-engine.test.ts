@@ -1,11 +1,10 @@
-import { describe, it, expect } from 'vitest';
 import type {
-  MicroserviceState,
-  BBGKYState,
   BBGKYHierarchy,
+  BBGKYState,
   BoltzmannGradResult,
-  BBGKYOptions,
+  MicroserviceState,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Scaling Engine interfaces', () => {
   it('should construct MicroserviceState for BBGKY analysis', () => {
@@ -22,8 +21,11 @@ describe('Scaling Engine interfaces', () => {
 
   it('should construct BBGKYHierarchy', () => {
     const s1: BBGKYState = {
-      order: 1, serviceIds: ['a'],
-      correlationEnergy: 0.8, tensor: new Float64Array([0.8]), isSignificant: true,
+      order: 1,
+      serviceIds: ['a'],
+      correlationEnergy: 0.8,
+      tensor: new Float64Array([0.8]),
+      isSignificant: true,
     };
     const hierarchy: BBGKYHierarchy = {
       systemSize: 50,

@@ -1,11 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import type {
-  LocalErrorBound,
-  ProofStep,
-  ConvergenceResult,
-  ICuttingEngine,
-  IConvergenceProver,
-} from '@agentix-e/micro-kinetic-core';
+import type { ConvergenceResult, LocalErrorBound, ProofStep } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Cutting Engine interfaces', () => {
   it('should accept a valid LocalErrorBound object', () => {
@@ -22,7 +16,12 @@ describe('Cutting Engine interfaces', () => {
   });
 
   it('should accept LocalErrorBound with indicators', () => {
-    const indicator = { metric: 'cpu', degradationRate: 0.001, temporalCorrelation: 0.9, isMonotonic: true };
+    const indicator = {
+      metric: 'cpu',
+      degradationRate: 0.001,
+      temporalCorrelation: 0.9,
+      isMonotonic: true,
+    };
     const bound: LocalErrorBound = {
       windowIndex: 1,
       startTime: 2000,
@@ -56,7 +55,12 @@ describe('Cutting Engine interfaces', () => {
   });
 
   it('should accept a converged ConvergenceResult', () => {
-    const step: ProofStep = { stepIndex: 0, claim: 'base', cumulativeError: 0, withinTolerance: true };
+    const step: ProofStep = {
+      stepIndex: 0,
+      claim: 'base',
+      cumulativeError: 0,
+      withinTolerance: true,
+    };
     const result: ConvergenceResult = {
       converged: true,
       convergenceTime: 10000,

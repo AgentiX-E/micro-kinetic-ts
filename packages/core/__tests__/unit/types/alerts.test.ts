@@ -1,15 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import {
-  DEFAULT_STOSS_PARAMS,
-} from '@agentix-e/micro-kinetic-core';
 import type {
-  AlertSeverity,
-  AlertRecord,
   AlertGroup,
+  AlertRecord,
+  AlertSeverity,
   CouplingSparsityMatrix,
-  IndependenceResult,
   DenoiseResult,
+  IndependenceResult,
 } from '@agentix-e/micro-kinetic-core';
+import { DEFAULT_STOSS_PARAMS } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Alert types - AlertRecord', () => {
   it('should accept a valid AlertRecord', () => {
@@ -32,8 +30,14 @@ describe('Alert types - AlertRecord', () => {
     const severities: AlertSeverity[] = ['critical', 'warning', 'info'];
     for (const sev of severities) {
       const alert: AlertRecord = {
-        id: 'a', serviceId: 'svc', severity: sev,
-        timestamp: 0, metric: 'm', value: 0, threshold: 0, message: '',
+        id: 'a',
+        serviceId: 'svc',
+        severity: sev,
+        timestamp: 0,
+        metric: 'm',
+        value: 0,
+        threshold: 0,
+        message: '',
       };
       expect(alert.severity).toBe(sev);
     }
@@ -42,10 +46,18 @@ describe('Alert types - AlertRecord', () => {
 
 describe('Alert types - AlertGroup', () => {
   it('should accept a valid AlertGroup', () => {
-    const alerts: AlertRecord[] = [{
-      id: 'a1', serviceId: 'svc-a', severity: 'warning',
-      timestamp: 1000, metric: 'cpu', value: 80, threshold: 70, message: 'warning',
-    }];
+    const alerts: AlertRecord[] = [
+      {
+        id: 'a1',
+        serviceId: 'svc-a',
+        severity: 'warning',
+        timestamp: 1000,
+        metric: 'cpu',
+        value: 80,
+        threshold: 70,
+        message: 'warning',
+      },
+    ];
     const group: AlertGroup = {
       id: 'group-1',
       timeWindow: [1000, 2000],
@@ -127,8 +139,14 @@ describe('Alert types - IndependenceResult', () => {
 describe('Alert types - DenoiseResult', () => {
   it('should accept a valid DenoiseResult', () => {
     const alert: AlertRecord = {
-      id: 'a1', serviceId: 'svc-a', severity: 'critical',
-      timestamp: 1000, metric: 'cpu', value: 90, threshold: 80, message: 'high',
+      id: 'a1',
+      serviceId: 'svc-a',
+      severity: 'critical',
+      timestamp: 1000,
+      metric: 'cpu',
+      value: 90,
+      threshold: 80,
+      message: 'high',
     };
     const result: DenoiseResult = {
       trueAlarms: [alert],
@@ -144,8 +162,14 @@ describe('Alert types - DenoiseResult', () => {
 
   it('should accept result with both true and coincidental alarms', () => {
     const na: AlertRecord = {
-      id: 'n1', serviceId: 'svc', severity: 'info',
-      timestamp: 0, metric: 'm', value: 0, threshold: 0, message: '',
+      id: 'n1',
+      serviceId: 'svc',
+      severity: 'info',
+      timestamp: 0,
+      metric: 'm',
+      value: 0,
+      threshold: 0,
+      message: '',
     };
     const result: DenoiseResult = {
       trueAlarms: [na],

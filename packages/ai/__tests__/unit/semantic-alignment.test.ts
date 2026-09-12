@@ -16,38 +16,47 @@
  * @module ai/__tests__/unit/semantic-alignment
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   IEmbeddingProvider,
   ServiceDescriptor,
-  EntityAlignmentResult,
 } from '../../src/interfaces/embedding-provider.js';
-import type {
-  ILLMProvider,
-  SingleEntityAlignmentResult,
-  EntityAlignmentCandidate,
-} from '../../src/interfaces/llm-provider.js';
+import type { EntityAlignmentCandidate, ILLMProvider } from '../../src/interfaces/llm-provider.js';
 import {
-  SemanticAlignmentProvider,
   DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
   SemanticAlignmentConfig,
+  SemanticAlignmentProvider,
 } from '../../src/providers/semantic-alignment.js';
 
 // ── Test Fixtures ────────────────────────────────────────
 
 const TOPOLOGY_SERVICES: ServiceDescriptor[] = [
   { id: 'frontend', name: 'frontend', namespace: 'onlineboutique', labels: ['web', 'gateway'] },
-  { id: 'cartservice', name: 'cartservice', namespace: 'onlineboutique', labels: ['backend', 'caching'] },
-  { id: 'productcatalog', name: 'productcatalog', namespace: 'onlineboutique', labels: ['backend'] },
-  { id: 'checkoutservice', name: 'checkoutservice', namespace: 'onlineboutique', labels: ['backend'] },
-  { id: 'paymentservice', name: 'paymentservice', namespace: 'onlineboutique', labels: ['backend', 'external'] },
-];
-
-const UNKNOWN_SPAN_SERVICES = [
-  'cartservice',
-  'frontend',
-  'productcatalogservice', // partial match to productcatalog
+  {
+    id: 'cartservice',
+    name: 'cartservice',
+    namespace: 'onlineboutique',
+    labels: ['backend', 'caching'],
+  },
+  {
+    id: 'productcatalog',
+    name: 'productcatalog',
+    namespace: 'onlineboutique',
+    labels: ['backend'],
+  },
+  {
+    id: 'checkoutservice',
+    name: 'checkoutservice',
+    namespace: 'onlineboutique',
+    labels: ['backend'],
+  },
+  {
+    id: 'paymentservice',
+    name: 'paymentservice',
+    namespace: 'onlineboutique',
+    labels: ['backend', 'external'],
+  },
 ];
 
 // ── Mock Embedding Provider ──────────────────────────────
@@ -121,9 +130,7 @@ function makeMockLLM(config: MockLLMConfig): ILLMProvider {
         topologyId,
         confidence,
         reasoning: `Matched ${spanService} to ${topologyId ?? 'null'} with confidence ${confidence}`,
-        ...(config.omitUsage
-          ? {}
-          : { usage: { promptTokens: 100, completionTokens: 20 } }),
+        ...(config.omitUsage ? {} : { usage: { promptTokens: 100, completionTokens: 20 } }),
       };
     }),
   };
@@ -150,9 +157,14 @@ describe('SemanticAlignmentProvider', () => {
     vectorMap['frontend'] = makeOrthogonalVector(DIM, 100); // → frontend
     vectorMap['productcatalogservice'] = makeOrthogonalVector(DIM, 102); // → productcatalog
     // Also add standalone entries
-    vectorMap['cartservice ' + 'cartservice' + ' onlineboutique ' + 'backend caching'] = makeOrthogonalVector(DIM, 101);
-    vectorMap['frontend ' + 'frontend' + ' onlineboutique ' + 'web gateway'] = makeOrthogonalVector(DIM, 100);
-    vectorMap['productcatalog ' + 'productcatalog' + ' onlineboutique ' + 'backend'] = makeOrthogonalVector(DIM, 102);
+    vectorMap['cartservice ' + 'cartservice' + ' onlineboutique ' + 'backend caching'] =
+      makeOrthogonalVector(DIM, 101);
+    vectorMap['frontend ' + 'frontend' + ' onlineboutique ' + 'web gateway'] = makeOrthogonalVector(
+      DIM,
+      100,
+    );
+    vectorMap['productcatalog ' + 'productcatalog' + ' onlineboutique ' + 'backend'] =
+      makeOrthogonalVector(DIM, 102);
 
     embeddingProvider = makeMockEmbedding(DIM, vectorMap);
   });
@@ -191,7 +203,10 @@ describe('SemanticAlignmentProvider', () => {
 
     it('should handle unknown span service names', async () => {
       const provider = new SemanticAlignmentProvider(embeddingProvider);
-      const result = await provider.align(['totally-random-service-xyz-abc-123'], TOPOLOGY_SERVICES);
+      const result = await provider.align(
+        ['totally-random-service-xyz-abc-123'],
+        TOPOLOGY_SERVICES,
+      );
 
       // Unknown service gets a weak embedding match → should not be in high-confidence matches
       // With default 0.7 threshold, the match is likely below threshold
@@ -250,8 +265,8 @@ describe('SemanticAlignmentProvider', () => {
         llmThreshold: 0.6,
       };
       const llm = makeMockLLM({
-        mappings: { 'paymenthandler': null },
-        confidences: { 'paymenthandler': 0.1 },
+        mappings: { paymenthandler: null },
+        confidences: { paymenthandler: 0.1 },
       });
       const provider = new SemanticAlignmentProvider(embeddingProvider, llm, config);
 
@@ -408,7 +423,7 @@ describe('SemanticAlignmentProvider', () => {
       // svc-b is uncached (different from svc-a) → cost increases
       const finalCost = provider.totalDailyCost;
       // 2 LLM calls at 100 input + 20 completion each
-      expect(finalCost).toBeCloseTo(2 * (100 * 0.27e-6 + 20 * 1.10e-6), 8);
+      expect(finalCost).toBeCloseTo(2 * (100 * 0.27e-6 + 20 * 1.1e-6), 8);
     });
 
     it('should stop matching when the daily budget is exhausted', async () => {
@@ -550,11 +565,9 @@ describe('SemanticAlignmentProvider', () => {
 
     it('keeps the daily cost budget usable when the caller omits the cap', async () => {
       const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.9 });
-      const provider = new SemanticAlignmentProvider(
-        makeSplitAxisEmbedding(DIM),
-        llm,
-        { llmThreshold: 0.5 },
-      );
+      const provider = new SemanticAlignmentProvider(makeSplitAxisEmbedding(DIM), llm, {
+        llmThreshold: 0.5,
+      });
 
       const result = await provider.align(['cartservice'], TOPOLOGY_SERVICES);
 
@@ -566,11 +579,9 @@ describe('SemanticAlignmentProvider', () => {
 
     it('keeps the LLM result cache usable when the caller omits the TTL', async () => {
       const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.9 });
-      const provider = new SemanticAlignmentProvider(
-        makeSplitAxisEmbedding(DIM),
-        llm,
-        { llmThreshold: 0.5 },
-      );
+      const provider = new SemanticAlignmentProvider(makeSplitAxisEmbedding(DIM), llm, {
+        llmThreshold: 0.5,
+      });
 
       await provider.align(['cartservice'], TOPOLOGY_SERVICES);
       await provider.align(['cartservice'], TOPOLOGY_SERVICES);
@@ -581,11 +592,9 @@ describe('SemanticAlignmentProvider', () => {
 
     it('keeps best-effort acceptance usable when the caller omits the strategy', async () => {
       const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.4 });
-      const provider = new SemanticAlignmentProvider(
-        makeSplitAxisEmbedding(DIM),
-        llm,
-        { llmThreshold: 0.95 },
-      );
+      const provider = new SemanticAlignmentProvider(makeSplitAxisEmbedding(DIM), llm, {
+        llmThreshold: 0.95,
+      });
 
       const result = await provider.align(['cartservice'], TOPOLOGY_SERVICES);
 
@@ -596,11 +605,10 @@ describe('SemanticAlignmentProvider', () => {
 
     it('lets an explicit strategy override the default', async () => {
       const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.4 });
-      const provider = new SemanticAlignmentProvider(
-        makeSplitAxisEmbedding(DIM),
-        llm,
-        { llmThreshold: 0.95, fallbackStrategy: 'none' },
-      );
+      const provider = new SemanticAlignmentProvider(makeSplitAxisEmbedding(DIM), llm, {
+        llmThreshold: 0.95,
+        fallbackStrategy: 'none',
+      });
 
       const result = await provider.align(['cartservice'], TOPOLOGY_SERVICES);
 
@@ -612,11 +620,9 @@ describe('SemanticAlignmentProvider', () => {
         { cartservice: 'cartservice', frontend: 'frontend' },
         { cartservice: 0.9, frontend: 0.9 },
       );
-      const provider = new SemanticAlignmentProvider(
-        makeSplitAxisEmbedding(DIM),
-        llm,
-        { llmThreshold: 0.5 },
-      );
+      const provider = new SemanticAlignmentProvider(makeSplitAxisEmbedding(DIM), llm, {
+        llmThreshold: 0.5,
+      });
 
       const result = await provider.align(SPAN_NAMES, TOPOLOGY_SERVICES);
 

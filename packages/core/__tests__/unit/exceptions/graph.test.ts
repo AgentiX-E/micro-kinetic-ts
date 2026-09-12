@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
 import {
-  GraphCycleError,
-  PruningFailureError,
   DisconnectedGraphError,
   EmptyGraphError,
+  GraphCycleError,
   KineticError,
+  PruningFailureError,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('GraphCycleError', () => {
   it('should create with cycleCount and maxContribution', () => {

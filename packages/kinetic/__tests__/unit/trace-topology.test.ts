@@ -1,10 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import {
-  augmentTopologyWithTraces,
-  canValidateWithTraces,
-} from '@agentix-e/micro-kinetic';
 import type { TraceSpan } from '@agentix-e/micro-kinetic';
-import type { ServiceCallGraph, ServiceNode, CallEdge } from '@agentix-e/micro-kinetic-core';
+import { augmentTopologyWithTraces, canValidateWithTraces } from '@agentix-e/micro-kinetic';
+import type { ServiceCallGraph, ServiceNode } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 // ────────────────────────────────────────────────────────────
 // Helpers
@@ -19,7 +16,8 @@ function makeGraph(services: string[], edges: [string, string][]): ServiceCallGr
   return {
     nodes,
     edges: edges.map(([from, to]) => ({
-      from, to,
+      from,
+      to,
       type: 'REST' as const,
       callRate: 100,
       p99Latency: 50,
@@ -39,10 +37,15 @@ function makeSpan(
   startTime = 0,
 ): TraceSpan {
   return {
-    traceId, spanId, parentSpanId: parentId, service,
-    operation: 'GET /api', duration,
+    traceId,
+    spanId,
+    parentSpanId: parentId,
+    service,
+    operation: 'GET /api',
+    duration,
     statusCode: isError ? 500 : 200,
-    isError, startTime,
+    isError,
+    startTime,
   };
 }
 
@@ -51,14 +54,17 @@ function makeSpan(
 // ────────────────────────────────────────────────────────────
 
 describe('augmentTopologyWithTraces', () => {
-
   // ── Test 1: Star-DAG pruning ──────────────────────────
   it('should prune star-DAG edges not observed in traces (1 parent → 7 children, 2 confirmed)', () => {
     const graph = makeGraph(
       ['frontend', 'auth', 'cart', 'catalog', 'payment', 'shipping', 'email', 'recommendation'],
       [
-        ['frontend', 'auth'], ['frontend', 'cart'], ['frontend', 'catalog'],
-        ['frontend', 'payment'], ['frontend', 'shipping'], ['frontend', 'email'],
+        ['frontend', 'auth'],
+        ['frontend', 'cart'],
+        ['frontend', 'catalog'],
+        ['frontend', 'payment'],
+        ['frontend', 'shipping'],
+        ['frontend', 'email'],
         ['frontend', 'recommendation'],
       ],
     );
@@ -86,7 +92,13 @@ describe('augmentTopologyWithTraces', () => {
 
   // ── Test 2: No traces → preserved (guard prevents pruning without evidence) ─
   it('should preserve original edges when spans are empty (guard: no trace evidence)', () => {
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['B', 'C']]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
 
     const result = augmentTopologyWithTraces(graph, []);
 
@@ -101,12 +113,19 @@ describe('augmentTopologyWithTraces', () => {
 
   // ── Test 3: All edges confirmed → no pruning ──────────
   it('should keep all edges when every edge is confirmed by traces', () => {
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['B', 'C'], ['A', 'C']]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+        ['A', 'C'],
+      ],
+    );
     const spans: TraceSpan[] = [
       makeSpan('t1', 'root', '', 'A', 10, false, 0),
       makeSpan('t1', 's1', 'root', 'B', 20, false, 1),
-      makeSpan('t1', 's2', 'root', 'C', 20, false, 2),   // A→C (direct from root A)
-      makeSpan('t1', 's3', 's1', 'C', 30, false, 3),      // B→C
+      makeSpan('t1', 's2', 'root', 'C', 20, false, 2), // A→C (direct from root A)
+      makeSpan('t1', 's3', 's1', 'C', 30, false, 3), // B→C
     ];
 
     const result = augmentTopologyWithTraces(graph, spans);
@@ -123,8 +142,8 @@ describe('augmentTopologyWithTraces', () => {
     const graph = makeGraph(['A', 'B'], [['A', 'B']]);
     const spans: TraceSpan[] = [
       makeSpan('t1', 'root', '', 'A', 10, false, 0),
-      makeSpan('t1', 's1', 'root', 'B', 20, false, 1),   // A→B
-      makeSpan('t1', 's2', 'root', 'D', 40, true, 2),     // A→D (new!)
+      makeSpan('t1', 's1', 'root', 'B', 20, false, 1), // A→B
+      makeSpan('t1', 's2', 'root', 'D', 40, true, 2), // A→D (new!)
     ];
 
     const result = augmentTopologyWithTraces(graph, spans);
@@ -140,7 +159,7 @@ describe('augmentTopologyWithTraces', () => {
     const graph = makeGraph(['A', 'B'], [['A', 'B']]);
     const spans: TraceSpan[] = [
       makeSpan('t1', 'root', '', 'A', 10, false, 0),
-      makeSpan('t1', 's1', 'root', 'C', 40, true, 1),     // A→C (new)
+      makeSpan('t1', 's1', 'root', 'C', 40, true, 1), // A→C (new)
     ];
 
     const result = augmentTopologyWithTraces(graph, spans, { discoverNewEdges: false });
@@ -159,8 +178,8 @@ describe('augmentTopologyWithTraces', () => {
     const graph = makeGraph(
       ['frontend', 'auth', 'cart', 'payment'],
       [
-        ['frontend', 'auth'],   // observed 3 times
-        ['frontend', 'cart'],   // observed 1 time (below threshold)
+        ['frontend', 'auth'], // observed 3 times
+        ['frontend', 'cart'], // observed 1 time (below threshold)
         ['frontend', 'payment'], // observed 2 times
       ],
     );
@@ -219,7 +238,7 @@ describe('augmentTopologyWithTraces', () => {
       makeSpan('t1', 'root', '', 'A', 100, false, 0),
       // Self-loop: A calls A (same service for parent and child)
       makeSpan('t1', 's2', 'root', 'A', 10, false, 1),
-      makeSpan('t1', 's3', 'root', 'B', 20, false, 2),   // A→B
+      makeSpan('t1', 's3', 'root', 'B', 20, false, 2), // A→B
     ];
 
     const result = augmentTopologyWithTraces(graph, spans);
@@ -236,8 +255,10 @@ describe('augmentTopologyWithTraces', () => {
     const graph = makeGraph(
       ['frontend', 'auth', 'cart', 'payment', 'shipping'],
       [
-        ['frontend', 'auth'], ['frontend', 'cart'],
-        ['frontend', 'payment'], ['frontend', 'shipping'],
+        ['frontend', 'auth'],
+        ['frontend', 'cart'],
+        ['frontend', 'payment'],
+        ['frontend', 'shipping'],
       ],
     );
 
@@ -265,8 +286,8 @@ describe('augmentTopologyWithTraces', () => {
     const keys = result.edges.map((e) => `${e.from}→${e.to}`);
     expect(keys).toContain('frontend→auth');
     expect(keys).toContain('frontend→cart');
-    expect(keys).not.toContain('frontend→payment');    // not directly called from frontend
-    expect(keys).not.toContain('frontend→shipping');    // not directly called from frontend
+    expect(keys).not.toContain('frontend→payment'); // not directly called from frontend
+    expect(keys).not.toContain('frontend→shipping'); // not directly called from frontend
     // auth→payment and auth→shipping should exist (discovered or kept)
     // Note: these are not in original graph, so they are "discovered" if discoverNewEdges is true (default)
     expect(keys).toContain('auth→payment');
@@ -277,7 +298,10 @@ describe('augmentTopologyWithTraces', () => {
   it('should preserve all original nodes in the augmented graph', () => {
     const graph = makeGraph(
       ['frontend', 'auth', 'cart', 'payment'],
-      [['frontend', 'auth'], ['frontend', 'cart']],
+      [
+        ['frontend', 'auth'],
+        ['frontend', 'cart'],
+      ],
     );
 
     const spans: TraceSpan[] = [
@@ -302,7 +326,13 @@ describe('augmentTopologyWithTraces', () => {
 
   // ── Test 11: Edge weight boost for trace-validated edges ─
   it('should boost callRate for trace-validated edges proportionally to call frequency', () => {
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['A', 'C']]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['A', 'C'],
+      ],
+    );
     // A→B called 3 times across traces, A→C called 1 time
     const spans: TraceSpan[] = [
       makeSpan('t1', 'r1', '', 'A', 100, false, 0),
@@ -353,8 +383,8 @@ describe('augmentTopologyWithTraces', () => {
     const graph = makeGraph(
       ['frontend', 'auth', 'cart'],
       [
-        ['frontend', 'auth'],   // observed 3 times
-        ['frontend', 'cart'],   // observed 1 time (below threshold)
+        ['frontend', 'auth'], // observed 3 times
+        ['frontend', 'cart'], // observed 1 time (below threshold)
       ],
     );
 
@@ -392,10 +422,7 @@ describe('augmentTopologyWithTraces', () => {
   // ── Test 13b: discoverNewEdges above threshold adds new edges ─
   it('should discover new edges from traces when above minCallFrequency', () => {
     // Graph has frontend→auth only; traces reveal frontend also calls cart 3 times
-    const graph = makeGraph(
-      ['frontend', 'auth', 'cart'],
-      [['frontend', 'auth']],
-    );
+    const graph = makeGraph(['frontend', 'auth', 'cart'], [['frontend', 'auth']]);
 
     const spans: TraceSpan[] = [
       makeSpan('t1', 'r1', '', 'frontend', 100, false, 0),
@@ -429,7 +456,7 @@ describe('augmentTopologyWithTraces', () => {
     // This test verifies the behavior — all spans are processed regardless of anomalyTime.
     // If anomalyTime filtering is added later, this test documents expected behavior.
     const spans: TraceSpan[] = [
-      makeSpan('t1', 'root', '', 'A', 100, false, 1000),      // startTime = 1000
+      makeSpan('t1', 'root', '', 'A', 100, false, 1000), // startTime = 1000
       makeSpan('t1', 's1', 'root', 'B', 20, false, 1001),
     ];
 
@@ -443,7 +470,12 @@ describe('augmentTopologyWithTraces', () => {
   it('should handle deeply nested trace trees (>3 levels)', () => {
     const graph = makeGraph(
       ['A', 'B', 'C', 'D', 'E'],
-      [['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'E']],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+        ['C', 'D'],
+        ['D', 'E'],
+      ],
     );
     // 5-level deep trace: A→B→C→D→E
     const spans: TraceSpan[] = [
@@ -468,7 +500,12 @@ describe('augmentTopologyWithTraces', () => {
   it('should handle fan-out patterns (one parent spans to many children in same trace)', () => {
     const graph = makeGraph(
       ['A', 'B', 'C', 'D', 'E'],
-      [['A', 'B'], ['A', 'C'], ['A', 'D'], ['A', 'E']],
+      [
+        ['A', 'B'],
+        ['A', 'C'],
+        ['A', 'D'],
+        ['A', 'E'],
+      ],
     );
     // A fans out to B,C,D,E in a single trace
     const spans: TraceSpan[] = [
@@ -489,7 +526,13 @@ describe('augmentTopologyWithTraces', () => {
 
   // ── Test 18: Root spans without children (no parent→child relationships) ─
   it('should preserve original edges when all spans are root spans (no parent→child edges)', () => {
-    const graph = makeGraph(['A', 'B', 'C'], [['A', 'B'], ['B', 'C']]);
+    const graph = makeGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
     // All spans are root spans (parentSpanId='')
     const spans: TraceSpan[] = [
       makeSpan('t1', 's1', '', 'A', 10, false, 0),
@@ -510,29 +553,16 @@ describe('augmentTopologyWithTraces', () => {
 // ────────────────────────────────────────────────────────────
 
 describe('canValidateWithTraces', () => {
-
   it('should return true with 10+ spans and at least one parent relationship', () => {
     const spans = Array.from({ length: 10 }, (_, i) =>
-      makeSpan(
-        't1',
-        `s${i}`,
-        i > 0 ? `s${i - 1}` : '',
-        `svc-${i}`,
-        10, false, 0,
-      ),
+      makeSpan('t1', `s${i}`, i > 0 ? `s${i - 1}` : '', `svc-${i}`, 10, false, 0),
     );
     expect(canValidateWithTraces(spans)).toBe(true);
   });
 
   it('should return false with fewer than 10 spans', () => {
     const spans = Array.from({ length: 9 }, (_, i) =>
-      makeSpan(
-        't1',
-        `s${i}`,
-        i > 0 ? `s${i - 1}` : '',
-        `svc-${i}`,
-        10, false, 0,
-      ),
+      makeSpan('t1', `s${i}`, i > 0 ? `s${i - 1}` : '', `svc-${i}`, 10, false, 0),
     );
     expect(canValidateWithTraces(spans)).toBe(false);
   });
@@ -552,9 +582,7 @@ describe('canValidateWithTraces', () => {
     const spans: TraceSpan[] = [
       makeSpan('t1', 'root', '', 'svc-root', 10, false, 0),
       makeSpan('t1', 'child', 'root', 'svc-child', 10, false, 1),
-      ...Array.from({ length: 8 }, (_, i) =>
-        makeSpan('t1', `x${i}`, '', `svc-x${i}`, 1, false, 0),
-      ),
+      ...Array.from({ length: 8 }, (_, i) => makeSpan('t1', `x${i}`, '', `svc-x${i}`, 1, false, 0)),
     ];
     expect(spans.length).toBe(10);
     expect(canValidateWithTraces(spans)).toBe(true);

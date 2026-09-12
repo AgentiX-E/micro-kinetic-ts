@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('RCA Engine interfaces', () => {
   it('should import IRCAEngine type without runtime errors', () => {

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
 import { UbiqueLinearAlgebra } from '@agentix-e/micro-kinetic-tree';
+import { describe, expect, it, vi } from 'vitest';
 
 // Mock ubique
 vi.mock('ubique', () => {
@@ -10,8 +10,8 @@ vi.mock('ubique', () => {
     const U: number[][] = [];
     const P: number[] = [];
     for (let i = 0; i < n; i++) {
-      L.push(new Array(n).fill(0));
-      U.push(new Array(n).fill(0));
+      L.push(Array.from({ length: n }, () => 0));
+      U.push(Array.from({ length: n }, () => 0));
       P.push(i);
       L[i]![i] = 1;
     }
@@ -49,7 +49,7 @@ vi.mock('ubique', () => {
   function inv(matrix: number[][]) {
     const n = matrix.length;
     if (n === 2) {
-      const a = matrix.map(row => [...row]);
+      const a = matrix.map((row) => [...row]);
       const det = a[0]![0]! * a[1]![1]! - a[0]![1]! * a[1]![0]!;
       if (Math.abs(det) < 1e-12) {
         throw new Error('Matrix is singular');
@@ -62,7 +62,7 @@ vi.mock('ubique', () => {
     // Return identity as placeholder
     const id: number[][] = [];
     for (let i = 0; i < n; i++) {
-      id.push(new Array(n).fill(0));
+      id.push(Array.from({ length: n }, () => 0));
       id[i]![i] = 1;
     }
     return id;

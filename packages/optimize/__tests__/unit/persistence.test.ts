@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileSystemStore } from '@agentix-e/micro-kinetic-storage-fs';
 import type { IKeyValueStore } from '@agentix-e/micro-kinetic-core';

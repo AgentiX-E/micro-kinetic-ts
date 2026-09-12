@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { DecimalProvider } from '../../../src/math/decimal-provider.js';
 
 describe('DecimalProvider', () => {
@@ -159,7 +159,10 @@ describe('DecimalProvider', () => {
   describe('50-digit precision correctness', () => {
     it('should compute multiply with high precision', () => {
       const dp = new DecimalProvider(50);
-      const result = dp.multiply('1.0000000000000000000000000001', '2.0000000000000000000000000002');
+      const result = dp.multiply(
+        '1.0000000000000000000000000001',
+        '2.0000000000000000000000000002',
+      );
       expect(result.startsWith('2.0000000000000000000000000004')).toBe(true);
     });
 
@@ -178,14 +181,26 @@ describe('DecimalProvider', () => {
     it('should compute pow with 50-digit precision', () => {
       const dp = new DecimalProvider(50);
       const result = dp.pow('1.0000000000000001', '10');
-      expect(Number(result)).toBeCloseTo(Math.pow(1.0000000000000001, 10), 14);
+
+      // `pow` returns a decimal STRING, and that is the only way to observe the
+      // precision this test is named after: `1.0000000000000001` is exactly 1
+      // in float64, so comparing through `Number(...)`, or against
+      // `Math.pow(1.0000000000000001, 10)`, is a comparison that the value `1`
+      // already satisfies. The first digit float64 cannot hold is the 16th;
+      // (1 + 1e-16)^10 puts its leading term at 1e-15.
+      expect(result).not.toBe('1');
+      expect(result.startsWith('1.000000000000001')).toBe(true);
+      expect(Number(result)).toBeGreaterThan(1);
     });
   });
 
   describe('precision edge cases', () => {
     it('should handle extremely small multiply', () => {
       const dp = new DecimalProvider(50);
-      const result = dp.multiply('0.0000000000000000000000000001', '0.0000000000000000000000000001');
+      const result = dp.multiply(
+        '0.0000000000000000000000000001',
+        '0.0000000000000000000000000001',
+      );
       expect(Number(result)).toBeLessThan(1e-30);
     });
 

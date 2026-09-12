@@ -109,7 +109,12 @@ describe('computePrismScores', () => {
       extOnly: [makeSeries('cpu', [10, 10], [10, 10]), makeSeries('latency', [1, 1], [5, 5])],
       // S^I = 0, S^E = 4 → conj = 0.
     });
-    const scores = computePrismScores(metrics, nodesOf('source', 'extOnly'), INJECT_MS, 'conjunctive');
+    const scores = computePrismScores(
+      metrics,
+      nodesOf('source', 'extOnly'),
+      INJECT_MS,
+      'conjunctive',
+    );
 
     expect(scores.get('source')).toBe(1);
     expect(scores.get('extOnly')).toBe(0);

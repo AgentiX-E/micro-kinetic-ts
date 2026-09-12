@@ -5,7 +5,7 @@
  * Data must have sufficient variance for MAD to produce non-zero thresholds.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { computePropagationVelocity } from '../../src/causal/propagation-velocity.js';
 
 /**
@@ -26,7 +26,6 @@ function deterministicStep(length: number, onset: number): Float64Array {
 
 /** Aggressive BOCPD tuning that reliably detects a changepoint on short series. */
 const SENSITIVE_BOCPD = { hazardRate: 0.3, changepointThreshold: 0.7, minRunLength: 10 };
-
 
 describe('computePropagationVelocity — basic cases', () => {
   it('should detect forward propagation (source fails first)', () => {
@@ -112,11 +111,9 @@ describe('computePropagationVelocity — edge cases', () => {
   });
 
   it('should handle empty data', () => {
-    const result = computePropagationVelocity(
-      new Float64Array([]),
-      new Float64Array([]),
-      { useBOCPD: false },
-    );
+    const result = computePropagationVelocity(new Float64Array([]), new Float64Array([]), {
+      useBOCPD: false,
+    });
     expect(result.propagationProbability).toBe(0.5);
     expect(result.sourceOnsetIndex).toBe(-1);
     expect(result.targetOnsetIndex).toBe(-1);

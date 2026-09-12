@@ -6,7 +6,7 @@
  * test suite is meaningful, not a tautology.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { IKeyValueStore } from '../../../src/storage/i-key-value-store.js';
 
 // ── Broken implementations ──

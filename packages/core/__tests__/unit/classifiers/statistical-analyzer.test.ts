@@ -1,15 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import type { TimeSeries } from '../../../src/types/time-series.js';
+import { describe, expect, it } from 'vitest';
 import type { FaultClassifierContext } from '../../../src/interfaces/fault-classifier.js';
+import type { TimeSeries } from '../../../src/types/time-series.js';
 import { StatisticalAnalyzer } from '../../../src/utils/classifiers/statistical-analyzer.js';
 
 // ── Helpers ───────────────────────────────────────────────
 
-function makeSeries(
-  label: string,
-  values: number[],
-  unit = 'count',
-): TimeSeries {
+function makeSeries(label: string, values: number[], unit = 'count'): TimeSeries {
   return {
     label,
     values: new Float64Array(values),
@@ -179,9 +175,7 @@ describe('StatisticalAnalyzer', () => {
     });
 
     it('should return UNKNOWN for stable all-same series', () => {
-      const series = [
-        makeSeries('cpu', [5, 5, 5, 5, 5]),
-      ];
+      const series = [makeSeries('cpu', [5, 5, 5, 5, 5])];
       const result = analyzer.classify(series, makeContext());
       expect(result[0]!.category).toBe('UNKNOWN');
     });
@@ -207,9 +201,7 @@ describe('StatisticalAnalyzer', () => {
   describe('custom config', () => {
     it('should accept custom anomaly threshold', () => {
       const a = new StatisticalAnalyzer({ anomalyThreshold: 3.0, minDataPoints: 10 });
-      const series = [
-        makeSeries('cpu', [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]),
-      ];
+      const series = [makeSeries('cpu', [1, 2, 3, 4, 5, 1, 2, 3, 4, 5])];
       // Only 10 points, meets custom minDataPoints
       const result = a.classify(series, makeContext());
       expect(Array.isArray(result)).toBe(true);

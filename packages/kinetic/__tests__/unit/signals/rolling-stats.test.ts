@@ -4,7 +4,7 @@
  * Coverage target: ≥95% statements, branches, functions, lines.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { RollingStats } from '../../../src/signals/rolling-stats.js';
 
 // ===========================================================================
@@ -79,7 +79,11 @@ describe('RollingStats.addValue (incremental)', () => {
     const batch = RollingStats.fromValues(new Float64Array([1, 2, 3, 4, 5]));
 
     const inc = new RollingStats();
-    inc.addValue(1); inc.addValue(2); inc.addValue(3); inc.addValue(4); inc.addValue(5);
+    inc.addValue(1);
+    inc.addValue(2);
+    inc.addValue(3);
+    inc.addValue(4);
+    inc.addValue(5);
 
     expect(inc.mean).toBeCloseTo(batch.mean, 8);
     expect(inc.variance).toBeCloseTo(batch.variance, 8);
@@ -104,7 +108,9 @@ describe('RollingStats.addValue (incremental)', () => {
   it('should return correct stddev for known distribution', () => {
     const stats = new RollingStats();
     // Values with mean=10, variance=4 → stddev=2
-    stats.addValue(8); stats.addValue(10); stats.addValue(12);
+    stats.addValue(8);
+    stats.addValue(10);
+    stats.addValue(12);
     expect(stats.stddev).toBeCloseTo(1.633, 3); // pop stddev
     expect(stats.sampleStddev).toBeCloseTo(2.0, 2);
   });

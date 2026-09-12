@@ -1,11 +1,23 @@
-import { describe, it, expect } from 'vitest';
-import type { AlertRecord, AlertGroup, CouplingSparsityMatrix, IndependenceResult, DenoiseResult } from '@agentix-e/micro-kinetic-core';
+import type {
+  AlertGroup,
+  AlertRecord,
+  CouplingSparsityMatrix,
+  DenoiseResult,
+  IndependenceResult,
+} from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Denoise Engine interfaces - interface type usage', () => {
   it('should construct AlertGroup for denoising', () => {
     const alert: AlertRecord = {
-      id: 'a1', serviceId: 'svc-a', severity: 'warning',
-      timestamp: 1000, metric: 'cpu', value: 85, threshold: 80, message: 'high cpu',
+      id: 'a1',
+      serviceId: 'svc-a',
+      severity: 'warning',
+      timestamp: 1000,
+      metric: 'cpu',
+      value: 85,
+      threshold: 80,
+      message: 'high cpu',
     };
     const group: AlertGroup = {
       id: 'g1',
@@ -42,8 +54,14 @@ describe('Denoise Engine interfaces - interface type usage', () => {
 
   it('should construct DenoiseResult', () => {
     const alert: AlertRecord = {
-      id: 'a1', serviceId: 'svc', severity: 'critical',
-      timestamp: 0, metric: 'mem', value: 2000, threshold: 1000, message: 'oom',
+      id: 'a1',
+      serviceId: 'svc',
+      severity: 'critical',
+      timestamp: 0,
+      metric: 'mem',
+      value: 2000,
+      threshold: 1000,
+      message: 'oom',
     };
     const result: DenoiseResult = {
       trueAlarms: [alert],

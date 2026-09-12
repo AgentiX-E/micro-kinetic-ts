@@ -273,9 +273,7 @@ describe('dropFSE26MetricNames', () => {
   it('keeps a service key with an empty list when all its series drop', () => {
     const raw = makeRawCase({
       metrics: {
-        'ts-empty': [
-          { metric: 'http.response.error_rate', timestamps: [1], values: [1] },
-        ],
+        'ts-empty': [{ metric: 'http.response.error_rate', timestamps: [1], values: [1] }],
       },
     });
 

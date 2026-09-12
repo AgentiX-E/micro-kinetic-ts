@@ -1,9 +1,14 @@
-import { describe, it, expect } from 'vitest';
-import { IndependenceChecker } from '../../../src/stoss/independence-checker.js';
-import { StatisticsProvider } from '../../../src/math/statistics-provider.js';
 import type { AlertRecord } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
+import { StatisticsProvider } from '../../../src/math/statistics-provider.js';
+import { IndependenceChecker } from '../../../src/stoss/independence-checker.js';
 
-function makeAlert(serviceId: string, timestamp: number, value: number, threshold: number = 0.8): AlertRecord {
+function makeAlert(
+  serviceId: string,
+  timestamp: number,
+  value: number,
+  threshold: number = 0.8,
+): AlertRecord {
   return {
     id: `alert_${serviceId}_${timestamp}`,
     serviceId,
@@ -62,9 +67,15 @@ describe('IndependenceChecker', () => {
       ];
 
       const matrix = new Float64Array(9); // 3x3
-      matrix[0] = 1; matrix[1] = 0.01; matrix[2] = 0;
-      matrix[3] = 0.01; matrix[4] = 1; matrix[5] = 0;
-      matrix[6] = 0; matrix[7] = 0; matrix[8] = 1;
+      matrix[0] = 1;
+      matrix[1] = 0.01;
+      matrix[2] = 0;
+      matrix[3] = 0.01;
+      matrix[4] = 1;
+      matrix[5] = 0;
+      matrix[6] = 0;
+      matrix[7] = 0;
+      matrix[8] = 1;
 
       const result = checker.testIndependence(alertsA, alertsB, matrix, 0, 1);
       expect(result.decompositionError).toBeGreaterThanOrEqual(0);
@@ -110,7 +121,7 @@ describe('IndependenceChecker', () => {
         makeAlert('svc_b', 2500, 0.84),
         makeAlert('svc_b', 3500, 0.91),
         makeAlert('svc_b', 4500, 0.87),
-        makeAlert('svc_b', 5500, 0.90),
+        makeAlert('svc_b', 5500, 0.9),
       ];
 
       const matrix = new Float64Array([1, 0.8, 0.8, 1]);
@@ -252,11 +263,13 @@ describe('IndependenceChecker', () => {
     it('should have sparsityThreshold in result', () => {
       const checker = new IndependenceChecker();
       const alertsA: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
         makeAlert('svc_a', 3000, 0.92),
       ];
       const alertsB: AlertRecord[] = [
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
         makeAlert('svc_b', 3500, 0.52),
       ];
 
@@ -293,10 +306,12 @@ describe('IndependenceChecker', () => {
       const stats = new StatisticsProvider();
       const checker = new IndependenceChecker(stats);
       const alertsA: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
       ];
       const alertsB: AlertRecord[] = [
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
       ];
 
       const matrix = new Float64Array([1, 0.01, 0.01, 1]);
@@ -324,12 +339,7 @@ describe('IndependenceChecker', () => {
         makeAlert('svc_b', 6500, 1.0, 1.0),
       ];
 
-      const matrix = new Float64Array([
-        1, 0.005, 0, 0,
-        0.005, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1,
-      ]);
+      const matrix = new Float64Array([1, 0.005, 0, 0, 0.005, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
       const result = checker.testIndependence(alertsA, alertsB, matrix, 0, 1);
       expect(result.decompositionError).toBeGreaterThanOrEqual(0);

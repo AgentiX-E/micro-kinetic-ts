@@ -10,8 +10,11 @@
  * BOCPD is useful when precise probabilistic onset detection is needed.
  */
 
-import { describe, it, expect } from 'vitest';
-import { bocpdDetectOnset, bocpdDetectAllChangepoints } from '../../../src/signals/bocpd-detector.js';
+import { describe, expect, it } from 'vitest';
+import {
+  bocpdDetectAllChangepoints,
+  bocpdDetectOnset,
+} from '../../../src/signals/bocpd-detector.js';
 
 describe('bocpdDetectOnset — parameter validation', () => {
   it('should return onsetIndex=-1 for dataset below minRunLength', () => {

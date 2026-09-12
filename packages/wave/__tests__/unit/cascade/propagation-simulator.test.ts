@@ -1,7 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
-import { PropagationSimulator } from '../../../src/cascade/propagation-simulator.js';
+import type {
+  CallEdge,
+  ServiceCallGraph,
+  ServiceNode,
+  WaveParams,
+} from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it, vi } from 'vitest';
 import { WaveCascadeModel } from '../../../src/cascade/cascade-model.js';
-import type { ServiceCallGraph, ServiceNode, CallEdge, WaveParams } from '@agentix-e/micro-kinetic-core';
+import { PropagationSimulator } from '../../../src/cascade/propagation-simulator.js';
 
 // ── Test Helpers ────────────────────────────────────────────
 
@@ -25,9 +30,7 @@ const defaultParams: WaveParams = {
   timeHorizon: 30000,
 };
 
-const twoNodeGraph = makeServiceGraph(['svc_a', 'svc_b'], [
-  makeEdge('svc_a', 'svc_b', 100),
-]);
+const twoNodeGraph = makeServiceGraph(['svc_a', 'svc_b'], [makeEdge('svc_a', 'svc_b', 100)]);
 
 // ── simulate ────────────────────────────────────────────────
 
@@ -55,7 +58,9 @@ describe('PropagationSimulator.simulate', () => {
 
   it('should throw for nonexistent source', () => {
     const graph = makeServiceGraph(['svc_a']);
-    expect(() => new PropagationSimulator().simulate('svc_unknown', graph, defaultParams)).toThrow();
+    expect(() =>
+      new PropagationSimulator().simulate('svc_unknown', graph, defaultParams),
+    ).toThrow();
   });
 });
 
@@ -226,7 +231,12 @@ describe('PropagationSimulator.simulateEnsemble', () => {
       });
 
       try {
-        const result = new PropagationSimulator().simulateEnsemble('svc_a', twoNodeGraph, defaultParams, 5);
+        const result = new PropagationSimulator().simulateEnsemble(
+          'svc_a',
+          twoNodeGraph,
+          defaultParams,
+          5,
+        );
         expect(result.meanCascade).toBeDefined();
       } finally {
         Math.random = originalRandom;
@@ -236,6 +246,8 @@ describe('PropagationSimulator.simulateEnsemble', () => {
 
   it('should throw for nonexistent source in ensemble', () => {
     const graph = makeServiceGraph(['svc_a']);
-    expect(() => new PropagationSimulator().simulateEnsemble('svc_unknown', graph, defaultParams, 5)).toThrow();
+    expect(() =>
+      new PropagationSimulator().simulateEnsemble('svc_unknown', graph, defaultParams, 5),
+    ).toThrow();
   });
 });

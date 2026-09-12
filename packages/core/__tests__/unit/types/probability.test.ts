@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
 import type {
-  ProbabilityDistribution,
   ConfidenceInterval,
   HypothesisTestResult,
   LinearRegressionResult,
+  ProbabilityDistribution,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Probability types - ProbabilityDistribution', () => {
   it('should accept a normal distribution', () => {

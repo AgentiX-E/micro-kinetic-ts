@@ -1,10 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import type {
+  BenchmarkResult,
+  DenoiseResult,
+  RootCauseResult,
+} from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import {
-  formatRCATable,
-  formatDenoiseTable,
   formatBenchmarkTable,
+  formatDenoiseTable,
+  formatRCATable,
 } from '../../../../src/cli/formatters/table.js';
-import type { RootCauseResult, DenoiseResult, BenchmarkResult } from '@agentix-e/micro-kinetic-core';
 
 function makeRootCause(rank: number): RootCauseResult {
   return {
@@ -22,10 +26,28 @@ function makeRootCause(rank: number): RootCauseResult {
 function makeDenoiseResult(): DenoiseResult {
   return {
     trueAlarms: [
-      { id: '1', serviceId: 'svc_a', severity: 'critical', timestamp: 1000, metric: 'cpu', value: 0.95, threshold: 0.8, message: 'High CPU' },
+      {
+        id: '1',
+        serviceId: 'svc_a',
+        severity: 'critical',
+        timestamp: 1000,
+        metric: 'cpu',
+        value: 0.95,
+        threshold: 0.8,
+        message: 'High CPU',
+      },
     ],
     coincidentalAlarms: [
-      { id: '2', serviceId: 'svc_b', severity: 'warning', timestamp: 1100, metric: 'mem', value: 0.3, threshold: 0.7, message: 'Low mem' },
+      {
+        id: '2',
+        serviceId: 'svc_b',
+        severity: 'warning',
+        timestamp: 1100,
+        metric: 'mem',
+        value: 0.3,
+        threshold: 0.7,
+        message: 'Low mem',
+      },
     ],
     groupedAlarms: [],
     sparsityScore: 0.85,

@@ -1,11 +1,14 @@
-import { describe, it, expect } from 'vitest';
 import type {
-  WaveParams,
   AlertIntensity,
+  CallEdge,
   CascadeResult,
   DecayCurve,
+  ServiceCallGraph,
+  ServiceId,
+  ServiceNode,
+  WaveParams,
 } from '@agentix-e/micro-kinetic-core';
-import type { ServiceNode, CallEdge, ServiceCallGraph, ServiceId } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Wave Engine interfaces', () => {
   it('should construct WaveParams', () => {
@@ -31,7 +34,9 @@ describe('Wave Engine interfaces', () => {
 
   it('should construct a dissipated CascadeResult', () => {
     const intensity: AlertIntensity = {
-      serviceId: 'svc-a', time: 0, intensity: 1.0,
+      serviceId: 'svc-a',
+      time: 0,
+      intensity: 1.0,
     };
     const trajectories = new Map<string, readonly AlertIntensity[]>();
     trajectories.set('svc-a', [intensity]);

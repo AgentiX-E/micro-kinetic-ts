@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest';
 import {
+  boundToConfidence,
   ConfidenceEstimator,
   estimateErrorBound,
-  boundToConfidence,
 } from '@agentix-e/micro-kinetic-tree';
+import { describe, expect, it } from 'vitest';
 
 describe('ConfidenceEstimator', () => {
   describe('constructor', () => {

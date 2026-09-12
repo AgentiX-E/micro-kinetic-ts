@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { formatJson } from '../../../../src/cli/formatters/json.js';
 
 describe('formatJson', () => {
@@ -31,7 +31,10 @@ describe('formatJson', () => {
   });
 
   it('should handle Map', () => {
-    const map = new Map([['key1', 'val1'], ['key2', 'val2']]);
+    const map = new Map([
+      ['key1', 'val1'],
+      ['key2', 'val2'],
+    ]);
     const output = formatJson(map);
     expect(output).toContain('key1');
     expect(output).toContain('val1');

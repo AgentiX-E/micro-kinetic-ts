@@ -2,8 +2,13 @@
  * Unit tests for AutoSensitivity — bifurcation-guided threshold optimization.
  */
 
-import { describe, it, expect } from 'vitest';
-import { computeAutoSensitivity, computeMetricAutoSensitivity, DEFAULT_AUTO_SENSITIVITY_CONFIG, METRIC_TYPE_PRIORS } from '../../../src/signals/auto-sensitivity.js';
+import { describe, expect, it } from 'vitest';
+import {
+  computeAutoSensitivity,
+  computeMetricAutoSensitivity,
+  DEFAULT_AUTO_SENSITIVITY_CONFIG,
+  METRIC_TYPE_PRIORS,
+} from '../../../src/signals/auto-sensitivity.js';
 
 describe('computeAutoSensitivity — basic cases', () => {
   it('should return sparseK for datasets below minDataPoints', () => {
@@ -139,7 +144,11 @@ describe('computeMetricAutoSensitivity', () => {
 
   it('should return all metric type priors as valid', () => {
     const types: Array<'latency' | 'error_rate' | 'throughput' | 'resource' | 'generic'> = [
-      'latency', 'error_rate', 'throughput', 'resource', 'generic',
+      'latency',
+      'error_rate',
+      'throughput',
+      'resource',
+      'generic',
     ];
     for (const t of types) {
       expect(METRIC_TYPE_PRIORS[t].min).toBeGreaterThan(0);

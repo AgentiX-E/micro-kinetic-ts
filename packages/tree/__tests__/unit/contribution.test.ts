@@ -1,9 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import {
-  CollisionContributionAnalyzer,
-  buildEdgeWeightMap,
-} from '@agentix-e/micro-kinetic-tree';
-import type { DetectedCycle, CallEdge } from '@agentix-e/micro-kinetic-core';
+import type { CallEdge, DetectedCycle } from '@agentix-e/micro-kinetic-core';
+import { CollisionContributionAnalyzer, buildEdgeWeightMap } from '@agentix-e/micro-kinetic-tree';
+import { describe, expect, it } from 'vitest';
 
 function makeEdge(from: string, to: string): CallEdge {
   return {
@@ -42,12 +39,7 @@ describe('buildEdgeWeightMap', () => {
 });
 
 describe('CollisionContributionAnalyzer', () => {
-  const edges = [
-    makeEdge('A', 'B'),
-    makeEdge('B', 'C'),
-    makeEdge('C', 'A'),
-    makeEdge('B', 'A'),
-  ];
+  const edges = [makeEdge('A', 'B'), makeEdge('B', 'C'), makeEdge('C', 'A'), makeEdge('B', 'A')];
   const weights = new Float64Array([0.9, 0.8, 0.7, 0.6]);
 
   it('computes raw contribution as product of edge weights', () => {
@@ -168,10 +160,7 @@ describe('CollisionContributionAnalyzer', () => {
 
   it('computes 2-hop contribution with zero-weight edge in cycle', () => {
     // Edge A→D not in weight map, so weight = 0 → early return 0
-    const edges2 = [
-      makeEdge('A', 'B'),
-      makeEdge('B', 'C'),
-    ];
+    const edges2 = [makeEdge('A', 'B'), makeEdge('B', 'C')];
     const weights2 = new Float64Array([0.9, 0.5]);
     const analyzer = new CollisionContributionAnalyzer(edges2, weights2);
     const cycle = makeCycle(['A', 'B', 'D']); // A→B OK, B→D not in weight map → w=0
@@ -181,11 +170,7 @@ describe('CollisionContributionAnalyzer', () => {
 
   it('computes 2-hop contribution when neighborWeight is zero', () => {
     // Create edges where 2-hop neighbor lookup returns 0 (edge not in weight map)
-    const edges2 = [
-      makeEdge('A', 'B'),
-      makeEdge('B', 'C'),
-      makeEdge('C', 'A'),
-    ];
+    const edges2 = [makeEdge('A', 'B'), makeEdge('B', 'C'), makeEdge('C', 'A')];
     const weights2 = new Float64Array([0.9, 0.8, 0.7]);
     const analyzer = new CollisionContributionAnalyzer(edges2, weights2, { alpha: 0.5, beta: 0.3 });
     // Cycle A→B→C: weights for A→B=0.9, B→C=0.8, C→A=0.7

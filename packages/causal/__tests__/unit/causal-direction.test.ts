@@ -19,7 +19,6 @@ import type {
   CausalDirection,
   ConfidenceTier,
   ITimingProvider,
-  ServiceTiming,
   TemporalContext,
 } from '@agentix-e/micro-kinetic-core';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -44,17 +43,6 @@ function makeEdge(from: string, to: string, overrides: Partial<CallEdge> = {}): 
     callRate: 100,
     p99Latency: 50,
     errorRate: 0.05,
-    ...overrides,
-  };
-}
-
-function makeTiming(serviceId: string, overrides: Partial<ServiceTiming> = {}): ServiceTiming {
-  return {
-    serviceId,
-    earliestAnomalyMs: null,
-    latestNormalMs: null,
-    anomalyCount: 0,
-    normalCount: 0,
     ...overrides,
   };
 }
@@ -1604,12 +1592,22 @@ describe('CausalDirectionFusion', () => {
       fusion.register(static_);
 
       const edges = [makeEdge('svc-a', 'svc-b'), makeEdge('c', 'd')];
-      const result = await fusion.inferDirections(edges, makeContext());
+      // Pass the context this test builds. It used to be discarded in favour of
+      // a freshly created empty one, which made every assertion below hold with
+      // the trace provider seeing no data at all -- measured: an empty context
+      // yields acceptedTier 'none', edgesResolved 1, coverage 0.5, against
+      // 'trace' / 1 / 1 for the context above. Both satisfy the thresholds
+      // below, so the suite was green either way; only the first form exercises
+      // the trace tier.
+      //
+      // OPEN: the fixture gives spans for a->b only, so the documented premise
+      // ("trace has 1/2 coverage -> below minCoverage -> mergeTierResults fills
+      // the gaps") is not what this case produces either way -- the static
+      // provider's c->d direction is what makes coverage non-zero. The scenario
+      // needs re-deriving against the tier thresholds before it can pin the
+      // merge path.
+      const result = await fusion.inferDirections(edges, ctx);
 
-      // Trace has 1/2 coverage → below minCoverage → falls through
-      // No single tier accepted → mergeTierResults fills gaps
-      // But both edges were in the merged results
-      // Edges resolved depends on what tiers produce data
       expect(result.edgesResolved).toBeGreaterThanOrEqual(1);
       expect(result.coverage).toBeGreaterThanOrEqual(0.5);
     });

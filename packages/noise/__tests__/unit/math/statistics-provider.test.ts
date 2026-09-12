@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { StatisticsProvider, computeHoeffdingD } from '../../../src/math/statistics-provider.js';
 
 function makeArray(data: number[]): Float64Array {
@@ -84,7 +84,10 @@ describe('StatisticsProvider', () => {
       let allValid = true;
       for (let i = 0; i < result.density.length; i++) {
         const d = result.density[i]!;
-        if (isNaN(d) || d < 0) { allValid = false; break; }
+        if (isNaN(d) || d < 0) {
+          allValid = false;
+          break;
+        }
       }
       expect(allValid).toBe(true);
     });

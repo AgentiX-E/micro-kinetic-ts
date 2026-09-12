@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
 import {
-  validateTopologyResponse,
-  computeRetryDelay,
   buildTopologyPrompt,
   calibrateLLMConfidence,
+  computeRetryDelay,
   DEFAULT_RETRY_CONFIG,
+  validateTopologyResponse,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 // ── validateTopologyResponse ──────────────────────────────
 
@@ -19,7 +19,8 @@ describe('validateTopologyResponse', () => {
             to: 'checkoutservice',
             method: 'REST',
             confidence: 0.92,
-            reasoning: 'Frontend is the user-facing entry point that routes to checkout for order processing',
+            reasoning:
+              'Frontend is the user-facing entry point that routes to checkout for order processing',
           },
         ],
         [],
@@ -30,28 +31,80 @@ describe('validateTopologyResponse', () => {
     });
 
     it('should accept REST method', () => {
-      const result = validateTopologyResponse([{ from: 'a', to: 'b', method: 'REST', confidence: 0.8, reasoning: 'Test reasoning for REST edge validation with sufficient length.' }], []);
+      const result = validateTopologyResponse(
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'REST',
+            confidence: 0.8,
+            reasoning: 'Test reasoning for REST edge validation with sufficient length.',
+          },
+        ],
+        [],
+      );
       expect(result.valid).toBe(true);
     });
 
     it('should accept gRPC method', () => {
-      const result = validateTopologyResponse([{ from: 'a', to: 'b', method: 'gRPC', confidence: 0.8, reasoning: 'Test reasoning for gRPC edge validation with sufficient length.' }], []);
+      const result = validateTopologyResponse(
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'gRPC',
+            confidence: 0.8,
+            reasoning: 'Test reasoning for gRPC edge validation with sufficient length.',
+          },
+        ],
+        [],
+      );
       expect(result.valid).toBe(true);
     });
 
     it('should accept MQ method', () => {
-      const result = validateTopologyResponse([{ from: 'a', to: 'b', method: 'MQ', confidence: 0.8, reasoning: 'Test reasoning for MQ edge validation with sufficient length.' }], []);
+      const result = validateTopologyResponse(
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'MQ',
+            confidence: 0.8,
+            reasoning: 'Test reasoning for MQ edge validation with sufficient length.',
+          },
+        ],
+        [],
+      );
       expect(result.valid).toBe(true);
     });
 
     it('should accept EVENT method', () => {
-      const result = validateTopologyResponse([{ from: 'a', to: 'b', method: 'EVENT', confidence: 0.8, reasoning: 'Test reasoning for EVENT edge validation with sufficient length.' }], []);
+      const result = validateTopologyResponse(
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'EVENT',
+            confidence: 0.8,
+            reasoning: 'Test reasoning for EVENT edge validation with sufficient length.',
+          },
+        ],
+        [],
+      );
       expect(result.valid).toBe(true);
     });
 
     it('should accept INTERNAL method via case normalization', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: 'b', method: 'internal', confidence: 0.5, reasoning: 'Internal loopback for health check purposes.' }],
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'internal',
+            confidence: 0.5,
+            reasoning: 'Internal loopback for health check purposes.',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(true);
@@ -59,7 +112,15 @@ describe('validateTopologyResponse', () => {
 
     it('should auto-create nodes for unknown services', () => {
       const result = validateTopologyResponse(
-        [{ from: 'svc_new', to: 'svc_other', method: 'REST', confidence: 0.9, reasoning: 'New service calling other service via REST API.' }],
+        [
+          {
+            from: 'svc_new',
+            to: 'svc_other',
+            method: 'REST',
+            confidence: 0.9,
+            reasoning: 'New service calling other service via REST API.',
+          },
+        ],
         [],
       );
       expect(result.graph!.nodes.has('svc_new')).toBe(true);
@@ -69,7 +130,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reuse known service nodes', () => {
       const result = validateTopologyResponse(
-        [{ from: 'svc_a', to: 'svc_b', method: 'REST', confidence: 0.8, reasoning: 'svc_a calls svc_b for downstream processing.' }],
+        [
+          {
+            from: 'svc_a',
+            to: 'svc_b',
+            method: 'REST',
+            confidence: 0.8,
+            reasoning: 'svc_a calls svc_b for downstream processing.',
+          },
+        ],
         ['svc_a'],
       );
       expect(result.graph!.nodes.get('svc_a')!.namespace).toBe('discovered');
@@ -78,7 +147,15 @@ describe('validateTopologyResponse', () => {
 
     it('should scale confidence to call rate', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: 'b', method: 'REST', confidence: 0.5, reasoning: 'Medium confidence edge from testing.' }],
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'REST',
+            confidence: 0.5,
+            reasoning: 'Medium confidence edge from testing.',
+          },
+        ],
         [],
       );
       const edge = result.graph!.edges[0]!;
@@ -105,7 +182,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reject edge with missing to', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: '', method: 'REST', confidence: 0.5, reasoning: 'missing to field test case' }],
+        [
+          {
+            from: 'a',
+            to: '',
+            method: 'REST',
+            confidence: 0.5,
+            reasoning: 'missing to field test case',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(false);
@@ -114,7 +199,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reject self-loop edges', () => {
       const result = validateTopologyResponse(
-        [{ from: 'svc_a', to: 'svc_a', method: 'REST', confidence: 0.5, reasoning: 'self loop test case for validation' }],
+        [
+          {
+            from: 'svc_a',
+            to: 'svc_a',
+            method: 'REST',
+            confidence: 0.5,
+            reasoning: 'self loop test case for validation',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(false);
@@ -123,7 +216,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reject invalid method', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: 'b', method: 'SOAP', confidence: 0.5, reasoning: 'invalid soap method test' }],
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'SOAP',
+            confidence: 0.5,
+            reasoning: 'invalid soap method test',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(false);
@@ -132,7 +233,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reject confidence > 1', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: 'b', method: 'REST', confidence: 1.5, reasoning: 'overconfident edge test' }],
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'REST',
+            confidence: 1.5,
+            reasoning: 'overconfident edge test',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(false);
@@ -141,7 +250,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reject confidence < 0', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: 'b', method: 'REST', confidence: -0.5, reasoning: 'negative confidence test' }],
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'REST',
+            confidence: -0.5,
+            reasoning: 'negative confidence test',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(false);
@@ -159,7 +276,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reject non-numeric confidence', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: 'b', method: 'REST', confidence: 'high', reasoning: 'non-numeric confidence' }],
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'REST',
+            confidence: 'high',
+            reasoning: 'non-numeric confidence',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(false);
@@ -168,7 +293,15 @@ describe('validateTopologyResponse', () => {
 
     it('should reject NaN confidence', () => {
       const result = validateTopologyResponse(
-        [{ from: 'a', to: 'b', method: 'REST', confidence: NaN, reasoning: 'nan confidence test edge' }],
+        [
+          {
+            from: 'a',
+            to: 'b',
+            method: 'REST',
+            confidence: NaN,
+            reasoning: 'nan confidence test edge',
+          },
+        ],
         [],
       );
       expect(result.valid).toBe(false);
@@ -177,8 +310,20 @@ describe('validateTopologyResponse', () => {
     it('should handle mixed valid/invalid edges', () => {
       const result = validateTopologyResponse(
         [
-          { from: 'a', to: 'b', method: 'REST', confidence: 0.9, reasoning: 'valid edge with proper reasoning' },
-          { from: 'c', to: 'd', method: 'INVALID', confidence: 0.5, reasoning: 'invalid method edge test' },
+          {
+            from: 'a',
+            to: 'b',
+            method: 'REST',
+            confidence: 0.9,
+            reasoning: 'valid edge with proper reasoning',
+          },
+          {
+            from: 'c',
+            to: 'd',
+            method: 'INVALID',
+            confidence: 0.5,
+            reasoning: 'invalid method edge test',
+          },
         ],
         [],
       );
@@ -228,10 +373,7 @@ describe('buildTopologyPrompt', () => {
   });
 
   it('should include metric hints when provided', () => {
-    const prompt = buildTopologyPrompt(
-      ['svc_a'],
-      { svc_a: ['cpu_usage', 'latency_p99'] },
-    );
+    const prompt = buildTopologyPrompt(['svc_a'], { svc_a: ['cpu_usage', 'latency_p99'] });
     expect(prompt).toContain('cpu_usage');
     expect(prompt).toContain('latency_p99');
   });

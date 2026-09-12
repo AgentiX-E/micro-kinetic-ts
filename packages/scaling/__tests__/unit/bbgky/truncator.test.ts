@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { HierarchyTruncator } from '../../../src/bbgky/truncator.js';
 import type { BBGKYHierarchy, BBGKYState } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
+import { HierarchyTruncator } from '../../../src/bbgky/truncator.js';
 
 function makeState(order: number, energy: number, isSignificant: boolean): BBGKYState {
   return {
@@ -144,11 +144,7 @@ describe('HierarchyTruncator', () => {
     // ── Positive error for early truncation ─────────────
     it('should compute positive error for early truncation', () => {
       const truncator = new HierarchyTruncator();
-      const states = [
-        makeState(1, 1.0, true),
-        makeState(2, 0.5, true),
-        makeState(3, 0.1, false),
-      ];
+      const states = [makeState(1, 1.0, true), makeState(2, 0.5, true), makeState(3, 0.1, false)];
       const hierarchy = makeHierarchy(states, 2);
       const error = truncator.estimateTruncationError(hierarchy, 2);
       expect(error).toBeGreaterThanOrEqual(0);
@@ -213,10 +209,7 @@ describe('HierarchyTruncator', () => {
     // ── Factorial scaling factor ────────────────────────
     it('should scale error by factorial factor', () => {
       const truncator = new HierarchyTruncator();
-      const states = [
-        makeState(1, 1.0, true),
-        makeState(2, 0.01, false),
-      ];
+      const states = [makeState(1, 1.0, true), makeState(2, 0.01, false)];
       const hierarchy = makeHierarchy(states, 10);
       const error = truncator.estimateTruncationError(hierarchy, 1);
       // With truncationOrder=1, factorial(0)=1, systemFactor=0.1
@@ -256,11 +249,7 @@ describe('HierarchyTruncator', () => {
     // ── Energy ratio >= 1 branch ────────────────────────
     it('should handle ratio >= 1 via inconsistent hierarchy', () => {
       const truncator = new HierarchyTruncator();
-      const states = [
-        makeState(1, 0.5, true),
-        makeState(2, 1.0, false),
-        makeState(3, 0.3, false),
-      ];
+      const states = [makeState(1, 0.5, true), makeState(2, 1.0, false), makeState(3, 0.3, false)];
       // Build with explicit ratios including >= 1
       const hierarchy: BBGKYHierarchy = {
         systemSize: 2,
@@ -276,11 +265,7 @@ describe('HierarchyTruncator', () => {
     // ── Missing energyRatios entry (?? 0 branch) ────────
     it('should handle energyRatios shorter than expected', () => {
       const truncator = new HierarchyTruncator();
-      const states = [
-        makeState(1, 1.0, true),
-        makeState(2, 0.5, true),
-        makeState(3, 0.1, false),
-      ];
+      const states = [makeState(1, 1.0, true), makeState(2, 0.5, true), makeState(3, 0.1, false)];
       // energyRatios has only 1 entry but states has 3
       const hierarchy: BBGKYHierarchy = {
         systemSize: 2,

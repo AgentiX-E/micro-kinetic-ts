@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { BoltzmannGradAnalyzer } from '../../../src/boltzmann-grad/scaling-analyzer.js';
 
 describe('BoltzmannGradAnalyzer', () => {
@@ -340,10 +340,19 @@ describe('BoltzmannGradAnalyzer', () => {
         systemLoad: 0.5,
       };
       const states = [
-        { serviceId: 'a', timestamp: 1000, faultProbability: 0.1, anomalyScore: 0.5, trafficRps: 100 },
+        {
+          serviceId: 'a',
+          timestamp: 1000,
+          faultProbability: 0.1,
+          anomalyScore: 0.5,
+          trafficRps: 100,
+        },
       ];
 
-      const result = analyzer.computeBBGKYHierarchy(states, graph, { maxOrder: 1, truncationEta: 0.01 });
+      const result = analyzer.computeBBGKYHierarchy(states, graph, {
+        maxOrder: 1,
+        truncationEta: 0.01,
+      });
       expect(result.systemSize).toBe(1);
     });
   });

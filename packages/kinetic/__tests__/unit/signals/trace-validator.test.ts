@@ -57,7 +57,6 @@ function makeLinearTraceChain(
   stepDuration = 10,
 ): TraceSpan[] {
   const spans: TraceSpan[] = [];
-  let prevSpanId = '';
   for (let i = 0; i < services.length; i++) {
     const spanId = `${traceId}_span_${i}`;
     spans.push(
@@ -71,7 +70,6 @@ function makeLinearTraceChain(
         baseStartTime + i * 20,
       ),
     );
-    prevSpanId = spanId;
   }
   return spans;
 }

@@ -5,19 +5,19 @@
  * collision types: chain, fan-in, bottleneck, and cycle nodes.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type {
+  CollisionAggregatorConfig,
+  CollisionNode,
+  FaultGraphEdge,
+} from '../../src/causal/collision-aggregator.js';
 import {
-  classifyCollisionType,
-  computeBoltzmannCollisionGain,
   aggregateCollisionEnergy,
   aggregateFaultEnergy,
   buildIncomingEdgeMap,
+  classifyCollisionType,
+  computeBoltzmannCollisionGain,
   computeTopologicalOrder,
-} from '../../src/causal/collision-aggregator.js';
-import type {
-  FaultGraphEdge,
-  CollisionNode,
-  CollisionAggregatorConfig,
 } from '../../src/causal/collision-aggregator.js';
 
 function makeEdge(from: string, to: string, weight: number): FaultGraphEdge {
@@ -49,7 +49,11 @@ describe('classifyCollisionType', () => {
   });
 
   it('respects custom fan-in threshold', () => {
-    const config: CollisionAggregatorConfig = { alpha: 0.4, bottleneckCapacity: 0.5, fanInThreshold: 5 };
+    const config: CollisionAggregatorConfig = {
+      alpha: 0.4,
+      bottleneckCapacity: 0.5,
+      fanInThreshold: 5,
+    };
     // inDegree=4 < threshold=5 → chain
     expect(classifyCollisionType(4, 1, 0, config)).toBe('chain');
   });
@@ -57,11 +61,7 @@ describe('classifyCollisionType', () => {
 
 describe('buildIncomingEdgeMap', () => {
   it('groups edges by target', () => {
-    const edges = [
-      makeEdge('A', 'C', 0.8),
-      makeEdge('B', 'C', 0.6),
-      makeEdge('A', 'D', 0.5),
-    ];
+    const edges = [makeEdge('A', 'C', 0.8), makeEdge('B', 'C', 0.6), makeEdge('A', 'D', 0.5)];
     const map = buildIncomingEdgeMap(edges);
     expect(map.get('C')).toHaveLength(2);
     expect(map.get('D')).toHaveLength(1);
@@ -111,7 +111,10 @@ describe('computeBoltzmannCollisionGain', () => {
   it('computes collision gain from two independent parents', () => {
     // Q = 1 - (1 - 0.8×1) × (1 - 0.7×1) = 1 - 0.2 × 0.3 = 1 - 0.06 = 0.94
     const edges = [makeEdge('A', 'C', 0.8), makeEdge('B', 'C', 0.7)];
-    const parentEnergies = new Map([['A', 1.0], ['B', 1.0]]);
+    const parentEnergies = new Map([
+      ['A', 1.0],
+      ['B', 1.0],
+    ]);
     const gain = computeBoltzmannCollisionGain(edges, parentEnergies, 'chain');
     expect(gain).toBeCloseTo(0.94, 2);
   });
@@ -119,7 +122,10 @@ describe('computeBoltzmannCollisionGain', () => {
   it('applies cycle amplification (Φ=1.8)', () => {
     // Same as above but cycle amplification: Q = 1.8 × 0.94^(1/1.8)
     const edges = [makeEdge('A', 'C', 0.8), makeEdge('B', 'C', 0.7)];
-    const parentEnergies = new Map([['A', 1.0], ['B', 1.0]]);
+    const parentEnergies = new Map([
+      ['A', 1.0],
+      ['B', 1.0],
+    ]);
     const chainGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'chain');
     const cycleGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'cycle');
     expect(cycleGain).toBeGreaterThan(chainGain);
@@ -129,7 +135,10 @@ describe('computeBoltzmannCollisionGain', () => {
     // Same parents, but fan-in amplification Φ=1.2 redistributes the base gain
     // between the linear chain (Φ=1.0) and the self-reinforcing cycle (Φ=1.8).
     const edges = [makeEdge('A', 'C', 0.8), makeEdge('B', 'C', 0.7)];
-    const parentEnergies = new Map([['A', 1.0], ['B', 1.0]]);
+    const parentEnergies = new Map([
+      ['A', 1.0],
+      ['B', 1.0],
+    ]);
     const chainGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'chain');
     const fanInGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'fan-in');
     const cycleGain = computeBoltzmannCollisionGain(edges, parentEnergies, 'cycle');
@@ -138,11 +147,11 @@ describe('computeBoltzmannCollisionGain', () => {
   });
 
   it('ignores parents with zero energy', () => {
-    const edges = [
-      makeEdge('A', 'B', 0.9),
-      makeEdge('C', 'B', 0.5),
-    ];
-    const parentEnergies = new Map([['A', 1.0], ['C', 0]]);
+    const edges = [makeEdge('A', 'B', 0.9), makeEdge('C', 'B', 0.5)];
+    const parentEnergies = new Map([
+      ['A', 1.0],
+      ['C', 0],
+    ]);
     const gain = computeBoltzmannCollisionGain(edges, parentEnergies, 'chain');
     // Only A contributes: Q = 1 - (1 - 0.9×1) = 0.9
     expect(gain).toBeCloseTo(0.9, 2);
@@ -193,9 +202,15 @@ describe('aggregateCollisionEnergy', () => {
       cycleCount: 0,
       processed: false,
     };
-    const result = aggregateCollisionEnergy(node, new Map([
-      ['A', 1.0], ['B', 1.0], ['C', 1.0], ['D', 1.0],
-    ]));
+    const result = aggregateCollisionEnergy(
+      node,
+      new Map([
+        ['A', 1.0],
+        ['B', 1.0],
+        ['C', 1.0],
+        ['D', 1.0],
+      ]),
+    );
     // inDegree=4, outDegree=0 → capacity=0 → bottleneck
     expect(result.collisionType).toBe('bottleneck');
   });
@@ -247,7 +262,11 @@ describe('aggregateFaultEnergy (end-to-end)', () => {
     // Local: A=0.6, B=0.3, C=0.1
     // Alpha=0.4: energy = 0.4 × local + 0.6 × collision
     const edges = [makeEdge('A', 'B', 0.8), makeEdge('B', 'C', 0.7)];
-    const localScores = new Map([['A', 0.6], ['B', 0.3], ['C', 0.1]]);
+    const localScores = new Map([
+      ['A', 0.6],
+      ['B', 0.3],
+      ['C', 0.1],
+    ]);
     const result = aggregateFaultEnergy(edges, localScores);
     expect(result.size).toBe(3);
 
@@ -271,8 +290,11 @@ describe('aggregateFaultEnergy (end-to-end)', () => {
       makeEdge('D', 'E', 0.6),
     ];
     const localScores = new Map([
-      ['A', 0.8], ['B', 0.7], ['C', 0.6],
-      ['D', 0.2], ['E', 0.1],
+      ['A', 0.8],
+      ['B', 0.7],
+      ['C', 0.6],
+      ['D', 0.2],
+      ['E', 0.1],
     ]);
     const result = aggregateFaultEnergy(edges, localScores);
 
@@ -286,8 +308,14 @@ describe('aggregateFaultEnergy (end-to-end)', () => {
       makeEdge('A', 'B', 0.9),
       makeEdge('B', 'A', 0.3), // Cycle
     ];
-    const localScores = new Map([['A', 0.5], ['B', 0.5]]);
-    const cycleMembership = new Map([['A', 1], ['B', 1]]);
+    const localScores = new Map([
+      ['A', 0.5],
+      ['B', 0.5],
+    ]);
+    const cycleMembership = new Map([
+      ['A', 1],
+      ['B', 1],
+    ]);
     const result = aggregateFaultEnergy(edges, localScores, cycleMembership);
 
     expect(result.get('A')!.collisionType).toBe('cycle');
@@ -295,7 +323,10 @@ describe('aggregateFaultEnergy (end-to-end)', () => {
   });
 
   it('handles isolated nodes with no edges', () => {
-    const localScores = new Map([['X', 0.5], ['Y', 0.7]]);
+    const localScores = new Map([
+      ['X', 0.5],
+      ['Y', 0.7],
+    ]);
     const result = aggregateFaultEnergy([], localScores);
     expect(result.size).toBe(2);
     // Alpha=0.4: E = 0.4 × local = 0.4 × 0.5 = 0.2, 0.4 × 0.7 = 0.28
@@ -308,7 +339,10 @@ describe('aggregateFaultEnergy (end-to-end)', () => {
     // yields an empty order. Without cycleMembership (default empty map), both
     // nodes fall into the isolated/cyclic fallback and keep their local score.
     const edges = [makeEdge('A', 'B', 0.9), makeEdge('B', 'A', 0.3)];
-    const localScores = new Map([['A', 0.5], ['B', 0.5]]);
+    const localScores = new Map([
+      ['A', 0.5],
+      ['B', 0.5],
+    ]);
     const result = aggregateFaultEnergy(edges, localScores);
 
     expect(result.size).toBe(2);

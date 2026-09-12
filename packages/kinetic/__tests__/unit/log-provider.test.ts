@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { LogSignalProvider } from '@agentix-e/micro-kinetic';
 import type { SignalAnalysisContext } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 function makeLogs(logs: Array<{ ts: number; svc: string; msg: string; level: string }>) {
   return logs.map((l) => ({ timestamp: l.ts, service: l.svc, message: l.msg, level: l.level }));

@@ -83,14 +83,18 @@ describe('AdaptiveConfigOptimizer E2E', () => {
       },
     };
 
+    // Read the optimum from `trueOptimum` rather than restating its values:
+    // this closure used to inline `'q25'`, `'pearson'` and `0.82`, so the two
+    // copies could drift apart and the test would score against a landscape
+    // that was no longer the documented one.
     const trueF = async (cfg: RCAConfiguration): Promise<number> => {
       let score = 0.85;
       // Penalty for wrong strategy
-      if (cfg.discrete.baselineStrategy !== 'q25') score -= 0.12;
+      if (cfg.discrete.baselineStrategy !== trueOptimum.discrete.baselineStrategy) score -= 0.12;
       // Penalty for wrong correlation
-      if (cfg.discrete.correlationMethod !== 'pearson') score -= 0.08;
+      if (cfg.discrete.correlationMethod !== trueOptimum.discrete.correlationMethod) score -= 0.08;
       // Penalty for distance from optimal decayAlpha
-      score -= (cfg.continuous.decayAlpha - 0.82) ** 2 * 3;
+      score -= (cfg.continuous.decayAlpha - trueOptimum.continuous.decayAlpha) ** 2 * 3;
       // Small bonus for collision on
       if (cfg.discrete.enableCollisionAggregation) score += 0.03;
       return Math.max(0, Math.min(1, score));

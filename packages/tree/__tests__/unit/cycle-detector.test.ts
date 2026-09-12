@@ -1,11 +1,10 @@
-import { describe, it, expect } from 'vitest';
 import {
   JohnsonCycleDetector,
   buildAdjacencyList,
-  tarjanSCC,
   cycleKey,
+  tarjanSCC,
 } from '@agentix-e/micro-kinetic-tree';
-import type { JohnsonCycleOptions } from '@agentix-e/micro-kinetic-tree';
+import { describe, expect, it } from 'vitest';
 
 describe('JohnsonCycleDetector', () => {
   const detector = new JohnsonCycleDetector();
@@ -107,7 +106,8 @@ describe('JohnsonCycleDetector', () => {
   it('uses custom options in constructor', () => {
     const custom = new JohnsonCycleDetector({ maxCycles: 50, maxCycleLength: 10 });
     const edges: Array<readonly [string, string]> = [
-      ['A', 'B'], ['B', 'A'],
+      ['A', 'B'],
+      ['B', 'A'],
     ];
     const cycles = custom.detect(edges);
     expect(cycles).toHaveLength(1);
@@ -115,7 +115,8 @@ describe('JohnsonCycleDetector', () => {
 
   it('detectWithContributions classifies by threshold', () => {
     const edges: Array<readonly [string, string]> = [
-      ['A', 'B'], ['B', 'A'],
+      ['A', 'B'],
+      ['B', 'A'],
     ];
     const contributions = new Map<string, number>();
     contributions.set('A→B', 0.5);
@@ -127,7 +128,8 @@ describe('JohnsonCycleDetector', () => {
 
   it('detectWithContributions handles contribution below threshold', () => {
     const edges: Array<readonly [string, string]> = [
-      ['A', 'B'], ['B', 'A'],
+      ['A', 'B'],
+      ['B', 'A'],
     ];
     const contributions = new Map<string, number>();
     contributions.set('A→B', 0.1);
@@ -155,7 +157,8 @@ describe('JohnsonCycleDetector', () => {
 
   it('detectWithContributions returns 0 when cycle key not in contributions map', () => {
     const edges: Array<readonly [string, string]> = [
-      ['A', 'B'], ['B', 'A'],
+      ['A', 'B'],
+      ['B', 'A'],
     ];
     const contributions = new Map<string, number>();
     // Empty contributions map → all cycles get contribution 0 via ?? 0
@@ -185,9 +188,7 @@ describe('buildAdjacencyList', () => {
   });
 
   it('ensures target nodes exist even if only as target', () => {
-    const edges: Array<readonly [string, string]> = [
-      ['A', 'B'],
-    ];
+    const edges: Array<readonly [string, string]> = [['A', 'B']];
     const adj = buildAdjacencyList(edges);
     expect(adj.has('A')).toBe(true);
     expect(adj.has('B')).toBe(true);

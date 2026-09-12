@@ -1,6 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { FaultClassifierContext, FaultTypeHypothesis, ILLMFaultClassifier } from '@agentix-e/micro-kinetic-core';
-import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import type {
+  FaultClassifierContext,
+  FaultTypeHypothesis,
+  TimeSeries,
+} from '@agentix-e/micro-kinetic-core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock fetch globally for LLM classifier tests
 const mockFetch = vi.fn();
@@ -42,8 +45,20 @@ function makeContext(serviceId = 'svc_a'): FaultClassifierContext {
 
 function makePriorHypotheses(): FaultTypeHypothesis[] {
   return [
-    { category: 'CPU', confidence: 0.4, evidence: ['cpu_usage elevated'], method: 'rule', severity: 'major' },
-    { category: 'MEM', confidence: 0.5, evidence: ['monotonic heap growth'], method: 'statistical', severity: 'major' },
+    {
+      category: 'CPU',
+      confidence: 0.4,
+      evidence: ['cpu_usage elevated'],
+      method: 'rule',
+      severity: 'major',
+    },
+    {
+      category: 'MEM',
+      confidence: 0.5,
+      evidence: ['monotonic heap growth'],
+      method: 'statistical',
+      severity: 'major',
+    },
   ];
 }
 
@@ -84,9 +99,17 @@ describe('LLMFaultClassifier', () => {
     it('should call DeepSeek API with structured prompt', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({
-          choices: [{ message: { content: '[{"category":"MEM","confidence":0.85,"evidence":["heap growing"],"severity":"major"}]' } }],
-        }),
+        json: () =>
+          Promise.resolve({
+            choices: [
+              {
+                message: {
+                  content:
+                    '[{"category":"MEM","confidence":0.85,"evidence":["heap growing"],"severity":"major"}]',
+                },
+              },
+            ],
+          }),
       });
 
       const classifier = new LLMFaultClassifier();
@@ -105,9 +128,17 @@ describe('LLMFaultClassifier', () => {
     it('should pass prior hypotheses in the prompt', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({
-          choices: [{ message: { content: '[{"category":"CPU","confidence":0.7,"evidence":["prior aligned"],"severity":"major"}]' } }],
-        }),
+        json: () =>
+          Promise.resolve({
+            choices: [
+              {
+                message: {
+                  content:
+                    '[{"category":"CPU","confidence":0.7,"evidence":["prior aligned"],"severity":"major"}]',
+                },
+              },
+            ],
+          }),
       });
 
       const classifier = new LLMFaultClassifier();
@@ -153,9 +184,10 @@ describe('LLMFaultClassifier', () => {
     it('should fall back to prior on JSON parse error', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({
-          choices: [{ message: { content: 'invalid json here' } }],
-        }),
+        json: () =>
+          Promise.resolve({
+            choices: [{ message: { content: 'invalid json here' } }],
+          }),
       });
 
       const classifier = new LLMFaultClassifier();
@@ -171,9 +203,17 @@ describe('LLMFaultClassifier', () => {
     it('should handle LLM response with code fence', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({
-          choices: [{ message: { content: '```json\n[{"category":"DISK","confidence":0.9,"evidence":["high I/O"],"severity":"critical"}]\n```' } }],
-        }),
+        json: () =>
+          Promise.resolve({
+            choices: [
+              {
+                message: {
+                  content:
+                    '```json\n[{"category":"DISK","confidence":0.9,"evidence":["high I/O"],"severity":"critical"}]\n```',
+                },
+              },
+            ],
+          }),
       });
 
       const classifier = new LLMFaultClassifier();
@@ -194,11 +234,7 @@ describe('LLMFaultClassifier', () => {
 
       const classifier = new LLMFaultClassifier({ timeoutMs: 1 });
       await expect(
-        classifier.classifyWithContext(
-          [makeSeries('x', [1])],
-          makeContext(),
-          [],
-        ),
+        classifier.classifyWithContext([makeSeries('x', [1])], makeContext(), []),
       ).rejects.toThrow();
     });
   });

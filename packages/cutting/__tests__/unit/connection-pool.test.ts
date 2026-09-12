@@ -1,24 +1,42 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('numpy-ts', () => {
   class NDArray {
     data: Float64Array;
     flags = { C_CONTIGUOUS: true };
     _shape: number[];
-    constructor(data: Float64Array, shape?: number[]) { this.data = data; this._shape = shape || [data.length]; }
-    tolist(): number[] { return Array.from(this.data); }
-    copy() { return new NDArray(new Float64Array(this.data), this._shape); }
-    reshape(shape: number[]) { return new NDArray(this.data, shape); }
+    constructor(data: Float64Array, shape?: number[]) {
+      this.data = data;
+      this._shape = shape || [data.length];
+    }
+    tolist(): number[] {
+      return Array.from(this.data);
+    }
+    copy() {
+      return new NDArray(new Float64Array(this.data), this._shape);
+    }
+    reshape(shape: number[]) {
+      return new NDArray(this.data, shape);
+    }
   }
   function array(data: Float64Array | number[]) {
     return new NDArray(data instanceof Float64Array ? data : new Float64Array(data), [data.length]);
   }
   function polyfit(x: NDArray, y: NDArray): NDArray {
-    const xd = x.data; const yd = y.data; const n = xd.length;
-    let sx = 0, sy = 0, sxy = 0, sx2 = 0;
+    const xd = x.data;
+    const yd = y.data;
+    const n = xd.length;
+    let sx = 0,
+      sy = 0,
+      sxy = 0,
+      sx2 = 0;
     for (let i = 0; i < n; i++) {
-      const xi = xd[i]!, yi = yd[i]!;
-      sx += xi; sy += yi; sxy += xi * yi; sx2 += xi * xi;
+      const xi = xd[i]!,
+        yi = yd[i]!;
+      sx += xi;
+      sy += yi;
+      sxy += xi * yi;
+      sx2 += xi * xi;
     }
     const denom = n * sx2 - sx * sx;
     const slope = Math.abs(denom) < 1e-12 ? 0 : (n * sxy - sx * sy) / denom;
@@ -28,8 +46,8 @@ vi.mock('numpy-ts', () => {
   return { array, polyfit, NDArray, default: { array, polyfit, NDArray } };
 });
 
-import { ConnectionPoolDetector } from '@agentix-e/micro-kinetic-cutting';
 import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
+import { ConnectionPoolDetector } from '@agentix-e/micro-kinetic-cutting';
 
 function makeTS(label: string, timestamps: number[], values: number[]): TimeSeries {
   return { label, timestamps, values: new Float64Array(values), unit: 'connections' };
@@ -57,7 +75,12 @@ describe('ConnectionPoolDetector', () => {
 
     it('predicts exhaustion time', () => {
       const ts = makeTS('pool', [0, 3600000, 7200000, 10800000, 14400000], [100, 85, 70, 55, 40]);
-      const result = detector.detect(ts, { poolCapacity: 100, exhaustionThreshold: 0.1, minGrowthRate: 0.001, minFitQuality: 0.5 });
+      const result = detector.detect(ts, {
+        poolCapacity: 100,
+        exhaustionThreshold: 0.1,
+        minGrowthRate: 0.001,
+        minFitQuality: 0.5,
+      });
       if (result.detected) {
         expect(result.hoursToExhaustion).toBeDefined();
         expect(result.exhaustionTimestamp).toBeDefined();
@@ -65,7 +88,11 @@ describe('ConnectionPoolDetector', () => {
     });
 
     it('stable connections not detected', () => {
-      const ts = makeTS('pool', [0, 3600000, 7200000, 10800000, 14400000], [100, 100, 100, 100, 100]);
+      const ts = makeTS(
+        'pool',
+        [0, 3600000, 7200000, 10800000, 14400000],
+        [100, 100, 100, 100, 100],
+      );
       expect(detector.detect(ts).detected).toBe(false);
     });
 
@@ -77,12 +104,22 @@ describe('ConnectionPoolDetector', () => {
     });
 
     it('throws on fewer than 3 data points', () => {
-      const ts: TimeSeries = { label: 'pool', timestamps: [0, 1000], values: new Float64Array([100, 90]), unit: 'connections' };
+      const ts: TimeSeries = {
+        label: 'pool',
+        timestamps: [0, 1000],
+        values: new Float64Array([100, 90]),
+        unit: 'connections',
+      };
       expect(() => detector.detect(ts)).toThrow();
     });
 
     it('throws on mismatched lengths', () => {
-      const ts: TimeSeries = { label: 'pool', timestamps: [0, 1000, 2000], values: new Float64Array([100, 90]), unit: 'connections' };
+      const ts: TimeSeries = {
+        label: 'pool',
+        timestamps: [0, 1000, 2000],
+        values: new Float64Array([100, 90]),
+        unit: 'connections',
+      };
       expect(() => detector.detect(ts)).toThrow();
     });
 

@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { CouplingSparsityAnalyzer } from '../../../src/stoss/coupling-analyzer.js';
+import type {
+  AlertRecord,
+  CallEdge,
+  ServiceCallGraph,
+  ServiceNode,
+} from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { StatisticsProvider } from '../../../src/math/statistics-provider.js';
-import type { AlertRecord, ServiceCallGraph, ServiceNode, CallEdge } from '@agentix-e/micro-kinetic-core';
+import { CouplingSparsityAnalyzer } from '../../../src/stoss/coupling-analyzer.js';
 
 function makeServiceGraph(serviceIds: string[], edges: CallEdge[] = []): ServiceCallGraph {
   const nodes = new Map<string, ServiceNode>();
@@ -163,10 +168,7 @@ describe('CouplingSparsityAnalyzer', () => {
     it('should handle single service in multi-service graph', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a']);
-      const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9),
-        makeAlert('svc_a', 2000, 0.85),
-      ];
+      const alerts: AlertRecord[] = [makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85)];
 
       const result = analyzer.computeCouplingSparsity(alerts, graph);
       expect(result.dimension).toBe(1);
@@ -213,12 +215,21 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85), makeAlert('svc_a', 3000, 0.92),
-        makeAlert('svc_a', 4000, 0.88), makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55), makeAlert('svc_b', 3500, 0.52),
-        makeAlert('svc_b', 4500, 0.48), makeAlert('svc_b', 5500, 0.51),
-        makeAlert('svc_c', 1200, 0.3), makeAlert('svc_c', 2200, 0.35), makeAlert('svc_c', 3200, 0.32),
-        makeAlert('svc_c', 4200, 0.28), makeAlert('svc_c', 5200, 0.31),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 5000, 0.91),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 5500, 0.51),
+        makeAlert('svc_c', 1200, 0.3),
+        makeAlert('svc_c', 2200, 0.35),
+        makeAlert('svc_c', 3200, 0.32),
+        makeAlert('svc_c', 4200, 0.28),
+        makeAlert('svc_c', 5200, 0.31),
       ];
 
       const result = analyzer.computeCouplingSparsity(alerts, graph);
@@ -232,12 +243,21 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85), makeAlert('svc_a', 3000, 0.92),
-        makeAlert('svc_a', 4000, 0.88), makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55), makeAlert('svc_b', 3500, 0.52),
-        makeAlert('svc_b', 4500, 0.48), makeAlert('svc_b', 5500, 0.51),
-        makeAlert('svc_c', 1200, 0.3), makeAlert('svc_c', 2200, 0.35), makeAlert('svc_c', 3200, 0.32),
-        makeAlert('svc_c', 4200, 0.28), makeAlert('svc_c', 5200, 0.31),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 5000, 0.91),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 5500, 0.51),
+        makeAlert('svc_c', 1200, 0.3),
+        makeAlert('svc_c', 2200, 0.35),
+        makeAlert('svc_c', 3200, 0.32),
+        makeAlert('svc_c', 4200, 0.28),
+        makeAlert('svc_c', 5200, 0.31),
       ];
 
       const result = analyzer.computeCouplingSparsity(alerts, graph);
@@ -269,11 +289,15 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a', 'svc_b']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
-        makeAlert('svc_b', 3500, 0.52), makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
         makeAlert('svc_b', 5500, 0.51),
         makeAlert('svc_unknown', 1000, 0.9), // Not in graph
       ];
@@ -286,25 +310,33 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c', 'svc_d']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.9), makeAlert('svc_b', 2500, 0.85),
-        makeAlert('svc_b', 3500, 0.92), makeAlert('svc_b', 4500, 0.88),
+        makeAlert('svc_b', 1500, 0.9),
+        makeAlert('svc_b', 2500, 0.85),
+        makeAlert('svc_b', 3500, 0.92),
+        makeAlert('svc_b', 4500, 0.88),
         makeAlert('svc_b', 5500, 0.91),
-        makeAlert('svc_c', 1200, 0.3), makeAlert('svc_c', 2200, 0.35),
-        makeAlert('svc_c', 3200, 0.32), makeAlert('svc_c', 4200, 0.28),
+        makeAlert('svc_c', 1200, 0.3),
+        makeAlert('svc_c', 2200, 0.35),
+        makeAlert('svc_c', 3200, 0.32),
+        makeAlert('svc_c', 4200, 0.28),
         makeAlert('svc_c', 5200, 0.31),
-        makeAlert('svc_d', 1300, 0.31), makeAlert('svc_d', 2300, 0.36),
-        makeAlert('svc_d', 3300, 0.33), makeAlert('svc_d', 4300, 0.29),
+        makeAlert('svc_d', 1300, 0.31),
+        makeAlert('svc_d', 2300, 0.36),
+        makeAlert('svc_d', 3300, 0.33),
+        makeAlert('svc_d', 4300, 0.29),
         makeAlert('svc_d', 5300, 0.32),
       ];
 
       const result = analyzer.computeCouplingSparsity(alerts, graph);
       expect(Array.isArray(result.independentGroups)).toBe(true);
-      result.independentGroups.forEach(group => {
+      result.independentGroups.forEach((group) => {
         expect(Array.isArray(group)).toBe(true);
-        group.forEach(member => {
+        group.forEach((member) => {
           expect(typeof member).toBe('string');
         });
       });
@@ -314,11 +346,15 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_ghost']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
-        makeAlert('svc_b', 3500, 0.52), makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
         makeAlert('svc_b', 5500, 0.51),
       ];
 
@@ -330,11 +366,15 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a', 'svc_b']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
-        makeAlert('svc_b', 3500, 0.52), makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
         makeAlert('svc_b', 5500, 0.51),
       ];
 
@@ -346,8 +386,10 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
       ];
 
@@ -361,11 +403,15 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer(stats);
       const graph = makeServiceGraph(['svc_a', 'svc_b']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.5), makeAlert('svc_b', 2500, 0.55),
-        makeAlert('svc_b', 3500, 0.52), makeAlert('svc_b', 4500, 0.48),
+        makeAlert('svc_b', 1500, 0.5),
+        makeAlert('svc_b', 2500, 0.55),
+        makeAlert('svc_b', 3500, 0.52),
+        makeAlert('svc_b', 4500, 0.48),
         makeAlert('svc_b', 5500, 0.51),
       ];
 
@@ -379,9 +425,12 @@ describe('CouplingSparsityAnalyzer', () => {
       // insertion order, which is the single source of truth for index semantics.
       const graph = makeServiceGraph(['svc_c', 'svc_a', 'svc_b']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_c', 1000, 0.9), makeAlert('svc_c', 2000, 0.85),
-        makeAlert('svc_a', 1500, 0.5), makeAlert('svc_a', 2500, 0.55),
-        makeAlert('svc_b', 1200, 0.3), makeAlert('svc_b', 2200, 0.35),
+        makeAlert('svc_c', 1000, 0.9),
+        makeAlert('svc_c', 2000, 0.85),
+        makeAlert('svc_a', 1500, 0.5),
+        makeAlert('svc_a', 2500, 0.55),
+        makeAlert('svc_b', 1200, 0.3),
+        makeAlert('svc_b', 2200, 0.35),
       ];
 
       const result = analyzer.computeCouplingSparsity(alerts, graph);
@@ -393,17 +442,25 @@ describe('CouplingSparsityAnalyzer', () => {
       const analyzer = new CouplingSparsityAnalyzer();
       const graph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c', 'svc_d']);
       const alerts: AlertRecord[] = [
-        makeAlert('svc_a', 1000, 0.9), makeAlert('svc_a', 2000, 0.85),
-        makeAlert('svc_a', 3000, 0.92), makeAlert('svc_a', 4000, 0.88),
+        makeAlert('svc_a', 1000, 0.9),
+        makeAlert('svc_a', 2000, 0.85),
+        makeAlert('svc_a', 3000, 0.92),
+        makeAlert('svc_a', 4000, 0.88),
         makeAlert('svc_a', 5000, 0.91),
-        makeAlert('svc_b', 1500, 0.9), makeAlert('svc_b', 2500, 0.85),
-        makeAlert('svc_b', 3500, 0.92), makeAlert('svc_b', 4500, 0.88),
+        makeAlert('svc_b', 1500, 0.9),
+        makeAlert('svc_b', 2500, 0.85),
+        makeAlert('svc_b', 3500, 0.92),
+        makeAlert('svc_b', 4500, 0.88),
         makeAlert('svc_b', 5500, 0.91),
-        makeAlert('svc_c', 1200, 0.3), makeAlert('svc_c', 2200, 0.35),
-        makeAlert('svc_c', 3200, 0.32), makeAlert('svc_c', 4200, 0.28),
+        makeAlert('svc_c', 1200, 0.3),
+        makeAlert('svc_c', 2200, 0.35),
+        makeAlert('svc_c', 3200, 0.32),
+        makeAlert('svc_c', 4200, 0.28),
         makeAlert('svc_c', 5200, 0.31),
-        makeAlert('svc_d', 1300, 0.31), makeAlert('svc_d', 2300, 0.36),
-        makeAlert('svc_d', 3300, 0.33), makeAlert('svc_d', 4300, 0.29),
+        makeAlert('svc_d', 1300, 0.31),
+        makeAlert('svc_d', 2300, 0.36),
+        makeAlert('svc_d', 3300, 0.33),
+        makeAlert('svc_d', 4300, 0.29),
         makeAlert('svc_d', 5300, 0.32),
       ];
 

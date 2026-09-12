@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import type { CallEdge, ServiceCallGraph, ServiceNode } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { ThresholdEstimator } from '../../../src/cascade/threshold-estimator.js';
-import type { ServiceCallGraph, ServiceNode, CallEdge } from '@agentix-e/micro-kinetic-core';
 
 // ── Test Helpers ────────────────────────────────────────────
 
@@ -12,14 +12,20 @@ function makeServiceGraph(serviceIds: string[], edges: CallEdge[] = []): Service
   return { nodes, edges, systemLoad: 0.5 };
 }
 
-function makeEdge(from: string, to: string, callRate = 100, p99Latency = 100, errorRate = 0.01): CallEdge {
+function makeEdge(
+  from: string,
+  to: string,
+  callRate = 100,
+  p99Latency = 100,
+  errorRate = 0.01,
+): CallEdge {
   return { from, to, type: 'REST', callRate, p99Latency, errorRate };
 }
 
-const threeNodeGraph = makeServiceGraph(['svc_a', 'svc_b', 'svc_c'], [
-  makeEdge('svc_a', 'svc_b', 200),
-  makeEdge('svc_b', 'svc_c', 100),
-]);
+const threeNodeGraph = makeServiceGraph(
+  ['svc_a', 'svc_b', 'svc_c'],
+  [makeEdge('svc_a', 'svc_b', 200), makeEdge('svc_b', 'svc_c', 100)],
+);
 
 // ── estimate ────────────────────────────────────────────────
 
@@ -59,9 +65,10 @@ describe('ThresholdEstimator.estimate', () => {
     it('should be higher for sparse graphs than dense', () => {
       const e = new ThresholdEstimator();
       const sparse = makeServiceGraph(['a', 'b', 'c'], [makeEdge('a', 'b', 50)]);
-      const dense = makeServiceGraph(['a', 'b', 'c'], [
-        makeEdge('a', 'b', 200), makeEdge('b', 'c', 200), makeEdge('a', 'c', 200),
-      ]);
+      const dense = makeServiceGraph(
+        ['a', 'b', 'c'],
+        [makeEdge('a', 'b', 200), makeEdge('b', 'c', 200), makeEdge('a', 'c', 200)],
+      );
       expect(e.estimate(sparse).propagationThreshold).toBeGreaterThanOrEqual(
         e.estimate(dense).propagationThreshold,
       );
@@ -119,20 +126,26 @@ describe('ThresholdEstimator.estimate', () => {
     });
 
     it('should classify fully connected graph', () => {
-      const full = makeServiceGraph(['a', 'b', 'c'], [
-        makeEdge('a', 'b', 300), makeEdge('b', 'a', 300),
-        makeEdge('a', 'c', 300), makeEdge('c', 'a', 300),
-        makeEdge('b', 'c', 300), makeEdge('c', 'b', 300),
-      ]);
+      const full = makeServiceGraph(
+        ['a', 'b', 'c'],
+        [
+          makeEdge('a', 'b', 300),
+          makeEdge('b', 'a', 300),
+          makeEdge('a', 'c', 300),
+          makeEdge('c', 'a', 300),
+          makeEdge('b', 'c', 300),
+          makeEdge('c', 'b', 300),
+        ],
+      );
       const risk = new ThresholdEstimator().estimate(full).cascadeRisk;
       expect(['low', 'moderate', 'high']).toContain(risk);
     });
 
     it('should classify chain graph', () => {
-      const chain = makeServiceGraph(['a', 'b', 'c', 'd', 'e'], [
-        makeEdge('a', 'b'), makeEdge('b', 'c'),
-        makeEdge('c', 'd'), makeEdge('d', 'e'),
-      ]);
+      const chain = makeServiceGraph(
+        ['a', 'b', 'c', 'd', 'e'],
+        [makeEdge('a', 'b'), makeEdge('b', 'c'), makeEdge('c', 'd'), makeEdge('d', 'e')],
+      );
       const risk = new ThresholdEstimator().estimate(chain).cascadeRisk;
       expect(['low', 'moderate', 'high']).toContain(risk);
     });

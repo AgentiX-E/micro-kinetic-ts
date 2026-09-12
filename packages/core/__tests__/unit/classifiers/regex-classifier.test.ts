@@ -1,9 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type {
+  ClassificationRule,
+  FaultClassifierContext,
+} from '../../../src/interfaces/fault-classifier.js';
 import type { TimeSeries } from '../../../src/types/time-series.js';
-import type { ClassificationRule, FaultClassifierContext } from '../../../src/interfaces/fault-classifier.js';
 import {
-  RegexFaultClassifier,
   DEFAULT_CLASSIFICATION_RULES,
+  RegexFaultClassifier,
   bestHypothesisToFaultType,
   hypothesisToFaultType,
 } from '../../../src/utils/classifiers/regex-classifier.js';
@@ -97,8 +100,20 @@ describe('RegexFaultClassifier', () => {
     it('should update max confidence when subsequent series has higher rule confidence', () => {
       // Create a custom classifier with rules at different confidence levels
       const customRules: ClassificationRule[] = [
-        { pattern: /cpu_a/, category: 'CPU', priority: 100, confidence: 0.3, description: 'low conf' },
-        { pattern: /cpu_b/, category: 'CPU', priority: 99, confidence: 0.9, description: 'high conf' },
+        {
+          pattern: /cpu_a/,
+          category: 'CPU',
+          priority: 100,
+          confidence: 0.3,
+          description: 'low conf',
+        },
+        {
+          pattern: /cpu_b/,
+          category: 'CPU',
+          priority: 99,
+          confidence: 0.9,
+          description: 'high conf',
+        },
       ];
       const c = new RegexFaultClassifier(customRules);
       const series = [makeSeries('cpu_a', [0.9]), makeSeries('cpu_b', [0.9])];
@@ -121,10 +136,7 @@ describe('RegexFaultClassifier', () => {
     });
 
     it('should include evidence in each hypothesis', () => {
-      const series = [
-        makeSeries('cpu_usage', [0.9]),
-        makeSeries('memory_used', [0.7]),
-      ];
+      const series = [makeSeries('cpu_usage', [0.9]), makeSeries('memory_used', [0.7])];
       const result = classifier.classify(series, makeContext());
       expect(result[0]!.evidence).toContain('cpu_usage');
       expect(result[1]!.evidence).toContain('memory_used');
@@ -221,10 +233,7 @@ describe('RegexFaultClassifier', () => {
         },
       ];
       const classifier = new RegexFaultClassifier(customRules);
-      const result = classifier.classify(
-        [makeSeries('gpu_memory_used', [0.95])],
-        makeContext(),
-      );
+      const result = classifier.classify([makeSeries('gpu_memory_used', [0.95])], makeContext());
       expect(result[0]!.category).toBe('GPU_MEM');
     });
 
@@ -246,10 +255,7 @@ describe('RegexFaultClassifier', () => {
         },
       ];
       const classifier = new RegexFaultClassifier(customRules);
-      const result = classifier.classify(
-        [makeSeries('disk_cpu_io', [0.9])],
-        makeContext(),
-      );
+      const result = classifier.classify([makeSeries('disk_cpu_io', [0.9])], makeContext());
       expect(result[0]!.category).toBe('DISK');
     });
   });
@@ -266,7 +272,13 @@ describe('RegexFaultClassifier', () => {
 
 describe('hypothesisToFaultType', () => {
   it('should convert hypothesis to FaultType', () => {
-    const h = { category: 'CPU', confidence: 0.9, evidence: ['cpu'], method: 'rule' as const, severity: 'major' as const };
+    const h = {
+      category: 'CPU',
+      confidence: 0.9,
+      evidence: ['cpu'],
+      method: 'rule' as const,
+      severity: 'major' as const,
+    };
     const ft = hypothesisToFaultType(h);
     expect(ft.category).toBe('CPU');
     expect(ft.severity).toBe('major');
@@ -279,8 +291,20 @@ describe('hypothesisToFaultType', () => {
 describe('bestHypothesisToFaultType', () => {
   it('should return first hypothesis as FaultType', () => {
     const hypotheses = [
-      { category: 'CPU', confidence: 0.9, evidence: ['cpu'], method: 'rule' as const, severity: 'major' as const },
-      { category: 'MEM', confidence: 0.5, evidence: ['mem'], method: 'rule' as const, severity: 'minor' as const },
+      {
+        category: 'CPU',
+        confidence: 0.9,
+        evidence: ['cpu'],
+        method: 'rule' as const,
+        severity: 'major' as const,
+      },
+      {
+        category: 'MEM',
+        confidence: 0.5,
+        evidence: ['mem'],
+        method: 'rule' as const,
+        severity: 'minor' as const,
+      },
     ];
     const ft = bestHypothesisToFaultType(hypotheses);
     expect(ft.category).toBe('CPU');

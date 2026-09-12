@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  DecimalProvider,
-  StatisticsProvider,
   CouplingSparsityAnalyzer,
+  DecimalProvider,
   IndependenceChecker,
+  StatisticsProvider,
   StossDenoiser,
   registerNoiseFactories,
 } from '../../src/index.js';
