@@ -108,6 +108,68 @@ function truncate(message: string, max: number): string {
 }
 
 /**
+ * Format a ratio in the units the scorer used: two decimals below a thousand,
+ * scientific notation above. A relative rise is unbounded, so a fixed-decimal
+ * render would print `1954.300` — five significant digits spent on a quantity
+ * whose useful information is its magnitude.
+ *
+ * Four significant digits, not three: the reader compares the baseline against
+ * the near-zero guard's `0.001` floor, and a three-digit render maps `1.004e-3`
+ * onto `1.00e-3`, which reads as at-the-floor when it is not.
+ */
+function fmtRatio(x: number): string {
+  if (!Number.isFinite(x)) return 'nonfinite';
+  return x >= 1000 ? x.toExponential(3) : x.toFixed(2);
+}
+
+/**
+ * Format a baseline level. Baselines span roughly 1e-4 to 1e8 across the
+ * bridge's metric sources, and a near-zero baseline is the whole reason a rise
+ * can be huge, so the exponent is the part that has to survive the render.
+ */
+function fmtBase(x: number): string {
+  if (!Number.isFinite(x)) return 'nonfinite';
+  return x === 0 ? '0' : x.toExponential(3);
+}
+
+/** How many kept metrics carry a decomposition, and their combined lines. */
+const SHAPE_TOP_K = 3;
+
+/**
+ * Render the decomposition of the metrics that decided a service's score.
+ *
+ * The anomaly score is unbounded in the RISE direction and hard-capped at
+ * `log10(2)` in the DROP direction (a relative drop cannot exceed 100%), so a
+ * score above ~0.55 can only have come from a rise. Without the rise ratio and
+ * the baseline it was measured against, a score cannot be told apart from a
+ * shape artifact. Rendered only for the metrics the caller supplied a
+ * decomposition for, and the counts make a partial render detectable.
+ *
+ * @param outcomes - The engine's outcome list for one service.
+ * @returns One line, or an empty array when no kept metric carries one.
+ */
+function formatAnomalyShape(outcomes: readonly MetricDiagnostic[]): string[] {
+  const kept = outcomes.filter((d) => d.outcome === 'kept');
+  const withBreakdown = kept
+    .filter((d) => d.breakdown !== undefined)
+    .sort((a, b) => b.score - a.score || (a.label < b.label ? -1 : 1));
+  if (withBreakdown.length === 0) return [];
+  const shown = withBreakdown.slice(0, SHAPE_TOP_K).map((d) => {
+    const b = d.breakdown!;
+    return (
+      `${d.label}=${fmt(d.score)}{dev=${fmt(b.deviation)},trend=${fmt(b.trend)},` +
+      `cv=${fmt(b.cv)},burst=${fmt(b.burst)},rise=${fmtRatio(b.riseRatio)},` +
+      `drop=${fmtRatio(b.dropRatio)},base=${fmtBase(b.baselineMean)}}`
+    );
+  });
+  const count =
+    withBreakdown.length === kept.length
+      ? String(withBreakdown.length)
+      : `${withBreakdown.length}/${kept.length}`;
+  return [`    metricTop(${count}): ${shown.join(' ')}`];
+}
+
+/**
  * Render one service's metric competition as two lines.
  *
  * `metricKept` carries the label and the score that competed for the service's
@@ -196,6 +258,7 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
     // grow the dump by an order of magnitude for rows nothing reads.
     if (service.metricOutcomes !== undefined && (gt.has(service.serviceId) || rank !== undefined)) {
       lines.push(...formatMetricCompetition(service.metricOutcomes));
+      lines.push(...formatAnomalyShape(service.metricOutcomes));
     }
   }
 

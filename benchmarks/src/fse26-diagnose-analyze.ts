@@ -19,6 +19,27 @@
  * @module benchmarks/fse26-diagnose-analyze
  */
 
+/**
+ * The score decomposition of one metric, as the `metricTop` line reports it.
+ *
+ * Needed because the score alone cannot say whether a metric won on a genuine
+ * deviation or on a bonus, nor how large its rise was. The anomaly score is
+ * unbounded in the RISE direction and hard-capped at `log10(2)` in the DROP
+ * direction, so a high score IS a rise — the ratio says how extreme.
+ */
+export interface DiagnosedBreakdown {
+  readonly deviation: number;
+  readonly trend: number;
+  readonly cv: number;
+  readonly burst: number;
+  /** `(max − baseline) / baseline` — unbounded. */
+  readonly riseRatio: number;
+  /** `(baseline − min) / baseline` — bounded at 1 by construction. */
+  readonly dropRatio: number;
+  /** The pre-anomaly baseline the two ratios were measured against. */
+  readonly baselineMean: number;
+}
+
 /** One metric's fate, as the `DIAG` block reports it. */
 export interface DiagnosedMetricOutcome {
   readonly label: string;
@@ -30,6 +51,8 @@ export interface DiagnosedMetricOutcome {
   readonly outcome: string;
   /** The metric's score. Meaningful only when `outcome` is `kept`. */
   readonly score: number;
+  /** The score decomposition, when the block reported one. */
+  readonly breakdown?: DiagnosedBreakdown;
 }
 
 /** One service's signal inventory, as the `DIAG` block reports it. */
@@ -81,6 +104,22 @@ const SERVICE_RE =
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
 const METRIC_DROP_RE = /^ {4}metricDrop\((\d+)\):(?: (.*))?$/;
+/**
+ * The shape line always carries at least one entry: the producer omits the line
+ * entirely when it has no decomposition to print. Requiring the body here rather
+ * than defaulting an absent one keeps a `?? ''` fallback out of the reader — a
+ * fallback that could only ever fire on a line the producer cannot write.
+ */
+const METRIC_TOP_RE = /^ {4}metricTop\((\d+)(?:\/(\d+))?\): (.+)$/;
+
+/**
+ * `label=score{dev=…,trend=…,cv=…,burst=…,rise=…,drop=…,base=…}`.
+ *
+ * The label is `.+?` and the score `[^{]+` because the score is immediately
+ * followed by `{`, which a `\S+` would swallow.
+ */
+const TOP_ENTRY_RE =
+  /^(.+?)=([^{]+)\{dev=(\S+),trend=(\S+),cv=(\S+),burst=(\S+),rise=(\S+),drop=(\S+),base=(\S+)\}$/;
 
 /**
  * Split a space-separated `label=value` / `label:value` list.
@@ -239,6 +278,46 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
           })),
         );
         declaredOutcomeCount += Number(dropped[1]);
+      }
+      continue;
+    }
+
+    const top = METRIC_TOP_RE.exec(line);
+    if (top && openOutcomes !== undefined) {
+      // The shape line is space-separated like the other two, but each entry is
+      // `label=score{…}` rather than a single `key=value` pair, so it is split
+      // here rather than through the shared one-separator helper.
+      const raw = top[3]!.split(' ').filter((entry) => entry.length > 0);
+      const byLabel = new Map<string, DiagnosedBreakdown>();
+      let parsed = 0;
+      for (const entry of raw) {
+        const m = TOP_ENTRY_RE.exec(entry);
+        if (m === null) continue;
+        const nums = [m[3], m[4], m[5], m[6], m[7], m[8], m[9]].map(Number);
+        if (!nums.every((n) => Number.isFinite(n))) continue;
+        byLabel.set(m[1]!, {
+          deviation: nums[0]!,
+          trend: nums[1]!,
+          cv: nums[2]!,
+          burst: nums[3]!,
+          riseRatio: nums[4]!,
+          dropRatio: nums[5]!,
+          baselineMean: nums[6]!,
+        });
+        parsed++;
+      }
+      // A render whose entries did not all parse, or that claims a different
+      // number of decompositions than it printed, is a truncation — and a
+      // truncation reads as complete. The whole line is ignored, not partially
+      // consumed: a partially attached decomposition is worse than none,
+      // because it looks like a metric that genuinely carried no decomposition.
+      const keptCount = openOutcomes.filter((outcome) => outcome.outcome === 'kept').length;
+      const declaredKept = top[2] === undefined ? keptCount : Number(top[2]);
+      if (parsed === raw.length && parsed === Number(top[1]) && declaredKept === keptCount) {
+        openOutcomes = openOutcomes.map((outcome) => {
+          const breakdown = byLabel.get(outcome.label);
+          return breakdown === undefined ? outcome : { ...outcome, breakdown };
+        });
       }
       continue;
     }
@@ -617,6 +696,180 @@ function faultTypeTable(deltas: readonly DiagnosticDelta[]): string[] {
     );
   }
   return lines;
+}
+
+/**
+ * The one metric that decided a service's anomaly score: the highest-scoring
+ * kept metric that carries a decomposition.
+ *
+ * A service with no such metric contributes nothing — its score cannot be
+ * attributed, and inventing an attribution would be worse than reporting one.
+ */
+function decisiveMetric(
+  service: DiagnosedService,
+): (DiagnosedMetricOutcome & { breakdown: DiagnosedBreakdown }) | undefined {
+  const candidates = (service.metricOutcomes ?? []).filter(
+    (outcome): outcome is DiagnosedMetricOutcome & { breakdown: DiagnosedBreakdown } =>
+      outcome.outcome === 'kept' && outcome.breakdown !== undefined,
+  );
+  if (candidates.length === 0) return undefined;
+  return candidates.reduce((best, current) => (current.score > best.score ? current : best));
+}
+
+/** How one population's decisive metrics were won. */
+export interface AnomalyShapeCell {
+  readonly population: string;
+  /** Services in this population that carried an attributable metric. */
+  readonly services: number;
+  /** Decisive on the deviation term: `deviation ≥ 0.5 × score`. */
+  readonly deviationLed: number;
+  /** Decisive on a bonus: the three bonuses together exceed the deviation. */
+  readonly bonusLed: number;
+  /** A rise, not a drop: `riseRatio > dropRatio`. */
+  readonly rise: number;
+  readonly drop: number;
+  /** Median `riseRatio` over the population, or `undefined` when empty. */
+  readonly medianRiseRatio: number | undefined;
+  readonly medianBaselineMean: number | undefined;
+  /**
+   * Decisive metrics whose baseline is at or below the `0.001` floor the
+   * near-zero-baseline guard tests. A large surge here means the ABSOLUTE floor
+   * is miscalibrated for the source's units, not that the guard is wrong.
+   */
+  readonly baselineAtFloor: number;
+}
+
+/**
+ * Profile how the decisive metrics of each service population were won.
+ *
+ * The question this answers: is a rank decided by a genuine deviation, or by a
+ * bonus computed on a ratio whose baseline was tiny? The three bonuses are
+ * bounded (`trend` by construction, `cv ≤ 0.075`, `burst = 0.1 × deviation`),
+ * while `riseRatio` is unbounded — so a high score with a bonus-led
+ * decomposition would be a different defect from a high score with a
+ * deviation-led one.
+ *
+ * Populations are separated because a verdict needs a control: the ground-truth
+ * source's decisive metric is what a *correct* attribution looks like on the
+ * same cases as the wrong winner's.
+ *
+ * @param cases - A parsed dump.
+ * @returns One cell per population, in a fixed order.
+ */
+export function anomalyShape(cases: readonly DiagnosedCase[]): AnomalyShapeCell[] {
+  interface Mutable {
+    population: string;
+    services: number;
+    deviationLed: number;
+    bonusLed: number;
+    rise: number;
+    drop: number;
+    rises: number[];
+    baselines: number[];
+    baselineAtFloor: number;
+  }
+  const populations: Mutable[] = [
+    'ground-truth source',
+    'wrong top-1 winner',
+    'other predicted / bystander',
+  ].map((population) => ({
+    population,
+    services: 0,
+    deviationLed: 0,
+    bonusLed: 0,
+    rise: 0,
+    drop: 0,
+    rises: [],
+    baselines: [],
+    baselineAtFloor: 0,
+  }));
+
+  for (const kase of cases) {
+    for (const service of kase.services) {
+      const decisive = decisiveMetric(service);
+      if (decisive === undefined) continue;
+      const { deviation, trend, cv, burst, riseRatio, dropRatio, baselineMean } =
+        decisive.breakdown;
+      const bonus = trend + cv + burst;
+      const cell = service.isGroundTruth
+        ? populations[0]!
+        : service.serviceId === kase.prediction[0]
+          ? populations[1]!
+          : populations[2]!;
+      cell.services++;
+      if (deviation >= 0.5 * decisive.score) cell.deviationLed++;
+      if (bonus > deviation) cell.bonusLed++;
+      if (riseRatio > dropRatio) cell.rise++;
+      else cell.drop++;
+      cell.rises.push(riseRatio);
+      cell.baselines.push(baselineMean);
+      if (baselineMean <= 0.001) cell.baselineAtFloor++;
+    }
+  }
+
+  const median = (values: readonly number[]): number | undefined => {
+    if (values.length === 0) return undefined;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  };
+
+  return populations.map((cell) => ({
+    population: cell.population,
+    services: cell.services,
+    deviationLed: cell.deviationLed,
+    bonusLed: cell.bonusLed,
+    rise: cell.rise,
+    drop: cell.drop,
+    medianRiseRatio: median(cell.rises),
+    medianBaselineMean: median(cell.baselines),
+    baselineAtFloor: cell.baselineAtFloor,
+  }));
+}
+
+/** `value` as a compact magnitude, or `-` when absent. */
+function magnitude(value: number | undefined): string {
+  if (value === undefined) return '-';
+  if (value === 0) return '0';
+  return Math.abs(value) >= 1000 || Math.abs(value) < 0.01
+    ? value.toExponential(2)
+    : value.toFixed(2);
+}
+
+/**
+ * Render the anomaly-shape profile for a dump.
+ *
+ * @param cases - A parsed dump.
+ * @param label - How to describe the source in the header.
+ * @returns The report text, ending with a newline.
+ */
+export function formatAnomalyShapeReport(cases: readonly DiagnosedCase[], label: string): string {
+  const cells = anomalyShape(cases);
+  const attributable = cells.reduce((sum, cell) => sum + cell.services, 0);
+  const lines: string[] = [];
+  lines.push(`FSE'26 anomaly shape — ${label}`);
+  lines.push(`  cases: ${cases.length}   services with an attributable metric: ${attributable}`);
+  lines.push('');
+  lines.push(
+    `  ${'population'.padEnd(28)} ${'n'.padStart(5)} ${'dev-led'.padStart(8)} ` +
+      `${'bonus-led'.padStart(10)} ${'rise'.padStart(6)} ${'drop'.padStart(6)} ` +
+      `${'med-rise'.padStart(9)} ${'med-base'.padStart(9)} ${'base<=1e-3'.padStart(11)}`,
+  );
+  for (const cell of cells) {
+    lines.push(
+      `  ${cell.population.padEnd(28)} ${String(cell.services).padStart(5)} ` +
+        `${String(cell.deviationLed).padStart(8)} ${String(cell.bonusLed).padStart(10)} ` +
+        `${String(cell.rise).padStart(6)} ${String(cell.drop).padStart(6)} ` +
+        `${magnitude(cell.medianRiseRatio).padStart(9)} ` +
+        `${magnitude(cell.medianBaselineMean).padStart(9)} ` +
+        `${String(cell.baselineAtFloor).padStart(11)}`,
+    );
+  }
+  lines.push('');
+  lines.push('  "dev-led" means deviation ≥ half the score. A relative DROP is capped');
+  lines.push('  at log10(2) ≈ 0.301, so a high score with rise > drop is an unbounded');
+  lines.push('  rise; "base<=1e-3" counts decisive metrics the near-zero-baseline guard');
+  lines.push('  would test, which is how a miscalibrated ABSOLUTE floor shows up.');
+  return `${lines.join('\n')}\n`;
 }
 
 /**

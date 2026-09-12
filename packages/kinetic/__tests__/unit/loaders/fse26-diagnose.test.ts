@@ -327,37 +327,171 @@ describe('formatFSE26Diagnostic — metric competition', () => {
   });
 
   it('orders kept metrics by score descending then label ascending', () => {
-    const out = formatFSE26Diagnostic(
-      input({
-        services: [
-          service({
-            metricOutcomes: [
-              { label: 'z-low', outcome: 'kept', score: 0.1 },
-              { label: 'a-high', outcome: 'kept', score: 0.9 },
-              { label: 'b-high', outcome: 'kept', score: 0.9 },
-            ],
-          }),
-        ],
-      }),
-    );
+    // Both input orders, because a small-array sort is free to call the
+    // comparator in either direction and only one order exercises both arms of
+    // the score-then-label chain.
+    const outcomes = [
+      { label: 'z-low', outcome: 'kept' as const, score: 0.1 },
+      { label: 'a-high', outcome: 'kept' as const, score: 0.9 },
+      { label: 'b-high', outcome: 'kept' as const, score: 0.9 },
+    ];
 
-    expect(out).toContain('metricKept(3): a-high=0.900 b-high=0.900 z-low=0.100');
+    for (const order of [outcomes, [...outcomes].reverse()]) {
+      const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: order })] }));
+      expect(out).toContain('metricKept(3): a-high=0.900 b-high=0.900 z-low=0.100');
+    }
   });
 
   it('orders dropped metrics by label ascending with their reason', () => {
+    const outcomes = [
+      { label: 'zeta', outcome: 'too-few-samples' as const, score: 0 },
+      { label: 'alpha', outcome: 'duty-cycled-idle' as const, score: 0 },
+    ];
+
+    for (const order of [outcomes, [...outcomes].reverse()]) {
+      const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: order })] }));
+      expect(out).toContain('metricDrop(2): alpha:duty-cycled-idle zeta:too-few-samples');
+    }
+  });
+});
+
+describe('formatFSE26Diagnostic — anomaly shape', () => {
+  const breakdown = {
+    deviation: 3.203,
+    trend: 0.04,
+    cv: 0.048,
+    burst: 0,
+    riseRatio: 1954.3,
+    dropRatio: 0.02,
+    baselineMean: 0.0017,
+  };
+
+  it('renders the decomposition of the metrics that decided the service score', () => {
+    // The score alone cannot say whether a metric won on a genuine deviation or
+    // on a bonus, nor how large its rise was. Anomaly scores are unbounded in
+    // the RISE direction only, so the rise is what has to be visible.
     const out = formatFSE26Diagnostic(
       input({
         services: [
           service({
             metricOutcomes: [
-              { label: 'zeta', outcome: 'too-few-samples', score: 0 },
-              { label: 'alpha', outcome: 'duty-cycled-idle', score: 0 },
+              {
+                label: 'hubble_http_request_duration_p99_seconds',
+                outcome: 'kept',
+                score: 3.291,
+                breakdown,
+              },
+              {
+                label: 'container.cpu.usage',
+                outcome: 'kept',
+                score: 0.358,
+                breakdown: { ...breakdown, deviation: 0.35, riseRatio: 1.24, baselineMean: 0.42 },
+              },
             ],
           }),
         ],
       }),
     );
 
-    expect(out).toContain('metricDrop(2): alpha:duty-cycled-idle zeta:too-few-samples');
+    expect(out).toContain(
+      'metricTop(2): hubble_http_request_duration_p99_seconds=3.291' +
+        '{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3} ' +
+        'container.cpu.usage=0.358' +
+        '{dev=0.350,trend=0.040,cv=0.048,burst=0.000,rise=1.24,drop=0.02,base=4.200e-1}',
+    );
+  });
+
+  it('renders only the breakdowns it has, and states the count it rendered', () => {
+    // A kept outcome the caller reported without a decomposition must not be
+    // printed as if it had one, and the count has to say how many of the kept
+    // metrics carry a decomposition so a partial render is detectable.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [
+              { label: 'a', outcome: 'kept', score: 0.9, breakdown },
+              { label: 'b', outcome: 'kept', score: 0.5 },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricTop(1/2): a=0.900{');
+    expect(out).not.toContain(' b=0.500{');
+  });
+
+  it('omits the shape line when no kept metric carries a decomposition', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [service({ metricOutcomes: [{ label: 'a', outcome: 'kept', score: 1 }] })],
+      }),
+    );
+
+    expect(out).not.toContain('metricTop');
+  });
+
+  it('does not render the shape line for a service that is neither ground truth nor predicted', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-elsewhere'],
+        topPredictions: ['ts-also-elsewhere'],
+        services: [
+          service({
+            serviceId: 'ts-bystander',
+            metricOutcomes: [{ label: 'a', outcome: 'kept', score: 1, breakdown }],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).not.toContain('metricTop');
+  });
+
+  it('survives a non-finite decomposition value rather than printing NaN', () => {
+    const render = (patch: Partial<typeof breakdown>): string =>
+      formatFSE26Diagnostic(
+        input({
+          services: [
+            service({
+              metricOutcomes: [
+                { label: 'a', outcome: 'kept', score: 1, breakdown: { ...breakdown, ...patch } },
+              ],
+            }),
+          ],
+        }),
+      );
+
+    const infinite = render({ riseRatio: Number.POSITIVE_INFINITY });
+    expect(infinite).not.toContain('Infinity');
+    expect(infinite).toContain('rise=nonfinite');
+
+    // A baseline is the one value whose exact zero and whose non-finite cases
+    // are both reachable: an exact-zero row (the metric never moved off zero)
+    // and a NaN from a degenerate series.
+    expect(render({ baselineMean: 0 })).toContain('base=0');
+    expect(render({ baselineMean: Number.NaN })).not.toContain('NaN');
+    expect(render({ baselineMean: Number.NaN })).toContain('base=nonfinite');
+  });
+
+  it('orders the shape line by score then label, in either comparator order', () => {
+    const entry = (label: string, score: number) => ({
+      label,
+      outcome: 'kept' as const,
+      score,
+      breakdown,
+    });
+    const outcomes = [entry('z-flat', 0.9), entry('a-flat', 0.9), entry('m-low', 0.1)];
+
+    for (const order of [outcomes, [...outcomes].reverse()]) {
+      const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: order })] }));
+      expect(out).toContain(
+        'metricTop(3): a-flat=0.900{dev=3.203,trend=0.040,cv=0.048,burst=0.000,' +
+          'rise=1.954e+3,drop=0.02,base=1.700e-3} ' +
+          'z-flat=0.900{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3} ' +
+          'm-low=0.100{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3}',
+      );
+    }
   });
 });

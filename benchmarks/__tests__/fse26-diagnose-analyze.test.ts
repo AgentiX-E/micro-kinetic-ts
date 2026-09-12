@@ -17,8 +17,10 @@ import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/ind
 
 import type { DiagnosedCase } from '../src/fse26-diagnose-analyze.js';
 import {
+  anomalyShape,
   diffDiagnostics,
   familyCompetition,
+  formatAnomalyShapeReport,
   formatDiagnoseComparison,
   formatMetricCompetitionReport,
   isTop1Correct,
@@ -732,6 +734,366 @@ describe('familyCompetition', () => {
   it('says so rather than printing an empty table when no block parsed', () => {
     expect(formatMetricCompetitionReport([], MEMORY, 'dump.txt')).toContain(
       'No DIAG blocks were parsed.',
+    );
+  });
+});
+
+describe('parseDiagnosticDump — anomaly shape', () => {
+  const BREAKDOWN = {
+    deviation: 3.203,
+    trend: 0.04,
+    cv: 0.048,
+    burst: 0,
+    riseRatio: 1954,
+    dropRatio: 0.02,
+    baselineMean: 0.0017,
+  };
+
+  const withShape = (spec: ServiceSpec, topPredictions: string[] = [spec.serviceId]) =>
+    dump({ services: [serviceLine(spec)], topPredictions });
+
+  it('attaches the decomposition to the kept metric it belongs to', () => {
+    const text = withShape({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [
+        { label: 'hubble_p99', outcome: 'kept', score: 3.291, breakdown: BREAKDOWN },
+        { label: 'container.cpu.usage', outcome: 'kept', score: 0.358 },
+      ],
+    });
+
+    const outcomes = parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes!;
+
+    expect(outcomes.find((o) => o.label === 'hubble_p99')!.breakdown).toEqual(BREAKDOWN);
+    expect(outcomes.find((o) => o.label === 'container.cpu.usage')!.breakdown).toBeUndefined();
+  });
+
+  it('reads a rise ratio and a baseline in scientific notation', () => {
+    // Baselines span 1e-4..1e8, so the render is exponential and the reader has
+    // to accept it — a parse that silently produced NaN would zero the report.
+    const text = withShape({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [
+        {
+          label: 'm',
+          outcome: 'kept',
+          score: 1,
+          breakdown: { ...BREAKDOWN, riseRatio: 7481, baselineMean: 1.7e-3 },
+        },
+      ],
+    });
+
+    const b = parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes![0]!.breakdown!;
+
+    expect(b.riseRatio).toBe(7481);
+    expect(b.baselineMean).toBe(0.0017);
+  });
+
+  it('ignores a shape line that claims more decompositions than it printed', () => {
+    const text = withShape({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [{ label: 'm', outcome: 'kept', score: 1, breakdown: BREAKDOWN }],
+    }).replace('metricTop(1):', 'metricTop(3):');
+
+    expect(
+      parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes![0]!.breakdown,
+    ).toBeUndefined();
+  });
+
+  it('ignores a shape line whose kept total disagrees with the inventory', () => {
+    const text = withShape({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [
+        { label: 'a', outcome: 'kept', score: 0.9, breakdown: BREAKDOWN },
+        { label: 'b', outcome: 'kept', score: 0.5 },
+      ],
+    }).replace('metricTop(1/2):', 'metricTop(1/7):');
+
+    expect(
+      parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes![0]!.breakdown,
+    ).toBeUndefined();
+  });
+
+  it('ignores a shape line carrying a token it cannot parse', () => {
+    // A partially consumed line is worse than an ignored one: the metrics that
+    // did parse look like metrics that genuinely carried no decomposition.
+    const text = withShape({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [{ label: 'm', outcome: 'kept', score: 1, breakdown: BREAKDOWN }],
+    })
+      .split('\n')
+      .map((line) => (line.startsWith('    metricTop(') ? `${line} unparseable` : line))
+      .join('\n');
+
+    expect(
+      parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes![0]!.breakdown,
+    ).toBeUndefined();
+  });
+
+  it('ignores a shape line carrying a non-finite value', () => {
+    const text = withShape({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [{ label: 'm', outcome: 'kept', score: 1, breakdown: BREAKDOWN }],
+    }).replace('rise=1.954e+3', 'rise=nonfinite');
+
+    expect(
+      parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes![0]!.breakdown,
+    ).toBeUndefined();
+  });
+
+  it('carries four significant digits, which is what the floor comparison needs', () => {
+    // The renderer is deliberately compact, so the reader must know what
+    // precision it is reading. Four significant digits is the contract, and it
+    // is not arbitrary: the baseline column is compared against the near-zero
+    // guard's 0.001 floor, and 1.004e-3 must not read back as at-the-floor.
+    const text = withShape({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [
+        {
+          label: 'm',
+          outcome: 'kept',
+          score: 1,
+          breakdown: { ...BREAKDOWN, riseRatio: 7481.7, baselineMean: 0.001004 },
+        },
+      ],
+    });
+
+    const b = parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes![0]!.breakdown!;
+
+    expect(b.riseRatio).toBe(7482);
+    expect(b.baselineMean).toBe(1.004e-3);
+    expect(b.baselineMean).toBeGreaterThan(0.001);
+  });
+});
+
+describe('anomalyShape', () => {
+  const BREAKDOWN = {
+    deviation: 3.2,
+    trend: 0.04,
+    cv: 0.048,
+    burst: 0,
+    riseRatio: 1954,
+    dropRatio: 0.02,
+    baselineMean: 0.0017,
+  };
+  const parse = (
+    groundTruthServices: string[],
+    services: ServiceSpec[],
+    topPredictions: string[],
+  ) =>
+    parseDiagnosticDump(
+      dump({ groundTruthServices, services: services.map(serviceLine), topPredictions }),
+    );
+
+  it('separates the source population from the wrong winner', () => {
+    // A verdict needs a control: without the source column, "the winner is
+    // rise-led" has nothing to be compared against.
+    const cases = parse(
+      ['ts-source'],
+      [
+        {
+          serviceId: 'ts-source',
+          metricOutcomes: [
+            {
+              label: 'container.memory.rss',
+              outcome: 'kept',
+              score: 0.78,
+              breakdown: { ...BREAKDOWN, deviation: 0.78, riseRatio: 4.9, dropRatio: 0.01 },
+            },
+          ],
+        },
+        {
+          serviceId: 'ts-winner',
+          metricOutcomes: [
+            {
+              label: 'hubble_p99',
+              outcome: 'kept',
+              score: 3.291,
+              breakdown: { ...BREAKDOWN, baselineMean: 4e-4 },
+            },
+          ],
+        },
+      ],
+      ['ts-winner', 'ts-source'],
+    );
+
+    const cells = anomalyShape(cases);
+
+    const source = cells.find((c) => c.population === 'ground-truth source')!;
+    const winner = cells.find((c) => c.population === 'wrong top-1 winner')!;
+    expect(source.services).toBe(1);
+    expect(source.medianRiseRatio ?? -1).toBe(4.9);
+    expect(source.medianBaselineMean).toBe(0.0017);
+    expect(source.baselineAtFloor).toBe(0);
+    expect(winner.services).toBe(1);
+    expect(winner.medianRiseRatio).toBe(1954);
+    expect(winner.rise).toBe(1);
+    expect(winner.baselineAtFloor).toBe(1);
+  });
+
+  it('counts a drop as a drop, and gives it no rise credit', () => {
+    const cases = parse(
+      ['ts-source'],
+      [
+        {
+          serviceId: 'ts-source',
+          metricOutcomes: [
+            {
+              label: 'mem',
+              outcome: 'kept',
+              score: 0.301,
+              breakdown: { ...BREAKDOWN, deviation: 0.301, riseRatio: 0.01, dropRatio: 1 },
+            },
+          ],
+        },
+      ],
+      ['ts-source'],
+    );
+
+    const source = anomalyShape(cases).find((c) => c.population === 'ground-truth source')!;
+
+    expect(source.drop).toBe(1);
+    expect(source.rise).toBe(0);
+    expect(source.medianBaselineMean).toBeCloseTo(0.0017, 6);
+  });
+
+  it('counts a bonus-led metric separately from a deviation-led one', () => {
+    // The bonuses are bounded and the rise is not, so a metric that won on a
+    // bonus is a different defect from one that won on a deviation.
+    const cases = parse(
+      ['ts-source'],
+      [
+        {
+          serviceId: 'ts-source',
+          metricOutcomes: [
+            {
+              label: 'flat',
+              outcome: 'kept',
+              score: 0.4,
+              breakdown: {
+                ...BREAKDOWN,
+                deviation: 0.1,
+                trend: 0.3,
+                cv: 0.05,
+                burst: 0.04,
+                riseRatio: 1.2,
+                dropRatio: 0.01,
+              },
+            },
+          ],
+        },
+      ],
+      ['ts-source'],
+    );
+
+    const source = anomalyShape(cases).find((c) => c.population === 'ground-truth source')!;
+
+    expect(source.bonusLed).toBe(1);
+    expect(source.deviationLed).toBe(0);
+  });
+
+  it('excludes a service whose decisive metric has no decomposition', () => {
+    const cases = parse(
+      ['ts-source'],
+      [{ serviceId: 'ts-source', metricOutcomes: [{ label: 'a', outcome: 'kept', score: 1 }] }],
+      ['ts-source'],
+    );
+
+    expect(anomalyShape(cases).every((c) => c.services === 0)).toBe(true);
+  });
+
+  it('skips a service the block never rendered an inventory for', () => {
+    // A case has ~51 services and only the ground truth and the predictions are
+    // rendered, so "no inventory" is the common case and must read as
+    // unattributable rather than as an empty competition.
+    const cases = parse(
+      ['ts-source', 'ts-source-2'],
+      [
+        { serviceId: 'ts-source' },
+        {
+          serviceId: 'ts-source-2',
+          metricOutcomes: [{ label: 'm', outcome: 'kept', score: 1, breakdown: BREAKDOWN }],
+        },
+      ],
+      ['ts-source', 'ts-source-2'],
+    );
+
+    expect(anomalyShape(cases).find((c) => c.population === 'ground-truth source')!.services).toBe(
+      1,
+    );
+  });
+
+  it('renders the profile with every population and the floor column', () => {
+    const cases = parse(
+      ['ts-source'],
+      [
+        {
+          serviceId: 'ts-source',
+          metricOutcomes: [{ label: 'm', outcome: 'kept', score: 1, breakdown: BREAKDOWN }],
+        },
+      ],
+      ['ts-source'],
+    );
+
+    const report = formatAnomalyShapeReport(cases, 'dump.txt');
+
+    expect(report).toContain("FSE'26 anomaly shape — dump.txt");
+    expect(report).toContain('ground-truth source');
+    expect(report).toContain('wrong top-1 winner');
+    expect(report).toContain('other predicted / bystander');
+    expect(report).toContain('base<=1e-3');
+    expect(report).toContain('services with an attributable metric: 1');
+  });
+
+  it('renders an empty profile for a dump with no competition', () => {
+    expect(formatAnomalyShapeReport([], 'dump.txt')).toContain(
+      'services with an attributable metric: 0',
+    );
+  });
+
+  it('attributes a predicted non-winner to its own population and renders a zero magnitude', () => {
+    // A rank-2 prediction is rendered but is neither the ground truth nor the
+    // top-1, so it must land in the third population rather than being silently
+    // folded into one of the other two. Its decisive metric is a pure drop with
+    // a zero rise, which is also the only way the report shows a zero median.
+    const cases = parse(
+      ['ts-src'],
+      [
+        {
+          serviceId: 'ts-src',
+          metricOutcomes: [
+            {
+              label: 'mem',
+              outcome: 'kept',
+              score: 1,
+              breakdown: { ...BREAKDOWN, riseRatio: 0, dropRatio: 3 },
+            },
+          ],
+        },
+        {
+          serviceId: 'ts-w',
+          metricOutcomes: [{ label: 'w', outcome: 'kept', score: 2, breakdown: BREAKDOWN }],
+        },
+        {
+          serviceId: 'ts-third',
+          metricOutcomes: [
+            {
+              label: 't',
+              outcome: 'kept',
+              score: 0.5,
+              breakdown: { ...BREAKDOWN, riseRatio: 0, baselineMean: 0.5 },
+            },
+          ],
+        },
+      ],
+      ['ts-w', 'ts-third', 'ts-src'],
+    );
+
+    const cells = anomalyShape(cases);
+    expect(cells.find((c) => c.population === 'other predicted / bystander')!.services).toBe(1);
+
+    // n=1, dev-led=1, bonus-led=0, rise=0, drop=1, med-rise=0, med-base=0.50, floor=0.
+    expect(formatAnomalyShapeReport(cases, 'dump.txt')).toMatch(
+      /\n {2}other predicted \/ bystander\s+1\s+1\s+0\s+0\s+1\s+0\s+0\.50\s+0\n/,
     );
   });
 });

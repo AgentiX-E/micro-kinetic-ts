@@ -13,7 +13,7 @@
  *       --before <baseline-dump.txt> --after <candidate-dump.txt> [--output <file>]
  *
  *     tsx benchmarks/src/analyze-fse26-diagnose.ts \
- *       --dump <dump.txt> --family <regex> [--family-label <name>] [--output <file>]
+ *       --dump <dump.txt> [--family <regex>] [--family-label <name>] [--output <file>]
  *
  * `--before` is the run under the configuration that is being defended (for the
  * `logicHttp` question, `--log-mode count`) and `--after` is the candidate. It
@@ -21,9 +21,13 @@
  * question is always both "does this recover the losses" and "does it keep the
  * gains".
  *
- * The family mode answers the other half: for one run, was a fault's signature
- * discarded by a guard or scored and out-competed? It needs a single dump,
- * because the metric competition does not depend on the log-signal mode.
+ * The single-dump mode answers the other two halves. Its shape report is always
+ * printed: how each service's decisive metric was won (deviation vs bonus, rise
+ * vs drop, against what baseline). `--family` adds the metric-family section,
+ * which says whether a fault's signature was discarded by a guard or scored and
+ * out-competed. `--family` is optional because the shape report needs no
+ * family, and requiring it would make the shape report unreachable without
+ * inventing a family to satisfy the parser.
  *
  * The two modes are selected by which flags are present, and an invocation that
  * names neither throws rather than defaulting to one of them: the defect this
@@ -37,6 +41,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 import type { MetricFamily } from './fse26-diagnose-analyze.js';
 import {
+  formatAnomalyShapeReport,
   formatDiagnoseComparison,
   formatMetricCompetitionReport,
   parseDiagnosticDump,
@@ -50,9 +55,10 @@ interface ComparisonOptions {
 }
 
 interface FamilyOptions {
-  readonly kind: 'family';
+  readonly kind: 'dump';
   readonly dump: string;
-  readonly family: MetricFamily;
+  /** Present only when `--family` was given; the shape report needs none. */
+  readonly family: MetricFamily | undefined;
   readonly output: string | undefined;
 }
 
@@ -60,7 +66,7 @@ type CliOptions = ComparisonOptions | FamilyOptions;
 
 const USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
-  '--dump <dump> --family <regex> [--family-label <name>] [--output <file>]';
+  '--dump <dump> [--family <regex>] [--family-label <name>] [--output <file>]';
 
 function parseArgs(argv: readonly string[]): CliOptions {
   const values = new Map<string, string>();
@@ -73,14 +79,17 @@ function parseArgs(argv: readonly string[]): CliOptions {
   const output = values.get('output');
 
   const dump = values.get('dump');
-  const family = values.get('family');
-  if (dump !== undefined && family !== undefined) {
+  if (dump !== undefined) {
+    const family = values.get('family');
     return {
-      kind: 'family',
+      kind: 'dump',
       dump,
       // An invalid pattern is a loud failure, never a report whose family
       // silently matches nothing.
-      family: { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
+      family:
+        family === undefined
+          ? undefined
+          : { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
       output,
     };
   }
@@ -102,10 +111,13 @@ const report =
         parseDiagnosticDump(readFileSync(opts.after, 'utf-8')),
         `${opts.before} -> ${opts.after}`,
       )
-    : formatMetricCompetitionReport(
-        parseDiagnosticDump(readFileSync(opts.dump, 'utf-8')),
-        opts.family,
-        opts.dump,
-      );
+    : (() => {
+        const cases = parseDiagnosticDump(readFileSync(opts.dump, 'utf-8'));
+        const sections = [formatAnomalyShapeReport(cases, opts.dump)];
+        if (opts.family !== undefined) {
+          sections.unshift(formatMetricCompetitionReport(cases, opts.family, opts.dump));
+        }
+        return sections.join('\n');
+      })();
 process.stdout.write(report);
 if (opts.output !== undefined) writeFileSync(opts.output, report);
