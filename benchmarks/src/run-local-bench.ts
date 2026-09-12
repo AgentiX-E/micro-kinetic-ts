@@ -11,39 +11,79 @@
  * @module benchmarks/run-local-bench
  */
 
-import { Container, DI_TOKENS } from '../../packages/core/src/index.js';
+import type { TimeSeries } from '../../packages/core/src/index.js';
+import {
+  Container,
+  DEFAULT_CLASSIFICATION_RULES,
+  DI_TOKENS,
+  RegexFaultClassifier,
+} from '../../packages/core/src/index.js';
+import type {
+  BenchmarkCase,
+  BenchmarkSuite,
+} from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { BenchmarkRunner } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
-import type { BenchmarkCase, BenchmarkSuite } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
-import { RegexFaultClassifier, DEFAULT_CLASSIFICATION_RULES } from '../../packages/core/src/index.js';
+import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
-import type { ServiceCallGraph, ServiceNode, TimeSeries, MetricMap } from '../../packages/core/src/index.js';
 
 // ── Per-benchmark service name lists ─────────────────────
 
 const BENCHMARK_SERVICES: Record<string, string[]> = {
   OnlineBoutique: [
-    'frontend', 'adservice', 'cartservice', 'checkoutservice',
-    'currencyservice', 'emailservice', 'paymentservice',
-    'productcatalogservice', 'recommendationservice', 'shippingservice',
+    'frontend',
+    'adservice',
+    'cartservice',
+    'checkoutservice',
+    'currencyservice',
+    'emailservice',
+    'paymentservice',
+    'productcatalogservice',
+    'recommendationservice',
+    'shippingservice',
   ],
   SockShop: [
-    'front-end', 'catalogue', 'carts', 'orders', 'user',
-    'payment', 'shipping', 'queue-master',
+    'front-end',
+    'catalogue',
+    'carts',
+    'orders',
+    'user',
+    'payment',
+    'shipping',
+    'queue-master',
   ],
   TrainTicket: [
-    'ts-ui', 'ts-travel-service', 'ts-train-service', 'ts-route-service',
-    'ts-station-service', 'ts-seat-service', 'ts-order-service',
-    'ts-preserve-service', 'ts-user-service', 'ts-price-service',
-    'ts-config-service', 'ts-security-service', 'ts-auth-service',
-    'ts-payment-service', 'ts-assurance-service', 'ts-contacts-service',
-    'ts-food-service', 'ts-consign-service', 'ts-voucher-service',
-    'ts-verification-code-service', 'ts-basic-service', 'ts-cancel-service',
-    'ts-rebook-service', 'ts-execute-service', 'ts-travel2-service',
-    'ts-admin-order-service', 'ts-admin-route-service', 'ts-admin-travel-service',
-    'ts-admin-user-service', 'ts-admin-basic-info-service',
+    'ts-ui',
+    'ts-travel-service',
+    'ts-train-service',
+    'ts-route-service',
+    'ts-station-service',
+    'ts-seat-service',
+    'ts-order-service',
+    'ts-preserve-service',
+    'ts-user-service',
+    'ts-price-service',
+    'ts-config-service',
+    'ts-security-service',
+    'ts-auth-service',
+    'ts-payment-service',
+    'ts-assurance-service',
+    'ts-contacts-service',
+    'ts-food-service',
+    'ts-consign-service',
+    'ts-voucher-service',
+    'ts-verification-code-service',
+    'ts-basic-service',
+    'ts-cancel-service',
+    'ts-rebook-service',
+    'ts-execute-service',
+    'ts-travel2-service',
+    'ts-admin-order-service',
+    'ts-admin-route-service',
+    'ts-admin-travel-service',
+    'ts-admin-user-service',
+    'ts-admin-basic-info-service',
   ],
 };
 
@@ -73,8 +113,11 @@ function generateServiceMetrics(
   // Each service gets 3-5 metric series
   const metricCount = 3 + (serviceName.length % 3);
   const metricNames = [
-    `${faultType}_usage`, 'latency_p99', 'throughput',
-    'error_rate', 'memory_used',
+    `${faultType}_usage`,
+    'latency_p99',
+    'throughput',
+    'error_rate',
+    'memory_used',
   ];
 
   for (let m = 0; m < Math.min(metricCount, metricNames.length); m++) {
@@ -163,7 +206,8 @@ async function main(): Promise<void> {
   const CASES_PER_TYPE = 20;
 
   for (const [system, serviceIds] of Object.entries(BENCHMARK_SERVICES)) {
-    const firstId = system === 'OnlineBoutique' ? 're1ob' : system === 'SockShop' ? 're1ss' : 're1tt';
+    const firstId =
+      system === 'OnlineBoutique' ? 're1ob' : system === 'SockShop' ? 're1ss' : 're1tt';
     const metaId = `${firstId}_${serviceIds[0]}_cpu_1`;
 
     // Verify topology builds correctly

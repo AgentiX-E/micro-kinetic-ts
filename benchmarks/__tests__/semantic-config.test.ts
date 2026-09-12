@@ -1,61 +1,33 @@
 /**
- * Unit tests for the semantic configuration factory used by run-rcaeval.ts.
+ * Unit tests for the semantic configuration factory used by the RCAEval runners.
  *
- * Tests the createSemanticConfig() function's env-variable-driven behavior:
+ * Tests `createSemanticConfig()`'s env-variable-driven behavior:
  * - ZHIPU_API_KEY set → ApiEmbeddingProvider (Zhipu embedding-3)
  * - ZHIPU_API_KEY unset → TfIdfEmbeddingProvider (offline fallback)
- * - No LLM provider when not needed
- * - Config values correct (thresholds, dimension)
+ * - BENCHMARK_USE_TFIDF=1 → offline fallback even with a key present
+ * - No LLM provider when not needed, and thresholds as configured
  *
- * NOTE: This file does NOT call the real Zhipu API. It tests the
- * factory function's decision logic with mock env variables.
+ * This file previously held a hand-maintained *copy* of the factory, so it could
+ * only prove that the copy agreed with itself -- and it had drifted already: it
+ * asserted an `llmProvider: null` field the real factory no longer returns. It
+ * now imports the real function from `benchmarks/src/semantic-config.ts`.
  *
- * @module benchmarks/__tests__/semantic-config.test
+ * NOTE: This file does NOT call the real Zhipu API. It tests the factory's
+ * decision logic with mock env variables.
+ *
+ * @module benchmarks/__tests__/semantic-config
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-
-// ── Helpers (replicate the factory logic from run-rcaeval.ts) ───
-
-async function createSemanticConfigEnv(
-  zhipuKey: string | undefined,
-) {
-  // Simulate env (run-rcaeval.ts reads process.env directly)
-  if (zhipuKey !== undefined) {
-    process.env['ZHIPU_API_KEY'] = zhipuKey;
-  }
-
-  const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-ai');
-  const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
-
-  const zhipu_effective = process.env['ZHIPU_API_KEY'];
-  const embeddingProvider = zhipu_effective
-    ? createApiEmbeddingFromEnv({
-        vendorPrefix: 'ZHIPU',
-        endpoint: 'https://open.bigmodel.cn/api/paas/v4/embeddings',
-        model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
-        dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
-      })
-    : new TfIdfEmbeddingProvider();
-
-  return {
-    embeddingProvider,
-    llmProvider: null as unknown,
-    alignmentConfig: {
-      embeddingThreshold: 0.6,
-      llmThreshold: 0.5,
-    },
-  };
-}
-
-// ── Tests ────────────────────────────────────────────────
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createSemanticConfig } from '../src/semantic-config.js';
 
 describe('Semantic configuration factory', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    // Restore env before each test
     process.env = { ...originalEnv };
+    delete process.env['ZHIPU_API_KEY'];
+    delete process.env['BENCHMARK_USE_TFIDF'];
   });
 
   afterEach(() => {
@@ -65,51 +37,56 @@ describe('Semantic configuration factory', () => {
   describe('with ZHIPU_API_KEY set', () => {
     it('should create an ApiEmbeddingProvider', async () => {
       process.env['ZHIPU_API_KEY'] = 'test-key';
-      const config = await createSemanticConfigEnv('test-key');
+      const config = await createSemanticConfig();
+      const provider = config.embeddingProvider;
 
-      expect(config.embeddingProvider.meta.backend).toBe('api');
-      expect(config.embeddingProvider.meta.requiresNetwork).toBe(true);
-      expect(config.embeddingProvider.dimension).toBe(2048);
+      expect(provider).toBeDefined();
+      expect(provider?.meta?.backend).toBe('api');
+      expect(provider?.meta?.requiresNetwork).toBe(true);
+      expect(provider!.dimension).toBe(2048);
     });
 
     it('should not create an LLM provider', async () => {
       process.env['ZHIPU_API_KEY'] = 'test-key';
-      const config = await createSemanticConfigEnv('test-key');
+      const config = await createSemanticConfig();
 
-      expect(config.llmProvider).toBeNull();
+      // `undefined` is how the config spells "none"; `null` is not a legal value
+      // for the optional field, so the factory must not produce it.
+      expect(config.llmProvider).toBeUndefined();
     });
 
-    it('should set correct alignment thresholds', async () => {
+    it('should fall back to TF-IDF when BENCHMARK_USE_TFIDF=1', async () => {
       process.env['ZHIPU_API_KEY'] = 'test-key';
-      const config = await createSemanticConfigEnv('test-key');
+      process.env['BENCHMARK_USE_TFIDF'] = '1';
+      const config = await createSemanticConfig();
 
-      expect(config.alignmentConfig.embeddingThreshold).toBe(0.6);
-      expect(config.alignmentConfig.llmThreshold).toBe(0.5);
+      expect(config.embeddingProvider?.meta?.backend).toBe('tfidf');
+      expect(config.embeddingProvider?.meta?.requiresNetwork).toBe(false);
     });
   });
 
   describe('without ZHIPU_API_KEY', () => {
     it('should create a TfIdfEmbeddingProvider as fallback', async () => {
-      delete process.env['ZHIPU_API_KEY'];
-      const config = await createSemanticConfigEnv(undefined);
+      const config = await createSemanticConfig();
 
-      expect(config.embeddingProvider.meta.backend).toBe('tfidf');
-      expect(config.embeddingProvider.meta.requiresNetwork).toBe(false);
+      expect(config.embeddingProvider).toBeDefined();
+      expect(config.embeddingProvider?.meta?.backend).toBe('tfidf');
+      expect(config.embeddingProvider?.meta?.requiresNetwork).toBe(false);
     });
 
     it('should still produce valid alignment config', async () => {
-      delete process.env['ZHIPU_API_KEY'];
-      const config = await createSemanticConfigEnv(undefined);
+      const config = await createSemanticConfig();
 
       expect(config.alignmentConfig).toBeDefined();
+      expect(config.alignmentConfig?.embeddingThreshold).toBe(0.6);
+      expect(config.alignmentConfig?.llmThreshold).toBe(0.5);
       expect(config.embeddingProvider).toBeDefined();
     });
 
     it('should produce embeddings locally without network', async () => {
-      delete process.env['ZHIPU_API_KEY'];
-      const config = await createSemanticConfigEnv(undefined);
+      const config = await createSemanticConfig();
 
-      const result = await config.embeddingProvider.embed(['test-service']);
+      const result = await config.embeddingProvider!.embed(['test-service']);
       expect(result.vectors).toHaveLength(1);
       expect(result.vectors[0]!.length).toBeGreaterThan(0);
     });
@@ -118,17 +95,15 @@ describe('Semantic configuration factory', () => {
   describe('CI fallback behavior', () => {
     it('should gracefully handle empty string key as absent', async () => {
       process.env['ZHIPU_API_KEY'] = '';
-      const config = await createSemanticConfigEnv('');
 
       // Empty string is falsy → use TF-IDF fallback
-      expect(config.embeddingProvider.meta.backend).toBe('tfidf');
+      const config = await createSemanticConfig();
+      expect(config.embeddingProvider?.meta?.backend).toBe('tfidf');
     });
 
     it('should handle key being unset (CI without secrets configured)', async () => {
-      delete process.env['ZHIPU_API_KEY'];
-
       // Just verify no throw
-      const config = await createSemanticConfigEnv(undefined);
+      const config = await createSemanticConfig();
       expect(config).toBeDefined();
       expect(config.embeddingProvider).toBeDefined();
     });

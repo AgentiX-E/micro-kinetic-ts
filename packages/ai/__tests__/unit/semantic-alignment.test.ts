@@ -505,4 +505,126 @@ describe('SemanticAlignmentProvider', () => {
       expect(withLLM.hasLLM).toBe(true);
     });
   });
+
+  // ── Partial configuration ──────────────────────────────
+  //
+  // `SemanticAlignmentConfig` declares five fields with documented defaults,
+  // but the constructor demanded all five. Every caller in this repository
+  // passes one or two of them and lets the rest fall through, which left
+  // `dailyCostCapUSD`, `cacheTtlMs` and `fallbackStrategy` undefined at
+  // runtime. The cost guard then read `0 < undefined` -- false -- so the LLM
+  // fallback, its 24h cache and best-effort acceptance were all silently dead.
+  // None of those callers were type-checked, so nothing caught it. These tests
+  // pin the documented defaults from the caller's side.
+  describe('partial configuration', () => {
+    const SPAN_NAMES = ['cartservice', 'frontend'];
+
+    /**
+     * Deterministic embedding provider for the LLM phase.
+     *
+     * Span texts embed onto one axis and topology descriptor queries onto an
+     * orthogonal one, so cosine similarity is exactly 0 and the embedding phase
+     * can never accept a match. Every span therefore reaches the LLM phase,
+     * which is what these tests need to observe. The shared fixture cannot do
+     * this: its descriptor queries are deliberately identical to its span
+     * vectors, so it satisfies any threshold below 1.
+     */
+    function makeSplitAxisEmbedding(dim: number): IEmbeddingProvider {
+      const spanNames = new Set(SPAN_NAMES);
+      const spanAxis = new Float32Array(dim);
+      const topologyAxis = new Float32Array(dim);
+      spanAxis[0] = 1;
+      topologyAxis[1] = 1;
+      return {
+        modelId: 'split-axis-embedding',
+        dimension: dim,
+        embed: vi.fn(async (texts: readonly string[]) => ({
+          vectors: texts.map((t) => (spanNames.has(t.trim()) ? spanAxis : topologyAxis)),
+        })),
+      };
+    }
+
+    function makeLLM(mappings: Record<string, string>, confidences: Record<string, number>) {
+      return makeMockLLM({ mappings, confidences });
+    }
+
+    it('keeps the daily cost budget usable when the caller omits the cap', async () => {
+      const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.9 });
+      const provider = new SemanticAlignmentProvider(
+        makeSplitAxisEmbedding(DIM),
+        llm,
+        { llmThreshold: 0.5 },
+      );
+
+      const result = await provider.align(['cartservice'], TOPOLOGY_SERVICES);
+
+      // `align()` gates the whole LLM phase on `withinBudget()`, which cannot
+      // be answered while the cap is undefined.
+      expect(vi.mocked(llm.alignEntity).mock.calls.length).toBe(1);
+      expect(result.matches.get('cartservice')).toBe('cartservice');
+    });
+
+    it('keeps the LLM result cache usable when the caller omits the TTL', async () => {
+      const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.9 });
+      const provider = new SemanticAlignmentProvider(
+        makeSplitAxisEmbedding(DIM),
+        llm,
+        { llmThreshold: 0.5 },
+      );
+
+      await provider.align(['cartservice'], TOPOLOGY_SERVICES);
+      await provider.align(['cartservice'], TOPOLOGY_SERVICES);
+
+      // The second call is answered from the cache, so the LLM is hit once.
+      expect(vi.mocked(llm.alignEntity).mock.calls.length).toBe(1);
+    });
+
+    it('keeps best-effort acceptance usable when the caller omits the strategy', async () => {
+      const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.4 });
+      const provider = new SemanticAlignmentProvider(
+        makeSplitAxisEmbedding(DIM),
+        llm,
+        { llmThreshold: 0.95 },
+      );
+
+      const result = await provider.align(['cartservice'], TOPOLOGY_SERVICES);
+
+      // 0.4 is below the 0.95 threshold, so only the default 'best-effort'
+      // strategy can accept the match.
+      expect(result.matches.get('cartservice')).toBe('cartservice');
+    });
+
+    it('lets an explicit strategy override the default', async () => {
+      const llm = makeLLM({ cartservice: 'cartservice' }, { cartservice: 0.4 });
+      const provider = new SemanticAlignmentProvider(
+        makeSplitAxisEmbedding(DIM),
+        llm,
+        { llmThreshold: 0.95, fallbackStrategy: 'none' },
+      );
+
+      const result = await provider.align(['cartservice'], TOPOLOGY_SERVICES);
+
+      expect(result.matches.has('cartservice')).toBe(false);
+    });
+
+    it('resolves every remaining span, not just the first one that spends budget', async () => {
+      const llm = makeLLM(
+        { cartservice: 'cartservice', frontend: 'frontend' },
+        { cartservice: 0.9, frontend: 0.9 },
+      );
+      const provider = new SemanticAlignmentProvider(
+        makeSplitAxisEmbedding(DIM),
+        llm,
+        { llmThreshold: 0.5 },
+      );
+
+      const result = await provider.align(SPAN_NAMES, TOPOLOGY_SERVICES);
+
+      // `alignByLLM` breaks out of its loop the moment the budget is exhausted.
+      // With an undefined cap every call exhausted it, so at most one span was
+      // ever resolved per invocation.
+      expect(result.matches.get('cartservice')).toBe('cartservice');
+      expect(result.matches.get('frontend')).toBe('frontend');
+    });
+  });
 });

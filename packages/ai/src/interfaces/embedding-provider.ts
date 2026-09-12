@@ -17,11 +17,34 @@
  *
  * @module ai/interfaces
  */
+/**
+ * Result of an embedding request: one vector per input text.
+ *
+ * Named so that callers and mocks can refer to it; it used to be an inline
+ * object type on `IEmbeddingProvider.embed`, which is why consumers kept
+ * inventing names for it (one of them imported an `EmbeddingResult` that never
+ * existed, and never failed because the test was never type-checked).
+ */
+export interface EmbeddingResult {
+  /** One L2-normalized vector per input text, in input order. */
+  readonly vectors: readonly Float32Array[];
+}
+
 export interface IEmbeddingProvider {
   /** Model identifier used in logs and metrics. */
   readonly modelId: string;
   /** Fixed dimension of output embedding vectors. */
   readonly dimension: number;
+  /**
+   * Optional backend metadata, for logging and observability.
+   *
+   * Both built-in providers implement it (TF-IDF reports `backend: 'tfidf'`,
+   * the API provider `backend: 'api'`), but it stays optional on purpose: this
+   * interface is aligned with `@agentix-e/log-parser-core`, so making it
+   * required would force every external provider (transformers, ONNX, WebLLM,
+   * OpenAI-compatible) to grow a member the contract does not ask for.
+   */
+  readonly meta?: EmbeddingProviderMeta;
   /**
    * Batch-generate L2-normalized embedding vectors.
    *
@@ -33,9 +56,7 @@ export interface IEmbeddingProvider {
    * @param texts - Input text array.
    * @returns Normalized embedding vectors.
    */
-  embed(texts: readonly string[]): Promise<{
-    readonly vectors: readonly Float32Array[];
-  }>;
+  embed(texts: readonly string[]): Promise<EmbeddingResult>;
 }
 
 /**

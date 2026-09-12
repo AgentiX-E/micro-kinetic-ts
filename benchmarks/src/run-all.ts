@@ -16,21 +16,22 @@
  * @module benchmarks/run-all
  */
 
-import { resolve, dirname } from 'node:path';
 import { writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Container, DI_TOKENS } from '../../packages/core/src/index.js';
-import { BenchmarkRunner } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
-import type { RunResult } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
-import { SyntheticBenchmarkGenerator } from '../../packages/kinetic/src/benchmarks/synthetic/data-generator.js';
 import {
-  RegexFaultClassifier,
+  Container,
   DEFAULT_CLASSIFICATION_RULES,
+  DI_TOKENS,
+  RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
+import type { RunResult } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+import { BenchmarkRunner } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+import { SyntheticBenchmarkGenerator } from '../../packages/kinetic/src/benchmarks/synthetic/data-generator.js';
+import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -118,47 +119,73 @@ async function runPerFaultType(
 
     console.log(
       `  ${ft.type.padEnd(8)} ${String(ft.count).padStart(4)} cases  ` +
-      `Avg@1: ${(result.avgTop1 * 100).toFixed(1)}%  ` +
-      `Avg@5: ${(result.avgTop5 * 100).toFixed(1)}%  ` +
-      `LA: ${(result.locationAccuracy * 100).toFixed(1)}%  ` +
-      `TA: ${(result.typeAccuracy * 100).toFixed(1)}%  ` +
-      `${result.duration}ms`,
+        `Avg@1: ${(result.avgTop1 * 100).toFixed(1)}%  ` +
+        `Avg@5: ${(result.avgTop5 * 100).toFixed(1)}%  ` +
+        `LA: ${(result.locationAccuracy * 100).toFixed(1)}%  ` +
+        `TA: ${(result.typeAccuracy * 100).toFixed(1)}%  ` +
+        `${result.duration}ms`,
     );
   }
 
   // Summary
   const totalCases = results.reduce((s, r) => s + r.result.totalCases, 0);
-  const weightedAvg1 = totalCases > 0
-    ? results.reduce((s, r) => s + r.result.avgTop1 * r.result.totalCases, 0) / totalCases
-    : 0;
-  const weightedAvg5 = totalCases > 0
-    ? results.reduce((s, r) => s + r.result.avgTop5 * r.result.totalCases, 0) / totalCases
-    : 0;
-  const weightedLA = totalCases > 0
-    ? results.reduce((s, r) => s + r.result.locationAccuracy * r.result.totalCases, 0) / totalCases
-    : 0;
-  const weightedTA = totalCases > 0
-    ? results.reduce((s, r) => s + r.result.typeAccuracy * r.result.totalCases, 0) / totalCases
-    : 0;
+  const weightedAvg1 =
+    totalCases > 0
+      ? results.reduce((s, r) => s + r.result.avgTop1 * r.result.totalCases, 0) / totalCases
+      : 0;
+  const weightedAvg5 =
+    totalCases > 0
+      ? results.reduce((s, r) => s + r.result.avgTop5 * r.result.totalCases, 0) / totalCases
+      : 0;
+  const weightedLA =
+    totalCases > 0
+      ? results.reduce((s, r) => s + r.result.locationAccuracy * r.result.totalCases, 0) /
+        totalCases
+      : 0;
+  const weightedTA =
+    totalCases > 0
+      ? results.reduce((s, r) => s + r.result.typeAccuracy * r.result.totalCases, 0) / totalCases
+      : 0;
 
   console.log('');
   console.log('  ' + '═'.repeat(60));
-  console.log(`  Overall   ${String(totalCases).padStart(4)} cases  ` +
-    `Avg@1: ${(weightedAvg1 * 100).toFixed(1)}%  ` +
-    `Avg@5: ${(weightedAvg5 * 100).toFixed(1)}%  ` +
-    `LA: ${(weightedLA * 100).toFixed(1)}%  ` +
-    `TA: ${(weightedTA * 100).toFixed(1)}%`);
+  console.log(
+    `  Overall   ${String(totalCases).padStart(4)} cases  ` +
+      `Avg@1: ${(weightedAvg1 * 100).toFixed(1)}%  ` +
+      `Avg@5: ${(weightedAvg5 * 100).toFixed(1)}%  ` +
+      `LA: ${(weightedLA * 100).toFixed(1)}%  ` +
+      `TA: ${(weightedTA * 100).toFixed(1)}%`,
+  );
   console.log('');
 
   // github-action-benchmark JSON
   const totalMs = Date.now() - startTime;
-  const json = JSON.stringify([
-    { name: 'Total Duration', value: totalMs, unit: 'ms', range: '± 50' },
-    { name: 'Avg@1 Accuracy', value: Number(weightedAvg1.toFixed(4)), unit: 'ratio', range: '0-1' },
-    { name: 'Avg@5 Accuracy', value: Number(weightedAvg5.toFixed(4)), unit: 'ratio', range: '0-1' },
-    { name: 'Location Accuracy', value: Number(weightedLA.toFixed(4)), unit: 'ratio', range: '0-1' },
-    { name: 'Type Accuracy', value: Number(weightedTA.toFixed(4)), unit: 'ratio', range: '0-1' },
-  ], null, 2);
+  const json = JSON.stringify(
+    [
+      { name: 'Total Duration', value: totalMs, unit: 'ms', range: '± 50' },
+      {
+        name: 'Avg@1 Accuracy',
+        value: Number(weightedAvg1.toFixed(4)),
+        unit: 'ratio',
+        range: '0-1',
+      },
+      {
+        name: 'Avg@5 Accuracy',
+        value: Number(weightedAvg5.toFixed(4)),
+        unit: 'ratio',
+        range: '0-1',
+      },
+      {
+        name: 'Location Accuracy',
+        value: Number(weightedLA.toFixed(4)),
+        unit: 'ratio',
+        range: '0-1',
+      },
+      { name: 'Type Accuracy', value: Number(weightedTA.toFixed(4)), unit: 'ratio', range: '0-1' },
+    ],
+    null,
+    2,
+  );
 
   if (opts.output) {
     writeFileSync(resolve(__dirname, '..', '..', opts.output), json, 'utf-8');
@@ -179,13 +206,37 @@ async function runMixed(
   const result = await runner.runSuite(suite);
   const totalMs = Date.now() - startTime;
 
-  const json = JSON.stringify([
-    { name: 'Total Duration', value: totalMs, unit: 'ms', range: '± 50' },
-    { name: 'Avg@1 Accuracy', value: Number(result.avgTop1.toFixed(4)), unit: 'ratio', range: '0-1' },
-    { name: 'Avg@5 Accuracy', value: Number(result.avgTop5.toFixed(4)), unit: 'ratio', range: '0-1' },
-    { name: 'Location Accuracy', value: Number(result.locationAccuracy.toFixed(4)), unit: 'ratio', range: '0-1' },
-    { name: 'Type Accuracy', value: Number(result.typeAccuracy.toFixed(4)), unit: 'ratio', range: '0-1' },
-  ], null, 2);
+  const json = JSON.stringify(
+    [
+      { name: 'Total Duration', value: totalMs, unit: 'ms', range: '± 50' },
+      {
+        name: 'Avg@1 Accuracy',
+        value: Number(result.avgTop1.toFixed(4)),
+        unit: 'ratio',
+        range: '0-1',
+      },
+      {
+        name: 'Avg@5 Accuracy',
+        value: Number(result.avgTop5.toFixed(4)),
+        unit: 'ratio',
+        range: '0-1',
+      },
+      {
+        name: 'Location Accuracy',
+        value: Number(result.locationAccuracy.toFixed(4)),
+        unit: 'ratio',
+        range: '0-1',
+      },
+      {
+        name: 'Type Accuracy',
+        value: Number(result.typeAccuracy.toFixed(4)),
+        unit: 'ratio',
+        range: '0-1',
+      },
+    ],
+    null,
+    2,
+  );
 
   if (opts.output) {
     writeFileSync(resolve(__dirname, '..', '..', opts.output), json, 'utf-8');

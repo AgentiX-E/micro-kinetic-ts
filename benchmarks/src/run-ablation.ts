@@ -44,6 +44,7 @@ import { WeightCalibrator } from '../../packages/kinetic/src/signals/weight-cali
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
@@ -776,18 +777,23 @@ async function main(): Promise<void> {
   }
 
   // ── Init topology ──
-  const semanticConfig = {
-    embeddingProvider: null,
-    llmProvider: null,
-    alignmentConfig: { embeddingThreshold: 0.6, llmThreshold: 0.5 },
-  };
-
+  //
+  // NOTE: this runner deliberately differs from `createSemanticConfig()` (used by
+  // run-rcaeval). When no Zhipu key is usable it leaves the embedding provider
+  // UNSET, so semantic enhancement is off and the topology falls back to exact
+  // YAML matches plus ring-connect. run-rcaeval instead builds a TF-IDF provider
+  // in that case, which changes the call graph and therefore every ablation cell.
+  // The log lines below used to announce a "TF-IDF fallback" on both of those
+  // paths, so an ablation report could describe a configuration it never ran.
+  // Aligning the two runners is a behavioural change and needs its own ablation,
+  // not a drive-by edit.
   const forceTfIdf = process.env['BENCHMARK_USE_TFIDF'] === '1';
   const zhipuKey = process.env['ZHIPU_API_KEY'];
+  let embeddingProvider: SemanticEnhancerConfig['embeddingProvider'];
   if (zhipuKey && !forceTfIdf) {
     try {
       const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
-      semanticConfig.embeddingProvider = createApiEmbeddingFromEnv({
+      const created = createApiEmbeddingFromEnv({
         vendorPrefix: 'ZHIPU',
         endpoint:
           process.env['ZHIPU_EMBEDDING_ENDPOINT'] ??
@@ -795,13 +801,23 @@ async function main(): Promise<void> {
         model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
         dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
       });
-      console.log('Semantic: Zhipu embedding-3 ✓');
+      if (created) {
+        embeddingProvider = created;
+        console.log('Semantic: Zhipu embedding-3 ✓');
+      } else {
+        console.log('Semantic: disabled (provider creation returned null)');
+      }
     } catch {
-      console.log('Semantic: TF-IDF fallback');
+      console.log('Semantic: disabled (provider creation failed)');
     }
   } else {
-    console.log('Semantic: TF-IDF (no ZHIPU_API_KEY)');
+    console.log('Semantic: disabled (no ZHIPU_API_KEY)');
   }
+
+  const semanticConfig: SemanticEnhancerConfig = {
+    embeddingProvider,
+    alignmentConfig: { embeddingThreshold: 0.6, llmThreshold: 0.5 },
+  };
 
   await initRCAEvalTopology(undefined, semanticConfig);
 

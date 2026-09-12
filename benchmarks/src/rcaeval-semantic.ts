@@ -21,25 +21,59 @@
  */
 
 import type {
-  CallEdge,
+  IEmbeddingProvider,
+  ILLMProvider,
+  SemanticAlignmentConfig,
   ServiceDescriptor,
-} from '@agentix-e/micro-kinetic-core';
-import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
+} from '@agentix-e/micro-kinetic-ai';
 import { SemanticAlignmentProvider } from '@agentix-e/micro-kinetic-ai';
-import type { SemanticAlignmentConfig } from '@agentix-e/micro-kinetic-ai';
-import type { ILLMProvider } from '@agentix-e/micro-kinetic-ai';
+import type { CallEdge } from '@agentix-e/micro-kinetic-core';
 
 // ── Enhanced Edge ─────────────────────────────────────────
 
 /**
+ * Provenance of a benchmark call edge: which matcher produced it.
+ *
+ * This is the benchmark's *only* way to tell a real topological edge from one
+ * the builder invented. It is deliberately not encoded in `CallEdge.type`: that
+ * field is the domain's transport union (`REST` / `gRPC` / `MQ` / `CALLBACK` /
+ * `ASYNC`), and a synthetic ring-connect edge is a real transport edge whose
+ * topology position happens to be unknown. Tagging it with a type outside the
+ * union compiles only until someone type-checks the file, and cannot survive an
+ * exhaustive switch over `EdgeType`.
+ */
+export type EdgeProvenance = 'exact-yaml' | 'semantic-embedding' | 'semantic-llm' | 'ring-connect';
+
+/** Provenance used by the builder's ring-connect fallback. */
+export const RING_CONNECT: EdgeProvenance = 'ring-connect';
+
+/**
+ * A `CallEdge` carrying the provenance of the match that produced it.
+ *
+ * `source` is optional because edges loaded from YAML or created by the engine
+ * are untagged; an untagged edge is never a ring-connect fallback.
+ */
+export type ProvenancedCallEdge = CallEdge & { readonly source?: EdgeProvenance };
+
+/**
+ * Read an edge's provenance, if it carries one.
+ *
+ * Structural rather than nominal, because the builder hands `CallEdge` values
+ * to the engine and only the benchmark knows about the tag.
+ */
+export function edgeProvenance(edge: CallEdge): EdgeProvenance | undefined {
+  return (edge as ProvenancedCallEdge).source;
+}
+
+/**
  * Extended CallEdge carrying provenance metadata from semantic alignment.
  *
- * Distinguishable from exact YAML matches and ring-connect fallbacks
- * via `_diag_source` diagnostic labels.
+ * Distinguishable from exact YAML matches and ring-connect fallbacks via its
+ * `source` provenance tag.
  */
 export interface SemanticCallEdge extends CallEdge {
-  /** Provenance: 'exact-yaml' | 'semantic-embedding' | 'semantic-llm' | 'ring-connect' */
-  readonly source: 'exact-yaml' | 'semantic-embedding' | 'semantic-llm' | 'ring-connect';
+  /** Provenance of the match that produced this edge. */
+  readonly source: EdgeProvenance;
   /** Confidence score from the matching method (1.0 for exact, 0-1 for semantic). */
   readonly matchConfidence: number;
 }
@@ -154,9 +188,7 @@ export class RCAEvalSemanticEnhancer {
    * 3. For each matched service, create edges inferred from its alias' topology
    * 4. Return enhanced edge set + statistics
    */
-  async enhance(
-    input: SemanticEnhancementInput,
-  ): Promise<SemanticEnhancementOutput> {
+  async enhance(input: SemanticEnhancementInput): Promise<SemanticEnhancementOutput> {
     if (input.unmatchedCaseServiceIds.length === 0) {
       return {
         edges: [],
@@ -245,14 +277,10 @@ export class RCAEvalSemanticEnhancer {
       resolved.add(svcId);
     }
 
-    const stillUnmatched = input.unmatchedCaseServiceIds.filter(
-      (s) => !resolved.has(s),
-    );
+    const stillUnmatched = input.unmatchedCaseServiceIds.filter((s) => !resolved.has(s));
 
     const avgConf =
-      edges.length > 0
-        ? edges.reduce((sum, e) => sum + e.matchConfidence, 0) / edges.length
-        : 0;
+      edges.length > 0 ? edges.reduce((sum, e) => sum + e.matchConfidence, 0) / edges.length : 0;
 
     return {
       edges,
@@ -285,9 +313,7 @@ export class RCAEvalSemanticEnhancer {
   /**
    * Build a map from source service ID → outgoing edges.
    */
-  private buildEdgeMap(
-    edges: readonly CallEdge[],
-  ): Map<string, CallEdge[]> {
+  private buildEdgeMap(edges: readonly CallEdge[]): Map<string, CallEdge[]> {
     const map = new Map<string, CallEdge[]>();
     for (const edge of edges) {
       const list = map.get(edge.from) ?? [];
@@ -302,11 +328,12 @@ export class RCAEvalSemanticEnhancer {
    */
   private isLLMResolved(
     svcId: string,
-    lowConfidence: readonly Array<{ spanService: string; candidates: Array<{ topologyId: string; confidence: number }> }>,
+    lowConfidence: ReadonlyArray<{
+      spanService: string;
+      candidates: ReadonlyArray<{ topologyId: string; confidence: number }>;
+    }>,
   ): boolean {
-    return lowConfidence.some(
-      (lc) => lc.spanService === svcId && lc.candidates.length > 0,
-    );
+    return lowConfidence.some((lc) => lc.spanService === svcId && lc.candidates.length > 0);
   }
 
   /**
@@ -314,7 +341,10 @@ export class RCAEvalSemanticEnhancer {
    */
   private getConfidence(
     svcId: string,
-    lowConfidence: readonly Array<{ spanService: string; candidates: Array<{ topologyId: string; confidence: number }> }>,
+    lowConfidence: ReadonlyArray<{
+      spanService: string;
+      candidates: ReadonlyArray<{ topologyId: string; confidence: number }>;
+    }>,
   ): number {
     const lc = lowConfidence.find((l) => l.spanService === svcId);
     return lc?.candidates[0]?.confidence ?? 0.85;

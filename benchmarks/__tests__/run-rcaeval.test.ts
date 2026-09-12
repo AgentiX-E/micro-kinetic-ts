@@ -7,11 +7,11 @@
  * @module benchmarks/__tests__/run-rcaeval.test
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 // ═══════════════════════════════════════════════════════════
 // Inline replicas of functions from benchmarks/src/run-rcaeval.ts
@@ -30,21 +30,14 @@ interface CaseMeta {
 function parseCaseDir(dirPath: string): CaseMeta | null {
   const name = basename(dirPath);
   // Pattern: re{1-3}{ob|ss|tt}_{service}_{fault}_{instance}
-  const match = name.match(
-    /^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i,
-  );
+  const match = name.match(/^re([123])(ob|ss|tt)_(.+?)_(cpu|mem|disk|delay|loss|socket)_(\d+)$/i);
   if (!match) return null;
 
   const suiteNum = match[1]!;
   const sysCode = match[2]!;
   return {
     suite: `RE${suiteNum}` as CaseMeta['suite'],
-    system:
-      sysCode === 'ob'
-        ? 'OnlineBoutique'
-        : sysCode === 'ss'
-          ? 'SockShop'
-          : 'TrainTicket',
+    system: sysCode === 'ob' ? 'OnlineBoutique' : sysCode === 'ss' ? 'SockShop' : 'TrainTicket',
     service: match[3]!,
     faultType: match[4]!.toLowerCase(),
     instance: parseInt(match[5]!, 10),
@@ -177,9 +170,7 @@ describe('parseCaseDir', () => {
   });
 
   it('should handle filesystem paths with nested directories', () => {
-    const result = parseCaseDir(
-      '/home/user/RCAEval-json/OnlineBoutique/re2ob_frontend_loss_5',
-    );
+    const result = parseCaseDir('/home/user/RCAEval-json/OnlineBoutique/re2ob_frontend_loss_5');
     expect(result).not.toBeNull();
     expect(result!.suite).toBe('RE2');
     expect(result!.system).toBe('OnlineBoutique');
@@ -345,7 +336,6 @@ describe('discoverAllCases', () => {
 // ═══════════════════════════════════════════════════════════
 
 import { buildRCAEvalCallGraph } from '../src/rcaeval-topology.js';
-import type { ServiceCallGraph } from '../../packages/core/src/index.js';
 
 describe('buildRCAEvalCallGraph — additional edge cases', () => {
   it('should ring-connect services when no topology match found', () => {

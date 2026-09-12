@@ -17,22 +17,14 @@
  * @module benchmarks/__tests__/rcaeval-semantic.test
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
-import type { IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
-import type {
-  ServiceDescriptor,
-  EmbeddingResult,
-} from '@agentix-e/micro-kinetic-ai';
+import type { EmbeddingResult, IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
+import { beforeAll, describe, expect, it } from 'vitest';
+import type { SemanticEnhancementInput } from '../src/rcaeval-semantic.js';
 import { RCAEvalSemanticEnhancer } from '../src/rcaeval-semantic.js';
-import type {
-  SemanticCallEdge,
-  SemanticEnhancerConfig,
-  SemanticEnhancementInput,
-} from '../src/rcaeval-semantic.js';
 import {
-  initRCAEvalTopology,
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
+  initRCAEvalTopology,
 } from '../src/rcaeval-topology.js';
 
 // ── Mock Embedding Provider ─────────────────────────────
@@ -117,11 +109,46 @@ const TRAINTICKET_SERVICE_IDS = [
 ];
 
 const TRAINTICKET_EDGES = [
-  { from: 'ts-ui', to: 'ts-travel-service', type: 'REST' as const, callRate: 1, p99Latency: 5, errorRate: 0 },
-  { from: 'ts-ui', to: 'ts-order-service', type: 'REST' as const, callRate: 1, p99Latency: 5, errorRate: 0 },
-  { from: 'ts-order-service', to: 'ts-payment-service', type: 'REST' as const, callRate: 1, p99Latency: 10, errorRate: 0.01 },
-  { from: 'ts-order-service', to: 'ts-preserve-service', type: 'REST' as const, callRate: 0.5, p99Latency: 20, errorRate: 0.02 },
-  { from: 'ts-preserve-service', to: 'ts-payment-service', type: 'REST' as const, callRate: 0.3, p99Latency: 15, errorRate: 0 },
+  {
+    from: 'ts-ui',
+    to: 'ts-travel-service',
+    type: 'REST' as const,
+    callRate: 1,
+    p99Latency: 5,
+    errorRate: 0,
+  },
+  {
+    from: 'ts-ui',
+    to: 'ts-order-service',
+    type: 'REST' as const,
+    callRate: 1,
+    p99Latency: 5,
+    errorRate: 0,
+  },
+  {
+    from: 'ts-order-service',
+    to: 'ts-payment-service',
+    type: 'REST' as const,
+    callRate: 1,
+    p99Latency: 10,
+    errorRate: 0.01,
+  },
+  {
+    from: 'ts-order-service',
+    to: 'ts-preserve-service',
+    type: 'REST' as const,
+    callRate: 0.5,
+    p99Latency: 20,
+    errorRate: 0.02,
+  },
+  {
+    from: 'ts-preserve-service',
+    to: 'ts-payment-service',
+    type: 'REST' as const,
+    callRate: 0.3,
+    p99Latency: 15,
+    errorRate: 0,
+  },
 ];
 
 function makeInput(overrides: Partial<SemanticEnhancementInput> = {}): SemanticEnhancementInput {
@@ -155,7 +182,9 @@ describe('RCAEvalSemanticEnhancer', () => {
       const mockProvider = new MockEmbeddingProvider(new Map());
       const enhancer = new RCAEvalSemanticEnhancer({
         embeddingProvider: mockProvider,
-        llmProvider: { alignEntity: async () => ({ topologyId: null, confidence: 0, usage: {} }) } as any,
+        llmProvider: {
+          alignEntity: async () => ({ topologyId: null, confidence: 0, usage: {} }),
+        } as any,
       });
       expect(enhancer.isAvailable).toBe(true);
     });
@@ -168,9 +197,7 @@ describe('RCAEvalSemanticEnhancer', () => {
       const enhancer = new RCAEvalSemanticEnhancer({
         embeddingProvider: new MockEmbeddingProvider(new Map()),
       });
-      const result = await enhancer.enhance(
-        makeInput({ unmatchedCaseServiceIds: [] }),
-      );
+      const result = await enhancer.enhance(makeInput({ unmatchedCaseServiceIds: [] }));
 
       expect(result.edges).toHaveLength(0);
       expect(result.resolvedServiceIds).toHaveLength(0);
@@ -218,14 +245,10 @@ describe('RCAEvalSemanticEnhancer', () => {
       expect(result.edges.length).toBeGreaterThan(0);
 
       // ts-order-service in YAML has outgoing edges to ts-payment-service, ts-preserve-service
-      const outEdges = result.edges.filter(
-        (e) => e.from === 'ts-new-order-svc',
-      );
+      const outEdges = result.edges.filter((e) => e.from === 'ts-new-order-svc');
       expect(outEdges.length).toBe(2);
       // ts-order-service is also a target from ts-ui
-      const inEdges = result.edges.filter(
-        (e) => e.to === 'ts-new-order-svc',
-      );
+      const inEdges = result.edges.filter((e) => e.to === 'ts-new-order-svc');
       expect(inEdges.length).toBe(1);
     });
 
@@ -239,9 +262,7 @@ describe('RCAEvalSemanticEnhancer', () => {
       );
 
       // ts-payment-service is a target from ts-order-service and ts-preserve-service
-      const inEdges = result.edges.filter(
-        (e) => e.to === 'ts-new-payment-api',
-      );
+      const inEdges = result.edges.filter((e) => e.to === 'ts-new-payment-api');
       expect(inEdges.length).toBe(2);
     });
 
@@ -346,9 +367,7 @@ describe('RCAEvalSemanticEnhancer', () => {
     it('should still produce valid graphs with exact-match services', () => {
       const g = buildRCAEvalCallGraph('re1tt_ts-ui_cpu_1', ['ts-ui', 'ts-travel-service']);
       expect(g.edges.length).toBeGreaterThan(0);
-      const hasUItoTravel = g.edges.some(
-        (e) => e.from === 'ts-ui' && e.to === 'ts-travel-service',
-      );
+      const hasUItoTravel = g.edges.some((e) => e.from === 'ts-ui' && e.to === 'ts-travel-service');
       expect(hasUItoTravel).toBe(true);
     });
 
@@ -379,7 +398,10 @@ describe('enhanceRCAEvalCallGraph', () => {
   it('should produce same results as buildRCAEvalCallGraph without enhancer', async () => {
     // initRCAEvalTopology called without semantic config → no enhancer
     const syncResult = buildRCAEvalCallGraph('re1tt_ts-ui_cpu_1', ['ts-ui', 'ts-travel-service']);
-    const asyncResult = await enhanceRCAEvalCallGraph('re1tt_ts-ui_cpu_1', ['ts-ui', 'ts-travel-service']);
+    const asyncResult = await enhanceRCAEvalCallGraph('re1tt_ts-ui_cpu_1', [
+      'ts-ui',
+      'ts-travel-service',
+    ]);
 
     expect(asyncResult.edges.length).toBe(syncResult.edges.length);
     expect(asyncResult.nodes.size).toBe(syncResult.nodes.size);

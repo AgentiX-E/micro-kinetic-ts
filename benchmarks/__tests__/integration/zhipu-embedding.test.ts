@@ -12,10 +12,12 @@
  * @module benchmarks/__tests__/integration/zhipu-embedding.test
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
-import { ApiEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
-import { cosineSimilarity } from '@agentix-e/micro-kinetic-ai';
-import { createApiEmbeddingFromEnv } from '@agentix-e/micro-kinetic-ai';
+import {
+  ApiEmbeddingProvider,
+  cosineSimilarity,
+  createApiEmbeddingFromEnv,
+} from '@agentix-e/micro-kinetic-ai';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 // ── Skip Check ───────────────────────────────────────────
 
@@ -39,7 +41,13 @@ describeIf('Zhipu embedding-3 API integration', () => {
   let provider: ApiEmbeddingProvider;
 
   beforeAll(() => {
-    provider = createApiEmbeddingFromEnv(ZHIPU_CONFIG);
+    const created = createApiEmbeddingFromEnv(ZHIPU_CONFIG);
+    // The suite is skipped without a key, so a null provider means the factory
+    // failed for another reason; failing loudly beats asserting on `undefined`.
+    if (!created) {
+      throw new Error('createApiEmbeddingFromEnv returned null with ZHIPU_API_KEY set');
+    }
+    provider = created;
   });
 
   it('should connect to Zhipu API and return embeddings', async () => {
@@ -80,10 +88,7 @@ describeIf('Zhipu embedding-3 API integration', () => {
   });
 
   it('should produce distinct embeddings for unrelated services', async () => {
-    const result = await provider.embed([
-      'ts-order-service',
-      'ts-seat-service',
-    ]);
+    const result = await provider.embed(['ts-order-service', 'ts-seat-service']);
     const sim = cosineSimilarity(result.vectors[0]!, result.vectors[1]!);
     // Different concepts, same prefix → moderate similarity
     expect(sim).toBeLessThan(0.95);

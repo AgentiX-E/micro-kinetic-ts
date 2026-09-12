@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "run": "tsx src/run-all.ts"
+    "run": "tsx src/run-all.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@agentix-e/micro-kinetic-core": "workspace:^",

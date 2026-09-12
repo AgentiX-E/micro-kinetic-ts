@@ -2,6 +2,7 @@
 export type {
   AlignmentFallbackStrategy,
   EmbeddingProviderMeta,
+  EmbeddingResult,
   EntityAlignmentResult,
   IEmbeddingProvider,
   ServiceDescriptor,

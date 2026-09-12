@@ -169,8 +169,15 @@ export interface RCAEvalCase {
   readonly injectTime: number;
   /** Log entries (RE2/RE3 only). */
   readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
-  /** Trace spans (RE2/RE3 only). */
-  readonly traces?: ReadonlyArray<BenchmarkTraceSpan>;
+  /**
+   * Trace spans (RE2/RE3 only).
+   *
+   * Deliberately NOT readonly: after the topology has been augmented, the
+   * benchmark harness drops this reference to bound peak memory. RE2 alone
+   * carries 270+ cases at 100K+ spans each, which is enough to exhaust the
+   * heap, so the consumer needs to be able to release it in place.
+   */
+  traces?: ReadonlyArray<BenchmarkTraceSpan>;
   /** Ground truth: root cause service and metric. */
   readonly groundTruth: BenchmarkGroundTruth;
 }

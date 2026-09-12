@@ -56,12 +56,14 @@ import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/tr
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
   initRCAEvalTopology,
   isRCAEvalTopologyInitialized,
 } from './rcaeval-topology.js';
+import { createSemanticConfig } from './semantic-config.js';
 
 // ── Semantic Enhancement (optional, requires .env) ────────
 
@@ -84,50 +86,6 @@ function loadEnvFile(): void {
       process.env[key] = value;
     }
   }
-}
-
-/**
- * Environment-driven semantic enhancer configuration.
- *
- * Reads ZHIPU_API_KEY and DEEPSEEK_API_KEY from env. If neither is
- * available, semantic enhancement is disabled and buildRCAEvalCallGraph
- * (exact match only) is used.
- *
- * NEVER contains API keys — only env variable names.
- */
-async function createSemanticConfig() {
-  const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-ai');
-  const { createApiEmbeddingFromEnv } = await import('@agentix-e/micro-kinetic-ai');
-
-  // Prefer real API embedding; fall back to TF-IDF for local-only runs.
-  // ZHIPU_EMBEDDING_ENDPOINT: override the default Zhipu API endpoint.
-  //   - Default: https://open.bigmodel.cn/api/paas/v4/embeddings (China mainland)
-  //   - For CI / overseas runners: https://api.z.ai/api/paas/v4/embeddings
-  //
-  // When BENCHMARK_USE_TFIDF=1: force local TF-IDF embedding (zero network dependency).
-  // Use this in CI to prevent API latency from inflating benchmark runtime.
-  const forceTfIdf = process.env['BENCHMARK_USE_TFIDF'] === '1';
-  const zhipuKey = process.env['ZHIPU_API_KEY'];
-  const embeddingProvider =
-    zhipuKey && !forceTfIdf
-      ? createApiEmbeddingFromEnv({
-          vendorPrefix: 'ZHIPU',
-          endpoint:
-            process.env['ZHIPU_EMBEDDING_ENDPOINT'] ??
-            'https://open.bigmodel.cn/api/paas/v4/embeddings',
-          model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
-          dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
-        })
-      : new TfIdfEmbeddingProvider();
-
-  return {
-    embeddingProvider,
-    llmProvider: null, // LLM fallback not needed for embedding-based matching
-    alignmentConfig: {
-      embeddingThreshold: 0.6,
-      llmThreshold: 0.5,
-    },
-  };
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -563,7 +521,7 @@ interface LoadStats {
 async function loadSingleCase(
   meta: CaseMeta,
   loader: RCAEvalLoader,
-  semanticConfig?: { embeddingProvider: any; llmProvider: any; alignmentConfig: any },
+  semanticConfig?: SemanticEnhancerConfig,
   computeTraceActivity = false,
 ): Promise<{
   benchCase: BenchmarkCase;
@@ -657,7 +615,7 @@ async function loadCases(
   metas: CaseMeta[],
   loader: RCAEvalLoader,
   maxCases: number,
-  semanticConfig?: { embeddingProvider: any; llmProvider: any; alignmentConfig: any },
+  semanticConfig?: SemanticEnhancerConfig,
   computeTraceActivity = false,
 ): Promise<LoadStats> {
   const loaded: BenchmarkCase[] = [];
@@ -698,10 +656,11 @@ async function loadCases(
 
       // Collect semantic stats from diagnostic labels on the call graph
       const firstNode = benchCase.callGraph.nodes.values().next().value;
-      if (firstNode?.labels?._diag_semantic) {
-        const resolved = parseInt(firstNode.labels._diag_semantic, 10) || 0;
-        const emb = parseInt(firstNode.labels._diag_embedding, 10) || 0;
-        const llm = parseInt(firstNode.labels._diag_llm, 10) || 0;
+      const diagLabels = firstNode?.labels;
+      if (diagLabels?._diag_semantic) {
+        const resolved = parseInt(diagLabels._diag_semantic, 10) || 0;
+        const emb = parseInt(diagLabels._diag_embedding ?? '0', 10) || 0;
+        const llm = parseInt(diagLabels._diag_llm ?? '0', 10) || 0;
         // Use benchCase.callGraph.node count as a proxy for total services;
         // it mirrors the original serviceIds length from rawCase.metrics.
         const svcCount = benchCase.callGraph.nodes.size;

@@ -10,9 +10,9 @@
  * @module benchmarks/__tests__/integration/semantic-enhancer-zhipu.test
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
-import { RCAEvalSemanticEnhancer } from '../../src/rcaeval-semantic.js';
 import { createApiEmbeddingFromEnv } from '@agentix-e/micro-kinetic-ai';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { RCAEvalSemanticEnhancer } from '../../src/rcaeval-semantic.js';
 
 // ── Skip Check ───────────────────────────────────────────
 
@@ -26,7 +26,8 @@ const describeIf = runIntegration ? describe : describe.skip;
  * Historically problematic mismatches between RCAEval case service IDs
  * and YAML topology service names. Each pair is [caseServiceId, yamlServiceId].
  */
-const TRAINTICKET_VARIANTS = [
+/** Each entry is a [caseServiceId, yamlServiceId] pair. */
+const TRAINTICKET_VARIANTS: ReadonlyArray<readonly [string, string]> = [
   // Direct matches (should always resolve)
   ['ts-order-service', 'ts-order-service'],
   ['ts-payment-service', 'ts-payment-service'],
@@ -120,6 +121,13 @@ describeIf('RCAEvalSemanticEnhancer with Zhipu embedding-3', () => {
       model: process.env.ZHIPU_EMBEDDING_MODEL ?? 'embedding-3',
       dimension: Number(process.env.ZHIPU_EMBEDDING_DIMENSION ?? '2048'),
     });
+    // The suite is skipped without a key, so a null provider here means the
+    // factory failed for another reason. Passing `undefined` instead would
+    // silently disable semantic enhancement and turn every assertion below into
+    // a pass over an empty result set.
+    if (!provider) {
+      throw new Error('createApiEmbeddingFromEnv returned null with ZHIPU_API_KEY set');
+    }
     enhancer = new RCAEvalSemanticEnhancer({
       embeddingProvider: provider,
       alignmentConfig: {
@@ -186,9 +194,7 @@ describeIf('RCAEvalSemanticEnhancer with Zhipu embedding-3', () => {
   });
 
   it('should resolve most of the 18 variant pairs', async () => {
-    const variants = TRAINTICKET_VARIANTS.filter(
-      ([caseId, yamlId]) => caseId !== yamlId,
-    );
+    const variants = TRAINTICKET_VARIANTS.filter(([caseId, yamlId]) => caseId !== yamlId);
     const caseIds = variants.map(([caseId]) => caseId);
 
     const result = await enhancer.enhance({
@@ -202,8 +208,8 @@ describeIf('RCAEvalSemanticEnhancer with Zhipu embedding-3', () => {
     const pct = result.resolvedServiceIds.length / caseIds.length;
     console.log(
       `Zhipu embedding resolution: ${result.resolvedServiceIds.length}/${caseIds.length} ` +
-      `(${(pct * 100).toFixed(1)}%) — ` +
-      `unresolved: ${result.unresolvedServiceIds.join(', ')}`,
+        `(${(pct * 100).toFixed(1)}%) — ` +
+        `unresolved: ${result.unresolvedServiceIds.join(', ')}`,
     );
 
     expect(pct).toBeGreaterThanOrEqual(0.7);

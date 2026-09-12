@@ -28,8 +28,31 @@ import type {
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
-import { RCAEvalSemanticEnhancer } from './rcaeval-semantic.js';
+import type {
+  EdgeProvenance,
+  ProvenancedCallEdge,
+  SemanticEnhancerConfig,
+} from './rcaeval-semantic.js';
+import { edgeProvenance, RCAEvalSemanticEnhancer, RING_CONNECT } from './rcaeval-semantic.js';
+
+// ── Graph shapes this module owns ─────────────────────────
+
+/**
+ * A node whose `labels` this module writes.
+ *
+ * `ServiceNode.labels` is readonly because a node is immutable once it reaches
+ * the engine. The builder owns these nodes before that hand-over and staples
+ * `_diag_*` diagnostic labels onto them in place, so it needs the field to be
+ * writable. The mutable form is assignable to the readonly one, so the graph is
+ * still a `ServiceCallGraph` everywhere downstream.
+ */
+type AnnotatableNode = Omit<ServiceNode, 'labels'> & { labels: Record<string, string> };
+
+/** The graph shape this module builds: owned nodes, provenance-tagged edges. */
+type BenchmarkCallGraph = Omit<ServiceCallGraph, 'nodes' | 'edges'> & {
+  nodes: Map<ServiceId, AnnotatableNode>;
+  edges: ProvenancedCallEdge[];
+};
 
 // ── Topology Registry ─────────────────────────────────────
 
@@ -320,7 +343,7 @@ export async function enhanceRCAEvalCallGraph(
 
   // Step 4: Replace ring-connect edges for resolved services with semantic edges
   const resolvedSet = new Set(result.resolvedServiceIds);
-  const enhancedEdges = baseGraph.edges.filter((edge) => {
+  const enhancedEdges: ProvenancedCallEdge[] = baseGraph.edges.filter((edge) => {
     // Keep non-ring-connect edges (exact YAML matches)
     if (!isRingConnectEdge(edge)) return true;
     // Keep ring-connect edges only for still-unmatched services
@@ -343,7 +366,7 @@ export async function enhanceRCAEvalCallGraph(
     }
   }
 
-  const enhancedGraph: ServiceCallGraph = {
+  const enhancedGraph: BenchmarkCallGraph = {
     ...baseGraph,
     edges: enhancedEdges,
   };
@@ -360,7 +383,7 @@ function buildFromRegistry(
   system: 'OnlineBoutique' | 'SockShop' | 'TrainTicket',
   caseId: string,
   serviceIds: readonly string[],
-): ServiceCallGraph {
+): BenchmarkCallGraph {
   const topologyEdges = _registry.edgeMaps.get(system) ?? [];
   const topologySvcNames = new Set<string>();
 
@@ -373,7 +396,7 @@ function buildFromRegistry(
   const nodes = buildNodes(serviceIds, system);
   const svcSet = new Set(serviceIds);
   const connectedSvcs = new Set<string>();
-  const edges: CallEdge[] = [];
+  const edges: ProvenancedCallEdge[] = [];
   let matchedEdgeCount = 0;
 
   // Match topology edges against this case's service set
@@ -420,9 +443,9 @@ function buildRingConnectOnly(
   namespace: string,
   caseId: string,
   serviceIds: readonly string[],
-): ServiceCallGraph {
+): BenchmarkCallGraph {
   const nodes = buildNodes(serviceIds, namespace);
-  const edges: CallEdge[] = [];
+  const edges: ProvenancedCallEdge[] = [];
   const unconnected = [...serviceIds];
 
   if (unconnected.length > 1) {
@@ -431,7 +454,8 @@ function buildRingConnectOnly(
       edges.push({
         from: unconnected[i]!,
         to: unconnected[next]!,
-        type: 'INTERNAL',
+        type: 'REST',
+        source: RING_CONNECT,
         callRate: 1,
         p99Latency: 1,
         errorRate: 0,
@@ -441,7 +465,8 @@ function buildRingConnectOnly(
     edges.push({
       from: unconnected[0]!,
       to: unconnected[0]!,
-      type: 'INTERNAL',
+      type: 'REST',
+      source: RING_CONNECT,
       callRate: 1,
       p99Latency: 1,
       errorRate: 0,
@@ -455,8 +480,11 @@ function buildRingConnectOnly(
 
 // ── Helpers ───────────────────────────────────────────────
 
-function buildNodes(serviceIds: readonly string[], namespace: string): Map<ServiceId, ServiceNode> {
-  const nodes = new Map<ServiceId, ServiceNode>();
+function buildNodes(
+  serviceIds: readonly string[],
+  namespace: string,
+): Map<ServiceId, AnnotatableNode> {
+  const nodes = new Map<ServiceId, AnnotatableNode>();
   for (const id of serviceIds) {
     nodes.set(id, { id, name: id, namespace, labels: {} });
   }
@@ -466,7 +494,7 @@ function buildNodes(serviceIds: readonly string[], namespace: string): Map<Servi
 function ringConnect(
   unconnected: readonly string[],
   connectedSvcs: ReadonlySet<string>,
-  edges: CallEdge[],
+  edges: ProvenancedCallEdge[],
 ): void {
   if (unconnected.length === 0) return;
 
@@ -476,7 +504,8 @@ function ringConnect(
     edges.push({
       from: firstConnected,
       to: unconnected[0]!,
-      type: 'INTERNAL',
+      type: 'REST',
+      source: RING_CONNECT,
       callRate: 1,
       p99Latency: 1,
       errorRate: 0,
@@ -488,7 +517,8 @@ function ringConnect(
       edges.push({
         from: unconnected[i]!,
         to: unconnected[next]!,
-        type: 'INTERNAL',
+        type: 'REST',
+        source: RING_CONNECT,
         callRate: 1,
         p99Latency: 1,
         errorRate: 0,
@@ -498,7 +528,7 @@ function ringConnect(
 }
 
 function annotateNodes(
-  nodes: Map<ServiceId, ServiceNode>,
+  nodes: Map<ServiceId, AnnotatableNode>,
   caseId: string,
   system: string,
   matchedEdgeCount: number,
@@ -529,12 +559,12 @@ function annotateNodes(
  * Annotate an enhanced graph with semantic alignment statistics.
  */
 function annotateWithSemanticStats(
-  graph: ServiceCallGraph,
+  graph: BenchmarkCallGraph,
   caseId: string,
   system: string,
   result: import('./rcaeval-semantic.js').SemanticEnhancementOutput,
   serviceCount: number,
-): ServiceCallGraph {
+): BenchmarkCallGraph {
   const exactMatchEdgeCount = graph.edges.filter(
     (e) =>
       !isRingConnectEdge(e) &&
@@ -561,16 +591,21 @@ function annotateWithSemanticStats(
 }
 
 /**
- * Check if an edge is a ring-connect fallback (type INTERNAL + zero confidence signal).
+ * Check if an edge is a ring-connect fallback, i.e. one this builder invented.
+ *
+ * The test is provenance, not `type`: a synthetic edge is a real `REST` call
+ * the topology file simply does not list, so keying on the transport type would
+ * misfire the moment the edge is normalised -- and would silently reclassify
+ * every synthetic edge as an exact YAML match, corrupting the `_diag_matched`
+ * ratio that the RCAEval diagnostics are read from.
  */
 function isRingConnectEdge(edge: CallEdge): boolean {
-  return edge.type === 'INTERNAL' && edge.p99Latency <= 1 && edge.errorRate === 0;
+  return edgeProvenance(edge) === RING_CONNECT;
 }
 
 /**
- * Check if an edge comes from a specific source (for SemanticCallEdge via duck-typing).
+ * Check if an edge comes from a specific matcher.
  */
-function isEdgeFromSource(edge: CallEdge, source: string): boolean {
-  const semEdge = edge as CallEdge & { source?: string };
-  return semEdge.source === source;
+function isEdgeFromSource(edge: CallEdge, source: EdgeProvenance): boolean {
+  return edgeProvenance(edge) === source;
 }

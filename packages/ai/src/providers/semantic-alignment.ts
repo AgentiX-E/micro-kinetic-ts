@@ -83,6 +83,13 @@ export class SemanticAlignmentProvider {
   /** Provider metadata for logging. */
   public readonly id = 'semantic-alignment';
 
+  /**
+   * Effective configuration: the caller's overrides merged over
+   * `DEFAULT_SEMANTIC_ALIGNMENT_CONFIG`. Always complete, so no consumer has to
+   * re-derive a default.
+   */
+  private readonly config: SemanticAlignmentConfig;
+
   /** Accumulated LLM cost for the current day (resets on next day). */
   private dailyCost = 0;
   private currentDay = '';
@@ -93,13 +100,25 @@ export class SemanticAlignmentProvider {
   /**
    * @param embeddingProvider - Primary embedding provider (e.g., TF-IDF).
    * @param llmProvider - Optional LLM provider for fallback matching.
-   * @param config - Alignment configuration.
+   * @param config - Alignment configuration overrides. Omitted fields take the
+   *   documented defaults from `DEFAULT_SEMANTIC_ALIGNMENT_CONFIG`.
    */
   constructor(
     private readonly embeddingProvider: IEmbeddingProvider,
     private readonly llmProvider: ILLMProvider | null = null,
-    private readonly config: SemanticAlignmentConfig = DEFAULT_SEMANTIC_ALIGNMENT_CONFIG,
-  ) {}
+    config: Partial<SemanticAlignmentConfig> = {},
+  ) {
+    // Merge over the defaults rather than requiring the caller to supply all
+    // five fields. The parameter used to be a complete `SemanticAlignmentConfig`
+    // that every caller passed partially, and the difference was invisible
+    // because none of them were type-checked. At runtime it meant
+    // `dailyCostCapUSD`, `cacheTtlMs` and `fallbackStrategy` were `undefined`,
+    // so `withinBudget()` computed `0 < undefined` -- false -- and the LLM
+    // fallback was refused, its cache never hit, and best-effort acceptance
+    // never applied. Exhausting that phantom budget also broke out of
+    // `alignByLLM`'s loop, so at most one span was resolved per invocation.
+    this.config = { ...DEFAULT_SEMANTIC_ALIGNMENT_CONFIG, ...config };
+  }
 
   // ── Public API ─────────────────────────────────────────
 

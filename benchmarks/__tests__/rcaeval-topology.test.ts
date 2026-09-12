@@ -10,12 +10,8 @@
  * @module benchmarks/__tests__/rcaeval-topology.test
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
-import {
-  buildRCAEvalCallGraph,
-  initRCAEvalTopology,
-  identifyBenchmarkSystem,
-} from '../src/rcaeval-topology.js';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { buildRCAEvalCallGraph, initRCAEvalTopology } from '../src/rcaeval-topology.js';
 
 // ── Initialize YAML topology registry once before all tests ──
 
@@ -28,7 +24,11 @@ beforeAll(async () => {
 describe('buildRCAEvalCallGraph — System Identification', () => {
   // RE1 cases
   it('re1ob_* → OnlineBoutique', () => {
-    const g = buildRCAEvalCallGraph('re1ob_adservice_cpu_1', ['adservice', 'frontend', 'cartservice']);
+    const g = buildRCAEvalCallGraph('re1ob_adservice_cpu_1', [
+      'adservice',
+      'frontend',
+      'cartservice',
+    ]);
     expect(g.nodes.get('adservice')?.labels._diag_system).toBe('OnlineBoutique');
     expect(g.edges.length).toBeGreaterThan(0);
   });
@@ -45,7 +45,11 @@ describe('buildRCAEvalCallGraph — System Identification', () => {
 
   // RE2 cases (was bug: forced to SockShop)
   it('re2ob_* → OnlineBoutique (was forced to SockShop before fix)', () => {
-    const g = buildRCAEvalCallGraph('re2ob_cartservice_cpu_1', ['frontend', 'cartservice', 'checkoutservice']);
+    const g = buildRCAEvalCallGraph('re2ob_cartservice_cpu_1', [
+      'frontend',
+      'cartservice',
+      'checkoutservice',
+    ]);
     expect(g.nodes.get('cartservice')?.labels._diag_system).toBe('OnlineBoutique');
     // Verify OB-specific edges exist
     const hasCheckoutCart = g.edges.some(
@@ -60,13 +64,19 @@ describe('buildRCAEvalCallGraph — System Identification', () => {
   });
 
   it('re2tt_* → TrainTicket', () => {
-    const g = buildRCAEvalCallGraph('re2tt_ts-order-service_mem_1', ['ts-order-service', 'ts-payment-service']);
+    const g = buildRCAEvalCallGraph('re2tt_ts-order-service_mem_1', [
+      'ts-order-service',
+      'ts-payment-service',
+    ]);
     expect(g.nodes.get('ts-order-service')?.labels._diag_system).toBe('TrainTicket');
   });
 
   // RE3 cases (was bug: forced to TrainTicket)
   it('re3ob_* → OnlineBoutique (was forced to TrainTicket before fix)', () => {
-    const g = buildRCAEvalCallGraph('re3ob_paymentservice_mem_1', ['checkoutservice', 'paymentservice']);
+    const g = buildRCAEvalCallGraph('re3ob_paymentservice_mem_1', [
+      'checkoutservice',
+      'paymentservice',
+    ]);
     expect(g.nodes.get('checkoutservice')?.labels._diag_system).toBe('OnlineBoutique');
   });
 
@@ -76,7 +86,10 @@ describe('buildRCAEvalCallGraph — System Identification', () => {
   });
 
   it('re3tt_* → TrainTicket', () => {
-    const g = buildRCAEvalCallGraph('re3tt_ts-preserve-service_disk_1', ['ts-preserve-service', 'ts-seat-service']);
+    const g = buildRCAEvalCallGraph('re3tt_ts-preserve-service_disk_1', [
+      'ts-preserve-service',
+      'ts-seat-service',
+    ]);
     expect(g.nodes.get('ts-seat-service')?.labels._diag_system).toBe('TrainTicket');
   });
 });
