@@ -6,6 +6,8 @@
     "declarationMap": false,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "__tests__/**/*.ts"],
+  // `*.ts` covers the vitest configs at the package root; without it they
+  // would be the only TypeScript in this package that no compiler ever reads.
+  "include": ["*.ts", "src/**/*.ts", "__tests__/**/*.ts"],
   "exclude": ["node_modules", "dist", "coverage"]
 }

@@ -1,6 +1,6 @@
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -19,32 +19,36 @@ export default defineConfig({
     },
   },
   test: {
+    // Pinned like `integration-tests/`: the include patterns, the setup file and
+    // the coverage globs are all resolved against `root`, which otherwise
+    // defaults to the working directory -- so running this config from the repo
+    // root would select nothing at all.
+    root: __dirname,
     globals: true,
     environment: 'node',
     setupFiles: ['__tests__/setup.ts'],
     include: ['__tests__/**/*.test.ts', '__tests__/**/*.spec.ts'],
+    // `__tests__/integration/**` calls the real Zhipu embedding API, gated on
+    // ZHIPU_API_KEY, which `setup.ts` reads out of the gitignored `.env`. A gate
+    // must not depend on a network service or on a quota, so those suites are
+    // opt-in through `test:integration` and are never part of the default run.
+    exclude: [...configDefaults.exclude, '__tests__/integration/**'],
     coverage: {
-      include: [
-        'src/rcaeval-topology.ts',
-        'src/rcaeval-semantic.ts',
-      ],
+      // Only the two modules that decide the call graph every RCAEval number is
+      // computed on. The other files under `src/` are CLI entry points that call
+      // `main()` at import time; they have no unit-testable surface.
+      include: ['src/rcaeval-topology.ts', 'src/rcaeval-semantic.ts'],
       exclude: ['__tests__/integration/**'],
+      // The repository's 95% bar, every dimension. Reaching it took more than
+      // tests: the previous 82/77/80/82 floor was itself failing (functions sat
+      // at 78.26%), and the uncovered remainder contained real dead code -- an
+      // unreachable `catch`, three `?? []` fallbacks that could never fire, a
+      // `?? null` behind a total lookup, and a never-referenced system map.
       thresholds: {
-        // rcaeval-semantic.ts hits 99%+, rcaeval-topology.ts is ~76%
-        // due to YAML file-loading / BFS discovery functions that are
-        // tested indirectly through integration (buildRCAEvalCallGraph
-        // exercises them via exact-match and ring-connect paths).
-        // Semantic enhancement paths are fully covered.
-        //
-        // The LLM reranking layer (reranking-engine.ts + investigator-engine.ts)
-        // was retired as net-negative dead code; those two files were ~100%
-        // covered and previously padded this aggregate above 83%. With them
-        // gone, the honest floor is the rcaeval-topology-dominated ~82.9% —
-        // no remaining line lost coverage, the scope simply shrank.
-        statements: 82,
-        branches: 77,
-        functions: 80,
-        lines: 82,
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
       },
     },
   },

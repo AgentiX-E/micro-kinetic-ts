@@ -11,7 +11,11 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { buildRCAEvalCallGraph, initRCAEvalTopology } from '../src/rcaeval-topology.js';
+import {
+  buildRCAEvalCallGraph,
+  identifyBenchmarkSystem,
+  initRCAEvalTopology,
+} from '../src/rcaeval-topology.js';
 
 // ── Initialize YAML topology registry once before all tests ──
 
@@ -91,6 +95,29 @@ describe('buildRCAEvalCallGraph — System Identification', () => {
       'ts-seat-service',
     ]);
     expect(g.nodes.get('ts-seat-service')?.labels._diag_system).toBe('TrainTicket');
+  });
+});
+
+// ── Fallback heuristic for non-standard naming ────────────
+
+describe('identifyBenchmarkSystem — non-standard case ids', () => {
+  // The primary pattern is `re{N}{sys}…`. Case ids that do not follow it fall
+  // back to searching for the system code as an underscore-delimited infix,
+  // which is how the vendor-supplied dumps are named.
+  it('recognises an _ob_ infix as OnlineBoutique', () => {
+    expect(identifyBenchmarkSystem('case_ob_adservice_cpu_1')).toBe('OnlineBoutique');
+  });
+
+  it('recognises an _ss_ infix as SockShop', () => {
+    expect(identifyBenchmarkSystem('case_ss_orders_delay_1')).toBe('SockShop');
+  });
+
+  it('recognises a _tt_ infix as TrainTicket', () => {
+    expect(identifyBenchmarkSystem('case_tt_ts-ui_cpu_1')).toBe('TrainTicket');
+  });
+
+  it('returns null when no system code is present at all', () => {
+    expect(identifyBenchmarkSystem('mystery_case_1')).toBeNull();
   });
 });
 

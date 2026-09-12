@@ -17,86 +17,20 @@
  * @module benchmarks/__tests__/rcaeval-semantic.test
  */
 
-import type { EmbeddingResult, IEmbeddingProvider } from '@agentix-e/micro-kinetic-ai';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { SemanticEnhancementInput } from '../src/rcaeval-semantic.js';
-import { RCAEvalSemanticEnhancer } from '../src/rcaeval-semantic.js';
+import { edgeProvenance, RCAEvalSemanticEnhancer } from '../src/rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
   initRCAEvalTopology,
 } from '../src/rcaeval-topology.js';
-
-// ── Mock Embedding Provider ─────────────────────────────
-
-/**
- * Pre-computed embedding provider for deterministic testing.
- *
- * Takes a map of text → Float32Array and returns those exact vectors.
- * For texts not in the map, returns a zero vector (low similarity to everything).
- */
-class MockEmbeddingProvider implements IEmbeddingProvider {
-  public readonly dimension: number;
-  public readonly modelId: string;
-
-  constructor(
-    private readonly vectorMap: ReadonlyMap<string, Float32Array>,
-    private readonly defaultDim: number = 4,
-  ) {
-    this.dimension = this.defaultDim;
-    this.modelId = 'mock-embedding';
-  }
-
-  get meta(): { name: string; backend: string; requiresNetwork: boolean } {
-    return { name: 'mock-embedding', backend: 'mock', requiresNetwork: false };
-  }
-
-  async embed(texts: readonly string[]): Promise<EmbeddingResult> {
-    const vectors = texts.map((t) => {
-      const vec = this.vectorMap.get(t);
-      if (vec) return new Float32Array(vec); // copy
-      // Not in map: return zero vector
-      return new Float32Array(this.defaultDim);
-    });
-    return { vectors };
-  }
-}
-
-/**
- * Create a mock embedding provider that maps case service names to
- * YAML topology aliases via shared vector representations.
- *
- * The SemanticAlignmentProvider calls embed() with all texts in one batch:
- *   [spanService1, spanService2, ..., enrichedTopo1, enrichedTopo2, ...]
- *
- * The enriched topology query is: `${name} ${id} ${namespace}` (from buildDescriptorQuery).
- * We map both the raw span name and the enriched YAML name to the same vector,
- * so cosine similarity between them will be ~1.0.
- */
-function createMatchEmbedding(
-  unmatchedToYaml: ReadonlyMap<string, string>,
-  yamlServiceIds: readonly string[],
-  system = 'TrainTicket',
-): IEmbeddingProvider {
-  const dim = 8;
-  const vectorMap = new Map<string, Float32Array>();
-  const usedVecs: Float32Array[] = [];
-
-  let vecIdx = 0;
-  for (const [unmatched, yamlId] of unmatchedToYaml) {
-    const vec = new Float32Array(dim);
-    const idx = vecIdx % dim;
-    vec[idx] = 1.0;
-    usedVecs.push(vec);
-    // Map both the case service name AND the enriched YAML query to the same vector
-    vectorMap.set(unmatched, vec);
-    const enriched = `${yamlId} ${yamlId} ${system}`;
-    vectorMap.set(enriched, vec);
-    vecIdx++;
-  }
-
-  return new MockEmbeddingProvider(vectorMap, dim);
-}
+import {
+  createMatchEmbedding,
+  createPartialMatchEmbedding,
+  DeterministicEmbeddingProvider,
+  TableLLMProvider,
+} from './helpers/embedding-fixtures.js';
 
 // ── Test Data ────────────────────────────────────────────
 
@@ -171,7 +105,7 @@ describe('RCAEvalSemanticEnhancer', () => {
     });
 
     it('should be available with embedding provider', () => {
-      const mockProvider = new MockEmbeddingProvider(new Map());
+      const mockProvider = new DeterministicEmbeddingProvider(new Map());
       const enhancer = new RCAEvalSemanticEnhancer({
         embeddingProvider: mockProvider,
       });
@@ -179,12 +113,9 @@ describe('RCAEvalSemanticEnhancer', () => {
     });
 
     it('should be available with embedding + LLM providers', () => {
-      const mockProvider = new MockEmbeddingProvider(new Map());
       const enhancer = new RCAEvalSemanticEnhancer({
-        embeddingProvider: mockProvider,
-        llmProvider: {
-          alignEntity: async () => ({ topologyId: null, confidence: 0, usage: {} }),
-        } as any,
+        embeddingProvider: new DeterministicEmbeddingProvider(new Map()),
+        llmProvider: new TableLLMProvider(new Map()),
       });
       expect(enhancer.isAvailable).toBe(true);
     });
@@ -195,7 +126,7 @@ describe('RCAEvalSemanticEnhancer', () => {
   describe('enhance — no-op cases', () => {
     it('should return empty result for empty unmatched list', async () => {
       const enhancer = new RCAEvalSemanticEnhancer({
-        embeddingProvider: new MockEmbeddingProvider(new Map()),
+        embeddingProvider: new DeterministicEmbeddingProvider(new Map()),
       });
       const result = await enhancer.enhance(makeInput({ unmatchedCaseServiceIds: [] }));
 
@@ -222,7 +153,7 @@ describe('RCAEvalSemanticEnhancer', () => {
         ['ts-new-order-svc', 'ts-order-service'],
         ['ts-alternate-ui', 'ts-ui'],
       ]);
-      const provider = createMatchEmbedding(mapping, TRAINTICKET_SERVICE_IDS);
+      const provider = createMatchEmbedding(mapping, 'TrainTicket');
       const enhancer = new RCAEvalSemanticEnhancer({ embeddingProvider: provider });
 
       const result = await enhancer.enhance(makeInput());
@@ -235,7 +166,7 @@ describe('RCAEvalSemanticEnhancer', () => {
 
     it('should generate edges for matched services (source role)', async () => {
       const mapping = new Map([['ts-new-order-svc', 'ts-order-service']]);
-      const provider = createMatchEmbedding(mapping, TRAINTICKET_SERVICE_IDS);
+      const provider = createMatchEmbedding(mapping, 'TrainTicket');
       const enhancer = new RCAEvalSemanticEnhancer({ embeddingProvider: provider });
 
       const result = await enhancer.enhance(
@@ -254,7 +185,7 @@ describe('RCAEvalSemanticEnhancer', () => {
 
     it('should generate edges for matched services (target role)', async () => {
       const mapping = new Map([['ts-new-payment-api', 'ts-payment-service']]);
-      const provider = createMatchEmbedding(mapping, TRAINTICKET_SERVICE_IDS);
+      const provider = createMatchEmbedding(mapping, 'TrainTicket');
       const enhancer = new RCAEvalSemanticEnhancer({ embeddingProvider: provider });
 
       const result = await enhancer.enhance(
@@ -268,7 +199,7 @@ describe('RCAEvalSemanticEnhancer', () => {
 
     it('should tag edges with correct source provenance', async () => {
       const mapping = new Map([['ts-new-order-svc', 'ts-order-service']]);
-      const provider = createMatchEmbedding(mapping, TRAINTICKET_SERVICE_IDS);
+      const provider = createMatchEmbedding(mapping, 'TrainTicket');
       const enhancer = new RCAEvalSemanticEnhancer({ embeddingProvider: provider });
 
       const result = await enhancer.enhance(
@@ -284,7 +215,7 @@ describe('RCAEvalSemanticEnhancer', () => {
 
     it('should split resolved and unresolved services', async () => {
       const mapping = new Map([['ts-new-order-svc', 'ts-order-service']]);
-      const provider = createMatchEmbedding(mapping, TRAINTICKET_SERVICE_IDS);
+      const provider = createMatchEmbedding(mapping, 'TrainTicket');
       const enhancer = new RCAEvalSemanticEnhancer({ embeddingProvider: provider });
 
       const result = await enhancer.enhance(
@@ -299,7 +230,7 @@ describe('RCAEvalSemanticEnhancer', () => {
 
     it('should compute average confidence across all semantic edges', async () => {
       const mapping = new Map([['ts-new-order-svc', 'ts-order-service']]);
-      const provider = createMatchEmbedding(mapping, TRAINTICKET_SERVICE_IDS);
+      const provider = createMatchEmbedding(mapping, 'TrainTicket');
       const enhancer = new RCAEvalSemanticEnhancer({ embeddingProvider: provider });
 
       const result = await enhancer.enhance(
@@ -310,12 +241,98 @@ describe('RCAEvalSemanticEnhancer', () => {
     });
   });
 
+  // ── enhance() — LLM fallback ──────────────────────
+
+  describe('enhance — LLM fallback', () => {
+    /**
+     * Similarity 0.55 sits below the 0.9 embedding threshold, so the service
+     * becomes a low-confidence *candidate* rather than a match, and is handed
+     * to the LLM. This is the only route by which a service can be both a
+     * low-confidence candidate and ultimately resolved, which is what makes it
+     * LLM-attributed rather than embedding-attributed.
+     */
+    function lowConfidenceSetup(llm: TableLLMProvider) {
+      return new RCAEvalSemanticEnhancer({
+        embeddingProvider: createPartialMatchEmbedding(
+          'ts-new-order-svc',
+          'ts-order-service',
+          'TrainTicket',
+          0.55,
+        ),
+        llmProvider: llm,
+        alignmentConfig: { embeddingThreshold: 0.9, llmThreshold: 0.5 },
+      });
+    }
+
+    it('attributes a low-confidence match to the LLM, not to the embedding', async () => {
+      const llm = new TableLLMProvider(new Map([['ts-new-order-svc', 'ts-order-service']]));
+      const enhancer = lowConfidenceSetup(llm);
+
+      const result = await enhancer.enhance(
+        makeInput({ unmatchedCaseServiceIds: ['ts-new-order-svc'] }),
+      );
+
+      expect(llm.calls).toBe(1);
+      expect(result.llmResolvedCount).toBe(1);
+      expect(result.embeddingResolvedCount).toBe(0);
+      expect(result.resolvedServiceIds).toEqual(['ts-new-order-svc']);
+      for (const edge of result.edges) {
+        expect(edge.source).toBe('semantic-llm');
+        // Confidence comes from the candidate the embedding phase recorded.
+        expect(edge.matchConfidence).toBeCloseTo(0.55, 5);
+      }
+    });
+
+    it('leaves the service unresolved when the LLM names no topology service', async () => {
+      const llm = new TableLLMProvider(new Map());
+      const enhancer = lowConfidenceSetup(llm);
+
+      const result = await enhancer.enhance(
+        makeInput({ unmatchedCaseServiceIds: ['ts-new-order-svc'] }),
+      );
+
+      expect(llm.calls).toBe(1);
+      expect(result.edges).toHaveLength(0);
+      expect(result.llmResolvedCount).toBe(0);
+      expect(result.unresolvedServiceIds).toEqual(['ts-new-order-svc']);
+    });
+  });
+
+  // ── edgeProvenance ─────────────────────────────────
+
+  describe('edgeProvenance', () => {
+    it('reads the tag from an edge that carries one', () => {
+      const edge = {
+        from: 'a',
+        to: 'b',
+        type: 'REST' as const,
+        callRate: 1,
+        p99Latency: 1,
+        errorRate: 0,
+        source: 'ring-connect' as const,
+      };
+      expect(edgeProvenance(edge)).toBe('ring-connect');
+    });
+
+    it('reports undefined for an edge that carries none', () => {
+      const edge = {
+        from: 'a',
+        to: 'b',
+        type: 'REST' as const,
+        callRate: 1,
+        p99Latency: 1,
+        errorRate: 0,
+      };
+      expect(edgeProvenance(edge)).toBeUndefined();
+    });
+  });
+
   // ── Edge generation correctness ─────────────────────
 
   describe('edge generation correctness', () => {
     it('should preserve original edge properties (type, callRate, latency, errorRate)', async () => {
       const mapping = new Map([['ts-new-order-svc', 'ts-order-service']]);
-      const provider = createMatchEmbedding(mapping, TRAINTICKET_SERVICE_IDS);
+      const provider = createMatchEmbedding(mapping, 'TrainTicket');
       const enhancer = new RCAEvalSemanticEnhancer({ embeddingProvider: provider });
 
       const result = await enhancer.enhance(
@@ -334,7 +351,7 @@ describe('RCAEvalSemanticEnhancer', () => {
       // When the matched alias has self-loops in YAML, they should be filtered
       // or at least not create infinite loops
       const enhancer = new RCAEvalSemanticEnhancer({
-        embeddingProvider: new MockEmbeddingProvider(
+        embeddingProvider: new DeterministicEmbeddingProvider(
           new Map([['svc-a', new Float32Array([1, 0, 0, 0])]]),
         ),
       });

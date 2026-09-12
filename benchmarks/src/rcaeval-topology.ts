@@ -64,18 +64,18 @@ type BenchmarkCallGraph = Omit<ServiceCallGraph, 'nodes' | 'edges'> & {
  * filter edges to only include services present in the current case.
  */
 interface TopologyRegistry {
-  /** System name → pre-loaded topology edges (full set, unfiltered by case). */
-  readonly edgeMaps: ReadonlyMap<string, readonly CallEdge[]>;
-  /** System name → set of all service IDs in the topology. */
-  readonly serviceIdSets: ReadonlyMap<string, readonly string[]>;
+  /** Pre-loaded topology edges per system (full set, unfiltered by case). */
+  readonly edgesBySystem: Readonly<Record<SystemName, readonly CallEdge[]>>;
+  /** All service IDs in each system's topology. */
+  readonly serviceIdsBySystem: Readonly<Record<SystemName, readonly string[]>>;
   /** Semantic enhancer (null if no embedding provider configured). */
   readonly semanticEnhancer: RCAEvalSemanticEnhancer | null;
   readonly initialized: boolean;
 }
 
 let _registry: TopologyRegistry = {
-  edgeMaps: new Map(),
-  serviceIdSets: new Map(),
+  edgesBySystem: perSystem<readonly CallEdge[]>(() => []),
+  serviceIdsBySystem: perSystem<readonly string[]>(() => []),
   semanticEnhancer: null,
   initialized: false,
 };
@@ -88,27 +88,41 @@ const TOPOLOGY_CONFIG_DIR = 'configs/topology';
 // ── System Name Mapping ──────────────────────────────────
 
 /**
- * Map RCAEval case system codes to topology config file names.
+ * Map RCAEval case system codes to benchmark system names.
  *
- * The system code is extracted from case IDs (e.g., "re1ob_..." → "ob").
+ * The system code is extracted from case IDs (e.g., "re1ob_..." → "ob");
+ * case IDs use ob/ss/tt.
  *
- * Case IDs use: ob, ss, tt
- * Config files: onlineboutique.yaml, sockshop.yaml, trainticket.yaml
+ * The key type is the regex capture set itself, not `string`, so the lookup in
+ * `identifyBenchmarkSystem` is total and needs no `?? null` fallback that can
+ * never be taken.
  */
-const SYSTEM_TO_CONFIG_FILE: Readonly<Record<string, string>> = {
-  ob: 'onlineboutique.yaml',
-  OnlineBoutique: 'onlineboutique.yaml',
-  ss: 'sockshop.yaml',
-  SockShop: 'sockshop.yaml',
-  tt: 'trainticket.yaml',
-  TrainTicket: 'trainticket.yaml',
-};
-
-const SYSTEM_CODE_TO_NAME: Readonly<Record<string, string>> = {
+const SYSTEM_CODE_TO_NAME: Readonly<
+  Record<'ob' | 'ss' | 'tt', 'OnlineBoutique' | 'SockShop' | 'TrainTicket'>
+> = {
   ob: 'OnlineBoutique',
   ss: 'SockShop',
   tt: 'TrainTicket',
 };
+
+/** The benchmark systems the RCAEval suites cover. */
+const SYSTEMS = ['OnlineBoutique', 'SockShop', 'TrainTicket'] as const;
+
+/** A benchmark system name. */
+type SystemName = (typeof SYSTEMS)[number];
+
+/**
+ * A record carrying one entry per system.
+ *
+ * The registry is keyed this way rather than by `Map<string, …>` so that a
+ * lookup cannot miss: every reader of the registry is handed a `SystemName`,
+ * and a `Record` over that union is total. That is what removes the `?? []`
+ * fallbacks that used to sit on every read -- they were unreachable, and an
+ * empty topology is the wrong thing to hide a lookup bug behind.
+ */
+function perSystem<V>(make: () => V): Record<SystemName, V> {
+  return { OnlineBoutique: make(), SockShop: make(), TrainTicket: make() };
+}
 
 // ── System Identification ─────────────────────────────────
 
@@ -127,11 +141,10 @@ export function identifyBenchmarkSystem(
   const lower = caseId.toLowerCase();
   const sysMatch = lower.match(/^re\d(ob|ss|tt)/);
   if (sysMatch) {
-    const sysCode = sysMatch[1]!;
-    return (
-      (SYSTEM_CODE_TO_NAME[sysCode] as 'OnlineBoutique' | 'SockShop' | 'TrainTicket' | undefined) ??
-      null
-    );
+    // The alternation captures exactly the union the map is keyed on, so this
+    // cast is a restatement of the regex, and the lookup cannot miss.
+    const sysCode = sysMatch[1] as 'ob' | 'ss' | 'tt';
+    return SYSTEM_CODE_TO_NAME[sysCode];
   }
 
   // Fallback heuristic for non-standard naming
@@ -166,21 +179,20 @@ export async function initRCAEvalTopology(
   const configPath = resolve(__sourceDir, '..', '..', configDir);
   const provider = new StaticTopologyProvider(configPath);
 
-  const systems = ['OnlineBoutique', 'SockShop', 'TrainTicket'] as const;
-  const edgeMaps = new Map<string, readonly CallEdge[]>();
-  const serviceIdSets = new Map<string, readonly string[]>();
+  const edgesBySystem = perSystem<readonly CallEdge[]>(() => []);
+  const serviceIdsBySystem = perSystem<readonly string[]>(() => []);
 
-  for (const system of systems) {
-    try {
-      const allServiceIds = collectServiceIds(configPath, system);
-      const context = { knownServiceIds: allServiceIds, namespace: system };
-      const graph = await provider.discover(context);
-      edgeMaps.set(system, graph.edges);
-      serviceIdSets.set(system, allServiceIds);
-    } catch {
-      edgeMaps.set(system, []);
-      serviceIdSets.set(system, []);
-    }
+  // No try/catch: neither call can throw. `collectServiceIds` wraps its own
+  // body in a try/catch and returns `[]`, and `StaticTopologyProvider.discover`
+  // routes every I/O and parse error through `loadAll`, which catches them all
+  // (which is why the same-shaped catch inside that provider was already
+  // removed). The `catch` that used to sit here could therefore never run.
+  for (const system of SYSTEMS) {
+    const allServiceIds = collectServiceIds(configPath, system);
+    const context = { knownServiceIds: allServiceIds, namespace: system };
+    const graph = await provider.discover(context);
+    edgesBySystem[system] = graph.edges;
+    serviceIdsBySystem[system] = allServiceIds;
   }
 
   // Initialize semantic enhancer if embedding provider is available
@@ -188,7 +200,12 @@ export async function initRCAEvalTopology(
     ? new RCAEvalSemanticEnhancer(semanticConfig)
     : null;
 
-  _registry = { edgeMaps, serviceIdSets, semanticEnhancer: enhancer, initialized: true };
+  _registry = {
+    edgesBySystem,
+    serviceIdsBySystem,
+    semanticEnhancer: enhancer,
+    initialized: true,
+  };
 }
 
 /**
@@ -317,7 +334,7 @@ export async function enhanceRCAEvalCallGraph(
 
   // Step 2: Find which services were NOT matched by exact YAML lookups
   // (i.e., they were ring-connected)
-  const yamlServiceIds = _registry.serviceIdSets.get(system) ?? [];
+  const yamlServiceIds = _registry.serviceIdsBySystem[system];
   const yamlServiceSet = new Set(yamlServiceIds);
   const unmatchedServiceIds = serviceIds.filter((s) => !yamlServiceSet.has(s));
 
@@ -326,7 +343,7 @@ export async function enhanceRCAEvalCallGraph(
     return baseGraph;
   }
 
-  const yamlEdges = _registry.edgeMaps.get(system) ?? [];
+  const yamlEdges = _registry.edgesBySystem[system];
 
   // Step 3: Semantic enhancement
   const result = await _registry.semanticEnhancer.enhance({
@@ -384,7 +401,7 @@ function buildFromRegistry(
   caseId: string,
   serviceIds: readonly string[],
 ): BenchmarkCallGraph {
-  const topologyEdges = _registry.edgeMaps.get(system) ?? [];
+  const topologyEdges = _registry.edgesBySystem[system];
   const topologySvcNames = new Set<string>();
 
   // Collect known topology service names from edges

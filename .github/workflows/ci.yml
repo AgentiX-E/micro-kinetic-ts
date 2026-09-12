@@ -125,6 +125,32 @@ jobs:
           comment-on-alert: true
           alert-threshold: 105%
 
+  # The benchmark harness decides every number this project publishes, and its
+  # unit suites -- the topology builder and the semantic topology enhancer -- are
+  # gated on coverage like any package. A separate job rather than a matrix entry
+  # because the matrix assumes `packages/<name>/coverage/`, and `benchmarks/` is
+  # not under `packages/`.
+  #
+  # `__tests__/integration/**` is excluded by `benchmarks/vitest.config.ts`: it
+  # calls the real Zhipu embedding API, so it cannot gate anything.
+  benchmark-tests:
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm nx test @agentix-e/micro-kinetic-benchmarks -- --coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-benchmarks
+          path: benchmarks/coverage/
+
   # The Parquet → JSON bridge and the sharder decide every published benchmark
   # number, and they are plain Python: gate them on their own unit tests, which
   # run against synthetic Parquet/JSON in about a second and need no download.
