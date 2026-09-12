@@ -113,6 +113,7 @@ function buildDiagnostic(
     const dominantMetric = faultGraph.dominantMetrics?.get(serviceId)?.label;
     const selfAnomaly = faultGraph.anomalyScores.get(serviceId) ?? 0;
     const logScore = faultGraph.logScores?.get(serviceId) ?? 0;
+    const metricOutcomes = faultGraph.metricDiagnostics?.get(serviceId);
 
     let errorCount = 0;
     let fatalCount = 0;
@@ -146,6 +147,7 @@ function buildDiagnostic(
       httpExceptionCount,
       sampleErrorMessages,
       exceptionClasses: [...exceptionClassSet].sort(),
+      metricOutcomes,
     });
   }
 

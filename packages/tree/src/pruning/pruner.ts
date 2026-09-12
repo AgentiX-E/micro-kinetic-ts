@@ -420,6 +420,7 @@ export class TreePruner {
       anomalyOnsetTimes,
       postInjectOnsetDelays,
       dominantMetrics,
+      metricDiagnostics,
       propagationWeights,
     } = topoResult;
 
@@ -591,6 +592,7 @@ export class TreePruner {
       anomalyOnsetTimes,
       postInjectOnsetDelays,
       dominantMetrics,
+      metricDiagnostics,
       injectTimeMs,
       detectedCycles: classifiedCycles,
       totalCycleContribution,

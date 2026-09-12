@@ -18,6 +18,8 @@
  * @module benchmarks/fse26-diagnose
  */
 
+import type { MetricDiagnostic } from '@agentix-e/micro-kinetic-core';
+
 /** A single service's signal summary for one case. */
 export interface FSE26DiagnosticService {
   /** Service ID (Train Ticket name, e.g. `ts-order-service`). */
@@ -54,6 +56,20 @@ export interface FSE26DiagnosticService {
    * behind a weak fault type.
    */
   readonly exceptionClasses: readonly string[];
+  /**
+   * The fate of every metric this service carries, in the order the engine
+   * examined them (see {@link MetricDiagnostic}).
+   *
+   * The service's anomaly score is a MAXIMUM over its metrics, so a scalar
+   * cannot say whether the metric that should have carried the fault signature
+   * was scored and out-competed, or was discarded by a guard before it was ever
+   * scored. Those are different defects with different fixes, and this is the
+   * only field that separates them.
+   *
+   * Optional so an engine that does not report metric diagnostics renders
+   * exactly the block it rendered before.
+   */
+  readonly metricOutcomes?: readonly MetricDiagnostic[];
 }
 
 /** Input to {@link formatFSE26Diagnostic}. */
@@ -89,6 +105,34 @@ function fmt(x: number): string {
 /** Truncate a message to `max` characters without splitting a UTF-16 pair. */
 function truncate(message: string, max: number): string {
   return message.length <= max ? message : `${message.slice(0, max)}…`;
+}
+
+/**
+ * Render one service's metric competition as two lines.
+ *
+ * `metricKept` carries the label and the score that competed for the service's
+ * anomaly maximum, highest first; `metricDrop` carries the label and the guard
+ * that discarded it, in label order. Both lines are always emitted — including
+ * at zero — because the presence of the lines is what distinguishes "the
+ * dataset carries no metrics for this service" from "this service was never
+ * examined".
+ *
+ * @param outcomes - The engine's outcome list for one service.
+ * @returns Two formatted lines.
+ */
+function formatMetricCompetition(outcomes: readonly MetricDiagnostic[]): string[] {
+  const kept = outcomes
+    .filter((d) => d.outcome === 'kept')
+    .sort((a, b) => b.score - a.score || (a.label < b.label ? -1 : 1))
+    .map((d) => `${d.label}=${fmt(d.score)}`);
+  const dropped = outcomes
+    .filter((d) => d.outcome !== 'kept')
+    .sort((a, b) => (a.label < b.label ? -1 : 1))
+    .map((d) => `${d.label}:${d.outcome}`);
+  return [
+    `    metricKept(${kept.length}):${kept.length > 0 ? ` ${kept.join(' ')}` : ''}`,
+    `    metricDrop(${dropped.length}):${dropped.length > 0 ? ` ${dropped.join(' ')}` : ''}`,
+  ];
 }
 
 /**
@@ -145,6 +189,13 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
       lines.push(
         `    exc(${service.exceptionClasses.length}): ${service.exceptionClasses.join(',')}`,
       );
+    }
+    // The metric competition is rendered only for the two service sets a reader
+    // actually compares — the ground truth and the engine's predictions. A case
+    // has ~51 services carrying ~70 metrics each; rendering all of them would
+    // grow the dump by an order of magnitude for rows nothing reads.
+    if (service.metricOutcomes !== undefined && (gt.has(service.serviceId) || rank !== undefined)) {
+      lines.push(...formatMetricCompetition(service.metricOutcomes));
     }
   }
 

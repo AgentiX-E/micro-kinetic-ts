@@ -2376,3 +2376,149 @@ describe('buildTopologyFaultGraph — suppressNearZeroBaselineRise', () => {
     expect(on.anomalyScores.get('svc-event') ?? 0).toBeGreaterThan(0);
   });
 });
+
+describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
+  it('records exactly one outcome per metric, in the order the service carries them', () => {
+    // The scalar anomaly score is a max over metrics, so it hides WHY one
+    // metric beat another. Every metric must therefore be accounted for: a
+    // silently absent metric is indistinguishable from a metric the guards
+    // discarded, which is the whole question the diagnostics exist to answer.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          makeTimeSeries('ramp', [1, 1, 1, 1, 1, 2, 3, 4, 5, 6]),
+          makeTimeSeries('single', [7]),
+          makeTimeSeries('zeroed', [0, 0, 0, 0, 0, 0]),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const diags = result.metricDiagnostics.get('svc');
+    expect(diags).toBeDefined();
+    expect(diags!.map((d) => d.label)).toEqual(['ramp', 'single', 'zeroed']);
+    expect(diags!.map((d) => d.outcome)).toEqual(['kept', 'too-few-samples', 'non-positive-mean']);
+  });
+
+  it('scores a kept metric with the value that drives the service anomaly', () => {
+    // The diagnostic must not re-derive a second, drifting score: the number it
+    // reports has to be the very number the ranking consumed.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      ['svc', [makeTimeSeries('ramp', [1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const kept = result.metricDiagnostics.get('svc')!.filter((d) => d.outcome === 'kept');
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.score).toBe(result.anomalyScores.get('svc'));
+    expect(kept[0]!.score).toBeGreaterThan(0);
+  });
+
+  it('reports the decomposition of a kept metric', () => {
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      ['svc', [makeTimeSeries('ramp', [1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const breakdown = result.metricDiagnostics.get('svc')![0]!.breakdown;
+    expect(breakdown).toBeDefined();
+    expect(breakdown!.deviation).toBeGreaterThan(0);
+    expect(breakdown!.riseRatio).toBeGreaterThan(0);
+    expect(breakdown!.baselineMean).toBeGreaterThan(0);
+  });
+
+  it('names the guard that dropped a metric rather than only counting it', () => {
+    // Six distinct reasons a metric can fail to contribute. Collapsing them into
+    // one "skipped" bucket is what makes a diagnostic useless: "the fault
+    // signature was discarded by the transient guard" and "the fault signature
+    // scored too low" call for completely different fixes.
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          makeTimeSeries('duty-cycled', [0, 0, 0, 0, 0, 0, 0, 0, 5, 5]),
+          makeTimeSeries('returns', [1, 1, 1, 1, 10, 10, 1, 1, 1, 1]),
+          makeTimeSeries('flat', [5, 5, 5, 5, 5, 5, 5, 5, 5, 5]),
+        ],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    expect(result.metricDiagnostics.get('svc')!.map((d) => [d.label, d.outcome])).toEqual([
+      ['duty-cycled', 'duty-cycled-idle'],
+      ['returns', 'transient-return'],
+      ['flat', 'sub-epsilon-deviation'],
+    ]);
+  });
+
+  it('distinguishes the optional near-zero-baseline guard from the always-on ones', () => {
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [
+          makeTimeSeries('noise', [
+            ...Array.from({ length: 30 }, () => 0.0001),
+            ...Array.from({ length: 10 }, () => 0.005),
+          ]),
+        ],
+      ],
+    ]);
+
+    const off = buildTopologyFaultGraph(graph, metrics);
+    const on = buildTopologyFaultGraph(graph, metrics, { suppressNearZeroBaselineRise: true });
+
+    expect(off.metricDiagnostics.get('svc')![0]!.outcome).toBe('kept');
+    expect(on.metricDiagnostics.get('svc')![0]!.outcome).toBe('near-zero-baseline-rise');
+  });
+
+  it('reports an empty outcome list for a service with no metrics at all', () => {
+    // "the dataset carries nothing for this service" is a different finding from
+    // "every metric this service carries was discarded", and the fault graph
+    // must not conflate them.
+    const graph = makeCallGraph(['svc-empty'], []);
+    const result = buildTopologyFaultGraph(graph, makeMetrics([]));
+
+    expect(result.metricDiagnostics.get('svc-empty')).toEqual([]);
+  });
+
+  it('accounts for every metric exactly once even when none survives the guards', () => {
+    const graph = makeCallGraph(['svc'], []);
+    const metrics = makeMetrics([
+      [
+        'svc',
+        [makeTimeSeries('a', [1]), makeTimeSeries('b', [0, 0, 0]), makeTimeSeries('c', [4, 4, 4])],
+      ],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    const diags = result.metricDiagnostics.get('svc')!;
+    expect(diags).toHaveLength(3);
+    expect(diags.some((d) => d.outcome === 'kept')).toBe(false);
+    expect(result.anomalyScores.get('svc')).toBe(0);
+  });
+
+  it('keeps the diagnostic array aligned with the metric inventory of every node', () => {
+    const graph = makeCallGraph(['svc-a', 'svc-b'], [{ from: 'svc-a', to: 'svc-b' }]);
+    const metrics = makeMetrics([
+      ['svc-a', [makeTimeSeries('x', [1, 1, 2, 3, 4, 5]), makeTimeSeries('y', [9])]],
+      ['svc-b', [makeTimeSeries('z', [2, 2, 2, 2, 2, 2])]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+
+    for (const [id, series] of metrics) {
+      expect(result.metricDiagnostics.get(id)).toHaveLength(series.length);
+    }
+  });
+});

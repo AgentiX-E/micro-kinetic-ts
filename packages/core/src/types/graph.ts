@@ -68,6 +68,65 @@ export interface DetectedCycle {
 }
 
 /**
+ * Why one metric did or did not contribute to its node's anomaly score.
+ *
+ * Every early exit inside the anomaly scorer is named, because collapsing them
+ * into a single "skipped" bucket destroys the only distinction that matters: a
+ * metric discarded by a guard calls for a guard fix, while a metric that was
+ * scored and out-competed calls for a scoring fix.
+ *
+ * - `kept` — scored, and contributed a candidate to the maximum.
+ * - `too-few-samples` — fewer than two samples; no deviation is definable.
+ * - `non-positive-mean` — a non-positive mean makes every ratio meaningless.
+ * - `duty-cycled-idle` — zero for over 40% of its history, so its idle→active
+ *   step yields an unbounded artifact ratio rather than an anomaly.
+ * - `transient-return` — returns to its starting level over a non-zero
+ *   baseline: a propagated symptom, not a source shift.
+ * - `near-zero-baseline-rise` — baseline below the 0.001 floor, so a relative
+ *   rise is undefined.
+ * - `sub-epsilon-deviation` — a relative deviation indistinguishable from
+ *   floating-point error.
+ */
+export type MetricDiagnosticOutcome =
+  | 'kept'
+  | 'too-few-samples'
+  | 'non-positive-mean'
+  | 'duty-cycled-idle'
+  | 'transient-return'
+  | 'near-zero-baseline-rise'
+  | 'sub-epsilon-deviation';
+
+/**
+ * The fate of one metric inside one node's anomaly competition.
+ *
+ * Every metric a node carries yields exactly one entry, so the list can be
+ * reconciled against the metric inventory that produced it — a silently missing
+ * metric would be indistinguishable from a discarded one.
+ */
+export interface MetricDiagnostic {
+  /** The metric label, as it appears in the node's series. */
+  readonly label: string;
+  /** What happened to the metric. */
+  readonly outcome: MetricDiagnosticOutcome;
+  /**
+   * The feature-weighted score the metric reached. Zero for every outcome other
+   * than `kept`; for a kept metric it is the SAME number the node's anomaly
+   * score was maximised over, not a re-derivation that could drift from it.
+   */
+  readonly score: number;
+  /** The score decomposition. Present only when `outcome` is `kept`. */
+  readonly breakdown?: {
+    readonly deviation: number;
+    readonly trend: number;
+    readonly cv: number;
+    readonly burst: number;
+    readonly riseRatio: number;
+    readonly dropRatio: number;
+    readonly baselineMean: number;
+  };
+}
+
+/**
  * Fault propagation graph — the core data structure for collision tree RCA.
  *
  * This is built from a ServiceCallGraph by annotating edges with
@@ -121,6 +180,17 @@ export interface FaultPropagationGraph {
       };
     }
   >;
+  /**
+   * Per-node metric competition — one entry per metric the node carries.
+   *
+   * A node's anomaly score is a MAXIMUM over its metrics, so the scalar alone
+   * cannot distinguish "the fault signature was scored and lost to another
+   * metric" from "the fault signature was discarded before it was scored".
+   * Those are different defects with different fixes, so each guard that can
+   * discard a metric is named separately in {@link MetricDiagnosticOutcome}.
+   * Optional: a diagnostic convenience, never a ranking input.
+   */
+  readonly metricDiagnostics?: ReadonlyMap<ServiceId, readonly MetricDiagnostic[]>;
   /**
    * Fault injection time in Unix milliseconds, when known.
    *

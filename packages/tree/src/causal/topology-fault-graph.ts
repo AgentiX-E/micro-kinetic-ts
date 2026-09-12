@@ -43,6 +43,8 @@
 
 import type {
   CallEdge,
+  MetricDiagnostic,
+  MetricDiagnosticOutcome,
   ServiceCallGraph,
   ServiceId,
   TimeSeries,
@@ -307,6 +309,14 @@ export interface TopologyFaultGraphResult {
       breakdown?: MetricBreakdown;
     }
   >;
+  /**
+   * Per-service metric competition, one entry per metric the service carries.
+   *
+   * The anomaly score is a maximum, so it cannot distinguish "the fault
+   * signature was scored and lost" from "the fault signature was discarded by a
+   * guard". This is that distinction, recorded rather than inferred.
+   */
+  readonly metricDiagnostics: ReadonlyMap<ServiceId, readonly MetricDiagnostic[]>;
   /** Per-edge propagation weights (0-1), aligned with callGraph.edges. */
   readonly propagationWeights: Float64Array;
   /** Diagnostic: number of edges computed via Pearson correlation. */
@@ -392,6 +402,7 @@ export function buildTopologyFaultGraph(
     ServiceId,
     { label: string; head: number[]; tail: number[]; transientSkipped: string[] }
   >();
+  const metricDiagnostics = new Map<ServiceId, readonly MetricDiagnostic[]>();
   let diagSvcCount = 0;
   let diagNoMetrics = 0;
   let diagZeroScore = 0;
@@ -405,6 +416,7 @@ export function buildTopologyFaultGraph(
     anomalyOnsetTimes.set(serviceId, result.onsetIndex);
     postInjectOnsetDelays.set(serviceId, result.postInjectOnsetDelay);
     dominantMetrics.set(serviceId, result.dominantMetric);
+    metricDiagnostics.set(serviceId, result.metricDiagnostics);
 
     if (!serviceMetrics || serviceMetrics.length === 0) {
       diagNoMetrics++;
@@ -523,6 +535,7 @@ export function buildTopologyFaultGraph(
     anomalyOnsetTimes,
     postInjectOnsetDelays,
     dominantMetrics,
+    metricDiagnostics,
     propagationWeights,
     pearsonEdgeCount,
     fallbackEdgeCount,
@@ -555,6 +568,8 @@ interface AnomalyFeatures {
     /** Raw score decomposition of the dominant metric (diagnostic). */
     breakdown?: MetricBreakdown;
   };
+  /** One entry per metric the service carries, in input order. */
+  metricDiagnostics: MetricDiagnostic[];
 }
 
 /**
@@ -580,6 +595,14 @@ export interface MetricBreakdown {
   /** The collapseDiscount in effect when the score was computed. */
   readonly collapseDiscount: number;
 }
+
+/**
+ * Why a metric did or did not contribute to its service's anomaly score.
+ *
+ * Re-exported from the core graph contract: the outcome vocabulary is part of
+ * what the graph promises its consumers, so it has exactly one definition.
+ */
+export type { MetricDiagnostic, MetricDiagnosticOutcome };
 
 interface EdgeWeightResult {
   weight: number;
@@ -614,6 +637,7 @@ function computeAnomalyFeatures(
       onsetIndex: Number.MAX_SAFE_INTEGER,
       postInjectOnsetDelay: -1,
       dominantMetric: { label: '', head: [], tail: [], transientSkipped: [] },
+      metricDiagnostics: [],
     };
   }
 
@@ -625,10 +649,20 @@ function computeAnomalyFeatures(
   let bestMetricValues: Float64Array | null = null;
   let bestMetricTimestamps: readonly number[] | null = null;
   let bestBreakdown: MetricBreakdown | undefined;
-  const transientSkippedLabels: string[] = [];
+  // One entry per metric examined, so a consumer can reconcile the outcome list
+  // against the service's metric inventory without re-deriving the guards.
+  const metricDiagnostics: MetricDiagnostic[] = [];
+
+  /** Record a metric that produced no candidate, and why. */
+  const drop = (label: string, outcome: MetricDiagnosticOutcome): void => {
+    metricDiagnostics.push({ label, outcome, score: 0 });
+  };
 
   for (const ts of serviceMetrics) {
-    if (ts.values.length < 2) continue;
+    if (ts.values.length < 2) {
+      drop(ts.label, 'too-few-samples');
+      continue;
+    }
 
     const n = ts.values.length;
 
@@ -643,7 +677,10 @@ function computeAnomalyFeatures(
       if (v < min) min = v;
     }
     const mean = sum / n;
-    if (mean <= 0) continue;
+    if (mean <= 0) {
+      drop(ts.label, 'non-positive-mean');
+      continue;
+    }
 
     // Idle-metric guard: a metric that sits at ~0 for MOST of its history
     // (e.g. a latency percentile that is 0 whenever there is no traffic) is an
@@ -667,7 +704,10 @@ function computeAnomalyFeatures(
     for (let i = 0; i < n; i++) {
       if (ts.values[i]! <= max * 0.001) nearZeroCount++;
     }
-    if (nearZeroCount > n * 0.4) continue;
+    if (nearZeroCount > n * 0.4) {
+      drop(ts.label, 'duty-cycled-idle');
+      continue;
+    }
 
     // Transient-spike guard: a metric that spikes and then RETURNS to (or
     // near) its starting level over a NON-ZERO baseline is a transient
@@ -708,7 +748,7 @@ function computeAnomalyFeatures(
       // Diagnostic: record what the transient guard discards, so the
       // benchmark failure diagnostics can reveal whether a genuine fault
       // signature is being mistaken for a transient symptom.
-      transientSkippedLabels.push(ts.label);
+      drop(ts.label, 'transient-return');
       continue;
     }
 
@@ -753,7 +793,10 @@ function computeAnomalyFeatures(
     // genuinely idle metric is treated uniformly. A zero→burst→zero event
     // fault resets its exact-zero baseline to the full mean (raised above
     // 0.001 by the burst) and is therefore untouched.
-    if (cfg.suppressNearZeroBaselineRise && baselineMean <= 0.001) continue;
+    if (cfg.suppressNearZeroBaselineRise && baselineMean <= 0.001) {
+      drop(ts.label, 'near-zero-baseline-rise');
+      continue;
+    }
 
     // Deviation — log₁₀ compression for score differentiation.
     // Linear ratio (max/baseline − 1) saturates at 1.0 for any >2x spike,
@@ -791,7 +834,10 @@ function computeAnomalyFeatures(
     const effectiveDrop = dropRatio * (1 - collapseDiscount);
     const ratio = Math.max(riseRatio, effectiveDrop);
     const deviation = Math.log10(1 + ratio);
-    if (deviation < 1e-6) continue;
+    if (deviation < 1e-6) {
+      drop(ts.label, 'sub-epsilon-deviation');
+      continue;
+    }
 
     // Trend slope (linear regression) — the magnitude of the monotonic drift.
     // This is direction-agnostic: a monotonic drop (memory release, crash)
@@ -849,6 +895,22 @@ function computeAnomalyFeatures(
     let featureScore = deviation + trendBonus + burstBonus + cvBonus;
     featureScore = Math.max(0, featureScore);
 
+    // The decomposition is built once and shared: the diagnostic entry and the
+    // dominant-metric record must not be two drifting renderings of the same
+    // score (a hand-copied second object is how the published FSE'26 config
+    // block lost the field that produced a 24.2pp swing).
+    const breakdown: MetricBreakdown = {
+      deviation,
+      trend: trendBonus,
+      cv: cvBonus,
+      burst: burstBonus,
+      riseRatio,
+      dropRatio,
+      baselineMean,
+      collapseDiscount,
+    };
+    metricDiagnostics.push({ label: ts.label, outcome: 'kept', score: featureScore, breakdown });
+
     // Onset: the first point deviating from the PRE-CHANGE baseline by more
     // than 30%. Comparing against the full mean (which includes the spike)
     // made every first point look anomalous, so the onset was always 0 and
@@ -882,16 +944,7 @@ function computeAnomalyFeatures(
       // (index 0) mask the true fault onset (e.g. a late step change), which
       // corrupted the source/symptom ordering signal used downstream.
       bestMetricOnset = metricOnset;
-      bestBreakdown = {
-        deviation,
-        trend: trendBonus,
-        cv: cvBonus,
-        burst: burstBonus,
-        riseRatio,
-        dropRatio,
-        baselineMean,
-        collapseDiscount,
-      };
+      bestBreakdown = breakdown;
     }
   }
 
@@ -914,9 +967,15 @@ function computeAnomalyFeatures(
       label: bestMetricLabel,
       head: bestMetricHead,
       tail: bestMetricTail,
-      transientSkipped: transientSkippedLabels,
+      // Derived from the single outcome list rather than accumulated in
+      // parallel: the transient guard's discarded labels are one outcome of
+      // many, and a second accumulator can only disagree with the first.
+      transientSkipped: metricDiagnostics
+        .filter((d) => d.outcome === 'transient-return')
+        .map((d) => d.label),
       breakdown: bestBreakdown,
     },
+    metricDiagnostics,
   };
 }
 

@@ -19,6 +19,19 @@
  * @module benchmarks/fse26-diagnose-analyze
  */
 
+/** One metric's fate, as the `DIAG` block reports it. */
+export interface DiagnosedMetricOutcome {
+  readonly label: string;
+  /**
+   * The engine's outcome word. Kept as a plain string rather than a closed
+   * union: this reader must survive an engine that adds a guard, and a strict
+   * union here would turn a new reason into a parse failure.
+   */
+  readonly outcome: string;
+  /** The metric's score. Meaningful only when `outcome` is `kept`. */
+  readonly score: number;
+}
+
 /** One service's signal inventory, as the `DIAG` block reports it. */
 export interface DiagnosedService {
   readonly serviceId: string;
@@ -28,10 +41,25 @@ export interface DiagnosedService {
   readonly predictedRank: number | undefined;
   readonly selfAnomaly: number;
   readonly logScore: number;
+  /**
+   * The metric that drove this service's anomaly score, or `''` when the engine
+   * named none (the block prints `-` for that).
+   */
+  readonly dominantMetric: string;
   readonly errorCount: number;
   readonly fatalCount: number;
   readonly logicExceptionCount: number;
   readonly httpExceptionCount: number;
+  /**
+   * The service's metric competition, or `undefined` when the block did not
+   * report it (an older dump, or a service the formatter chose not to render).
+   *
+   * A list whose declared size disagrees with the entries actually printed is
+   * reported as `undefined`, never as a short list: a truncated inventory reads
+   * exactly like a complete one, which is how a parser once fabricated
+   * `gt_http = 0` for every replace-code case.
+   */
+  readonly metricOutcomes: readonly DiagnosedMetricOutcome[] | undefined;
 }
 
 /** One case's diagnostic block, as data. */
@@ -51,6 +79,27 @@ const HEADER_RE =
 const SERVICE_RE =
   /^ {2}(\S+)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+) dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
+const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
+const METRIC_DROP_RE = /^ {4}metricDrop\((\d+)\):(?: (.*))?$/;
+
+/**
+ * Split a space-separated `label=value` / `label:value` list.
+ *
+ * The separator is the LAST occurrence, not the first: metric labels are
+ * dotted names that never contain `=` or `:`, but a label that did would then
+ * corrupt one entry rather than the whole list, and the declared-count check
+ * below would catch it either way.
+ */
+function parseEntries(body: string | undefined, separator: '=' | ':'): string[][] {
+  if (body === undefined || body === '') return [];
+  return body
+    .split(' ')
+    .filter((entry) => entry.length > 0)
+    .map((entry) => {
+      const at = entry.lastIndexOf(separator);
+      return at < 0 ? [entry, ''] : [entry.slice(0, at), entry.slice(at + 1)];
+    });
+}
 
 /** Split a bracketed list into trimmed, non-empty entries. */
 function parseList(body: string | undefined): string[] {
@@ -59,6 +108,18 @@ function parseList(body: string | undefined): string[] {
     .split(',')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+/**
+ * A service under construction.
+ *
+ * The metric lines trail the service line they belong to, so the outcome list
+ * has to be appended to after the service has been read. Kept private: the only
+ * thing that needs the mutable shape is the parser, and exposing it would let a
+ * consumer mutate a parsed dump.
+ */
+interface MutableService extends Omit<DiagnosedService, 'metricOutcomes'> {
+  metricOutcomes: DiagnosedMetricOutcome[] | undefined;
 }
 
 /**
@@ -81,14 +142,38 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         faultType: string;
         groundTruth: string[];
         logSignalMode: string;
-        services: DiagnosedService[];
+        services: MutableService[];
       }
     | undefined;
+  // The metric lines follow the service they belong to, so the parser has to
+  // remember which service it last emitted rather than which case it is in.
+  let lastService: MutableService | undefined;
+  // The inventory currently being read. It is opened by a `metricKept` line and
+  // extended by the `metricDrop` line that follows. `undefined` therefore means
+  // "this block never opened an inventory", which is what makes a lost
+  // `metricKept` line detectably different from an empty one: a dropped-only
+  // list would otherwise match its own declared count and read as complete.
+  let openOutcomes: DiagnosedMetricOutcome[] | undefined;
+  // The count the block DECLARED, accumulated across both lines. An inventory
+  // that disagrees with it is discarded rather than shortened — a short
+  // inventory reads exactly like a complete one.
+  let declaredOutcomeCount = 0;
+
+  const finalizeOutcomes = (): void => {
+    if (lastService === undefined) return;
+    const outcomes = openOutcomes;
+    if (outcomes === undefined) return;
+    const faithful =
+      outcomes.length === declaredOutcomeCount &&
+      outcomes.every((outcome) => Number.isFinite(outcome.score));
+    lastService.metricOutcomes = faithful ? outcomes : undefined;
+  };
 
   for (const line of text.split('\n')) {
     const header = HEADER_RE.exec(line);
     if (header) {
       // A new header without a footer means the previous block was truncated.
+      finalizeOutcomes();
       current = {
         datapack: header[1]!,
         faultType: header[2]!,
@@ -96,30 +181,71 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         logSignalMode: header[5] ?? '',
         services: [],
       };
+      lastService = undefined;
+      declaredOutcomeCount = 0;
+      openOutcomes = undefined;
       continue;
     }
     if (current === undefined) continue;
 
     const service = SERVICE_RE.exec(line);
     if (service) {
+      finalizeOutcomes();
       const markers = parseList(service[2]);
       const rankMarker = markers.find((m) => m.startsWith('#'));
-      current.services.push({
+      const entries: MutableService = {
         serviceId: service[1]!,
         isGroundTruth: markers.includes('GT'),
         predictedRank: rankMarker === undefined ? undefined : Number(rankMarker.slice(1)),
         selfAnomaly: Number(service[3]),
         logScore: Number(service[4]),
+        dominantMetric: service[5] === '-' ? '' : service[5]!,
         errorCount: Number(service[6]),
         fatalCount: Number(service[7]),
         logicExceptionCount: Number(service[8]),
         httpExceptionCount: Number(service[9]),
-      });
+        metricOutcomes: undefined,
+      };
+      current.services.push(entries);
+      lastService = entries;
+      declaredOutcomeCount = 0;
+      openOutcomes = undefined;
+      continue;
+    }
+
+    const kept = METRIC_KEPT_RE.exec(line);
+    if (kept && lastService !== undefined) {
+      finalizeOutcomes();
+      openOutcomes = parseEntries(kept[2], '=').map(([label, score]) => ({
+        label: label!,
+        outcome: 'kept',
+        score: Number(score),
+      }));
+      declaredOutcomeCount = Number(kept[1]);
+      continue;
+    }
+
+    const dropped = METRIC_DROP_RE.exec(line);
+    if (dropped && lastService !== undefined) {
+      // A dropped line with no open inventory is a malformed block: it is
+      // ignored outright, so the service reads as "unreported" rather than
+      // acquiring a fabricated kept-less list.
+      if (openOutcomes !== undefined) {
+        openOutcomes.push(
+          ...parseEntries(dropped[2], ':').map(([label, outcome]) => ({
+            label: label!,
+            outcome: outcome!,
+            score: 0,
+          })),
+        );
+        declaredOutcomeCount += Number(dropped[1]);
+      }
       continue;
     }
 
     const prediction = PREDICTION_RE.exec(line);
     if (prediction) {
+      finalizeOutcomes();
       cases.push({
         datapack: current.datapack,
         faultType: current.faultType,
@@ -129,6 +255,9 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         prediction: parseList(prediction[1]),
       });
       current = undefined;
+      lastService = undefined;
+      declaredOutcomeCount = 0;
+      openOutcomes = undefined;
     }
   }
 
@@ -283,6 +412,45 @@ export function regressionMechanism(
   };
 }
 
+/**
+ * The metric family a fault's signature is expected to live in.
+ *
+ * Stated by the caller rather than baked in: this module reduces a dump, and
+ * which labels constitute a fault signature is a property of the fault under
+ * investigation, not of the dump format.
+ */
+export interface MetricFamily {
+  /** How the report names the family. */
+  readonly label: string;
+  /** Matches the labels that belong to the family. */
+  readonly pattern: RegExp;
+}
+
+/**
+ * One fault type's answer to the only question a metric diagnostic can settle:
+ * was the fault signature DISCARDED BY A GUARD, or SCORED AND OUT-COMPETED?
+ *
+ * Those two readings call for completely different work — a guard fix against a
+ * scoring change — and the scalar anomaly score cannot tell them apart, because
+ * both leave the service with a score that some other metric produced.
+ */
+export interface FamilyCompetitionCell {
+  readonly faultType: string;
+  readonly cases: number;
+  /** Cases whose source carries at least one metric of the family. */
+  readonly sourcesWithFamily: number;
+  /** Cases where at least one family metric survived the guards. */
+  readonly sourcesKeepingFamily: number;
+  /** Cases where every family metric the source carries was discarded. */
+  readonly sourcesDroppingFamily: number;
+  /** Cases where the source carries no family metric at all (a data gap). */
+  readonly sourcesWithoutFamily: number;
+  /** Cases whose source's DOMINANT metric is in the family. */
+  readonly sourcesDominantInFamily: number;
+  /** Cases where a family metric survived AND still lost the service competition. */
+  readonly sourcesKeepingButLosingFamily: number;
+}
+
 /** Count deltas by kind, for a one-line summary of a comparison. */
 export function tallyDeltas(
   deltas: readonly DiagnosticDelta[],
@@ -295,6 +463,130 @@ export function tallyDeltas(
   };
   for (const delta of deltas) tally[delta.kind] += 1;
   return tally;
+}
+
+/**
+ * A non-stateful matcher for a metric family.
+ *
+ * A global or sticky pattern carries `lastIndex` between calls, so `test` would
+ * answer differently on alternate invocations and silently halve every count.
+ * Rebuilt without those flags, so the reducer stays a pure function of its
+ * inputs regardless of how the caller wrote the pattern.
+ */
+function familyMatcher(family: MetricFamily): (label: string) => boolean {
+  const pattern = new RegExp(family.pattern.source, family.pattern.flags.replace(/[gy]/g, ''));
+  return (label) => pattern.test(label);
+}
+
+/**
+ * Reduce one dump to the per-fault-type fate of a metric family.
+ *
+ * Only ground-truth services are examined: the question is what happened to the
+ * fault source's signature, and a service that is neither the source nor a
+ * prediction carries no answer. A case whose ground-truth service was not
+ * rendered at all (no metric outcomes reported) is counted in `cases` but in
+ * none of the family columns, which is how a dump produced by an older engine
+ * reads as "unreported" rather than as "absent".
+ *
+ * @param cases - A parsed dump.
+ * @param family - The labels that constitute the fault signature.
+ * @returns One cell per fault type, in descending case count.
+ */
+export function familyCompetition(
+  cases: readonly DiagnosedCase[],
+  family: MetricFamily,
+): FamilyCompetitionCell[] {
+  interface Mutable {
+    faultType: string;
+    cases: number;
+    sourcesWithFamily: number;
+    sourcesKeepingFamily: number;
+    sourcesDroppingFamily: number;
+    sourcesWithoutFamily: number;
+    sourcesDominantInFamily: number;
+    sourcesKeepingButLosingFamily: number;
+  }
+  const byType = new Map<string, Mutable>();
+  const isFamily = familyMatcher(family);
+
+  for (const kase of cases) {
+    const cell = byType.get(kase.faultType) ?? {
+      faultType: kase.faultType,
+      cases: 0,
+      sourcesWithFamily: 0,
+      sourcesKeepingFamily: 0,
+      sourcesDroppingFamily: 0,
+      sourcesWithoutFamily: 0,
+      sourcesDominantInFamily: 0,
+      sourcesKeepingButLosingFamily: 0,
+    };
+    cell.cases++;
+    for (const source of kase.services) {
+      if (!source.isGroundTruth || source.metricOutcomes === undefined) continue;
+      const ofFamily = source.metricOutcomes.filter((outcome) => isFamily(outcome.label));
+      const kept = ofFamily.filter((outcome) => outcome.outcome === 'kept');
+      if (ofFamily.length === 0) cell.sourcesWithoutFamily++;
+      else cell.sourcesWithFamily++;
+      if (kept.length > 0) cell.sourcesKeepingFamily++;
+      if (ofFamily.length > 0 && kept.length === 0) cell.sourcesDroppingFamily++;
+      const dominantIsFamily = isFamily(source.dominantMetric);
+      if (dominantIsFamily) cell.sourcesDominantInFamily++;
+      if (kept.length > 0 && !dominantIsFamily) cell.sourcesKeepingButLosingFamily++;
+    }
+    byType.set(kase.faultType, cell);
+  }
+
+  return [...byType.values()].sort(
+    (a, b) => b.cases - a.cases || (a.faultType < b.faultType ? -1 : 1),
+  );
+}
+
+/**
+ * Render the metric-competition report for a dump.
+ *
+ * @param cases - A parsed dump.
+ * @param family - The metric family under investigation.
+ * @param modeLabel - How to describe the configuration in the header.
+ * @returns The report text, ending with a newline.
+ */
+export function formatMetricCompetitionReport(
+  cases: readonly DiagnosedCase[],
+  family: MetricFamily,
+  modeLabel: string,
+): string {
+  const cells = familyCompetition(cases, family);
+  const modes = [...new Set(cases.map((kase) => kase.logSignalMode))].filter((m) => m !== '');
+  const lines: string[] = [];
+  lines.push(`FSE'26 metric competition — ${modeLabel}`);
+  lines.push(`  after-mode: ${modes.length > 0 ? modes.join(', ') : '(unrecorded)'}`);
+  lines.push(`  cases: ${cases.length}`);
+  lines.push(`  tracked family: ${family.label}`);
+  lines.push('');
+  if (cells.length === 0) {
+    lines.push('No DIAG blocks were parsed.');
+    return `${lines.join('\n')}\n`;
+  }
+
+  lines.push(
+    `  ${'fault type'.padEnd(30)} ${'cases'.padStart(6)} ${'has-fam'.padStart(8)} ` +
+      `${'kept'.padStart(6)} ${'dropped'.padStart(8)} ${'absent'.padStart(7)} ` +
+      `${'dominant'.padStart(9)} ${'kept-lost'.padStart(10)}`,
+  );
+  for (const cell of cells) {
+    lines.push(
+      `  ${cell.faultType.padEnd(30)} ${String(cell.cases).padStart(6)} ` +
+        `${String(cell.sourcesWithFamily).padStart(8)} ${String(cell.sourcesKeepingFamily).padStart(6)} ` +
+        `${String(cell.sourcesDroppingFamily).padStart(8)} ` +
+        `${String(cell.sourcesWithoutFamily).padStart(7)} ` +
+        `${String(cell.sourcesDominantInFamily).padStart(9)} ` +
+        `${String(cell.sourcesKeepingButLosingFamily).padStart(10)}`,
+    );
+  }
+  lines.push('');
+  lines.push('  A source counts in "dropped" when every family metric it carries was discarded');
+  lines.push('  by a guard, and in "kept-lost" when a family metric survived but lost');
+  lines.push("  the competition for the source's own anomaly score.");
+  return `${lines.join('\n')}\n`;
 }
 
 /**

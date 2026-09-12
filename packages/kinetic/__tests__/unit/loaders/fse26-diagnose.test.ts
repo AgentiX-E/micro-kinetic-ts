@@ -254,3 +254,110 @@ describe('formatFSE26Diagnostic', () => {
     expect(serviceLines).toEqual(['ts-auth-service', 'ts-order-service']);
   });
 });
+
+describe('formatFSE26Diagnostic — metric competition', () => {
+  it('renders the metric competition for a ground-truth service', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [
+              { label: 'container.memory.rss', outcome: 'kept', score: 0.412 },
+              { label: 'jvm.memory.used', outcome: 'transient-return', score: 0 },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricKept(1): container.memory.rss=0.412');
+    expect(out).toContain('metricDrop(1): jvm.memory.used:transient-return');
+  });
+
+  it('renders the metric competition for a predicted service', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-some-other-service'],
+        topPredictions: ['ts-order-service'],
+        services: [service({ metricOutcomes: [{ label: 'http', outcome: 'kept', score: 1 }] })],
+      }),
+    );
+
+    expect(out).toContain('metricKept(1): http=1.000');
+  });
+
+  it('omits the metric competition for a service that is neither ground truth nor predicted', () => {
+    // 51 services carry ~70 metrics each; rendering the competition for all of
+    // them would multiply the dump by an order of magnitude for rows nothing
+    // reads. The bound is part of the contract, so it is pinned here.
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-elsewhere'],
+        topPredictions: ['ts-also-elsewhere'],
+        services: [
+          service({
+            serviceId: 'ts-bystander',
+            metricOutcomes: [{ label: 'http', outcome: 'kept', score: 1 }],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).not.toContain('metricKept');
+    expect(out).not.toContain('metricDrop');
+  });
+
+  it('omits the metric competition when the caller supplied no outcomes', () => {
+    // An engine that does not report metric diagnostics must produce exactly the
+    // block it produced before, so the addition stays purely additive.
+    const out = formatFSE26Diagnostic(input({ services: [service({})] }));
+
+    expect(out).not.toContain('metricKept');
+    expect(out).not.toContain('metricDrop');
+  });
+
+  it('states zero counts rather than omitting the lines for an empty inventory', () => {
+    // "the dataset carries no metrics for this service" and "this service was
+    // never examined" are different findings; only the lines' presence separates
+    // them, so an empty inventory still renders.
+    const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: [] })] }));
+
+    expect(out).toContain('metricKept(0):');
+    expect(out).toContain('metricDrop(0):');
+  });
+
+  it('orders kept metrics by score descending then label ascending', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [
+              { label: 'z-low', outcome: 'kept', score: 0.1 },
+              { label: 'a-high', outcome: 'kept', score: 0.9 },
+              { label: 'b-high', outcome: 'kept', score: 0.9 },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricKept(3): a-high=0.900 b-high=0.900 z-low=0.100');
+  });
+
+  it('orders dropped metrics by label ascending with their reason', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [
+              { label: 'zeta', outcome: 'too-few-samples', score: 0 },
+              { label: 'alpha', outcome: 'duty-cycled-idle', score: 0 },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricDrop(2): alpha:duty-cycled-idle zeta:too-few-samples');
+  });
+});

@@ -12,12 +12,15 @@
 
 import { describe, expect, it } from 'vitest';
 
+import type { MetricDiagnostic } from '../../packages/core/src/index.js';
 import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
 
 import type { DiagnosedCase } from '../src/fse26-diagnose-analyze.js';
 import {
   diffDiagnostics,
+  familyCompetition,
   formatDiagnoseComparison,
+  formatMetricCompetitionReport,
   isTop1Correct,
   parseDiagnosticDump,
   regressionMechanism,
@@ -31,6 +34,12 @@ interface ServiceSpec {
   http?: number;
   logic?: number;
   dominant?: string | undefined;
+  /**
+   * Typed with the engine's own vocabulary rather than `string`: a test that can
+   * spell an outcome the engine cannot produce is testing a format that does not
+   * exist. Tolerance of a NEW reason is exercised by tampering with a real dump.
+   */
+  metricOutcomes?: readonly MetricDiagnostic[];
 }
 
 function serviceLine(spec: ServiceSpec) {
@@ -46,6 +55,7 @@ function serviceLine(spec: ServiceSpec) {
     httpExceptionCount: spec.http ?? 0,
     sampleErrorMessages: [],
     exceptionClasses: [],
+    metricOutcomes: spec.metricOutcomes,
   };
 }
 
@@ -250,10 +260,12 @@ describe('regressionMechanism', () => {
     predictedRank: undefined,
     selfAnomaly,
     logScore: 0,
+    dominantMetric: '',
     errorCount: http + logic,
     fatalCount: 0,
     logicExceptionCount: logic,
     httpExceptionCount: http,
+    metricOutcomes: undefined,
   });
 
   it('recognises a silent source out-flooded by its caller', () => {
@@ -407,5 +419,319 @@ describe('formatDiagnoseComparison — degenerate rows', () => {
 
     expect(report).toContain('gained: 1');
     expect(report).toMatch(/JVMMemoryStress\s+1\s+0\s+1/);
+  });
+});
+
+describe('parseDiagnosticDump — metric competition', () => {
+  const withCompetition = (spec: ServiceSpec) =>
+    dump({ services: [serviceLine(spec)], topPredictions: [spec.serviceId] });
+
+  it('reads the metric outcomes and the dominant metric of a service', () => {
+    const text = withCompetition({
+      serviceId: 'ts-order-service',
+      dominant: 'container.memory.rss',
+      metricOutcomes: [
+        { label: 'container.memory.rss', outcome: 'kept', score: 0.412 },
+        { label: 'jvm.memory.used', outcome: 'transient-return', score: 0 },
+      ],
+    });
+
+    const entry = parseDiagnosticDump(text)[0]!.services[0]!;
+
+    expect(entry.dominantMetric).toBe('container.memory.rss');
+    expect(entry.metricOutcomes).toEqual([
+      { label: 'container.memory.rss', outcome: 'kept', score: 0.412 },
+      { label: 'jvm.memory.used', outcome: 'transient-return', score: 0 },
+    ]);
+  });
+
+  it('reports an absent dominant metric as an empty string, not as the placeholder', () => {
+    const text = withCompetition({ serviceId: 'ts-order-service', dominant: undefined });
+    expect(parseDiagnosticDump(text)[0]!.services[0]!.dominantMetric).toBe('');
+  });
+
+  it('reports no metric outcomes when the block carried none', () => {
+    // A dump from an engine that does not report the competition must read as
+    // "unreported", never as "this service carries no metrics".
+    const text = withCompetition({ serviceId: 'ts-order-service' });
+    expect(parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes).toBeUndefined();
+  });
+
+  it('discards an inventory whose declared size disagrees with the entries printed', () => {
+    // A truncated list reads exactly like a complete one, and a parser that
+    // accepted one once fabricated `gt_http = 0` for every replace-code case.
+    // The block declares the size, so the parser can refuse.
+    const text = withCompetition({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [
+        { label: 'container.memory.rss', outcome: 'kept', score: 0.412 },
+        { label: 'jvm.memory.used', outcome: 'kept', score: 0.2 },
+      ],
+    }).replace('metricKept(2):', 'metricKept(7):');
+
+    expect(parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes).toBeUndefined();
+  });
+
+  it('discards an inventory carrying a non-finite score', () => {
+    const text = withCompetition({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [{ label: 'container.memory.rss', outcome: 'kept', score: Number.NaN }],
+    });
+
+    expect(parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes).toBeUndefined();
+  });
+
+  it('does not fabricate an inventory when only the dropped line survived', () => {
+    // A lost `metricKept` line would otherwise leave a dropped-only list whose
+    // length matches its own declared count — a truncation that reads as a
+    // complete inventory, which is exactly how the earlier parser fabricated
+    // `gt_http = 0` for every replace-code case.
+    const text = dump({
+      services: [
+        serviceLine({
+          serviceId: 'ts-ui',
+          metricOutcomes: [
+            { label: 'container.memory.rss', outcome: 'transient-return', score: 0 },
+          ],
+        }),
+      ],
+      topPredictions: ['ts-ui'],
+    });
+
+    expect(text).toContain('metricKept(0):');
+    expect(text).toContain('metricDrop(1): container.memory.rss:transient-return');
+    // Drop the kept line outright, so the dropped line has nothing to append to.
+    const withoutKept = text
+      .split('\n')
+      .filter((line) => !line.startsWith('    metricKept('))
+      .join('\n');
+
+    expect(parseDiagnosticDump(withoutKept)[0]!.services[0]!.metricOutcomes).toBeUndefined();
+  });
+
+  it('discards an inventory whose label split the line into extra entries', () => {
+    // A label containing a space would otherwise be read as two metrics, and the
+    // declared-count check is what catches it.
+    const text = dump({
+      services: [
+        serviceLine({
+          serviceId: 'ts-ui',
+          metricOutcomes: [{ label: 'two words', outcome: 'kept', score: 0.5 }],
+        }),
+      ],
+      topPredictions: ['ts-ui'],
+    });
+
+    expect(text).toContain('metricKept(1): two words=0.500');
+    expect(parseDiagnosticDump(text)[0]!.services[0]!.metricOutcomes).toBeUndefined();
+  });
+
+  it('keeps an outcome word it does not recognise instead of dropping the metric', () => {
+    // The reader must survive an engine that adds a guard. Discarding an unknown
+    // word would shorten the inventory below its declared size, and mapping it to
+    // `kept` would silently promote a discarded metric into the competition.
+    const text = withCompetition({
+      serviceId: 'ts-order-service',
+      metricOutcomes: [{ label: 'container.memory.rss', outcome: 'transient-return', score: 0 }],
+    }).replace('container.memory.rss:transient-return', 'container.memory.rss:brand-new-guard');
+
+    const entry = parseDiagnosticDump(text)[0]!.services[0]!;
+
+    expect(entry.metricOutcomes).toEqual([
+      { label: 'container.memory.rss', outcome: 'brand-new-guard', score: 0 },
+    ]);
+  });
+
+  it('does not attach a metric inventory to the following service', () => {
+    // The formatter reorders services by anomaly score, so the metric lines can
+    // trail a service that is not the one the inventory belongs to if the
+    // parser keys on position instead of on the service it last read.
+    const text = dump({
+      services: [
+        serviceLine({
+          serviceId: 'ts-ui',
+          selfAnomaly: 0.9,
+          metricOutcomes: [{ label: 'http', outcome: 'kept', score: 1 }],
+        }),
+        serviceLine({ serviceId: 'ts-next', selfAnomaly: 0.2 }),
+      ],
+      topPredictions: ['ts-ui', 'ts-next'],
+    });
+
+    const services = parseDiagnosticDump(text)[0]!.services;
+    expect(services.map((s) => s.serviceId)).toEqual(['ts-ui', 'ts-next']);
+    expect(services[0]!.metricOutcomes).toHaveLength(1);
+    expect(services[1]!.metricOutcomes).toBeUndefined();
+  });
+});
+
+describe('familyCompetition', () => {
+  const MEMORY = { label: 'memory', pattern: /memory/i };
+  const caseWith = (faultType: string, services: ServiceSpec[]): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        faultType,
+        groundTruthServices: services.map((s) => s.serviceId),
+        services: services.map(serviceLine),
+        topPredictions: services.map((s) => s.serviceId),
+      }),
+    )[0]!;
+
+  it('separates a signature discarded by a guard from one that was out-competed', () => {
+    // The two readings call for different work, and the scalar anomaly score
+    // cannot express either — this is the only place they are told apart.
+    const dropped = caseWith('JVMMemoryStress', [
+      {
+        serviceId: 'ts-a',
+        dominant: 'k8s.pod.filesystem.usage',
+        metricOutcomes: [{ label: 'container.memory.rss', outcome: 'transient-return', score: 0 }],
+      },
+    ]);
+    const outcompeted = caseWith('JVMMemoryStress', [
+      {
+        serviceId: 'ts-b',
+        dominant: 'k8s.pod.filesystem.usage',
+        metricOutcomes: [
+          { label: 'container.memory.rss', outcome: 'kept', score: 0.2 },
+          { label: 'k8s.pod.filesystem.usage', outcome: 'kept', score: 0.9 },
+        ],
+      },
+    ]);
+
+    const [cell] = familyCompetition([dropped, outcompeted], MEMORY);
+
+    expect(cell!.cases).toBe(2);
+    expect(cell!.sourcesWithFamily).toBe(2);
+    expect(cell!.sourcesKeepingFamily).toBe(1);
+    expect(cell!.sourcesDroppingFamily).toBe(1);
+    expect(cell!.sourcesKeepingButLosingFamily).toBe(1);
+    expect(cell!.sourcesDominantInFamily).toBe(0);
+  });
+
+  it('counts the family winning its own service separately from merely surviving', () => {
+    const won = caseWith('JVMMemoryStress', [
+      {
+        serviceId: 'ts-a',
+        dominant: 'container.memory.rss',
+        metricOutcomes: [{ label: 'container.memory.rss', outcome: 'kept', score: 0.9 }],
+      },
+    ]);
+
+    const [cell] = familyCompetition([won], MEMORY);
+
+    expect(cell!.sourcesDominantInFamily).toBe(1);
+    expect(cell!.sourcesKeepingButLosingFamily).toBe(0);
+  });
+
+  it('reports a source that carries no family metric at all as a data gap', () => {
+    const absent = caseWith('ContainerKill', [
+      {
+        serviceId: 'ts-a',
+        dominant: 'container.cpu.usage',
+        metricOutcomes: [{ label: 'container.cpu.usage', outcome: 'kept', score: 0.9 }],
+      },
+    ]);
+
+    const [cell] = familyCompetition([absent], MEMORY);
+
+    expect(cell!.sourcesWithoutFamily).toBe(1);
+    expect(cell!.sourcesWithFamily).toBe(0);
+    expect(cell!.sourcesKeepingFamily).toBe(0);
+  });
+
+  it('ignores a service that is not ground truth, and one with no reported inventory', () => {
+    const text = dump({
+      groundTruthServices: ['ts-source'],
+      services: [
+        serviceLine({
+          serviceId: 'ts-bystander',
+          metricOutcomes: [{ label: 'container.memory.rss', outcome: 'kept', score: 0.9 }],
+        }),
+        serviceLine({ serviceId: 'ts-source' }),
+      ],
+      topPredictions: ['ts-bystander', 'ts-source'],
+    });
+
+    const [cell] = familyCompetition(parseDiagnosticDump(text), MEMORY);
+
+    expect(cell!.cases).toBe(1);
+    expect(cell!.sourcesWithFamily).toBe(0);
+    expect(cell!.sourcesWithoutFamily).toBe(0);
+  });
+
+  it('counts every case once even when a global pattern is supplied', () => {
+    // `test` on a global regex advances `lastIndex`, so a naive reducer answers
+    // differently on alternate calls and silently halves its counts.
+    const global = { label: 'memory', pattern: /memory/gi };
+    const one = caseWith('JVMMemoryStress', [
+      {
+        serviceId: 'ts-a',
+        dominant: 'container.memory.rss',
+        metricOutcomes: [{ label: 'container.memory.rss', outcome: 'kept', score: 0.9 }],
+      },
+    ]);
+
+    const [cell] = familyCompetition([one, one, one], global);
+
+    expect(cell!.cases).toBe(3);
+    expect(cell!.sourcesWithFamily).toBe(3);
+    expect(cell!.sourcesDominantInFamily).toBe(3);
+  });
+
+  it('orders cells by case count descending', () => {
+    const small = caseWith('JVMException', [{ serviceId: 'ts-a' }]);
+    const big = caseWith('JVMMemoryStress', [{ serviceId: 'ts-b' }]);
+
+    expect(familyCompetition([small, big, big], MEMORY).map((c) => c.faultType)).toEqual([
+      'JVMMemoryStress',
+      'JVMException',
+    ]);
+  });
+
+  it('breaks a case-count tie by fault-type name, so the table is byte-stable', () => {
+    const zeta = caseWith('Zeta', [{ serviceId: 'ts-a' }]);
+    const alpha = caseWith('Alpha', [{ serviceId: 'ts-b' }]);
+
+    // Both input orders, so both arms of the tie-break are exercised: with two
+    // elements the sort calls the comparator exactly once.
+    expect(familyCompetition([zeta, alpha], MEMORY).map((c) => c.faultType)).toEqual([
+      'Alpha',
+      'Zeta',
+    ]);
+    expect(familyCompetition([alpha, zeta], MEMORY).map((c) => c.faultType)).toEqual([
+      'Alpha',
+      'Zeta',
+    ]);
+  });
+
+  it('renders the table with the family verdict columns', () => {
+    const report = formatMetricCompetitionReport(
+      [
+        caseWith('JVMMemoryStress', [
+          {
+            serviceId: 'ts-a',
+            dominant: 'k8s.pod.filesystem.usage',
+            metricOutcomes: [
+              { label: 'container.memory.rss', outcome: 'duty-cycled-idle', score: 0 },
+            ],
+          },
+        ]),
+      ],
+      MEMORY,
+      'dump.txt',
+    );
+
+    expect(report).toContain("FSE'26 metric competition — dump.txt");
+    expect(report).toContain('after-mode: logicHttp');
+    expect(report).toContain('tracked family: memory');
+    expect(report).toContain('JVMMemoryStress');
+    expect(report).toContain('has-fam');
+    expect(report).toContain('kept-lost');
+  });
+
+  it('says so rather than printing an empty table when no block parsed', () => {
+    expect(formatMetricCompetitionReport([], MEMORY, 'dump.txt')).toContain(
+      'No DIAG blocks were parsed.',
+    );
   });
 });
