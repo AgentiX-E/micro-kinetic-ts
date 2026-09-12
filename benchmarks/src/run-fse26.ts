@@ -50,6 +50,8 @@ import {
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
+import { buildFSE26Report, formatFSE26ConfigLine, type FSE26RunConfig } from './fse26-report.js';
+
 interface CliOptions {
   dataDir: string;
   maxCases: number;
@@ -188,6 +190,7 @@ function buildDiagnostic(
   benchCase: BenchmarkCase,
   faultGraph: FaultPropagationGraph,
   ranking: RootCauseResult[],
+  logSignalMode: string,
 ): string {
   const injectTime = benchCase.injectTime;
   const services: FSE26DiagnosticService[] = [];
@@ -239,6 +242,7 @@ function buildDiagnostic(
     groundTruthServices: raw.groundTruthServices,
     services,
     topPredictions: ranking.map((r) => r.serviceId),
+    logSignalMode,
   });
 }
 
@@ -246,6 +250,18 @@ async function main(): Promise<void> {
   const opts = parseArgs();
   const loader = new FSE26Loader();
   const dropSet = new Set(opts.dropMetrics);
+
+  // The run configuration, built once. Both renderings of it — the header line
+  // and the `config` object in the JSON artifact — come from this object, so
+  // they cannot disagree about the mode; that is how the JSON lost `logMode`
+  // while the line kept it, leaving two artifacts 24.2pp apart with byte-equal
+  // `config` blocks.
+  const runConfig: FSE26RunConfig = {
+    logWeight: opts.logWeight,
+    logSignalMode: opts.logMode,
+    rankNormalization: opts.rankNormalization,
+    dropMetrics: opts.dropMetrics,
+  };
 
   // Production ranking config: the log signal is shipped enabled (benchmark
   // #220 net-positive, zero regression); every other causal prior is opt-in.
@@ -258,9 +274,7 @@ async function main(): Promise<void> {
   console.log("Micro-Kinetic — FSE'26 RCABench");
   console.log('═'.repeat(65));
   console.log(`Data:   ${opts.dataDir}`);
-  console.log(
-    `Config: logWeight=${opts.logWeight} logMode=${opts.logMode} rankNormalization=${opts.rankNormalization}`,
-  );
+  console.log(formatFSE26ConfigLine(runConfig));
   if (opts.dropMetrics.length > 0) {
     console.log(`Ablation: dropping metric names [${opts.dropMetrics.join(', ')}]`);
   }
@@ -331,7 +345,7 @@ async function main(): Promise<void> {
       if (unlimited || dumped < opts.diagnoseLimit) {
         diagnosed.set(faultType, dumped + 1);
         if (faultGraph) {
-          console.log(buildDiagnostic(raw, benchCase, faultGraph, ranking));
+          console.log(buildDiagnostic(raw, benchCase, faultGraph, ranking, opts.logMode));
         }
       }
     }
@@ -380,29 +394,18 @@ async function main(): Promise<void> {
 
   // ── Structured output (for CI artifact) ──────────────────
   if (opts.output) {
-    const report = {
-      dataset: 'fse26',
+    const report = buildFSE26Report({
       anchor: { sotaAvgTop1: ANCHOR_AVG, sotaBestTop1: ANCHOR_BEST },
-      config: { logWeight: opts.logWeight, rankNormalization: opts.rankNormalization },
+      config: runConfig,
       cases: predictionsPerCase.length,
       top1,
       top3,
       top5,
-      deltaVsSotaAvg: delta,
       loadErrors,
       engineErrors,
       emptyGraphs,
-      perFaultType: Object.fromEntries(
-        sortedFaults.map(([ft, cell]) => [
-          ft,
-          {
-            total: cell.total,
-            correct: cell.correct,
-            top1: cell.total > 0 ? cell.correct / cell.total : 0,
-          },
-        ]),
-      ),
-    };
+      perFaultType: faultCells,
+    });
     writeFileSync(opts.output, JSON.stringify(report, null, 2));
     console.log(`\nResults written to ${opts.output}`);
   }

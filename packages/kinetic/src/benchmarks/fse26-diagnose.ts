@@ -68,6 +68,12 @@ export interface FSE26DiagnosticInput {
   readonly services: readonly FSE26DiagnosticService[];
   /** The engine's top-K predicted service IDs, in rank order. */
   readonly topPredictions: readonly string[];
+  /**
+   * The log-signal mode this run scored with. Required rather than optional:
+   * the per-service `logic` and `http` counts below are gated by the mode, so a
+   * block without it cannot be interpreted after being copied out of a log.
+   */
+  readonly logSignalMode: string;
 }
 
 /**
@@ -115,7 +121,7 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
   lines.push(
     `DIAG datapack=${input.datapack} faultType=${input.faultType} GT=[${input.groundTruthServices.join(
       ', ',
-    )}] services=${input.services.length}`,
+    )}] services=${input.services.length} logMode=${input.logSignalMode}`,
   );
 
   for (const service of ordered) {

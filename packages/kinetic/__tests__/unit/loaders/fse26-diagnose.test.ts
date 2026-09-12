@@ -40,6 +40,7 @@ function input(overrides: Partial<FSE26DiagnosticInput>): FSE26DiagnosticInput {
     groundTruthServices: ['ts-order-service'],
     services: [],
     topPredictions: [],
+    logSignalMode: 'logicHttp',
     ...overrides,
   };
 }
@@ -52,6 +53,13 @@ describe('formatFSE26Diagnostic', () => {
         'GT=[ts-order-service] services=0',
     );
     expect(out).toContain('prediction=[]');
+  });
+
+  it('names the log-signal mode the counts were gated by', () => {
+    // The `logic` and `http` counts are mode-dependent, so the block has to say
+    // which mode produced it or it cannot be read after being lifted out of a log.
+    expect(formatFSE26Diagnostic(input({}))).toContain('logMode=logicHttp');
+    expect(formatFSE26Diagnostic(input({ logSignalMode: 'count' }))).toContain('logMode=count');
   });
 
   it('sorts services by self-anomaly descending, then service id ascending', () => {
