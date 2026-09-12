@@ -26,6 +26,7 @@ import {
 import type {
   LeaderboardEntry,
   LeaderboardTable,
+  OursMeasuredProvenance,
   Provenance,
 } from '../../../src/benchmarks/leaderboard/sota-leaderboard.js';
 
@@ -104,7 +105,10 @@ describe('createSotaLeaderboard', () => {
   });
 
   it('records our two measured cells with the reproducing commit', () => {
-    const ours = table.entries.filter((e) => isOursMeasured(e.provenance));
+    const ours = table.entries.filter(
+      (e): e is LeaderboardEntry & { readonly provenance: OursMeasuredProvenance } =>
+        isOursMeasured(e.provenance),
+    );
     expect(ours).toHaveLength(2);
     for (const entry of ours) {
       expect(entry.provenance.commit).toBe('80709c2');

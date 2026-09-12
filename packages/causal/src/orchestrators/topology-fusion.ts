@@ -43,8 +43,18 @@ export interface FusedEdge extends CallEdge {
  * Result of a topology fusion operation.
  */
 export interface TopologyFusionResult {
-  /** The fused service call graph. */
-  readonly graph: ServiceCallGraph;
+  /**
+   * The fused service call graph.
+   *
+   * Typed as {@link FusedServiceCallGraph} rather than a plain
+   * `ServiceCallGraph`, because every edge in it is a {@link FusedEdge}: the
+   * fusion step attaches `providerId`, `fusedConfidence` and `provenance` to
+   * each one, ring-connect edges included. Declaring the plain graph here would
+   * erase that enrichment from the public type, forcing every consumer that
+   * needs it to cast -- and a cast is exactly how a renamed field goes
+   * unnoticed while the assertions that read it keep passing on `undefined`.
+   */
+  readonly graph: FusedServiceCallGraph;
   /** Total number of fused edges (excluding ring-connect). */
   readonly fusedEdgeCount: number;
   /** Edges contributed by each provider (providerId → count). */
@@ -57,6 +67,16 @@ export interface TopologyFusionResult {
   readonly averageConfidence: number;
 }
 
+/**
+ * A service call graph whose edges carry fusion provenance.
+ *
+ * Assignable to `ServiceCallGraph` (the edge array is covariant), so widening a
+ * `TopologyFusionResult.graph` reference to the plain graph stays legal.
+ */
+export interface FusedServiceCallGraph extends ServiceCallGraph {
+  readonly edges: readonly FusedEdge[];
+}
+
 // ── Config ────────────────────────────────────────────────
 
 /**
@@ -65,15 +85,24 @@ export interface TopologyFusionResult {
 export interface TopologyFusionConfig {
   /** Providers ordered by priority (highest confidence first). */
   readonly providers: readonly ITopologyProvider[];
-  /** Whether to ring-connect unmatched services (default: true). */
-  readonly ringConnectUnmatched: boolean;
+  /**
+   * Whether to ring-connect unmatched services (default: true).
+   *
+   * The three fields below are OPTIONAL, which is what the constructor has
+   * always implemented: it spreads them over
+   * {@link DEFAULT_TOPOLOGY_FUSION_CONFIG}. Declaring them required made the
+   * common `new TopologyFusion({ providers })` call a type error, so every
+   * caller that wanted the documented defaults had to either list all three or
+   * cast -- contradicting both the defaults and the doc comments.
+   */
+  readonly ringConnectUnmatched?: boolean;
   /** Edge type for ring-connect edges (default: REST). */
-  readonly ringConnectType: EdgeType;
+  readonly ringConnectType?: EdgeType;
   /** Minimum confidence to accept a provider edge (default: 0). */
-  readonly minEdgeConfidence: number;
+  readonly minEdgeConfidence?: number;
 }
 
-export const DEFAULT_TOPOLOGY_FUSION_CONFIG: Omit<TopologyFusionConfig, 'providers'> =
+export const DEFAULT_TOPOLOGY_FUSION_CONFIG: Required<Omit<TopologyFusionConfig, 'providers'>> =
   Object.freeze({
     ringConnectUnmatched: true,
     ringConnectType: 'REST' as const,
@@ -94,7 +123,12 @@ export const DEFAULT_TOPOLOGY_FUSION_CONFIG: Omit<TopologyFusionConfig, 'provide
  * ```
  */
 export class TopologyFusion {
-  private readonly config: TopologyFusionConfig;
+  /**
+   * The accepted config with every default applied. `Required<>` at the
+   * storage boundary is what lets the rest of the class read the defaults as
+   * plain values while callers may still omit them.
+   */
+  private readonly config: Required<TopologyFusionConfig>;
 
   constructor(config: TopologyFusionConfig) {
     this.config = {

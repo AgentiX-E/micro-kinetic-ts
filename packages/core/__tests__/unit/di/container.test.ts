@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import fc from 'fast-check';
 import {
+  CircularDependencyError,
   Container,
   ContainerResolutionError,
-  CircularDependencyError,
   DI_TOKENS,
 } from '@agentix-e/micro-kinetic-core';
+import fc from 'fast-check';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 describe('Container', () => {
   let container: Container;
@@ -85,7 +85,10 @@ describe('Container', () => {
 
     it('should resolve dependencies through factory', () => {
       container.register(DI_TOKENS.MATRIX_OPS, () => 'matrix');
-      container.register(DI_TOKENS.RCA_ENGINE, (c) => `engine-with-${c.resolve(DI_TOKENS.MATRIX_OPS)}`);
+      container.register(
+        DI_TOKENS.RCA_ENGINE,
+        (c) => `engine-with-${c.resolve(DI_TOKENS.MATRIX_OPS)}`,
+      );
       const engine = container.resolve<string>(DI_TOKENS.RCA_ENGINE);
       expect(engine).toBe('engine-with-matrix');
     });
@@ -231,10 +234,14 @@ describe('Container', () => {
 
     it('should create new instances for transient', () => {
       let calls = 0;
-      container.register(DI_TOKENS.MATRIX_OPS, () => {
-        calls++;
-        return {};
-      }, false);
+      container.register(
+        DI_TOKENS.MATRIX_OPS,
+        () => {
+          calls++;
+          return {};
+        },
+        false,
+      );
       container.resolve(DI_TOKENS.MATRIX_OPS);
       container.resolve(DI_TOKENS.MATRIX_OPS);
       expect(calls).toBe(2);
@@ -242,10 +249,14 @@ describe('Container', () => {
 
     it('should only call factory once for singleton', () => {
       let calls = 0;
-      container.register(DI_TOKENS.MATRIX_OPS, () => {
-        calls++;
-        return {};
-      }, true);
+      container.register(
+        DI_TOKENS.MATRIX_OPS,
+        () => {
+          calls++;
+          return {};
+        },
+        true,
+      );
       container.resolve(DI_TOKENS.MATRIX_OPS);
       container.resolve(DI_TOKENS.MATRIX_OPS);
       expect(calls).toBe(1);
@@ -336,12 +347,12 @@ describe('Container - property-based tests', () => {
     for (let i = 0; i < 150; i++) {
       tokens.push(Symbol.for(`mass-${i}`));
     }
-    for (let i = 0; i < tokens.length; i++) {
-      c.register(tokens[i], () => i);
+    for (const [i, token] of tokens.entries()) {
+      c.register(token, () => i);
     }
     expect(c.size).toBe(150);
-    for (let i = 0; i < tokens.length; i++) {
-      expect(c.resolve(tokens[i])).toBe(i);
+    for (const [i, token] of tokens.entries()) {
+      expect(c.resolve(token)).toBe(i);
     }
   });
 });

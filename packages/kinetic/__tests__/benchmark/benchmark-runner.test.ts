@@ -1,9 +1,11 @@
 import {
   Container,
   DI_TOKENS,
+  invariant,
   type FaultCategory,
   type IContainer,
   type IRCAEngine,
+  type RootCauseResult,
   type TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -51,7 +53,7 @@ function createMockEngine(): IRCAEngine {
       dominantMetrics: new Map(
         [...callGraph.nodes.keys()].map((id) => [
           id,
-          { label: 'cpu', head: [0.1, 0.2, 0.3], tail: [0.8, 0.9] },
+          { label: 'cpu', head: [0.1, 0.2, 0.3], tail: [0.8, 0.9], transientSkipped: [] },
         ]),
       ),
       detectedCycles: [],
@@ -59,7 +61,7 @@ function createMockEngine(): IRCAEngine {
       pruneThreshold: 0.001,
     }),
     analyze: async (_graph, topK = 5) => {
-      const results = [];
+      const results: RootCauseResult[] = [];
       // First result: correct service but generic fault type
       results.push({
         serviceId: 'service_1',
@@ -95,6 +97,16 @@ function createContainer(): IContainer {
   const container = new Container();
   container.register(DI_TOKENS.RCA_ENGINE, () => createMockEngine());
   return container;
+}
+
+/**
+ * Unwrap the first series of a generator result, failing loudly when the
+ * generator returned nothing (the fault generators always return >= 1).
+ */
+function firstSeries(series: readonly TimeSeries[]): TimeSeries {
+  const [first] = series;
+  invariant(first !== undefined, 'fault generator must return at least one series');
+  return first;
 }
 
 // ── Metrics Tests ─────────────────────────────────────────
@@ -176,7 +188,7 @@ describe('Standalone Metrics', () => {
       const predictions = [
         { serviceId: 'svc_a', confidence: 0.9 },
         { serviceId: 'svc_b', confidence: 0.5 },
-      ].map((p, i) => ({
+      ].map((p, i): RootCauseResult => ({
         ...p,
         faultType: { category: 'CPU', subType: '', severity: 'major' as const },
         rank: i + 1,
@@ -268,7 +280,7 @@ describe('Standalone Metrics', () => {
         { serviceId: 'svc_b', confidence: 0.9 },
         { serviceId: 'svc_a', confidence: 0.8 },
         { serviceId: 'svc_c', confidence: 0.7 },
-      ].map((p, i) => ({
+      ].map((p, i): RootCauseResult => ({
         ...p,
         faultType: { category: 'CPU', subType: '', severity: 'major' as const },
         rank: i + 1,
@@ -283,15 +295,17 @@ describe('Standalone Metrics', () => {
     });
 
     it('should return 0 when not found', () => {
-      const predictions = [{ serviceId: 'svc_a', confidence: 0.9 }].map((p, i) => ({
-        ...p,
-        faultType: { category: 'CPU', subType: '', severity: 'major' as const },
-        rank: i + 1,
-        evidenceMetrics: [],
-        propagationDepth: 1,
-        propagationErrorBound: 0.01,
-        viaTreeSearch: false,
-      }));
+      const predictions = [{ serviceId: 'svc_a', confidence: 0.9 }].map(
+        (p, i): RootCauseResult => ({
+          ...p,
+          faultType: { category: 'CPU', subType: '', severity: 'major' as const },
+          rank: i + 1,
+          evidenceMetrics: [],
+          propagationDepth: 1,
+          propagationErrorBound: 0.01,
+          viaTreeSearch: false,
+        }),
+      );
       expect(computeMRR(predictions, 'svc_z')).toBe(0);
     });
   });
@@ -352,14 +366,19 @@ describe('Standalone Metrics', () => {
     });
 
     it('should handle FaultType objects (category + subType)', () => {
-      const prediction = {
+      // MEMORY + LEAK normalizes to the real 'MEMORY_LEAK' taxonomy entry.
+      const prediction: RootCauseResult = {
         serviceId: 'svc_a',
-        faultType: { category: 'NETWORK', subType: 'DELAY' },
+        faultType: { category: 'MEMORY', subType: 'LEAK', severity: 'major' },
         confidence: 0.9,
         rank: 1,
-      } as RootCauseResult;
-      expect(computeTA(prediction, 'network_delay')).toBe(1);
-      expect(computeTA(prediction, 'network-delay')).toBe(1);
+        evidenceMetrics: [],
+        propagationDepth: 1,
+        propagationErrorBound: 0,
+        viaTreeSearch: false,
+      };
+      expect(computeTA(prediction, 'memory_leak')).toBe(1);
+      expect(computeTA(prediction, 'memory-leak')).toBe(1);
     });
 
     it('should normalize non-string non-object fault type via String()', () => {
@@ -490,7 +509,7 @@ describe('SyntheticBenchmarkGenerator', () => {
 
     it('should generate CPU fault with increasing values after injection', () => {
       const series = generator.generateCPUFault(timestamps, injectIndex);
-      const cpuValues = series[0].values;
+      const cpuValues = firstSeries(series).values;
       const beforeInject = cpuValues.slice(0, injectIndex).reduce((a, b) => a + b, 0) / injectIndex;
       const afterInject =
         cpuValues.slice(injectIndex).reduce((a, b) => a + b, 0) / (cpuValues.length - injectIndex);
@@ -499,7 +518,7 @@ describe('SyntheticBenchmarkGenerator', () => {
 
     it('should generate MEM fault with monotonic growth', () => {
       const series = generator.generateMEMFault(timestamps, injectIndex);
-      const memValues = series[0].values;
+      const memValues = firstSeries(series).values;
       // After injection, the overall trend should grow
       // Compare average of first half of post-injection vs second half
       const postInject = Array.from(memValues.slice(injectIndex));
@@ -512,7 +531,7 @@ describe('SyntheticBenchmarkGenerator', () => {
 
     it('should generate DISK fault with increased I/O', () => {
       const series = generator.generateDISKFault(timestamps, injectIndex);
-      const readValues = series[0].values;
+      const readValues = firstSeries(series).values;
       const beforeAvg = readValues.slice(0, injectIndex).reduce((a, b) => a + b, 0) / injectIndex;
       const afterAvg =
         readValues.slice(injectIndex).reduce((a, b) => a + b, 0) /
@@ -522,15 +541,19 @@ describe('SyntheticBenchmarkGenerator', () => {
 
     it('should generate DELAY fault with growing latency', () => {
       const series = generator.generateDELAYFault(timestamps, injectIndex);
-      const latValues = series[0].values;
+      const latValues = firstSeries(series).values;
       const lastValue = latValues[latValues.length - 1];
       const firstBefore = latValues[0];
+      invariant(
+        lastValue !== undefined && firstBefore !== undefined,
+        'DELAY series must be non-empty',
+      );
       expect(lastValue).toBeGreaterThan(firstBefore * 10);
     });
 
     it('should generate LOSS fault with elevated loss rate', () => {
       const series = generator.generateLOSSFault(timestamps, injectIndex);
-      const lossValues = series[0].values;
+      const lossValues = firstSeries(series).values;
       const afterAvg =
         lossValues.slice(injectIndex).reduce((a, b) => a + b, 0) /
         (lossValues.length - injectIndex);
@@ -539,7 +562,7 @@ describe('SyntheticBenchmarkGenerator', () => {
 
     it('should generate SOCKET fault with growing socket count', () => {
       const series = generator.generateSOCKETFault(timestamps, injectIndex);
-      const socketValues = series[0].values;
+      const socketValues = firstSeries(series).values;
       const afterAvg =
         socketValues.slice(injectIndex).reduce((a, b) => a + b, 0) /
         (socketValues.length - injectIndex);
@@ -699,7 +722,12 @@ describe('BenchmarkRunner', () => {
       const failingEngine: IRCAEngine = {
         buildFaultGraph: vi.fn(() => ({
           callGraph: { nodes: new Map(), edges: [], systemLoad: 0 },
+          propagationWeights: new Float64Array(0),
           anomalyScores: new Map(),
+          anomalyOnsetTimes: new Map(),
+          detectedCycles: [],
+          totalCycleContribution: 0,
+          pruneThreshold: 0.001,
         })),
         analyze: vi.fn(() => Promise.reject(new Error('Engine crashed'))),
         getCycleContributionBound: () => 0,
@@ -726,11 +754,18 @@ describe('BenchmarkRunner', () => {
       const emptyEngine: IRCAEngine = {
         buildFaultGraph: vi.fn(() => ({
           callGraph: {
-            nodes: new Map([['svc_a', { serviceId: 'svc_a', dependencies: [] }]]),
+            nodes: new Map([
+              ['svc_a', { id: 'svc_a', name: 'svc_a', namespace: 'test', labels: {} }],
+            ]),
             edges: [],
             systemLoad: 0,
           },
+          propagationWeights: new Float64Array(0),
           anomalyScores: new Map(),
+          anomalyOnsetTimes: new Map(),
+          detectedCycles: [],
+          totalCycleContribution: 0,
+          pruneThreshold: 0.001,
         })),
         analyze: vi.fn(() => Promise.resolve([])),
         getCycleContributionBound: () => 0,
@@ -759,13 +794,17 @@ describe('BenchmarkRunner', () => {
       const rankedEngine: IRCAEngine = {
         buildFaultGraph: (callGraph) => ({
           callGraph,
+          propagationWeights: new Float64Array(callGraph.edges.length),
           anomalyScores: new Map(
             [...callGraph.nodes.keys()].map((id) => [id, id === 'service_2' ? 0.9 : 0.1]),
           ),
           anomalyOnsetTimes: new Map(),
+          detectedCycles: [],
+          totalCycleContribution: 0,
+          pruneThreshold: 0.001,
         }),
         analyze: async (_graph, topK = 5) => {
-          const mk = (id: string, rank: number) => ({
+          const mk = (id: string, rank: number): RootCauseResult => ({
             serviceId: id,
             faultType: { category: 'CPU', subType: '', severity: 'major' as const },
             confidence: 1 - rank * 0.1,
@@ -787,7 +826,7 @@ describe('BenchmarkRunner', () => {
       container.register(DI_TOKENS.RCA_ENGINE, () => rankedEngine);
       const runner = new BenchmarkRunner(container);
 
-      const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+      const generator = new SyntheticBenchmarkGenerator(42);
       // Force every generated case's ground-truth service to 'service_2'.
       const suite = generator.generateRCAEvalSuite('topk-distinction', 4);
       const patchedCases = suite.cases.map((c) => ({
@@ -813,13 +852,17 @@ describe('BenchmarkRunner', () => {
       const correctEngine: IRCAEngine = {
         buildFaultGraph: (callGraph) => ({
           callGraph,
+          propagationWeights: new Float64Array(callGraph.edges.length),
           anomalyScores: new Map(
             [...callGraph.nodes.keys()].map((id) => [id, id === 'service_1' ? 0.9 : 0.1]),
           ),
           anomalyOnsetTimes: new Map(),
+          detectedCycles: [],
+          totalCycleContribution: 0,
+          pruneThreshold: 0.001,
         }),
         analyze: async (_graph, topK = 5) => {
-          const mk = (id: string, rank: number) => ({
+          const mk = (id: string, rank: number): RootCauseResult => ({
             serviceId: id,
             faultType: { category: 'CPU', subType: '', severity: 'major' as const },
             confidence: 1 - rank * 0.1,
@@ -840,7 +883,7 @@ describe('BenchmarkRunner', () => {
       container.register(DI_TOKENS.RCA_ENGINE, () => correctEngine);
       const runner = new BenchmarkRunner(container);
 
-      const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+      const generator = new SyntheticBenchmarkGenerator(42);
       const suite = generator.generateRCAEvalSuite('topk-correct', 4);
       const patchedCases = suite.cases.map((c) => ({
         ...c,
@@ -1065,7 +1108,7 @@ describe('RCA Engine Integration', () => {
     const benchCase = generator.generateRCAEvalCase('CPU', 3);
     const caseWithLogs = {
       ...benchCase,
-      logs: [{ timestamp: 1000, service: 'service_1', level: 'ERROR' as const }],
+      logs: [{ timestamp: 1000, service: 'service_1', message: 'boom', level: 'ERROR' as const }],
     };
     await runner.runSuite({ name: 'logs-fwd', cases: [caseWithLogs], totalCases: 1 });
 
@@ -1818,10 +1861,7 @@ describe('BenchmarkRunner prediction enrichment', () => {
 
 // ── Helpers ───────────────────────────────────────────────
 
-function makePrediction(
-  serviceId: string,
-  faultCategory = 'CPU',
-): import('@agentix-e/micro-kinetic-core').RootCauseResult {
+function makePrediction(serviceId: string, faultCategory: FaultCategory = 'CPU'): RootCauseResult {
   return {
     serviceId,
     faultType: { category: faultCategory, subType: '', severity: 'major' },
@@ -1896,7 +1936,7 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
       discoverNewEdges: true,
     });
 
-    const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+    const generator = new SyntheticBenchmarkGenerator(42);
     const suite = generator.generateRCAEvalSuite('trace-suite', 2);
     const result = await runner.runSuite(suite);
 
@@ -1913,7 +1953,7 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
       spans: [],
     });
 
-    const generator = new SyntheticBenchmarkGenerator({ seed: 33 });
+    const generator = new SyntheticBenchmarkGenerator(33);
     const suite = generator.generateRCAEvalSuite('no-trace', 2);
     const result = await runner.runSuite(suite);
 
@@ -1941,7 +1981,7 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
       pruneUnobserved: true,
     });
 
-    const generator = new SyntheticBenchmarkGenerator({ seed: 42 });
+    const generator = new SyntheticBenchmarkGenerator(42);
     const suite = generator.generateRCAEvalSuite('per-case-trace', 2);
 
     // Attach per-case traces (BenchmarkTraceSpan shape — structurally a

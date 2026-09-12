@@ -76,14 +76,14 @@ function makeGraph(nodes: string[], edges: Array<[string, string]>): ServiceCall
 
 function makeFaultMetrics(nodeIds: string[], fault: string): MetricMap {
   const m = new Map<string, readonly TimeSeries[]>();
-  const timestamps = new Float64Array([0, 60000, 120000, 180000, 240000]);
+  const timestamps = [0, 60000, 120000, 180000, 240000];
   for (const id of nodeIds) {
     // The faulting service spikes to 100 in the final sample; the others stay
     // low (30) so the engine has a clear root-cause signal.
     const values = new Float64Array(
       id === fault ? [10, 11, 12, 10, 100] : [10, 11, 12, 10, 30],
     );
-    m.set(id, [{ label: 'cpu', values, timestamps }]);
+    m.set(id, [{ label: 'cpu', values, timestamps, unit: 'percent' }]);
   }
   return m;
 }

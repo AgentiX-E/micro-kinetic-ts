@@ -1,17 +1,23 @@
-import { describe, it, expect } from 'vitest';
 import type {
-  BenchmarkDatasetId,
-  BenchmarkCase,
   AvgAtK,
+  BenchmarkCase,
+  BenchmarkDatasetId,
+  BenchmarkResult,
+  EntityFaultProcessScores,
   FaultTypeAccuracy,
   LA_TA_Scores,
-  EntityFaultProcessScores,
-  BenchmarkResult,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Benchmark types - BenchmarkDatasetId', () => {
   it('should accept all valid dataset IDs', () => {
-    const ids: BenchmarkDatasetId[] = ['rcaeval-re1', 'rcaeval-re2', 'rcaeval-re3', 'aiops2025', 'rca100'];
+    const ids: BenchmarkDatasetId[] = [
+      'rcaeval-re1',
+      'rcaeval-re2',
+      'rcaeval-re3',
+      'aiops2025',
+      'rca100',
+    ];
     for (const id of ids) {
       expect(id.length).toBeGreaterThan(0);
     }
@@ -48,11 +54,18 @@ describe('Benchmark types - BenchmarkCase', () => {
         'svc-a': { timestamps: [1, 2], values: [10, 20], metricName: 'cpu' },
       },
       logs: [{ timestamp: 1995000, serviceId: 'svc-a', level: 'ERROR', message: 'OOM' }],
-      traces: [{
-        traceId: 't1', spanId: 's1', parentSpanId: 'p1',
-        serviceId: 'svc-a', operationName: 'POST /pay',
-        startTime: 1990000, duration: 100, status: 'ERROR',
-      }],
+      traces: [
+        {
+          traceId: 't1',
+          spanId: 's1',
+          parentSpanId: 'p1',
+          serviceId: 'svc-a',
+          operationName: 'POST /pay',
+          startTime: 1990000,
+          duration: 100,
+          status: 'ERROR',
+        },
+      ],
     };
     expect(c.groundTruthMetric).toBe('heap_used');
     expect(c.logs?.length).toBe(1);
@@ -61,15 +74,27 @@ describe('Benchmark types - BenchmarkCase', () => {
 
   it('should support trace status OK', () => {
     const c: BenchmarkCase = {
-      caseId: 'c3', datasetId: 'rca100', systemName: 'SockShop',
-      faultType: 'NETWORK_DELAY', groundTruthServiceId: 'orders',
-      anomalyTimestamp: 3000, injectTimestamp: 2000, metrics: {},
-      traces: [{
-        traceId: 't2', spanId: 's2', serviceId: 'orders',
-        operationName: 'GET /orders', startTime: 2000, duration: 50, status: 'OK',
-      }],
+      caseId: 'c3',
+      datasetId: 'rca100',
+      systemName: 'SockShop',
+      faultType: 'NETWORK_DELAY',
+      groundTruthServiceId: 'orders',
+      anomalyTimestamp: 3000,
+      injectTimestamp: 2000,
+      metrics: {},
+      traces: [
+        {
+          traceId: 't2',
+          spanId: 's2',
+          serviceId: 'orders',
+          operationName: 'GET /orders',
+          startTime: 2000,
+          duration: 50,
+          status: 'OK',
+        },
+      ],
     };
-    expect(c.traces?.[0].status).toBe('OK');
+    expect(c.traces?.[0]?.status).toBe('OK');
   });
 });
 
@@ -143,8 +168,11 @@ describe('Benchmark types - BenchmarkResult', () => {
       avgAtK: { avgAt1: 0.7, avgAt3: 0.8, avgAt5: 0.85 },
       perFaultType: [{ faultType: 'CPU', totalCases: 100, correctAt5: 90, accuracy: 0.9 }],
       laTaScores: {
-        locationAccuracy: 0.75, typeAccuracy: 0.8,
-        explainability: 0.7, efficiency: 0.9, compositeScore: 78,
+        locationAccuracy: 0.75,
+        typeAccuracy: 0.8,
+        explainability: 0.7,
+        efficiency: 0.9,
+        compositeScore: 78,
       },
       executionTimeMs: 10000,
       memoryPeakBytes: 2097152,
@@ -162,8 +190,10 @@ describe('Benchmark types - BenchmarkResult', () => {
       avgAtK: { avgAt1: 0.9, avgAt3: 0.95, avgAt5: 0.97 },
       perFaultType: [],
       efpScores: {
-        entityScore: 0.8, faultScore: 0.85,
-        processScore: 0.9, compositeScore: 83.5,
+        entityScore: 0.8,
+        faultScore: 0.85,
+        processScore: 0.9,
+        compositeScore: 83.5,
       },
       executionTimeMs: 3000,
       memoryPeakBytes: 1048576,

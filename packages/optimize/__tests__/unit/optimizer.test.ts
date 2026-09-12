@@ -24,7 +24,10 @@ function makeTS(label: string, values: number[]): TimeSeries {
   return {
     label,
     values: new Float64Array(values),
-    timestamps: new Float64Array(values.map((_, i) => i * 1000)),
+    // TimeSeries.timestamps is declared readonly number[]; production always
+    // builds it from plain arrays, so keep the fixture in the same shape.
+    timestamps: values.map((_, i) => i * 1000),
+    unit: 'percent',
   };
 }
 
@@ -201,7 +204,7 @@ describe('AdaptiveConfigOptimizer', () => {
 describe('AdaptiveConfigOptimizer on known function', () => {
   it('should find near-optimal config for synthetic function', async () => {
     // f(θ) = 0.8 - (decayAlpha - 0.85)^2 * 5 - penalty for suboptimal discrete choices
-    const trueF = (cfg: RCAConfiguration): number => {
+    const trueF = async (cfg: RCAConfiguration): Promise<number> => {
       let score = 0.8;
       score -= (cfg.continuous.decayAlpha - 0.85) * (cfg.continuous.decayAlpha - 0.85) * 5;
       if (cfg.discrete.baselineStrategy !== 'q25') score -= 0.1;

@@ -48,8 +48,17 @@ export interface HistoricalConfig {
   readonly collisionWeight: number;
   readonly topoWeight: number;
   readonly logWeight: number;
-  readonly traceWeight: number;
-  readonly prismWeight: number;
+  /**
+   * Trace-activity weight. OPTIONAL, mirroring `RankingWeights` in core, which
+   * documents it as "absent means 0 (disabled)": a record describes a config
+   * that actually ran, so it may legitimately omit it. Every other reader in
+   * this package already treats it that way (`integration.ts`, `config-space.ts`).
+   */
+  readonly traceWeight?: number;
+  /**
+   * PRISM prior weight. OPTIONAL for the same reason as {@link traceWeight}.
+   */
+  readonly prismWeight?: number;
 }
 
 export interface MetaLearnerOptions {
@@ -181,8 +190,12 @@ export class MetaLearner {
       collisionWeight += weights[i]! * cfg.collisionWeight;
       topoWeight += weights[i]! * cfg.topoWeight;
       logWeight += weights[i]! * cfg.logWeight;
-      traceWeight += weights[i]! * cfg.traceWeight;
-      prismWeight += weights[i]! * cfg.prismWeight;
+      // Both are optional in `RankingWeights` (absent means 0), so an absent
+      // weight must contribute nothing rather than turn the sum into NaN. The
+      // result is written into an `RCAConfiguration` verbatim, and a NaN there
+      // silently poisons every score the config produces.
+      traceWeight += weights[i]! * (cfg.traceWeight ?? 0);
+      prismWeight += weights[i]! * (cfg.prismWeight ?? 0);
     }
 
     // ── Discrete params: weighted voting ──

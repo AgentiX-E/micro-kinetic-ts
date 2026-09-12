@@ -1,0 +1,35 @@
+/**
+ * Type-check the test suites under `packages/*\/__tests__`.
+ *
+ * Every package's own `tsconfig.json` excludes `__tests__`, and it has to:
+ * that config drives `tsup`, which must not bundle tests into `dist`. The
+ * consequence was that no compiler ever read a test file, so the suites
+ * accumulated mistakes no gate could see -- and a test file is where a
+ * production contract is asserted, which makes an unchecked assertion the
+ * cheapest way to be wrong.
+ *
+ * This project exists to close that hole. It is deliberately separate from the
+ * per-package configs rather than merged into them, so that:
+ *
+ *   - `dist` keeps containing only `src`, and
+ *   - `packages/*\/src` is still checked exactly once, by the project that owns
+ *     its emit settings (this config has `noEmit`).
+ *
+ * Run it through `pnpm typecheck:tests`, or as part of `pnpm typecheck`, which
+ * is what CI and the pre-push hook call.
+ *
+ * NOTE: like the `integration-tests/` and `benchmarks/` configs, this one
+ * resolves `@agentix-e/*` imports through each package's built `dist`
+ * declarations. Run `pnpm build` first -- the same order CI uses.
+ */
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["packages/*/__tests__/**/*.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

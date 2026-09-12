@@ -14,10 +14,10 @@
  * @module causal/__tests__/unit/static-topology
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { StaticTopologyProvider } from '../../src/providers/static-topology';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { StaticTopologyProvider } from '../../src/providers/static-topology.js';
 
 const TEST_CONFIG_DIR = join(__dirname, '..', '..', '__fixtures__', 'topology-test');
 
@@ -218,7 +218,14 @@ describe('StaticTopologyProvider', () => {
       setupConfigDir(FULL_YAML);
       const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
       const graph = await provider.discover({
-        knownServiceIds: ['backend-a', 'queue-handler', 'frontend', 'backend-b', 'async-worker', 'callback-relay'],
+        knownServiceIds: [
+          'backend-a',
+          'queue-handler',
+          'frontend',
+          'backend-b',
+          'async-worker',
+          'callback-relay',
+        ],
       });
 
       const mqEdge = graph.edges.find((e) => e.from === 'backend-a' && e.to === 'queue-handler');
@@ -229,10 +236,19 @@ describe('StaticTopologyProvider', () => {
       setupConfigDir(FULL_YAML);
       const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
       const graph = await provider.discover({
-        knownServiceIds: ['queue-handler', 'async-worker', 'frontend', 'backend-a', 'backend-b', 'callback-relay'],
+        knownServiceIds: [
+          'queue-handler',
+          'async-worker',
+          'frontend',
+          'backend-a',
+          'backend-b',
+          'callback-relay',
+        ],
       });
 
-      const asyncEdge = graph.edges.find((e) => e.from === 'queue-handler' && e.to === 'async-worker');
+      const asyncEdge = graph.edges.find(
+        (e) => e.from === 'queue-handler' && e.to === 'async-worker',
+      );
       expect(asyncEdge!.type).toBe('ASYNC');
     });
 
@@ -240,7 +256,14 @@ describe('StaticTopologyProvider', () => {
       setupConfigDir(FULL_YAML);
       const provider = new StaticTopologyProvider(TEST_CONFIG_DIR);
       const graph = await provider.discover({
-        knownServiceIds: ['backend-b', 'callback-relay', 'frontend', 'backend-a', 'queue-handler', 'async-worker'],
+        knownServiceIds: [
+          'backend-b',
+          'callback-relay',
+          'frontend',
+          'backend-a',
+          'queue-handler',
+          'async-worker',
+        ],
       });
 
       const cbEdge = graph.edges.find((e) => e.from === 'backend-b' && e.to === 'callback-relay');
@@ -269,9 +292,7 @@ describe('StaticTopologyProvider', () => {
         knownServiceIds: ['service-a', 'service-b', 'orphan-svc'],
       });
 
-      const orphanEdge = graph.edges.find(
-        (e) => e.from === 'orphan-svc' || e.to === 'orphan-svc',
-      );
+      const orphanEdge = graph.edges.find((e) => e.from === 'orphan-svc' || e.to === 'orphan-svc');
       expect(orphanEdge).toBeDefined();
     });
 
@@ -286,7 +307,8 @@ describe('StaticTopologyProvider', () => {
       // But orphan-1 and orphan-2 should be ring-connected
       const allEdges = graph.edges.map((e) => `${e.from}→${e.to}`);
       // Check at least one direction exists in the ring
-      const hasOrphan1to2 = allEdges.includes('orphan-1→orphan-2') || allEdges.includes('orphan-2→orphan-1');
+      const hasOrphan1to2 =
+        allEdges.includes('orphan-1→orphan-2') || allEdges.includes('orphan-2→orphan-1');
       expect(hasOrphan1to2).toBe(true);
     });
 

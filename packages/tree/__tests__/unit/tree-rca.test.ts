@@ -1,31 +1,29 @@
-import { describe, it, expect } from 'vitest';
+import type { CallEdge, PrunedTree, ServiceId, TreeNodeScore } from '@agentix-e/micro-kinetic-core';
 import { TreeRCAEngine } from '@agentix-e/micro-kinetic-tree';
-import type {
-  PrunedTree,
-  ServiceId,
-  TreeNodeScore,
-  CallEdge,
-} from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
-function makeEdge(from: string, to: string): CallEdge {
+function makeEdge(from: string, to: string, p99Latency = 50): CallEdge {
   return {
     from,
     to,
     type: 'REST',
     callRate: 100,
-    p99Latency: 50,
+    p99Latency,
     errorRate: 0.01,
   };
 }
 
 function makeNodeScore(id: string, anomalyScore: number, depth = 0): [string, TreeNodeScore] {
-  return [id, {
-    nodeId: id,
-    anomalyScore,
-    childPropagationScore: 0,
-    totalScore: anomalyScore,
-    depth,
-  }];
+  return [
+    id,
+    {
+      nodeId: id,
+      anomalyScore,
+      childPropagationScore: 0,
+      totalScore: anomalyScore,
+      depth,
+    },
+  ];
 }
 
 function makePrunedTree(
@@ -82,7 +80,10 @@ describe('TreeRCAEngine', () => {
       ]);
       const tree = makePrunedTree(
         ['A', 'B', 'C'],
-        [['A', 'B'], ['B', 'C']],
+        [
+          ['A', 'B'],
+          ['B', 'C'],
+        ],
         anomalyScores,
       );
       const allEdges = [makeEdge('A', 'B'), makeEdge('B', 'C')];
@@ -126,7 +127,14 @@ describe('TreeRCAEngine', () => {
         ['B', 0.3],
         ['C', 0.2],
       ]);
-      const tree = makePrunedTree(['A', 'B', 'C'], [['A', 'B'], ['A', 'C']], anomalyScores);
+      const tree = makePrunedTree(
+        ['A', 'B', 'C'],
+        [
+          ['A', 'B'],
+          ['A', 'C'],
+        ],
+        anomalyScores,
+      );
       const allEdges = [makeEdge('A', 'B'), makeEdge('A', 'C')];
       const propWeights = new Float64Array([0.5, 0.3]);
 
@@ -201,7 +209,7 @@ describe('TreeRCAEngine', () => {
       const allEdges = [makeEdge('X', 'Y')];
       const propWeights = new Float64Array([0.5]);
       const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
-      const xResult = results.find(r => r.serviceId === 'X');
+      const xResult = results.find((r) => r.serviceId === 'X');
       expect(xResult).toBeDefined();
     });
   });
@@ -209,15 +217,33 @@ describe('TreeRCAEngine', () => {
   describe('rank', () => {
     it('ranks accumulators by totalScore', () => {
       const engine = new TreeRCAEngine();
-      const accumulators = new Map<ServiceId, {
-        anomalyScore: number;
-        childPropagationScore: number;
-        totalScore: number;
-        depth: number;
-      }>();
-      accumulators.set('svc-a', { anomalyScore: 0.3, childPropagationScore: 0, totalScore: 0.3, depth: 0 });
-      accumulators.set('svc-b', { anomalyScore: 0.9, childPropagationScore: 0, totalScore: 0.9, depth: 0 });
-      accumulators.set('svc-c', { anomalyScore: 0.6, childPropagationScore: 0, totalScore: 0.6, depth: 0 });
+      const accumulators = new Map<
+        ServiceId,
+        {
+          anomalyScore: number;
+          childPropagationScore: number;
+          totalScore: number;
+          depth: number;
+        }
+      >();
+      accumulators.set('svc-a', {
+        anomalyScore: 0.3,
+        childPropagationScore: 0,
+        totalScore: 0.3,
+        depth: 0,
+      });
+      accumulators.set('svc-b', {
+        anomalyScore: 0.9,
+        childPropagationScore: 0,
+        totalScore: 0.9,
+        depth: 0,
+      });
+      accumulators.set('svc-c', {
+        anomalyScore: 0.6,
+        childPropagationScore: 0,
+        totalScore: 0.6,
+        depth: 0,
+      });
 
       const ranked = engine.rank(accumulators, 2);
       expect(ranked.size).toBe(2);
@@ -226,15 +252,28 @@ describe('TreeRCAEngine', () => {
 
     it('limits to k even when accumulator count exceeds k', () => {
       const engine = new TreeRCAEngine();
-      const accumulators = new Map<ServiceId, {
-        anomalyScore: number;
-        childPropagationScore: number;
-        totalScore: number;
-        depth: number;
-      }>();
+      const accumulators = new Map<
+        ServiceId,
+        {
+          anomalyScore: number;
+          childPropagationScore: number;
+          totalScore: number;
+          depth: number;
+        }
+      >();
       accumulators.set('A', { anomalyScore: 1, childPropagationScore: 0, totalScore: 1, depth: 0 });
-      accumulators.set('B', { anomalyScore: 0.8, childPropagationScore: 0, totalScore: 0.8, depth: 0 });
-      accumulators.set('C', { anomalyScore: 0.6, childPropagationScore: 0, totalScore: 0.6, depth: 0 });
+      accumulators.set('B', {
+        anomalyScore: 0.8,
+        childPropagationScore: 0,
+        totalScore: 0.8,
+        depth: 0,
+      });
+      accumulators.set('C', {
+        anomalyScore: 0.6,
+        childPropagationScore: 0,
+        totalScore: 0.6,
+        depth: 0,
+      });
 
       const ranked = engine.rank(accumulators, 1);
       expect(ranked.size).toBe(1);
@@ -242,13 +281,21 @@ describe('TreeRCAEngine', () => {
 
     it('handles k larger than accumulator count', () => {
       const engine = new TreeRCAEngine();
-      const accumulators = new Map<ServiceId, {
-        anomalyScore: number;
-        childPropagationScore: number;
-        totalScore: number;
-        depth: number;
-      }>();
-      accumulators.set('S', { anomalyScore: 0.5, childPropagationScore: 0, totalScore: 0.5, depth: 0 });
+      const accumulators = new Map<
+        ServiceId,
+        {
+          anomalyScore: number;
+          childPropagationScore: number;
+          totalScore: number;
+          depth: number;
+        }
+      >();
+      accumulators.set('S', {
+        anomalyScore: 0.5,
+        childPropagationScore: 0,
+        totalScore: 0.5,
+        depth: 0,
+      });
       const ranked = engine.rank(accumulators, 5);
       expect(ranked.size).toBe(1);
     });
@@ -274,17 +321,13 @@ describe('TreeRCAEngine', () => {
       ['minor', 0.45],
       ['warning', 0.25],
     ]);
-    const tree = makePrunedTree(
-      ['critical', 'major', 'minor', 'warning'],
-      [],
-      anomalyScores,
-    );
+    const tree = makePrunedTree(['critical', 'major', 'minor', 'warning'], [], anomalyScores);
     const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 4);
 
-    const critical = results.find(r => r.serviceId === 'critical')!;
-    const major = results.find(r => r.serviceId === 'major')!;
-    const minor = results.find(r => r.serviceId === 'minor')!;
-    const warning = results.find(r => r.serviceId === 'warning')!;
+    const critical = results.find((r) => r.serviceId === 'critical')!;
+    const major = results.find((r) => r.serviceId === 'major')!;
+    const minor = results.find((r) => r.serviceId === 'minor')!;
+    const warning = results.find((r) => r.serviceId === 'warning')!;
 
     // Note: scores > 0.8 throw in confidence computation
     // Test classification logic using find
@@ -316,12 +359,11 @@ describe('TreeRCAEngine', () => {
         ['X', 0.6],
         ['Y', 0.4],
       ]);
-      const allEdges = [makeEdge('X', 'Y')];
-      allEdges[0]!.p99Latency = 100;
+      const allEdges = [makeEdge('X', 'Y', 100)];
       const tree = makePrunedTree(['X', 'Y'], [['X', 'Y']], anomalyScores);
       const propWeights = new Float64Array([0.7]);
       const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 2);
-      const xResult = results.find(r => r.serviceId === 'X');
+      const xResult = results.find((r) => r.serviceId === 'X');
       expect(xResult).toBeDefined();
     });
   });
@@ -335,16 +377,17 @@ describe('TreeRCAEngine', () => {
     ]);
     const tree = makePrunedTree(
       ['Root', 'Mid', 'Leaf'],
-      [['Root', 'Mid'], ['Mid', 'Leaf']],
+      [
+        ['Root', 'Mid'],
+        ['Mid', 'Leaf'],
+      ],
       anomalyScores,
     );
-    const allEdges = [makeEdge('Root', 'Mid'), makeEdge('Mid', 'Leaf')];
-    allEdges[0]!.p99Latency = 50;
-    allEdges[1]!.p99Latency = 100;
+    const allEdges = [makeEdge('Root', 'Mid', 50), makeEdge('Mid', 'Leaf', 100)];
     const propWeights = new Float64Array([0.5, 0.3]);
     const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 3);
     expect(results.length).toBeLessThanOrEqual(3);
-    const rootResult = results.find(r => r.serviceId === 'Root');
+    const rootResult = results.find((r) => r.serviceId === 'Root');
     expect(rootResult).toBeDefined();
   });
 
@@ -414,9 +457,7 @@ describe('TreeRCAEngine', () => {
 
   it('handles mid-level anomaly scores for fault types', () => {
     const engine = new TreeRCAEngine();
-    const anomalyScores = new Map<string, number>([
-      ['M', 0.65],
-    ]);
+    const anomalyScores = new Map<string, number>([['M', 0.65]]);
     const tree = makePrunedTree(['M'], [], anomalyScores);
     const results = engine.analyze(tree, anomalyScores, new Float64Array(0), [], 1);
     expect(results[0]!.faultType.severity).toBe('major');
@@ -432,17 +473,22 @@ describe('TreeRCAEngine', () => {
     ]);
     const tree = makePrunedTree(
       ['Top', 'Mid1', 'Mid2', 'Bottom'],
-      [['Top', 'Mid1'], ['Top', 'Mid2'], ['Mid1', 'Bottom']],
+      [
+        ['Top', 'Mid1'],
+        ['Top', 'Mid2'],
+        ['Mid1', 'Bottom'],
+      ],
       anomalyScores,
     );
-    const allEdges = [makeEdge('Top', 'Mid1'), makeEdge('Top', 'Mid2'), makeEdge('Mid1', 'Bottom')];
-    allEdges[0]!.p99Latency = 50;
-    allEdges[1]!.p99Latency = 30;
-    allEdges[2]!.p99Latency = 100;
+    const allEdges = [
+      makeEdge('Top', 'Mid1', 50),
+      makeEdge('Top', 'Mid2', 30),
+      makeEdge('Mid1', 'Bottom', 100),
+    ];
     const propWeights = new Float64Array([0.5, 0.4, 0.6]);
     const results = engine.analyze(tree, anomalyScores, propWeights, allEdges, 4);
     expect(results.length).toBeGreaterThanOrEqual(1);
-    const topResult = results.find(r => r.serviceId === 'Top');
+    const topResult = results.find((r) => r.serviceId === 'Top');
     expect(topResult).toBeDefined();
     expect(topResult!.propagationDepth).toBeGreaterThanOrEqual(1);
   });
@@ -546,7 +592,10 @@ describe('TreeRCAEngine', () => {
     ]);
     const tree = makePrunedTree(
       ['Top', 'Mid', 'Bottom'],
-      [['Top', 'Mid'], ['Mid', 'Bottom']],
+      [
+        ['Top', 'Mid'],
+        ['Mid', 'Bottom'],
+      ],
       anomalyScores,
     );
     const allEdges = [makeEdge('Top', 'Mid'), makeEdge('Mid', 'Bottom')];

@@ -15,13 +15,11 @@
  * @module ai/__tests__/unit/api-embedding
  */
 
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ApiEmbeddingConfigInput } from '../../src/providers/api-embedding-config.js';
 import {
-  resolveApiEmbeddingConfig,
   DEFAULT_RETRY_CONFIG,
-} from '../../src/providers/api-embedding-config.js';
-import type {
-  ApiEmbeddingConfigInput,
+  resolveApiEmbeddingConfig,
 } from '../../src/providers/api-embedding-config.js';
 import { ApiEmbeddingProvider } from '../../src/providers/api-embedding.js';
 import { createApiEmbeddingFromEnv } from '../../src/providers/env-embedding.js';
@@ -86,7 +84,7 @@ describe('ApiEmbeddingConfig', () => {
     });
     expect(resolved.headers).toEqual({
       'X-Custom': 'value',
-      'Authorization': 'Bearer token',
+      Authorization: 'Bearer token',
     });
   });
 });
@@ -125,7 +123,12 @@ describe('ApiEmbeddingProvider', () => {
     it('should parse embeddings and normalize by default', async () => {
       const p = new ApiEmbeddingProvider(DIM_4_CONFIG);
       const mockFetch = vi.fn().mockResolvedValue(
-        jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0], [0, 1, 0, 0]])),
+        jsonResponse(
+          mockEmbeddingResponse([
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+          ]),
+        ),
       );
       p._setFetch(mockFetch);
 
@@ -139,9 +142,7 @@ describe('ApiEmbeddingProvider', () => {
 
     it('should normalize non-unit vectors', async () => {
       const p = new ApiEmbeddingProvider(DIM_4_CONFIG);
-      p._setFetch(vi.fn().mockResolvedValue(
-        jsonResponse(mockEmbeddingResponse([[3, 4, 0, 0]])),
-      ));
+      p._setFetch(vi.fn().mockResolvedValue(jsonResponse(mockEmbeddingResponse([[3, 4, 0, 0]]))));
 
       const result = await p.embed(['service-a']);
       expect(result.vectors[0]![0]).toBeCloseTo(0.6, 5);
@@ -150,9 +151,7 @@ describe('ApiEmbeddingProvider', () => {
 
     it('should skip normalization when normalize=false', async () => {
       const p = new ApiEmbeddingProvider({ ...DIM_4_CONFIG, normalize: false });
-      p._setFetch(vi.fn().mockResolvedValue(
-        jsonResponse(mockEmbeddingResponse([[3, 4, 0, 0]])),
-      ));
+      p._setFetch(vi.fn().mockResolvedValue(jsonResponse(mockEmbeddingResponse([[3, 4, 0, 0]]))));
 
       const result = await p.embed(['service-a']);
       expect(result.vectors[0]![0]).toBeCloseTo(3, 5);
@@ -169,11 +168,7 @@ describe('ApiEmbeddingProvider', () => {
         const reqBody = JSON.parse(init.body as string);
         const inputLen = Array.isArray(reqBody.input) ? reqBody.input.length : 1;
         return Promise.resolve(
-          jsonResponse(
-            mockEmbeddingResponse(
-              Array.from({ length: inputLen }, () => [1, 0, 0, 0]),
-            ),
-          ),
+          jsonResponse(mockEmbeddingResponse(Array.from({ length: inputLen }, () => [1, 0, 0, 0]))),
         );
       });
 
@@ -190,7 +185,12 @@ describe('ApiEmbeddingProvider', () => {
       const mockFetch = vi.fn().mockImplementation(() => {
         callCount++;
         return Promise.resolve(
-          jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0], [0, 1, 0, 0]])),
+          jsonResponse(
+            mockEmbeddingResponse([
+              [1, 0, 0, 0],
+              [0, 1, 0, 0],
+            ]),
+          ),
         );
       });
 
@@ -214,35 +214,25 @@ describe('ApiEmbeddingProvider', () => {
           retryableStatuses: [429, 502, 503],
         },
       });
-      p._setFetch(vi.fn().mockResolvedValue(
-        new Response('Unauthorized', { status: 401 }),
-      ));
+      p._setFetch(vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 })));
 
-      await expect(p.embed(['service-a'])).rejects.toThrow(
-        'Embedding API error 401',
-      );
+      await expect(p.embed(['service-a'])).rejects.toThrow('Embedding API error 401');
     });
 
     it('should throw on invalid response shape', async () => {
       const p = new ApiEmbeddingProvider(DIM_4_CONFIG);
-      p._setFetch(vi.fn().mockResolvedValue(
-        jsonResponse({ error: 'something went wrong' }),
-      ));
+      p._setFetch(vi.fn().mockResolvedValue(jsonResponse({ error: 'something went wrong' })));
 
-      await expect(p.embed(['service-a'])).rejects.toThrow(
-        'Invalid embedding API response',
-      );
+      await expect(p.embed(['service-a'])).rejects.toThrow('Invalid embedding API response');
     });
 
     it('should throw on dimension mismatch', async () => {
       const p = new ApiEmbeddingProvider(DIM_4_CONFIG);
-      p._setFetch(vi.fn().mockResolvedValue(
-        jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0, 0, 0, 0, 0]])),
-      ));
-
-      await expect(p.embed(['service-a'])).rejects.toThrow(
-        'Embedding dimension mismatch',
+      p._setFetch(
+        vi.fn().mockResolvedValue(jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0, 0, 0, 0, 0]]))),
       );
+
+      await expect(p.embed(['service-a'])).rejects.toThrow('Embedding dimension mismatch');
     });
   });
 
@@ -252,7 +242,12 @@ describe('ApiEmbeddingProvider', () => {
       const mockFetch = vi.fn().mockImplementation((_url, init: RequestInit) => {
         capturedBody = JSON.parse(init.body as string);
         return Promise.resolve(
-          jsonResponse({ vectors: [[1, 0, 0, 0], [0, 1, 0, 0]] }),
+          jsonResponse({
+            vectors: [
+              [1, 0, 0, 0],
+              [0, 1, 0, 0],
+            ],
+          }),
         );
       });
 
@@ -278,13 +273,9 @@ describe('ApiEmbeddingProvider', () => {
 
     it('should throw without custom response mapper in custom format', async () => {
       const p = new ApiEmbeddingProvider({ ...DIM_4_CONFIG, format: 'custom' });
-      p._setFetch(vi.fn().mockResolvedValue(
-        jsonResponse({ vectors: [[1, 0, 0, 0]] }),
-      ));
+      p._setFetch(vi.fn().mockResolvedValue(jsonResponse({ vectors: [[1, 0, 0, 0]] })));
 
-      await expect(p.embed(['a'])).rejects.toThrow(
-        'Invalid embedding API response',
-      );
+      await expect(p.embed(['a'])).rejects.toThrow('Invalid embedding API response');
     });
   });
 
@@ -294,13 +285,9 @@ describe('ApiEmbeddingProvider', () => {
       const mockFetch = vi.fn().mockImplementation(() => {
         callCount++;
         if (callCount < 3) {
-          return Promise.resolve(
-            new Response('Rate limited', { status: 429 }),
-          );
+          return Promise.resolve(new Response('Rate limited', { status: 429 }));
         }
-        return Promise.resolve(
-          jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0]])),
-        );
+        return Promise.resolve(jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0]])));
       });
 
       const p = new ApiEmbeddingProvider({
@@ -320,9 +307,7 @@ describe('ApiEmbeddingProvider', () => {
     });
 
     it('should throw after exhausting retries', async () => {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response('Server error', { status: 502 }),
-      );
+      const mockFetch = vi.fn().mockResolvedValue(new Response('Server error', { status: 502 }));
 
       const p = new ApiEmbeddingProvider({
         ...DIM_4_CONFIG,
@@ -336,9 +321,7 @@ describe('ApiEmbeddingProvider', () => {
       p._setFetch(mockFetch);
 
       // Last retry attempt with retryable status → throws with "(retries exhausted)"
-      await expect(p.embed(['service-a'])).rejects.toThrow(
-        /Embedding API error 502/,
-      );
+      await expect(p.embed(['service-a'])).rejects.toThrow(/Embedding API error 502/);
     });
 
     it('should retry on transient network errors before succeeding', async () => {
@@ -349,9 +332,7 @@ describe('ApiEmbeddingProvider', () => {
           // Reject with a network error (not an HTTP response)
           return Promise.reject(new Error('connection reset'));
         }
-        return Promise.resolve(
-          jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0]])),
-        );
+        return Promise.resolve(jsonResponse(mockEmbeddingResponse([[1, 0, 0, 0]])));
       });
 
       const p = new ApiEmbeddingProvider({
@@ -407,9 +388,7 @@ describe('ApiEmbeddingProvider', () => {
       p._setFetch(mockFetch);
 
       // AbortError is detected and re-thrown as a timeout on the first attempt
-      await expect(p.embed(['service-a'])).rejects.toThrow(
-        'Embedding API timeout after 1234ms',
-      );
+      await expect(p.embed(['service-a'])).rejects.toThrow('Embedding API timeout after 1234ms');
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
@@ -449,8 +428,8 @@ describe('createApiEmbeddingFromEnv', () => {
       model: 'test-embedding',
       dimension: 128,
     });
-    expect(provider.modelId).toBe('test-embedding');
-    expect(provider.dimension).toBe(128);
+    expect(provider?.modelId).toBe('test-embedding');
+    expect(provider?.dimension).toBe(128);
   });
 
   it('should return null without API key (no auth header)', () => {
@@ -472,7 +451,7 @@ describe('createApiEmbeddingFromEnv', () => {
       dimension: 128,
       extraHeaders: { 'X-App': 'micro-kinetic' },
     });
-    expect(provider.modelId).toBe('test-embedding');
+    expect(provider?.modelId).toBe('test-embedding');
   });
 });
 

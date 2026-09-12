@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FileSystemStore } from '@agentix-e/micro-kinetic-storage-fs';
+import type { IKeyValueStore } from '@agentix-e/micro-kinetic-core';
 import {
   ModelStore,
   saveModel,
@@ -40,6 +41,11 @@ function makeRecord(
       temporalBonus: 0.15,
       defaultWeight: 0.05,
       childContributionCap: 1.0,
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 0,
     },
     accuracy: 0.8,
     ...overrides,

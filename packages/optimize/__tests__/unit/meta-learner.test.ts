@@ -188,3 +188,62 @@ describe('loadMetaLearner', () => {
     expect(ml.predict(makeCtx()).discrete.baselineStrategy).toBe('q25');
   });
 });
+
+// ── Optional ranking weights ──────────────────────────────
+//
+// `RankingWeights` (core) declares `traceWeight` and `prismWeight` OPTIONAL and
+// documents them as "absent means 0 (disabled)", and the optimizer's own bridge
+// reads them with `?? 0` (`src/integration.ts`). A historical record describes a
+// config that actually ran, so it may legitimately omit them. Fusion must
+// therefore treat an absent weight as 0 rather than letting `w × undefined`
+// collapse it to NaN -- a NaN here is written straight into the resulting
+// `RCAConfiguration`, which the optimizer then uses to seed its GP prior.
+
+describe('MetaLearner — optional ranking weights', () => {
+  /**
+   * A config with the optional ranking weights absent, which is what a record
+   * built from a real `RCAConfiguration` looks like when the engine ran with
+   * them disabled.
+   */
+  function withoutOptionalWeights(): HistoricalConfig {
+    const { traceWeight: _trace, prismWeight: _prism, ...rest } = makeCfg();
+    return rest;
+  }
+
+  it('fuses an absent prismWeight to 0, not NaN', () => {
+    const ml = new MetaLearner([makeRecord({ config: withoutOptionalWeights() })]);
+    const pred = ml.predict(makeCtx());
+    expect(Number.isNaN(pred.ranking.prismWeight)).toBe(false);
+    expect(pred.ranking.prismWeight).toBe(0);
+  });
+
+  it('fuses an absent traceWeight to 0, not NaN', () => {
+    const ml = new MetaLearner([makeRecord({ config: withoutOptionalWeights() })]);
+    const pred = ml.predict(makeCtx());
+    expect(Number.isNaN(pred.ranking.traceWeight)).toBe(false);
+    expect(pred.ranking.traceWeight).toBe(0);
+  });
+
+  it('keeps every fused weight finite across several records', () => {
+    const ml = new MetaLearner([
+      makeRecord({ system: 'A', config: withoutOptionalWeights() }),
+      makeRecord({ system: 'B', config: makeCfg({ prismWeight: 1.5, traceWeight: 0.5 }) }),
+      makeRecord({ system: 'C', config: withoutOptionalWeights() }),
+    ]);
+    const pred = ml.predict(makeCtx());
+    for (const [name, value] of Object.entries(pred.continuous)) {
+      expect(Number.isFinite(value), `continuous.${name}`).toBe(true);
+    }
+    for (const [name, value] of Object.entries(pred.ranking)) {
+      expect(Number.isFinite(value), `ranking.${name}`).toBe(true);
+    }
+  });
+
+  it('still honours a weight that is present', () => {
+    const ml = new MetaLearner([
+      makeRecord({ config: makeCfg({ prismWeight: 2, traceWeight: 0 }) }),
+    ]);
+    const pred = ml.predict(makeCtx());
+    expect(pred.ranking.prismWeight).toBe(2);
+  });
+});

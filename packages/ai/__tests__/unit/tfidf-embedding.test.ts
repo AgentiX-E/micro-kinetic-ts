@@ -16,15 +16,16 @@
  * @module ai/__tests__/unit
  */
 
-import { describe, it, expect } from 'vitest';
+import { invariant } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import {
-  TfIdfEmbeddingProvider,
-  tokenizeServiceName,
-  cosineSimilarity,
   cosineDistance,
+  cosineSimilarity,
   jaccardSimilarity,
   normalizeL2,
-} from '../../src';
+  TfIdfEmbeddingProvider,
+  tokenizeServiceName,
+} from '../../src/index.js';
 
 // =============================================================================
 // tokenizeServiceName
@@ -200,7 +201,7 @@ describe('normalizeL2', () => {
     expect(normalized[0]).toBeCloseTo(0.6, 5);
     expect(normalized[1]).toBeCloseTo(0.8, 5);
     // Verify unit length
-    const len = Math.sqrt(normalized[0] ** 2 + normalized[1] ** 2);
+    const len = Math.hypot(...normalized);
     expect(len).toBeCloseTo(1, 5);
   });
 
@@ -282,6 +283,10 @@ describe('TfIdfEmbeddingProvider', () => {
       const topologyVecs = await provider.embed(topologyNames);
       const uiVec = topologyVecs.vectors[0]; // "ts-ui"
       const uiSpanVec = vectors[0]; // "ts-ui" from span
+      invariant(
+        uiSpanVec !== undefined && uiVec !== undefined,
+        'fitTransform/embed must return the "ts-ui" vector',
+      );
 
       const selfSim = cosineSimilarity(uiSpanVec, uiVec);
       // Should be high (near 1) for self-matching
@@ -314,8 +319,8 @@ describe('TfIdfEmbeddingProvider', () => {
 
       for (const vec of vectors) {
         let sumSquares = 0;
-        for (let i = 0; i < vec.length; i++) {
-          sumSquares += vec[i] * vec[i];
+        for (const v of vec) {
+          sumSquares += v * v;
         }
         const norm = Math.sqrt(sumSquares);
         // Zero vector is okay (no matching vocabulary terms)
@@ -365,15 +370,16 @@ describe('TfIdfEmbeddingProvider', () => {
       const topologyVecs = await provider.embed(topologyNames);
 
       const spanVec = vectors[0];
+      invariant(spanVec !== undefined, 'fitTransform must return the query vector');
       let bestSim = 0;
       let bestIdx = -1;
-      for (let i = 0; i < topologyVecs.vectors.length; i++) {
-        const sim = cosineSimilarity(spanVec, topologyVecs.vectors[i]);
+      topologyVecs.vectors.forEach((vec, i) => {
+        const sim = cosineSimilarity(spanVec, vec);
         if (sim > bestSim) {
           bestSim = sim;
           bestIdx = i;
         }
-      }
+      });
 
       expect(bestIdx).toBe(2); // ts-admin-basic-info-service
       expect(bestSim).toBeGreaterThan(0.3); // reasonable similarity
@@ -381,27 +387,23 @@ describe('TfIdfEmbeddingProvider', () => {
 
     it('should match "ts-ui-dashboard" → "ts-ui" (prefix match)', async () => {
       const provider = new TfIdfEmbeddingProvider();
-      const topologyNames = [
-        'ts-ui',
-        'ts-auth-service',
-        'ts-order-service',
-        'ts-travel-service',
-      ];
+      const topologyNames = ['ts-ui', 'ts-auth-service', 'ts-order-service', 'ts-travel-service'];
       const spanName = 'ts-ui-dashboard';
 
       const { vectors } = await provider.fitTransform(topologyNames, [spanName]);
       const topologyVecs = await provider.embed(topologyNames);
 
       const spanVec = vectors[0];
+      invariant(spanVec !== undefined, 'fitTransform must return the query vector');
       let bestSim = 0;
       let bestIdx = -1;
-      for (let i = 0; i < topologyVecs.vectors.length; i++) {
-        const sim = cosineSimilarity(spanVec, topologyVecs.vectors[i]);
+      topologyVecs.vectors.forEach((vec, i) => {
+        const sim = cosineSimilarity(spanVec, vec);
         if (sim > bestSim) {
           bestSim = sim;
           bestIdx = i;
         }
-      }
+      });
 
       expect(bestIdx).toBe(0); // ts-ui
       expect(bestSim).toBeGreaterThan(0.2);
@@ -421,15 +423,16 @@ describe('TfIdfEmbeddingProvider', () => {
       const topologyVecs = await provider.embed(topologyNames);
 
       const spanVec = vectors[0];
+      invariant(spanVec !== undefined, 'fitTransform must return the query vector');
       let bestSim = 0;
       let bestIdx = -1;
-      for (let i = 0; i < topologyVecs.vectors.length; i++) {
-        const sim = cosineSimilarity(spanVec, topologyVecs.vectors[i]);
+      topologyVecs.vectors.forEach((vec, i) => {
+        const sim = cosineSimilarity(spanVec, vec);
         if (sim > bestSim) {
           bestSim = sim;
           bestIdx = i;
         }
-      }
+      });
 
       expect(bestIdx).toBe(1); // ts-order-service
       expect(bestSim).toBeGreaterThan(0.3);
@@ -444,6 +447,7 @@ describe('TfIdfEmbeddingProvider', () => {
       const topologyVecs = await provider.embed(topologyNames);
 
       const spanVec = vectors[0];
+      invariant(spanVec !== undefined, 'fitTransform must return the query vector');
       let maxSim = 0;
       for (const tv of topologyVecs.vectors) {
         const sim = cosineSimilarity(spanVec, tv);
@@ -484,10 +488,7 @@ describe('TfIdfEmbeddingProvider', () => {
   describe('edge cases', () => {
     it('should handle duplicate topology names', async () => {
       const provider = new TfIdfEmbeddingProvider();
-      const { vectors } = await provider.fitTransform(
-        ['same', 'same', 'same'],
-        ['different'],
-      );
+      const { vectors } = await provider.fitTransform(['same', 'same', 'same'], ['different']);
       expect(vectors).toHaveLength(1);
     });
 

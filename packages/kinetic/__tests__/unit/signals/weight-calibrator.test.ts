@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import type { CalibratedWeights, TrainingExample } from '@agentix-e/micro-kinetic';
 import {
-  WeightCalibrator,
-  DEFAULT_FUSION_WEIGHTS,
-  DEFAULT_COLLISION_BOOSTS,
   DEFAULT_CALIBRATOR_CONFIG,
+  DEFAULT_COLLISION_BOOSTS,
+  DEFAULT_FUSION_WEIGHTS,
+  WeightCalibrator,
 } from '@agentix-e/micro-kinetic';
-import type { TrainingExample, CalibratedWeights } from '@agentix-e/micro-kinetic';
+import { describe, expect, it } from 'vitest';
 
 // ── Helpers ───────────────────────────────────────────────
 
@@ -169,9 +169,7 @@ describe('WeightCalibrator', () => {
       const w = c.train(examples);
 
       // Cycle boost should decrease (wrong predictions)
-      expect(w.collisionBoosts.cycle).toBeLessThan(
-        DEFAULT_COLLISION_BOOSTS.cycle,
-      );
+      expect(w.collisionBoosts.cycle).toBeLessThan(DEFAULT_COLLISION_BOOSTS.cycle);
     });
 
     it('increases cycle boost when cycle predictions are correct', () => {
@@ -184,9 +182,7 @@ describe('WeightCalibrator', () => {
       const w = c.train(examples);
 
       // Cycle boost should increase (correct predictions reinforce it)
-      expect(w.collisionBoosts.cycle).toBeGreaterThan(
-        DEFAULT_COLLISION_BOOSTS.cycle,
-      );
+      expect(w.collisionBoosts.cycle).toBeGreaterThan(DEFAULT_COLLISION_BOOSTS.cycle);
     });
 
     it('boosts stay in valid range [0.5, 3.0]', () => {
@@ -194,7 +190,8 @@ describe('WeightCalibrator', () => {
       const examples = Array.from({ length: 30 }, (_, i) =>
         makeExample({
           isCorrect: i % 2 === 0,
-          collisionType: i % 4 === 0 ? 'cycle' : i % 4 === 1 ? 'bottleneck' : i % 4 === 2 ? 'fanIn' : 'chain',
+          collisionType:
+            i % 4 === 0 ? 'cycle' : i % 4 === 1 ? 'bottleneck' : i % 4 === 2 ? 'fanIn' : 'chain',
         }),
       );
 
@@ -215,9 +212,7 @@ describe('WeightCalibrator', () => {
 
     it('does not crash when collisionType is undefined', () => {
       const c = new WeightCalibrator();
-      const examples = Array.from({ length: 10 }, () =>
-        makeExample({ collisionType: undefined }),
-      );
+      const examples = Array.from({ length: 10 }, () => makeExample({ collisionType: undefined }));
 
       const w = c.train(examples);
       expect(w.collisionBoosts.cycle).toBe(DEFAULT_COLLISION_BOOSTS.cycle);
@@ -320,11 +315,9 @@ describe('WeightCalibrator', () => {
       // With per-fault-type amplification, weights should change more
       // (the amplify factor for accuracy=0.2 is 1+0.3=1.3)
       const noFTChange = Math.abs(
-        wNoFT.fusion.collision - DEFAULT_FUSION_WEIGHTS.collision,
+        wNoFT.getWeights().fusion.collision - DEFAULT_FUSION_WEIGHTS.collision,
       );
-      const ftChange = Math.abs(
-        wWithFT.fusion.collision - DEFAULT_FUSION_WEIGHTS.collision,
-      );
+      const ftChange = Math.abs(wWithFT.fusion.collision - DEFAULT_FUSION_WEIGHTS.collision);
       expect(ftChange).toBeGreaterThan(noFTChange);
     });
 
@@ -350,7 +343,8 @@ describe('WeightCalibrator', () => {
       const examples = Array.from({ length: 15 }, (_, i) =>
         makeExample({
           isCorrect: i % 3 === 0,
-          collisionType: i % 4 === 0 ? 'cycle' : i % 4 === 1 ? 'bottleneck' : i % 4 === 2 ? 'fanIn' : 'chain',
+          collisionType:
+            i % 4 === 0 ? 'cycle' : i % 4 === 1 ? 'bottleneck' : i % 4 === 2 ? 'fanIn' : 'chain',
           faultType: i % 2 === 0 ? 'CPU_HOG' : 'MEM_LEAK',
         }),
       );
@@ -371,7 +365,10 @@ describe('WeightCalibrator', () => {
       expect(restoredW.fusion.anomaly).toBeCloseTo(originalW.fusion.anomaly, 10);
       expect(restoredW.fusion.topology).toBeCloseTo(originalW.fusion.topology, 10);
       expect(restoredW.collisionBoosts.cycle).toBeCloseTo(originalW.collisionBoosts.cycle, 10);
-      expect(restoredW.collisionBoosts.bottleneck).toBeCloseTo(originalW.collisionBoosts.bottleneck, 10);
+      expect(restoredW.collisionBoosts.bottleneck).toBeCloseTo(
+        originalW.collisionBoosts.bottleneck,
+        10,
+      );
     });
 
     it('returns null for malformed JSON', () => {

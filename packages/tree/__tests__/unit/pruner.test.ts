@@ -1015,7 +1015,7 @@ describe('TreePruner', () => {
   });
 
   describe('ranking fusion weights (serializable structure)', () => {
-    it('packs the five flat option fields into a RankingWeights object', () => {
+    it('packs the flat option fields into a RankingWeights object', () => {
       const pruner = new TreePruner({
         sourceWeight: 0.1,
         temporalWeight: 0.2,
@@ -1033,6 +1033,9 @@ describe('TreePruner', () => {
         collisionWeight: 0.3,
         topoWeight: 0.4,
         logWeight: 0.5,
+        riseWeight: 0.6,
+        traceWeight: 0.7,
+        prismWeight: 0.8,
       });
 
       expect(weights).toEqual({
@@ -1041,6 +1044,9 @@ describe('TreePruner', () => {
         collisionWeight: 0.3,
         topoWeight: 0.4,
         logWeight: 0.5,
+        riseWeight: 0.6,
+        traceWeight: 0.7,
+        prismWeight: 0.8,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.

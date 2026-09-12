@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import type { IHierarchyTruncator, IScalingAnalyzer } from '@agentix-e/micro-kinetic-core';
+import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { registerScalingFactories } from '../../../src/di/factories.js';
-import { DI_TOKENS, Container } from '@agentix-e/micro-kinetic-core';
+// HierarchyBuilder / FaultProbabilityAsymptotics have no core interface,
+// so assert the concrete classes registered under their symbols.
+import type { FaultProbabilityAsymptotics, HierarchyBuilder } from '../../../src/index.js';
 
 describe('registerScalingFactories', () => {
   // ── Token registration ───────────────────────────────
@@ -32,63 +36,73 @@ describe('registerScalingFactories', () => {
   it('should resolve HierarchyBuilder instance', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(Symbol.for('micro-kinetic:HierarchyBuilder'));
+    const instance = container.resolve<HierarchyBuilder>(
+      Symbol.for('micro-kinetic:HierarchyBuilder'),
+    );
     expect(instance).toBeDefined();
   });
 
   it('should resolve HierarchyBuilder with computeBBGKYHierarchy method', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(Symbol.for('micro-kinetic:HierarchyBuilder'));
+    const instance = container.resolve<HierarchyBuilder>(
+      Symbol.for('micro-kinetic:HierarchyBuilder'),
+    );
     expect(typeof instance.computeBBGKYHierarchy).toBe('function');
   });
 
   it('should resolve HIERARCHY_TRUNCATOR instance', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(DI_TOKENS.HIERARCHY_TRUNCATOR);
+    const instance = container.resolve<IHierarchyTruncator>(DI_TOKENS.HIERARCHY_TRUNCATOR);
     expect(instance).toBeDefined();
   });
 
   it('should resolve HIERARCHY_TRUNCATOR with findTruncationOrder method', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(DI_TOKENS.HIERARCHY_TRUNCATOR);
+    const instance = container.resolve<IHierarchyTruncator>(DI_TOKENS.HIERARCHY_TRUNCATOR);
     expect(typeof instance.findTruncationOrder).toBe('function');
   });
 
   it('should resolve SCALING_ANALYZER instance', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(DI_TOKENS.SCALING_ANALYZER);
+    const instance = container.resolve<IScalingAnalyzer>(DI_TOKENS.SCALING_ANALYZER);
     expect(instance).toBeDefined();
   });
 
   it('should resolve SCALING_ANALYZER with estimateFaultProbability method', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(DI_TOKENS.SCALING_ANALYZER);
+    const instance = container.resolve<IScalingAnalyzer>(DI_TOKENS.SCALING_ANALYZER);
     expect(typeof instance.estimateFaultProbability).toBe('function');
   });
 
   it('should resolve FaultProbabilityAsymptotics instance', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(Symbol.for('micro-kinetic:FaultProbabilityAsymptotics'));
+    const instance = container.resolve<FaultProbabilityAsymptotics>(
+      Symbol.for('micro-kinetic:FaultProbabilityAsymptotics'),
+    );
     expect(instance).toBeDefined();
   });
 
   it('should resolve FaultProbabilityAsymptotics with firstOrder method', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(Symbol.for('micro-kinetic:FaultProbabilityAsymptotics'));
+    const instance = container.resolve<FaultProbabilityAsymptotics>(
+      Symbol.for('micro-kinetic:FaultProbabilityAsymptotics'),
+    );
     expect(typeof instance.firstOrder).toBe('function');
   });
 
   it('should resolve FaultProbabilityAsymptotics with secondOrder method', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(Symbol.for('micro-kinetic:FaultProbabilityAsymptotics'));
+    const instance = container.resolve<FaultProbabilityAsymptotics>(
+      Symbol.for('micro-kinetic:FaultProbabilityAsymptotics'),
+    );
     expect(typeof instance.secondOrder).toBe('function');
   });
 
@@ -96,14 +110,14 @@ describe('registerScalingFactories', () => {
   it('should resolve SCALING_ANALYZER with computeBBGKYHierarchy method', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(DI_TOKENS.SCALING_ANALYZER);
+    const instance = container.resolve<IScalingAnalyzer>(DI_TOKENS.SCALING_ANALYZER);
     expect(typeof instance.computeBBGKYHierarchy).toBe('function');
   });
 
   it('should resolve SCALING_ANALYZER with truncateHierarchy method', () => {
     const container = new Container();
     registerScalingFactories(container);
-    const instance = container.resolve(DI_TOKENS.SCALING_ANALYZER);
+    const instance = container.resolve<IScalingAnalyzer>(DI_TOKENS.SCALING_ANALYZER);
     expect(typeof instance.truncateHierarchy).toBe('function');
   });
 

@@ -228,9 +228,16 @@ function bfsMaxDepth(
 /**
  * Type-safe approximate-close matcher for benchmark context validation.
  * Use `expectCloseTo(actual, expected, tolerance)` in tests.
+ *
+ * The matcher produced by `expectCloseTo.primitive()` must be accepted by
+ * `expectCloseTo` itself, so the fields it carries are part of this contract.
  */
 export interface CloseToMatcher {
   readonly __brand: 'CloseToMatcher';
+  /** Value the actual number is compared against. */
+  readonly value: number;
+  /** Relative tolerance applied by `expectCloseTo`. */
+  readonly tolerance: number;
 }
 
 class CloseToPrimitive implements CloseToMatcher {
@@ -243,17 +250,17 @@ class CloseToPrimitive implements CloseToMatcher {
 
 export function expectCloseTo(
   actual: number,
-  expected: number | CloseToPrimitive,
+  expected: number | CloseToMatcher,
   tolerance?: number,
 ): boolean {
   let expVal: number;
   let tol: number;
-  if (expected instanceof CloseToPrimitive) {
-    expVal = expected.value;
-    tol = expected.tolerance;
-  } else {
+  if (typeof expected === 'number') {
     expVal = expected;
     tol = tolerance ?? 0.1;
+  } else {
+    expVal = expected.value;
+    tol = expected.tolerance;
   }
   const denom = Math.max(1, Math.abs(expVal));
   return Math.abs(actual - expVal) / denom <= tol;

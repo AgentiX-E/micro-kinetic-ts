@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import type { CallEdge, ServiceCallGraph, ServiceNode } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { CorrelationDecay } from '../../src/correlation-decay.js';
-import type { ServiceCallGraph, ServiceNode, CallEdge } from '@agentix-e/micro-kinetic-core';
 
 // ── Test Helpers ────────────────────────────────────────────
 
@@ -78,10 +78,7 @@ describe('CorrelationDecay.estimateDecay', () => {
   // ── Edge: Single-node graph ───────────────────────────────
 
   describe('single-node graph', () => {
-    const result = new CorrelationDecay().estimateDecay(
-      makeServiceGraph(['svc-only']),
-      30000,
-    );
+    const result = new CorrelationDecay().estimateDecay(makeServiceGraph(['svc-only']), 30000);
 
     it('should have fitQuality = 1.0', () => {
       expect(result.fitQuality).toBe(1);
@@ -99,10 +96,10 @@ describe('CorrelationDecay.estimateDecay', () => {
   // ── Edge: Graph with edges to non-existent services ───────
 
   describe('graph with non-existent edge targets', () => {
-    const graph = makeServiceGraph(['svc-a', 'svc-b'], [
-      makeEdge('svc-a', 'svc-b', 100),
-    ]);
-    graph.edges.push(makeEdge('svc-b', 'svc-nope', 50));
+    const graph = makeServiceGraph(
+      ['svc-a', 'svc-b'],
+      [makeEdge('svc-a', 'svc-b', 100), makeEdge('svc-b', 'svc-nope', 50)],
+    );
     const result = new CorrelationDecay().estimateDecay(graph, 60000);
 
     it('should have decayConstant > 0', () => {
@@ -115,11 +112,17 @@ describe('CorrelationDecay.estimateDecay', () => {
   });
 
   describe('fully connected graph', () => {
-    const full = makeServiceGraph(['a', 'b', 'c'], [
-      makeEdge('a', 'b', 100), makeEdge('b', 'a', 100),
-      makeEdge('a', 'c', 100), makeEdge('c', 'a', 100),
-      makeEdge('b', 'c', 100), makeEdge('c', 'b', 100),
-    ]);
+    const full = makeServiceGraph(
+      ['a', 'b', 'c'],
+      [
+        makeEdge('a', 'b', 100),
+        makeEdge('b', 'a', 100),
+        makeEdge('a', 'c', 100),
+        makeEdge('c', 'a', 100),
+        makeEdge('b', 'c', 100),
+        makeEdge('c', 'b', 100),
+      ],
+    );
     const result = new CorrelationDecay().estimateDecay(full, 60000);
 
     it('should have 200 timePoints', () => {
@@ -165,9 +168,7 @@ describe('CorrelationDecay.fitDecay', () => {
   it('should fit exponential decay to clean data', () => {
     const timePoints = new Float64Array([0, 1000, 2000, 3000, 4000, 5000]);
     const tau = 2000;
-    const correlationValues = new Float64Array(
-      Array.from(timePoints, t => Math.exp(-t / tau)),
-    );
+    const correlationValues = new Float64Array(Array.from(timePoints, (t) => Math.exp(-t / tau)));
     const result = new CorrelationDecay().fitDecay(timePoints, correlationValues);
     expect(result.fitQuality).toBeGreaterThan(0.5);
     expect(result.decayConstant).toBeGreaterThan(0);
@@ -185,7 +186,7 @@ describe('CorrelationDecay.fitDecay', () => {
     const timePoints = new Float64Array([0, 1000, 2000, 3000, 4000, 5000]);
     const tau = 2000;
     const correlationValues = new Float64Array(
-      Array.from(timePoints, t => Math.exp(-t / tau) * (0.9 + 0.2 * Math.random())),
+      Array.from(timePoints, (t) => Math.exp(-t / tau) * (0.9 + 0.2 * Math.random())),
     );
     const result = new CorrelationDecay().fitDecay(timePoints, correlationValues);
     expect(result.fitQuality).toBeGreaterThan(0);

@@ -44,8 +44,12 @@ function makeCallGraph(
 }
 
 /** Create a TimeSeries with given values and optional timestamps. */
-function makeTimeSeries(label: string, values: number[], timestamps?: number[]): TimeSeries {
-  const ts = timestamps ?? values.map((_, i) => i * 1000);
+function makeTimeSeries(
+  label: string,
+  values: number[] | Float64Array,
+  timestamps?: number[],
+): TimeSeries {
+  const ts = timestamps ?? Array.from(values, (_, i) => i * 1000);
   return {
     label,
     timestamps: ts,
@@ -814,8 +818,14 @@ describe('buildTopologyFaultGraph — Configuration', () => {
 
     // The custom bonus weight should be lower than default bonus weight
     // (Pearson correlation is the same, so the difference is only in bonus)
-    if (resultCustom.propagationWeights[0] !== resultDefault.propagationWeights[0]) {
-      expect(resultCustom.propagationWeights[0]).toBeLessThan(resultDefault.propagationWeights[0]);
+    const customWeight = resultCustom.propagationWeights[0];
+    const defaultWeight = resultDefault.propagationWeights[0];
+    if (
+      customWeight !== undefined &&
+      defaultWeight !== undefined &&
+      customWeight !== defaultWeight
+    ) {
+      expect(customWeight).toBeLessThan(defaultWeight);
     }
   });
 });

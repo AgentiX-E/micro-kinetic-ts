@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import type { ICascadeSimulator, IWavePropagationModel } from '@agentix-e/micro-kinetic-core';
+import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 import { registerWaveFactories } from '../../../src/di/factories.js';
-import { DI_TOKENS, Container } from '@agentix-e/micro-kinetic-core';
+// CorrelationDecay / ThresholdEstimator have no core interface covering every
+// member these tests assert, so assert the concrete classes instead.
+import type { CorrelationDecay, ThresholdEstimator } from '../../../src/index.js';
 
 // ── Token Registration ──────────────────────────────────────
 
@@ -37,47 +41,55 @@ describe('registerWaveFactories — token resolution', () => {
   registerWaveFactories(container);
 
   it('should resolve WAVE_PROPAGATION_MODEL to an object with simulateCascade', () => {
-    const instance = container.resolve(DI_TOKENS.WAVE_PROPAGATION_MODEL);
+    const instance = container.resolve<IWavePropagationModel>(DI_TOKENS.WAVE_PROPAGATION_MODEL);
     expect(typeof instance.simulateCascade).toBe('function');
   });
 
   it('should resolve CASCADE_SIMULATOR to an object with simulate', () => {
-    const instance = container.resolve(DI_TOKENS.CASCADE_SIMULATOR);
+    const instance = container.resolve<ICascadeSimulator>(DI_TOKENS.CASCADE_SIMULATOR);
     expect(typeof instance.simulate).toBe('function');
   });
 
   it('should resolve CASCADE_SIMULATOR to an object with simulateEnsemble', () => {
-    const instance = container.resolve(DI_TOKENS.CASCADE_SIMULATOR);
+    const instance = container.resolve<ICascadeSimulator>(DI_TOKENS.CASCADE_SIMULATOR);
     expect(typeof instance.simulateEnsemble).toBe('function');
   });
 
   it('should resolve CORRELATION_DECAY_ESTIMATOR to an object with estimateDecay', () => {
-    const instance = container.resolve(DI_TOKENS.CORRELATION_DECAY_ESTIMATOR);
+    const instance = container.resolve<CorrelationDecay>(DI_TOKENS.CORRELATION_DECAY_ESTIMATOR);
     expect(typeof instance.estimateDecay).toBe('function');
   });
 
   it('should resolve ThresholdEstimator to an object with estimate', () => {
-    const instance = container.resolve(Symbol.for('micro-kinetic:ThresholdEstimator'));
+    const instance = container.resolve<ThresholdEstimator>(
+      Symbol.for('micro-kinetic:ThresholdEstimator'),
+    );
     expect(typeof instance.estimate).toBe('function');
   });
 
   it('should resolve ThresholdEstimator to an object with generationThreshold', () => {
-    const instance = container.resolve(Symbol.for('micro-kinetic:ThresholdEstimator'));
+    const instance = container.resolve<ThresholdEstimator>(
+      Symbol.for('micro-kinetic:ThresholdEstimator'),
+    );
     expect(typeof instance.generationThreshold).toBe('function');
   });
 
   it('should resolve ThresholdEstimator to an object with propagationThreshold', () => {
-    const instance = container.resolve(Symbol.for('micro-kinetic:ThresholdEstimator'));
+    const instance = container.resolve<ThresholdEstimator>(
+      Symbol.for('micro-kinetic:ThresholdEstimator'),
+    );
     expect(typeof instance.propagationThreshold).toBe('function');
   });
 
   it('should resolve ThresholdEstimator to an object with extinctionThreshold', () => {
-    const instance = container.resolve(Symbol.for('micro-kinetic:ThresholdEstimator'));
+    const instance = container.resolve<ThresholdEstimator>(
+      Symbol.for('micro-kinetic:ThresholdEstimator'),
+    );
     expect(typeof instance.extinctionThreshold).toBe('function');
   });
 
   it('should resolve CORRELATION_DECAY_ESTIMATOR to an object with fitDecay', () => {
-    const instance = container.resolve(DI_TOKENS.CORRELATION_DECAY_ESTIMATOR);
+    const instance = container.resolve<CorrelationDecay>(DI_TOKENS.CORRELATION_DECAY_ESTIMATOR);
     expect(typeof instance.fitDecay).toBe('function');
   });
 

@@ -1,15 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import {
-  DEFAULT_CUTTING_OPTIONS,
-} from '@agentix-e/micro-kinetic-core';
 import type {
-  TimeSeries,
-  MetricSnapshot,
-  CuttingWindow,
   CuttingOptions,
   CuttingQualityMetrics,
   CuttingSchedule,
+  CuttingWindow,
+  MetricSnapshot,
+  TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
+import { DEFAULT_CUTTING_OPTIONS } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('TimeSeries types - TimeSeries', () => {
   it('should accept a valid TimeSeries', () => {
@@ -118,33 +116,41 @@ describe('TimeSeries types - DEFAULT_CUTTING_OPTIONS', () => {
 
 describe('TimeSeries types - CuttingQualityMetrics', () => {
   it('should accept valid CuttingQualityMetrics', () => {
+    // CuttingQualityMetrics declares only entropy / maxLocalError /
+    // convergenceRate; no production code produces window counts here.
     const metrics: CuttingQualityMetrics = {
-      totalWindows: 10,
-      adaptiveRefinements: 3,
       entropy: 1.5,
       maxLocalError: 0.001,
       convergenceRate: 0.1,
     };
-    expect(metrics.totalWindows).toBe(10);
     expect(metrics.entropy).toBe(1.5);
+    expect(metrics.convergenceRate).toBe(0.1);
   });
 });
 
 describe('TimeSeries types - CuttingSchedule', () => {
   it('should accept a converged CuttingSchedule', () => {
     const ts: TimeSeries = {
-      label: 'test', timestamps: [0, 1000], values: new Float64Array([1, 2]), unit: 'count',
+      label: 'test',
+      timestamps: [0, 1000],
+      values: new Float64Array([1, 2]),
+      unit: 'count',
     };
     const window: CuttingWindow = {
-      index: 0, startTime: 0, endTime: 1000, duration: 1000,
-      slice: ts, degradationRate: 0, localErrorBound: 0,
+      index: 0,
+      startTime: 0,
+      endTime: 1000,
+      duration: 1000,
+      slice: ts,
+      degradationRate: 0,
+      localErrorBound: 0,
     };
     const schedule: CuttingSchedule = {
       totalDuration: 1000,
       windows: [window],
       converged: true,
       convergenceTimeUpperBound: 500,
-      quality: { totalWindows: 1, adaptiveRefinements: 0, entropy: 0, maxLocalError: 0, convergenceRate: 0 },
+      quality: { entropy: 0, maxLocalError: 0, convergenceRate: 0 },
     };
     expect(schedule.converged).toBe(true);
     expect(schedule.convergenceTimeUpperBound).toBe(500);
@@ -155,7 +161,7 @@ describe('TimeSeries types - CuttingSchedule', () => {
       totalDuration: 1000,
       windows: [],
       converged: false,
-      quality: { totalWindows: 0, adaptiveRefinements: 0, entropy: 0, maxLocalError: 0, convergenceRate: 0 },
+      quality: { entropy: 0, maxLocalError: 0, convergenceRate: 0 },
     };
     expect(schedule.converged).toBe(false);
     expect(schedule.convergenceTimeUpperBound).toBeUndefined();

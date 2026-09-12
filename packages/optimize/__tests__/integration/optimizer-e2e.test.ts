@@ -47,7 +47,8 @@ function makeMetrics(n: number): MetricMap {
       {
         label: 'cpu',
         values: vals,
-        timestamps: new Float64Array(20).map((_, k) => k * 1000),
+        timestamps: Array.from({ length: 20 }, (_, k) => k * 1000),
+        unit: 'percent',
       },
     ]);
   }
@@ -82,7 +83,7 @@ describe('AdaptiveConfigOptimizer E2E', () => {
       },
     };
 
-    const trueF = (cfg: RCAConfiguration): number => {
+    const trueF = async (cfg: RCAConfiguration): Promise<number> => {
       let score = 0.85;
       // Penalty for wrong strategy
       if (cfg.discrete.baselineStrategy !== 'q25') score -= 0.12;

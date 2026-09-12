@@ -14,33 +14,29 @@
  * @module causal/__tests__/unit
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  TraceTimingProvider,
-  LogTimingProvider,
-  GrangerCausalityProvider,
-  StaticDirectionProvider,
-  CausalDirectionFusion,
-} from '../../src';
 import type {
   CallEdge,
   CausalDirection,
-  TemporalContext,
-  ServiceTiming,
   ConfidenceTier,
   ITimingProvider,
+  ServiceTiming,
+  TemporalContext,
 } from '@agentix-e/micro-kinetic-core';
-import type { SpanTiming, LogAnomalyPoint } from '../../src/types';
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  CausalDirectionFusion,
+  GrangerCausalityProvider,
+  LogTimingProvider,
+  StaticDirectionProvider,
+  TraceTimingProvider,
+} from '../../src/index.js';
+import type { LogAnomalyPoint, SpanTiming } from '../../src/types/index.js';
 
 // =============================================================================
 // Test Helpers
 // =============================================================================
 
-function makeEdge(
-  from: string,
-  to: string,
-  overrides: Partial<CallEdge> = {},
-): CallEdge {
+function makeEdge(from: string, to: string, overrides: Partial<CallEdge> = {}): CallEdge {
   return {
     from,
     to,
@@ -318,7 +314,9 @@ describe('TraceTimingProvider', () => {
     });
 
     it('should return empty when no span data is present', async () => {
-      expect(await provider.inferDirection([makeEdge('svc-a', 'svc-b')], makeContext())).toHaveLength(0);
+      expect(
+        await provider.inferDirection([makeEdge('svc-a', 'svc-b')], makeContext()),
+      ).toHaveLength(0);
     });
 
     it('should infer reverse direction when to has caller data pointing from', async () => {
@@ -376,9 +374,7 @@ describe('TraceTimingProvider', () => {
     it('should skip edges where neither service has span data', async () => {
       const ctx = makeContext({
         metadata: {
-          spans: [
-            makeSpanTiming({ service: 'svc-a', callers: ['x'] }),
-          ],
+          spans: [makeSpanTiming({ service: 'svc-a', callers: ['x'] })],
         },
       });
       const edges = [makeEdge('svc-x', 'svc-y')];
@@ -411,8 +407,20 @@ describe('TraceTimingProvider', () => {
       const ctx = makeContext({
         metadata: {
           spans: [
-            makeSpanTiming({ service: 'svc-a', earliestStartMs: 1000, errorSpanCount: 3, callers: [], callees: [] }),
-            makeSpanTiming({ service: 'svc-b', earliestStartMs: 1000, errorSpanCount: 0, callers: [], callees: [] }),
+            makeSpanTiming({
+              service: 'svc-a',
+              earliestStartMs: 1000,
+              errorSpanCount: 3,
+              callers: [],
+              callees: [],
+            }),
+            makeSpanTiming({
+              service: 'svc-b',
+              earliestStartMs: 1000,
+              errorSpanCount: 0,
+              callers: [],
+              callees: [],
+            }),
           ],
         },
       });
@@ -428,8 +436,20 @@ describe('TraceTimingProvider', () => {
       const ctx = makeContext({
         metadata: {
           spans: [
-            makeSpanTiming({ service: 'svc-a', earliestStartMs: 1000, errorSpanCount: 3, callers: [], callees: [] }),
-            makeSpanTiming({ service: 'svc-b', earliestStartMs: 3000, errorSpanCount: 2, callers: [], callees: [] }),
+            makeSpanTiming({
+              service: 'svc-a',
+              earliestStartMs: 1000,
+              errorSpanCount: 3,
+              callers: [],
+              callees: [],
+            }),
+            makeSpanTiming({
+              service: 'svc-b',
+              earliestStartMs: 3000,
+              errorSpanCount: 2,
+              callers: [],
+              callees: [],
+            }),
           ],
         },
       });
@@ -446,8 +466,20 @@ describe('TraceTimingProvider', () => {
       const ctx = makeContext({
         metadata: {
           spans: [
-            makeSpanTiming({ service: 'svc-a', earliestStartMs: 1000, errorSpanCount: 1, callers: [], callees: [] }),
-            makeSpanTiming({ service: 'svc-b', earliestStartMs: 1000, errorSpanCount: 1, callers: [], callees: [] }),
+            makeSpanTiming({
+              service: 'svc-a',
+              earliestStartMs: 1000,
+              errorSpanCount: 1,
+              callers: [],
+              callees: [],
+            }),
+            makeSpanTiming({
+              service: 'svc-b',
+              earliestStartMs: 1000,
+              errorSpanCount: 1,
+              callers: [],
+              callees: [],
+            }),
           ],
         },
       });
@@ -610,7 +642,9 @@ describe('LogTimingProvider', () => {
     });
 
     it('should return empty when no anomaly points are present', async () => {
-      expect(await provider.inferDirection([makeEdge('svc-a', 'svc-b')], makeContext())).toHaveLength(0);
+      expect(
+        await provider.inferDirection([makeEdge('svc-a', 'svc-b')], makeContext()),
+      ).toHaveLength(0);
     });
 
     it('should skip edge with missing anomaly data for one side', async () => {
@@ -636,10 +670,7 @@ describe('LogTimingProvider', () => {
           ],
         },
       });
-      const edges = [
-        makeEdge('a', 'b'),
-        makeEdge('b', 'c'),
-      ];
+      const edges = [makeEdge('a', 'b'), makeEdge('b', 'c')];
       const results = await provider.inferDirection(edges, ctx);
 
       expect(results).toHaveLength(2);
@@ -718,7 +749,7 @@ describe('GrangerCausalityProvider', () => {
       const provider2 = new GrangerCausalityProvider({ maxLag: 2 });
       const n = 50;
       const signal = Array.from({ length: n }, (_, i) => Math.sin(i * 0.1));
-      const effect = Array.from({ length: n }, (_, i) => i === 0 ? 0 : signal[i - 1]! * 0.5);
+      const effect = Array.from({ length: n }, (_, i) => (i === 0 ? 0 : signal[i - 1]! * 0.5));
 
       const result = provider2.grangerTest(signal, effect);
       expect(result).not.toBeNull();
@@ -910,9 +941,12 @@ describe('StaticDirectionProvider', () => {
 
     it('should return true after adding directions', async () => {
       provider.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       expect(await provider.canInfer(makeContext())).toBe(true);
     });
@@ -921,22 +955,23 @@ describe('StaticDirectionProvider', () => {
   describe('inferDirection', () => {
     it('should return pre-configured directions', async () => {
       provider.addDirection({
-        source: 'svc-a', target: 'svc-b',
-        tier: 'static', confidence: 0.5,
+        source: 'svc-a',
+        target: 'svc-b',
+        tier: 'static',
+        confidence: 0.5,
         reasoning: 'HTTP GET from a to b',
         provider: 'static-direction',
       });
       provider.addDirection({
-        source: 'svc-b', target: 'svc-c',
-        tier: 'static', confidence: 0.5,
+        source: 'svc-b',
+        target: 'svc-c',
+        tier: 'static',
+        confidence: 0.5,
         reasoning: 'gRPC from b to c',
         provider: 'static-direction',
       });
 
-      const edges = [
-        makeEdge('svc-a', 'svc-b'),
-        makeEdge('svc-b', 'svc-c'),
-      ];
+      const edges = [makeEdge('svc-a', 'svc-b'), makeEdge('svc-b', 'svc-c')];
       const results = await provider.inferDirection(edges, makeContext());
 
       expect(results).toHaveLength(2);
@@ -947,8 +982,10 @@ describe('StaticDirectionProvider', () => {
 
     it('should use runtime directions from context when available', async () => {
       const runtimeDir: CausalDirection = {
-        source: 'svc-x', target: 'svc-y',
-        tier: 'static', confidence: 0.7,
+        source: 'svc-x',
+        target: 'svc-y',
+        tier: 'static',
+        confidence: 0.7,
         reasoning: 'runtime overridden',
         provider: 'static-direction',
       };
@@ -970,9 +1007,12 @@ describe('StaticDirectionProvider', () => {
 
     it('should return empty when source is mapped but target is not', async () => {
       provider.addDirection({
-        source: 'svc-a', target: 'svc-b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'svc-a',
+        target: 'svc-b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       // svc-a has a configured direction, but only toward svc-b — not svc-c
       const edges = [makeEdge('svc-a', 'svc-c')];
@@ -984,18 +1024,24 @@ describe('StaticDirectionProvider', () => {
     it('should track direction count', () => {
       expect(provider.directionCount).toBe(0);
       provider.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       expect(provider.directionCount).toBe(1);
     });
 
     it('should remove direction', () => {
       provider.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       expect(provider.removeDirection('a', 'b')).toBe(true);
       expect(provider.directionCount).toBe(0);
@@ -1007,14 +1053,20 @@ describe('StaticDirectionProvider', () => {
 
     it('should clear all directions', () => {
       provider.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       provider.addDirection({
-        source: 'b', target: 'c',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'b',
+        target: 'c',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       expect(provider.directionCount).toBe(2);
       provider.clear();
@@ -1023,12 +1075,20 @@ describe('StaticDirectionProvider', () => {
 
     it('should replace direction for same source-target pair', () => {
       provider.addDirection({
-        source: 'a', target: 'b', tier: 'static', confidence: 0.3,
-        reasoning: 'old', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.3,
+        reasoning: 'old',
+        provider: 'static-direction',
       });
       provider.addDirection({
-        source: 'a', target: 'b', tier: 'static', confidence: 0.7,
-        reasoning: 'new', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.7,
+        reasoning: 'new',
+        provider: 'static-direction',
       });
       expect(provider.directionCount).toBe(1);
     });
@@ -1037,8 +1097,12 @@ describe('StaticDirectionProvider', () => {
   describe('estimateConfidence', () => {
     it('should return 0.5 when directions exist', async () => {
       provider.addDirection({
-        source: 'a', target: 'b', tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       expect(await provider.estimateConfidence(makeContext())).toBe(0.5);
     });
@@ -1050,11 +1114,16 @@ describe('StaticDirectionProvider', () => {
 
   describe('constructor with initial directions', () => {
     it('should populate directions from constructor', async () => {
-      const initialDirs: CausalDirection[] = [{
-        source: 'init-a', target: 'init-b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'initial', provider: 'static-direction',
-      }];
+      const initialDirs: CausalDirection[] = [
+        {
+          source: 'init-a',
+          target: 'init-b',
+          tier: 'static',
+          confidence: 0.5,
+          reasoning: 'initial',
+          provider: 'static-direction',
+        },
+      ];
       const providerWithInit = new StaticDirectionProvider(initialDirs);
       expect(providerWithInit.directionCount).toBe(1);
 
@@ -1133,9 +1202,7 @@ describe('GrangerCausalityProvider — edge cases', () => {
     const n = 40;
     const signal = Array.from({ length: n }, (_, i) => Math.sin(i * 0.3) * 10);
     // Strong lag-1 dependence with small noise
-    const effect = Array.from({ length: n }, (_, i) =>
-      i === 0 ? 0 : 0.7 * signal[i - 1]!,
-    );
+    const effect = Array.from({ length: n }, (_, i) => (i === 0 ? 0 : 0.7 * signal[i - 1]!));
     const result = provider.grangerTest(signal, effect);
     // Strong deterministic dependence should produce valid F-stats
     if (result) {
@@ -1284,7 +1351,12 @@ describe('CausalDirectionFusion', () => {
         fusion.register(makeTierProvider(tier));
       }
       expect(fusion.providers.map((p) => p.meta.tier)).toEqual([
-        'trace', 'log', 'granger', 'static', 'llm', 'none',
+        'trace',
+        'log',
+        'granger',
+        'static',
+        'llm',
+        'none',
       ]);
     });
 
@@ -1314,9 +1386,12 @@ describe('CausalDirectionFusion', () => {
     it('should return available providers with data', async () => {
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       fusion.register(static_);
 
@@ -1336,9 +1411,12 @@ describe('CausalDirectionFusion', () => {
     it('should compute zero coverage for empty edges even with an available provider', async () => {
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'config', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'config',
+        provider: 'static-direction',
       });
       fusion.register(static_);
 
@@ -1388,9 +1466,12 @@ describe('CausalDirectionFusion', () => {
     it('should fall through to static when higher tiers unavailable', async () => {
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'svc-a', target: 'svc-b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'config', provider: 'static-direction',
+        source: 'svc-a',
+        target: 'svc-b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'config',
+        provider: 'static-direction',
       });
 
       fusion.register(new TraceTimingProvider());
@@ -1406,17 +1487,17 @@ describe('CausalDirectionFusion', () => {
     it('should merge results from multiple tiers when needed', async () => {
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'svc-a', target: 'svc-b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'config', provider: 'static-direction',
+        source: 'svc-a',
+        target: 'svc-b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'config',
+        provider: 'static-direction',
       });
       // Only provide edges for which static has data; nothing for svc-c→svc-d
       fusion.register(static_);
 
-      const edges = [
-        makeEdge('svc-a', 'svc-b'),
-        makeEdge('svc-c', 'svc-d'),
-      ];
+      const edges = [makeEdge('svc-a', 'svc-b'), makeEdge('svc-c', 'svc-d')];
       const result = await fusion.inferDirections(edges, makeContext());
 
       expect(result.edgesResolved).toBe(1);
@@ -1426,9 +1507,12 @@ describe('CausalDirectionFusion', () => {
     it('should include tier results for all providers', async () => {
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
 
       fusion.register(new TraceTimingProvider());
@@ -1447,9 +1531,12 @@ describe('CausalDirectionFusion', () => {
 
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       fusion.register(static_);
 
@@ -1466,9 +1553,12 @@ describe('CausalDirectionFusion', () => {
 
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'a', target: 'b',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'a',
+        target: 'b',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
       fusion.register(static_);
 
@@ -1502,9 +1592,12 @@ describe('CausalDirectionFusion', () => {
       });
       const static_ = new StaticDirectionProvider();
       static_.addDirection({
-        source: 'c', target: 'd',
-        tier: 'static', confidence: 0.5,
-        reasoning: 'test', provider: 'static-direction',
+        source: 'c',
+        target: 'd',
+        tier: 'static',
+        confidence: 0.5,
+        reasoning: 'test',
+        provider: 'static-direction',
       });
 
       fusion.register(new TraceTimingProvider());

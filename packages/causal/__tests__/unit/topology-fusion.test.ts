@@ -17,25 +17,29 @@
  * @module causal/__tests__/unit/topology-fusion
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import type {
+  CallEdge,
   ITopologyProvider,
-  TopologyProviderMeta,
-  TopologyDiscoveryContext,
   ServiceCallGraph,
   ServiceNode,
-  CallEdge,
+  TopologyDiscoveryContext,
+  TopologyProviderMeta,
 } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
+import type { FusedServiceCallGraph } from '../../src/orchestrators/topology-fusion.js';
 import {
-  TopologyFusion,
   createDefaultTopologyFusion,
+  TopologyFusion,
   TopologyFusionResult,
-  TopologyFusionConfig,
 } from '../../src/orchestrators/topology-fusion.js';
 
 // ── Mock Providers ────────────────────────────────────────
 
-function makeMeta(id: string, confidence: number, method: 'static' | 'dynamic' | 'semantic' = 'static'): TopologyProviderMeta {
+function makeMeta(
+  id: string,
+  confidence: number,
+  method: 'static' | 'dynamic' | 'semantic' = 'static',
+): TopologyProviderMeta {
   return {
     id,
     description: `Mock ${id} provider`,
@@ -84,7 +88,12 @@ function makeProvider(
 describe('TopologyFusion', () => {
   describe('basic discovery', () => {
     it('should fuse edges from a single provider', async () => {
-      const p = makeProvider('static', 0.9, [makeEdge('a', 'b'), makeEdge('b', 'c')], ['a', 'b', 'c']);
+      const p = makeProvider(
+        'static',
+        0.9,
+        [makeEdge('a', 'b'), makeEdge('b', 'c')],
+        ['a', 'b', 'c'],
+      );
       const fusion = new TopologyFusion({ providers: [p] });
       const result = await fusion.discover({ knownServiceIds: ['a', 'b', 'c'] });
 
@@ -105,7 +114,12 @@ describe('TopologyFusion', () => {
     });
 
     it('should filter edges where endpoints are not in known services', async () => {
-      const p = makeProvider('static', 0.9, [makeEdge('a', 'b'), makeEdge('c', 'd')], ['a', 'b', 'c', 'd']);
+      const p = makeProvider(
+        'static',
+        0.9,
+        [makeEdge('a', 'b'), makeEdge('c', 'd')],
+        ['a', 'b', 'c', 'd'],
+      );
       const fusion = new TopologyFusion({ providers: [p] });
       const result = await fusion.discover({ knownServiceIds: ['a', 'b'] });
 
@@ -264,7 +278,12 @@ describe('TopologyFusion', () => {
 
   describe('fusion result metadata', () => {
     it('should compute average confidence correctly', async () => {
-      const p = makeProvider('static', 0.9, [makeEdge('a', 'b'), makeEdge('b', 'c')], ['a', 'b', 'c']);
+      const p = makeProvider(
+        'static',
+        0.9,
+        [makeEdge('a', 'b'), makeEdge('b', 'c')],
+        ['a', 'b', 'c'],
+      );
       const fusion = new TopologyFusion({ providers: [p] });
       const result = await fusion.discover({ knownServiceIds: ['a', 'b', 'c'] });
 
@@ -304,6 +323,54 @@ describe('TopologyFusion', () => {
 
       const edge = result.graph.edges[0]!;
       expect(edge.providerId).toBe('trace');
+    });
+
+    it('should include the winning provider confidence on fused edges', async () => {
+      const high = makeProvider('trace', 0.95, [makeEdge('a', 'b')], ['a', 'b']);
+      const low = makeProvider('static', 0.4, [makeEdge('a', 'b')], ['a', 'b']);
+      const fusion = new TopologyFusion({ providers: [high, low] });
+      const result = await fusion.discover({ knownServiceIds: ['a', 'b'] });
+
+      // The conflict is resolved in favour of the higher-confidence provider, so
+      // the surviving edge must report THAT provider's confidence -- it is the
+      // number `averageConfidence` is computed from.
+      const edge = result.graph.edges[0]!;
+      expect(edge.fusedConfidence).toBe(0.95);
+      expect(edge.providerId).toBe('trace');
+    });
+
+    it('should expose enrichment on ring-connect edges too, not only fused ones', async () => {
+      const p = makeProvider('static', 0.9, [makeEdge('a', 'b')], ['a', 'b']);
+      const fusion = new TopologyFusion({ providers: [p] });
+      const result = await fusion.discover({
+        knownServiceIds: ['a', 'b', 'orphan-1', 'orphan-2'],
+      });
+
+      // Every edge in the result carries provenance, so a consumer can always
+      // tell a synthetic ring-connect edge from a provider-backed one without
+      // falling back to inspecting `type` or the latency fields.
+      const orphans = result.graph.edges.filter((e) => ['orphan-1', 'orphan-2'].includes(e.from));
+      expect(orphans.length).toBeGreaterThan(0);
+      for (const edge of orphans) {
+        expect(edge.providerId).toBe('ring-connect');
+        expect(edge.fusedConfidence).toBe(0);
+        expect(edge.provenance).toContain('ring-connect');
+      }
+    });
+
+    it('should type the fused graph as carrying the fused edges', async () => {
+      const p = makeProvider('trace', 0.9, [makeEdge('a', 'b')], ['a', 'b']);
+      const fusion = new TopologyFusion({ providers: [p] });
+      const result: TopologyFusionResult = await fusion.discover({
+        knownServiceIds: ['a', 'b'],
+      });
+
+      // `TopologyFusionResult.graph` must not degrade to a plain
+      // `ServiceCallGraph`: that erases `providerId`/`fusedConfidence`/
+      // `provenance` from the public type, so every caller that needs them has
+      // to cast, and a cast is exactly how a field rename goes unnoticed.
+      const graph: FusedServiceCallGraph = result.graph;
+      expect(graph.edges.every((e) => typeof e.providerId === 'string')).toBe(true);
     });
   });
 

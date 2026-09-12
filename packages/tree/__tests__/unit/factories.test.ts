@@ -1,14 +1,22 @@
-import { describe, it, expect } from 'vitest';
 import {
-  registerTreeModule,
-  createTreePruner,
-  createTreeRCAEngine,
   createConfidenceEstimator,
   createNumpyTsMatrixOps,
+  createTreePruner,
+  createTreeRCAEngine,
   createUbiqueLinearAlgebra,
+  registerTreeModule,
 } from '@agentix-e/micro-kinetic-tree';
+import { describe, expect, it } from 'vitest';
+// TreeRCAEngine is the type createTreeRCAEngine declares; the IRootCauseRanker
+// contract does not cover its PrunedTree-based analyze()/rank() signatures.
+import type {
+  IContainer,
+  ILinearAlgebra,
+  IMatrixOps,
+  IRCAEngine,
+} from '@agentix-e/micro-kinetic-core';
 import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
-import type { IContainer } from '@agentix-e/micro-kinetic-core';
+import type { TreeRCAEngine } from '@agentix-e/micro-kinetic-tree';
 
 describe('Factory functions', () => {
   let container: IContainer;
@@ -76,7 +84,7 @@ describe('registerTreeModule', () => {
   it('resolves MATRIX_OPS to correct type', () => {
     const container = new Container();
     registerTreeModule(container);
-    const ops = container.resolve(DI_TOKENS.MATRIX_OPS);
+    const ops = container.resolve<IMatrixOps>(DI_TOKENS.MATRIX_OPS);
     expect(ops).toBeDefined();
     expect(typeof ops.multiply).toBe('function');
     expect(typeof ops.eigenvalues).toBe('function');
@@ -86,7 +94,7 @@ describe('registerTreeModule', () => {
   it('resolves LINEAR_ALGEBRA to correct type', () => {
     const container = new Container();
     registerTreeModule(container);
-    const alg = container.resolve(DI_TOKENS.LINEAR_ALGEBRA);
+    const alg = container.resolve<ILinearAlgebra>(DI_TOKENS.LINEAR_ALGEBRA);
     expect(alg).toBeDefined();
     expect(typeof alg.solve).toBe('function');
     expect(typeof alg.lu).toBe('function');
@@ -97,7 +105,7 @@ describe('registerTreeModule', () => {
   it('resolves RCA_ENGINE to correct type', () => {
     const container = new Container();
     registerTreeModule(container);
-    const engine = container.resolve(DI_TOKENS.RCA_ENGINE);
+    const engine = container.resolve<IRCAEngine>(DI_TOKENS.RCA_ENGINE);
     expect(engine).toBeDefined();
     expect(typeof engine.buildFaultGraph).toBe('function');
     expect(typeof engine.analyze).toBe('function');
@@ -106,7 +114,7 @@ describe('registerTreeModule', () => {
   it('resolves ROOT_CAUSE_RANKER to correct type', () => {
     const container = new Container();
     registerTreeModule(container);
-    const ranker = container.resolve(DI_TOKENS.ROOT_CAUSE_RANKER);
+    const ranker = container.resolve<TreeRCAEngine>(DI_TOKENS.ROOT_CAUSE_RANKER);
     expect(ranker).toBeDefined();
     expect(typeof ranker.analyze).toBe('function');
     expect(typeof ranker.rank).toBe('function');

@@ -129,7 +129,10 @@ describe('Graph types - FaultPropagationGraph', () => {
       propagationWeights: new Float64Array([0.5, 0.3]),
       anomalyScores,
       anomalyOnsetTimes: new Map<ServiceId, number>(),
-      dominantMetrics: new Map<ServiceId, { label: string; head: number[]; tail: number[] }>(),
+      dominantMetrics: new Map<
+        ServiceId,
+        { label: string; head: number[]; tail: number[]; transientSkipped: string[] }
+      >(),
       detectedCycles: [],
       totalCycleContribution: 0,
       pruneThreshold: 0.001,

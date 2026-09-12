@@ -1,14 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import {
-  DEFAULT_BBGKY_OPTIONS,
-} from '@agentix-e/micro-kinetic-core';
 import type {
-  MicroserviceState,
-  BBGKYState,
   BBGKYHierarchy,
+  BBGKYState,
   BoltzmannGradResult,
-  BBGKYOptions,
+  MicroserviceState,
 } from '@agentix-e/micro-kinetic-core';
+import { DEFAULT_BBGKY_OPTIONS } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it } from 'vitest';
 
 describe('Coupling types - MicroserviceState', () => {
   it('should accept a valid MicroserviceState', () => {
@@ -77,8 +74,11 @@ describe('Coupling types - BBGKYState', () => {
 describe('Coupling types - BBGKYHierarchy', () => {
   it('should accept a valid BBGKYHierarchy', () => {
     const state1: BBGKYState = {
-      order: 1, serviceIds: ['a'], correlationEnergy: 0.5,
-      tensor: new Float64Array([0.5]), isSignificant: true,
+      order: 1,
+      serviceIds: ['a'],
+      correlationEnergy: 0.5,
+      tensor: new Float64Array([0.5]),
+      isSignificant: true,
     };
     const hierarchy: BBGKYHierarchy = {
       systemSize: 10,
@@ -94,12 +94,18 @@ describe('Coupling types - BBGKYHierarchy', () => {
 
   it('should handle multiple states', () => {
     const s1: BBGKYState = {
-      order: 1, serviceIds: ['a'], correlationEnergy: 1.0,
-      tensor: new Float64Array([1]), isSignificant: true,
+      order: 1,
+      serviceIds: ['a'],
+      correlationEnergy: 1.0,
+      tensor: new Float64Array([1]),
+      isSignificant: true,
     };
     const s2: BBGKYState = {
-      order: 2, serviceIds: ['a', 'b'], correlationEnergy: 0.01,
-      tensor: new Float64Array(4), isSignificant: false,
+      order: 2,
+      serviceIds: ['a', 'b'],
+      correlationEnergy: 0.01,
+      tensor: new Float64Array(4),
+      isSignificant: false,
     };
     const hierarchy: BBGKYHierarchy = {
       systemSize: 2,
@@ -109,8 +115,8 @@ describe('Coupling types - BBGKYHierarchy', () => {
       truncationError: 0.01,
     };
     expect(hierarchy.states.length).toBe(2);
-    expect(hierarchy.states[0].order).toBe(1);
-    expect(hierarchy.states[1].order).toBe(2);
+    expect(hierarchy.states[0]?.order).toBe(1);
+    expect(hierarchy.states[1]?.order).toBe(2);
   });
 });
 

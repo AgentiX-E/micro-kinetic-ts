@@ -35,7 +35,10 @@ function makeTS(label: string, values: number[]): TimeSeries {
   return {
     label,
     values: new Float64Array(values),
-    timestamps: new Float64Array(values.map((_, i) => i * 1000)),
+    // TimeSeries.timestamps is declared readonly number[]; production always
+    // builds it from plain arrays, so keep the fixture in the same shape.
+    timestamps: values.map((_, i) => i * 1000),
+    unit: 'percent',
   };
 }
 

@@ -1,11 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type {
+  IContainer,
+  MetricMap,
+  ServiceCallGraph,
+  ServiceNode,
+  TimeSeries,
+} from '@agentix-e/micro-kinetic-core';
 import { Container, DI_TOKENS } from '@agentix-e/micro-kinetic-core';
-import type { IContainer } from '@agentix-e/micro-kinetic-core';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
+  DEFAULT_PIPELINE_CONFIG,
   RCAPipeline,
   registerRCAPipeline,
-  DEFAULT_PIPELINE_CONFIG,
 } from '../../../src/pipeline/rca-pipeline.js';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -32,17 +38,21 @@ function createMockContainer(): IContainer {
 
   const mockDenoise = {
     computeCouplingSparsity: vi.fn(() => ({})),
-    denoise: vi.fn(() => Promise.resolve({
-      trueAlarms: [],
-      coincidentalAlarms: [],
-      groupedAlarms: [],
-      sparsityScore: 0,
-      falsePositiveReduction: 0,
-    })),
+    denoise: vi.fn(() =>
+      Promise.resolve({
+        trueAlarms: [],
+        coincidentalAlarms: [],
+        groupedAlarms: [],
+        sparsityScore: 0,
+        falsePositiveReduction: 0,
+      }),
+    ),
   };
 
   const mockScaling = {
-    estimateFaultProbability: vi.fn(() => Promise.resolve({ limitProbability: 0.5, scalingExponent: 0.3 })),
+    estimateFaultProbability: vi.fn(() =>
+      Promise.resolve({ limitProbability: 0.5, scalingExponent: 0.3 }),
+    ),
   };
 
   const mockWave = {
@@ -59,21 +69,31 @@ function createMockContainer(): IContainer {
   return container;
 }
 
-function makeCallGraph() {
+function makeCallGraph(): ServiceCallGraph {
+  const nodes = new Map<string, ServiceNode>([
+    ['svc_a', { id: 'svc_a', name: 'svc_a', namespace: 'test', labels: {} }],
+    ['svc_b', { id: 'svc_b', name: 'svc_b', namespace: 'test', labels: {} }],
+  ]);
   return {
-    nodes: new Map([
-      ['svc_a', { serviceId: 'svc_a', dependencies: [] }],
-      ['svc_b', { serviceId: 'svc_b', dependencies: ['svc_a'] }],
-    ]),
-    edges: [{ from: 'svc_b', to: 'svc_a', weight: 1 }],
+    nodes,
+    edges: [{ from: 'svc_b', to: 'svc_a', type: 'REST', callRate: 1, p99Latency: 0, errorRate: 0 }],
     systemLoad: 0.5,
   };
 }
 
-function makeMetrics(): Map<string, Array<{ label: string; values: number[]; timestamps: number[] }>> {
-  return new Map([
-    ['svc_a', [{ label: 'cpu', values: [0.9, 0.95, 0.92], timestamps: [1, 2, 3] }]],
-    ['svc_b', [{ label: 'cpu', values: [0.3, 0.4, 0.35], timestamps: [1, 2, 3] }]],
+function makeTimeSeries(label: string, values: number[]): TimeSeries {
+  return {
+    label,
+    timestamps: values.map((_, i) => i + 1),
+    values: new Float64Array(values),
+    unit: 'ratio',
+  };
+}
+
+function makeMetrics(): MetricMap {
+  return new Map<string, readonly TimeSeries[]>([
+    ['svc_a', [makeTimeSeries('cpu', [0.9, 0.95, 0.92])]],
+    ['svc_b', [makeTimeSeries('cpu', [0.3, 0.4, 0.35])]],
   ]);
 }
 
@@ -215,12 +235,14 @@ describe('RCAPipeline', () => {
       const container = createMockContainer();
       // Override mock cutting to return 2+ windows → enables chronic detection branch
       const mockCuttingWithWindows = {
-        segment: vi.fn(() => Promise.resolve([{ start: 0, end: 1 }, { start: 2, end: 3 }])),
-        estimateLocalBounds: vi.fn(() =>
+        segment: vi.fn(() =>
           Promise.resolve([
-            { errorBound: 0.01 },
-            { errorBound: 0.02 },
+            { start: 0, end: 1 },
+            { start: 2, end: 3 },
           ]),
+        ),
+        estimateLocalBounds: vi.fn(() =>
+          Promise.resolve([{ errorBound: 0.01 }, { errorBound: 0.02 }]),
         ),
       };
       container.remove(DI_TOKENS.CUTTING_ENGINE);
@@ -418,7 +440,10 @@ describe('RCAPipeline', () => {
       container.remove(DI_TOKENS.CONVERGENCE_PROVER);
       const mockCuttingWithWindows = {
         segment: vi.fn(() =>
-          Promise.resolve([{ start: 0, end: 1 }, { start: 2, end: 3 }]),
+          Promise.resolve([
+            { start: 0, end: 1 },
+            { start: 2, end: 3 },
+          ]),
         ),
         estimateLocalBounds: vi.fn(() =>
           Promise.resolve([{ errorBound: 0.01 }, { errorBound: 0.02 }]),
@@ -444,7 +469,10 @@ describe('RCAPipeline', () => {
       container.remove(DI_TOKENS.CUTTING_ENGINE);
       const mockCuttingWithWindows = {
         segment: vi.fn(() =>
-          Promise.resolve([{ start: 0, end: 1 }, { start: 2, end: 3 }]),
+          Promise.resolve([
+            { start: 0, end: 1 },
+            { start: 2, end: 3 },
+          ]),
         ),
         estimateLocalBounds: vi.fn(() =>
           Promise.resolve([{ errorBound: 0.01 }, { errorBound: 0.02 }]),
@@ -475,11 +503,11 @@ describe('RCAPipeline', () => {
         enableScaling: false,
         enableWave: false,
       });
-      const metricsWithShortSeries = new Map([
-        ['svc_a', [{ label: 'cpu', values: [0.5], timestamps: [1] }]],
+      const metricsWithShortSeries: MetricMap = new Map([
+        ['svc_a', [makeTimeSeries('cpu', [0.5])]],
       ]);
-      const callGraph = {
-        nodes: new Map([['svc_a', { serviceId: 'svc_a', dependencies: [] }]]),
+      const callGraph: ServiceCallGraph = {
+        nodes: new Map([['svc_a', { id: 'svc_a', name: 'svc_a', namespace: 'test', labels: {} }]]),
         edges: [],
         systemLoad: 0,
       };
