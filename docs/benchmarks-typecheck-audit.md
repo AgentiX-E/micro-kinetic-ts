@@ -94,6 +94,35 @@ real Zhipu embedding API; a gate cannot depend on a network service, a
 credential, or a quota. The suite had been running against a live endpoint on
 every local test invocation whenever a gitignored `.env` was present.
 
+## Golden preservation (measured, not argued)
+
+Both rounds changed `benchmarks/`, which is on the RCAEval path, so "no engine
+code reads `CallEdge.type`" and "a `Record` read equals a `Map.get`" are
+arguments, not results. `benchmark-rcaeval.yml` triggers on any change under
+`benchmarks/src/**`, so both pushes ran the whole suite on their own (runs
+34665009262 and 34668284723). Every one of the nine golden cells reproduces
+exactly, and each pair of result files differs on a single line — `Total
+duration`:
+
+| cell | golden baseline | after the provenance refactor (`94f8df0`) | after the registry refactor (`eed292b`) |
+|---|---|---|---|
+| RE1 OnlineBoutique / SockShop / TrainTicket | 80.0 / 92.8 / 68.0 | 80.0 / 92.8 / 68.0 | **80.0 / 92.8 / 68.0** |
+| RE2 OnlineBoutique / SockShop / TrainTicket | 82.4 / 88.9 / 68.1 | 82.4 / 88.9 / 68.1 | **82.4 / 88.9 / 68.1** |
+| RE3 OnlineBoutique / SockShop / TrainTicket | 80.0 / 45.0 / 51.1 | 80.0 / 45.0 / 51.1 | **80.0 / 45.0 / 51.1** |
+
+`diff` output for all six comparisons is one hunk, the duration line:
+
+```
+RE1  243 744 ms -> 234 789 ms
+RE2  250 864 ms -> 231 847 ms
+RE3  128 429 ms -> 108 010 ms
+```
+
+Every per-fault-type cell, every failure-diagnostic dump, and every `_diag_*`
+label (including `_diag_matched`, which is exactly what the ring-connect
+provenance change had to leave alone) is byte-identical. The refactors are
+invariant on the published baseline, not merely plausible.
+
 ## Verification
 
 | check | result |
