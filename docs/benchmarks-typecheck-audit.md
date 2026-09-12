@@ -45,13 +45,16 @@ included because test files were exactly where the last batch of drift hid.
 
 ## Verification
 
-| check | before | after |
-|---|---|---|
-| `tsc -p benchmarks/tsconfig.json` | 44 errors / 9 files | **0** |
-| `nx run-many --target=typecheck --all` | 14 projects | **15 projects** |
-| `packages/ai` unit tests | 22 (in this suite) | **26**, coverage 100 / 100 / 100 / 100 |
-| `packages/ai` package total | 110 | **113** |
-| deleted | — | `benchmarks/src/diag-rca.ts` (13 errors, unreachable) |
+| check | result |
+|---|---|
+| `tsc -p benchmarks/tsconfig.json` | 44 errors / 9 files → **0** |
+| `nx run-many --target=typecheck --all` | 14 → **15 projects**, exit 0 |
+| `nx run-many --target=test --all` | every package green (ai 113/113, kinetic 830/830, tree 541/541, core 412/412); the one failure is the pre-existing sandbox-only EPERM in `optimize`'s `FileSystemStore` round-trip, reproduced on a clean HEAD |
+| `packages/ai` semantic-alignment suite | **26 tests**, 5 new, **4 of them red before the fix** |
+| `packages/ai` coverage | 100 / 100 / 100 / 100 |
+| lint | 0 warnings / 0 errors |
+| format:check | green, now covering `benchmarks/**` |
+| deleted | `benchmarks/src/diag-rca.ts` (13 of the 44 errors, unreachable) |
 
 ## Not yet done (deliberately)
 
