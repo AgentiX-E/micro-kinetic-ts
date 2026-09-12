@@ -1,0 +1,9 @@
+# Test-only tooling for the converter + sharder unit tests.
+#
+# Kept out of requirements-fse26.txt on purpose: that file is part of
+# `scripts/fse26_provenance.py`'s digest, so anything added to it invalidates
+# every cached shard. A test-runner bump must not force a 2-hour cache rebuild.
+#
+# Installed by the `converter-tests` job in .github/workflows/ci.yml.
+-r requirements-fse26.txt
+coverage==7.16.0

@@ -1,0 +1,21 @@
+node_modules/
+dist/
+coverage/
+.tsup/
+tsup.config.bundled_*.mjs
+*.tsbuildinfo
+.cache/
+benchmark-results/
+artifacts/
+*.log
+# pnpm-lock.yaml — committed for CI reproducibility
+.nx/
+.env
+temp/
+_tmp_*
+
+# Python tooling artifacts (scripts/ converter tests, coverage runs)
+.coverage
+.coverage.*
+__pycache__/
+*.pyc

@@ -1,0 +1,111 @@
+# OnlineBoutique Service Topology
+# Source: https://github.com/GoogleCloudPlatform/microservices-demo
+# Architecture: 11 services with REST/gRPC communication
+#
+# Key dependency patterns:
+#   frontend → all backend services (entry point)
+#   checkoutservice → cart, currency, email, payment, shipping (transaction orchestration)
+#   recommendationservice → productcatalogservice (ML-based recommendations)
+
+version: "1.0"
+system: OnlineBoutique
+description: "Google Cloud microservices-demo — e-commerce platform"
+source: "https://github.com/GoogleCloudPlatform/microservices-demo"
+
+services:
+  - id: frontend
+    namespace: online-boutique
+    labels:
+      tier: web
+      language: go
+      description: "User-facing HTTP/gRPC frontend"
+
+  - id: adservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: java
+      description: "Text ad serving"
+
+  - id: cartservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: csharp
+      description: "Shopping cart state"
+
+  - id: checkoutservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: go
+      description: "Order checkout orchestration"
+
+  - id: currencyservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: nodejs
+      description: "Currency conversion"
+
+  - id: emailservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: python
+      description: "Order confirmation emails"
+
+  - id: paymentservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: nodejs
+      description: "Payment processing"
+
+  - id: productcatalogservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: go
+      description: "Product catalog and search"
+
+  - id: recommendationservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: python
+      description: "ML-based product recommendations"
+
+  - id: shippingservice
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: go
+      description: "Shipping cost estimation"
+
+  - id: checkouterrors
+    namespace: online-boutique
+    labels:
+      tier: backend
+      language: go
+      description: "Checkout error simulation service (fault injection)"
+
+edges:
+  # frontend → all backend services
+  - { from: frontend, to: adservice, type: gRPC, callRate: 200, p99Latency: 30, errorRate: 0.01 }
+  - { from: frontend, to: cartservice, type: gRPC, callRate: 500, p99Latency: 20, errorRate: 0.01 }
+  - { from: frontend, to: checkoutservice, type: gRPC, callRate: 100, p99Latency: 40, errorRate: 0.01 }
+  - { from: frontend, to: currencyservice, type: gRPC, callRate: 300, p99Latency: 15, errorRate: 0.01 }
+  - { from: frontend, to: productcatalogservice, type: gRPC, callRate: 800, p99Latency: 25, errorRate: 0.01 }
+  - { from: frontend, to: recommendationservice, type: gRPC, callRate: 200, p99Latency: 50, errorRate: 0.01 }
+  - { from: frontend, to: shippingservice, type: gRPC, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+
+  # checkoutservice orchestration
+  - { from: checkoutservice, to: cartservice, type: gRPC, callRate: 100, p99Latency: 10, errorRate: 0.02 }
+  - { from: checkoutservice, to: currencyservice, type: gRPC, callRate: 100, p99Latency: 10, errorRate: 0.01 }
+  - { from: checkoutservice, to: emailservice, type: gRPC, callRate: 100, p99Latency: 50, errorRate: 0.01 }
+  - { from: checkoutservice, to: paymentservice, type: gRPC, callRate: 100, p99Latency: 100, errorRate: 0.02 }
+  - { from: checkoutservice, to: shippingservice, type: gRPC, callRate: 100, p99Latency: 20, errorRate: 0.01 }
+
+  # recommendationservice depends on product catalog
+  - { from: recommendationservice, to: productcatalogservice, type: gRPC, callRate: 300, p99Latency: 20, errorRate: 0.01 }
