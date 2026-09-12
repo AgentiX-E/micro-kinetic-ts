@@ -32,7 +32,15 @@ import { fileURLToPath } from 'node:url';
 // packages/kinetic/__tests__/unit/ → four levels up is the repository root.
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 const WORKFLOW_PATH = resolve(repoRoot, '.github/workflows/fse26-benchmark.yml');
-const RUNNER_PATH = resolve(repoRoot, 'benchmarks/src/run-fse26.ts');
+/**
+ * Where the runner's configuration defaults live.
+ *
+ * This was `run-fse26.ts` until the CLI parsing moved to `fse26-cli.ts` so that
+ * it could be tested at all (`run-fse26.ts` calls `main()` on import). The
+ * extraction broke this guard, which is the correct behaviour for a guard that
+ * reads a file by path: it reported `undefined` rather than silently passing.
+ */
+const RUNNER_PATH = resolve(repoRoot, 'benchmarks/src/fse26-cli.ts');
 
 /**
  * Read the `default:` of one `workflow_dispatch` input out of the raw YAML.
@@ -56,10 +64,31 @@ function readInputDefault(yml: string, input: string): string | undefined {
   return undefined;
 }
 
-/** The runner's own default log-signal mode, from its CLI option defaults. */
+/** The runner's own default log-signal mode. */
+const DEFAULT_RE = /DEFAULT_FSE26_LOG_MODE:\s*LogSignalMode\s*=\s*'([A-Za-z]+)'/;
+
 function readRunnerDefault(source: string): string | undefined {
-  const m = /logMode:\s*'([A-Za-z]+)',/.exec(source);
-  return m?.[1];
+  return DEFAULT_RE.exec(source)?.[1];
+}
+
+/**
+ * The modes the CLI accepts, read from its exhaustive `Record<LogSignalMode, true>`.
+ *
+ * This is the guard for a defect that already fired: the accepted set was a
+ * hand-written `||` chain, and when the default was flipped to `logicHttp` the
+ * rewrite dropped `count` from it. `--log-mode count` then matched nothing and
+ * fell back to `logicHttp`, so the `count` configuration became unreachable
+ * through the workflow — and silently, because the fallback produced a valid run
+ * with a plausible number. Two diagnostics dispatched to compare the two modes
+ * came back byte-identical.
+ */
+function readAcceptedModes(source: string): string[] {
+  // Anchored on the declaration: a bare name match also hits the identifier's
+  // mention in the module's doc comment, and `[^{]*` then ran on to the first
+  // brace in the file -- an `import { … }` -- capturing the wrong block.
+  const body = /const LOG_MODE_ACCEPTED[^{]*\{([^}]*)\}/.exec(source)?.[1];
+  if (body === undefined) return [];
+  return [...body.matchAll(/(\w+):\s*true/g)].map((m) => m[1]!);
 }
 
 /**
@@ -93,5 +122,20 @@ describe('FSE26 reported configuration', () => {
     const mode = readRunnerDefault(runner)!;
     const best = Object.entries(MEASURED_MODES).sort((a, b) => b[1].topAt1 - a[1].topAt1)[0]!;
     expect(mode).toBe(best[0]);
+  });
+
+  it('accepts every mode that has been measured', () => {
+    // A measured mode that the CLI refuses is not merely unused: it is
+    // UNDISPATCHABLE, and the fallback hides that by reporting another mode's
+    // number. This is the assertion that would have caught `count` disappearing.
+    const accepted = readAcceptedModes(runner);
+    expect(accepted.length).toBeGreaterThan(0);
+    for (const mode of Object.keys(MEASURED_MODES)) {
+      expect(accepted, `measured mode ${mode} must be accepted by --log-mode`).toContain(mode);
+    }
+  });
+
+  it('accepts the mode it ships as the default', () => {
+    expect(readAcceptedModes(runner)).toContain(readRunnerDefault(runner));
   });
 });

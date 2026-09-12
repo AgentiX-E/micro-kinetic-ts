@@ -213,8 +213,16 @@ export function diffDiagnostics(
 export interface RegressionMechanism {
   readonly datapack: string;
   readonly faultType: string;
-  /** The ground-truth service the case should rank first. */
-  readonly groundTruth: string | undefined;
+  /**
+   * The ground-truth service the case should rank first.
+   *
+   * Non-optional because `regressionMechanism` is called on cases that were
+   * CORRECT before, and a case is only correct when it named a ground truth.
+   * A caller that passes a delta of another kind still gets a value: the
+   * contract is stated at {@link regressionMechanism} instead, which defaults
+   * the field and is tested for the absent case.
+   */
+  readonly groundTruth: string;
   readonly top1Before: string | undefined;
   readonly top1After: string | undefined;
   /** The source's framework-HTTP line count under the `after` mode. */
@@ -258,7 +266,7 @@ export function regressionMechanism(
   return {
     datapack: delta.datapack,
     faultType: delta.faultType,
-    groundTruth,
+    groundTruth: groundTruth ?? '-',
     top1Before: delta.top1Before,
     top1After: delta.top1After,
     sourceHttpCount: source?.httpExceptionCount,
@@ -289,9 +297,14 @@ export function tallyDeltas(
   return tally;
 }
 
-/** `value` with fixed decimals, or `-` when the datum is absent. */
+/**
+ * `value` with fixed decimals, or `-` when the datum is absent.
+ *
+ * No non-finite guard: every caller passes a count the parser read with
+ * `/\d+/`, so the value is `undefined` or a finite integer by construction.
+ */
 function num(value: number | undefined, digits = 3): string {
-  return value === undefined || !Number.isFinite(value) ? '-' : value.toFixed(digits);
+  return value === undefined ? '-' : value.toFixed(digits);
 }
 
 /** Render the per-fault-type breakdown of the deltas. */
@@ -364,10 +377,15 @@ export function formatDiagnoseComparison(
       `${'win http/logic'.padEnd(15)} out-flooded`,
   );
   for (const mechanism of mechanisms) {
+    // Only `top1After` can be absent here, and only because "wrong" includes
+    // "predicted nothing". The other three cannot be: `faultType` is a required
+    // string, and a regression is defined as CORRECT before, which requires the
+    // case to have named a ground truth and the engine to have ranked it first.
+    // Defaulting those would be dead code that hides a widened type.
     lines.push(
-      `  ${mechanism.datapack.padEnd(36)} ${(mechanism.faultType ?? '').padEnd(20)} ` +
-        `${(mechanism.groundTruth ?? '-').padEnd(15)} ` +
-        `${`${mechanism.top1Before ?? '-'}→${mechanism.top1After ?? '-'}`.padEnd(30)} ` +
+      `  ${mechanism.datapack.padEnd(36)} ${mechanism.faultType.padEnd(20)} ` +
+        `${mechanism.groundTruth.padEnd(15)} ` +
+        `${`${mechanism.top1Before}→${mechanism.top1After ?? '-'}`.padEnd(30)} ` +
         `${`${num(mechanism.sourceHttpCount, 0)}/${num(mechanism.sourceLogicCount, 0)}`.padEnd(15)} ` +
         `${`${num(mechanism.winnerHttpCount, 0)}/${num(mechanism.winnerLogicCount, 0)}`.padEnd(15)} ` +
         `${mechanism.winnerOutfloodsSource ? 'YES' : 'no'}`,

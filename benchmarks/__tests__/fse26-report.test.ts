@@ -153,11 +153,12 @@ describe('FSE26 report — summary arithmetic', () => {
       perFaultType: new Map([
         ['Zeta', { total: 5, correct: 1 }],
         ['Alpha', { total: 5, correct: 2 }],
+        ['Mu', { total: 5, correct: 3 }],
       ]),
     });
     // Equal totals must not fall back to insertion order: the artifact is
     // diffed between runs, so the order has to be a function of the content.
-    expect(Object.keys(tied.perFaultType)).toEqual(['Alpha', 'Zeta']);
+    expect(Object.keys(tied.perFaultType)).toEqual(['Alpha', 'Mu', 'Zeta']);
   });
 
   it('derives the delta against the anchor average', () => {

@@ -272,6 +272,13 @@ describe('regressionMechanism', () => {
     expect(mechanism.winnerOutfloodsSource).toBe(false);
   });
 
+  it('marks an absent ground-truth name rather than leaving the column empty', () => {
+    const mechanism = regressionMechanism({ ...delta, groundTruth: [] }, [
+      kaseWith([svc('ts-ui', 412, 0, 0.9)]),
+    ]);
+    expect(mechanism.groundTruth).toBe('-');
+  });
+
   it('reports undefined when the source is absent from the case', () => {
     const mechanism = regressionMechanism(delta, [kaseWith([svc('ts-ui', 412, 0, 0.9)])]);
     expect(mechanism.sourceHttpCount).toBeUndefined();
@@ -362,5 +369,43 @@ describe('formatDiagnoseComparison', () => {
     expect(formatDiagnoseComparison(legacy, legacy, 'x -> y')).toContain(
       'after-mode: (unrecorded)',
     );
+  });
+});
+
+describe('formatDiagnoseComparison — degenerate rows', () => {
+  it('renders a regression whose candidate run predicted nothing', () => {
+    // "Wrong" includes "predicted nothing", so `top1After` is the one field a
+    // regression row can be missing. The row must mark it rather than print a
+    // blank, and the source/winner counts are absent with it because neither
+    // service is named.
+    const before = parseDiagnosticDump(
+      dump({
+        services: [serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 0.9 })],
+        topPredictions: ['ts-order-service'],
+      }),
+    );
+    const after = parseDiagnosticDump(
+      dump({ services: [serviceLine({ serviceId: 'ts-ui', http: 3 })], topPredictions: [] }),
+    );
+
+    const report = formatDiagnoseComparison(before, after, 'x -> y');
+
+    expect(report).toContain('Regressions (');
+    expect(report).toMatch(/ts-order-service→-\s+-\/-\s+-\/-\s+no/);
+    expect(report).toContain('0/1 regressions');
+  });
+
+  it('counts a gained case in the per-fault-type table', () => {
+    const wrong = dump({ datapack: 'dp-gain', services: [], topPredictions: ['ts-ui'] });
+    const right = dump({ datapack: 'dp-gain', services: [], topPredictions: ['ts-order-service'] });
+
+    const report = formatDiagnoseComparison(
+      parseDiagnosticDump(wrong),
+      parseDiagnosticDump(right),
+      'x -> y',
+    );
+
+    expect(report).toContain('gained: 1');
+    expect(report).toMatch(/JVMMemoryStress\s+1\s+0\s+1/);
   });
 });

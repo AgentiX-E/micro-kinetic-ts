@@ -32,7 +32,6 @@
  */
 
 import { readdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
@@ -50,94 +49,8 @@ import {
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 
+import { parseFSE26Args } from './fse26-cli.js';
 import { buildFSE26Report, formatFSE26ConfigLine, type FSE26RunConfig } from './fse26-report.js';
-
-interface CliOptions {
-  dataDir: string;
-  maxCases: number;
-  /** Strength of the log signal (self-caused logic-exception volume). */
-  logWeight: number;
-  /** Log signal scoring mode (count = logic-exception only, logicHttp = logic +
-   *   framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP,
-   *   logicHttpDominant = logic + concentration-gated framework HTTP,
-   *   all = every error).
-   *
-   *   `logicHttp` is the measured default, not a guess. Full 1422-case runs on
-   *   the same commit and the same provenance-verified cache:
-   *     logicHttp  Top@1 47.3% (673/1422)  — run 34604105028
-   *     count      Top@1 23.1% (328/1422)  — run 34604119657
-   *   The gain is +24.2pp and clears the published SOTA best of 37.0%; it comes
-   *   from the replace-code / replace-method / replace-path / delay / abort
-   *   classes, whose faulting service floods a propagated framework HTTP error
-   *   that the logic-exception-only gate discards. Network* and JVMException do
-   *   regress under it (NetworkBandwidth 42.9%→28.6%, NetworkPartition
-   *   48.5%→40.2%, JVMException 79.1%→69.8%), but the net is strongly positive,
-   *   so this is the configuration that gets reported. */
-  logMode: 'count' | 'novelty' | 'logicHttp' | 'logicHttpJoint' | 'logicHttpDominant' | 'all';
-  /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
-  rankNormalization: boolean;
-  /** Emit a JSON result document to this path (optional). */
-  output: string;
-  /** Fault types to dump a per-service signal diagnostic for (empty = none). */
-  diagnose: string[];
-  /** Max diagnostic dumps per matching fault type (0 = unlimited). */
-  diagnoseLimit: number;
-  /**
-   * Metric names to filter out of every case before scoring (empty = none).
-   * Component-ablation switch: the bridge merges four metric sources into one
-   * map, so removing a source's names here re-scores the same cases as if the
-   * bridge had never emitted that source — without rebuilding the cache.
-   */
-  dropMetrics: string[];
-}
-
-function parseArgs(): CliOptions {
-  const args = process.argv.slice(2);
-  const opts: CliOptions = {
-    dataDir: join(homedir(), 'RCABench-json'),
-    maxCases: 0,
-    logWeight: 1.0,
-    logMode: 'logicHttp',
-    rankNormalization: true,
-    output: '',
-    diagnose: [],
-    diagnoseLimit: 3,
-    dropMetrics: [],
-  };
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
-    else if (args[i] === '--max-cases' && i + 1 < args.length)
-      opts.maxCases = parseInt(args[++i]!, 10) || 0;
-    else if (args[i] === '--log-weight' && i + 1 < args.length)
-      opts.logWeight = parseFloat(args[++i]!) || 0;
-    else if (args[i] === '--log-mode' && i + 1 < args.length) {
-      // An unrecognised mode is never silently downgraded to a *different*
-      // configuration: it falls back to the same measured default, so a typo
-      // reports the default instead of an unmeasured mode.
-      const mode = args[++i]!;
-      opts.logMode =
-        mode === 'novelty' ||
-        mode === 'all' ||
-        mode === 'logicHttp' ||
-        mode === 'logicHttpJoint' ||
-        mode === 'logicHttpDominant'
-          ? mode
-          : 'logicHttp';
-    } else if (args[i] === '--no-rank-normalization') opts.rankNormalization = false;
-    else if (args[i] === '--output' && i + 1 < args.length) opts.output = args[++i]!;
-    else if (args[i] === '--diagnose' && i + 1 < args.length)
-      opts.diagnose = args[++i]!.split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-    else if (args[i] === '--diagnose-limit' && i + 1 < args.length)
-      opts.diagnoseLimit = parseInt(args[++i]!, 10) || 0;
-    else if (args[i] === '--drop-metrics' && i + 1 < args.length)
-      opts.dropMetrics = args[++i]!.split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-  }
-  return opts;
-}
 
 /**
  * Discover every case directory (a `case.json` present) under `dataDir`, via a
@@ -247,7 +160,7 @@ function buildDiagnostic(
 }
 
 async function main(): Promise<void> {
-  const opts = parseArgs();
+  const opts = parseFSE26Args(process.argv.slice(2));
   const loader = new FSE26Loader();
   const dropSet = new Set(opts.dropMetrics);
 

@@ -34,10 +34,19 @@ export default defineConfig({
     // opt-in through `test:integration` and are never part of the default run.
     exclude: [...configDefaults.exclude, '__tests__/integration/**'],
     coverage: {
-      // Only the two modules that decide the call graph every RCAEval number is
-      // computed on. The other files under `src/` are CLI entry points that call
-      // `main()` at import time; they have no unit-testable surface.
-      include: ['src/rcaeval-topology.ts', 'src/rcaeval-semantic.ts'],
+      // The modules with a unit-testable surface: the two that decide the call
+      // graph every RCAEval number is computed on, plus the FSE'26 result and
+      // diagnostic readers. The remaining files under `src/` are CLI entry
+      // points that call `main()` at import time and have no such surface --
+      // listed deliberately rather than by an `exclude` pattern, because an
+      // allow-list that names its files is a claim that can be checked.
+      include: [
+        'src/rcaeval-topology.ts',
+        'src/rcaeval-semantic.ts',
+        'src/fse26-report.ts',
+        'src/fse26-diagnose-analyze.ts',
+        'src/fse26-cli.ts',
+      ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
       // tests: the previous 82/77/80/82 floor was itself failing (functions sat
