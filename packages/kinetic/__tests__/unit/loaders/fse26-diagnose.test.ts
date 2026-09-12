@@ -475,6 +475,33 @@ describe('formatFSE26Diagnostic — anomaly shape', () => {
     expect(render({ baselineMean: Number.NaN })).toContain('base=nonfinite');
   });
 
+  it('declares the entries it printed when the kept list is longer than the render', () => {
+    // The declaration is a count of what FOLLOWS on the line. Declaring the kept
+    // count instead asserts entries that were never printed, which is exactly
+    // what a truncated line looks like — and the reader rejects those, so the
+    // whole line became unreadable whenever a service carried more kept metrics
+    // than the render shows. Every fixture in this suite had at most three, so
+    // 100% line and branch coverage did not see it.
+    const entry = (label: string, score: number) => ({
+      label,
+      outcome: 'kept' as const,
+      score,
+      breakdown,
+    });
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [entry('a', 0.9), entry('b', 0.8), entry('c', 0.7), entry('d', 0.6)],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricTop(3/4): a=0.900{');
+    expect(out).not.toContain('d=0.600{');
+  });
+
   it('orders the shape line by score then label, in either comparator order', () => {
     const entry = (label: string, score: number) => ({
       label,

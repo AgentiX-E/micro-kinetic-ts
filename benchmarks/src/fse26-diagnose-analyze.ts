@@ -737,6 +737,22 @@ export interface AnomalyShapeCell {
    * is miscalibrated for the source's units, not that the guard is wrong.
    */
   readonly baselineAtFloor: number;
+  /**
+   * Median share of the decisive score contributed by each term. Read together
+   * with the source population, this separates "the winner is carried by a
+   * term the source is not" from "both are carried by the same term and the
+   * winner simply has more of it" — only the first is a reweighting defect.
+   */
+  readonly medianDeviationShare: number | undefined;
+  readonly medianTrendShare: number | undefined;
+  readonly medianCvShare: number | undefined;
+  readonly medianBurstShare: number | undefined;
+  /**
+   * Decisive metrics whose trend bonus is at least a quarter of the score.
+   * `trendBonus = trendStrength × 0.15` and `trendStrength` is unbounded, so a
+   * metric that drifts monotonically without a fault earns an open-ended bonus.
+   */
+  readonly trendHeavy: number;
 }
 
 /**
@@ -767,6 +783,11 @@ export function anomalyShape(cases: readonly DiagnosedCase[]): AnomalyShapeCell[
     rises: number[];
     baselines: number[];
     baselineAtFloor: number;
+    deviationShares: number[];
+    trendShares: number[];
+    cvShares: number[];
+    burstShares: number[];
+    trendHeavy: number;
   }
   const populations: Mutable[] = [
     'ground-truth source',
@@ -782,6 +803,11 @@ export function anomalyShape(cases: readonly DiagnosedCase[]): AnomalyShapeCell[
     rises: [],
     baselines: [],
     baselineAtFloor: 0,
+    deviationShares: [],
+    trendShares: [],
+    cvShares: [],
+    burstShares: [],
+    trendHeavy: 0,
   }));
 
   for (const kase of cases) {
@@ -804,6 +830,15 @@ export function anomalyShape(cases: readonly DiagnosedCase[]): AnomalyShapeCell[
       cell.rises.push(riseRatio);
       cell.baselines.push(baselineMean);
       if (baselineMean <= 0.001) cell.baselineAtFloor++;
+      // Shares are undefined for a non-positive score, which no kept metric can
+      // have; guarded so the ratio never divides by zero if that changes.
+      if (decisive.score > 0) {
+        cell.deviationShares.push(deviation / decisive.score);
+        cell.trendShares.push(trend / decisive.score);
+        cell.cvShares.push(cv / decisive.score);
+        cell.burstShares.push(burst / decisive.score);
+      }
+      if (trend >= 0.25 * decisive.score) cell.trendHeavy++;
     }
   }
 
@@ -823,6 +858,11 @@ export function anomalyShape(cases: readonly DiagnosedCase[]): AnomalyShapeCell[
     medianRiseRatio: median(cell.rises),
     medianBaselineMean: median(cell.baselines),
     baselineAtFloor: cell.baselineAtFloor,
+    medianDeviationShare: median(cell.deviationShares),
+    medianTrendShare: median(cell.trendShares),
+    medianCvShare: median(cell.cvShares),
+    medianBurstShare: median(cell.burstShares),
+    trendHeavy: cell.trendHeavy,
   }));
 }
 
@@ -833,6 +873,11 @@ function magnitude(value: number | undefined): string {
   return Math.abs(value) >= 1000 || Math.abs(value) < 0.01
     ? value.toExponential(2)
     : value.toFixed(2);
+}
+
+/** A score share in [0, 1] at three decimals, or `-` when absent. */
+function share(value: number | undefined): string {
+  return value === undefined ? '-' : value.toFixed(3);
 }
 
 /**
@@ -865,10 +910,28 @@ export function formatAnomalyShapeReport(cases: readonly DiagnosedCase[], label:
     );
   }
   lines.push('');
+  lines.push('  How those scores were composed (median share of the score):');
+  lines.push(
+    `  ${'population'.padEnd(28)} ${'n'.padStart(5)} ${'dev'.padStart(7)} ${'trend'.padStart(7)} ` +
+      `${'cv'.padStart(7)} ${'burst'.padStart(7)} ${'trend>=25%'.padStart(11)}`,
+  );
+  for (const cell of cells) {
+    lines.push(
+      `  ${cell.population.padEnd(28)} ${String(cell.services).padStart(5)} ` +
+        `${share(cell.medianDeviationShare).padStart(7)} ` +
+        `${share(cell.medianTrendShare).padStart(7)} ` +
+        `${share(cell.medianCvShare).padStart(7)} ` +
+        `${share(cell.medianBurstShare).padStart(7)} ` +
+        `${String(cell.trendHeavy).padStart(11)}`,
+    );
+  }
+  lines.push('');
   lines.push('  "dev-led" means deviation ≥ half the score. A relative DROP is capped');
   lines.push('  at log10(2) ≈ 0.301, so a high score with rise > drop is an unbounded');
   lines.push('  rise; "base<=1e-3" counts decisive metrics the near-zero-baseline guard');
-  lines.push('  would test, which is how a miscalibrated ABSOLUTE floor shows up.');
+  lines.push('  would test, which is how a miscalibrated ABSOLUTE floor shows up. Compare');
+  lines.push('  the composition columns across populations: the same term in both means the');
+  lines.push('  winner has MORE of it, not a different one, and no reweighting separates them.');
   return `${lines.join('\n')}\n`;
 }
 

@@ -162,10 +162,12 @@ function formatAnomalyShape(outcomes: readonly MetricDiagnostic[]): string[] {
       `drop=${fmtRatio(b.dropRatio)},base=${fmtBase(b.baselineMean)}}`
     );
   });
+  // The declared count is what FOLLOWS on the line, and the denominator is the
+  // kept count when the render was truncated. Declaring the kept count instead
+  // asserts entries that were never printed, which is indistinguishable from a
+  // truncated line — and the reader is right to reject it.
   const count =
-    withBreakdown.length === kept.length
-      ? String(withBreakdown.length)
-      : `${withBreakdown.length}/${kept.length}`;
+    shown.length === kept.length ? String(shown.length) : `${shown.length}/${kept.length}`;
   return [`    metricTop(${count}): ${shown.join(' ')}`];
 }
 

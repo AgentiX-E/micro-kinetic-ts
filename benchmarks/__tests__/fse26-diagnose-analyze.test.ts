@@ -1001,6 +1001,82 @@ describe('anomalyShape', () => {
     expect(anomalyShape(cases).every((c) => c.services === 0)).toBe(true);
   });
 
+  it('reports how each population composed its score', () => {
+    // The point of the composition columns: the SAME term leading in both
+    // populations means the winner has more of it, not a different one, and no
+    // reweighting of that term separates them. A bonus-led winner against a
+    // deviation-led source would be the opposite finding.
+    const cases = parse(
+      ['ts-src'],
+      [
+        {
+          serviceId: 'ts-src',
+          metricOutcomes: [
+            {
+              label: 'mem',
+              outcome: 'kept',
+              score: 0.4,
+              breakdown: {
+                ...BREAKDOWN,
+                deviation: 0.29,
+                trend: 0.1,
+                cv: 0.008,
+                burst: 0,
+                riseRatio: 4.9,
+                dropRatio: 0.01,
+              },
+            },
+          ],
+        },
+        {
+          serviceId: 'ts-w',
+          metricOutcomes: [
+            {
+              label: 'hubble_p99',
+              outcome: 'kept',
+              score: 1,
+              breakdown: {
+                ...BREAKDOWN,
+                deviation: 0.1,
+                trend: 0.8,
+                cv: 0.05,
+                burst: 0.05,
+                riseRatio: 1.26,
+                dropRatio: 0.01,
+              },
+            },
+          ],
+        },
+      ],
+      ['ts-w', 'ts-src'],
+    );
+
+    const cells = anomalyShape(cases);
+    const source = cells.find((c) => c.population === 'ground-truth source')!;
+    const winner = cells.find((c) => c.population === 'wrong top-1 winner')!;
+
+    expect(source.medianDeviationShare).toBeCloseTo(0.725, 3);
+    expect(source.medianTrendShare).toBeCloseTo(0.25, 3);
+    expect(source.trendHeavy).toBe(1);
+    expect(winner.medianDeviationShare).toBeCloseTo(0.1, 3);
+    expect(winner.medianTrendShare).toBeCloseTo(0.8, 3);
+    expect(winner.medianCvShare).toBeCloseTo(0.05, 3);
+    expect(winner.medianBurstShare).toBeCloseTo(0.05, 3);
+    expect(winner.trendHeavy).toBe(1);
+    expect(formatAnomalyShapeReport(cases, 'dump.txt')).toContain(
+      'How those scores were composed (median share of the score):',
+    );
+  });
+
+  it('leaves the composition columns blank for a population with no members', () => {
+    const cases = parse(['ts-src'], [{ serviceId: 'ts-src' }], ['ts-src']);
+    const report = formatAnomalyShapeReport(cases, 'dump.txt');
+
+    expect(report).toContain('trend>=25%');
+    // n=0, dev, trend, cv, burst and the count all render as placeholders/zero.
+    expect(report).toMatch(/\n {2}wrong top-1 winner\s+0\s+-\s+-\s+-\s+-\s+0\n/);
+  });
+
   it('skips a service the block never rendered an inventory for', () => {
     // A case has ~51 services and only the ground truth and the predictions are
     // rendered, so "no inventory" is the common case and must read as
