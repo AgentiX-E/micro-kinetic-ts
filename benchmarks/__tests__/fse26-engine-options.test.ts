@@ -33,9 +33,9 @@ describe('buildFse26EngineOptions', () => {
     // Off by default: the shipped configuration must not carry the signal until
     // it has been ablated against the kill criterion.
     expect(buildFse26EngineOptions(BASE).signals.failedEdgeWeight).toBe(0);
-    expect(
-      buildFse26EngineOptions({ ...BASE, failedEdgeWeight: 1 }).signals.failedEdgeWeight,
-    ).toBe(1);
+    expect(buildFse26EngineOptions({ ...BASE, failedEdgeWeight: 1 }).signals.failedEdgeWeight).toBe(
+      1,
+    );
 
     // End to end, from argv — the only path a dispatch actually takes.
     const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--failed-edge-weight', '2.5']));

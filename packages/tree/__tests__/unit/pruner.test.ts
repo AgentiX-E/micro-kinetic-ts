@@ -1466,9 +1466,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
   // roles the signal has to tell apart, and the direction is the whole point.
   const CALLER = 'ts-ui-dashboard';
   const CALLEE = 'ts-order-service';
-  const failedTraceEdges = [
-    { caller: CALLER, callee: CALLEE, failed: 10, baseline: 0 },
-  ];
+  const failedTraceEdges = [{ caller: CALLER, callee: CALLEE, failed: 10, baseline: 0 }];
 
   // Both services deviate after injection, so both are rankable candidates and
   // the ONLY thing that can separate their scores is the new term.

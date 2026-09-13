@@ -113,9 +113,7 @@ describe('FSE26 report — the two renderings agree', () => {
     // published one — and a flipped switch cannot hide inside it.
     const shipped = formatFSE26ConfigLine(makeConfig());
     expect(shipped).not.toContain('failedEdgeWeight');
-    expect(shipped).toBe(
-      'Config: logWeight=1 logMode=logicHttp rankNormalization=true',
-    );
+    expect(shipped).toBe('Config: logWeight=1 logMode=logicHttp rankNormalization=true');
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
     );
