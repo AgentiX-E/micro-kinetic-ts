@@ -309,8 +309,38 @@ discarded.
 
 Run **`34753450177`** is the re-dispatch on `rcabench-full-v3`. It was dispatched
 before the hardening landed, so it still runs the old step text (a workflow is
-pinned at dispatch time); the hardening applies to every run after it.
+pinned at dispatch time); the hardening applies to every run after it. It
+**succeeded** — ~68 minutes, of which the download was only ~13: the object had
+been spooled out of cold storage by the previous failed attempt. The new manifest
+carries `converterRevision cac1ca5`, `converterDigest sha256:92927553…`, and
+`totalCases 1422`; every shard is a few tens of kilobytes LARGER than the set it
+replaces (HTTP `1610150223` vs `1610114253`), which is the `failedTraceEdges`
+payload itself.
 
-The remaining work while it builds is the engine-side consumer of
-`failedTraceEdges` — the field is data only, and no scoring signal reads it yet.
+### Verified end to end
+
+Run **`34756473190`** (`fse26-benchmark.yml`, `shard_tag: rcabench-full-v3`)
+closes the loop, which is what makes this section more than a status report:
+
+```
+provenance OK: converter cac1ca51… sha256:92927553… built 2026-09-13T12:09:01Z
+provenance OK: 7 shard(s) verified in /home/runner/rcabench
+Config: logWeight=1 logMode=logicHttp rankNormalization=true
+Cases discovered: 1422; evaluated: 1422
+Top@1 = 47.3%   Top@3 = 60.7%   Top@5 = 65.8%
+loadErrors=0 engineErrors=0 emptyGraphs=0
+```
+
+Three things are established at once. The gate that was failing loudly now passes
+against the current checkout — the rebuild really did remove the block, and it
+verifies the converter digest plus every shard's `bytes` and `sha256`, so the
+whole cache is content-checked rather than merely present. The shipped
+configuration reproduces `47.3 / 60.7 / 65.8` on the **schema 3** cache, at the
+same per-fault-type counts (`ReplaceCode 159/231`, `ReplaceMethod 123/190`), so
+adding the field changed no shipped number — which is the control arm for the
+comparison that follows. And all 1422 cases still load with zero load errors,
+zero engine errors, and zero empty graphs.
+
+The remaining work is the engine-side consumer of `failedTraceEdges` — the field
+is data only, and no scoring signal reads it yet.
 
