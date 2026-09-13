@@ -1,0 +1,106 @@
+# FSE'26 HTTP + Network misses — verdict: two mechanisms, and the metric layer is the bigger one
+
+Run `34742498321` on `4dde4bc`, categories `HTTP,Network`, 1050 cases,
+`diagnose_limit=0` so every case is dumped (149,680 lines). Top@1 59.33%, Top@3
+74.00%, Top@5 77.71%. The per-fault-type cells reproduce the published full-set
+numbers exactly (159/231, 123/190, 39/97, 39/88, 42/89, 12/48, 14/46, 12/42,
+47/60, 34/44, 45/51, 16/21, 3/4, 38/39), so the dump is the full population for
+these families and not a sample.
+
+These two families hold **426 of the benchmark's 749 misses (57%)** and sit at
+29–69% Top@1, against the 2% of the structural silent block. The question was
+whether they share the block's mechanism.
+
+## 1. They do not. The misses split roughly half and half
+
+`finalScore = log1p(selfAnomaly) + logScore` reproduces the observed rank 1 in
+**1046/1046** cases of this dump, so the two-term model is exact here as well.
+
+| class | count | shape |
+| ----- | ----- | ----- |
+| **log-decided** | 208/426 (49%) | the winner emits accepted messages and the source emits fewer or none |
+| **log-silent** | 218/426 (51%) | *neither* side emits an accepted message — the metric layer alone decides |
+
+and within the log-decided half, **163/426 (38% of all misses) are cases where the
+source's metric term ALONE is already larger than the winner's** — the log term is
+the only obstacle. That pool is **eighteen times the silent block's entire
+ceiling on the logWeight axis** (163 against 9), although it is the same wall:
+the block's own verdict proved a log-silent source cannot overtake the case's top
+emitter while both terms are bounded to `[0, 1]`.
+
+Per type, the metric gap `D = log1p(winner) - log1p(source)` separates the two
+classes cleanly:
+
+| fault type | misses | source logged | winner logged | median winner logScore | median D |
+| ---------- | ------ | ------------- | ------------- | ---------------------- | -------- |
+| HTTPResponseReplaceCode | 72 | 14 | 14 | 0.00 | **0.4005** |
+| HTTPRequestReplaceMethod | 67 | 20 | 26 | 0.00 | **0.2485** |
+| HTTPRequestAbort | 13 | 3 | 3 | 0.00 | **0.3425** |
+| NetworkPartition | 58 | 3 | 33 | 1.00 | 0.0305 |
+| HTTPResponseDelay | 47 | 29 | 29 | 1.00 | 0.0513 |
+| HTTPRequestDelay | 49 | 31 | 31 | 1.00 | 0.0305 |
+| NetworkLoss | 36 | 3 | 20 | 1.00 | 0.0202 |
+| NetworkCorrupt | 32 | 2 | 18 | 1.00 | 0.0202 |
+| NetworkBandwidth | 30 | 0 | 21 | 1.00 | 0.0211 |
+| HTTPResponseAbort | 10 | 6 | 6 | 1.00 | 0.2392 |
+
+The replace/abort types are **log-silent metric failures**: no log signal on
+either side, and the source loses by a wide metric margin (median `D` 0.25–0.40).
+They are at 64–78% Top@1 precisely because the log signal is what normally wins
+them, and these are the cases where it does not fire.
+
+The network types and the two delay types are the **small-gap log contest**: the
+metric gap is 0.02–0.05, i.e. one to three rank positions, and the winner takes it
+by holding the maximum log term (median 1.00) while the source holds less.
+
+## 2. What decides the log-silent half
+
+For the 218 log-silent misses, grouping each service's `dominant=` label into
+families:
+
+| the SOURCE's own most-anomalous metric is | n | the WINNER's is | n |
+| ----------------------------------------- | - | --------------- | - |
+| http inbound latency | 110 | **db connection pool** | **75** |
+| network io/errors | 30 | http inbound latency | 69 |
+| cpu | 23 | otel collector internals | 16 |
+| jvm cpu | 16 | node / pod-limits | 16 |
+| db connection pool | 10 | jvm cpu | 14 |
+
+Broken down by label, the winner's connection-pool wins are
+`db.client.connections.use_time.max` **56** and
+`db.client.connections.wait_time.max` **19**.
+
+**That split is the reason the family-level ablation failed.** Those two labels do
+opposite jobs: in the silent-block analysis `use_time.max` was the decisive metric
+of 39 wrong winners (a *victim* signature) while `wait_time.max` was among the
+sources' own beaters (a *source* signature). Dropping the whole family therefore
+removed the source's own evidence at the same time as the victim's, which is
+exactly the shape the measurement had: **+0.14pp with five regressed types**. The
+apparent bound (68 cases flippable against 25 hurt) was optimistic for the same
+reason the method always is — the bound ignores that the other side has a second
+metric ready to take over.
+
+The derived probe is therefore narrower: drop **`use_time.max` only** and keep
+`wait_time.max`. Dispatched as a full 1422-case run.
+
+## 3. What this changes about where the work is
+
+The silent block is closed and provably so, but it was never the benchmark's
+biggest lever — the sweep's own pricing said the metric term alone is 14.98% and
+the log term adds 32.35pp. This diagnostic says the same thing from the miss side:
+
+1. **218 misses (51% of these families, 29% of every miss in the benchmark) have
+   no log signal at all.** They are pure metric failures, and they are not close:
+   median `D` runs 0.25–0.40 for the log-silent types. No log-side change can
+   touch them, and the metric layer is what has to improve.
+2. **163 more are cases where the metric already ranks the source first** and the
+   log term overrides it — the same bounded-terms wall, but on a pool eighteen
+   times larger than the block's.
+3. The `http inbound latency` family is the source's own decisive metric in
+   110/218 log-silent misses, so the question is not "the source has no signal" —
+   as it was for the block — but "why does an equivalent signal on the winner win".
+
+So the next measurement is the narrow label ablation dispatched above, and its
+kill criterion is unchanged: RCAEval golden 9-cell bit-identical, FSE'26 zero
+regressed fault types. A narrower drop than a family is the only form of this
+ablation that has not already been rejected.
