@@ -273,7 +273,7 @@ because Zenodo serves from cold storage.
 | 2 | The same job with a byte prefix | Already implemented and exercised (run `34490555117`). Not a rebuild — but it is the cheap real-data check, and it needs no out-of-band URL. |
 | 3 | Stream the shards per category (peak = largest category) | **Not needed** — the disk constraint it removes does not exist. It would be an unmotivated change: run time is unchanged, because the cost is the archive download, not the tree. |
 | 4 | A larger or self-hosted runner | **Not needed**, for the same reason. |
-| 5 | Re-host the archive to kill the cold-storage download | The only option with a real measured argument: it saves ~2h20m **per rebuild** forever (2h24m of the 3h17m is Zenodo at ~1.5 MB/s). Cost is one upload, split because release assets cap at 2 GiB per file, plus a digest gate so a re-hosted archive cannot go stale silently. Worth doing once converter revisions are expected to keep landing — not before this rebuild proves the field. |
+| 5 | Re-host the archive to kill the cold-storage download | The only option with a real measured argument, and it is now two arguments. Cost: it saves ~2h20m **per rebuild** forever (2h24m of the 3h17m is Zenodo at ~1.5 MB/s). Availability: the dependency has already failed for real on the first dispatch that used it — run `34752201606` took 25 minutes of continuous 504s, transferred **zero bytes**, and failed the job, because `--retry 30 --retry-delay 20` is a fixed attempt count and a cold spool is not a transient blip. The retry budget was rebased on the deadline (`download_deadline_seconds`, commit `ca6688b` in the data repository), which restores the path; re-hosting is what removes the dependency. Needs a split upload (release assets cap at 2 GiB per file) and a digest gate so a re-hosted archive cannot go stale silently — the archive carries **no digest today**, unlike the shards. |
 
 So the answer to "is streaming the only option" is that it is **not an option at
 all** — it was a fix for a constraint that measurement had not established. What
@@ -295,6 +295,21 @@ an already-published figure by checking out the commit it was measured on. The
 `v3` tag will carry `schemaVersion 3`, the new `converterRevision`, and a fresh
 `converterDigest`; the consumer's provenance gate then passes against the current
 checkout instead of failing loudly, which is what it does today.
+
+That first dispatch **failed**, at the download, and the failure is worth keeping
+because it is the strongest argument for option 5 above: 25 minutes of
+uninterrupted Zenodo 504s, zero bytes transferred, `curl: (22)` once the fixed
+retry count ran out. Nothing downstream ran. The retry budget was rebased on a
+deadline instead of an attempt count (`ca6688b` in the data repository), verified
+by extracting that step's own text from the workflow and running it under
+`bash -e` against a stub `curl` — retries then succeeds, an endless 504 storm
+terminates at the deadline rather than hanging, prefix mode still forwards the
+Range request, and `-C -` survives on every attempt so no partial download is
+discarded.
+
+Run **`34753450177`** is the re-dispatch on `rcabench-full-v3`. It was dispatched
+before the hardening landed, so it still runs the old step text (a workflow is
+pinned at dispatch time); the hardening applies to every run after it.
 
 The remaining work while it builds is the engine-side consumer of
 `failedTraceEdges` — the field is data only, and no scoring signal reads it yet.
