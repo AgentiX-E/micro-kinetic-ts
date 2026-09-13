@@ -51,6 +51,17 @@ export type { JohnsonCycleOptions } from './graph/cycle-detector.js';
 // rescale (rank or min-max). Consumers need to be able to verify that property
 // rather than infer it — see the invariance suite in `ranking-signals.test.ts`.
 export { rankNormalizeScores } from './causal/topology-fault-graph.js';
+// The topology config is part of the public surface: `TreePruner` takes a
+// `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a
+// consumer that wants to name the object it builds — rather than infer it — needs
+// the type. It is also the home of the scoring ablation switches, which a
+// benchmark harness has to be able to describe.
+export type {
+  MetricBreakdown,
+  MetricDiagnostic,
+  MetricDiagnosticOutcome,
+  TopologyFaultGraphConfig,
+} from './causal/topology-fault-graph.js';
 
 // Pruning
 export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';

@@ -46,6 +46,7 @@ export default defineConfig({
         'src/fse26-report.ts',
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-cli.ts',
+        'src/fse26-engine-options.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

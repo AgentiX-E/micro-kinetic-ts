@@ -48,6 +48,7 @@ import {
   formatFSE26Diagnostic,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+import { buildFse26EngineOptions } from './fse26-engine-options.js';
 
 import { parseFSE26Args } from './fse26-cli.js';
 import { buildFSE26Report, formatFSE26ConfigLine, type FSE26RunConfig } from './fse26-report.js';
@@ -183,14 +184,8 @@ async function main(): Promise<void> {
   // Production ranking config: the log signal is shipped enabled (benchmark
   // #220 net-positive, zero regression); every other causal prior is opt-in.
   // Rank normalization is load-bearing on Train Ticket's large topologies.
-  const pruner = new TreePruner(
-    { logWeight: opts.logWeight, logSignalMode: opts.logMode },
-    {
-      rankNormalization: opts.rankNormalization,
-      metricRiseCeiling: opts.metricRiseCeiling,
-      metricFleetBaseline: opts.metricFleetBaseline,
-    },
-  );
+  const engineOptions = buildFse26EngineOptions(opts);
+  const pruner = new TreePruner(engineOptions.signals, engineOptions.topology);
 
   console.log("Micro-Kinetic — FSE'26 RCABench");
   console.log('═'.repeat(65));
