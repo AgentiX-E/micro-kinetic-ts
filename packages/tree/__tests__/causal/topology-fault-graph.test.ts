@@ -2522,3 +2522,106 @@ describe('buildTopologyFaultGraph — Metric Competition Diagnostics', () => {
     }
   });
 });
+
+describe('buildTopologyFaultGraph — Metric Rise Ceiling', () => {
+  // A memory-stress shape: a flat baseline of 1 stepping to 50, i.e. a ~49x
+  // relative rise against a REAL operating baseline (not a near-zero artifact,
+  // so the near-zero guard does not apply and the ceiling is the only thing
+  // that can bound it).
+  const rising = () =>
+    makeMetrics([
+      [
+        'svc-rise',
+        [
+          makeTimeSeries('container.memory.rss', [
+            ...Array.from({ length: 30 }, () => 1),
+            ...Array.from({ length: 10 }, () => 50),
+          ]),
+        ],
+      ],
+    ]);
+  const risingGraph = makeCallGraph(['svc-rise'], []);
+
+  it('is off by default — the ceiling must be a strict opt-in', () => {
+    // The golden RCAEval baseline is produced with no ceiling, so "off" has to
+    // be bit-identical to the option never being passed, not merely close.
+    const absent = buildTopologyFaultGraph(risingGraph, rising());
+    const zero = buildTopologyFaultGraph(risingGraph, rising(), { metricRiseCeiling: 0 });
+    const negative = buildTopologyFaultGraph(risingGraph, rising(), { metricRiseCeiling: -1 });
+
+    expect(zero.anomalyScores.get('svc-rise')).toBe(absent.anomalyScores.get('svc-rise'));
+    expect(negative.anomalyScores.get('svc-rise')).toBe(absent.anomalyScores.get('svc-rise'));
+    expect(absent.dominantMetrics.get('svc-rise')!.breakdown!.riseRatio).toBeGreaterThan(10);
+  });
+
+  it('clamps the deviation of a rise at the ceiling, leaving the bonuses alone', () => {
+    // The expectation is derived from the UNCAPPED breakdown rather than from a
+    // hand-copied number: the trend and cv terms depend on the series shape and
+    // must survive the clamp unchanged, while the burst term is a fraction of
+    // the deviation and must follow it.
+    const open = buildTopologyFaultGraph(risingGraph, rising());
+    const b = open.dominantMetrics.get('svc-rise')!.breakdown!;
+    expect(b.riseRatio).toBeGreaterThan(10);
+
+    const capped = buildTopologyFaultGraph(risingGraph, rising(), { metricRiseCeiling: 10 });
+    const deviation = Math.log10(1 + 10);
+    const expected = deviation + b.trend + (b.burst > 0 ? 0.1 * deviation : 0) + b.cv;
+
+    expect(capped.anomalyScores.get('svc-rise')).toBeCloseTo(expected, 12);
+    expect(capped.anomalyScores.get('svc-rise')).toBeLessThan(open.anomalyScores.get('svc-rise')!);
+  });
+
+  it('still reports the true rise, so the diagnostic does not lie about the data', () => {
+    // The clamp is a scoring decision, not a property of the series. A breakdown
+    // that echoed the clamped ratio would hide the very excursion the clamp
+    // exists to bound, and the diagnostic could no longer justify the setting.
+    const open = buildTopologyFaultGraph(risingGraph, rising());
+    const capped = buildTopologyFaultGraph(risingGraph, rising(), { metricRiseCeiling: 10 });
+
+    expect(capped.dominantMetrics.get('svc-rise')!.breakdown!.riseRatio).toBe(
+      open.dominantMetrics.get('svc-rise')!.breakdown!.riseRatio,
+    );
+    expect(capped.metricDiagnostics.get('svc-rise')![0]!.breakdown!.riseRatio).toBe(
+      open.metricDiagnostics.get('svc-rise')![0]!.breakdown!.riseRatio,
+    );
+    expect(capped.metricDiagnostics.get('svc-rise')![0]!.breakdown!.deviation).toBeLessThan(
+      open.metricDiagnostics.get('svc-rise')![0]!.breakdown!.deviation,
+    );
+  });
+
+  it('changes nothing when the ceiling is above the metric rise', () => {
+    const open = buildTopologyFaultGraph(risingGraph, rising());
+    const above = buildTopologyFaultGraph(risingGraph, rising(), { metricRiseCeiling: 1000 });
+
+    expect(above.anomalyScores.get('svc-rise')).toBe(open.anomalyScores.get('svc-rise'));
+  });
+
+  it('is a bound on the ratio itself, so a ceiling below 1 also bounds a DROP', () => {
+    // The rule is "no single metric may exceed a relative deviation of R", and a
+    // drop's ratio is already bounded at 1 by construction — which is why a
+    // ceiling at or above 1 can only ever affect rises.
+    const crash = makeMetrics([
+      [
+        'svc-crash',
+        [
+          makeTimeSeries('cpu', [
+            ...Array.from({ length: 8 }, () => 30),
+            ...Array.from({ length: 8 }, () => 0.3),
+          ]),
+        ],
+      ],
+    ]);
+    const graph = makeCallGraph(['svc-crash'], []);
+
+    const open = buildTopologyFaultGraph(graph, crash);
+    const capped = buildTopologyFaultGraph(graph, crash, { metricRiseCeiling: 0.5 });
+    const b = open.dominantMetrics.get('svc-crash')!.breakdown!;
+    const deviation = Math.log10(1 + 0.5);
+
+    expect(b.dropRatio).toBeGreaterThan(0.5);
+    expect(capped.anomalyScores.get('svc-crash')).toBeCloseTo(
+      deviation + b.trend + (b.burst > 0 ? 0.1 * deviation : 0) + b.cv,
+      12,
+    );
+  });
+});

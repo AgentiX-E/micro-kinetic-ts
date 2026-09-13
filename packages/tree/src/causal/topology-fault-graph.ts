@@ -227,6 +227,31 @@ export interface TopologyFaultGraphConfig {
    * the default is changed.
    */
   readonly suppressNearZeroBaselineRise: boolean;
+  /**
+   * Largest relative deviation ONE metric may contribute, as a bound on the
+   * ratio itself rather than on the resulting score.
+   *
+   * `deviation = log10(1 + max(riseRatio, dropRatio × (1 − collapseDiscount)))`
+   * is unbounded in the RISE direction and bounded at `log10(2) ≈ 0.301` in the
+   * DROP direction (a relative drop cannot exceed 100%), so `max over metrics`
+   * hands a service's whole anomaly score to whichever of its metrics happened
+   * to move furthest in relative terms. Measured on the FSE'26 silent block
+   * (run 34694846718, 369 cases): the metric that dethroned the fault source
+   * rises a median of 29.2× against the source's own 8.5×, so the *symptom*
+   * wins on dynamic range alone — `docs/fse26-metric-competition-verdict.md`.
+   *
+   * A ceiling states that past some point "moved a lot" is all a metric is
+   * allowed to say, so no single metric can be worth an unbounded amount more
+   * than another. It preserves the ordering among a service's own metrics below
+   * the ceiling, which is where a source's genuine signature lives.
+   *
+   * Because a drop's ratio is already ≤ 1, any ceiling at or above 1 can only
+   * affect rises; a ceiling below 1 is a bound on both directions.
+   *
+   * `0` (or any non-positive value) means OFF. Default: `0` — bit-identical to
+   * the shipped scoring, which is what the golden RCAEval baseline depends on.
+   */
+  readonly metricRiseCeiling: number;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -247,6 +272,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   rankNormalization: false, // min-max rescale (shipped behaviour)
   suppressIdleTransients: false, // non-zero-baseline transient guard only (shipped)
   suppressNearZeroBaselineRise: false, // near-zero-baseline rise suppression (opt-in)
+  metricRiseCeiling: 0, // unbounded relative rise (shipped behaviour)
 };
 
 /**
@@ -832,7 +858,13 @@ function computeAnomalyFeatures(
     // the default 0 this is bit-identical to max(riseRatio, dropRatio).
     const collapseDiscount = cfg.collapseDiscount > 0 ? cfg.collapseDiscount : 0;
     const effectiveDrop = dropRatio * (1 - collapseDiscount);
-    const ratio = Math.max(riseRatio, effectiveDrop);
+    const unboundedRatio = Math.max(riseRatio, effectiveDrop);
+    // The ceiling bounds the ratio, not the score, so the breakdown keeps
+    // reporting the TRUE rise/drop while the deviation reflects the clamp: a
+    // diagnostic that echoed the clamped value could no longer justify the
+    // setting, because the excursion it exists to bound would be invisible.
+    const ratio =
+      cfg.metricRiseCeiling > 0 ? Math.min(unboundedRatio, cfg.metricRiseCeiling) : unboundedRatio;
     const deviation = Math.log10(1 + ratio);
     if (deviation < 1e-6) {
       drop(ts.label, 'sub-epsilon-deviation');

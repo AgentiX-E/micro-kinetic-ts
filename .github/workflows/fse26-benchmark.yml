@@ -31,6 +31,10 @@ on:
         description: 'Max diagnostic dumps per matching fault type (0 = unlimited)'
         required: false
         default: '3'
+      rise_ceiling:
+        description: 'Ceiling on the relative deviation one metric may contribute (empty = the runner default, which is unbounded)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -135,10 +139,20 @@ jobs:
           if [ -n "${{ inputs.log_mode }}" ]; then
             LOG_MODE_ARG=(--log-mode "${{ inputs.log_mode }}")
           fi
+          #   Same rule as the log mode: passed only when the dispatch input is
+          #   non-empty, so the runner's default (unbounded) is the single source
+          #   of truth for the shipped configuration. The value the run actually
+          #   used is echoed in the `Config:` line and in the artifact's `config`
+          #   block, so an ablation is distinguishable from a published run.
+          RISE_CEILING_ARG=()
+          if [ -n "${{ inputs.rise_ceiling }}" ]; then
+            RISE_CEILING_ARG=(--rise-ceiling "${{ inputs.rise_ceiling }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --log-weight "${{ inputs.log_weight }}" \
             "${LOG_MODE_ARG[@]}" \
+            "${RISE_CEILING_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \
             "${DIAGNOSE_ARG[@]}" \
             --output fse26-results.json 2>&1 | tee fse26-results.txt

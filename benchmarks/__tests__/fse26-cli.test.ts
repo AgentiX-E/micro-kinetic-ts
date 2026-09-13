@@ -141,6 +141,28 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--log-weight', 'x']).logWeight).toBe(0);
   });
 
+  it('parses the metric rise ceiling, defaulting to unbounded', () => {
+    expect(parseFSE26Args([]).metricRiseCeiling).toBe(0);
+    expect(parseFSE26Args(['--rise-ceiling', '10']).metricRiseCeiling).toBe(10);
+    expect(parseFSE26Args(['--rise-ceiling', '2.5']).metricRiseCeiling).toBe(2.5);
+    expect(parseFSE26Args(['--rise-ceiling', '0']).metricRiseCeiling).toBe(0);
+  });
+
+  it('rejects a ceiling with trailing garbage instead of running a different one', () => {
+    // THE reason this flag does not use `parseFloat`: `parseFloat('1O')` is 1, so
+    // `--rise-ceiling 1O` meaning 10 would have measured a ceiling of 1 — a
+    // plausible number from a DIFFERENT configuration, which is worse than a
+    // failure because nothing in the artifact looks wrong. Anything that is not
+    // a finite positive number falls back to the shipped configuration, which
+    // can only reproduce published numbers.
+    expect(parseFSE26Args(['--rise-ceiling', '1O']).metricRiseCeiling).toBe(0);
+    expect(parseFSE26Args(['--rise-ceiling', '10x']).metricRiseCeiling).toBe(0);
+    expect(parseFSE26Args(['--rise-ceiling', '']).metricRiseCeiling).toBe(0);
+    expect(parseFSE26Args(['--rise-ceiling', '-4']).metricRiseCeiling).toBe(0);
+    expect(parseFSE26Args(['--rise-ceiling', 'Infinity']).metricRiseCeiling).toBe(0);
+    expect(parseFSE26Args(['--rise-ceiling']).metricRiseCeiling).toBe(0);
+  });
+
   it('ignores unknown flags', () => {
     expect(parseFSE26Args(['--verbose', '--log-mode', 'count']).logMode).toBe('count');
   });

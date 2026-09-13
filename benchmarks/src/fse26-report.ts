@@ -40,6 +40,15 @@ export interface FSE26RunConfig {
   readonly rankNormalization: boolean;
   /** Metric names dropped for this run (empty = no ablation). */
   readonly dropMetrics: readonly string[];
+  /**
+   * Ceiling on one metric's relative deviation (0 = unbounded, the shipped
+   * behaviour). An ablation switch for the anomaly score's dynamic range: the
+   * RISE direction is unbounded while a DROP is capped at `log10(2)`, so a
+   * service's score can be handed to whichever of its metrics has the widest
+   * range. A run at a non-zero ceiling is a different configuration and has to
+   * say so, or its numbers cannot be compared with the published ones.
+   */
+  readonly metricRiseCeiling: number;
 }
 
 /** One fault type's cell in the summary. */
@@ -91,6 +100,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'logSignalMode',
   'rankNormalization',
   'dropMetrics',
+  'metricRiseCeiling',
 ] as const;
 
 /**
@@ -131,6 +141,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     `rankNormalization=${config.rankNormalization}`;
   if (config.dropMetrics.length > 0) {
     line += ` dropMetrics=[${config.dropMetrics.join(', ')}]`;
+  }
+  // Printed only when it changes the configuration, like `dropMetrics`: the JSON
+  // always carries it, and the line exists to make a NON-default run visible.
+  if (config.metricRiseCeiling > 0) {
+    line += ` riseCeiling=${config.metricRiseCeiling}`;
   }
   return line;
 }

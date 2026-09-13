@@ -88,6 +88,17 @@ export interface Fse26CliOptions {
    * bridge had never emitted that source — without rebuilding the cache.
    */
   readonly dropMetrics: readonly string[];
+  /**
+   * Ceiling on one metric's relative deviation (0 = unbounded, the shipped
+   * behaviour).
+   *
+   * The anomaly score is `max` over a service's metrics and the RISE direction
+   * is unbounded, so a symptom with a wide dynamic range can out-score the
+   * source's own signature — measured at 29.2x against 8.5x median rise on the
+   * FSE'26 silent block (`docs/fse26-metric-competition-verdict.md`). This is
+   * the ablation switch for that bound; the default is off.
+   */
+  readonly metricRiseCeiling: number;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -120,6 +131,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     diagnose: [] as string[],
     diagnoseLimit: 3,
     dropMetrics: [] as string[],
+    metricRiseCeiling: 0,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -138,6 +150,16 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--diagnose-limit' && i + 1 < argv.length)
       opts.diagnoseLimit = parseInt(argv[++i]!, 10) || 0;
     else if (arg === '--drop-metrics' && i + 1 < argv.length) opts.dropMetrics = csv(argv[++i]!);
+    else if (arg === '--rise-ceiling' && i + 1 < argv.length) {
+      // STRICT, unlike the other numeric flags: `parseFloat('1O')` is 1, so a
+      // typo would run a plausible but DIFFERENT ablation than the one asked
+      // for — `--rise-ceiling 1O` meaning 10 would silently measure 1. `Number`
+      // rejects the trailing garbage, and anything not a finite positive value
+      // falls back to the SHIPPED configuration, which can only reproduce
+      // published numbers rather than invent an unmeasured one.
+      const ceiling = Number(argv[++i]!);
+      opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
+    }
   }
 
   return opts;

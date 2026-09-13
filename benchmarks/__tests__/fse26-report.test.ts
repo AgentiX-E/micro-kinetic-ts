@@ -32,6 +32,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     logSignalMode: 'logicHttp',
     rankNormalization: true,
     dropMetrics: [],
+    metricRiseCeiling: 0,
     ...overrides,
   };
 }
@@ -74,8 +75,14 @@ describe('FSE26 report — attribution', () => {
     // Verbatim from the artifacts of runs 34604105028 (47.3%) and 34604119657
     // (23.1%). Both fields that differ between those runs are absent, so this
     // check is what would have flagged them as unattributable.
+    // `metricRiseCeiling` is additionally absent because it postdates those
+    // runs; the point of the check is that TODAY's requirement set flags them.
     const published = { logWeight: 1, rankNormalization: true };
-    expect(missingReportedConfigFields(published)).toEqual(['logSignalMode', 'dropMetrics']);
+    expect(missingReportedConfigFields(published)).toEqual([
+      'logSignalMode',
+      'dropMetrics',
+      'metricRiseCeiling',
+    ]);
   });
 
   it('treats a non-object as carrying nothing', () => {
@@ -94,6 +101,16 @@ describe('FSE26 report — the two renderings agree', () => {
     // The line and the JSON are rendered from one object; `missingReportedConfigFields`
     // is the executable form of "both carry the same four fields".
     expect(missingReportedConfigFields(makeConfig())).toHaveLength(0);
+  });
+
+  it('names the rise ceiling only when it changes the configuration', () => {
+    // The shipped configuration is an unbounded rise, so a ceiling of 0 adds
+    // nothing to the line — but a run WITH one is a different configuration and
+    // must be distinguishable from the published numbers at a glance.
+    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('riseCeiling');
+    expect(formatFSE26ConfigLine(makeConfig({ metricRiseCeiling: 10 }))).toContain(
+      'riseCeiling=10',
+    );
   });
 
   it('mentions the dropped metric names only when there is an ablation', () => {

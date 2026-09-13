@@ -176,6 +176,7 @@ async function main(): Promise<void> {
     logSignalMode: opts.logMode,
     rankNormalization: opts.rankNormalization,
     dropMetrics: opts.dropMetrics,
+    metricRiseCeiling: opts.metricRiseCeiling,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark
@@ -183,7 +184,7 @@ async function main(): Promise<void> {
   // Rank normalization is load-bearing on Train Ticket's large topologies.
   const pruner = new TreePruner(
     { logWeight: opts.logWeight, logSignalMode: opts.logMode },
-    { rankNormalization: opts.rankNormalization },
+    { rankNormalization: opts.rankNormalization, metricRiseCeiling: opts.metricRiseCeiling },
   );
 
   console.log("Micro-Kinetic — FSE'26 RCABench");
