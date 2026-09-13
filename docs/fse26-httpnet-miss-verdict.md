@@ -145,3 +145,58 @@ net gain and type regressions rather than a block of recovered cases.
 It also closes the input-ablation family completely: every form of it — five
 families by bound, the connection pool by family, the connection pool by label —
 has now been measured.
+
+## 5. The next evidence class, and the two free checks that located it
+
+The verdict above says the obstacle is the direction ambiguity: 163 misses where
+the source's metric already wins and the log term overrides it, and 208 more where
+the winner is the case's top log emitter. Removing the winner's decisive metric
+does not help (two cases recovered of 56 expected), so the fix has to change *who*
+the interface evidence is attributed to — which needs to know which callee a
+service's failed calls were against. Two free checks were run before designing
+anything.
+
+**Check 1 — the captured error messages cannot supply it.** The diagnostic already
+carries up to three post-injection error messages per service. Across the whole
+dump there are **19,522 `ERR:` lines**, and of those:
+
+- **0** mention any peer service (`ts-*-service` matches zero times);
+- **0** carry a URL, host, or port.
+
+They are truncated to 160 characters and generic: `HikariPool-1 - Connection is
+not available, request timed out after 30001ms`, `Communications link failure`,
+`Servlet.service() for servlet [dispatcherServlet] ... threw exception`. So a
+message-based direction signal is dead on arrival: the target is not in the text.
+The same read is corroborating rather than useless, though — `HikariPool ...
+request timed out` says *I am waiting on a shared resource*, which is a victim's
+signature, and the winner's decisive metric in the log-silent half is
+`db.client.connections.*` in 75 cases. That mechanism is already measured out by
+the two ablations above, so it closes rather than opens a lever.
+
+**Check 2 — the converter drops it, and the raw data has it.** `scripts/fse26_convert.py`
+emits `traceEdges` as **distinct `[caller, callee]` pairs only** — no status, no
+duration, no time, and therefore no attribution of *which* callee a failed call
+went to:
+
+    "traceEdges": [ ["ts-ui-dashboard", "ts-order-service"] ]
+
+while `read_trace_derived_metrics` in the same file already reads
+`attr.http.response.status_code` and `duration` per span, bucketed by service and
+window. The span-level information the engine needs is therefore present in the
+archive and is being aggregated away one level too early: the aggregation is
+per-service instead of per-edge.
+
+So the next iteration is a converter revision rather than an engine change:
+`read_failed_trace_edges` — the same polars self-join as `read_trace_edges`,
+filtered to spans whose HTTP response status is >= 400 — emitting
+`[[caller, callee, failed_count], ...]`. That is the only evidence class that can
+say "this service's failures were *against* that one", which is what "whose
+failure explains whose" needs, and it is what the 163 overridden cases and the 208
+log-decided ones lack.
+
+Its cost is the pipeline, not the algorithm: a converter revision changes the
+digest the provenance gate checks, so the shards must be rebuilt and republished
+before a benchmark can use them, and the local path cannot do it (the sandbox
+proxy is rate-limited to a few MB per twenty minutes). The kill criterion is
+unchanged — RCAEval golden 9-cell bit-identical, FSE'26 zero regressed fault
+types — and the signal is opt-in until it clears it.
