@@ -189,64 +189,113 @@ per-service instead of per-edge.
 So the next iteration is a converter revision rather than an engine change:
 `read_failed_trace_edges` — the same polars self-join as `read_trace_edges`,
 filtered to spans whose HTTP response status is >= 400 — emitting
-`[[caller, callee, failed_count], ...]`. That is the only evidence class that can
+`[[caller, callee, failed, baseline], ...]`, where `baseline` is the same count
+over the pre-injection window (an edge that was already failing is a deployment
+property, not fault evidence; merging the two would make a permanently broken
+edge read as the fault's signature). That is the only evidence class that can
 say "this service's failures were *against* that one", which is what "whose
 failure explains whose" needs, and it is what the 163 overridden cases and the 208
 log-decided ones lack.
 
 Its cost is the pipeline, not the algorithm: a converter revision changes the
 digest the provenance gate checks, so the shards must be rebuilt and republished
-before a benchmark can use them, and the local path cannot do it (the sandbox
-proxy is rate-limited to a few MB per twenty minutes). The kill criterion is
+before a benchmark can use them (§6 — the rebuild path exists and is dispatched),
+and the local path cannot do it (the sandbox proxy is rate-limited to a few MB per
+twenty minutes). The kill criterion is
 unchanged — RCAEval golden 9-cell bit-identical, FSE'26 zero regressed fault
 types — and the signal is opt-in until it clears it.
 
-## 6. The rebuild has no automated path — measured, and it is the gating step
+## 6. The rebuild path exists, in the data repository — and disk was never the constraint
 
-The converter revision is done and tested (193 Python tests, 100% statements and
-branches on every module; see `scripts/fse26_convert.py`'s
-`read_failed_trace_edges`, and `SCHEMA_VERSION` bumped 2 → 3 so a cache built
-before it is distinguishable rather than silently missing the field). What it
-cannot do on its own is take effect, and the reason is worth recording exactly.
+**Retraction first.** An earlier version of this section claimed (a) no workflow
+builds the shard cache, (b) the pipeline's peak disk is ~3.5× what a hosted runner
+has, and (c) the cheap prefix check needs an archive URL that is not recorded in
+the repository. All three are false, and all three were false for the same reason:
+the search was run over the *consumer* repository only. `AgentiX-E/rcabench-data`
+is the producer, and it was never opened. What follows replaces them.
 
-**No workflow builds the shard cache.** `fse26-benchmark.yml` and every other
-workflow only *download* the prebuilt shards from the `AgentiX-E/rcabench-data`
-release; `grep` over `.github/workflows/` finds no reference to `fse26_convert.py`,
-`fse26_convert_tar.py` or `fse26_shard.py`. The published set was built out of
-band. So a converter revision lands while the cache it invalidates has no
-rebuild path.
+### The build path is `rcabench-data/.github/workflows/build-cache.yml`
 
-**The gate is what makes that loud, and it is working.** `fse26_provenance.py`
-compares the checkout's `converterDigest` against the manifest's, and
-`PROVENANCE_FILES` includes `fse26_convert.py`, so the next FSE'26 run fails on
-the provenance check instead of quietly scoring against a cache that predates the
-field. That is the intended behaviour and the reason the digest exists; the run
-is blocked, not wrong.
+It is a `workflow_dispatch` job that (1) clones the converter and sharder from
+`micro-kinetic-ts` — recording `git rev-parse HEAD` as `CONVERTER_REVISION`, so a
+dispatch always builds with the converter at the code repository's current
+`HEAD`; (2) installs `requirements-fse26.txt`; (3) downloads the archive; (4)
+runs `fse26_convert_tar.py` (streaming); (5) deletes the archive; (6) runs
+`fse26_shard.py`; and (7) uploads the 7 shards plus `manifest.json` to a Release
+with the repo's own token. The data repository's own `README.md` documents this
+under **Build**, and the workflow file states outright that consumers pin an
+explicit tag because `--clobber` does not refresh `published_at`. The earlier
+`grep` over `.github/workflows/` was searching the wrong repository's workflows;
+finding no converter reference there is exactly what a correctly separated
+producer/consumer pair looks like.
 
-**Why a runner cannot simply be added.** The documented pipeline materialises the
-whole converted tree before sharding: `fse26_convert_tar.py` writes one
-`case.json` per datapack and `fse26_shard.py` then packs them by category. That
-intermediate tree measures **~48.9 GB**, against the ~14 GB free on a standard
-hosted runner — so the peak disk is roughly 3.5× what the runner has, and the
-13.4 GB archive on top of it. The stream converter's own header notes the same
-constraint from the other side (it exists because materialising the archive *and*
-its extracted Parquet would exhaust 14 GB).
+**It has succeeded six times out of six**, including the full build whose output
+we currently ship — run `34586313254`, 2026-09-11 09:51→13:09, converter
+`6a15947dc55cc7eb9b6a2480ac528d6f068c024c`, `totalCases 1422`, HTTP shard
+1,610,114,253 bytes: byte-identical to `rcabench-full`'s manifest. "Built out of
+band" is not true; it was built by this workflow, and every published number can
+be traced to a run id.
 
-Two designs fix it, and the choice is a trade rather than a derivation:
+### The disk arithmetic was wrong by an order of magnitude
 
-1. **Stream the shards.** Convert and pack per category in one pass, so the peak
-   disk is the largest single category (~7 GB) instead of the full tree. This
-   keeps the existing single-pass property and removes the intermediate tree
-   entirely, but it changes the shard writer's structure — one archive is open
-   at a time, so the writer becomes stateful across the stream.
-2. **A runner with the disk.** Either a self-hosted one or a larger hosted
-   runner; no code changes, but the pipeline stays available only where that
-   capacity exists.
+The workflow logs its own `df -h "$HOME"` twice. From run `34586313254`:
 
-Until one of them lands, the FSE'26 benchmark cannot use the new field, and the
-next measurement that depends on it stays blocked. The cheap check that can be
-run in the meantime is the prefix validation the stream converter was built for:
-a range-downloaded prefix of the archive converted end to end, which confirms on
-REAL data that datapacks carry `attr.http.response.status_code` and that
-`failedTraceEdges` is non-empty and plausible. That check needs the archive URL,
-which is not recorded anywhere in the repository.
+```
+after the 13.4 GB archive download   /dev/root  145G  71G  74G  50% /
+after converting the whole tree
+and deleting the archive             /dev/root  145G  96G  50G  66% /
+```
+
+So the runner's root volume is **145 GB** and had **74 GB free** with the archive
+down, and **50 GB free with the entire ~48.9 GB converted tree on disk**. The true
+peak is the archive and the tree coexisting during conversion — roughly 110 GB of
+145 GB, i.e. ~35 GB of headroom. The "~14 GB" figure used previously is the
+*documented workspace-SSD* allowance for a GitHub-hosted runner, not the size of
+the root volume; those are different mounts, and conflating them is what produced
+a "3.5× over" conclusion about a pipeline that has in fact completed end to end.
+
+### The prefix check is not a workaround either — it is an input of the same job
+
+`download_prefix_bytes` (default `0` = full 13.4 GB) turns the download into a
+`Range` request, and it has been exercised: run `34490555117` passed
+`-r 0-524288000` (500 MB), finished in **7 minutes** with 47 cases
+(HTTP 22 / Pod 1 / Resource 24), and published them to `rcabench-verify-v1`. The
+archive URL is recorded there too —
+`https://zenodo.org/api/records/17105974/files/rcabench-absolute_anomaly.tar.gz/content`
+(Zenodo record 17105974, CC-BY-4.0) — along with `-C -` resume and 30 retries,
+because Zenodo serves from cold storage.
+
+### Options, ranked by cost and by what they are actually for
+
+| # | Option | Status |
+|---|---|---|
+| 1 | Dispatch `build-cache.yml` with `release_tag` + `download_prefix_bytes: 0` | **The shipped path.** No code. 6/6 green, including a full 1422-case build. ~3h17m, of which 2h24m is the Zenodo download. |
+| 2 | The same job with a byte prefix | Already implemented and exercised (run `34490555117`). Not a rebuild — but it is the cheap real-data check, and it needs no out-of-band URL. |
+| 3 | Stream the shards per category (peak = largest category) | **Not needed** — the disk constraint it removes does not exist. It would be an unmotivated change: run time is unchanged, because the cost is the archive download, not the tree. |
+| 4 | A larger or self-hosted runner | **Not needed**, for the same reason. |
+| 5 | Re-host the archive to kill the cold-storage download | The only option with a real measured argument: it saves ~2h20m **per rebuild** forever (2h24m of the 3h17m is Zenodo at ~1.5 MB/s). Cost is one upload, split because release assets cap at 2 GiB per file, plus a digest gate so a re-hosted archive cannot go stale silently. Worth doing once converter revisions are expected to keep landing — not before this rebuild proves the field. |
+
+So the answer to "is streaming the only option" is that it is **not an option at
+all** — it was a fix for a constraint that measurement had not established. What
+gates the next measurement is the dispatch itself, and nothing else.
+
+### Action taken
+
+The converter half is already done and verified: 13 new tests written red first,
+`scripts/` at 193 tests with 100.00% statements *and* branches on every module,
+the golden 9-cell byte-identical at `debf820`, and `SCHEMA_VERSION` bumped 2 → 3
+so a cache built before the field is distinguishable rather than silently missing
+it.
+
+Run **`34752201606`** was then dispatched against `rcabench-data` with
+`release_tag: rcabench-full-v3` and `download_prefix_bytes: 0`. A new tag rather
+than a `--clobber` of `rcabench-full`, so that the 47.33% headline stays
+reproducible from the tag it names: clobbering destroys the ability to re-derive
+an already-published figure by checking out the commit it was measured on. The
+`v3` tag will carry `schemaVersion 3`, the new `converterRevision`, and a fresh
+`converterDigest`; the consumer's provenance gate then passes against the current
+checkout instead of failing loudly, which is what it does today.
+
+The remaining work while it builds is the engine-side consumer of
+`failedTraceEdges` — the field is data only, and no scoring signal reads it yet.
+
