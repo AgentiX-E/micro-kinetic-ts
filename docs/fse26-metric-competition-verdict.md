@@ -64,6 +64,9 @@ The DIAG block renders it as two lines, for the services a reader compares
 - The pre-existing `dominant=` field equals the highest-scoring kept metric in
   **2094/2094** services. The score the diagnostic reports is the number the
   ranking consumed, not a re-derivation.
+- The shape readback is run `34694846718`, after the declaration defect below was
+  fixed: **2094** services carry an attributable decomposition (5 before the
+  fix), and the same nine types reproduce again.
 
 ## The verdict
 
@@ -167,34 +170,99 @@ construction, so a **drop-only** score cannot exceed `log10(2) ≈ 0.301` plus t
 bounded bonuses — about 0.55. **A score above ~0.55 is therefore a rise**, which
 makes the direction of every winner computable without inspecting any series:
 
-| population              | median winning score | implied rise |
-| ----------------------- | -------------------- | ------------ |
-| wrong top-1 winner      | 2.044                | ~110×        |
-| wrong top-1 winner, p90 | 3.121                | ~1320×       |
-| wrong top-1 winner, max | 3.874                | ~7480×       |
-| ground-truth source     | 1.307                | ~19×         |
+| population               | n    | median score | `10^score − 1` | median **riseRatio** | median **baseline** |
+| ------------------------ | ---- | ------------ | -------------- | -------------------- | ------------------- |
+| wrong top-1 winner       | 319  | 2.044        | 110×           | **29.22×**           | **1.75**            |
+| other predicted (rank 2+) | 1406 | —           | —              | 26.76×               | 1.55                |
+| ground-truth source      | 369  | 1.307        | 19×            | **8.46×**            | **8.07**            |
+
+The `10^score − 1` column is what the first reading reported, and it is **not the
+rise**: the score includes the bonuses, so it overstates the ratio by roughly the
+bonus share. The `riseRatio` column is the metric's actual relative rise and is
+the one to reason from. Every direction claim below is unaffected — a score above
+0.55 still implies a rise — but every magnitude claim must use `riseRatio`.
 
 Only 9 of 319 wrong winners score below 0.6, so **97% are rise-driven**. The
-recurring winners are latency series, ranked by how extreme their rise is:
+winner's rise is 3.5× the source's (29.22 against 8.46) on a baseline 4.6×
+smaller (1.75 against 8.07), which is the entire separation. The predictions that
+did NOT take rank 1 have the same profile as those that did (rise 26.76,
+baseline 1.55), so this is a property of being victim-like rather than of
+winning: the source is out-ranked by essentially any caller, and the ordering
+among the callers is what decides.
 
-| median implied rise | metric |
-| ------------------- | ------ |
-| 2338× | `hubble_http_request_duration_p95_seconds` |
-| 797×  | `hubble_http_request_duration_p50_seconds` |
-| 322×  | `db.client.connections.use_time.max` |
-| 265×  | `http.client.request.duration.max` |
-| 127×  | `http.server.request.duration` |
+## Two candidates this measurement eliminated
 
-A rise of 2338× on a p95 is not a load level moving; it is a percentile that was
-essentially zero for most of its history. The guard that exists for exactly that
-class tests `baselineMean <= 0.001` — an **absolute** floor — and the prior
-falsification of it (`docs/near-zero-rise-suppression-falsified.md`) was measured
-on RCAEval, where the production top-1's baselines ran `0.008 … 8.3e7` and the
-guard therefore never fired. Whether the same floor is miscalibrated for a
-latency series **in seconds** — legitimately living at `0.05` with peaks at `100`
-— is a different question, and it is the one the `rise` and `base` columns of
-`metricTop` answer. The ablation of the metric families above is not the next
-step; reading the baselines is.
+**The near-zero-baseline guard.** Its floor is an *absolute* `baselineMean ≤
+0.001`, and the prior falsification of it was measured on RCAEval where the
+production top-1's baselines ran `0.008 … 8.3e7`, so the guard never fired. On
+this block the decisive metrics' baselines are:
+
+| baseline band | wrong winners |
+| ------------- | ------------- |
+| ≤ 1e-6 | 0 |
+| 1e-6 … 1e-3 (at or below the floor) | **14** |
+| 1e-3 … 1e-2 | 14 |
+| 1e-2 … 1 | 109 |
+| > 1 | 182 |
+
+Median baseline **1.75**, minimum `4.4e-5`, maximum `7.8e6`. Only **14 of 319**
+(4.4%) would be touched by the floor at all, 13 of them inside one family
+(`k8s.*`, median baseline `5e-4`); the source population has 9 of 369. And the
+prior falsification on RCAEval — where the baselines ran `0.008 … 8.3e7` and the
+guard never fired — is *consistent* with this rather than contradicted by it.
+Recalibrating the guard reaches 4% of the wrong winners, not a block.
+**Eliminated.**
+
+**The trend bonus.** `trendBonus = trendStrength × 0.15` and `trendStrength` is
+unbounded, so a metric that drifts monotonically earns an open-ended bonus —
+`trend = 0.779` out of a `score = 3.291` in one real case, a quarter of it. But
+the composition is the *same in both populations*:
+
+| population | deviation | trend | cv | burst | trend ≥ 25% of score |
+| ---------- | --------- | ----- | -- | ----- | -------------------- |
+| wrong top-1 winner | 0.730 | 0.223 | 0.034 | 0.000 | 120/319 |
+| other predicted (rank 2+) | 0.712 | 0.239 | 0.034 | 0.000 | 606/1406 |
+| ground-truth source | 0.709 | **0.244** | 0.033 | 0.000 | 174/369 |
+
+The source leans on the trend bonus slightly **more** than the wrong winner does.
+Reweighting it cannot separate the two populations, because the winner does not
+have a different composition — it has more of the same one. **Eliminated.**
+
+## What is left
+
+Every population is a deviation-led rise (0.71–0.73 of the score from the
+deviation, 0.22–0.24 from the trend) on a real operating baseline. The winner's
+metric simply has a larger relative rise — which is precisely what
+`max over metrics` is defined to select. Nothing in the metric layer can prefer
+the source's 8.5× resource rise to a caller's 29× latency rise, because the
+*ratio* is the only quantity the score consults and the *symptom* has the larger
+one.
+
+The remaining lever is therefore structural: change what a service's score IS,
+rather than reweighting a term of it. The candidate that keeps the source's
+information while removing the dynamic-range bias is to rank each metric ACROSS
+services before the maximum, so the source saturates on the metric where it is
+extreme instead of losing to a victim on a metric with a wider range. The
+decision then falls to the causal signals, which is the only place it can be made
+for this block — the source is log-silent.
+
+That change touches the anomaly score, which FSE'26 and RCAEval share, so it
+needs the full-set FSE'26 ablation **and** the golden 9-cell guard, with the
+9-cell required to be bit-identical or the candidate dies.
+
+## An instrument defect found by its own guard
+
+The first `metricTop` render declared the number of kept metrics that carried a
+decomposition — 38 on a real case — while printing at most three entries. The
+reader validates a declaration against what follows (a truncation that reads as
+complete is the defect class the instrument exists for), so it rejected 2089 of
+2094 lines and the first shape run was unusable. The producer was wrong and the
+guard was right.
+
+The blind spot is worth naming: every fixture in the suite had at most three kept
+metrics with a decomposition, so line and branch coverage were both **100%**
+while the truncation path was never exercised. Coverage of lines is not coverage
+of the cases a line can see.
 
 ## What this rules out
 
@@ -206,30 +274,36 @@ step; reading the baselines is.
   score; only 23/147 misses are within 20%.
 - **Dropping collector internals, pod filesystem, or the node-level series.**
   Net-negative or near-neutral on the necessary-condition test above.
+- **Recalibrating the near-zero-baseline guard.** It would touch 14 of 319 wrong
+  winners (4.4%), 13 of them in one family.
+- **Reweighting the trend bonus.** The source leans on it more than the winner
+  does (0.250 against 0.223).
 - **A `--drop-metrics` ablation as the next move.** It was the plan before the
-  direction of the winners was computed; the rise table makes it a way to tune a
-  number that the reading will supply directly.
+  direction and composition of the winners were computable.
 
-## Next step
+## Next step — the structural candidate, and its kill criterion
 
-Re-run the same 369 cases with `metricTop` enabled and read the `rise`/`base`
-columns for the wrong winner's decisive metric. Two outcomes, two different
-fixes, and the run distinguishes them:
+Change what a service's anomaly score IS: rank each metric across services
+*before* the maximum, so a service that is the extreme deviator on ANY metric
+saturates on that metric instead of being out-scaled on it. The source then stops
+losing to a symptom whose only advantage is a wider dynamic range, and the
+decision moves to the causal signals (onset order, call-graph direction, the log
+signal) where a source/symptom asymmetry actually exists.
 
-- **Baselines at or below the `0.001` floor.** The near-zero guard's floor is
-  absolute and simply wrong for a series measured in seconds; the fix is to make
-  the floor relative to the series' own peak (the same idea the idle guard
-  already uses, since it compares against `max * 0.001`). This is a guard
-  recalibration, not a new signal.
-- **Baselines at a real operating level (`0.05`, `0.5`, `1e8`).** Then a 100–3000×
-  rise is genuine and the defect is structural: a `max` over relative deviations
-  across heterogeneous metrics lets the *symptom* with the largest dynamic range
-  decide a service's own score. The fix is to rank each metric across services
-  before the maximum, so the source's moderate rise on its own signature
-  saturates instead of losing to the victim's extreme rise on a latency. That
-  keeps the source's information and hands the decision to the causal signals —
-  which is the only place it can be made, since the source of this block is
-  log-silent.
+Its kill criterion is fixed in advance, because the change touches a score that
+both benchmarks share:
 
-Either way the change needs the FSE'26 full-set ablation **and** the RCAEval
-golden 9-cell guard, because the anomaly score is shared by both.
+1. the **RCAEval golden 9-cell must be bit-identical** (RE1 80/92.8/68,
+   RE2 82.4/88.9/68.1, RE3 80/45/51.1) — this is shared production scoring, and a
+   golden-baseline regression kills the change regardless of the FSE'26 gain;
+2. the **FSE'26 full 1422 must not regress a single fault type**, with the
+   silent block (JVMMemoryStress 171, ContainerKill 89, PodFailure 24,
+   PodKill 10) as the target.
+
+A cheaper intermediate worth measuring in the same run: keep the max but clamp
+each metric's *contribution* to a common ceiling (the way the DROP direction is
+already clamped at `log10(2)`), so no single metric can be worth more than a
+fixed amount. That preserves the ordering among the source's own metrics while
+capping the advantage a 100× rise has over a 5× one. It is a smaller change and
+the same run tells us whether the ceiling is enough before the ranking change is
+attempted.
