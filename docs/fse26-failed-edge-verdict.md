@@ -86,6 +86,36 @@ is zero for every service at ANY weight. The blast radius of this switch is
 exactly one dataset, which means the RCAEval golden cannot falsify it and the
 FSE'26 regression count is the whole criterion.
 
+## The fan-in/volume hypothesis is refuted
+
+The two regressions were the obvious place to look for a mechanism, and the
+totals suggested one: the cache carries 1,013,406 net failures over 4,805
+records, ~211 per edge, so a raw `sum` is largely a measure of how much traffic a
+service receives. If that were the failure mode, a high-traffic SYMPTOM whose
+callers time out would out-accumulate the source — and dividing by the number of
+distinct callers that saw failures (`mean`) would fix it.
+
+It does not. Matched pair on one commit and one cache, weight 1, only the
+aggregation changed:
+
+| run | mode | Top@1 | Top@3 | Top@5 | correct |
+|---|---|---|---|---|---|
+| `34766439438` | `sum` | 53.1% | 71.0% | 75.9% | 755 |
+| `34766441691` | `mean` | 51.6% | 69.9% | 75.9% | 734 |
+
+`mean` costs 21 cases, and it does not repair either regressed type:
+`JVMMemoryStress` (1/171) and `HTTPResponsePatchBody` (1/4) are byte-identical
+under both aggregations. So a raw sum is not being dominated by traffic, and
+removing the amplification only loses cases — `ReplaceCode` 220→215,
+`ReplaceMethod` 130→125, `ReplacePath` 38→36. `mean` is retained, tested and off
+by default, as the recorded answer rather than a live option.
+
+One correction to the previous section, stated plainly: the both-endpoints
+invariant fixed in the same commit is right, but it is **empirically inert on this
+cache** — the coverage line is identical before and after (4,805 records, 4,805
+in-graph), so no edge in the data actually had an out-of-graph endpoint. It is a
+latent defect, not one that cost anything here.
+
 ## Next: where the two regressions come from
 
 The signal's known failure mode is a **victim with many callers**: if a fault

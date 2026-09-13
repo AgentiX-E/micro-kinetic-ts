@@ -943,6 +943,17 @@ export type FailedEdgeMode = 'sum' | 'mean';
  * counts (one caller with one failure scores as high as one with two hundred),
  * which is the measured risk rather than a reason to prefer it a priori.
  *
+ * ## `mean` is now measured, and is WORSE — do not flip the default
+ *
+ * Matched pair, one commit and one cache, weight 1, only the mode changed (runs
+ * `34766439438` and `34766441691`): `sum` 53.1% Top@1 with 755 correct,
+ * `mean` 51.6% with 734 — **−1.5pp**. `mean` also did NOT repair the two fault
+ * types that `sum` costs: `JVMMemoryStress` (1/171) and
+ * `HTTPResponsePatchBody` (1/4) are identical under both. So the hypothesis is
+ * refuted — a raw sum is not being dominated by traffic — and removing the
+ * amplification only loses cases. The mode is retained, fully tested and off by
+ * default, as the recorded answer to that question rather than a live option.
+ *
  * @param edges - Per-edge failed-call counts (undefined -> empty -> neutral).
  * @param nodeIds - Services present in the call graph; an edge with EITHER
  *   endpoint outside it is ignored, including in the normalisation denominator,
