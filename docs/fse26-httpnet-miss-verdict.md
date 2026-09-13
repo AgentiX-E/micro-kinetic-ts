@@ -104,3 +104,44 @@ So the next measurement is the narrow label ablation dispatched above, and its
 kill criterion is unchanged: RCAEval golden 9-cell bit-identical, FSE'26 zero
 regressed fault types. A narrower drop than a family is the only form of this
 ablation that has not already been rejected.
+
+## 4. The narrow label drop — mechanism confirmed, and still rejected
+
+Run `34743282955` on `1f68021`, full 1422 cases, `drop_metrics` = the single label
+`db.client.connections.use_time.max`.
+
+| run | drop set | Top@1 | delta | Top@3 | Top@5 | regressed types |
+| --- | -------- | ----- | ----- | ----- | ----- | --------------- |
+| control | — | 47.33% | — | 60.69% | 65.75% | — |
+| family drop | all 7 `db.client.connections.*` | 47.47% | +0.14pp | 61.11% | 65.89% | 5 |
+| **label drop** | **`use_time.max` only** | **47.61%** | **+0.28pp** | 61.11% | 65.96% | **2** |
+
+**The mechanism is confirmed.** Dropping the family cost `NetworkDelay` five cases
+(16/21 → 10/21) because it also removed `wait_time.max`, which is the *source's*
+own signature; dropping only the victim-side label recovers four of those five
+(15/21) and simultaneously beats the family drop on the headline (+0.28pp against
++0.14pp). So "ablate the label that wins, not the family it belongs to" is now a
+measured rule and not a hypothesis — and it is the reason the family's
+necessary-condition bound read 68-against-25 while the ablation delivered
++0.14pp.
+
+**It is still rejected**, by the pre-declared criterion and for consistency with
+everything else: two single-case regressions (`HTTPResponseReplaceCode` 159 → 158,
+`NetworkDelay` 16 → 15). The same rule rejected `metricFleetBaseline` at +0.49pp
+with six, and the family drop at +0.14pp with five; a smaller number of regressions
+is a smaller violation, not a different rule. It stays an off-by-default probe.
+
+### What that also measures
+
+The winner's decisive metric in the log-silent half is `use_time.max` in 56 cases
+and `wait_time.max` in 19. Removing **only** the first recovered **two** cases of
+the 56 expected by the necessary-condition bound. So when the winner's top metric
+is deleted, its second metric takes the case over almost every time. That is the
+same optimism measured on the family, now with the label isolated: **the metric
+layer's deficit is distributed across the inventory, not attributable to one bad
+series**, which is why every input ablation in this benchmark has produced a small
+net gain and type regressions rather than a block of recovered cases.
+
+It also closes the input-ablation family completely: every form of it — five
+families by bound, the connection pool by family, the connection pool by label —
+has now been measured.
