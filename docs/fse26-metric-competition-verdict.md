@@ -365,3 +365,106 @@ on real baselines with the same bonus composition, and the victim's is simply
 larger. A root-cause rank has to come from what distinguishes them *causally* —
 onset order, call-graph direction, which service's failure explains the other's —
 rather than from how far each one's own numbers moved.
+
+## Correction — the gap I published was the wrong statistic, and the right one changes the conclusion
+
+An earlier section of this document dismisses the block on the strength of a
+"median score ratio 0.59, only 23/147 within 20%, so no tie-break closes this".
+That number is real but it answers a different question: it is the SOURCE's
+memory metric measured against the source's OWN best metric, i.e. a
+within-service ratio. It says the memory metric loses its own service's
+competition. It says nothing about how far the service is from rank 1.
+
+The cross-service gap — the source's `selfAnomaly` against the rank-1 service's,
+read from the 288 block misses of run 34694846718 — is:
+
+| fault type | n | median src/win | p10 | p90 | within 1% | within 10% |
+| ---------- | - | -------------- | --- | --- | --------- | ---------- |
+| JVMMemoryStress | 167 | **0.940** | 0.620 | 1.630 | 68/167 | 90/167 |
+| ContainerKill | 88 | 0.760 | 0.340 | 1.500 | 27/88 | 35/88 |
+| PodFailure | 24 | 0.818 | 0.346 | 0.980 | 2/24 | 9/24 |
+| PodKill | 9 | 0.842 | 0.306 | 1.122 | 1/9 | 4/9 |
+| **all** | **288** | **0.875** | 0.459 | 1.500 | **89/288 (31%)** | 138/288 (48%) |
+
+Two facts follow, and both contradict the published reading:
+
+1. **31% of the misses (89/288) have the source's `selfAnomaly` at or ABOVE the
+   winner's** (20% are more than 20% higher). The metric already favours the
+   source in those cases and it still loses, so *something other than the metric*
+   is deciding them.
+2. The absolute scores are `source median 0.760` against `winner median 0.960`,
+   with both maxima at exactly `1.000`. A clamp is in play, and it is not the
+   per-metric deviation clamp the rise-ceiling work targeted.
+
+So the block is not lost on metric magnitude, and "a tie-break cannot close it"
+does not follow from the within-service ratio it was derived from.
+
+## The scale asymmetry — why every metric-layer candidate was rejected
+
+The shipped score is
+`finalScore(v) = log1p(selfAnomaly(v)) + logWeight × logScore(v)` with
+`logWeight = 1` and **every other weight at its 0 default** (`sourceWeight`,
+`temporalWeight`, `collisionWeight`, `topoWeight`, `riseWeight`, `traceWeight`,
+`prismWeight`). The two live terms are on incomparable scales:
+
+- **The metric term is a RANK.** `rankNormalizeScores` maps each service to
+  `(i + j) / 2 / (n - 1)` — its normalised rank. On a 51-service case that is a
+  step of `1/50 = 0.020`. Verified on a real case:
+  `1.000, 0.980, 0.960, 0.940, 0.920` for ranks #1..#5 — an identical 0.020 step
+  regardless of how large the underlying metric difference is.
+- **The log term is a MAX-normalised count** in `[0, 1]`: the case's top
+  self-caused logic-exception emitter receives the **full 1.0 in a single step**.
+
+One step of the log term is therefore worth **fifty rank positions** of the
+metric term. That is the exchange rate, and it explains the pattern all the
+metric-layer work kept hitting:
+
+- a reweighting of the metric component cannot matter, because the component's
+  entire top-5 spread is 0.08 while the other term is worth up to 1.0;
+- an extreme metric advantage is not recoverable, because rank normalisation
+  discards the magnitude before the sum;
+- every candidate was adjusting the *small* term.
+
+**The formula is not an inference — it reproduces the observed rank-1 in
+369/369 cases** of the diagnostic dump, which is what makes the split below
+attributable rather than suggestive. For the 288 block misses:
+
+| quantity | value |
+| -------- | ----- |
+| source's `logScore` | **0 in 288/288** — the source is log-silent |
+| winner's `logScore` | `> 0` in **166/288**; median **1.000**, p90 **1.000** |
+| winner's post-injection HTTP error lines | median 12, p90 104 |
+| cases where the winner's ONLY advantage is its log term (the source's metric term alone is larger) | **89/288 (31%)** |
+
+So the block splits 166 log-decided / 122 metric-rank-decided, and the
+log-decided half is decided by **the victim's** HTTP error lines — a few lines
+are enough, because the top emitter's term is a full 1.0 no matter how few the
+lines are. This is the same direction-ambiguity the framework-HTTP work
+identified on the log side and the error-rate work identified on the metric
+side; what is new here is that it is quantified at the SCORE level, against a
+measured exchange rate.
+
+## Next step — the logWeight sweep, which has never been run at scale
+
+Every published FSE'26 number uses `logWeight = 1`, and `log_weight` has been a
+workflow input since the config-integrity fix. No sweep at scale exists
+(`docs/rank-collapse-falsified.md` noted the same thing from the other side: "the
+secondary signals (`logWeight`, `traceWeight`) or a service-id tie-break decide
+the order").
+
+The sweep is the decisive measurement because it isolates the exchange rate
+directly, needs **no code change** (so the golden baseline can move only by the
+weight itself), and its kill criterion already stands from the dynamic-range work:
+
+- `log_weight=0` — the metric-only ceiling, per fault type. This is the upper
+  bound a perfect log disambiguator could reach, and it prices the 166
+  log-decided misses exactly.
+- `log_weight=0.5` and `0.25` — whether a mid weight recovers part of the block
+  without regressing the error-emitter types (`HTTPResponseReplaceCode`,
+  `HTTPRequestReplaceMethod`) whose sources legitimately earn the term.
+
+Read with `scripts/compare_fse26_runs.py`, against the 47.33% control, with the
+RCAEval golden 9-cell as the co-guard. If no weight is net-positive with zero
+regressed types, then the log term's power is the wall — and the next candidate
+has to change the *shape* of the metric term (its rank step) rather than any
+weight, which is a different and separately falsifiable question.
