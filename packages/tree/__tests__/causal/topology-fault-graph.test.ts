@@ -2625,3 +2625,151 @@ describe('buildTopologyFaultGraph — Metric Rise Ceiling', () => {
     );
   });
 });
+
+describe('buildTopologyFaultGraph — Fleet-Relative Metric Baseline', () => {
+  // Three services. `common` rises in every one of them (a fleet-wide effect);
+  // `own` rises only in svc-a (a service-local signature). `max over metrics`
+  // cannot tell those apart, so without the option the two services whose
+  // `common` moved slightly more take the top — even though the movement is
+  // shared and therefore carries no information about which is the source.
+  const shared = (peak: number) => [
+    ...Array.from({ length: 20 }, () => 10),
+    ...Array.from({ length: 20 }, () => peak),
+  ];
+  const local = (peak: number) => [
+    ...Array.from({ length: 20 }, () => 1),
+    ...Array.from({ length: 20 }, () => peak),
+  ];
+  const fleet = () =>
+    makeMetrics([
+      ['svc-a', [makeTimeSeries('common', shared(200)), makeTimeSeries('own', local(5))]],
+      ['svc-b', [makeTimeSeries('common', shared(210)), makeTimeSeries('own', local(1.1))]],
+      ['svc-c', [makeTimeSeries('common', shared(210)), makeTimeSeries('own', local(1.1))]],
+    ]);
+  const graph = makeCallGraph(
+    ['svc-a', 'svc-b', 'svc-c'],
+    [
+      { from: 'svc-b', to: 'svc-a' },
+      { from: 'svc-c', to: 'svc-a' },
+    ],
+  );
+
+  it('is off by default — bit-identical to the shipped scoring', () => {
+    const absent = buildTopologyFaultGraph(graph, fleet());
+    const explicit = buildTopologyFaultGraph(graph, fleet(), { metricFleetBaseline: false });
+
+    for (const id of ['svc-a', 'svc-b', 'svc-c']) {
+      expect(explicit.anomalyScores.get(id)).toBe(absent.anomalyScores.get(id));
+    }
+  });
+
+  it('discounts a fleet-wide rise and promotes a service-local one', () => {
+    // The same three cases, scored both ways. This is the ONLY kind of operation
+    // that can reorder them: a bound on the ratio cannot, because `min` is
+    // monotone (see the rise-ceiling suite).
+    const open = buildTopologyFaultGraph(graph, fleet());
+    const fleetRelative = buildTopologyFaultGraph(graph, fleet(), { metricFleetBaseline: true });
+
+    const openTop = [...open.anomalyScores.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+    const adjustedTop = [...fleetRelative.anomalyScores.entries()].sort(
+      (a, b) => b[1] - a[1],
+    )[0]![0];
+
+    expect(openTop).toBe('svc-b');
+    expect(adjustedTop).toBe('svc-a');
+  });
+
+  it('is exactly the maximum excess over each metric fleet median', () => {
+    // Re-derived from the RAW diagnostics rather than from a hand-copied
+    // expectation: the adjustment is defined against the same scores the
+    // diagnostic reports, so the two must agree per service and per metric.
+    const result = buildTopologyFaultGraph(graph, fleet(), { metricFleetBaseline: true });
+
+    const fleetMedian = new Map<string, number>();
+    const byLabel = new Map<string, number[]>();
+    for (const diagnostics of result.metricDiagnostics.values()) {
+      for (const entry of diagnostics) {
+        if (entry.outcome !== 'kept') continue;
+        const scores = byLabel.get(entry.label) ?? [];
+        scores.push(entry.score);
+        byLabel.set(entry.label, scores);
+      }
+    }
+    for (const [label, scores] of byLabel) {
+      const sorted = [...scores].sort((a, b) => a - b);
+      fleetMedian.set(label, sorted[Math.floor(sorted.length / 2)]!);
+    }
+
+    for (const [serviceId, diagnostics] of result.metricDiagnostics) {
+      let expected = 0;
+      for (const entry of diagnostics) {
+        if (entry.outcome !== 'kept') continue;
+        expected = Math.max(expected, entry.score - (fleetMedian.get(entry.label) ?? 0));
+      }
+      expect(result.anomalyScores.get(serviceId)).toBeCloseTo(expected, 12);
+    }
+    // Guard against a vacuous pass: the option has to have done something.
+    expect(result.anomalyScores.get('svc-a')).toBeGreaterThan(0);
+  });
+
+  it('never produces a negative score for a service below its fleet median', () => {
+    // Every service here shares one metric that moves identically, so every
+    // excess is zero and every score must bottom out at zero rather than going
+    // negative — `log1p` of a negative self-anomaly would invert the ranking.
+    const identical = makeMetrics([
+      ['svc-a', [makeTimeSeries('common', shared(200))]],
+      ['svc-b', [makeTimeSeries('common', shared(200))]],
+      ['svc-c', [makeTimeSeries('common', shared(200))]],
+    ]);
+
+    const result = buildTopologyFaultGraph(
+      makeCallGraph(['svc-a', 'svc-b', 'svc-c'], [{ from: 'svc-b', to: 'svc-a' }]),
+      identical,
+      { metricFleetBaseline: true },
+    );
+
+    for (const id of ['svc-a', 'svc-b', 'svc-c']) {
+      expect(result.anomalyScores.get(id)).toBe(0);
+    }
+  });
+
+  it('leaves the diagnostic reporting the raw scores, not the adjusted ones', () => {
+    // An instrument that echoed the adjusted value could no longer show the
+    // excursion the adjustment exists to remove.
+    const open = buildTopologyFaultGraph(graph, fleet());
+    const fleetRelative = buildTopologyFaultGraph(graph, fleet(), { metricFleetBaseline: true });
+
+    for (const id of ['svc-a', 'svc-b', 'svc-c']) {
+      expect(fleetRelative.metricDiagnostics.get(id)).toEqual(open.metricDiagnostics.get(id));
+    }
+  });
+
+  it('ignores metrics a guard discarded when building the fleet median', () => {
+    // A discarded metric has no score to contribute, and including an entry for
+    // it would shift the median every surviving metric is measured against. The
+    // dropped metric here is an exact-zero series, which the non-positive-mean
+    // guard removes.
+    const mixed = makeMetrics([
+      [
+        'svc-a',
+        [
+          makeTimeSeries('common', shared(200)),
+          makeTimeSeries('own', local(5)),
+          makeTimeSeries(
+            'all-zero',
+            Array.from({ length: 40 }, () => 0),
+          ),
+        ],
+      ],
+      ['svc-b', [makeTimeSeries('common', shared(210)), makeTimeSeries('own', local(1.1))]],
+      ['svc-c', [makeTimeSeries('common', shared(210)), makeTimeSeries('own', local(1.1))]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, mixed, { metricFleetBaseline: true });
+
+    const outcomes = result.metricDiagnostics.get('svc-a')!;
+    expect(outcomes.find((o) => o.label === 'all-zero')!.outcome).toBe('non-positive-mean');
+    // `all-zero` contributed nothing, so svc-a is still the service-local deviator.
+    expect([...result.anomalyScores.entries()].sort((a, b) => b[1] - a[1])[0]![0]).toBe('svc-a');
+  });
+});

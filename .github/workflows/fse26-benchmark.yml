@@ -35,6 +35,10 @@ on:
         description: 'Ceiling on the relative deviation one metric may contribute (empty = the runner default, which is unbounded)'
         required: false
         default: ''
+      fleet_baseline:
+        description: 'Set to anything non-empty to subtract each metric''s cross-service median before the service maximum (empty = the runner default, which is off)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -148,11 +152,16 @@ jobs:
           if [ -n "${{ inputs.rise_ceiling }}" ]; then
             RISE_CEILING_ARG=(--rise-ceiling "${{ inputs.rise_ceiling }}")
           fi
+          FLEET_BASELINE_ARG=()
+          if [ -n "${{ inputs.fleet_baseline }}" ]; then
+            FLEET_BASELINE_ARG=(--fleet-baseline)
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             --log-weight "${{ inputs.log_weight }}" \
             "${LOG_MODE_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
+            "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \
             "${DIAGNOSE_ARG[@]}" \
             --output fse26-results.json 2>&1 | tee fse26-results.txt

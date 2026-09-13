@@ -163,6 +163,13 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--rise-ceiling']).metricRiseCeiling).toBe(0);
   });
 
+  it('turns on the fleet-relative metric baseline only when asked', () => {
+    expect(parseFSE26Args([]).metricFleetBaseline).toBe(false);
+    expect(parseFSE26Args(['--fleet-baseline']).metricFleetBaseline).toBe(true);
+    // A flag with no value must not consume the next flag.
+    expect(parseFSE26Args(['--fleet-baseline', '--rise-ceiling', '10']).metricRiseCeiling).toBe(10);
+  });
+
   it('ignores unknown flags', () => {
     expect(parseFSE26Args(['--verbose', '--log-mode', 'count']).logMode).toBe('count');
   });

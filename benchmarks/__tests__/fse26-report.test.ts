@@ -33,6 +33,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     rankNormalization: true,
     dropMetrics: [],
     metricRiseCeiling: 0,
+    metricFleetBaseline: false,
     ...overrides,
   };
 }
@@ -82,6 +83,7 @@ describe('FSE26 report — attribution', () => {
       'logSignalMode',
       'dropMetrics',
       'metricRiseCeiling',
+      'metricFleetBaseline',
     ]);
   });
 
@@ -110,6 +112,13 @@ describe('FSE26 report — the two renderings agree', () => {
     expect(formatFSE26ConfigLine(makeConfig())).not.toContain('riseCeiling');
     expect(formatFSE26ConfigLine(makeConfig({ metricRiseCeiling: 10 }))).toContain(
       'riseCeiling=10',
+    );
+  });
+
+  it('names the fleet baseline only when it is on', () => {
+    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('fleetBaseline');
+    expect(formatFSE26ConfigLine(makeConfig({ metricFleetBaseline: true }))).toContain(
+      'fleetBaseline=true',
     );
   });
 

@@ -49,6 +49,13 @@ export interface FSE26RunConfig {
    * say so, or its numbers cannot be compared with the published ones.
    */
   readonly metricRiseCeiling: number;
+  /**
+   * Whether each metric's cross-service median is subtracted before the service
+   * maximum (`false` = the shipped absolute score). The ONLY operation that can
+   * reorder two services on the metric axis, so a run that uses it is a
+   * different configuration and has to say so.
+   */
+  readonly metricFleetBaseline: boolean;
 }
 
 /** One fault type's cell in the summary. */
@@ -101,6 +108,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'rankNormalization',
   'dropMetrics',
   'metricRiseCeiling',
+  'metricFleetBaseline',
 ] as const;
 
 /**
@@ -146,6 +154,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // always carries it, and the line exists to make a NON-default run visible.
   if (config.metricRiseCeiling > 0) {
     line += ` riseCeiling=${config.metricRiseCeiling}`;
+  }
+  if (config.metricFleetBaseline) {
+    line += ' fleetBaseline=true';
   }
   return line;
 }

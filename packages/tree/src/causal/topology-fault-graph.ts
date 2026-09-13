@@ -252,6 +252,27 @@ export interface TopologyFaultGraphConfig {
    * the shipped scoring, which is what the golden RCAEval baseline depends on.
    */
   readonly metricRiseCeiling: number;
+  /**
+   * Subtract each metric's CROSS-SERVICE median from the metric's score before
+   * taking the service maximum.
+   *
+   * A metric that moved for every service in the case — an agent queue draining
+   * harder because the whole fleet logged more, a node-level load average, a
+   * database pool under fleet-wide traffic — carries no information about WHICH
+   * service is the root cause, yet `max over metrics` cannot distinguish "this
+   * service is unusual on this metric" from "everyone moved and this service
+   * moved a little more". Removing the shared component makes the score answer
+   * "is this service unusual on this metric", which is the question a root-cause
+   * rank is actually asking.
+   *
+   * This is one of only two operations that can REORDER two services. A bound on
+   * the ratio cannot: `min` is monotone, so clamping can only shrink a margin or
+   * tie both parties (see `metricRiseCeiling`). Changing which metric is the
+   * maximum is the other.
+   *
+   * Default: `false` (bit-identical to shipped behaviour).
+   */
+  readonly metricFleetBaseline: boolean;
 }
 
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
@@ -273,6 +294,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   suppressIdleTransients: false, // non-zero-baseline transient guard only (shipped)
   suppressNearZeroBaselineRise: false, // near-zero-baseline rise suppression (opt-in)
   metricRiseCeiling: 0, // unbounded relative rise (shipped behaviour)
+  metricFleetBaseline: false, // absolute per-metric score (shipped behaviour)
 };
 
 /**
@@ -490,6 +512,53 @@ export function buildTopologyFaultGraph(
         ` rawMax=${rawMax.toExponential(2)} samples=[${diagSampleIds.join(',')}]` +
         ` metric=${firstTs?.label ?? '?'} head=[${pts.join(',')}] tail=[${ptsLast.join(',')}]`,
     );
+  }
+
+  // ── Step 1a: Fleet-relative metric baseline ───
+  // A metric that rose for EVERY service carries no information about which one
+  // is the root cause, but `max over metrics` cannot tell the difference between
+  // "this service is unusual on this metric" and "everyone moved on this metric
+  // and this service moved a little more". Subtracting each metric's cross-
+  // service median removes the shared component before the maximum is taken,
+  // which is the one operation that can reorder two services: a ceiling on the
+  // ratio cannot, because `min` is monotone.
+  //
+  // Measured context (FSE'26 run 34694846718, the 301-case silent block): the
+  // fault source is the extreme deviator on its OWN signature series, while the
+  // service that takes rank 1 is extreme on a series the whole fleet shares
+  // (`jvm.system.cpu.load_1m`, `queueSize`), so the shared component is what
+  // decides the rank. See `docs/fse26-metric-competition-verdict.md`.
+  //
+  // The DIAGNOSTIC keeps reporting the RAW per-metric scores: this is a scoring
+  // decision, and an instrument that echoed the adjusted value could no longer
+  // show the excursion the adjustment exists to remove.
+  if (cfg.metricFleetBaseline) {
+    const byLabel = new Map<string, number[]>();
+    for (const diagnostics of metricDiagnostics.values()) {
+      for (const entry of diagnostics) {
+        if (entry.outcome !== 'kept') continue;
+        const scores = byLabel.get(entry.label);
+        if (scores === undefined) byLabel.set(entry.label, [entry.score]);
+        else scores.push(entry.score);
+      }
+    }
+    const fleetMedian = new Map<string, number>();
+    for (const [label, scores] of byLabel) {
+      const sorted = [...scores].sort((a, b) => a - b);
+      fleetMedian.set(label, sorted[Math.floor(sorted.length / 2)]!);
+    }
+    for (const [serviceId, diagnostics] of metricDiagnostics) {
+      let best = 0;
+      for (const entry of diagnostics) {
+        if (entry.outcome !== 'kept') continue;
+        // Every kept label has a median by construction: `byLabel` was built from
+        // the same kept entries, over every service. A fallback here would be a
+        // branch no input can reach, and one that could mask a label mismatch.
+        const excess = entry.score - fleetMedian.get(entry.label)!;
+        if (excess > best) best = excess;
+      }
+      anomalyScores.set(serviceId, best);
+    }
   }
 
   // ── Step 1b: Score normalization for large topologies ───

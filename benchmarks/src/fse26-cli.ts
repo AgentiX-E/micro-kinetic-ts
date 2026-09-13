@@ -99,6 +99,15 @@ export interface Fse26CliOptions {
    * the ablation switch for that bound; the default is off.
    */
   readonly metricRiseCeiling: number;
+  /**
+   * Subtract each metric's cross-service median before the service maximum.
+   *
+   * The other half of the dynamic-range question: a metric that moved for every
+   * service carries no information about WHICH service is the source, yet a
+   * maximum over metrics cannot tell "unusual on this metric" from "everyone
+   * moved". Off by default; the run config records whether it was used.
+   */
+  readonly metricFleetBaseline: boolean;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -132,6 +141,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     diagnoseLimit: 3,
     dropMetrics: [] as string[],
     metricRiseCeiling: 0,
+    metricFleetBaseline: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -159,7 +169,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // published numbers rather than invent an unmeasured one.
       const ceiling = Number(argv[++i]!);
       opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
-    }
+    } else if (arg === '--fleet-baseline') opts.metricFleetBaseline = true;
   }
 
   return opts;
