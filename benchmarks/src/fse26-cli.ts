@@ -108,6 +108,15 @@ export interface Fse26CliOptions {
    * moved". Off by default; the run config records whether it was used.
    */
   readonly metricFleetBaseline: boolean;
+  /**
+   * Strength of the failed-edge-DIRECTION signal (0 = disabled, the shipped
+   * behaviour).
+   *
+   * Charges each post-injection failed call to its CALLEE — the service its
+   * callers' calls failed against — which is the inverse of the log signal's
+   * credit to the emitter. This is the ablation switch for it.
+   */
+  readonly failedEdgeWeight: number;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -142,6 +151,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     dropMetrics: [] as string[],
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
+    failedEdgeWeight: 0,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -149,9 +159,15 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     if (arg === '--data-dir' && i + 1 < argv.length) opts.dataDir = argv[++i]!;
     else if (arg === '--max-cases' && i + 1 < argv.length)
       opts.maxCases = parseInt(argv[++i]!, 10) || 0;
-    else if (arg === '--log-weight' && i + 1 < argv.length)
-      opts.logWeight = parseFloat(argv[++i]!) || 0;
-    else if (arg === '--log-mode' && i + 1 < argv.length) {
+    else if (arg === '--log-weight' && i + 1 < argv.length) {
+      // STRICT, for the reason spelled out on `--rise-ceiling` below:
+      // `parseFloat('1O')` is 1, so a typo would run a plausible but DIFFERENT
+      // ablation than the one asked for. The fallback is the SHIPPED weight
+      // (1.0), not 0 — 0 is a *different* measured configuration (14.98% Top@1),
+      // so silently selecting it would publish an ablation nobody chose.
+      const weight = Number(argv[++i]!);
+      opts.logWeight = Number.isFinite(weight) && weight >= 0 ? weight : 1.0;
+    } else if (arg === '--log-mode' && i + 1 < argv.length) {
       const mode = argv[++i]!;
       opts.logMode = isLogSignalMode(mode) ? mode : DEFAULT_FSE26_LOG_MODE;
     } else if (arg === '--no-rank-normalization') opts.rankNormalization = false;
@@ -170,6 +186,13 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const ceiling = Number(argv[++i]!);
       opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
     } else if (arg === '--fleet-baseline') opts.metricFleetBaseline = true;
+    else if (arg === '--failed-edge-weight' && i + 1 < argv.length) {
+      // Same strictness as the other numeric ablation switches, and the same
+      // safe fallback: the SHIPPED weight is 0 (the signal is off), so a typo
+      // reproduces a published configuration instead of inventing one.
+      const weight = Number(argv[++i]!);
+      opts.failedEdgeWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
+    }
   }
 
   return opts;

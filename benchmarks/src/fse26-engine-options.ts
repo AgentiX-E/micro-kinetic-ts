@@ -27,6 +27,15 @@ import type { Fse26CliOptions } from './fse26-cli.js';
 export interface Fse26SignalOptions {
   readonly logWeight: number;
   readonly logSignalMode: LogSignalMode;
+  /**
+   * Failed-edge-direction weight. Carried as a required field with an explicit
+   * default (0 = shipped/off) rather than an optional one: the engine's option
+   * is optional so that `undefined` means disabled, but a PARTIAL passed through
+   * here would be a silent no-op if the key were ever misspelled, and this file
+   * exists precisely because a dropped option ran the control while the `Config:`
+   * line reported the ablation.
+   */
+  readonly failedEdgeWeight: number;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -60,7 +69,11 @@ export const NON_ENGINE_OPTION_KEYS = [
  */
 export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptions {
   return {
-    signals: { logWeight: opts.logWeight, logSignalMode: opts.logMode },
+    signals: {
+      logWeight: opts.logWeight,
+      logSignalMode: opts.logMode,
+      failedEdgeWeight: opts.failedEdgeWeight,
+    },
     topology: {
       // Load-bearing on Train Ticket's large topologies.
       rankNormalization: opts.rankNormalization,

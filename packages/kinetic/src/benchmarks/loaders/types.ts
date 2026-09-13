@@ -8,6 +8,7 @@
  */
 
 import type {
+  FaultFailedEdge,
   MetricMap,
   ServiceCallGraph,
   TraceActivityCounts,
@@ -72,6 +73,15 @@ export interface BenchmarkCase {
   readonly traces?: ReadonlyArray<BenchmarkTraceSpan>;
   /** Optional per-service pre/post span counts (trace-activity rise signal). */
   readonly traceActivity?: ReadonlyMap<string, TraceActivityCounts>;
+  /**
+   * Optional per-edge failed-call counts — the callee each failed call was made
+   * against, with the same edge's pre-injection baseline.
+   *
+   * This is the only case input that carries the DIRECTION of a fault: the log
+   * signal credits whoever emits an error (the caller, usually a victim), while
+   * this names the service the error was emitted ABOUT (the callee, the source).
+   */
+  readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge>;
   /** Optional structured event records (RCA100). */
   readonly events?: ReadonlyArray<BenchmarkEvent>;
   /** Optional alert data (RCA100). */

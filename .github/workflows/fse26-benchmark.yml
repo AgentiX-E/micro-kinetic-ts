@@ -47,6 +47,10 @@ on:
         description: 'Comma-separated metric labels to strip from every case before scoring (empty = no ablation). Applied at load time, so the engine is unchanged'
         required: false
         default: ''
+      failed_edge_weight:
+        description: 'Weight of the failed-edge-direction signal, which charges each failed call to its CALLEE (empty = the runner default, which is 0 = disabled). Non-zero is an ablation'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -189,12 +193,17 @@ jobs:
           if [ -n "${{ inputs.drop_metrics }}" ]; then
             DROP_METRICS_ARG=(--drop-metrics "${{ inputs.drop_metrics }}")
           fi
+          FAILED_EDGE_ARG=()
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            FAILED_EDGE_ARG=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             "${LOG_WEIGHT_ARG[@]}" \
             "${LOG_MODE_ARG[@]}" \
             "${RANK_NORM_ARG[@]}" \
             "${DROP_METRICS_ARG[@]}" \
+            "${FAILED_EDGE_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

@@ -37,6 +37,9 @@
  *   "traceEdges": [
  *     ["ts-ui-dashboard", "ts-order-service"]
  *   ],
+ *   "failedTraceEdges": [
+ *     ["ts-ui-dashboard", "ts-order-service", 12, 1]
+ *   ],
  *   "logs": [
  *     { "timestamp": 1756998000000, "service": "ts-order-service", "level": "ERROR", "message": "..." }
  *   ]
@@ -68,6 +71,7 @@ import * as path from 'node:path';
 
 import type {
   CallEdge,
+  FaultFailedEdge,
   MetricMap,
   ServiceCallGraph,
   ServiceNode,
@@ -263,6 +267,16 @@ export interface FSE26MetricSeries {
 /** A directed caller → callee edge, pre-aggregated by the bridge from spans. */
 type FSE26TraceEdge = readonly [string, string];
 
+/**
+ * A bridge-emitted FAILED-call edge: `[caller, callee, failed, baseline]`.
+ *
+ * Both counts are present because they are measured on the SAME edge in two
+ * windows — `failed` at/after the injection, `baseline` before it. The engine
+ * subtracts them, so an edge that was already broken is not mistaken for this
+ * fault's signature.
+ */
+type FSE26FailedTraceEdge = readonly [string, string, number, number];
+
 /** A normalised log entry from the bridge JSON. */
 interface FSE26LogEntry {
   readonly timestamp: number;
@@ -279,6 +293,12 @@ export interface FSE26RawCase {
   readonly injectTimeMs: number;
   readonly metrics: Readonly<Record<string, readonly FSE26MetricSeries[]>>;
   readonly traceEdges?: readonly FSE26TraceEdge[];
+  /**
+   * `[caller, callee, failed, baseline]` per edge with at least one
+   * post-injection failed call. Written only when non-empty, so an absent key
+   * means "not measured", never "nothing failed".
+   */
+  readonly failedTraceEdges?: readonly FSE26FailedTraceEdge[];
   readonly logs?: readonly FSE26LogEntry[];
 }
 
@@ -353,6 +373,35 @@ export function traceEdgesToCallEdges(
     addDeduplicatedEdge(edges, seen, from, to);
   }
   return edges;
+}
+
+/**
+ * Convert bridge-emitted failed-call edges into the engine's per-edge contract.
+ *
+ * A pure structural transform, like {@link traceEdgesToCallEdges}: the bridge
+ * already resolved each span's parent service and sorted by `(caller, callee)`,
+ * so this only re-shapes the tuples. Filtering by which services are rankable
+ * belongs to the signal (`computeFailedEdgeScores`), not here — the loader is
+ * deliberately unaware of the call graph.
+ *
+ * An empty or absent list maps to `undefined`, NOT to an empty array: the
+ * bridge writes the key only when it has entries, so "absent" means the
+ * measurement was not taken, while an empty array would assert "no edge
+ * failed". Collapsing the two would fabricate evidence of absence.
+ *
+ * @param failedTraceEdges - The `[caller, callee, failed, baseline]` tuples.
+ * @returns One record per edge, in the bridge's order, or `undefined`.
+ */
+export function toFSE26FailedEdges(
+  failedTraceEdges: readonly FSE26FailedTraceEdge[] | undefined,
+): FaultFailedEdge[] | undefined {
+  if (!failedTraceEdges || failedTraceEdges.length === 0) return undefined;
+  return failedTraceEdges.map(([caller, callee, failed, baseline]) => ({
+    caller,
+    callee,
+    failed,
+    baseline,
+  }));
 }
 
 /**
@@ -557,6 +606,7 @@ export class FSE26Loader {
       injectTime: raw.injectTimeMs,
       groundTruth: resolveFSE26GroundTruth(raw),
       logs,
+      failedTraceEdges: toFSE26FailedEdges(raw.failedTraceEdges),
     };
   }
 }

@@ -1,7 +1,13 @@
-import type { CallEdge, FaultLogEntry, ServiceId } from '@agentix-e/micro-kinetic-core';
+import type {
+  CallEdge,
+  FaultFailedEdge,
+  FaultLogEntry,
+  ServiceId,
+} from '@agentix-e/micro-kinetic-core';
 import {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   computeDeepestExceptions,
+  computeFailedEdgeScores,
   computeHttpEmitterDominance,
   computeHttpVictimSet,
   computeLogNoveltyScores,
@@ -1261,5 +1267,141 @@ describe('computeHttpVictimSet — invariant under monotone rescaling', () => {
     }
 
     expect(mismatches).toBe(0);
+  });
+});
+
+describe('computeFailedEdgeScores', () => {
+  const edge = (
+    caller: string,
+    callee: string,
+    failed: number,
+    baseline: number,
+  ): FaultFailedEdge => ({ caller, callee, failed, baseline });
+
+  it('credits the CALLEE of the failed calls, never the caller', () => {
+    // The entire point of the signal: the log signal credits the service that
+    // EMITS the error, which is the caller. This one credits the service the
+    // error was emitted ABOUT. If it credited the caller it would be a weaker
+    // copy of the log signal and would add no direction.
+    const scores = computeFailedEdgeScores(
+      [edge('ts-ui-dashboard', 'ts-order-service', 5, 0)],
+      new Set(['ts-ui-dashboard', 'ts-order-service']),
+    );
+
+    expect(scores.get('ts-order-service')).toBe(1);
+    expect(scores.has('ts-ui-dashboard')).toBe(false);
+  });
+
+  it('sums the fan-in across callers and max-normalises the field', () => {
+    // A genuine fan-out: the same callee reached by two callers, plus a second
+    // callee with LESS evidence, so the normalisation is observable rather than
+    // trivially 1 for everything. A single-edge fixture cannot see this.
+    // c's evidence is the SUM over its callers (2 + 6 = 8), not either edge.
+    const scores = computeFailedEdgeScores(
+      [edge('a', 'c', 2, 0), edge('b', 'c', 6, 0), edge('a', 'd', 2, 0)],
+      new Set(['a', 'b', 'c', 'd']),
+    );
+
+    expect(scores.get('c')).toBe(1);
+    expect(scores.get('d')).toBeCloseTo(2 / 8, 10);
+    expect(scores.size).toBe(2);
+  });
+
+  it('subtracts each edge pre-injection baseline', () => {
+    // `baseline` is measured over the PRE-injection window on the SAME edge. An
+    // edge that was already failing is a deployment property, so only the rise
+    // over its own baseline is evidence of this fault.
+    const scores = computeFailedEdgeScores(
+      [edge('a', 'b', 9, 8), edge('a', 'c', 3, 0)],
+      new Set(['a', 'b', 'c']),
+    );
+
+    // b's net is 1 against c's 3, so b is one third of the max.
+    expect(scores.get('c')).toBe(1);
+    expect(scores.get('b')).toBeCloseTo(1 / 3, 10);
+  });
+
+  it('clamps a negative net at zero instead of penalising the callee', () => {
+    // A permanently-broken edge that got BETTER after injection must not hand
+    // its callee a negative score — that would penalise a service for a fault
+    // it did not cause, and the weight is defined as a non-negative reward.
+    const scores = computeFailedEdgeScores(
+      [edge('a', 'b', 1, 5), edge('a', 'c', 2, 0)],
+      new Set(['a', 'b', 'c']),
+    );
+
+    expect(scores.get('c')).toBe(1);
+    expect(scores.has('b')).toBe(false);
+  });
+
+  it('ignores an edge whose callee is not a rankable node', () => {
+    // Trace-derived edges can name a service with no metric series (the load
+    // generator, a data-plane pod). The engine can only score nodes, so such an
+    // edge must not enter the denominator either.
+    const scores = computeFailedEdgeScores(
+      [edge('a', 'loadgenerator', 100, 0), edge('a', 'c', 4, 0)],
+      new Set(['a', 'c']),
+    );
+
+    expect(scores.get('c')).toBe(1);
+    expect(scores.size).toBe(1);
+  });
+
+  it('drops self-edges, which carry no direction', () => {
+    const scores = computeFailedEdgeScores([edge('a', 'a', 5, 0)], new Set(['a']));
+    expect(scores.size).toBe(0);
+  });
+
+  it('is empty for absent or empty input', () => {
+    expect(computeFailedEdgeScores(undefined, new Set(['a'])).size).toBe(0);
+    expect(computeFailedEdgeScores([], new Set(['a'])).size).toBe(0);
+  });
+
+  it('is empty rather than NaN when every net is zero', () => {
+    // The degenerate case the max-normalisation divides by: if the max were 0
+    // the naive division would emit NaN for every service, and a NaN score
+    // silently poisons the whole sort comparator.
+    const scores = computeFailedEdgeScores(
+      [edge('a', 'b', 2, 2), edge('a', 'c', 0, 0)],
+      new Set(['a', 'b', 'c']),
+    );
+
+    expect(scores.size).toBe(0);
+  });
+
+  it('is empty when the graph has no nodes', () => {
+    expect(computeFailedEdgeScores([edge('a', 'b', 5, 0)], new Set()).size).toBe(0);
+  });
+
+  it('drops an edge whose counts are not finite numbers', () => {
+    // A `null`/`undefined` count read out of a JSON tuple would make
+    // `failed - baseline` NaN, and NaN propagates through the max into EVERY
+    // score — poisoning the whole sort comparator rather than failing loudly.
+    // Dropping the edge keeps the damage local to the edge that is malformed.
+    const scores = computeFailedEdgeScores(
+      [
+        { caller: 'a', callee: 'b', failed: Number.NaN, baseline: 0 },
+        { caller: 'a', callee: 'c', failed: 4, baseline: 0 },
+      ],
+      new Set(['a', 'b', 'c']),
+    );
+
+    expect(scores.get('c')).toBe(1);
+    expect(scores.has('b')).toBe(false);
+  });
+
+  it('normalises so the top-scoring callee is exactly 1', () => {
+    // Pinned as a contract: the term is `weight × score` with score in [0, 1],
+    // which is what makes the weight comparable to the other signals.
+    const scores = computeFailedEdgeScores(
+      [edge('a', 'b', 37, 4), edge('a', 'c', 12, 0)],
+      new Set(['a', 'b', 'c']),
+    );
+
+    expect(scores.get('b')).toBe(1);
+    for (const value of scores.values()) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+    }
   });
 });

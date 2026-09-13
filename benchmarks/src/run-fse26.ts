@@ -179,6 +179,7 @@ async function main(): Promise<void> {
     dropMetrics: opts.dropMetrics,
     metricRiseCeiling: opts.metricRiseCeiling,
     metricFleetBaseline: opts.metricFleetBaseline,
+    failedEdgeWeight: opts.failedEdgeWeight,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark

@@ -25,6 +25,7 @@
  *                 + riseWeight      × 2 × (riseScore(v) − 0.5)
  *                 + traceWeight     × traceActivity(v)
  *                 + prismWeight     × prismScore(v)
+ *                 + failedEdgeWeight × failedEdgeScore(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -82,4 +83,22 @@ export interface RankingWeights {
    * means 0 (disabled).
    */
   readonly prismWeight?: number;
+  /**
+   * Failed-call-direction prior: rewards a service that its callers' FAILED
+   * calls were made AGAINST (the callee of a failed edge).
+   *
+   *   finalScore(v) += failedEdgeWeight × failedEdgeScore(v)
+   *
+   * `failedEdgeScore(v)` is the max-normalised sum over edges `(caller → v)` of
+   * `failed − baseline`, where both counts come from the same edge measured
+   * over the post- and pre-injection windows. It is the INVERSE of the log
+   * signal: the log signal credits whoever EMITS an error (the caller, which is
+   * usually the victim), this one credits whoever the error was emitted ABOUT
+   * (the callee, which is the source). That is the direction the log signal
+   * cannot express, and it is why this is a separate signal rather than another
+   * log mode.
+   *
+   * OPTIONAL: absent means 0 (disabled).
+   */
+  readonly failedEdgeWeight?: number;
 }

@@ -59,6 +59,7 @@ import { computePrismScores } from './prism-signal.js';
 import type { LogSignalMode } from './ranking-signals.js';
 import {
   computeDeepestExceptions,
+  computeFailedEdgeScores,
   computeLogScores,
   computeRiseScores,
   computeTopoSourceScores,
@@ -280,6 +281,27 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * default is flipped.
    */
   readonly prismWeight: number;
+  /**
+   * Weight of the failed-edge-DIRECTION signal: reward a service that its
+   * callers' FAILED calls were made AGAINST (the callee of a failed edge).
+   *
+   *   finalScore(v) += failedEdgeWeight × failedEdgeScore(v)
+   *
+   * `failedEdgeScore(v)` is the max-normalised sum over edges `caller → v` of
+   * `failed − baseline`, where both counts are measured on the SAME edge over
+   * the post- and pre-injection windows (see computeFailedEdgeScores). It is
+   * the INVERSE of the log signal: the log signal credits whichever service
+   * EMITS an error — which on a propagation-carrying fault is a VICTIM that is
+   * reporting its broken dependency — while this one credits the service the
+   * error was emitted ABOUT, i.e. the dependency itself. That is the direction
+   * the log signal cannot express, and the reason this is a separate signal
+   * rather than another log mode.
+   *
+   * Default: 0 (opt-in). It must be ablated and read back net-positive with
+   * zero regression on the kill criterion (RCAEval golden 9-cell byte-identical
+   * AND FSE'26 zero regressed fault types) before the default is flipped.
+   */
+  readonly failedEdgeWeight: number;
 }
 
 /**
@@ -299,6 +321,7 @@ export function toRankingWeights(
     | 'riseWeight'
     | 'traceWeight'
     | 'prismWeight'
+    | 'failedEdgeWeight'
   >,
 ): RankingWeights {
   return {
@@ -310,6 +333,7 @@ export function toRankingWeights(
     riseWeight: options.riseWeight,
     traceWeight: options.traceWeight,
     prismWeight: options.prismWeight,
+    failedEdgeWeight: options.failedEdgeWeight,
   };
 }
 
@@ -329,6 +353,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   riseWeight: 0.0,
   traceWeight: 0.0,
   prismWeight: 0.0,
+  failedEdgeWeight: 0.0,
 };
 
 /**
@@ -585,6 +610,15 @@ export class TreePruner {
     // when the injection time is unknown or no service is anomalous.
     const prismScores = computePrismScores(metrics, new Set(callGraph.nodes.keys()), injectTimeMs);
 
+    // The failed-edge-DIRECTION signal: each failed call is charged to its
+    // CALLEE — the service whose interface was failing — which is the inverse
+    // of the log signal's credit to the emitter. This is the only signal that
+    // carries the DIRECTION of a fault, so it is deliberately not a log mode.
+    const failedEdgeScores = computeFailedEdgeScores(
+      options?.failedTraceEdges,
+      new Set(callGraph.nodes.keys()),
+    );
+
     return {
       callGraph: topologyGraph,
       propagationWeights,
@@ -604,6 +638,7 @@ export class TreePruner {
       deepestExceptions,
       traceActivityScores,
       prismScores,
+      failedEdgeScores,
     };
   }
 
@@ -664,6 +699,7 @@ export class TreePruner {
       graph.riseScores,
       graph.traceActivityScores,
       graph.prismScores,
+      graph.failedEdgeScores,
     );
 
     return results;
@@ -841,6 +877,7 @@ function performTreeRCA(
   riseScores?: ReadonlyMap<ServiceId, number>,
   traceActivityScores?: ReadonlyMap<ServiceId, number>,
   prismScores?: ReadonlyMap<ServiceId, number>,
+  failedEdgeScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -1050,7 +1087,7 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with eight causal priors (all opt-in except log):
+  // Rank by self anomaly combined with nine causal priors (all opt-in except log):
   //
   // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
   //    node's neighbours whose index-based onset is later.
@@ -1072,6 +1109,10 @@ function performTreeRCA(
   // 8. A PRISM prior (`prismWeight`) — reward the service anomalous in BOTH its
   //    internal and external properties (the graph-free internal/external
   //    asymmetry of PRISM).
+  // 9. A FAILED-EDGE-DIRECTION prior (`failedEdgeWeight`) — reward the CALLEE
+  //    of post-injection failed calls, i.e. the service its callers' calls
+  //    failed against. The inverse of the log prior, and the only signal that
+  //    carries a fault's DIRECTION.
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy
@@ -1097,6 +1138,7 @@ function performTreeRCA(
   //                 + riseWeight      × gatedRiseContribution(dir(v), hasLogicException(v))
   //                 + traceWeight     × traceActivity(v)
   //                 + prismWeight     × prismScore(v)
+  //                 + failedEdgeWeight × failedEdgeScore(v)
   //
   // When self anomalies are exactly equal (or all weights are 0), the order
   // is settled deterministically by service id.
@@ -1126,6 +1168,14 @@ function performTreeRCA(
   // service's normalised score (0 when the signal is absent/neutral).
   const prismWeight = options.prismWeight;
   const prismTerm = (id: ServiceId): number => prismWeight * (prismScores?.get(id) ?? 0);
+  // The failed-edge-direction signal rewards the CALLEE of post-injection failed
+  // calls — the service whose interface was failing — which is the inverse of
+  // the log signal's credit to the emitter. Non-negative by construction
+  // (`computeFailedEdgeScores` clamps each edge's net at zero), so this term can
+  // only ever reward.
+  const failedEdgeWeight = options.failedEdgeWeight;
+  const failedEdgeTerm = (id: ServiceId): number =>
+    failedEdgeWeight * (failedEdgeScores?.get(id) ?? 0);
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `temporalEarliness`, `topoScores`,
@@ -1150,7 +1200,8 @@ function performTreeRCA(
         weights.logWeight * (logScores?.get(id) ?? 0) +
         riseTerm(id) +
         traceTerm(id) +
-        prismTerm(id);
+        prismTerm(id) +
+        failedEdgeTerm(id);
       finalScores.set(id, s);
     }
     return s;

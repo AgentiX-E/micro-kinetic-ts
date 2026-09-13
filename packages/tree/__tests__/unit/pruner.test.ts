@@ -1,6 +1,7 @@
 import type {
   CallEdge,
   MetricMap,
+  RankingWeights,
   ServiceCallGraph,
   ServiceNode,
   TimeSeries,
@@ -1036,6 +1037,7 @@ describe('TreePruner', () => {
         riseWeight: 0.6,
         traceWeight: 0.7,
         prismWeight: 0.8,
+        failedEdgeWeight: 0.9,
       });
 
       expect(weights).toEqual({
@@ -1047,6 +1049,7 @@ describe('TreePruner', () => {
         riseWeight: 0.6,
         traceWeight: 0.7,
         prismWeight: 0.8,
+        failedEdgeWeight: 0.9,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -1455,5 +1458,109 @@ describe('TreePruner', () => {
       expect(top.finalScore).toBeDefined();
       expect(top.finalScore!).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('TreePruner — failed-edge-direction signal', () => {
+  // A caller that is failing against a callee: the two services are the two
+  // roles the signal has to tell apart, and the direction is the whole point.
+  const CALLER = 'ts-ui-dashboard';
+  const CALLEE = 'ts-order-service';
+  const failedTraceEdges = [
+    { caller: CALLER, callee: CALLEE, failed: 10, baseline: 0 },
+  ];
+
+  // Both services deviate after injection, so both are rankable candidates and
+  // the ONLY thing that can separate their scores is the new term.
+  const makeCase = (): [ServiceCallGraph, MetricMap] => [
+    makeCallGraph([CALLER, CALLEE], [[CALLER, CALLEE]]),
+    makeMetrics({
+      [CALLER]: [1, 1, 1, 1, 4, 4, 4, 4],
+      [CALLEE]: [1, 1, 1, 1, 3, 3, 3, 3],
+    }),
+  ];
+
+  const scores = (pruner: TreePruner, options?: { failedTraceEdges: typeof failedTraceEdges }) => {
+    const [callGraph, metrics] = makeCase();
+    const graph = pruner.buildFaultGraph(callGraph, metrics, options);
+    return {
+      graph,
+      byService: new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!])),
+    };
+  };
+
+  it('charges the CALLEE, not the emitter, in the graph it builds', () => {
+    const pruner = new TreePruner();
+    const { graph } = scores(pruner, { failedTraceEdges });
+
+    expect(graph.failedEdgeScores?.get(CALLEE)).toBe(1);
+    expect(graph.failedEdgeScores?.has(CALLER)).toBe(false);
+  });
+
+  it('is neutral at the default weight: carrying the field changes no score', () => {
+    // This is the property that lets the field ship in the cache before the
+    // signal is trusted: at weight 0 the presence of failed edges must be
+    // unobservable, exactly like an absent field.
+    const pruner = new TreePruner();
+    const without = scores(pruner);
+    const withField = scores(pruner, { failedTraceEdges });
+
+    expect(without.graph.failedEdgeScores?.size ?? 0).toBe(0);
+    expect([...withField.byService.keys()]).toEqual([...without.byService.keys()]);
+    for (const [serviceId, score] of withField.byService) {
+      expect(score).toBeCloseTo(without.byService.get(serviceId)!, 12);
+    }
+  });
+
+  it('raises the callee score by exactly the weight and leaves the caller alone', () => {
+    // The term is `weight × score` with score in [0, 1], so with weight 1 and a
+    // single charged callee the delta is exactly 1 — and the caller's own score
+    // must not move, or the signal would be a re-weighting rather than a new
+    // axis.
+    const base = new TreePruner();
+    const enabled = new TreePruner({ failedEdgeWeight: 1 });
+    const before = scores(base, { failedTraceEdges }).byService;
+    const after = scores(enabled, { failedTraceEdges }).byService;
+
+    expect(after.get(CALLEE)! - before.get(CALLEE)!).toBeCloseTo(1, 10);
+    expect(after.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
+  });
+
+  it('carries the weight into the shared RankingWeights contract', () => {
+    // `toRankingWeights` is the serializable contract the offline optimizer
+    // tunes against, so a signal missing from it is invisible to tuning — and
+    // an omission there is silent, because the engine's own option keeps working.
+    const weights = toRankingWeights({
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 1,
+      riseWeight: 0,
+      traceWeight: 0,
+      prismWeight: 0,
+      failedEdgeWeight: 0.5,
+    });
+
+    expect(weights.failedEdgeWeight).toBe(0.5);
+  });
+
+  it('keeps the weight OPTIONAL in the shared contract, so stored weight vectors still load', () => {
+    // `TreePrunerOptions` requires the field (a caller must state it), but the
+    // serializable `RankingWeights` keeps it optional: the optimizer persists
+    // weight vectors, and a vector saved before this signal existed must still
+    // be a valid input rather than a type error or a fabricated 0.
+    const legacy: RankingWeights = {
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 1,
+      riseWeight: 0,
+      traceWeight: 0,
+      prismWeight: 0,
+    };
+
+    expect(legacy.failedEdgeWeight).toBeUndefined();
   });
 });

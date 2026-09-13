@@ -34,6 +34,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     dropMetrics: [],
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
+    failedEdgeWeight: 0,
     ...overrides,
   };
 }
@@ -77,13 +78,15 @@ describe('FSE26 report — attribution', () => {
     // (23.1%). Both fields that differ between those runs are absent, so this
     // check is what would have flagged them as unattributable.
     // `metricRiseCeiling` is additionally absent because it postdates those
-    // runs; the point of the check is that TODAY's requirement set flags them.
+    // runs; `failedEdgeWeight` likewise. The point of the check is that TODAY's
+    // requirement set flags them.
     const published = { logWeight: 1, rankNormalization: true };
     expect(missingReportedConfigFields(published)).toEqual([
       'logSignalMode',
       'dropMetrics',
       'metricRiseCeiling',
       'metricFleetBaseline',
+      'failedEdgeWeight',
     ]);
   });
 
@@ -103,6 +106,19 @@ describe('FSE26 report — the two renderings agree', () => {
     // The line and the JSON are rendered from one object; `missingReportedConfigFields`
     // is the executable form of "both carry the same four fields".
     expect(missingReportedConfigFields(makeConfig())).toHaveLength(0);
+  });
+
+  it('names the failed-edge weight only when it is non-zero', () => {
+    // The shipped value is 0, so a zero-weight line stays byte-identical to the
+    // published one — and a flipped switch cannot hide inside it.
+    const shipped = formatFSE26ConfigLine(makeConfig());
+    expect(shipped).not.toContain('failedEdgeWeight');
+    expect(shipped).toBe(
+      'Config: logWeight=1 logMode=logicHttp rankNormalization=true',
+    );
+    expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
+      'failedEdgeWeight=1',
+    );
   });
 
   it('names the rise ceiling only when it changes the configuration', () => {

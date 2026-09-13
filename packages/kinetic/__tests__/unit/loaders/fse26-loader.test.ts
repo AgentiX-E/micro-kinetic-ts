@@ -22,6 +22,7 @@ import {
   dropFSE26MetricNames,
   expandMetricTimestamps,
   resolveFSE26GroundTruth,
+  toFSE26FailedEdges,
   toFSE26LogEntry,
   toFSE26MetricMap,
   traceEdgesToCallEdges,
@@ -478,5 +479,45 @@ describe('FSE26Loader', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('toFSE26FailedEdges', () => {
+  it('maps each 4-tuple to a caller/callee/failed/baseline record', () => {
+    // The bridge emits `[caller, callee, failed, baseline]`. Both counts are
+    // kept: `baseline` is the same edge's PRE-injection failure count, and the
+    // engine subtracts it, so dropping it here would silently turn a
+    // permanently-broken edge into the fault's signature.
+    const edges = toFSE26FailedEdges([
+      ['ts-ui-dashboard', 'ts-order-service', 12, 1],
+      ['ts-order-service', 'ts-station-service', 5, 0],
+    ]);
+
+    expect(edges).toEqual([
+      { caller: 'ts-ui-dashboard', callee: 'ts-order-service', failed: 12, baseline: 1 },
+      { caller: 'ts-order-service', callee: 'ts-station-service', failed: 5, baseline: 0 },
+    ]);
+  });
+
+  it('maps an absent key to undefined rather than an empty list', () => {
+    // The converter writes the key only when the list is non-empty, so an
+    // absent key means "no evidence", NOT "no edge failed". Collapsing the two
+    // would make a case with a genuinely empty measurement indistinguishable
+    // from one the converter never populated.
+    expect(toFSE26FailedEdges(undefined)).toBeUndefined();
+  });
+
+  it('maps an empty list to undefined for the same reason', () => {
+    expect(toFSE26FailedEdges([])).toBeUndefined();
+  });
+
+  it('preserves order so a rebuild of the same datapack is byte-stable', () => {
+    // The bridge sorts by (caller, callee); the loader must not reorder, or two
+    // builds of the same datapack would describe the same evidence differently.
+    const edges = toFSE26FailedEdges([
+      ['a', 'c', 1, 0],
+      ['a', 'b', 2, 0],
+    ]);
+    expect(edges?.map((e) => `${e.caller}->${e.callee}`)).toEqual(['a->c', 'a->b']);
   });
 });

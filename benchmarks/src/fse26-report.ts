@@ -56,6 +56,13 @@ export interface FSE26RunConfig {
    * different configuration and has to say so.
    */
   readonly metricFleetBaseline: boolean;
+  /**
+   * Weight of the failed-edge-DIRECTION signal (0 = disabled, the shipped
+   * configuration). It charges each post-injection failed call to its CALLEE —
+   * the inverse of the log signal's credit to the emitter — so a non-zero value
+   * is a different ranking and has to say so.
+   */
+  readonly failedEdgeWeight: number;
 }
 
 /** One fault type's cell in the summary. */
@@ -109,6 +116,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'dropMetrics',
   'metricRiseCeiling',
   'metricFleetBaseline',
+  'failedEdgeWeight',
 ] as const;
 
 /**
@@ -157,6 +165,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   }
   if (config.metricFleetBaseline) {
     line += ' fleetBaseline=true';
+  }
+  // Same rule as the two above: the shipped value is 0, so a zero-weight run's
+  // line is byte-identical to the published one and a flipped switch is visible.
+  if (config.failedEdgeWeight !== 0) {
+    line += ` failedEdgeWeight=${config.failedEdgeWeight}`;
   }
   return line;
 }

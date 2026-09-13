@@ -138,7 +138,37 @@ describe('parseFSE26Args — other flags', () => {
     // `parseInt('x')` is NaN and `NaN || 0` is 0, so a bad count means "all
     // cases" rather than an empty run.
     expect(parseFSE26Args(['--max-cases', 'x']).maxCases).toBe(0);
-    expect(parseFSE26Args(['--log-weight', 'x']).logWeight).toBe(0);
+    // `--log-weight` is parsed STRICTLY and falls back to the SHIPPED weight,
+    // not to 0: 0 is itself a measured configuration (14.98% Top@1), so falling
+    // back to it would run a different ablation than the one asked for while the
+    // `Config:` line reported a weight the operator typed.
+    expect(parseFSE26Args(['--log-weight', 'x']).logWeight).toBe(1.0);
+    expect(parseFSE26Args(['--log-weight', '1O']).logWeight).toBe(1.0);
+  });
+
+  it('keeps every valid log weight, including the measured 0', () => {
+    expect(parseFSE26Args(['--log-weight', '0']).logWeight).toBe(0);
+    expect(parseFSE26Args(['--log-weight', '0.25']).logWeight).toBe(0.25);
+    expect(parseFSE26Args(['--log-weight', '1']).logWeight).toBe(1);
+    expect(parseFSE26Args(['--log-weight', '-1']).logWeight).toBe(1.0);
+  });
+
+  it('parses the failed-edge weight, disabled by default', () => {
+    expect(parseFSE26Args([]).failedEdgeWeight).toBe(0);
+    expect(parseFSE26Args(['--failed-edge-weight', '0']).failedEdgeWeight).toBe(0);
+    expect(parseFSE26Args(['--failed-edge-weight', '1']).failedEdgeWeight).toBe(1);
+    expect(parseFSE26Args(['--failed-edge-weight', '2.5']).failedEdgeWeight).toBe(2.5);
+  });
+
+  it('rejects a failed-edge weight with trailing garbage instead of running a different one', () => {
+    // Same trap as `--rise-ceiling`: `parseFloat('1O')` is 1, so a typo would
+    // silently measure a weight of 1. The fallback is the SHIPPED weight (0).
+    expect(parseFSE26Args(['--failed-edge-weight', '1O']).failedEdgeWeight).toBe(0);
+    expect(parseFSE26Args(['--failed-edge-weight', 'x']).failedEdgeWeight).toBe(0);
+    expect(parseFSE26Args(['--failed-edge-weight', '']).failedEdgeWeight).toBe(0);
+    // A negative weight would make the signal a penalty, which is a different
+    // mechanism than the one the option documents.
+    expect(parseFSE26Args(['--failed-edge-weight', '-1']).failedEdgeWeight).toBe(0);
   });
 
   it('parses the metric rise ceiling, defaulting to unbounded', () => {
@@ -172,5 +202,11 @@ describe('parseFSE26Args — other flags', () => {
 
   it('ignores unknown flags', () => {
     expect(parseFSE26Args(['--verbose', '--log-mode', 'count']).logMode).toBe('count');
+  });
+
+  it('does not consume the next flag when the value is missing', () => {
+    // A flag with no value must not swallow the following flag.
+    expect(parseFSE26Args(['--failed-edge-weight']).failedEdgeWeight).toBe(0);
+    expect(parseFSE26Args(['--log-weight', '--log-mode']).logMode).toBe('logicHttp');
   });
 });

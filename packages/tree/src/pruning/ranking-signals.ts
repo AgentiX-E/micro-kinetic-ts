@@ -29,6 +29,7 @@
 
 import type {
   CallEdge,
+  FaultFailedEdge,
   FaultLogEntry,
   ServiceId,
   TraceActivityCounts,
@@ -865,5 +866,75 @@ export function computeTraceActivityScores(
   if (logicExceptionServices.size > 0) return scores;
 
   scores.set(candidate, 1);
+  return scores;
+}
+
+/**
+ * Failed-edge-DIRECTION signal: the callee of a failed call is the candidate,
+ * the caller is only where the error was reported.
+ *
+ * The log signal rewards whoever EMITS an error. When a service is broken, the
+ * services that call it are the ones that log — so on a propagation-carrying
+ * fault the log signal points at a VICTIM. This signal is its inverse: for each
+ * edge `caller → callee` it charges the failures to the CALLEE, so the service
+ * whose interface is failing collects the evidence.
+ *
+ * The count per edge is `failed − baseline`, clamped at zero, where both counts
+ * are measured on the SAME edge over the post- and pre-injection windows. Two
+ * properties follow, and both are load-bearing:
+ *
+ * - Subtracting the baseline removes edges that were ALREADY broken before the
+ *   injection. A permanently failing dependency is a deployment property, and
+ *   charging it to the callee would make a pre-existing defect look like this
+ *   fault's signature.
+ * - Clamping at zero keeps the signal a non-negative REWARD. A broken edge that
+ *   got better after injection must not hand its callee a penalty, because the
+ *   weight is defined as a reward and a negative term would be an unexplained
+ *   second mechanism inside one switch.
+ *
+ * The result is max-normalised into [0, 1] like the log signal, so the two
+ * weights are directly comparable and the score is invariant under the
+ * absolute call volume of the case.
+ *
+ * @param edges - Per-edge failed-call counts (undefined → empty → neutral).
+ * @param nodeIds - Services present in the call graph; an edge to any other
+ *   service is ignored, including in the normalisation denominator, because
+ *   the engine can only rank nodes it has metrics for.
+ * @returns Sparse `{callee: score}` map, or empty when no edge carries
+ *   post-injection failures beyond its own baseline.
+ */
+export function computeFailedEdgeScores(
+  edges: ReadonlyArray<FaultFailedEdge> | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (!edges || edges.length === 0 || nodeIds.size === 0) return scores;
+
+  const net = new Map<ServiceId, number>();
+  let max = 0;
+  for (const edge of edges) {
+    // A `null`/`undefined` count out of a JSON tuple would make the difference
+    // NaN, and NaN propagates through `Math.max` into every score, silently
+    // poisoning the sort comparator. Drop the malformed edge instead.
+    if (!Number.isFinite(edge.failed) || !Number.isFinite(edge.baseline)) continue;
+    // A self-call carries no direction: it says the service's own calls
+    // failed, not that anything upstream or downstream broke.
+    if (edge.caller === edge.callee) continue;
+    if (!nodeIds.has(edge.callee)) continue;
+    const contribution = Math.max(0, edge.failed - edge.baseline);
+    if (contribution <= 0) continue;
+    const total = (net.get(edge.callee) ?? 0) + contribution;
+    net.set(edge.callee, total);
+    if (total > max) max = total;
+  }
+
+  // `max > 0` is guaranteed whenever `net` is non-empty (every inserted
+  // contribution is positive), so the division below never sees a zero
+  // denominator and never emits NaN.
+  if (max <= 0) return scores;
+
+  for (const [callee, total] of net) {
+    scores.set(callee, total / max);
+  }
   return scores;
 }

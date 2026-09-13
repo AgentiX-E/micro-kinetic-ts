@@ -22,7 +22,24 @@ describe('buildFse26EngineOptions', () => {
   it('forwards the signal options the pruner is constructed with', () => {
     const engine = buildFse26EngineOptions({ ...BASE, logWeight: 0.5, logMode: 'count' });
 
-    expect(engine.signals).toEqual({ logWeight: 0.5, logSignalMode: 'count' });
+    expect(engine.signals).toEqual({
+      logWeight: 0.5,
+      logSignalMode: 'count',
+      failedEdgeWeight: 0,
+    });
+  });
+
+  it('forwards the failed-edge-direction weight, absent by default', () => {
+    // Off by default: the shipped configuration must not carry the signal until
+    // it has been ablated against the kill criterion.
+    expect(buildFse26EngineOptions(BASE).signals.failedEdgeWeight).toBe(0);
+    expect(
+      buildFse26EngineOptions({ ...BASE, failedEdgeWeight: 1 }).signals.failedEdgeWeight,
+    ).toBe(1);
+
+    // End to end, from argv — the only path a dispatch actually takes.
+    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--failed-edge-weight', '2.5']));
+    expect(fromArgv.signals.failedEdgeWeight).toBe(2.5);
   });
 
   it('forwards rank normalization, which is load-bearing on the large topologies', () => {

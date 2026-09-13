@@ -118,6 +118,32 @@ export interface TraceActivityCounts {
 }
 
 /**
+ * One caller → callee edge with its FAILED-call counts, measured separately in
+ * the pre- and post-injection windows.
+ *
+ * This is the one evidence class that carries the DIRECTION of a fault. The log
+ * signal credits the service that emits an error; this credits the service the
+ * error was emitted ABOUT, because a callee that broke is what its callers
+ * report. The two are inverses, which is why this is a distinct signal rather
+ * than another log mode.
+ *
+ * `baseline` is a required field and is never folded into `failed`: an edge
+ * that was already failing BEFORE the injection is a deployment property, so
+ * only the rise over its own baseline is evidence of this fault. Merging the
+ * two would make a permanently broken edge read as the fault's signature.
+ */
+export interface FaultFailedEdge {
+  /** The service that made the calls (the caller of the edge). */
+  readonly caller: ServiceId;
+  /** The service the failed calls were made against (the callee). */
+  readonly callee: ServiceId;
+  /** Failed calls on this edge AT or AFTER the injection time. */
+  readonly failed: number;
+  /** Failed calls on the SAME edge before the injection time. */
+  readonly baseline: number;
+}
+
+/**
  * Optional inputs to {@link IRCAEngine.buildFaultGraph}.
  *
  * These carry case-level temporal context that is independent of the call
@@ -146,6 +172,19 @@ export interface BuildFaultGraphOptions {
    * counts disable that signal (neutral for every service).
    */
   readonly traceActivity?: ReadonlyMap<ServiceId, TraceActivityCounts>;
+  /**
+   * Per-edge failed-call counts (the callee each failed call was made
+   * against). Drives the failed-edge-direction signal: a fault's victims are
+   * the CALLEES their callers' calls failed against, so the service that owns
+   * those failures is the source, not whoever logged the error. Absent edges
+   * disable that signal (neutral for every service).
+   *
+   * Edges naming a service that is not in the call graph are ignored by the
+   * signal: the engine can only rank nodes it has metrics for, so a
+   * trace-only service (a load generator, a data-plane pod) must not enter the
+   * normalisation either.
+   */
+  readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge>;
 }
 
 export interface IRCAEngine {

@@ -390,6 +390,7 @@ export class BenchmarkRunner {
           injectTimeMs: this.useInjectTime ? benchCase.injectTime : 0,
           logs: benchCase.logs,
           traceActivity: benchCase.traceActivity,
+          failedTraceEdges: benchCase.failedTraceEdges,
         });
         const results = await engine.analyze(faultGraph, topK);
 

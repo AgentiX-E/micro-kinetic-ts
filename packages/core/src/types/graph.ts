@@ -253,6 +253,18 @@ export interface FaultPropagationGraph {
    */
   readonly logScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service failed-edge-direction score (0-1) — the number of
+   * post-injection FAILED calls whose CALLEE is this service, net of each
+   * edge's own pre-injection baseline, normalised by the maximum (the callee
+   * the most failures were made against scores 1).
+   *
+   * This is the inverse of `logScores`: the log signal credits the service that
+   * EMITS an error (the caller), this one credits the service the error was
+   * emitted ABOUT (the callee). Optional: absent when the case carried no
+   * failed-edge counts. Feeds the (opt-in, default 0) `failedEdgeWeight`.
+   */
+  readonly failedEdgeScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service topological-source score (0-1) — `1 − maxParentExplanation`,
    * where `maxParentExplanation` is the largest `propagationWeight(p→v) ×
    * anomaly(p)` over a node's upstream parents. A source (no strongly
