@@ -1,8 +1,17 @@
 # FSE'26 metric competition — verdict: the fault signature is scored and out-competed
 
-Run `34684319273` on `16ceae9`, categories `Resource,Pod,JVM` (369 cases),
-shipped config (`logSignalMode=logicHttp`, `logWeight=1`, `rankNormalization=true`),
-`--diagnose` on all nine fault types in those categories.
+Runs cited, in order of what they establish:
+
+| run | commit | scope | establishes |
+| --- | ------ | ----- | ----------- |
+| `34684319273` | `16ceae9` | 369 cases, Resource+Pod+JVM | the competition is `kept-and-lost`, not guard-blocked |
+| `34693527122`, `34694846718` | `9a9652b`, `60acdce` | 369 cases | how each decisive score was composed |
+| `34733455962`, `34733457581`, `34733458767` | `bd6c910` | full 1422 | the dynamic-range ablations, measured |
+
+The first group fixes the diagnosis; the last fixes what the diagnosis rules out.
+`34684319273` used `--diagnose` on all nine fault types in `Resource,Pod,JVM`;
+the ablation batch used the full seven categories and no diagnostic, because it
+is about the headline numbers.
 
 ## Why this block, and not the 41 regressions
 
@@ -160,7 +169,8 @@ dropping the family removes the *wrong winner's* decisive metric and leaves the
 
 Only the connection pool has a large positive bound (62 against 25), and even it
 carries 25 counter-cases, so it is a candidate for a measured ablation rather
-than a conclusion.
+than a conclusion — and it is still the one family not yet ablated (the
+dynamic-range candidates took precedence; see the measured runs below).
 
 ## The mechanism, once the decomposition is visible
 
@@ -228,27 +238,26 @@ The source leans on the trend bonus slightly **more** than the wrong winner does
 Reweighting it cannot separate the two populations, because the winner does not
 have a different composition — it has more of the same one. **Eliminated.**
 
-## What is left
+## What is left, and what any candidate must satisfy
 
-Every population is a deviation-led rise (0.71–0.73 of the score from the
-deviation, 0.22–0.24 from the trend) on a real operating baseline. The winner's
-metric simply has a larger relative rise — which is precisely what
-`max over metrics` is defined to select. Nothing in the metric layer can prefer
-the source's 8.5× resource rise to a caller's 29× latency rise, because the
-*ratio* is the only quantity the score consults and the *symptom* has the larger
-one.
+Both populations are deviation-led rises on real operating baselines with the
+same bonus structure. The winner's metric simply has a larger relative rise —
+which is precisely what `max over metrics` is defined to select. Nothing in the
+metric layer can prefer the source's 8.5× resource rise to a caller's 29× latency
+rise, because the *ratio* is the only quantity the score consults and the
+*symptom* has the larger one.
 
-The remaining lever is therefore structural: change what a service's score IS,
-rather than reweighting a term of it. The candidate that keeps the source's
-information while removing the dynamic-range bias is to rank each metric ACROSS
-services before the maximum, so the source saturates on the metric where it is
-extreme instead of losing to a victim on a metric with a wider range. The
-decision then falls to the causal signals, which is the only place it can be made
-for this block — the source is log-silent.
+The structural constraint that follows was derived before the ablation and then
+confirmed by it (see the measured runs below): a candidate has to be either
 
-That change touches the anomaly score, which FSE'26 and RCAEval share, so it
-needs the full-set FSE'26 ablation **and** the golden 9-cell guard, with the
-9-cell required to be bit-identical or the candidate dies.
+- **non-monotone in a service's own metric score** — a bound or a rescale cannot
+  work, because `min` and every monotone transform preserve the ordering and can
+  only shrink a margin or create a tie; or
+- **expressed against the other services' values for the same metric** — which is
+  what the fleet-relative baseline does.
+
+Both surviving shapes were then built and measured, and both were rejected. The
+next candidate therefore has to come from outside the metric layer entirely.
 
 ## An instrument defect found by its own guard
 
@@ -264,46 +273,89 @@ metrics with a decomposition, so line and branch coverage were both **100%**
 while the truncation path was never exercised. Coverage of lines is not coverage
 of the cases a line can see.
 
-## What this rules out
+## The dynamic-range ablations, measured
 
-- **A guard fix for the memory family.** 2/369.
-- **A new log-signal mode.** The block's `selfAnomaly`-only ranking is nearly the
-  final ranking (26%→23%, 24%→18% top-5).
-- **Data acquisition.** 369/369 sources carry all eleven memory series.
-- **A `max`-over-metrics tie-break.** The median miss is 0.59 of the winner's
-  score; only 23/147 misses are within 20%.
-- **Dropping collector internals, pod filesystem, or the node-level series.**
-  Net-negative or near-neutral on the necessary-condition test above.
-- **Recalibrating the near-zero-baseline guard.** It would touch 14 of 319 wrong
-  winners (4.4%), 13 of them in one family.
-- **Reweighting the trend bonus.** The source leans on it more than the winner
-  does (0.250 against 0.223).
-- **A `--drop-metrics` ablation as the next move.** It was the plan before the
-  direction and composition of the winners were computable.
+Three full 1422-case runs on the same commit and cache (`bd6c910`), read with
+`scripts/compare_fse26_runs.py`, which prints each artifact's configuration
+verbatim so an ablation cannot be compared with a baseline without its settings
+being visible:
 
-## Next step — the structural candidate, and its kill criterion
+| run | configuration | Top@1 | Top@3 | Top@5 | regressed types |
+| --- | ------------- | ----- | ----- | ----- | --------------- |
+| control | shipped | 47.33% | 60.69% | 65.75% | — |
+| fleet baseline | `metricFleetBaseline=true` | **47.82% (+0.49pp)** | 61.74% | 68.71% | **6** |
+| rise ceiling 20 | `metricRiseCeiling=20` | **44.66% (−2.67pp)** | 57.52% | 63.36% | **9** |
 
-Change what a service's anomaly score IS: rank each metric across services
-*before* the maximum, so a service that is the extreme deviator on ANY metric
-saturates on that metric instead of being out-scaled on it. The source then stops
-losing to a symptom whose only advantage is a wider dynamic range, and the
-decision moves to the causal signals (onset order, call-graph direction, the log
-signal) where a source/symptom asymmetry actually exists.
+The control reproduces the published 47.33% exactly, which is what makes the two
+candidates comparable at all — and it is also the end-to-end proof that the two
+new options are bit-identical at their defaults.
 
-Its kill criterion is fixed in advance, because the change touches a score that
-both benchmarks share:
+**The rise ceiling is rejected**, as the monotonicity arithmetic predicted: a
+monotone clamp can only shrink a margin or tie both parties. `NetworkDelay` goes
+from 16/21 to **0/21**, `NetworkBandwidth` 12/42 to 5/42, `JVMMemoryStress` 4/171
+to 2/171. Erasing the source's own excursion is exactly what it does.
 
-1. the **RCAEval golden 9-cell must be bit-identical** (RE1 80/92.8/68,
-   RE2 82.4/88.9/68.1, RE3 80/45/51.1) — this is shared production scoring, and a
-   golden-baseline regression kills the change regardless of the FSE'26 gain;
-2. the **FSE'26 full 1422 must not regress a single fault type**, with the
-   silent block (JVMMemoryStress 171, ContainerKill 89, PodFailure 24,
-   PodKill 10) as the target.
+**The fleet baseline is rejected by its own kill criterion.** It gains +0.49pp
+overall — and regresses six fault types:
 
-A cheaper intermediate worth measuring in the same run: keep the max but clamp
-each metric's *contribution* to a common ceiling (the way the DROP direction is
-already clamped at `log10(2)`), so no single metric can be worth more than a
-fixed amount. That preserves the ordering among the source's own metrics while
-capping the advantage a 100× rise has over a 5× one. It is a smaller change and
-the same run tells us whether the ceiling is enough before the ranking change is
-attempted.
+| fault type | control → fleet |
+| ---------- | --------------- |
+| NetworkPartition | 39/97 → **34/97** |
+| NetworkDelay | 16/21 → **14/21** |
+| NetworkBandwidth | 12/42 → **11/42** |
+| NetworkLoss | 12/48 → **11/48** |
+| HTTPRequestAbort | 47/60 → **46/60** |
+| PodKill | 1/10 → **0/10** |
+
+The gains are mostly outside the target: HTTPResponseReplaceBody +4,
+HTTPResponseReplaceCode +5, HTTPRequestReplaceMethod +1, and only
+**JVMMemoryStress +3 (4/171 → 7/171) and ContainerKill +1 (1/89 → 2/89)** inside
+the silent block the option was designed for. A +0.49pp net that trades six type
+regressions for three cases of block movement is not a shippable default,
+whatever the mechanism argument says. It stays as an off-by-default probe,
+documented as falsified as a default, exactly like `suppressNearZeroBaselineRise`
+before it.
+
+## A third hypothesis, eliminated for free
+
+If the source's fault moves several of its own metrics at once while a victim
+moves one, then the COUNT of anomalous metrics per service would separate them
+without needing any metric-label semantics. Measured on the 319 wrong cases of
+run 34694846718, source versus wrong winner:
+
+| threshold | median breadth (source / winner) | cases with source higher |
+| --------- | -------------------------------- | ------------------------ |
+| ≥ 0.05 | 13 / 14 | 43% |
+| ≥ 0.1 | 13 / 13 | 53% |
+| ≥ 0.2 | 12 / 11 | 58% |
+| ≥ 0.3 | 10 / 10 | 53% |
+| ≥ 0.5 | 6 / 6 | 49% |
+| ≥ 0.1, silent block only | 12 / 12 | 52% |
+
+Equal medians and a coin-flip split at every threshold. The source and its
+replacement have the **same number** of anomalous metrics; they differ only in
+which one is largest. No count-based discriminator exists here.
+
+## Where this leaves the block
+
+Six candidates are now eliminated by measurement, not by argument:
+
+1. a guard fix for the memory family — 2/369;
+2. a new log-signal mode — the block's `selfAnomaly`-only ranking is nearly final;
+3. data acquisition — 369/369 sources carry all eleven memory series;
+4. dropping a metric family — a **necessary-condition bound** (not an ablation)
+   put four of five candidates net-negative or near-neutral; the fifth, the
+   connection pool at 62 helped against 25 hurt, has never been run and is the
+   one family still open;
+5. any monotone compression of the metric component (a rise ceiling) — provably
+   cannot reorder, and measured at −2.67pp;
+6. the fleet-relative baseline and the anomaly-breadth count — the first gains
+   +0.49pp while regressing six types and moving the block by 3 cases, the second
+   is a coin flip.
+
+What is left is not a reweighting of the metric layer. The source and the service
+that replaces it are the same kind of object there: both are deviation-led rises
+on real baselines with the same bonus composition, and the victim's is simply
+larger. A root-cause rank has to come from what distinguishes them *causally* —
+onset order, call-graph direction, which service's failure explains the other's —
+rather than from how far each one's own numbers moved.
