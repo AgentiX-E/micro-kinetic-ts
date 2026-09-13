@@ -37,6 +37,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
     failedEdgeWeight: 0,
+    failedEdgeMode: 'sum',
     ...overrides,
   };
 }
@@ -89,6 +90,7 @@ describe('FSE26 report — attribution', () => {
       'metricRiseCeiling',
       'metricFleetBaseline',
       'failedEdgeWeight',
+      'failedEdgeMode',
     ]);
   });
 
@@ -118,6 +120,15 @@ describe('FSE26 report — the two renderings agree', () => {
     expect(shipped).toBe('Config: logWeight=1 logMode=logicHttp rankNormalization=true');
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
+    );
+    // The shipped aggregation stays off the line; a non-shipped one must show,
+    // or a run that ranks differently looks identical to the published one.
+    expect(
+      formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1, failedEdgeMode: 'mean' })),
+    ).toContain('failedEdgeMode=mean');
+    // At weight 0 the aggregation cannot change anything, so it is not printed.
+    expect(formatFSE26ConfigLine(makeConfig({ failedEdgeMode: 'mean' }))).not.toContain(
+      'failedEdgeMode',
     );
   });
 

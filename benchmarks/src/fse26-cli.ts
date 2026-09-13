@@ -26,7 +26,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import type { LogSignalMode } from '../../packages/tree/src/index.js';
+import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -60,6 +60,22 @@ const LOG_MODE_ACCEPTED: Readonly<Record<LogSignalMode, true>> = {
   logicHttpDominant: true,
   all: true,
 };
+
+/** The aggregation modes the failed-edge signal has been measured with. */
+export const FAILED_EDGE_MODES = { sum: true, mean: true } as const;
+
+/**
+ * The shipped aggregation: the one the +5.8pp ablation measured.
+ *
+ * Widened to {@link FailedEdgeMode} on purpose — `as const` would narrow it to
+ * the literal `'sum'`, which then cannot hold a parsed `'mean'`.
+ */
+export const DEFAULT_FAILED_EDGE_MODE: FailedEdgeMode = 'sum';
+
+/** Whether a raw argument names a failed-edge aggregation mode. */
+export function isFailedEdgeMode(value: string): value is FailedEdgeMode {
+  return Object.prototype.hasOwnProperty.call(FAILED_EDGE_MODES, value);
+}
 
 /** Whether a raw argument names a log-signal mode. */
 export function isLogSignalMode(value: string): value is LogSignalMode {
@@ -117,6 +133,11 @@ export interface Fse26CliOptions {
    * credit to the emitter. This is the ablation switch for it.
    */
   readonly failedEdgeWeight: number;
+  /**
+   * How a callee's failed calls are aggregated: `sum` (default) or `mean` over
+   * its failing callers (fan-in normalised).
+   */
+  readonly failedEdgeMode: FailedEdgeMode;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -152,6 +173,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
     failedEdgeWeight: 0,
+    failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -186,7 +208,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const ceiling = Number(argv[++i]!);
       opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
     } else if (arg === '--fleet-baseline') opts.metricFleetBaseline = true;
-    else if (arg === '--failed-edge-weight' && i + 1 < argv.length) {
+    else if (arg === '--failed-edge-mode' && i + 1 < argv.length) {
+      // Falling back to the SHIPPED mode on an unknown value, like the log mode:
+      // a typo must reproduce a published configuration, never invent one.
+      const mode = argv[++i]!;
+      opts.failedEdgeMode = isFailedEdgeMode(mode) ? mode : DEFAULT_FAILED_EDGE_MODE;
+    } else if (arg === '--failed-edge-weight' && i + 1 < argv.length) {
       // Same strictness as the other numeric ablation switches, and the same
       // safe fallback: the SHIPPED weight is 0 (the signal is off), so a typo
       // reproduces a published configuration instead of inventing one.

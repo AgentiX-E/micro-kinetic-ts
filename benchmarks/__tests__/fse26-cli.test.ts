@@ -160,6 +160,19 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--failed-edge-weight', '2.5']).failedEdgeWeight).toBe(2.5);
   });
 
+  it('parses the failed-edge aggregation, defaulting to sum', () => {
+    expect(parseFSE26Args([]).failedEdgeMode).toBe('sum');
+    expect(parseFSE26Args(['--failed-edge-mode', 'sum']).failedEdgeMode).toBe('sum');
+    expect(parseFSE26Args(['--failed-edge-mode', 'mean']).failedEdgeMode).toBe('mean');
+  });
+
+  it('falls back to the SHIPPED mode on an unrecognised value', () => {
+    // An unknown aggregation must reproduce a published configuration, never
+    // invent one — the same reasoning as the log-signal mode.
+    expect(parseFSE26Args(['--failed-edge-mode', 'median']).failedEdgeMode).toBe('sum');
+    expect(parseFSE26Args(['--failed-edge-mode', '']).failedEdgeMode).toBe('sum');
+  });
+
   it('rejects a failed-edge weight with trailing garbage instead of running a different one', () => {
     // Same trap as `--rise-ceiling`: `parseFloat('1O')` is 1, so a typo would
     // silently measure a weight of 1. The fallback is the SHIPPED weight (0).

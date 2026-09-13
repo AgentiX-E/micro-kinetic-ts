@@ -19,7 +19,11 @@
  * @module benchmarks/fse26-engine-options
  */
 
-import type { LogSignalMode, TopologyFaultGraphConfig } from '../../packages/tree/src/index.js';
+import type {
+  FailedEdgeMode,
+  LogSignalMode,
+  TopologyFaultGraphConfig,
+} from '../../packages/tree/src/index.js';
 
 import type { Fse26CliOptions } from './fse26-cli.js';
 
@@ -36,6 +40,13 @@ export interface Fse26SignalOptions {
    * line reported the ablation.
    */
   readonly failedEdgeWeight: number;
+  /**
+   * Carried as a required field for the same reason as the weight above: a
+   * PARTIAL passed through here would be a silent no-op if the key were ever
+   * misspelled, and this file exists because a dropped option once ran the
+   * control while the `Config:` line reported the ablation.
+   */
+  readonly failedEdgeMode: FailedEdgeMode;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -73,6 +84,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       logWeight: opts.logWeight,
       logSignalMode: opts.logMode,
       failedEdgeWeight: opts.failedEdgeWeight,
+      failedEdgeMode: opts.failedEdgeMode,
     },
     topology: {
       // Load-bearing on Train Ticket's large topologies.

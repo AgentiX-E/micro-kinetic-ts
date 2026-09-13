@@ -65,6 +65,11 @@ export interface FSE26RunConfig {
    * is a different ranking and has to say so.
    */
   readonly failedEdgeWeight: number;
+  /**
+   * How a callee's failed calls were aggregated (`sum` = the shipped one). A
+   * run using `mean` ranks differently, so it has to say so.
+   */
+  readonly failedEdgeMode: string;
 }
 
 /** One fault type's cell in the summary. */
@@ -209,6 +214,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'metricRiseCeiling',
   'metricFleetBaseline',
   'failedEdgeWeight',
+  'failedEdgeMode',
 ] as const;
 
 /**
@@ -262,6 +268,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // line is byte-identical to the published one and a flipped switch is visible.
   if (config.failedEdgeWeight !== 0) {
     line += ` failedEdgeWeight=${config.failedEdgeWeight}`;
+    // Only once the signal is on, and only when it is not the shipped mode:
+    // the aggregation is meaningless without a weight to apply it to.
+    if (config.failedEdgeMode !== 'sum') {
+      line += ` failedEdgeMode=${config.failedEdgeMode}`;
+    }
   }
   return line;
 }

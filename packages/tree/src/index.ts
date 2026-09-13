@@ -85,6 +85,7 @@ export {
   gatedRiseContribution,
 } from './pruning/ranking-signals.js';
 export type {
+  FailedEdgeMode,
   HttpEmitterDominance,
   HttpSourceJointContext,
   LogSignalMode,

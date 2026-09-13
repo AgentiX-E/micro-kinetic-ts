@@ -1347,6 +1347,24 @@ describe('computeFailedEdgeScores', () => {
     expect(scores.size).toBe(1);
   });
 
+  it('ignores an edge whose CALLER is not a rankable node, in both modes', () => {
+    // The callee-side guard alone is not enough. A service with no metric
+    // series — typically the load generator — would otherwise pour its whole
+    // synthetic failure volume into the callee's sum while contributing no
+    // caller to the `mean` divisor, which is exactly the traffic distortion
+    // `mean` exists to remove. The call-graph builder already drops edges
+    // unless BOTH endpoints are present; the signal uses the same invariant.
+    const edges = [edge('loadgenerator', 'b', 500, 0), edge('a', 'b', 10, 0)];
+    const nodes = new Set(['a', 'b']);
+
+    for (const mode of ['sum', 'mean'] as const) {
+      const scores = computeFailedEdgeScores(edges, nodes, mode);
+      // b's only usable evidence is a's 10 failures, not 510.
+      expect(scores.get('b')).toBe(1);
+      expect(scores.size).toBe(1);
+    }
+  });
+
   it('drops self-edges, which carry no direction', () => {
     const scores = computeFailedEdgeScores([edge('a', 'a', 5, 0)], new Set(['a']));
     expect(scores.size).toBe(0);
@@ -1403,5 +1421,89 @@ describe('computeFailedEdgeScores', () => {
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThanOrEqual(1);
     }
+  });
+
+  describe('mean mode', () => {
+    it('removes the fan-in amplification that lets a busy SYMPTOM out-score the source', () => {
+      // THE failure mode `mean` exists to test. `t` receives calls from three
+      // callers and `s` from one; on the raw SUM the busier service wins even
+      // though the source's calls failed harder per caller. The cache averages
+      // ~211 net failures per edge, so traffic volume, not fault severity,
+      // dominates a sum.
+      const edges = [
+        edge('c1', 't', 40, 0),
+        edge('c2', 't', 40, 0),
+        edge('c3', 't', 40, 0),
+        edge('c1', 's', 100, 0),
+      ];
+      const nodes = new Set(['c1', 'c2', 'c3', 't', 's']);
+
+      // sum: t = 120 beats s = 100.
+      const sum = computeFailedEdgeScores(edges, nodes, 'sum');
+      expect(sum.get('t')).toBe(1);
+      expect(sum.get('s')).toBeCloseTo(100 / 120, 10);
+
+      // mean: t = 40 per caller, s = 100 per caller — the source now leads.
+      const mean = computeFailedEdgeScores(edges, nodes, 'mean');
+      expect(mean.get('s')).toBe(1);
+      expect(mean.get('t')).toBeCloseTo(0.4, 10);
+    });
+
+    it('divides by DISTINCT callers, so one caller failing twice counts once', () => {
+      // Two edges from the same caller must not inflate the divisor — the
+      // divisor is the number of callers that saw failures, not the number of
+      // records. (Duplicated caller/callee records would otherwise quietly
+      // halve a service's score.)
+      const scores = computeFailedEdgeScores(
+        [edge('a', 'b', 50, 0), edge('a', 'b', 50, 0), edge('a', 'c', 30, 0)],
+        new Set(['a', 'b', 'c']),
+        'mean',
+      );
+
+      // b = 100 / 1 caller, c = 30 / 1 caller.
+      expect(scores.get('b')).toBe(1);
+      expect(scores.get('c')).toBeCloseTo(0.3, 10);
+    });
+
+    it('counts neither a self-edge nor an out-of-graph caller in the divisor', () => {
+      // A self-call is not a caller: it says the service's own calls failed.
+      // Equally, a caller with no rankable node never reaches the signal, so it
+      // must not shrink the divisor either.
+      const scores = computeFailedEdgeScores(
+        [
+          edge('b', 'b', 10, 0),
+          edge('loadgenerator', 'b', 10, 0),
+          edge('a', 'b', 100, 0),
+          edge('a', 'c', 40, 0),
+        ],
+        new Set(['a', 'b', 'c']),
+        'mean',
+      );
+
+      // b = 100 / 1 caller = 100; c = 40 / 1 = 40.
+      expect(scores.get('b')).toBe(1);
+      expect(scores.get('c')).toBeCloseTo(0.4, 10);
+    });
+
+    it('agrees with sum when every callee has exactly one failing caller', () => {
+      // The two modes must be indistinguishable on a fan-in-free input, so a
+      // difference in a run can only come from fan-in and not from an
+      // independent change in behaviour.
+      const edges = [edge('a', 'b', 30, 5), edge('c', 'd', 10, 0)];
+      const nodes = new Set(['a', 'b', 'c', 'd']);
+
+      const sum = computeFailedEdgeScores(edges, nodes, 'sum');
+      const mean = computeFailedEdgeScores(edges, nodes, 'mean');
+      expect(mean).toEqual(sum);
+    });
+
+    it('defaults to sum, the mode the published ablation measured', () => {
+      const edges = [edge('c1', 't', 40, 0), edge('c2', 't', 40, 0), edge('c1', 's', 100, 0)];
+      const nodes = new Set(['c1', 'c2', 't', 's']);
+
+      expect(computeFailedEdgeScores(edges, nodes)).toEqual(
+        computeFailedEdgeScores(edges, nodes, 'sum'),
+      );
+    });
   });
 });

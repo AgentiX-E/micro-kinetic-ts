@@ -26,6 +26,7 @@ describe('buildFse26EngineOptions', () => {
       logWeight: 0.5,
       logSignalMode: 'count',
       failedEdgeWeight: 0,
+      failedEdgeMode: 'sum',
     });
   });
 
@@ -40,6 +41,19 @@ describe('buildFse26EngineOptions', () => {
     // End to end, from argv — the only path a dispatch actually takes.
     const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--failed-edge-weight', '2.5']));
     expect(fromArgv.signals.failedEdgeWeight).toBe(2.5);
+  });
+
+  it('forwards the failed-edge AGGREGATION, shipped as sum', () => {
+    // The aggregation changes which service the signal votes for, so a dropped
+    // value would run the measured `sum` while the `Config:` line reported
+    // `mean` — the same silent swap this file exists to prevent.
+    expect(buildFse26EngineOptions(BASE).signals.failedEdgeMode).toBe('sum');
+    expect(
+      buildFse26EngineOptions({ ...BASE, failedEdgeMode: 'mean' }).signals.failedEdgeMode,
+    ).toBe('mean');
+
+    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--failed-edge-mode', 'mean']));
+    expect(fromArgv.signals.failedEdgeMode).toBe('mean');
   });
 
   it('forwards rank normalization, which is load-bearing on the large topologies', () => {

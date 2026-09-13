@@ -51,6 +51,10 @@ on:
         description: 'Weight of the failed-edge-direction signal, which charges each failed call to its CALLEE (empty = the runner default, which is 0 = disabled). Non-zero is an ablation'
         required: false
         default: ''
+      failed_edge_mode:
+        description: 'Aggregation for the failed-edge signal: sum (empty = the runner default) or mean, which divides a callee net failures by its number of failing callers'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -197,6 +201,10 @@ jobs:
           if [ -n "${{ inputs.failed_edge_weight }}" ]; then
             FAILED_EDGE_ARG=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
           fi
+          FAILED_EDGE_MODE_ARG=()
+          if [ -n "${{ inputs.failed_edge_mode }}" ]; then
+            FAILED_EDGE_MODE_ARG=(--failed-edge-mode "${{ inputs.failed_edge_mode }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             "${LOG_WEIGHT_ARG[@]}" \
@@ -204,6 +212,7 @@ jobs:
             "${RANK_NORM_ARG[@]}" \
             "${DROP_METRICS_ARG[@]}" \
             "${FAILED_EDGE_ARG[@]}" \
+            "${FAILED_EDGE_MODE_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

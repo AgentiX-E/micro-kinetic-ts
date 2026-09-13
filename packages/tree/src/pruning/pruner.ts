@@ -56,7 +56,7 @@ import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
 import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
 import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
 import { computePrismScores } from './prism-signal.js';
-import type { LogSignalMode } from './ranking-signals.js';
+import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
 import {
   computeDeepestExceptions,
   computeFailedEdgeScores,
@@ -302,6 +302,14 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * AND FSE'26 zero regressed fault types) before the default is flipped.
    */
   readonly failedEdgeWeight: number;
+  /**
+   * How a callee's per-edge failures are aggregated: `sum` (the default and the
+   * measured one) or `mean` over the distinct callers that saw failures against
+   * it. `mean` removes the fan-in/volume amplification that a raw sum carries —
+   * the cache averages ~211 net failures per edge, so a high-traffic symptom can
+   * out-accumulate the source. Ablation switch; default `sum`.
+   */
+  readonly failedEdgeMode?: FailedEdgeMode;
 }
 
 /**
@@ -354,6 +362,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   traceWeight: 0.0,
   prismWeight: 0.0,
   failedEdgeWeight: 0.0,
+  failedEdgeMode: 'sum',
 };
 
 /**
@@ -617,6 +626,7 @@ export class TreePruner {
     const failedEdgeScores = computeFailedEdgeScores(
       options?.failedTraceEdges,
       new Set(callGraph.nodes.keys()),
+      this.options.failedEdgeMode,
     );
 
     return {

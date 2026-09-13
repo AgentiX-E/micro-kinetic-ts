@@ -903,15 +903,67 @@ export function computeTraceActivityScores(
  * @returns Sparse `{callee: score}` map, or empty when no edge carries
  *   post-injection failures beyond its own baseline.
  */
+export type FailedEdgeMode = 'sum' | 'mean';
+
+/**
+ * Failed-edge-DIRECTION signal: the callee of a failed call is the candidate,
+ * the caller is only where the error was reported.
+ *
+ * The log signal rewards whoever EMITS an error. When a service is broken, the
+ * services that call it are the ones that log — so on a propagation-carrying
+ * fault the log signal points at a VICTIM. This signal is its inverse: for each
+ * edge `caller -> callee` it charges the failures to the CALLEE, so the service
+ * whose interface is failing collects the evidence.
+ *
+ * The count per edge is `failed - baseline`, clamped at zero, where both counts
+ * are measured on the SAME edge over the post- and pre-injection windows. Two
+ * properties follow, and both are load-bearing:
+ *
+ * - Subtracting the baseline removes edges that were ALREADY broken before the
+ *   injection. A permanently failing dependency is a deployment property, and
+ *   charging it to the callee would make a pre-existing defect look like this
+ *   fault's signature.
+ * - Clamping at zero keeps the signal a non-negative REWARD. A broken edge that
+ *   got better after injection must not hand its callee a penalty, because the
+ *   weight is defined as a reward and a negative term would be an unexplained
+ *   second mechanism inside one switch.
+ *
+ * ## Why there are two aggregations
+ *
+ * `sum` is the direct reading and is the one that measured +5.8pp Top@1 — but it
+ * cost two fault types, and the mechanism is visible in the totals: the FSE'26
+ * cache carries ~211 net failures PER EDGE (1,013,406 over 4,805 records), so a
+ * raw sum is dominated by how much traffic a service receives rather than by
+ * whether it broke. A high-traffic SYMPTOM whose callers time out can therefore
+ * out-accumulate the actual source.
+ *
+ * `mean` divides each callee's net failures by the number of DISTINCT callers that
+ * saw failures against it, removing that fan-in/volume amplification. It is the
+ * ablation switch for exactly that question, and it is noise-sensitive at low
+ * counts (one caller with one failure scores as high as one with two hundred),
+ * which is the measured risk rather than a reason to prefer it a priori.
+ *
+ * @param edges - Per-edge failed-call counts (undefined -> empty -> neutral).
+ * @param nodeIds - Services present in the call graph; an edge with EITHER
+ *   endpoint outside it is ignored, including in the normalisation denominator,
+ *   because the engine can only rank nodes it has metrics for.
+ * @param mode - `sum` (default, the measured one) or `mean` (fan-in normalised).
+ * @returns Sparse `{callee: score}` map, or empty when no edge carries
+ *   post-injection failures beyond its own baseline.
+ */
 export function computeFailedEdgeScores(
   edges: ReadonlyArray<FaultFailedEdge> | undefined,
   nodeIds: ReadonlySet<ServiceId>,
+  mode: FailedEdgeMode = 'sum',
 ): Map<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   if (!edges || edges.length === 0 || nodeIds.size === 0) return scores;
 
   const net = new Map<ServiceId, number>();
-  let max = 0;
+  // Distinct callers per callee. Only needed for `mean`, but tracked
+  // unconditionally so the two modes cannot disagree about which edges counted.
+  const callers = new Map<ServiceId, Set<ServiceId>>();
+
   for (const edge of edges) {
     // A `null`/`undefined` count out of a JSON tuple would make the difference
     // NaN, and NaN propagates through `Math.max` into every score, silently
@@ -920,21 +972,44 @@ export function computeFailedEdgeScores(
     // A self-call carries no direction: it says the service's own calls
     // failed, not that anything upstream or downstream broke.
     if (edge.caller === edge.callee) continue;
-    if (!nodeIds.has(edge.callee)) continue;
+    // BOTH endpoints must be rankable, the same invariant `buildFSE26CallGraph`
+    // applies to trace edges. Checking only the callee would let a service with
+    // no metric series — typically the load generator — pour its whole synthetic
+    // failure volume into a callee's sum while contributing no caller to the
+    // `mean` divisor, which is exactly the traffic distortion `mean` exists to
+    // remove.
+    if (!nodeIds.has(edge.caller) || !nodeIds.has(edge.callee)) continue;
     const contribution = Math.max(0, edge.failed - edge.baseline);
     if (contribution <= 0) continue;
-    const total = (net.get(edge.callee) ?? 0) + contribution;
-    net.set(edge.callee, total);
-    if (total > max) max = total;
+
+    net.set(edge.callee, (net.get(edge.callee) ?? 0) + contribution);
+    const seen = callers.get(edge.callee);
+    if (seen) {
+      seen.add(edge.caller);
+    } else {
+      callers.set(edge.callee, new Set([edge.caller]));
+    }
+  }
+
+  if (net.size === 0) return scores;
+
+  const aggregate = new Map<ServiceId, number>();
+  let max = 0;
+  // Iterate the caller sets rather than the sums: a callee is in `net` exactly
+  // when it has a caller set, and a caller set always has at least one member,
+  // so the divisor is >= 1 by construction and needs no fallback that coverage
+  // could never reach.
+  for (const [callee, who] of callers) {
+    const value = mode === 'mean' ? net.get(callee)! / who.size : net.get(callee)!;
+    aggregate.set(callee, value);
+    if (value > max) max = value;
   }
 
   // `max > 0` is guaranteed whenever `net` is non-empty (every inserted
-  // contribution is positive), so the division below never sees a zero
-  // denominator and never emits NaN.
-  if (max <= 0) return scores;
-
-  for (const [callee, total] of net) {
-    scores.set(callee, total / max);
+  // contribution is positive, and `mean` divides by a caller count >= 1), so the
+  // division below never sees a zero denominator and never emits NaN.
+  for (const [callee, value] of aggregate) {
+    scores.set(callee, value / max);
   }
   return scores;
 }
