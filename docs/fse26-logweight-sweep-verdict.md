@@ -140,3 +140,95 @@ family, at 68 flippable against 25 hurt, never run.
 
 Both are guarded by the standing kill criterion: RCAEval golden 9-cell
 bit-identical, FSE'26 zero regressed fault types.
+
+## 6. The two probes, measured — the metric term's SPACING is not the lever either
+
+Three runs on `2ad5450` (34741483868 / 34741486275 / 34741488203), all 1422
+cases, read with `scripts/compare_fse26_runs.py`.
+
+**The control reproduces 47.33% bit-for-bit**, which is the point of running it:
+the config-ownership change (every override now passed only when non-empty, and
+every runner-owned input default emptied) did not move the shipped default.
+
+| run | configuration | Top@1 | Top@3 | Top@5 | regressed types |
+| --- | ------------- | ----- | ----- | ----- | --------------- |
+| control | shipped | 47.33% | 60.69% | 65.75% | — |
+| `no_rank_normalization=1` | metric term min-max instead of rank | **47.33% (+0.00pp)** | 60.69% | 65.75% | — |
+| `drop_metrics=db.client.connections.*` | 7 labels | 47.47% (+0.14pp) | 61.11% | 65.89% | **5** |
+
+### The spacing hypothesis is falsified
+
+`no_rank_normalization` moves the aggregate by **exactly zero** — and six fault
+types move in opposite directions, cancelling:
+
+| fault type | control | min-max |
+| ---------- | ------- | ------- |
+| HTTPResponseReplaceCode | 159 | **160** |
+| HTTPRequestReplaceMethod | 123 | **124** |
+| HTTPResponseAbort | 34 | **35** |
+| NetworkPartition | 39 | **38** |
+| HTTPResponseDelay | 42 | **41** |
+| HTTPRequestReplacePath | 38 | **37** |
+
+And the silent block does not move **at all**: JVMMemoryStress 4/171 in both,
+ContainerKill 1/89 in both, PodFailure 0/24 in both. So §5's question is
+answered, negatively: a spacing proportional to the score distribution gives the
+block nothing. The reason is §4 — both branches bound the metric term to
+`[0, 1]`, so neither can exceed a full log term, and the two services at the top
+are close in raw score as well as in rank, so the spacing does not widen the
+decisive gap.
+
+This is the case the comparison script was built for: a per-type table reports
+opposite-signed movement that an aggregate cannot show, and here the aggregate
+would have read as "the switch does nothing".
+
+### The last input ablation is rejected
+
+Dropping the connection-pool family is net-positive and fails the kill criterion:
+
+| fault type | control | dropped |
+| ---------- | ------- | ------- |
+| ContainerKill | 1 | **4** |
+| NetworkLoss | 12 | **14** |
+| NetworkCorrupt | 14 | **15** |
+| JVMException | 30 | **31** |
+| JVMLatency | 2 | **3** |
+| NetworkPartition | 39 | **40** |
+| **NetworkDelay** | 16 | **10** |
+| HTTPResponseReplaceCode | 159 | 158 |
+
+`NetworkDelay` falls from 16/21 to 10/21, and the target block barely moves
+(ContainerKill +3, JVMMemoryStress +0). So the family that carried the largest
+positive necessary-condition bound (68 flippable against 25 hurt) behaves like
+`metricFleetBaseline` before it: a small net gain paid for with type regressions.
+It stays as an off-by-default probe.
+
+### What is now closed, and what that leaves
+
+With the metric term bounded to `[0, 1]` in **both** normalisation branches and
+the log term reaching 1.0 in one step, §4's condition is a bound on the whole
+shipped functional form: a log-silent source loses to the case's top log emitter.
+Every lever inside that form has now been measured and rejected —
+
+| lever | result |
+| ----- | ------ |
+| every `logWeight` (oracle, label given) | +2.67pp ceiling |
+| both metric-normalisation branches | 0.00pp, block unmoved |
+| every metric input ablation | connection pool +0.14pp / 5 regressions; the other four by necessary-condition bound |
+| any monotone compression of the metric term | provably cannot reorder; measured −2.67pp |
+| fleet-relative baseline | +0.49pp / 6 regressions |
+| anomaly breadth | coin flip |
+
+The silent block's 288 misses are therefore **unreachable within the shipped
+score**, and the gap is not a tuning deficit: it is that the victim's interface
+evidence is worth a full `±1.0` while the source's resource evidence is confined
+to `[0, 1]` and the source has no log term at all by construction.
+
+The reachable headroom is elsewhere, and the `logWeight = 0` run says where. The
+network and resource classes are the ones the metric term wins and the log term
+loses (NetworkPartition 39 → 47, NetworkBandwidth 12 → 18, NetworkLoss 12 → 17,
+NetworkCorrupt 14 → 17), and they sit at 29–41% — the largest low-scoring family
+outside the structural block (233 cases, 152 misses). The next measurement is a
+per-service diagnostic on the HTTP and Network categories, using the tooling that
+resolved the block, to determine whether those misses are the same
+direction-ambiguity class or a different and addressable mechanism.
