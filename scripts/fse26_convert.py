@@ -20,10 +20,12 @@ TypeScript `FSE26Loader` consumes the exact same normalised view the
 benchmark's evaluator uses.
 
 Trace spans are NOT serialised in full: a single datapack can contain millions
-of spans (~86 MB as raw JSON), but the engine only consumes the call-graph
-edges they imply. The bridge therefore resolves each span's parent service via
-a polars self-join and emits the DISTINCT caller → callee edges as `traceEdges`
-instead, shrinking the trace component by ~3 orders of magnitude. Metric time
+of spans (~86 MB as raw JSON), but the engine consumes only what the spans
+imply, aggregated. The bridge therefore resolves each span's parent service via
+a polars self-join and emits two derived products instead, shrinking the trace
+component by ~3 orders of magnitude: the DISTINCT caller → callee edges as
+`traceEdges`, and the caller → callee pairs whose post-injection calls returned
+an HTTP status of 400 or above as `failedTraceEdges`. Metric time
 series remain the dominant per-case size (~34 MB/case measured on a 500 MB
 prefix subset), so `case.json` is far smaller than the span list but still
 substantial.
@@ -46,6 +48,9 @@ Output `case.json` schema (per datapack):
       },
       "traceEdges": [
         ["ts-ui-dashboard", "ts-order-service"]
+      ],
+      "failedTraceEdges": [
+        ["ts-ui-dashboard", "ts-order-service", 12, 1]
       ],
       "logs": [
         {"timestamp": 1756998000000, "service": "...", "level": "ERROR", "message": "..."}
@@ -797,6 +802,109 @@ def read_trace_edges(normal_path: Path, abnormal_path: Path) -> list[list[str]]:
     ]
 
 
+FAILED_STATUS_COLUMN = "attr.http.response.status_code"
+
+# The floor the platform's own `_calculate_http_error_rate` uses. 400 itself is a
+# failure, so the comparison is `>=`, not `>`.
+FAILURE_STATUS_FLOOR = 400
+
+
+def read_failed_trace_edges(
+    normal_path: Path, abnormal_path: Path
+) -> list[list[Any]]:
+    """
+    Attribute each FAILED call to the callee it was made against.
+
+    `read_trace_edges` reduces the spans to distinct `[caller, callee]` pairs,
+    which is all the call graph needs — but it discards the one fact that can
+    tell a cause from a symptom. A fault's interface evidence is emitted by its
+    VICTIMS: they are the ones whose calls fail, so "who emitted the errors"
+    cannot say who is causal. What can is *whom* those failing calls were
+    against, and every outgoing span carries both the calling service and the
+    HTTP response status of the call.
+
+    Returns `[caller, callee, failed, baseline]` rows, sorted by
+    `(caller, callee)` for the same determinism reason `read_trace_edges` sorts:
+    polars' grouping keeps no stable order, so an identical datapack could
+    otherwise produce different bytes on each build. `failed` counts the
+    post-injection failures, `baseline` the pre-injection ones; an edge is
+    emitted only when it failed AFTER injection, because an edge that was
+    already failing beforehand is a property of the deployment rather than
+    evidence about the fault, and emitting it would implicate the same callee in
+    every case.
+
+    Degrades to an empty list when the status column is absent from a file's
+    schema, which happens for some datapacks — the same condition
+    `read_trace_derived_metrics` already checks for the same column.
+    """
+    frames: list[pl.DataFrame] = []
+    for path, is_abnormal in ((normal_path, False), (abnormal_path, True)):
+        if not path.exists():
+            continue
+        if FAILED_STATUS_COLUMN not in pl.read_parquet_schema(path):
+            continue
+        frames.append(
+            pl.read_parquet(
+                path,
+                columns=[
+                    "trace_id",
+                    "span_id",
+                    "parent_span_id",
+                    "service_name",
+                    FAILED_STATUS_COLUMN,
+                ],
+            ).with_columns(pl.lit(is_abnormal).alias("__abnormal"))
+        )
+    if not frames:
+        return []
+
+    df = pl.concat(frames).rename({"service_name": "service"})
+    df = df.filter(
+        pl.col("service").is_not_null()
+        & pl.col("span_id").is_not_null()
+        & pl.col("trace_id").is_not_null()
+    )
+
+    failed = df.filter(
+        pl.col(FAILED_STATUS_COLUMN).is_not_null()
+        & (pl.col(FAILED_STATUS_COLUMN) >= FAILURE_STATUS_FLOOR)
+    )
+
+    # The parent lookup is deduplicated on the join key. A span id is unique in
+    # well-formed data, but if it were not, the inner join would fan out and
+    # MULTIPLY the counts — an inflated failure count is exactly the kind of
+    # number this reader exists to make trustworthy.
+    # `keep="first"` is deliberate: if a span id were duplicated across services
+    # the surviving row would otherwise be arbitrary, and this reader's output
+    # has to be a pure function of the datapack's bytes.
+    parents = df.select(
+        pl.col("span_id").alias("parent_span_id"),
+        pl.col("service").alias("parent_service"),
+    ).unique(subset=["parent_span_id"], keep="first")
+    joined = failed.join(parents, on="parent_span_id", how="inner")
+    joined = joined.filter(pl.col("parent_service") != pl.col("service"))
+
+    grouped = (
+        joined.group_by(["parent_service", "service"])
+        .agg(
+            pl.col("__abnormal").sum().alias("failed"),
+            pl.col("__abnormal").not_().sum().alias("baseline"),
+        )
+        .filter(pl.col("failed") > 0)
+        .sort(["parent_service", "service"])
+    )
+
+    return [
+        [
+            row["parent_service"],
+            row["service"],
+            int(row["failed"]),
+            int(row["baseline"]),
+        ]
+        for row in grouped.iter_rows(named=True)
+    ]
+
+
 def read_logs(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
     """
     Read normal + abnormal logs and normalise to the loader's schema.
@@ -893,6 +1001,15 @@ def build_case(src_dir: Path) -> dict[str, Any]:
     )
     if trace_edges:
         case["traceEdges"] = trace_edges
+
+    # Which callee each service's POST-INJECTION failed calls went to. Kept
+    # separate from `traceEdges` because the two answer different questions: the
+    # edges say a call happened, these say a call FAILED and against whom.
+    failed_edges = read_failed_trace_edges(
+        src_dir / "normal_traces.parquet", src_dir / "abnormal_traces.parquet"
+    )
+    if failed_edges:
+        case["failedTraceEdges"] = failed_edges
 
     logs = read_logs(src_dir / "normal_logs.parquet", src_dir / "abnormal_logs.parquet")
     if logs:

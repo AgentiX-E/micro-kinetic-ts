@@ -200,3 +200,53 @@ before a benchmark can use them, and the local path cannot do it (the sandbox
 proxy is rate-limited to a few MB per twenty minutes). The kill criterion is
 unchanged — RCAEval golden 9-cell bit-identical, FSE'26 zero regressed fault
 types — and the signal is opt-in until it clears it.
+
+## 6. The rebuild has no automated path — measured, and it is the gating step
+
+The converter revision is done and tested (193 Python tests, 100% statements and
+branches on every module; see `scripts/fse26_convert.py`'s
+`read_failed_trace_edges`, and `SCHEMA_VERSION` bumped 2 → 3 so a cache built
+before it is distinguishable rather than silently missing the field). What it
+cannot do on its own is take effect, and the reason is worth recording exactly.
+
+**No workflow builds the shard cache.** `fse26-benchmark.yml` and every other
+workflow only *download* the prebuilt shards from the `AgentiX-E/rcabench-data`
+release; `grep` over `.github/workflows/` finds no reference to `fse26_convert.py`,
+`fse26_convert_tar.py` or `fse26_shard.py`. The published set was built out of
+band. So a converter revision lands while the cache it invalidates has no
+rebuild path.
+
+**The gate is what makes that loud, and it is working.** `fse26_provenance.py`
+compares the checkout's `converterDigest` against the manifest's, and
+`PROVENANCE_FILES` includes `fse26_convert.py`, so the next FSE'26 run fails on
+the provenance check instead of quietly scoring against a cache that predates the
+field. That is the intended behaviour and the reason the digest exists; the run
+is blocked, not wrong.
+
+**Why a runner cannot simply be added.** The documented pipeline materialises the
+whole converted tree before sharding: `fse26_convert_tar.py` writes one
+`case.json` per datapack and `fse26_shard.py` then packs them by category. That
+intermediate tree measures **~48.9 GB**, against the ~14 GB free on a standard
+hosted runner — so the peak disk is roughly 3.5× what the runner has, and the
+13.4 GB archive on top of it. The stream converter's own header notes the same
+constraint from the other side (it exists because materialising the archive *and*
+its extracted Parquet would exhaust 14 GB).
+
+Two designs fix it, and the choice is a trade rather than a derivation:
+
+1. **Stream the shards.** Convert and pack per category in one pass, so the peak
+   disk is the largest single category (~7 GB) instead of the full tree. This
+   keeps the existing single-pass property and removes the intermediate tree
+   entirely, but it changes the shard writer's structure — one archive is open
+   at a time, so the writer becomes stateful across the stream.
+2. **A runner with the disk.** Either a self-hosted one or a larger hosted
+   runner; no code changes, but the pipeline stays available only where that
+   capacity exists.
+
+Until one of them lands, the FSE'26 benchmark cannot use the new field, and the
+next measurement that depends on it stays blocked. The cheap check that can be
+run in the meantime is the prefix validation the stream converter was built for:
+a range-downloaded prefix of the archive converted end to end, which confirms on
+REAL data that datapacks carry `attr.http.response.status_code` and that
+`failedTraceEdges` is non-empty and plausible. That check needs the archive URL,
+which is not recorded anywhere in the repository.

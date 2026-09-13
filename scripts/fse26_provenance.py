@@ -61,7 +61,12 @@ PROVENANCE_FILES: tuple[str, ...] = (
     "requirements-fse26.txt",
 )
 
-SCHEMA_VERSION = 2
+# 2 → 3: `case.json` gained `failedTraceEdges` (the callee each post-injection
+# failed call was made against). A cache built by revision 2 does not carry it,
+# so the version is bumped rather than left to be detected at read time: the
+# whole point of the version is that a consumer can tell an old cache from a new
+# one without probing for fields.
+SCHEMA_VERSION = 3
 DIGEST_PREFIX = "sha256:"
 _CHUNK = 1 << 20
 

@@ -684,6 +684,266 @@ class TestReadTraceEdges(unittest.TestCase):
         self.assertEqual(edges, [])
 
 
+class TestReadFailedTraceEdges(unittest.TestCase):
+    """`read_failed_trace_edges` attributes a FAILED call to the callee it was
+    made against.
+
+    The engine's direction problem is that a fault's interface evidence is
+    emitted by its VICTIMS, so "who emitted the errors" cannot say who is
+    causal. The missing fact is which callee those errors were against, and it
+    is in the spans: an outgoing span carries both the parent service and the
+    response status of the call. `read_trace_edges` throws that away by
+    deduplicating to bare pairs, and these tests pin the reader that keeps it.
+
+    Post-injection and pre-injection counts are reported separately, because a
+    call that was already failing before the fault is not evidence about the
+    fault. Collapsing the two would make a chronically broken edge look like a
+    fault signature.
+    """
+
+    STATUS = "attr.http.response.status_code"
+
+    def _write_traces(self, root: Path, name: str, rows: list[tuple]) -> Path:
+        """Write a traces Parquet from (trace_id, span_id, parent, service[, status]).
+
+        The status is optional per row because it is optional per SPAN: a span
+        with no outgoing HTTP call has nothing to report, so the fixtures that
+        only need a parent to exist omit it rather than invent a value.
+        """
+        path = root / name
+        pl.DataFrame(
+            {
+                "trace_id": [r[0] for r in rows],
+                "span_id": [r[1] for r in rows],
+                "parent_span_id": [r[2] for r in rows],
+                "service_name": [r[3] for r in rows],
+                self.STATUS: [r[4] if len(r) > 4 else None for r in rows],
+            },
+            schema_overrides={self.STATUS: pl.Int32},
+        ).write_parquet(path)
+        return path
+
+    def test_attributes_a_failed_call_to_its_callee(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t1", "s0", "", "ts-ui-dashboard", None),
+                ("t1", "s1", "s0", "ts-order-service", 500)],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+
+    def test_counts_every_failed_span_and_aggregates_per_edge(self) -> None:
+        # Three failing calls over one edge are one triple carrying 3, not three
+        # triples: the consumer wants "how much did this edge fail", and a
+        # repeated edge would make it sum anyway.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-ui-dashboard"),
+                    ("t1", "b", "a", "ts-order-service", 500),
+                    ("t2", "c", "", "ts-ui-dashboard"),
+                    ("t2", "d", "c", "ts-order-service", 503),
+                    ("t3", "e", "", "ts-ui-dashboard"),
+                    ("t3", "f", "e", "ts-order-service", 404),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 3, 0]])
+
+    def test_separates_fault_time_failures_from_pre_injection_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [("t0", "n0", "", "ts-ui-dashboard", None),
+                    ("t0", "n1", "n0", "ts-order-service", 500)],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t1", "a", "", "ts-ui-dashboard", None),
+                ("t1", "b", "a", "ts-order-service", 500)],
+            )
+            edges = conv.read_failed_trace_edges(normal, abnormal)
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 1]])
+
+    def test_a_status_below_four_hundred_is_not_a_failure(self) -> None:
+        # 399 is the boundary the platform's own error-rate metric uses; a reader
+        # that used `> 400` would silently drop every 400 and every 3xx/2xx.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-ui-dashboard"),
+                    ("t1", "b", "a", "ts-order-service", 399),
+                    ("t2", "c", "", "ts-ui-dashboard"),
+                    ("t2", "d", "c", "ts-order-service", 200),
+                    ("t3", "e", "", "ts-ui-dashboard"),
+                    ("t3", "f", "e", "ts-order-service", 400),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+
+    def test_a_null_status_is_not_a_failure(self) -> None:
+        # The column is present for some datapacks and null for some spans; a
+        # null coerced to a number would be 0 and read as a success, which is
+        # right here only by accident.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t1", "a", "", "ts-ui-dashboard"), ("t1", "b", "a", "ts-order-service", None)],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [])
+
+    def test_drops_self_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t1", "a", "", "ts-order-service", None),
+                ("t1", "b", "a", "ts-order-service", 500)],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [])
+
+    def test_ignores_unresolvable_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t1", "b", "ghost", "ts-order-service", 500)],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [])
+
+    def test_empty_when_the_status_column_is_absent(self) -> None:
+        # Not every datapack carries the attribute. The reader must degrade to
+        # "no attribution available" rather than raise, exactly as
+        # `read_trace_derived_metrics` does for the same column.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "abnormal_traces.parquet"
+            pl.DataFrame(
+                {
+                    "trace_id": ["t1", "t1"],
+                    "span_id": ["a", "b"],
+                    "parent_span_id": ["", "a"],
+                    "service_name": ["ts-ui-dashboard", "ts-order-service"],
+                }
+            ).write_parquet(path)
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", path)
+        self.assertEqual(edges, [])
+
+    def test_empty_when_no_trace_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            edges = conv.read_failed_trace_edges(root / "m1.parquet", root / "m2.parquet")
+        self.assertEqual(edges, [])
+
+    def test_is_deterministic_in_order(self) -> None:
+        # Same reason `read_trace_edges` sorts: polars' group-by keeps no stable
+        # order, so an identical datapack could otherwise emit a different
+        # sequence on each build and change the artifact's bytes.
+        rows = [
+            ("t1", "a", "", "ts-ui-dashboard"),
+            ("t1", "b", "a", "ts-order-service", 500),
+            ("t2", "c", "", "ts-ui-dashboard"),
+            ("t2", "d", "c", "ts-station-service", 500),
+            ("t3", "e", "", "ts-travel-service", None),
+            ("t3", "f", "e", "ts-order-service", 500),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = conv.read_failed_trace_edges(
+                root / "missing.parquet",
+                self._write_traces(root, "abnormal_traces.parquet", rows),
+            )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            second = conv.read_failed_trace_edges(
+                root / "missing.parquet",
+                self._write_traces(root, "abnormal_traces.parquet", list(reversed(rows))),
+            )
+        self.assertEqual(first, second)
+        self.assertEqual(
+            first,
+            [
+                ["ts-travel-service", "ts-order-service", 1, 0],
+                ["ts-ui-dashboard", "ts-order-service", 1, 0],
+                ["ts-ui-dashboard", "ts-station-service", 1, 0],
+            ],
+        )
+
+    def test_does_not_inflate_the_count_when_a_parent_span_id_repeats(self) -> None:
+        # The parent lookup is joined on `parent_span_id`, so a duplicated span
+        # id would fan the join out and MULTIPLY the failure count. One failing
+        # call must stay one failure whatever the parent rows do.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t1", "a", "", "ts-ui-dashboard", None),
+                    ("t1", "a", "", "ts-ui-dashboard", None),
+                    ("t1", "b", "a", "ts-order-service", 500),
+                ],
+            )
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", abnormal)
+        self.assertEqual(edges, [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+
+    def test_does_not_mistake_the_span_kind_column_for_the_http_status(self) -> None:
+        # The archive carries a bare `attr.status_code` on every span — a span
+        # KIND enum (1=server, 2=client, …), not an HTTP status. Reading it as a
+        # response code would count every span kind above 400 as a failure and,
+        # more insidiously, would report a plausible number instead of raising.
+        # The reader keys on the fully qualified column name for this reason.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "abnormal_traces.parquet"
+            pl.DataFrame(
+                {
+                    "trace_id": ["t1", "t1"],
+                    "span_id": ["a", "b"],
+                    "parent_span_id": ["", "a"],
+                    "service_name": ["ts-ui-dashboard", "ts-order-service"],
+                    "attr.status_code": [500, 500],
+                }
+            ).write_parquet(path)
+            edges = conv.read_failed_trace_edges(root / "missing.parquet", path)
+        self.assertEqual(edges, [])
+
+    def test_ignores_an_edge_whose_failures_are_all_pre_injection(self) -> None:
+        # A chronically broken edge with no fault-time failure is not evidence
+        # about the fault, and emitting it would hand the engine a consistent
+        # "this callee is implicated" that is true of every case.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [("t0", "n0", "", "ts-ui-dashboard", None),
+                    ("t0", "n1", "n0", "ts-order-service", 500)],
+            )
+            edges = conv.read_failed_trace_edges(normal, root / "missing.parquet")
+        self.assertEqual(edges, [])
+
+
 class TestReadMetricsHistogram(unittest.TestCase):
     """`read_metrics_histogram` emits a `{metric}.max` series per histogram metric
     (the peak per-scrape value), ignoring `count`/`sum`/`min`."""
@@ -1065,6 +1325,44 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
+    def test_emits_failed_trace_edges_when_the_response_status_is_present(self) -> None:
+        # The end-to-end half of the failure attribution: the synthetic datapack
+        # carries only the span KIND, so the round-trip test above pins the
+        # `unavailable` path. This one rewrites the traces with the HTTP
+        # response status the real archive uses and asserts the field reaches
+        # `case.json` with the pre/post split intact.
+        src = _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
+        for name, rows in (
+            (
+                "normal_traces.parquet",
+                [(_dt(NORMAL_START + 2), "t1", "s0", "", "ts-ui-dashboard", 200), (_dt(NORMAL_START + 3), "t1", "s1", "s0", "ts-order-service", 200)],
+            ),
+            (
+                "abnormal_traces.parquet",
+                [(_dt(ABNORMAL_START + 2), "t2", "s2", "", "ts-ui-dashboard", 200), (_dt(ABNORMAL_START + 3), "t2", "s3", "s2", "ts-order-service", 503)],
+            ),
+        ):
+            pl.DataFrame(
+                {
+                    "time": [r[0] for r in rows],
+                    "trace_id": [r[1] for r in rows],
+                    "span_id": [r[2] for r in rows],
+                    "parent_span_id": [r[3] for r in rows],
+                    "service_name": [r[4] for r in rows],
+                    # `duration` is required by the latency reader and is always
+                    # present in the archive (nanoseconds).
+                    "duration": [1_000_000 for _ in rows],
+                    "attr.http.response.status_code": [r[5] for r in rows],
+                }
+            ).write_parquet(src / name)
+
+        out_path = conv.convert_datapack(src, self.root / "out" / src.name)
+        case = json.loads(out_path.read_text("utf-8"))
+
+        # Only the POST-injection failure counts; the pre-injection child span
+        # succeeded, so the baseline is 0 rather than omitted.
+        self.assertEqual(case["failedTraceEdges"], [["ts-ui-dashboard", "ts-order-service", 1, 0]])
+
     def test_network_fault_round_trip(self) -> None:
         src = _build_synthetic_datapack(self.root, "ts5-ts-order-service-network-svfvxk")
         dst = self.root / "out"
@@ -1100,6 +1398,11 @@ class TestConvertDatapackEndToEnd(unittest.TestCase):
 
         # Trace edges: parent→child resolved, root spans contribute no edge.
         self.assertEqual(case["traceEdges"], [["ts-ui-dashboard", "ts-order-service"]])
+        # This fixture carries the span-KIND `attr.status_code` but not the HTTP
+        # response status, so the failure attribution degrades to "unavailable"
+        # and the key is omitted rather than emitted empty — an empty list would
+        # read as "no edge failed", which is a different and wrong claim.
+        self.assertNotIn("failedTraceEdges", case)
 
         # Logs: upper-cased level, ui-dashboard filtered, null level → INFO.
         self.assertEqual(len(case["logs"]), 2)
