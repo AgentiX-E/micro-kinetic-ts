@@ -59,16 +59,20 @@ def main(argv: list[str]) -> int:
 
     regressed: list[str] = []
     for fault_type in fault_types:
-        total = base["perFaultType"].get(fault_type, {}).get("total", 0)
-        row = f"  {fault_type:<22}{total:>5}"
+        base_cell = base["perFaultType"].get(fault_type)
+        row = f"  {fault_type:<22}{base_cell['total'] if base_cell else 0:>5}"
         deltas: list[int] = []
         for _, doc in runs:
             cell = doc["perFaultType"].get(fault_type)
             row += "              -" if cell is None else f"{cell['correct']:>7}/{cell['total']:<5}"
-            if cell is not None:
-                deltas.append(cell["correct"] - base["perFaultType"][fault_type]["correct"])
+            # A type the BASELINE does not carry has no delta to report: treating
+            # its absence as zero would invent a large gain (or loss) out of a
+            # changed fault-type inventory, which is a property of the run set
+            # rather than of the change under test.
+            if cell is not None and base_cell is not None:
+                deltas.append(cell["correct"] - base_cell["correct"])
         worst = min(deltas) if deltas else 0
-        row += f"{worst:>+8}"
+        row += f"{worst:>+8}" if deltas else f"{'-':>8}"
         if worst < 0:
             regressed.append(f"{fault_type} ({worst:+d})")
         print(row)
