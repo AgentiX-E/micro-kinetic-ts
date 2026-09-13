@@ -139,3 +139,77 @@ describe('FSE26 reported configuration', () => {
     expect(readAcceptedModes(runner)).toContain(readRunnerDefault(runner));
   });
 });
+
+/**
+ * Enumerate the `workflow_dispatch` input names out of the raw YAML.
+ *
+ * Inputs live at a fixed indent under `inputs:`; the scan stops at the first
+ * shallower line so a key from the enclosing mapping cannot be mistaken for an
+ * input.
+ */
+function readInputNames(yml: string): string[] {
+  const lines = yml.split('\n');
+  const start = lines.findIndex((line) => /^ {4}inputs:\s*$/.test(line));
+  if (start < 0) return [];
+  const names: string[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.trim().length === 0) continue;
+    const indent = line.length - line.trimStart().length;
+    if (indent <= 4) break;
+    const m = /^ {6}([A-Za-z_][A-Za-z0-9_]*):\s*$/.exec(line);
+    if (m) names.push(m[1]!);
+  }
+  return names;
+}
+
+/**
+ * Every `workflow_dispatch` input, classified by WHO owns its default.
+ *
+ * - `runner` — the input overrides a default the runner also carries. It MUST
+ *   therefore default to EMPTY, so the runner stays the only owner. A literal
+ *   here is a second copy, and a second copy can drift silently: the run still
+ *   succeeds, still prints a confident Top@1, and simply reports a
+ *   configuration nobody chose. That is not hypothetical — this file's history
+ *   contains `log_mode: count` against a measured best of `logicHttp`, worth
+ *   24.2pp, and the drift was invisible in the artifact.
+ * - `workflow` — the input has no runner counterpart: it selects which
+ *   provenance-verified shards to download, which the runner cannot know.
+ *
+ * Exhaustive by construction: a NEW workflow input fails the suite until it is
+ * classified, so the choice cannot be made by accident.
+ */
+const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
+  shard_tag: 'workflow',
+  categories: 'workflow',
+  max_cases: 'runner',
+  log_weight: 'runner',
+  log_mode: 'runner',
+  diagnose: 'runner',
+  diagnose_limit: 'runner',
+  rise_ceiling: 'runner',
+  fleet_baseline: 'runner',
+  no_rank_normalization: 'runner',
+  drop_metrics: 'runner',
+};
+
+describe('FSE26 workflow-input ownership', () => {
+  const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
+
+  it('classifies every workflow input, so a new one cannot slip through', () => {
+    const names = readInputNames(workflow);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((name) => INPUT_OWNER[name] === undefined)).toEqual([]);
+    // And the table carries no stale entry for an input that no longer exists.
+    expect(Object.keys(INPUT_OWNER).filter((name) => !names.includes(name))).toEqual([]);
+  });
+
+  it('leaves every runner-owned default empty, so the runner is the sole owner', () => {
+    const offenders = Object.entries(INPUT_OWNER)
+      .filter(([, owner]) => owner === 'runner')
+      .map(([name]) => [name, readInputDefault(workflow, name)] as const)
+      .filter(([, value]) => value !== '')
+      .map(([name, value]) => `${name}=${String(value)}`);
+    expect(offenders).toEqual([]);
+  });
+});
