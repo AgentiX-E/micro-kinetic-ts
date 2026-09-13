@@ -290,6 +290,12 @@ The control reproduces the published 47.33% exactly, which is what makes the two
 candidates comparable at all — and it is also the end-to-end proof that the two
 new options are bit-identical at their defaults.
 
+The other half of the kill criterion also passes: the **RCAEval golden 9-cell on
+this same commit is byte-identical** (RE1 80.0 / 92.8 / 68.0, RE2 82.4 / 88.9 /
+68.1, RE3 80.0 / 45.0 / 51.1), from run `34733449577`. So the options change
+nothing unless they are asked to — which is what lets both of them stay in the
+tree as probes while their defaults stay rejected.
+
 **The rise ceiling is rejected**, as the monotonicity arithmetic predicted: a
 monotone clamp can only shrink a margin or tie both parties. `NetworkDelay` goes
 from 16/21 to **0/21**, `NetworkBandwidth` 12/42 to 5/42, `JVMMemoryStress` 4/171
