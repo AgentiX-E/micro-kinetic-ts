@@ -23,6 +23,8 @@ export interface FSE26Anchor {
   readonly sotaBestTop1: number;
 }
 
+import type { FaultFailedEdge } from '../../packages/core/src/index.js';
+
 /**
  * Everything that determines the reported numbers.
  *
@@ -69,6 +71,96 @@ export interface FSE26RunConfig {
 export interface FSE26FaultCell {
   readonly total: number;
   readonly correct: number;
+}
+
+/**
+ * How much failed-edge evidence a run's cases actually carry.
+ *
+ * A ranking signal can report "no change" for two very different reasons: the
+ * signal is not informative, or it never received any input. The two are
+ * indistinguishable from the headline number, and the second looks exactly like
+ * a result — so the input has to be counted, not assumed. This is the counter:
+ * how many cases carry the field at all, how many records there are, how many
+ * name a CALLEE that is actually rankable in that case's graph (the signal drops
+ * the rest), and the total post-injection failures those in-graph edges carry
+ * net of their own baselines.
+ *
+ * All four zero means the signal was driven by nothing; `casesWithEdges: 0` is
+ * the specific shape of an empty evidence class.
+ */
+export interface FailedEdgeCoverage {
+  /** Cases in the run. */
+  readonly cases: number;
+  /** Cases carrying at least one failed-edge record. */
+  readonly casesWithEdges: number;
+  /** Failed-edge records across all cases. */
+  readonly edges: number;
+  /** Records whose CALLEE is a graph node — the ones the signal can use. */
+  readonly inGraphEdges: number;
+  /** In-graph failures net of each edge's own pre-injection baseline. */
+  readonly netFailures: number;
+}
+
+/**
+ * Count the failed-edge evidence a run actually loaded.
+ *
+ * Takes a deliberately compact per-case projection rather than the loaded case:
+ * a case's metric SERIES are large and the runner releases them after scoring,
+ * so a counter that retained them would hold the whole dataset in memory. The
+ * metric KEYS are the graph nodes (`toBenchmarkCase` builds one node per service
+ * with metric series), so `metricKeys.has(callee)` is the same test the signal
+ * performs, without this module depending on the kinetic package.
+ *
+ * A self-edge (`caller === callee`) counts as a RECORD but not as in-graph
+ * evidence, because the signal drops it: it says nothing about direction. Same
+ * for a callee with no metric series.
+ *
+ * @param cases - One compact projection per evaluated case.
+ * @returns The coverage counters.
+ */
+export function summariseFailedEdgeCoverage(
+  cases: ReadonlyArray<{
+    readonly failedTraceEdges?: readonly FaultFailedEdge[];
+    readonly metricKeys: ReadonlySet<string>;
+  }>,
+): FailedEdgeCoverage {
+  let casesWithEdges = 0;
+  let edges = 0;
+  let inGraphEdges = 0;
+  let netFailures = 0;
+
+  for (const oneCase of cases) {
+    const list = oneCase.failedTraceEdges;
+    if (!list || list.length === 0) continue;
+    casesWithEdges += 1;
+    edges += list.length;
+    for (const { caller, callee, failed, baseline } of list) {
+      if (caller === callee) continue;
+      if (!oneCase.metricKeys.has(callee)) continue;
+      inGraphEdges += 1;
+      netFailures += Math.max(0, failed - baseline);
+    }
+  }
+
+  return { cases: cases.length, casesWithEdges, edges, inGraphEdges, netFailures };
+}
+
+/**
+ * Render {@link summariseFailedEdgeCoverage} as one line for the run's header.
+ *
+ * Printed unconditionally, unlike an ablation line: a run whose signal received
+ * nothing must be indistinguishable from one that received everything only in
+ * the numbers, never in the log.
+ *
+ * @param coverage - The counters.
+ * @returns One human-readable line, without a trailing newline.
+ */
+export function formatFailedEdgeCoverageLine(coverage: FailedEdgeCoverage): string {
+  return (
+    `Data:   failed edges in ${coverage.casesWithEdges}/${coverage.cases} cases ` +
+    `(${coverage.edges} records, ${coverage.inGraphEdges} in-graph, ` +
+    `net ${coverage.netFailures} failures)`
+  );
 }
 
 /** The complete summary object written to `--output`. */

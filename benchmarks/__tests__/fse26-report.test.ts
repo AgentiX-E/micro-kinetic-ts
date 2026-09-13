@@ -18,10 +18,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { FSE26RunConfig } from '../src/fse26-report.js';
 import {
-  REPORTED_CONFIG_FIELDS,
   buildFSE26Report,
+  formatFailedEdgeCoverageLine,
   formatFSE26ConfigLine,
   missingReportedConfigFields,
+  REPORTED_CONFIG_FIELDS,
+  summariseFailedEdgeCoverage,
 } from '../src/fse26-report.js';
 
 const ANCHOR = { sotaAvgTop1: 0.21, sotaBestTop1: 0.37 };
@@ -211,5 +213,121 @@ describe('FSE26 report — summary arithmetic', () => {
     expect([report.cases, report.loadErrors, report.engineErrors, report.emptyGraphs]).toEqual([
       9, 1, 2, 3,
     ]);
+  });
+});
+
+describe('summariseFailedEdgeCoverage', () => {
+  const oneCase = (
+    rows: Array<[string, string, number, number]> | undefined,
+    metricKeys: string[],
+  ) => ({
+    // Mirrors the loader: the bridge's 4-tuples become the engine's per-edge
+    // records, so the counter is fed exactly what the signal is fed.
+    failedTraceEdges: rows?.map(([caller, callee, failed, baseline]) => ({
+      caller,
+      callee,
+      failed,
+      baseline,
+    })),
+    metricKeys: new Set(metricKeys),
+  });
+
+  it('counts the cases, records and in-graph evidence a run actually loaded', () => {
+    const coverage = summariseFailedEdgeCoverage([
+      oneCase(
+        [
+          ['a', 'b', 10, 2],
+          ['a', 'c', 3, 0],
+        ],
+        ['a', 'b', 'c'],
+      ),
+      oneCase([['a', 'b', 5, 5]], ['a', 'b']),
+    ]);
+
+    expect(coverage).toEqual({
+      cases: 2,
+      casesWithEdges: 2,
+      edges: 3,
+      inGraphEdges: 3,
+      // (10 - 2) + 3 + max(0, 5 - 5)
+      netFailures: 11,
+    });
+  });
+
+  it('separates RECORDS from usable evidence when the callee has no metric series', () => {
+    // The signal drops an edge to a service with no rankable node, including
+    // from its normalisation denominator. Counting it as usable would report
+    // evidence the ranking never received — exactly the confusion this counter
+    // exists to prevent.
+    const coverage = summariseFailedEdgeCoverage([
+      oneCase(
+        [
+          ['a', 'loadgenerator', 400, 0],
+          ['a', 'c', 4, 0],
+        ],
+        ['a', 'c'],
+      ),
+    ]);
+
+    expect(coverage.edges).toBe(2);
+    expect(coverage.inGraphEdges).toBe(1);
+    expect(coverage.netFailures).toBe(4);
+  });
+
+  it('treats a self-edge as a record but not as in-graph evidence', () => {
+    const coverage = summariseFailedEdgeCoverage([oneCase([['a', 'a', 7, 0]], ['a'])]);
+
+    expect(coverage.edges).toBe(1);
+    expect(coverage.inGraphEdges).toBe(0);
+    expect(coverage.netFailures).toBe(0);
+  });
+
+  it('clamps a negative net at zero, like the signal does', () => {
+    const coverage = summariseFailedEdgeCoverage([
+      oneCase(
+        [
+          ['a', 'b', 1, 9],
+          ['a', 'c', 2, 0],
+        ],
+        ['a', 'b', 'c'],
+      ),
+    ]);
+
+    expect(coverage.inGraphEdges).toBe(2);
+    expect(coverage.netFailures).toBe(2);
+  });
+
+  it('reports an EMPTY evidence class as zero, not as a healthy run', () => {
+    // The shape that reads as "the signal changed nothing": every counter zero.
+    const absent = summariseFailedEdgeCoverage([oneCase(undefined, ['a'])]);
+    expect(absent).toEqual({
+      cases: 1,
+      casesWithEdges: 0,
+      edges: 0,
+      inGraphEdges: 0,
+      netFailures: 0,
+    });
+    expect(summariseFailedEdgeCoverage([oneCase([], ['a'])])).toEqual(absent);
+    expect(summariseFailedEdgeCoverage([])).toEqual({
+      cases: 0,
+      casesWithEdges: 0,
+      edges: 0,
+      inGraphEdges: 0,
+      netFailures: 0,
+    });
+  });
+
+  it('renders one line that names every counter', () => {
+    const line = formatFailedEdgeCoverageLine({
+      cases: 1422,
+      casesWithEdges: 12,
+      edges: 30,
+      inGraphEdges: 7,
+      netFailures: 41,
+    });
+
+    expect(line).toBe(
+      'Data:   failed edges in 12/1422 cases (30 records, 7 in-graph, net 41 failures)',
+    );
   });
 });

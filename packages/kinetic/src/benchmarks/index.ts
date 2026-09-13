@@ -148,6 +148,11 @@ export {
 
 export { BenchmarkRunner } from './runners/benchmark-runner.js';
 
+// The single owner of the case -> engine-options mapping. Exported so the
+// FSE'26 runner (which builds its fault graph inline) cannot drift from
+// BenchmarkRunner and silently drop a case-level input.
+export { toFaultGraphOptions } from './runners/fault-graph-options.js';
+
 export type {
   CasePrediction,
   CompleteBenchmarkReport,

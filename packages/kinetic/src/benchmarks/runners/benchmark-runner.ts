@@ -25,6 +25,7 @@ import type { TimeSeries, TraceSpan } from '@agentix-e/micro-kinetic-core';
 
 import type { BenchmarkSuite } from '../loaders/types.js';
 
+import { toFaultGraphOptions } from './fault-graph-options.js';
 import { computeAvgAtK, computeTA } from './metrics.js';
 
 import type { TrainingExample } from '../../signals/weight-calibrator.js';
@@ -386,12 +387,11 @@ export class BenchmarkRunner {
           effectiveCallGraph = traceResult.refinedGraph;
         }
 
-        const faultGraph = engine.buildFaultGraph(effectiveCallGraph, benchCase.metrics, {
-          injectTimeMs: this.useInjectTime ? benchCase.injectTime : 0,
-          logs: benchCase.logs,
-          traceActivity: benchCase.traceActivity,
-          failedTraceEdges: benchCase.failedTraceEdges,
-        });
+        const faultGraph = engine.buildFaultGraph(
+          effectiveCallGraph,
+          benchCase.metrics,
+          toFaultGraphOptions(benchCase, this.useInjectTime ? benchCase.injectTime : 0),
+        );
         const results = await engine.analyze(faultGraph, topK);
 
         // Capture the full ranked service-ID list for correct Avg@K.

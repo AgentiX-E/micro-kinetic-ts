@@ -42,16 +42,23 @@ import type {
   FSE26RawCase,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
-  FSE26Loader,
   computeAvgAtKMultiLabel,
   dropFSE26MetricNames,
   formatFSE26Diagnostic,
+  FSE26Loader,
+  toFaultGraphOptions,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { buildFse26EngineOptions } from './fse26-engine-options.js';
 
 import { parseFSE26Args } from './fse26-cli.js';
-import { buildFSE26Report, formatFSE26ConfigLine, type FSE26RunConfig } from './fse26-report.js';
+import {
+  buildFSE26Report,
+  formatFailedEdgeCoverageLine,
+  formatFSE26ConfigLine,
+  summariseFailedEdgeCoverage,
+  type FSE26RunConfig,
+} from './fse26-report.js';
 
 /**
  * Discover every case directory (a `case.json` present) under `dataDir`, via a
@@ -207,6 +214,13 @@ async function main(): Promise<void> {
   const predictionsPerCase: string[][] = [];
   const acceptedPerCase: string[][] = [];
   const faultTypeOfCase: string[] = [];
+  // One compact projection per case for the failed-edge coverage counter: the
+  // metric KEYS only, because a case's series are large and are released after
+  // scoring. See summariseFailedEdgeCoverage for why the input is counted at all.
+  const failedEdgeCases: Array<{
+    failedTraceEdges?: BenchmarkCase['failedTraceEdges'];
+    metricKeys: ReadonlySet<string>;
+  }> = [];
   const faultCells = new Map<string, FaultCell>();
   let loadErrors = 0;
   let engineErrors = 0;
@@ -228,6 +242,13 @@ async function main(): Promise<void> {
     }
     if (dropSet.size > 0) raw = dropFSE26MetricNames(raw, dropSet);
     const benchCase = loader.toBenchmarkCase(raw);
+    // Count what the ranking can actually use, from the SAME node set the signal
+    // filters on (`callGraph.nodes` is exactly the metric-keyed service set), so
+    // the counter cannot disagree with the signal about what was usable.
+    failedEdgeCases.push({
+      failedTraceEdges: benchCase.failedTraceEdges,
+      metricKeys: new Set(benchCase.callGraph.nodes.keys()),
+    });
     // Dual-label accepted set: the raw case's full ground-truth list (two
     // labels for network faults, one otherwise).
     const accepted =
@@ -243,10 +264,16 @@ async function main(): Promise<void> {
         // The engine requires ≥ 1 edge; a single-service case is degenerate.
         emptyGraphs++;
       } else {
-        faultGraph = pruner.buildFaultGraph(benchCase.callGraph, benchCase.metrics, {
-          injectTimeMs: benchCase.injectTime,
-          logs: benchCase.logs,
-        });
+        // ONE owner for the case -> options mapping. This call site used to
+        // spell the options out inline and had silently dropped `traceActivity`
+        // and `failedTraceEdges`, so both signals were dead on the benchmark
+        // with the largest case count — reporting "no change", which reads as a
+        // result. See packages/kinetic/src/benchmarks/runners/fault-graph-options.ts.
+        faultGraph = pruner.buildFaultGraph(
+          benchCase.callGraph,
+          benchCase.metrics,
+          toFaultGraphOptions(benchCase, benchCase.injectTime),
+        );
         ranking = pruner.analyze(faultGraph, 5);
       }
     } catch {
@@ -282,6 +309,14 @@ async function main(): Promise<void> {
   const top3 = computeAvgAtKMultiLabel(predictionsPerCase, acceptedPerCase, 3);
   const top5 = computeAvgAtKMultiLabel(predictionsPerCase, acceptedPerCase, 5);
 
+  // Printed with the RESULTS, not only in the header: a signal that received
+  // nothing produces "no change", which is indistinguishable from a measured
+  // null unless the input is counted next to the number. See
+  // summariseFailedEdgeCoverage.
+  const failedEdgeCoverage = formatFailedEdgeCoverageLine(
+    summariseFailedEdgeCoverage(failedEdgeCases),
+  );
+
   const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
   console.log('');
   console.log(`${'═'.repeat(65)}`);
@@ -292,6 +327,7 @@ async function main(): Promise<void> {
     `  Cases = ${predictionsPerCase.length}   loadErrors=${loadErrors} ` +
       `engineErrors=${engineErrors} emptyGraphs=${emptyGraphs}`,
   );
+  console.log(`  ${failedEdgeCoverage}`);
   console.log('');
   console.log(`  vs published anchor: SOTA avg ${pct(ANCHOR_AVG)} / best ${pct(ANCHOR_BEST)}`);
   const delta = top1 - ANCHOR_AVG;
