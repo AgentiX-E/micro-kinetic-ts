@@ -150,6 +150,37 @@ same reason `computeTraceActivityScores` guards on span counts — and two is th
 smallest value that expresses it. A matched pair at 1 vs 2 on one commit measures
 whether it recovers all five without spending the +82.
 
+## The evidence floor recovers the losses AND spends the gain — the axis is retired
+
+Matched pair on one commit and one cache, weight 1, only the floor changed:
+
+| run | floor | Top@1 | Top@3 | Top@5 | correct |
+|---|---|---|---|---|---|
+| `34811523306` | 1 (shipped) | 53.1% | 71.0% | 75.9% | 755 |
+| `34811525788` | 2 | 47.7% | 63.7% | 67.4% | 679 |
+
+The floor does exactly what it was built to do — `HTTPResponsePatchBody` 1→4 and
+`JVMMemoryStress` 1→4, both fully recovered — and then takes the gain with it:
+`HTTPResponseReplaceCode` **220→158, −62 of the +61 it produced**. Measured against
+the shipped baseline (673 cases), floor 2 is 678: **+15 across six fault types and
+−10 across six others**, with six types regressed for a net of five cases.
+
+So the gain and the regressions are the same population. The signal's
+discriminating power on FSE'26 lives in single-record evidence — the cases it wins
+and the cases it loses are drawn from one source, and filtering for "repeated"
+evidence filters out both. It is not separable by evidence volume, by aggregation
+(`mean` measured worse), or by direction (that is the signal's whole premise).
+
+**Verdict: the axis is retired.** `failedEdgeWeight` stays 0 and the shipped FSE'26
+Top@1 stays 47.33%. The switch remains in the code, tested and off by default,
+carrying this measurement so the question is not re-run.
+
+What would reopen it: evidence that distinguishes a source from a victim on a
+*different* signal, not a threshold on this one. The dump now records the signal's
+own per-service score, so a future candidate can be attributed case by case instead
+of inferred from totals — which is how this question was settled and the previous
+two framings were disproved.
+
 ## The earlier framing, corrected
 
 An intermediate reading of these regressions attributed them to a high-fan-in
