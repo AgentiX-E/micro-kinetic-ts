@@ -211,3 +211,30 @@ credited callee differs from the source, which is the only subset where the gate
 choice to make about *another* service — the cases it destroys are the ones where the
 callee is the source and the gate takes its credit away. **A gate has to be measured on
 both populations, not only on the one it is meant to reject.**
+
+## The whole block, split by whether the source emits at all
+
+One line per fault type over the 522-block stock dump, with `HTTPResponseReplaceCode`
+kept as the contrast. Cells are Top@1 correct / cases.
+
+| fault type | blocks | wrong | source EMITS | source SILENT | winner emits |
+| --- | --- | --- | --- | --- | --- |
+| JVMMemoryStress | 171 | 167 | 1/93 (1.1%) | 3/78 (3.8%) | 115 |
+| ContainerKill | 88 | 87 | 0/38 (0.0%) | 1/50 (2.0%) | 48 |
+| PodFailure | 23 | 23 | — | 0/23 (0.0%) | 14 |
+| PodKill | 9 | 8 | 1/3 (33.3%) | 0/6 (0.0%) | 4 |
+| **HTTPResponseReplaceCode** | 231 | 72 | **159/173 (91.9%)** | **0/58 (0.0%)** | 178 |
+
+**Whether the source emits predicts the outcome for exactly one of these types.** On
+ReplaceCode it separates 91.9% from 0.0%; on the four silent-source types it separates
+nothing — 1.1% against 3.8%, 0.0% against 2.0%, nothing at all, 33% against 0% on three
+cases. And on every one of the four the winner emits far more often than not (115 of 167,
+48 of 87, 14 of 23), so the log term is not merely unhelpful there: it is usually
+pointing at the other service.
+
+This is the correction to "the signal gap is the top lever" that
+`docs/fse26-data-gap-verdict.md` proposes. Widening the log gate can only serve the
+ReplaceCode block, and **159 of those 173 cases already succeed** — the gate is not what
+they depend on. The lever the verdict names is therefore 58 cases plus whatever the 285
+of the four other types need, and those 285 cannot be moved by any change to what the log
+signal accepts.
