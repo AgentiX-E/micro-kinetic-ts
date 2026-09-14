@@ -15,16 +15,20 @@ import { describe, expect, it } from 'vitest';
 import type { MetricDiagnostic } from '../../packages/core/src/index.js';
 import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
 
-import type { DiagnosedCase } from '../src/fse26-diagnose-analyze.js';
+import type { DiagnosedCase, WeightSeparationCase } from '../src/fse26-diagnose-analyze.js';
 import {
   anomalyShape,
+  buildWeightSeparationCases,
+  caseWeightInterval,
   classifyMiss,
+  computeWeightSeparation,
   diffDiagnostics,
   familyCompetition,
   formatAnomalyShapeReport,
   formatDiagnoseComparison,
   formatMetricCompetitionReport,
   formatMissReport,
+  formatWeightSeparationReport,
   isTop1Correct,
   parseDiagnosticDump,
   regressionMechanism,
@@ -1477,5 +1481,278 @@ describe('formatMissReport', () => {
     const report = formatMissReport(cases, { logWeight: 1 });
     expect(report).toContain('wrong cases: 0');
     expect(report).toContain('silent both sides (no error evidence either side): 0');
+  });
+});
+
+describe('caseWeightInterval', () => {
+  /** A case from plain numbers, so each fixture reads as arithmetic. */
+  const affine = (
+    target: string,
+    scores: Record<string, [number, number]>,
+  ): WeightSeparationCase => ({
+    datapack: 'dp-1',
+    target,
+    scores: new Map(Object.entries(scores).map(([id, [base, slope]]) => [id, { base, slope }])),
+  });
+
+  it('floors the weight when the target trails at rest but rises faster', () => {
+    // Target overtakes at base gap 0.3 / slope gap 1 = 0.3.
+    const interval = caseWeightInterval(affine('src', { src: [0, 1], win: [0.3, 0] }));
+    expect(interval.min).toBeCloseTo(0.3, 10);
+    expect(interval.max).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('caps the weight when the target leads at rest but rises slower', () => {
+    // The competitor overtakes at 0.2 / 0.5 = 0.4.
+    const interval = caseWeightInterval(affine('src', { src: [0.5, 0.5], win: [0.3, 1] }));
+    expect(interval.min).toBe(0);
+    expect(interval.max).toBeCloseTo(0.4, 10);
+  });
+
+  it('is unsatisfiable when an equal-slope competitor is ahead at rest', () => {
+    // No weight changes the gap, so the target can never be rank 1. Reported as an
+    // empty interval rather than a huge number, which a caller could mistake for a
+    // satisfiable constraint.
+    const interval = caseWeightInterval(affine('src', { src: [1, 2], win: [1.5, 2] }));
+    expect(interval.max).toBeLessThan(interval.min);
+  });
+
+  it('is unbounded when no competitor rises faster', () => {
+    const interval = caseWeightInterval(
+      affine('src', { src: [0.5, 5], win: [0.1, 1], third: [0.2, 2] }),
+    );
+    expect(interval.min).toBe(0);
+    expect(interval.max).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('excludes every weight when the target is not in the dump', () => {
+    const interval = caseWeightInterval(affine('absent', { other: [1, 0] }));
+    expect(interval.max).toBeLessThan(interval.min);
+  });
+});
+
+describe('computeWeightSeparation', () => {
+  const one = (name: string, target: string, scores: Record<string, [number, number]>) => ({
+    datapack: name,
+    target,
+    scores: new Map(Object.entries(scores).map(([id, [base, slope]]) => [id, { base, slope }])),
+  });
+
+  it('is separable when the intervals overlap', () => {
+    // dp-a needs >= 0.2/1 = 0.2; dp-b is overtaken at 0.4/1 = 0.4, so it tolerates
+    // <= 0.4. The window [0.2, 0.4] is non-empty.
+    const report = computeWeightSeparation([
+      one('dp-a', 'src', { src: [0, 1], win: [0.2, 0] }),
+      one('dp-b', 'src', { src: [0.4, 0], win: [0.2, 1] }),
+    ]);
+    expect(report.separable).toBe(true);
+    expect(report.requiredMin).toBeCloseTo(0.2, 10);
+    expect(report.allowedMax).toBeCloseTo(0.2, 10);
+    expect(report.bindingMin).toBe('dp-a');
+    expect(report.bindingMax).toBe('dp-b');
+  });
+
+  it('is NOT separable when the intervals overlap nowhere, and names both binders', () => {
+    // The measured shape of the failed-edge axis: the wins need >= 0.6 while the
+    // losses cap the weight at 0.3, so no sweep can pass.
+    const report = computeWeightSeparation([
+      one('needs-a-lot', 'src', { src: [0, 1], win: [0.6, 0] }),
+      one('breaks-early', 'src', { src: [0.3, 0], win: [0.5, 1] }),
+    ]);
+    expect(report.separable).toBe(false);
+    expect(report.requiredMin).toBeCloseTo(0.6, 10);
+    // The competitor is already ahead at rest and rises faster, so this case
+    // tolerates no non-negative weight at all: (0.5 - 0.3) / (0 - 1) = -0.2.
+    expect(report.allowedMax).toBeCloseTo(-0.2, 10);
+    expect(report.bindingMin).toBe('needs-a-lot');
+    expect(report.bindingMax).toBe('breaks-early');
+  });
+
+  it('treats an empty input as trivially separable', () => {
+    // No requirement means no constraint; reporting it as inseparable would fail
+    // every run that happens to move no case.
+    const report = computeWeightSeparation([]);
+    expect(report.separable).toBe(true);
+    expect(report.cases).toBe(0);
+  });
+});
+
+describe('buildWeightSeparationCases', () => {
+  it('reads the shipped formula: base is log1p(self) plus the log term, slope is the failed-edge score', () => {
+    const cases = buildWeightSeparationCases(
+      parseDiagnosticDump(
+        dump({
+          groundTruthServices: ['ts-order-service'],
+          services: [
+            serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 0.5, logScore: 0 }),
+            serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, logScore: 0, failedEdge: 1 }),
+          ],
+          topPredictions: ['ts-order-service'],
+        }),
+      ),
+      { logWeight: 1 },
+    );
+
+    const target = cases[0]!.scores.get('ts-order-service')!;
+    expect(target.base).toBeCloseTo(Math.log1p(0.5), 10);
+    expect(target.slope).toBe(0);
+    expect(cases[0]!.scores.get('ts-win')!.slope).toBe(1);
+  });
+
+  it('skips a case with no ground truth, which has no target to satisfy', () => {
+    const cases = buildWeightSeparationCases(
+      parseDiagnosticDump(
+        dump({ groundTruthServices: [], services: [serviceLine({ serviceId: 'ts-win' })] }),
+      ),
+      { logWeight: 1 },
+    );
+    expect(cases).toEqual([]);
+  });
+
+  it('treats a dump written before the field existed as a zero slope, not as a gap', () => {
+    // An older dump has no `failedEdge=`, and the coefficient of an absent term IS
+    // zero — a genuine zero, unlike a missing measurement, because the term simply
+    // was not in the score. That is the opposite of the parser's rule for the same
+    // field, where absence means "cannot answer" rather than "zero"; here the
+    // solver is modelling a score that did not include the term at all.
+    const legacy = dump({
+      groundTruthServices: ['ts-order-service'],
+      services: [
+        serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 1, logScore: 0 }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.5, logScore: 0 }),
+      ],
+      topPredictions: ['ts-order-service'],
+    }).replace(/ failedEdge=\S+ failedEdgeRecords=\d+/, '');
+
+    const cases = buildWeightSeparationCases(parseDiagnosticDump(legacy), { logWeight: 1 });
+    expect(cases[0]!.scores.get('ts-win')!.slope).toBe(0);
+    expect(computeWeightSeparation(cases).separable).toBe(true);
+  });
+
+  it('names no lower binder when the floor is zero, which every weight satisfies', () => {
+    const report = formatWeightSeparationReport(
+      parseDiagnosticDump(
+        dump({
+          groundTruthServices: ['ts-order-service'],
+          services: [
+            serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 0, logScore: 0 }),
+            serviceLine({
+              serviceId: 'ts-win',
+              selfAnomaly: 0.9,
+              logScore: 0,
+              failedEdge: 1,
+            }),
+          ],
+          topPredictions: ['ts-order-service'],
+        }),
+      ),
+      { logWeight: 1 },
+    );
+
+    // Nothing needs a non-zero floor, so the only binder is the upper one.
+    expect(report).toContain('separable: NO');
+    expect(report).toContain('needs 0.000 for -');
+    expect(report).toContain('before dp-1 breaks');
+  });
+
+  it('scales the log term by the weight it is given', () => {
+    const parsed = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-order-service'],
+        services: [
+          serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 0, logScore: 1 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, logScore: 0 }),
+        ],
+        topPredictions: ['ts-order-service'],
+      }),
+    );
+    const atOne = buildWeightSeparationCases(parsed, { logWeight: 1 })[0]!;
+    const atHalf = buildWeightSeparationCases(parsed, { logWeight: 0.5 })[0]!;
+    expect(atOne.scores.get('ts-order-service')!.base).toBeCloseTo(1, 10);
+    expect(atHalf.scores.get('ts-order-service')!.base).toBeCloseTo(0.5, 10);
+  });
+});
+
+describe('formatWeightSeparationReport', () => {
+  it('reports both bounds and the verdict, and names no binder when none exists', () => {
+    const report = formatWeightSeparationReport(
+      parseDiagnosticDump(
+        dump({
+          groundTruthServices: ['ts-order-service'],
+          services: [
+            // The target wins at rest AND resists the weight: it has the smaller
+            // slope, so raising the weight eventually hands rank 1 to the winner.
+            serviceLine({
+              serviceId: 'ts-order-service',
+              selfAnomaly: 1,
+              logScore: 0,
+              failedEdge: 1,
+            }),
+            serviceLine({
+              serviceId: 'ts-win',
+              selfAnomaly: 0.5,
+              logScore: 0,
+              failedEdge: 2,
+            }),
+          ],
+          topPredictions: ['ts-order-service'],
+        }),
+      ),
+      { logWeight: 1 },
+    );
+
+    // Overtake at (0.405 - 0.693) / (1 - 2) = 0.288, so every weight in
+    // [0, 0.288] keeps the target first: a finite cap, and a satisfiable one. The
+    // unsatisfiable branch is covered by the separate fixture below.
+    expect(report).toContain('separable: YES');
+    expect(report).toContain('required min weight: 0.000');
+    expect(report).toContain('allowed max weight:  0.288');
+    expect(report).toContain('cases the weight is supposed to satisfy: 1');
+    // No binding-cases line here: it names the two cases that conflict, and a
+    // satisfiable interval has no conflict to name.
+    expect(report).not.toContain('binding cases');
+  });
+
+  it('distinguishes "no weight works" from "no cap", never collapsing the two', () => {
+    // `-Infinity` is what an unsatisfiable case contributes, and printing it as
+    // "unbounded" would report the worst case as the most permissive one.
+    const report = formatWeightSeparationReport(
+      parseDiagnosticDump(
+        dump({
+          groundTruthServices: ['ts-order-service'],
+          services: [
+            serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 0, logScore: 0 }),
+            serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9, logScore: 0 }),
+          ],
+          topPredictions: ['ts-order-service'],
+        }),
+      ),
+      { logWeight: 1 },
+    );
+
+    expect(report).toContain('separable: NO');
+    expect(report).toContain('allowed max weight:  none');
+    expect(report).not.toContain('unbounded');
+  });
+
+  it('says unbounded rather than printing an infinite bound', () => {
+    // `Infinity.toFixed(3)` renders as "Infinity", which reads like a value.
+    const report = formatWeightSeparationReport(
+      parseDiagnosticDump(
+        dump({
+          groundTruthServices: ['ts-order-service'],
+          services: [
+            serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 1, logScore: 0 }),
+            serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, logScore: 0 }),
+          ],
+          topPredictions: ['ts-order-service'],
+        }),
+      ),
+      { logWeight: 1 },
+    );
+
+    expect(report).toContain('allowed max weight:  unbounded');
+    expect(report).toContain('separable: YES');
+    expect(report).not.toContain('Infinity');
   });
 });

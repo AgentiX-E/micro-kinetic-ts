@@ -45,6 +45,7 @@ import {
   formatDiagnoseComparison,
   formatMetricCompetitionReport,
   formatMissReport,
+  formatWeightSeparationReport,
   parseDiagnosticDump,
 } from './fse26-diagnose-analyze.js';
 
@@ -68,6 +69,8 @@ interface FamilyOptions {
    * attribute losses to a term at a scale the run never used.
    */
   readonly logWeight: number | undefined;
+  /** Same value, same reason, for the weight-separation section. */
+  readonly weightSweep: number | undefined;
   readonly output: string | undefined;
 }
 
@@ -76,7 +79,7 @@ type CliOptions = ComparisonOptions | FamilyOptions;
 const USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--family <regex>] [--family-label <name>] [--misses <logWeight>] ' +
-  '[--output <file>]';
+  '[--weight-sweep <logWeight>] [--output <file>]';
 
 function parseArgs(argv: readonly string[]): CliOptions {
   const values = new Map<string, string>();
@@ -92,6 +95,15 @@ function parseArgs(argv: readonly string[]): CliOptions {
   if (dump !== undefined) {
     const family = values.get('family');
     const misses = values.get('misses');
+    const sweep = values.get('weight-sweep');
+    let weightSweep: number | undefined;
+    if (sweep !== undefined) {
+      const parsedSweep = Number(sweep);
+      if (!Number.isFinite(parsedSweep)) {
+        throw new Error(`--weight-sweep expects the run's log weight, got '${sweep}'\n${USAGE}`);
+      }
+      weightSweep = parsedSweep;
+    }
     let logWeight: number | undefined;
     if (misses !== undefined) {
       // STRICT: a weight that is not a finite number would attribute every miss
@@ -112,6 +124,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
           ? undefined
           : { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
       logWeight,
+      weightSweep,
       output,
     };
   }
@@ -141,6 +154,9 @@ const report =
         }
         if (opts.logWeight !== undefined) {
           sections.unshift(formatMissReport(cases, { logWeight: opts.logWeight }));
+        }
+        if (opts.weightSweep !== undefined) {
+          sections.unshift(formatWeightSeparationReport(cases, { logWeight: opts.weightSweep }));
         }
         return sections.join('\n');
       })();

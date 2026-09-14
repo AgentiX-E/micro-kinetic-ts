@@ -743,6 +743,205 @@ export function formatMissReport(
   return lines.join('\n');
 }
 
+/**
+ * One case's requirement on a weight.
+ *
+ * Every candidate's score is affine in the weight — `base + w × slope` — which is
+ * what makes a sweep PREDICTABLE rather than something to run. For the shipped
+ * formula the base is `log1p(selfAnomaly) + logWeight × logScore` and the slope is
+ * the new signal's score, so a control dump (weight 0) already carries everything
+ * needed to say whether any weight could work.
+ */
+export interface WeightSeparationCase {
+  /** Case identifier, so the binding case can be named. */
+  readonly datapack: string;
+  /** The service that must end up at rank 1. */
+  readonly target: string;
+  /** Per-service affine score, `base` at `w = 0` and `slope` as the coefficient. */
+  readonly scores: ReadonlyMap<string, { readonly base: number; readonly slope: number }>;
+}
+
+/** The interval of weights, if any, at which EVERY case puts its target first. */
+export interface WeightSeparation {
+  readonly cases: number;
+  /** The smallest weight that satisfies every case. */
+  readonly requiredMin: number;
+  /** The largest weight that satisfies every case (may be `Infinity`). */
+  readonly allowedMax: number;
+  /** Whether a single weight exists. False means no sweep can pass. */
+  readonly separable: boolean;
+  /** The case that demands the largest minimum — the binding lower bound. */
+  readonly bindingMin: string | undefined;
+  /** The case that permits the smallest maximum — the binding upper bound. */
+  readonly bindingMax: string | undefined;
+}
+
+/** Float tolerance for a zero coefficient or a zero gap. */
+const WEIGHT_EPSILON = 1e-12;
+
+/**
+ * The interval of weights at which one case's target is at rank 1.
+ *
+ * Solved exactly rather than sampled: for each competitor the requirement
+ * `base_t + w·slope_t >= base_k + w·slope_k` is linear in `w`, so the case's
+ * interval is the intersection of at most one half-line per competitor. A
+ * competitor with a larger slope caps `w`; one with a smaller slope floors it; one
+ * with the same slope either never wins or is an unconditional blocker.
+ *
+ * @param one - The case.
+ * @returns The interval, `[0, Infinity]` when the target is never overtaken.
+ */
+export function caseWeightInterval(one: WeightSeparationCase): {
+  readonly min: number;
+  readonly max: number;
+} {
+  const target = one.scores.get(one.target);
+  // A target the dump does not describe cannot be satisfied by ANY weight, so the
+  // interval is EMPTY rather than unconstrained. Returning `[0, Infinity]` here
+  // would report a case the method cannot evaluate as one it has cleared — the
+  // aggregate would then claim separability on the strength of a case it never
+  // read.
+  if (target === undefined) {
+    return { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY };
+  }
+
+  let min = 0;
+  let max = Number.POSITIVE_INFINITY;
+  for (const [service, other] of one.scores) {
+    if (service === one.target) continue;
+    const slopeGap = target.slope - other.slope;
+    const baseGap = other.base - target.base;
+    if (slopeGap > WEIGHT_EPSILON) {
+      // Raising the weight helps the target against this competitor.
+      min = Math.max(min, baseGap / slopeGap);
+    } else if (slopeGap < -WEIGHT_EPSILON) {
+      // Raising the weight hurts it: this competitor caps the weight.
+      max = Math.min(max, baseGap / slopeGap);
+    } else if (baseGap > 0) {
+      // Equal slopes and the competitor is ahead at every weight: the target can
+      // never be rank 1, so the case excludes every weight. Reported as an empty
+      // interval rather than as a large number, so a caller cannot mistake it for
+      // a satisfiable constraint.
+      max = Number.NEGATIVE_INFINITY;
+    }
+  }
+  return { min, max };
+}
+
+/**
+ * Whether a single weight satisfies every case at once.
+ *
+ * This is the cheap substitute for a weight sweep. A sweep over `k` weights costs
+ * `k` full benchmark runs; this costs nothing, because the dump already carries
+ * both terms. It answers only the QUESTION a sweep would answer — "does a weight
+ * exist that keeps every case?" — and not what that weight would do to cases that
+ * are currently wrong for other reasons, so it can prove a sweep is futile and
+ * cannot prove one is sufficient. That asymmetry is the point: it is a
+ * falsifier.
+ *
+ * @param cases - One entry per case that the weight is supposed to move.
+ * @returns The aggregate interval and whether it is non-empty.
+ */
+export function computeWeightSeparation(cases: readonly WeightSeparationCase[]): WeightSeparation {
+  let requiredMin = 0;
+  let allowedMax = Number.POSITIVE_INFINITY;
+  let bindingMin: string | undefined;
+  let bindingMax: string | undefined;
+  for (const one of cases) {
+    const { min, max } = caseWeightInterval(one);
+    if (min > requiredMin) {
+      requiredMin = min;
+      bindingMin = one.datapack;
+    }
+    if (max < allowedMax) {
+      allowedMax = max;
+      bindingMax = one.datapack;
+    }
+  }
+  return {
+    cases: cases.length,
+    requiredMin,
+    allowedMax,
+    separable: requiredMin <= allowedMax,
+    bindingMin,
+    bindingMax,
+  };
+}
+
+/**
+ * Build the solver's input from parsed cases, for the shipped score formula.
+ *
+ * The base is `log1p(selfAnomaly) + logWeight × logScore` and the slope is the
+ * failed-edge score, so a dump from a run with the signal OFF still predicts what
+ * turning it on would do — which is what makes the control run sufficient and the
+ * sweep unnecessary.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The run's log weight.
+ * @returns One entry per case whose target the dump describes.
+ */
+export function buildWeightSeparationCases(
+  cases: readonly DiagnosedCase[],
+  weights: MissAttributionWeights,
+): WeightSeparationCase[] {
+  const built: WeightSeparationCase[] = [];
+  for (const kase of cases) {
+    const target = kase.groundTruth[0];
+    if (target === undefined || target === '') continue;
+    const scores = new Map<string, { base: number; slope: number }>();
+    for (const service of kase.services) {
+      scores.set(service.serviceId, {
+        base: Math.log1p(service.selfAnomaly) + weights.logWeight * service.logScore,
+        slope: service.failedEdgeScore ?? 0,
+      });
+    }
+    built.push({ datapack: kase.datapack, target, scores });
+  }
+  return built;
+}
+
+/**
+ * Render {@link computeWeightSeparation} as a report.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The run's log weight.
+ * @returns One multi-line report, without a trailing newline.
+ */
+export function formatWeightSeparationReport(
+  cases: readonly DiagnosedCase[],
+  weights: MissAttributionWeights,
+): string {
+  const report = computeWeightSeparation(buildWeightSeparationCases(cases, weights));
+  const lines: string[] = [];
+  lines.push(
+    `Weight separation (logWeight=${weights.logWeight}; solved from the dump, no sweep needed):`,
+  );
+  lines.push(`  cases the weight is supposed to satisfy: ${report.cases}`);
+  lines.push(`  required min weight: ${report.requiredMin.toFixed(3)}`);
+  // Three distinct meanings, and collapsing any two of them would misreport the
+  // verdict: a finite cap, no cap at all, and "no weight satisfies every case"
+  // (`-Infinity`, which is what an unsatisfiable case contributes).
+  const cap =
+    report.allowedMax === Number.POSITIVE_INFINITY
+      ? 'unbounded'
+      : report.allowedMax === Number.NEGATIVE_INFINITY
+        ? 'none — some case is unsatisfiable at every weight'
+        : report.allowedMax.toFixed(3);
+  lines.push(`  allowed max weight:  ${cap}`);
+  lines.push(`  separable: ${report.separable ? 'YES' : 'NO'}`);
+  if (!report.separable) {
+    // `bindingMin` may be absent — a floor of zero binds nothing and is satisfied
+    // by every weight — but `bindingMax` cannot be: a report is only inseparable
+    // when the cap is finite, and a finite cap is always set by some case. So the
+    // upper binder carries no fallback, and none that coverage could never reach.
+    lines.push(
+      `  binding cases: needs ${report.requiredMin.toFixed(3)} for ${report.bindingMin ?? '-'}, ` +
+        `but only ${report.allowedMax.toFixed(3)} before ${report.bindingMax!} breaks`,
+    );
+  }
+  return lines.join('\n');
+}
+
 export interface MetricFamily {
   /** How the report names the family. */
   readonly label: string;

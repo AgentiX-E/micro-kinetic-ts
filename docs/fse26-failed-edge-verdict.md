@@ -189,3 +189,47 @@ symptom out-accumulating the source. That was a plausible guess from the totals
 single record, and `mean` measured worse. The dumps are what settled it, which is
 why the diagnostic had to carry the signal's own score before the question could
 be answered at all.
+
+## The scale axis, solved rather than swept: no weight exists
+
+The verdict above closed this signal along volume (`minRecords`), aggregation
+(`mean`) and direction (its own premise). One axis was left unmeasured — the
+WEIGHT — and a sweep looked like the way to test it. It is not necessary: every
+candidate's score is affine in the weight, so the dump already contains the answer.
+
+For a case, `score(v) = base(v) + w × slope(v)` where `base` is
+`log1p(selfAnomaly) + logWeight × logScore` and `slope` is the failed-edge score.
+The target is at rank 1 exactly on an interval, obtained by intersecting one
+half-line per competitor, and a single weight exists iff the per-case intervals
+intersect. `computeWeightSeparation` does that exactly; `--weight-sweep <logWeight>`
+runs it over a dump. A **control** dump is sufficient, because the slope does not
+depend on the weight being on.
+
+Solved over the 67 cases this signal moves (62 fixed, 5 broken) in the 522-block
+stock dump:
+
+| population | its requirement on the weight |
+| --- | --- |
+| the 62 fixed cases | need `w ≥ 0.010 … 0.580` (**largest 0.580**) |
+| the 5 broken cases | tolerate `w ≤ 0.261 … 0.949` (**smallest 0.261**) |
+
+A single weight would need `w ≥ 0.580` and `w ≤ 0.261` at once. **The intervals
+overlap; no weight exists.** So the sweep cannot pass the kill criterion, and the
+axis is closed on its fourth and last dimension without spending a run.
+
+This is a falsifier, not a solver: it proves a sweep is futile and cannot prove one
+is sufficient, because it only reads the cases it is given and says nothing about
+cases that are wrong for other reasons. That asymmetry is why it is worth having —
+it will answer the next weight question the same way, for free.
+
+### Two defects the solver's own tests found
+
+Both are the absence-versus-zero family, which this codebase keeps producing:
+
+- a case whose target the dump does not describe initially contributed **no
+  constraint**, so the aggregate would report "separable" on the strength of a case
+  it never read. An unreadable target now yields an EMPTY interval, i.e. an
+  unsatisfiable case.
+- the report rendered `-Infinity` (an unsatisfiable case) as `unbounded`, i.e. as
+  the most permissive possible answer. The three meanings — a finite cap, no cap,
+  and no weight at all — are now three distinct strings.
