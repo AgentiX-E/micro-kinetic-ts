@@ -166,6 +166,21 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--failed-edge-mode', 'mean']).failedEdgeMode).toBe('mean');
   });
 
+  it('parses the latency weight, defaulting to the shipped 0', () => {
+    expect(parseFSE26Args([]).latWeight).toBe(0);
+    expect(parseFSE26Args(['--lat-weight', '0.75']).latWeight).toBe(0.75);
+    expect(parseFSE26Args(['--lat-weight', '2']).latWeight).toBe(2);
+  });
+
+  it('falls back to the SHIPPED latency weight on anything unusable', () => {
+    // 0 is the shipped value, so a typo reproduces a published configuration
+    // instead of inventing an unmeasured one. A negative weight would flip the
+    // term into a PENALTY on the very services it is meant to credit.
+    expect(parseFSE26Args(['--lat-weight', '0.5x']).latWeight).toBe(0);
+    expect(parseFSE26Args(['--lat-weight', '-1']).latWeight).toBe(0);
+    expect(parseFSE26Args(['--lat-weight', '']).latWeight).toBe(0);
+  });
+
   it('parses the failed-edge evidence floor, defaulting to the shipped 1', () => {
     expect(parseFSE26Args([]).failedEdgeMinRecords).toBe(1);
     expect(parseFSE26Args(['--failed-edge-min-records', '2']).failedEdgeMinRecords).toBe(2);

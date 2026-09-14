@@ -49,6 +49,12 @@ export interface Fse26SignalOptions {
   readonly failedEdgeMode: FailedEdgeMode;
   /** Required for the same reason as the two above: a silent no-op is the bug. */
   readonly failedEdgeMinRecords: number;
+  /**
+   * Weight of the per-edge LATENCY-rise signal. Required for the same reason as
+   * the three above: a PARTIAL passed through here would be a silent no-op if
+   * the key were ever misspelled.
+   */
+  readonly latWeight: number;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -88,6 +94,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       failedEdgeWeight: opts.failedEdgeWeight,
       failedEdgeMode: opts.failedEdgeMode,
       failedEdgeMinRecords: opts.failedEdgeMinRecords,
+      latWeight: opts.latWeight,
     },
     topology: {
       // Load-bearing on Train Ticket's large topologies.

@@ -28,6 +28,7 @@ describe('buildFse26EngineOptions', () => {
       failedEdgeWeight: 0,
       failedEdgeMode: 'sum',
       failedEdgeMinRecords: 1,
+      latWeight: 0,
     });
   });
 
@@ -67,6 +68,18 @@ describe('buildFse26EngineOptions', () => {
 
     const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--failed-edge-min-records', '3']));
     expect(fromArgv.signals.failedEdgeMinRecords).toBe(3);
+  });
+
+  it('forwards the latency weight, shipped as 0', () => {
+    // Off by default: the shipped configuration must not carry the term until it
+    // has been ablated against the kill criterion. A dropped weight would run the
+    // control while the `Config:` line reported the ablation.
+    expect(buildFse26EngineOptions(BASE).signals.latWeight).toBe(0);
+    expect(buildFse26EngineOptions({ ...BASE, latWeight: 0.75 }).signals.latWeight).toBe(0.75);
+
+    // End to end, from argv — the only path a dispatch actually takes.
+    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--lat-weight', '0.75']));
+    expect(fromArgv.signals.latWeight).toBe(0.75);
   });
 
   it('forwards rank normalization, which is load-bearing on the large topologies', () => {

@@ -23,12 +23,13 @@ import { toFaultGraphOptions } from '../../../src/benchmarks/runners/fault-graph
  * A `Record` over the union rather than a bare list: adding a name to the union
  * without handling it fails to compile, which a plain string array cannot do.
  */
-type ForwardedEvidence = 'logs' | 'traceActivity' | 'failedTraceEdges';
+type ForwardedEvidence = 'logs' | 'traceActivity' | 'failedTraceEdges' | 'edgeLatency';
 
 const FORWARDED: Readonly<Record<ForwardedEvidence, true>> = {
   logs: true,
   traceActivity: true,
   failedTraceEdges: true,
+  edgeLatency: true,
 };
 
 function makeCase(overrides: Partial<BenchmarkCase> = {}): BenchmarkCase {
@@ -62,8 +63,12 @@ describe('toFaultGraphOptions', () => {
     const logs = [{ timestamp: 1, service: 'a', message: 'x', level: 'ERROR' as const }];
     const traceActivity = new Map([['a', { pre: 1, post: 2 }]]);
     const failedTraceEdges = [{ caller: 'b', callee: 'a', failed: 3, baseline: 0 }];
+    const edgeLatency = [{ caller: 'b', callee: 'a', preMeanMs: 1, postMeanMs: 40 }];
 
-    const options = toFaultGraphOptions(makeCase({ logs, traceActivity, failedTraceEdges }), 7);
+    const options = toFaultGraphOptions(
+      makeCase({ logs, traceActivity, failedTraceEdges, edgeLatency }),
+      7,
+    );
 
     for (const field of Object.keys(FORWARDED) as ForwardedEvidence[]) {
       expect(options[field]).toBeDefined();
@@ -71,6 +76,7 @@ describe('toFaultGraphOptions', () => {
     expect(options.logs).toBe(logs);
     expect(options.traceActivity).toBe(traceActivity);
     expect(options.failedTraceEdges).toBe(failedTraceEdges);
+    expect(options.edgeLatency).toBe(edgeLatency);
   });
 
   it('leaves an absent field ABSENT rather than substituting an empty value', () => {
@@ -83,6 +89,7 @@ describe('toFaultGraphOptions', () => {
     expect(options.logs).toBeUndefined();
     expect(options.traceActivity).toBeUndefined();
     expect(options.failedTraceEdges).toBeUndefined();
+    expect(options.edgeLatency).toBeUndefined();
   });
 
   it('is pure: the same case yields an equal options object', () => {

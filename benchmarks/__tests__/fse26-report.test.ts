@@ -39,6 +39,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     failedEdgeWeight: 0,
     failedEdgeMode: 'sum',
     failedEdgeMinRecords: 1,
+    latWeight: 0,
     ...overrides,
   };
 }
@@ -93,6 +94,7 @@ describe('FSE26 report — attribution', () => {
       'failedEdgeWeight',
       'failedEdgeMode',
       'failedEdgeMinRecords',
+      'latWeight',
     ]);
   });
 
@@ -139,6 +141,18 @@ describe('FSE26 report — the two renderings agree', () => {
     ).toContain('failedEdgeMinRecords=2');
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeMinRecords: 2 }))).not.toContain(
       'failedEdgeMinRecords',
+    );
+  });
+
+  it('names the latency weight only when it is non-zero, and outside the failed-edge block', () => {
+    // The two weights gate INDEPENDENT terms: the latency term can be on while
+    // the failed-edge signal is off, so nesting this line inside that block would
+    // hide a non-shipped configuration behind a shipped-looking line.
+    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('latWeight');
+    expect(formatFSE26ConfigLine(makeConfig({ latWeight: 0.75 }))).toContain('latWeight=0.75');
+    // Still printed when the failed-edge weight is 0.
+    expect(formatFSE26ConfigLine(makeConfig({ latWeight: 0.75, failedEdgeWeight: 0 }))).toContain(
+      'latWeight=0.75',
     );
   });
 

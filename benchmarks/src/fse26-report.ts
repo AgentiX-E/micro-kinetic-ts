@@ -72,6 +72,11 @@ export interface FSE26RunConfig {
   readonly failedEdgeMode: string;
   /** Minimum contributing edges a callee needs to be credited (1 = shipped). */
   readonly failedEdgeMinRecords: number;
+  /**
+   * Weight of the per-edge LATENCY-rise signal (0 = disabled, the shipped
+   * configuration). A non-zero value is a different ranking and has to say so.
+   */
+  readonly latWeight: number;
 }
 
 /** One fault type's cell in the summary. */
@@ -218,6 +223,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'failedEdgeWeight',
   'failedEdgeMode',
   'failedEdgeMinRecords',
+  'latWeight',
 ] as const;
 
 /**
@@ -279,6 +285,13 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     if (config.failedEdgeMinRecords !== 1) {
       line += ` failedEdgeMinRecords=${config.failedEdgeMinRecords}`;
     }
+  }
+  // Same rule as the fleet baseline: the shipped value is 0, so a zero-weight
+  // line stays byte-identical to the published one and a flipped switch is
+  // visible. This one is NOT nested under the failed-edge weight — the two terms
+  // are independent, and the latency term can be on while that one is off.
+  if (config.latWeight !== 0) {
+    line += ` latWeight=${config.latWeight}`;
   }
   return line;
 }

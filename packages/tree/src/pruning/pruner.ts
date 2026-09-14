@@ -37,6 +37,7 @@ import {
   invariantRange,
   type BuildFaultGraphOptions,
   type DetectedCycle,
+  type FaultEdgeLatency,
   type FaultPropagationGraph,
   type MetricMap,
   type PrunedEdgeRecord,
@@ -59,6 +60,7 @@ import { computePrismScores } from './prism-signal.js';
 import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
 import {
   computeDeepestExceptions,
+  computeEdgeLatencyScores,
   computeFailedEdgeScores,
   computeLogScores,
   computeRiseScores,
@@ -319,6 +321,25 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * anomaly is maximal. One event is not a pattern.
    */
   readonly failedEdgeMinRecords?: number;
+  /**
+   * Weight of the per-edge inbound latency rise.
+   *
+   *   finalScore(v) += latWeight × latScore(v)
+   *
+   * `latScore(v)` is the largest `postMeanMs / preMeanMs` over the edges
+   * `caller → v`, `log1p`-compressed and max-normalised. It is the CONTINUOUS
+   * counterpart of `failedEdgeWeight`: that one counts failures, so a call that
+   * became slow but still succeeded is invisible to it, and so is a case where
+   * no call failed at all.
+   *
+   * Default: 0 (opt-in). The measurement is why the default is not flipped: it
+   * takes JVMMemoryStress from 4 to 30 cases at a partial weight while costing
+   * `HTTPResponseReplaceCode` two, and the kill criterion has no exception for a
+   * favourable ratio.
+   */
+  readonly latWeight: number;
+  /** The per-edge latency records the term above is computed from. */
+  readonly edgeLatency?: readonly FaultEdgeLatency[];
 }
 
 /**
@@ -339,6 +360,7 @@ export function toRankingWeights(
     | 'traceWeight'
     | 'prismWeight'
     | 'failedEdgeWeight'
+    | 'latWeight'
   >,
 ): RankingWeights {
   return {
@@ -351,6 +373,7 @@ export function toRankingWeights(
     traceWeight: options.traceWeight,
     prismWeight: options.prismWeight,
     failedEdgeWeight: options.failedEdgeWeight,
+    latWeight: options.latWeight,
   };
 }
 
@@ -373,6 +396,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeWeight: 0.0,
   failedEdgeMode: 'sum',
   failedEdgeMinRecords: 1,
+  latWeight: 0.0,
 };
 
 /**
@@ -640,6 +664,15 @@ export class TreePruner {
       this.options.failedEdgeMinRecords,
     );
 
+    // The per-edge LATENCY signal: the continuous counterpart of the term above.
+    // It credits the callee of an edge whose mean span duration rose, which is
+    // the same direction — and it is defined on the cases where no call failed
+    // at all, which the failed-edge counts cannot see.
+    const edgeLatencyScores = computeEdgeLatencyScores(
+      options?.edgeLatency,
+      new Set(callGraph.nodes.keys()),
+    );
+
     return {
       callGraph: topologyGraph,
       propagationWeights,
@@ -660,6 +693,7 @@ export class TreePruner {
       traceActivityScores,
       prismScores,
       failedEdgeScores,
+      edgeLatencyScores,
     };
   }
 
@@ -721,6 +755,7 @@ export class TreePruner {
       graph.traceActivityScores,
       graph.prismScores,
       graph.failedEdgeScores,
+      graph.edgeLatencyScores,
     );
 
     return results;
@@ -899,6 +934,7 @@ function performTreeRCA(
   traceActivityScores?: ReadonlyMap<ServiceId, number>,
   prismScores?: ReadonlyMap<ServiceId, number>,
   failedEdgeScores?: ReadonlyMap<ServiceId, number>,
+  edgeLatencyScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -1197,6 +1233,13 @@ function performTreeRCA(
   const failedEdgeWeight = options.failedEdgeWeight;
   const failedEdgeTerm = (id: ServiceId): number =>
     failedEdgeWeight * (failedEdgeScores?.get(id) ?? 0);
+  // The continuous counterpart of the term above, and the only term whose
+  // magnitude comes from a DURATION rather than a count: it exists exactly where
+  // the counts are zero. `edgeLatencyScores` is absent (not empty) when the case
+  // carried no per-edge measurements, so a case without the field scores exactly
+  // as it did before this term existed.
+  const latWeight = options.latWeight;
+  const latTerm = (id: ServiceId): number => latWeight * (edgeLatencyScores?.get(id) ?? 0);
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `temporalEarliness`, `topoScores`,
@@ -1222,7 +1265,8 @@ function performTreeRCA(
         riseTerm(id) +
         traceTerm(id) +
         prismTerm(id) +
-        failedEdgeTerm(id);
+        failedEdgeTerm(id) +
+        latTerm(id);
       finalScores.set(id, s);
     }
     return s;

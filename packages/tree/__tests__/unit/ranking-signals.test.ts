@@ -1,5 +1,6 @@
 import type {
   CallEdge,
+  FaultEdgeLatency,
   FaultFailedEdge,
   FaultLogEntry,
   ServiceId,
@@ -7,6 +8,7 @@ import type {
 import {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   computeDeepestExceptions,
+  computeEdgeLatencyScores,
   computeFailedEdgeScores,
   computeHttpEmitterDominance,
   computeHttpVictimSet,
@@ -1549,5 +1551,118 @@ describe('computeFailedEdgeScores', () => {
         computeFailedEdgeScores(edges, nodes, 'sum'),
       );
     });
+  });
+});
+
+describe('computeEdgeLatencyScores', () => {
+  /** One per-edge latency record, in millisecond means either side of the injection. */
+  const lat = (caller: string, callee: string, pre: number, post: number): FaultEdgeLatency => ({
+    caller,
+    callee,
+    preMeanMs: pre,
+    postMeanMs: post,
+  });
+
+  it('credits the callee with the LARGEST inbound rise, not the mean over callers', () => {
+    // One caller going from 1 ms to 100 ms is the signal. A mean over the three
+    // callers would give 34x and bury it behind the two that did not move.
+    const scores = computeEdgeLatencyScores(
+      [lat('a', 'target', 10, 10), lat('b', 'target', 10, 10), lat('c', 'target', 1, 100)],
+      new Set(['a', 'b', 'c', 'target']),
+    );
+
+    expect(scores.get('target')).toBe(1);
+  });
+
+  it('normalises to the largest rise in the case, so the top callee is 1', () => {
+    const scores = computeEdgeLatencyScores(
+      [lat('a', 'small', 10, 20), lat('b', 'big', 10, 1000)],
+      new Set(['a', 'b', 'small', 'big']),
+    );
+
+    expect(scores.get('big')).toBe(1);
+    expect(scores.get('small')!).toBeGreaterThan(0);
+    expect(scores.get('small')!).toBeLessThan(1);
+  });
+
+  it('compresses the rise, so a 10x larger edge is nowhere near 10x the score', () => {
+    // The measured range spans 0.3 to 2048, so the scale matters. These two rises
+    // are 8x and 80x — a LINEAR scale would report the second as exactly 10x the
+    // first, which is how one pathological caller comes to own every case. The
+    // fixture avoids powers of ten on purpose: `log1p(9)` and `log1p(99)` are
+    // `ln(10)` and `ln(100)`, whose ratio is exactly 2, and a coincidental
+    // equality would pin arithmetic rather than the property under test.
+    const scores = computeEdgeLatencyScores(
+      [lat('a', 'small', 2, 16), lat('b', 'large', 2, 160)],
+      new Set(['a', 'b', 'small', 'large']),
+    );
+    const ratio = scores.get('large')! / scores.get('small')!;
+
+    expect(ratio).toBeGreaterThan(1);
+    expect(ratio).toBeLessThan(3);
+  });
+
+  it('ignores an edge with an endpoint outside the graph', () => {
+    // Same rule as the failed-edge signal, for the same reason: an unrankable
+    // service cannot be credited, so letting its edge set the case maximum would
+    // rescale every in-graph score against evidence no candidate can act on.
+    const scores = computeEdgeLatencyScores(
+      [lat('a', 'inside', 10, 20), lat('ghost', 'outside', 1, 1000)],
+      new Set(['a', 'inside']),
+    );
+
+    expect(scores.get('inside')).toBe(1);
+    expect(scores.has('outside')).toBe(false);
+  });
+
+  it('ignores self-calls', () => {
+    expect(computeEdgeLatencyScores([lat('a', 'a', 1, 1000)], new Set(['a'])).size).toBe(0);
+  });
+
+  it('ignores a non-finite or non-positive measurement rather than propagating it', () => {
+    // `pre <= 0` divides to Infinity and `NaN` poisons the division that
+    // normalises the case, so both are dropped before they can reach a score.
+    const scores = computeEdgeLatencyScores(
+      [
+        lat('a', 'zeroPre', 0, 5),
+        lat('b', 'negativePre', -1, 5),
+        lat('c', 'nanPost', 1, Number.NaN),
+        lat('d', 'infPre', Number.POSITIVE_INFINITY, 5),
+        lat('e', 'good', 1, 2),
+      ],
+      new Set(['a', 'b', 'c', 'd', 'e', 'zeroPre', 'negativePre', 'nanPost', 'infPre', 'good']),
+    );
+
+    expect([...scores.keys()]).toEqual(['good']);
+  });
+
+  it('returns an EMPTY map when every measurable edge got FASTER', () => {
+    // There is no rise to normalise against. Crediting nobody is the correct
+    // reading; dividing by a zero maximum would put NaN into every final score
+    // in the case instead.
+    const scores = computeEdgeLatencyScores(
+      [lat('a', 'fast', 100, 10), lat('b', 'faster', 100, 1)],
+      new Set(['a', 'b', 'fast', 'faster']),
+    );
+
+    expect(scores.size).toBe(0);
+  });
+
+  it('returns an empty map for absent or empty input, never zeroed rows', () => {
+    // A callee with no measurement must be ABSENT from the map: present-with-0
+    // would read as a measured flat latency, which is the one value that means
+    // no evidence.
+    expect(computeEdgeLatencyScores(undefined, new Set(['a'])).size).toBe(0);
+    expect(computeEdgeLatencyScores([], new Set(['a'])).size).toBe(0);
+  });
+
+  it('is inert at a weight of zero, whatever the measurements say', () => {
+    // The shipped default. The term is additive and gated on `latWeight`, so a
+    // case carrying latency evidence scores exactly as it did before the field
+    // existed — `x + 0 * y === x`.
+    const scores = computeEdgeLatencyScores([lat('a', 'b', 1, 1000)], new Set(['a', 'b']));
+    const weight = 0;
+
+    expect(0.5 + weight * (scores.get('b') ?? 0)).toBe(0.5);
   });
 });

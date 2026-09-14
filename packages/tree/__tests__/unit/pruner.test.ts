@@ -1038,6 +1038,7 @@ describe('TreePruner', () => {
         traceWeight: 0.7,
         prismWeight: 0.8,
         failedEdgeWeight: 0.9,
+        latWeight: 0.95,
       });
 
       expect(weights).toEqual({
@@ -1050,6 +1051,7 @@ describe('TreePruner', () => {
         traceWeight: 0.7,
         prismWeight: 0.8,
         failedEdgeWeight: 0.9,
+        latWeight: 0.95,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -1538,9 +1540,11 @@ describe('TreePruner — failed-edge-direction signal', () => {
       traceWeight: 0,
       prismWeight: 0,
       failedEdgeWeight: 0.5,
+      latWeight: 0.25,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
+    expect(weights.latWeight).toBe(0.25);
   });
 
   it('keeps the weight OPTIONAL in the shared contract, so stored weight vectors still load', () => {
@@ -1560,5 +1564,96 @@ describe('TreePruner — failed-edge-direction signal', () => {
     };
 
     expect(legacy.failedEdgeWeight).toBeUndefined();
+    // Same contract for the latency weight: a vector stored before the term
+    // existed must still load, and must NOT read as a fabricated 0.
+    expect(legacy.latWeight).toBeUndefined();
+  });
+
+  it('keeps the latency weight optional in the shared contract too', () => {
+    const legacy: RankingWeights = {
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 1,
+      riseWeight: 0,
+      traceWeight: 0,
+      prismWeight: 0,
+    };
+
+    expect(legacy.latWeight).toBeUndefined();
+  });
+});
+
+describe('TreePruner — per-edge latency-rise signal', () => {
+  // The same two roles the failed-edge signal has to tell apart, but the
+  // evidence is a DURATION rather than a failure count: the caller waited longer
+  // on the callee. The direction is credited the same way — to the callee.
+  const CALLER = 'ts-ui-dashboard';
+  const CALLEE = 'ts-order-service';
+  const edgeLatency = [{ caller: CALLER, callee: CALLEE, preMeanMs: 10, postMeanMs: 400 }];
+
+  // Both services deviate after injection, so both are rankable candidates and
+  // the ONLY thing that can separate their scores is the new term.
+  const makeCase = (): [ServiceCallGraph, MetricMap] => [
+    makeCallGraph([CALLER, CALLEE], [[CALLER, CALLEE]]),
+    makeMetrics({
+      [CALLER]: [1, 1, 1, 1, 4, 4, 4, 4],
+      [CALLEE]: [1, 1, 1, 1, 3, 3, 3, 3],
+    }),
+  ];
+
+  const scores = (pruner: TreePruner, options?: { edgeLatency: typeof edgeLatency }) => {
+    const [callGraph, metrics] = makeCase();
+    const graph = pruner.buildFaultGraph(callGraph, metrics, options);
+    return {
+      graph,
+      byService: new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!])),
+    };
+  };
+
+  it('credits the CALLEE whose inbound latency rose, in the graph it builds', () => {
+    // The caller recorded the duration, so the callee is the service that got
+    // slower — the inverse of crediting whoever observed the slowness.
+    const { graph } = scores(new TreePruner(), { edgeLatency });
+
+    expect(graph.edgeLatencyScores?.get(CALLEE)).toBe(1);
+    expect(graph.edgeLatencyScores?.has(CALLER)).toBe(false);
+  });
+
+  it('is neutral at the default weight: carrying the field changes no score', () => {
+    // This is the property that lets the converter ship the field before the
+    // signal is trusted: at weight 0 the presence of latency records must be
+    // unobservable, exactly like an absent field.
+    const pruner = new TreePruner();
+    const without = scores(pruner);
+    const withField = scores(pruner, { edgeLatency });
+
+    expect(without.graph.edgeLatencyScores?.size ?? 0).toBe(0);
+    expect([...withField.byService.keys()]).toEqual([...without.byService.keys()]);
+    for (const [serviceId, score] of withField.byService) {
+      expect(score).toBeCloseTo(without.byService.get(serviceId)!, 12);
+    }
+  });
+
+  it('raises the callee score by exactly the weight and leaves the caller alone', () => {
+    // The term is `weight × score` with score in [0, 1], so with weight 1 and a
+    // single credited callee the delta is exactly 1 — and the caller's own score
+    // must not move, or the term would be a re-weighting rather than a new axis.
+    const before = scores(new TreePruner(), { edgeLatency }).byService;
+    const after = scores(new TreePruner({ latWeight: 1 }), { edgeLatency }).byService;
+
+    expect(after.get(CALLEE)! - before.get(CALLEE)!).toBeCloseTo(1, 10);
+    expect(after.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
+  });
+
+  it('is independent of the failed-edge weight it mirrors', () => {
+    // The two terms gate separate signals: a run can carry the latency term with
+    // the failed-edge signal off, which is the configuration this axis is
+    // measured in. If they shared a gate, that run would be impossible.
+    const withLatOnly = scores(new TreePruner({ latWeight: 1 }), { edgeLatency }).byService;
+    const base = scores(new TreePruner()).byService;
+
+    expect(withLatOnly.get(CALLEE)! - base.get(CALLEE)!).toBeCloseTo(1, 10);
   });
 });

@@ -265,6 +265,18 @@ export interface FaultPropagationGraph {
    */
   readonly failedEdgeScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service inbound latency-rise score (0-1) — the largest
+   * `postMeanMs / preMeanMs` over the edges `caller → v`, `log1p`-compressed and
+   * normalised by the case maximum.
+   *
+   * The continuous counterpart of `failedEdgeScores`: that one counts failures,
+   * this one measures how long the callers waited, so it is defined exactly on
+   * the cases where no call failed at all. Optional: absent when the case
+   * carried no per-edge measurements. Feeds the (opt-in, default 0)
+   * `latWeight`.
+   */
+  readonly edgeLatencyScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service topological-source score (0-1) — `1 − maxParentExplanation`,
    * where `maxParentExplanation` is the largest `propagationWeight(p→v) ×
    * anomaly(p)` over a node's upstream parents. A source (no strongly

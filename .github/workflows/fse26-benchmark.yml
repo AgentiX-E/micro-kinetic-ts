@@ -59,6 +59,10 @@ on:
         description: 'Minimum contributing edges a callee needs before the failed-edge signal credits it (empty = the runner default, which is 1). A single record is one event, not an interface failure'
         required: false
         default: ''
+      lat_weight:
+        description: 'Weight of the per-edge latency-rise signal, which credits the CALLEE of a call whose span duration rose (empty = the runner default, which is 0 = disabled). It needs rcabench-latency-full or newer, whose shards carry traceEdgeLatency'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -213,6 +217,10 @@ jobs:
           if [ -n "${{ inputs.failed_edge_min_records }}" ]; then
             FAILED_EDGE_MIN_ARG=(--failed-edge-min-records "${{ inputs.failed_edge_min_records }}")
           fi
+          LAT_ARG=()
+          if [ -n "${{ inputs.lat_weight }}" ]; then
+            LAT_ARG=(--lat-weight "${{ inputs.lat_weight }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             "${LOG_WEIGHT_ARG[@]}" \
@@ -222,6 +230,7 @@ jobs:
             "${FAILED_EDGE_ARG[@]}" \
             "${FAILED_EDGE_MODE_ARG[@]}" \
             "${FAILED_EDGE_MIN_ARG[@]}" \
+            "${LAT_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

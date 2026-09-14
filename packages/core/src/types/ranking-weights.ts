@@ -26,6 +26,7 @@
  *                 + traceWeight     × traceActivity(v)
  *                 + prismWeight     × prismScore(v)
  *                 + failedEdgeWeight × failedEdgeScore(v)
+ *                 + latWeight       × latScore(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -101,4 +102,31 @@ export interface RankingWeights {
    * OPTIONAL: absent means 0 (disabled).
    */
   readonly failedEdgeWeight?: number;
+  /**
+   * Per-edge latency-rise prior: rewards a service that its CALLERS' spans
+   * spent longer waiting on (the callee of an edge whose mean span duration
+   * rose after the injection).
+   *
+   *   finalScore(v) += latWeight × latScore(v)
+   *
+   * `latScore(v)` is the largest `postMeanMs / preMeanMs` over the edges
+   * `caller → v`, compressed with `log1p(max(0, rise − 1))` and max-normalised
+   * into [0, 1].
+   *
+   * The CONTINUOUS counterpart of {@link RankingWeights.failedEdgeWeight}: that
+   * one counts FAILURES, so a call that became slow but still succeeded is
+   * invisible to it, and so is a case where no call failed at all — 70 of the
+   * 291 silent-source cases. Duration is what the caller recorded about the
+   * callee, so this carries the same direction and exists exactly where the
+   * counts are zero.
+   *
+   * Measured on FSE'26: a JVM memory-stress source's inbound rise is 3.574 at
+   * the median and 14.79 at p90 against a ReplaceCode source's 0.976, and
+   * ranking on this term alone reaches 33.3% on that block against a shipped
+   * 2.3%. It is inert on ReplaceCode, so it is a term for the silent-source
+   * faults rather than a repair for that type.
+   *
+   * OPTIONAL: absent means 0 (disabled).
+   */
+  readonly latWeight?: number;
 }

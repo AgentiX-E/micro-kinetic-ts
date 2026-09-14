@@ -143,6 +143,15 @@ export interface Fse26CliOptions {
    * 1 = the shipped behaviour.
    */
   readonly failedEdgeMinRecords: number;
+  /**
+   * Strength of the per-edge LATENCY-rise signal (0 = disabled, the shipped
+   * behaviour).
+   *
+   * Credits the callee of an edge whose mean span duration rose, which is the
+   * same direction as the failed-edge signal but exists on the cases where no
+   * call failed at all. Ablation switch.
+   */
+  readonly latWeight: number;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -180,6 +189,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     failedEdgeWeight: 0,
     failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
     failedEdgeMinRecords: 1,
+    latWeight: 0,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -232,6 +242,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // reproduces a published configuration instead of inventing one.
       const weight = Number(argv[++i]!);
       opts.failedEdgeWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
+    } else if (arg === '--lat-weight' && i + 1 < argv.length) {
+      // Same strictness and the same safe fallback as the two weights above: the
+      // SHIPPED weight is 0 (the term is off), so a typo reproduces a published
+      // configuration instead of inventing an unmeasured one.
+      const weight = Number(argv[++i]!);
+      opts.latWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
     }
   }
 

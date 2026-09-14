@@ -29,6 +29,7 @@
 
 import type {
   CallEdge,
+  FaultEdgeLatency,
   FaultFailedEdge,
   FaultLogEntry,
   ServiceId,
@@ -1044,5 +1045,77 @@ export function computeFailedEdgeScores(
   for (const [callee, value] of aggregate) {
     scores.set(callee, value / max);
   }
+  return scores;
+}
+
+/**
+ * Per-callee inbound latency rise, max-normalised into [0, 1].
+ *
+ * The CONTINUOUS counterpart of {@link computeFailedEdgeScores}. That one counts
+ * FAILURES, so a call that became slow but still succeeded is invisible to it —
+ * and so is a case where no call failed at all, which is 70 of the 291
+ * silent-source cases. Duration is what the CALLER recorded about the callee, so
+ * this carries the same direction and is defined exactly where the counts are
+ * zero.
+ *
+ * Measured on FSE'26: a JVM memory-stress source's inbound rise is 3.574 at the
+ * median and 14.79 at p90, against a ReplaceCode source's 0.976, and ranking on
+ * this term alone reaches 33.3% on that block against a shipped 2.3%. It is inert
+ * on ReplaceCode (source 0.976 vs winner 0.975), so it is a term for the
+ * silent-source faults rather than a repair for that type.
+ *
+ * Three shape decisions:
+ *
+ * - a callee is credited on its LARGEST inbound rise, not its mean: one caller
+ *   going from 1 ms to 2 s is the signal, and averaging it against twenty
+ *   unchanged callers would bury it;
+ * - the rise is compressed with `log1p(max(0, r − 1))` before normalising,
+ *   because the measured range spans 0.3 to 2048 and a linear scale would let one
+ *   pathological caller own every case;
+ * - an edge with an endpoint outside the graph, or a self-call, is ignored —
+ *   same rule as the failed-edge signal, and for the same reason: an unrankable
+ *   service must not enter the normalisation every candidate is scored against.
+ *
+ * @param edges - Per-edge latency records, or `undefined` when not recorded.
+ * @param nodeIds - The in-graph services.
+ * @returns Normalised scores. A callee with no usable measurement is ABSENT from
+ *   the map rather than present with a 0, so the term is 0 for it without
+ *   fabricating a measurement that was never taken.
+ */
+export function computeEdgeLatencyScores(
+  edges: ReadonlyArray<FaultEdgeLatency> | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (edges === undefined || edges.length === 0) return scores;
+
+  const rise = new Map<ServiceId, number>();
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.caller) || !nodeIds.has(edge.callee)) continue;
+    if (edge.caller === edge.callee) continue;
+    if (!Number.isFinite(edge.preMeanMs) || !Number.isFinite(edge.postMeanMs)) continue;
+    // A non-positive baseline would divide to Infinity. The converter already
+    // excludes it; the guard is here so a hand-built case cannot poison the
+    // case maximum and thereby rescale every other candidate.
+    if (edge.preMeanMs <= 0) continue;
+    const value = edge.postMeanMs / edge.preMeanMs;
+    const previous = rise.get(edge.callee);
+    if (previous === undefined || value > previous) rise.set(edge.callee, value);
+  }
+  if (rise.size === 0) return scores;
+
+  let max = 0;
+  const compressed = new Map<ServiceId, number>();
+  for (const [callee, value] of rise) {
+    const magnitude = Math.log1p(Math.max(0, value - 1));
+    compressed.set(callee, magnitude);
+    if (magnitude > max) max = magnitude;
+  }
+  // Every measurable edge got FASTER, so there is no rise to normalise against.
+  // Crediting nobody is the correct reading; dividing by a zero maximum would
+  // emit NaN into every final score in the case instead.
+  if (max <= 0) return scores;
+
+  for (const [callee, value] of compressed) scores.set(callee, value / max);
   return scores;
 }

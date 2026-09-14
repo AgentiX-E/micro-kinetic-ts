@@ -74,6 +74,7 @@ export {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
   computeDeepestExceptions,
+  computeEdgeLatencyScores,
   computeFailedEdgeScores,
   computeHttpEmitterDominance,
   computeHttpVictimSet,

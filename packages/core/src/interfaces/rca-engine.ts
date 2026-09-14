@@ -209,6 +209,19 @@ export interface BuildFaultGraphOptions {
    * normalisation either.
    */
   readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge>;
+  /**
+   * Per-edge span latency before and after the injection, as the CALLER
+   * measured it. Drives the latency-rise signal — the continuous counterpart of
+   * `failedTraceEdges`, which counts failures and is therefore blind to a call
+   * that became slow but still succeeded.
+   *
+   * Absent means "not recorded", never "nothing got slower": the converter
+   * writes the key only when at least one edge has a usable measurement on both
+   * sides, and the loader maps an empty list to `undefined` for the same
+   * reason. Edges naming a service outside the call graph are ignored by the
+   * signal, so a trace-only service cannot enter its normalisation either.
+   */
+  readonly edgeLatency?: ReadonlyArray<FaultEdgeLatency>;
 }
 
 export interface IRCAEngine {
