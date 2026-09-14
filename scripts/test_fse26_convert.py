@@ -1945,5 +1945,173 @@ class TestModuleEntrypoints(unittest.TestCase):
         self.assertEqual(code, 1)
 
 
+class TestReadEdgeLatency(unittest.TestCase):
+    """`read_edge_latency` emits per-edge mean duration before and after the
+    injection — the observable that exists where the failure counts are zero."""
+
+    def _write_traces(
+        self, root: Path, name: str, rows: list[tuple[str, str, str, str, float | None]]
+    ) -> Path:
+        """Write traces from (trace_id, span_id, parent_span_id, service, duration_ns)."""
+        path = root / name
+        pl.DataFrame(
+            {
+                "trace_id": [r[0] for r in rows],
+                "span_id": [r[1] for r in rows],
+                "parent_span_id": [r[2] for r in rows],
+                "service_name": [r[3] for r in rows],
+                # A 4-tuple is a parent span with no duration of its own, which is the
+                # shape the root spans take in every other fixture in this file.
+                "duration": [(r[4] if len(r) > 4 else None) for r in rows],
+            },
+            schema_overrides={"duration": pl.Float64},
+        ).write_parquet(path)
+        return path
+
+    def test_reports_pre_and_post_mean_in_milliseconds(self) -> None:
+        # 1_000_000 ns is 1 ms, so the conversion is visible in the assertion rather
+        # than implied by it.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [("t1", "s0", "", "ts-ui"), ("t1", "s1", "s0", "ts-order", 1_000_000.0)],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t2", "s2", "", "ts-ui"),
+                    ("t2", "s3", "s2", "ts-order", 5_000_000.0),
+                    ("t3", "s4", "", "ts-ui"),
+                    ("t3", "s5", "s4", "ts-order", 9_000_000.0),
+                ],
+            )
+            rows = conv.read_edge_latency(normal, abnormal)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], "ts-ui")
+        self.assertEqual(rows[0][1], "ts-order")
+        self.assertAlmostEqual(rows[0][2], 1.0)
+        self.assertAlmostEqual(rows[0][3], 7.0)
+
+    def test_drops_an_edge_that_has_spans_in_only_one_window(self) -> None:
+        # A rise needs both sides. Emitting a null would push a null into JSON, and
+        # treating a missing window as zero would fabricate an infinite rise — so
+        # the reader reports a comparison or nothing. Modelled with a DIFFERENT edge
+        # in the pre window rather than an empty file: a zero-row frame built from
+        # empty Python lists has Null-typed columns, which is a fixture artefact
+        # rather than a data shape a real parquet file produces.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [("t0", "p0", "", "ts-other"), ("t0", "p1", "p0", "ts-elsewhere", 1_000_000.0)],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t1", "s0", "", "ts-ui"), ("t1", "s1", "s0", "ts-order", 2_000_000.0)],
+            )
+            rows = conv.read_edge_latency(normal, abnormal)
+
+        self.assertEqual(rows, [])
+
+    def test_excludes_self_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            writes = [
+                ("t1", "s0", "", "ts-order"),
+                ("t1", "s1", "s0", "ts-order", 1_000_000.0),
+            ]
+            normal = self._write_traces(root, "normal_traces.parquet", writes)
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t2", "s2", "", "ts-order"), ("t2", "s3", "s2", "ts-order", 3_000_000.0)],
+            )
+            rows = conv.read_edge_latency(normal, abnormal)
+
+        self.assertEqual(rows, [])
+
+    def test_ignores_non_finite_and_non_positive_durations(self) -> None:
+        # The same guard the derived-metrics reader applies: a zero or negative span
+        # duration is not a measurement, and leaving one in the mean would drag it
+        # toward zero while looking like a real observation.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t1", "s0", "", "ts-ui"),
+                    ("t1", "s1", "s0", "ts-order", 4_000_000.0),
+                    ("t2", "s2", "", "ts-ui"),
+                    ("t2", "s3", "s2", "ts-order", 0.0),
+                    ("t3", "s4", "", "ts-ui"),
+                    ("t3", "s5", "s4", "ts-order", None),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [("t4", "s6", "", "ts-ui"), ("t4", "s7", "s6", "ts-order", 8_000_000.0)],
+            )
+            rows = conv.read_edge_latency(normal, abnormal)
+
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0][2], 4.0)
+
+    def test_degrades_to_empty_when_the_duration_column_is_absent(self) -> None:
+        # A datapack that cannot answer this contributes nothing, rather than a row
+        # of zeros that would read as a measured flat latency.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "normal_traces.parquet"
+            pl.DataFrame(
+                {
+                    "trace_id": ["t1", "t1"],
+                    "span_id": ["s0", "s1"],
+                    "parent_span_id": ["", "s0"],
+                    "service_name": ["ts-ui", "ts-order"],
+                }
+            ).write_parquet(path)
+
+            rows = conv.read_edge_latency(path, root / "missing.parquet")
+
+        self.assertEqual(rows, [])
+
+    def test_output_is_ordered_by_edge_regardless_of_input_order(self) -> None:
+        # Polars' grouping keeps no stable order, so an identical datapack could
+        # otherwise produce different bytes on each build.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            normal = self._write_traces(
+                root,
+                "normal_traces.parquet",
+                [
+                    ("t1", "a0", "", "ts-z"),
+                    ("t1", "a1", "a0", "ts-a", 1_000_000.0),
+                    ("t2", "b0", "", "ts-a"),
+                    ("t2", "b1", "b0", "ts-z", 2_000_000.0),
+                ],
+            )
+            abnormal = self._write_traces(
+                root,
+                "abnormal_traces.parquet",
+                [
+                    ("t3", "c0", "", "ts-z"),
+                    ("t3", "c1", "c0", "ts-a", 5_000_000.0),
+                    ("t4", "d0", "", "ts-a"),
+                    ("t4", "d1", "d0", "ts-z", 6_000_000.0),
+                ],
+            )
+            rows = conv.read_edge_latency(normal, abnormal)
+
+        self.assertEqual([(r[0], r[1]) for r in rows], [("ts-a", "ts-z"), ("ts-z", "ts-a")])
+
+
 if __name__ == "__main__":
     unittest.main()

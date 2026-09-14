@@ -905,6 +905,105 @@ def read_failed_trace_edges(
     ]
 
 
+def read_edge_latency(normal_path: Path, abnormal_path: Path) -> list[list[Any]]:
+    """
+    Emit per-edge mean span duration, before and after the injection.
+
+    `read_failed_trace_edges` counts FAILURES, so a call that became slow but still
+    succeeded is invisible to it — and so is a datapack where no call failed at all.
+    Those are the cases the failed-edge signal cannot speak about: 70 of the 291
+    silent-source cases and 160 of the 357 wrong cases in the last dump. Duration is
+    a continuous magnitude the CALLER recorded about the callee, so it carries the
+    same direction the counts do and exists where the counts are zero.
+
+    A separate reader rather than an extension of `read_failed_trace_edges`, whose
+    contract is "failed calls only" (`failed > 0`) and whose determinism argument
+    rests on the deduplicated join over that filtered subset. Widening it would
+    change both its meaning and that argument; a new reader keeps each exact.
+
+    `duration` is nanoseconds in the source, converted to milliseconds with the same
+    guard `read_trace_derived_metrics` uses (finite and strictly positive), so the
+    two readers cannot disagree about which spans are measurable.
+
+    Returns `[caller, callee, preMeanMs, postMeanMs]` rows sorted by
+    `(caller, callee)`. Sorted for the same reason as its sibling: polars' grouping
+    keeps no stable order, so an identical datapack could otherwise produce
+    different bytes on each build. Degrades to an empty list when the duration
+    column is absent, so a datapack that cannot answer this contributes nothing
+    rather than a fabricated zero.
+    """
+    frames: list[pl.DataFrame] = []
+    for path, is_abnormal in ((normal_path, False), (abnormal_path, True)):
+        if not path.exists():
+            continue
+        if "duration" not in pl.read_parquet_schema(path):
+            continue
+        frames.append(
+            pl.read_parquet(
+                path,
+                columns=["trace_id", "span_id", "parent_span_id", "service_name", "duration"],
+            ).with_columns(pl.lit(is_abnormal).alias("__abnormal"))
+        )
+    if not frames:
+        return []
+
+    df = pl.concat(frames).rename({"service_name": "service"})
+    df = df.filter(
+        pl.col("service").is_not_null()
+        & pl.col("span_id").is_not_null()
+        & pl.col("trace_id").is_not_null()
+    )
+
+    # The parent lookup is scoped by the ID columns ONLY, never by the metric being
+    # measured. A span is a candidate PARENT regardless of whether its own duration
+    # is usable — and in practice a root or instrumentation span often carries none —
+    # so filtering on duration first would delete the parents and leave their
+    # children unresolvable. That is a silent loss of the busiest edges.
+    parents = df.select(
+        pl.col("span_id").alias("parent_span_id"),
+        pl.col("service").alias("parent_service"),
+    ).unique(subset=["parent_span_id"], keep="first")
+
+    measurable = df.filter(
+        pl.col("duration").is_not_null()
+        & pl.col("duration").is_finite()
+        & (pl.col("duration") > 0.0)
+    ).with_columns((pl.col("duration").cast(pl.Float64) / 1_000_000.0).alias("__ms"))
+
+    joined = measurable.join(parents, on="parent_span_id", how="inner")
+    joined = joined.filter(pl.col("parent_service") != pl.col("service"))
+
+    grouped = (
+        joined.group_by(["parent_service", "service"])
+        .agg(
+            pl.col("__abnormal").not_().mean().alias("__pre_present"),
+            pl.col("__abnormal").mean().alias("__post_present"),
+            pl.col("__ms").filter(pl.col("__abnormal").not_()).mean().alias("pre_mean_ms"),
+            pl.col("__ms").filter(pl.col("__abnormal")).mean().alias("post_mean_ms"),
+        )
+        # A window with no spans on one side cannot state a rise, and emitting a
+        # null would push a `null` into JSON. Drop the edge instead: this reader
+        # reports a comparison or nothing.
+        .filter(
+            (pl.col("__pre_present") > 0)
+            & (pl.col("__post_present") > 0)
+            & pl.col("pre_mean_ms").is_not_null()
+            & pl.col("post_mean_ms").is_not_null()
+        )
+        .sort(["parent_service", "service"])
+    )
+
+    return [
+        [
+            row["parent_service"],
+            row["service"],
+            float(row["pre_mean_ms"]),
+            float(row["post_mean_ms"]),
+        ]
+        for row in grouped.iter_rows(named=True)
+    ]
+
+
 def read_logs(normal_path: Path, abnormal_path: Path) -> list[dict[str, Any]]:
     """
     Read normal + abnormal logs and normalise to the loader's schema.
@@ -1010,6 +1109,16 @@ def build_case(src_dir: Path) -> dict[str, Any]:
     )
     if failed_edges:
         case["failedTraceEdges"] = failed_edges
+
+    # How long each callee took to answer each caller, before and after. A NEW key
+    # rather than a wider row: the loader ignores keys it does not know, so this is
+    # additive and an existing cache stays readable — no format break, and therefore
+    # no version bump until a signal consumes it.
+    edge_latency = read_edge_latency(
+        src_dir / "normal_traces.parquet", src_dir / "abnormal_traces.parquet"
+    )
+    if edge_latency:
+        case["traceEdgeLatency"] = edge_latency
 
     logs = read_logs(src_dir / "normal_logs.parquet", src_dir / "abnormal_logs.parquet")
     if logs:
