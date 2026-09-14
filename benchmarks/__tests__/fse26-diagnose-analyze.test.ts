@@ -18,11 +18,13 @@ import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/ind
 import type { DiagnosedCase } from '../src/fse26-diagnose-analyze.js';
 import {
   anomalyShape,
+  classifyMiss,
   diffDiagnostics,
   familyCompetition,
   formatAnomalyShapeReport,
   formatDiagnoseComparison,
   formatMetricCompetitionReport,
+  formatMissReport,
   isTop1Correct,
   parseDiagnosticDump,
   regressionMechanism,
@@ -1204,5 +1206,276 @@ describe('anomalyShape', () => {
     expect(formatAnomalyShapeReport(cases, 'dump.txt')).toMatch(
       /\n {2}other predicted \/ bystander\s+1\s+1\s+0\s+0\s+1\s+0\s+0\.50\s+0\n/,
     );
+  });
+});
+
+describe('classifyMiss', () => {
+  /**
+   * One case whose Top@1 is wrong, parameterised by the two scored terms.
+   *
+   * The source is always `ts-src` and the winner always `ts-win`, so a reader can
+   * see at a glance which term the fixture moved.
+   */
+  function wrongCase(
+    source: { selfAnomaly: number; logScore: number; logic?: number },
+    winner: { selfAnomaly: number; logScore: number; logic?: number },
+  ) {
+    return parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', ...source }),
+          serviceLine({ serviceId: 'ts-win', ...winner }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+      }),
+    )[0]!;
+  }
+
+  it('attributes nothing when Top@1 is already correct', () => {
+    const kase = parseDiagnosticDump(
+      dump({
+        services: [
+          serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 1 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.2 }),
+        ],
+        topPredictions: ['ts-order-service', 'ts-win'],
+      }),
+    )[0]!;
+    expect(classifyMiss(kase, { logWeight: 1 })).toEqual([]);
+  });
+
+  it('attributes a loss to the METRIC term when only the anomaly is higher', () => {
+    const [miss] = classifyMiss(
+      wrongCase({ selfAnomaly: 0.4, logScore: 0 }, { selfAnomaly: 0.9, logScore: 0 }),
+      { logWeight: 1 },
+    );
+    expect(miss!.decidedBy).toBe('metric');
+    expect(miss!.source).toBe('ts-src');
+    expect(miss!.winner).toBe('ts-win');
+  });
+
+  it('attributes a loss to the LOG term when only the log score is higher', () => {
+    const [miss] = classifyMiss(
+      wrongCase({ selfAnomaly: 0.8, logScore: 0 }, { selfAnomaly: 0.8, logScore: 1 }),
+      { logWeight: 1 },
+    );
+    expect(miss!.decidedBy).toBe('log');
+  });
+
+  it('attributes a loss to BOTH when each term points at the winner', () => {
+    const [miss] = classifyMiss(
+      wrongCase({ selfAnomaly: 0.3, logScore: 0 }, { selfAnomaly: 0.9, logScore: 1 }),
+      { logWeight: 1 },
+    );
+    expect(miss!.decidedBy).toBe('both');
+  });
+
+  it('reports a TIE when the two scored terms are equal', () => {
+    // Equal terms mean the deterministic service-id tiebreak decided the order.
+    // That is a missing discrimination, not a signal pointing the wrong way, and
+    // the report has to keep the two apart.
+    const [miss] = classifyMiss(
+      wrongCase({ selfAnomaly: 0.5, logScore: 0.4 }, { selfAnomaly: 0.5, logScore: 0.4 }),
+      { logWeight: 1 },
+    );
+    expect(miss!.decidedBy).toBe('tie');
+  });
+
+  it('reports UNEXPLAINED when the winner scores strictly LOWER', () => {
+    // The engine ordered a service below one with a strictly higher score. No
+    // modelling story explains that, so the category exists to make a bug
+    // impossible to mistake for a result.
+    const [miss] = classifyMiss(
+      wrongCase({ selfAnomaly: 1, logScore: 1 }, { selfAnomaly: 0.1, logScore: 0 }),
+      { logWeight: 1 },
+    );
+    expect(miss!.decidedBy).toBe('unexplained');
+  });
+
+  it('scales the log term by the weight it is given', () => {
+    // A log gap of 0.2 is enough to overturn a small metric gap at weight 1 and
+    // not at weight 0.1 — which is why the CLI makes the weight a value rather
+    // than a default.
+    const kase = wrongCase({ selfAnomaly: 0.5, logScore: 0 }, { selfAnomaly: 0.4, logScore: 0.2 });
+    expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('log');
+    expect(classifyMiss(kase, { logWeight: 0.1 })[0]!.decidedBy).toBe('unexplained');
+  });
+
+  it('reports ABSENT for a dump with no ground truth at all', () => {
+    // `GT=[]` is what a case with an unresolvable label produces. There is no
+    // source to attribute against, so the case is unattributable rather than
+    // attributed to the empty string.
+    const kase = parseDiagnosticDump(
+      dump({
+        groundTruthServices: [],
+        services: [serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 })],
+        topPredictions: ['ts-win'],
+      }),
+    )[0]!;
+    const [miss] = classifyMiss(kase, { logWeight: 1 });
+    expect(miss!.decidedBy).toBe('absent');
+    expect(miss!.source).toBe('');
+    expect(Number.isNaN(miss!.sourceAnomaly)).toBe(true);
+  });
+
+  it('reports ABSENT for a dump with no prediction at all', () => {
+    // `prediction=[]` is a case the engine returned nothing for. There is no
+    // winner to score against, and reading the winner's terms as 0 would
+    // fabricate the comparison.
+    const kase = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 })],
+        topPredictions: [],
+      }),
+    )[0]!;
+    const [miss] = classifyMiss(kase, { logWeight: 1 });
+    expect(miss!.decidedBy).toBe('absent');
+    expect(miss!.winner).toBeUndefined();
+    expect(Number.isNaN(miss!.winnerAnomaly)).toBe(true);
+    expect(miss!.sourceAnomaly).toBe(0.4);
+  });
+
+  it('detects a weight that is not the one the run used', () => {
+    // A dump's ORDER is only consistent with the weight that produced it, so
+    // passing a different weight does not yield a different attribution — it
+    // yields `unexplained`, because at that weight the winner scores strictly
+    // lower than the source and no ranking could have produced this dump.
+    //
+    // That is the property that makes `unexplained` worth its own category: a
+    // report full of them means the weight handed to the analyzer is wrong, not
+    // that the signal is.
+    const kase = wrongCase({ selfAnomaly: 0.5, logScore: 0 }, { selfAnomaly: 0.4, logScore: 0.2 });
+
+    // At the run's own weight the loss is fully explained by the log term.
+    expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('log');
+    // At any weight too small to explain it, the same dump reads as inconsistent.
+    expect(classifyMiss(kase, { logWeight: 0.1 })[0]!.decidedBy).toBe('unexplained');
+  });
+
+  it('reports ABSENT when the source is not in the dump at all', () => {
+    // A source the engine never scored is an anomaly-detection or coverage
+    // question; nothing about its evidence can be read from this dump.
+    const kase = parseDiagnosticDump(
+      dump({
+        services: [serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 })],
+        topPredictions: ['ts-win'],
+      }),
+    )[0]!;
+    const [miss] = classifyMiss(kase, { logWeight: 1 });
+    expect(miss!.decidedBy).toBe('absent');
+    expect(Number.isNaN(miss!.sourceAnomaly)).toBe(true);
+  });
+
+  it('reports ABSENT, with NaN rather than zero, when the WINNER is not described', () => {
+    // A hand-edited or truncated dump can name a winner it does not describe.
+    // Reporting 0 for that winner's terms would read as "scored and credited
+    // nothing" and would silently attribute the loss to the other term.
+    const tampered = dump({
+      groundTruthServices: ['ts-src'],
+      services: [serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 })],
+      topPredictions: ['ts-win'],
+    });
+    const [miss] = classifyMiss(parseDiagnosticDump(tampered)[0]!, { logWeight: 1 });
+
+    expect(miss!.decidedBy).toBe('absent');
+    expect(miss!.winner).toBe('ts-win');
+    expect(Number.isNaN(miss!.winnerAnomaly)).toBe(true);
+    expect(Number.isNaN(miss!.winnerLog)).toBe(true);
+    // The source IS described, so its own terms are still reported.
+    expect(miss!.sourceAnomaly).toBe(0.4);
+  });
+
+  it('flags whether each side emitted error evidence', () => {
+    // The silent-source question: a miss where NEITHER side emits cannot be moved
+    // by reweighting the log signal, so the report counts them apart.
+    const [miss] = classifyMiss(
+      wrongCase({ selfAnomaly: 0.4, logScore: 0, logic: 0 }, { selfAnomaly: 0.9, logScore: 0 }),
+      { logWeight: 1 },
+    );
+    expect(miss!.sourceEmits).toBe(false);
+    expect(miss!.winnerEmits).toBe(false);
+
+    const [emitting] = classifyMiss(
+      wrongCase({ selfAnomaly: 0.4, logScore: 0, logic: 3 }, { selfAnomaly: 0.9, logScore: 0 }),
+      { logWeight: 1 },
+    );
+    expect(emitting!.sourceEmits).toBe(true);
+  });
+});
+
+describe('formatMissReport', () => {
+  it('tallies every kind, the silent block, and each fault type', () => {
+    const text = dump({
+      faultType: 'JVMMemoryStress',
+      groundTruthServices: ['ts-src'],
+      services: [
+        // metric-decided, both sides silent
+        serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+      ],
+      topPredictions: ['ts-win', 'ts-src'],
+    });
+    const cases = parseDiagnosticDump(text);
+    const report = formatMissReport(cases, { logWeight: 1 });
+
+    expect(report).toContain('wrong cases: 1');
+    // Whitespace-insensitive: the column width is presentation, the TALLY is the
+    // assertion, and pinning the padding would make a reformat look like a defect.
+    expect(report).toMatch(/\n {2}metric\s+1\n/);
+    expect(report).toContain('silent both sides (no error evidence either side): 1');
+    // The per-type row is the report's last line, and the report deliberately
+    // carries no trailing newline, so the anchor is `$` and not `\n`.
+    expect(report).toMatch(/JVMMemoryStress\s+wrong=1 silent=1 metric=1$/);
+  });
+
+  it('says nothing about kinds that did not occur', () => {
+    // A zero row is noise in a report that is read to decide what to fix next.
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+      }),
+    );
+    const report = formatMissReport(cases, { logWeight: 1 });
+    expect(report).not.toContain('unexplained');
+    expect(report).not.toContain('absent');
+  });
+
+  it('accumulates several wrong cases of the same fault type', () => {
+    // The first case of a type creates the bucket and the rest append to it; a
+    // report that only ever saw one case per type would have an untested append.
+    const one = dump({
+      datapack: 'dp-1',
+      faultType: 'ContainerKill',
+      groundTruthServices: ['ts-src'],
+      services: [
+        serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+      ],
+      topPredictions: ['ts-win', 'ts-src'],
+    });
+    const two = one.replace('datapack=dp-1', 'datapack=dp-2');
+    const report = formatMissReport(parseDiagnosticDump(one + two), { logWeight: 1 });
+
+    expect(report).toContain('wrong cases: 2');
+    expect(report).toMatch(/ContainerKill\s+wrong=2 silent=2 metric=2/);
+  });
+
+  it('reports zero wrong cases for a dump whose every case is correct', () => {
+    const cases = parseDiagnosticDump(
+      dump({
+        services: [serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 1 })],
+        topPredictions: ['ts-order-service'],
+      }),
+    );
+    const report = formatMissReport(cases, { logWeight: 1 });
+    expect(report).toContain('wrong cases: 0');
+    expect(report).toContain('silent both sides (no error evidence either side): 0');
   });
 });

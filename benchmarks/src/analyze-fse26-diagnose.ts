@@ -44,6 +44,7 @@ import {
   formatAnomalyShapeReport,
   formatDiagnoseComparison,
   formatMetricCompetitionReport,
+  formatMissReport,
   parseDiagnosticDump,
 } from './fse26-diagnose-analyze.js';
 
@@ -59,6 +60,14 @@ interface FamilyOptions {
   readonly dump: string;
   /** Present only when `--family` was given; the shape report needs none. */
   readonly family: MetricFamily | undefined;
+  /**
+   * The run's log weight, present only when `--misses` was given.
+   *
+   * It is a VALUE rather than a bare switch on purpose: attributing each miss
+   * needs the scale the log term actually ran at, and a defaulted weight would
+   * attribute losses to a term at a scale the run never used.
+   */
+  readonly logWeight: number | undefined;
   readonly output: string | undefined;
 }
 
@@ -66,7 +75,8 @@ type CliOptions = ComparisonOptions | FamilyOptions;
 
 const USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
-  '--dump <dump> [--family <regex>] [--family-label <name>] [--output <file>]';
+  '--dump <dump> [--family <regex>] [--family-label <name>] [--misses <logWeight>] ' +
+  '[--output <file>]';
 
 function parseArgs(argv: readonly string[]): CliOptions {
   const values = new Map<string, string>();
@@ -81,6 +91,17 @@ function parseArgs(argv: readonly string[]): CliOptions {
   const dump = values.get('dump');
   if (dump !== undefined) {
     const family = values.get('family');
+    const misses = values.get('misses');
+    let logWeight: number | undefined;
+    if (misses !== undefined) {
+      // STRICT: a weight that is not a finite number would attribute every miss
+      // to a scale nobody chose, and the report would look like a measurement.
+      const parsed = Number(misses);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`--misses expects the run's log weight, got '${misses}'\n${USAGE}`);
+      }
+      logWeight = parsed;
+    }
     return {
       kind: 'dump',
       dump,
@@ -90,6 +111,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
         family === undefined
           ? undefined
           : { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
+      logWeight,
       output,
     };
   }
@@ -116,6 +138,9 @@ const report =
         const sections = [formatAnomalyShapeReport(cases, opts.dump)];
         if (opts.family !== undefined) {
           sections.unshift(formatMetricCompetitionReport(cases, opts.family, opts.dump));
+        }
+        if (opts.logWeight !== undefined) {
+          sections.unshift(formatMissReport(cases, { logWeight: opts.logWeight }));
         }
         return sections.join('\n');
       })();

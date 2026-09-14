@@ -515,6 +515,234 @@ export function regressionMechanism(
  * which labels constitute a fault signature is a property of the fault under
  * investigation, not of the dump format.
  */
+/**
+ * Which scored term decided a Top@1 miss.
+ *
+ * The engine's own order is `log1p(selfAnomaly) + logWeight × logScore` when the
+ * other priors are off, and the dump carries both inputs — so every miss can be
+ * ATTRIBUTED rather than guessed. Each value names a different defect, which is
+ * why they are separate values and not one "wrong" bucket:
+ *
+ * - `metric` — the winner's own anomaly is higher. The ranking had nothing else
+ *   to go on; the loss is an anomaly-signal problem.
+ * - `log` — the winner's log score is higher. The engine saw error evidence
+ *   pointing at the winner.
+ * - `both` — both terms favour the winner.
+ * - `tie` — the two terms are equal, so the deterministic service-id tiebreak
+ *   decided it. Not a signal failure; a missing discrimination.
+ * - `unexplained` — the winner's terms do NOT explain the loss, i.e. the engine
+ *   ordered a service below one with a strictly higher score. That is a defect in
+ *   the engine or in the dump, never a modelling result, so it is its own value
+ *   and a report showing any of them is reporting a bug.
+ * - `absent` — either service the attribution needs (the source or the winner) is
+ *   missing from this dump's service list. The case cannot be attributed from this
+ *   dump at all: the fields are reported as `NaN`, never 0, because a fabricated
+ *   zero would read as "measured and credited nothing", which is a different
+ *   statement and the wrong one to build a next step on.
+ */
+export type MissDecidedBy = 'metric' | 'log' | 'both' | 'tie' | 'unexplained' | 'absent';
+
+/** How one wrong case was decided. */
+export interface MissClassification {
+  readonly datapack: string;
+  readonly faultType: string;
+  readonly source: string;
+  readonly winner: string | undefined;
+  readonly decidedBy: MissDecidedBy;
+  readonly sourceAnomaly: number;
+  readonly winnerAnomaly: number;
+  readonly sourceLog: number;
+  readonly winnerLog: number;
+  /**
+   * Whether the service emitted any post-injection ERROR/FATAL line. The
+   * distinction that matters for the silent-source block: a miss where NEITHER
+   * side emits is a case the log signal structurally cannot decide, so it needs a
+   * different signal rather than a reweighting.
+   */
+  readonly sourceEmits: boolean;
+  readonly winnerEmits: boolean;
+}
+
+/** The only prior a dump's DIAG blocks can be attributed with. */
+export interface MissAttributionWeights {
+  /**
+   * The run's log weight. Required, because the log term is one of the two terms
+   * the dump carries and its SCALE decides the attribution.
+   */
+  readonly logWeight: number;
+}
+
+/** Float tolerance for "the two scores are equal". */
+const SCORE_EPSILON = 1e-9;
+
+/** Whether a service carries any post-injection error evidence. */
+function emits(service: DiagnosedService): boolean {
+  return service.errorCount + service.fatalCount + service.logicExceptionCount > 0;
+}
+
+/** The order the miss kinds are reported and tallied in. */
+const MISS_ORDER: readonly MissDecidedBy[] = [
+  'metric',
+  'log',
+  'both',
+  'tie',
+  'unexplained',
+  'absent',
+];
+
+/**
+ * Attribute a case's Top@1 miss.
+ *
+ * Exact only for a run whose ONLY non-zero prior is the log weight: the dump
+ * carries `selfAnomaly` and `logScore` and nothing else, so any other term's
+ * contribution is invisible here. `weights` therefore names just that one, and a
+ * caller with a different configuration must not use this — it would attribute a
+ * loss to a term it cannot see.
+ *
+ * @param kase - One parsed case.
+ * @param weights - The run's log weight.
+ * @returns One classification, or `[]` when Top@1 was already correct.
+ */
+export function classifyMiss(
+  kase: DiagnosedCase,
+  weights: MissAttributionWeights,
+): MissClassification[] {
+  if (isTop1Correct(kase)) return [];
+
+  const winner = kase.prediction[0];
+  const source = kase.groundTruth[0] ?? '';
+  const byId = new Map(kase.services.map((s) => [s.serviceId, s]));
+  const win = winner === undefined ? undefined : byId.get(winner);
+  const src = byId.get(source);
+
+  // Attribution needs BOTH services. If either is missing the case cannot be
+  // attributed from this dump, and every field it would have contributed is
+  // reported as `NaN` — never as 0, which would read as a measurement.
+  if (src === undefined || win === undefined) {
+    return [
+      {
+        datapack: kase.datapack,
+        faultType: kase.faultType,
+        source,
+        winner,
+        decidedBy: 'absent',
+        sourceAnomaly: src?.selfAnomaly ?? Number.NaN,
+        winnerAnomaly: win?.selfAnomaly ?? Number.NaN,
+        sourceLog: src?.logScore ?? Number.NaN,
+        winnerLog: win?.logScore ?? Number.NaN,
+        sourceEmits: src === undefined ? false : emits(src),
+        winnerEmits: win === undefined ? false : emits(win),
+      },
+    ];
+  }
+
+  // Both services are known from here on, so every term below is read from a real
+  // row and no fallback exists that coverage could never reach.
+  const metricPart = Math.log1p(win.selfAnomaly) - Math.log1p(src.selfAnomaly);
+  const logPart = weights.logWeight * (win.logScore - src.logScore);
+  const gap = metricPart + logPart;
+
+  let decidedBy: MissDecidedBy;
+  if (Math.abs(gap) <= SCORE_EPSILON) decidedBy = 'tie';
+  else if (gap < 0) decidedBy = 'unexplained';
+  else if (metricPart > 0 && logPart > 0) decidedBy = 'both';
+  else if (logPart > 0) decidedBy = 'log';
+  else decidedBy = 'metric';
+
+  return [
+    {
+      datapack: kase.datapack,
+      faultType: kase.faultType,
+      source,
+      winner,
+      decidedBy,
+      sourceAnomaly: src.selfAnomaly,
+      winnerAnomaly: win.selfAnomaly,
+      sourceLog: src.logScore,
+      winnerLog: win.logScore,
+      sourceEmits: emits(src),
+      winnerEmits: emits(win),
+    },
+  ];
+}
+
+/**
+ * Attribute every Top@1 miss in a dump.
+ *
+ * Reports the silent-both-sides count separately from the total: a miss where
+ * neither the source nor the winner emits is the block no reweighting can move,
+ * so that is the number which decides whether a log-side fix is the right next
+ * move at all.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The run's log weight.
+ * @returns The classifications, with the tallies.
+ */
+export function tallyMisses(
+  cases: readonly DiagnosedCase[],
+  weights: MissAttributionWeights,
+): {
+  readonly total: number;
+  readonly byDecidedBy: ReadonlyMap<MissDecidedBy, number>;
+  readonly silentBothSides: number;
+  readonly classifications: readonly MissClassification[];
+} {
+  const classifications = cases.flatMap((kase) => classifyMiss(kase, weights));
+  const byDecidedBy = new Map<MissDecidedBy, number>();
+  let silentBothSides = 0;
+  for (const c of classifications) {
+    byDecidedBy.set(c.decidedBy, (byDecidedBy.get(c.decidedBy) ?? 0) + 1);
+    if (!c.sourceEmits && !c.winnerEmits) silentBothSides += 1;
+  }
+  return { total: classifications.length, byDecidedBy, silentBothSides, classifications };
+}
+
+/**
+ * Render the miss attribution over a whole dump.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The run's log weight.
+ * @returns One multi-line report, without a trailing newline.
+ */
+export function formatMissReport(
+  cases: readonly DiagnosedCase[],
+  weights: MissAttributionWeights,
+): string {
+  const { total, byDecidedBy, silentBothSides, classifications } = tallyMisses(cases, weights);
+  const lines: string[] = [];
+  lines.push(
+    `Miss attribution (logWeight=${weights.logWeight}; exact only when no other prior is on):`,
+  );
+  lines.push(`  wrong cases: ${total}`);
+  for (const kind of MISS_ORDER) {
+    const n = byDecidedBy.get(kind) ?? 0;
+    if (n > 0) lines.push(`  ${kind.padEnd(12)} ${n}`);
+  }
+  lines.push(`  silent both sides (no error evidence either side): ${silentBothSides}`);
+
+  const byType = new Map<string, MissClassification[]>();
+  for (const c of classifications) {
+    const list = byType.get(c.faultType);
+    if (list) list.push(c);
+    else byType.set(c.faultType, [c]);
+  }
+  for (const [faultType, list] of [...byType].sort((a, b) => b[1].length - a[1].length)) {
+    const counts = new Map<MissDecidedBy, number>();
+    let silent = 0;
+    for (const c of list) {
+      counts.set(c.decidedBy, (counts.get(c.decidedBy) ?? 0) + 1);
+      if (!c.sourceEmits && !c.winnerEmits) silent += 1;
+    }
+    const parts = MISS_ORDER.filter((k) => (counts.get(k) ?? 0) > 0).map(
+      (k) => `${k}=${counts.get(k)}`,
+    );
+    lines.push(
+      `  ${faultType.padEnd(26)} wrong=${list.length} silent=${silent} ${parts.join(' ')}`,
+    );
+  }
+  return lines.join('\n');
+}
+
 export interface MetricFamily {
   /** How the report names the family. */
   readonly label: string;
