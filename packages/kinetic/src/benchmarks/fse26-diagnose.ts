@@ -49,6 +49,18 @@ export interface FSE26DiagnosticService {
    * volume or its ranking that changed", which the normalised score cannot.
    */
   readonly failedEdgeRecords: number;
+  /**
+   * The largest inbound latency rise this service sees, as `postMeanMs / preMeanMs`
+   * over the callers that have a measurement on both sides, or `undefined` when no
+   * inbound edge has one.
+   *
+   * `undefined` rather than 1: "no caller measured a change" and "every caller
+   * measured exactly the same latency" are different statements, and defaulting to
+   * 1 would report the second for both.
+   */
+  readonly latRise: number | undefined;
+  /** How many inbound edges carried a latency measurement on both sides. */
+  readonly latEdges: number;
   /** Count of post-injection ERROR log lines. */
   readonly errorCount: number;
   /** Count of post-injection FATAL log lines. */
@@ -283,6 +295,8 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
       `  ${service.serviceId}${tag} selfAnomaly=${fmt(service.selfAnomaly)} ` +
         `logScore=${fmt(service.logScore)} failedEdge=${fmt(service.failedEdgeScore)} ` +
         `failedEdgeRecords=${service.failedEdgeRecords} ` +
+        `latRise=${service.latRise === undefined ? '-' : fmt(service.latRise)} ` +
+        `latEdges=${service.latEdges} ` +
         `dominant=${service.dominantMetric ?? '-'} ` +
         `err=${service.errorCount} fatal=${service.fatalCount} logic=${service.logicExceptionCount} ` +
         `http=${service.httpExceptionCount}`,

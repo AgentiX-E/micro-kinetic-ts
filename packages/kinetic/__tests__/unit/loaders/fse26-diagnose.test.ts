@@ -25,6 +25,8 @@ function service(overrides: Partial<FSE26DiagnosticService>): FSE26DiagnosticSer
     logScore: 0,
     failedEdgeScore: 0,
     failedEdgeRecords: 0,
+    latRise: undefined,
+    latEdges: 0,
     errorCount: 0,
     fatalCount: 0,
     logicExceptionCount: 0,
@@ -48,6 +50,19 @@ function input(overrides: Partial<FSE26DiagnosticInput>): FSE26DiagnosticInput {
 }
 
 describe('formatFSE26Diagnostic', () => {
+  it('renders the inbound latency rise, and a dash when no caller measured one', () => {
+    // `-` rather than `1.000`: "no caller measured a change" and "every caller
+    // measured exactly the same latency" are different statements, and a defaulted
+    // 1 would report the second for both.
+    const measured = formatFSE26Diagnostic(
+      input({ services: [service({ latRise: 2.5, latEdges: 3 })] }),
+    );
+    expect(measured).toContain('latRise=2.500 latEdges=3');
+
+    const unmeasured = formatFSE26Diagnostic(input({ services: [service({})] }));
+    expect(unmeasured).toContain('latRise=- latEdges=0');
+  });
+
   it('renders the call graph on ONE line, sorted, when the producer supplied it', () => {
     // Structure is what a per-service scalar block cannot express, so the graph is
     // rendered as its own line rather than folded into each service.

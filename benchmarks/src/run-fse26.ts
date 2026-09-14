@@ -122,6 +122,24 @@ function buildDiagnostic(
     const callee = row[1];
     failedEdgeRecordsByCallee.set(callee, (failedEdgeRecordsByCallee.get(callee) ?? 0) + 1);
   }
+  // Inbound latency per service: the LARGEST rise any caller measured, plus how
+  // many callers measured at all. The maximum rather than the mean because one
+  // caller going from 1 ms to 2 s is the signal, and averaging it against twenty
+  // unchanged callers would bury it. `pre <= 0` is skipped rather than divided: the
+  // converter already excludes it, and a defensive divide would emit Infinity.
+  const latencyByCallee = new Map<string, { rise: number; count: number }>();
+  for (const row of raw.traceEdgeLatency ?? []) {
+    const callee = row[1];
+    const pre = row[2];
+    const post = row[3];
+    if (!Number.isFinite(pre) || !Number.isFinite(post) || pre <= 0) continue;
+    const previous = latencyByCallee.get(callee);
+    latencyByCallee.set(callee, {
+      rise: previous === undefined ? post / pre : Math.max(previous.rise, post / pre),
+      count: (previous?.count ?? 0) + 1,
+    });
+  }
+
   const services: FSE26DiagnosticService[] = [];
   for (const serviceId of benchCase.callGraph.nodes.keys()) {
     const series = benchCase.metrics.get(serviceId) ?? [];
@@ -162,6 +180,8 @@ function buildDiagnostic(
       logScore,
       failedEdgeScore,
       failedEdgeRecords: failedEdgeRecordsByCallee.get(serviceId) ?? 0,
+      latRise: latencyByCallee.get(serviceId)?.rise,
+      latEdges: latencyByCallee.get(serviceId)?.count ?? 0,
       errorCount,
       fatalCount,
       logicExceptionCount,

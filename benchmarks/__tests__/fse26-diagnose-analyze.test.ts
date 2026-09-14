@@ -42,6 +42,8 @@ interface ServiceSpec {
   /** The failed-edge-direction score (the log score's INVERSE). */
   failedEdge?: number;
   failedEdgeRecords?: number;
+  latRise?: number;
+  latEdges?: number;
   http?: number;
   logic?: number;
   dominant?: string | undefined;
@@ -62,6 +64,8 @@ function serviceLine(spec: ServiceSpec) {
     logScore: spec.logScore ?? 0,
     failedEdgeScore: spec.failedEdge ?? 0,
     failedEdgeRecords: spec.failedEdgeRecords ?? 0,
+    latRise: spec.latRise,
+    latEdges: spec.latEdges ?? 0,
     errorCount: (spec.logic ?? 0) + (spec.http ?? 0),
     fatalCount: 0,
     logicExceptionCount: spec.logic ?? 0,
@@ -145,6 +149,35 @@ describe('parseDiagnosticDump', () => {
     const legacy = dump().replace(' logMode=logicHttp', '');
     const kase = parseDiagnosticDump(legacy)[0]!;
     expect(kase.logSignalMode).toBe('');
+  });
+
+  it('reads the latency fields, and the dash as UNKNOWN rather than as 1', () => {
+    // The producer prints `-` when no caller measured a change. Parsing that as 1
+    // would claim every caller measured an identical latency.
+    const text = dump({
+      services: [
+        serviceLine({ serviceId: 'ts-src', latRise: 4.25, latEdges: 2 }),
+        serviceLine({ serviceId: 'ts-win' }),
+      ],
+    });
+    const parsed = parseDiagnosticDump(text)[0]!.services;
+    const src = parsed.find((s) => s.serviceId === 'ts-src')!;
+    const win = parsed.find((s) => s.serviceId === 'ts-win')!;
+    expect(src.latRise).toBe(4.25);
+    expect(src.latEdges).toBe(2);
+    expect(win.latRise).toBeUndefined();
+    expect(win.latEdges).toBe(0);
+  });
+
+  it('reports the latency fields as undefined for a dump that predates them', () => {
+    const legacy = dump({ services: [serviceLine({ serviceId: 'ts-src' })] }).replace(
+      / latRise=\S+ latEdges=\d+/,
+      '',
+    );
+    expect(legacy).not.toContain('latRise=');
+    const src = parseDiagnosticDump(legacy)[0]!.services[0]!;
+    expect(src.latRise).toBeUndefined();
+    expect(src.latEdges).toBeUndefined();
   });
 
   it('reads the call graph as written, and reports an ABSENT graph as undefined', () => {
@@ -318,6 +351,8 @@ describe('regressionMechanism', () => {
     logScore: 0,
     failedEdgeScore: 0,
     failedEdgeRecords: 0,
+    latRise: undefined,
+    latEdges: 0,
     dominantMetric: '',
     errorCount: http + logic,
     fatalCount: 0,

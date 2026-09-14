@@ -277,6 +277,18 @@ type FSE26TraceEdge = readonly [string, string];
  */
 type FSE26FailedTraceEdge = readonly [string, string, number, number];
 
+/**
+ * `[caller, callee, preMeanMs, postMeanMs]` per edge with a measurable span
+ * duration on BOTH sides of the injection.
+ *
+ * The continuous counterpart of {@link FSE26FailedTraceEdge}: that tuple counts
+ * FAILURES, so a call that became slow but still succeeded is invisible to it, and
+ * so is a datapack where no call failed at all. Duration is what the caller
+ * recorded about the callee, so this carries the same direction and exists where
+ * the counts are zero.
+ */
+export type FSE26EdgeLatency = readonly [string, string, number, number];
+
 /** A normalised log entry from the bridge JSON. */
 interface FSE26LogEntry {
   readonly timestamp: number;
@@ -299,6 +311,14 @@ export interface FSE26RawCase {
    * means "not measured", never "nothing failed".
    */
   readonly failedTraceEdges?: readonly FSE26FailedTraceEdge[];
+  /**
+   * Per-edge latency either side of the injection. Written only when non-empty, so
+   * an absent key means "not measured", never "nothing got slower".
+   *
+   * Additive: an older cache has no such key and loads unchanged, which is why this
+   * needs no schema-version break.
+   */
+  readonly traceEdgeLatency?: readonly FSE26EdgeLatency[];
   readonly logs?: readonly FSE26LogEntry[];
 }
 

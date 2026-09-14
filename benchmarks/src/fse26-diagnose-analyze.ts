@@ -76,6 +76,10 @@ export interface DiagnosedService {
   readonly failedEdgeScore: number | undefined;
   /** Raw failed-edge records naming this service as the callee, or `undefined`. */
   readonly failedEdgeRecords: number | undefined;
+  /** Largest inbound latency rise, or `undefined` when not recorded / not measured. */
+  readonly latRise: number | undefined;
+  /** Measured inbound edges, or `undefined` when the dump predates the field. */
+  readonly latEdges: number | undefined;
   /**
    * The metric that drove this service's anomaly score, or `''` when the engine
    * named none (the block prints `-` for that).
@@ -122,7 +126,7 @@ export interface DiagnosedCase {
 const HEADER_RE =
   /^DIAG datapack=(\S+) faultType=(\S+) GT=\[([^\]]*)\] services=(\d+)(?: logMode=(\S+))?$/;
 const SERVICE_RE =
-  /^ {2}(\S+)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
+  /^ {2}(\S+)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))?(?: latRise=(\S+) latEdges=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
 const EDGES_RE = /^ {2}edges=(.*)$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
@@ -278,11 +282,16 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         // field reads as unknown rather than as a measurement of zero.
         failedEdgeScore: service[5] === undefined ? undefined : Number(service[5]),
         failedEdgeRecords: service[6] === undefined ? undefined : Number(service[6]),
-        dominantMetric: service[7] === '-' ? '' : service[7]!,
-        errorCount: Number(service[8]),
-        fatalCount: Number(service[9]),
-        logicExceptionCount: Number(service[10]),
-        httpExceptionCount: Number(service[11]),
+        // `-` is the producer's marker for "no caller measured a change", which is
+        // not the same as a rise of 1, so it parses to `undefined` and not to a
+        // number.
+        latRise: service[7] === undefined || service[7] === '-' ? undefined : Number(service[7]),
+        latEdges: service[8] === undefined ? undefined : Number(service[8]),
+        dominantMetric: service[9] === '-' ? '' : service[9]!,
+        errorCount: Number(service[10]),
+        fatalCount: Number(service[11]),
+        logicExceptionCount: Number(service[12]),
+        httpExceptionCount: Number(service[13]),
         metricOutcomes: undefined,
       };
       current.services.push(entries);
