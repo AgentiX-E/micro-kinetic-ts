@@ -310,6 +310,15 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * out-accumulate the source. Ablation switch; default `sum`.
    */
   readonly failedEdgeMode?: FailedEdgeMode;
+  /**
+   * Minimum contributing edges a callee needs before it is credited at all.
+   * Default 1 (today's behaviour). The FSE'26 measurement is why a floor exists:
+   * every one of the five regressions this signal caused had a winner with
+   * exactly ONE contributing record, and max-normalisation turns that single
+   * record into the full weight — so one failed call outranks a source whose own
+   * anomaly is maximal. One event is not a pattern.
+   */
+  readonly failedEdgeMinRecords?: number;
 }
 
 /**
@@ -363,6 +372,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   prismWeight: 0.0,
   failedEdgeWeight: 0.0,
   failedEdgeMode: 'sum',
+  failedEdgeMinRecords: 1,
 };
 
 /**
@@ -627,6 +637,7 @@ export class TreePruner {
       options?.failedTraceEdges,
       new Set(callGraph.nodes.keys()),
       this.options.failedEdgeMode,
+      this.options.failedEdgeMinRecords,
     );
 
     return {

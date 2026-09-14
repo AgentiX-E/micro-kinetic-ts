@@ -27,6 +27,7 @@ describe('buildFse26EngineOptions', () => {
       logSignalMode: 'count',
       failedEdgeWeight: 0,
       failedEdgeMode: 'sum',
+      failedEdgeMinRecords: 1,
     });
   });
 
@@ -54,6 +55,18 @@ describe('buildFse26EngineOptions', () => {
 
     const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--failed-edge-mode', 'mean']));
     expect(fromArgv.signals.failedEdgeMode).toBe('mean');
+  });
+
+  it('forwards the failed-edge evidence floor, shipped as 1', () => {
+    // A dropped floor would run the unguarded signal while the `Config:` line
+    // reported the guarded one — the silent swap this file exists to prevent.
+    expect(buildFse26EngineOptions(BASE).signals.failedEdgeMinRecords).toBe(1);
+    expect(
+      buildFse26EngineOptions({ ...BASE, failedEdgeMinRecords: 2 }).signals.failedEdgeMinRecords,
+    ).toBe(2);
+
+    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--failed-edge-min-records', '3']));
+    expect(fromArgv.signals.failedEdgeMinRecords).toBe(3);
   });
 
   it('forwards rank normalization, which is load-bearing on the large topologies', () => {

@@ -166,6 +166,23 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--failed-edge-mode', 'mean']).failedEdgeMode).toBe('mean');
   });
 
+  it('parses the failed-edge evidence floor, defaulting to the shipped 1', () => {
+    expect(parseFSE26Args([]).failedEdgeMinRecords).toBe(1);
+    expect(parseFSE26Args(['--failed-edge-min-records', '2']).failedEdgeMinRecords).toBe(2);
+    expect(parseFSE26Args(['--failed-edge-min-records', '5']).failedEdgeMinRecords).toBe(5);
+  });
+
+  it('rejects a floor that would credit a callee on no evidence', () => {
+    // A floor of 0 or a non-integer falls back to the SHIPPED floor rather than
+    // inventing a configuration. `Number('2O')` is NaN, so a typo reproduces the
+    // published behaviour instead of a plausible different one.
+    expect(parseFSE26Args(['--failed-edge-min-records', '0']).failedEdgeMinRecords).toBe(1);
+    expect(parseFSE26Args(['--failed-edge-min-records', '-3']).failedEdgeMinRecords).toBe(1);
+    expect(parseFSE26Args(['--failed-edge-min-records', '2.5']).failedEdgeMinRecords).toBe(1);
+    expect(parseFSE26Args(['--failed-edge-min-records', '2O']).failedEdgeMinRecords).toBe(1);
+    expect(parseFSE26Args(['--failed-edge-min-records', '']).failedEdgeMinRecords).toBe(1);
+  });
+
   it('falls back to the SHIPPED mode on an unrecognised value', () => {
     // An unknown aggregation must reproduce a published configuration, never
     // invent one — the same reasoning as the log-signal mode.

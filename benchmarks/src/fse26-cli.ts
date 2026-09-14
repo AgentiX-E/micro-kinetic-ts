@@ -138,6 +138,11 @@ export interface Fse26CliOptions {
    * its failing callers (fan-in normalised).
    */
   readonly failedEdgeMode: FailedEdgeMode;
+  /**
+   * Minimum contributing edges a callee needs before the signal credits it.
+   * 1 = the shipped behaviour.
+   */
+  readonly failedEdgeMinRecords: number;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -174,6 +179,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     metricFleetBaseline: false,
     failedEdgeWeight: 0,
     failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
+    failedEdgeMinRecords: 1,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -208,7 +214,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const ceiling = Number(argv[++i]!);
       opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
     } else if (arg === '--fleet-baseline') opts.metricFleetBaseline = true;
-    else if (arg === '--failed-edge-mode' && i + 1 < argv.length) {
+    else if (arg === '--failed-edge-min-records' && i + 1 < argv.length) {
+      // Strict, and it falls back to the SHIPPED floor of 1 — a floor of 0 would
+      // credit a callee on no evidence at all, which is not a configuration
+      // anyone asked for. A non-integer is rejected for the same reason the
+      // other numeric switches reject trailing garbage.
+      const floor = Number(argv[++i]!);
+      opts.failedEdgeMinRecords = Number.isInteger(floor) && floor >= 1 ? floor : 1;
+    } else if (arg === '--failed-edge-mode' && i + 1 < argv.length) {
       // Falling back to the SHIPPED mode on an unknown value, like the log mode:
       // a typo must reproduce a published configuration, never invent one.
       const mode = argv[++i]!;

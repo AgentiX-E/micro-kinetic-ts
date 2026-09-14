@@ -201,6 +201,7 @@ async function main(): Promise<void> {
     metricFleetBaseline: opts.metricFleetBaseline,
     failedEdgeWeight: opts.failedEdgeWeight,
     failedEdgeMode: opts.failedEdgeMode,
+    failedEdgeMinRecords: opts.failedEdgeMinRecords,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark

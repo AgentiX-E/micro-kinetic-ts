@@ -193,6 +193,7 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   drop_metrics: 'runner',
   failed_edge_weight: 'runner',
   failed_edge_mode: 'runner',
+  failed_edge_min_records: 'runner',
 };
 
 describe('FSE26 workflow-input ownership', () => {

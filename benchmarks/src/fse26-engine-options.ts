@@ -47,6 +47,8 @@ export interface Fse26SignalOptions {
    * control while the `Config:` line reported the ablation.
    */
   readonly failedEdgeMode: FailedEdgeMode;
+  /** Required for the same reason as the two above: a silent no-op is the bug. */
+  readonly failedEdgeMinRecords: number;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -85,6 +87,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       logSignalMode: opts.logMode,
       failedEdgeWeight: opts.failedEdgeWeight,
       failedEdgeMode: opts.failedEdgeMode,
+      failedEdgeMinRecords: opts.failedEdgeMinRecords,
     },
     topology: {
       // Load-bearing on Train Ticket's large topologies.

@@ -959,6 +959,13 @@ export type FailedEdgeMode = 'sum' | 'mean';
  *   endpoint outside it is ignored, including in the normalisation denominator,
  *   because the engine can only rank nodes it has metrics for.
  * @param mode - `sum` (default, the measured one) or `mean` (fan-in normalised).
+ * @param minRecords - Minimum number of contributing edges a callee needs before
+ *   it is credited at all. Default 1 (today's behaviour). The FSE'26 measurement
+ *   found why a floor matters: five regressions all had a winner with exactly ONE
+ *   contributing record, and max-normalisation turns that single record into the
+ *   full weight, so one failed call — a timeout, a retry — purchases the signal
+ *   and outranks a source whose own anomaly is maximal. One event is not a
+ *   pattern; the same reason `computeTraceActivityScores` guards on span counts.
  * @returns Sparse `{callee: score}` map, or empty when no edge carries
  *   post-injection failures beyond its own baseline.
  */
@@ -966,11 +973,16 @@ export function computeFailedEdgeScores(
   edges: ReadonlyArray<FaultFailedEdge> | undefined,
   nodeIds: ReadonlySet<ServiceId>,
   mode: FailedEdgeMode = 'sum',
+  minRecords = 1,
 ): Map<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   if (!edges || edges.length === 0 || nodeIds.size === 0) return scores;
 
   const net = new Map<ServiceId, number>();
+  // Contributing edges per callee: the evidence VOLUME behind a callee's score,
+  // which `minRecords` gates. Counted after the same filters that build `net`,
+  // so the guard and the score cannot disagree about what counted.
+  const records = new Map<ServiceId, number>();
   // Distinct callers per callee. Only needed for `mean`, but tracked
   // unconditionally so the two modes cannot disagree about which edges counted.
   const callers = new Map<ServiceId, Set<ServiceId>>();
@@ -994,6 +1006,7 @@ export function computeFailedEdgeScores(
     if (contribution <= 0) continue;
 
     net.set(edge.callee, (net.get(edge.callee) ?? 0) + contribution);
+    records.set(edge.callee, (records.get(edge.callee) ?? 0) + 1);
     const seen = callers.get(edge.callee);
     if (seen) {
       seen.add(edge.caller);
@@ -1011,14 +1024,23 @@ export function computeFailedEdgeScores(
   // so the divisor is >= 1 by construction and needs no fallback that coverage
   // could never reach.
   for (const [callee, who] of callers) {
+    // A callee with too little evidence is not credited AT ALL: it stays out of
+    // the map, so its term is 0 rather than a fabricated score. Filtering here
+    // (rather than in the loop above) means the dropped callee also leaves the
+    // normalisation denominator — otherwise the services that remain would be
+    // rescaled against evidence the signal refused to use.
+    // `records` is filled in the same branch as `callers`, so every callee here
+    // has an entry — no fallback, and none that coverage could never reach.
+    if (records.get(callee)! < minRecords) continue;
     const value = mode === 'mean' ? net.get(callee)! / who.size : net.get(callee)!;
     aggregate.set(callee, value);
     if (value > max) max = value;
   }
 
-  // `max > 0` is guaranteed whenever `net` is non-empty (every inserted
-  // contribution is positive, and `mean` divides by a caller count >= 1), so the
-  // division below never sees a zero denominator and never emits NaN.
+  // `max > 0` whenever `aggregate` is non-empty (every inserted contribution is
+  // positive, and `mean` divides by a caller count >= 1), and an empty
+  // `aggregate` skips the loop entirely — so the division below never sees a
+  // zero denominator and never emits NaN.
   for (const [callee, value] of aggregate) {
     scores.set(callee, value / max);
   }

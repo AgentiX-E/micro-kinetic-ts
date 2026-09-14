@@ -38,6 +38,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     metricFleetBaseline: false,
     failedEdgeWeight: 0,
     failedEdgeMode: 'sum',
+    failedEdgeMinRecords: 1,
     ...overrides,
   };
 }
@@ -91,6 +92,7 @@ describe('FSE26 report — attribution', () => {
       'metricFleetBaseline',
       'failedEdgeWeight',
       'failedEdgeMode',
+      'failedEdgeMinRecords',
     ]);
   });
 
@@ -129,6 +131,14 @@ describe('FSE26 report — the two renderings agree', () => {
     // At weight 0 the aggregation cannot change anything, so it is not printed.
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeMode: 'mean' }))).not.toContain(
       'failedEdgeMode',
+    );
+    // The shipped floor stays off the line; a raised one must show, because it
+    // changes which callees the signal credits at all.
+    expect(
+      formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1, failedEdgeMinRecords: 2 })),
+    ).toContain('failedEdgeMinRecords=2');
+    expect(formatFSE26ConfigLine(makeConfig({ failedEdgeMinRecords: 2 }))).not.toContain(
+      'failedEdgeMinRecords',
     );
   });
 

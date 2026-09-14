@@ -70,6 +70,8 @@ export interface FSE26RunConfig {
    * run using `mean` ranks differently, so it has to say so.
    */
   readonly failedEdgeMode: string;
+  /** Minimum contributing edges a callee needs to be credited (1 = shipped). */
+  readonly failedEdgeMinRecords: number;
 }
 
 /** One fault type's cell in the summary. */
@@ -215,6 +217,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'metricFleetBaseline',
   'failedEdgeWeight',
   'failedEdgeMode',
+  'failedEdgeMinRecords',
 ] as const;
 
 /**
@@ -272,6 +275,9 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
     // the aggregation is meaningless without a weight to apply it to.
     if (config.failedEdgeMode !== 'sum') {
       line += ` failedEdgeMode=${config.failedEdgeMode}`;
+    }
+    if (config.failedEdgeMinRecords !== 1) {
+      line += ` failedEdgeMinRecords=${config.failedEdgeMinRecords}`;
     }
   }
   return line;

@@ -55,6 +55,10 @@ on:
         description: 'Aggregation for the failed-edge signal: sum (empty = the runner default) or mean, which divides a callee net failures by its number of failing callers'
         required: false
         default: ''
+      failed_edge_min_records:
+        description: 'Minimum contributing edges a callee needs before the failed-edge signal credits it (empty = the runner default, which is 1). A single record is one event, not an interface failure'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -205,6 +209,10 @@ jobs:
           if [ -n "${{ inputs.failed_edge_mode }}" ]; then
             FAILED_EDGE_MODE_ARG=(--failed-edge-mode "${{ inputs.failed_edge_mode }}")
           fi
+          FAILED_EDGE_MIN_ARG=()
+          if [ -n "${{ inputs.failed_edge_min_records }}" ]; then
+            FAILED_EDGE_MIN_ARG=(--failed-edge-min-records "${{ inputs.failed_edge_min_records }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             "${LOG_WEIGHT_ARG[@]}" \
@@ -213,6 +221,7 @@ jobs:
             "${DROP_METRICS_ARG[@]}" \
             "${FAILED_EDGE_ARG[@]}" \
             "${FAILED_EDGE_MODE_ARG[@]}" \
+            "${FAILED_EDGE_MIN_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

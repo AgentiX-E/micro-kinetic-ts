@@ -1497,6 +1497,50 @@ describe('computeFailedEdgeScores', () => {
       expect(mean).toEqual(sum);
     });
 
+    it('credits NOTHING to a callee with a single record once a floor is set', () => {
+      // The measured defect this floor exists for: max-normalisation turns ONE
+      // record into the full weight, so a single failed call outranks a source
+      // whose own anomaly is maximal. All five FSE'26 regressions this signal
+      // caused had a winner with exactly one contributing record.
+      const edges = [edge('a', 'b', 100, 0), edge('c', 'd', 3, 0), edge('e', 'd', 3, 0)];
+      const nodes = new Set(['a', 'b', 'c', 'd', 'e']);
+
+      const unguarded = computeFailedEdgeScores(edges, nodes, 'sum', 1);
+      expect(unguarded.has('b')).toBe(true);
+      expect(unguarded.has('d')).toBe(true);
+
+      const guarded = computeFailedEdgeScores(edges, nodes, 'sum', 2);
+      expect(guarded.has('b')).toBe(false);
+      expect(guarded.get('d')).toBe(1);
+    });
+
+    it('removes a guarded callee from the normalisation denominator too', () => {
+      // Otherwise the services that survive are rescaled against evidence the
+      // signal refused to use, so the floor would change every other score.
+      const edges = [edge('a', 'b', 1000, 0), edge('c', 'd', 2, 0), edge('e', 'd', 2, 0)];
+      const nodes = new Set(['a', 'b', 'c', 'd', 'e']);
+
+      const scores = computeFailedEdgeScores(edges, nodes, 'sum', 2);
+      expect(scores.has('b')).toBe(false);
+      // d is the maximum among what remains, so it is 1 — not 4/1000.
+      expect(scores.get('d')).toBe(1);
+    });
+
+    it('credits nothing at all when every callee is below the floor', () => {
+      const scores = computeFailedEdgeScores([edge('a', 'b', 9, 0)], new Set(['a', 'b']), 'sum', 3);
+      expect(scores.size).toBe(0);
+    });
+
+    it('leaves the shipped behaviour unchanged at the default floor of 1', () => {
+      const edges = [edge('a', 'b', 100, 0), edge('c', 'd', 3, 0)];
+      const nodes = new Set(['a', 'b', 'c', 'd']);
+      expect(computeFailedEdgeScores(edges, nodes)).toEqual(
+        computeFailedEdgeScores(edges, nodes, 'sum', 1),
+      );
+      // One record is still enough at the default.
+      expect(computeFailedEdgeScores([edge('a', 'b', 1, 0)], new Set(['a', 'b'])).get('b')).toBe(1);
+    });
+
     it('defaults to sum, the mode the published ablation measured', () => {
       const edges = [edge('c1', 't', 40, 0), edge('c2', 't', 40, 0), edge('c1', 's', 100, 0)];
       const nodes = new Set(['c1', 'c2', 't', 's']);
