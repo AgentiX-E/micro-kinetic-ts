@@ -1,0 +1,101 @@
+# Per-edge latency term — verdict
+
+The `latWeight` term rewards the CALLEE of an edge whose mean span duration rose.
+It was built off by default (`7558bc8`) and measured as a matched pair on one
+commit and one cache. It is the largest gain measured in this effort and it is
+still **rejected as a default flip**, by the same pre-registered rule that
+rejected the failed-edge signal. Both halves of that sentence matter.
+
+## The pair
+
+Commit `7558bc8`, cache `rcabench-latency-full` (converter `ada655bf`), all 1422
+cases, only `latWeight` different:
+
+| run | config | Top@1 | Top@3 | Top@5 | correct |
+| --- | --- | --- | --- | --- | --- |
+| `34861464922` | shipped (`latWeight=0`) | 47.33% | 60.69% | 65.75% | 673 |
+| `34861468557` | `latWeight=0.75` | **55.20%** | **72.57%** | **78.76%** | **785** |
+
+**+7.88pp Top@1, +112 cases**, with Top@3 +11.88pp and Top@5 +13.01pp. For scale,
+the failed-edge signal reached +5.8pp / +82 by a partial route and needed the
+direction it encodes; this term reaches more with `failedEdgeWeight` at 0 in both
+runs.
+
+The control is also the provenance check on the rebuilt cache: it reproduces the
+published **47.3277%** exactly, so the new key changed nothing at weight 0 and the
+cache is comparable with every earlier result.
+
+## Per fault type
+
+| fault type | shipped | `latWeight=0.75` | delta |
+| --- | --- | --- | --- |
+| JVMMemoryStress | 4 | **30** | **+26** |
+| HTTPRequestDelay | 39 | 59 | +20 |
+| HTTPResponseDelay | 42 | 59 | +17 |
+| ContainerKill | 1 | 14 | +13 |
+| NetworkCorrupt | 14 | 26 | +12 |
+| NetworkPartition | 39 | 51 | +12 |
+| NetworkLoss | 12 | 23 | +11 |
+| JVMLatency | 2 | 6 | +4 |
+| NetworkDelay | 16 | 20 | +4 |
+| PodKill | 1 | 2 | +1 |
+| HTTPResponsePatchBody | 3 | 4 | +1 |
+| HTTPResponseAbort | 34 | 32 | **−2** |
+| HTTPResponseReplaceCode | 159 | 157 | **−2** |
+| HTTPRequestReplacePath | 38 | 37 | −1 |
+| HTTPResponseReplaceBody | 45 | 44 | −1 |
+| JVMException | 30 | 29 | −1 |
+| JVMReturn | 12 | 11 | −1 |
+| NetworkBandwidth | 12 | 11 | −1 |
+
+11 types gain (+121 cases), 7 regress (−9 cases). The gains are where the evidence
+class lives — the four silent-source types all move (JVMMemoryStress 7.5×,
+ContainerKill 14×, PodKill, PatchBody) — and so do the network types, which the
+simulating dump could not see.
+
+## The simulator was faithful, and its coverage was the limit
+
+Before the run the simulator predicted, on a 406-block dump covering three types,
+JVMMemoryStress 4→30 and ReplaceCode 159→157. Measured: **+26 and −2, both
+exact.** Its total (+25) understated the real gain (+112) only because 22 of the
+25 types were not in the dump it read. So the method transferred and the earlier
+extrapolation was coverage-limited, not wrong.
+
+## Verdict: rejected as a default flip
+
+The pre-registered criterion is *RCAEval golden 9-cell byte-identical* **and**
+*FSE'26 zero regressed fault types*, with no exception for a favourable ratio.
+
+- **RCAEval golden: 9 of 9 byte-identical** (RE1 80.0/92.8/68.0, RE2 82.4/88.9/68.1,
+  RE3 80.0/45.0/51.1) — the term is structurally invisible to that suite, since
+  only the FSE'26 loader emits `traceEdgeLatency`, so this half could not have
+  failed and does not by itself support the term.
+- **FSE'26 zero regressed fault types: FAILS, 7 violations.**
+
+So `latWeight` stays **0.0** and the shipped FSE'26 stays **47.33%**. The
+regressions are small — seven types, −1 or −2 cases each — but the rule has no
+threshold at which a regression stops counting, and applying it the other way here
+would retroactively un-reject the failed-edge signal at +5.8pp / 2 types.
+
+## What would reopen it
+
+A weight (or variant) with **zero regressed fault types** that still gains. That
+is a closed-form question, not a sweep: the score is affine in the weight,
+`score(v) = A(v) + w·L(v)` with `A = log1p(selfAnomaly) + logWeight·logScore` and
+`L = latScore(v)`, and both are recorded per service in a diagnostic dump. For each
+case the set of weights that keeps the ground truth at rank 1 is an interval
+(intersect one half-line per competitor); requiring every currently-correct case to
+stay correct is the intersection of those intervals, and the best achievable gain
+inside it is read off the same intervals.
+
+`computeWeightSeparation` already does this algebra, but its slope is hardcoded to
+the failed-edge score, so it has to be generalised to take a slope function first.
+The full-coverage dump (all 25 fault types, `diagnose_limit=0`) is dispatched for
+it. That run is the whole remaining cost: if the feasible window is empty, the term
+is closed with a number rather than an argument; if it is non-empty, one paired run
+decides the flip.
+
+Two things are deliberately NOT claimed here. The 7 regressions are not shown to be
+noise or tie-break artefacts — they are case counts in a deterministic run. And the
+gain is not shown to be robust to the metric term changing underneath it; every
+number above is on one cache and one commit.
