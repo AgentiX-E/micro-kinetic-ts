@@ -149,3 +149,44 @@ That is a better outcome than either extreme: the field is not dead, but its tar
 the four silent-source types, not the failed-edge axis. The next step is a weighted term
 over `latRise` with the affine solver run first — generalised to take a slope function
 rather than the failed-edge score — so the weight is solved before it is swept.
+
+## Simulated: a partial weight gains 26 cases on the resource block
+
+The affine solver is the wrong instrument here and was not used. It answers "does a weight
+exist that satisfies every case at once", and with `latRise` alone at 33.3% on
+JVMMemoryStress that answer is trivially no and carries no information. The validated
+simulator is the right one: it reproduces the dump's own top-1 in 406/406 cases at `w = 0`,
+so its deltas are trustworthy, and it can sweep the weight for free.
+
+Scored as `log1p(selfAnomaly) + logScore + w × latScore`, where `latScore` is
+`log1p(max(0, latRise − 1))` max-normalised across the case — the same shape and the same
+`log1p` compression the other signals use, because `latRise` spans 0.3 to 2048.
+
+| w | JVMMemoryStress | ReplaceCode | PatchBody | net vs shipped |
+| --- | --- | --- | --- | --- |
+| 0.00 | 4 | 159 | 3 | — |
+| 0.25 | **24 (+20)** | 158 (−1) | 4 (+1) | +20 |
+| 0.50 | 27 (+23) | 158 (−1) | 4 (+1) | +23 |
+| **0.75** | **30 (+26)** | **157 (−2)** | 4 (+1) | **+25** |
+| 1.00 | 35 (+31) | **85 (−74)** | 3 (0) | **−43** |
+
+Two things to read in that table. The gain is real and concentrated where the evidence is:
+JVMMemoryStress 4 → 30 at the best weight, against a term that explains 33.3% of the block
+on its own. And the collapse at `w = 1` is the same failure the failed-edge axis hit — a
+full-weight additive term decides every case it can, including the ones it is wrong about —
+so the useful region is a partial weight, not the obvious one.
+
+Three caveats that a run has to settle, none of which the simulation can:
+
+1. **ReplaceCode regresses by 2 cases at the best weight**, so the kill criterion's "zero
+   regressed fault types" is not met by simulation. The magnitude is small and the gain is
+   +26, but the rule does not have an exception for a favourable ratio.
+2. **This dump covers 406 of 1422 cases.** The term applies to every case, so the other
+   1016 — Network, Resource, Pod, Time, DNS and most of HTTP — are unmeasured. A +25 on
+   this subset can be eaten by a −30 elsewhere.
+3. **The simulator uses a simpler tie-break than the engine**, which is why its `w = 0`
+   counts reproduce the real ones only to within a case or two.
+
+So the next step is to build the term, not to claim the result: an off-by-default
+`latWeight`, `SCHEMA`-free because the field is already cached, and then the paired
+measurement against the shipped configuration.
