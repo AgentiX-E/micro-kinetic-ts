@@ -23,6 +23,8 @@ function service(overrides: Partial<FSE26DiagnosticService>): FSE26DiagnosticSer
     dominantMetric: 'container.cpu.usage',
     selfAnomaly: 0.5,
     logScore: 0,
+    failedEdgeScore: 0,
+    failedEdgeRecords: 0,
     errorCount: 0,
     fatalCount: 0,
     logicExceptionCount: 0,
@@ -109,8 +111,40 @@ describe('formatFSE26Diagnostic', () => {
         ],
       }),
     );
-    expect(out).toContain('selfAnomaly=0.420 logScore=0.500 dominant=container.memory.usage');
+    expect(out).toContain('selfAnomaly=0.420 logScore=0.500');
+    expect(out).toContain('dominant=container.memory.usage');
     expect(out).toContain('metrics(2): container.cpu.usage,container.memory.usage');
+  });
+
+  it('renders the failed-edge score next to the log score', () => {
+    // The two are INVERSES — the log score credits whoever emits an error (a
+    // victim), the failed-edge score credits the callee those calls failed
+    // against (the source). A dump that shows only one cannot attribute a
+    // regression the other causes, so both are rendered on the same line.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-order-service',
+            selfAnomaly: 0.9,
+            logScore: 0,
+            failedEdgeScore: 1,
+            failedEdgeRecords: 7,
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('logScore=0.000 failedEdge=1.000 failedEdgeRecords=7');
+  });
+
+  it('renders zero failed-edge evidence as zero, not as an absent field', () => {
+    // A service with no failed calls against it must be visibly neutral in the
+    // dump: an omitted field would be indistinguishable from a field the
+    // formatter forgot to render.
+    const out = formatFSE26Diagnostic(input({ services: [service({})] }));
+
+    expect(out).toContain('failedEdge=0.000 failedEdgeRecords=0');
   });
 
   it('renders a dash for an absent dominant metric', () => {

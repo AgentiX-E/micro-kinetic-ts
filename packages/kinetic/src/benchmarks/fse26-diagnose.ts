@@ -32,6 +32,23 @@ export interface FSE26DiagnosticService {
   readonly selfAnomaly: number;
   /** The engine's max-normalised logic-exception log score in [0, 1]. */
   readonly logScore: number;
+  /**
+   * The engine's max-normalised failed-edge-direction score in [0, 1] — the
+   * credit this service receives as the CALLEE of post-injection failed calls.
+   *
+   * Required, not optional: it is the INVERSE of `logScore`, so a regression it
+   * causes cannot be attributed from a dump that omits it. The two together
+   * say whether a service is the source (high here, silent in logs) or a victim
+   * (high in logs, low here), which is the whole question.
+   */
+  readonly failedEdgeScore: number;
+  /**
+   * How many failed-edge RECORDS name this service as the callee, before the
+   * signal's filtering or normalisation. A raw count, deliberately not a second
+   * implementation of the aggregation: it answers "is this service's evidence
+   * volume or its ranking that changed", which the normalised score cannot.
+   */
+  readonly failedEdgeRecords: number;
   /** Count of post-injection ERROR log lines. */
   readonly errorCount: number;
   /** Count of post-injection FATAL log lines. */
@@ -241,7 +258,9 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
     const metricList = service.metricNames.join(',');
     lines.push(
       `  ${service.serviceId}${tag} selfAnomaly=${fmt(service.selfAnomaly)} ` +
-        `logScore=${fmt(service.logScore)} dominant=${service.dominantMetric ?? '-'} ` +
+        `logScore=${fmt(service.logScore)} failedEdge=${fmt(service.failedEdgeScore)} ` +
+        `failedEdgeRecords=${service.failedEdgeRecords} ` +
+        `dominant=${service.dominantMetric ?? '-'} ` +
         `err=${service.errorCount} fatal=${service.fatalCount} logic=${service.logicExceptionCount} ` +
         `http=${service.httpExceptionCount}`,
     );

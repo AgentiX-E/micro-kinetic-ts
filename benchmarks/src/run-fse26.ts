@@ -114,6 +114,14 @@ function buildDiagnostic(
   logSignalMode: string,
 ): string {
   const injectTime = benchCase.injectTime;
+  // Raw record counts per callee, counted here rather than in the engine so the
+  // dump can separate "more evidence" from "a higher score" — the two changes
+  // have different fixes.
+  const failedEdgeRecordsByCallee = new Map<string, number>();
+  for (const row of raw.failedTraceEdges ?? []) {
+    const callee = row[1];
+    failedEdgeRecordsByCallee.set(callee, (failedEdgeRecordsByCallee.get(callee) ?? 0) + 1);
+  }
   const services: FSE26DiagnosticService[] = [];
   for (const serviceId of benchCase.callGraph.nodes.keys()) {
     const series = benchCase.metrics.get(serviceId) ?? [];
@@ -121,6 +129,9 @@ function buildDiagnostic(
     const dominantMetric = faultGraph.dominantMetrics?.get(serviceId)?.label;
     const selfAnomaly = faultGraph.anomalyScores.get(serviceId) ?? 0;
     const logScore = faultGraph.logScores?.get(serviceId) ?? 0;
+    // Read from the graph, so the dump reports what the ENGINE used rather than
+    // re-deriving it here — a second copy could disagree with the score.
+    const failedEdgeScore = faultGraph.failedEdgeScores?.get(serviceId) ?? 0;
     const metricOutcomes = faultGraph.metricDiagnostics?.get(serviceId);
 
     let errorCount = 0;
@@ -149,6 +160,8 @@ function buildDiagnostic(
       dominantMetric,
       selfAnomaly,
       logScore,
+      failedEdgeScore,
+      failedEdgeRecords: failedEdgeRecordsByCallee.get(serviceId) ?? 0,
       errorCount,
       fatalCount,
       logicExceptionCount,

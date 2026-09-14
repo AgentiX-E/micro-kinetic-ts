@@ -65,6 +65,18 @@ export interface DiagnosedService {
   readonly selfAnomaly: number;
   readonly logScore: number;
   /**
+   * The failed-edge-direction score (the log score's INVERSE), or `undefined`
+   * for a dump written before the engine reported it.
+   *
+   * Optional on purpose. A dump copied out of an older run has no such field,
+   * and defaulting it to 0 would claim "this service was measured and credited
+   * nothing" — a different statement from "this dump cannot answer that". The
+   * analyzer exists to compare dumps across runs, so it has to read both.
+   */
+  readonly failedEdgeScore: number | undefined;
+  /** Raw failed-edge records naming this service as the callee, or `undefined`. */
+  readonly failedEdgeRecords: number | undefined;
+  /**
    * The metric that drove this service's anomaly score, or `''` when the engine
    * named none (the block prints `-` for that).
    */
@@ -100,7 +112,7 @@ export interface DiagnosedCase {
 const HEADER_RE =
   /^DIAG datapack=(\S+) faultType=(\S+) GT=\[([^\]]*)\] services=(\d+)(?: logMode=(\S+))?$/;
 const SERVICE_RE =
-  /^ {2}(\S+)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+) dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
+  /^ {2}(\S+)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
 const METRIC_DROP_RE = /^ {4}metricDrop\((\d+)\):(?: (.*))?$/;
@@ -238,11 +250,16 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         predictedRank: rankMarker === undefined ? undefined : Number(rankMarker.slice(1)),
         selfAnomaly: Number(service[3]),
         logScore: Number(service[4]),
-        dominantMetric: service[5] === '-' ? '' : service[5]!,
-        errorCount: Number(service[6]),
-        fatalCount: Number(service[7]),
-        logicExceptionCount: Number(service[8]),
-        httpExceptionCount: Number(service[9]),
+        // `undefined`, never 0, when the field is absent: the optional group
+        // leaves both captures undefined together, so a dump from before this
+        // field reads as unknown rather than as a measurement of zero.
+        failedEdgeScore: service[5] === undefined ? undefined : Number(service[5]),
+        failedEdgeRecords: service[6] === undefined ? undefined : Number(service[6]),
+        dominantMetric: service[7] === '-' ? '' : service[7]!,
+        errorCount: Number(service[8]),
+        fatalCount: Number(service[9]),
+        logicExceptionCount: Number(service[10]),
+        httpExceptionCount: Number(service[11]),
         metricOutcomes: undefined,
       };
       current.services.push(entries);

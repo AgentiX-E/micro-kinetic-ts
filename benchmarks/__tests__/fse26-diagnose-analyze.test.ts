@@ -33,6 +33,9 @@ interface ServiceSpec {
   serviceId: string;
   selfAnomaly?: number;
   logScore?: number;
+  /** The failed-edge-direction score (the log score's INVERSE). */
+  failedEdge?: number;
+  failedEdgeRecords?: number;
   http?: number;
   logic?: number;
   dominant?: string | undefined;
@@ -51,6 +54,8 @@ function serviceLine(spec: ServiceSpec) {
     dominantMetric: 'dominant' in spec ? spec.dominant : 'cpu',
     selfAnomaly: spec.selfAnomaly ?? 0.5,
     logScore: spec.logScore ?? 0,
+    failedEdgeScore: spec.failedEdge ?? 0,
+    failedEdgeRecords: spec.failedEdgeRecords ?? 0,
     errorCount: (spec.logic ?? 0) + (spec.http ?? 0),
     fatalCount: 0,
     logicExceptionCount: spec.logic ?? 0,
@@ -134,6 +139,32 @@ describe('parseDiagnosticDump', () => {
     const legacy = dump().replace(' logMode=logicHttp', '');
     const kase = parseDiagnosticDump(legacy)[0]!;
     expect(kase.logSignalMode).toBe('');
+  });
+
+  it('reads the failed-edge fields when the dump carries them', () => {
+    const text = dump({
+      services: [serviceLine({ serviceId: 'ts-order-service', failedEdge: 1 })],
+    });
+    const entry = parseDiagnosticDump(text)[0]!.services[0]!;
+    expect(entry.failedEdgeScore).toBe(1);
+    expect(entry.failedEdgeRecords).toBe(0);
+  });
+
+  it('records an absent failed-edge field as UNKNOWN, not as zero', () => {
+    // The whole point of this analyzer is comparing dumps across runs, so it has
+    // to read a dump written before the engine reported the field at all.
+    // Defaulting to 0 would claim the service was measured and credited
+    // nothing — a different statement from "this dump cannot answer that", and
+    // the wrong one to build a regression verdict on.
+    const withField = dump({
+      services: [serviceLine({ serviceId: 'ts-order-service', failedEdge: 1 })],
+    });
+    expect(withField).toContain('failedEdge=1.000');
+    const legacy = withField.replace(/ failedEdge=\S+ failedEdgeRecords=\d+/, '');
+    expect(legacy).not.toContain('failedEdge=');
+    const entry = parseDiagnosticDump(legacy)[0]!.services[0]!;
+    expect(entry.failedEdgeScore).toBeUndefined();
+    expect(entry.failedEdgeRecords).toBeUndefined();
   });
 
   it('reads a service with no markers and an absent dominant metric', () => {
@@ -262,6 +293,8 @@ describe('regressionMechanism', () => {
     predictedRank: undefined,
     selfAnomaly,
     logScore: 0,
+    failedEdgeScore: 0,
+    failedEdgeRecords: 0,
     dominantMetric: '',
     errorCount: http + logic,
     fatalCount: 0,
