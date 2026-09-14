@@ -118,12 +118,43 @@ latent defect, not one that cost anything here.
 
 ## Next: where the two regressions come from
 
-The signal's known failure mode is a **victim with many callers**: if a fault
-makes several services' calls fail against one *symptom*, that symptom collects
-the largest net failure count and takes the vote. `JVMMemoryStress` (a
-silent-source fault where the source emits nothing and its callers time out) and
-`HTTPResponsePatchBody` (4 cases total) are both shapes where that is plausible.
-The discriminator is already in the cache and needs no new field: for the 5 lost
-cases, whether the charged callee is the symptom rather than the source, and
-whether a gate on the callee's OWN anomaly would exclude it without touching the
-61 `ReplaceCode` gains.
+The dumps answer it, and the answer is not the mechanism the criterion assumed.
+All five regressions were extracted from a matched pair of diagnostic runs (same
+commit, same cache, `diagnose=JVMMemoryStress,HTTPResponsePatchBody`) and every one
+has the same shape:
+
+| case | fault | source | winner | winner records | winner failedEdge | source selfAnomaly |
+|---|---|---|---|---|---|---|
+| `brbql8` | JVMMemoryStress | `ts-inside-payment-service` | `ts-ui-dashboard` | **1** | **1.000** | 1.000 |
+| `ds6qwb` | JVMMemoryStress | `ts-assurance-service` | `ts-ui-dashboard` | **1** | **1.000** | 1.000 |
+| `pf77h8` | JVMMemoryStress | `ts-cancel-service` | `ts-ui-dashboard` | **1** | **1.000** | 1.000 |
+| `qjhx5h` | PatchBody | `ts-food-service` | `ts-consign-service` | **1** | **1.000** | 0.420 |
+| `vcqmmx` | PatchBody | `ts-route-plan-service` | `ts-travel-plan-service` | **1** | **1.000** | 1.000 |
+
+The winner in every case has exactly ONE contributing record, and
+max-normalisation turns that single record into the FULL weight. So one failed
+call — a timeout, a retry — purchases the signal: in the three JVMMemoryStress
+cases the source has no failed-edge evidence at all while `ts-ui-dashboard` scores
+1.000, and `1.0 + log1p(0.48) = 1.392` beats the source's `log1p(1.0) = 0.693`.
+
+This refutes the remaining part of the fan-in story as well. `mean` was already
+measured to be worse, and it could not have helped here anyway: the problem is not
+that many callers accumulated, it is that ONE record was enough. The signal's
+defect is a missing evidence FLOOR, not a missing normalisation.
+
+`failedEdgeMinRecords` (default 1 = the shipped behaviour, so nothing moves until
+it is set) requires a callee to have at least that many contributing edges before
+it is credited at all, and drops it from the normalisation denominator too. The
+value is stated as a principle rather than tuned: one event is not a pattern — the
+same reason `computeTraceActivityScores` guards on span counts — and two is the
+smallest value that expresses it. A matched pair at 1 vs 2 on one commit measures
+whether it recovers all five without spending the +82.
+
+## The earlier framing, corrected
+
+An intermediate reading of these regressions attributed them to a high-fan-in
+symptom out-accumulating the source. That was a plausible guess from the totals
+(1,013,406 net failures over 4,805 records) and it was wrong: the dumps show a
+single record, and `mean` measured worse. The dumps are what settled it, which is
+why the diagnostic had to carry the signal's own score before the question could
+be answered at all.
