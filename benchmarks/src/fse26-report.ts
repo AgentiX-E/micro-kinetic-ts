@@ -286,13 +286,16 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
       line += ` failedEdgeMinRecords=${config.failedEdgeMinRecords}`;
     }
   }
-  // Same rule as the fleet baseline: the shipped value is 0, so a zero-weight
-  // line stays byte-identical to the published one and a flipped switch is
-  // visible. This one is NOT nested under the failed-edge weight — the two terms
-  // are independent, and the latency term can be on while that one is off.
-  if (config.latWeight !== 0) {
-    line += ` latWeight=${config.latWeight}`;
-  }
+  // ALWAYS printed, unlike the three fields above. The rule that lets a field be
+  // omitted when it holds its default only holds while that default is ZERO: the
+  // omission then means "0" both before and after any change to the default, so two
+  // different shipped configurations can never render the same line. The shipped
+  // latency weight is not zero, so an omitted-when-default field would print a
+  // byte-identical `Config:` line for the 694-case run and the 673-case ablation —
+  // which is the exact defect this line exists to prevent. It is NOT nested under
+  // the failed-edge weight either: the two terms are independent, and this one can
+  // be on while that one is off.
+  line += ` latWeight=${config.latWeight}`;
   return line;
 }
 

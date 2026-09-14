@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
 import { NON_ENGINE_OPTION_KEYS, buildFse26EngineOptions } from '../src/fse26-engine-options.js';
@@ -28,7 +29,7 @@ describe('buildFse26EngineOptions', () => {
       failedEdgeWeight: 0,
       failedEdgeMode: 'sum',
       failedEdgeMinRecords: 1,
-      latWeight: 0,
+      latWeight: DEFAULT_LAT_WEIGHT,
     });
   });
 
@@ -70,16 +71,26 @@ describe('buildFse26EngineOptions', () => {
     expect(fromArgv.signals.failedEdgeMinRecords).toBe(3);
   });
 
-  it('forwards the latency weight, shipped as 0', () => {
-    // Off by default: the shipped configuration must not carry the term until it
-    // has been ablated against the kill criterion. A dropped weight would run the
-    // control while the `Config:` line reported the ablation.
-    expect(buildFse26EngineOptions(BASE).signals.latWeight).toBe(0);
+  it('forwards the latency weight, shipped at the measured zero-regression point', () => {
+    // ON by default, unlike the failed-edge signal: this term's weight was solved
+    // against the kill criterion's second half and then measured, so the shipped
+    // configuration carries it. A dropped weight would run the 673-case ablation
+    // while the `Config:` line reported the 694-case default.
+    expect(buildFse26EngineOptions(BASE).signals.latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(DEFAULT_LAT_WEIGHT).toBeGreaterThan(0);
+    // The ablation stays reachable, and it is a DIFFERENT configuration.
+    expect(buildFse26EngineOptions({ ...BASE, latWeight: 0 }).signals.latWeight).toBe(0);
     expect(buildFse26EngineOptions({ ...BASE, latWeight: 0.75 }).signals.latWeight).toBe(0.75);
 
-    // End to end, from argv — the only path a dispatch actually takes.
-    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--lat-weight', '0.75']));
-    expect(fromArgv.signals.latWeight).toBe(0.75);
+    // End to end, from argv — the only path a dispatch actually takes, for both the
+    // shipped default and the ablation.
+    expect(buildFse26EngineOptions(parseFSE26Args([])).signals.latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(buildFse26EngineOptions(parseFSE26Args(['--lat-weight', '0'])).signals.latWeight).toBe(
+      0,
+    );
+    expect(
+      buildFse26EngineOptions(parseFSE26Args(['--lat-weight', '0.75'])).signals.latWeight,
+    ).toBe(0.75);
   });
 
   it('forwards rank normalization, which is load-bearing on the large topologies', () => {

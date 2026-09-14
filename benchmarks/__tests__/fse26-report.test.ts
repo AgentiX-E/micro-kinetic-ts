@@ -118,10 +118,14 @@ describe('FSE26 report — the two renderings agree', () => {
 
   it('names the failed-edge weight only when it is non-zero', () => {
     // The shipped value is 0, so a zero-weight line stays byte-identical to the
-    // published one — and a flipped switch cannot hide inside it.
+    // published one — and a flipped switch cannot hide inside it. That is the
+    // omission rule this field obeys and the latency weight does NOT, because its
+    // shipped value is not zero.
     const shipped = formatFSE26ConfigLine(makeConfig());
     expect(shipped).not.toContain('failedEdgeWeight');
-    expect(shipped).toBe('Config: logWeight=1 logMode=logicHttp rankNormalization=true');
+    expect(shipped).toBe(
+      'Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0',
+    );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
     );
@@ -144,13 +148,17 @@ describe('FSE26 report — the two renderings agree', () => {
     );
   });
 
-  it('names the latency weight only when it is non-zero, and outside the failed-edge block', () => {
-    // The two weights gate INDEPENDENT terms: the latency term can be on while
-    // the failed-edge signal is off, so nesting this line inside that block would
-    // hide a non-shipped configuration behind a shipped-looking line.
-    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('latWeight');
+  it('names the latency weight on every run, the shipped value included', () => {
+    // UNCONDITIONAL, unlike `riseCeiling` and `fleetBaseline`: the rule that lets a
+    // field be omitted when it holds its default only holds while that default is
+    // zero. The shipped latency weight is not zero, so an omitted-when-default field
+    // would render a 694-case run and a 673-case run with byte-identical `Config:`
+    // lines — the exact defect this line exists to prevent.
+    expect(formatFSE26ConfigLine(makeConfig())).toContain('latWeight=0');
+    expect(formatFSE26ConfigLine(makeConfig({ latWeight: 0.03 }))).toContain('latWeight=0.03');
     expect(formatFSE26ConfigLine(makeConfig({ latWeight: 0.75 }))).toContain('latWeight=0.75');
-    // Still printed when the failed-edge weight is 0.
+    // Still printed when the failed-edge weight is 0 — the two terms are
+    // independent, and the latency term can be on while that one is off.
     expect(formatFSE26ConfigLine(makeConfig({ latWeight: 0.75, failedEdgeWeight: 0 }))).toContain(
       'latWeight=0.75',
     );

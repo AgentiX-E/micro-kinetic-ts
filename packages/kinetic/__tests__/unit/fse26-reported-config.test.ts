@@ -102,6 +102,57 @@ const MEASURED_MODES: Record<string, { topAt1: number; hits: number; cases: numb
     logicHttp: { topAt1: 0.473, hits: 673, cases: 1422, run: '34604105028' },
   };
 
+/**
+ * Where the engine's shipped latency weight is declared.
+ *
+ * The same discipline as `MEASURED_MODES`, applied to a NUMBER rather than a mode:
+ * a default is a claim, and a claim without a measurement behind it is how this
+ * benchmark published 23.1% for months. The value is read as text because the
+ * defect being guarded against is a configuration default, which no runtime
+ * assertion of the engine's own behaviour can see.
+ */
+const PRUNER_PATH = resolve(repoRoot, 'packages/tree/src/pruning/pruner.ts');
+const DEFAULT_LAT_WEIGHT_RE = /DEFAULT_LAT_WEIGHT\s*=\s*([0-9.]+)/;
+
+/**
+ * Weights with a recorded full-benchmark measurement, and what that measurement
+ * did to the fault types. `regressedTypes` is the half of the shared kill
+ * criterion that decides whether a weight may ship: `0` is required.
+ */
+const MEASURED_LAT_WEIGHTS: Record<
+  string,
+  { topAt1: number; hits: number; cases: number; regressedTypes: number; run: string }
+> = {
+  '0': {
+    topAt1: 0.4732770745428973,
+    hits: 673,
+    cases: 1422,
+    regressedTypes: 0,
+    run: '34861464922',
+  },
+  '0.03': {
+    topAt1: 0.4880450070323488,
+    hits: 694,
+    cases: 1422,
+    regressedTypes: 0,
+    run: '34872477561',
+  },
+  '0.66': {
+    topAt1: 0.5555555555555556,
+    hits: 790,
+    cases: 1422,
+    regressedTypes: 5,
+    run: '34872482240',
+  },
+  '0.75': {
+    topAt1: 0.5520393811533052,
+    hits: 785,
+    cases: 1422,
+    regressedTypes: 7,
+    run: '34861468557',
+  },
+};
+
 describe('FSE26 reported configuration', () => {
   const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
   const runner = readFileSync(RUNNER_PATH, 'utf8');
@@ -137,6 +188,35 @@ describe('FSE26 reported configuration', () => {
 
   it('accepts the mode it ships as the default', () => {
     expect(readAcceptedModes(runner)).toContain(readRunnerDefault(runner));
+  });
+});
+
+describe('FSE26 latency weight — a shipped default is a measured claim', () => {
+  const pruner = readFileSync(PRUNER_PATH, 'utf8');
+  const shipped = DEFAULT_LAT_WEIGHT_RE.exec(pruner)?.[1];
+
+  it('declares the shipped latency weight where this guard can read it', () => {
+    expect(shipped).toBeDefined();
+  });
+
+  it('ships a latency weight that has a recorded full-benchmark measurement', () => {
+    expect(Object.keys(MEASURED_LAT_WEIGHTS)).toContain(shipped);
+  });
+
+  it('ships a latency weight that regressed ZERO fault types', () => {
+    // The second half of the shared kill criterion, and the only reason this term
+    // was rejected at 0.75 in the first place (+7.88pp and still refused). A future
+    // flip to a weight that gains more while costing a type fails here rather than
+    // being discovered in the artifact.
+    const measured = MEASURED_LAT_WEIGHTS[shipped!]!;
+    expect(measured.regressedTypes).toBe(0);
+  });
+
+  it('ships the best-measured zero-regression weight', () => {
+    const passing = Object.entries(MEASURED_LAT_WEIGHTS)
+      .filter(([, m]) => m.regressedTypes === 0)
+      .sort((a, b) => b[1].topAt1 - a[1].topAt1);
+    expect(shipped).toBe(passing[0]?.[0]);
   });
 });
 

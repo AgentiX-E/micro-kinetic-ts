@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LogSignalMode } from '../../packages/tree/src/index.js';
+import { DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
 
 import { DEFAULT_FSE26_LOG_MODE, isLogSignalMode, parseFSE26Args } from '../src/fse26-cli.js';
 
@@ -144,6 +145,12 @@ describe('parseFSE26Args — other flags', () => {
     // `Config:` line reported a weight the operator typed.
     expect(parseFSE26Args(['--log-weight', 'x']).logWeight).toBe(1.0);
     expect(parseFSE26Args(['--log-weight', '1O']).logWeight).toBe(1.0);
+    // An EMPTY value is unusable too, and it is the case that hides best:
+    // `Number('')` is 0, which is finite and non-negative, so a naive check accepts
+    // it and silently runs the 14.98% ablation. The workflow passes this flag only
+    // when the dispatch input is non-empty, for the same reason.
+    expect(parseFSE26Args(['--log-weight', '']).logWeight).toBe(1.0);
+    expect(parseFSE26Args(['--log-weight', '   ']).logWeight).toBe(1.0);
   });
 
   it('keeps every valid log weight, including the measured 0', () => {
@@ -166,19 +173,31 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--failed-edge-mode', 'mean']).failedEdgeMode).toBe('mean');
   });
 
-  it('parses the latency weight, defaulting to the shipped 0', () => {
-    expect(parseFSE26Args([]).latWeight).toBe(0);
+  it('parses the latency weight, defaulting to the SHIPPED measured weight', () => {
+    // Not zero. `parseFSE26Args([])` is what CI runs when no input is overridden,
+    // so this IS the published configuration, and the shipped value is the
+    // criterion-passing point inside the zero-regression window rather than the
+    // ablation. Asserted against the engine's own constant, so the number has one
+    // owner and a change to it cannot pass by editing a literal here.
+    expect(parseFSE26Args([]).latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(DEFAULT_LAT_WEIGHT).toBeGreaterThan(0);
+    // Zero is still reachable explicitly — it is a different MEASURED
+    // configuration (the pre-flip control), not an invalid one.
+    expect(parseFSE26Args(['--lat-weight', '0']).latWeight).toBe(0);
     expect(parseFSE26Args(['--lat-weight', '0.75']).latWeight).toBe(0.75);
     expect(parseFSE26Args(['--lat-weight', '2']).latWeight).toBe(2);
   });
 
   it('falls back to the SHIPPED latency weight on anything unusable', () => {
-    // 0 is the shipped value, so a typo reproduces a published configuration
-    // instead of inventing an unmeasured one. A negative weight would flip the
-    // term into a PENALTY on the very services it is meant to credit.
-    expect(parseFSE26Args(['--lat-weight', '0.5x']).latWeight).toBe(0);
-    expect(parseFSE26Args(['--lat-weight', '-1']).latWeight).toBe(0);
-    expect(parseFSE26Args(['--lat-weight', '']).latWeight).toBe(0);
+    // The fallback has to be the SHIPPED value, exactly as `--log-weight`'s is.
+    // It used to be a hardcoded 0, which was the shipped value only while the
+    // default WAS 0: after the flip it would have run the ablation on a typo and
+    // reported it under the shipped configuration's name in the `Config:` line.
+    // A negative weight would flip the term into a PENALTY on the very services it
+    // is meant to credit.
+    expect(parseFSE26Args(['--lat-weight', '0.5x']).latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(parseFSE26Args(['--lat-weight', '-1']).latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(parseFSE26Args(['--lat-weight', '']).latWeight).toBe(DEFAULT_LAT_WEIGHT);
   });
 
   it('parses the failed-edge evidence floor, defaulting to the shipped 1', () => {

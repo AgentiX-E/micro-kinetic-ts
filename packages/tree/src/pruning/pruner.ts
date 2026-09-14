@@ -332,10 +332,8 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * became slow but still succeeded is invisible to it, and so is a case where
    * no call failed at all.
    *
-   * Default: 0 (opt-in). The measurement is why the default is not flipped: it
-   * takes JVMMemoryStress from 4 to 30 cases at a partial weight while costing
-   * `HTTPResponseReplaceCode` two, and the kill criterion has no exception for a
-   * favourable ratio.
+   * Default: {@link DEFAULT_LAT_WEIGHT}, the measured zero-regression point. Pass
+   * `0` explicitly for the ablation that scores 47.33%.
    */
   readonly latWeight: number;
   /** The per-edge latency records the term above is computed from. */
@@ -377,6 +375,32 @@ export function toRankingWeights(
   };
 }
 
+/**
+ * The shipped weight of the per-edge latency-rise term.
+ *
+ * Flipped from 0 to this value only after the weight was SOLVED rather than swept:
+ * the score is affine in the weight, so with both terms recorded per service in a
+ * diagnostic dump the set of weights at which a currently-correct case stays
+ * correct is an intersection of half-lines. That window is `w ∈ [0, 0.030459]` on
+ * the full FSE'26 dump, and beyond it the first casualty is a single
+ * `JVMException` case.
+ *
+ * The two points that matter were then MEASURED on the real engine, on one commit
+ * and one cache, with only this weight different:
+ *
+ * | weight | Top@1 | correct | regressed fault types |
+ * | --- | --- | --- | --- |
+ * | 0 (the ablation) | 47.33% | 673 | 0 |
+ * | **0.03 (this value)** | **48.80%** | **694** | **0** |
+ *
+ * `0.03` rather than the window's edge `0.030459`: the default has to be a number
+ * that was measured, and the reconstructed window is a prediction the measurement
+ * confirmed (+21 cases, zero regressions) rather than a substitute for it. The
+ * more aggressive `0.75` gains far more (+7.88pp) and is refused by the kill
+ * criterion's second half — seven fault types regress.
+ */
+export const DEFAULT_LAT_WEIGHT = 0.03;
+
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
   decayAlpha: 0.8,
@@ -396,7 +420,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeWeight: 0.0,
   failedEdgeMode: 'sum',
   failedEdgeMinRecords: 1,
-  latWeight: 0.0,
+  latWeight: DEFAULT_LAT_WEIGHT,
 };
 
 /**

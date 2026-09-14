@@ -27,6 +27,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
+import { DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -144,12 +145,16 @@ export interface Fse26CliOptions {
    */
   readonly failedEdgeMinRecords: number;
   /**
-   * Strength of the per-edge LATENCY-rise signal (0 = disabled, the shipped
-   * behaviour).
+   * Strength of the per-edge LATENCY-rise signal.
    *
    * Credits the callee of an edge whose mean span duration rose, which is the
    * same direction as the failed-edge signal but exists on the cases where no
-   * call failed at all. Ablation switch.
+   * call failed at all.
+   *
+   * The default is the engine's own {@link DEFAULT_LAT_WEIGHT}, imported rather
+   * than restated: a literal here would be a second copy, and a second copy of a
+   * measured default is what let the published mode drift 24.2pp from the measured
+   * one. Pass 0 for the ablation.
    */
   readonly latWeight: number;
 }
@@ -160,6 +165,33 @@ function csv(value: string): string[] {
     .split(',')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Parse a non-negative weight flag, falling back to the SHIPPED weight.
+ *
+ * Two ways a weight flag can go wrong, and they need the same answer:
+ *
+ * 1. an unusable value (`'1O'`, `'-1'`) — `parseFloat` would read `1O` as `1`, so a
+ *    typo would run a plausible but DIFFERENT ablation than the one asked for;
+ * 2. an EMPTY value. `Number('')` is `0`, which is not a missing measurement — it is
+ *    a *different measured configuration* (the ablation), so accepting it silently
+ *    selects one nobody asked for.
+ *
+ * Both fall back to the shipped weight, so the worst case is a run of the published
+ * configuration under a name that says so, never an unrequested experiment wearing
+ * the published configuration's label. The workflow passes each weight flag only
+ * when its dispatch input is non-empty, for exactly the reason in (2); enforcing it
+ * here as well means the CLI cannot be a second door into the same swap.
+ *
+ * @param raw - The flag's argument, verbatim.
+ * @param shipped - The shipped weight for this flag.
+ * @returns The parsed weight, or `shipped`.
+ */
+function parseWeight(raw: string, shipped: number): number {
+  if (raw.trim() === '') return shipped;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : shipped;
 }
 
 /**
@@ -189,7 +221,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     failedEdgeWeight: 0,
     failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
     failedEdgeMinRecords: 1,
-    latWeight: 0,
+    latWeight: DEFAULT_LAT_WEIGHT,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -198,13 +230,10 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--max-cases' && i + 1 < argv.length)
       opts.maxCases = parseInt(argv[++i]!, 10) || 0;
     else if (arg === '--log-weight' && i + 1 < argv.length) {
-      // STRICT, for the reason spelled out on `--rise-ceiling` below:
-      // `parseFloat('1O')` is 1, so a typo would run a plausible but DIFFERENT
-      // ablation than the one asked for. The fallback is the SHIPPED weight
-      // (1.0), not 0 — 0 is a *different* measured configuration (14.98% Top@1),
-      // so silently selecting it would publish an ablation nobody chose.
-      const weight = Number(argv[++i]!);
-      opts.logWeight = Number.isFinite(weight) && weight >= 0 ? weight : 1.0;
+      // The fallback is the SHIPPED weight (1.0), not 0 — 0 is a *different*
+      // measured configuration (14.98% Top@1), so silently selecting it would
+      // publish an ablation nobody chose. See `parseWeight` for the empty value.
+      opts.logWeight = parseWeight(argv[++i]!, 1.0);
     } else if (arg === '--log-mode' && i + 1 < argv.length) {
       const mode = argv[++i]!;
       opts.logMode = isLogSignalMode(mode) ? mode : DEFAULT_FSE26_LOG_MODE;
@@ -243,11 +272,11 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const weight = Number(argv[++i]!);
       opts.failedEdgeWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
     } else if (arg === '--lat-weight' && i + 1 < argv.length) {
-      // Same strictness and the same safe fallback as the two weights above: the
-      // SHIPPED weight is 0 (the term is off), so a typo reproduces a published
-      // configuration instead of inventing an unmeasured one.
-      const weight = Number(argv[++i]!);
-      opts.latWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
+      // Same rule and the same fallback as `--log-weight`: the SHIPPED weight, NOT
+      // 0. Zero is a *different measured* configuration — the 47.33% ablation — so
+      // a typo must reproduce the published configuration rather than silently run
+      // an experiment nobody asked for under the shipped one's name.
+      opts.latWeight = parseWeight(argv[++i]!, DEFAULT_LAT_WEIGHT);
     }
   }
 

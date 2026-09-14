@@ -6,7 +6,7 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import { TreePruner, toRankingWeights } from '@agentix-e/micro-kinetic-tree';
+import { DEFAULT_LAT_WEIGHT, TreePruner, toRankingWeights } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
 function makeNode(id: string): ServiceNode {
@@ -1621,11 +1621,14 @@ describe('TreePruner — per-edge latency-rise signal', () => {
     expect(graph.edgeLatencyScores?.has(CALLER)).toBe(false);
   });
 
-  it('is neutral at the default weight: carrying the field changes no score', () => {
-    // This is the property that lets the converter ship the field before the
-    // signal is trusted: at weight 0 the presence of latency records must be
-    // unobservable, exactly like an absent field.
-    const pruner = new TreePruner();
+  it('is neutral at weight 0: carrying the field changes no score', () => {
+    // Weight 0 is the ABLATION (673 of 1422 on FSE'26), and it is the configuration
+    // the converter shipped the field under before the signal was trusted: at weight
+    // 0 the presence of latency records must be unobservable, exactly like an absent
+    // field. The baseline is stated EXPLICITLY rather than inherited from the
+    // constructor, because the shipped default is no longer 0 — a test that relied on
+    // the default would silently stop testing this property the moment it changed.
+    const pruner = new TreePruner({ latWeight: 0 });
     const without = scores(pruner);
     const withField = scores(pruner, { edgeLatency });
 
@@ -1640,11 +1643,24 @@ describe('TreePruner — per-edge latency-rise signal', () => {
     // The term is `weight × score` with score in [0, 1], so with weight 1 and a
     // single credited callee the delta is exactly 1 — and the caller's own score
     // must not move, or the term would be a re-weighting rather than a new axis.
-    const before = scores(new TreePruner(), { edgeLatency }).byService;
+    const before = scores(new TreePruner({ latWeight: 0 }), { edgeLatency }).byService;
     const after = scores(new TreePruner({ latWeight: 1 }), { edgeLatency }).byService;
 
     expect(after.get(CALLEE)! - before.get(CALLEE)!).toBeCloseTo(1, 10);
     expect(after.get(CALLER)!).toBeCloseTo(before.get(CALLER)!, 12);
+  });
+
+  it('applies the SHIPPED weight by default, and it is the exported one', () => {
+    // The constructor's default is the published configuration, so it has to be the
+    // measured, criterion-passing point rather than the ablation. Asserted against
+    // the exported constant so the value has exactly one owner: a literal here would
+    // be a second copy that could agree with itself while disagreeing with the CLI.
+    const shipped = scores(new TreePruner(), { edgeLatency }).byService;
+    const ablation = scores(new TreePruner({ latWeight: 0 }), { edgeLatency }).byService;
+
+    expect(DEFAULT_LAT_WEIGHT).toBeGreaterThan(0);
+    expect(shipped.get(CALLEE)! - ablation.get(CALLEE)!).toBeCloseTo(DEFAULT_LAT_WEIGHT, 12);
+    expect(shipped.get(CALLER)!).toBeCloseTo(ablation.get(CALLER)!, 12);
   });
 
   it('is independent of the failed-edge weight it mirrors', () => {
@@ -1652,7 +1668,7 @@ describe('TreePruner — per-edge latency-rise signal', () => {
     // the failed-edge signal off, which is the configuration this axis is
     // measured in. If they shared a gate, that run would be impossible.
     const withLatOnly = scores(new TreePruner({ latWeight: 1 }), { edgeLatency }).byService;
-    const base = scores(new TreePruner()).byService;
+    const base = scores(new TreePruner({ latWeight: 0 })).byService;
 
     expect(withLatOnly.get(CALLEE)! - base.get(CALLEE)!).toBeCloseTo(1, 10);
   });

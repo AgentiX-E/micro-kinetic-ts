@@ -22,6 +22,7 @@ import {
   caseWeightInterval,
   classifyMiss,
   computeWeightSeparation,
+  computeZeroRegressionWindow,
   diffDiagnostics,
   familyCompetition,
   formatAnomalyShapeReport,
@@ -29,11 +30,13 @@ import {
   formatMetricCompetitionReport,
   formatMissReport,
   formatWeightSeparationReport,
+  formatZeroRegressionWindowReport,
   isTop1Correct,
   latencySlopes,
   parseDiagnosticDump,
   regressionMechanism,
   tallyDeltas,
+  zeroRegressionSamples,
 } from '../src/fse26-diagnose-analyze.js';
 
 interface ServiceSpec {
@@ -2028,5 +2031,179 @@ describe('buildWeightSeparationCases — slope selection', () => {
 
     expect(lat).toContain('slope=lat');
     expect(failedEdge).toContain('slope=failedEdge');
+  });
+});
+
+describe('computeZeroRegressionWindow — the question the flip is decided on', () => {
+  /**
+   * Two cases whose only difference is WHO is ahead at rest.
+   *
+   * `dp-cap` is CORRECT at w = 0 and loses to a competitor with a larger slope at
+   * `log1p(0.5)`, so it caps the window. `dp-gain` is WRONG at w = 0 and takes the
+   * lead at `log1p(0.25)`, so it is a gain that the cap decides whether we may
+   * collect. Both thresholds are written as `log1p` of the anomaly the fixture sets
+   * rather than as a decimal, because the dump prints three decimals and a fixture
+   * that assumed more precision would silently test the rounding.
+   */
+  const capCase = dump({
+    datapack: 'dp-cap',
+    groundTruthServices: ['ts-src'],
+    services: [
+      serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, failedEdge: 0 }),
+      serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, failedEdge: 1 }),
+    ],
+  });
+  const gainCase = dump({
+    datapack: 'dp-gain',
+    groundTruthServices: ['ts-src'],
+    services: [
+      serviceLine({ serviceId: 'ts-src', selfAnomaly: 0, failedEdge: 1 }),
+      serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.25, failedEdge: 0 }),
+    ],
+  });
+  const build = (text: string) =>
+    buildWeightSeparationCases(parseDiagnosticDump(text), { logWeight: 1 });
+
+  it('caps the window at the weight where the first currently-correct case loses', () => {
+    // `ts-src` leads at rest by log1p(0.5) and is overtaken once the competitor's
+    // slope of 1 closes that gap, so the cap is exact and the binder is named.
+    const window = computeZeroRegressionWindow(build(capCase));
+
+    expect(window.satisfied).toBe(1);
+    expect(window.cap).toBeCloseTo(Math.log1p(0.5), 12);
+    expect(window.capBinder).toBe('dp-cap');
+  });
+
+  it('is unbounded when no currently-correct case can be overtaken', () => {
+    const window = computeZeroRegressionWindow(
+      build(
+        dump({
+          datapack: 'dp-safe',
+          groundTruthServices: ['ts-src'],
+          services: [
+            serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, failedEdge: 1 }),
+            serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, failedEdge: 0 }),
+          ],
+        }),
+      ),
+    );
+
+    expect(window.cap).toBe(Number.POSITIVE_INFINITY);
+    expect(window.capBinder).toBeUndefined();
+  });
+
+  it('takes the INTERSECTION of the caps, not the first or the widest', () => {
+    // Two correct cases, one tolerant to 0.4055 and one only to 0.2. The window is
+    // the tighter of the two, and the binder has to be the case that set it — a
+    // report naming the wrong one sends the next step to the wrong case.
+    const text =
+      capCase +
+      dump({
+        datapack: 'dp-tight',
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.25, failedEdge: 0 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, failedEdge: 1 }),
+        ],
+      });
+    const window = computeZeroRegressionWindow(build(text));
+
+    expect(window.satisfied).toBe(2);
+    expect(window.cap).toBeCloseTo(Math.log1p(0.25), 12);
+    expect(window.capBinder).toBe('dp-tight');
+  });
+
+  it('counts a currently-wrong case as a GAIN only where the window covers it', () => {
+    // The same gain is inside the window at 0.25 and outside it at 0.1, so the
+    // sample has to be evaluated at the weight asked for rather than once for the
+    // whole run — a single "gains" number would be true at one weight and false at
+    // the other.
+    const cases = build(capCase + gainCase);
+    const samples = zeroRegressionSamples(cases, [0, 0.1, 0.25]);
+
+    expect(samples.map((s) => [s.weight, s.correct, s.gained, s.lost])).toEqual([
+      [0, 1, 0, 0],
+      [0.1, 1, 0, 0],
+      [0.25, 2, 1, 0],
+    ]);
+  });
+
+  it('reports the loss as soon as the weight passes the cap', () => {
+    const cases = build(capCase);
+    const samples = zeroRegressionSamples(cases, [Math.log1p(0.5) - 1e-9, Math.log1p(0.5) + 1e-9]);
+
+    expect(samples[0]!.lost).toBe(0);
+    expect(samples[1]!.lost).toBe(1);
+    expect(samples[1]!.correct).toBe(0);
+  });
+
+  it('ignores a case that is already wrong and can never be satisfied', () => {
+    // THE defect this function exists for. The separation report intersects over
+    // EVERY case, so one case that admits no weight at all makes it say "no weight
+    // works" — which reads as "the signal is useless" when the useful question, and
+    // the one the criterion asks, is whether any case can get WORSE. A case that is
+    // already wrong cannot get worse.
+    const hopeless = dump({
+      datapack: 'dp-hopeless',
+      groundTruthServices: ['ts-ghost'],
+      services: [serviceLine({ serviceId: 'ts-src', selfAnomaly: 1 })],
+    });
+    const cases = build(capCase + hopeless);
+
+    expect(computeWeightSeparation(cases).separable).toBe(false);
+
+    const window = computeZeroRegressionWindow(cases);
+    expect(window.cap).toBeCloseTo(Math.log1p(0.5), 12);
+    expect(window.unreachable).toBe(1);
+    expect(window.gains.map((g) => g.datapack)).toEqual([]);
+  });
+
+  it('states both questions in the report, so the NO cannot be read as the verdict', () => {
+    const hopeless = dump({
+      datapack: 'dp-hopeless',
+      groundTruthServices: ['ts-ghost'],
+      services: [serviceLine({ serviceId: 'ts-src', selfAnomaly: 1 })],
+    });
+    const report = formatZeroRegressionWindowReport(
+      parseDiagnosticDump(capCase + gainCase + hopeless),
+      {
+        logWeight: 1,
+      },
+    );
+
+    expect(report).toContain('slope=failedEdge');
+    expect(report).toContain('binder dp-cap');
+    // The cap is printed as a number, and the first weight ABOVE it is shown
+    // forfeiting a case — the claim is two-sided rather than "zero below the cap".
+    expect(report).toMatch(/cap weight:\s+0\.405465/);
+    // The claim is two-sided: the row AT the cap still holds every case, and the
+    // first row past it forfeits exactly the one named as the binder.
+    const rows = [...report.matchAll(/^\s{2}([0-9.]+)\s+(\d+)\s+(\d+)\s+(\d+)(.*)$/gm)].map(
+      (m) => ({
+        weight: Number(m[1]),
+        correct: Number(m[2]),
+        lost: Number(m[4]),
+        mark: m[5]!.trim(),
+      }),
+    );
+    expect(rows.find((r) => r.mark === '')!.lost).toBe(0);
+    expect(rows.find((r) => r.mark !== '')!.lost).toBe(1);
+    // And it says which question it answered. `computeWeightSeparation` answers NO
+    // on this same input, so a reader who confuses the two reports the signal as
+    // unusable when the criterion's question has a YES.
+    expect(report).toContain('may become incorrect');
+  });
+
+  it('probes the cap itself by default, not only a coarse grid around it', () => {
+    // The slope is the dump's own `failedEdge=` column, so the fixtures above model
+    // the score they are solving for. The latency slope is a DIFFERENT score and is
+    // exercised by `--slope lat` on a real dump, where `latRise=` is present.
+    const report = formatZeroRegressionWindowReport(parseDiagnosticDump(capCase), { logWeight: 1 });
+    const probed = [...report.matchAll(/^\s{2}([0-9.]+)\s/gm)].map((m) => Number(m[1]));
+
+    // The cap is a solved number, not a grid point, so a report that only printed
+    // the grid would never show the boundary it claims.
+    expect(probed.some((w) => Math.abs(w - Math.log1p(0.5)) < 1e-6)).toBe(true);
+    expect(probed.some((w) => w > Math.log1p(0.5))).toBe(true);
   });
 });

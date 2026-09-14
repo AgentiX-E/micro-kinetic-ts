@@ -67,7 +67,7 @@ export type {
 export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/contribution.js';
 export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 
-export { TreePruner, toRankingWeights } from './pruning/pruner.js';
+export { DEFAULT_LAT_WEIGHT, TreePruner, toRankingWeights } from './pruning/pruner.js';
 export type { TreePrunerOptions } from './pruning/pruner.js';
 
 export {

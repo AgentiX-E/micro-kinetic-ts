@@ -1118,6 +1118,233 @@ export function formatWeightSeparationReport(
   return lines.join('\n');
 }
 
+/**
+ * Weights at which NO case that is correct today becomes incorrect.
+ *
+ * ## Why this is not {@link computeWeightSeparation}
+ *
+ * The two are easy to confuse and they answer different questions:
+ *
+ * - `computeWeightSeparation` asks *"is there a weight at which EVERY case is
+ *   satisfied?"*. One case that no weight can satisfy makes it say NO, and on the
+ *   per-edge latency slope that is exactly what it says — `separable: NO`,
+ *   `cases: 1380` — even though a weight at which nothing gets worse plainly
+ *   exists.
+ * - This asks *"is there a weight at which no case gets WORSE?"*, which is the
+ *   question the kill criterion asks. A case that is already wrong cannot get
+ *   worse, so it constrains nothing here; it is only a candidate to be GAINED.
+ *
+ * A wrong negative on the first question is not a curiosity: the register cited the
+ * window below as the reason the latency axis could be reopened, and no shipped
+ * instrument could compute it. The report therefore names which question it
+ * answered, and the CLI flag that prints it is separate.
+ *
+ * ## The algebra
+ *
+ * `score(v) = base(v) + w·slope(v)` with `base = log1p(selfAnomaly) +
+ * logWeight·logScore`, so for each competitor the requirement is linear in `w` and
+ * a case's feasible set is a union of intervals ({@link caseWeightInterval}).
+ * Intersecting that union over every currently-correct case leaves the interval
+ * containing 0; its right end is the cap.
+ */
+export interface ZeroRegressionWindow {
+  /** Cases the dump describes and that name at least one acceptable root. */
+  readonly cases: number;
+  /** Cases satisfied at `w = 0` — the population the window must protect. */
+  readonly satisfied: number;
+  /** Cases no weight can satisfy, and that are not satisfied at 0 either. */
+  readonly unreachable: number;
+  /** The largest weight at which no currently-correct case loses rank 1. */
+  readonly cap: number;
+  /** The case that sets `cap`; `undefined` when the cap is unbounded. */
+  readonly capBinder?: string;
+  /** Currently-wrong cases a weight can fix, with the weights that fix them. */
+  readonly gains: readonly WindowGain[];
+}
+
+/** One currently-wrong case, and the weights at which it becomes correct. */
+export interface WindowGain {
+  readonly datapack: string;
+  readonly intervals: readonly WeightInterval[];
+}
+
+/** One weight, and what the case set looks like there. */
+export interface WindowSample {
+  readonly weight: number;
+  /** Cases satisfied at this weight (including the gains below). */
+  readonly correct: number;
+  /** Satisfied here, unsatisfied at 0. */
+  readonly gained: number;
+  /** Satisfied at 0, unsatisfied here — the regressions the criterion forbids. */
+  readonly lost: number;
+}
+
+/**
+ * Weights every window report probes, unless a caller supplies its own.
+ *
+ * Includes 0.03 because that is the shipped latency weight: a window report that
+ * did not sample the operating point could not be compared with the run that
+ * measured it.
+ */
+export const DEFAULT_WINDOW_GRID: readonly number[] = [
+  0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.25, 0.5, 0.75, 1,
+];
+
+/** Whether a union of intervals covers `w`. */
+function intervalsCover(intervals: readonly WeightInterval[], w: number): boolean {
+  return intervals.some(
+    (interval) => w >= interval.min - WEIGHT_EPSILON && w <= interval.max + WEIGHT_EPSILON,
+  );
+}
+
+/**
+ * The right end of the interval component containing 0.
+ *
+ * `+Infinity` when the component is unbounded, `-Infinity` when 0 is not covered
+ * at all. The distinction matters: only a case that IS covered at 0 can cap the
+ * window, because only a case that is correct today can regress.
+ */
+function componentEndingAtZero(intervals: readonly WeightInterval[]): number {
+  let end = Number.NEGATIVE_INFINITY;
+  for (const interval of intervals) {
+    if (interval.min <= WEIGHT_EPSILON && interval.max >= -WEIGHT_EPSILON) {
+      end = Math.max(end, interval.max);
+    }
+  }
+  return end;
+}
+
+/**
+ * Solve the zero-regression window for a case set.
+ *
+ * @param cases - Input from {@link buildWeightSeparationCases}.
+ * @returns The window, with its binder and the gains inside it.
+ */
+export function computeZeroRegressionWindow(
+  cases: readonly WeightSeparationCase[],
+): ZeroRegressionWindow {
+  let satisfied = 0;
+  let unreachable = 0;
+  let cap = Number.POSITIVE_INFINITY;
+  let capBinder: string | undefined;
+  const gains: WindowGain[] = [];
+
+  for (const one of cases) {
+    const allowed = caseWeightInterval(one);
+    const baseline = componentEndingAtZero(allowed);
+    if (baseline === Number.NEGATIVE_INFINITY) {
+      // Not correct at w = 0. It cannot regress, so it never caps the window: an
+      // empty interval means no weight satisfies it, which is a gain that is out of
+      // reach rather than a constraint.
+      if (allowed.length === 0) unreachable++;
+      else gains.push({ datapack: one.datapack, intervals: allowed });
+      continue;
+    }
+    satisfied++;
+    // With a union of intervals per case, the intersection's component at 0 ends at
+    // the SMALLEST of the per-case component ends — the case that reaches the least
+    // far is the one that binds.
+    if (baseline < cap) {
+      cap = baseline;
+      capBinder = one.datapack;
+    }
+  }
+
+  return { cases: cases.length, satisfied, unreachable, cap, capBinder, gains };
+}
+
+/**
+ * Evaluate the case set at each weight in `grid`.
+ *
+ * @param cases - Input from {@link buildWeightSeparationCases}.
+ * @param grid - Weights to probe, in any order; the result keeps that order.
+ * @returns One sample per weight.
+ */
+export function zeroRegressionSamples(
+  cases: readonly WeightSeparationCase[],
+  grid: readonly number[],
+): readonly WindowSample[] {
+  const intervals = cases.map((one) => caseWeightInterval(one));
+  const atZero = intervals.map((one) => intervalsCover(one, 0));
+  return grid.map((weight) => {
+    let correct = 0;
+    let gained = 0;
+    let lost = 0;
+    intervals.forEach((one, index) => {
+      const here = intervalsCover(one, weight);
+      if (here) correct++;
+      if (here && !atZero[index]) gained++;
+      if (!here && atZero[index]) lost++;
+    });
+    return { weight, correct, gained, lost };
+  });
+}
+
+/**
+ * Render {@link computeZeroRegressionWindow} as a report.
+ *
+ * The cap is inserted into the grid, plus one weight just above it, so the claim is
+ * two-sided: nothing is lost up to the cap, and the case named as the binder is
+ * lost immediately after it. A report that only probed the grid could state a cap
+ * it never demonstrated.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The run's log weight.
+ * @param slope - Which term's score is the coefficient.
+ * @param grid - Weights to probe; defaults to {@link DEFAULT_WINDOW_GRID}.
+ * @returns A multi-line report, without a trailing newline.
+ */
+export function formatZeroRegressionWindowReport(
+  cases: readonly DiagnosedCase[],
+  weights: MissAttributionWeights,
+  slope: SlopeKind = 'failedEdge',
+  grid: readonly number[] = DEFAULT_WINDOW_GRID,
+): string {
+  const built = buildWeightSeparationCases(cases, weights, slope);
+  const window = computeZeroRegressionWindow(built);
+  // A relative step, so the probe lands just outside the cap whatever its scale.
+  const justAbove = Number.isFinite(window.cap)
+    ? window.cap * (1 + 1e-6) + Number.EPSILON
+    : Number.POSITIVE_INFINITY;
+  const probes = Number.isFinite(justAbove) ? [...grid, window.cap, justAbove] : [...grid];
+  const samples = zeroRegressionSamples(built, probes);
+
+  // Six decimals, not three. The cap is the number a flip decision is made
+  // against, and the shipped latency weight (0.03) sits 1.5% below it: at three
+  // decimals both render as `0.030`, so a reader could not tell how much room the
+  // shipped point has, nor separate the cap from a grid point beside it.
+  const cap = Number.isFinite(window.cap) ? window.cap.toFixed(6) : 'unbounded';
+  const lines: string[] = [];
+  lines.push(
+    `Weight window (slope=${slope}; logWeight=${weights.logWeight}; no case correct today ` +
+      'may become incorrect):',
+  );
+  lines.push(
+    `  cases: ${window.cases}   correct at 0: ${window.satisfied}   ` +
+      `unreachable at every weight: ${window.unreachable}`,
+  );
+  lines.push(
+    window.capBinder === undefined
+      ? `  cap weight: ${cap}   no case can be overtaken at any weight`
+      : `  cap weight: ${cap}   binder ${window.capBinder}`,
+  );
+  lines.push(
+    `  gains reachable inside the window: ${window.gains.length}` +
+      (window.gains.length === 0 ? '' : ` (${window.gains.map((g) => g.datapack).join(', ')})`),
+  );
+  lines.push(
+    `  ${'w'.padEnd(12)}${'correct'.padStart(8)}${'gained'.padStart(8)}${'lost'.padStart(6)}`,
+  );
+  for (const sample of samples) {
+    const mark = sample.weight === justAbove ? '   <- first weight above the cap' : '';
+    lines.push(
+      `  ${sample.weight.toFixed(6).padEnd(12)}${String(sample.correct).padStart(8)}` +
+        `${String(sample.gained).padStart(8)}${String(sample.lost).padStart(6)}${mark}`,
+    );
+  }
+  return lines.join('\n');
+}
+
 export interface MetricFamily {
   /** How the report names the family. */
   readonly label: string;

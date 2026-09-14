@@ -1657,9 +1657,12 @@ describe('computeEdgeLatencyScores', () => {
   });
 
   it('is inert at a weight of zero, whatever the measurements say', () => {
-    // The shipped default. The term is additive and gated on `latWeight`, so a
-    // case carrying latency evidence scores exactly as it did before the field
-    // existed — `x + 0 * y === x`.
+    // Weight 0 is the ABLATION, not the shipped default — the shipped value is
+    // `DEFAULT_LAT_WEIGHT`. The property tested here is the gating: the term is
+    // additive and multiplied by `latWeight`, so a case carrying latency evidence
+    // scores exactly as it did before the field existed when the weight is 0 —
+    // `x + 0 * y === x`. That is what let the converter ship the field before the
+    // signal was trusted.
     const scores = computeEdgeLatencyScores([lat('a', 'b', 1, 1000)], new Set(['a', 'b']));
     const weight = 0;
 

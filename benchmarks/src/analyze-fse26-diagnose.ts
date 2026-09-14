@@ -46,6 +46,7 @@ import {
   formatMetricCompetitionReport,
   formatMissReport,
   formatWeightSeparationReport,
+  formatZeroRegressionWindowReport,
   parseDiagnosticDump,
   type SlopeKind,
 } from './fse26-diagnose-analyze.js';
@@ -73,6 +74,15 @@ interface FamilyOptions {
   /** Same value, same reason, for the weight-separation section. */
   readonly weightSweep: number | undefined;
   /**
+   * The run's log weight, present only when `--window` was given.
+   *
+   * The zero-regression window is a different question from `--weight-sweep`
+   * (nothing gets worse, against everything is satisfied), so it is a different
+   * flag: the first question's answer is NO on every input this benchmark has
+   * produced, and reporting only it made the second look unaskable.
+   */
+  readonly windowSweep: number | undefined;
+  /**
    * Which term's score the weight solves for. `failedEdge` unless `--slope lat`
    * says otherwise: the latency term answers a DIFFERENT question (its own
    * regression set), and mixing the two would attribute one term's losses to the
@@ -87,7 +97,8 @@ type CliOptions = ComparisonOptions | FamilyOptions;
 const USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--family <regex>] [--family-label <name>] [--misses <logWeight>] ' +
-  '[--weight-sweep <logWeight>] [--slope failedEdge|lat] [--output <file>]';
+  '[--weight-sweep <logWeight>] [--window <logWeight>] [--slope failedEdge|lat] ' +
+  '[--output <file>]';
 
 function parseArgs(argv: readonly string[]): CliOptions {
   const values = new Map<string, string>();
@@ -111,6 +122,20 @@ function parseArgs(argv: readonly string[]): CliOptions {
         throw new Error(`--weight-sweep expects the run's log weight, got '${sweep}'\n${USAGE}`);
       }
       weightSweep = parsedSweep;
+    }
+    // A SEPARATE flag from `--weight-sweep`, not a second block on it: the two
+    // answer different questions ("can every case be satisfied" against "can any
+    // case get worse") and the first answers NO on every input this benchmark has
+    // ever produced. Sharing one flag is how the second question came to look
+    // unanswerable.
+    const windowArg = values.get('window');
+    let windowSweep: number | undefined;
+    if (windowArg !== undefined) {
+      const parsedWindow = Number(windowArg);
+      if (!Number.isFinite(parsedWindow)) {
+        throw new Error(`--window expects the run's log weight, got '${windowArg}'\n${USAGE}`);
+      }
+      windowSweep = parsedWindow;
     }
     // Anything that is not exactly `lat` falls back to the term this solver was
     // built for, like every other switch here: a typo has to reproduce a known
@@ -137,6 +162,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
           : { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
       logWeight,
       weightSweep,
+      windowSweep,
       slope,
       output,
     };
@@ -171,6 +197,11 @@ const report =
         if (opts.weightSweep !== undefined) {
           sections.unshift(
             formatWeightSeparationReport(cases, { logWeight: opts.weightSweep }, opts.slope),
+          );
+        }
+        if (opts.windowSweep !== undefined) {
+          sections.unshift(
+            formatZeroRegressionWindowReport(cases, { logWeight: opts.windowSweep }, opts.slope),
           );
         }
         return sections.join('\n');
