@@ -8,6 +8,7 @@
  */
 
 import type {
+  FaultEdgeLatency,
   FaultFailedEdge,
   MetricMap,
   ServiceCallGraph,
@@ -82,6 +83,13 @@ export interface BenchmarkCase {
    * this names the service the error was emitted ABOUT (the callee, the source).
    */
   readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge>;
+  /**
+   * Per-edge latency either side of the injection, as the caller measured it.
+   *
+   * Absent means "not recorded", never "nothing got slower": the reader writes the key
+   * only when at least one edge has a measurement on both sides.
+   */
+  readonly edgeLatency?: ReadonlyArray<FaultEdgeLatency>;
   /** Optional structured event records (RCA100). */
   readonly events?: ReadonlyArray<BenchmarkEvent>;
   /** Optional alert data (RCA100). */

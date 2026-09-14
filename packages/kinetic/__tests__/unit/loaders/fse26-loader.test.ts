@@ -22,6 +22,7 @@ import {
   dropFSE26MetricNames,
   expandMetricTimestamps,
   resolveFSE26GroundTruth,
+  toFSE26EdgeLatency,
   toFSE26FailedEdges,
   toFSE26LogEntry,
   toFSE26MetricMap,
@@ -479,6 +480,49 @@ describe('FSE26Loader', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('toFSE26EdgeLatency', () => {
+  it('maps the raw tuples onto objects, keeping both durations', () => {
+    expect(
+      toFSE26EdgeLatency([
+        ['ts-ui', 'ts-order-service', 1.5, 6.0],
+        ['ts-a', 'ts-b', 2.0, 2.0],
+      ]),
+    ).toEqual([
+      { caller: 'ts-ui', callee: 'ts-order-service', preMeanMs: 1.5, postMeanMs: 6.0 },
+      { caller: 'ts-a', callee: 'ts-b', preMeanMs: 2.0, postMeanMs: 2.0 },
+    ]);
+  });
+
+  it('drops a row rather than coercing it when a duration is not usable', () => {
+    // The converter already excludes these spans. Coercing one to 1.0 here would read as
+    // "this call took exactly as long before and after" — the one value that means no
+    // evidence, which is the opposite of what a dropped row says.
+    expect(
+      toFSE26EdgeLatency([
+        ['ts-ui', 'ts-order-service', 0, 5],
+        ['ts-a', 'ts-b', -1, 5],
+        ['ts-c', 'ts-d', Number.NaN, 5],
+        ['ts-e', 'ts-f', 1, -2],
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined for an absent or empty input, never an empty array', () => {
+    // "not recorded" and "recorded, and nothing was measurable" are different statements.
+    expect(toFSE26EdgeLatency(undefined)).toBeUndefined();
+    expect(toFSE26EdgeLatency([])).toBeUndefined();
+  });
+
+  it('is carried onto the case by toBenchmarkCase', () => {
+    const raw = makeRawCase({ traceEdgeLatency: [['ts-ui', 'ts-order-service', 3, 9]] });
+    // `toBenchmarkCase` is a loader method, not a free function — the conversion needs
+    // the loader's own configuration.
+    expect(new FSE26Loader().toBenchmarkCase(raw).edgeLatency).toEqual([
+      { caller: 'ts-ui', callee: 'ts-order-service', preMeanMs: 3, postMeanMs: 9 },
+    ]);
   });
 });
 

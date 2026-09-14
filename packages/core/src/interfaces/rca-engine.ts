@@ -25,6 +25,30 @@ import type { FaultPropagationGraph, ServiceCallGraph, ServiceId } from '../type
  * - TODO: LLM-assisted RCA engine
  */
 /**
+ * One edge's span duration before and after the injection, as measured BY THE CALLER.
+ *
+ * The continuous counterpart of {@link FaultFailedEdge}. That one counts FAILURES, so a
+ * call that became slow but still succeeded is invisible to it — and so is a case where
+ * no call failed at all, which is 70 of the 291 silent-source cases. Duration is what the
+ * caller recorded about the callee, so it carries the same direction and exists exactly
+ * where the counts are zero.
+ *
+ * Measured on FSE'26: a JVM memory-stress source's inbound rise is 3.574 at the median and
+ * 14.79 at p90, against a ReplaceCode source's 0.976 — and ranking by this alone reaches
+ * 33.3% on that block against a shipped 2.3%.
+ */
+export interface FaultEdgeLatency {
+  /** The service that made the call (the caller of the edge). */
+  readonly caller: ServiceId;
+  /** The service the call was made against (the callee, which is credited). */
+  readonly callee: ServiceId;
+  /** Mean span duration in milliseconds BEFORE the injection. */
+  readonly preMeanMs: number;
+  /** Mean span duration in milliseconds AT or AFTER the injection. */
+  readonly postMeanMs: number;
+}
+
+/**
  * Optional inputs to {@link IRCAEngine.buildFaultGraph}.
  *
  * These carry case-level temporal context that is independent of the call

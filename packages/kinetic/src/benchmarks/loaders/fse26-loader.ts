@@ -71,6 +71,7 @@ import * as path from 'node:path';
 
 import type {
   CallEdge,
+  FaultEdgeLatency,
   FaultFailedEdge,
   MetricMap,
   ServiceCallGraph,
@@ -412,6 +413,30 @@ export function traceEdgesToCallEdges(
  * @param failedTraceEdges - The `[caller, callee, failed, baseline]` tuples.
  * @returns One record per edge, in the bridge's order, or `undefined`.
  */
+/**
+ * Map the raw `[caller, callee, preMeanMs, postMeanMs]` tuples onto {@link FaultEdgeLatency}.
+ *
+ * A row whose durations are not finite and positive is DROPPED rather than coerced: the
+ * converter already excludes those spans, and a fabricated `1.0` here would read as "this
+ * call took exactly as long before and after", which is the one value that means no
+ * evidence at all.
+ *
+ * @param edgeLatency - The raw tuples.
+ * @returns One entry per usable edge, or `undefined` when there are none.
+ */
+export function toFSE26EdgeLatency(
+  edgeLatency: readonly FSE26EdgeLatency[] | undefined,
+): FaultEdgeLatency[] | undefined {
+  if (!edgeLatency || edgeLatency.length === 0) return undefined;
+  const out: FaultEdgeLatency[] = [];
+  for (const [caller, callee, preMeanMs, postMeanMs] of edgeLatency) {
+    if (!Number.isFinite(preMeanMs) || !Number.isFinite(postMeanMs)) continue;
+    if (preMeanMs <= 0 || postMeanMs < 0) continue;
+    out.push({ caller, callee, preMeanMs, postMeanMs });
+  }
+  return out.length === 0 ? undefined : out;
+}
+
 export function toFSE26FailedEdges(
   failedTraceEdges: readonly FSE26FailedTraceEdge[] | undefined,
 ): FaultFailedEdge[] | undefined {
@@ -627,6 +652,7 @@ export class FSE26Loader {
       groundTruth: resolveFSE26GroundTruth(raw),
       logs,
       failedTraceEdges: toFSE26FailedEdges(raw.failedTraceEdges),
+      edgeLatency: toFSE26EdgeLatency(raw.traceEdgeLatency),
     };
   }
 }
