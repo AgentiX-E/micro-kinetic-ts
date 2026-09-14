@@ -72,3 +72,42 @@ rise separate the source from the victim?** Specifically, for the 58
 credited callee's inbound latency rise differs between the two populations. If it does
 not, the field is recorded as measured-and-inert and the axis stays closed — for the
 cost of one prefix rebuild rather than a full one.
+
+## CORRECTION: the prefix path cannot deliver the cases this probe needs
+
+The table above claims separability is testable at roughly a twentieth of the full
+rebuild, via `download_prefix_bytes`. That is **wrong**, and the prefix build that was
+run establishes it.
+
+The source is a single 13.4 GB tar, so `download_prefix_bytes` takes a byte prefix of
+the **tar stream**, not a selection of cases. At 512 MB the resulting cache contains
+**48 cases, 22 of them HTTP**, and it happens to carry the HTTP, Pod and Resource
+categories simply because they sit early in the stream. The cases this probe needs are
+58 specific `ts-ui-dashboard`-sourced `HTTPResponseReplaceCode` cases plus the JVM
+regressions, scattered through the archive — and JVM is not in the prefix at all.
+
+The full HTTP shard is 1.61 GB compressed for 796 cases against 58 MB for 22, so
+reaching the whole HTTP category alone needs an order of magnitude more prefix. There
+is no cheap subset that contains the right cases: **the full download is the cost of
+this question.**
+
+What the prefix build did establish, for 6 minutes rather than 3 h 17 m:
+
+- the cache workflow clones the converter at HEAD and the published
+  `manifest.json` records `converterRevision: c0db4e0` — the revision that added
+  `read_edge_latency`, so the new key is in the pipeline and the digest is recorded;
+- a separate `release_tag` keeps a partial cache from touching the published
+  `rcabench-full-v3`, which the default `release_tag` would otherwise replace with a
+  48-case subset;
+- the manifest reports `schemaVersion: 3` alongside the new key, which is the additive
+  claim in `read_edge_latency` checked against a real build rather than asserted.
+
+The full rebuild is dispatched as `rcabench-latency-full` with the default full
+download, so the published cache stays byte-identical for every existing result.
+
+### The correction that matters for future candidates
+
+A "cheap prefix probe" is only cheap when the cases under test sit early in the tar.
+For a fault type, a source service, or any other subset chosen by content, the prefix
+cost is essentially the full download, and the honest plan is to budget the rebuild
+rather than to promise a shortcut.
