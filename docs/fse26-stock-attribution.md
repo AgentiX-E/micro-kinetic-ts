@@ -73,3 +73,51 @@ which does change the spacing between two services' scores and is therefore not
 the non-reordering case. That is the next falsifiable candidate, at the step size
 the theorem names: the metric term is a uniform rank with step `1/(n−1) ≈ 0.020`
 at 51 services, while the log term's first step is already 1.0 = 50 rank positions.
+
+## Correction: `HTTPResponseReplaceCode` is two populations, not one
+
+`docs/fse26-data-gap-verdict.md` characterises this type as "signal gap, the top
+lever" from a diagnostic of **12 case dumps across 4 fault types**, in which the
+ReplaceCode samples had `ts-basic-service` as the source. A census of all 231
+blocks says that generalisation does not hold at the type level:
+
+| source service | cases | Top@1 | rate | source emits logs |
+| --- | --- | --- | --- | --- |
+| **`ts-ui-dashboard`** | **58** | **0** | **0.0%** | **0 / 58 — never** |
+| the other 10 backends | 173 | 159 | **91.9%** | 173 / 173 — always |
+| total | 231 | 159 | 68.8% | 173 / 231 |
+
+So the type is not weak: it is **at 91.9% for 173 of its cases and 0.0% for the
+other 58**. The gate mechanism the verdict identified is correct and is what the
+173 cases exercise — the source floods `HttpClientErrorException` and the
+`isLogicException` gate drops it, yet those cases still score 91.9% because the
+source is rank-1 on the metric term anyway. The 58 dashboard cases are a different
+population with a different cause.
+
+### What the 58 are
+
+- the source emits **no** log line in any of them (0/58);
+- its own anomaly is mid-pack: rank 1 in **1 of 58**, typically **#13–19**, with
+  values mostly 0.2–0.4 — no fault-specific signature, and its dominant metric is
+  a mix of `k8s.pod.network.io` and HTTP duration percentiles;
+- **every one of the 58 carries failed-edge records** (58/58), i.e. in-graph
+  callers' calls failed against the dashboard. The evidence exists and is
+  callee-side.
+
+That last point connects them to the failed-edge signal: enabling it moves this
+type 159 → 220 (+61), which is close to the whole dashboard population, and the
+`minRecords=2` floor drops it back to 158 — the same single-record population
+either way. So the 58 are **addressable by callee-side attribution and were not
+addressed only because the same evidence mis-ranks `JVMMemoryStress`**.
+
+### Why no discriminator is proposed here
+
+The credited callee is `ts-ui-dashboard` in **both** populations — correct in the
+58 (it is the source) and wrong in the JVMMemoryStress regressions (it is a
+victim). Anything that keys on the service's identity therefore cannot separate
+them. The two populations do differ in the source's own evidence — max anomaly and
+no failed-edge records in the JVMMemoryStress cases, mid-pack anomaly and
+failed-edge records here — but every rule built on that difference so far has
+excluded both populations together. That is recorded rather than re-proposed:
+**a candidate needs a discriminator that is not a function of the credited
+service's identity or of its own metric score**, and none has been found yet.
