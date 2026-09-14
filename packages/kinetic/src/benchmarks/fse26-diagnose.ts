@@ -107,6 +107,23 @@ export interface FSE26DiagnosticInput {
    * block without it cannot be interpreted after being copied out of a log.
    */
   readonly logSignalMode: string;
+  /**
+   * The case's call-graph edges, as `caller>callee`, sorted and de-duplicated.
+   *
+   * The per-service block carries only SCALARS, so no dump can answer a question
+   * about STRUCTURE — whether the credited service calls the source, whether it sits
+   * upstream or downstream of it, how deep it is. Those are exactly the
+   * discriminators a signal that credits a CALLEE needs, and the failed-edge work was
+   * blocked on them: its credited callee is the same service in the cases where it is
+   * right and in the cases where it is wrong, so nothing about that service's identity
+   * or its own score can separate the two.
+   *
+   * Optional so a dump written before this line renders exactly the block it rendered
+   * before. An ABSENT line means "not recorded" and is reported as `undefined` by the
+   * parser, never as an empty edge set — the same absence-versus-empty rule the
+   * per-service fields follow.
+   */
+  readonly edges?: readonly string[];
 }
 
 /**
@@ -248,6 +265,12 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
       ', ',
     )}] services=${input.services.length} logMode=${input.logSignalMode}`,
   );
+  // The graph goes on ONE line rather than into the per-service blocks, because it
+  // is a property of the case and every reader wants all of it at once. Rendered
+  // only when the producer supplied it, so an older block is byte-identical.
+  if (input.edges !== undefined) {
+    lines.push(`  edges=${[...input.edges].sort().join(',')}`);
+  }
 
   for (const service of ordered) {
     const markers: string[] = [];

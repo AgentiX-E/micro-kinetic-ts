@@ -147,6 +147,20 @@ describe('parseDiagnosticDump', () => {
     expect(kase.logSignalMode).toBe('');
   });
 
+  it('reads the call graph as written, and reports an ABSENT graph as undefined', () => {
+    // "not recorded" must stay distinguishable from "recorded and empty": a
+    // structural answer computed from a defaulted empty graph would call every
+    // service unconnected.
+    const text = dump({
+      services: [serviceLine({ serviceId: 'ts-src' })],
+      edges: ['ts-a>ts-b', 'ts-b>ts-a'],
+    });
+    expect(parseDiagnosticDump(text)[0]!.edges).toEqual(['ts-a>ts-b', 'ts-b>ts-a']);
+
+    const withoutGraph = dump({ services: [serviceLine({ serviceId: 'ts-src' })] });
+    expect(parseDiagnosticDump(withoutGraph)[0]!.edges).toBeUndefined();
+  });
+
   it('reads the failed-edge fields when the dump carries them', () => {
     const text = dump({
       services: [serviceLine({ serviceId: 'ts-order-service', failedEdge: 1 })],
@@ -198,6 +212,7 @@ describe('isTop1Correct', () => {
     faultType: 'JVMMemoryStress',
     groundTruth: ['ts-order-service'],
     logSignalMode: 'logicHttp',
+    edges: undefined,
     services: [],
     prediction,
   });
@@ -226,6 +241,7 @@ describe('diffDiagnostics', () => {
       faultType,
       groundTruth: ['ts-order-service'],
       logSignalMode: 'logicHttp',
+      edges: undefined,
       services: [],
       prediction,
     };
@@ -288,6 +304,7 @@ describe('regressionMechanism', () => {
       faultType: 'JVMMemoryStress',
       groundTruth: ['ts-order-service'],
       logSignalMode: 'logicHttp',
+      edges: undefined,
       services,
       prediction: ['ts-ui', 'ts-order-service'],
     };

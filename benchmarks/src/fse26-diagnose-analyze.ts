@@ -107,6 +107,16 @@ export interface DiagnosedCase {
   readonly services: readonly DiagnosedService[];
   /** The engine's ranking for this case, best first. */
   readonly prediction: readonly string[];
+  /**
+   * The case's call-graph edges (`caller>callee`), or `undefined` for a dump
+   * written before the line existed.
+   *
+   * Optional, and never defaulted to an empty array: "this dump recorded no graph"
+   * and "this case has no edges" are different statements, and a structural
+   * question answered from a defaulted empty graph would report every service as
+   * unconnected — a fabricated answer rather than a missing one.
+   */
+  readonly edges: readonly string[] | undefined;
 }
 
 const HEADER_RE =
@@ -114,6 +124,7 @@ const HEADER_RE =
 const SERVICE_RE =
   /^ {2}(\S+)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
+const EDGES_RE = /^ {2}edges=(.*)$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
 const METRIC_DROP_RE = /^ {4}metricDrop\((\d+)\):(?: (.*))?$/;
 /**
@@ -194,6 +205,8 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         groundTruth: string[];
         logSignalMode: string;
         services: MutableService[];
+        /** Filled by the `edges=` line, which may appear anywhere in the block. */
+        edges: readonly string[] | undefined;
       }
     | undefined;
   // The metric lines follow the service they belong to, so the parser has to
@@ -231,6 +244,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         groundTruth: parseList(header[3]),
         logSignalMode: header[5] ?? '',
         services: [],
+        edges: undefined,
       };
       lastService = undefined;
       declaredOutcomeCount = 0;
@@ -238,6 +252,15 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
       continue;
     }
     if (current === undefined) continue;
+
+    const edges = EDGES_RE.exec(line);
+    if (edges) {
+      // `parseList` maps an empty body to `[]`, which is correct HERE: the line is
+      // present, so the producer recorded a graph and it happens to be empty. The
+      // absent line stays `undefined` and is never conflated with this.
+      current.edges = parseList(edges[1]);
+      continue;
+    }
 
     const service = SERVICE_RE.exec(line);
     if (service) {
@@ -347,6 +370,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         faultType: current.faultType,
         groundTruth: current.groundTruth,
         logSignalMode: current.logSignalMode,
+        edges: current.edges,
         services: current.services,
         prediction: parseList(prediction[1]),
       });

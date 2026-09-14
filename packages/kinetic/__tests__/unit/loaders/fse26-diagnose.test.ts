@@ -48,6 +48,35 @@ function input(overrides: Partial<FSE26DiagnosticInput>): FSE26DiagnosticInput {
 }
 
 describe('formatFSE26Diagnostic', () => {
+  it('renders the call graph on ONE line, sorted, when the producer supplied it', () => {
+    // Structure is what a per-service scalar block cannot express, so the graph is
+    // rendered as its own line rather than folded into each service.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [service({ serviceId: 'ts-a' })],
+        edges: ['ts-b>ts-a', 'ts-a>ts-b'],
+      }),
+    );
+
+    expect(out).toContain('\n  edges=ts-a>ts-b,ts-b>ts-a\n');
+  });
+
+  it('renders no edges line at all when the producer did not supply one', () => {
+    // An absent line means "not recorded". Rendering `edges=` empty would claim the
+    // case has no edges, which is a different and fabricated statement.
+    const out = formatFSE26Diagnostic(input({ services: [service({})] }));
+
+    expect(out).not.toContain('edges=');
+  });
+
+  it('renders an EMPTY edges line when the producer recorded an empty graph', () => {
+    // The other side of the same rule: a supplied-but-empty graph is a real
+    // observation and must be distinguishable from an absent one.
+    const out = formatFSE26Diagnostic(input({ services: [service({})], edges: [] }));
+
+    expect(out).toContain('\n  edges=\n');
+  });
+
   it('renders the header with ground truth and service count', () => {
     const out = formatFSE26Diagnostic(input({}));
     expect(out).toContain(

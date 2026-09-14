@@ -179,6 +179,11 @@ function buildDiagnostic(
     services,
     topPredictions: ranking.map((r) => r.serviceId),
     logSignalMode,
+    // The graph the engine actually consumed, so a dump can answer structural
+    // questions — upstream/downstream, reachability — that no per-service scalar
+    // can. Emitted here rather than per service because every reader wants the
+    // whole case's graph at once.
+    edges: benchCase.callGraph.edges.map((edge) => `${edge.from}>${edge.to}`),
   });
 }
 
