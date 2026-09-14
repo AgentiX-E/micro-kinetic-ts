@@ -163,3 +163,51 @@ break, so the expected regression count is one rather than zero and the kill cri
 is NOT yet met by argument. And this is a separability result computed on one dump, not
 a measured gain — the next step is to build the gate and measure the pair, with the
 affine solver used first to confirm a weight exists.
+
+## The structural gate is REJECTED — by simulation, before spending a run
+
+The separability result above was computed only over the cases where the credited callee
+was DISTINCT from the source, and that is the flaw in it: the gate also has to decide for
+the cases where the credited callee IS the source, and there it can only take the credit
+away. A simulation over the same 406-block dump shows the cost.
+
+The simulator was validated first: ranking every case by
+`log1p(selfAnomaly) + logScore + w × failedEdge` reproduces the dump's own top-1 in
+**406/406** cases at `w = 0`, so it is faithful and its deltas are trustworthy.
+
+| fault type | cases | shipped (`w=0`) | `w=1` | `w=1` + gate |
+| --- | --- | --- | --- | --- |
+| HTTPResponseReplaceCode | 231 | 159 | **219** | **148** |
+| JVMMemoryStress | 171 | 4 | 1 | **4** |
+| HTTPResponsePatchBody | 4 | 3 | 1 | **3** |
+| total | 406 | 166 | 221 | **155** |
+
+`w=1` reproduces the measured ablation (ReplaceCode 220, JVM 1, PatchBody 1) to within one
+tie-break case, and the gate recovers both regressed types in full — while costing
+**71 ReplaceCode cases**. The net is **155 against a baseline of 166: worse than doing
+nothing.**
+
+### Why the gate cannot work here
+
+Asked of the GROUND TRUTH itself, the gate answers **False** far more often than True:
+
+| source service | cases where `self >= max(downstream)` is False |
+| --- | --- |
+| `ts-ui-dashboard` | **57 of 58** |
+| `ts-basic-service` | 50 |
+| `ts-preserve-service` | 22 |
+| `ts-route-plan-service` | 21 |
+
+The dashboard's median self-anomaly is **0.320** against a downstream maximum of **0.980**.
+So the test is not a source detector at all: it is a detector for "is the source the single
+most anomalous service in this case", which is precisely what the metric layer is bad at.
+Gating a second signal on it re-imposes the failure the second signal exists to repair.
+
+### Corrected
+
+The previous section's claim that the gate "costs nothing on the 62 fixed cases" is wrong
+and is corrected here rather than left standing. It was computed on the subset where the
+credited callee differs from the source, which is the only subset where the gate has a
+choice to make about *another* service — the cases it destroys are the ones where the
+callee is the source and the gate takes its credit away. **A gate has to be measured on
+both populations, not only on the one it is meant to reject.**
