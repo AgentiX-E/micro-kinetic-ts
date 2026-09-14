@@ -60,7 +60,7 @@ on:
         required: false
         default: ''
       lat_weight:
-        description: 'Weight of the per-edge latency-rise signal, which credits the CALLEE of a call whose span duration rose (empty = the runner default, which is 0 = disabled). It needs rcabench-latency-full or newer, whose shards carry traceEdgeLatency'
+        description: 'Weight of the per-edge latency-rise signal, which credits the CALLEE of a call whose span duration rose (empty = the runner default, which is the shipped 0.03 = the measured zero-regression point; 0 is the pre-flip ablation). It needs rcabench-latency-full or newer, whose shards carry traceEdgeLatency'
         required: false
         default: ''
 

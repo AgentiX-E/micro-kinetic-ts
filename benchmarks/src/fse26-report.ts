@@ -73,8 +73,9 @@ export interface FSE26RunConfig {
   /** Minimum contributing edges a callee needs to be credited (1 = shipped). */
   readonly failedEdgeMinRecords: number;
   /**
-   * Weight of the per-edge LATENCY-rise signal (0 = disabled, the shipped
-   * configuration). A non-zero value is a different ranking and has to say so.
+   * Weight of the per-edge LATENCY-rise signal. The shipped configuration carries
+   * it ON — unlike `failedEdgeWeight` above, whose shipped value is 0 — so this
+   * field is always rendered, and a run at `0` is the ablation that scores 47.33%.
    */
   readonly latWeight: number;
 }
