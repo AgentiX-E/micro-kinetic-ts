@@ -788,8 +788,17 @@ export function formatMissReport(
 export interface WeightSeparationCase {
   /** Case identifier, so the binding case can be named. */
   readonly datapack: string;
-  /** The service that must end up at rank 1. */
-  readonly target: string;
+  /**
+   * The services ANY of which may end up at rank 1.
+   *
+   * A list rather than one name, because the benchmark's own labels are a list:
+   * every FSE'26 network-fault case names two acceptable roots (`mysql` plus the
+   * service it is co-located with). Requiring `groundTruth[0]` specifically would
+   * demand a ranking the benchmark never asked for, and would report a
+   * correctly-ranked case as unsatisfiable — it did, for 42 of 97
+   * `NetworkPartition` cases in one measured dump, which is how this was found.
+   */
+  readonly targets: readonly string[];
   /** Per-service affine score, `base` at `w = 0` and `slope` as the coefficient. */
   readonly scores: ReadonlyMap<string, { readonly base: number; readonly slope: number }>;
 }
@@ -809,41 +818,88 @@ export interface WeightSeparation {
   readonly bindingMax: string | undefined;
 }
 
+/**
+ * Which signal's score is the coefficient of the weight being solved for.
+ *
+ * A selector rather than a map, because the two terms live in the same dump and
+ * only one of them is ever the subject of a question: the solver answers "does a
+ * weight exist" for ONE term at a time, and passing a precomputed map would let a
+ * caller mix them.
+ */
+export type SlopeKind = 'failedEdge' | 'lat';
+
+/**
+ * Reconstruct the latency term's per-service score from the dump.
+ *
+ * Deliberately the same shape as the engine's `computeEdgeLatencyScores`, because
+ * the point of the solver is to predict what the ENGINE would do: the raw
+ * `latRise` the service line carries is a ratio, and the term applies
+ * `log1p(max(0, rise − 1))` to it and then max-normalises across the case. An
+ * unmeasured service is ABSENT from the result rather than present with a 0, which
+ * is the same distinction the engine keeps.
+ *
+ * @param services - The case's services, as parsed.
+ * @returns The normalised slope per measured service; empty when no measurement
+ *   carries a rise, in which case every slope is 0 and the term cannot reorder.
+ */
+export function latencySlopes(services: readonly DiagnosedService[]): Map<string, number> {
+  const magnitudes = new Map<string, number>();
+  for (const service of services) {
+    const rise = service.latRise;
+    if (rise === undefined || !Number.isFinite(rise)) continue;
+    magnitudes.set(service.serviceId, Math.log1p(Math.max(0, rise - 1)));
+  }
+  let max = 0;
+  for (const magnitude of magnitudes.values()) if (magnitude > max) max = magnitude;
+  // Every measurable edge got faster (or nothing was measured), so there is no
+  // rise to normalise against and the term is 0 for everyone.
+  if (max <= 0) return new Map();
+  const slopes = new Map<string, number>();
+  for (const [serviceId, magnitude] of magnitudes) {
+    slopes.set(serviceId, magnitude / max);
+  }
+  return slopes;
+}
+
 /** Float tolerance for a zero coefficient or a zero gap. */
 const WEIGHT_EPSILON = 1e-12;
 
-/**
- * The interval of weights at which one case's target is at rank 1.
- *
- * Solved exactly rather than sampled: for each competitor the requirement
- * `base_t + w·slope_t >= base_k + w·slope_k` is linear in `w`, so the case's
- * interval is the intersection of at most one half-line per competitor. A
- * competitor with a larger slope caps `w`; one with a smaller slope floors it; one
- * with the same slope either never wins or is an unconditional blocker.
- *
- * @param one - The case.
- * @returns The interval, `[0, Infinity]` when the target is never overtaken.
- */
-export function caseWeightInterval(one: WeightSeparationCase): {
+/** A closed interval of weights. */
+export interface WeightInterval {
   readonly min: number;
   readonly max: number;
-} {
-  const target = one.scores.get(one.target);
-  // A target the dump does not describe cannot be satisfied by ANY weight, so the
-  // interval is EMPTY rather than unconstrained. Returning `[0, Infinity]` here
-  // would report a case the method cannot evaluate as one it has cleared — the
-  // aggregate would then claim separability on the strength of a case it never
-  // read.
-  if (target === undefined) {
-    return { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY };
-  }
+}
+
+/**
+ * The interval of weights at which ONE named service is at rank 1.
+ *
+ * Solved exactly rather than sampled: for each competitor the requirement
+ * `base_t + w·slope_t >= base_k + w·slope_k` is linear in `w`, so the interval is
+ * the intersection of at most one half-line per competitor. A competitor with a
+ * larger slope caps `w`; one with a smaller slope floors it; one with the same
+ * slope either never wins or is an unconditional blocker.
+ *
+ * @param scores - The case's affine scores.
+ * @param target - The service that must be first.
+ * @returns The interval, or `undefined` when the service is not described or is
+ *   never first.
+ */
+function targetInterval(
+  scores: WeightSeparationCase['scores'],
+  target: string,
+): WeightInterval | undefined {
+  const t = scores.get(target);
+  // A target the dump does not describe cannot be satisfied by ANY weight. The
+  // caller must not read that as "unconstrained" — the aggregate would then claim
+  // separability on the strength of a case it never read.
+  if (t === undefined) return undefined;
 
   let min = 0;
   let max = Number.POSITIVE_INFINITY;
-  for (const [service, other] of one.scores) {
-    if (service === one.target) continue;
-    const slopeGap = target.slope - other.slope;
-    const baseGap = other.base - target.base;
+  for (const [service, other] of scores) {
+    if (service === target) continue;
+    const slopeGap = t.slope - other.slope;
+    const baseGap = other.base - t.base;
     if (slopeGap > WEIGHT_EPSILON) {
       // Raising the weight helps the target against this competitor.
       min = Math.max(min, baseGap / slopeGap);
@@ -859,6 +915,45 @@ export function caseWeightInterval(one: WeightSeparationCase): {
     }
   }
   return { min, max };
+}
+
+/** Merge ascending intervals, joining any pair that touches. */
+function mergeIntervals(sorted: readonly WeightInterval[]): WeightInterval[] {
+  const merged: WeightInterval[] = [];
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && interval.min <= last.max + WEIGHT_EPSILON) {
+      merged[merged.length - 1] = { min: last.min, max: Math.max(last.max, interval.max) };
+    } else {
+      merged.push(interval);
+    }
+  }
+  return merged;
+}
+
+/**
+ * The set of weights at which one case is satisfied.
+ *
+ * A LIST, not one interval, because a case is satisfied by ANY of its acceptable
+ * roots and the union of their intervals need not be an interval: two roots can
+ * each be first over disjoint weight ranges. Collapsing that to a single interval
+ * would silently claim the gap between them, so a caller reading the gap as
+ * feasible would measure a weight this method had no evidence for.
+ *
+ * @param one - The case.
+ * @returns Disjoint intervals in ascending order; EMPTY when no weight satisfies
+ *   the case, which is the honest answer for a case the dump does not describe.
+ */
+export function caseWeightInterval(one: WeightSeparationCase): readonly WeightInterval[] {
+  const intervals: WeightInterval[] = [];
+  for (const name of one.targets) {
+    const interval = targetInterval(one.scores, name);
+    // `min > max` is `targetInterval`'s empty set: a root that can never be first.
+    if (interval === undefined || interval.min > interval.max) continue;
+    intervals.push(interval);
+  }
+  intervals.sort((a, b) => a.min - b.min);
+  return mergeIntervals(intervals);
 }
 
 /**
@@ -880,14 +975,34 @@ export function computeWeightSeparation(cases: readonly WeightSeparationCase[]):
   let allowedMax = Number.POSITIVE_INFINITY;
   let bindingMin: string | undefined;
   let bindingMax: string | undefined;
+  // The feasible set is the INTERSECTION of the cases' sets, and an intersection of
+  // unions is not described by its extremes: two cases can each allow disjoint
+  // ranges whose overlap is empty while the extremes still look compatible. So the
+  // verdict comes from folding the sets, and the extremes are reported as bounds.
+  let feasible: readonly WeightInterval[] = [{ min: 0, max: Number.POSITIVE_INFINITY }];
   for (const one of cases) {
-    const { min, max } = caseWeightInterval(one);
-    if (min > requiredMin) {
-      requiredMin = min;
+    const allowed = caseWeightInterval(one);
+    const next: WeightInterval[] = [];
+    for (const have of feasible) {
+      for (const want of allowed) {
+        const lo = Math.max(have.min, want.min);
+        const hi = Math.min(have.max, want.max);
+        if (lo <= hi) next.push({ min: lo, max: hi });
+      }
+    }
+    next.sort((a, b) => a.min - b.min);
+    feasible = mergeIntervals(next);
+    // The earliest weight this case permits, and the latest: `allowed` is ascending
+    // and a case with no feasible weight at all contributes an empty extreme, which
+    // is what makes the aggregate unsatisfiable rather than merely narrow.
+    const lo = allowed[0]?.min ?? Number.POSITIVE_INFINITY;
+    const hi = allowed[allowed.length - 1]?.max ?? Number.NEGATIVE_INFINITY;
+    if (lo > requiredMin) {
+      requiredMin = lo;
       bindingMin = one.datapack;
     }
-    if (max < allowedMax) {
-      allowedMax = max;
+    if (hi < allowedMax) {
+      allowedMax = hi;
       bindingMax = one.datapack;
     }
   }
@@ -895,7 +1010,7 @@ export function computeWeightSeparation(cases: readonly WeightSeparationCase[]):
     cases: cases.length,
     requiredMin,
     allowedMax,
-    separable: requiredMin <= allowedMax,
+    separable: feasible.length > 0,
     bindingMin,
     bindingMax,
   };
@@ -905,30 +1020,39 @@ export function computeWeightSeparation(cases: readonly WeightSeparationCase[]):
  * Build the solver's input from parsed cases, for the shipped score formula.
  *
  * The base is `log1p(selfAnomaly) + logWeight × logScore` and the slope is the
- * failed-edge score, so a dump from a run with the signal OFF still predicts what
+ * selected term's score, so a dump from a run with the term OFF still predicts what
  * turning it on would do — which is what makes the control run sufficient and the
  * sweep unnecessary.
  *
  * @param cases - Parsed cases.
  * @param weights - The run's log weight.
+ * @param slope - Which term's score is the coefficient. Defaults to `failedEdge`,
+ *   the term this solver was built for, so existing callers are unaffected.
  * @returns One entry per case whose target the dump describes.
  */
 export function buildWeightSeparationCases(
   cases: readonly DiagnosedCase[],
   weights: MissAttributionWeights,
+  slope: SlopeKind = 'failedEdge',
 ): WeightSeparationCase[] {
   const built: WeightSeparationCase[] = [];
   for (const kase of cases) {
-    const target = kase.groundTruth[0];
-    if (target === undefined || target === '') continue;
+    // EVERY acceptable root, not the first: the benchmark's labels are a list and
+    // the engine is correct when it ranks any of them first.
+    const targets = kase.groundTruth.filter((name) => name !== '');
+    if (targets.length === 0) continue;
+    // Computed once per case, not per service: the latency term is max-normalised
+    // ACROSS the case, so a per-service call would divide by a per-service maximum.
+    const lat = slope === 'lat' ? latencySlopes(kase.services) : undefined;
     const scores = new Map<string, { base: number; slope: number }>();
     for (const service of kase.services) {
       scores.set(service.serviceId, {
         base: Math.log1p(service.selfAnomaly) + weights.logWeight * service.logScore,
-        slope: service.failedEdgeScore ?? 0,
+        slope:
+          lat === undefined ? (service.failedEdgeScore ?? 0) : (lat.get(service.serviceId) ?? 0),
       });
     }
-    built.push({ datapack: kase.datapack, target, scores });
+    built.push({ datapack: kase.datapack, targets, scores });
   }
   return built;
 }
@@ -943,34 +1067,53 @@ export function buildWeightSeparationCases(
 export function formatWeightSeparationReport(
   cases: readonly DiagnosedCase[],
   weights: MissAttributionWeights,
+  slope: SlopeKind = 'failedEdge',
 ): string {
-  const report = computeWeightSeparation(buildWeightSeparationCases(cases, weights));
+  const report = computeWeightSeparation(buildWeightSeparationCases(cases, weights, slope));
   const lines: string[] = [];
   lines.push(
-    `Weight separation (logWeight=${weights.logWeight}; solved from the dump, no sweep needed):`,
+    `Weight separation (slope=${slope}; logWeight=${weights.logWeight}; solved from the dump, no sweep needed):`,
   );
   lines.push(`  cases the weight is supposed to satisfy: ${report.cases}`);
-  lines.push(`  required min weight: ${report.requiredMin.toFixed(3)}`);
-  // Three distinct meanings, and collapsing any two of them would misreport the
-  // verdict: a finite cap, no cap at all, and "no weight satisfies every case"
-  // (`-Infinity`, which is what an unsatisfiable case contributes).
+  // Four distinct meanings, and collapsing any two would misreport the verdict: a
+  // finite bound, no cap at all (`+Infinity` on the cap), and "no weight works"
+  // (`+Infinity` on the floor, or `-Infinity` on the cap, which is what an
+  // unsatisfiable case contributes). A non-finite FLOOR printed as a number would
+  // be worse than useless — `Infinity` reads as a very large weight, and the old
+  // rendering of an unsatisfiable case showed `0.000`, which reads as "w = 0
+  // satisfies this", the opposite of what the case says.
+  const floor = Number.isFinite(report.requiredMin)
+    ? report.requiredMin.toFixed(3)
+    : 'none — no weight is enough for every case';
   const cap =
     report.allowedMax === Number.POSITIVE_INFINITY
       ? 'unbounded'
       : report.allowedMax === Number.NEGATIVE_INFINITY
         ? 'none — some case is unsatisfiable at every weight'
         : report.allowedMax.toFixed(3);
+  lines.push(`  required min weight: ${floor}`);
   lines.push(`  allowed max weight:  ${cap}`);
   lines.push(`  separable: ${report.separable ? 'YES' : 'NO'}`);
   if (!report.separable) {
-    // `bindingMin` may be absent — a floor of zero binds nothing and is satisfied
-    // by every weight — but `bindingMax` cannot be: a report is only inseparable
-    // when the cap is finite, and a finite cap is always set by some case. So the
-    // upper binder carries no fallback, and none that coverage could never reach.
-    lines.push(
-      `  binding cases: needs ${report.requiredMin.toFixed(3)} for ${report.bindingMin ?? '-'}, ` +
-        `but only ${report.allowedMax.toFixed(3)} before ${report.bindingMax!} breaks`,
-    );
+    // Two shapes, and they need different sentences. A genuine conflict has two
+    // finite bounds with the floor above the cap, and naming both binders is the
+    // useful statement. An unsatisfiable case has NO numeric bound, so the
+    // comparison form would print the two infinities and read as if a weight
+    // existed — the opposite of the verdict it is meant to convey.
+    // Both names are guaranteed on this path, and the assertion records WHY rather
+    // than papering over a gap: an inseparable report either has a finite conflict —
+    // and a finite bound is always set by some case — or a case that admits no
+    // weight, which is itself the floor's binder. The fields stay optional on the
+    // interface only because a SEPARABLE report has no binders to name.
+    const minName = report.bindingMin as string;
+    const maxName = report.bindingMax as string;
+    if (Number.isFinite(report.requiredMin) && Number.isFinite(report.allowedMax)) {
+      lines.push(
+        `  binding cases: needs ${floor} for ${minName}, but only ${cap} before ${maxName} breaks`,
+      );
+    } else {
+      lines.push(`  binding cases: ${minName} admits no weight at all, so no sweep can pass`);
+    }
   }
   return lines.join('\n');
 }

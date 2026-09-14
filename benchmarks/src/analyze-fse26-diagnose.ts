@@ -47,6 +47,7 @@ import {
   formatMissReport,
   formatWeightSeparationReport,
   parseDiagnosticDump,
+  type SlopeKind,
 } from './fse26-diagnose-analyze.js';
 
 interface ComparisonOptions {
@@ -71,6 +72,13 @@ interface FamilyOptions {
   readonly logWeight: number | undefined;
   /** Same value, same reason, for the weight-separation section. */
   readonly weightSweep: number | undefined;
+  /**
+   * Which term's score the weight solves for. `failedEdge` unless `--slope lat`
+   * says otherwise: the latency term answers a DIFFERENT question (its own
+   * regression set), and mixing the two would attribute one term's losses to the
+   * other's scores.
+   */
+  readonly slope: SlopeKind;
   readonly output: string | undefined;
 }
 
@@ -79,7 +87,7 @@ type CliOptions = ComparisonOptions | FamilyOptions;
 const USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--family <regex>] [--family-label <name>] [--misses <logWeight>] ' +
-  '[--weight-sweep <logWeight>] [--output <file>]';
+  '[--weight-sweep <logWeight>] [--slope failedEdge|lat] [--output <file>]';
 
 function parseArgs(argv: readonly string[]): CliOptions {
   const values = new Map<string, string>();
@@ -104,6 +112,10 @@ function parseArgs(argv: readonly string[]): CliOptions {
       }
       weightSweep = parsedSweep;
     }
+    // Anything that is not exactly `lat` falls back to the term this solver was
+    // built for, like every other switch here: a typo has to reproduce a known
+    // configuration rather than invent one.
+    const slope: SlopeKind = values.get('slope') === 'lat' ? 'lat' : 'failedEdge';
     let logWeight: number | undefined;
     if (misses !== undefined) {
       // STRICT: a weight that is not a finite number would attribute every miss
@@ -125,6 +137,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
           : { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
       logWeight,
       weightSweep,
+      slope,
       output,
     };
   }
@@ -156,7 +169,9 @@ const report =
           sections.unshift(formatMissReport(cases, { logWeight: opts.logWeight }));
         }
         if (opts.weightSweep !== undefined) {
-          sections.unshift(formatWeightSeparationReport(cases, { logWeight: opts.weightSweep }));
+          sections.unshift(
+            formatWeightSeparationReport(cases, { logWeight: opts.weightSweep }, opts.slope),
+          );
         }
         return sections.join('\n');
       })();

@@ -99,3 +99,63 @@ Two things are deliberately NOT claimed here. The 7 regressions are not shown to
 noise or tie-break artefacts — they are case counts in a deterministic run. And the
 gain is not shown to be robust to the metric term changing underneath it; every
 number above is on one cache and one commit.
+
+## The weight axis, solved rather than swept
+
+The reopening question was whether a weight exists with ZERO regressed fault types.
+It is a computation, not a sweep: `score(v) = A(v) + w·L(v)` with
+`A = log1p(selfAnomaly) + logWeight·logScore` and `L = latScore(v)`, both recorded
+per service in a diagnostic dump, so the set of weights that keeps a case satisfied
+is an intersection of half-lines. `computeWeightSeparation` now takes a slope
+selector (`--slope failedEdge|lat`), and its per-case requirement is the SET of the
+case's labelled roots rather than `groundTruth[0]`.
+
+**The instrument was validated against the measurement above before it was used.**
+Reconstructing `latScore` from the dump and ranking `A + w·L` reproduces the
+engine's own top-1 in **1380/1380** blocks at `w = 0`, and at `w = 0.75` it
+reproduces the ablation **exactly**: 21 of 21 fault types match, and the totals
+match — 673 → 785, +112, the same numbers the pair measured.
+
+Solved over all 1422 cases:
+
+| weight | correct | vs shipped | regressed cases |
+| --- | --- | --- | --- |
+| 0 (shipped) | 673 | — | 0 |
+| 0.01 | 673 | +0 | 0 |
+| 0.020 | 686 | +13 | 0 |
+| 0.030 | 694 | +21 | 0 |
+| **0.0305** | **697** | **+24** | **0** |
+| 0.031 | — | — | 1 (`JVMException`) |
+| 0.05 | 707 | +34 | 2 |
+| 0.50 | 781 | +108 | 6 |
+| 0.6646 | **791** | **+118** | 11 |
+| 1.00 | 595 | −78 | 232 |
+
+**A zero-regression weight exists**: the window is `w ∈ [0, 0.030459]`, and the best
+point inside it is **+24 cases** over shipped. Beyond it the first casualty is a
+single `JVMException` case at `w = 0.0309`. The unconstrained optimum is much
+larger — `w ≈ 0.6646` for +118 — but it costs 11 regressed types, so it is the
+frontier rather than a candidate.
+
+Two runs are dispatched to measure this: `lat_weight=0.03` for the
+criterion-passing point and `lat_weight=0.66` for the frontier. Both are
+predictions from a validated instrument, and both are still predictions — the
+verdict above stands on the measured pair, and the flip decision waits on these.
+
+### One defect the validation found, and one it did not
+
+`buildWeightSeparationCases` used `groundTruth[0]` as the single service that must
+be rank-1. **Every FSE'26 network case labels two acceptable roots** (`mysql` plus
+the service it is co-located with — 42 of 97 `NetworkPartition` cases, and all of
+`NetworkLoss`, `NetworkCorrupt`, `NetworkDelay`, `NetworkBandwidth`). Requiring the
+first in particular demanded a ranking the benchmark never asked for, and it is how
+the four "mismatched" types appeared in the first validation pass: 3 of them were
+this defect, and the fourth (`NetworkBandwidth`) was dump coverage. The requirement
+is now a set, and a case's satisfiable weights are kept as a LIST of intervals —
+the union of two roots' ranges is not an interval, and collapsing it would claim
+the gap between them.
+
+`classifyMiss` still attributes each miss against `groundTruth[0]`. For a
+multi-label case that names one of the acceptable roots, so its attribution is
+meaningful only where a single source exists; the stock census and the failed-edge
+work were all on such types, and this is recorded rather than silently left.
