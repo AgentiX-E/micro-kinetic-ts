@@ -111,3 +111,41 @@ A "cheap prefix probe" is only cheap when the cases under test sit early in the 
 For a fault type, a source service, or any other subset chosen by content, the prefix
 cost is essentially the full download, and the honest plan is to budget the rebuild
 rather than to promise a shortcut.
+
+## Measured: per-edge latency is real for the resource faults and inert for ReplaceCode
+
+Run `34851239065` on the rebuilt cache (`rcabench-latency-full`, converter `ada655bf`),
+`--diagnose` over 406 blocks. All 406 carry `latRise`, so the field survives the pipeline.
+
+Per-service `latRise` is the largest ratio `postMeanMs / preMeanMs` over a service's
+inbound edges.
+
+| fault type | cases | source latRise med / p90 | winner latRise med / p90 | source > winner |
+| --- | --- | --- | --- | --- |
+| JVMMemoryStress | 171 | **3.574 / 14.79** | 1.962 / 17.00 | **100/165 (61%)** |
+| HTTPResponseReplaceCode | 231 | 0.976 / 1.91 | 0.975 / 2.19 | 30/222 (14%) |
+
+Counterfactual, ranking by `latRise` alone and ignoring every other term:
+
+| fault type | Top@1 if `latRise` were the only signal | shipped |
+| --- | --- | --- |
+| JVMMemoryStress | **57/171 (33.3%)** | 4/171 (2.3%) |
+| HTTPResponseReplaceCode | 1/231 (0.4%) | 159/231 (68.8%) |
+| HTTPResponsePatchBody | 1/4 (25.0%) | 3/4 (75.0%) |
+
+### The verdict is conditional, and it points away from the case that motivated the field
+
+- **For the resource faults it is the strongest single observable found on this block.**
+  33.3% alone against a shipped 2.3% is a fourteen-fold difference on 171 cases, and it
+  is the shape the data-gap verdict predicted: a JVM memory fault's sharpest signature is
+  a latency side effect, and this reader attributes that latency to the CALLEE that the
+  caller was waiting on rather than to the network-level metric that fires on victims.
+- **For ReplaceCode it carries nothing.** Source and winner are indistinguishable (0.976
+  against 0.975) and it wins 14% of head-to-heads. So it cannot serve the 58
+  `ts-ui-dashboard` cases that motivated adding the field, and the earlier hope that the
+  same evidence would reopen the failed-edge axis is not supported.
+
+That is a better outcome than either extreme: the field is not dead, but its target is
+the four silent-source types, not the failed-edge axis. The next step is a weighted term
+over `latRise` with the affine solver run first — generalised to take a slope function
+rather than the failed-edge score — so the weight is solved before it is swept.
