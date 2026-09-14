@@ -121,3 +121,45 @@ failed-edge records here — but every rule built on that difference so far has
 excluded both populations together. That is recorded rather than re-proposed:
 **a candidate needs a discriminator that is not a function of the credited
 service's identity or of its own metric score**, and none has been found yet.
+
+## The discriminator exists, and it is structural
+
+Run `34828878066` (commit `66f7e05`) adds the call graph to the dump, which makes the
+question answerable. Read over that dump, the failed-edge term moves 107 cases; 62 of
+them it fixes and 7 it breaks (a computed superset of the 5 measured on the pair,
+because this recomputation uses a cruder tie-break than the engine).
+
+The first thing the graph shows is a GT-CONDITIONED discriminator that is perfect and
+useless: in 62 of the 62 fixed cases the credited callee **is** the source, and in 6 of
+the 7 broken cases it is a **direct caller of the source** (distance 1). A rule of the
+form "do not credit a caller of the source" separates the two populations exactly — and
+cannot be implemented, because the engine does not know the source.
+
+The unconditional form of the same fact does work, and it is a RELATION rather than a
+property of the credited service:
+
+> credit the callee only when its own anomaly is not explained by a dependency of its
+> own — i.e. when it is a topological source.
+
+| group | gate `selfAnomaly(callee) >= max selfAnomaly(its callees)` |
+| --- | --- |
+| the 7 broken cases | **rejected in 6 of 7** |
+| the 62 fixed cases | **no case has a distinct callee, so the gate never has to decide — it costs nothing** |
+
+The mechanism is visible in the numbers: in the three `ts-ui-dashboard` breakages the
+dashboard's own anomaly is 0.34–0.54 while its 22 downstream dependencies peak at
+**1.000** — the maxima ARE the sources it waits on. The dashboard's anomaly is
+inherited, and the gate says so without being told where the fault is.
+
+This satisfies the reopening condition the closed-axes register set for this axis (a
+discriminator that is neither the credited service's identity nor its own metric
+score), and it is the same shape the metric-competition verdict left open as its second
+surviving family: **expressed against the other services' values**, here against the
+callee's own dependencies rather than against the fleet.
+
+Two caveats stated rather than deferred. The gate is not a full repair: one broken case
+(`ts-travel-service`, self 0.980 vs downstream max 0.900) satisfies it and would still
+break, so the expected regression count is one rather than zero and the kill criterion
+is NOT yet met by argument. And this is a separability result computed on one dump, not
+a measured gain — the next step is to build the gate and measure the pair, with the
+affine solver used first to confirm a weight exists.
