@@ -2,7 +2,7 @@
 
 > Builds the free read the register demanded before any further run: a reconstruction
 > of the engine's three scored terms from a diagnostic dump alone, validated by
-> reproducing the shipped run's own rank-1 on **1422/1422 cases**. Three results follow.
+> reproducing the shipped run's own rank-1 on **1422/1422 cases**. Four results follow.
 >
 > 1. **The log-mode axis is answered, and the answer is NO.** `count` collapses to
 >    **496/1422 (34.9%)** with **9 regressed fault types**; the built-but-never-measured
