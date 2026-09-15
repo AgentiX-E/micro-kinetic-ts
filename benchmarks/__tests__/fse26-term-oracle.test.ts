@@ -50,6 +50,7 @@ import {
   oracleCensus,
   oracleFidelity,
   rankCase,
+  shippedScores,
 } from '../src/fse26-term-oracle.js';
 
 const OPTS: TermOracleOptions = {
@@ -853,6 +854,30 @@ describe('oracleFidelity — the term the dump’s own run had on', () => {
 
     expect(oracleFidelity(cases, { ...OPTS, poolWeight: 0.8 }).poolFlips).toBe(1);
     expect(oracleFidelity(cases, OPTS).poolFlips).toBe(0);
+  });
+});
+
+describe('shippedScores — one entry point for the score the engine ranks by', () => {
+  it('is the blend at the same configuration, with the RECORDED log term', () => {
+    // A wrapper is only worth having if it agrees with what it wraps: the mode pre-screen
+    // needs a log source and a dominance grid, and a caller asking "what does the engine
+    // score this case at" must not have to guess either. If they ever disagree, this
+    // test fails before a screen reports a window solved against the wrong base.
+    const kase = casesOf(
+      block([
+        { serviceId: 'ts-a', selfAnomaly: 0.9, logScore: 0.5 },
+        { serviceId: 'ts-b', selfAnomaly: 0.4, logScore: 0.1, dominant: 'k8s.pod.phase' },
+      ]),
+    )[0]!;
+    const weights = { logWeight: 1, latWeight: 0, latFloor: 1, poolWeight: 0.25 };
+
+    const scores = shippedScores(kase, weights);
+    const blended = blendScores(kase, { ...OPTS, ...weights }, 'recorded', new Map());
+
+    expect([...scores.keys()].sort()).toEqual([...blended.keys()].sort());
+    for (const [serviceId, score] of scores) {
+      expect(score).toBeCloseTo(blended.get(serviceId)!, 12);
+    }
   });
 });
 

@@ -32,9 +32,11 @@ import {
   computeZeroRegressionWindow,
   diffDiagnostics,
   familyCompetition,
+  familyScreen,
   formatAnalyzeSections,
   formatAnomalyShapeReport,
   formatDiagnoseComparison,
+  formatFamilyScreenReport,
   formatMetricCompetitionReport,
   formatMissReport,
   formatWeightSeparationReport,
@@ -2614,6 +2616,416 @@ describe('parseAnalyzeArgs — the pool penalty is part of a section’s configu
     expect(() => dumpMode(['--log-weight', '1', '--misses', '--pool-penalty', ''])).toThrow(
       /pool-penalty/,
     );
+  });
+});
+
+describe('familyScreen — a family penalty, SOLVED instead of swept', () => {
+  /**
+   * The model, stated once: `score(v) = shipped(v) + w × (-1 if family(v) === F else 0)`,
+   * with `w >= 0`. Two consequences the fixtures below are built on, both of which are
+   * properties of the score rather than of the solver:
+   *
+   *   - a family penalty HURTS a case whose root is in F (a rival then overtakes it), and
+   *     that is what caps the window;
+   *   - it HELPS a case whose wrong rank-1 winner is in F, and the weight at which the
+   *     root finally overtakes that winner is a closed form — so the whole screen is
+   *     solved, never sampled.
+   *
+   * `logScore` is the fixture knob that sets a deficit to a size worth testing: with
+   * three candidates the metric term's steps are `log1p(1) - log1p(0.5) = 0.2877`, and the
+   * log term adds any smaller amount on top, exactly as `logWeight = 1` scales it.
+   */
+  const K8S = 'k8s.pod.phase';
+  const JVM = 'jvm.system.cpu.load_1m';
+
+  /** A three-candidate case: `first` is rank 1, `second` is overtaken or overtakes. */
+  const threeWay = (spec: {
+    datapack: string;
+    root: { id: string; dominant: string; logScore?: number };
+    rank1: { id: string; dominant: string; logScore?: number };
+    filler: { id: string; dominant: string; logScore?: number };
+    topPredictions: readonly string[];
+  }) =>
+    parseDiagnosticDump(
+      dump({
+        datapack: spec.datapack,
+        groundTruthServices: [spec.root.id],
+        services: [
+          serviceLine({
+            serviceId: spec.rank1.id,
+            selfAnomaly: 0.9,
+            dominant: spec.rank1.dominant,
+            logScore: spec.rank1.logScore ?? 0,
+          }),
+          serviceLine({
+            serviceId: spec.root.id,
+            selfAnomaly: 0.5,
+            dominant: spec.root.dominant,
+            logScore: spec.root.logScore ?? 0,
+          }),
+          serviceLine({
+            serviceId: spec.filler.id,
+            selfAnomaly: 0.1,
+            dominant: spec.filler.dominant,
+            logScore: spec.filler.logScore ?? 0,
+          }),
+          serviceLine({
+            serviceId: 'ts-quiet',
+            selfAnomaly: 0,
+            dominant: 'cpu',
+            logScore: 0,
+          }),
+        ],
+        topPredictions: [...spec.topPredictions],
+      }),
+    )[0]!;
+
+  /** A case the k8s penalty FIXES: the wrong rank-1 winner is the k8s one. */
+  const gainCase = (rootLog = 0.12) =>
+    threeWay({
+      datapack: 'gain-me',
+      root: { id: 'ts-root', dominant: JVM, logScore: rootLog },
+      rank1: { id: 'ts-win', dominant: K8S },
+      filler: { id: 'ts-filler', dominant: 'cpu' },
+      topPredictions: ['ts-win', 'ts-root'],
+    });
+
+  /** A case the k8s penalty BREAKS: the root itself is the k8s one. */
+  const protectCase = (logScore = 0.4) =>
+    threeWay({
+      datapack: 'protect-me',
+      root: { id: 'ts-root', dominant: K8S, logScore },
+      rank1: { id: 'ts-rival', dominant: 'cpu' },
+      filler: { id: 'ts-filler', dominant: 'cpu' },
+      topPredictions: ['ts-root', 'ts-rival'],
+    });
+
+  /**
+   * The two weights the fixture's own arithmetic implies.
+   *
+   * With FOUR candidates the metric term's steps are `log1p(1)`, `log1p(2/3)`, `log1p(1/3)`
+   * and `0` — an earlier draft of this fixture divided by two candidates and produced a cap
+   * BELOW the gain floor, so the screen correctly reported no gain and the fixture, not the
+   * screen, was wrong.
+   */
+  const STEPS = [Math.log1p(1), Math.log1p(2 / 3), Math.log1p(1 / 3), 0];
+  /** The gaining case's deficit: the winner leads by the step difference, less the root's log. */
+  const FLOOR = STEPS[0]! - STEPS[1]! - 0.12;
+  /** The protecting case's lead: the root's step, plus its log, less the rival's step. */
+  const CAP = STEPS[1]! + 0.4 - STEPS[0]!;
+
+  it('solves one window per family, with the gain, its split and no losses', () => {
+    // The fixture's whole point: the gain floor must sit BELOW the cap, or there is no
+    // weight that both fixes the wrong case and protects the right one.
+    expect(FLOOR).toBeLessThan(CAP);
+    const rows = familyScreen([gainCase(), protectCase()], { logWeight: 1 });
+    const k8s = rows.find((row) => row.family === 'k8s');
+    expect(k8s).toBeDefined();
+    expect(k8s!.gain).toBe(1);
+    expect(k8s!.gainTypes).toEqual([{ key: 'JVMMemoryStress', cases: 1 }]);
+    expect(k8s!.gainFloor).toBeCloseTo(FLOOR, 9);
+    expect(k8s!.cap).toBeCloseTo(CAP, 9);
+    // The weight to ship is the interval's MIDPOINT, for the same reason the pool penalty
+    // shipped its own midpoint: a value chosen at either edge is one a converter revision
+    // can move across it.
+    expect(k8s!.ship).toBeCloseTo((FLOOR + CAP) / 2, 9);
+    // The criterion's second half, MEASURED rather than argued from the construction.
+    expect(k8s!.lostAtShip).toBe(0);
+    expect(k8s!.satisfied).toBe(1);
+  });
+
+  it('names the pair that caps the window, so the edge is actionable', () => {
+    const k8s = familyScreen([gainCase(), protectCase()], { logWeight: 1 }).find(
+      (row) => row.family === 'k8s',
+    )!;
+    expect(k8s.capBinder?.datapack).toBe('protect-me');
+    expect(k8s.capBinder?.target).toBe('ts-root');
+    expect(k8s.capBinder?.rival).toBe('ts-rival');
+    expect(k8s.capBinder?.slopeGap).toBeCloseTo(1, 12);
+    expect(k8s.capBinder?.lead).toBeCloseTo(CAP, 9);
+  });
+
+  it('reports a family with no admissible gain as a row, not by omission', () => {
+    // Whether a family was screened and found worthless, or never screened, is the
+    // difference between a closed axis and an open one — so every observed family gets a
+    // row and the zero is printed.
+    const rows = familyScreen([gainCase(), protectCase()], { logWeight: 1 });
+    const families = rows.map((row) => row.family);
+    expect(families).toContain('cpu');
+    expect(rows.find((row) => row.family === 'cpu')!.gain).toBe(0);
+  });
+
+  it('counts the services and cases a family touches, so a one-service family is visible', () => {
+    const k8s = familyScreen([gainCase(), protectCase()], { logWeight: 1 }).find(
+      (row) => row.family === 'k8s',
+    )!;
+    // Two services carry a k8s dominant metric, one in each case.
+    expect(k8s.services).toBe(2);
+    expect(k8s.cases).toBe(2);
+    expect(k8s.labels).toEqual([K8S]);
+  });
+
+  it('marks the family the ENGINE already penalises, and only that one', () => {
+    const poolCase = threeWay({
+      datapack: 'pool',
+      root: { id: 'ts-root', dominant: 'cpu' },
+      rank1: { id: 'ts-win', dominant: POOL_METRIC_PREFIX + 'use_time.max' },
+      filler: { id: 'ts-filler', dominant: 'cpu' },
+      topPredictions: ['ts-win', 'ts-root'],
+    });
+    const rows = familyScreen([poolCase], { logWeight: 1 });
+
+    expect(rows.find((row) => row.family === 'db.client.connections')!.enginePoolFamily).toBe(true);
+    expect(rows.find((row) => row.family === 'cpu')!.enginePoolFamily).toBe(false);
+  });
+
+  it('spends the budget the SHIPPED pool term already consumed', () => {
+    // The whole reason the pool penalty's recorded window is measured at `--pool-penalty 0`:
+    // at the shipped weight the term already subtracts from the family, so the OTHER
+    // families' windows are the shipped configuration's, not the pre-pool one's. A screen
+    // that ignored the base term would solve a window that every zero-regression
+    // measurement contradicts — and the shift is EXACTLY the weight already applied.
+    const cases = [
+      threeWay({
+        datapack: 'pool-protect',
+        root: { id: 'ts-root', dominant: POOL_METRIC_PREFIX + 'use_time.max', logScore: 0.4 },
+        rank1: { id: 'ts-rival', dominant: 'cpu' },
+        filler: { id: 'ts-filler', dominant: 'cpu' },
+        topPredictions: ['ts-root', 'ts-rival'],
+      }),
+    ];
+    const pick = (poolWeight: number) =>
+      familyScreen(cases, { logWeight: 1, poolWeight }).find(
+        (row) => row.family === 'db.client.connections',
+      )!;
+
+    expect(pick(0).cap).toBeCloseTo(CAP, 9);
+    expect(pick(0.2).cap).toBeCloseTo(CAP - 0.2, 9);
+  });
+
+  it('handles a family with an unbounded window by shipping the floor', () => {
+    // No currently-correct case carries the family, so nothing can regress and the cap is
+    // infinite. The value to ship is then the SMALLEST weight that attains the gain — the
+    // register's rule that inside a step the optimum is its lower boundary — rather than a
+    // midpoint of an interval that has no far end.
+    const rows = familyScreen([gainCase()], { logWeight: 1 });
+    const k8s = rows.find((row) => row.family === 'k8s')!;
+
+    expect(k8s.cap).toBe(Number.POSITIVE_INFINITY);
+    expect(k8s.capBinder).toBeUndefined();
+    expect(k8s.ship).toBeCloseTo(k8s.gainFloor, 12);
+    expect(k8s.lostAtShip).toBe(0);
+  });
+
+  it('reports a POINT window as a point, and the profile it sits on', () => {
+    // The shape the real benchmark produces most often, and the reason the profile exists:
+    // the metric term's top step is a constant for a fixed candidate count, so the weight
+    // that WINS a case and the weight that LOSES one are the same number. Here both cases
+    // have the same top-two structure, so the gain arrives exactly at the cap.
+    // The datapack must not contain the word the assertion looks for: an earlier draft named
+    // the gaining fixture 'gain-point', so `toContain('point')` passed off the FIXTURE'S NAME
+    // while the single-point branch had never executed. The assertion is anchored to the
+    // column instead, and neither datapack here contains the word.
+    // The cap must be EXACTLY the step, so the lead comes from the metric term's top two
+    // positions rather than from a log score: the printed `logScore` carries three decimals,
+    // so a lead built out of it is quantised (0.365, not 0.364643…) and the window would be
+    // a 0.0004-wide interval instead of a point.
+    const step = STEPS[0]! - STEPS[1]!;
+    const protectedCase = parseDiagnosticDump(
+      dump({
+        datapack: 'protect-at-cap',
+        groundTruthServices: ['ts-root'],
+        services: [
+          serviceLine({ serviceId: 'ts-root', selfAnomaly: 0.9, dominant: K8S }),
+          serviceLine({ serviceId: 'ts-rival', selfAnomaly: 0.5, dominant: 'cpu' }),
+          serviceLine({ serviceId: 'ts-filler', selfAnomaly: 0.1, dominant: 'cpu' }),
+          serviceLine({ serviceId: 'ts-quiet', selfAnomaly: 0, dominant: 'cpu' }),
+        ],
+        topPredictions: ['ts-root', 'ts-rival'],
+      }),
+    )[0]!;
+    const weights = { logWeight: 1 };
+    const row = familyScreen([gainCase(0), protectedCase], weights).find(
+      (one) => one.family === 'k8s',
+    )!;
+
+    expect(row.gainFloor).toBeCloseTo(step, 9);
+    expect(row.bestEnd).toBeCloseTo(step, 9);
+    expect(row.ship).toBeCloseTo(step, 9);
+    // The width COLUMN, not the word: `]` then whitespace then `point` can only come from
+    // the rendering of a window with no interior.
+    expect(formatFamilyScreenReport([row], weights)).toMatch(/\]\s+point\s/);
+  });
+
+  it('counts two gains that arrive at the SAME weight as two', () => {
+    // The bug this pins, found on the real dump: the profile collected the arrival weights
+    // in a SET, and two of the pool family\u0027s six gains arrive at exactly the same weight
+    // (0.010050, the metric term\u0027s top step for a 51-candidate case). The screen then
+    // reported five gains where the solver had found six, while the per-type split — which
+    // counts CASES — still said six. Two counts of one population disagreed.
+    const weights = { logWeight: 1 };
+    const rows = familyScreen([gainCase(0), gainCase(0.05)], weights);
+    const k8s = rows.find((row) => row.family === 'k8s')!;
+
+    expect(k8s.gain).toBe(2);
+    // Both floors are distinct here (the two roots carry different log scores), so the
+    // profile shows two steps; the collapse this pins needs equal margins, which the
+    // real dump supplies and a fixture can only approximate. The invariant is that the
+    // profile's END equals the gain, whichever way the margins fall.
+    expect(k8s.steps.at(-1)!.gained).toBe(2);
+  });
+
+  it('reports a MONOTONE profile, which is what the model proves', () => {
+    // Every gain is `[floor, Infinity)`, so no case can be gained and then lost: the counts
+    // never fall, and the last step is the maximum. If this ever fails, the screen's
+    // reasoning about which weights are admissible is wrong, not merely the printing.
+    const cases = [gainCase(), protectCase()];
+    for (const row of familyScreen(cases, { logWeight: 1 })) {
+      for (let index = 1; index < row.steps.length; index++) {
+        expect(row.steps[index]!.gained).toBeGreaterThanOrEqual(row.steps[index - 1]!.gained);
+      }
+      expect(row.steps.at(-1)!.gained).toBe(row.gain);
+    }
+  });
+
+  it('screens an explicitly named family even when the dump never carries it', () => {
+    // An explicit request is answered with a zero row. Answering with no row is the
+    // "absence read as zero" defect from the other side: a caller cannot tell a screened
+    // and empty family from one the screen skipped.
+    const rows = familyScreen([gainCase()], { logWeight: 1 }, ['nothing.at.all']);
+
+    expect(rows.map((row) => row.family)).toEqual(['nothing.at.all']);
+    expect(rows[0]!.gain).toBe(0);
+    expect(rows[0]!.services).toBe(0);
+    expect(rows[0]!.cases).toBe(0);
+  });
+
+  it('ranks by gain, then by the width of the window, then by name', () => {
+    const both = [gainCase(), protectCase()];
+    const rows = familyScreen(both, { logWeight: 1 });
+    // k8s is the only family with a gain, so it leads.
+    expect(rows[0]!.family).toBe('k8s');
+    // Everything else is at zero and ordered by name, so two runs diff cleanly.
+    const rest = rows.slice(1).map((row) => row.family);
+    expect([...rest].sort()).toEqual(rest);
+  });
+  it('renders the gain, its split and the pair that caps the window', () => {
+    const weights = { logWeight: 1 };
+    const text = formatFamilyScreenReport(
+      familyScreen([gainCase(), protectCase()], weights),
+      weights,
+    );
+
+    expect(text).toContain('Family screen');
+    expect(text).toContain('k8s: +1 (JVMMemoryStress +1)');
+    expect(text).toContain('lost at ship 0');
+    // The width, and the case the gain came from: a row's gain is auditable rather than
+    // trusted, and a zero-width window is a different KIND of object from a 0.038-wide one.
+    expect(text).toContain((CAP - FLOOR).toFixed(6));
+    expect(text).toContain('gains gain-me');
+    // The profile carries the weights the maximum is silent about: the count is reached at
+    // the floor and held to the cap, so exactly one entry survives.
+    expect(text).toContain('profile ' + FLOOR.toFixed(6) + '\u21921');
+    // The cap is printed WITH the pair that sets it: a cap alone is not actionable, and
+    // the defaults for the three unstated weights are named in the configuration line, so
+    // a report cannot be read as having been solved at an ablation.
+    expect(text).toContain('cap bound by protect-me: ts-root overtaken by ts-rival');
+    expect(text).toContain('logWeight=1 latWeight=0.561495 latFloor=10.3 poolWeight=0.0679');
+  });
+
+  it('renders an unbounded window as unbounded, and skips the binder line', () => {
+    const weights = { logWeight: 1 };
+    const text = formatFamilyScreenReport(familyScreen([gainCase()], weights), weights);
+
+    expect(text).toContain('unbounded');
+    expect(text).not.toContain('cap bound by');
+    expect(text).not.toContain('point');
+  });
+
+  it('says so rather than printing a table with no body', () => {
+    expect(formatFamilyScreenReport([], { logWeight: 1 })).toContain('no family is present');
+  });
+
+  it('says so when no family has an admissible gain', () => {
+    // The distinction the screen exists to make: a family that was SCREENED and buys
+    // nothing, versus one nobody looked at. The row prints the zero; this line says the
+    // whole dump came back empty.
+    const weights = { logWeight: 1 };
+    const text = formatFamilyScreenReport(familyScreen([protectCase()], weights), weights);
+
+    expect(text).toContain('no family has an admissible gain');
+  });
+
+  it('truncates a long label list on the row rather than wrapping it', () => {
+    // Four labels in one family: the table names three and an ellipsis, so a row stays one
+    // line and the table's width is stable between runs — a report meant to be diffed.
+    const many = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-root'],
+        services: [
+          serviceLine({ serviceId: 'ts-root', selfAnomaly: 0.9, dominant: 'cpu' }),
+          serviceLine({ serviceId: 'ts-a', selfAnomaly: 0.7, dominant: 'k8s.pod.phase' }),
+          serviceLine({ serviceId: 'ts-b', selfAnomaly: 0.5, dominant: 'k8s.pod.ready' }),
+          serviceLine({ serviceId: 'ts-c', selfAnomaly: 0.3, dominant: 'k8s.pod.restart' }),
+          serviceLine({ serviceId: 'ts-d', selfAnomaly: 0.1, dominant: 'k8s.node.cpuUsage' }),
+        ],
+        topPredictions: ['ts-root'],
+      }),
+    );
+    const weights = { logWeight: 1 };
+    const text = formatFamilyScreenReport(familyScreen(many, weights), weights);
+
+    expect(text).toContain('…');
+    // The labels are sorted, so the row names the first three and drops the last: the
+    // assertion is on the order the report promises, not on an arbitrary three.
+    expect(text).toContain('k8s.node.cpuUsage');
+    expect(text).not.toContain('k8s.pod.restart');
+  });
+});
+
+describe('--family-screen wiring', () => {
+  it('is a switch that renders its own section from the whole configuration', () => {
+    // A kebab switch whose name does not map to a section kind is accepted and never
+    // rendered — indistinguishable from a screen that found nothing.
+    const opts = parseAnalyzeArgs(['--dump', 'd.txt', '--log-weight', '1', '--family-screen']);
+    expect(opts.kind).toBe('dump');
+    if (opts.kind !== 'dump') throw new Error('unreachable');
+    expect(opts.sections.map((section) => section.kind)).toEqual(['familyScreen']);
+    expect(opts.sections[0]!.poolWeight).toBe(DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+
+    const text = formatAnalyzeSections(
+      parseDiagnosticDump(
+        dump({
+          groundTruthServices: ['ts-root'],
+          services: [
+            serviceLine({ serviceId: 'ts-root', selfAnomaly: 0.9, dominant: 'cpu' }),
+            serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.5, dominant: 'k8s.pod.phase' }),
+          ],
+          topPredictions: ['ts-root'],
+        }),
+      ),
+      'dump.txt',
+      {
+        kind: 'dump',
+        dump: 'dump.txt',
+        family: undefined,
+        sections: [
+          {
+            kind: 'familyScreen',
+            logWeight: 1,
+            latWeight: DEFAULT_LAT_WEIGHT,
+            latFloor: DEFAULT_LAT_MIN_RISE,
+            poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+          },
+        ],
+        slope: 'lat',
+        output: undefined,
+      },
+    );
+
+    expect(text).toContain('Family screen');
+    expect(text).toContain('poolWeight=' + DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    expect(text).toContain('k8s');
   });
 });
 

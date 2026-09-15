@@ -24,9 +24,16 @@ import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  POOL_METRIC_PREFIX,
 } from '../../packages/tree/src/index.js';
 
-import { formatTermOracleReport, isPoolDominantLabel, latencySlopes } from './fse26-term-oracle.js';
+import {
+  dominantFamily,
+  formatTermOracleReport,
+  isPoolDominantLabel,
+  latencySlopes,
+  shippedScores,
+} from './fse26-term-oracle.js';
 
 /**
  * `latencySlopes` moved to `fse26-term-oracle.ts` — the module that owns "rebuild a term
@@ -1488,6 +1495,416 @@ export function zeroRegressionSamples(
 }
 
 /**
+ * A family penalty screened against the SHIPPED score.
+ *
+ * `score(v) = shipped(v) + w × (−1 when v's dominant family is F, else 0)`, `w ≥ 0`. The
+ * base is the engine's own four terms, taken from {@link shippedScores} so this cannot
+ * become a second implementation of the score — a screen that re-derived the blend would
+ * be measuring a different engine than the one it reports on.
+ *
+ * Everything below is SOLVED, never sampled: each case's requirement is a union of
+ * half-lines in `w` (see {@link caseWeightInterval}), so the admissible window, the gain
+ * inside it and the weights at which each gain arrives are all closed forms.
+ */
+export interface FamilyScreenWeights {
+  /** The run's log weight — the scale of the log term, and never defaulted. */
+  readonly logWeight: number;
+  /** The run's latency weight and rise floor. Default to the shipped constants. */
+  readonly latWeight?: number;
+  readonly latFloor?: number;
+  /**
+   * The run's pool penalty. Defaults to the shipped constant, so a family is screened
+   * against the engine that exists. `0` is the explicit three-term ablation — and it is
+   * the configuration the pool family's own window was measured at, because at the
+   * shipped weight that term has already spent part of the budget (`cap` shifts down by
+   * exactly the weight already applied, which is a test).
+   */
+  readonly poolWeight?: number;
+}
+
+/** One family's solved screen. */
+export interface FamilyScreenRow {
+  /** The family key, from {@link dominantFamily} — the screen's unit of grouping. */
+  readonly family: string;
+  /**
+   * The distinct dominant labels observed in this family, sorted.
+   *
+   * Printed because the grouping IS a judgement: a reader has to be able to see that
+   * `http.server.request.duration` and its `.max` variant were counted as one family,
+   * rather than taking the row's name on trust.
+   */
+  readonly labels: readonly string[];
+  /** Services (over every case) whose dominant metric is in the family. */
+  readonly services: number;
+  /** Cases with at least one such service. */
+  readonly cases: number;
+  /** Currently-wrong cases this penalty fixes at the best admissible weight. */
+  readonly gain: number;
+  /** The per-fault-type split of the gain, which is what the kill criterion asks about. */
+  readonly gainTypes: readonly { readonly key: string; readonly cases: number }[];
+  /** The gained cases, by datapack, so a row's gain can be audited case by case. */
+  readonly gained: readonly string[];
+  /** Currently-wrong cases no weight can fix — context for a zero gain. */
+  readonly unreachable: number;
+  /** Cases correct at `w = 0`; the population the window protects. */
+  readonly satisfied: number;
+  /** The largest weight at which no currently-correct case loses rank 1. */
+  readonly cap: number;
+  /** The smallest weight at which the gain reaches its maximum. */
+  readonly gainFloor: number;
+  /** The largest weight at which the gain still holds its maximum. */
+  readonly bestEnd: number;
+  /**
+   * The gain as a step function of the weight, over the admissible window.
+   *
+   * Reported because the maximum alone hides the shippable compromise: the metric term's
+   * top step is a CONSTANT for a fixed candidate count, so the weight that wins a case and
+   * the weight that loses one are frequently the same number, and a family's maximal gain
+   * then sits at a single weight while a smaller one collects most of it. A profile of
+   * `1 at 0.004, 4 at 0.006, 5 at 0.010` recommends something the interval alone cannot.
+   */
+  readonly steps: readonly FamilyScreenStep[];
+  /**
+   * The weight to ship: the MIDPOINT of `[gainFloor, cap]`, or `gainFloor` when the cap is
+   * unbounded. `0` when there is no gain — the term is then not applied at all, and a
+   * positive number here would be a weight that buys nothing.
+   */
+  readonly ship: number;
+  /** The pair whose ratio sets the cap; absent when the cap is unbounded. */
+  readonly capBinder?: WindowCapBinder;
+  /** Losses at {@link ship}, which must be `0` — measured, not inferred from the cap. */
+  readonly lostAtShip: number;
+  /**
+   * Whether this is the family the ENGINE's own pool penalty already subtracts from.
+   * Not an exclusion — a label. The row is still solved and still comparable.
+   */
+  readonly enginePoolFamily: boolean;
+}
+
+/** One breakpoint of a family's gain profile. */
+export interface FamilyScreenStep {
+  /** A weight; the gain between this and the next breakpoint is `gained`. */
+  readonly weight: number;
+  /** Cases satisfied at this weight that are NOT satisfied at `w = 0`. */
+  readonly gained: number;
+}
+
+/**
+ * The weight from which ONE gained case is satisfied.
+ *
+ * A gain's satisfying set is exactly `[floor, ∞)` — the union over its acceptable roots of
+ * half-lines, each with a positive floor:
+ *
+ * - a gain is a case NOT satisfied at `w = 0`, so no root's interval covers 0;
+ * - a root that is NOT a family member keeps its score while members drop, so once it is
+ *   first it stays first: its interval is `[floor, ∞)` with `floor > 0`;
+ * - a root that IS a member is capped above by every non-member ahead of it, so its
+ *   interval either covers 0 (and the case is not a gain) or is empty.
+ *
+ * The union is therefore `[min floor, ∞)`, which is what makes the profile a cumulative
+ * count over the floors rather than a scan of endpoints. `Infinity` is the answer for a
+ * gain whose far end does not exist, and the caller filters those out.
+ *
+ * @param gain - One currently-wrong case and the weights that satisfy it.
+ * @returns The smallest weight that satisfies it.
+ */
+function gainFloorOf(gain: WindowGain): number {
+  let floor = Number.POSITIVE_INFINITY;
+  for (const interval of gain.intervals) floor = Math.min(floor, interval.min);
+  return floor;
+}
+
+/**
+ * The gain profile over `[0, cap]`, as breakpoints.
+ *
+ * Reported because the maximum alone hides the shippable compromise: the metric term's top
+ * step is a CONSTANT for a fixed candidate count, so the weight that wins a case and the
+ * weight that loses one are frequently the same number, and a family's maximal gain then
+ * sits at a single weight while a smaller one collects most of it.
+ *
+ * @param gains - The window's currently-wrong cases.
+ * @param cap - The window's cap, possibly unbounded.
+ * @returns Ascending breakpoints: the entry at 0, one per reachable floor, and the cap.
+ */
+function gainProfile(gains: readonly WindowGain[], cap: number): readonly FamilyScreenStep[] {
+  // A LIST, not a set. Two cases can share a floor EXACTLY — measured on this benchmark, two
+  // of the pool family's six gains both arrive at 0.010050, which is the metric term's top
+  // step for a 51-candidate case — and a set would report five gains where there are six.
+  // That is the same collapse the metric term's tie-group mean exists to avoid.
+  const floors: number[] = [];
+  for (const gain of gains) {
+    const floor = gainFloorOf(gain);
+    if (floor <= cap + WEIGHT_EPSILON) floors.push(floor);
+  }
+  const weights = [...new Set(floors)].sort((a, b) => a - b);
+  if (Number.isFinite(cap)) weights.push(cap);
+  // The entry at 0 is kept so a reader can see the profile was evaluated there rather than
+  // assumed: its gain is 0 by definition, because a gain is not satisfied at 0.
+  const steps: FamilyScreenStep[] = [{ weight: 0, gained: 0 }];
+  for (const weight of weights) {
+    steps.push({
+      weight,
+      gained: floors.filter((floor) => floor <= weight + WEIGHT_EPSILON).length,
+    });
+  }
+  return steps;
+}
+
+/**
+ * Build the solver's input for ONE family.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The run's configuration.
+ * @param family - The family whose members carry the slope.
+ * @returns One entry per case whose targets the dump describes.
+ */
+function buildFamilyCases(
+  cases: readonly DiagnosedCase[],
+  weights: FamilyScreenWeights,
+  family: string,
+): WeightSeparationCase[] {
+  const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
+  const latFloor = weights.latFloor ?? SHIPPED_LAT_FLOOR;
+  const poolWeight = weights.poolWeight ?? SHIPPED_POOL_WEIGHT;
+  const built: WeightSeparationCase[] = [];
+  for (const kase of cases) {
+    // EVERY acceptable root, as everywhere else: the labels are a list.
+    const targets = kase.groundTruth.filter((name) => name !== '');
+    if (targets.length === 0) continue;
+    const base = shippedScores(kase, {
+      logWeight: weights.logWeight,
+      latWeight,
+      latFloor,
+      poolWeight,
+    });
+    const scores = new Map<string, { base: number; slope: number }>();
+    for (const service of kase.services) {
+      scores.set(service.serviceId, {
+        // Total by construction — `shippedScores` assigns an entry to every service —
+        // so the lookup asserts rather than defaulting to a base nobody computed.
+        base: base.get(service.serviceId)!,
+        slope: dominantFamily(service.dominantMetric) === family ? -1 : 0,
+      });
+    }
+    built.push({ datapack: kase.datapack, targets, scores });
+  }
+  return built;
+}
+
+/**
+ * Screen every observed dominant-metric family for a zero-regression window.
+ *
+ * This is the systematic form of the hand-registered family sets the pool penalty was
+ * chosen from: instead of naming twelve sets and measuring each, it solves a window for
+ * every family the dump carries — including the ones with no gain, because whether an
+ * axis was screened and found worthless is the difference between a closed question and
+ * an open one.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The run's configuration.
+ * @param families - Families to screen; defaults to every family observed in the dump.
+ * @returns One solved row per family, ranked by gain.
+ */
+export function familyScreen(
+  cases: readonly DiagnosedCase[],
+  weights: FamilyScreenWeights,
+  families?: readonly string[],
+): readonly FamilyScreenRow[] {
+  const labelsByFamily = new Map<string, Set<string>>();
+  const servicesByFamily = new Map<string, number>();
+  const casesByFamily = new Map<string, number>();
+  for (const kase of cases) {
+    const seen = new Set<string>();
+    for (const service of kase.services) {
+      const family = dominantFamily(service.dominantMetric);
+      const labels = labelsByFamily.get(family) ?? new Set<string>();
+      labels.add(service.dominantMetric);
+      labelsByFamily.set(family, labels);
+      bump(servicesByFamily, family);
+      if (!seen.has(family)) {
+        seen.add(family);
+        bump(casesByFamily, family);
+      }
+    }
+  }
+
+  // Every family the dump carries, or exactly the ones asked for: an explicit request is
+  // answered with a zero row rather than with no row, so a caller cannot read "skipped"
+  // as "screened and empty".
+  const requested = families ?? [...labelsByFamily.keys()];
+  const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
+  const rows: FamilyScreenRow[] = [];
+  for (const family of requested) {
+    const built = buildFamilyCases(cases, weights, family);
+    const window = computeZeroRegressionWindow(built);
+    const steps = gainProfile(window.gains, window.cap);
+    const gain = steps.reduce((best, step) => (step.gained > best ? step.gained : best), 0);
+    // The maximal-gain weight range: from the FIRST weight that attains the peak to the LAST
+    // one. A range of width zero is a knife edge, and the profile says what a smaller weight
+    // would still buy.
+    const bestStart = steps.find((step) => step.gained === gain)?.weight ?? 0;
+    const bestEnd = [...steps].reverse().find((step) => step.gained === gain)?.weight ?? bestStart;
+    const winners =
+      gain === 0
+        ? []
+        : window.gains
+            .filter((one) => intervalsCover(one.intervals, bestStart))
+            .map((one) => one.datapack);
+    const gainTypes = new Map<string, number>();
+    for (const datapack of winners) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
+    const gained = [...winners].sort();
+    const labels = [...(labelsByFamily.get(family) ?? new Set<string>())].sort();
+    // The weight to ship is the midpoint of the maximal-gain range, or its single value
+    // when the range has no interior — the same rule the pool penalty shipped its own
+    // midpoint under. `0` when there is no gain at all: a positive weight that buys nothing
+    // is a configuration change with no measured effect.
+    const ship = gain === 0 ? 0 : (bestStart + bestEnd) / 2;
+    rows.push({
+      family,
+      labels,
+      services: servicesByFamily.get(family) ?? 0,
+      cases: casesByFamily.get(family) ?? 0,
+      gain,
+      gainTypes: tallyCounter(gainTypes),
+      gained,
+      unreachable: window.unreachable,
+      satisfied: window.satisfied,
+      cap: window.cap,
+      gainFloor: bestStart,
+      bestEnd,
+      steps,
+      ship,
+      capBinder: window.capBinder,
+      lostAtShip: zeroRegressionSamples(built, [ship])[0]!.lost,
+      // The prefix is the engine's, imported: a second copy of it could drift to a family
+      // the engine does not penalise while every row here stayed green.
+      enginePoolFamily: labels.some((label) => label.startsWith(POOL_METRIC_PREFIX)),
+    });
+  }
+  // Gain descending, then the WIDER window, then the name. The width matters because two
+  // families worth the same cases are not equally robust: the one whose window is wider is
+  // the one a converter revision is less likely to invalidate.
+  return rows.sort((a, b) => {
+    if (b.gain !== a.gain) return b.gain - a.gain;
+    const widthA = Number.isFinite(a.cap) ? a.cap - a.gainFloor : Number.POSITIVE_INFINITY;
+    const widthB = Number.isFinite(b.cap) ? b.cap - b.gainFloor : Number.POSITIVE_INFINITY;
+    if (widthB !== widthA) return widthB - widthA;
+    return a.family < b.family ? -1 : 1;
+  });
+}
+
+/** Increment a counter. */
+function bump(counter: Map<string, number>, key: string): void {
+  counter.set(key, (counter.get(key) ?? 0) + 1);
+}
+
+/** Tally a counted map into a descending, then name-ordered list. */
+function tallyCounter(counter: ReadonlyMap<string, number>): readonly {
+  readonly key: string;
+  readonly cases: number;
+}[] {
+  return [...counter.entries()]
+    .map(([key, cases]) => ({ key, cases }))
+    .sort((a, b) => b.cases - a.cases || (a.key < b.key ? -1 : 1));
+}
+
+/**
+ * Render the family screen.
+ *
+ * @param rows - The solved rows.
+ * @param weights - The configuration they were solved at, for the header.
+ * @returns A multi-line report, without a trailing newline.
+ */
+export function formatFamilyScreenReport(
+  rows: readonly FamilyScreenRow[],
+  weights: FamilyScreenWeights,
+): string {
+  const lines: string[] = [];
+  const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+  lines.push(
+    'Family screen (term = −[dominant family == F]; base = the SHIPPED score; ' +
+      'window SOLVED, not swept):',
+  );
+  lines.push(`  configuration: ${configurationLine(weights)}`);
+  if (rows.length === 0) {
+    lines.push('  no family is present in this dump');
+    return lines.join('\n');
+  }
+  lines.push(
+    `  protected at w=0: ${rows[0]!.satisfied} cases per row; ` +
+      'gain counts only cases a zero-regression weight reaches',
+  );
+  lines.push(
+    '  family                          gain  window                     width     ' +
+      'ship      svcs/cases  labels',
+  );
+  for (const row of rows) {
+    const marker = row.enginePoolFamily ? ' *' : '  ';
+    // A window of width ZERO has no interior: at exactly the cap nothing is lost, and one
+    // float above it a currently-correct case is. Printed as `point` rather than as
+    // `0.000000`, because the two rows would otherwise read as the same kind of object.
+    const width = !Number.isFinite(row.cap)
+      ? 'unbounded'
+      : row.cap - row.gainFloor <= 0
+        ? 'point'
+        : (row.cap - row.gainFloor).toFixed(6);
+    lines.push(
+      `  ${(row.family + marker).padEnd(32)}${String(row.gain).padStart(3)}  ` +
+        `[${at(row.gainFloor)}, ${at(row.cap)}]`.padEnd(25) +
+        `${width.padStart(10)}  ` +
+        `${row.ship.toFixed(6).padStart(9)}  ` +
+        `${String(row.services).padStart(4)}/${String(row.cases).padEnd(5)}  ` +
+        `${row.labels.slice(0, 3).join(', ')}${row.labels.length > 3 ? ', …' : ''}`,
+    );
+  }
+  lines.push("  * the family the engine's own pool penalty already subtracts from");
+  lines.push('');
+  for (const row of rows) {
+    if (row.gain === 0) continue;
+    lines.push(
+      `  ${row.family}: +${row.gain} (${row.gainTypes
+        .map((type) => `${type.key} +${type.cases}`)
+        .join(', ')}) · lost at ship ${row.lostAtShip} · unreachable ${row.unreachable}`,
+    );
+    lines.push(
+      `    gains ${row.gained.slice(0, 4).join(', ')}${row.gained.length > 4 ? ', …' : ''}`,
+    );
+    // The profile, with the entries that do not change the count dropped: a family whose
+    // maximum sits at a single weight can still be shippable at a smaller one, and that is
+    // not visible in the maximum or in the interval.
+    const profile = row.steps.filter((step, index) =>
+      index === 0 ? step.gained > 0 : step.gained !== row.steps[index - 1]!.gained,
+    );
+    if (profile.length > 0) {
+      lines.push(
+        `    profile ${profile.map((step) => `${step.weight.toFixed(6)}→${step.gained}`).join(', ')}`,
+      );
+    }
+    if (row.capBinder !== undefined) {
+      lines.push(
+        `    cap bound by ${row.capBinder.datapack}: ${row.capBinder.target} overtaken by ` +
+          `${row.capBinder.rival} (lead ${row.capBinder.lead.toFixed(6)}, ` +
+          `slope gap ${row.capBinder.slopeGap.toFixed(6)})`,
+      );
+    }
+  }
+  const positive = rows.filter((row) => row.gain > 0);
+  if (positive.length === 0) {
+    lines.push('  no family has an admissible gain: every window buys nothing at w > 0');
+  }
+  return lines.join('\n');
+}
+
+/** One line naming the configuration a screen was solved at. */
+function configurationLine(weights: FamilyScreenWeights): string {
+  return (
+    `logWeight=${weights.logWeight} latWeight=${weights.latWeight ?? SHIPPED_LAT_WEIGHT} ` +
+    `latFloor=${weights.latFloor ?? SHIPPED_LAT_FLOOR} ` +
+    `poolWeight=${weights.poolWeight ?? SHIPPED_POOL_WEIGHT}`
+  );
+}
+
+/**
  * Render {@link computeZeroRegressionWindow} as a report.
  *
  * The cap is inserted into the grid, plus one weight just above it, so the claim is
@@ -2127,7 +2544,8 @@ export interface AnalyzeComparisonOptions {
 }
 
 /** The sections that reconstruct a score from the dump. */
-export type AnalyzeSectionKind = 'misses' | 'weightSweep' | 'window' | 'termOracle';
+export type AnalyzeSectionKind =
+  'misses' | 'weightSweep' | 'window' | 'termOracle' | 'familyScreen';
 
 /**
  * One requested section, CARRYING the weight it is computed at.
@@ -2186,6 +2604,7 @@ export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
   'window',
   'weightSweep',
   'termOracle',
+  'familyScreen',
   'misses',
 ];
 
@@ -2211,7 +2630,8 @@ const ANALYZE_USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
   '[--pool-penalty <w>] ' +
-  '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family <regex>] ' +
+  '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
+  '[--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
 /**
@@ -2237,7 +2657,7 @@ const VALUE_FLAGS = new Set([
 ]);
 
 /** Flags that take no value. */
-const SWITCH_FLAGS = new Set(['misses', 'weight-sweep', 'window', 'term-oracle']);
+const SWITCH_FLAGS = new Set(['misses', 'weight-sweep', 'window', 'term-oracle', 'family-screen']);
 
 /**
  * Parse the analyzer's command line.
@@ -2478,6 +2898,17 @@ function analyzeSectionText(
         dominanceGrid: DEFAULT_TERM_ORACLE_DOMINANCE_GRID,
         poolWeight: section.poolWeight,
       });
+    case 'familyScreen': {
+      // The screen solves against the shipped score, so it takes the whole configuration
+      // from the section — the same owner as every other reconstruction here.
+      const weights: FamilyScreenWeights = {
+        logWeight: section.logWeight,
+        latWeight: section.latWeight,
+        latFloor: section.latFloor,
+        poolWeight: section.poolWeight,
+      };
+      return formatFamilyScreenReport(familyScreen(cases, weights), weights);
+    }
     case 'misses':
       return formatMissReport(cases, {
         logWeight: section.logWeight,

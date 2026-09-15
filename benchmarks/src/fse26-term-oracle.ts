@@ -44,7 +44,10 @@
  * @module benchmarks/fse26-term-oracle
  */
 
-import { POOL_METRIC_PREFIX } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  POOL_METRIC_PREFIX,
+} from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 
@@ -343,6 +346,47 @@ export function blendScores(
     );
   }
   return scores;
+}
+
+/** The four weights the shipped score has — everything {@link shippedScores} needs. */
+export interface ShippedScoreWeights {
+  readonly logWeight: number;
+  readonly latWeight: number;
+  readonly latFloor: number;
+  readonly poolWeight: number;
+}
+
+/**
+ * The score the engine ranks by, per service, for one case.
+ *
+ * A thin wrapper over {@link blendScores} with the RECORDED log term, which is the term the
+ * dump's own ranking was produced with: a consumer asking "what does the engine score this
+ * case at" should not have to know about the mode pre-screen's inputs. The dominance
+ * threshold is the engine's own constant and the grid is empty because neither is READ for
+ * the recorded source; passing a restated default here would be a second owner of a
+ * constant, which is how this module's own defects have started.
+ *
+ * @param kase - One parsed case.
+ * @param weights - The run's four weights.
+ * @returns Every candidate's score; total, so a lookup asserts rather than defaulting.
+ */
+export function shippedScores(
+  kase: DiagnosedCase,
+  weights: ShippedScoreWeights,
+): Map<string, number> {
+  return blendScores(
+    kase,
+    {
+      logWeight: weights.logWeight,
+      latWeight: weights.latWeight,
+      latFloor: weights.latFloor,
+      poolWeight: weights.poolWeight,
+      dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+      dominanceGrid: [],
+    },
+    'recorded',
+    latencySlopes(kase.services, weights.latFloor),
+  );
 }
 
 function rankScored(scored: readonly ScoredService[]): string[] {
