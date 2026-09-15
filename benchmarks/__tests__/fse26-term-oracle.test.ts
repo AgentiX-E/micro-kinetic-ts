@@ -19,7 +19,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
-import { DEFAULT_HTTP_DOMINANCE_THRESHOLD } from '../../packages/tree/src/index.js';
+import {
+  computePoolMetricScores,
+  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  POOL_METRIC_PREFIX,
+} from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase } from '../src/fse26-diagnose-analyze.js';
 import {
@@ -29,6 +33,7 @@ import {
 } from '../src/fse26-diagnose-analyze.js';
 import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 import {
+  blendScores,
   dominantFamily,
   dominantFamilyCensus,
   formatFamilyCensus,
@@ -37,6 +42,7 @@ import {
   formatOracleCensus,
   formatTermOracleReport,
   httpDominance,
+  isPoolDominantLabel,
   latencySlopes,
   logSlopesForMode,
   metricSlopes,
@@ -52,6 +58,13 @@ const OPTS: TermOracleOptions = {
   latFloor: 10.3,
   dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   dominanceGrid: [0.5],
+  /**
+   * The pool penalty OFF. Every expectation in this file that predates the pool term
+   * was written against the three-term score, so the shared fixture states that
+   * ablation explicitly rather than inheriting a shipped weight those expectations
+   * never saw. The pool term's own tests set their weight and say what they measure.
+   */
+  poolWeight: 0,
 };
 
 interface ServiceSpec {
@@ -709,7 +722,11 @@ describe('formatters', () => {
     const text = formatFidelity(oracleFidelity(cases, OPTS), OPTS);
     expect(text).toContain('logWeight=1 latWeight=0.561495 latFloor=10.3');
     expect(text).toContain('error bar');
-    expect(text).toContain('rank-1 reproduced: 1/1 cases');
+    expect(text).toContain('rank-1 same as the dump’s own recorded: 1/1 cases');
+    // The caveat prints with the number, because the number alone is ambiguous: a
+    // shortfall means "the flags are not the dump's configuration" OR "the
+    // reconstruction drifted", and only a reader who knows which can act on it.
+    expect(text).toContain('CONFIGURATION moving the winner');
   });
 
   it('prints the ceilings and the conflicts', () => {
@@ -736,6 +753,109 @@ describe('formatters', () => {
   });
 });
 
+describe('isPoolDominantLabel — the instrument’s rule agrees with the engine’s', () => {
+  it('classifies label for label exactly what the engine classifies', () => {
+    // The PREFIX is imported from the engine, but the RULE (starts-with it) is
+    // restated here, so it is validated against the engine's own classifier instead
+    // of being assumed. A screen that penalises a different family than the engine
+    // does is a screen that validates nothing — and the failure would be silent,
+    // because both sides would keep producing numbers.
+    const labels = [
+      `${POOL_METRIC_PREFIX}use_time.max`,
+      `${POOL_METRIC_PREFIX}wait_time.max`,
+      `${POOL_METRIC_PREFIX}timeouts`,
+      POOL_METRIC_PREFIX.replace(/\.$/, ''),
+      `${POOL_METRIC_PREFIX.replace(/\.$/, '')}Total`,
+      'container.cpu.usage',
+      'http.client.request.duration.max',
+      '',
+    ];
+    const ids = labels.map((_, index) => `svc-${index}`);
+    const engine = computePoolMetricScores(
+      new Map(ids.map((id, index) => [id, { label: labels[index]!, head: [1], tail: [2] }])),
+      new Set(ids),
+    );
+
+    for (let index = 0; index < labels.length; index++) {
+      expect(isPoolDominantLabel(labels[index]!)).toBe(engine.get(ids[index]!) === 1);
+    }
+    // The rule is not vacuous in either direction.
+    expect(labels.filter((label) => isPoolDominantLabel(label))).toHaveLength(3);
+  });
+});
+
+describe('blendScores — the score the engine ranks by', () => {
+  const poolCase = (): DiagnosedCase =>
+    casesOf(
+      block([
+        { serviceId: 'ts-pool', selfAnomaly: 0.9, dominant: `${POOL_METRIC_PREFIX}use_time.max` },
+        { serviceId: 'ts-cpu', selfAnomaly: 0.4, dominant: 'container.cpu.usage' },
+      ]),
+    )[0]!;
+
+  it('subtracts exactly the pool weight from the pool-dominant service, and nobody else', () => {
+    const kase = poolCase();
+    const off = blendScores(kase, OPTS, 'recorded', new Map());
+    const on = blendScores(kase, { ...OPTS, poolWeight: 0.25 }, 'recorded', new Map());
+
+    expect(off.get('ts-pool')! - on.get('ts-pool')!).toBeCloseTo(0.25, 12);
+    expect(on.get('ts-cpu')).toBeCloseTo(off.get('ts-cpu')!, 12);
+  });
+
+  it('does not penalise a service whose dominant metric is ABSENT', () => {
+    // Absence must not become the punished state — the same rule the engine keeps.
+    // Subtracting from a service the engine never measured would be a fabricated
+    // finding, and it would grow with the weight.
+    const kase = casesOf(block([{ serviceId: 'ts-plain', selfAnomaly: 0.7, dominant: '' }]))[0]!;
+    const off = blendScores(kase, OPTS, 'recorded', new Map());
+    const on = blendScores(kase, { ...OPTS, poolWeight: 0.25 }, 'recorded', new Map());
+
+    expect(on.get('ts-plain')).toBe(off.get('ts-plain'));
+  });
+});
+
+describe('rankCase — the pool term is part of the shipped blend', () => {
+  it('flips the blend when the penalty outweighs the metric gap', () => {
+    const kase = casesOf(
+      block([
+        { serviceId: 'ts-pool', selfAnomaly: 0.9, dominant: `${POOL_METRIC_PREFIX}use_time.max` },
+        { serviceId: 'ts-cpu', selfAnomaly: 0.4, dominant: 'container.cpu.usage' },
+      ]),
+    )[0]!;
+
+    expect(rankCase(kase, OPTS, 'recorded', new Map()).order[0]).toBe('ts-pool');
+    expect(rankCase(kase, { ...OPTS, poolWeight: 0.8 }, 'recorded', new Map()).order[0]).toBe(
+      'ts-cpu',
+    );
+  });
+});
+
+describe('oracleFidelity — the term the dump’s own run had on', () => {
+  it('counts the cases whose rank-1 the penalty moves, and only those', () => {
+    // Two cases in one dump: in the first the penalty overtakes the pool-dominant
+    // leader, in the second the pool-dominant service is already last so the penalty
+    // cannot reorder anything. One flip, not two.
+    const moved = block(
+      [
+        { serviceId: 'ts-pool', selfAnomaly: 0.9, dominant: `${POOL_METRIC_PREFIX}use_time.max` },
+        { serviceId: 'ts-cpu', selfAnomaly: 0.4, dominant: 'container.cpu.usage' },
+      ],
+      { datapack: 'moved' },
+    );
+    const still = block(
+      [
+        { serviceId: 'ts-cpu', selfAnomaly: 0.9, dominant: 'container.cpu.usage' },
+        { serviceId: 'ts-pool', selfAnomaly: 0.4, dominant: `${POOL_METRIC_PREFIX}use_time.max` },
+      ],
+      { datapack: 'still' },
+    );
+    const cases = casesOf(moved, still);
+
+    expect(oracleFidelity(cases, { ...OPTS, poolWeight: 0.8 }).poolFlips).toBe(1);
+    expect(oracleFidelity(cases, OPTS).poolFlips).toBe(0);
+  });
+});
+
 describe('--term-oracle wiring', () => {
   it('is a switch, maps to its section kind, and still needs the log weight', () => {
     // A switch whose kebab name does not map to a section kind is accepted and never
@@ -755,7 +875,15 @@ describe('--term-oracle wiring', () => {
       kind: 'dump',
       dump: 'dump.txt',
       family: undefined,
-      sections: [{ kind: 'termOracle', logWeight: 1, latWeight: 0.561495, latFloor: 10.3 }],
+      sections: [
+        {
+          kind: 'termOracle',
+          logWeight: 1,
+          latWeight: 0.561495,
+          latFloor: 10.3,
+          poolWeight: 0,
+        },
+      ],
       slope: 'lat',
       output: undefined,
     });

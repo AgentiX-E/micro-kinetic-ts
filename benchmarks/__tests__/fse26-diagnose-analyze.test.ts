@@ -15,9 +15,11 @@ import { describe, expect, it } from 'vitest';
 import type { MetricDiagnostic } from '../../packages/core/src/index.js';
 import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
+  computeEdgeLatencyScores,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
-  computeEdgeLatencyScores,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  POOL_METRIC_PREFIX,
 } from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase, WeightSeparationCase } from '../src/fse26-diagnose-analyze.js';
@@ -39,6 +41,8 @@ import {
   formatZeroRegressionWindowReport,
   isTop1Correct,
   latencySlopes,
+  MISS_DECIDED_BY,
+  MISS_ORDER,
   parseAnalyzeArgs,
   parseDiagnosticDump,
   regressionMechanism,
@@ -1502,6 +1506,38 @@ describe('classifyMiss', () => {
   });
 });
 
+describe('the attribution vocabulary is a census, not a sample', () => {
+  const TERMS = ['metric', 'log', 'lat', 'pool'];
+
+  it('lists every subset of the four terms, so a label cannot be printed and dropped', () => {
+    // `classifyMiss` builds its label by joining the positive parts, so the set of
+    // spellings is a FUNCTION of the term list. A spelling reachable that way and
+    // absent from the vocabulary would be a label the per-type line prints and the
+    // tally silently drops — and nothing would fail, which is the whole risk.
+    const subsets: string[] = [];
+    for (let mask = 1; mask < 1 << TERMS.length; mask++) {
+      subsets.push(
+        TERMS.filter((_, index) => (mask & (1 << index)) !== 0)
+          .join('+')
+          .replace(/^/, ''),
+      );
+    }
+
+    expect([...MISS_DECIDED_BY].sort()).toEqual([...subsets].sort());
+    expect(MISS_DECIDED_BY).toHaveLength(15);
+  });
+
+  it('tallies every kind in the vocabulary, in the vocabulary’s own order', () => {
+    // Two lists again, and this is the one that decides what the report shows: the
+    // tally iterates the ORDER and skips zero counts. A spelling missing here would be
+    // counted into `byDecidedBy` and never printed.
+    expect(MISS_ORDER.slice(0, MISS_DECIDED_BY.length)).toEqual([...MISS_DECIDED_BY]);
+    expect(new Set(MISS_ORDER).size).toBe(MISS_ORDER.length);
+    // The three that are not a set of terms come last, so the terms read as a block.
+    expect(MISS_ORDER.slice(MISS_DECIDED_BY.length)).toEqual(['tie', 'unexplained', 'absent']);
+  });
+});
+
 describe('formatMissReport', () => {
   it('tallies every kind, the silent block, and each fault type', () => {
     const text = dump({
@@ -2428,6 +2464,159 @@ describe('latencySlopes agrees with the engine it predicts', () => {
   });
 });
 
+describe('classifyMiss — the pool penalty is a modelled term', () => {
+  /**
+   * THE second instance of the defect that produced `unexplained 12`: the shipped score
+   * gained a fourth term and the attribution still summed three. `unexplained` is
+   * documented as "a bug, or a wrong weight — never a result", so a term the engine has
+   * on and the classifier does not model manufactures exactly that reading.
+   *
+   * The pool term is a PENALTY, so its contribution to the winner's margin is
+   * `-weight × (indicator(winner) - indicator(source))`: positive when it subtracted
+   * from the ROOT (one of the reasons the root lost), negative when it subtracted from
+   * the winner (a term already on the root's side, which must NOT be named).
+   */
+  const wrongCase = (
+    src: { selfAnomaly: number; logScore?: number; latRise?: number; dominant?: string },
+    win: { selfAnomaly: number; logScore?: number; latRise?: number; dominant?: string },
+  ) => {
+    const { dominant: srcDominant, ...srcRest } = src;
+    const { dominant: winDominant, ...winRest } = win;
+    return parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({
+            serviceId: 'ts-src',
+            ...srcRest,
+            ...(srcDominant === undefined ? {} : { dominant: srcDominant }),
+          }),
+          serviceLine({
+            serviceId: 'ts-win',
+            ...winRest,
+            ...(winDominant === undefined ? {} : { dominant: winDominant }),
+          }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+      }),
+    )[0]!;
+  };
+
+  it('names the pool term when the penalty is why the root lost', () => {
+    // Equal on everything the other three terms see; the ROOT is pool-dominant, so the
+    // penalty subtracted from it while the winner kept its whole score.
+    const kase = wrongCase(
+      { selfAnomaly: 0.8, dominant: POOL_METRIC_PREFIX + 'use_time.max' },
+      { selfAnomaly: 0.8, dominant: 'container.cpu.usage' },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1, latWeight: 0 })[0]!.decidedBy).toBe('pool');
+  });
+
+  it('spells out the full four-term combination', () => {
+    // Every prior points at the winner AND the penalty subtracted from the root: the
+    // answer has to name all four, because a reader acting on it needs to know the
+    // pool term is implicated too.
+    const kase = wrongCase(
+      { selfAnomaly: 0.4, logScore: 0, latRise: 1, dominant: POOL_METRIC_PREFIX + 'wait_time.max' },
+      { selfAnomaly: 0.9, logScore: 1, latRise: 100, dominant: 'cpu' },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('metric+log+lat+pool');
+  });
+
+  it('does NOT name the penalty when it worked FOR the root', () => {
+    // The winner is pool-dominant, so the penalty subtracted from IT. Naming it here
+    // would send a reader to strengthen a term that is already on the root's side.
+    const kase = wrongCase(
+      { selfAnomaly: 0.4, dominant: 'cpu' },
+      { selfAnomaly: 0.9, dominant: POOL_METRIC_PREFIX + 'use_time.max' },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1, latWeight: 0 })[0]!.decidedBy).toBe('metric');
+  });
+
+  it('is the three-term view at a weight of zero, and the SHIPPED view by default', () => {
+    // The default is the engine's own constant, imported: a default of 0 here would
+    // describe an engine that does not exist. The ablation has to be written down.
+    const kase = wrongCase(
+      { selfAnomaly: 0.8, dominant: POOL_METRIC_PREFIX + 'use_time.max' },
+      { selfAnomaly: 0.8, dominant: 'container.cpu.usage' },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1, latWeight: 0 })[0]!.decidedBy).toBe('pool');
+    expect(classifyMiss(kase, { logWeight: 1, latWeight: 0, poolWeight: 0 })[0]!.decidedBy).toBe(
+      'tie',
+    );
+  });
+});
+
+describe('formatMissReport — the banner names every modelled term', () => {
+  const poolMiss = () =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({
+            serviceId: 'ts-src',
+            selfAnomaly: 0.8,
+            dominant: POOL_METRIC_PREFIX + 'use_time.max',
+          }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.8, dominant: 'cpu' }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+      }),
+    );
+
+  it('states the pool weight, so `unexplained` is a claim about it', () => {
+    const text = formatMissReport(poolMiss(), { logWeight: 1 });
+
+    expect(text).toContain('poolWeight=' + DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    expect(text).toContain('pool');
+  });
+
+  it('says the term is NOT modelled when the ablation is stated', () => {
+    // An ablation that renders as the shipped configuration's banner would make the
+    // report's own claim false, which is the failure mode the banner exists to stop.
+    const text = formatMissReport(poolMiss(), { logWeight: 1, poolWeight: 0 });
+
+    expect(text).toContain('pool penalty NOT modelled');
+    expect(text).not.toContain('poolWeight=' + DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+  });
+});
+
+describe('parseAnalyzeArgs — the pool penalty is part of a section’s configuration', () => {
+  const dumpMode = (argv: readonly string[]) => {
+    const opts = parseAnalyzeArgs(['--dump', 'd.txt', ...argv]);
+    if (opts.kind !== 'dump') throw new Error('expected dump mode');
+    return opts;
+  };
+
+  it('defaults to the SHIPPED pool weight rather than to the ablation', () => {
+    const opts = dumpMode(['--log-weight', '1', '--misses']);
+
+    expect(opts.sections[0]!.poolWeight).toBe(DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+  });
+
+  it('carries an explicitly stated ablation onto the section', () => {
+    const opts = dumpMode(['--log-weight', '1', '--misses', '--pool-penalty', '0']);
+
+    expect(opts.sections[0]!.poolWeight).toBe(0);
+  });
+
+  it('rejects a pool penalty that is not a usable weight', () => {
+    // A negative weight would CREDIT the pool-dominant service, which is a different
+    // signal than the one measured; an empty value would select the ablation while
+    // reading as "the shipped configuration".
+    expect(() => dumpMode(['--log-weight', '1', '--misses', '--pool-penalty', '-0.1'])).toThrow(
+      /pool-penalty/,
+    );
+    expect(() => dumpMode(['--log-weight', '1', '--misses', '--pool-penalty', ''])).toThrow(
+      /pool-penalty/,
+    );
+  });
+});
+
 describe('parseAnalyzeArgs — one owner for the log weight', () => {
   /**
    * The run's log weight appeared FOUR times in this command line: on
@@ -2464,6 +2653,7 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
         logWeight: 1,
         latWeight: DEFAULT_LAT_WEIGHT,
         latFloor: DEFAULT_LAT_MIN_RISE,
+        poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       },
     ]);
   });
@@ -2891,6 +3081,7 @@ describe('parseAnalyzeArgs — every section carries the whole configuration', (
       logWeight: 1,
       latWeight: DEFAULT_LAT_WEIGHT,
       latFloor: DEFAULT_LAT_MIN_RISE,
+      poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     });
   });
 
@@ -2910,6 +3101,7 @@ describe('parseAnalyzeArgs — every section carries the whole configuration', (
       logWeight: 0.5,
       latWeight: 0,
       latFloor: 1,
+      poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     });
   });
 

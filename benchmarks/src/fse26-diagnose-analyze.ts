@@ -23,9 +23,10 @@ import {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
 } from '../../packages/tree/src/index.js';
 
-import { formatTermOracleReport, latencySlopes } from './fse26-term-oracle.js';
+import { formatTermOracleReport, isPoolDominantLabel, latencySlopes } from './fse26-term-oracle.js';
 
 /**
  * `latencySlopes` moved to `fse26-term-oracle.ts` — the module that owns "rebuild a term
@@ -596,6 +597,7 @@ export function regressionMechanism(
  */
 const SHIPPED_LAT_WEIGHT = DEFAULT_LAT_WEIGHT;
 const SHIPPED_LAT_FLOOR = DEFAULT_LAT_MIN_RISE;
+const SHIPPED_POOL_WEIGHT = DEFAULT_POOL_METRIC_PENALTY_WEIGHT;
 
 /**
  * Which scored term decided a Top@1 miss.
@@ -629,17 +631,41 @@ const SHIPPED_LAT_FLOOR = DEFAULT_LAT_MIN_RISE;
  *   zero would read as "measured and credited nothing", which is a different
  *   statement and the wrong one to build a next step on.
  */
-export type MissTerm = 'metric' | 'log' | 'lat';
+export type MissTerm = 'metric' | 'log' | 'lat' | 'pool';
 
-export type MissDecidedBy =
-  | MissTerm
-  | 'metric+log'
-  | 'metric+lat'
-  | 'log+lat'
-  | 'metric+log+lat'
-  | 'tie'
-  | 'unexplained'
-  | 'absent';
+/**
+ * Every attribution a case can receive, as ONE list the type is derived from.
+ *
+ * Derived rather than restated, because the alternative is two lists that must agree: a
+ * spelling reachable by `classifyMiss` and absent here would be a label the report prints
+ * and the tally drops, and nothing would fail. The test that walks all fifteen subsets of
+ * the four terms is the census that keeps this list complete.
+ *
+ * The pool penalty is a term like the others HERE, unlike in the oracle's `TermName`: the
+ * question is the same — how much did this term contribute to the winner's margin — and
+ * for a penalty that is a number, `-weight × (indicator(winner) - indicator(source))`.
+ * Positive means it subtracted from the ROOT, i.e. it is one of the reasons the root
+ * lost; negative means it worked FOR the root, and it must not be named.
+ */
+export const MISS_DECIDED_BY = [
+  'metric',
+  'log',
+  'lat',
+  'pool',
+  'metric+log',
+  'metric+lat',
+  'metric+pool',
+  'log+lat',
+  'log+pool',
+  'lat+pool',
+  'metric+log+lat',
+  'metric+log+pool',
+  'metric+lat+pool',
+  'log+lat+pool',
+  'metric+log+lat+pool',
+] as const;
+
+export type MissDecidedBy = (typeof MISS_DECIDED_BY)[number] | 'tie' | 'unexplained' | 'absent';
 
 /** How one wrong case was decided. */
 export interface MissClassification {
@@ -679,6 +705,13 @@ export interface MissAttributionWeights {
   readonly latWeight?: number;
   /** The run's latency rise floor. Defaults to the shipped constant. */
   readonly latFloor?: number;
+  /**
+   * The run's pool-dominance penalty. Defaults to the SHIPPED constant, and there is no
+   * "absent" spelling for the same reason as the latency weight: the dump carries the
+   * dominant metric, so the term is attributable, and a reader diagnosing the shipped
+   * engine must get the shipped engine. `0` is the explicit three-term ablation.
+   */
+  readonly poolWeight?: number;
 }
 
 /** Float tolerance for "the two scores are equal". */
@@ -689,22 +722,19 @@ function emits(service: DiagnosedService): boolean {
   return service.errorCount + service.fatalCount + service.logicExceptionCount > 0;
 }
 
-/** The order the miss kinds are reported and tallied in. */
-const MISS_ORDER: readonly MissDecidedBy[] = [
-  'metric',
-  'log',
-  'lat',
-  'metric+log',
-  'metric+lat',
-  'log+lat',
-  'metric+log+lat',
+/**
+ * The order the miss kinds are reported and tallied in: the combinations first, in the
+ * order `MISS_DECIDED_BY` fixes, then the three that are not a set of terms.
+ */
+export const MISS_ORDER: readonly MissDecidedBy[] = [
+  ...MISS_DECIDED_BY,
   'tie',
   'unexplained',
   'absent',
 ];
 
 /** The terms a classification can name, in the order they are spelled out. */
-const MISS_TERMS: readonly MissTerm[] = ['metric', 'log', 'lat'];
+const MISS_TERMS: readonly MissTerm[] = ['metric', 'log', 'lat', 'pool'];
 
 /**
  * Attribute a case's Top@1 miss.
@@ -764,11 +794,20 @@ export function classifyMiss(
   const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
   const latSlopes = latencySlopes(kase.services, weights.latFloor ?? SHIPPED_LAT_FLOOR);
   const latOf = (serviceId: string) => latSlopes.get(serviceId) ?? 0;
+  const poolWeight = weights.poolWeight ?? SHIPPED_POOL_WEIGHT;
+
+  // Every term is a contribution to the WINNER's margin over the source, the pool
+  // penalty included — and there it is a difference of indicators, not of magnitudes:
+  // the term depends on WHICH metric won a service's anomaly maximum, so a service
+  // whose dominant metric was never measured is not penalised (the engine's own rule).
+  const poolIndicator = (service: { dominantMetric: string }): number =>
+    isPoolDominantLabel(service.dominantMetric) ? 1 : 0;
 
   const parts: Record<MissTerm, number> = {
     metric: Math.log1p(win.selfAnomaly) - Math.log1p(src.selfAnomaly),
     log: weights.logWeight * (win.logScore - src.logScore),
     lat: latWeight * (latOf(winner!) - latOf(source)),
+    pool: -poolWeight * (poolIndicator(win) - poolIndicator(src)),
   };
   const gap = MISS_TERMS.reduce((sum, term) => sum + parts[term], 0);
 
@@ -846,8 +885,14 @@ export function formatMissReport(
     latWeight === 0
       ? 'latency term NOT modelled (--lat-weight 0)'
       : `latWeight=${latWeight}; latFloor=${weights.latFloor ?? SHIPPED_LAT_FLOOR}`;
+  const poolWeight = weights.poolWeight ?? SHIPPED_POOL_WEIGHT;
+  // The pool term is named on the same rule as the latency one: an ablation that left
+  // this clause reading like the shipped configuration would make the banner — and with
+  // it every `unexplained` claim — false.
+  const poolModelled =
+    poolWeight === 0 ? 'pool penalty NOT modelled (--pool-penalty 0)' : `poolWeight=${poolWeight}`;
   lines.push(
-    `Miss attribution (logWeight=${weights.logWeight}; ${modelled}; ` +
+    `Miss attribution (logWeight=${weights.logWeight}; ${modelled}; ${poolModelled}; ` +
       'exact only when no other prior is on):',
   );
   lines.push(`  wrong cases: ${total}`);
@@ -2116,6 +2161,14 @@ export interface AnalyzeSection {
    */
   readonly latWeight: number;
   readonly latFloor: number;
+  /**
+   * The run's pool-dominance penalty. On the section for the third time and the same
+   * reason: the attribution's `unexplained` count is a claim about the modelled terms,
+   * so a section computed at the wrong penalty reports the shipped term's own decisions
+   * as engine anomalies — which is exactly how the missing latency term produced twelve
+   * phantom defects.
+   */
+  readonly poolWeight: number;
 }
 
 export interface AnalyzeDumpOptions {
@@ -2149,9 +2202,15 @@ export const DEFAULT_TERM_ORACLE_DOMINANCE_GRID: readonly number[] = [
   0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.95,
 ];
 
+/**
+ * The usage line names every flag the parser accepts, the pool penalty included: a
+ * reader who does not know it exists reads a shipped-configuration report as a
+ * three-term one, which is the reading this whole module exists to prevent.
+ */
 const ANALYZE_USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
+  '[--pool-penalty <w>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
@@ -2173,6 +2232,7 @@ const VALUE_FLAGS = new Set([
   'lat-weight',
   'log-weight',
   'output',
+  'pool-penalty',
   'slope',
 ]);
 
@@ -2251,6 +2311,14 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     DEFAULT_LAT_WEIGHT,
     (n) => n >= 0,
   );
+  const poolWeight = numberFlag(
+    values.get('pool-penalty'),
+    '--pool-penalty',
+    DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    // A negative weight would CREDIT the pool-dominant service, which is a different
+    // signal than the one measured and not one anybody has evidence for.
+    (n) => n >= 0,
+  );
   const latFloor = numberFlag(
     values.get('lat-floor'),
     '--lat-floor',
@@ -2277,6 +2345,7 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
       logWeight,
       latWeight,
       latFloor,
+      poolWeight,
     })),
     // Anything that is not exactly `lat` falls back to the term this solver was
     // built for, like every other switch here: a typo has to reproduce a known
@@ -2407,12 +2476,14 @@ function analyzeSectionText(
         latFloor: section.latFloor,
         dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
         dominanceGrid: DEFAULT_TERM_ORACLE_DOMINANCE_GRID,
+        poolWeight: section.poolWeight,
       });
     case 'misses':
       return formatMissReport(cases, {
         logWeight: section.logWeight,
         latWeight: section.latWeight,
         latFloor: section.latFloor,
+        poolWeight: section.poolWeight,
       });
   }
 }

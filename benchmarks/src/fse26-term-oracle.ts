@@ -48,7 +48,18 @@ import { POOL_METRIC_PREFIX } from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 
-/** The three terms the shipped score sums. */
+/**
+ * The three terms the shipped score sums that have an ORDER of their own.
+ *
+ * The pool-dominance penalty is deliberately absent. It is part of the shipped score —
+ * `blendScores` below subtracts it — but "which services does this term rank first" has
+ * no answer for a pure penalty: the term's own order is every non-pool service in a tie
+ * broken by id. Counting that order in a census of "which term alone names a root" would
+ * add arbitrary ids to a tally of causal claims.
+ *
+ * The exclusion is stated rather than silent, and the term still has a measured
+ * footprint: {@link OracleFidelity.poolFlips} counts the cases it reorders.
+ */
 export type TermName = 'metric' | 'log' | 'lat';
 
 /**
@@ -88,6 +99,15 @@ export interface TermOracleOptions {
    * caller asked for and a test can drive it with two points.
    */
   readonly dominanceGrid: readonly number[];
+  /**
+   * The run's DB-connection-pool dominance penalty — the score's FOURTH term.
+   *
+   * Required, like every other weight here, and imported by the caller from the engine:
+   * the shipped configuration has this term ON, so a reconstruction that omits it
+   * describes an engine that does not exist and would report the shipped run's own
+   * decisions as the instrument disagreeing with itself.
+   */
+  readonly poolWeight: number;
 }
 
 /**
@@ -259,6 +279,72 @@ export function logSlopesForMode(
 }
 
 /** Rank scored services with the engine's comparator. */
+/**
+ * Whether a service's dominant metric belongs to the pool family.
+ *
+ * The PREFIX is the engine's, imported; the RULE is restated here, because the dump
+ * carries a bare label while the engine's classifier takes its own metric objects. A
+ * restatement is a risk, so the tests validate it against the engine's own classifier
+ * rather than assuming it: a screen that penalises a different family than the engine
+ * does is a screen that validates nothing, and it would fail silently — both sides still
+ * producing numbers.
+ *
+ * A service with NO dominant metric is not penalised. The engine credits only a MEASURED
+ * dominance, and a fabricated penalty would be a finding that grows with the weight.
+ *
+ * @param dominantMetric - The label the dump printed for the service.
+ * @returns Whether the penalty applies to it.
+ */
+export function isPoolDominantLabel(dominantMetric: string): boolean {
+  return dominantMetric.startsWith(POOL_METRIC_PREFIX);
+}
+
+/**
+ * The score the shipped engine ranks by, per service.
+ *
+ * `log1p(metric) + logWeight·log + latWeight·lat − poolWeight·[pool-dominant]`, which is
+ * the engine's own `finalScore` with the priors this benchmark leaves off.
+ *
+ * Exported because a candidate penalty's zero-regression window is solved from SCORE
+ * GAPS between two services, and a solver that re-derived the blend would be a second
+ * implementation of the very quantity being measured — the defect this module exists to
+ * find. It is also what makes the pool term's own contribution an exact number rather
+ * than an ordering claim.
+ *
+ * @param kase - One parsed case.
+ * @param opts - The configuration to reconstruct at.
+ * @param logSource - Which log term to use.
+ * @param latSlopes - The case's latency term, from {@link latencySlopes}.
+ * @returns Every candidate's score; total, so a lookup asserts rather than defaulting.
+ */
+export function blendScores(
+  kase: DiagnosedCase,
+  opts: TermOracleOptions,
+  logSource: LogTermSource,
+  latSlopes: ReadonlyMap<string, number>,
+): Map<string, number> {
+  const metric = metricSlopes(kase.services);
+  const log =
+    logSource === 'recorded'
+      ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
+      : logSlopesForMode(kase.services, logSource, opts.dominance);
+  const scores = new Map<string, number>();
+  for (const service of kase.services) {
+    // The metric term's map is TOTAL — {@link metricSlopes} assigns an entry to every
+    // service — so its lookup asserts rather than falling back. A `?? 0` here could
+    // never fire, and if it ever did it would fabricate a metric term of zero for a
+    // service the map cannot be missing: the term would silently stop voting.
+    scores.set(
+      service.serviceId,
+      Math.log1p(metric.get(service.serviceId)!) +
+        opts.logWeight * (log.get(service.serviceId) ?? 0) +
+        opts.latWeight * (latSlopes.get(service.serviceId) ?? 0) -
+        (isPoolDominantLabel(service.dominantMetric) ? opts.poolWeight : 0),
+    );
+  }
+  return scores;
+}
+
 function rankScored(scored: readonly ScoredService[]): string[] {
   return [...scored]
     .sort((a, b) => {
@@ -302,16 +388,12 @@ export function rankCase(
     logSource === 'recorded'
       ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
       : logSlopesForMode(kase.services, logSource, opts.dominance);
+  // The blend comes from `blendScores`, so the score this ranks by IS the score the
+  // solver measures — one implementation, not two.
+  const scores = blendScores(kase, opts, logSource, latSlopes);
   const blended: ScoredService[] = kase.services.map((service) => ({
     serviceId: service.serviceId,
-    // The metric term's map is TOTAL — {@link metricSlopes} assigns an entry to every
-    // service — so its lookup asserts rather than falling back. A `?? 0` here could
-    // never fire, and if it ever did it would fabricate a metric term of zero for a
-    // service the map cannot be missing: the term would silently stop voting.
-    score:
-      Math.log1p(metric.get(service.serviceId)!) +
-      opts.logWeight * (log.get(service.serviceId) ?? 0) +
-      opts.latWeight * (latSlopes.get(service.serviceId) ?? 0),
+    score: scores.get(service.serviceId)!,
   }));
   return {
     order: rankScored(blended),
@@ -363,6 +445,13 @@ export interface OracleFidelity {
    * bar for every mode comparison, stated as a count rather than as a caveat.
    */
   readonly recordedLogFlips: number;
+  /**
+   * Cases whose rank-1 the POOL penalty moves, measured against the same terms with the
+   * penalty off. The term has no order of its own (see {@link TermName}), so this is how
+   * its footprint is reported: a reconstruction that carried the term but never applied
+   * it would otherwise read exactly like one that did.
+   */
+  readonly poolFlips: number;
 }
 
 /** Measure the instrument against the dump it is reading. */
@@ -378,6 +467,7 @@ export function oracleFidelity(
   let top1Correct = 0;
   let recordedLogViolations = 0;
   let recordedLogFlips = 0;
+  let poolFlips = 0;
   for (const kase of cases) {
     const metric = metricSlopes(kase.services);
     const ordered = printedOrder(kase.services);
@@ -399,6 +489,9 @@ export function oracleFidelity(
     if (winner !== undefined && winner === kase.prediction[0]) top1Matches++;
     if (winner !== undefined && root.has(winner)) top1Correct++;
     if (derived.order[0] !== winner) recordedLogFlips++;
+    if (rankCase(kase, { ...opts, poolWeight: 0 }, 'recorded', lat).order[0] !== winner) {
+      poolFlips++;
+    }
     const derivedLog = logSlopesForMode(kase.services, 'logicHttp', opts.dominance);
     for (const service of kase.services) {
       if (Math.abs((derivedLog.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) {
@@ -416,6 +509,7 @@ export function oracleFidelity(
     top1Correct,
     recordedLogViolations,
     recordedLogFlips,
+    poolFlips,
   };
 }
 
@@ -822,7 +916,8 @@ export function formatFidelity(fidelity: OracleFidelity, opts: TermOracleOptions
   lines.push('Instrument fidelity (reconstruction vs the dump it reads):');
   lines.push(
     `  cases ${fidelity.cases}; services ${fidelity.services}; ` +
-      `logWeight=${opts.logWeight} latWeight=${opts.latWeight} latFloor=${opts.latFloor}`,
+      `logWeight=${opts.logWeight} latWeight=${opts.latWeight} latFloor=${opts.latFloor} ` +
+      `poolWeight=${opts.poolWeight}`,
   );
   lines.push(
     `  metric term: max |recomputed - printed| = ${fidelity.metricMaxDeviation.toExponential(2)}; ` +
@@ -833,8 +928,19 @@ export function formatFidelity(fidelity: OracleFidelity, opts: TermOracleOptions
       `${fidelity.orderConsistent}/${fidelity.cases} cases`,
   );
   lines.push(
-    `  rank-1 reproduced: ${fidelity.top1Matches}/${fidelity.cases} cases; ` +
-      `rank-1 an acceptable root: ${fidelity.top1Correct}`,
+    `  rank-1 same as the dump’s own recorded: ${fidelity.top1Matches}/${fidelity.cases} cases; ` +
+      `an acceptable root: ${fidelity.top1Correct}; moved by the pool penalty: ${fidelity.poolFlips}`,
+  );
+  // The line above is a FIDELITY check only when these flags name the configuration the
+  // dump was scored at — and the tool cannot know that, because a dump does not record
+  // its weights. Left unsaid, a reader seeing a shortfall concludes the reconstruction
+  // drifted: measured here, the pool penalty alone moves the winner in 103 of 1422 cases,
+  // so at any other weight the same line reads 1319/1422 for a perfectly faithful
+  // reconstruction. Naming which reading applies is cheaper than a caveat in a document
+  // nobody reads next to the number.
+  lines.push(
+    '  (a rank-1 differing from the recorded one is the CONFIGURATION moving the winner whenever ' +
+      'these flags are not the dump’s own; the pool footprint above is measured, not inferred)',
   );
   lines.push(
     `  log term: counts-derived vs printed, services above 6e-4: ${fidelity.recordedLogViolations}; ` +
