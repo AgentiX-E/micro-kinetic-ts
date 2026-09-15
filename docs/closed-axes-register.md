@@ -127,6 +127,17 @@ Before reading any number, check that the input was counted:
   default of 1.0), and the defaults are guarded as TEXT because a default is invisible to
   every runtime assertion of the engine's behaviour
   (`benchmarks/__tests__/rcaeval-reported-config.test.ts`).
+- **a reconstruction must model every term that is LIVE in the dump**, and the opposite
+  failure is as expensive as the one above: a term missing from `blendScores` is invisible
+  while its weight is 0 and turns the shipped configuration's own decisions into
+  `rank-1 moved`/`unexplained` the moment it ships. Each shipped term therefore has an
+  entry in `TermOracleOptions`, a count in the fidelity report (`poolFlips`,
+  `temporalFlips`), and a contribution in the miss decomposition — and a term's SIGN there
+  is the finding: positive means that term promoted the wrong winner, i.e. its case-level
+  cost (`docs/fse26-onset-verdict.md` §7, where the shipped term's cost is `broken 0`).
+  The CLI dispatch passes the SECTION OBJECT rather than re-listing its fields: the first
+  version of this change passed a hand-picked subset, and `--temporal-weight 0` printed a
+  banner claiming `0.036552`.
 - a diagnostic dump's miss attribution prints **`unexplained`** and **`tie`** — a
   healthy engine has zero `unexplained`, because that category means the order is
   inconsistent with the terms the dump carries (`docs/fse26-stock-attribution.md`).

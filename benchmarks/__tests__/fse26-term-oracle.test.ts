@@ -22,6 +22,7 @@ import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/ind
 import {
   computePoolMetricScores,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  DEFAULT_ONSET_SHAPE,
   POOL_METRIC_PREFIX,
 } from '../../packages/tree/src/index.js';
 
@@ -62,6 +63,14 @@ const OPTS: TermOracleOptions = {
   latFloor: 10.3,
   dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   dominanceGrid: [0.5],
+  /**
+   * The temporal prior OFF, on the same rule as the pool penalty below: every expectation
+   * in this file that predates the term was written against the FOUR-term score, and
+   * inheriting the shipped pair would silently re-express all of them. The term's own
+   * tests set the pair and say what they measure.
+   */
+  temporalWeight: 0,
+  onsetShape: DEFAULT_ONSET_SHAPE,
   /**
    * The pool penalty OFF. Every expectation in this file that predates the pool term
    * was written against the three-term score, so the shared fixture states that
@@ -382,6 +391,26 @@ describe('oracleFidelity', () => {
     expect(fidelity.top1Matches).toBe(1);
     expect(fidelity.top1Correct).toBe(1);
     expect(fidelity.recordedLogFlips).toBe(0);
+  });
+
+  it('counts the cases the TEMPORAL prior reorders, against its own ablated arm', () => {
+    // The term has no order of its own, so `temporalFlips` is the only place its
+    // footprint is reported as a number — and a reconstruction that carried the pair but
+    // never applied it would otherwise read exactly like one that did. The fixture puts
+    // the metric leader second in time, so the shipped `earliest-only` shape promotes the
+    // first mover: at weight 1 the rank-1 changes, at 0 it does not.
+    const cases = casesOf(
+      block(
+        [
+          { serviceId: 'ts-late', selfAnomaly: 0.9, onset: 60000 },
+          { serviceId: 'ts-early', selfAnomaly: 0.8, onset: 0 },
+        ],
+        { groundTruth: ['ts-late'], topPredictions: ['ts-early'], injectTimeMs: 1_700_000_000_000 },
+      ),
+    );
+
+    expect(oracleFidelity(cases, { ...OPTS, temporalWeight: 0 }).temporalFlips).toBe(0);
+    expect(oracleFidelity(cases, { ...OPTS, temporalWeight: 1 }).temporalFlips).toBe(1);
   });
 
   it('notices a block whose anomalies are not rank-normalised for its own n', () => {
@@ -923,7 +952,14 @@ describe('shippedScores — one entry point for the score the engine ranks by', 
         { serviceId: 'ts-b', selfAnomaly: 0.4, logScore: 0.1, dominant: 'k8s.pod.phase' },
       ]),
     )[0]!;
-    const weights = { logWeight: 1, latWeight: 0, latFloor: 1, poolWeight: 0.25 };
+    const weights = {
+      logWeight: 1,
+      latWeight: 0,
+      latFloor: 1,
+      poolWeight: 0.25,
+      temporalWeight: 0,
+      onsetShape: DEFAULT_ONSET_SHAPE,
+    };
 
     const scores = shippedScores(kase, weights);
     const blended = blendScores(kase, { ...OPTS, ...weights }, 'recorded', new Map());
@@ -947,9 +983,16 @@ describe('shippedRank1 — one owner of "who the modelled score puts first"', ()
         { serviceId: 'ts-a', selfAnomaly: 0.5 },
       ]),
     )[0]!;
-    expect(shippedRank1(kase, { logWeight: 1, latWeight: 0, latFloor: 1, poolWeight: 0 })).toBe(
-      'ts-a',
-    );
+    expect(
+      shippedRank1(kase, {
+        logWeight: 1,
+        latWeight: 0,
+        latFloor: 1,
+        poolWeight: 0,
+        temporalWeight: 0,
+        onsetShape: DEFAULT_ONSET_SHAPE,
+      }),
+    ).toBe('ts-a');
   });
 
   it('returns undefined for a case with no candidates rather than a fabricated name', () => {
@@ -957,7 +1000,14 @@ describe('shippedRank1 — one owner of "who the modelled score puts first"', ()
     // "not measured" into a prediction and could silently count as a miss.
     const kase = casesOf(block([], { datapack: 'no-services' }))[0]!;
     expect(
-      shippedRank1(kase, { logWeight: 1, latWeight: 0, latFloor: 1, poolWeight: 0 }),
+      shippedRank1(kase, {
+        logWeight: 1,
+        latWeight: 0,
+        latFloor: 1,
+        poolWeight: 0,
+        temporalWeight: 0,
+        onsetShape: DEFAULT_ONSET_SHAPE,
+      }),
     ).toBeUndefined();
   });
 });
@@ -1032,6 +1082,8 @@ describe('--term-oracle wiring', () => {
           latWeight: 0.561495,
           latFloor: 10.3,
           poolWeight: 0,
+          temporalWeight: 0,
+          onsetShape: DEFAULT_ONSET_SHAPE,
         },
       ],
       slope: 'lat',

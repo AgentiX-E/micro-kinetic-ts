@@ -45,8 +45,12 @@
  */
 
 import {
+  computeOnsetSlopes,
+  computeTemporalEarliness,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  DEFAULT_ONSET_SHAPE,
   POOL_METRIC_PREFIX,
+  type OnsetShape,
 } from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
@@ -54,14 +58,17 @@ import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 /**
  * The three terms the shipped score sums that have an ORDER of their own.
  *
- * The pool-dominance penalty is deliberately absent. It is part of the shipped score —
- * `blendScores` below subtracts it — but "which services does this term rank first" has
- * no answer for a pure penalty: the term's own order is every non-pool service in a tie
- * broken by id. Counting that order in a census of "which term alone names a root" would
- * add arbitrary ids to a tally of causal claims.
+ * Two shipped terms are deliberately absent, on ONE rule: a term whose own order is a
+ * TIE broken by id, which would add arbitrary service ids to a tally of causal claims.
  *
- * The exclusion is stated rather than silent, and the term still has a measured
- * footprint: {@link OracleFidelity.poolFlips} counts the cases it reorders.
+ * - the pool-dominance PENALTY: its own order is every non-pool service, tied.
+ * - the injection-anchored temporal prior: its credit is a mask ({@link OnsetShape}), so
+ *   in the shipped `earliest-only` shape its own order is the first mover followed by
+ *   everybody else, tied.
+ *
+ * Both exclusions are stated rather than silent, and neither term is unmeasured:
+ * {@link OracleFidelity.poolFlips} and {@link OracleFidelity.temporalFlips} count the
+ * cases each one reorders, and the miss attribution carries a `temporal` contribution.
  */
 export type TermName = 'metric' | 'log' | 'lat';
 
@@ -111,6 +118,25 @@ export interface TermOracleOptions {
    * decisions as the instrument disagreeing with itself.
    */
   readonly poolWeight: number;
+  /**
+   * The run's injection-anchored temporal prior — the score's FIFTH term, and the most
+   * recent one to ship.
+   *
+   * Required for the reason the pool penalty is: the reconstruction is the run's score,
+   * and a missing live term turns every one of ITS decisions into the instrument
+   * disagreeing with itself. That is not hypothetical — the pool penalty produced exactly
+   * that footprint, and this term's own footprint on the 1422-case dump is
+   * {@link OracleFidelity.temporalFlips} cases.
+   */
+  readonly temporalWeight: number;
+  /**
+   * Which shape the temporal prior reads the onset delays in.
+   *
+   * A weight is a claim about a shape, so a reconstruction that carried one without the
+   * other is not a configuration — and this field is why `blendScores` takes the pair
+   * rather than a factor.
+   */
+  readonly onsetShape: OnsetShape;
 }
 
 /**
@@ -303,10 +329,71 @@ export function isPoolDominantLabel(dominantMetric: string): boolean {
 }
 
 /**
+ * The engine's earliness map for one parsed case, rebuilt from the dump.
+ *
+ * Deliberately EMPTY, never neutral-filled, when the term cannot act — that is the
+ * engine's own spelling and it is the one thing a screen must not paper over: a map
+ * filled with 0.5 for every service would make "no usable onsets" and "every service
+ * equally early" the same object, and the first is a data gap while the second is a
+ * result. Callers that want a value per service use {@link onsetSlopes}.
+ *
+ * @param kase - One parsed case.
+ * @returns Earliness in [0, 1] per service; empty when the term is inert.
+ */
+export function onsetEarliness(kase: DiagnosedCase): Map<string, number> {
+  const delays = new Map<string, number>();
+  for (const service of kase.services) {
+    if (service.onsetDelayMs !== undefined) delays.set(service.serviceId, service.onsetDelayMs);
+  }
+  return computeTemporalEarliness(delays, kase.injectTimeMs ?? 0);
+}
+
+/**
+ * The shapes the screen sweeps — the ENGINE's own declaration, imported.
+ *
+ * Not restated here: a local copy could drift to a shape the ranking does not
+ * implement, and every row below would stay green while the screen measured a term
+ * that does not exist. `ONSET_SHAPES` is the single list the CLI documents, the
+ * workflow accepts and the screen iterates.
+ */
+
+/**
+ * One case's onset slope per service, in one shape — TOTAL over the case.
+ *
+ * A thin adapter, and deliberately no more than one: the shape arithmetic lives in the
+ * engine's {@link computeOnsetSlopes} so the ranking and this reconstruction cannot
+ * disagree about what a shape means, and all this adds is the one thing a summation
+ * needs and the engine does not — an entry for EVERY service. An omitted entry would be
+ * a missing slope in a score, and a term that credits whoever it failed to look up.
+ *
+ * @param kase - One parsed case.
+ * @param shape - Which shape to build; defaults to the engine's own.
+ * @returns The slope per service; total over the case's services.
+ */
+export function onsetSlopes(
+  kase: DiagnosedCase,
+  shape: OnsetShape = DEFAULT_ONSET_SHAPE,
+): Map<string, number> {
+  const delays = new Map<string, number>();
+  for (const service of kase.services) {
+    if (service.onsetDelayMs !== undefined) delays.set(service.serviceId, service.onsetDelayMs);
+  }
+  const measured = computeOnsetSlopes(delays, kase.injectTimeMs ?? 0, shape);
+  const slopes = new Map<string, number>();
+  for (const service of kase.services) {
+    // 0 for a service the engine left out, which is the same value the engine's own
+    // `?? 0` at the ranking reads: no credit, not "neutral credit".
+    slopes.set(service.serviceId, measured.get(service.serviceId) ?? 0);
+  }
+  return slopes;
+}
+
+/**
  * The score the shipped engine ranks by, per service.
  *
- * `log1p(metric) + logWeight·log + latWeight·lat − poolWeight·[pool-dominant]`, which is
- * the engine's own `finalScore` with the priors this benchmark leaves off.
+ * `log1p(metric) + logWeight·log + latWeight·lat + temporalWeight·onset
+ * − poolWeight·[pool-dominant]`, which is the engine's own `finalScore` with the priors
+ * this benchmark leaves off.
  *
  * Exported because a candidate penalty's zero-regression window is solved from SCORE
  * GAPS between two services, and a solver that re-derived the blend would be a second
@@ -331,6 +418,11 @@ export function blendScores(
     logSource === 'recorded'
       ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
       : logSlopesForMode(kase.services, logSource, opts.dominance);
+  // TOTAL over the case's services, like the metric term above and for the same reason:
+  // the map is built from `kase.services`, so a lookup cannot miss and an `?? 0` on it
+  // could never fire — and if it ever did it would fabricate a slope of zero, i.e. a term
+  // that silently stopped voting.
+  const onset = onsetSlopes(kase, opts.onsetShape);
   const scores = new Map<string, number>();
   for (const service of kase.services) {
     // The metric term's map is TOTAL — {@link metricSlopes} assigns an entry to every
@@ -341,19 +433,29 @@ export function blendScores(
       service.serviceId,
       Math.log1p(metric.get(service.serviceId)!) +
         opts.logWeight * (log.get(service.serviceId) ?? 0) +
-        opts.latWeight * (latSlopes.get(service.serviceId) ?? 0) -
+        opts.latWeight * (latSlopes.get(service.serviceId) ?? 0) +
+        opts.temporalWeight * onset.get(service.serviceId)! -
         (isPoolDominantLabel(service.dominantMetric) ? opts.poolWeight : 0),
     );
   }
   return scores;
 }
 
-/** The four weights the shipped score has — everything {@link shippedScores} needs. */
+/** The five weights the shipped score has — everything {@link shippedScores} needs. */
 export interface ShippedScoreWeights {
   readonly logWeight: number;
   readonly latWeight: number;
   readonly latFloor: number;
   readonly poolWeight: number;
+  /**
+   * The temporal prior's pair, which the caller passes EXPLCITLY even at weight 0.
+   *
+   * Not optional: a consumer that wants "the shipped configuration minus this term" —
+   * an onset screen, say — must say `0` rather than omit the field, because omitting it
+   * would make the term's own ablation the same call as the shipped configuration.
+   */
+  readonly temporalWeight: number;
+  readonly onsetShape: OnsetShape;
 }
 
 /**
@@ -367,7 +469,7 @@ export interface ShippedScoreWeights {
  * constant, which is how this module's own defects have started.
  *
  * @param kase - One parsed case.
- * @param weights - The run's four weights.
+ * @param weights - The run's five weights.
  * @returns Every candidate's score; total, so a lookup asserts rather than defaulting.
  */
 export function shippedScores(
@@ -381,6 +483,8 @@ export function shippedScores(
       latWeight: weights.latWeight,
       latFloor: weights.latFloor,
       poolWeight: weights.poolWeight,
+      temporalWeight: weights.temporalWeight,
+      onsetShape: weights.onsetShape,
       dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
       dominanceGrid: [],
     },
@@ -525,6 +629,19 @@ export interface OracleFidelity {
    * it would otherwise read exactly like one that did.
    */
   readonly poolFlips: number;
+  /**
+   * Cases whose rank-1 the TEMPORAL prior moves, measured against the same terms with its
+   * weight at 0.
+   *
+   * The term has no order of its OWN ({@link TermName} excludes it for the same reason as
+   * the pool penalty), but it does have a footprint, and this is it: the number of cases
+   * the shipped weight reorders. A reconstruction that carried the term but never applied
+   * it would otherwise read exactly like one that did — and this count is also the
+   * case-level COST of the term, because a case it reorders AWAY from the root is a case
+   * it broke. Cross-check it against the miss attribution: a positive `temporal`
+   * contribution there is the same event.
+   */
+  readonly temporalFlips: number;
 }
 
 /** Measure the instrument against the dump it is reading. */
@@ -541,6 +658,7 @@ export function oracleFidelity(
   let recordedLogViolations = 0;
   let recordedLogFlips = 0;
   let poolFlips = 0;
+  let temporalFlips = 0;
   for (const kase of cases) {
     const metric = metricSlopes(kase.services);
     const ordered = printedOrder(kase.services);
@@ -565,6 +683,9 @@ export function oracleFidelity(
     if (rankCase(kase, { ...opts, poolWeight: 0 }, 'recorded', lat).order[0] !== winner) {
       poolFlips++;
     }
+    if (rankCase(kase, { ...opts, temporalWeight: 0 }, 'recorded', lat).order[0] !== winner) {
+      temporalFlips++;
+    }
     const derivedLog = logSlopesForMode(kase.services, 'logicHttp', opts.dominance);
     for (const service of kase.services) {
       if (Math.abs((derivedLog.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) {
@@ -583,6 +704,7 @@ export function oracleFidelity(
     recordedLogViolations,
     recordedLogFlips,
     poolFlips,
+    temporalFlips,
   };
 }
 

@@ -20,13 +20,13 @@
  */
 
 import {
-  computeOnsetSlopes,
-  computeTemporalEarliness,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
+  isOnsetShape,
   ONSET_SHAPES,
   POOL_METRIC_PREFIX,
 } from '../../packages/tree/src/index.js';
@@ -44,17 +44,20 @@ import {
   formatTermOracleReport,
   isPoolDominantLabel,
   latencySlopes,
+  onsetEarliness,
+  onsetSlopes,
   shippedRank1,
   shippedScores,
 } from './fse26-term-oracle.js';
 
 /**
- * `latencySlopes` moved to `fse26-term-oracle.ts` — the module that owns "rebuild a term
- * from a dump" — so the solver below and the oracle there cannot disagree about the
- * engine: two implementations of one signal is the defect this whole analyzer exists to
- * find. Re-exported so every existing caller keeps its import path.
+ * `latencySlopes`, `onsetEarliness` and `onsetSlopes` moved to `fse26-term-oracle.ts` —
+ * the module that owns "rebuild a term from a dump" — so a screen here and the oracle
+ * there cannot disagree about the engine: two implementations of one signal is the defect
+ * this whole analyzer exists to find. Re-exported so every existing caller keeps its
+ * import path.
  */
-export { latencySlopes };
+export { latencySlopes, onsetEarliness, onsetSlopes };
 
 /**
  * The shape menu, re-exported rather than restated.
@@ -652,16 +655,21 @@ export function regressionMechanism(
  * investigation, not of the dump format.
  */
 /**
- * The latency weight and rise floor the SHIPPED engine runs with.
+ * The weights the SHIPPED engine runs with, imported rather than restated.
  *
- * Imported rather than restated: a diagnostic describes an engine, and if the two
- * numbers that describe it are typed out here they can drift from the engine's
- * own — which is precisely how this module came to report the shipped signal's
- * decisions as engine anomalies.
+ * A diagnostic describes an engine, and if the numbers that describe it are typed out
+ * here they can drift from the engine's own — which is precisely how this module came to
+ * report the shipped signal's decisions as engine anomalies. There is now one of these per
+ * shipped term, and `SHIPPED_TEMPORAL_WEIGHT` is the newest: a dump that carried the term
+ * while a reconstruction omitted it would print the term's OWN decisions as the
+ * instrument disagreeing with the engine, which is the defect this list exists to make
+ * impossible.
  */
 const SHIPPED_LAT_WEIGHT = DEFAULT_LAT_WEIGHT;
 const SHIPPED_LAT_FLOOR = DEFAULT_LAT_MIN_RISE;
 const SHIPPED_POOL_WEIGHT = DEFAULT_POOL_METRIC_PENALTY_WEIGHT;
+const SHIPPED_TEMPORAL_WEIGHT = DEFAULT_TEMPORAL_WEIGHT;
+const SHIPPED_ONSET_SHAPE = DEFAULT_ONSET_SHAPE;
 
 /**
  * Which scored term decided a Top@1 miss.
@@ -688,14 +696,17 @@ const SHIPPED_POOL_WEIGHT = DEFAULT_POOL_METRIC_PENALTY_WEIGHT;
  *   modelled. That is a defect in the engine or in the dump, never a modelling
  *   result. "Modelled" is load-bearing: the report prints which terms it used, and
  *   an unmodelled term's decisions land here, so a reader must check the banner
- *   before treating one as an engine finding.
+ *   before treating one as an engine finding. The temporal prior is MODELLED, so a
+ *   `temporal` contribution is a finding about that term rather than about the engine:
+ *   positive means the term credited the WRONG winner — the case-level cost of the term
+ *   — and negative means it worked for the root and simply was not enough.
  * - `absent` — either service the attribution needs (the source or the winner) is
  *   missing from this dump's service list. The case cannot be attributed from this
  *   dump at all: the fields are reported as `NaN`, never 0, because a fabricated
  *   zero would read as "measured and credited nothing", which is a different
  *   statement and the wrong one to build a next step on.
  */
-export type MissTerm = 'metric' | 'log' | 'lat' | 'pool';
+export type MissTerm = 'metric' | 'log' | 'lat' | 'pool' | 'temporal';
 
 /**
  * Every attribution a case can receive, as ONE list the type is derived from.
@@ -712,21 +723,40 @@ export type MissTerm = 'metric' | 'log' | 'lat' | 'pool';
  * lost; negative means it worked FOR the root, and it must not be named.
  */
 export const MISS_DECIDED_BY = [
+  // Generated from the term list, not hand-maintained: 2^5 - 1 = 31 names, and the
+  // only thing a hand-written list of 31 does reliably is drift from the terms.
+  // The test that walks every SUBSET of `MISS_TERMS` is what keeps this complete.
   'metric',
   'log',
   'lat',
   'pool',
+  'temporal',
   'metric+log',
   'metric+lat',
   'metric+pool',
+  'metric+temporal',
   'log+lat',
   'log+pool',
+  'log+temporal',
   'lat+pool',
+  'lat+temporal',
+  'pool+temporal',
   'metric+log+lat',
   'metric+log+pool',
+  'metric+log+temporal',
   'metric+lat+pool',
+  'metric+lat+temporal',
+  'metric+pool+temporal',
   'log+lat+pool',
+  'log+lat+temporal',
+  'log+pool+temporal',
+  'lat+pool+temporal',
   'metric+log+lat+pool',
+  'metric+log+lat+temporal',
+  'metric+log+pool+temporal',
+  'metric+lat+pool+temporal',
+  'log+lat+pool+temporal',
+  'metric+log+lat+pool+temporal',
 ] as const;
 
 export type MissDecidedBy = (typeof MISS_DECIDED_BY)[number] | 'tie' | 'unexplained' | 'absent';
@@ -754,6 +784,18 @@ export interface MissClassification {
 
 /** The priors a dump's DIAG blocks can be attributed with. */
 export interface MissAttributionWeights {
+  /**
+   * The run's injection-anchored temporal pair.
+   *
+   * Here for the same reason as the latency and pool weights, one shipped term later: the
+   * attribution decomposes the margin the WRONG winner had over the root, and a live term
+   * missing from the decomposition makes a case whose real cause is that term read as
+   * `unexplained` — i.e. as an engine defect. Defaults to the shipped pair, so a reader
+   * diagnosing the shipped engine gets the shipped engine; `temporalWeight: 0` is the
+   * explicit ablation and it is a DIFFERENT report.
+   */
+  readonly temporalWeight?: number;
+  readonly onsetShape?: OnsetShape;
   /**
    * The run's log weight. Required, because its SCALE decides the attribution and
    * a defaulted one would attribute losses at a scale the run never used.
@@ -798,7 +840,7 @@ export const MISS_ORDER: readonly MissDecidedBy[] = [
 ];
 
 /** The terms a classification can name, in the order they are spelled out. */
-const MISS_TERMS: readonly MissTerm[] = ['metric', 'log', 'lat', 'pool'];
+const MISS_TERMS: readonly MissTerm[] = ['metric', 'log', 'lat', 'pool', 'temporal'];
 
 /**
  * Attribute a case's Top@1 miss.
@@ -867,11 +909,21 @@ export function classifyMiss(
   const poolIndicator = (service: { dominantMetric: string }): number =>
     isPoolDominantLabel(service.dominantMetric) ? 1 : 0;
 
+  const onset = onsetSlopes(kase, weights.onsetShape ?? SHIPPED_ONSET_SHAPE);
+  const temporalWeight = weights.temporalWeight ?? SHIPPED_TEMPORAL_WEIGHT;
+
   const parts: Record<MissTerm, number> = {
     metric: Math.log1p(win.selfAnomaly) - Math.log1p(src.selfAnomaly),
     log: weights.logWeight * (win.logScore - src.logScore),
     lat: latWeight * (latOf(winner!) - latOf(source)),
     pool: -poolWeight * (poolIndicator(win) - poolIndicator(src)),
+    // The temporal term credits the FIRST MOVER, so its contribution to the winner's
+    // margin is a difference of two slopes — `w·(slope(winner) − slope(root))`. Positive
+    // means the term promoted the wrong service: the term's own cost, and the number the
+    // shipped configuration must have at 0. Negative means it argued FOR the root and lost
+    // to the other terms, which is a different finding and the reason the sign is reported
+    // rather than a magnitude.
+    temporal: temporalWeight * ((onset.get(winner!) ?? 0) - (onset.get(source) ?? 0)),
   };
   const gap = MISS_TERMS.reduce((sum, term) => sum + parts[term], 0);
 
@@ -991,6 +1043,8 @@ export function reconcileConfigurations(
       latWeight: weights.latWeight ?? SHIPPED_LAT_WEIGHT,
       latFloor: weights.latFloor ?? SHIPPED_LAT_FLOOR,
       poolWeight: weights.poolWeight ?? SHIPPED_POOL_WEIGHT,
+      temporalWeight: weights.temporalWeight ?? SHIPPED_TEMPORAL_WEIGHT,
+      onsetShape: weights.onsetShape ?? SHIPPED_ONSET_SHAPE,
     });
     const modelled = modelledTop !== undefined && root.has(modelledTop);
     if (modelledTop !== kase.prediction[0]) rank1Moved++;
@@ -1052,9 +1106,17 @@ export function formatMissReport(
   // it every `unexplained` claim — false.
   const poolModelled =
     poolWeight === 0 ? 'pool penalty NOT modelled (--pool-penalty 0)' : `poolWeight=${poolWeight}`;
+  const temporalWeight = weights.temporalWeight ?? SHIPPED_TEMPORAL_WEIGHT;
+  // Named on the same rule as the other two, and it needs BOTH halves: a weight quoted
+  // without the shape it was measured on is not a configuration, so an ablation typed in
+  // one of them and left in the other would print a banner nobody could reproduce.
+  const temporalModelled =
+    temporalWeight === 0
+      ? 'temporal prior NOT modelled (--temporal-weight 0)'
+      : `temporalWeight=${temporalWeight}; onsetShape=${weights.onsetShape ?? SHIPPED_ONSET_SHAPE}`;
   lines.push(
     `Miss attribution (logWeight=${weights.logWeight}; ${modelled}; ${poolModelled}; ` +
-      'exact only when no other prior is on):',
+      `${temporalModelled}; exact only when no other prior is on):`,
   );
   // Two counts, because they are two different questions and the report used to
   // answer both with one number while its own mode pre-screen answered the second
@@ -1695,6 +1757,14 @@ export interface FamilyScreenWeights {
    * exactly the weight already applied, which is a test).
    */
   readonly poolWeight?: number;
+  /**
+   * The run's temporal pair, on the same rule as the pool penalty: a family weight is
+   * measured ON the shipped configuration, so the base it is a distance from carries the
+   * shipped term. {@link onsetScreen} is the one caller that must NOT inherit this — the
+   * term it solves cannot be in its own base — and it says so where it builds the base.
+   */
+  readonly temporalWeight?: number;
+  readonly onsetShape?: OnsetShape;
 }
 
 /** One family's solved screen. */
@@ -1851,6 +1921,10 @@ function buildFamilyCases(
       latWeight,
       latFloor,
       poolWeight,
+      // A family's weight is measured ON the shipped configuration, so the shipped
+      // temporal pair is part of the base.
+      temporalWeight: weights.temporalWeight ?? SHIPPED_TEMPORAL_WEIGHT,
+      onsetShape: weights.onsetShape ?? SHIPPED_ONSET_SHAPE,
     });
     const scores = new Map<string, { base: number; slope: number }>();
     for (const service of kase.services) {
@@ -1924,7 +1998,7 @@ function solveWindow(built: readonly WeightSeparationCase[]): SolvedWindow {
 /**
  * Whether a case carries enough onset evidence for the temporal term to act at all.
  *
- * The engine's own rule, and the cheapest possible screen: `computeTemporalEarliness`
+ * The engine's own rule, and the cheapest possible screen: `onsetEarliness`
  * returns an empty map unless the injection time is known AND at least two services
  * have a defined delay — one onset cannot establish a before/after order. Counting
  * that population first is the difference between "the term has no window" and "the
@@ -1987,66 +2061,6 @@ export function onsetAvailability(cases: readonly DiagnosedCase[]): OnsetAvailab
   };
 }
 
-/**
- * The engine's earliness map for one parsed case, rebuilt from the dump.
- *
- * Deliberately EMPTY, never neutral-filled, when the term cannot act — that is the
- * engine's own spelling and it is the one thing a screen must not paper over: a map
- * filled with 0.5 for every service would make "no usable onsets" and "every service
- * equally early" the same object, and the first is a data gap while the second is a
- * result. Callers that want a value per service use {@link onsetSlopes}.
- *
- * @param kase - One parsed case.
- * @returns Earliness in [0, 1] per service; empty when the term is inert.
- */
-export function onsetEarliness(kase: DiagnosedCase): Map<string, number> {
-  const delays = new Map<string, number>();
-  for (const service of kase.services) {
-    if (service.onsetDelayMs !== undefined) delays.set(service.serviceId, service.onsetDelayMs);
-  }
-  return computeTemporalEarliness(delays, kase.injectTimeMs ?? 0);
-}
-
-/**
- * The shapes the screen sweeps — the ENGINE's own declaration, imported.
- *
- * Not restated here: a local copy could drift to a shape the ranking does not
- * implement, and every row below would stay green while the screen measured a term
- * that does not exist. `ONSET_SHAPES` is the single list the CLI documents, the
- * workflow accepts and the screen iterates.
- */
-
-/**
- * One case's onset slope per service, in one shape — TOTAL over the case.
- *
- * A thin adapter, and deliberately no more than one: the shape arithmetic lives in the
- * engine's {@link computeOnsetSlopes} so the ranking and this screen cannot disagree
- * about what a shape means, and all this adds is the one thing the solver needs and the
- * engine does not — an entry for EVERY service. An omitted entry would be a missing
- * slope at the solver, and a term that credits whoever it failed to look up.
- *
- * @param kase - One parsed case.
- * @param shape - Which shape to build; defaults to the engine's own.
- * @returns The slope per service; total over the case's services.
- */
-export function onsetSlopes(
-  kase: DiagnosedCase,
-  shape: OnsetShape = DEFAULT_ONSET_SHAPE,
-): Map<string, number> {
-  const delays = new Map<string, number>();
-  for (const service of kase.services) {
-    if (service.onsetDelayMs !== undefined) delays.set(service.serviceId, service.onsetDelayMs);
-  }
-  const measured = computeOnsetSlopes(delays, kase.injectTimeMs ?? 0, shape);
-  const slopes = new Map<string, number>();
-  for (const service of kase.services) {
-    // 0 for a service the engine left out, which is the same value the engine's own
-    // `?? 0` at the ranking reads: no credit, not "neutral credit".
-    slopes.set(service.serviceId, measured.get(service.serviceId) ?? 0);
-  }
-  return slopes;
-}
-
 /** The solved onset screen. */
 export interface OnsetScreen {
   /** How much of the dump carries onset evidence at all. */
@@ -2085,11 +2099,17 @@ export function onsetScreen(
   for (const kase of cases) {
     const targets = kase.groundTruth.filter((name) => name !== '');
     if (targets.length === 0) continue;
+    // The term being SOLVED is not in its own base: `temporalWeight: 0` here is the
+    // ablation this window is a distance from, and leaving the shipped weight in would
+    // measure an ADDITIONAL onset term on top of one already applied. The shape is the
+    // one under test, which is why it is the only field that comes from the caller.
     const base = shippedScores(kase, {
       logWeight: weights.logWeight,
       latWeight,
       latFloor,
       poolWeight,
+      temporalWeight: 0,
+      onsetShape: shape,
     });
     const slopes = onsetSlopes(kase, shape);
     const scores = new Map<string, { base: number; slope: number }>();
@@ -3160,6 +3180,17 @@ export interface AnalyzeSection {
    * phantom defects.
    */
   readonly poolWeight: number;
+  /**
+   * The run's temporal pair — the fifth shipped term, and here for the fourth time and the
+   * same reason.
+   *
+   * The shape is on the section rather than defaulted at the point of use because a weight
+   * without it is not a configuration: the shipped weight is measured on exactly one shape,
+   * and a report that reconstructed the other one while printing the weight would be
+   * describing an engine nobody has run.
+   */
+  readonly temporalWeight: number;
+  readonly onsetShape: OnsetShape;
 }
 
 export interface AnalyzeDumpOptions {
@@ -3204,7 +3235,7 @@ export const DEFAULT_TERM_ORACLE_DOMINANCE_GRID: readonly number[] = [
 const ANALYZE_USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
-  '[--pool-penalty <w>] ' +
+  '[--pool-penalty <w>] [--temporal-weight <w>] [--onset-shape <shape>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
   '[--onset-screen] [--discriminator] ' +
   '[--family <regex>] ' +
@@ -3227,9 +3258,11 @@ const VALUE_FLAGS = new Set([
   'lat-floor',
   'lat-weight',
   'log-weight',
+  'onset-shape',
   'output',
   'pool-penalty',
   'slope',
+  'temporal-weight',
 ]);
 
 /** Flags that take no value. */
@@ -3332,6 +3365,18 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     // would render a configuration the operator believes changed something.
     (n) => n >= 1,
   );
+  const temporalWeight = numberFlag(
+    values.get('temporal-weight'),
+    '--temporal-weight',
+    DEFAULT_TEMPORAL_WEIGHT,
+    (n) => n >= 0,
+  );
+  // Strict, falling back to the SHIPPED shape: a reader that names a shape the engine
+  // does not implement must get the configuration that was measured rather than a term
+  // invented at the command line.
+  const rawShape = values.get('onset-shape');
+  const onsetShape: OnsetShape =
+    rawShape !== undefined && isOnsetShape(rawShape) ? rawShape : DEFAULT_ONSET_SHAPE;
 
   const family = values.get('family');
 
@@ -3350,6 +3395,8 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
       latWeight,
       latFloor,
       poolWeight,
+      temporalWeight,
+      onsetShape,
     })),
     // Anything that is not exactly `lat` falls back to the term this solver was
     // built for, like every other switch here: a typo has to reproduce a known
@@ -3481,28 +3528,28 @@ function analyzeSectionText(
         dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
         dominanceGrid: DEFAULT_TERM_ORACLE_DOMINANCE_GRID,
         poolWeight: section.poolWeight,
+        temporalWeight: section.temporalWeight,
+        onsetShape: section.onsetShape,
       });
     case 'familyScreen': {
       // The screen solves against the shipped score, so it takes the whole configuration
       // from the section — the same owner as every other reconstruction here.
-      const weights: FamilyScreenWeights = {
-        logWeight: section.logWeight,
-        latWeight: section.latWeight,
-        latFloor: section.latFloor,
-        poolWeight: section.poolWeight,
-      };
+      // The section's own fields, all six. A hand-assembled subset is how the temporal
+      // pair silently reverted to its shipped default the first time the flag was passed:
+      // `undefined` reaches the `?? SHIPPED` inside and the report describes a
+      // configuration the caller did not ask for while looking exactly like one they did.
+      const weights: FamilyScreenWeights = section;
       return formatFamilyScreenReport(familyScreen(cases, weights), weights);
     }
     case 'onsetScreen': {
       // Same configuration object as the family screen, because it is the same
       // question over a different slope: is there a weight that gains a case without
       // losing one? The onset screen asks it of the only TIME in the dump.
-      const weights: FamilyScreenWeights = {
-        logWeight: section.logWeight,
-        latWeight: section.latWeight,
-        latFloor: section.latFloor,
-        poolWeight: section.poolWeight,
-      };
+      // The section's own fields, all six. A hand-assembled subset is how the temporal
+      // pair silently reverted to its shipped default the first time the flag was passed:
+      // `undefined` reaches the `?? SHIPPED` inside and the report describes a
+      // configuration the caller did not ask for while looking exactly like one they did.
+      const weights: FamilyScreenWeights = section;
       // The whole declared menu, so the axis cannot be left open on the technicality
       // that only one shape was tried.
       return formatOnsetMenuReport(onsetShapeMenu(cases, weights), weights);
@@ -3517,15 +3564,16 @@ function analyzeSectionText(
         dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
         dominanceGrid: DEFAULT_TERM_ORACLE_DOMINANCE_GRID,
         poolWeight: section.poolWeight,
+        temporalWeight: section.temporalWeight,
+        onsetShape: section.onsetShape,
       };
       return formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
     }
     case 'misses':
-      return formatMissReport(cases, {
-        logWeight: section.logWeight,
-        latWeight: section.latWeight,
-        latFloor: section.latFloor,
-        poolWeight: section.poolWeight,
-      });
+      // The section's OWN fields, all six. Hand-assembling a subset here is how the
+      // temporal pair silently reverted to its shipped default the first time this flag was
+      // passed: `undefined` reaches the `?? SHIPPED` inside, and the report then describes
+      // a configuration the caller did not ask for while looking exactly like one they did.
+      return formatMissReport(cases, section);
   }
 }

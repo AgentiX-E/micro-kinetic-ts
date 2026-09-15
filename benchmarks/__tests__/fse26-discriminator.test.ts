@@ -10,7 +10,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
-import { DEFAULT_HTTP_DOMINANCE_THRESHOLD } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  DEFAULT_ONSET_SHAPE,
+  DEFAULT_TEMPORAL_WEIGHT,
+} from '../../packages/tree/src/index.js';
 
 import { parseDiagnosticDump } from '../src/fse26-diagnose-analyze.js';
 import type { CaseOutcome } from '../src/fse26-discriminator.js';
@@ -34,6 +38,10 @@ const OPTS: TermOracleOptions = {
   dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   dominanceGrid: [],
   poolWeight: 0.0679,
+  // The shipped pair: this file's expectations are about the discriminator's folds, and
+  // the configuration it reads is the one the engine actually ran.
+  temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+  onsetShape: DEFAULT_ONSET_SHAPE,
 };
 
 /** One rendered block, in the shape the producer writes it. */

@@ -18,7 +18,9 @@ import {
   computeEdgeLatencyScores,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
   POOL_METRIC_PREFIX,
 } from '../../packages/tree/src/index.js';
 
@@ -1583,9 +1585,9 @@ describe('classifyMiss', () => {
 });
 
 describe('the attribution vocabulary is a census, not a sample', () => {
-  const TERMS = ['metric', 'log', 'lat', 'pool'];
+  const TERMS = ['metric', 'log', 'lat', 'pool', 'temporal'];
 
-  it('lists every subset of the four terms, so a label cannot be printed and dropped', () => {
+  it('lists every subset of the five terms, so a label cannot be printed and dropped', () => {
     // `classifyMiss` builds its label by joining the positive parts, so the set of
     // spellings is a FUNCTION of the term list. A spelling reachable that way and
     // absent from the vocabulary would be a label the per-type line prints and the
@@ -1600,7 +1602,9 @@ describe('the attribution vocabulary is a census, not a sample', () => {
     }
 
     expect([...MISS_DECIDED_BY].sort()).toEqual([...subsets].sort());
-    expect(MISS_DECIDED_BY).toHaveLength(15);
+    // 2^5 - 1. Derived from the term list rather than asserted as a literal, so adding a
+    // sixth term fails here with the missing labels rather than passing with a stale count.
+    expect(MISS_DECIDED_BY).toHaveLength(2 ** TERMS.length - 1);
   });
 
   it('tallies every kind in the vocabulary, in the vocabulary’s own order', () => {
@@ -3320,6 +3324,48 @@ describe('classifyMiss — the pool penalty is a modelled term', () => {
     )[0]!;
   };
 
+  it('names the temporal prior as NOT modelled when its weight is 0', () => {
+    // Same rule as the pool penalty's ablation, one shipped term later, and it needs a
+    // test rather than a promise: the pair is what the reader compares their flags to, so
+    // a banner that printed the shipped weight while the model used 0 would make every
+    // `unexplained` claim below it false.
+    const text = dump({
+      groundTruthServices: ['ts-src'],
+      services: [
+        serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+      ],
+      topPredictions: ['ts-win', 'ts-src'],
+    });
+    const report = formatMissReport(parseDiagnosticDump(text), {
+      logWeight: 1,
+      temporalWeight: 0,
+    });
+
+    expect(report).toContain('temporal prior NOT modelled (--temporal-weight 0)');
+    expect(report).not.toContain('onsetShape=');
+  });
+
+  it('prints the temporal PAIR on the banner when the term is modelled', () => {
+    // Both halves, because a weight without the shape it was measured on is not a
+    // configuration — the same lesson the workflow descriptions taught.
+    const text = dump({
+      groundTruthServices: ['ts-src'],
+      services: [
+        serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+      ],
+      topPredictions: ['ts-win', 'ts-src'],
+    });
+    const report = formatMissReport(parseDiagnosticDump(text), {
+      logWeight: 1,
+      temporalWeight: 0.036552,
+      onsetShape: 'earliest-only',
+    });
+
+    expect(report).toContain('temporalWeight=0.036552; onsetShape=earliest-only');
+  });
+
   it('names the pool term when the penalty is why the root lost', () => {
     // Equal on everything the other three terms see; the ROOT is pool-dominant, so the
     // penalty subtracted from it while the winner kept its whole score.
@@ -3832,6 +3878,8 @@ describe('--family-screen wiring', () => {
             latWeight: DEFAULT_LAT_WEIGHT,
             latFloor: DEFAULT_LAT_MIN_RISE,
             poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+            temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+            onsetShape: DEFAULT_ONSET_SHAPE,
           },
         ],
         slope: 'lat',
@@ -3878,6 +3926,8 @@ describe('--discriminator wiring', () => {
             latWeight: DEFAULT_LAT_WEIGHT,
             latFloor: DEFAULT_LAT_MIN_RISE,
             poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+            temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+            onsetShape: DEFAULT_ONSET_SHAPE,
           },
         ],
         slope: 'lat',
@@ -3930,6 +3980,8 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
         latWeight: DEFAULT_LAT_WEIGHT,
         latFloor: DEFAULT_LAT_MIN_RISE,
         poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+        temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+        onsetShape: DEFAULT_ONSET_SHAPE,
       },
     ]);
   });
@@ -4358,6 +4410,8 @@ describe('parseAnalyzeArgs — every section carries the whole configuration', (
       latWeight: DEFAULT_LAT_WEIGHT,
       latFloor: DEFAULT_LAT_MIN_RISE,
       poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+      temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+      onsetShape: DEFAULT_ONSET_SHAPE,
     });
   });
 
@@ -4378,6 +4432,11 @@ describe('parseAnalyzeArgs — every section carries the whole configuration', (
       latWeight: 0,
       latFloor: 1,
       poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+      // The two fields the flags did NOT mention keep the SHIPPED values: an ablation of
+      // one term is not an ablation of the others, and a section that zeroed everything
+      // unmentioned would report a configuration nobody asked for.
+      temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+      onsetShape: DEFAULT_ONSET_SHAPE,
     });
   });
 

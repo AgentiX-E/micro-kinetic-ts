@@ -186,9 +186,54 @@ term as the control:
 | runs | `35021503281` | `35021510164` |
 | per-type | — | `HTTPRequestDelay` 54→56, `JVMMemoryStress` 12→13, `JVMReturn` 12→13, **22 types unchanged, 0 regressed** |
 
-What the pair still does not have is a case-level split at the RUN's configuration: the
-artifact is a summary, so "0 regressed fault types" is a claim about 25 types, exactly
-the weaker claim the pool penalty's own row was written to stop repeating. The case-level
-statement that survives is the *offline* one — `+4, lostAtShip 0` from the solver — and it
-is the reason the net is +4 rather than a larger number with casualties inside it.
+### The case-level split, measured rather than inferred
+
+"0 regressed fault types" is a claim about 25 types — the weaker claim the pool penalty's
+own row was written to stop repeating — and the run's artifact is a summary, so the pair
+alone does not settle it. Two independent readings do:
+
+- **The solver**, on the control dump: `gain 4, lostAtShip 0` at `w = 0.036552`, with the
+  four datapacks named in advance.
+- **The reconstruction**, added in the same iteration as this section, reading the same
+  control dump at the SHIPPED model (the oracle rebuilds the score, which now includes this
+  term with its recorded shape):
+
+  ```
+  configuration vs the dump's recorded rank-1 (1422 cases):
+    both-correct 756  both-wrong 662  fixed 4  broken 0  net +4
+    correct: recorded 756 / modelled 760; rank-1 moved 17
+  ```
+
+  `broken 0` is the case-level statement, and `modelled 760` is the candidate's headline
+  reproduced from the CONTROL dump. `rank-1 moved 17` is larger than the four because the
+  other thirteen move between wrong services — which is also why `unexplained 4` appears:
+  the model now includes a term the dump's run did not have, so four cases' modelled order
+  disagrees with the recorded winner. That is the mirror image of §2 of
+  `fse26-shipped-config-verdict.md`, and the note under the count says so.
+
+### The instrument had to grow with the term
+
+`blendScores` did not model the temporal prior at all, which was invisible while the term
+was off and fatal the moment it shipped: reading the NEW dump would have printed `rank-1
+moved` and `unexplained` for the shipped configuration's own decisions. The term is now in
+`TermOracleOptions` (weight AND shape — a weight without the shape it was measured on is
+not a configuration), in `shippedScores`, in the fidelity report as `temporalFlips`, and in
+the miss decomposition as a `temporal` contribution whose SIGN is a finding: positive means
+the term promoted the wrong winner, i.e. its case-level cost.
+
+Two things this shook out, both of which are the repo's recurring defect in a new place:
+
+1. **The CLI dispatch hand-assembled a subset of the section's fields.** Passing
+   `--temporal-weight 0` printed a banner claiming `0.036552`: `undefined` reached the
+   `?? SHIPPED` fallback inside. Three call sites did this (the miss report, the family
+   screen, the onset screen); all three now pass the section itself, so a field added to
+   the section cannot be forgotten at a call site.
+2. **A term being SOLVED must not be in its own base.** `--onset-screen` now pins
+   `temporalWeight: 0` where it builds its base, because inheriting the shipped weight
+   while adding `w·slope` would measure an ADDITIONAL term on top of one already applied.
+   Its menu output is byte-identical to the pre-ship run, which is the check.
+
+Verified inert on the dumps that predate the term: with `--temporal-weight 0` the report is
+byte-identical to the same command before this change, apart from the banner clause that
+states the ablation.
 
