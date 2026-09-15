@@ -1,7 +1,7 @@
 /**
  * Coordinate descent — a deterministic, derivative-free black-box optimizer.
  *
- * This is the L2 workhorse for tuning the five ranking fusion weights
+ * This is the L2 workhorse for tuning a small set of ranking fusion weights
  * (`RankingWeights`): unlike the GP/LLM surrogate (which is best for a large
  * mixed space), coordinate descent is cheap, interpretable, and converges
  * monotonically for a small continuous space. It is deliberately DECOUPLED

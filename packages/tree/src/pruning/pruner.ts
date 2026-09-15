@@ -386,7 +386,7 @@ export interface TreePrunerOptions extends RCAEngineOptions {
 }
 
 /**
- * Package the five ranking fusion weights into the shared, serializable
+ * Package the ranking fusion weights into the shared, serializable
  * {@link RankingWeights} structure. This is the single source of truth for
  * "what are the ranking weights", used by the offline optimizer (L2) to tune
  * and persist them without coupling to the engine's flat option fields.
@@ -1272,7 +1272,7 @@ function performTreeRCA(
     }
   }
 
-  // Rank by self anomaly combined with nine causal priors (all opt-in except log):
+  // Rank by self anomaly combined with eleven causal priors (all opt-in except log):
   //
   // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
   //    node's neighbours whose index-based onset is later.
@@ -1298,6 +1298,19 @@ function performTreeRCA(
   //    of post-injection failed calls, i.e. the service its callers' calls
   //    failed against. The inverse of the log prior, and the only signal that
   //    carries a fault's DIRECTION.
+  // 10. A PER-EDGE-LATENCY prior (`latWeight`) — reward the CALLEE of the edges
+  //    whose mean span duration rose. The CONTINUOUS counterpart of 9: it exists
+  //    on the cases where no call failed at all, and its floor (`latMinRise`) is
+  //    a MASK on how thin a rise counts as evidence.
+  // 11. A POOL-DOMINANCE PENALTY (`poolMetricPenaltyWeight`) — SUBTRACT when the
+  //    metric that won a service's own anomaly maximum is a DB connection-pool
+  //    series. The only term here keyed on WHICH evidence won rather than on how
+  //    much, and the only one whose sign is a penalty on the evidence rather than
+  //    on inherited energy.
+  //
+  // This list has to grow with the score: it was one term short for a release
+  // (the per-edge latency prior shipped without an entry), and a reader counting
+  // it is how the omission was found.
   //
   // The root cause is the fault injection point — the service whose OWN
   // deviation is highest AND whose onset precedes its neighbours'. A healthy

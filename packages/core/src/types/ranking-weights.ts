@@ -1,10 +1,12 @@
 /**
  * Ranking fusion weights for root-cause candidate ordering.
  *
- * These are the five tunable weights that blend the raw self-anomaly score
- * with four independent, dataset-decoupled causality signals. Every weight
- * is opt-in (default 0), so a weight vector of all zeros reduces the ranking
- * to pure self-anomaly ordering. The structure is the single, serializable
+ * These are the tunable weights that blend the raw self-anomaly score with the
+ * independent, dataset-decoupled causality signals. Every weight is opt-in
+ * (default 0), so a weight vector of all zeros reduces the ranking to pure
+ * self-anomaly ordering. The COUNT is deliberately not stated: it was five, then
+ * ten, and a sentence that counts a growing list is wrong more often than it is
+ * right — the formula below is the list. The structure is the single, serializable
  * contract between the ranking engine (tree package) and the offline
  * optimizer (optimize package, L2) — it is deliberately independent of any
  * concrete engine so the optimizer can tune it without coupling to the

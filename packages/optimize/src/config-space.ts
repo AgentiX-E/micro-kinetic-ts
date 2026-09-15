@@ -125,8 +125,13 @@ const CONTINUOUS: readonly ContinuousParam[] = [
 ];
 
 /**
- * Ranking fusion weights — the seven log-space priors blended into the root
- * cause ordering. All are dimensionless with range [0, 3] (linear). A weight
+ * Ranking fusion weights — the seven log-space priors this space tunes.
+ *
+ * Deliberately a SUBSET of `RankingWeights`: the per-edge latency pair and the
+ * pool-dominance penalty are not in the space because they were SOLVED from the
+ * dump rather than fitted (their zero-regression windows are a property of the
+ * shipped benchmark, not of a search), and a fitted weight for them would be a
+ * number with no measurement behind it. All are dimensionless with range [0, 3] (linear). A weight
  * of 0 disables a signal; 1.0 makes it comparable to the self-anomaly term
  * (log1p(selfAnomaly) ∈ [0, log1p(max)]); 3.0 lets it dominate (the ablation's strong
  * signal strength). This is the search space the L2 optimizer tunes directly
