@@ -480,10 +480,11 @@ export interface FamilyCensusCell {
  * two sides by 2 cases out of 672. A feature screen is only usable if it can be
  * recomputed, so it lives here rather than in a session's throwaway probe.
  *
- * `source` uses the FIRST acceptable root, which is what the dump's own file order
- * gives; a case whose other root is the anomalous one therefore contributes under the
- * first root's family. Stated rather than fixed: picking "the most anomalous root"
- * would compare a service the ranking was never asked to prefer.
+ * `source` is the MOST ANOMALOUS acceptable root, because the parsed service list is in
+ * the printer's anomaly order — not `groundTruth[0]`, which is the order the LABEL lists
+ * its roots in. The two differ only for a case with two acceptable roots
+ * (`NetworkPartition` labels `mysql` AND its co-located service), and for those the
+ * anomalous one is the side the ranking actually weighed.
  *
  * @param cases - Parsed cases.
  * @returns One cell per family, sorted by the larger of the two counts, descending.
