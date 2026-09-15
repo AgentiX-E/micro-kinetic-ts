@@ -221,6 +221,24 @@ would buy are not worth a default nobody ran. The margin is 1.5%, and it protect
 against exactly one thing — a later change moving the metric term underneath the
 window — which is a risk no measurement of this signal can retire.
 
+### Both halves of the kill criterion, measured on the flip commit
+
+The decision above rests on a *flagged* run. Both halves were then re-measured on the
+commit that carries the flip (`fb54fb8`), with no override at all — the path a
+scheduled run takes:
+
+| half | run | result |
+| --- | --- | --- |
+| FSE'26, DEFAULT path (no `lat_weight` input) | `34877815364` | **48.80% / 694 correct / +21 / zero regressed fault types**, and its per-fault-type cells are **byte-identical** to the flagged `34872477561` — the flag and the default are the same configuration |
+| RCAEval golden 9-cell | `34877797128` (`fb54fb8`), `34878213491` (`1f58bcb`) | RE1 **80.0 / 92.8 / 68.0**, RE2 **82.4 / 88.9 / 68.1**, RE3 **80.0 / 45.0 / 51.1** — all nine exactly the recorded golden, and the artifacts are byte-identical to the pre-flip run `34873364380` apart from the `Total duration` line |
+
+The second half had to be measured even though the term is structurally invisible to
+that suite (only the FSE'26 loader emits `traceEdgeLatency`, so the term cannot move
+a RCAEval cell): the criterion is a test, and a test that is skipped because it "must"
+pass is not a test. It cost two runs and cannot now be overclaimed.
+
+`CI` (`34877797227`) and `Release` (`34877797193`) are green on the same commit.
+
 ### What was fixed in the engine to land this
 
 The flip exposed three defects, all of which would have been silent:

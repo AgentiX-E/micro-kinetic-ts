@@ -19,3 +19,6 @@ _tmp_*
 .coverage.*
 __pycache__/
 *.pyc
+
+# macOS Finder metadata — never a source file.
+.DS_Store
