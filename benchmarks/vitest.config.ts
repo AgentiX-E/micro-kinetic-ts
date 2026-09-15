@@ -60,6 +60,7 @@ export default defineConfig({
         'src/rcaeval-semantic.ts',
         'src/fse26-report.ts',
         'src/fse26-diagnose-analyze.ts',
+        'src/fse26-term-oracle.ts',
         'src/fse26-cli.ts',
         'src/fse26-engine-options.ts',
       ],

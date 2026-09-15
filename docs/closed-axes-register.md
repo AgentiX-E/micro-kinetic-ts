@@ -55,7 +55,9 @@ measured against, not the current number. Both are still reachable as ablations 
 | axis | where | the number that closed it | reopens only if |
 | --- | --- | --- | --- |
 | reweighting the log term (`logWeight`) | `fse26-logweight-sweep-verdict.md` | control 47.33%; `0.5` → 46.84% (−0.49pp); per-fault-type **oracle ceiling +2.67pp → 50.00%** | a per-type oracle that exceeds 50% exists, i.e. the metric term itself changes |
-| log-signal mode (`count` / `logicHttp` / `all`) | `fse26-framework-http-direction-verdict.md` | `count` 16.5%, `logicHttp` 46.5% — the shipped mode is the best measured | a new mode is both measured and better on the same cache |
+| log-signal mode (`count` / `logicHttp` / `all` / `novelty` / `logicHttpDominant`) | `fse26-framework-http-direction-verdict.md`, `fse26-term-oracle-verdict.md` | `count` 16.5%, `logicHttp` 46.5% — the shipped mode is the best measured; **the two modes that were built and never measured are now pre-screened offline, on the shipped dump**: `count` re-derived is **496/1422 (34.9%) with 9 regressed fault types** (`ReplaceCode` −149), and `logicHttpDominant` — "falsified before ablation" in `78eb99e` — reaches **775** at the engine's default 0.5 with **5 regressed types** (`ReplaceCode` −15). Swept from 0.2 to 0.95 the only point that regresses nothing is **0.2, at +6 cases of which 5 are the instrument's own ±5 rounding artefact** (`HTTPResponseReplaceBody`), leaving **1 case** — inside the error bar. The mechanism is the register's conflict a third time: the framework-HTTP flood is a source signature in the replace-code population (one emitter owns 90–100% of it, 597 cases) and a victim cascade in the network population (spread, 224 cases), and no threshold serves both | a new mode is both measured and better on the same cache. **The reopening condition is now answered for `logicHttpDominant`: it is measured, and it is not better.** `novelty` remains unmeasured — it cannot be rebuilt from a dump (it needs per-class line counts) and is not reachable from the FSE'26 CLI |
+| a per-case DISCRIMINATOR that picks the configuration per case (the lever `fse26-latency-shape-verdict.md`'s ceiling analysis named) | `fse26-term-oracle-verdict.md` | **the bound is measured**: a perfect per-case choice among the four configurations the shipped formula can take (`metric only`, `log only`, `lat only` at the shipped weights, and the blend) reaches **871/1422 = 61.25%**, i.e. **+8.51pp** over the shipped 750 — and **551 cases (38.8%)** are named by NONE of them. A perfect choice of one TERM alone reaches 880 (61.88%), which is not implementable (the metric base cannot be switched off) but bounds the blend: no discriminator can exceed it. The conflict tally the discriminator would have to resolve is 551 cases demanding opposite treatments (`log` right where both others are wrong 450 times, wrong where both are right 101 times), and the metric layer misranks the root deeply rather than narrowly (median rank of the best root among misses **14**, mean 16.8; only 126 of 672 inside the top 3) | a discriminator that states its expected accuracy against the conflict tally, is pre-screened on the dump for free, and converts the +8.51pp oracle with **zero** regressed fault types |
+| the unlabelled candidate (a service row with an EMPTY id — the ten `k8s.*` series with no service label) | `fse26-term-oracle-verdict.md` | present in **1421/1422** cases, self-anomaly 0.00–0.36, last position in 943 cases, never in the engine's top-5; it IS one of the `n` candidates and `n` is the divisor of every metric term (`n = 51` is what makes the step exactly `1/50`). Dropping it from the engine measures **750 → 749** — one case lost, none gained — so it is recorded rather than shipped. The PARSER defects it exposed are fixed: `SERVICE_RE` required a non-empty id and silently dropped the row (the parsed count disagreed with the header's `services=` in 1421/1422 cases, unchecked), and a block whose parsed count is short is now dropped like a truncated one because it is a different `n` | a candidate filter that removes it and does not lose a case — or a converter change that gives those series a home |
 | metric term: any monotone transform or bound of a service's OWN score | `fse26-metric-competition-verdict.md`, `fse26-logweight-sweep-verdict.md` | both surviving shapes built and rejected; a bound/rescale can only shrink a margin or tie, and the metric term is bounded in `[0,1]` while one log step is a full `1.0` | the candidate is **not** a function of that service's own metric score |
 | metric term: fleet-relative baseline | `fse26-metric-competition-verdict.md` | `metricFleetBaseline` measured, rejected (+0.49pp / 6 type regressions) | a different cross-service statistic than the median |
 | global min-max normalisation of ranks | `fse26-metric-competition-verdict.md` | measured **+0.00pp** | never — it is the same ordering rescaled |
@@ -104,3 +106,22 @@ that the metric layer is the larger of the remaining mechanisms, and
 function of a service's own metric score**. Those two statements together are the
 door: the constraint is on the SHAPE of the problem, and it excludes a whole
 family rather than pointing at one candidate.
+
+**The door now has a number on it.** `docs/fse26-term-oracle-verdict.md` rebuilds the
+engine's three terms from a dump and reproduces the shipped run's own rank-1 on
+1422/1422 cases, so a candidate can be pre-screened at zero cost. It measures the
+lever the ceiling analysis named — a per-case discriminator — at **871/1422 = 61.25%**
+(best of the four configurations the shipped formula can take, as an ORACLE, +8.51pp
+over the shipped 750), with **551 cases (38.8%) named by none of them** and the metric
+layer misranking the root **deeply** rather than narrowly (median rank **14** among the
+misses). It also censuses the dominant-metric family of every miss: the family a sampled
+verdict named as the source's signature (`hubble_http_*`) separates the two sides by
+**+2 cases out of 672** — no information — while the source's anomaly is RESOURCE-driven
+(`k8s.*`/`container.*`/`jvm.*`) **85 cases** more often than the winner's and the
+winner's is CLIENT-duration-driven **132 cases** more often. That is the first computed
+feature with a large margin, and it comes with the two rows it must not touch: the pool
+label drop (+0.28pp, 2 regressed types) and the silent stock's own series.
+
+Before proposing a candidate, read that document's §1: the pre-screen is exact for the
+shipped configuration and carries a **±5 case** error bar for any RE-DERIVED term, so a
+predicted gain inside that band is not evidence.

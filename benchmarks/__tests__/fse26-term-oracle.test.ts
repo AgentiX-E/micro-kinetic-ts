@@ -1,0 +1,666 @@
+/**
+ * Unit tests for the term oracle — the module that rebuilds the engine's terms from
+ * a dump and pre-screens alternative configurations offline.
+ *
+ * Blocks are produced by the REAL formatter and read back by the real parser, so a
+ * format change fails here rather than making the oracle quietly rank nothing.
+ *
+ * The fixtures are RANK-CONSISTENT by default. The formatter prints `selfAnomaly` as
+ * the rank-normalised value, so a hand-built block whose anomalies are not
+ * `(n - 1 - i) / (n - 1)` over `n` candidates is a dump the engine could not have
+ * produced — and the oracle's fidelity check, whose entire job is to notice exactly
+ * that, would (correctly) flag every such fixture. Deriving the values from the
+ * service order keeps the fixtures physical, leaves the fidelity assertion
+ * meaningful, and is why the tests below order their services deliberately.
+ *
+ * @module benchmarks/__tests__/fse26-term-oracle
+ */
+
+import { describe, expect, it } from 'vitest';
+
+import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
+import { DEFAULT_HTTP_DOMINANCE_THRESHOLD } from '../../packages/tree/src/index.js';
+
+import type { DiagnosedCase } from '../src/fse26-diagnose-analyze.js';
+import {
+  formatAnalyzeSections,
+  parseAnalyzeArgs,
+  parseDiagnosticDump,
+} from '../src/fse26-diagnose-analyze.js';
+import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
+import {
+  formatFidelity,
+  formatModeScreen,
+  formatOracleCensus,
+  formatTermOracleReport,
+  httpDominance,
+  latencySlopes,
+  logSlopesForMode,
+  metricSlopes,
+  modeScreen,
+  oracleCensus,
+  oracleFidelity,
+  rankCase,
+} from '../src/fse26-term-oracle.js';
+
+const OPTS: TermOracleOptions = {
+  logWeight: 1,
+  latWeight: 0.561495,
+  latFloor: 10.3,
+  dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  dominanceGrid: [0.5],
+};
+
+interface ServiceSpec {
+  serviceId: string;
+  /**
+   * The count the engine would print, derived from the specs' own counts exactly as
+   * the `logicHttp` mode computes it: `(logic + http) / max(logic + http)`.
+   *
+   * Derived rather than defaulted to 0, because the formatter takes the printed score
+   * and the raw counts as INDEPENDENT inputs — a fixture that set the counts and left
+   * this at 0 would be a block the engine never writes, and a test built on it would be
+   * measuring the recorder rather than the mode. Set it explicitly only where the test
+   * is about a disagreement between the two (the fidelity check counts those).
+   */
+  logScore?: number;
+  /**
+   * Defaults to the RANK-NORMALISED value implied by the spec's position, which is
+   * what the producer prints. Set it only where the test is about the matcher rather
+   * than about the data — a tie group, or a single candidate.
+   */
+  selfAnomaly?: number;
+  latRise?: number;
+  latEdges?: number;
+  logic?: number;
+  http?: number;
+}
+
+/** One diagnostic block, rendered by the real formatter. */
+function block(
+  specs: readonly ServiceSpec[],
+  overrides: {
+    datapack?: string;
+    faultType?: string;
+    groundTruth?: readonly string[];
+    topPredictions?: readonly string[];
+  } = {},
+): string {
+  const n = specs.length;
+  const peak = specs.reduce((max, spec) => Math.max(max, (spec.logic ?? 0) + (spec.http ?? 0)), 0);
+  const services = specs.map((spec, i) => ({
+    serviceId: spec.serviceId,
+    metricNames: ['cpu'],
+    dominantMetric: 'cpu',
+    selfAnomaly: spec.selfAnomaly ?? (n < 2 ? 1 : (n - 1 - i) / (n - 1)),
+    logScore: spec.logScore ?? (peak > 0 ? ((spec.logic ?? 0) + (spec.http ?? 0)) / peak : 0),
+    failedEdgeScore: 0,
+    failedEdgeRecords: 0,
+    latRise: spec.latRise,
+    latEdges: spec.latEdges ?? 0,
+    errorCount: (spec.logic ?? 0) + (spec.http ?? 0),
+    fatalCount: 0,
+    logicExceptionCount: spec.logic ?? 0,
+    httpExceptionCount: spec.http ?? 0,
+    sampleErrorMessages: [],
+    exceptionClasses: [],
+    metricOutcomes: undefined,
+  }));
+  // The formatter sorts by anomaly, which is the order the producer's reader sees.
+  // Sorting here as well keeps a fixture's `topPredictions` honest.
+  services.sort((a, b) => b.selfAnomaly - a.selfAnomaly);
+  return formatFSE26Diagnostic({
+    datapack: overrides.datapack ?? 'dp-1',
+    faultType: overrides.faultType ?? 'JVMMemoryStress',
+    groundTruthServices: [...(overrides.groundTruth ?? ['ts-root'])],
+    services,
+    topPredictions: [...(overrides.topPredictions ?? [])],
+    logSignalMode: 'logicHttp',
+  });
+}
+
+/** Parse one or more rendered blocks into cases. */
+function casesOf(...texts: readonly string[]): DiagnosedCase[] {
+  return parseDiagnosticDump(texts.join('\n'));
+}
+
+describe('latencySlopes', () => {
+  it('normalises log1p(rise - 1) by the case maximum', () => {
+    const slopes = latencySlopes([
+      { serviceId: 'hot', latRise: 101 } as never,
+      { serviceId: 'warm', latRise: 11 } as never,
+    ]);
+    expect(slopes.get('hot')).toBeCloseTo(1, 9);
+    expect(slopes.get('warm')).toBeCloseTo(Math.log1p(10) / Math.log1p(100), 9);
+  });
+
+  it('keeps a rise at or below 1 present with magnitude 0 beside a real rise', () => {
+    // The shipped identity: a collapse is credited NOTHING, not dropped — which is
+    // what makes `minRise = 1` byte-identical to the shipped term. It is only when no
+    // measurement carries a rise at all that the term is empty, because there is then
+    // no maximum to normalise against.
+    const slopes = latencySlopes([
+      { serviceId: 'collapsed', latRise: 0.5 } as never,
+      { serviceId: 'risen', latRise: 101 } as never,
+    ]);
+    expect(slopes.has('collapsed')).toBe(true);
+    expect(slopes.get('collapsed')).toBe(0);
+    expect(latencySlopes([{ serviceId: 'collapsed', latRise: 0.5 } as never]).size).toBe(0);
+  });
+
+  it('masks a rise strictly between 1 and the floor, reading it as unmeasured', () => {
+    const services = [
+      { serviceId: 'a', latRise: 5 },
+      { serviceId: 'b', latRise: 100 },
+    ] as never;
+    expect(latencySlopes(services, 1).has('a')).toBe(true);
+    expect(latencySlopes(services, 10.3).has('a')).toBe(false);
+    // The mask does not move the divisor: the surviving maximum is still the case
+    // maximum, so no slope is raised by deleting a competitor.
+    expect(latencySlopes(services, 10.3).get('b')).toBeCloseTo(1, 9);
+  });
+
+  it('returns nothing when no measurement carries a rise', () => {
+    expect(latencySlopes([]).size).toBe(0);
+    expect(latencySlopes([{ serviceId: 'a', latRise: undefined } as never]).size).toBe(0);
+  });
+});
+
+describe('metricSlopes', () => {
+  it('gives distinct values their own rank divided by n - 1', () => {
+    const slopes = metricSlopes([
+      { serviceId: 'a', selfAnomaly: 1 } as never,
+      { serviceId: 'b', selfAnomaly: 0.5 } as never,
+      { serviceId: 'c', selfAnomaly: 0 } as never,
+    ]);
+    expect(slopes.get('a')).toBeCloseTo(1, 12);
+    expect(slopes.get('b')).toBeCloseTo(0.5, 12);
+    expect(slopes.get('c')).toBeCloseTo(0, 12);
+  });
+
+  it('gives a tie group the AVERAGE of the ranks it occupies', () => {
+    // This is the reconstruction's whole content: `rankNormalizeScores` collapses a
+    // tie group to its mean rank, so reading ranks off positions reports the distinct
+    // ranks the engine collapsed.
+    const slopes = metricSlopes([
+      { serviceId: 'a', selfAnomaly: 1 } as never,
+      { serviceId: 'b', selfAnomaly: 0.25 } as never,
+      { serviceId: 'c', selfAnomaly: 0.25 } as never,
+    ]);
+    expect(slopes.get('b')).toBeCloseTo((3 - 1 - 1.5) / 2, 12);
+    expect(slopes.get('c')).toBe(slopes.get('b'));
+    expect(slopes.get('b')).not.toBeCloseTo(0, 3);
+  });
+
+  it('counts a candidate with an empty id in n, as the engine does', () => {
+    // The unlabelled `k8s.*` row is one of the n candidates, and n is the divisor, so
+    // dropping it changes every other service's metric term.
+    const withRow = metricSlopes([
+      { serviceId: 'a', selfAnomaly: 1 } as never,
+      { serviceId: 'b', selfAnomaly: 1 } as never,
+      { serviceId: '', selfAnomaly: 0 } as never,
+    ]);
+    expect(withRow.get('a')).toBeCloseTo(0.75, 12);
+  });
+
+  it('is independent of the array order, including inside a tie group', () => {
+    const forward = metricSlopes([
+      { serviceId: 'ts-a', selfAnomaly: 0.9 } as never,
+      { serviceId: 'ts-b', selfAnomaly: 0.4 } as never,
+    ]);
+    const reversed = metricSlopes([
+      { serviceId: 'ts-b', selfAnomaly: 0.4 } as never,
+      { serviceId: 'ts-a', selfAnomaly: 0.9 } as never,
+    ]);
+    expect(reversed.get('a')).toBe(forward.get('a'));
+    expect(reversed.get('b')).toBe(forward.get('b'));
+    // A tie makes the comparator read the ids in BOTH directions.
+    const tie = metricSlopes([
+      { serviceId: 'ts-b', selfAnomaly: 0.5 } as never,
+      { serviceId: 'ts-a', selfAnomaly: 0.5 } as never,
+    ]);
+    expect(tie.get('ts-a')).toBe(tie.get('ts-b'));
+  });
+
+  it('returns the raw score for a single candidate rather than dividing by zero', () => {
+    expect(metricSlopes([{ serviceId: 'a', selfAnomaly: 0.37 } as never]).get('a')).toBe(0.37);
+  });
+});
+
+describe('httpDominance', () => {
+  it('is zero when no framework-HTTP line survived', () => {
+    expect(httpDominance([{ httpExceptionCount: 0 } as never])).toBe(0);
+  });
+
+  it("is the top emitter's share of the flood", () => {
+    expect(
+      httpDominance([{ httpExceptionCount: 9 } as never, { httpExceptionCount: 1 } as never]),
+    ).toBeCloseTo(0.9, 12);
+  });
+});
+
+describe('logSlopesForMode', () => {
+  const services = [
+    { serviceId: 'src', logicExceptionCount: 0, httpExceptionCount: 8 },
+    { serviceId: 'victim-a', logicExceptionCount: 0, httpExceptionCount: 1 },
+    { serviceId: 'root', logicExceptionCount: 4, httpExceptionCount: 0 },
+  ] as never;
+
+  it('count mode admits logic exceptions only, against the level-1 flood', () => {
+    const slopes = logSlopesForMode(services, 'count', 0.5);
+    expect(slopes.has('src')).toBe(false);
+    // The denominator stays the level-1 maximum (`logic + http`), not the maximum of
+    // what `count` admits: 4 / 8, not 4 / 4.
+    expect(slopes.get('root')).toBeCloseTo(0.5, 12);
+  });
+
+  it('logicHttp mode admits both signatures against the same denominator', () => {
+    const slopes = logSlopesForMode(services, 'logicHttp', 0.5);
+    expect(slopes.get('src')).toBeCloseTo(1, 12);
+    expect(slopes.get('root')).toBeCloseTo(0.5, 12);
+  });
+
+  it('dominant suppresses framework HTTP when the flood is spread', () => {
+    const spread = [
+      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 1 },
+      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 1 },
+      { serviceId: 'c', logicExceptionCount: 0, httpExceptionCount: 1 },
+      { serviceId: 'd', logicExceptionCount: 0, httpExceptionCount: 1 },
+      { serviceId: 'e', logicExceptionCount: 0, httpExceptionCount: 1 },
+      { serviceId: 'root', logicExceptionCount: 4, httpExceptionCount: 0 },
+    ] as never;
+    const slopes = logSlopesForMode(spread, 'dominant', 0.5);
+    expect(slopes.has('a')).toBe(false);
+    expect(slopes.get('root')).toBeCloseTo(1, 12);
+  });
+
+  it('keeps the level-1 denominator when the gate withdraws a flood', () => {
+    // The engine's asymmetry: withdrawal can only LOWER a score and can never promote
+    // a mid-tier emitter to 1.0, which is why the two maps are accumulated separately.
+    const spread = [
+      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 6 },
+      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 6 },
+      { serviceId: 'c', logicExceptionCount: 0, httpExceptionCount: 6 },
+      { serviceId: 'root', logicExceptionCount: 3, httpExceptionCount: 0 },
+    ] as never;
+    expect(logSlopesForMode(spread, 'dominant', 0.5).get('root')).toBeCloseTo(0.5, 12);
+  });
+
+  it('treats the threshold as inclusive, matching the engine', () => {
+    const even = [
+      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 1 },
+      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 1 },
+    ] as never;
+    expect(logSlopesForMode(even, 'dominant', 0.5).size).toBe(2);
+    expect(logSlopesForMode(even, 'dominant', 0.5000001).size).toBe(0);
+  });
+
+  it('returns nothing when the case carries no admitted line', () => {
+    expect(
+      logSlopesForMode(
+        [{ serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 0 } as never],
+        'logicHttp',
+        0.5,
+      ).size,
+    ).toBe(0);
+  });
+});
+
+describe('rankCase', () => {
+  const kase = casesOf(
+    block(
+      [
+        { serviceId: 'ts-a', logScore: 0 },
+        { serviceId: 'ts-b', logScore: 1 },
+      ],
+      { groundTruth: ['ts-b'], topPredictions: ['ts-b'] },
+    ),
+  )[0]!;
+
+  it('ranks by the blend, and by each term alone, separately', () => {
+    const rankings = rankCase(kase, OPTS, 'recorded', new Map());
+    expect(rankings.order[0]).toBe('ts-b');
+    expect(rankings.byTerm.metric[0]).toBe('ts-a');
+    expect(rankings.byTerm.log[0]).toBe('ts-b');
+    // The latency term has no evidence in this case, so its order is the id tiebreak
+    // — which is what the engine would produce with only that term switched on.
+    expect(rankings.byTerm.lat[0]).toBe('ts-a');
+  });
+
+  it('breaks a score tie by service id, like the engine', () => {
+    const tied = casesOf(
+      block([
+        { serviceId: 'ts-b', selfAnomaly: 0.5 },
+        { serviceId: 'ts-a', selfAnomaly: 0.5 },
+      ]),
+    )[0]!;
+    expect(rankCase(tied, OPTS, 'recorded', new Map()).order).toEqual(['ts-a', 'ts-b']);
+  });
+});
+
+describe('oracleFidelity', () => {
+  it('reproduces the printed anomaly, the printed order and the run’s own rank-1', () => {
+    const cases = casesOf(
+      block(
+        [{ serviceId: 'ts-a', http: 3 }, { serviceId: 'ts-b', http: 1 }, { serviceId: 'ts-c' }],
+        { groundTruth: ['ts-a'], topPredictions: ['ts-a'] },
+      ),
+    );
+    const fidelity = oracleFidelity(cases, OPTS);
+    expect(fidelity.cases).toBe(1);
+    expect(fidelity.services).toBe(3);
+    expect(fidelity.metricViolations).toBe(0);
+    expect(fidelity.metricMaxDeviation).toBeLessThan(5e-4);
+    expect(fidelity.orderConsistent).toBe(1);
+    expect(fidelity.top1Matches).toBe(1);
+    expect(fidelity.top1Correct).toBe(1);
+    expect(fidelity.recordedLogFlips).toBe(0);
+  });
+
+  it('notices a block whose anomalies are not rank-normalised for its own n', () => {
+    // The check earns its place here: this is a block the engine cannot emit, and a
+    // reader that trusted the array order instead of re-deriving it would rank it.
+    const impossible = casesOf(
+      block([
+        { serviceId: 'ts-a', selfAnomaly: 0.9 },
+        { serviceId: 'ts-b', selfAnomaly: 0.9 },
+      ]),
+    );
+    expect(oracleFidelity(impossible, OPTS).metricViolations).toBeGreaterThan(0);
+  });
+
+  it('counts a block whose printed log score is not the count ratio', () => {
+    const cases = casesOf(
+      block([
+        { serviceId: 'ts-a', logScore: 0.9, logic: 1 },
+        { serviceId: 'ts-b', logScore: 1, logic: 10 },
+      ]),
+    );
+    expect(oracleFidelity(cases, OPTS).recordedLogViolations).toBe(1);
+  });
+
+  it('counts a case whose rank-1 moves when the log term is re-derived', () => {
+    // The instrument's error bar, stated as a number. The contract of the field is
+    // that the two ORDERS differ; on the shipped dump the cause is the dump's
+    // three-decimal render of a score whose counts reach thousands, and this fixture
+    // reaches the same disagreement with legible numbers — the printed log scores here
+    // are not the count ratios, so the reconstructed term changes the winner.
+    const cases = casesOf(
+      block([
+        { serviceId: 'ts-a', logScore: 0.6, logic: 30 },
+        { serviceId: 'ts-b', logScore: 0.6, logic: 60 },
+        { serviceId: 'ts-c', logic: 0 },
+      ]),
+    );
+    const fidelity = oracleFidelity(cases, OPTS);
+    expect(fidelity.recordedLogFlips).toBe(1);
+    expect(fidelity.recordedLogViolations).toBe(2);
+  });
+});
+
+describe('oracleCensus', () => {
+  /** The log and latency terms name the root; the metric term does not. */
+  const logRight = block(
+    [{ serviceId: 'ts-victim' }, { serviceId: 'ts-root', logScore: 1, latRise: 100 }],
+    { datapack: 'log-right', groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+  );
+  /** The metric term names the root; the log and latency terms do not. */
+  const metricRight = block(
+    [{ serviceId: 'ts-root' }, { serviceId: 'ts-victim', logScore: 1, latRise: 100 }],
+    { datapack: 'metric-right', groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+  );
+
+  it('tallies which terms name a root and which pairs disagree', () => {
+    const census = oracleCensus(casesOf(logRight, metricRight), OPTS);
+    expect(census.cases).toBe(2);
+    expect(census.rootsFirst).toEqual([
+      { key: 'log+lat', cases: 1 },
+      { key: 'metric', cases: 1 },
+    ]);
+    expect(census.conflicts).toEqual([
+      { key: 'log+lat beats metric', cases: 1 },
+      { key: 'metric beats log+lat', cases: 1 },
+    ]);
+  });
+
+  it('reports the shipped count, the single-term ceiling and the menu ceiling', () => {
+    const census = oracleCensus(casesOf(logRight, metricRight), OPTS);
+    expect(census.shippedCorrect).toBe(2);
+    expect(census.singleTermCeiling).toBe(2);
+    expect(census.singleTermUnreachable).toBe(0);
+    expect(census.menuCeiling).toBe(2);
+    expect(census.rootMetricRank).toEqual(
+      expect.arrayContaining([
+        { key: '1', cases: 1 },
+        { key: '2', cases: 1 },
+      ]),
+    );
+  });
+
+  it('counts a case no term names as unreachable', () => {
+    // The root is last on every term, so no choice from the menu can reach it.
+    const hopeless = block(
+      [{ serviceId: 'ts-a', logScore: 1, latRise: 100 }, { serviceId: 'ts-root' }],
+      { datapack: 'hopeless', groundTruth: ['ts-root'], topPredictions: ['ts-a'] },
+    );
+    const census = oracleCensus(casesOf(hopeless), OPTS);
+    expect(census.rootsFirst).toEqual([{ key: 'none', cases: 1 }]);
+    expect(census.singleTermUnreachable).toBe(1);
+    expect(census.menuCeiling).toBe(0);
+  });
+
+  it('accepts ANY root the benchmark lists', () => {
+    // The labels are a list: naming the co-located service first is correct, and a
+    // census that read `groundTruth[0]` would call this case unreachable.
+    const twoRoots = block([{ serviceId: 'ts-order-service' }, { serviceId: 'mysql' }], {
+      datapack: 'two-roots',
+      groundTruth: ['mysql', 'ts-order-service'],
+      topPredictions: ['ts-order-service'],
+    });
+    const census = oracleCensus(casesOf(twoRoots), OPTS);
+    expect(census.shippedCorrect).toBe(1);
+    expect(census.singleTermUnreachable).toBe(0);
+  });
+
+  it('skips a case with no acceptable root and survives one with no service rows', () => {
+    // A case the benchmark did not label cannot be scored at all, and one whose dump
+    // carried no rows has no order to read: both must leave the tally untouched rather
+    // than contribute to a denominator.
+    const unlabelled = block([{ serviceId: 'ts-a' }], { datapack: 'unlabelled', groundTruth: [] });
+    const empty = block([], { datapack: 'empty', groundTruth: ['ts-root'] });
+    const census = oracleCensus(casesOf(unlabelled, empty), OPTS);
+    expect(census.cases).toBe(1);
+    expect(census.rootsFirst).toEqual([{ key: 'none', cases: 1 }]);
+    expect(census.rootMetricRank).toEqual([]);
+  });
+});
+
+describe('modeScreen', () => {
+  it('compares every row against the recorded log term, per fault type', () => {
+    // Two cases of one fault type. The recorded term names the root in both; the
+    // logic-only term loses the second one, where the root's only signature is the
+    // framework-HTTP half `count` does not admit. The row must report one regressed
+    // CASE and name the fault TYPE — the shared kill criterion asks about types.
+    const a = block(
+      [
+        { serviceId: 'ts-root', logScore: 0.6, logic: 5, http: 4 },
+        { serviceId: 'ts-victim', logic: 1 },
+      ],
+      {
+        datapack: 'a',
+        faultType: 'NetworkLoss',
+        groundTruth: ['ts-root'],
+        topPredictions: ['ts-root'],
+      },
+    );
+    const b = block(
+      [
+        { serviceId: 'ts-root', logScore: 0.6, http: 4 },
+        { serviceId: 'ts-victim', logic: 9 },
+      ],
+      {
+        datapack: 'b',
+        faultType: 'NetworkLoss',
+        groundTruth: ['ts-root'],
+        topPredictions: ['ts-root'],
+      },
+    );
+    const screen = modeScreen(casesOf(a, b), OPTS);
+    const recorded = screen.rows[0]!;
+    const count = screen.rows[1]!;
+    expect(recorded.source).toBe('recorded');
+    expect(recorded.correct).toBe(2);
+    expect(recorded.regressedTypes).toEqual([]);
+    expect(count.source).toBe('count');
+    expect(count.correct).toBe(1);
+    expect(count.gainedCases).toBe(0);
+    expect(count.regressedCases).toBe(1);
+    expect(count.regressedTypes).toEqual([{ key: 'NetworkLoss', cases: -1 }]);
+    // The grid's rows are present, in the grid's order, and labelled by threshold.
+    expect(screen.rows.map((row) => row.dominance)).toEqual([undefined, undefined, undefined, 0.5]);
+    expect(screen.rows.at(-1)!.source).toBe('dominant');
+  });
+
+  it('skips a case with no acceptable root', () => {
+    const noRoot = block([{ serviceId: 'ts-a' }], { groundTruth: [], datapack: 'no-root' });
+    expect(modeScreen(casesOf(noRoot), OPTS).rows[0]!.perFaultType).toEqual([]);
+  });
+
+  it('reads the threshold on the ROW, so a sweep point can change the answer', () => {
+    // The bug this pins: the renderer built one row per grid point and computed every
+    // one of them at the options' threshold, so a sweep printed identical rows and read
+    // as a plateau the mode does not have. Here the root wins only on the framework-HTTP
+    // half (it is second on the metric), and the flood is spread over three emitters —
+    // dominance 1/3, admitted at 0.2 and withdrawn at 0.5.
+    const spread = block(
+      [
+        { serviceId: 'ts-victim' },
+        { serviceId: 'ts-root', http: 1 },
+        { serviceId: 'ts-e2', http: 1 },
+        { serviceId: 'ts-e3', http: 1 },
+      ],
+      { datapack: 'spread', groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+    );
+    const screen = modeScreen(casesOf(spread), { ...OPTS, dominanceGrid: [0.2, 0.5] });
+    const atPointTwo = screen.rows.find((row) => row.dominance === 0.2)!;
+    const atHalf = screen.rows.find((row) => row.dominance === 0.5)!;
+    expect(atPointTwo.correct).toBe(1);
+    expect(atHalf.correct).toBe(0);
+    expect(atHalf.regressedCases).toBe(1);
+    expect(atHalf.regressedTypes).toEqual([{ key: 'JVMMemoryStress', cases: -1 }]);
+  });
+
+  it('counts a fault type a mode GAINS, and scores a case whose service list is empty', () => {
+    // The gain arm is the one the pre-screen exists for: a mode that only ever lost
+    // cases would never need a per-type tally. A case with a root but NO parsed rows
+    // must still be scored rather than skipped — it is a real case whose dump carried
+    // no services, and skipping it would inflate every other row's ratio.
+    const gain = block(
+      [
+        { serviceId: 'ts-victim', logScore: 0.8 },
+        { serviceId: 'ts-root', logic: 9 },
+      ],
+      {
+        datapack: 'gain',
+        faultType: 'NetworkLoss',
+        groundTruth: ['ts-root'],
+        topPredictions: ['ts-victim'],
+      },
+    );
+    const empty = block([], { datapack: 'empty', groundTruth: ['ts-root'] });
+    // A third fault type, neutral in both modes: the per-type table is SORTED, and two
+    // rows only ever exercise one arm of its comparator.
+    const neutral = block([{ serviceId: 'ts-root', logic: 3 }, { serviceId: 'ts-victim' }], {
+      datapack: 'neutral',
+      faultType: 'PodKill',
+      groundTruth: ['ts-root'],
+      topPredictions: ['ts-root'],
+    });
+    const screen = modeScreen(casesOf(gain, empty, neutral), OPTS);
+    expect(screen.rows[0]!.correct).toBe(1);
+    expect(screen.rows[0]!.perFaultType.map((row) => row.key)).toEqual([
+      'JVMMemoryStress',
+      'NetworkLoss',
+      'PodKill',
+    ]);
+    const count = screen.rows[1]!;
+    expect(count.correct).toBe(2);
+    expect(count.gainedCases).toBe(1);
+    expect(count.gainedTypes).toEqual([{ key: 'NetworkLoss', cases: 1 }]);
+    expect(count.regressedTypes).toEqual([]);
+  });
+});
+
+describe('formatters', () => {
+  const cases = casesOf(
+    block([{ serviceId: 'ts-victim' }, { serviceId: 'ts-root', logScore: 1 }], {
+      groundTruth: ['ts-root'],
+      topPredictions: ['ts-root'],
+    }),
+  );
+
+  it('labels every row of the mode screen with its pass or fail', () => {
+    const text = formatModeScreen(modeScreen(cases, OPTS));
+    expect(text).toContain('PASSES the second half');
+    expect(text).toContain('baseline recorded');
+  });
+
+  it('prints the configuration and the error bar with the fidelity numbers', () => {
+    const text = formatFidelity(oracleFidelity(cases, OPTS), OPTS);
+    expect(text).toContain('logWeight=1 latWeight=0.561495 latFloor=10.3');
+    expect(text).toContain('error bar');
+    expect(text).toContain('rank-1 reproduced: 1/1 cases');
+  });
+
+  it('prints the ceilings and the conflicts', () => {
+    const text = formatOracleCensus(oracleCensus(cases, OPTS), OPTS);
+    expect(text).toContain('single-term ceiling');
+    expect(text).toContain('menu ceiling');
+    expect(text).toContain('conflicts');
+    expect(text).toContain('metric rank of a root');
+  });
+
+  it('renders the whole section behind its own flag', () => {
+    const text = formatTermOracleReport(cases, 'dump.txt', OPTS);
+    expect(text).toContain('Term oracle — dump.txt');
+    expect(text).toContain('Instrument fidelity');
+    expect(text).toContain('Log-term mode pre-screen');
+  });
+
+  it('prints n/a rather than a division by zero for an empty dump', () => {
+    // A dump with no blocks is a real input (a `--diagnose` selection that matched
+    // nothing) and a report that printed `NaN%` would look like a measured result.
+    const text = formatOracleCensus(oracleCensus([], OPTS), OPTS);
+    expect(text).toContain('n/a');
+    expect(text).not.toContain('NaN');
+  });
+});
+
+describe('--term-oracle wiring', () => {
+  it('is a switch, maps to its section kind, and still needs the log weight', () => {
+    // A switch whose kebab name does not map to a section kind is accepted and never
+    // rendered, which is indistinguishable from a section with nothing to say.
+    expect(() => parseAnalyzeArgs(['--dump', 'd.txt', '--term-oracle'])).toThrow(/log-weight/);
+    const opts = parseAnalyzeArgs(['--dump', 'd.txt', '--term-oracle', '--log-weight', '1']);
+    expect(opts.kind).toBe('dump');
+    if (opts.kind !== 'dump') throw new Error('unreachable');
+    expect(opts.sections.map((s) => s.kind)).toEqual(['termOracle']);
+  });
+
+  it('renders its section from the parsed dump, carrying its own configuration', () => {
+    const cases = casesOf(
+      block([{ serviceId: 'ts-root' }], { groundTruth: ['ts-root'], topPredictions: ['ts-root'] }),
+    );
+    const text = formatAnalyzeSections(cases, 'dump.txt', {
+      kind: 'dump',
+      dump: 'dump.txt',
+      family: undefined,
+      sections: [{ kind: 'termOracle', logWeight: 1, latWeight: 0.561495, latFloor: 10.3 }],
+      slope: 'lat',
+      output: undefined,
+    });
+    expect(text).toContain('Term oracle — dump.txt');
+    expect(text).toContain('Log-term mode pre-screen');
+    expect(text).toContain('logWeight=1 latWeight=0.561495 latFloor=10.3');
+  });
+});

@@ -19,7 +19,21 @@
  * @module benchmarks/fse26-diagnose-analyze
  */
 
-import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+} from '../../packages/tree/src/index.js';
+
+import { formatTermOracleReport, latencySlopes } from './fse26-term-oracle.js';
+
+/**
+ * `latencySlopes` moved to `fse26-term-oracle.ts` — the module that owns "rebuild a term
+ * from a dump" — so the solver below and the oracle there cannot disagree about the
+ * engine: two implementations of one signal is the defect this whole analyzer exists to
+ * find. Re-exported so every existing caller keeps its import path.
+ */
+export { latencySlopes };
 
 /**
  * The score decomposition of one metric, as the `metricTop` line reports it.
@@ -127,8 +141,20 @@ export interface DiagnosedCase {
 
 const HEADER_RE =
   /^DIAG datapack=(\S+) faultType=(\S+) GT=\[([^\]]*)\] services=(\d+)(?: logMode=(\S+))?$/;
+/**
+ * One service row.
+ *
+ * The id is `\S*`, not `\S+`, because a row with an EMPTY id is what the producer
+ * writes for a candidate whose service label is missing — on the shipped dump that is
+ * one row per case carrying the ten unlabelled `k8s.*` series. Requiring an id here
+ * silently dropped that row, and the drop is not cosmetic: the engine's
+ * `rankNormalizeScores` divides by `n - 1` over ITS candidate set, so a reader that
+ * parses `n - 1` rows computes a different metric term for every service in the case.
+ * The row also made the parsed count disagree with the header's `services=` — which
+ * nothing checked until the guard on the `prediction=` line below.
+ */
 const SERVICE_RE =
-  /^ {2}(\S+)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))?(?: latRise=(\S+) latEdges=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
+  /^ {2}(\S*)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))?(?: latRise=(\S+) latEdges=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
 const EDGES_RE = /^ {2}edges=(.*)$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
@@ -211,6 +237,8 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         groundTruth: string[];
         logSignalMode: string;
         services: MutableService[];
+        /** The candidate count the header DECLARED, for the completeness check. */
+        declaredServices: number;
         /** Filled by the `edges=` line, which may appear anywhere in the block. */
         edges: readonly string[] | undefined;
       }
@@ -250,6 +278,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         groundTruth: parseList(header[3]),
         logSignalMode: header[5] ?? '',
         services: [],
+        declaredServices: Number(header[4]),
         edges: undefined,
       };
       lastService = undefined;
@@ -376,15 +405,22 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
     const prediction = PREDICTION_RE.exec(line);
     if (prediction) {
       finalizeOutcomes();
-      cases.push({
-        datapack: current.datapack,
-        faultType: current.faultType,
-        groundTruth: current.groundTruth,
-        logSignalMode: current.logSignalMode,
-        edges: current.edges,
-        services: current.services,
-        prediction: parseList(prediction[1]),
-      });
+      // A block whose parsed candidate count disagrees with its own header is
+      // DROPPED, for the same reason a block with no `prediction=` line is: its service
+      // list is known to be short, and a short list is not a smaller case — it is a
+      // different `n`, which changes the metric term of every service in the case. An
+      // absent case is visible in the totals; a wrong one is not.
+      if (current.services.length === current.declaredServices) {
+        cases.push({
+          datapack: current.datapack,
+          faultType: current.faultType,
+          groundTruth: current.groundTruth,
+          logSignalMode: current.logSignalMode,
+          edges: current.edges,
+          services: current.services,
+          prediction: parseList(prediction[1]),
+        });
+      }
       current = undefined;
       lastService = undefined;
       declaredOutcomeCount = 0;
@@ -895,55 +931,6 @@ export interface WeightSeparation {
  * caller mix them.
  */
 export type SlopeKind = 'failedEdge' | 'lat';
-
-/**
- * Reconstruct the latency term's per-service score from the dump.
- *
- * Deliberately the same shape as the engine's `computeEdgeLatencyScores`, because
- * the point of the solver is to predict what the ENGINE would do: the raw
- * `latRise` the service line carries is a ratio, and the term applies
- * `log1p(max(0, rise − 1))` to it and then max-normalises across the case. An
- * unmeasured service is ABSENT from the result rather than present with a 0, which
- * is the same distinction the engine keeps.
- *
- * @param services - The case's services, as parsed.
- * @param minRise - Rise a service must clear to be credited at all; default 1, which
- *   is the shipped shape. A rise **above 1 but below this** is dropped, so the
- *   service reads as unmeasured. A rise **at or below 1** is always kept, because the
- *   engine's rule is that such a service is present with magnitude 0 and redefining
- *   that here would break the `minRise = 1` identity below.
- * @returns The normalised slope per measured service; empty when no measurement
- *   carries a rise, in which case every slope is 0 and the term cannot reorder.
- */
-export function latencySlopes(
-  services: readonly DiagnosedService[],
-  minRise = 1,
-): Map<string, number> {
-  const magnitudes = new Map<string, number>();
-  for (const service of services) {
-    const rise = service.latRise;
-    if (rise === undefined || !Number.isFinite(rise)) continue;
-    // The floor is a MASK, not a compression, and that is what makes it a different
-    // axis from any pointwise reshaping of the slope. It can only delete a service's
-    // vote: the surviving maximum is always the case maximum, so the divisor never
-    // moves and no slope is ever raised. Two consequences follow, and they are why
-    // the floor is worth parameterising at all — it cannot remove a spurious
-    // COMPETITOR without also removing that same service as a CREDITEE, so its net
-    // effect is decided entirely by whether those two roles share a service.
-    if (rise > 1 && rise < minRise) continue;
-    magnitudes.set(service.serviceId, Math.log1p(Math.max(0, rise - 1)));
-  }
-  let max = 0;
-  for (const magnitude of magnitudes.values()) if (magnitude > max) max = magnitude;
-  // Every measurable edge got faster (or nothing was measured), so there is no
-  // rise to normalise against and the term is 0 for everyone.
-  if (max <= 0) return new Map();
-  const slopes = new Map<string, number>();
-  for (const [serviceId, magnitude] of magnitudes) {
-    slopes.set(serviceId, magnitude / max);
-  }
-  return slopes;
-}
 
 /** Float tolerance for a zero coefficient or a zero gap. */
 const WEIGHT_EPSILON = 1e-12;
@@ -2094,8 +2081,8 @@ export interface AnalyzeComparisonOptions {
   readonly output: string | undefined;
 }
 
-/** The three sections that reconstruct a score from the dump. */
-export type AnalyzeSectionKind = 'misses' | 'weightSweep' | 'window';
+/** The sections that reconstruct a score from the dump. */
+export type AnalyzeSectionKind = 'misses' | 'weightSweep' | 'window' | 'termOracle';
 
 /**
  * One requested section, CARRYING the weight it is computed at.
@@ -2145,13 +2132,27 @@ export interface AnalyzeDumpOptions {
 export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
   'window',
   'weightSweep',
+  'termOracle',
   'misses',
+];
+
+/**
+ * The dominance thresholds the log-mode pre-screen sweeps.
+ *
+ * Data rather than a literal inside the renderer so the frontier a report shows is
+ * the grid that was asked for. The threshold itself is NOT restated here: it comes
+ * from the engine's `DEFAULT_HTTP_DOMINANCE_THRESHOLD`, and the grid brackets it.
+ * The grid is coarse on purpose — the mode's frontier is a STEP, and a fine grid
+ * would print a plateau twenty times and hide that it is one step.
+ */
+export const DEFAULT_TERM_ORACLE_DOMINANCE_GRID: readonly number[] = [
+  0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.95,
 ];
 
 const ANALYZE_USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
-  '[--misses] [--weight-sweep] [--window] [--family <regex>] ' +
+  '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
 /**
@@ -2176,7 +2177,7 @@ const VALUE_FLAGS = new Set([
 ]);
 
 /** Flags that take no value. */
-const SWITCH_FLAGS = new Set(['misses', 'weight-sweep', 'window']);
+const SWITCH_FLAGS = new Set(['misses', 'weight-sweep', 'window', 'term-oracle']);
 
 /**
  * Parse the analyzer's command line.
@@ -2214,17 +2215,19 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
   const dump = values.get('dump');
   if (dump === undefined) throw new Error(ANALYZE_USAGE);
 
-  const requested = new Set(
-    [...switches].map((name) => (name === 'weight-sweep' ? 'weightSweep' : name)),
+  // Kebab to camel, in one place: a switch whose name does not map to its section
+  // kind is silently never rendered, which is how a flag can be accepted and ignored.
+  const requested = new Set<string>(
+    [...switches].map((name) => name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())),
   );
   const rawWeight = values.get('log-weight');
   if (requested.size > 0 && rawWeight === undefined) {
-    // Names the flag, states which weight it is, and gives the shipped value, so
+    // Names the flags, states which weight it is, and gives the shipped value, so
     // the reader does not have to guess between the four weights this tool knows.
     throw new Error(
-      '--misses/--weight-sweep/--window reconstruct a score, so they need the weight ' +
-        "that score ran at: pass --log-weight <w>, the run's LOG weight (the coefficient " +
-        `on logScore; the shipped runs use 1).\n${ANALYZE_USAGE}`,
+      '--misses/--weight-sweep/--window/--term-oracle reconstruct a score, so they need ' +
+        "the weight that score ran at: pass --log-weight <w>, the run's LOG weight (the " +
+        `coefficient on logScore; the shipped runs use 1).\n${ANALYZE_USAGE}`,
     );
   }
   let logWeight = 0;
@@ -2358,7 +2361,7 @@ export function formatAnalyzeSections(
     sections.push(formatMetricCompetitionReport(cases, opts.family, dumpLabel));
   }
   for (const section of opts.sections) {
-    sections.push(analyzeSectionText(cases, section, opts));
+    sections.push(analyzeSectionText(cases, section, opts, dumpLabel));
   }
   sections.push(formatAnomalyShapeReport(cases, dumpLabel));
   return sections.join('\n');
@@ -2374,12 +2377,15 @@ export function formatAnalyzeSections(
  * @param section - The section and the weight it is computed at.
  * @param opts - For the slope and the rise floor, which are properties of the
  *   shape rather than of the section.
+ * @param dumpLabel - The dump's path, which only the section that echoes its own
+ *   configuration into the report needs.
  * @returns The section text.
  */
 function analyzeSectionText(
   cases: readonly DiagnosedCase[],
   section: AnalyzeSection,
   opts: AnalyzeDumpOptions,
+  dumpLabel: string,
 ): string {
   switch (section.kind) {
     case 'window':
@@ -2391,6 +2397,17 @@ function analyzeSectionText(
       );
     case 'weightSweep':
       return formatWeightSeparationReport(cases, { logWeight: section.logWeight }, opts.slope);
+    case 'termOracle':
+      // The dominance threshold is the ENGINE's constant, imported rather than
+      // typed here, and the grid brackets it: a pre-screen read at a threshold the
+      // engine does not have would describe a mode that cannot be run.
+      return formatTermOracleReport(cases, dumpLabel, {
+        logWeight: section.logWeight,
+        latWeight: section.latWeight,
+        latFloor: section.latFloor,
+        dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+        dominanceGrid: DEFAULT_TERM_ORACLE_DOMINANCE_GRID,
+      });
     case 'misses':
       return formatMissReport(cases, {
         logWeight: section.logWeight,

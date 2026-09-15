@@ -154,6 +154,36 @@ describe('parseDiagnosticDump', () => {
     expect(parseDiagnosticDump(truncated)).toEqual([]);
   });
 
+  it('keeps a candidate whose service id is EMPTY, and counts it', () => {
+    // One row per case carries no service name on the shipped dump — the ten
+    // unlabelled `k8s.*` series. An id-requiring regex dropped it silently, and the
+    // drop is not cosmetic: the engine's metric term divides by `n - 1` over ITS
+    // candidate set, so a reader that parses one row fewer computes a different metric
+    // term for every service in the case.
+    const text = dump({
+      services: [
+        serviceLine({ serviceId: '', selfAnomaly: 0.1 }),
+        serviceLine({ serviceId: 'ts-ui', selfAnomaly: 0.9 }),
+      ],
+    });
+
+    const kase = parseDiagnosticDump(text)[0]!;
+    expect(kase.services.map((s) => s.serviceId)).toEqual(['ts-ui', '']);
+    expect(kase.services).toHaveLength(2);
+  });
+
+  it('drops a block whose parsed candidate count disagrees with its own header', () => {
+    // A short list is not a smaller case: it is a different `n`, which changes the
+    // metric term of every service in the case. An absent case shows up in the totals;
+    // a wrong one does not.
+    const text = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] }).replace(
+      'services=1',
+      'services=2',
+    );
+
+    expect(parseDiagnosticDump(text)).toEqual([]);
+  });
+
   it('records an absent log mode as an empty string, so it can be detected', () => {
     // Older dumps predate the mode field. Parsing must not fail, and the
     // sentinel has to be distinguishable from a real mode.
