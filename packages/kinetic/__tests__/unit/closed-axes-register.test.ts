@@ -71,6 +71,19 @@ describe('closed-axes register', () => {
     expect(dangling).toEqual([]);
   });
 
+  it('registers every verdict as a ROW, not as a passing mention', () => {
+    // The check above is satisfied by the name appearing ANYWHERE in the file, and
+    // one document hid behind that: `fse26-httpnet-miss-verdict.md`, 346 lines that
+    // closed the whole input-ablation family — five families by bound, the pool by
+    // family, the pool by label — carried no row, so an axis it had already
+    // measured was re-derived and re-proposed a session later. A row is what a
+    // reader scans for an axis; a mention in prose is not, and a doc referenced
+    // only in prose cannot be found by anyone looking for the axis.
+    const rowText = tableRows().flat().join(' ');
+    const orphaned = verdictDocs().filter((name) => !rowText.includes(name));
+    expect(orphaned).toEqual([]);
+  });
+
   it('closes every axis with a measurement, never with an argument', () => {
     // The third column is "the number that closed it". An empty one means the
     // axis was closed by reasoning, and reasoning is what this register replaces.
