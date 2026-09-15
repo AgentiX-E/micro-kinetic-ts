@@ -18,9 +18,10 @@ import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 /**
  * Build the semantic-alignment config from the environment.
  *
- * Reads `ZHIPU_API_KEY` and `DEEPSEEK_API_KEY` from the environment. If no
- * embedding provider can be built, semantic enhancement is disabled and the
- * topology builder falls back to exact YAML matches and ring-connect.
+ * Reads `ZHIPU_API_KEY` and `DEEPSEEK_API_KEY` from the environment, plus the
+ * three `ZHIPU_EMBEDDING_*` overrides. When the API path cannot produce a
+ * provider the local TF-IDF provider is used instead, so this ALWAYS returns a
+ * provider; the topology builder therefore never has to handle "none".
  */
 export async function createSemanticConfig(): Promise<SemanticEnhancerConfig> {
   const { TfIdfEmbeddingProvider } = await import('@agentix-e/micro-kinetic-ai');
@@ -36,8 +37,13 @@ export async function createSemanticConfig(): Promise<SemanticEnhancerConfig> {
   // runtime.
   const forceTfIdf = process.env['BENCHMARK_USE_TFIDF'] === '1';
   const zhipuKey = process.env['ZHIPU_API_KEY'];
-  const embeddingProvider =
-    zhipuKey && !forceTfIdf
+  // `!== undefined`, not truthiness: an exported-but-EMPTY key is the CI case, and
+  // the factory below already refuses it. Letting the factory decide makes the
+  // `null` it returns REACHABLE -- it used to be guarded out here, which turned
+  // the `?? undefined` below into an arm no test could ever take and hid the fact
+  // that this factory could hand back no provider at all.
+  const apiProvider =
+    zhipuKey !== undefined && !forceTfIdf
       ? createApiEmbeddingFromEnv({
           vendorPrefix: 'ZHIPU',
           endpoint:
@@ -46,14 +52,13 @@ export async function createSemanticConfig(): Promise<SemanticEnhancerConfig> {
           model: process.env['ZHIPU_EMBEDDING_MODEL'] ?? 'embedding-3',
           dimension: Number(process.env['ZHIPU_EMBEDDING_DIMENSION'] ?? '2048'),
         })
-      : new TfIdfEmbeddingProvider();
+      : undefined;
 
   return {
-    // `createApiEmbeddingFromEnv` returns null when it cannot build a provider
-    // from the environment. `undefined` is how this config spells "none", and
-    // `Boolean(undefined)` is false exactly as `Boolean(null)` was, so the
-    // caller's decision is unchanged.
-    embeddingProvider: embeddingProvider ?? undefined,
+    // One fallback for both reasons the API path can decline -- forced (`=1`) and
+    // refused (no key) -- so a run never silently proceeds with no embedding
+    // provider while every downstream number still looks computed.
+    embeddingProvider: apiProvider ?? new TfIdfEmbeddingProvider(),
     // LLM fallback is not needed for embedding-based matching, so no provider is
     // set. `null` is not a legal value here: the field is optional.
     alignmentConfig: {

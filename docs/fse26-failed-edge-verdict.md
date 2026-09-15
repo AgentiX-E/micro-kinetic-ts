@@ -201,7 +201,8 @@ For a case, `score(v) = base(v) + w × slope(v)` where `base` is
 `log1p(selfAnomaly) + logWeight × logScore` and `slope` is the failed-edge score.
 The target is at rank 1 exactly on an interval, obtained by intersecting one
 half-line per competitor, and a single weight exists iff the per-case intervals
-intersect. `computeWeightSeparation` does that exactly; `--weight-sweep <logWeight>`
+intersect. `computeWeightSeparation` does that exactly; `--weight-sweep` (with
+`--log-weight <w>`)
 runs it over a dump. A **control** dump is sufficient, because the slope does not
 depend on the weight being on.
 

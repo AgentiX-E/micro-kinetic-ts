@@ -26,6 +26,7 @@ import {
   computeZeroRegressionWindow,
   diffDiagnostics,
   familyCompetition,
+  formatAnalyzeSections,
   formatAnomalyShapeReport,
   formatDiagnoseComparison,
   formatMetricCompetitionReport,
@@ -34,6 +35,7 @@ import {
   formatZeroRegressionWindowReport,
   isTop1Correct,
   latencySlopes,
+  parseAnalyzeArgs,
   parseDiagnosticDump,
   regressionMechanism,
   tallyDeltas,
@@ -2389,5 +2391,327 @@ describe('latencySlopes agrees with the engine it predicts', () => {
     // `flat` is credited nothing, on both sides.
     expect(fromEngine.get('flat')).toBe(0);
     expect(fromDump.get('flat')).toBe(0);
+  });
+});
+
+describe('parseAnalyzeArgs — one owner for the log weight', () => {
+  /**
+   * The run's log weight appeared FOUR times in this command line: on
+   * `--log-weight` and on each of `--misses`, `--weight-sweep` and `--window`.
+   * Four owners of one number is the drift this repo keeps paying for, and it had
+   * already been paid: two invocations differing only in which flag got the number
+   *
+   *   --dump d --window 1        --slope lat --lat-floor 10.3 -> correct at 0: 673
+   *   --dump d --window 0.561495 --slope lat --lat-floor 10.3 -> correct at 0: 669
+   *
+   * The second passed the shipped LATENCY weight where a LOG weight belongs, and
+   * printed a self-consistent report whose baseline and — worse — whose CAP were
+   * wrong. The cap is the number the register quotes and a flip is decided
+   * against, so a tool that accepts the wrong weight in that slot corrupts the
+   * record while looking like it is checking it. Nothing objected.
+   *
+   * The value now has one owner, `--log-weight`; the sections are switches; and the
+   * weight lives ON the section, so a section cannot be requested without one.
+   */
+  const dumpArg = ['--dump', 'd.txt'];
+  const dumpMode = (argv: readonly string[]) => {
+    const opts = parseAnalyzeArgs(argv);
+    if (opts.kind !== 'dump') throw new Error('expected dump mode');
+    return opts;
+  };
+  const kindsOf = (argv: readonly string[]) => dumpMode(argv).sections.map((s) => s.kind);
+
+  it('reads the log weight once and prints the requested section', () => {
+    const opts = dumpMode([...dumpArg, '--log-weight', '1', '--window']);
+
+    expect(opts.sections).toEqual([{ kind: 'window', logWeight: 1 }]);
+  });
+
+  it('runs every section off the SAME weight', () => {
+    // The regression it prevents: three sections each carrying their own weight,
+    // which lets one of them be computed at a scale the run never used and still
+    // look like a matched report.
+    const opts = dumpMode([
+      ...dumpArg,
+      '--log-weight',
+      '1',
+      '--misses',
+      '--weight-sweep',
+      '--window',
+    ]);
+
+    expect(opts.sections.map((s) => s.logWeight)).toEqual([1, 1, 1]);
+  });
+
+  it('prints the sections in a canonical order, not in the order they were typed', () => {
+    const typed = dumpMode([...dumpArg, '--log-weight', '1', '--misses', '--window']);
+
+    expect(typed.sections.map((s) => s.kind)).toEqual(['window', 'misses']);
+  });
+
+  it('imposes no sections when none was asked for', () => {
+    expect(kindsOf([...dumpArg, '--log-weight', '1'])).toEqual([]);
+    expect(kindsOf(dumpArg)).toEqual([]);
+  });
+
+  it('refuses a section without the weight it has to reconstruct at', () => {
+    // The dump's order is only self-consistent with the weight its own run used, so
+    // a section at a guessed weight reports real cases as `unexplained`. The error
+    // names the flag, states WHICH weight it is, and gives the shipped value, so the
+    // reader does not have to choose between the four weights this tool knows.
+    expect(() => parseAnalyzeArgs([...dumpArg, '--window'])).toThrow(/--log-weight/);
+    expect(() => parseAnalyzeArgs([...dumpArg, '--window'])).toThrow(/LOG weight/);
+  });
+
+  it('rejects the OLD form in a way that says what to write instead', () => {
+    // `--window 1` used to be the correct invocation. A shell history that still
+    // has it must be told which flag now takes the number; a bare "unrecognised
+    // argument" would send the reader looking for a flag that moved.
+    expect(() => parseAnalyzeArgs([...dumpArg, '--window', '1'])).toThrow(/--log-weight/);
+    expect(() => parseAnalyzeArgs([...dumpArg, '--misses', '0.5'])).toThrow(/--log-weight/);
+    // A non-numeric token after a switch is a plain typo, not that mistake.
+    expect(() => parseAnalyzeArgs([...dumpArg, '--window', 'oops'])).toThrow(
+      /unrecognised argument 'oops'/,
+    );
+  });
+
+  it('rejects a log weight that is not a usable number', () => {
+    // STRICT, with no fallback: the flag is required, so a typo would otherwise be
+    // the only thing between the reader and a report at the fallback's weight —
+    // numbers this run did not produce.
+    for (const bad of ['', 'x', '1O', 'NaN', 'Infinity', '-1', ' ']) {
+      expect(() => parseAnalyzeArgs([...dumpArg, '--log-weight', bad, '--window'])).toThrow(
+        /--log-weight/,
+      );
+    }
+    // Zero is a real ablation, not a typo.
+    expect(dumpMode([...dumpArg, '--log-weight', '0', '--window']).sections[0]!.logWeight).toBe(0);
+  });
+
+  it('defaults the latency rise floor to the shipped shape', () => {
+    expect(dumpMode([...dumpArg, '--log-weight', '1', '--window']).latFloor).toBe(1);
+  });
+
+  it('rejects a rise floor that is not a rise floor', () => {
+    // Below 1 is refused rather than accepted as a no-op: magnitudes are
+    // `log1p(max(0, rise - 1))`, so such a floor masks nothing and would render a
+    // configuration the operator believes changed something.
+    for (const bad of ['', 'x', '0.9', '0', ' ']) {
+      expect(() => parseAnalyzeArgs([...dumpArg, '--log-weight', '1', '--lat-floor', bad])).toThrow(
+        /--lat-floor/,
+      );
+    }
+    expect(dumpMode([...dumpArg, '--log-weight', '1', '--lat-floor', '10.3']).latFloor).toBe(10.3);
+  });
+
+  it('falls back to the term the solver was built for on an unknown slope', () => {
+    expect(dumpMode([...dumpArg, '--log-weight', '1', '--slope', 'lat']).slope).toBe('lat');
+    expect(dumpMode([...dumpArg, '--log-weight', '1', '--slope', 'nonsense']).slope).toBe(
+      'failedEdge',
+    );
+  });
+
+  it('labels a metric family with the pattern when no label is given', () => {
+    const opts = dumpMode([...dumpArg, '--family', 'HTTP.*']);
+
+    expect(opts.family).toEqual({ label: 'HTTP.*', pattern: /HTTP.*/ });
+    // An unusable pattern is a loud failure, never a report that matches nothing.
+    expect(() => parseAnalyzeArgs([...dumpArg, '--family', '['])).toThrow();
+  });
+
+  it('still parses the comparison mode', () => {
+    expect(parseAnalyzeArgs(['--before', 'a.txt', '--after', 'b.txt'])).toEqual({
+      kind: 'comparison',
+      before: 'a.txt',
+      after: 'b.txt',
+      output: undefined,
+    });
+  });
+
+  it('rejects a line that names neither mode, and a flag without its value', () => {
+    expect(() => parseAnalyzeArgs([])).toThrow(/usage:/);
+    expect(() => parseAnalyzeArgs(['--dump'])).toThrow(/--dump expects a value/);
+    expect(() => parseAnalyzeArgs(['--dump', 'd.txt', 'stray'])).toThrow(
+      /unrecognised argument 'stray'/,
+    );
+  });
+
+  it('carries the output path through', () => {
+    expect(parseAnalyzeArgs([...dumpArg, '--output', 'out.txt']).output).toBe('out.txt');
+  });
+});
+
+describe('formatAnalyzeSections — the report a flag set actually prints', () => {
+  const text = dump({
+    groundTruthServices: ['ts-src'],
+    services: [
+      serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, latRise: 40, latEdges: 1 }),
+      serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, latRise: 2, latEdges: 1 }),
+    ],
+  });
+  const cases = parseDiagnosticDump(text);
+  const opts = parseAnalyzeArgs([
+    '--dump',
+    'd.txt',
+    '--log-weight',
+    '1',
+    '--misses',
+    '--weight-sweep',
+    '--window',
+    '--slope',
+    'lat',
+    '--family',
+    'JVM',
+  ]);
+  if (opts.kind !== 'dump') throw new Error('expected dump mode');
+
+  it('prints every requested section exactly once', () => {
+    const report = formatAnalyzeSections(cases, 'd.txt', opts);
+
+    for (const header of ['Weight window (', 'Weight separation (', 'Miss attribution (']) {
+      expect(report.split(header)).toHaveLength(2);
+    }
+  });
+
+  it('orders the sections, because the order IS how a reader takes them', () => {
+    // A question about a candidate weight first, then the metric family, then the
+    // shape summary that is the context for all of them. `unshift` calls made this
+    // order an accident of the edit history; it is now stated and checked.
+    const report = formatAnalyzeSections(cases, 'd.txt', opts);
+    const order = [
+      'metric competition',
+      'Weight window (',
+      'Weight separation (',
+      'Miss attribution (',
+      'anomaly shape',
+    ].map((anchor) => report.indexOf(anchor));
+
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('prints only the shape summary when no section was requested', () => {
+    const bare = parseAnalyzeArgs(['--dump', 'd.txt']);
+    if (bare.kind !== 'dump') throw new Error('expected dump mode');
+    const report = formatAnalyzeSections(cases, 'd.txt', bare);
+
+    expect(report).toContain('anomaly shape');
+    expect(report).not.toContain('Weight window (');
+    expect(report).not.toContain('Weight separation (');
+    expect(report).not.toContain('Miss attribution (');
+  });
+});
+
+describe('zeroRegressionSamples agrees with direct score evaluation', () => {
+  /**
+   * Two independent derivations of the same fact, which is the only way an
+   * interval computation earns trust. `zeroRegressionSamples` solves the weights
+   * algebraically — the intersection of one half-line per competitor — while this
+   * evaluates the affine score at a concrete weight and takes the maximum. An error
+   * in the algebra moves a boundary; the direct evaluation does not care where the
+   * boundaries are, so the two disagree exactly at a wrong interval.
+   */
+  const build = (text: string) =>
+    buildWeightSeparationCases(parseDiagnosticDump(text), { logWeight: 1 });
+  const text = dump({
+    datapack: 'dp-a',
+    groundTruthServices: ['ts-src'],
+    services: [
+      serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, failedEdge: 2 }),
+      serviceLine({ serviceId: 'ts-rival', selfAnomaly: 0, failedEdge: 5 }),
+    ],
+  });
+  const cases = build(text);
+
+  /** Does an acceptable root take rank 1 by direct evaluation at `w`? */
+  function direct(one: WeightSeparationCase, w: number): boolean {
+    let best = Number.NEGATIVE_INFINITY;
+    let bestIsTarget = false;
+    for (const [service, s] of one.scores) {
+      const value = s.base + w * s.slope;
+      const isTarget = one.targets.includes(service);
+      if (value > best + 1e-12) {
+        best = value;
+        bestIsTarget = isTarget;
+      } else if (Math.abs(value - best) <= 1e-12 && isTarget) {
+        bestIsTarget = true;
+      }
+    }
+    return bestIsTarget;
+  }
+
+  it('agrees case by case, including exactly on the boundary', () => {
+    // Above the cap the rival wins; at the cap they tie, and a tie with an
+    // acceptable root IS rank 1 for the engine, which is the subtlety a boundary
+    // test exists to pin.
+    const cap = computeZeroRegressionWindow(cases).cap;
+    const weights = [0, cap / 2, cap, cap * 1.000001, cap * 2, 1];
+
+    for (const w of weights) {
+      const sampled = zeroRegressionSamples(cases, [w])[0]!;
+      const evaluated = cases.reduce((sum, one) => sum + (direct(one, w) ? 1 : 0), 0);
+      expect([w, sampled.correct]).toEqual([w, evaluated]);
+    }
+  });
+
+  it('counts the same cases as satisfied at zero', () => {
+    const satisfied = computeZeroRegressionWindow(cases).satisfied;
+    const evaluated = cases.reduce((sum, one) => sum + (direct(one, 0) ? 1 : 0), 0);
+
+    expect(satisfied).toBe(evaluated);
+  });
+});
+
+describe('computeZeroRegressionWindow — a window that is a single point', () => {
+  /**
+   * A case whose root is correct ONLY because it TIES at w = 0.
+   *
+   * Equal base, rival with the larger slope: at rest they are level, and the
+   * moment any weight is applied the rival wins. Such a case is correct today, so
+   * it caps the window — at zero — and it is the tightest possible constraint.
+   *
+   * The binder search missed it: it required `lead > 0` to have a witness, but the
+   * binding pair here has `lead === 0` by construction. The report then took the
+   * `undefined` branch and printed "no case can be overtaken at any weight", which
+   * is the opposite of the truth — this case is overtaken by ANY weight above
+   * zero. A false statement printed confidently is worse than a missing one.
+   */
+  const tieCase = dump({
+    datapack: 'dp-tie',
+    groundTruthServices: ['ts-src'],
+    services: [
+      serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, failedEdge: 0 }),
+      serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.5, failedEdge: 1 }),
+    ],
+  });
+  const build = (text: string) =>
+    buildWeightSeparationCases(parseDiagnosticDump(text), { logWeight: 1 });
+
+  it('caps the window at zero and still names the pair that binds it', () => {
+    const window = computeZeroRegressionWindow(build(tieCase));
+
+    expect(window.satisfied).toBe(1);
+    expect(window.cap).toBeCloseTo(0, 12);
+    expect(window.capBinder?.datapack).toBe('dp-tie');
+    expect(window.capBinder?.target).toBe('ts-src');
+    expect(window.capBinder?.rival).toBe('ts-win');
+    expect(window.capBinder?.lead).toBeCloseTo(0, 12);
+    expect(window.capBinder?.slopeGap).toBeCloseTo(1, 12);
+  });
+
+  it('does not claim nothing can be overtaken when the cap is zero', () => {
+    const report = formatZeroRegressionWindowReport(parseDiagnosticDump(tieCase), { logWeight: 1 });
+
+    expect(report).not.toContain('no case can be overtaken');
+    expect(report).toContain('binder dp-tie');
+    // The two-sided claim, which the report has to SHOW and not merely assert: the
+    // cap row holds the case, and the first weight above it forfeits it.
+    expect(report).toMatch(/0\.000000\s+1\s+0\s+0/);
+    expect(report).toMatch(/0\.010000\s+0\s+0\s+1/);
+    // Including on the probe row itself. It used to be `cap + Number.EPSILON`, which
+    // is smaller than the `WEIGHT_EPSILON` the interval test inflates by, so for a
+    // cap of zero the probe fell back inside the window and this row claimed the
+    // case survived the weight it had just been beaten by.
+    expect(report).toMatch(/1\s+<- first weight above the cap/);
   });
 });

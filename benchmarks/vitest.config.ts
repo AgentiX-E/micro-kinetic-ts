@@ -36,11 +36,26 @@ export default defineConfig({
     coverage: {
       // The modules with a unit-testable surface: the two that decide the call
       // graph every RCAEval number is computed on, plus the FSE'26 result and
-      // diagnostic readers. The remaining files under `src/` are CLI entry
-      // points that call `main()` at import time and have no such surface --
-      // listed deliberately rather than by an `exclude` pattern, because an
-      // allow-list that names its files is a claim that can be checked.
+      // diagnostic readers. Listed deliberately rather than by an `exclude`
+      // pattern, because an allow-list that names its files is a claim that can be
+      // checked -- and this one had two holes:
+      //
+      //   1. `semantic-config.ts` was imported by `semantic-config.test.ts` and
+      //      absent from this list, so a module with tests sat outside the
+      //      denominator and its own coverage was never measured or required.
+      //   2. The claim that the remaining files "have no such surface" was false
+      //      for `analyze-fse26-diagnose.ts`: its flag parsing was 235 unmeasured
+      //      lines, and that is where the run's log weight came to be accepted on
+      //      four different flags, producing a wrong cap for the register. The
+      //      logic now lives in `fse26-diagnose-analyze.ts`, which is measured, and
+      //      what is left is `readFileSync`/`writeFileSync`.
+      //
+      // What remains unmeasured is the runner entry points (`run-*.ts`,
+      // `optimize-all.ts`, `merge-routing-probe.ts`): they execute at import time
+      // and need the benchmark corpora, so they are exercised by the workflow
+      // rather than here. That is a known gap, not a claim that they are trivial.
       include: [
+        'src/semantic-config.ts',
         'src/rcaeval-topology.ts',
         'src/rcaeval-semantic.ts',
         'src/fse26-report.ts',

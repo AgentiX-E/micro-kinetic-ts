@@ -3,7 +3,7 @@
 Run `34813401805` (commit `ccecee1`, cache `rcabench-full-v3`) with
 `diagnose=JVMMemoryStress,ContainerKill,PodFailure,PodKill,HTTPResponseReplaceCode`
 and `diagnose_limit=0`: **522 diagnostic blocks**, read back with
-`analyze-fse26-diagnose --misses 1` at `logWeight=1`.
+`analyze-fse26-diagnose --log-weight 1 --misses` at `logWeight=1`.
 
 This is the first attribution of the whole block from the score side. Its purpose
 is routing: 294 cases at ~2% Top@1 is the largest remaining stock, and the first

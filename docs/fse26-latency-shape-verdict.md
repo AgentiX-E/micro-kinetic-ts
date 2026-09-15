@@ -14,7 +14,7 @@ arithmetic that decided it:
 
 ```
 tsx benchmarks/src/analyze-fse26-diagnose.ts \
-  --dump artifacts/r34919714864/fse26-results.txt --window 1 --slope lat
+  --dump artifacts/r34919714864/fse26-results.txt --log-weight 1 --window --slope lat
 ```
 
 ```
@@ -69,7 +69,7 @@ unchanged — only the slope vector is), so the floor is the sole sampled axis:
 # the step, and the optimum inside it
 for r in 1 3 10.3 12 50 137 300; do
   tsx benchmarks/src/analyze-fse26-diagnose.ts \
-    --dump artifacts/r34919714864/fse26-results.txt --window 1 --slope lat --lat-floor "$r"
+    --dump artifacts/r34919714864/fse26-results.txt --log-weight 1 --window --slope lat --lat-floor "$r"
 done
 ```
 
@@ -163,3 +163,68 @@ have to key on something *other* than the rise's magnitude: for instance an
 interaction with the case's own structure (which service observed the rise, not how
 big it was), which is the direction `fse26-failed-edge-verdict.md` already rejected
 for the failure-count signal and would have to be re-argued for this one.
+
+## Both halves of the kill criterion, on the flip commit
+
+The candidate was then re-measured on the commit that carries it, with no override at
+all, because a half that is skipped because it "must" pass is not a test:
+
+| half | run | result |
+| --- | --- | --- |
+| FSE'26 through the **DEFAULT** path (no `lat_weight` input) | `34923701046` | **52.74% / 750 / +56**, zero regressed fault types, per-fault-type cells **byte-identical** to the flagged candidate `34921980498`, and the `Config:` line reads `latWeight=0.561495 latMinRise=10.3` from the defaults |
+| RCAEval golden 9-cell | `34923687812` (against `34877797128`) | RE1 80.0/92.8/68.0, RE2 82.4/88.9/68.1, RE3 80.0/45.0/51.1 — all nine exactly the recorded golden, artifacts **byte-identical** apart from the `Total duration` line |
+
+The flag and the default are therefore one configuration, not two that agree by
+accident: the per-type cells are the same bytes. The second half is structurally
+invisible to the RCAEval suite, since only the FSE'26 loader emits
+`traceEdgeLatency`; it was measured anyway.
+
+## Where the shipped pair sits: exactly on its own cap
+
+The window for the shipped pair, from the same instrument:
+
+```
+Weight window (slope=lat, latFloor=10.3; logWeight=1; ...)
+  cases: 1422   correct at 0: 673   unreachable at every weight: 549
+  cap weight: 0.561495   binder ts0-ts-travel2-service-response-abort-bvl7cs
+  cap detail: ts-consign-price-service overtakes ts-travel2-service — lead 0.561495 /
+              slope gap 1.000000 (slopes 0.000000 -> 1.000000)
+  0.030000         688      15     0
+  0.561495         750      77     0
+```
+
+Three things follow, and all three are load-bearing:
+
+1. **The shipped weight IS the cap.** `0.561495` is both the value that was measured and
+   the right end of the window — unlike `0.03`, which was deliberately chosen 1.5% inside
+   `0.030459`. That is acceptable only because the value was *measured at that exact
+   point*: the rule the earlier choice honoured was "a default must be a number that was
+   run", and this number was.
+2. **The reconstruction reproduces the run in its SPLIT, not only its net**: 750 =
+   673 + 77 − 0, and the measured run gained 77 with zero regressed fault types. The
+   earlier caution still stands in general (at `w = 0.75` the same instrument predicted
+   785 as `+132/−20` where the engine reached `+121/−9`), so this is a validated
+   instance, not a licence to read decompositions off the model.
+3. **The binder's gap is maximal again** — target slope 0 against a rival at the case
+   maximum 1 — so the shape axis is exhausted at this floor too: no pointwise reshaping
+   of the term can widen it, and the only remaining lever is another mask, which pays
+   only if the interference it removes is worth more than the credit it spends.
+
+## What the flip exposed in the TOOLING
+
+- **The run's log weight was accepted on four flags** — `--log-weight`, `--misses <w>`,
+  `--weight-sweep <w>` and `--window <w>` — and passing a LATENCY weight to `--window`
+  printed a self-consistent report with `correct at 0: 669` and `cap 0.122990` instead of
+  `673` and `0.561495`. Every number in it was wrong, including the one the register
+  quotes. The value now has one owner and the sections are switches, so a section cannot
+  be requested without the weight it is computed at.
+- **The parser was unreachable by tests**, which is why that got in: the entry point calls
+  `main()` at import time, so nothing loaded it and its ~235 lines of flags were outside
+  the coverage denominator. The parser now lives in the covered module.
+- **The binder search reported the opposite of the truth for a tie.** A case held only by
+  a tie at zero has `cap = 0` and `lead = 0`; the search required `lead > 0`, so it
+  returned nothing and the report printed *"no case can be overtaken at any weight"* about
+  a case every weight above zero overtakes.
+- **The "first weight above the cap" probe could fall back inside the window.** It added
+  `Number.EPSILON`, which is smaller than the `WEIGHT_EPSILON` the interval test inflates
+  by, so for a cap of zero the row claimed the case survived the weight that beat it.

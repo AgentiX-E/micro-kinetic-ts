@@ -1273,8 +1273,8 @@ function componentEndingAtZero(intervals: readonly WeightInterval[]): number {
  *
  * @param one - The binding case.
  * @param cap - The cap it set.
- * @returns The overtaking pair, or `undefined` if no pair reproduces the cap, which
- *   can only happen when the cap is not finite.
+ * @returns The overtaking pair, or `undefined` if no pair reproduces the cap — which
+ *   can only happen when the cap is not finite, now that a tie at zero is matched.
  */
 function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | undefined {
   if (!Number.isFinite(cap)) return undefined;
@@ -1285,7 +1285,12 @@ function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | 
       if (rival === target) continue;
       const slopeGap = other.slope - t.slope;
       const lead = t.base - other.base;
-      if (slopeGap <= WEIGHT_EPSILON || lead <= 0) continue;
+      // `lead < 0`, not `lead <= 0`: a target LEVEL with a steeper rival is held
+      // by a tie at zero and lost by any weight above it, so its cap is zero and
+      // `0 / slopeGap` IS that cap. Excluding it made the only reachable
+      // `undefined` return print "no case can be overtaken at any weight" about a
+      // case that every weight overtakes.
+      if (slopeGap <= WEIGHT_EPSILON || lead < 0) continue;
       // Relative tolerance: the cap was chosen as this very ratio, so a match is
       // exact up to the float arithmetic that produced both.
       if (Math.abs(lead / slopeGap - cap) <= Math.max(WEIGHT_EPSILON, Math.abs(cap) * 1e-9)) {
@@ -1405,8 +1410,12 @@ export function formatZeroRegressionWindowReport(
   const built = buildWeightSeparationCases(cases, weights, slope, latFloor);
   const window = computeZeroRegressionWindow(built);
   // A relative step, so the probe lands just outside the cap whatever its scale.
+  // It must clear the SAME epsilon the interval test inflates by: `Number.EPSILON`
+  // alone is smaller than `WEIGHT_EPSILON`, so for a cap of ZERO — a case held only
+  // by a tie — the probe landed back inside the window and the "first weight above
+  // the cap" row showed the case still standing, which reads as the cap being wrong.
   const justAbove = Number.isFinite(window.cap)
-    ? window.cap * (1 + 1e-6) + Number.EPSILON
+    ? window.cap * (1 + 1e-6) + WEIGHT_EPSILON * 2
     : Number.POSITIVE_INFINITY;
   const probes = Number.isFinite(justAbove) ? [...grid, window.cap, justAbove] : [...grid];
   const samples = zeroRegressionSamples(built, probes);
@@ -1971,4 +1980,296 @@ export function formatDiagnoseComparison(
     );
   }
   return `${lines.join('\n')}\n`;
+}
+/**
+ * The command line of `analyze-fse26-diagnose`, as data.
+ *
+ * It lives here, beside the functions it configures, rather than in the entry
+ * point, for one reason: the entry point calls `main()` at import time, so a test
+ * cannot load it, so its flags were unmeasured. That is how the defect below got
+ * in, and it is why the parser is now a pure function that returns an option
+ * object instead of reading `process.argv`.
+ *
+ * The defect, concretely. The run's LOG weight was accepted on FOUR flags — on
+ * `--log-weight` and on each of `--misses`, `--weight-sweep` and `--window`. Two
+ * invocations of this tool that differ only in which flag got the number:
+ *
+ *   --dump d --window 1        --slope lat --lat-floor 10.3   -> correct at 0: 673
+ *   --dump d --window 0.561495 --slope lat --lat-floor 10.3   -> correct at 0: 669
+ *
+ * The second passed the shipped LATENCY weight where a LOG weight belongs, and it
+ * printed a self-consistent report whose baseline and (more importantly) whose cap
+ * were wrong. The cap is the number the register quotes and a flip is decided
+ * against, so a tool that accepts the wrong weight in that slot is a tool that
+ * corrupts the record while looking like it is checking it.
+ *
+ * The repair is structural: the weight has ONE owner, the three sections are
+ * switches, and a number where a switch is expected is an error that names
+ * `--log-weight` — because the old form is in shell histories and a bare
+ * "unrecognised argument" would send a reader looking for a flag that moved.
+ *
+ * @module benchmarks/fse26-diagnose-analyze
+ */
+
+/** Where the two modes of the command line are declared. */
+export type AnalyzeOptions = AnalyzeComparisonOptions | AnalyzeDumpOptions;
+
+export interface AnalyzeComparisonOptions {
+  readonly kind: 'comparison';
+  readonly before: string;
+  readonly after: string;
+  readonly output: string | undefined;
+}
+
+/** The three sections that reconstruct a score from the dump. */
+export type AnalyzeSectionKind = 'misses' | 'weightSweep' | 'window';
+
+/**
+ * One requested section, CARRYING the weight it is computed at.
+ *
+ * The pairing is the whole point. A section cannot be requested without a weight
+ * because there is no way to write one down without the other, so "which weight
+ * did this section use" — the question that produced a wrong cap — has exactly
+ * one answer per section and it is on the section. Canonical order, which
+ * {@link formatAnalyzeSections} prints in: window, weightSweep, misses.
+ */
+export interface AnalyzeSection {
+  readonly kind: AnalyzeSectionKind;
+  /**
+   * The weight the run used on its log term — the ONLY owner of that number.
+   *
+   * Never defaulted: the dump's order is only self-consistent with the weight its
+   * own run used, so a section computed at a guessed weight reports real cases as
+   * `unexplained` and reads as a measurement.
+   */
+  readonly logWeight: number;
+}
+
+export interface AnalyzeDumpOptions {
+  readonly kind: 'dump';
+  readonly dump: string;
+  readonly family: MetricFamily | undefined;
+  /** The sections to print, in canonical order; empty when none was requested. */
+  readonly sections: readonly AnalyzeSection[];
+  /** The rise a service must clear before the latency term credits it. */
+  readonly latFloor: number;
+  readonly slope: SlopeKind;
+  readonly output: string | undefined;
+}
+
+/** Canonical section order, which is also the order the report prints them in. */
+export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
+  'window',
+  'weightSweep',
+  'misses',
+];
+
+const ANALYZE_USAGE =
+  'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
+  '--dump <dump> [--log-weight <w>] [--misses] [--weight-sweep] [--window] ' +
+  '[--family <regex>] [--family-label <name>] [--lat-floor <rise>] ' +
+  '[--slope failedEdge|lat] [--output <file>]';
+
+/**
+ * Flags that take a value.
+ *
+ * Naming them explicitly — rather than treating every `--flag` as a key and the
+ * next token as its value — is what lets a number after a SWITCH be recognised as
+ * the mistake it is. A permissive parser reads `--window 0.561495` as a section at
+ * the weight 0.561495, which is precisely how the wrong cap was produced.
+ */
+const VALUE_FLAGS = new Set([
+  'dump',
+  'before',
+  'after',
+  'family',
+  'family-label',
+  'lat-floor',
+  'log-weight',
+  'output',
+  'slope',
+]);
+
+/** Flags that take no value. */
+const SWITCH_FLAGS = new Set(['misses', 'weight-sweep', 'window']);
+
+/**
+ * Parse the analyzer's command line.
+ *
+ * @param argv - Arguments WITHOUT the interpreter and script path.
+ * @returns The parsed options.
+ * @throws When a value is unusable, a section is requested without the log weight
+ *   it has to reconstruct at, or the line names neither mode. Every one of these
+ *   is a hard failure: the alternative is a report that looks like a measurement.
+ */
+export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
+  const values = new Map<string, string>();
+  const switches = new Set<string>();
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!;
+    if (SWITCH_FLAGS.has(token.replace(/^--/, ''))) {
+      switches.add(token.replace(/^--/, ''));
+      continue;
+    }
+    const name = token.startsWith('--') ? token.slice(2) : undefined;
+    if (name === undefined || !VALUE_FLAGS.has(name)) {
+      throw new Error(unrecognised(token, argv[i - 1]) + '\n' + ANALYZE_USAGE);
+    }
+    if (i + 1 >= argv.length) throw new Error(`--${name} expects a value\n${ANALYZE_USAGE}`);
+    values.set(name, argv[++i]!);
+  }
+
+  const output = values.get('output');
+  const before = values.get('before');
+  const after = values.get('after');
+  if (before !== undefined && after !== undefined) {
+    return { kind: 'comparison', before, after, output };
+  }
+
+  const dump = values.get('dump');
+  if (dump === undefined) throw new Error(ANALYZE_USAGE);
+
+  const requested = new Set(
+    [...switches].map((name) => (name === 'weight-sweep' ? 'weightSweep' : name)),
+  );
+  const rawWeight = values.get('log-weight');
+  if (requested.size > 0 && rawWeight === undefined) {
+    // Names the flag, states which weight it is, and gives the shipped value, so
+    // the reader does not have to guess between the four weights this tool knows.
+    throw new Error(
+      '--misses/--weight-sweep/--window reconstruct a score, so they need the weight ' +
+        "that score ran at: pass --log-weight <w>, the run's LOG weight (the coefficient " +
+        `on logScore; the shipped runs use 1).\n${ANALYZE_USAGE}`,
+    );
+  }
+  let logWeight = 0;
+  if (rawWeight !== undefined) {
+    // STRICT, with no fallback. A weight that is not a usable number would
+    // otherwise leave the reader with a report at whatever weight the fallback
+    // named, and those are numbers the run did not produce.
+    const parsed = Number(rawWeight);
+    if (rawWeight.trim() === '' || !Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(`--log-weight expects a non-negative finite number, got '${rawWeight}'`);
+    }
+    logWeight = parsed;
+  }
+
+  const rawFloor = values.get('lat-floor');
+  let latFloor = 1;
+  if (rawFloor !== undefined) {
+    const parsed = Number(rawFloor);
+    // Below 1 is refused rather than accepted as a no-op: magnitudes are
+    // `log1p(max(0, rise - 1))`, so such a floor masks nothing, and accepting it
+    // would render a configuration the operator believes changed something.
+    if (rawFloor.trim() === '' || !Number.isFinite(parsed) || parsed < 1) {
+      throw new Error(`--lat-floor expects a rise of at least 1, got '${rawFloor}'`);
+    }
+    latFloor = parsed;
+  }
+
+  const family = values.get('family');
+
+  return {
+    kind: 'dump',
+    dump,
+    // An invalid pattern is a loud failure, never a report whose family silently
+    // matches nothing.
+    family:
+      family === undefined
+        ? undefined
+        : { label: values.get('family-label') ?? family, pattern: new RegExp(family) },
+    sections: ANALYZE_SECTION_ORDER.filter((kind) => requested.has(kind)).map((kind) => ({
+      kind,
+      logWeight,
+    })),
+    latFloor,
+    // Anything that is not exactly `lat` falls back to the term this solver was
+    // built for, like every other switch here: a typo has to reproduce a known
+    // configuration rather than invent one.
+    slope: values.get('slope') === 'lat' ? 'lat' : 'failedEdge',
+    output,
+  };
+}
+
+/**
+ * Explain an unusable token, recognising the one mistake this parser exists for.
+ *
+ * @param token - The offending token.
+ * @param previous - The token before it, which is a switch when the mistake is the
+ *   pre-`--log-weight` form `--window <w>`.
+ * @returns The message, without the usage block.
+ */
+function unrecognised(token: string, previous: string | undefined): string {
+  const prev = previous?.replace(/^--/, '');
+  const numeric = token !== '' && Number.isFinite(Number(token));
+  if (prev !== undefined && SWITCH_FLAGS.has(prev) && numeric) {
+    return (
+      `--${prev} is a switch and takes no value, so '${token}' has nowhere to go. ` +
+      "The run's LOG weight — not a signal weight such as latWeight — belongs on " +
+      '--log-weight.'
+    );
+  }
+  return `unrecognised argument '${token}'`;
+}
+
+/**
+ * Render the report for one dump, in the canonical section order.
+ *
+ * Extracted from the entry point for the same reason the parser was: the entry
+ * point calls `main()` at import time, so nothing here was measured. The ORDER is
+ * part of the contract rather than an artefact of `unshift` calls: the sections
+ * that answer a question about a candidate weight come first, then the metric
+ * family, then the shape summary, which is the context for all of them.
+ *
+ * @param cases - Parsed dump.
+ * @param dumpLabel - The path, echoed so a pasted report is traceable.
+ * @param opts - The parsed options; `sections` is already in canonical order.
+ * @returns The report text.
+ */
+export function formatAnalyzeSections(
+  cases: readonly DiagnosedCase[],
+  dumpLabel: string,
+  opts: AnalyzeDumpOptions,
+): string {
+  const sections: string[] = [];
+  if (opts.family !== undefined) {
+    sections.push(formatMetricCompetitionReport(cases, opts.family, dumpLabel));
+  }
+  for (const section of opts.sections) {
+    sections.push(analyzeSectionText(cases, section, opts));
+  }
+  sections.push(formatAnomalyShapeReport(cases, dumpLabel));
+  return sections.join('\n');
+}
+
+/**
+ * Render one requested section, at the weight that section carries.
+ *
+ * A `switch` with no default: adding a section kind is a compile error until it is
+ * rendered, which is the only way this stays exhaustive now that sections are data.
+ *
+ * @param cases - Parsed dump.
+ * @param section - The section and the weight it is computed at.
+ * @param opts - For the slope and the rise floor, which are properties of the
+ *   shape rather than of the section.
+ * @returns The section text.
+ */
+function analyzeSectionText(
+  cases: readonly DiagnosedCase[],
+  section: AnalyzeSection,
+  opts: AnalyzeDumpOptions,
+): string {
+  switch (section.kind) {
+    case 'window':
+      return formatZeroRegressionWindowReport(
+        cases,
+        { logWeight: section.logWeight },
+        opts.slope,
+        opts.latFloor,
+      );
+    case 'weightSweep':
+      return formatWeightSeparationReport(cases, { logWeight: section.logWeight }, opts.slope);
+    case 'misses':
+      return formatMissReport(cases, { logWeight: section.logWeight });
+  }
 }

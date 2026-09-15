@@ -160,7 +160,7 @@ above:
 
 ```
 tsx benchmarks/src/analyze-fse26-diagnose.ts \
-  --dump /tmp/resfull/fse26-results.txt --window 1 --slope lat
+  --dump /tmp/resfull/fse26-results.txt --log-weight 1 --window --slope lat
 ```
 
 Re-run against the full 1422-block dump it reproduces every row here — 673 / 686 / 694
