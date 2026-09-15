@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { MetricDiagnostic } from '../../packages/core/src/index.js';
 import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
+import { computeEdgeLatencyScores } from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase, WeightSeparationCase } from '../src/fse26-diagnose-analyze.js';
 import {
@@ -2326,5 +2327,67 @@ describe('latencySlopes — the rise floor', () => {
     );
     expect(atFloor4[0]!.scores.get('ts-src')!.slope).toBe(0);
     expect(atFloor4[0]!.scores.get('ts-win')!.slope).toBe(1);
+  });
+});
+
+describe('latencySlopes agrees with the engine it predicts', () => {
+  /**
+   * The solver's whole value depends on this: it reconstructs the term from the
+   * dump's `latRise`, while the engine computes it from the raw edges. If the two
+   * disagree the predictor is solving a term nobody runs — and the disagreement would
+   * be invisible, because both sides are "a number between 0 and 1".
+   *
+   * The two are fed the SAME evidence in the two shapes the two sides actually see:
+   * edges for the engine, `latRise` for the dump. `latRise` is the per-callee
+   * maximum of `post / pre`, which is what the engine takes too.
+   */
+  const EDGES = [
+    { caller: 'ui', callee: 'order', preMeanMs: 10, postMeanMs: 300 }, // 30x
+    { caller: 'ui', callee: 'pay', preMeanMs: 10, postMeanMs: 105 }, // 10.5x
+    { caller: 'gw', callee: 'pay', preMeanMs: 10, postMeanMs: 20 }, // 2x -- pay's max is 10.5x
+    { caller: 'gw', callee: 'stock', preMeanMs: 10, postMeanMs: 11 }, // 1.1x
+    { caller: 'gw', callee: 'flat', preMeanMs: 10, postMeanMs: 5 }, // got FASTER
+  ];
+  const nodes = new Set(['ui', 'gw', 'order', 'pay', 'stock', 'flat']);
+  const asDump = () =>
+    parseDiagnosticDump(
+      dump({
+        services: [
+          serviceLine({ serviceId: 'ui', latEdges: 2 }),
+          serviceLine({ serviceId: 'gw', latEdges: 3 }),
+          serviceLine({ serviceId: 'order', latRise: 30, latEdges: 1 }),
+          serviceLine({ serviceId: 'pay', latRise: 10.5, latEdges: 2 }),
+          serviceLine({ serviceId: 'stock', latRise: 1.1, latEdges: 1 }),
+          serviceLine({ serviceId: 'flat', latRise: 0.5, latEdges: 1 }),
+        ],
+      }),
+    )[0]!.services;
+
+  it('produces the same slope for every service, in the shipped shape', () => {
+    const fromEngine = computeEdgeLatencyScores(EDGES, nodes);
+    const fromDump = latencySlopes(asDump());
+
+    expect([...fromEngine.keys()].sort()).toEqual([...fromDump.keys()].sort());
+    for (const [id, slope] of fromEngine) {
+      expect(fromDump.get(id)).toBeCloseTo(slope, 12);
+    }
+  });
+
+  it('still agrees once a floor masks evidence on both sides', () => {
+    // A floor of 10 masks `stock` (1.1x) and the second edge into `pay` (2x), but it
+    // does NOT mask `flat` (0.5x) or `ui`/`gw` (no inbound rise): the carve-out for a
+    // rise at or below 1 is present-with-magnitude-0, exactly as the shipped shape has
+    // it. Both sides have to implement that boundary the same way — a floor applied on
+    // one side only would show up here as a different key set.
+    const fromEngine = computeEdgeLatencyScores(EDGES, nodes, 10);
+    const fromDump = latencySlopes(asDump(), 10);
+
+    expect([...fromEngine.keys()].sort()).toEqual(['flat', 'order', 'pay']);
+    expect([...fromDump.keys()].sort()).toEqual(['flat', 'order', 'pay']);
+    expect(fromDump.get('order')).toBeCloseTo(fromEngine.get('order')!, 12);
+    expect(fromDump.get('pay')).toBeCloseTo(fromEngine.get('pay')!, 12);
+    // `flat` is credited nothing, on both sides.
+    expect(fromEngine.get('flat')).toBe(0);
+    expect(fromDump.get('flat')).toBe(0);
   });
 });
