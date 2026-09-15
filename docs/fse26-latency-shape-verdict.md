@@ -14,7 +14,7 @@ arithmetic that decided it:
 
 ```
 tsx benchmarks/src/analyze-fse26-diagnose.ts \
-  --dump artifacts/r34919714864/fse26-results.txt --log-weight 1 --window --slope lat
+  --dump artifacts/r34919714864/fse26-results.txt --log-weight 1 --window --slope lat --lat-floor 1
 ```
 
 ```

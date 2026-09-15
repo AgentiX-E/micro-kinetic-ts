@@ -14,7 +14,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { MetricDiagnostic } from '../../packages/core/src/index.js';
 import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
-import { computeEdgeLatencyScores } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  computeEdgeLatencyScores,
+} from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase, WeightSeparationCase } from '../src/fse26-diagnose-analyze.js';
 import {
@@ -1326,12 +1330,12 @@ describe('classifyMiss', () => {
     expect(miss!.decidedBy).toBe('log');
   });
 
-  it('attributes a loss to BOTH when each term points at the winner', () => {
+  it('names the pair when each of the two error terms points at the winner', () => {
     const [miss] = classifyMiss(
       wrongCase({ selfAnomaly: 0.3, logScore: 0 }, { selfAnomaly: 0.9, logScore: 1 }),
       { logWeight: 1 },
     );
-    expect(miss!.decidedBy).toBe('both');
+    expect(miss!.decidedBy).toBe('metric+log');
   });
 
   it('reports a TIE when the two scored terms are equal', () => {
@@ -2424,7 +2428,14 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
   it('reads the log weight once and prints the requested section', () => {
     const opts = dumpMode([...dumpArg, '--log-weight', '1', '--window']);
 
-    expect(opts.sections).toEqual([{ kind: 'window', logWeight: 1 }]);
+    expect(opts.sections).toEqual([
+      {
+        kind: 'window',
+        logWeight: 1,
+        latWeight: DEFAULT_LAT_WEIGHT,
+        latFloor: DEFAULT_LAT_MIN_RISE,
+      },
+    ]);
   });
 
   it('runs every section off the SAME weight', () => {
@@ -2488,8 +2499,13 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
     expect(dumpMode([...dumpArg, '--log-weight', '0', '--window']).sections[0]!.logWeight).toBe(0);
   });
 
-  it('defaults the latency rise floor to the shipped shape', () => {
-    expect(dumpMode([...dumpArg, '--log-weight', '1', '--window']).latFloor).toBe(1);
+  it('defaults the shape to the SHIPPED one, not to an ablation', () => {
+    // The floor used to default to 1 — the credited-everything shape — which meant a
+    // window report printed a shape the engine had not run since the pair shipped.
+    const sections = dumpMode([...dumpArg, '--log-weight', '1', '--window']).sections;
+
+    expect(sections[0]!.latFloor).toBe(DEFAULT_LAT_MIN_RISE);
+    expect(sections[0]!.latWeight).toBe(DEFAULT_LAT_WEIGHT);
   });
 
   it('rejects a rise floor that is not a rise floor', () => {
@@ -2501,7 +2517,15 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
         /--lat-floor/,
       );
     }
-    expect(dumpMode([...dumpArg, '--log-weight', '1', '--lat-floor', '10.3']).latFloor).toBe(10.3);
+    const sections = dumpMode([
+      ...dumpArg,
+      '--log-weight',
+      '1',
+      '--lat-floor',
+      '1',
+      '--misses',
+    ]).sections;
+    expect(sections[0]!.latFloor).toBe(1);
   });
 
   it('falls back to the term the solver was built for on an unknown slope', () => {
@@ -2713,5 +2737,176 @@ describe('computeZeroRegressionWindow — a window that is a single point', () =
     // cap of zero the probe fell back inside the window and this row claimed the
     // case survived the weight it had just been beaten by.
     expect(report).toMatch(/1\s+<- first weight above the cap/);
+  });
+});
+
+describe('classifyMiss models the terms the run actually had on', () => {
+  /**
+   * THE defect this exists for. Run over the SHIPPED configuration's own dump,
+   * the report said `unexplained 12` — and `unexplained` is documented as "a bug,
+   * or a wrong weight — never a result". All twelve were the shipped latency
+   * term's own decisions: the classifier compared only the metric and the log, so
+   * the very signal that shipped was invisible to it, and its decisions were
+   * reported as engine anomalies.
+   *
+   * A diagnostic that does not model the configuration being diagnosed does not
+   * produce a conservative answer, it produces a WRONG one — and here it was wrong
+   * in the direction that sends a reader to fix the engine.
+   */
+  /**
+   * A miss with a named source and winner. Typed as an explicit subset rather than
+   * as `ServiceSpec`: spreading a type that REQUIRES `serviceId` over a literal
+   * that already sets it is an error TS reports, and one the spread ORDER would
+   * silently decide.
+   */
+  const wrongCase = (
+    src: { selfAnomaly: number; latRise?: number | undefined; latEdges?: number },
+    win: { selfAnomaly: number; latRise?: number | undefined; latEdges?: number },
+  ) =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', ...src }),
+          serviceLine({ serviceId: 'ts-win', ...win }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+      }),
+    )[0]!;
+
+  it('attributes to the LATENCY term when it alone accounts for the miss', () => {
+    // The winner's own anomaly is lower and it emits nothing; only its latency
+    // rise is bigger. That is a latency-decided miss, and before this it read as
+    // `unexplained`.
+    const kase = wrongCase(
+      { selfAnomaly: 0.9, latRise: 1, latEdges: 1 },
+      { selfAnomaly: 0.1, latRise: 100, latEdges: 1 },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('lat');
+  });
+
+  it('names the exact combination instead of one ambiguous "both"', () => {
+    // With three terms, "both" no longer says which pair — and a reader acting on
+    // it needs to know whether the log is implicated at all.
+    const kase = wrongCase(
+      { selfAnomaly: 0.5, latRise: 1, latEdges: 1 },
+      { selfAnomaly: 0.9, latRise: 100, latEdges: 1 },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('metric+lat');
+  });
+
+  it('falls back to `unexplained` only when NO modelled term accounts for it', () => {
+    // The winner scores higher on nothing: not the metric, not the log, not the
+    // latency. THAT is worth reporting as an anomaly.
+    const kase = wrongCase(
+      { selfAnomaly: 0.9, latRise: 100, latEdges: 1 },
+      { selfAnomaly: 0.1, latRise: 1, latEdges: 1 },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('unexplained');
+  });
+
+  it('makes the two-term view an EXPLICIT ablation, not a default', () => {
+    // Switching the term off must reproduce the old answer exactly — otherwise
+    // this is a rewrite rather than an extension — and the report says which view
+    // it printed, so `unexplained` cannot be read as an engine finding when the
+    // terms behind it were simply not modelled.
+    const kase = wrongCase(
+      { selfAnomaly: 0.9, latRise: 1, latEdges: 1 },
+      { selfAnomaly: 0.1, latRise: 100, latEdges: 1 },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1, latWeight: 0 })[0]!.decidedBy).toBe('unexplained');
+    expect(formatMissReport(parseDiagnosticDump(dump()), { logWeight: 1, latWeight: 0 })).toContain(
+      'latency term NOT modelled',
+    );
+  });
+
+  it('does not credit a rise the shipped floor masks', () => {
+    // A rise of 2x is below the shipped floor of 10.3, so it is evidence the run
+    // never used. Crediting it here would report a rank the engine never produced.
+    const kase = wrongCase(
+      { selfAnomaly: 0.9, latRise: 1, latEdges: 1 },
+      { selfAnomaly: 0.1, latRise: 2, latEdges: 1 },
+    );
+
+    expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('unexplained');
+    expect(classifyMiss(kase, { logWeight: 1, latFloor: 1 })[0]!.decidedBy).toBe('lat');
+  });
+
+  it('states the terms it modelled, so the tally is a claim about them', () => {
+    const report = formatMissReport(parseDiagnosticDump(dump()), { logWeight: 1 });
+
+    expect(report).toMatch(/Miss attribution \(.*latWeight=.*latFloor=.*\)/);
+  });
+});
+
+describe('parseAnalyzeArgs — every section carries the whole configuration', () => {
+  const dumpMode = (argv: readonly string[]) => {
+    const opts = parseAnalyzeArgs(['--dump', 'd.txt', ...argv]);
+    if (opts.kind !== 'dump') throw new Error('expected dump mode');
+    return opts;
+  };
+
+  it('describes the SHIPPED configuration by default', () => {
+    // A diagnostic reader that defaults to anything else describes an engine that
+    // does not exist. The shipped constants are imported, not restated, so they
+    // cannot drift from the engine's own.
+    const opts = dumpMode(['--log-weight', '1', '--misses']);
+
+    expect(opts.sections[0]).toEqual({
+      kind: 'misses',
+      logWeight: 1,
+      latWeight: DEFAULT_LAT_WEIGHT,
+      latFloor: DEFAULT_LAT_MIN_RISE,
+    });
+  });
+
+  it('lets an ablation be stated explicitly', () => {
+    const opts = dumpMode([
+      '--log-weight',
+      '0.5',
+      '--misses',
+      '--lat-weight',
+      '0',
+      '--lat-floor',
+      '1',
+    ]);
+
+    expect(opts.sections[0]).toEqual({
+      kind: 'misses',
+      logWeight: 0.5,
+      latWeight: 0,
+      latFloor: 1,
+    });
+  });
+
+  it('rejects a latency weight or floor that is not usable', () => {
+    // Same strictness as the log weight: a fallback here would describe a
+    // configuration the caller did not choose, and the report would look measured.
+    for (const bad of ['', 'x', '-1', 'NaN', ' ']) {
+      expect(() =>
+        parseAnalyzeArgs(['--dump', 'd', '--log-weight', '1', '--lat-weight', bad, '--misses']),
+      ).toThrow(/--lat-weight/);
+    }
+    for (const bad of ['', 'x', '0.9', '0']) {
+      expect(() =>
+        parseAnalyzeArgs(['--dump', 'd', '--log-weight', '1', '--lat-floor', bad, '--misses']),
+      ).toThrow(/--lat-floor/);
+    }
+    // Zero is a real ablation of the latency term, not a typo.
+    expect(
+      dumpMode(['--log-weight', '1', '--lat-weight', '0', '--misses']).sections[0]!.latWeight,
+    ).toBe(0);
+  });
+
+  it('puts the floor on the section, not only in one place', () => {
+    // The window and the miss attribution must describe the SAME shape: a floor
+    // held once and read twice is how the two came to disagree before.
+    const opts = dumpMode(['--log-weight', '1', '--window', '--lat-floor', '4']);
+
+    expect(opts.sections[0]!.latFloor).toBe(4);
   });
 });

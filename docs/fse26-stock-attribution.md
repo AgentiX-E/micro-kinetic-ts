@@ -238,3 +238,46 @@ ReplaceCode block, and **159 of those 173 cases already succeed** — the gate i
 they depend on. The lever the verdict names is therefore 58 cases plus whatever the 285
 of the four other types need, and those 285 cannot be moved by any change to what the log
 signal accepts.
+
+## Correction: the attribution now models the LATENCY term
+
+The table above was read on `rcabench-full-v3` at `logWeight=1` with no latency term,
+and it says `unexplained` is 0 across all 522 blocks — "the engine's order is
+self-consistent with the two terms the dump carries". That sentence is true of the run
+it describes and was still **read as a fact about the engine**, which it is not: it is a
+fact about a TWO-TERM view, and the shipped engine has had a third term since `fb54fb8`.
+
+Re-read on the SHIPPED configuration (run `34928980425`, commit `eb2042a`, cache
+`rcabench-latency-full`, `latWeight=0.561495` + `latMinRise=10.3`), the same command
+reported **`unexplained 12`** — a value the diagnostic documents as "a bug, or a wrong
+weight — never a result". All twelve were the shipped latency term's own decisions: the
+classifier compared only the metric and the log, so the signal that shipped was invisible
+to the very report used to decide what to fix next.
+
+`classifyMiss` now models every term the dump carries, the report names them in its
+banner, and the combination labels are spelled out (`metric+lat`, `log+lat`,
+`metric+log+lat`) because with three terms a single "both" stops saying which two.
+All 672 misses on the shipped configuration:
+
+| kind | count | meaning |
+| --- | --- | --- |
+| `metric` | 275 | the winner's own anomaly is higher, alone |
+| `log` | 120 | error evidence points at the winner, alone |
+| `lat` | 12 | only the per-edge latency rise favours the winner |
+| `metric+log` | 116 | |
+| `metric+lat` | 50 | |
+| `log+lat` | 25 | |
+| `metric+log+lat` | 74 | |
+| `unexplained` | **0** | now a real statement, because every shipped term is modelled |
+| *silent both sides* | 230 | orthogonal cut: no error evidence on either side |
+
+**The latency term is implicated in 161 of the 672 misses** (12 + 50 + 25 + 74), and 149
+of those were previously attributed to the metric or the log — i.e. the two-term report
+routed ~22% of the remaining misses to the wrong layer.
+
+Two checks that this is an EXTENSION and not a rewrite: `--lat-weight 0` reproduces the
+old numbers **exactly** (275→325 `metric`, 120→145 `log`, +190 `metric+log`, 12
+`unexplained`, 230 silent), and the three `lat`-involving labels are exactly the cases the
+old report could not explain. The defaults for `--lat-weight` and `--lat-floor` are now
+the SHIPPED constants, imported from the engine, so a diagnostic that says nothing
+describes the engine that shipped; an ablation has to be written down.

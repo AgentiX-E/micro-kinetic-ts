@@ -19,6 +19,8 @@
  * @module benchmarks/fse26-diagnose-analyze
  */
 
+import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+
 /**
  * The score decomposition of one metric, as the `metricTop` line reports it.
  *
@@ -549,6 +551,17 @@ export function regressionMechanism(
  * investigation, not of the dump format.
  */
 /**
+ * The latency weight and rise floor the SHIPPED engine runs with.
+ *
+ * Imported rather than restated: a diagnostic describes an engine, and if the two
+ * numbers that describe it are typed out here they can drift from the engine's
+ * own — which is precisely how this module came to report the shipped signal's
+ * decisions as engine anomalies.
+ */
+const SHIPPED_LAT_WEIGHT = DEFAULT_LAT_WEIGHT;
+const SHIPPED_LAT_FLOOR = DEFAULT_LAT_MIN_RISE;
+
+/**
  * Which scored term decided a Top@1 miss.
  *
  * The engine's own order is `log1p(selfAnomaly) + logWeight × logScore` when the
@@ -560,20 +573,37 @@ export function regressionMechanism(
  *   to go on; the loss is an anomaly-signal problem.
  * - `log` — the winner's log score is higher. The engine saw error evidence
  *   pointing at the winner.
- * - `both` — both terms favour the winner.
- * - `tie` — the two terms are equal, so the deterministic service-id tiebreak
- *   decided it. Not a signal failure; a missing discrimination.
- * - `unexplained` — the winner's terms do NOT explain the loss, i.e. the engine
- *   ordered a service below one with a strictly higher score. That is a defect in
- *   the engine or in the dump, never a modelling result, so it is its own value
- *   and a report showing any of them is reporting a bug.
+ * - `lat` — the winner's per-edge latency rise is higher. The engine saw a
+ *   duration signal the error counts cannot express.
+ * - a COMBINATION (`metric+log`, `metric+lat`, `log+lat`, `metric+log+lat`) — every
+ *   listed term favours the winner. Spelled out rather than collapsed into one
+ *   "both": with three terms, "both" stops saying which two, and whether the log is
+ *   implicated at all changes what a reader does next.
+ * - `tie` — the terms are equal, so the deterministic service-id tiebreak decided
+ *   it. Not a signal failure; a missing discrimination.
+ * - `unexplained` — NO MODELLED term explains the loss, i.e. the engine ordered a
+ *   service below one with a strictly higher score on every term this report
+ *   modelled. That is a defect in the engine or in the dump, never a modelling
+ *   result. "Modelled" is load-bearing: the report prints which terms it used, and
+ *   an unmodelled term's decisions land here, so a reader must check the banner
+ *   before treating one as an engine finding.
  * - `absent` — either service the attribution needs (the source or the winner) is
  *   missing from this dump's service list. The case cannot be attributed from this
  *   dump at all: the fields are reported as `NaN`, never 0, because a fabricated
  *   zero would read as "measured and credited nothing", which is a different
  *   statement and the wrong one to build a next step on.
  */
-export type MissDecidedBy = 'metric' | 'log' | 'both' | 'tie' | 'unexplained' | 'absent';
+export type MissTerm = 'metric' | 'log' | 'lat';
+
+export type MissDecidedBy =
+  | MissTerm
+  | 'metric+log'
+  | 'metric+lat'
+  | 'log+lat'
+  | 'metric+log+lat'
+  | 'tie'
+  | 'unexplained'
+  | 'absent';
 
 /** How one wrong case was decided. */
 export interface MissClassification {
@@ -596,13 +626,23 @@ export interface MissClassification {
   readonly winnerEmits: boolean;
 }
 
-/** The only prior a dump's DIAG blocks can be attributed with. */
+/** The priors a dump's DIAG blocks can be attributed with. */
 export interface MissAttributionWeights {
   /**
-   * The run's log weight. Required, because the log term is one of the two terms
-   * the dump carries and its SCALE decides the attribution.
+   * The run's log weight. Required, because its SCALE decides the attribution and
+   * a defaulted one would attribute losses at a scale the run never used.
    */
   readonly logWeight: number;
+  /**
+   * The run's per-edge latency weight. Defaults to the SHIPPED constant.
+   *
+   * There is no "absent" spelling: the dump carries `latRise` and `latEdges`, so
+   * the term is attributable, and a reader diagnosing the shipped engine gets the
+   * shipped engine. `0` is the explicit two-term ablation.
+   */
+  readonly latWeight?: number;
+  /** The run's latency rise floor. Defaults to the shipped constant. */
+  readonly latFloor?: number;
 }
 
 /** Float tolerance for "the two scores are equal". */
@@ -617,23 +657,37 @@ function emits(service: DiagnosedService): boolean {
 const MISS_ORDER: readonly MissDecidedBy[] = [
   'metric',
   'log',
-  'both',
+  'lat',
+  'metric+log',
+  'metric+lat',
+  'log+lat',
+  'metric+log+lat',
   'tie',
   'unexplained',
   'absent',
 ];
 
+/** The terms a classification can name, in the order they are spelled out. */
+const MISS_TERMS: readonly MissTerm[] = ['metric', 'log', 'lat'];
+
 /**
  * Attribute a case's Top@1 miss.
  *
- * Exact only for a run whose ONLY non-zero prior is the log weight: the dump
- * carries `selfAnomaly` and `logScore` and nothing else, so any other term's
- * contribution is invisible here. `weights` therefore names just that one, and a
- * caller with a different configuration must not use this — it would attribute a
- * loss to a term it cannot see.
+ * Models every term the dump carries: `selfAnomaly`, `logScore` and the per-edge
+ * latency rise (`latRise`/`latEdges`). The last of those is the reason this
+ * function changed — the dump grew that field for the latency term, and this
+ * comparison was not extended with it, so the shipped signal's own decisions were
+ * reported as `unexplained` (12 of 672 misses on the shipped configuration, all
+ * twelve explained by the latency term once it was modelled). A diagnostic that
+ * does not model the configuration it is diagnosing is not conservative; it is
+ * wrong, and it was wrong in the direction that sends a reader to fix the engine.
+ *
+ * Still exact only for a run whose non-zero priors are among the modelled ones,
+ * which is why `weights` also names the LATENCY weight and the rise floor, and
+ * why the report prints them: `unexplained` is a claim about the modelled terms.
  *
  * @param kase - One parsed case.
- * @param weights - The run's log weight.
+ * @param weights - The run's log weight, latency weight and rise floor.
  * @returns One classification, or `[]` when Top@1 was already correct.
  */
 export function classifyMiss(
@@ -671,16 +725,21 @@ export function classifyMiss(
 
   // Both services are known from here on, so every term below is read from a real
   // row and no fallback exists that coverage could never reach.
-  const metricPart = Math.log1p(win.selfAnomaly) - Math.log1p(src.selfAnomaly);
-  const logPart = weights.logWeight * (win.logScore - src.logScore);
-  const gap = metricPart + logPart;
+  const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
+  const latSlopes = latencySlopes(kase.services, weights.latFloor ?? SHIPPED_LAT_FLOOR);
+  const latOf = (serviceId: string) => latSlopes.get(serviceId) ?? 0;
+
+  const parts: Record<MissTerm, number> = {
+    metric: Math.log1p(win.selfAnomaly) - Math.log1p(src.selfAnomaly),
+    log: weights.logWeight * (win.logScore - src.logScore),
+    lat: latWeight * (latOf(winner!) - latOf(source)),
+  };
+  const gap = MISS_TERMS.reduce((sum, term) => sum + parts[term], 0);
 
   let decidedBy: MissDecidedBy;
   if (Math.abs(gap) <= SCORE_EPSILON) decidedBy = 'tie';
   else if (gap < 0) decidedBy = 'unexplained';
-  else if (metricPart > 0 && logPart > 0) decidedBy = 'both';
-  else if (logPart > 0) decidedBy = 'log';
-  else decidedBy = 'metric';
+  else decidedBy = MISS_TERMS.filter((term) => parts[term] > 0).join('+') as MissDecidedBy;
 
   return [
     {
@@ -743,8 +802,17 @@ export function formatMissReport(
 ): string {
   const { total, byDecidedBy, silentBothSides, classifications } = tallyMisses(cases, weights);
   const lines: string[] = [];
+  // The banner names every modelled term, because `unexplained` is a claim about
+  // THEM and not about the engine. A reader who skipped this line once spent a
+  // session treating the shipped signal's own decisions as twelve engine bugs.
+  const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
+  const modelled =
+    latWeight === 0
+      ? 'latency term NOT modelled (--lat-weight 0)'
+      : `latWeight=${latWeight}; latFloor=${weights.latFloor ?? SHIPPED_LAT_FLOOR}`;
   lines.push(
-    `Miss attribution (logWeight=${weights.logWeight}; exact only when no other prior is on):`,
+    `Miss attribution (logWeight=${weights.logWeight}; ${modelled}; ` +
+      'exact only when no other prior is on):',
   );
   lines.push(`  wrong cases: ${total}`);
   for (const kind of MISS_ORDER) {
@@ -1273,8 +1341,13 @@ function componentEndingAtZero(intervals: readonly WeightInterval[]): number {
  *
  * @param one - The binding case.
  * @param cap - The cap it set.
- * @returns The overtaking pair, or `undefined` if no pair reproduces the cap — which
- *   can only happen when the cap is not finite, now that a tie at zero is matched.
+ * @returns The overtaking pair, or `undefined` when none reproduces the cap: an
+ *   unbounded cap, or a cap inside the epsilon band below zero, where float noise
+ *   in `(−lead)/(−slopeGap)` can leave the ratio negative while the case still
+ *   counts as covered at zero. The search is a search rather than a value threaded
+ *   out of {@link componentEndingAtZero} because that helper works on the union
+ *   over a case's acceptable roots — which is exactly where the binding root is
+ *   discarded.
  */
 function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | undefined {
   if (!Number.isFinite(cap)) return undefined;
@@ -2043,6 +2116,19 @@ export interface AnalyzeSection {
    * `unexplained` and reads as a measurement.
    */
   readonly logWeight: number;
+  /**
+   * The run's per-edge latency weight and rise floor — the shape the section
+   * describes.
+   *
+   * On the section rather than in the section's options for the same reason as the
+   * log weight, and it is not hypothetical: the miss attribution and the window
+   * both read a floor, and while it lived in one place and was read in two, the
+   * attribution could describe a shape the window did not. The DEFAULTS are the
+   * shipped constants, so a reader diagnosing the shipped engine gets the shipped
+   * engine and an ablation has to be written down.
+   */
+  readonly latWeight: number;
+  readonly latFloor: number;
 }
 
 export interface AnalyzeDumpOptions {
@@ -2051,8 +2137,6 @@ export interface AnalyzeDumpOptions {
   readonly family: MetricFamily | undefined;
   /** The sections to print, in canonical order; empty when none was requested. */
   readonly sections: readonly AnalyzeSection[];
-  /** The rise a service must clear before the latency term credits it. */
-  readonly latFloor: number;
   readonly slope: SlopeKind;
   readonly output: string | undefined;
 }
@@ -2066,9 +2150,9 @@ export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
 
 const ANALYZE_USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
-  '--dump <dump> [--log-weight <w>] [--misses] [--weight-sweep] [--window] ' +
-  '[--family <regex>] [--family-label <name>] [--lat-floor <rise>] ' +
-  '[--slope failedEdge|lat] [--output <file>]';
+  '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
+  '[--misses] [--weight-sweep] [--window] [--family <regex>] ' +
+  '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
 /**
  * Flags that take a value.
@@ -2085,6 +2169,7 @@ const VALUE_FLAGS = new Set([
   'family',
   'family-label',
   'lat-floor',
+  'lat-weight',
   'log-weight',
   'output',
   'slope',
@@ -2144,9 +2229,9 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
   }
   let logWeight = 0;
   if (rawWeight !== undefined) {
-    // STRICT, with no fallback. A weight that is not a usable number would
-    // otherwise leave the reader with a report at whatever weight the fallback
-    // named, and those are numbers the run did not produce.
+    // STRICT, with no fallback: the flag is REQUIRED by any section, so a typo would
+    // otherwise leave the reader with a report at whatever weight the fallback named
+    // — numbers the run did not produce.
     const parsed = Number(rawWeight);
     if (rawWeight.trim() === '' || !Number.isFinite(parsed) || parsed < 0) {
       throw new Error(`--log-weight expects a non-negative finite number, got '${rawWeight}'`);
@@ -2154,18 +2239,24 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     logWeight = parsed;
   }
 
-  const rawFloor = values.get('lat-floor');
-  let latFloor = 1;
-  if (rawFloor !== undefined) {
-    const parsed = Number(rawFloor);
+  // Both defaults are the SHIPPED constants, imported: a diagnostic describes an
+  // engine, and a defaulted-to-something-else reader describes an engine that does
+  // not exist. `--lat-weight 0` and `--lat-floor 1` are the explicit ablations.
+  const latWeight = numberFlag(
+    values.get('lat-weight'),
+    '--lat-weight',
+    DEFAULT_LAT_WEIGHT,
+    (n) => n >= 0,
+  );
+  const latFloor = numberFlag(
+    values.get('lat-floor'),
+    '--lat-floor',
+    DEFAULT_LAT_MIN_RISE,
     // Below 1 is refused rather than accepted as a no-op: magnitudes are
     // `log1p(max(0, rise - 1))`, so such a floor masks nothing, and accepting it
     // would render a configuration the operator believes changed something.
-    if (rawFloor.trim() === '' || !Number.isFinite(parsed) || parsed < 1) {
-      throw new Error(`--lat-floor expects a rise of at least 1, got '${rawFloor}'`);
-    }
-    latFloor = parsed;
-  }
+    (n) => n >= 1,
+  );
 
   const family = values.get('family');
 
@@ -2181,14 +2272,45 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     sections: ANALYZE_SECTION_ORDER.filter((kind) => requested.has(kind)).map((kind) => ({
       kind,
       logWeight,
+      latWeight,
+      latFloor,
     })),
-    latFloor,
     // Anything that is not exactly `lat` falls back to the term this solver was
     // built for, like every other switch here: a typo has to reproduce a known
     // configuration rather than invent one.
     slope: values.get('slope') === 'lat' ? 'lat' : 'failedEdge',
     output,
   };
+}
+
+/**
+ * Read a numeric flag, or fall back to the SHIPPED value.
+ *
+ * Never to `0`: `0` is a *different measured configuration* for both of these, so a
+ * typo would silently run an ablation and label it with the shipped configuration's
+ * name. The predicate states each flag's own domain — a latency weight may be 0 (the
+ * term off) and a rise floor may not be below 1 (it would mask nothing).
+ *
+ * @param raw - The flag's value, or `undefined` when absent.
+ * @param flag - The flag's spelling, for the error.
+ * @param fallback - The shipped value.
+ * @param usable - Whether the parsed number is in the flag's domain.
+ * @returns The parsed value or the fallback.
+ * @throws When the value is present and unusable, because the fallback would then
+ *   describe a configuration nobody asked for while the report looked measured.
+ */
+function numberFlag(
+  raw: string | undefined,
+  flag: string,
+  fallback: number,
+  usable: (value: number) => boolean,
+): number {
+  if (raw === undefined) return fallback;
+  const parsed = Number(raw);
+  if (raw.trim() === '' || !Number.isFinite(parsed) || !usable(parsed)) {
+    throw new Error(`${flag} expects a usable number, got '${raw}'`);
+  }
+  return parsed;
 }
 
 /**
@@ -2265,11 +2387,15 @@ function analyzeSectionText(
         cases,
         { logWeight: section.logWeight },
         opts.slope,
-        opts.latFloor,
+        section.latFloor,
       );
     case 'weightSweep':
       return formatWeightSeparationReport(cases, { logWeight: section.logWeight }, opts.slope);
     case 'misses':
-      return formatMissReport(cases, { logWeight: section.logWeight });
+      return formatMissReport(cases, {
+        logWeight: section.logWeight,
+        latWeight: section.latWeight,
+        latFloor: section.latFloor,
+      });
   }
 }
