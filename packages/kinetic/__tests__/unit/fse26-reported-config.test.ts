@@ -29,6 +29,17 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { describe, expect, it } from 'vitest';
+
+// The ENGINE's constant, imported rather than restated: this guard exists to catch a
+// document disagreeing with the code, so a copy of the value here would be a third
+// opinion and could itself drift.
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+} from '../../../../packages/tree/src/index.js';
+
 // packages/kinetic/__tests__/unit/ → four levels up is the repository root.
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 const WORKFLOW_PATH = resolve(repoRoot, '.github/workflows/fse26-benchmark.yml');
@@ -394,6 +405,74 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   lat_min_rise: 'runner',
   pool_penalty: 'runner',
 };
+
+/**
+ * Read one input's `description:` out of the raw YAML.
+ *
+ * Returns `undefined` when the input has no description, which is a failure the
+ * caller has to state rather than an empty string it can quietly accept.
+ */
+function readInputDescription(yml: string, input: string): string | undefined {
+  const lines = yml.split('\n');
+  const start = lines.findIndex((line) => new RegExp(`^ {6}${input}:\\s*$`).test(line));
+  if (start < 0) return undefined;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.trim().length === 0) continue;
+    const indent = line.length - line.trimStart().length;
+    if (indent <= 6) return undefined;
+    const m = /^\s+description:\s*(.*)$/.exec(line);
+    if (m) return m[1]!;
+  }
+  return undefined;
+}
+
+describe('FSE26 workflow descriptions agree with the code they describe', () => {
+  /**
+   * Inputs whose description states the RUNNER's shipped value, and the constant it
+   * has to match.
+   *
+   * A description is documentation that a dispatcher reads instead of the code, and it
+   * can drift the same way a hardcoded default can — silently, because a run succeeds
+   * whoever is right. This one HAD drifted: `pool_penalty` said "empty = … 0 = INERT"
+   * for a whole session after 0.0679 shipped, so a reader who wanted the shipped
+   * configuration would have believed they had to pass a value, and the value they
+   * would have passed was the ablation. The description is read as TEXT on purpose:
+   * the defect is a disagreement between two files, which no runtime path can see.
+   */
+  const DESCRIBES_SHIPPED: Readonly<Record<string, number>> = {
+    log_weight: 1,
+    failed_edge_weight: 0,
+    failed_edge_min_records: 1,
+    lat_weight: DEFAULT_LAT_WEIGHT,
+    lat_min_rise: DEFAULT_LAT_MIN_RISE,
+    pool_penalty: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    diagnose_limit: 3,
+  };
+
+  it('names the shipped value of every input whose description quotes one', () => {
+    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
+    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED)) {
+      const description = readInputDescription(yml, input);
+      expect(description, `${input} has no description to check`).toBeDefined();
+      expect(description, `${input} must name the shipped ${shipped}`).toContain(String(shipped));
+    }
+  });
+
+  it('covers every runner-owned input whose description quotes a value', () => {
+    // The table above is hand-registered, so this keeps it honest: an input claiming
+    // "the runner default, which is <something with a digit>" must be in the table or
+    // fail the suite. Without it, the next measured constant gets a stale description
+    // and nothing notices — which is exactly how `pool_penalty` read "0 = INERT" for a
+    // session after 0.0679 shipped.
+    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
+    const claiming = readInputNames(yml).filter((name) => {
+      const description = readInputDescription(yml, name) ?? '';
+      return /runner default, which is (?!empty)[^)]*\d/.test(description);
+    });
+    expect(claiming.sort()).toEqual(Object.keys(DESCRIBES_SHIPPED).sort());
+  });
+});
 
 describe('FSE26 workflow-input ownership', () => {
   const workflow = readFileSync(WORKFLOW_PATH, 'utf8');

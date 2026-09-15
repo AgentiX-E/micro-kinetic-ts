@@ -371,12 +371,13 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * {@link computePoolMetricScores}) — a function of WHICH series won, not of the
    * score, so it is not one of the metric-layer shapes the register has closed.
    *
-   * Default {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}, which is **0 (INERT)** until
-   * the kill criterion is measured on a run: the offline pre-screen predicts a
-   * zero-regression window of `w ∈ (0.048823, 0.087011)` worth **+6 cases / 0 lost**
-   * (`--pool-penalty 0.0679` on `rcabench-full-v3`), and a prediction is not a
-   * measurement. Flip the default only when both halves are green and the value is in
-   * the recorded-runs table the guard reads.
+   * Default {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT} = **0.0679, the MIDPOINT of the
+   * measured zero-regression window** `w ∈ (0.048823, 0.087011)`, worth **+6 cases / 0
+   * lost / 0 regressed fault types** (`34949812666` off, `34949854236` on, same commit).
+   * Both halves of the kill criterion were measured on that pair, and the value is a key
+   * of the recorded-runs table in `fse26-reported-config.test.ts`, so moving it without
+   * a run fails the suite rather than silently changing what every published number
+   * means.
    *
    * Required, not optional, so the score term can read it without a fallback: an
    * `?? 0` on a field the constructor always fills is a branch no run can take, and

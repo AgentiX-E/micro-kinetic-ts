@@ -60,15 +60,15 @@ on:
         required: false
         default: ''
       lat_weight:
-        description: 'Weight of the per-edge latency-rise signal, which credits the CALLEE of a call whose span duration rose (empty = the runner default, which is the shipped 0.03 = the measured zero-regression point; 0 is the pre-flip ablation). It needs rcabench-latency-full or newer, whose shards carry traceEdgeLatency'
+        description: 'Weight of the per-edge latency-rise signal, which credits the CALLEE of a call whose span duration rose (empty = the runner default, which is the shipped 0.561495 = the cap of the zero-regression window for the shipped rise floor 10.3; 0 is the pre-flip ablation). It needs rcabench-latency-full or newer, whose shards carry traceEdgeLatency'
         required: false
         default: ''
       lat_min_rise:
-        description: 'Rise a service must clear before the latency-rise signal credits it (empty = the runner default, which is 1 = the shipped shape, crediting every rise above 1). Above 1 the term becomes a precision instrument: it stops crediting rises that are too small to be evidence, which also removes them as SPURIOUS COMPETITORS. It needs rcabench-latency-full or newer'
+        description: 'Rise a service must clear before the latency-rise signal credits it (empty = the runner default, which is the shipped 10.3, just above the 10.283 rise of the single competitor that bound the previous window). Above 1 the term becomes a precision instrument: it stops crediting rises that are too small to be evidence, which also removes them as SPURIOUS COMPETITORS. It needs rcabench-latency-full or newer'
         required: false
         default: ''
       pool_penalty:
-        description: 'Weight of the DB-connection-pool dominance PENALTY, subtracted from a service whose anomaly maximum was won by a db.client.connections.* series (empty = the runner default, which is 0 = INERT). The offline pre-screen measures a zero-regression window of w in (0.048823, 0.087011) worth +6 cases against 0 lost; 0.0679 is the window midpoint'
+        description: 'Weight of the DB-connection-pool dominance PENALTY, subtracted from a service whose anomaly maximum was won by a db.client.connections.* series (empty = the runner default, which is the shipped 0.0679 = the midpoint of the measured zero-regression window w in (0.048823, 0.087011), worth +6 cases against 0 lost and 0 regressed fault types; 0 is the pre-ship ablation)'
         required: false
         default: ''
 
