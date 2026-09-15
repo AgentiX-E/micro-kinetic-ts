@@ -85,6 +85,10 @@ regressions are small — seven types, −1 or −2 cases each — but the rule 
 threshold at which a regression stops counting, and applying it the other way here
 would retroactively un-reject the failed-edge signal at +5.8pp / 2 types.
 
+> **Superseded at `0.03`** — see *Verdict, revised* below. This paragraph rejects the
+> WEIGHT `0.75`, and the fixed wording "stays 0.0" was written before the weight axis
+> was solved; the signal itself was never rejected.
+
 ## What would reopen it
 
 A weight (or variant) with **zero regressed fault types** that still gains. That

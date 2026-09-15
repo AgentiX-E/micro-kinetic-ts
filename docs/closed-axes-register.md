@@ -9,6 +9,12 @@ and measuring both surviving shapes.
 **A proposal must say which rows it does not touch, and why it is not one of
 them.** If it cannot, the first thing to do is read that row's document.
 
+The **shipped FSE'26 headline is Top@1 48.80% (694/1422)**, Top@3 62.10%, Top@5
+66.74%, as of `fb54fb8` (the per-edge latency term at `latWeight=0.03`). Verdicts
+written before that commit quote a **47.33%** control: those rows are historical
+records of what their ablation was measured against, not the current number, and the
+47.33% configuration is still reachable as the `latWeight=0` ablation.
+
 | axis | where | the number that closed it | reopens only if |
 | --- | --- | --- | --- |
 | reweighting the log term (`logWeight`) | `fse26-logweight-sweep-verdict.md` | control 47.33%; `0.5` → 46.84% (−0.49pp); per-fault-type **oracle ceiling +2.67pp → 50.00%** | a per-type oracle that exceeds 50% exists, i.e. the metric term itself changes |
