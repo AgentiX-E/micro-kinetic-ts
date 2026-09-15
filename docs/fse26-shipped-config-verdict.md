@@ -111,14 +111,52 @@ it as new. It is registered now, in `closed-axes-register.md`, with the lineage 
 makes the old number unusable and a reopening condition that names the measurement that
 would replace it.
 
-## 6. What is next
+## 6. A description is a second owner of a value
+
+The same audit found a second class of the defect §2 describes, one level out: **the
+workflow input descriptions**. A dispatcher reads the description, not the code, and a
+description that quotes a number is a copy of that number — able to drift as silently as
+a hardcoded default, because the run still succeeds and still prints a confident Top@1.
+Two had drifted, and they were the two halves of the shipped latency **pair**:
+
+| input | said | the runner's shipped value |
+| --- | --- | --- |
+| `lat_weight` | "the shipped **0.03**" | **0.561495** |
+| `lat_min_rise` | "the shipped shape, crediting every rise above **1**" | **10.3** |
+| `pool_penalty` | "empty = … **0** = INERT" | **0.0679** |
+
+A dispatcher who wanted the shipped configuration and followed the first two would have
+reproduced the **pre-pair** ablation — 48.80% against the 52.74% headline, 5.56pp, on a
+run that looks entirely successful. That is the same failure as the `log_mode: count`
+incident this guard family was built for, and it survived because the description had no
+owner.
+
+Fixed, and then **guarded rather than merely corrected**: `fse26-reported-config.test.ts`
+reads each description as TEXT and requires it to contain the constant the runner has —
+imported from the engine, not restated, so the guard cannot drift itself — plus a second
+assertion requiring every input whose description quotes a value to be in that table, so
+the next measured constant cannot acquire a stale description nobody checks. Verified in
+both directions: restoring the old `0.03` text fails the suite, naming the input.
+
+## 7. What is next
 
 The onset signal is not in any dump, so it cannot be pre-screened for free — and this
 register does not spend a run on a hypothesis a free read can settle. The cheap way to
-make every timing hypothesis screenable offline is one field: emit the per-service onset
-delay on the DIAG service line (`onset=<ms>`, `-` when undetermined, the same
-absent-versus-empty rule the other fields follow) and dispatch **one** full run at the
-shipped configuration with `diagnose`. That run also produces the missing 1422-case
-pool-ON dump, so it closes the register's last data gap as a side effect. The window for
-`w·2·(earliness − 0.5)` is then solved offline by the `--family-screen` solver, and only
-a window with a gain and zero case-level losses is worth a CI pair.
+make every timing hypothesis screenable offline is one field, and it has shipped:
+
+- `onset=<ms>` per service (`-` for the engine's undetermined sentinel, and never a
+  negative number: a reader subtracting two delays would otherwise call a service that
+  moved before the injection the most causal one in the case);
+- `inject=<ms>` on the DIAG header — the anchor, and the field the engine's own gate
+  tests, with `absent` and `0` kept apart;
+- `--onset-screen`, which rebuilds `2 × (earliness − 0.5)` by **importing the engine's
+  own `computeTemporalEarliness`** and solves its window with the family screen's solver
+  (now shared, so both axes are advised by one rule);
+- and `onsetAvailability`, which separates the three ways the term can be inert — no
+  anchor, no onsets, onsets without an order — because a gain of 0 beside a data gap
+  reads as a measured negative result.
+
+One run at the shipped configuration with `diagnose` over all 25 fault types produces
+the dump this needs **and** the missing 1422-case pool-ON dump, so it closes the
+register's last data gap as a side effect. The window for the term is then solved
+offline, and only a window with a gain and zero case-level losses goes to a CI pair.
