@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       shard_tag:
-        description: 'rcabench-data release tag holding the shards (explicit; never `latest`)'
+        description: 'rcabench-data release tag holding the shards (explicit; never `latest`). The default names the cache the CURRENT converter revision matches, so a bare dispatch runs; any other tag is refused by the provenance gate below unless its manifest digest was built from this checkout'
         required: false
-        default: 'rcabench-full'
+        default: 'rcabench-latency-full'
       categories:
         description: 'Comma-separated fault categories to download (empty = all 7)'
         required: false
