@@ -636,10 +636,15 @@ export interface OracleFidelity {
    * The term has no order of its OWN ({@link TermName} excludes it for the same reason as
    * the pool penalty), but it does have a footprint, and this is it: the number of cases
    * the shipped weight reorders. A reconstruction that carried the term but never applied
-   * it would otherwise read exactly like one that did — and this count is also the
-   * case-level COST of the term, because a case it reorders AWAY from the root is a case
-   * it broke. Cross-check it against the miss attribution: a positive `temporal`
-   * contribution there is the same event.
+   * it would otherwise read exactly like one that did, and this is the only number that
+   * separates the two — the term has no order of its own to be counted in the census
+   * above.
+   *
+   * It is NOT the term's cost. A reorder can move the rank-1 between two wrong services,
+   * or between the root and a wrong one; only the second kind loses a case, and the count
+   * that measures it is `broken` in `reconcileConfigurations`. On the shipped dump this
+   * count is 4 while `broken` is 0 — every reorder was either a gain or one wrong winner
+   * replaced by another.
    */
   readonly temporalFlips: number;
 }
@@ -1135,7 +1140,15 @@ export function formatFidelity(fidelity: OracleFidelity, opts: TermOracleOptions
   );
   lines.push(
     `  rank-1 same as the dump’s own recorded: ${fidelity.top1Matches}/${fidelity.cases} cases; ` +
-      `an acceptable root: ${fidelity.top1Correct}; moved by the pool penalty: ${fidelity.poolFlips}`,
+      `an acceptable root: ${fidelity.top1Correct}`,
+  );
+  // Each shipped term that has no order of its own gets its own footprint line, because
+  // the number is the only thing that distinguishes a term the model APPLIED from one it
+  // merely carried. Two lines rather than one sum: the terms are separate axes and a
+  // combined count would be attributable to neither.
+  lines.push(
+    `  moved by the pool penalty: ${fidelity.poolFlips}; ` +
+      `moved by the temporal prior: ${fidelity.temporalFlips}`,
   );
   // The line above is a FIDELITY check only when these flags name the configuration the
   // dump was scored at — and the tool cannot know that, because a dump does not record

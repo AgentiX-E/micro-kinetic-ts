@@ -211,6 +211,39 @@ alone does not settle it. Two independent readings do:
   disagrees with the recorded winner. That is the mirror image of §2 of
   `fse26-shipped-config-verdict.md`, and the note under the count says so.
 
+### The prediction, checked against the run
+
+The solver named its four datapacks BEFORE the confirming run existed. The run's dump
+(`35029055764`, the shipped configuration with no override — so this is the DEFAULT path,
+not a flag path) lets the two lists be diffed case by case:
+
+```
+correct: pre 756 → post 760 (net 4)      rank-1 moved: 17
+FIXED   (4): ts1-ts-inside-payment-service-stress-6qq6f6  ts2-ts-route-plan-service-return-xw84fv
+             ts4-ts-ui-dashboard-request-delay-cm5wdn     ts5-ts-basic-service-request-delay-4qpvfj
+PREDICTED(4): the same four, in the same order once sorted
+BROKEN  (0): none
+```
+
+`PICKED = ACTUAL, BROKEN = 0`. A count that agreed while the NAMES did not would have been
+a coincidence of two counts; this is the same four cases.
+
+Reading that dump at its own configuration is also the last fidelity check the instrument
+needs: `rank-1 same as the dump's own recorded: 1422/1422`, `an acceptable root: 760`,
+`moved by the pool penalty: 97; moved by the temporal prior: 17`, `rank-1 moved 0` and
+`unexplained 0` in the attribution. `temporalFlips = 17` is the same 17 the offline
+reconciliation measured on the pre-flip dump, from two independent paths.
+
+### What the term's SIGN means, stated precisely
+
+The miss decomposition carries a `temporal` contribution, and the first draft of this
+section called a positive one "the term's case-level cost". It is not, and the numbers say
+so: **35 of the 662 misses** have a positive contribution while `broken` is **0**. A
+positive contribution means the term widened the WRONG winner's margin — it is working
+against the root in a case that is ALREADY lost, i.e. a barrier rather than a cause. The
+cost is `broken`, which is a different measurement. Both numbers are worth keeping: the
+barrier count is what a future change to the other terms would have to work against.
+
 ### The instrument had to grow with the term
 
 `blendScores` did not model the temporal prior at all, which was invisible while the term

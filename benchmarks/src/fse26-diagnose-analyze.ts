@@ -697,9 +697,15 @@ const SHIPPED_ONSET_SHAPE = DEFAULT_ONSET_SHAPE;
  *   result. "Modelled" is load-bearing: the report prints which terms it used, and
  *   an unmodelled term's decisions land here, so a reader must check the banner
  *   before treating one as an engine finding. The temporal prior is MODELLED, so a
- *   `temporal` contribution is a finding about that term rather than about the engine:
- *   positive means the term credited the WRONG winner — the case-level cost of the term
- *   — and negative means it worked for the root and simply was not enough.
+ *   `temporal` contribution is a finding about that term rather than about the engine.
+ *   Read the SIGN, and read it precisely: positive means the term widened the WRONG
+ *   winner's margin — it is working AGAINST the root in a case that is already a miss, so
+ *   it is a barrier rather than a cause, and 35 of the 662 misses on the shipped dump have
+ *   one. Negative means it argued FOR the root and the other terms outweighed it.
+ *   Neither sign is the term's COST: that is `broken 0`, measured by
+ *   `reconcileConfigurations` — a case that was correct at weight 0 and wrong at the
+ *   shipped weight. A barrier in a lost case and a loss are different findings, and this
+ *   vocabulary only has room for the first.
  * - `absent` — either service the attribution needs (the source or the winner) is
  *   missing from this dump's service list. The case cannot be attributed from this
  *   dump at all: the fields are reported as `NaN`, never 0, because a fabricated
@@ -919,10 +925,10 @@ export function classifyMiss(
     pool: -poolWeight * (poolIndicator(win) - poolIndicator(src)),
     // The temporal term credits the FIRST MOVER, so its contribution to the winner's
     // margin is a difference of two slopes — `w·(slope(winner) − slope(root))`. Positive
-    // means the term promoted the wrong service: the term's own cost, and the number the
-    // shipped configuration must have at 0. Negative means it argued FOR the root and lost
-    // to the other terms, which is a different finding and the reason the sign is reported
-    // rather than a magnitude.
+    // means it widened the wrong winner's margin, i.e. it is working AGAINST the root; that
+    // is a barrier in a case already lost, NOT a loss, and the distinction matters because
+    // the count is large (35 of 662 on the shipped dump) while the term's realized cost is
+    // zero. Negative means it argued for the root and the other terms outweighed it.
     temporal: temporalWeight * ((onset.get(winner!) ?? 0) - (onset.get(source) ?? 0)),
   };
   const gap = MISS_TERMS.reduce((sum, term) => sum + parts[term], 0);
