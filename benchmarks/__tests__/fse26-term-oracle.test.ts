@@ -29,6 +29,9 @@ import {
 } from '../src/fse26-diagnose-analyze.js';
 import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 import {
+  dominantFamily,
+  dominantFamilyCensus,
+  formatFamilyCensus,
   formatFidelity,
   formatModeScreen,
   formatOracleCensus,
@@ -74,6 +77,8 @@ interface ServiceSpec {
   latEdges?: number;
   logic?: number;
   http?: number;
+  /** The metric that won this service's anomaly maximum; defaults to `cpu`. */
+  dominant?: string;
 }
 
 /** One diagnostic block, rendered by the real formatter. */
@@ -91,7 +96,7 @@ function block(
   const services = specs.map((spec, i) => ({
     serviceId: spec.serviceId,
     metricNames: ['cpu'],
-    dominantMetric: 'cpu',
+    dominantMetric: spec.dominant ?? 'cpu',
     selfAnomaly: spec.selfAnomaly ?? (n < 2 ? 1 : (n - 1 - i) / (n - 1)),
     logScore: spec.logScore ?? (peak > 0 ? ((spec.logic ?? 0) + (spec.http ?? 0)) / peak : 0),
     failedEdgeScore: 0,
@@ -588,6 +593,101 @@ describe('modeScreen', () => {
     expect(count.gainedCases).toBe(1);
     expect(count.gainedTypes).toEqual([{ key: 'NetworkLoss', cases: 1 }]);
     expect(count.regressedTypes).toEqual([]);
+  });
+});
+
+describe('dominantFamilyCensus', () => {
+  it('buckets the two variants of one duration series into one family', () => {
+    // A classifier keyed on the FULL name splits `http.server.request.duration` from
+    // its `.max` variant, which turns one separation into two that look like noise.
+    expect(dominantFamily('http.server.request.duration')).toBe('http.server.duration');
+    expect(dominantFamily('http.server.request.duration.max')).toBe('http.server.duration');
+    expect(dominantFamily('hubble_http_request_duration_p99_seconds')).toBe('hubble_http');
+    expect(dominantFamily('')).toBe('none');
+  });
+
+  it('returns an unclassified series as its OWN name rather than pooling it', () => {
+    // An `other` bucket would hide exactly the series a reader needs to notice.
+    expect(dominantFamily('someNewSeries')).toBe('someNewSeries');
+  });
+
+  it('counts the source and the wrong winner per family, over the misses only', () => {
+    const miss = block([{ serviceId: 'ts-winner' }, { serviceId: 'ts-root' }], {
+      datapack: 'miss',
+      groundTruth: ['ts-root'],
+      topPredictions: ['ts-winner'],
+    });
+    const hit = block([{ serviceId: 'ts-root' }], {
+      datapack: 'hit',
+      groundTruth: ['ts-root'],
+      topPredictions: ['ts-root'],
+    });
+    const cells = dominantFamilyCensus(casesOf(miss, hit));
+    // Both rows carry the fixture's `cpu` dominant, so the same family appears on both
+    // sides of the one miss — and the correctly-ranked case contributes nothing.
+    expect(cells).toEqual([{ key: 'cpu', source: 1, winner: 1 }]);
+    expect(formatFamilyCensus(cells)).toContain('+0');
+  });
+
+  it('renders an empty census rather than a table with no body', () => {
+    expect(formatFamilyCensus([])).toContain('no miss carries both');
+  });
+
+  it('orders two families of equal weight by name, deterministically', () => {
+    // The tie-break arm: three families with the same peak count must not swap between
+    // runs, or a report cannot be diffed against the one it replaces. Three, not two:
+    // a two-element sort only ever compares the pair in one order.
+    const mk = (tag: string, dominant: string) =>
+      block(
+        [
+          { serviceId: `ts-w${tag}`, dominant },
+          { serviceId: `ts-r${tag}`, dominant },
+        ],
+        { datapack: tag, groundTruth: [`ts-r${tag}`], topPredictions: [`ts-w${tag}`] },
+      );
+    const cells = dominantFamilyCensus(
+      casesOf(
+        // Fed in ASCENDING family order, so the sort meets a comparison in both
+        // directions; the reverse order only ever exercises one arm.
+        mk('c', 'container.cpu.usage'),
+        mk('b', 'jvm.system.cpu.load_1m'),
+        mk('a', 'k8s.pod.phase'),
+      ),
+    );
+    expect(cells.map((cell) => cell.key)).toEqual(['container', 'jvm', 'k8s']);
+  });
+
+  it('reports a family that appears on ONLY one side, and a signed delta', () => {
+    // The `?? 0` arms: a family the source owns and the winner never does is exactly
+    // the shape a candidate rule would exploit, so the census must render it as
+    // `winner 0` rather than dropping the row.
+    const sourceOnly = block(
+      [
+        { serviceId: 'ts-w', dominant: 'http.client.request.duration.max' },
+        { serviceId: 'ts-r', dominant: 'k8s.pod.phase' },
+      ],
+      { datapack: 'source-only', groundTruth: ['ts-r'], topPredictions: ['ts-w'] },
+    );
+    const cells = dominantFamilyCensus(casesOf(sourceOnly));
+    // Ordered by the larger side, descending — a tie here — then by name.
+    expect(cells).toEqual([
+      { key: 'http.client.duration', source: 0, winner: 1 },
+      { key: 'k8s', source: 1, winner: 0 },
+    ]);
+    const text = formatFamilyCensus(cells);
+    expect(text).toContain('+1');
+    expect(text).toContain('-1');
+  });
+
+  it('skips a miss whose winner has no row in its own dump', () => {
+    // A prediction naming a service the block does not describe cannot be censused;
+    // counting it would attribute the miss to a family the case never reported.
+    const ghost = block([{ serviceId: 'ts-root', dominant: 'k8s.pod.phase' }], {
+      datapack: 'ghost',
+      groundTruth: ['ts-root'],
+      topPredictions: ['ts-not-in-the-block'],
+    });
+    expect(dominantFamilyCensus(casesOf(ghost))).toEqual([]);
   });
 });
 

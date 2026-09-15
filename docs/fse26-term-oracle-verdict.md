@@ -26,7 +26,7 @@
 >    named is not the one that separates: the source's dominant metric is `hubble_http_*`
 >    in 15.3% of misses against the winner's 15.6% (Δ **+2**), while the source's anomaly
 >    is RESOURCE-driven (`k8s.*`/`container.*`/`jvm.*`) 85 cases more often than the
->    winner's and the winner's is CLIENT-duration-driven 132 cases more often.
+>    winner's and the winner's is CLIENT-duration/pool-driven 131 cases more often.
 
 ## 1. The instrument, and why it is exact
 
@@ -199,22 +199,23 @@ gate is right about WHICH cases it suppresses and wrong about what to do with th
 
 `fse26-data-gap-verdict.md` states, from ten sampled rows, that "the source's dominant
 metric is almost always `hubble_http_request_duration_pXX`, never its fault-specific
-signature". Censused over all **672 misses**, classified by the family of the series that
-won each service's anomaly maximum:
+signature". Censused over all **672 misses** by the `--term-oracle` section itself
+(`dominantFamilyCensus`), classified by the family of the series that won each service's
+anomaly maximum:
 
-| dominant family | winner | source | Δ (winner − source) |
+| dominant family | source | winner | Δ (winner − source) |
 | --- | --- | --- | --- |
-| `jvm.*` | 157 | 131 | +26 |
-| `hubble_http_*` | **105** | **103** | **+2** |
-| `db.client.connections.use_time.max` | 89 | 16 | **+73** |
-| `http.client.request.duration.max` | 77 | 26 | +51 |
-| `http.server.request.duration` | 67 | 66 | +1 |
-| `queueSize` | 45 | 36 | +9 |
-| `k8s.*` | 42 | **122** | **−80** |
-| `db.client.connections.wait_time.max` | 39 | 31 | +8 |
-| `http.server.request.duration.max` | 29 | **76** | **−47** |
-| `container.*` | 16 | **47** | **−31** |
-| trace / other | 6 | 18 | −12 |
+| `jvm.*` | 131 | 157 | +26 |
+| `http.server.request.duration*` | 142 | 96 | −46 |
+| `db.client.connections.*` | 48 | **128** | **+80** |
+| `k8s.*` | **122** | 42 | **−80** |
+| `hubble_http_*` | **103** | **105** | **+2** |
+| `http.client.request.duration*` | 26 | 77 | +51 |
+| `container.*` | 47 | 16 | −31 |
+| `queueSize` | 36 | 45 | +9 |
+| `otlp*` / `processed*` (trace) | 17 | 5 | −12 |
+| `hubble_icmp_total` | 0 | 1 | +1 |
+| **total** | **672** | **672** | |
 
 **Two results, and the first one matters more than the second.**
 
@@ -226,12 +227,19 @@ sides equally". This is the third time this register's rule — *a type-level cl
 census, not a sample* — has paid, and the first time it has reversed a claim in a shipped
 verdict document.
 
+Two grouping choices are part of the measurement rather than incidental: the bare and
+`.max` variants of `http.server.request.duration` are ONE family, and the whole
+`db.client.connections.*` prefix is one — keyed on the full name they report as four
+families and a 46-case and an 80-case separation each read as two that look like noise.
+Anything the classifier does not claim is returned as its OWN name (`hubble_icmp_total`
+above), never pooled into `other`.
+
 **A feature that does separate**, and it is not the one the sampled claim pointed at. The
 source's anomaly is driven by a **resource** series — `k8s.*`, `container.*` or `jvm.*` —
 in **300 of 672** misses (44.6%) against the winner's **215** (32.0%): a margin of **85
 cases.** The winner's anomaly is driven by a **client-side duration or the DB pool**
-(`http.client.request.duration.max` + `db.client.connections.*`) in **205** misses against
-the source's **73**: a margin of **132 cases**, in the same direction as the register's
+(`http.client.request.duration*` + `db.client.connections.*`) in **205** misses against
+the source's **74**: a margin of **131 cases**, in the same direction as the register's
 "the emitter is credited" finding but computed from the metric layer instead of the log
 layer.
 
@@ -249,7 +257,9 @@ Two caveats keep this from being a candidate on its own, and both are the regist
 
 The instrument can pre-screen it at zero cost, which is the next iteration's work; this
 section publishes the feature screen it would start from, so the next proposal either uses
-these margins or explains why not.
+these margins or explains why not. The census is a section of `--term-oracle`
+(`dominantFamilyCensus`), not a session's throwaway probe, so every number above is
+reproduced by the command in §8.
 
 ## 6. The candidate with no name
 

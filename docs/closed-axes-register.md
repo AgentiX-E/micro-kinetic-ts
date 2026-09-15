@@ -118,7 +118,7 @@ misses). It also censuses the dominant-metric family of every miss: the family a
 verdict named as the source's signature (`hubble_http_*`) separates the two sides by
 **+2 cases out of 672** — no information — while the source's anomaly is RESOURCE-driven
 (`k8s.*`/`container.*`/`jvm.*`) **85 cases** more often than the winner's and the
-winner's is CLIENT-duration-driven **132 cases** more often. That is the first computed
+winner's is CLIENT-duration/pool-driven **131 cases** more often. That is the first computed
 feature with a large margin, and it comes with the two rows it must not touch: the pool
 label drop (+0.28pp, 2 regressed types) and the silent stock's own series.
 

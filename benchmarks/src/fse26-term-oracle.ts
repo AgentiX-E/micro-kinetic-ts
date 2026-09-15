@@ -423,6 +423,122 @@ export interface Tally {
   readonly cases: number;
 }
 
+/**
+ * The family a dominant metric belongs to.
+ *
+ * Ordered PREFIX rules on purpose, and the order is load-bearing: `http.server`
+ * duration has both a bare and a `.max` variant in the inventory, and a classifier
+ * keyed on the FULL name reports them as two families — which is how a 47-case
+ * separation becomes two 30-case ones that look like noise. Anything the rules do not
+ * claim is returned as its OWN name rather than bucketed into `other`: an unclassified
+ * series that is silently pooled cannot be noticed, and noticing it is the point.
+ *
+ * The families are the ones a reader of this benchmark needs to tell apart — a
+ * network/HTTP symptom the service merely serves, a client-side duration it measured,
+ * the DB pool, and the service's OWN resource series — not a canonical metric taxonomy.
+ *
+ * @param dominantMetric - The metric that won the service's anomaly maximum, or `''`.
+ * @returns The family name.
+ */
+export function dominantFamily(dominantMetric: string): string {
+  if (dominantMetric === '') return 'none';
+  const rules: readonly (readonly [string, string])[] = [
+    ['hubble_http', 'hubble_http'],
+    ['http.server.request.duration', 'http.server.duration'],
+    ['http.client.request.duration', 'http.client.duration'],
+    ['db.client.connections', 'db.client.connections'],
+    ['container.', 'container'],
+    ['k8s.', 'k8s'],
+    ['jvm.', 'jvm'],
+    ['queueSize', 'queueSize'],
+    ['otlp', 'trace'],
+    ['processedSpans', 'trace'],
+    ['processedLogs', 'trace'],
+  ];
+  for (const [prefix, family] of rules) {
+    if (dominantMetric.startsWith(prefix)) return family;
+  }
+  return dominantMetric;
+}
+
+/** One family's presence on the two sides of a miss. */
+export interface FamilyCensusCell {
+  readonly key: string;
+  /** Misses whose (first) root's dominant metric is this family. */
+  readonly source: number;
+  /** Misses whose wrong rank-1 winner's dominant metric is this family. */
+  readonly winner: number;
+}
+
+/**
+ * Census the dominant-metric FAMILY of the source against the wrong winner, over the
+ * misses.
+ *
+ * This exists because a shipped verdict asserted the opposite from ten sampled rows:
+ * `docs/fse26-data-gap-verdict.md` read "the source's dominant metric is almost always
+ * `hubble_http_request_duration_pXX`", and the population says that family separates the
+ * two sides by 2 cases out of 672. A feature screen is only usable if it can be
+ * recomputed, so it lives here rather than in a session's throwaway probe.
+ *
+ * `source` uses the FIRST acceptable root, which is what the dump's own file order
+ * gives; a case whose other root is the anomalous one therefore contributes under the
+ * first root's family. Stated rather than fixed: picking "the most anomalous root"
+ * would compare a service the ranking was never asked to prefer.
+ *
+ * @param cases - Parsed cases.
+ * @returns One cell per family, sorted by the larger of the two counts, descending.
+ */
+export function dominantFamilyCensus(cases: readonly DiagnosedCase[]): readonly FamilyCensusCell[] {
+  const source = new Map<string, number>();
+  const winner = new Map<string, number>();
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    const top = kase.prediction[0];
+    if (root.size === 0 || top === undefined || root.has(top)) continue;
+    const sourceService = kase.services.find((service) => root.has(service.serviceId));
+    const winnerService = kase.services.find((service) => service.serviceId === top);
+    if (sourceService === undefined || winnerService === undefined) continue;
+    bump(source, dominantFamily(sourceService.dominantMetric));
+    bump(winner, dominantFamily(winnerService.dominantMetric));
+  }
+  const keys = [...new Set([...source.keys(), ...winner.keys()])];
+  return keys
+    .map((key) => ({ key, source: source.get(key) ?? 0, winner: winner.get(key) ?? 0 }))
+    .sort(
+      (a, b) =>
+        Math.max(b.source, b.winner) - Math.max(a.source, a.winner) || (a.key < b.key ? -1 : 1),
+    );
+}
+
+/**
+ * Render the dominant-family census.
+ *
+ * The delta column is `winner − source`, signed, because that is the direction a rule
+ * would have to exploit: a family the SOURCE owns is a candidate for crediting, and a
+ * family the WINNER owns is a candidate for discounting. A cell near zero is the
+ * finding that a sampled claim missed.
+ *
+ * @param cells - The census.
+ * @returns The section text.
+ */
+export function formatFamilyCensus(cells: readonly FamilyCensusCell[]): string {
+  const lines: string[] = [];
+  const misses = cells.reduce((sum, cell) => sum + cell.source, 0);
+  lines.push(`Dominant-metric family of the source vs the wrong winner (${misses} misses):`);
+  if (cells.length === 0) {
+    lines.push('  (no miss carries both a root and a winner row)');
+    return lines.join('\n');
+  }
+  lines.push('  family                        source  winner   delta');
+  for (const cell of cells) {
+    const delta = cell.winner - cell.source;
+    lines.push(
+      `  ${cell.key.padEnd(26)}${String(cell.source).padStart(6)}` +
+        `${String(cell.winner).padStart(8)}${`${delta >= 0 ? '+' : ''}${delta}`.padStart(8)}`,
+    );
+  }
+  return lines.join('\n');
+}
 /** What each term would have decided on its own, and what that bounds. */
 export interface OracleCensus {
   readonly cases: number;
@@ -812,6 +928,7 @@ export function formatTermOracleReport(
   const sections = [
     formatFidelity(oracleFidelity(cases, opts), opts),
     formatOracleCensus(oracleCensus(cases, opts), opts),
+    formatFamilyCensus(dominantFamilyCensus(cases)),
     formatModeScreen(modeScreen(cases, opts)),
   ];
   return [`Term oracle — ${label}`, ...sections].join('\n');
