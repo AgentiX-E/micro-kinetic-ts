@@ -162,6 +162,37 @@ const MEASURED_LAT_WEIGHTS: Record<
 };
 
 /**
+ * Where the engine's shipped pool-penalty weight is declared, and the runs that
+ * measured the two points the shipped value is chosen between.
+ *
+ * The same discipline as the latency weight, and here it guards a PAIR of points for a
+ * second reason: `0.0679` is the midpoint of a window whose LOWER boundary is the gain
+ * plateau (0.048823) and whose UPPER boundary is the first casualty (0.087011). A
+ * constant moved without a run is indistinguishable from a number someone liked, and the
+ * control point is what makes "the term was off" a measurement rather than an assumption.
+ */
+const DEFAULT_POOL_PENALTY_RE = /DEFAULT_POOL_METRIC_PENALTY_WEIGHT\s*=\s*([0-9.]+)/;
+const MEASURED_POOL_WEIGHTS: Record<
+  string,
+  { topAt1: number; hits: number; cases: number; regressedTypes: number; run: string }
+> = {
+  '0': {
+    topAt1: 0.5274261603375527,
+    hits: 750,
+    cases: 1422,
+    regressedTypes: 0,
+    run: '34949812666',
+  },
+  '0.0679': {
+    topAt1: 0.5316455696202531,
+    hits: 756,
+    cases: 1422,
+    regressedTypes: 0,
+    run: '34949854236',
+  },
+};
+
+/**
  * Rise floors with a recorded full-benchmark measurement.
  *
  * A floor is not a weight, and it is NOT safe on its own: at the shipped weight a
@@ -187,6 +218,13 @@ const MEASURED_LAT_FLOORS: Record<
     run: '34921980498',
   },
 };
+
+/** Read a `const NAME = <number>` out of a source file, as text. */
+function readConstant(source: string, pattern: RegExp, label: string): number {
+  const m = pattern.exec(source);
+  if (m === null) throw new Error(`${label}: constant not found in the source`);
+  return Number(m[1]);
+}
 
 describe('FSE26 reported configuration', () => {
   const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
@@ -375,5 +413,34 @@ describe('FSE26 workflow-input ownership', () => {
       .filter(([, value]) => value !== '')
       .map(([name, value]) => `${name}=${String(value)}`);
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('FSE26 pool-penalty weight is a measured value', () => {
+  const source = readFileSync(PRUNER_PATH, 'utf8');
+
+  it('ships a weight that has a recorded run with zero regressed fault types', () => {
+    // A default is a claim about a measurement. The number is read as TEXT because the
+    // defect being guarded is a configuration default, which no runtime assertion of the
+    // engine's own behaviour can see.
+    const shipped = readConstant(
+      source,
+      DEFAULT_POOL_PENALTY_RE,
+      'DEFAULT_POOL_METRIC_PENALTY_WEIGHT',
+    );
+    const recorded = MEASURED_POOL_WEIGHTS[String(shipped)];
+
+    expect(recorded, `no recorded run for the shipped pool penalty ${shipped}`).toBeDefined();
+    expect(recorded!.cases).toBe(1422);
+    expect(recorded!.regressedTypes).toBe(0);
+    expect(recorded!.topAt1).toBeCloseTo(0.5316455696202531, 12);
+  });
+
+  it('keeps the OFF point recorded too, so the term was measured against its own ablation', () => {
+    // The gain is only a gain against the same commit with the term off: `0` is a key
+    // of the table for the same reason the latency weight's `0` is.
+    expect(MEASURED_POOL_WEIGHTS['0']).toBeDefined();
+    expect(MEASURED_POOL_WEIGHTS['0']!.hits).toBe(750);
+    expect(MEASURED_POOL_WEIGHTS['0']!.regressedTypes).toBe(0);
   });
 });

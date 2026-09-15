@@ -1757,18 +1757,17 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
     expect(graph.poolMetricScores?.get(OTHER)).toBe(0);
   });
 
-  it('is INERT at the shipped default: the term subtracts nothing today', () => {
-    // The shipped constant is still 0 because the +6-case window was measured on the
-    // dump and not on a run — and this test is what keeps that state honest: it fails
-    // the moment the default moves, which is when the measured-value guard has to be
-    // satisfied too.
-    expect(DEFAULT_POOL_METRIC_PENALTY_WEIGHT).toBe(0);
+  it('applies the SHIPPED weight by default, and it is the exported measured one', () => {
+    // The constructor's default is the published configuration, so it has to be the
+    // measured, criterion-passing point rather than the ablation — and it is asserted
+    // against the exported constant so the number has one owner. A literal here would
+    // be a second copy that could agree with itself while disagreeing with the CLI.
     const shipped = scores(new TreePruner()).byService;
     const off = scores(new TreePruner({ poolMetricPenaltyWeight: 0 })).byService;
 
-    for (const [serviceId, score] of shipped) {
-      expect(score).toBeCloseTo(off.get(serviceId)!, 12);
-    }
+    expect(DEFAULT_POOL_METRIC_PENALTY_WEIGHT).toBeGreaterThan(0);
+    expect(off.get(POOL)! - shipped.get(POOL)!).toBeCloseTo(DEFAULT_POOL_METRIC_PENALTY_WEIGHT, 10);
+    expect(shipped.get(OTHER)!).toBeCloseTo(off.get(OTHER)!, 12);
   });
 
   it('LOWERS the pool-dominant service by exactly the weight and moves nobody else', () => {

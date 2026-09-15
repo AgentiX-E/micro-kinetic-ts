@@ -476,20 +476,22 @@ export const DEFAULT_LAT_WEIGHT = 0.561495;
 /**
  * The shipped weight of the DB-connection-pool dominance penalty.
  *
- * **0 = INERT**, and deliberately so: the offline pre-screen (exact for this term
- * — it is a constant subtraction, so the reconstruction that reproduces the
- * shipped run's own rank-1 on 1422/1422 cases predicts it without a run) measures
- * a zero-regression window of `w ∈ (0.048823, 0.087011)` worth **+6 cases against
- * 0 lost**, with the first casualty at 0.087011 (`HTTPResponseReplaceCode`,
- * `ts-security-service` → `ts-preserve-service`).
+ * 0.0679 — the midpoint of the measured zero-regression window, not a round number:
+ * the window is `w ∈ (0.048823, 0.087011)`, bisected to 1e-6, and a value chosen at
+ * either boundary is a value a converter revision can move across it.
  *
- * A prediction is not a measurement: this constant becomes 0.0679 (the window's
- * midpoint, 0.019 from either boundary) only once an FSE'26 run and the RCAEval
- * golden have both been read back green, and only together with the recorded-runs
- * entry the guard in `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts`
- * requires.
+ * MEASURED on FSE'26 (`34949854236`), against the same commit with the term off
+ * (`34949812666`, 750): **750 → 756, +6 cases / 0 lost, zero regressed fault types**,
+ * Top@3 65.75% → 66.46%, Top@5 70.11% → 70.25%. The offline pre-screen predicted
+ * exactly that split (`ContainerKill` +2, `HTTPResponseReplaceCode` +1, `JVMLatency`
+ * +1, `NetworkDelay` +1, `NetworkPartition` +1) and the run reproduced it case for
+ * case, which is what makes the reconstruction usable for the next candidate.
+ *
+ * The guard in `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts`
+ * requires BOTH points to be in the recorded-runs table, so this constant cannot be
+ * moved to an unmeasured value.
  */
-export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0;
+export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
