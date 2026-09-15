@@ -954,29 +954,6 @@ describe('TreePruner', () => {
       expect(results[0]!.serviceId).toBe('A');
     });
 
-    it('credits the first mover at the SHIPPED weight, without overturning the ranking', () => {
-      // The shipped default is a measured +4 cases / 0 regressed on FSE'26, which is a
-      // statement about cases, not about this fixture: at 0.036552 the term must LIFT A
-      // by exactly the weight and leave the anomaly ordering intact here. Asserted as
-      // arithmetic rather than as an ordering, so the test says what the default does
-      // instead of encoding one fixture's outcome — and asserted against an EXPLICIT
-      // zero, because `new TreePruner()` is no longer the term-off arm.
-      const off = new TreePruner({ temporalWeight: 0 });
-      const shipped = new TreePruner();
-      const scoreOf = (pruner: TreePruner, id: string): number => {
-        const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
-        return pruner.analyze(graph, 3).find((r) => r.serviceId === id)!.finalScore!;
-      };
-
-      expect(scoreOf(shipped, 'A') - scoreOf(off, 'A')).toBeCloseTo(DEFAULT_TEMPORAL_WEIGHT, 12);
-      expect(scoreOf(shipped, 'B')).toBeCloseTo(scoreOf(off, 'B'), 12);
-      expect(scoreOf(shipped, 'C')).toBeCloseTo(scoreOf(off, 'C'), 12);
-      // B stays first: the shipped weight is deliberately too small to overturn a 0.5
-      // anomaly gap, and a default that COULD would be a different measurement.
-      const graph = shipped.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
-      expect(shipped.analyze(graph, 3)[0]!.serviceId).toBe('B');
-    });
-
     it('leaves the ranking on pure self-anomaly when the injection time is unknown', () => {
       // No injectTimeMs → the temporal signal is neutral for every service
       // and the highest self-anomaly service (B) still ranks first.
@@ -1929,20 +1906,24 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       }
     });
 
-    it('ships the measured PAIR, and the default is that pair', () => {
-      // The value the recorded-runs guard reads out of source as text has to be the
-      // value the ENGINE actually uses, or the guard polices a comment. Asserted by
-      // construction: an omitted option must behave exactly like the two constants.
-      const shipped = scores({
-        temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
-        onsetShape: DEFAULT_ONSET_SHAPE,
-      });
-      expect([...scores(undefined)]).toEqual([...shipped]);
-      // And the shipped pair is the one the screen found: the first mover gains exactly
-      // the shipped weight. If the shape were ever flipped alone, the default would
-      // credit a different service and this arithmetic would stop holding.
-      expect(shipped.get('A')! - scores(OFF).get('A')!).toBeCloseTo(DEFAULT_TEMPORAL_WEIGHT, 12);
-      expect(DEFAULT_ONSET_SHAPE).toBe('earliest-only');
+    it('ships the term OFF, which is the recorded point after the golden rejected it', () => {
+      // The pair SHIPPED once — at `0.036552` with `earliest-only` — and was reverted: it
+      // gained 4 cases of 1422 on FSE'26 with zero regressed fault types and moved six of
+      // the nine RCAEval golden cells, two of them by ~41pp (`fse26-onset-verdict.md` §8).
+      // So the default is the ablation, and that is a MEASUREMENT rather than an absence.
+      expect(DEFAULT_TEMPORAL_WEIGHT).toBe(0);
+      expect([...scores(undefined)]).toEqual([...scores(OFF)]);
+      expect([
+        ...scores({ temporalWeight: DEFAULT_TEMPORAL_WEIGHT, onsetShape: DEFAULT_ONSET_SHAPE }),
+      ]).toEqual([...scores(OFF)]);
+      // The candidate is MEASURABLE, not erased: at its recorded weight the first mover
+      // gains exactly that weight, which is the arithmetic the FSE'26 +4 was a consequence
+      // of. A test that only asserted "0 is 0" would leave the rejection unverifiable.
+      const candidate = scores({ temporalWeight: 0.036552, onsetShape: 'earliest-only' });
+      expect(candidate.get('A')! - scores(OFF).get('A')!).toBeCloseTo(0.036552, 12);
+      // And at the shipped weight the ranking is pure self-anomaly again, which is what the
+      // golden suite requires.
+      expect(scores(undefined).get('B')!).toBeGreaterThan(scores(undefined).get('A')!);
     });
 
     it('credits the first mover, and ONLY the first mover, by exactly the weight', () => {

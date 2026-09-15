@@ -1889,11 +1889,12 @@ describe('onsetSlopes — the engine’s own earliness, as a slope', () => {
     expect(slopes.get('ts-filler-00')).toBe(0);
   });
 
-  it('defaults to the SHIPPED shape, which is ONE-SIDED', () => {
+  it('defaults to the SHIPPED shape, and the rejected candidate is one call away', () => {
     // The screen and the ranking have to agree about what the term says, and the only
     // way that can be true by construction is for the reader's default parameter to be
     // the engine's constant. Asserted as the difference two shapes make on the same case:
-    // `earliness` demotes the late mover, `earliest-only` does not touch it.
+    // the shipped `earliness` demotes the late mover, and `earliest-only` — the shape the
+    // REVERTED candidate was measured on — does not touch it.
     const kase = field({
       inject: ANCHOR,
       first: { serviceId: 'ts-src', onset: 0 },
@@ -1902,10 +1903,13 @@ describe('onsetSlopes — the engine’s own earliness, as a slope', () => {
       prediction: 'ts-win',
     });
     const slopes = onsetSlopes(kase);
+    const oneSided = onsetSlopes(kase, 'earliest-only');
 
     expect(slopes.get('ts-src')).toBeCloseTo(1, 12);
-    expect(slopes.get('ts-win')).toBe(0);
+    expect(slopes.get('ts-win')).toBeCloseTo(-1, 12);
     expect(slopes.get('ts-filler-00')).toBe(0);
+    expect(oneSided.get('ts-src')).toBeCloseTo(1, 12);
+    expect(oneSided.get('ts-win')).toBe(0);
   });
 
   it('leaves every slope at 0 when the term cannot act', () => {

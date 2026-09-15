@@ -55,9 +55,11 @@ describe('computeOnsetSlopes — `earliness`, the shipped shape until the onset 
   it('defaults to the SHIPPED shape, so the field is optional at every call site', () => {
     // The default parameter is not decoration: `TreePruner` passes `options.onsetShape`,
     // which is `undefined` for a caller that set only the weight — so the omission has to
-    // resolve to the shipped shape rather than to a neutral or to a compile error.
+    // resolve to the shipped shape rather than to a neutral or to a compile error. The
+    // shipped shape is `earliness` because the ONE-SIDED candidate is the one the golden
+    // rejected (that shape's own weight is 0 either way, so the field is inert).
     const input = delays({ a: 0, b: 1000, c: 60000 });
-    expect(DEFAULT_ONSET_SHAPE).toBe('earliest-only');
+    expect(DEFAULT_ONSET_SHAPE).toBe('earliness');
     expect([...computeOnsetSlopes(input, ANCHOR)]).toEqual([
       ...computeOnsetSlopes(input, ANCHOR, DEFAULT_ONSET_SHAPE),
     ]);

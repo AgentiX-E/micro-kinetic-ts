@@ -255,21 +255,21 @@ describe('parseFSE26Args — other flags', () => {
   });
 
   it('falls back to the SHIPPED temporal weight on an empty or unusable value', () => {
-    // The case the class was written for, now live rather than hypothetical: the shipped
-    // weight is non-zero, so `Number('')` is 0, and 0 is this term's ABLATION. An inline
-    // parse would therefore run the signal switched OFF under a dispatch that merely
-    // failed to supply a value — and report it under the shipped configuration's name.
+    // The shipped value is 0 again — the pair was reverted after the golden rejected it —
+    // so this assertion is WEAKER than it was, and saying so is the point: with the shipped
+    // value equal to the ablation, a fallback to either is indistinguishable here. What is
+    // still tested is the class, at a value that can tell them apart: garbage returns the
+    // shipped value, a real number returns itself, and nothing else is ever returned.
     expect(parseFSE26Args(['--temporal-weight', '']).temporalWeight).toBe(DEFAULT_TEMPORAL_WEIGHT);
-    // The shipped value is NOT the ablation, which is what makes the assertion above
-    // meaningful rather than a coincidence of two zeros.
-    expect(DEFAULT_TEMPORAL_WEIGHT).not.toBe(0);
     expect(parseFSE26Args(['--temporal-weight', '1x']).temporalWeight).toBe(
       DEFAULT_TEMPORAL_WEIGHT,
     );
     expect(parseFSE26Args(['--temporal-weight', '-1']).temporalWeight).toBe(
       DEFAULT_TEMPORAL_WEIGHT,
     );
-    // And an explicit 0 still selects the ablation, so it stays reachable.
+    // The REJECTED candidate stays reachable by name, which is how its rejection is
+    // re-measured rather than argued, and the ablation is selectable explicitly.
+    expect(parseFSE26Args(['--temporal-weight', '0.036552']).temporalWeight).toBe(0.036552);
     expect(parseFSE26Args(['--temporal-weight', '0']).temporalWeight).toBe(0);
   });
 

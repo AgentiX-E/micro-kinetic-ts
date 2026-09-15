@@ -549,14 +549,17 @@ export const ONSET_SHAPES: readonly OnsetShape[] = [
 ];
 
 /**
- * The shipped SHAPE of the injection-anchored temporal prior.
+ * The shipped SHAPE of the injection-anchored temporal prior — inert, because the weight
+ * is 0.
  *
- * Half of a pair with {@link DEFAULT_TEMPORAL_WEIGHT}, not a preference: a weight is a
- * claim about a shape, and the only published measurement of this signal at a non-zero
- * weight used the shape that LOST (`earliness`, below). `earliest-only` is what the
- * zero-loss window was solved on.
+ * `earliest-only` was the shape the FSE'26 screen solved a zero-loss window for
+ * (`+4 cases`), and it shipped — then the golden suite rejected it (see
+ * {@link DEFAULT_TEMPORAL_WEIGHT}). The default is the engine's original normalisation
+ * because that is the shape every published number was measured with and a weight of 0
+ * makes the field inert either way: leaving the rejected candidate as the default would be
+ * an opinion the measurement does not support.
  */
-export const DEFAULT_ONSET_SHAPE: OnsetShape = 'earliest-only';
+export const DEFAULT_ONSET_SHAPE: OnsetShape = 'earliness';
 
 /** Whether a string names a declared shape; the CLI parses through this, not a cast. */
 export function isOnsetShape(value: string): value is OnsetShape {
@@ -564,29 +567,40 @@ export function isOnsetShape(value: string): value is OnsetShape {
 }
 
 /**
- * The shipped weight of the injection-anchored temporal prior.
+ * The shipped weight of the injection-anchored temporal prior. **0 = off**, and the axis
+ * is closed by a rejection rather than by an absence.
  *
- * Solved, not swept — the same discipline as {@link DEFAULT_LAT_WEIGHT} and
- * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}. The term is affine in this weight
- * (`base + w × slope`), so with every candidate's slope recorded per service the set of
- * weights at which a currently-correct case stays correct is an intersection of
- * half-lines and the zero-loss window is a closed interval. On 1422 FSE'26 cases at
- * {@link DEFAULT_ONSET_SHAPE} it is `w ∈ [0.034920, 0.038183]`: the fourth case flips at
- * the lower boundary and the first casualty appears at the upper one. The midpoint rule
- * is the one the pool penalty shipped under, so two terms advised by two rules cannot
- * both be described as the measured optimum.
+ * It was shipped once, at `0.036552` with `earliest-only` — a value SOLVED rather than
+ * swept (the term is affine in this weight, so the zero-loss window is a closed interval;
+ * it was `w ∈ [0.034920, 0.038183]` on 1422 FSE'26 cases, and the midpoint rule is the one
+ * the pool penalty shipped under). The FSE'26 half of the shared kill criterion passed
+ * completely, at case granularity: `760` against the control's `756`, three fault types up
+ * by 1/2/1, **zero regressed**, and the run flipped exactly the four datapacks the screen
+ * had named in advance with none broken.
  *
- * Measured as a PAIR with the shape, against its own ablation on one commit
- * (`docs/fse26-onset-verdict.md` §7): 760 correct at this value against 756 at 0, three
- * fault types up by 1/2/1 and **zero regressed**, Top@1 53.45% against 53.16%. The
- * window is narrow and both ends are named, which is why the case-level split rather
- * than the net is the number that decides.
+ * The RCAEval half failed, and that is why the value is 0:
+ *
+ *     cell      recorded  at the shipped pair
+ *     RE1 TT       68.0        27.2      (−40.8)
+ *     RE2 TT       68.1        25.7      (−42.4)
+ *     RE1 OB       80.0        79.2
+ *     RE3 SS       45.0        47.5      (+2.5)
+ *     other five   —           unchanged
+ *
+ * Six of nine cells moved, two of them by ~41pp, reproduced identically on a second run of
+ * the same engine (`35029285379`, `35030365430`). The mechanism was on record before the
+ * attempt and is now measured: on RCAEval the injection-anchored onset anchors to the
+ * SOURCE's slow-responding dominant metric, so "whoever moved first" is systematically a
+ * symptom — which is exactly why the two-sided shapes had no admissible weight either, and
+ * why a one-sided mask cannot rescue the signal on that benchmark.
  *
  * One owner for the value, so the pruner's default and every runner's parsed fallback
  * cannot disagree — the defect that once published a headline 24.2pp below the
- * best-measured one.
+ * best-measured one. `fse26-onset-verdict.md` §8 carries the whole record; the register
+ * row points at the −40.8 rather than at the FSE'26 gain, because the criterion is BOTH
+ * halves.
  */
-export const DEFAULT_TEMPORAL_WEIGHT = 0.036552;
+export const DEFAULT_TEMPORAL_WEIGHT = 0.0;
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,

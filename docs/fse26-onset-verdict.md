@@ -166,7 +166,12 @@ makes the gate able to see the term at all.
 4. If either half fails, close the axis with those two numbers and this document becomes
    the row's evidence; if both pass, the term ships and the register gains the split.
 
-## 7. Done: the pair, and what it took to make the gate able to see it
+## 7. The pair, and what it took to make the gate able to see it
+
+> **Outcome: REVERTED.** The FSE'26 half of the criterion passed here, completely and at
+> case granularity; the RCAEval half failed by ~41pp on one cell, so the weight is 0 again
+> and the axis is closed by a rejection rather than left open. §8 is the measurement.
+
 
 Three commits, in this order, because the third cannot be measured without the first:
 
@@ -270,3 +275,64 @@ Verified inert on the dumps that predate the term: with `--temporal-weight 0` th
 byte-identical to the same command before this change, apart from the banner clause that
 states the ablation.
 
+## 8. Rejected by the golden: the measurement that undid it
+
+The pair shipped at `0.036552` + `earliest-only`, and the RCAEval suite — which had just
+been taught to read the engine's constants (§5) — ran the shipped configuration for the
+first time in the signal's history. Six of the nine cells moved, two of them by ~41pp:
+
+| cell | recorded | at the shipped pair | Δ |
+| --- | --- | --- | --- |
+| RE1 TrainTicket | 68.0 | **27.2** | −40.8 |
+| RE2 TrainTicket | 68.1 | **25.7** | −42.4 |
+| RE1 OnlineBoutique | 80.0 | 79.2 | −0.8 |
+| RE3 SockShop | 45.0 | **47.5** | +2.5 |
+| RE1 SockShop, RE2 OB, RE2 SS, RE3 OB, RE3 TT | — | unchanged | 0 |
+
+Reproduced **identically to the decimal on a second run of the same engine**
+(`35029285379`, `35030365430`) — `35029285379`'s banner reads
+`temporalWeight: 0.036552 | onsetShape: earliest-only`, which is the only reason we know
+the gate ran the shipped configuration at all rather than its own pin.
+
+**Why it failed is the mechanism already on record, now measured.** The engine's own doc
+says it: on RCAEval the injection-anchored onset anchors to the SOURCE's slow-responding
+dominant metric — latency and socket cross the 30% threshold LATE — while a symptom's fast
+metrics cross it EARLY. So "whoever moved first" is systematically a symptom there. That is
+the same fact that left the two-sided shapes with no admissible weight at all
+(`pruner.ts`, `OnsetShape`), and it should have been read as a warning: a one-sided MASK
+cannot be punished for demoting the late-mover source, but it can still *promote* the early
+symptom, and on TrainTicket it does, almost always.
+
+The two benchmarks therefore disagree about this signal, and the criterion has no tie-break
+for that: FSE'26 +4 cases / 0 regressed types, RCAEval −40.8pp on a cell. The criterion says
+no, and the criterion is the one thing on this page that is not up for negotiation.
+
+### What the revert changed, and what it deliberately left standing
+
+- `DEFAULT_TEMPORAL_WEIGHT` is back to `0`; `DEFAULT_ONSET_SHAPE` is back to `'earliness'`.
+  The shape is inert at weight 0, so this restores the pre-flip engine exactly — and the
+  next RCAEval run is what proves it, by reproducing all nine recorded cells.
+- The SHAPE MACHINERY stays: `computeOnsetSlopes`, the `onsetShape` option, the
+  `--onset-shape` flags, the `--onset-screen` menu, and the dump's `onset=`/`inject=`
+  fields. They are inert at weight 0, they are what made this measurable, and deleting
+  them would make the rejection unre-measurable.
+- The **instrument** stays, and this is the part that would have hurt to lose: `blendScores`
+  models the term, so a dump produced with it on reads back at `rank-1 1422/1422` with
+  `unexplained 0`.
+
+### The guard that let this ship had one half
+
+`MEASURED_TEMPORAL_PAIRS` recorded `regressedTypes` — an FSE'26, fault-TYPE claim — and had
+no field for the golden at all. A candidate could therefore be recorded as "measured" with
+the other half of the criterion unmeasured, which is exactly what happened. It now carries
+`golden: 'identical' | 'moved'` per point, the shipped weight is required to be an
+`'identical'` point, and the rejected candidate is kept in the table **as data** with both
+of its numbers. The description check was hardened at the same time: it compared text, so
+`toContain('0')` passed against a description naming `0.036552` — the moment a value
+reverts to 0 the check stopped checking. Descriptions are now compared by numeric token.
+
+Two sentences from §4 and §5 are worth re-reading in this light, because both were right in
+a way that did not help: the screen's own note that "a mask on the onset, where the
+competitor and the credited source are not the same quantity" (true — and the competitor is
+on the other benchmark), and §5's insistence that the gate had to be able to SEE the term
+before any of this could be believed. It saw it, and it said no.

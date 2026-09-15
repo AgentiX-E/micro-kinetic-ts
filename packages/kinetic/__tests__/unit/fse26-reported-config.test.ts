@@ -264,28 +264,45 @@ const MEASURED_TEMPORAL_PAIRS: Record<
     hits: number;
     cases: number;
     regressedTypes: number;
+    /**
+     * The kill criterion's OTHER half, recorded as data.
+     *
+     * It was missing from the first version of this table, and that is how a candidate
+     * shipped with only half of the criterion checked: `regressedTypes` (FSE'26) is a
+     * claim about fault TYPES on one benchmark, and nothing here could record that the
+     * golden 9-cell had moved. It had — by 40.8pp on one cell — and the table said
+     * nothing, so the guard said nothing.
+     */
+    golden: 'identical' | 'moved';
     run: string;
-    control: string;
+    goldenRun: string;
+    /** The companion point, when this one's gain is a gain against it. */
+    control?: string;
   }
 > = {
+  '0': {
+    shape: 'earliness',
+    topAt1: 0.5316455696202531,
+    hits: 756,
+    cases: 1422,
+    regressedTypes: 0,
+    golden: 'identical',
+    run: '35021503281',
+    goldenRun: '35028063290',
+  },
   '0.036552': {
     shape: 'earliest-only',
     topAt1: 0.5344585091420534,
     hits: 760,
     cases: 1422,
     regressedTypes: 0,
+    // BOTH halves, and they disagree. Kept as DATA rather than as a sentence in a
+    // document: the next session must find the rejection where it finds the values.
+    golden: 'moved',
     run: '35021510164',
+    goldenRun: '35029285379',
     control: '35021503281',
   },
-};
-
-/** The same commit with the term off — the arm a gain is a gain AGAINST. */
-const MEASURED_TEMPORAL_OFF = {
-  topAt1: 0.5316455696202531,
-  hits: 756,
-  cases: 1422,
-  regressedTypes: 0,
-  run: '35021503281',
 };
 
 /**
@@ -517,7 +534,15 @@ describe('FSE26 workflow descriptions agree with the code they describe', () => 
     for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED)) {
       const description = readInputDescription(yml, input);
       expect(description, `${input} has no description to check`).toBeDefined();
-      expect(description, `${input} must name the shipped ${shipped}`).toContain(String(shipped));
+      // Compared as NUMBERS, not as substrings. `toContain('0')` succeeds against a
+      // description that names `0.036552`, so the moment a value reverts to 0 the check
+      // stops checking and a description still advertising the rejected candidate passes —
+      // which is precisely the state this file was in an hour ago. Every numeric token is
+      // read out and compared numerically, which also tolerates `1.0` for a shipped `1`.
+      const numbers = [...description!.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+      expect(numbers, `${input} must name the shipped ${shipped}: ${description}`).toContain(
+        shipped,
+      );
     }
   });
 
@@ -589,11 +614,11 @@ describe('FSE26 pool-penalty weight is a measured value', () => {
 describe('FSE26 temporal prior is a measured PAIR', () => {
   const source = readFileSync(PRUNER_PATH, 'utf8');
 
-  it('ships a weight AND a shape that were measured together', () => {
-    // A weight is a claim about a shape. The engine's only non-zero measurement of this
-    // signal before the pair used the min-max `earliness` shape and was a net REGRESSION
-    // on RCAEval, so a shipped weight quoted alone would not identify a configuration
-    // that anyone has run.
+  it('ships a weight whose recorded run has BOTH halves of the criterion green', () => {
+    // A default is a claim about a measurement, and the criterion has TWO halves. A table
+    // that can only record one of them lets a candidate ship on a green FSE'26 result
+    // while the golden has collapsed — which is not hypothetical: the onset pair did
+    // exactly that (FSE'26 +4, RE1 TrainTicket 68.0 → 27.2).
     const shippedWeight = readConstant(
       source,
       DEFAULT_TEMPORAL_WEIGHT_RE,
@@ -606,33 +631,45 @@ describe('FSE26 temporal prior is a measured PAIR', () => {
     ).toBeDefined();
     expect(recorded!.cases).toBe(1422);
     expect(recorded!.regressedTypes).toBe(0);
-    expect(recorded!.topAt1).toBeCloseTo(0.5344585091420534, 12);
-
-    // The other half of the pair, read from source in the same breath: a shape flipped
-    // without a run is exactly as unmeasured as a weight flipped without one, and the
-    // guard's whole job is to make that impossible to do silently.
-    const shippedShape = readStringConstant(source, DEFAULT_ONSET_SHAPE_RE, 'DEFAULT_ONSET_SHAPE');
-    expect(shippedShape).toBe(recorded!.shape);
+    // The half that was missing. `moved` is a rejection, whatever the other half says.
+    expect(recorded!.golden).toBe('identical');
   });
 
-  it('keeps the OFF point recorded, on one commit, so the gain has an arm', () => {
-    // `+4` is a difference, and a difference needs both sides measured at the same
-    // commit and the same dataset — otherwise it is a comparison of two runs.
-    const recorded = MEASURED_TEMPORAL_PAIRS['0.036552']!;
-    expect(recorded.control).toBe(String(MEASURED_TEMPORAL_OFF.run));
-    expect(MEASURED_TEMPORAL_OFF.hits).toBe(756);
-    expect(MEASURED_TEMPORAL_OFF.regressedTypes).toBe(0);
-    expect(recorded.hits - MEASURED_TEMPORAL_OFF.hits).toBe(4);
+  it('requires the shape to be the one the recorded run used', () => {
+    // A weight is a claim about a shape: carrying one without the other is not a
+    // configuration, so a shape flipped on its own is as unmeasured as a weight flipped on
+    // its own. Read from source in the same breath as the weight.
+    const shippedWeight = readConstant(
+      source,
+      DEFAULT_TEMPORAL_WEIGHT_RE,
+      'DEFAULT_TEMPORAL_WEIGHT',
+    );
+    const shippedShape = readStringConstant(source, DEFAULT_ONSET_SHAPE_RE, 'DEFAULT_ONSET_SHAPE');
+    expect(shippedShape).toBe(MEASURED_TEMPORAL_PAIRS[String(shippedWeight)]!.shape);
+  });
+
+  it('keeps the REJECTED candidate on the record, with both of its numbers', () => {
+    // This is the test that pays for the whole table. A rejected candidate whose only
+    // trace is a paragraph in a verdict document gets re-proposed as new by the next
+    // session — the register exists because of that, and here the FSE'26 gain alone is
+    // genuinely attractive (+4 cases, zero regressed types, the named four datapacks
+    // flipped). So the rejection is data: its gain AND the cell it destroyed.
+    const rejected = MEASURED_TEMPORAL_PAIRS['0.036552']!;
+    expect(rejected.shape).toBe('earliest-only');
+    expect(rejected.golden).toBe('moved');
+    expect(rejected.regressedTypes).toBe(0);
+    expect(rejected.hits).toBe(760);
+    expect(rejected.control).toBe(MEASURED_TEMPORAL_PAIRS['0']!.run);
   });
 
   it('names the shipped shape in the workflow input a dispatcher reads', () => {
     // The same lesson as the latency pair's descriptions: the description is a second
-    // owner of the value it quotes, and `onset_shape` is not covered by the numeric
-    // table above because a shape is a word.
+    // owner of the value it quotes, and `onset_shape` is not covered by the numeric table
+    // above because a shape is a word.
     const yml = readFileSync(WORKFLOW_PATH, 'utf8');
     const description = readInputDescription(yml, 'onset_shape');
     expect(description, 'onset_shape has no description to check').toBeDefined();
-    expect(description).toContain('earliest-only');
-    expect(description).not.toContain('default, which is earliness');
+    expect(description).toContain('earliness');
+    expect(description).not.toContain('default, which is earliest-only');
   });
 });
