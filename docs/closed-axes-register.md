@@ -16,6 +16,30 @@ and the measurement it was proposing had already been run: **+0.14pp with five
 regressed fault types**, and the block it targeted did not move at all. A count of
 cases a change *could* affect carries no information about the cases it *does*.
 
+## The number that frames every row below
+
+Of the **672 misses** on the shipped configuration, **74 (11.0%)** have the winner
+strictly ahead on the metric, the log AND the latency — no non-negative reweighting can
+put the source first, so those need new EVIDENCE. The other **598 (89.0%)** have the
+source at least level with the winner on some term, so each is individually reachable by
+reweighting. The two computations agree exactly: the 74 are precisely the cases labelled
+`metric+log+lat`, and nothing else is blocked.
+
+Read together with the `logWeight` row — where NO single weight satisfies every case, and
+the per-type oracle ceiling is 50.00% — this locates the obstacle precisely. It is **not**
+absent evidence for 89% of the misses, and it is not a single bad weight: it is **conflict
+between cases**, i.e. demands for opposite weightings from cases that a global (or
+per-fault-type) weight cannot serve at once.
+
+So the lever that is left is a **per-case discriminator** that decides *which term to
+trust* — a context feature, finer than the fault type. What the existing evidence surfaces
+can supply for that has been measured down: the error text cannot supply direction (19,522
+`ERR:` lines name zero peer services or URLs), per-edge failure counts do not separate
+source from victim at any weight, breadth does not (`latEdges`), the call graph's ancestry
+does not (the source carries a latency rise at all in only 9.3% of the latency-involved
+misses), and every metric-family/label/spacing gate has been measured. **A candidate here
+must name the context feature and show it separates, on a free read, before any run.**
+
 **A proposal must say which rows it does not touch, and why it is not one of
 them.** If it cannot, the first thing to do is read that row's document. If it is
 resting on a necessary-condition count, the second thing is to look for the row that
