@@ -222,3 +222,30 @@ Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0.561495 
 identical to the flagged candidate, and the config line shows the term at its new default —
 which is the point of the re-measurement: the value a dispatched run uses is the value that
 was measured, not the value a flag produced once.
+
+## 8. The shared kill criterion, both halves, on the flip commit
+
+| half | run | result |
+| --- | --- | --- |
+| RCAEval golden 9-cell byte-identical | `34952203632` (`e2d3b24`, no flag) | **all nine cells exact**: RE1 80.0 / 92.8 / 68.0, RE2 82.4 / 88.9 / 68.1, RE3 80.0 / 45.0 / 51.1 |
+| FSE'26 zero regressed fault types | `34953378651` (`e2d3b24`, no flag) | **zero**, +6 cases, every one of the 24 other types holding its count |
+
+Both were measured on the shipped configuration — the golden through the default path, which
+is the only path it has — so the criterion is satisfied by measurement rather than by
+argument. The previous headline 52.74% (750) remains reachable as `--pool-penalty 0`, and it
+too was measured on this commit (`34949812666`, `34949809566`).
+
+## 9. What this does not license
+
+- **The window is not a budget.** Moving toward 0.087011 to buy more would spend the exact
+  margin the measurement established, and the casualty there is named. A candidate wanting
+  more than +6 has to WIDEN the window (a second family, a better classifier) or find a new
+  axis, not move this weight.
+- **The credit side stays closed as measured.** Every set that credits the resource families
+  gained nothing before its first casualty; re-proposing one needs a reason the frontier
+  table does not already refute.
+- **One family is not a taxonomy.** The term names `db.client.connections.*` because that is
+  what the census measured and what the window tolerates; adding a family is a new decision
+  with its own row, and the prefix has one owner so the screen and the engine cannot drift.
+- **The +6 is benchmark-specific.** It is a property of these 1422 cases and this cache, which
+  is why the constant is guarded by a recorded run id rather than by a comment.
