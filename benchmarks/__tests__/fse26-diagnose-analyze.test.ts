@@ -47,6 +47,7 @@ import {
   MISS_ORDER,
   parseAnalyzeArgs,
   parseDiagnosticDump,
+  reconcileConfigurations,
   regressionMechanism,
   tallyDeltas,
   zeroRegressionSamples,
@@ -1540,6 +1541,215 @@ describe('the attribution vocabulary is a census, not a sample', () => {
   });
 });
 
+/**
+ * Pool-dominant, so the penalty applies to whichever side carries it.
+ *
+ * The label is the engine's own constant rather than a literal: a fixture whose
+ * "pool metric" the engine would not penalise is a fixture about a prefix, not
+ * about the term.
+ */
+const pool = `${POOL_METRIC_PREFIX}use_time.max`;
+
+/**
+ * Two named contenders at the top of a 26-candidate field, the rest filler.
+ *
+ * 26 and not two, because the metric term is RANK-normalised: two candidates give
+ * the runner-up a term of 0, so the gap to the leader is `log1p(1) = 0.693` and no
+ * admissible pool weight can close it. At 26 the step is `1/25` and the gap is
+ * `log1p(1) − log1p(0.96) = 0.0198`, which is the width the shipped 0.0679 has to
+ * work with — the same arithmetic that made the pool penalty's window `0.038` wide
+ * on the real 51-candidate cases. A fixture that ignored the spacing would be
+ * testing a ranking the engine cannot produce.
+ */
+function rankedField(options: {
+  readonly leader: ServiceSpec;
+  readonly runnerUp: ServiceSpec;
+  readonly groundTruth: string;
+  readonly prediction: string;
+}): string {
+  const candidates = 26;
+  const filler = Array.from({ length: candidates - 2 }, (_, i) =>
+    serviceLine({
+      serviceId: `ts-filler-${String(i).padStart(2, '0')}`,
+      selfAnomaly: (candidates - 1 - (i + 2)) / (candidates - 1),
+    }),
+  );
+  return dump({
+    groundTruthServices: [options.groundTruth],
+    services: [
+      serviceLine({ ...options.leader, selfAnomaly: 1 }),
+      serviceLine({ ...options.runnerUp, selfAnomaly: (candidates - 2) / (candidates - 1) }),
+      ...filler,
+    ],
+    topPredictions: [options.prediction],
+  });
+}
+
+describe('reconcileConfigurations', () => {
+  it('is zero in every cell when the flags are the dump’s own', () => {
+    // The property the whole reconciliation exists to state: at the configuration
+    // the dump was scored at, `recorded` and `modelled` are ONE number. Any non-zero
+    // cell here would mean the instrument disagrees with the engine it is reading.
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.9 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.4 }),
+        ],
+        topPredictions: ['ts-src', 'ts-win'],
+      }),
+    );
+    const reconciled = reconcileConfigurations(cases, { logWeight: 1, poolWeight: 0 });
+
+    expect(reconciled.scorable).toBe(1);
+    expect(reconciled).toMatchObject({
+      recordedCorrect: 1,
+      modelledCorrect: 1,
+      bothCorrect: 1,
+      bothWrong: 0,
+      fixed: 0,
+      broken: 0,
+      net: 0,
+      rank1Moved: 0,
+    });
+  });
+
+  it('counts what the modelled weights BREAK, which the miss set cannot show', () => {
+    // The number a headline hides, and the number `classifyMiss` structurally cannot
+    // report: a case the modelled weights turn from correct to wrong is not a
+    // recorded miss, so it never reaches the attribution. The shipped pool penalty
+    // published a net of +6 and a per-type split; its case-level cost was never
+    // printed because nothing was looking at the correct population.
+    const cases = parseDiagnosticDump(
+      rankedField({
+        // The ROOT is the pool-dominant service, so penalising the family demotes
+        // the right answer: recorded correct, modelled wrong.
+        leader: { serviceId: 'ts-src', dominant: pool },
+        runnerUp: { serviceId: 'ts-win', dominant: 'cpu' },
+        groundTruth: 'ts-src',
+        prediction: 'ts-src',
+      }),
+    );
+    const reconciled = reconcileConfigurations(cases, {
+      logWeight: 1,
+      poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    });
+
+    expect(reconciled).toMatchObject({
+      recordedCorrect: 1,
+      modelledCorrect: 0,
+      fixed: 0,
+      broken: 1,
+      net: -1,
+      rank1Moved: 1,
+    });
+  });
+
+  it('counts what the modelled weights FIX, and names it separately from the net', () => {
+    // The mirror image: the WRONG winner is the pool-dominant one, so the penalty
+    // demotes it and the root takes rank 1. `net` is `fixed − broken`, so a change
+    // that fixes three and breaks two must not be reported as +1 alone.
+    const cases = parseDiagnosticDump(
+      rankedField({
+        // The WRONG winner is the pool-dominant one, so the penalty demotes it and
+        // the root takes rank 1.
+        leader: { serviceId: 'ts-win', dominant: pool },
+        runnerUp: { serviceId: 'ts-src', dominant: 'cpu' },
+        groundTruth: 'ts-src',
+        prediction: 'ts-win',
+      }),
+    );
+    const reconciled = reconcileConfigurations(cases, {
+      logWeight: 1,
+      poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    });
+
+    expect(reconciled).toMatchObject({
+      recordedCorrect: 0,
+      modelledCorrect: 1,
+      fixed: 1,
+      broken: 0,
+      net: 1,
+    });
+  });
+
+  it('reports the net as `fixed − broken`, not as the case-level gain', () => {
+    // A change that fixes three cases and breaks two is +1, and +1 is also what a
+    // change that fixes one and breaks nothing is. The kill criterion's second half
+    // is about the second number, so the report cannot collapse them.
+    const fixed = parseDiagnosticDump(
+      rankedField({
+        leader: { serviceId: 'ts-win', dominant: pool },
+        runnerUp: { serviceId: 'ts-src', dominant: 'cpu' },
+        groundTruth: 'ts-src',
+        prediction: 'ts-win',
+      }),
+    );
+    const broken = parseDiagnosticDump(
+      rankedField({
+        leader: { serviceId: 'ts-src', dominant: pool },
+        runnerUp: { serviceId: 'ts-win', dominant: 'cpu' },
+        groundTruth: 'ts-src',
+        prediction: 'ts-src',
+      }),
+    );
+    const reconciled = reconcileConfigurations([...fixed, ...broken], {
+      logWeight: 1,
+      poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    });
+
+    expect(reconciled).toMatchObject({ fixed: 1, broken: 1, net: 0 });
+    // The two populations separately, which is what a per-fault-type table hides:
+    // +0 net here is one type gained and one lost, not a change with no effect.
+    expect(reconciled.modelledCorrect).toBe(reconciled.recordedCorrect);
+  });
+
+  it('partitions every scorable case exactly once', () => {
+    // The four cells are a CROSS-tabulation, not four independent counters: a case
+    // counted twice would inflate the net, and one counted nowhere would vanish. The
+    // identity is the cheap test that catches both, and it holds on the real dump
+    // (750 both-correct + 6 fixed + 0 broken + 666 both-wrong = 1422).
+    const cases = parseDiagnosticDump(
+      rankedField({
+        leader: { serviceId: 'ts-win', dominant: pool },
+        runnerUp: { serviceId: 'ts-src', dominant: 'cpu' },
+        groundTruth: 'ts-src',
+        prediction: 'ts-win',
+      }),
+    );
+    // A weight far past the window, so the penalised service falls through the field
+    // rather than swapping with one neighbour: the identity has to hold when the
+    // modelled winner is not even the runner-up.
+    const reconciled = reconcileConfigurations(cases, { logWeight: 1, poolWeight: 0.5 });
+
+    expect(
+      reconciled.bothCorrect + reconciled.fixed + reconciled.broken + reconciled.bothWrong,
+    ).toBe(reconciled.scorable);
+    expect(reconciled.recordedCorrect).toBe(reconciled.bothCorrect + reconciled.broken);
+    expect(reconciled.modelledCorrect).toBe(reconciled.bothCorrect + reconciled.fixed);
+    expect(reconciled.net).toBe(reconciled.fixed - reconciled.broken);
+  });
+
+  it('leaves a case with no acceptable root out of every cell', () => {
+    // An unlabelled case has no correct answer to gain or lose, so counting it would
+    // be counting it as a miss — the same absent-versus-empty rule the parser keeps.
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: [],
+        services: [serviceLine({ serviceId: 'ts-a', selfAnomaly: 0.9 })],
+        topPredictions: ['ts-a'],
+      }),
+    );
+    const reconciled = reconcileConfigurations(cases, { logWeight: 1 });
+
+    expect(reconciled.scorable).toBe(0);
+    expect(
+      reconciled.bothCorrect + reconciled.fixed + reconciled.broken + reconciled.bothWrong,
+    ).toBe(0);
+  });
+});
+
 describe('formatMissReport', () => {
   it('tallies every kind, the silent block, and each fault type', () => {
     const text = dump({
@@ -1580,6 +1790,52 @@ describe('formatMissReport', () => {
     const report = formatMissReport(cases, { logWeight: 1 });
     expect(report).not.toContain('unexplained');
     expect(report).not.toContain('absent');
+  });
+
+  it('prints the recorded miss count and the modelled one, and says which is which', () => {
+    // The defect this fixes, stated as an assertion: the report used to print one
+    // `wrong cases` number that was the dump's recorded ranking while its own mode
+    // pre-screen printed another that was the modelled one, and a reader could not
+    // tell which population the attribution below was about. Both are now on the
+    // page, each labelled, with `rank-1 moved` measuring whether they differ.
+    const cases = parseDiagnosticDump(
+      rankedField({
+        leader: { serviceId: 'ts-win', dominant: pool },
+        runnerUp: { serviceId: 'ts-src', dominant: 'cpu' },
+        groundTruth: 'ts-src',
+        prediction: 'ts-win',
+      }),
+    );
+    const report = formatMissReport(cases, {
+      logWeight: 1,
+      poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    });
+
+    expect(report).toContain("wrong cases: 1 (the dump's recorded rank-1)");
+    expect(report).toMatch(/correct: recorded 0 \/ modelled 1; rank-1 moved 1/);
+    // `unexplained` here is the pool penalty putting the source ahead of the recorded
+    // winner — a footprint of the difference, not an engine finding. Without the note
+    // the invariant "a healthy engine has zero unexplained" invites the wrong reading.
+    expect(report).toMatch(/note: 1 `unexplained` and 1 `fixed`/);
+  });
+
+  it('says nothing about a configuration difference when the rank-1 did not move', () => {
+    // The note is a claim that the flags are not the dump's own. Printing it at the
+    // dump's own configuration would retract the invariant for no reason.
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+      }),
+    );
+    const report = formatMissReport(cases, { logWeight: 1, poolWeight: 0 });
+
+    expect(report).toMatch(/correct: recorded 0 \/ modelled 0; rank-1 moved 0/);
+    expect(report).not.toContain('note:');
   });
 
   it('accumulates several wrong cases of the same fault type', () => {

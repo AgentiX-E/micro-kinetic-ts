@@ -28,8 +28,10 @@ import {
 import type { DiagnosedCase } from '../src/fse26-diagnose-analyze.js';
 import {
   formatAnalyzeSections,
+  isTop1Correct,
   parseAnalyzeArgs,
   parseDiagnosticDump,
+  reconcileConfigurations,
 } from '../src/fse26-diagnose-analyze.js';
 import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 import {
@@ -50,6 +52,7 @@ import {
   oracleCensus,
   oracleFidelity,
   rankCase,
+  shippedRank1,
   shippedScores,
 } from '../src/fse26-term-oracle.js';
 
@@ -444,7 +447,15 @@ describe('oracleCensus', () => {
 
   it('reports the shipped count, the single-term ceiling and the menu ceiling', () => {
     const census = oracleCensus(casesOf(logRight, metricRight), OPTS);
-    expect(census.shippedCorrect).toBe(2);
+    // ONE, not two — and the difference is the point. `metric-right`'s recorded
+    // prediction names the root, but the blend does not: the victim carries the log
+    // term (1.0) and the whole latency term (0.561) against the root's metric lead of
+    // `log1p(1) = 0.693`, so the configuration under study ranks the VICTIM first.
+    // Reading `kase.prediction` here reported 2, i.e. it credited the blend with a
+    // case the blend loses — and it did so two lines above a `menuCoverage` row that
+    // names `metric only` as the only configuration covering `metric-right`. Two
+    // renderings of one configuration disagreed inside one function.
+    expect(census.shippedCorrect).toBe(1);
     expect(census.singleTermCeiling).toBe(2);
     expect(census.singleTermUnreachable).toBe(0);
     expect(census.menuCeiling).toBe(2);
@@ -479,6 +490,44 @@ describe('oracleCensus', () => {
     const census = oracleCensus(casesOf(twoRoots), OPTS);
     expect(census.shippedCorrect).toBe(1);
     expect(census.singleTermUnreachable).toBe(0);
+  });
+
+  it('counts the CONFIGURATION UNDER STUDY, not the dump the dump was recorded at', () => {
+    // The two-instrument check that found the defect: on a 1422-case dump the census
+    // printed `shipped 750` while the mode pre-screen on the same page printed
+    // `baseline recorded: 756`, because the census read `kase.prediction` and the
+    // pre-screen ranked the modelled score. Both are "the shipped configuration's
+    // Top@1" and only one of them can be right, so the two must agree — and they
+    // agree with the reconciliation the miss report prints, which is a third reader.
+    const cases = casesOf(logRight, metricRight);
+    const census = oracleCensus(cases, OPTS);
+    expect(census.shippedCorrect).toBe(modeScreen(cases, OPTS).rows[0]!.correct);
+    expect(census.shippedCorrect).toBe(
+      reconcileConfigurations(cases, {
+        logWeight: OPTS.logWeight,
+        latWeight: OPTS.latWeight,
+        latFloor: OPTS.latFloor,
+        poolWeight: OPTS.poolWeight,
+      }).modelledCorrect,
+    );
+    // And it is NOT the recorded count: the dump's own ranking gets both cases right.
+    expect(cases.every((kase) => isTop1Correct(kase))).toBe(true);
+    expect(census.shippedCorrect).toBe(1);
+  });
+
+  it('agrees with the recorded count when the flags are the dump’s own', () => {
+    // The property that makes the change above safe: a faithful reconstruction's
+    // order IS the recorded order, so nothing measured at the dump's own
+    // configuration can move because `shippedCorrect` now ranks the score.
+    const cases = casesOf(
+      block([{ serviceId: 'ts-root' }, { serviceId: 'ts-victim' }], {
+        datapack: 'own-config',
+        topPredictions: ['ts-root'],
+      }),
+    );
+    const fidelity = oracleFidelity(cases, OPTS);
+    expect(fidelity.top1Matches).toBe(fidelity.cases);
+    expect(oracleCensus(cases, OPTS).shippedCorrect).toBe(1);
   });
 
   it('skips a case with no acceptable root and survives one with no service rows', () => {
@@ -878,6 +927,33 @@ describe('shippedScores — one entry point for the score the engine ranks by', 
     for (const [serviceId, score] of scores) {
       expect(score).toBeCloseTo(blended.get(serviceId)!, 12);
     }
+  });
+});
+
+describe('shippedRank1 — one owner of "who the modelled score puts first"', () => {
+  it('breaks a tie the way the ENGINE breaks it', () => {
+    // Two orders for one score is how a report printed 750, 756 and 672 for one run:
+    // the census read the recorded array, the pre-screen ranked the score, and the
+    // reconciliation would have invented a third `argmax`. The tiebreak is part of
+    // the tie — a different one is a different prediction, not a rounding detail.
+    const kase = casesOf(
+      block([
+        { serviceId: 'ts-b', selfAnomaly: 0.5 },
+        { serviceId: 'ts-a', selfAnomaly: 0.5 },
+      ]),
+    )[0]!;
+    expect(shippedRank1(kase, { logWeight: 1, latWeight: 0, latFloor: 1, poolWeight: 0 })).toBe(
+      'ts-a',
+    );
+  });
+
+  it('returns undefined for a case with no candidates rather than a fabricated name', () => {
+    // An absent rank-1 is a case the dump cannot score; naming anything would turn
+    // "not measured" into a prediction and could silently count as a miss.
+    const kase = casesOf(block([], { datapack: 'no-services' }))[0]!;
+    expect(
+      shippedRank1(kase, { logWeight: 1, latWeight: 0, latFloor: 1, poolWeight: 0 }),
+    ).toBeUndefined();
   });
 });
 

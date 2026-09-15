@@ -18,12 +18,14 @@ cases a change *could* affect carries no information about the cases it *does*.
 
 ## The number that frames every row below
 
-Of the **672 misses** on the shipped configuration, **74 (11.0%)** have the winner
-strictly ahead on the metric, the log AND the latency — no non-negative reweighting can
-put the source first, so those need new EVIDENCE. The other **598 (89.0%)** have the
-source at least level with the winner on some term, so each is individually reachable by
-reweighting. The two computations agree exactly: the 74 are precisely the cases labelled
-`metric+log+lat`, and nothing else is blocked.
+Of the **666 misses** at the shipped configuration (**672** is the same dump's pool-off
+count — the two differ by the six cases the pool penalty fixes, see
+`fse26-shipped-config-verdict.md` §4), **74 (11.1%)** have the winner strictly ahead on
+the metric, the log AND the latency — no non-negative reweighting can put the source
+first, so those need new EVIDENCE. The other **592 (88.9%)** have the source at least
+level with the winner on some term, so each is individually reachable by reweighting.
+The two computations agree exactly: the 74 are precisely the cases labelled
+`metric+log+lat` (73) plus `metric+log+lat+pool` (1), and nothing else is blocked.
 
 Read together with the `logWeight` row — where NO single weight satisfies every case, and
 the per-type oracle ceiling is 50.00% — this locates the obstacle precisely. It is **not**
@@ -58,6 +60,9 @@ measured against, not the current number. Both are still reachable as ablations 
 
 | axis | where | the number that closed it | reopens only if |
 | --- | --- | --- | --- |
+| the injection-anchored ONSET prior (`temporalWeight` — the service whose dominant metric left its pre-injection baseline FIRST is the source) | `fse26-shipped-config-verdict.md` §5 | default 0 since `46913ea`: measured **−2.5pp on RCAEval**. **Lineage-stale and benchmark-stale, which is why this row exists**: that measurement predates `rankNormalization` (`7f483c7`, the repo's largest measured effect), the latency pair (`8aa909b`) and the pool penalty, so its gain AND its regression set are both unusable — and it has **never been measured on FSE'26**. The engine still computes the signal (`postInjectOnsetDelays`), so this is a closed-by-a-code-comment axis, not an absent one | a measurement on FSE'26 at the shipped base with **zero regressed fault types** and the golden 9-cell byte-identical. Note the signal is not in any dump, so it cannot be pre-screened for free — budget one `diagnose` run to emit it before proposing a weight |
+| the local source-likelihood prior (`sourceWeight` — the fraction of causal neighbours whose onset index is LATER) | `fse26-shipped-config-verdict.md` §5 | default 0 (`#193` "regressed the benchmark"); superseded inside the engine by `postInjectOnsetDelays`, whose own comment says the index-based onset was computed from a **fault-contaminated baseline** — the two were never both right | the same measurement as the row above, on the injection-anchored signal. Do not re-propose the index-based one: its input is the defect the other was written to fix |
+| the ATTRIBUTION of each miss at the SHIPPED configuration (which term decided it) | `fse26-shipped-config-verdict.md` §4 | measured free from the 1422-case pre-pool dump: **756** at `--pool-penalty 0.0679` (the shipped headline, from another run's data); **750** both-correct / **6** fixed / **0** broken / **666** both-wrong; rank-1 moved 103. The instrument defect this exposed — one page printing 750, 756 and 672 for one run, and 14 cases filed as `unexplained` that were the flag difference — is fixed and pinned by tests | a FIFTH term ships, or a pool-ON 1422-case dump lands. Read `unexplained` only with `rank-1 moved`: it is a defect claim at the dump's own configuration and a footprint otherwise |
 | reweighting the log term (`logWeight`) | `fse26-logweight-sweep-verdict.md` | control 47.33%; `0.5` → 46.84% (−0.49pp); per-fault-type **oracle ceiling +2.67pp → 50.00%** | a per-type oracle that exceeds 50% exists, i.e. the metric term itself changes |
 | log-signal mode (`count` / `logicHttp` / `all` / `novelty` / `logicHttpDominant`) | `fse26-framework-http-direction-verdict.md`, `fse26-term-oracle-verdict.md` | `count` 16.5%, `logicHttp` 46.5% — the shipped mode is the best measured; **the two modes that were built and never measured are now pre-screened offline, on the shipped dump**: `count` re-derived is **496/1422 (34.9%) with 9 regressed fault types** (`ReplaceCode` −149), and `logicHttpDominant` — "falsified before ablation" in `78eb99e` — reaches **775** at the engine's default 0.5 with **5 regressed types** (`ReplaceCode` −15). Swept from 0.2 to 0.95 the only point that regresses nothing is **0.2, at +6 cases of which 5 are the instrument's own ±5 rounding artefact** (`HTTPResponseReplaceBody`), leaving **1 case** — inside the error bar. The mechanism is the register's conflict a third time: the framework-HTTP flood is a source signature in the replace-code population (one emitter owns 90–100% of it, 597 cases) and a victim cascade in the network population (spread, 224 cases), and no threshold serves both | a new mode is both measured and better on the same cache. **The reopening condition is now answered for `logicHttpDominant`: it is measured, and it is not better.** `novelty` remains unmeasured — it cannot be rebuilt from a dump (it needs per-class line counts) and is not reachable from the FSE'26 CLI |
 | a per-case DISCRIMINATOR that picks the configuration per case (the lever `fse26-latency-shape-verdict.md`'s ceiling analysis named) | `fse26-term-oracle-verdict.md` | **the bound is measured**: a perfect per-case choice among the four configurations the shipped formula can take (`metric only`, `log only`, `lat only` at the shipped weights, and the blend) reaches **871/1422 = 61.25%**, i.e. **+8.51pp** over the shipped 750 — and **551 cases (38.8%)** are named by NONE of them. A perfect choice of one TERM alone reaches 880 (61.88%), which is not implementable (the metric base cannot be switched off) but bounds the blend: no discriminator can exceed it. The conflict tally the discriminator would have to resolve is 551 cases demanding opposite treatments (`log` right where both others are wrong 450 times, wrong where both are right 101 times), and the metric layer misranks the root deeply rather than narrowly (median rank of the best root among misses **14**, mean 16.8; only 126 of 672 inside the top 3) | a discriminator that states its expected accuracy against the conflict tally, is pre-screened on the dump for free, and converts the +8.51pp oracle with **zero** regressed fault types |
@@ -105,6 +110,10 @@ Before reading any number, check that the input was counted:
 - a diagnostic dump's miss attribution prints **`unexplained`** and **`tie`** — a
   healthy engine has zero `unexplained`, because that category means the order is
   inconsistent with the terms the dump carries (`docs/fse26-stock-attribution.md`).
+  **Read it next to `rank-1 moved`**: the claim is about the modelled terms *at the
+  dump's own configuration*. When the flags move the rank-1, every case they would flip
+  lands in `unexplained` too — 14 of them, and 0 of them an engine finding, the first
+  time it was read that way (`fse26-shipped-config-verdict.md` §2).
 
 ## What is left
 
@@ -148,3 +157,13 @@ lever stays open as EVIDENCE with a stated bar — **+14 held out, zero held-out
 term removed** — and closed as a shippable change. What is genuinely left is therefore not a
 weight, a family or a chooser among these four configurations: it is a signal that does not
 exist in the dump yet.
+
+**One such signal exists, and it is registered above — read the first two rows of the table
+before proposing it.** The engine computes an injection-anchored onset delay per service
+(`postInjectOnsetDelays`) and `temporalWeight` renders it into the score; it is exactly the
+"not in the dump yet" signal, it is the engine's own theory (collision at `t₀`, propagation
+`τ`), and it was measured once: **−2.5pp on RCAEval**, at a configuration three large effects
+older than the current one, never on FSE'26. The two rows record it with its lineage so the
+next session does not spend a turn rediscovering it — and so it does not get shipped on the
+strength of a stale number either. The cheap way to settle it is one DIAG field plus one
+`diagnose` run (§6 of that verdict), which is also the last data gap on this page.

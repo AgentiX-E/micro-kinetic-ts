@@ -38,6 +38,7 @@ import {
   formatTermOracleReport,
   isPoolDominantLabel,
   latencySlopes,
+  shippedRank1,
   shippedScores,
 } from './fse26-term-oracle.js';
 
@@ -878,6 +879,103 @@ export function tallyMisses(
 }
 
 /**
+ * The dump's recorded ranking and the modelled one, reconciled case by case.
+ *
+ * A dump does not record the weights it was scored at, so the only way to know
+ * whether the flags on the command line are the dump's own is to MEASURE it: rank
+ * every case at the modelled weights and compare with the recorded rank-1. The
+ * comparison is what makes the four numbers below a reconciliation rather than a
+ * pair of assertions — at the dump's own configuration `fixed`, `broken` and
+ * `rank1Moved` are all zero and the two `correct` counts are one number.
+ *
+ * `broken` is the one a headline hides. The pool penalty's published figure is a net
+ * (+6) and a per-type split; the case-level cost it paid for it was never printed,
+ * and the attribution could not show it at all, because a case the modelled weights
+ * BREAK is not a recorded miss and therefore never reaches {@link classifyMiss}.
+ */
+export interface ConfigReconciliation {
+  /** Cases carrying at least one non-empty ground-truth label. */
+  readonly scorable: number;
+  /** Correct under the dump's own recorded rank-1. */
+  readonly recordedCorrect: number;
+  /** Correct under the modelled weights' rank-1. */
+  readonly modelledCorrect: number;
+  /** Correct in both: the population no configuration change touches. */
+  readonly bothCorrect: number;
+  /** Wrong in both. */
+  readonly bothWrong: number;
+  /** Recorded-wrong → modelled-correct. */
+  readonly fixed: number;
+  /** Recorded-correct → modelled-wrong. */
+  readonly broken: number;
+  /** `modelledCorrect − recordedCorrect`; the headline, and the least of these. */
+  readonly net: number;
+  /** Cases whose rank-1 the modelled weights move, correct or not. */
+  readonly rank1Moved: number;
+}
+
+/**
+ * Reconcile the modelled weights against a dump's recorded ranking.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The modelled weights.
+ * @returns The cross-tabulation.
+ */
+export function reconcileConfigurations(
+  cases: readonly DiagnosedCase[],
+  weights: MissAttributionWeights,
+): ConfigReconciliation {
+  let scorable = 0;
+  let bothCorrect = 0;
+  let bothWrong = 0;
+  let fixed = 0;
+  let broken = 0;
+  let rank1Moved = 0;
+  for (const kase of cases) {
+    if (!kase.groundTruth.some((name) => name !== '')) continue;
+    scorable++;
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    const recorded = kase.prediction[0] !== undefined && root.has(kase.prediction[0]);
+    const modelledTop = shippedRank1(kase, {
+      logWeight: weights.logWeight,
+      latWeight: weights.latWeight ?? SHIPPED_LAT_WEIGHT,
+      latFloor: weights.latFloor ?? SHIPPED_LAT_FLOOR,
+      poolWeight: weights.poolWeight ?? SHIPPED_POOL_WEIGHT,
+    });
+    const modelled = modelledTop !== undefined && root.has(modelledTop);
+    if (modelledTop !== kase.prediction[0]) rank1Moved++;
+    if (recorded && modelled) bothCorrect++;
+    else if (!recorded && !modelled) bothWrong++;
+    else if (modelled) fixed++;
+    else broken++;
+  }
+  const recordedCorrect = bothCorrect + broken;
+  const modelledCorrect = bothCorrect + fixed;
+  return {
+    scorable,
+    recordedCorrect,
+    modelledCorrect,
+    bothCorrect,
+    bothWrong,
+    fixed,
+    broken,
+    net: modelledCorrect - recordedCorrect,
+    rank1Moved,
+  };
+}
+
+/** Render the recorded-vs-modelled reconciliation as two lines. */
+function formatReconciliation(reconciled: ConfigReconciliation): string[] {
+  return [
+    `  configuration vs the dump's recorded rank-1 (${reconciled.scorable} cases): ` +
+      `both-correct ${reconciled.bothCorrect}  both-wrong ${reconciled.bothWrong}  ` +
+      `fixed ${reconciled.fixed}  broken ${reconciled.broken}  net ${reconciled.net >= 0 ? '+' : ''}${reconciled.net}`,
+    `  correct: recorded ${reconciled.recordedCorrect} / modelled ${reconciled.modelledCorrect}; ` +
+      `rank-1 moved ${reconciled.rank1Moved}`,
+  ];
+}
+
+/**
  * Render the miss attribution over a whole dump.
  *
  * @param cases - Parsed cases.
@@ -908,10 +1006,31 @@ export function formatMissReport(
     `Miss attribution (logWeight=${weights.logWeight}; ${modelled}; ${poolModelled}; ` +
       'exact only when no other prior is on):',
   );
-  lines.push(`  wrong cases: ${total}`);
+  // Two counts, because they are two different questions and the report used to
+  // answer both with one number while its own mode pre-screen answered the second
+  // with another: `wrong cases` is the DUMP's recorded ranking (the thing the engine
+  // actually did and the set `classifyMiss` attributes), `modelled` is the
+  // configuration on the banner. They are equal exactly when the flags are the
+  // dump's own, which `rank-1 moved` below measures rather than assumes.
+  const reconciled = reconcileConfigurations(cases, weights);
+  lines.push(`  wrong cases: ${total} (the dump's recorded rank-1)`);
+  lines.push(...formatReconciliation(reconciled));
   for (const kind of MISS_ORDER) {
     const n = byDecidedBy.get(kind) ?? 0;
     if (n > 0) lines.push(`  ${kind.padEnd(12)} ${n}`);
+  }
+  const unexplained = byDecidedBy.get('unexplained') ?? 0;
+  if (unexplained > 0 && reconciled.rank1Moved > 0) {
+    // The invariant is "a healthy engine has zero `unexplained`", and it is a claim
+    // about the modelled terms AT THE DUMP'S OWN CONFIGURATION. Once the weights move
+    // the rank-1, every case they would flip reads as `unexplained` — the pool penalty
+    // produced 14 of them on a pool-off dump, none of them an engine finding. Say so
+    // next to the number, because the count alone invites the opposite reading.
+    lines.push(
+      `  note: ${unexplained} \`unexplained\` and ${reconciled.fixed} \`fixed\` are two footprints of ` +
+        `the same difference — the modelled weights move the rank-1 in ${reconciled.rank1Moved} cases. ` +
+        'At the dump’s own configuration both are zero and the category is a defect claim.',
+    );
   }
   lines.push(`  silent both sides (no error evidence either side): ${silentBothSides}`);
 

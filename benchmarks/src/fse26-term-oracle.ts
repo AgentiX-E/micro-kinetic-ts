@@ -389,6 +389,35 @@ export function shippedScores(
   );
 }
 
+/**
+ * Rank-1 under the configuration under study, rebuilt from a dump.
+ *
+ * THE single owner of "which service does the modelled score put first", so the
+ * census, the mode pre-screen and the miss reconciliation cannot disagree about one
+ * configuration: three callers that each took their own `argmax` is exactly how a
+ * report came to print 750, 756 and 672 for the same run on the same page.
+ *
+ * The tiebreak is the engine's own — score descending, then service id ascending —
+ * because a rank-1 that a tie resolves differently is a different prediction, not a
+ * rounding detail.
+ *
+ * @param kase - One parsed case.
+ * @param weights - The run's four weights.
+ * @returns The rank-1 service id, or `undefined` for a case with no candidates.
+ */
+export function shippedRank1(
+  kase: DiagnosedCase,
+  weights: ShippedScoreWeights,
+): string | undefined {
+  const scores = shippedScores(kase, weights);
+  return rankScored(
+    kase.services.map((service) => ({
+      serviceId: service.serviceId,
+      score: scores.get(service.serviceId)!,
+    })),
+  )[0];
+}
+
 function rankScored(scored: readonly ScoredService[]): string[] {
   return [...scored]
     .sort((a, b) => {
@@ -692,6 +721,17 @@ export interface OracleCensus {
   readonly conflicts: readonly Tally[];
   /** The metric rank of a root (the best-ranked one), histogrammed. */
   readonly rootMetricRank: readonly Tally[];
+  /**
+   * Cases the configuration UNDER STUDY gets right — the modelled weights' own
+   * rank-1, not the dump's recorded one.
+   *
+   * Modelled rather than recorded because every other number in this census is
+   * modelled, and a report that mixes the two prints two different scores for one
+   * run: read from `kase.prediction` this read 750 on a page whose mode pre-screen
+   * said 756, which is the same run under the same flags. The two agree exactly
+   * whenever the flags are the dump's own (the fidelity line measures that), so
+   * nothing a faithful reconstruction reports can move because of this.
+   */
   readonly shippedCorrect: number;
   /**
    * Cases the best single term names — the ceiling for any pure-term ranker. The
@@ -772,9 +812,9 @@ export function oracleCensus(
     const root = new Set(kase.groundTruth.filter((name) => name !== ''));
     if (root.size === 0) continue;
     counted++;
-    if (kase.prediction[0] !== undefined && root.has(kase.prediction[0])) shippedCorrect++;
     const lat = latencySlopes(kase.services, opts.latFloor);
     const rankings = rankCase(kase, opts, 'recorded', lat);
+    if (root.has(rankings.order[0] ?? '')) shippedCorrect++;
     const right = terms.filter((term) => root.has(rankings.byTerm[term][0] ?? ''));
     const wrong = terms.filter((term) => {
       const top = rankings.byTerm[term][0];
