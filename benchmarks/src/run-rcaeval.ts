@@ -13,7 +13,12 @@
  *
  * Usage:
  *   pnpm exec tsx benchmarks/src/run-rcaeval.ts [--data-dir <path>] [--suite re1|re2|re3] [--system ob|ss|tt] [--max-cases <n>]
- *   [--trace-weight <w>] [--log-weight <w>] [--rank-normalization|--no-rank-normalization]
+ *   [--trace-weight <w>] [--log-weight <w>] [--temporal-weight <w>] [--onset-shape <shape>] [--rank-normalization|--no-rank-normalization]
+ *
+ * Every field this runner does not pin is the ENGINE's default, which is what makes
+ * its per-cell results the golden reference for a shipped configuration — see
+ * `benchmarks/__tests__/rcaeval-reported-config.test.ts` for the fields that ARE
+ * pinned and why each one is allowed to be.
  *
  * @module benchmarks/run-rcaeval
  */
@@ -54,8 +59,15 @@ import type {
 } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
+import {
+  DEFAULT_ONSET_SHAPE,
+  DEFAULT_TEMPORAL_WEIGHT,
+  isOnsetShape,
+  TreePruner,
+} from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+import { parseWeight } from './cli-args.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
@@ -108,11 +120,24 @@ interface CliOptions {
    */
   noInjectTime: boolean;
   /**
-   * Strength of the injection-time-anchored temporal-earliness signal in the
-   * ranking. Default 0 (disabled — the signal empirically regressed, see
-   * TreePrunerOptions.temporalWeight). Set e.g. 0.5 to re-enable the ON mode.
+   * Strength of the injection-time-anchored temporal prior in the ranking.
+   *
+   * Read from {@link DEFAULT_TEMPORAL_WEIGHT} rather than restated as a literal, and
+   * that is the whole point of the field: this runner IS the golden 9-cell, so a
+   * private copy of the shipped value would let the gate it feeds stay blind to a
+   * signal the engine ships — a cell-by-cell identical RCAEval would then be evidence
+   * that the pin held, not that the signal is harmless. Pass `0` explicitly for the
+   * ablation; the CLI's fallback on a malformed value is the shipped value, so a typo
+   * reproduces the published configuration instead of measuring the term switched off.
    */
   temporalWeight: number;
+  /**
+   * Which shape the temporal prior reads the onset delays in.
+   *
+   * Inert while `temporalWeight` is 0 — the term is multiplied by the weight — and
+   * read from {@link DEFAULT_ONSET_SHAPE} for the same reason the weight is.
+   */
+  onsetShape: OnsetShape;
   /** Strength of the collision-energy signal (penalise upstream-inherited energy). */
   collisionWeight: number;
   /** Strength of the topological-source signal (reward no-anomalous-parent nodes). */
@@ -190,7 +215,8 @@ function parseArgs(): CliOptions {
     system: 'all',
     suite: 'all',
     noInjectTime: false,
-    temporalWeight: 0,
+    temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+    onsetShape: DEFAULT_ONSET_SHAPE,
     collisionWeight: 0,
     topoWeight: 0,
     logWeight: 1.0,
@@ -218,17 +244,26 @@ function parseArgs(): CliOptions {
     else if (args[i] === '--suite' && i + 1 < args.length) opts.suite = args[++i]!;
     else if (args[i] === '--no-inject-time') opts.noInjectTime = true;
     else if (args[i] === '--temporal-weight' && i + 1 < args.length)
-      opts.temporalWeight = parseFloat(args[++i]!) || 0;
-    else if (args[i] === '--collision-weight' && i + 1 < args.length)
-      opts.collisionWeight = parseFloat(args[++i]!) || 0;
+      opts.temporalWeight = parseWeight(args[++i]!, DEFAULT_TEMPORAL_WEIGHT);
+    else if (args[i] === '--onset-shape' && i + 1 < args.length) {
+      // Strict, falling back to the SHIPPED shape on an unknown value: a typo must
+      // reproduce a published configuration rather than invent one. Inert while the
+      // weight is 0, so a dispatch that only meant to set the shape is safe.
+      const shape = args[++i]!;
+      opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
+    } else if (args[i] === '--collision-weight' && i + 1 < args.length)
+      opts.collisionWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--topo-weight' && i + 1 < args.length)
-      opts.topoWeight = parseFloat(args[++i]!) || 0;
+      opts.topoWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--log-weight' && i + 1 < args.length)
-      opts.logWeight = parseFloat(args[++i]!) || 0;
+      // Falls back to the field's own default (1.0), NOT to 0: an inline
+      // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a
+      // configuration this runner never described and never recorded.
+      opts.logWeight = parseWeight(args[++i]!, 1.0);
     else if (args[i] === '--trace-weight' && i + 1 < args.length)
-      opts.traceWeight = parseFloat(args[++i]!) || 0;
+      opts.traceWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--prism-weight' && i + 1 < args.length)
-      opts.prismWeight = parseFloat(args[++i]!) || 0;
+      opts.prismWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--log-signal-mode' && i + 1 < args.length) {
       const mode = args[++i]!;
       opts.logSignalMode = mode === 'novelty' ? 'novelty' : 'count';
@@ -260,6 +295,7 @@ function parseArgs(): CliOptions {
 
 function createContainer(weights: {
   temporalWeight: number;
+  onsetShape: OnsetShape;
   collisionWeight: number;
   topoWeight: number;
   logWeight: number;
@@ -276,6 +312,9 @@ function createContainer(weights: {
   container.register(
     DI_TOKENS.RCA_ENGINE,
     () =>
+      // The first argument IS the engine's option object, so every field on it —
+      // `temporalWeight` and `onsetShape` included — reaches the pruner without a
+      // second restatement here. The second argument is the topology config.
       new TreePruner(weights, {
         collapseDiscount: weights.collapseDiscount,
         rankNormalization: weights.rankNormalization,
@@ -1137,7 +1176,9 @@ async function main(): Promise<void> {
   const injectMode = opts.noInjectTime
     ? 'OFF (dataset-decoupled)'
     : 'ON (RCAEval baseline protocol)';
-  console.log(`injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight}`);
+  console.log(
+    `injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight} | onsetShape: ${opts.onsetShape}`,
+  );
   console.log(
     `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients} suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`,
   );
@@ -1201,6 +1242,7 @@ async function main(): Promise<void> {
 
   const container = createContainer({
     temporalWeight: opts.temporalWeight,
+    onsetShape: opts.onsetShape,
     collisionWeight: opts.collisionWeight,
     topoWeight: opts.topoWeight,
     logWeight: opts.logWeight,

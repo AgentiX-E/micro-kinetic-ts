@@ -37,6 +37,8 @@ import {
   type OnsetShape,
 } from '../../packages/tree/src/index.js';
 
+import { parseWeight } from './cli-args.js';
+
 /**
  * The log-signal mode the benchmark reports.
  *
@@ -228,11 +230,9 @@ function csv(value: string): string[] {
  * @param shipped - The shipped weight for this flag.
  * @returns The parsed weight, or `shipped`.
  */
-function parseWeight(raw: string, shipped: number): number {
-  if (raw.trim() === '') return shipped;
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : shipped;
-}
+// `parseWeight` is the shared rule (see `./cli-args.js`): the RCAEval runner takes
+// the same kind of flag, and a second copy of "what a malformed weight means"
+// would let the two scripts disagree about a value neither of them owns.
 
 /**
  * Parse the runner's arguments.
