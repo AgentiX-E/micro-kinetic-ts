@@ -1156,8 +1156,8 @@ export interface ZeroRegressionWindow {
   readonly unreachable: number;
   /** The largest weight at which no currently-correct case loses rank 1. */
   readonly cap: number;
-  /** The case that sets `cap`; `undefined` when the cap is unbounded. */
-  readonly capBinder?: string;
+  /** The case that sets `cap`, and the pair whose ratio the cap is. */
+  readonly capBinder?: WindowCapBinder;
   /** Currently-wrong cases a weight can fix, with the weights that fix them. */
   readonly gains: readonly WindowGain[];
 }
@@ -1166,6 +1166,36 @@ export interface ZeroRegressionWindow {
 export interface WindowGain {
   readonly datapack: string;
   readonly intervals: readonly WeightInterval[];
+}
+
+/**
+ * WHY the window stops where it does.
+ *
+ * A cap on its own is not actionable. The cap is `lead / slopeGap` for exactly one
+ * currently-correct case, and those two quantities decide what — if anything — could
+ * move it:
+ *
+ * - a target whose slope is already `0` against a rival whose slope is already `1`
+ *   is the maximal gap, so **no** pointwise reshaping of the term can raise the cap.
+ *   That case's cap is a property of the rest of the score, not of the term's shape;
+ * - a modest gap is where a reshaping of the term has room, and the three numbers
+ *   below are what a candidate must be designed against.
+ *
+ * `lead` and `slopeGap` are recorded rather than recomputed so a report can print the
+ * division it performed.
+ */
+export interface WindowCapBinder {
+  readonly datapack: string;
+  /** The service that must stay at rank 1. */
+  readonly target: string;
+  /** The service that takes rank 1 from it. */
+  readonly rival: string;
+  readonly targetSlope: number;
+  readonly rivalSlope: number;
+  /** `target.base − rival.base`, the target's lead at `w = 0` (always positive). */
+  readonly lead: number;
+  /** `rival.slope − target.slope`, always positive. */
+  readonly slopeGap: number;
 }
 
 /** One weight, and what the case set looks like there. */
@@ -1215,6 +1245,47 @@ function componentEndingAtZero(intervals: readonly WeightInterval[]): number {
 }
 
 /**
+ * Recover the pair whose ratio IS the cap, for the report.
+ *
+ * Recomputed from the case's scores instead of threaded out of
+ * {@link componentEndingAtZero}: that helper works on the union over a case's
+ * acceptable roots, where the binding root is exactly what it discards. One scan of
+ * one case is cheaper than making every caller carry a root it does not need.
+ *
+ * @param one - The binding case.
+ * @param cap - The cap it set.
+ * @returns The overtaking pair, or `undefined` if no pair reproduces the cap, which
+ *   can only happen when the cap is not finite.
+ */
+function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | undefined {
+  if (!Number.isFinite(cap)) return undefined;
+  for (const target of one.targets) {
+    const t = one.scores.get(target);
+    if (t === undefined) continue;
+    for (const [rival, other] of one.scores) {
+      if (rival === target) continue;
+      const slopeGap = other.slope - t.slope;
+      const lead = t.base - other.base;
+      if (slopeGap <= WEIGHT_EPSILON || lead <= 0) continue;
+      // Relative tolerance: the cap was chosen as this very ratio, so a match is
+      // exact up to the float arithmetic that produced both.
+      if (Math.abs(lead / slopeGap - cap) <= Math.max(WEIGHT_EPSILON, Math.abs(cap) * 1e-9)) {
+        return {
+          datapack: one.datapack,
+          target,
+          rival,
+          targetSlope: t.slope,
+          rivalSlope: other.slope,
+          lead,
+          slopeGap,
+        };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
  * Solve the zero-regression window for a case set.
  *
  * @param cases - Input from {@link buildWeightSeparationCases}.
@@ -1226,7 +1297,7 @@ export function computeZeroRegressionWindow(
   let satisfied = 0;
   let unreachable = 0;
   let cap = Number.POSITIVE_INFINITY;
-  let capBinder: string | undefined;
+  let capCase: WeightSeparationCase | undefined;
   const gains: WindowGain[] = [];
 
   for (const one of cases) {
@@ -1246,11 +1317,18 @@ export function computeZeroRegressionWindow(
     // far is the one that binds.
     if (baseline < cap) {
       cap = baseline;
-      capBinder = one.datapack;
+      capCase = one;
     }
   }
 
-  return { cases: cases.length, satisfied, unreachable, cap, capBinder, gains };
+  return {
+    cases: cases.length,
+    satisfied,
+    unreachable,
+    cap,
+    capBinder: capCase === undefined ? undefined : capBinderOf(capCase, cap),
+    gains,
+  };
 }
 
 /**
@@ -1326,8 +1404,19 @@ export function formatZeroRegressionWindowReport(
   lines.push(
     window.capBinder === undefined
       ? `  cap weight: ${cap}   no case can be overtaken at any weight`
-      : `  cap weight: ${cap}   binder ${window.capBinder}`,
+      : `  cap weight: ${cap}   binder ${window.capBinder.datapack}`,
   );
+  if (window.capBinder !== undefined) {
+    // The cap's own arithmetic, so a reader can see what a reshaping of the term
+    // would have to change. A target slope of 0 against a rival slope of 1 is the
+    // maximal gap: no pointwise reshaping can widen that case's window.
+    const b = window.capBinder;
+    lines.push(
+      `  cap detail: ${b.rival} overtakes ${b.target} — lead ${b.lead.toFixed(6)} / ` +
+        `slope gap ${b.slopeGap.toFixed(6)} (slopes ${b.targetSlope.toFixed(6)} -> ` +
+        `${b.rivalSlope.toFixed(6)})`,
+    );
+  }
   lines.push(
     `  gains reachable inside the window: ${window.gains.length}` +
       (window.gains.length === 0 ? '' : ` (${window.gains.map((g) => g.datapack).join(', ')})`),

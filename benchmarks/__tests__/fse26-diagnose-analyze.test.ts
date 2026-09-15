@@ -2071,7 +2071,26 @@ describe('computeZeroRegressionWindow — the question the flip is decided on', 
 
     expect(window.satisfied).toBe(1);
     expect(window.cap).toBeCloseTo(Math.log1p(0.5), 12);
-    expect(window.capBinder).toBe('dp-cap');
+    expect(window.capBinder?.datapack).toBe('dp-cap');
+  });
+
+  it('explains the cap: which service is overtaken, by whom, and by how much', () => {
+    // `lead / slopeGap` IS the cap, so a report that gives the cap without these
+    // three numbers cannot say whether any reshaping of the term could move it —
+    // which is the only actionable question a cap raises.
+    const window = computeZeroRegressionWindow(build(capCase));
+    const binder = window.capBinder!;
+
+    expect(binder.target).toBe('ts-src');
+    expect(binder.rival).toBe('ts-win');
+    expect(binder.lead).toBeCloseTo(Math.log1p(0.5), 12);
+    expect(binder.slopeGap).toBeCloseTo(1, 12);
+    expect(binder.lead / binder.slopeGap).toBeCloseTo(window.cap, 12);
+    // A target with NO latency evidence and a rival at the top of the case is the
+    // shape no pointwise reshaping of the term can help: the target's slope is
+    // already 0 and the rival's is already 1, so the gap is maximal either way.
+    expect(binder.targetSlope).toBe(0);
+    expect(binder.rivalSlope).toBe(1);
   });
 
   it('is unbounded when no currently-correct case can be overtaken', () => {
@@ -2110,7 +2129,7 @@ describe('computeZeroRegressionWindow — the question the flip is decided on', 
 
     expect(window.satisfied).toBe(2);
     expect(window.cap).toBeCloseTo(Math.log1p(0.25), 12);
-    expect(window.capBinder).toBe('dp-tight');
+    expect(window.capBinder?.datapack).toBe('dp-tight');
   });
 
   it('counts a currently-wrong case as a GAIN only where the window covers it', () => {
@@ -2173,6 +2192,12 @@ describe('computeZeroRegressionWindow — the question the flip is decided on', 
 
     expect(report).toContain('slope=failedEdge');
     expect(report).toContain('binder dp-cap');
+    // The cap is not just a number: the report names the pair and the two quantities
+    // whose ratio it is, because "can any reshaping of the term move this cap?"
+    // is answered by the competitor's slope and the target's, not by the cap alone.
+    expect(report).toContain('ts-win overtakes ts-src');
+    expect(report).toMatch(/lead 0\.405465/);
+    expect(report).toMatch(/slope gap 1\.000000/);
     // The cap is printed as a number, and the first weight ABOVE it is shown
     // forfeiting a case — the claim is two-sided rather than "zero below the cap".
     expect(report).toMatch(/cap weight:\s+0\.405465/);
