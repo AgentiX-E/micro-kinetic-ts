@@ -12,7 +12,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+} from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
 import { NON_ENGINE_OPTION_KEYS, buildFse26EngineOptions } from '../src/fse26-engine-options.js';
@@ -31,7 +35,21 @@ describe('buildFse26EngineOptions', () => {
       failedEdgeMinRecords: 1,
       latWeight: DEFAULT_LAT_WEIGHT,
       latMinRise: DEFAULT_LAT_MIN_RISE,
+      poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     });
+  });
+
+  it('forwards the pool-dominance penalty, inert by default', () => {
+    // Inert until the +6-case window is measured rather than predicted: the mapping
+    // has to carry the value the CLI parsed, and the default has to be the engine's
+    // own constant — a literal here would be a second shipped configuration.
+    expect(buildFse26EngineOptions(BASE).signals.poolMetricPenaltyWeight).toBe(
+      DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    );
+    expect(
+      buildFse26EngineOptions({ ...BASE, poolMetricPenaltyWeight: 0.0679 }).signals
+        .poolMetricPenaltyWeight,
+    ).toBe(0.0679);
   });
 
   it('forwards the failed-edge-direction weight, absent by default', () => {

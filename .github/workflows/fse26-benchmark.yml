@@ -67,6 +67,10 @@ on:
         description: 'Rise a service must clear before the latency-rise signal credits it (empty = the runner default, which is 1 = the shipped shape, crediting every rise above 1). Above 1 the term becomes a precision instrument: it stops crediting rises that are too small to be evidence, which also removes them as SPURIOUS COMPETITORS. It needs rcabench-latency-full or newer'
         required: false
         default: ''
+      pool_penalty:
+        description: 'Weight of the DB-connection-pool dominance PENALTY, subtracted from a service whose anomaly maximum was won by a db.client.connections.* series (empty = the runner default, which is 0 = INERT). The offline pre-screen measures a zero-regression window of w in (0.048823, 0.087011) worth +6 cases against 0 lost; 0.0679 is the window midpoint'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -229,6 +233,10 @@ jobs:
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             LAT_FLOOR_ARG=(--lat-min-rise "${{ inputs.lat_min_rise }}")
           fi
+          POOL_ARG=()
+          if [ -n "${{ inputs.pool_penalty }}" ]; then
+            POOL_ARG=(--pool-penalty "${{ inputs.pool_penalty }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             "${LOG_WEIGHT_ARG[@]}" \
@@ -240,6 +248,7 @@ jobs:
             "${FAILED_EDGE_MIN_ARG[@]}" \
             "${LAT_ARG[@]}" \
             "${LAT_FLOOR_ARG[@]}" \
+            "${POOL_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

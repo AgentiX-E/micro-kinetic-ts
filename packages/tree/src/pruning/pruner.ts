@@ -63,6 +63,7 @@ import {
   computeEdgeLatencyScores,
   computeFailedEdgeScores,
   computeLogScores,
+  computePoolMetricScores,
   computeRiseScores,
   computeTopoSourceScores,
   computeTraceActivityScores,
@@ -325,6 +326,7 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * Weight of the per-edge inbound latency rise.
    *
    *   finalScore(v) += latWeight × latScore(v)
+   *   finalScore(v) −= poolMetricPenaltyWeight × poolMetricScore(v)
    *
    * `latScore(v)` is the largest `postMeanMs / preMeanMs` over the edges
    * `caller → v`, `log1p`-compressed and max-normalised. It is the CONTINUOUS
@@ -359,6 +361,28 @@ export interface TreePrunerOptions extends RCAEngineOptions {
   readonly latMinRise?: number;
   /** The per-edge latency records the term above is computed from. */
   readonly edgeLatency?: readonly FaultEdgeLatency[];
+  /**
+   * Weight of the DB-connection-pool dominance PENALTY.
+   *
+   *   finalScore(v) −= poolMetricPenaltyWeight × poolMetricScore(v)
+   *
+   * `poolMetricScore(v)` is 1 when the metric that won `v`'s anomaly maximum is
+   * a `db.client.connections.*` series and 0 otherwise (see
+   * {@link computePoolMetricScores}) — a function of WHICH series won, not of the
+   * score, so it is not one of the metric-layer shapes the register has closed.
+   *
+   * Default {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}, which is **0 (INERT)** until
+   * the kill criterion is measured on a run: the offline pre-screen predicts a
+   * zero-regression window of `w ∈ (0.048823, 0.087011)` worth **+6 cases / 0 lost**
+   * (`--pool-penalty 0.0679` on `rcabench-full-v3`), and a prediction is not a
+   * measurement. Flip the default only when both halves are green and the value is in
+   * the recorded-runs table the guard reads.
+   *
+   * Required, not optional, so the score term can read it without a fallback: an
+   * `?? 0` on a field the constructor always fills is a branch no run can take, and
+   * one that would read as a measurement of the ablation if it ever did.
+   */
+  readonly poolMetricPenaltyWeight: number;
 }
 
 /**
@@ -380,6 +404,7 @@ export function toRankingWeights(
     | 'prismWeight'
     | 'failedEdgeWeight'
     | 'latWeight'
+    | 'poolMetricPenaltyWeight'
   >,
 ): RankingWeights {
   return {
@@ -393,6 +418,7 @@ export function toRankingWeights(
     prismWeight: options.prismWeight,
     failedEdgeWeight: options.failedEdgeWeight,
     latWeight: options.latWeight,
+    poolMetricPenaltyWeight: options.poolMetricPenaltyWeight,
   };
 }
 
@@ -447,6 +473,24 @@ export const DEFAULT_LAT_MIN_RISE = 10.3;
  */
 export const DEFAULT_LAT_WEIGHT = 0.561495;
 
+/**
+ * The shipped weight of the DB-connection-pool dominance penalty.
+ *
+ * **0 = INERT**, and deliberately so: the offline pre-screen (exact for this term
+ * — it is a constant subtraction, so the reconstruction that reproduces the
+ * shipped run's own rank-1 on 1422/1422 cases predicts it without a run) measures
+ * a zero-regression window of `w ∈ (0.048823, 0.087011)` worth **+6 cases against
+ * 0 lost**, with the first casualty at 0.087011 (`HTTPResponseReplaceCode`,
+ * `ts-security-service` → `ts-preserve-service`).
+ *
+ * A prediction is not a measurement: this constant becomes 0.0679 (the window's
+ * midpoint, 0.019 from either boundary) only once an FSE'26 run and the RCAEval
+ * golden have both been read back green, and only together with the recorded-runs
+ * entry the guard in `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts`
+ * requires.
+ */
+export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0;
+
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
   decayAlpha: 0.8,
@@ -468,6 +512,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeMinRecords: 1,
   latWeight: DEFAULT_LAT_WEIGHT,
   latMinRise: DEFAULT_LAT_MIN_RISE,
+  poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
 };
 
 /**
@@ -684,6 +729,14 @@ export class TreePruner {
       anomalyScores,
     );
     const riseScores = computeRiseScores(dominantMetrics, new Set(callGraph.nodes.keys()));
+    // The pool-dominance indicator is a FUNCTION OF THE DOMINANT LABEL, so it is
+    // derived here from the same `dominantMetrics` the rise signal reads rather
+    // than being carried on the graph: one owner for "which metric won", and the
+    // term is exactly 0 unless the weight is non-zero.
+    const poolMetricScores = computePoolMetricScores(
+      dominantMetrics,
+      new Set(callGraph.nodes.keys()),
+    );
     const deepestExceptions = computeDeepestExceptions(
       options?.logs,
       new Set(callGraph.nodes.keys()),
@@ -766,6 +819,7 @@ export class TreePruner {
       prismScores,
       failedEdgeScores,
       edgeLatencyScores,
+      poolMetricScores,
     };
   }
 
@@ -828,6 +882,7 @@ export class TreePruner {
       graph.prismScores,
       graph.failedEdgeScores,
       graph.edgeLatencyScores,
+      graph.poolMetricScores,
     );
 
     return results;
@@ -1007,6 +1062,7 @@ function performTreeRCA(
   prismScores?: ReadonlyMap<ServiceId, number>,
   failedEdgeScores?: ReadonlyMap<ServiceId, number>,
   edgeLatencyScores?: ReadonlyMap<ServiceId, number>,
+  poolMetricScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -1312,6 +1368,13 @@ function performTreeRCA(
   // as it did before this term existed.
   const latWeight = options.latWeight;
   const latTerm = (id: ServiceId): number => latWeight * (edgeLatencyScores?.get(id) ?? 0);
+  // The DB-connection-pool penalty, and the only NEGATIVE term here whose sign is
+  // not already inside the signal (the collision term's `ratioContrib` is defined
+  // as a penalty; this indicator is 1 = pool-dominant, so the minus is the term's).
+  // An absent map and an entry of 0 mean the same thing to it — no evidence —
+  // which is why the lookup may fall back: only a measured dominance is punished.
+  const poolPenaltyWeight = options.poolMetricPenaltyWeight;
+  const poolTerm = (id: ServiceId): number => -poolPenaltyWeight * (poolMetricScores?.get(id) ?? 0);
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `temporalEarliness`, `topoScores`,
@@ -1338,7 +1401,8 @@ function performTreeRCA(
         traceTerm(id) +
         prismTerm(id) +
         failedEdgeTerm(id) +
-        latTerm(id);
+        latTerm(id) +
+        poolTerm(id);
       finalScores.set(id, s);
     }
     return s;

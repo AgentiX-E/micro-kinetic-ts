@@ -27,7 +27,11 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
-import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+} from '../../packages/tree/src/index.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -166,6 +170,15 @@ export interface Fse26CliOptions {
    * 0.03) is a 6-case regression. `1` restores the credited-everything shape.
    */
   readonly latMinRise: number;
+  /**
+   * Weight of the DB-connection-pool dominance penalty: subtracts it from a
+   * service whose anomaly maximum was won by a `db.client.connections.*` series.
+   *
+   * Required, not optional, and defaulted to the engine's own constant rather
+   * than to a literal: this is the value a dispatched run without the flag uses,
+   * so a second copy here is a second shipped configuration.
+   */
+  readonly poolMetricPenaltyWeight: number;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -232,6 +245,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     failedEdgeMinRecords: 1,
     latWeight: DEFAULT_LAT_WEIGHT,
     latMinRise: DEFAULT_LAT_MIN_RISE,
+    poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -293,6 +307,11 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // non-finite one would drop every measurement through the mask.
       const rise = Number(argv[++i]!);
       opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : DEFAULT_LAT_MIN_RISE;
+    } else if (arg === '--pool-penalty' && i + 1 < argv.length) {
+      // Through `parseWeight`, not an inline `Number(...)`: an empty value must
+      // fall back to the SHIPPED weight rather than select 0, which is a
+      // different measured configuration (`--pool-penalty 0` is the ablation).
+      opts.poolMetricPenaltyWeight = parseWeight(argv[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
     }
   }
 

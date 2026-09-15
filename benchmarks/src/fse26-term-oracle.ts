@@ -44,6 +44,8 @@
  * @module benchmarks/fse26-term-oracle
  */
 
+import { POOL_METRIC_PREFIX } from '../../packages/tree/src/index.js';
+
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 
 /** The three terms the shipped score sums. */
@@ -446,7 +448,10 @@ export function dominantFamily(dominantMetric: string): string {
     ['hubble_http', 'hubble_http'],
     ['http.server.request.duration', 'http.server.duration'],
     ['http.client.request.duration', 'http.client.duration'],
-    ['db.client.connections', 'db.client.connections'],
+    // The engine's own family, imported rather than restated: this screen validates
+    // the term the engine ships, and a second copy of the prefix could drift to a
+    // family the engine does not penalise while every number here stayed green.
+    [POOL_METRIC_PREFIX, 'db.client.connections'],
     ['container.', 'container'],
     ['k8s.', 'k8s'],
     ['jvm.', 'jvm'],

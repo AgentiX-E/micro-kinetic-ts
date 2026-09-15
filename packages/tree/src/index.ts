@@ -70,6 +70,7 @@ export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 export {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   TreePruner,
   toRankingWeights,
 } from './pruning/pruner.js';
@@ -78,6 +79,7 @@ export type { TreePrunerOptions } from './pruning/pruner.js';
 export {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
+  POOL_METRIC_PREFIX,
   computeDeepestExceptions,
   computeEdgeLatencyScores,
   computeFailedEdgeScores,
@@ -85,6 +87,7 @@ export {
   computeHttpVictimSet,
   computeLogNoveltyScores,
   computeLogScores,
+  computePoolMetricScores,
   computeRiseScores,
   computeTopoSourceScores,
   computeTraceActivityScores,

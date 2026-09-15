@@ -14,7 +14,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LogSignalMode } from '../../packages/tree/src/index.js';
-import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+} from '../../packages/tree/src/index.js';
 
 import { DEFAULT_FSE26_LOG_MODE, isLogSignalMode, parseFSE26Args } from '../src/fse26-cli.js';
 
@@ -209,6 +213,33 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args([]).latMinRise).toBeGreaterThan(1);
     expect(parseFSE26Args(['--lat-min-rise', '1']).latMinRise).toBe(1);
     expect(parseFSE26Args(['--lat-min-rise', '10.3']).latMinRise).toBe(10.3);
+  });
+
+  it('parses the pool penalty, defaulting to the SHIPPED (inert) constant', () => {
+    // The shipped value is 0 while the +6-case window is still a prediction: the
+    // default has to be the engine's own constant, so a dispatched run without the
+    // flag reproduces exactly what the last measured run used. Asserted against the
+    // export so the number has one owner.
+    expect(parseFSE26Args([]).poolMetricPenaltyWeight).toBe(DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    expect(parseFSE26Args(['--pool-penalty', '0.0679']).poolMetricPenaltyWeight).toBe(0.0679);
+    // An explicit 0 is the ablation, and it is distinguishable from the default only
+    // while the default is non-zero — which is why the config line prints the field
+    // unconditionally rather than omitting it at the default.
+    expect(parseFSE26Args(['--pool-penalty', '0']).poolMetricPenaltyWeight).toBe(0);
+  });
+
+  it('falls back to the SHIPPED pool penalty on an empty or unusable value', () => {
+    // `Number('')` is 0 — finite and non-negative — so an inline parse would read a
+    // blank value as the ABLATION, which is a different measured configuration.
+    expect(parseFSE26Args(['--pool-penalty', '']).poolMetricPenaltyWeight).toBe(
+      DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    );
+    expect(parseFSE26Args(['--pool-penalty', 'abc']).poolMetricPenaltyWeight).toBe(
+      DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    );
+    expect(parseFSE26Args(['--pool-penalty', '-1']).poolMetricPenaltyWeight).toBe(
+      DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    );
   });
 
   it('refuses a rise floor below 1 rather than accepting a no-op', () => {

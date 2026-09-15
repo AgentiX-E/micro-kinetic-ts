@@ -9,6 +9,8 @@ import type {
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  POOL_METRIC_PREFIX,
   TreePruner,
   toRankingWeights,
 } from '@agentix-e/micro-kinetic-tree';
@@ -1044,6 +1046,7 @@ describe('TreePruner', () => {
         prismWeight: 0.8,
         failedEdgeWeight: 0.9,
         latWeight: 0.95,
+        poolMetricPenaltyWeight: 0.0679,
       });
 
       expect(weights).toEqual({
@@ -1057,6 +1060,7 @@ describe('TreePruner', () => {
         prismWeight: 0.8,
         failedEdgeWeight: 0.9,
         latWeight: 0.95,
+        poolMetricPenaltyWeight: 0.0679,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -1546,6 +1550,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
       prismWeight: 0,
       failedEdgeWeight: 0.5,
       latWeight: 0.25,
+      poolMetricPenaltyWeight: 0,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
@@ -1710,5 +1715,140 @@ describe('TreePruner — per-edge latency-rise signal', () => {
     const base = scores(new TreePruner({ latWeight: 0 })).byService;
 
     expect(withLatOnly.get(CALLEE)! - base.get(CALLEE)!).toBeCloseTo(1, 10);
+  });
+});
+
+describe('TreePruner — DB-connection-pool dominance penalty', () => {
+  // Two candidates that differ ONLY in which series won their anomaly maximum: the
+  // one whose pool series dominates is the service the term is about, and the other
+  // exists so "no other service moves" is a measurement rather than a claim.
+  const POOL = 'ts-consign-service';
+  const OTHER = 'ts-order-service';
+
+  /** The pool service carries both series and the pool one wins; the other has cpu only. */
+  const makeCase = (): [ServiceCallGraph, MetricMap] => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [
+        POOL,
+        [
+          makeTimeSeries('cpu_usage', [1, 1, 1, 1, 2, 2, 2, 2]),
+          // A far larger post-injection level, so this series wins the maximum.
+          makeTimeSeries(`${POOL_METRIC_PREFIX}use_time.max`, [1, 1, 1, 1, 900, 900, 900, 900]),
+        ],
+      ],
+      [OTHER, [makeTimeSeries('cpu_usage', [1, 1, 1, 1, 4, 4, 4, 4])]],
+    ]);
+    return [makeCallGraph([POOL, OTHER], [[OTHER, POOL]]), metrics];
+  };
+
+  const scores = (pruner: TreePruner) => {
+    const [callGraph, metrics] = makeCase();
+    const graph = pruner.buildFaultGraph(callGraph, metrics);
+    return {
+      graph,
+      byService: new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!])),
+    };
+  };
+
+  it('marks the pool-dominant service in the graph it builds, and only that one', () => {
+    const { graph } = scores(new TreePruner());
+
+    expect(graph.poolMetricScores?.get(POOL)).toBe(1);
+    expect(graph.poolMetricScores?.get(OTHER)).toBe(0);
+  });
+
+  it('is INERT at the shipped default: the term subtracts nothing today', () => {
+    // The shipped constant is still 0 because the +6-case window was measured on the
+    // dump and not on a run — and this test is what keeps that state honest: it fails
+    // the moment the default moves, which is when the measured-value guard has to be
+    // satisfied too.
+    expect(DEFAULT_POOL_METRIC_PENALTY_WEIGHT).toBe(0);
+    const shipped = scores(new TreePruner()).byService;
+    const off = scores(new TreePruner({ poolMetricPenaltyWeight: 0 })).byService;
+
+    for (const [serviceId, score] of shipped) {
+      expect(score).toBeCloseTo(off.get(serviceId)!, 12);
+    }
+  });
+
+  it('LOWERS the pool-dominant service by exactly the weight and moves nobody else', () => {
+    // A new axis, not a re-weighting: the credited service loses exactly the weight
+    // and every other candidate's score is untouched. The weight is stated
+    // explicitly rather than inherited, so this keeps testing the property after the
+    // default is flipped.
+    const weight = 0.25;
+    const before = scores(new TreePruner({ poolMetricPenaltyWeight: 0 })).byService;
+    const after = scores(new TreePruner({ poolMetricPenaltyWeight: weight })).byService;
+
+    expect(before.get(POOL)! - after.get(POOL)!).toBeCloseTo(weight, 10);
+    expect(after.get(OTHER)!).toBeCloseTo(before.get(OTHER)!, 12);
+  });
+
+  it('treats a graph with NO dominance recorded as unpenalised', () => {
+    // A `FaultPropagationGraph` may legally omit the map (it is optional on the shared
+    // contract), and the term must then be exactly 0 rather than subtract from every
+    // service: "not recorded" is not "not pool-dominant" applied backwards.
+    const [callGraph, metrics] = makeCase();
+    const pruner = new TreePruner({ poolMetricPenaltyWeight: 0.25 });
+    const graph = pruner.buildFaultGraph(callGraph, metrics);
+    const withoutField = { ...graph, poolMetricScores: undefined };
+    const penalised = new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!]));
+    const plain = new Map(pruner.analyze(withoutField).map((r) => [r.serviceId, r.finalScore!]));
+
+    expect(plain.get(POOL)! - penalised.get(POOL)!).toBeCloseTo(0.25, 10);
+  });
+
+  it('carries the weight into the serializable weight vector', () => {
+    // Every weight is stated explicitly: the vector is the optimizer's contract, so a
+    // test that spread the engine's private options would stop compiling (and had
+    // already stopped saying anything about which values it checked).
+    const weights: RankingWeights = toRankingWeights({
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 1,
+      riseWeight: 0,
+      traceWeight: 0,
+      prismWeight: 0,
+      failedEdgeWeight: 0,
+      latWeight: 0,
+      poolMetricPenaltyWeight: 0.0679,
+    });
+
+    expect(weights.poolMetricPenaltyWeight).toBe(0.0679);
+  });
+
+  it('reads a legacy weight vector without the key as OFF, never as a fabricated 0', () => {
+    // A stored vector written before this term existed must keep meaning "off" — and
+    // the field has to stay optional on the shared contract for that to be sayable.
+    const legacy: RankingWeights = {
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: 1,
+    };
+    const weights = toRankingWeights({
+      sourceWeight: 0,
+      temporalWeight: 0,
+      collisionWeight: 0,
+      topoWeight: 0,
+      logWeight: legacy.logWeight,
+      riseWeight: 0,
+      traceWeight: 0,
+      prismWeight: 0,
+      failedEdgeWeight: 0,
+      latWeight: 0,
+      poolMetricPenaltyWeight: 0,
+    });
+
+    // The CONTRACT keeps the field optional, so a vector stored before this term
+    // existed simply does not carry it — and reading it yields `undefined`, never a
+    // fabricated 0 that would claim the term was measured and disabled.
+    expect(legacy.poolMetricPenaltyWeight).toBeUndefined();
+    // What the PRODUCER emits is a different statement: `toRankingWeights` takes the
+    // option as required, so it always writes the number.
+    expect(weights.poolMetricPenaltyWeight).toBe(0);
   });
 });

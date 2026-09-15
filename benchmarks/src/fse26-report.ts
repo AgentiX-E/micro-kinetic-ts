@@ -84,6 +84,12 @@ export interface FSE26RunConfig {
    * unlike the weight above, whose shipped value is not zero.
    */
   readonly latMinRise: number;
+  /**
+   * Weight of the DB-connection-pool dominance penalty. Required here for the same
+   * reason the weights above are: this line is the only record of which
+   * configuration produced a number.
+   */
+  readonly poolMetricPenaltyWeight: number;
 }
 
 /** One fault type's cell in the summary. */
@@ -232,6 +238,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'failedEdgeMinRecords',
   'latWeight',
   'latMinRise',
+  'poolMetricPenaltyWeight',
 ] as const;
 
 /**
@@ -309,6 +316,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   if (config.latMinRise !== 1) {
     line += ` latMinRise=${config.latMinRise}`;
   }
+  // Unconditional, on the same rule as the latency weight: this term's shipped value
+  // will be NON-zero once measured, so an omitted-when-default field would render a
+  // byte-identical line for the shipped run and for `--pool-penalty 0`. Printing it
+  // while the shipped value is still 0 costs one field and cannot go stale.
+  line += ` poolMetricPenaltyWeight=${config.poolMetricPenaltyWeight}`;
   return line;
 }
 

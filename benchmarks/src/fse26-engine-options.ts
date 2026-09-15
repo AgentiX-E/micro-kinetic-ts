@@ -57,6 +57,12 @@ export interface Fse26SignalOptions {
   readonly latWeight: number;
   /** Rise a service must clear before the latency term credits it (1 = shipped). */
   readonly latMinRise: number;
+  /**
+   * DB-connection-pool dominance penalty. Required for the same reason as the
+   * weights above: a PARTIAL passed through here would be a silent no-op if the
+   * key were ever misspelled.
+   */
+  readonly poolMetricPenaltyWeight: number;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -98,6 +104,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       failedEdgeMinRecords: opts.failedEdgeMinRecords,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
+      poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
     },
     topology: {
       // Load-bearing on Train Ticket's large topologies.

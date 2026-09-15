@@ -609,6 +609,75 @@ export function computeRiseScores(
 }
 
 /**
+ * The metric family whose rise is a SHARED-RESOURCE symptom rather than a
+ * service's own work: the DB connection pool.
+ *
+ * Carries its trailing DOT, because the separator is what makes the match a family
+ * instead of a prefix coincidence: without it a series named
+ * `db.client.connectionsTotal` would be classified as a pool measurement, and the
+ * position of the boundary would be decided by whatever a future converter happens
+ * to call an unrelated series.
+ *
+ * The single owner of the family. The offline pre-screen that measured this signal
+ * (`benchmarks/src/fse26-term-oracle.ts`) imports it rather than restating it: a
+ * screen that validates a different family than the engine penalises is a screen
+ * that validates nothing.
+ */
+export const POOL_METRIC_PREFIX = 'db.client.connections.';
+
+/**
+ * The DB-connection-pool dominance indicator: 1 when the metric that won a
+ * service's anomaly maximum is a connection-pool series, 0 otherwise.
+ *
+ * ## Why this is a signal and not a metric guard
+ *
+ * A pool's `use_time`/`wait_time` maxima are the largest numbers any service
+ * carries in this benchmark and they rise for every service sharing the
+ * saturated database, so the series wins a service's anomaly maximum whenever
+ * contention exists — including for services that are only WAITING. The census
+ * over the shipped dump's 672 misses says exactly that: **128 wrong rank-1
+ * winners have a pool-dominant anomaly against 48 ground-truth sources** (a
+ * margin of +80, the largest winner-side margin of any family).
+ *
+ * The term is therefore a PENALTY ON THE EVIDENCE, and it is neither of the two
+ * metric-layer shapes already closed in the register:
+ *
+ * - not a transform of the score — it is a function of WHICH series won, so it
+ *   is constant across a service's anomaly magnitude and cannot be written as a
+ *   reshaping of it (a service at 0.9 and one at 0.3 with the same dominant
+ *   series receive the same value);
+ * - not an input ablation — nothing is removed, so a service whose SECOND
+ *   metric would have taken the case over keeps its score. That takeover is
+ *   exactly why dropping the pool LABEL recovered only 2 of the 56 cases its
+ *   bound predicted (`docs/fse26-httpnet-miss-verdict.md`).
+ *
+ * An unmeasured dominance is 0, never 1: a service with no attributable metric
+ * carries no evidence that it is pool-dominant, and defaulting it to the
+ * penalised state would subtract from a service the engine never scored.
+ *
+ * @param dominantMetrics - Per-service dominant metric (label + head/tail).
+ * @param nodeIds - Services present in the call graph.
+ * @returns Per-service indicator in {0, 1}; empty when no dominance was measured.
+ */
+export function computePoolMetricScores(
+  dominantMetrics:
+    | ReadonlyMap<
+        ServiceId,
+        { readonly label: string; readonly head: number[]; readonly tail: number[] }
+      >
+    | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (!dominantMetrics || nodeIds.size === 0) return scores;
+  for (const nodeId of nodeIds) {
+    const label = dominantMetrics.get(nodeId)?.label ?? '';
+    scores.set(nodeId, label.startsWith(POOL_METRIC_PREFIX) ? 1 : 0);
+  }
+  return scores;
+}
+
+/**
  * Combine a raw metric direction with the log signal into a single rise
  * contribution in [−1, 1].
  *

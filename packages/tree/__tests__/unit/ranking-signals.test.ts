@@ -6,7 +6,6 @@ import type {
   ServiceId,
 } from '@agentix-e/micro-kinetic-core';
 import {
-  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   computeDeepestExceptions,
   computeEdgeLatencyScores,
   computeFailedEdgeScores,
@@ -14,10 +13,13 @@ import {
   computeHttpVictimSet,
   computeLogNoveltyScores,
   computeLogScores,
+  computePoolMetricScores,
   computeRiseScores,
   computeTopoSourceScores,
   computeTraceActivityScores,
+  DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   gatedRiseContribution,
+  POOL_METRIC_PREFIX,
   rankNormalizeScores,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
@@ -1744,5 +1746,64 @@ describe('computeEdgeLatencyScores — the rise floor', () => {
     const scores = computeEdgeLatencyScores(three(), ids, 101);
 
     expect(scores.size).toBe(0);
+  });
+});
+
+describe('computePoolMetricScores', () => {
+  const ids = new Set<ServiceId>(['pool-svc', 'cpu-svc', 'silent']);
+
+  const dominant = (
+    entries: Record<string, string>,
+  ): ReadonlyMap<ServiceId, { label: string; head: number[]; tail: number[] }> =>
+    new Map(Object.entries(entries).map(([id, label]) => [id, { label, head: [1], tail: [2] }]));
+
+  it('credits a service whose anomaly maximum is a pool series, and nobody else', () => {
+    // The indicator is 1/0, not a magnitude: the term is a fixed subtraction, so a
+    // service with a huge pool anomaly and one with a tiny one are treated alike.
+    const scores = computePoolMetricScores(
+      dominant({
+        'pool-svc': `${POOL_METRIC_PREFIX}use_time.max`,
+        'cpu-svc': 'container.cpu.usage',
+        silent: 'jvm.system.cpu.load_1m',
+      }),
+      ids,
+    );
+
+    expect(scores.get('pool-svc')).toBe(1);
+    expect(scores.get('cpu-svc')).toBe(0);
+    expect(scores.get('silent')).toBe(0);
+  });
+
+  it('is 0 — never 1 — for a service whose dominant metric was not measured', () => {
+    // Absence must not become the penalised state: subtracting from a service the
+    // engine never scored is a fabricated finding, and it would grow with the
+    // weight. Only a MEASURED dominance is punished.
+    const scores = computePoolMetricScores(dominant({ 'cpu-svc': 'container.cpu.usage' }), ids);
+
+    expect(scores.get('pool-svc')).toBe(0);
+    expect(scores.get('silent')).toBe(0);
+  });
+
+  it('returns an empty map when the case carries no dominance at all', () => {
+    expect(computePoolMetricScores(undefined, ids).size).toBe(0);
+    expect(computePoolMetricScores(new Map(), new Set<ServiceId>()).size).toBe(0);
+  });
+
+  it('matches every series of the family, and only whole segments of it', () => {
+    // The family has several series (`use_time`, `wait_time`, `timeouts`) and the
+    // census that sized this term counted them as ONE population; a classifier keyed
+    // on the full name would see three much smaller ones. The separator is what keeps
+    // the match a family rather than a prefix coincidence.
+    const scores = computePoolMetricScores(
+      dominant({
+        'pool-svc': `${POOL_METRIC_PREFIX}wait_time.max`,
+        'cpu-svc': `${POOL_METRIC_PREFIX.replace(/\.$/, '')}Total`,
+      }),
+      new Set<ServiceId>(['pool-svc', 'cpu-svc']),
+    );
+
+    expect(scores.get('pool-svc')).toBe(1);
+    expect(scores.get('cpu-svc')).toBe(0);
+    expect(POOL_METRIC_PREFIX.endsWith('.')).toBe(true);
   });
 });

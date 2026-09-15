@@ -41,6 +41,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     failedEdgeMinRecords: 1,
     latWeight: 0,
     latMinRise: 1,
+    poolMetricPenaltyWeight: 0,
     ...overrides,
   };
 }
@@ -84,8 +85,9 @@ describe('FSE26 report — attribution', () => {
     // (23.1%). Both fields that differ between those runs are absent, so this
     // check is what would have flagged them as unattributable.
     // `metricRiseCeiling` is additionally absent because it postdates those
-    // runs; `failedEdgeWeight` likewise. The point of the check is that TODAY's
-    // requirement set flags them.
+    // runs; `failedEdgeWeight` likewise, and `poolMetricPenaltyWeight` too. The point
+    // of the check is that TODAY's requirement set flags them — which is why it grows
+    // with every reported field rather than being frozen at the published list.
     const published = { logWeight: 1, rankNormalization: true };
     expect(missingReportedConfigFields(published)).toEqual([
       'logSignalMode',
@@ -97,6 +99,7 @@ describe('FSE26 report — attribution', () => {
       'failedEdgeMinRecords',
       'latWeight',
       'latMinRise',
+      'poolMetricPenaltyWeight',
     ]);
   });
 
@@ -126,7 +129,8 @@ describe('FSE26 report — the two renderings agree', () => {
     const shipped = formatFSE26ConfigLine(makeConfig());
     expect(shipped).not.toContain('failedEdgeWeight');
     expect(shipped).toBe(
-      'Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0',
+      'Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0 ' +
+        'poolMetricPenaltyWeight=0',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',
@@ -147,6 +151,18 @@ describe('FSE26 report — the two renderings agree', () => {
     ).toContain('failedEdgeMinRecords=2');
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeMinRecords: 2 }))).not.toContain(
       'failedEdgeMinRecords',
+    );
+  });
+
+  it('names the pool penalty on every run, so an ablation cannot hide behind the default', () => {
+    // Unconditional for the same reason as the latency weight, and here it is
+    // already load-bearing while the shipped value is still 0: `--pool-penalty 0` is a
+    // DIFFERENT measured configuration, and a field printed only when it differs from
+    // its default would render the shipped run and that ablation identically the day
+    // the default moves.
+    expect(formatFSE26ConfigLine(makeConfig())).toContain('poolMetricPenaltyWeight=0');
+    expect(formatFSE26ConfigLine(makeConfig({ poolMetricPenaltyWeight: 0.0679 }))).toContain(
+      'poolMetricPenaltyWeight=0.0679',
     );
   });
 

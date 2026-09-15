@@ -294,6 +294,17 @@ export interface FaultPropagationGraph {
    */
   readonly riseScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service DB-connection-pool dominance indicator in {0, 1}: 1 when the
+   * metric that won the service's anomaly maximum is a `db.client.connections.*`
+   * series, 0 otherwise (and 0 — never 1 — when no dominance was measured).
+   *
+   * A pool's maxima rise for every service sharing the saturated database, so the
+   * series wins a service's anomaly maximum whenever contention exists, including
+   * for services that are only waiting. Feeds the (opt-in, negative)
+   * `poolMetricPenaltyWeight` term. Absent means the case measured no dominance.
+   */
+  readonly poolMetricScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service most DISTINCTIVE deepest `Caused by:` exception class (a
    * string, e.g. `MalformedJwtException`). Consumed by the evidence-grounded
    * LLM reranker so the model reasons over the actual exception identity, not

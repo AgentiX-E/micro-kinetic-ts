@@ -27,6 +27,7 @@
  *                 + prismWeight     × prismScore(v)
  *                 + failedEdgeWeight × failedEdgeScore(v)
  *                 + latWeight       × latScore(v)
+ *                 − poolMetricPenaltyWeight × poolMetricScore(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -129,4 +130,27 @@ export interface RankingWeights {
    * OPTIONAL: absent means 0 (disabled).
    */
   readonly latWeight?: number;
+  /**
+   * Pool-dominance penalty: subtracts when the metric that won a service's
+   * anomaly maximum is a DB connection-pool series (`db.client.connections.*`).
+   *
+   *   finalScore(v) −= poolMetricPenaltyWeight × poolMetricScore(v)
+   *
+   * `poolMetricScore(v)` ∈ {0, 1} is a function of WHICH metric won, not of the
+   * score, so this is a penalty on the EVIDENCE rather than a reshaping of the
+   * anomaly — the metric term's own shape is closed in the register, and so is
+   * every input ablation.
+   *
+   * A pool's maxima are the largest numbers any service carries here and they
+   * rise for every service sharing the saturated database, so the series wins a
+   * service's anomaly maximum whenever contention exists — including for services
+   * that are only waiting. The census over the shipped dump's 672 misses is that
+   * statement: 128 wrong rank-1 winners are pool-dominant against 48 sources.
+   *
+   * OPTIONAL: absent means 0 (disabled). The documented interface intentionally
+   * keeps every fusion weight optional — the shipped constant and the measured
+   * value are the engine's own (see `DEFAULT_TREE_PRUNER_OPTIONS`), so a stored
+   * weight vector written before this term existed still loads and means "off".
+   */
+  readonly poolMetricPenaltyWeight?: number;
 }
