@@ -147,6 +147,10 @@ the property the enrolment claimed, measured: at weight 0 the field changes noth
 shipped ranking — and therefore the golden — is untouched by its presence. The config line
 prints the field, which is how a reader can tell the shipped run and the ablation apart.
 
+A **second** control (`34949809566`, dispatched separately and identically) returned the same
+750 with a byte-identical per-type table and an identical config line, so the +6 below is a
+difference between two configurations and not run-to-run variation.
+
 ### 6.2 The candidate — measured, and the split reproduced (run `34949854236`)
 
 Same commit, `--pool-penalty 0.0679`:
@@ -190,3 +194,31 @@ shipped configuration is the measured one and the ablation stays reachable as
 `--pool-penalty 0`. After the flip the DEFAULT path is re-measured with no flag at all —
 the guard the register demands, because a flag path that works says nothing about the
 configuration a dispatched run actually uses.
+
+**Dispatching that default path immediately found a defect.** A bare `workflow_dispatch` of
+the FSE'26 benchmark failed in four seconds at **"Verify cache provenance"** and never ran a
+case: the workflow's declared default `shard_tag: rcabench-full` names a cache whose
+converter digest predates this checkout, and the gate — which exists so a stale cache cannot
+publish a wrong score with no error — refuses it. The gate is right; the default was a trap,
+and it made the one dispatch every reader tries first fail with a message that reads like a
+data problem. The default now names `rcabench-latency-full`, the cache every shipped run
+uses and the one whose manifest digest matches HEAD (`7164c66`), and the input's description
+says why it is pinned.
+
+The default-path reading is therefore taken with the cache tag supplied — the tag is a
+WORKFLOW-owned input, chosen by the operator, while "the default path" means the runner's own
+constants — and it is read against the control: same commit, cache and no flag but
+`--pool-penalty` differs nowhere, so the config line inside the artifact is the check that
+the flip reached the runner's defaults rather than only the flag.
+
+**Result (run `34953378651`, no flag):**
+
+```
+Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679
+756 / 1422 = 53.16%;  Top@3 66.46%;  Top@5 70.25%
++6 gained / 0 lost;  zero regressed fault types
+```
+
+identical to the flagged candidate, and the config line shows the term at its new default —
+which is the point of the re-measurement: the value a dispatched run uses is the value that
+was measured, not the value a flag produced once.
