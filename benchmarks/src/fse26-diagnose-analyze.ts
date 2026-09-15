@@ -28,6 +28,12 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import {
+  caseOutcomes,
+  discriminatorScreen,
+  formatDiscriminatorReport,
+} from './fse26-discriminator.js';
+import type { TermOracleOptions } from './fse26-term-oracle.js';
+import {
   dominantFamily,
   formatTermOracleReport,
   isPoolDominantLabel,
@@ -2545,7 +2551,7 @@ export interface AnalyzeComparisonOptions {
 
 /** The sections that reconstruct a score from the dump. */
 export type AnalyzeSectionKind =
-  'misses' | 'weightSweep' | 'window' | 'termOracle' | 'familyScreen';
+  'misses' | 'weightSweep' | 'window' | 'termOracle' | 'familyScreen' | 'discriminator';
 
 /**
  * One requested section, CARRYING the weight it is computed at.
@@ -2605,6 +2611,7 @@ export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
   'weightSweep',
   'termOracle',
   'familyScreen',
+  'discriminator',
   'misses',
 ];
 
@@ -2631,6 +2638,7 @@ const ANALYZE_USAGE =
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
   '[--pool-penalty <w>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
+  '[--discriminator] ' +
   '[--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
@@ -2657,7 +2665,14 @@ const VALUE_FLAGS = new Set([
 ]);
 
 /** Flags that take no value. */
-const SWITCH_FLAGS = new Set(['misses', 'weight-sweep', 'window', 'term-oracle', 'family-screen']);
+const SWITCH_FLAGS = new Set([
+  'misses',
+  'weight-sweep',
+  'window',
+  'term-oracle',
+  'family-screen',
+  'discriminator',
+]);
 
 /**
  * Parse the analyzer's command line.
@@ -2908,6 +2923,19 @@ function analyzeSectionText(
         poolWeight: section.poolWeight,
       };
       return formatFamilyScreenReport(familyScreen(cases, weights), weights);
+    }
+    case 'discriminator': {
+      // The screen fits and cross-validates its own rules, so it needs the whole
+      // configuration as well — one owner, as everywhere else in this report.
+      const options: TermOracleOptions = {
+        logWeight: section.logWeight,
+        latWeight: section.latWeight,
+        latFloor: section.latFloor,
+        dominance: DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+        dominanceGrid: DEFAULT_TERM_ORACLE_DOMINANCE_GRID,
+        poolWeight: section.poolWeight,
+      };
+      return formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
     }
     case 'misses':
       return formatMissReport(cases, {

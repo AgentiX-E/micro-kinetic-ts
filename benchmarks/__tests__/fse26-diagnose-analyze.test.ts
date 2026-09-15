@@ -3029,6 +3029,54 @@ describe('--family-screen wiring', () => {
   });
 });
 
+describe('--discriminator wiring', () => {
+  it('is a switch that renders its own section from the whole configuration', () => {
+    // A kebab switch whose name does not map to a section kind is accepted and never
+    // rendered — indistinguishable from a screen that fitted no rule.
+    const opts = parseAnalyzeArgs(['--dump', 'd.txt', '--log-weight', '1', '--discriminator']);
+    expect(opts.kind).toBe('dump');
+    if (opts.kind !== 'dump') throw new Error('unreachable');
+    expect(opts.sections.map((section) => section.kind)).toEqual(['discriminator']);
+    expect(opts.sections[0]!.poolWeight).toBe(DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+
+    const text = formatAnalyzeSections(
+      parseDiagnosticDump(
+        dump({
+          groundTruthServices: ['ts-root'],
+          services: [
+            serviceLine({ serviceId: 'ts-root', selfAnomaly: 0.9 }),
+            serviceLine({ serviceId: 'ts-other', selfAnomaly: 0.1 }),
+          ],
+          topPredictions: ['ts-root'],
+        }),
+      ),
+      'dump.txt',
+      {
+        kind: 'dump',
+        dump: 'dump.txt',
+        family: undefined,
+        sections: [
+          {
+            kind: 'discriminator',
+            logWeight: 1,
+            latWeight: DEFAULT_LAT_WEIGHT,
+            latFloor: DEFAULT_LAT_MIN_RISE,
+            poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+          },
+        ],
+        slope: 'lat',
+        output: undefined,
+      },
+    );
+
+    expect(text).toContain('Discriminator screen');
+    // The oracle line is the instrument check: the reconstruction's own ceiling and baseline
+    // are printed beside the fitted rules, so a reader can see what the rule is chasing.
+    expect(text).toContain('the oracle');
+    expect(text).toContain('cross-validation');
+  });
+});
+
 describe('parseAnalyzeArgs — one owner for the log weight', () => {
   /**
    * The run's log weight appeared FOUR times in this command line: on
