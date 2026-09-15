@@ -62,9 +62,13 @@ export default defineConfig({
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
         'src/fse26-discriminator.ts',
-        'src/fse26-discriminator.ts',
         'src/fse26-cli.ts',
         'src/fse26-engine-options.ts',
+        // Added with the module: `cli-args.ts` decides what a MALFORMED flag means, and
+        // it was written, imported by two test files and left out of this list — the
+        // allow-list's own hole, a third time. `__tests__/coverage-scope.test.ts` now
+        // diffs this list against the modules the tests import, in both directions.
+        'src/cli-args.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

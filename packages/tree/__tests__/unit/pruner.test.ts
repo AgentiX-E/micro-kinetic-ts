@@ -9,7 +9,10 @@ import type {
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
+  ONSET_SHAPES,
   POOL_METRIC_PREFIX,
   TreePruner,
   toRankingWeights,
@@ -933,10 +936,11 @@ describe('TreePruner', () => {
     );
 
     it('ranks the earliest-onset source above a higher-anomaly symptom when enabled', () => {
-      // With the injection time known AND temporalWeight > 0, A's disturbance
-      // precedes B's and C's, so the temporal earliness prior must lift A above
-      // B (whose anomaly is larger). This is the opt-in causal source/symptom
-      // separation the index-based onset could not provide.
+      // With the injection time known AND a non-zero temporalWeight, A's disturbance
+      // precedes B's and C's, so the temporal prior must lift A above B (whose anomaly
+      // is larger). This is the causal source/symptom separation the index-based onset
+      // could not provide — and the weight is stated explicitly, because the SHIPPED
+      // default is small by design and would not carry A past a 0.5 anomaly gap.
       const pruner = new TreePruner({ temporalWeight: 0.5 });
       const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
 
@@ -950,16 +954,27 @@ describe('TreePruner', () => {
       expect(results[0]!.serviceId).toBe('A');
     });
 
-    it('disables the temporal signal by default (pure self-anomaly even with injectTime)', () => {
-      // The DEFAULT temporalWeight is 0: even when the injection time is known,
-      // the temporal signal is neutral and the highest self-anomaly service (B)
-      // ranks first. This is the shipped behaviour — the signal regressed the
-      // benchmark (#207/#208, net ≈ −2.5pp) and is therefore opt-in.
-      const pruner = new TreePruner();
-      const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
+    it('credits the first mover at the SHIPPED weight, without overturning the ranking', () => {
+      // The shipped default is a measured +4 cases / 0 regressed on FSE'26, which is a
+      // statement about cases, not about this fixture: at 0.036552 the term must LIFT A
+      // by exactly the weight and leave the anomaly ordering intact here. Asserted as
+      // arithmetic rather than as an ordering, so the test says what the default does
+      // instead of encoding one fixture's outcome — and asserted against an EXPLICIT
+      // zero, because `new TreePruner()` is no longer the term-off arm.
+      const off = new TreePruner({ temporalWeight: 0 });
+      const shipped = new TreePruner();
+      const scoreOf = (pruner: TreePruner, id: string): number => {
+        const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
+        return pruner.analyze(graph, 3).find((r) => r.serviceId === id)!.finalScore!;
+      };
 
-      const results = pruner.analyze(graph, 3);
-      expect(results[0]!.serviceId).toBe('B');
+      expect(scoreOf(shipped, 'A') - scoreOf(off, 'A')).toBeCloseTo(DEFAULT_TEMPORAL_WEIGHT, 12);
+      expect(scoreOf(shipped, 'B')).toBeCloseTo(scoreOf(off, 'B'), 12);
+      expect(scoreOf(shipped, 'C')).toBeCloseTo(scoreOf(off, 'C'), 12);
+      // B stays first: the shipped weight is deliberately too small to overturn a 0.5
+      // anomaly gap, and a default that COULD would be a different measurement.
+      const graph = shipped.buildFaultGraph(callGraph, metrics, { injectTimeMs: 180000 });
+      expect(shipped.analyze(graph, 3)[0]!.serviceId).toBe('B');
     });
 
     it('leaves the ranking on pure self-anomaly when the injection time is unknown', () => {
@@ -1893,15 +1908,41 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       );
     };
 
+    /**
+     * The baseline is stated EXPLICITLY rather than inherited from the constructor.
+     *
+     * The shipped weight is no longer 0, so a test that used `new TreePruner()` as its
+     * "term off" arm would silently stop testing anything the moment the default moved
+     * — the arms would differ by a shape and both would carry the term. `OFF` is the
+     * ablation as a number, not as an omission.
+     */
+    const OFF = { temporalWeight: 0 } as const;
+
     it('is inert at weight 0 whatever the shape says', () => {
       // The property that let the shape be enrolled, screened and dispatched BEFORE a
       // weight was chosen: the term is multiplied by the weight, so at 0 the shape's
       // own opinion cannot reach a score. Asserted against a pruner that never mentions
       // either field, so this cannot pass by comparing two spellings of one default.
-      const baseline = scores({});
-      for (const onsetShape of ['earliest-only', 'latest-only', 'order'] as const) {
+      const baseline = scores(OFF);
+      for (const onsetShape of ONSET_SHAPES) {
         expect([...scores({ temporalWeight: 0, onsetShape })].sort()).toEqual([...baseline].sort());
       }
+    });
+
+    it('ships the measured PAIR, and the default is that pair', () => {
+      // The value the recorded-runs guard reads out of source as text has to be the
+      // value the ENGINE actually uses, or the guard polices a comment. Asserted by
+      // construction: an omitted option must behave exactly like the two constants.
+      const shipped = scores({
+        temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+        onsetShape: DEFAULT_ONSET_SHAPE,
+      });
+      expect([...scores(undefined)]).toEqual([...shipped]);
+      // And the shipped pair is the one the screen found: the first mover gains exactly
+      // the shipped weight. If the shape were ever flipped alone, the default would
+      // credit a different service and this arithmetic would stop holding.
+      expect(shipped.get('A')! - scores(OFF).get('A')!).toBeCloseTo(DEFAULT_TEMPORAL_WEIGHT, 12);
+      expect(DEFAULT_ONSET_SHAPE).toBe('earliest-only');
     });
 
     it('credits the first mover, and ONLY the first mover, by exactly the weight', () => {
@@ -1909,7 +1950,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       // assertion is therefore arithmetic: A is the first mover, so it gains exactly the
       // weight; B and C are not the boundary set, so they do not move at all. A term
       // that moved anybody else would be a reweighting, not this axis.
-      const baseline = scores({});
+      const baseline = scores(OFF);
       const credited = scores({ temporalWeight: 1, onsetShape: 'earliest-only' });
 
       expect(credited.get('A')! - baseline.get('A')!).toBeCloseTo(1, 12);
@@ -1922,7 +1963,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       // helped as much, the signal would be a proxy for "extreme onset" rather than for
       // order — so the reversed shape must credit the OTHER end, and the screen's
       // control arm is only meaningful because this holds.
-      const baseline = scores({});
+      const baseline = scores(OFF);
       const reversed = scores({ temporalWeight: 1, onsetShape: 'latest-only' });
 
       expect(reversed.get('C')! - baseline.get('C')!).toBeCloseTo(-1, 12);
@@ -1930,12 +1971,12 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
     });
 
     it('reads the RANK in the order shape, so a far outlier cannot flatten the credit', () => {
-      // The delays are 60000 / 120000 / 300000 ms, so the engine's own shape — min-max
-      // in the DELAY — gives B an earliness of 0.75 and therefore a slope of 0.5, while
-      // C sits alone at the far end. The rank shape spaces the same three services
-      // evenly. Both are reported by the screen, and they are different statements about
-      // the case, which is why the screen sweeps the menu rather than one shape.
-      const baseline = scores({});
+      // The delays are 60000 / 120000 / 300000 ms, so the engine's original shape —
+      // min-max in the DELAY — gives B an earliness of 0.75 and therefore a slope of
+      // 0.5, while C sits alone at the far end. The rank shape spaces the same three
+      // services evenly. Both are reported by the screen, and they are different
+      // statements about the case, which is why the screen sweeps the menu.
+      const baseline = scores(OFF);
       const engine = scores({ temporalWeight: 1, onsetShape: 'earliness' });
       const byRank = scores({ temporalWeight: 1, onsetShape: 'order' });
 

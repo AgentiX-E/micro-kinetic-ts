@@ -31,7 +31,7 @@ function delays(entries: Record<string, number>): Map<string, number> {
 
 const ANCHOR = 1_700_000_000_000;
 
-describe('computeOnsetSlopes — the ENGINE’s own shape is the expression it replaced', () => {
+describe('computeOnsetSlopes — `earliness`, the shipped shape until the onset axis was measured', () => {
   it('equals 2 × (earliness − 0.5) for every service, exactly', () => {
     // The claim behind enrolling the shape without moving a number. If this held only
     // approximately, every published headline would have to be re-measured; because it
@@ -52,11 +52,19 @@ describe('computeOnsetSlopes — the ENGINE’s own shape is the expression it r
     expect(slopes.has('d')).toBe(false);
   });
 
-  it('is the default shape, so the field is optional at every call site', () => {
-    const input = delays({ a: 0, b: 1000 });
-    expect(DEFAULT_ONSET_SHAPE).toBe('earliness');
+  it('defaults to the SHIPPED shape, so the field is optional at every call site', () => {
+    // The default parameter is not decoration: `TreePruner` passes `options.onsetShape`,
+    // which is `undefined` for a caller that set only the weight — so the omission has to
+    // resolve to the shipped shape rather than to a neutral or to a compile error.
+    const input = delays({ a: 0, b: 1000, c: 60000 });
+    expect(DEFAULT_ONSET_SHAPE).toBe('earliest-only');
     expect([...computeOnsetSlopes(input, ANCHOR)]).toEqual([
-      ...computeOnsetSlopes(input, ANCHOR, 'earliness'),
+      ...computeOnsetSlopes(input, ANCHOR, DEFAULT_ONSET_SHAPE),
+    ]);
+    // And the two one-sided shapes are genuinely different, so a default that silently
+    // fell through to the wrong end of the ordering would be visible here.
+    expect([...computeOnsetSlopes(input, ANCHOR)]).not.toEqual([
+      ...computeOnsetSlopes(input, ANCHOR, 'latest-only'),
     ]);
   });
 

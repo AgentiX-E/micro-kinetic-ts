@@ -1862,10 +1862,34 @@ describe('onsetSlopes — the engine’s own earliness, as a slope', () => {
 
   const ANCHOR = 1_700_000_000_000;
 
-  it('normalises the earliest onset to +1 and the latest to −1, as the engine does', () => {
+  it('normalises the earliest onset to +1 and the latest to −1 in the `earliness` shape', () => {
     // Not a re-derivation: the call goes through the engine's own function, so a
     // screen can never report a window for a term the ranking would leave inert. The
-    // values are pinned because they are the SIGN that decides the direction.
+    // values are pinned because they are the SIGN that decides the direction. The shape
+    // is passed EXPLICITLY: it is no longer the shipped default, and a test that read it
+    // through the default would stop describing `earliness` the day the default moved.
+    const kase = field({
+      inject: ANCHOR,
+      first: { serviceId: 'ts-src', onset: 0 },
+      second: { serviceId: 'ts-win', onset: 60000 },
+      groundTruth: 'ts-src',
+      prediction: 'ts-win',
+    });
+    const slopes = onsetSlopes(kase, 'earliness');
+
+    expect(slopes.get('ts-src')).toBeCloseTo(1, 12);
+    expect(slopes.get('ts-win')).toBeCloseTo(-1, 12);
+    // A service with no onset is neutral: the term contributes nothing to it rather
+    // than crediting it as earliest, which is the failure that would make every
+    // unmeasured service the top candidate.
+    expect(slopes.get('ts-filler-00')).toBe(0);
+  });
+
+  it('defaults to the SHIPPED shape, which is ONE-SIDED', () => {
+    // The screen and the ranking have to agree about what the term says, and the only
+    // way that can be true by construction is for the reader's default parameter to be
+    // the engine's constant. Asserted as the difference two shapes make on the same case:
+    // `earliness` demotes the late mover, `earliest-only` does not touch it.
     const kase = field({
       inject: ANCHOR,
       first: { serviceId: 'ts-src', onset: 0 },
@@ -1876,10 +1900,7 @@ describe('onsetSlopes — the engine’s own earliness, as a slope', () => {
     const slopes = onsetSlopes(kase);
 
     expect(slopes.get('ts-src')).toBeCloseTo(1, 12);
-    expect(slopes.get('ts-win')).toBeCloseTo(-1, 12);
-    // A service with no onset is neutral: the term contributes nothing to it rather
-    // than crediting it as earliest, which is the failure that would make every
-    // unmeasured service the top candidate.
+    expect(slopes.get('ts-win')).toBe(0);
     expect(slopes.get('ts-filler-00')).toBe(0);
   });
 

@@ -238,6 +238,64 @@ function readConstant(source: string, pattern: RegExp, label: string): number {
   return Number(m[1]);
 }
 
+/** Read a `const NAME = '<text>'` out of a source file. A shape is a word, not a number. */
+function readStringConstant(source: string, pattern: RegExp, label: string): string {
+  const m = pattern.exec(source);
+  if (m === null) throw new Error(`${label}: constant not found in the source`);
+  return m[1]!;
+}
+
+/**
+ * Where the engine's shipped SHAPE for the temporal prior is declared, and the runs
+ * that measured the pair.
+ *
+ * The shape is not a weight, so it cannot be omitted-when-default the way a zero can,
+ * and it is the half that decides WHAT the term says. It is keyed here by the weight it
+ * was measured WITH, because the two are one configuration: a weight quoted without its
+ * shape is not a measurement, and this table is what stops the pair from being split by
+ * a later edit that only means to touch one of them.
+ */
+const DEFAULT_ONSET_SHAPE_RE = /DEFAULT_ONSET_SHAPE:\s*OnsetShape\s*=\s*'([a-z-]+)'/;
+const MEASURED_TEMPORAL_PAIRS: Record<
+  string,
+  {
+    shape: string;
+    topAt1: number;
+    hits: number;
+    cases: number;
+    regressedTypes: number;
+    run: string;
+    control: string;
+  }
+> = {
+  '0.036552': {
+    shape: 'earliest-only',
+    topAt1: 0.5344585091420534,
+    hits: 760,
+    cases: 1422,
+    regressedTypes: 0,
+    run: '35021510164',
+    control: '35021503281',
+  },
+};
+
+/** The same commit with the term off — the arm a gain is a gain AGAINST. */
+const MEASURED_TEMPORAL_OFF = {
+  topAt1: 0.5316455696202531,
+  hits: 756,
+  cases: 1422,
+  regressedTypes: 0,
+  run: '35021503281',
+};
+
+/**
+ * Where the engine's shipped temporal weight is declared.
+ *
+ * A third owner of "what the record is keyed by", so it is read as text exactly like
+ * the latency and pool weights above.
+ */
+const DEFAULT_TEMPORAL_WEIGHT_RE = /DEFAULT_TEMPORAL_WEIGHT\s*=\s*([0-9.]+)/;
+
 describe('FSE26 reported configuration', () => {
   const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
   const runner = readFileSync(RUNNER_PATH, 'utf8');
@@ -525,5 +583,56 @@ describe('FSE26 pool-penalty weight is a measured value', () => {
     expect(MEASURED_POOL_WEIGHTS['0']).toBeDefined();
     expect(MEASURED_POOL_WEIGHTS['0']!.hits).toBe(750);
     expect(MEASURED_POOL_WEIGHTS['0']!.regressedTypes).toBe(0);
+  });
+});
+
+describe('FSE26 temporal prior is a measured PAIR', () => {
+  const source = readFileSync(PRUNER_PATH, 'utf8');
+
+  it('ships a weight AND a shape that were measured together', () => {
+    // A weight is a claim about a shape. The engine's only non-zero measurement of this
+    // signal before the pair used the min-max `earliness` shape and was a net REGRESSION
+    // on RCAEval, so a shipped weight quoted alone would not identify a configuration
+    // that anyone has run.
+    const shippedWeight = readConstant(
+      source,
+      DEFAULT_TEMPORAL_WEIGHT_RE,
+      'DEFAULT_TEMPORAL_WEIGHT',
+    );
+    const recorded = MEASURED_TEMPORAL_PAIRS[String(shippedWeight)];
+    expect(
+      recorded,
+      `no recorded run for the shipped temporal weight ${shippedWeight}`,
+    ).toBeDefined();
+    expect(recorded!.cases).toBe(1422);
+    expect(recorded!.regressedTypes).toBe(0);
+    expect(recorded!.topAt1).toBeCloseTo(0.5344585091420534, 12);
+
+    // The other half of the pair, read from source in the same breath: a shape flipped
+    // without a run is exactly as unmeasured as a weight flipped without one, and the
+    // guard's whole job is to make that impossible to do silently.
+    const shippedShape = readStringConstant(source, DEFAULT_ONSET_SHAPE_RE, 'DEFAULT_ONSET_SHAPE');
+    expect(shippedShape).toBe(recorded!.shape);
+  });
+
+  it('keeps the OFF point recorded, on one commit, so the gain has an arm', () => {
+    // `+4` is a difference, and a difference needs both sides measured at the same
+    // commit and the same dataset — otherwise it is a comparison of two runs.
+    const recorded = MEASURED_TEMPORAL_PAIRS['0.036552']!;
+    expect(recorded.control).toBe(String(MEASURED_TEMPORAL_OFF.run));
+    expect(MEASURED_TEMPORAL_OFF.hits).toBe(756);
+    expect(MEASURED_TEMPORAL_OFF.regressedTypes).toBe(0);
+    expect(recorded.hits - MEASURED_TEMPORAL_OFF.hits).toBe(4);
+  });
+
+  it('names the shipped shape in the workflow input a dispatcher reads', () => {
+    // The same lesson as the latency pair's descriptions: the description is a second
+    // owner of the value it quotes, and `onset_shape` is not covered by the numeric
+    // table above because a shape is a word.
+    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
+    const description = readInputDescription(yml, 'onset_shape');
+    expect(description, 'onset_shape has no description to check').toBeDefined();
+    expect(description).toContain('earliest-only');
+    expect(description).not.toContain('default, which is earliness');
   });
 });

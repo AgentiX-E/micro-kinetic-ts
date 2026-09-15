@@ -72,11 +72,11 @@ on:
         required: false
         default: ''
       temporal_weight:
-        description: 'Weight of the injection-anchored temporal prior, which credits the service whose dominant metric left its pre-injection baseline FIRST (empty = the runner default, which is 0 = OFF, the value every measured headline uses). The offline screen measures the whole shape menu on the 1422-case dump in one command; on FSE''26 the shipped shape and the rank shape have NO admissible weight, while earliest-only has a zero-loss window worth +4 cases at 0.036552'
+        description: 'Weight of the injection-anchored temporal prior, which credits the service whose dominant metric left its pre-injection baseline FIRST (empty = the runner default, which is the shipped 0.036552 = the midpoint of the measured zero-loss window w in [0.034920, 0.038183] at onset_shape earliest-only, worth +4 cases / 0 regressed types; 0 is the pre-ship ablation). It is a PAIR with onset_shape: the value was measured with that shape, and the engine''s earlier non-zero measurement of this signal used the two-sided earliness shape and regressed RCAEval by 2.5pp'
         required: false
         default: ''
       onset_shape:
-        description: 'Shape the temporal prior reads the onset delays in: earliness (empty = the runner default, min-max in the delay), order (linear in the onset RANK), earliest-only (credit ONLY whoever moved first), latest-only (a REVERSED control). INERT while temporal_weight is 0, which is why it can be set without changing a published number'
+        description: 'Shape the temporal prior reads the onset delays in: the runner default, which is earliest-only (credit ONLY whoever moved first — one-sided, so it cannot demote anybody), order (linear in the onset RANK), earliness (min-max in the delay, the SHAPE THE OLD 2.5pp RCAEval REGRESSION WAS MEASURED WITH), latest-only (a REVERSED control). It is a PAIR with temporal_weight: the weight is a claim about a shape, so a value quoted without this one is not a configuration'
         required: false
         default: ''
 

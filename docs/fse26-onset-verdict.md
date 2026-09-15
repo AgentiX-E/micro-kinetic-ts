@@ -140,10 +140,19 @@ working term from one whose sign had been flipped.
   kinetic/runner options → the workflow input), and then the pair.
 
 One property makes the shape half of that provably safe: the term is
-`temporalWeight × 2 × (earliness − 0.5)`, so with the shipped default `temporalWeight = 0`
-**the shape cannot move any ranking at all** — including the RCAEval golden, whose runs do
-not set it. So the golden 9-cell's inputs cannot change until the weight does, and the
-whole risk of this candidate sits in the weight — which is exactly what the pair measures.
+`temporalWeight × slope`, so while the weight is 0 **the shape cannot move any ranking at
+all**, including the RCAEval golden — at weight 0 the two are the same function. So the
+whole risk of this candidate sits in the weight, which is exactly what the pair measures.
+
+**The RCAEval half of that was a claim, not a fact, and the first draft of this section
+got it backwards.** It said the golden "does not set" the shape. True, and irrelevant:
+`run-rcaeval.ts` also pinned the *weight* to a literal `0` — the term's ABLATION — while
+carrying the engine's defaults for the latency weight and the pool penalty. Had the flip
+shipped on that basis, the golden 9-cell would have stayed byte-identical because the
+gate never ran the configuration, and the register would have recorded "zero movement" as
+evidence for the signal. RCAEval has no dispatch inputs, so its configuration can only
+follow the engine's defaults; the runner now reads both constants (§7), which is what
+makes the gate able to see the term at all.
 
 ## 6. What the next iteration is
 
@@ -153,6 +162,33 @@ whole risk of this candidate sits in the weight — which is exactly what the pa
 2. Measure the pair on one commit at the shipped configuration: control `temporalWeight=0`
    against the candidate `0.036552` + `earliest-only`, and require **zero regressed fault
    types**.
-3. Measure the RCAEval golden 9-cell on the same commit and require it byte-identical.
+3. Measure the RCAEval golden 9-cell at the candidate and require it byte-identical.
 4. If either half fails, close the axis with those two numbers and this document becomes
    the row's evidence; if both pass, the term ships and the register gains the split.
+
+## 7. Done: the pair, and what it took to make the gate able to see it
+
+Three commits, in this order, because the third cannot be measured without the first:
+
+| commit | what |
+| --- | --- |
+| `ea8884b` | the shape becomes a first-class engine option (`computeOnsetSlopes` is the one owner; the screen's copy is deleted and the old rows reproduce byte for byte) |
+| `0612025` | **one owner for the pair**: `run-rcaeval` reads `DEFAULT_TEMPORAL_WEIGHT` / `DEFAULT_ONSET_SHAPE` instead of pinning the ablation, takes `--onset-shape`, and prints both; `parseWeight` becomes one shared rule, so a malformed flag reproduces a published configuration instead of running an unrecorded one |
+| the flip | `0.036552` + `earliest-only`, with the recorded-runs pair table as the guard |
+
+Measured on one commit, 1422 cases, `rcabench-latency-full`, the shipped base minus this
+term as the control:
+
+| | control (`temporalWeight=0`) | candidate (`0.036552`, `earliest-only`) |
+| --- | --- | --- |
+| Top@1 | 53.16% (756) | **53.45% (760)** |
+| Top@3 / Top@5 | 66.46% / 70.25% | 66.53% / 70.25% |
+| runs | `35021503281` | `35021510164` |
+| per-type | — | `HTTPRequestDelay` 54→56, `JVMMemoryStress` 12→13, `JVMReturn` 12→13, **22 types unchanged, 0 regressed** |
+
+What the pair still does not have is a case-level split at the RUN's configuration: the
+artifact is a summary, so "0 regressed fault types" is a claim about 25 types, exactly
+the weaker claim the pool penalty's own row was written to stop repeating. The case-level
+statement that survives is the *offline* one — `+4, lostAtShip 0` from the solver — and it
+is the reason the net is +4 rather than a larger number with casualties inside it.
+

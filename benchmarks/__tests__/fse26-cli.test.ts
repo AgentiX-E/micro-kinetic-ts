@@ -231,16 +231,16 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--pool-penalty', '0']).poolMetricPenaltyWeight).toBe(0);
   });
 
-  it('parses the temporal prior: the weight off by default, the shape its own owner', () => {
-    // The WEIGHT's shipped value is 0, and unlike every other weight here that is also
-    // the published configuration — the term is off in every measured headline — so the
-    // fallback is the shipped value without ambiguity.
+  it('parses the temporal PAIR: the shipped weight and the shipped shape', () => {
+    // Both halves are read from the engine's constants rather than asserted as literals:
+    // what this test is for is that the CLI and the pruner cannot disagree about a
+    // configuration, and pinning the numbers here would be a second owner of them —
+    // the recorded-runs guard is where a VALUE is asserted, once.
     expect(parseFSE26Args([]).temporalWeight).toBe(DEFAULT_TEMPORAL_WEIGHT);
-    expect(DEFAULT_TEMPORAL_WEIGHT).toBe(0);
+    expect(parseFSE26Args([]).onsetShape).toBe(DEFAULT_ONSET_SHAPE);
     expect(parseFSE26Args(['--temporal-weight', '0.036552']).temporalWeight).toBe(0.036552);
     // The SHAPE is a different kind of field: it has no default-0 to be omitted against,
     // and it is inert while the weight is 0, which is why it can be set on its own.
-    expect(parseFSE26Args([]).onsetShape).toBe(DEFAULT_ONSET_SHAPE);
     for (const shape of ONSET_SHAPES) {
       expect(parseFSE26Args(['--onset-shape', shape]).onsetShape).toBe(shape);
     }
@@ -255,16 +255,22 @@ describe('parseFSE26Args — other flags', () => {
   });
 
   it('falls back to the SHIPPED temporal weight on an empty or unusable value', () => {
-    // `Number('')` is 0, which HERE happens to equal the shipped value — and the test
-    // still earns its place, because the hazard is not the number but the class: the day
-    // the default flips, an inline parse would silently run the ablation.
+    // The case the class was written for, now live rather than hypothetical: the shipped
+    // weight is non-zero, so `Number('')` is 0, and 0 is this term's ABLATION. An inline
+    // parse would therefore run the signal switched OFF under a dispatch that merely
+    // failed to supply a value — and report it under the shipped configuration's name.
     expect(parseFSE26Args(['--temporal-weight', '']).temporalWeight).toBe(DEFAULT_TEMPORAL_WEIGHT);
+    // The shipped value is NOT the ablation, which is what makes the assertion above
+    // meaningful rather than a coincidence of two zeros.
+    expect(DEFAULT_TEMPORAL_WEIGHT).not.toBe(0);
     expect(parseFSE26Args(['--temporal-weight', '1x']).temporalWeight).toBe(
       DEFAULT_TEMPORAL_WEIGHT,
     );
     expect(parseFSE26Args(['--temporal-weight', '-1']).temporalWeight).toBe(
       DEFAULT_TEMPORAL_WEIGHT,
     );
+    // And an explicit 0 still selects the ablation, so it stays reachable.
+    expect(parseFSE26Args(['--temporal-weight', '0']).temporalWeight).toBe(0);
   });
 
   it('falls back to the SHIPPED pool penalty on an empty or unusable value', () => {

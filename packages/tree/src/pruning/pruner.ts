@@ -109,46 +109,43 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly sourceWeight: number;
   /**
-   * Weight of the GLOBAL temporal-earliness signal in root-cause ranking.
+   * Weight of the GLOBAL injection-anchored temporal prior in root-cause ranking.
    *
    * Unlike `sourceWeight` (a LOCAL neighbour-fraction prior based on the
    * index-based, self-derived-baseline onset), this signal is anchored to
    * the fault INJECTION time: each service's onset delay after injection is
-   * computed from a clean pre-injection baseline, then min-max normalised
-   * into an earliness score (earliest = 1, latest = 0, undetermined = 0.5).
-   * The combination is in log1p space:
+   * computed from a clean pre-injection baseline, turned into a slope by
+   * {@link computeOnsetSlopes} in whatever shape `onsetShape` names, and added in
+   * log1p space:
    *
-   *   finalScore(v) = log1p(selfAnomaly(v)) + temporalWeight × 2 × (earliness − 0.5)
+   *   finalScore(v) = log1p(selfAnomaly(v)) + temporalWeight × slope(v)
    *
-   * so a source (earliness → 1) gains up to `+temporalWeight` while a symptom
-   * (earliness → 0) loses up to `−temporalWeight`, and an undetermined onset
-   * contributes nothing. When the injection time is unknown, every service is
-   * neutral and the signal has no effect.
+   * When the injection time is unknown, or fewer than two services have a
+   * determined onset, every slope is 0 and the signal has no effect.
    *
-   * Default: 0 — the temporal signal is opt-in. Benchmarks #207/#208 measured
-   * a NET REGRESSION of ≈ −2.5pp (OnlineBoutique RE1 −12.0, RE3 −13.3) with
-   * temporalWeight 0.5: the injection-anchored onset systematically anchors to
-   * the source's slow-responding dominant metric (latency/socket), which
-   * crosses the 30% deviation threshold LATE, while symptoms' fast metrics
-   * (workload/cpu) cross it EARLY. "Earliest onset = source" therefore does
-   * not hold on RCAEval, so the signal is shipped disabled and only re-enabled
-   * (at a low weight) after the onset detector is validated against real data.
+   * Default {@link DEFAULT_TEMPORAL_WEIGHT}, measured as a PAIR with
+   * {@link DEFAULT_ONSET_SHAPE} — and the shape is not decoration, it is what the
+   * weight was measured ON. The signal's only earlier measurement at a non-zero weight
+   * used the min-max `earliness` shape and was a net regression of ≈ −2.5pp on RCAEval
+   * (#207/#208): the injection-anchored onset systematically anchors to the SOURCE's
+   * slow-responding dominant metric (latency/socket), which crosses the 30% deviation
+   * threshold LATE, while a symptom's fast metrics (workload/cpu) cross it EARLY. That
+   * mechanism makes "earliest onset = source" a claim about the SHAPE, so the shape is
+   * where it was answered: `earliest-only` is one-sided and cannot demote anybody.
    */
   readonly temporalWeight: number;
   /**
    * Which shape the temporal prior reads the onset delays in.
    *
-   * The weight decides HOW MUCH the term matters; this decides WHAT it says. They are
-   * separate owners because they were measured separately: at the shipped
-   * `temporalWeight = 0` this field is provably inert whatever it says (the term is
-   * multiplied by the weight), so a shape change cannot move any published number
-   * until the weight does — which is why the shape could be enrolled and screened
-   * before the weight was chosen.
+   * The weight decides HOW MUCH the term matters; this decides WHAT it says. They are a
+   * PAIR rather than two settings, and the pairing is measured: a weight is a claim
+   * about a shape, so a value quoted without the shape it was measured on is not a
+   * configuration. See {@link OnsetShape} for what each one asserts.
    *
-   * Default {@link DEFAULT_ONSET_SHAPE} — the min-max earliness every published number
-   * was measured with. The other shapes are candidates, not alternatives: on FSE'26 the
-   * shipped shape and `order` have no admissible weight at all, while `earliest-only`
-   * has a measured zero-loss window worth +4 cases (`docs/fse26-onset-verdict.md`).
+   * Default {@link DEFAULT_ONSET_SHAPE}. Inert while `temporalWeight` is 0 — the term is
+   * multiplied by the weight — which is why the shape could be enrolled, screened and
+   * dispatched before the weight was chosen, and why flipping it alone can never move a
+   * published number.
    */
   readonly onsetShape: OnsetShape;
   /**
@@ -520,7 +517,7 @@ export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
  * statement than "no admissible weight on any declared shape", and a screen that only
  * tried one would leave the axis open on a technicality.
  *
- * - `earliness` — shipped: min-max in the delay; earliest 1, latest 0.
+ * - `earliness` — min-max in the delay; earliest 1, latest 0.
  * - `order` — the same ORDER with the magnitude discarded: linear in the onset RANK.
  * - `earliest-only` — credit only the service(s) that moved FIRST, and nothing else.
  *   A MASK on the onset, which the register notes a rise floor cannot build: there,
@@ -528,6 +525,18 @@ export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
  * - `latest-only` — the CONTROL. The premise is that cause precedes effect, so a shape
  *   that helps while inverted would falsify it; without this arm a screen cannot tell
  *   a working term from a working term with the sign flipped.
+ *
+ * Shipped is `earliest-only`, and the reason the shape and not the weight is the lever
+ * is measured: the two-sided shapes cannot help here. At `w = 0.5` with `earliness`,
+ * the signal was a net regression of ≈ −2.5pp on RCAEval (#207/#208) because the
+ * injection-anchored onset systematically anchors to the SOURCE's slow-responding
+ * dominant metric — latency and socket cross the 30% deviation threshold LATE — while a
+ * symptom's fast metrics (workload, cpu) cross it EARLY. "Earliest onset = source" is
+ * therefore a claim about the shape, and a two-sided normalisation is punished by the
+ * mechanism rather than by the noise. `earliest-only` is ONE-SIDED: it credits the first
+ * mover and cannot demote anybody, which is why the failure mode above is structurally
+ * unavailable to it — and why it is the only shape of the four with an admissible weight
+ * on FSE'26 (`docs/fse26-onset-verdict.md`).
  */
 export type OnsetShape = 'earliness' | 'order' | 'earliest-only' | 'latest-only';
 
@@ -539,8 +548,15 @@ export const ONSET_SHAPES: readonly OnsetShape[] = [
   'latest-only',
 ];
 
-/** The shipped shape — the one every published number was measured with. */
-export const DEFAULT_ONSET_SHAPE: OnsetShape = 'earliness';
+/**
+ * The shipped SHAPE of the injection-anchored temporal prior.
+ *
+ * Half of a pair with {@link DEFAULT_TEMPORAL_WEIGHT}, not a preference: a weight is a
+ * claim about a shape, and the only published measurement of this signal at a non-zero
+ * weight used the shape that LOST (`earliness`, below). `earliest-only` is what the
+ * zero-loss window was solved on.
+ */
+export const DEFAULT_ONSET_SHAPE: OnsetShape = 'earliest-only';
 
 /** Whether a string names a declared shape; the CLI parses through this, not a cast. */
 export function isOnsetShape(value: string): value is OnsetShape {
@@ -548,16 +564,29 @@ export function isOnsetShape(value: string): value is OnsetShape {
 }
 
 /**
- * Weight of the global temporal prior. **0 = off**, which is the shipped value.
+ * The shipped weight of the injection-anchored temporal prior.
  *
- * One owner for the number, so the pruner's defaults and the CLI's parsed fallback
+ * Solved, not swept — the same discipline as {@link DEFAULT_LAT_WEIGHT} and
+ * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}. The term is affine in this weight
+ * (`base + w × slope`), so with every candidate's slope recorded per service the set of
+ * weights at which a currently-correct case stays correct is an intersection of
+ * half-lines and the zero-loss window is a closed interval. On 1422 FSE'26 cases at
+ * {@link DEFAULT_ONSET_SHAPE} it is `w ∈ [0.034920, 0.038183]`: the fourth case flips at
+ * the lower boundary and the first casualty appears at the upper one. The midpoint rule
+ * is the one the pool penalty shipped under, so two terms advised by two rules cannot
+ * both be described as the measured optimum.
+ *
+ * Measured as a PAIR with the shape, against its own ablation on one commit
+ * (`docs/fse26-onset-verdict.md` §7): 760 correct at this value against 756 at 0, three
+ * fault types up by 1/2/1 and **zero regressed**, Top@1 53.45% against 53.16%. The
+ * window is narrow and both ends are named, which is why the case-level split rather
+ * than the net is the number that decides.
+ *
+ * One owner for the value, so the pruner's default and every runner's parsed fallback
  * cannot disagree — the defect that once published a headline 24.2pp below the
- * best-measured one. The flip to a measured value is a separate, guarded step: the
- * recorded-runs table in `fse26-reported-config.test.ts` must gain the key first
- * (`docs/fse26-onset-verdict.md` names the candidate, +4 cases / 0 lost at
- * `earliest-only`).
+ * best-measured one.
  */
-export const DEFAULT_TEMPORAL_WEIGHT = 0.0;
+export const DEFAULT_TEMPORAL_WEIGHT = 0.036552;
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
@@ -1345,9 +1374,10 @@ function performTreeRCA(
   //
   // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
   //    node's neighbours whose index-based onset is later.
-  // 2. A GLOBAL temporal-earliness prior (`temporalWeight`) anchored to the
-  //    fault injection time — the earlier a service deviated from its clean
-  //    pre-injection baseline, the more likely it is the source.
+  // 2. A GLOBAL injection-anchored temporal prior (`temporalWeight`) — the earlier
+  //    a service deviated from its clean pre-injection baseline, the more likely it
+  //    is the source. What exactly the onset delays are read as is `onsetShape`'s
+  //    (`earliest-only` credits the first mover and nothing else).
   // 3. A COLLISION-ENERGY prior (`collisionWeight`) — penalise a node whose
   //    fault energy is mostly INHERITED from upstream (ratioContrib → 1).
   // 4. A TOPOLOGICAL-source prior (`topoWeight`) — reward a node with no
@@ -1398,7 +1428,7 @@ function performTreeRCA(
   //
   //   finalScore(v) = log1p(selfAnomaly(v))
   //                 + sourceWeight    × sourceScore(v)
-  //                 + temporalWeight  × 2 × (earliness(v) − 0.5)
+  //                 + temporalWeight  × onsetSlope(v)   // shaped by `onsetShape`
   //                 − collisionWeight × ratioContrib(v)
   //                 + topoWeight      × topoSource(v)
   //                 + logWeight       × logScore(v)
