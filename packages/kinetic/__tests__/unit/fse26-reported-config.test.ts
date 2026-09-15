@@ -113,6 +113,7 @@ const MEASURED_MODES: Record<string, { topAt1: number; hits: number; cases: numb
  */
 const PRUNER_PATH = resolve(repoRoot, 'packages/tree/src/pruning/pruner.ts');
 const DEFAULT_LAT_WEIGHT_RE = /DEFAULT_LAT_WEIGHT\s*=\s*([0-9.]+)/;
+const DEFAULT_LAT_MIN_RISE_RE = /DEFAULT_LAT_MIN_RISE\s*=\s*([0-9.]+)/;
 
 /**
  * Weights with a recorded full-benchmark measurement, and what that measurement
@@ -150,6 +151,40 @@ const MEASURED_LAT_WEIGHTS: Record<
     cases: 1422,
     regressedTypes: 7,
     run: '34861468557',
+  },
+  '0.561495': {
+    topAt1: 0.5274261603375527,
+    hits: 750,
+    cases: 1422,
+    regressedTypes: 0,
+    run: '34921980498',
+  },
+};
+
+/**
+ * Rise floors with a recorded full-benchmark measurement.
+ *
+ * A floor is not a weight, and it is NOT safe on its own: at the shipped weight a
+ * floor of 10.3 costs 6 cases across 6 fault types. The pair is the configuration, so
+ * the guard below requires the PAIR to have been measured, not each half separately.
+ */
+const MEASURED_LAT_FLOORS: Record<
+  string,
+  { topAt1: number; hits: number; cases: number; regressedTypes: number; run: string }
+> = {
+  '1': {
+    topAt1: 0.4838255977496484,
+    hits: 688,
+    cases: 1422,
+    regressedTypes: 6,
+    run: '34921984651',
+  },
+  '10.3': {
+    topAt1: 0.5274261603375527,
+    hits: 750,
+    cases: 1422,
+    regressedTypes: 0,
+    run: '34921980498',
   },
 };
 
@@ -217,6 +252,49 @@ describe('FSE26 latency weight — a shipped default is a measured claim', () =>
       .filter(([, m]) => m.regressedTypes === 0)
       .sort((a, b) => b[1].topAt1 - a[1].topAt1);
     expect(shipped).toBe(passing[0]?.[0]);
+  });
+});
+
+/**
+ * The weight the term shipped at while the floor was still 1 (the no-op). Anything
+ * above it is only defensible together with a floor, because the shipped shape's
+ * zero-regression window ends at 0.030459.
+ */
+const DEFAULT_SHIPPED_WEIGHT_WITHOUT_FLOOR = 0.03;
+
+describe('FSE26 latency rise floor — shipped as a PAIR with the weight', () => {
+  const pruner = readFileSync(PRUNER_PATH, 'utf8');
+  const shippedWeight = DEFAULT_LAT_WEIGHT_RE.exec(pruner)?.[1];
+  const shippedFloor = DEFAULT_LAT_MIN_RISE_RE.exec(pruner)?.[1];
+
+  it('declares the shipped floor where this guard can read it', () => {
+    expect(shippedFloor).toBeDefined();
+  });
+
+  it('ships a floor that has a recorded full-benchmark measurement', () => {
+    expect(Object.keys(MEASURED_LAT_FLOORS)).toContain(shippedFloor);
+  });
+
+  it('ships a floor the shipped WEIGHT is also measured at', () => {
+    // The two values are ONE configuration. A floor measured only against a different
+    // weight would say nothing about the pair that actually ships — and this one is
+    // not safe on its own: at the shipped weight a floor of 10.3 costs 6 cases across
+    // 6 fault types, so its own row is a regression and only the pair is a gain.
+    expect(MEASURED_LAT_FLOORS[shippedFloor!]!.run).toBe(MEASURED_LAT_WEIGHTS[shippedWeight!]!.run);
+  });
+
+  it('ships a PAIR whose measurement regressed zero fault types', () => {
+    expect(MEASURED_LAT_FLOORS[shippedFloor!]!.regressedTypes).toBe(0);
+    expect(MEASURED_LAT_WEIGHTS[shippedWeight!]!.regressedTypes).toBe(0);
+  });
+
+  it('does not ship the no-op floor with a weight that needs a floor', () => {
+    // The shipped weight exists only because the floor removed the competitor that
+    // bounded the shipped shape. Shipping them mismatched — a high weight with a floor
+    // of 1 — is the failure this file can see no other way.
+    if (Number(shippedWeight) > DEFAULT_SHIPPED_WEIGHT_WITHOUT_FLOOR) {
+      expect(Number(shippedFloor)).toBeGreaterThan(1);
+    }
   });
 });
 

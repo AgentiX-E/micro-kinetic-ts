@@ -107,22 +107,53 @@ the weight's cap: 10.283 is the evidence that had to be excluded, and 10.3 is th
 first value that excludes it. It is not a preference and not a round number — a round
 10 does **not** work (it leaves the competitor in place and the cap at 0.030459).
 
-## What is claimed, and what is not
+## The measurement: 750, exactly the prediction
 
-The +77 is a **prediction from a reconstruction**, not a measurement. The
-reconstruction's *net* is the validated quantity (it reproduces 694 at `w = 0.03` and
-785 at `w = 0.75`); its per-case gain/loss split is not, so "nothing is lost" is a
-statement inside the model and only a run can confirm the engine agrees. Two runs are
-dispatched on the commit that lands the floor:
+The +77 was a prediction from a reconstruction. It was then measured, on one commit and
+one cache, and the **floor was measured both with and without the weight** so the gain
+could be attributed to the pair rather than assumed:
 
-| run | configuration | what it measures |
-| --- | --- | --- |
-| `34921980498` | `latMinRise=10.3`, `latWeight=0.561495` | the candidate |
-| `34921984651` | `latMinRise=10.3`, `latWeight=0.03` (shipped weight) | the floor alone, so the gain can be attributed to the pair rather than assumed |
+| run | floor | weight | Top@1 | correct | regressed fault types |
+| --- | --- | --- | --- | --- | --- |
+| `34877815364` | 1 | 0.03 (shipped) | 48.80% | 694 | 0 |
+| `34921984651` | 10.3 | **0.03 (the floor ALONE)** | 48.38% | 688 | **6** |
+| `34921980498` | **10.3** | **0.561495 (shipped)** | **52.74%** | **750** | **0** |
+
+The candidate measured **750** — the reconstruction's prediction to the case — with
+**zero regressed fault types**, Top@3 65.75% and Top@5 70.11%.
+
+The middle row is the reason the two values ship as a PAIR and the reason the guard in
+`fse26-reported-config.test.ts` requires a measurement of the *pair*: at the old weight
+a floor of 10.3 is a **6-case regression across 6 fault types** (JVMMemoryStress −3,
+ContainerKill −1, HTTPResponseDelay −1, NetworkBandwidth −1, NetworkDelay −1,
+JVMLatency −1). Neither half is defensible alone. The floor removes a competitor that
+only matters at a large weight, and the large weight only survives with the floor.
+
+Per fault type against the previously shipped 694 — 10 types gain, none regress:
+
+| fault type | shipped | candidate | delta |
+| --- | --- | --- | --- |
+| HTTPRequestDelay | 42 | **54** | +12 |
+| NetworkLoss | 14 | **23** | +9 |
+| HTTPResponseDelay | 44 | **52** | +8 |
+| NetworkPartition | 41 | **48** | +7 |
+| NetworkCorrupt | 18 | **24** | +6 |
+| JVMMemoryStress | 7 | **12** | +5 |
+| HTTPRequestReplaceMethod | 123 | **127** | +4 |
+| ContainerKill | 2 | **4** | +2 |
+| JVMLatency | 3 | **5** | +2 |
+| NetworkDelay | 18 | **19** | +1 |
+| **all 14 others (incl. ReplaceCode, 231 cases)** | — | — | **+0** |
+
+The largest type, `HTTPResponseReplaceCode` (231 cases), is untouched — which matters,
+because it is the type the earlier 0.75 ablation cost two cases on. The gains are
+concentrated in the delay and network families, which is exactly where a *duration*
+signal has evidence and the failure counts do not.
 
 The kill criterion is unchanged and has no exception: **RCAEval golden 9-cell
-byte-identical** AND **FSE'26 zero regressed fault types**. A gain of +77 with one
-regressed type is refused, and so is +5 with none if the golden moves.
+byte-identical** AND **FSE'26 zero regressed fault types**. The second half is measured
+above; the first is measured on the flip commit itself, because a half that is skipped
+because it "must" pass is not a test.
 
 ## What would reopen the shape axis
 

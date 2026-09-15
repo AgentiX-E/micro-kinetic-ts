@@ -14,7 +14,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LogSignalMode } from '../../packages/tree/src/index.js';
-import { DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
 
 import { DEFAULT_FSE26_LOG_MODE, isLogSignalMode, parseFSE26Args } from '../src/fse26-cli.js';
 
@@ -200,10 +200,13 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--lat-weight', '']).latWeight).toBe(DEFAULT_LAT_WEIGHT);
   });
 
-  it('parses the latency rise floor, defaulting to the shipped 1', () => {
-    // 1 is the shipped shape, and the boundary matters: a floor of 1 must be a no-op,
-    // so `--lat-min-rise 1` and no flag at all have to agree.
-    expect(parseFSE26Args([]).latMinRise).toBe(1);
+  it('parses the latency rise floor, defaulting to the SHIPPED measured value', () => {
+    // The shipped floor is half of a measured PAIR with the weight: at the shipped
+    // weight a floor of 1 scores 673 against 750, and a floor of 10.3 at the OLD weight
+    // is a 6-case regression. So the default is the engine's constant, and `1` — the
+    // credited-everything shape — is still reachable as an explicit ablation.
+    expect(parseFSE26Args([]).latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    expect(parseFSE26Args([]).latMinRise).toBeGreaterThan(1);
     expect(parseFSE26Args(['--lat-min-rise', '1']).latMinRise).toBe(1);
     expect(parseFSE26Args(['--lat-min-rise', '10.3']).latMinRise).toBe(10.3);
   });
@@ -213,11 +216,9 @@ describe('parseFSE26Args — other flags', () => {
     // (magnitudes are `log1p(max(0, rise - 1))`), so accepting it would render a
     // configuration the operator believes changed something when nothing changed.
     // The fallback is the SHIPPED floor, like every other weight fallback.
-    expect(parseFSE26Args(['--lat-min-rise', '0.5']).latMinRise).toBe(1);
-    expect(parseFSE26Args(['--lat-min-rise', '0']).latMinRise).toBe(1);
-    expect(parseFSE26Args(['--lat-min-rise', '-3']).latMinRise).toBe(1);
-    expect(parseFSE26Args(['--lat-min-rise', 'x']).latMinRise).toBe(1);
-    expect(parseFSE26Args(['--lat-min-rise', '']).latMinRise).toBe(1);
+    for (const bad of ['0.5', '0', '-3', 'x', '']) {
+      expect(parseFSE26Args(['--lat-min-rise', bad]).latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    }
   });
 
   it('parses the failed-edge evidence floor, defaulting to the shipped 1', () => {

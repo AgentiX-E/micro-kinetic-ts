@@ -6,7 +6,12 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
-import { DEFAULT_LAT_WEIGHT, TreePruner, toRankingWeights } from '@agentix-e/micro-kinetic-tree';
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  TreePruner,
+  toRankingWeights,
+} from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
 function makeNode(id: string): ServiceNode {
@@ -1661,6 +1666,24 @@ describe('TreePruner — per-edge latency-rise signal', () => {
     expect(DEFAULT_LAT_WEIGHT).toBeGreaterThan(0);
     expect(shipped.get(CALLEE)! - ablation.get(CALLEE)!).toBeCloseTo(DEFAULT_LAT_WEIGHT, 12);
     expect(shipped.get(CALLER)!).toBeCloseTo(ablation.get(CALLER)!, 12);
+  });
+
+  it('applies the SHIPPED floor by default, so thin rises are not credited', () => {
+    // The shipped configuration is the PAIR, and the floor is the half a reader is
+    // least likely to expect: a default of 1 would credit a 2x rise just as the
+    // previous release did, while the weight's default is now 18x larger. A fixture
+    // whose rise is below the shipped floor must therefore score as if the term were
+    // off, and one above it must still be credited.
+    expect(DEFAULT_LAT_MIN_RISE).toBeGreaterThan(1);
+    const thin = [{ caller: CALLER, callee: CALLEE, preMeanMs: 10, postMeanMs: 20 }]; // 2x
+    const thick = [{ caller: CALLER, callee: CALLEE, preMeanMs: 10, postMeanMs: 400 }]; // 40x
+
+    const off = scores(new TreePruner({ latWeight: 0 })).byService;
+    const thinShipped = scores(new TreePruner(), { edgeLatency: thin }).byService;
+    const thickShipped = scores(new TreePruner(), { edgeLatency: thick }).byService;
+
+    expect(thinShipped.get(CALLEE)!).toBeCloseTo(off.get(CALLEE)!, 12);
+    expect(thickShipped.get(CALLEE)! - off.get(CALLEE)!).toBeCloseTo(DEFAULT_LAT_WEIGHT, 12);
   });
 
   it('masks the callee once the floor is above its rise, so the term is inert', () => {

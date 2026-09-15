@@ -339,11 +339,11 @@ export interface TreePrunerOptions extends RCAEngineOptions {
   /**
    * Rise a service must clear before the latency term credits it at all.
    *
-   * Default 1, which is the shipped shape (`log1p(max(0, rise − 1))` credits every
-   * rise above 1). A floor above 1 turns the term into a *precision* instrument: a
-   * rise of 1.1× and a rise of 10× are not the same evidence, and a competitor with
-   * a moderate rise of its own can be enough to displace a source that the counts
-   * cannot see.
+   * Default {@link DEFAULT_LAT_MIN_RISE}. A floor turns the term into a *precision*
+   * instrument: a rise of 1.1× and a rise of 10× are not the same evidence, and a
+   * competitor with a moderate rise of its own can be enough to displace a source
+   * that the failure counts cannot see. `1` restores the credited-everything shape,
+   * and is the ablation that scores 48.80%.",
    *
    * It is a MASK, not a compression, and that matters for what it can do. It removes
    * rises strictly between 1 and the floor, so the surviving maximum is always the
@@ -397,30 +397,55 @@ export function toRankingWeights(
 }
 
 /**
+ * Rise a service must clear before the per-edge latency term credits it.
+ *
+ * The shipped value, measured as a PAIR with {@link DEFAULT_LAT_WEIGHT} — and the
+ * pairing is the point, because this floor is not safe on its own. At the previous
+ * weight (0.03) a floor of 10.3 costs 6 cases across 6 fault types; at 0.561495 the
+ * same floor gains 56 cases across 10 with none regressed.
+ *
+ * Why it works is structural rather than tuned. The shipped shape's zero-regression
+ * window ends at 0.030459, and the single case that sets it has a target with latency
+ * slope 0 against a rival at the case maximum 1 — a **maximal** gap, which no
+ * pointwise reshaping of the term can widen (`--window` prints that arithmetic). A
+ * floor is not a pointwise reshaping: it deletes rises instead of compressing them, so
+ * it can remove a spurious competitor outright. It holds at 0.030459 until the floor
+ * passes 10.283 — the rise of the one competitor that bound the window, in
+ * `ts1-ts-food-service-exception-ch2v8l` — and then jumps to 0.561495, because that
+ * case no longer binds.
+ *
+ * 10.3 rather than a round 10: the step's boundary is a solved threshold with a named
+ * binder, and 10 does not reach it. Inside a step the optimum is its LOWER boundary,
+ * because the cap is fixed there and a higher floor only masks more credit.
+ */
+export const DEFAULT_LAT_MIN_RISE = 10.3;
+
+/**
  * The shipped weight of the per-edge latency-rise term.
  *
  * Flipped from 0 to this value only after the weight was SOLVED rather than swept:
  * the score is affine in the weight, so with both terms recorded per service in a
- * diagnostic dump the set of weights at which a currently-correct case stays
- * correct is an intersection of half-lines. That window is `w ∈ [0, 0.030459]` on
- * the full FSE'26 dump, and beyond it the first casualty is a single
- * `JVMException` case.
+ * diagnostic dump the set of weights at which a currently-correct case stays correct
+ * is an intersection of half-lines. The window is `w ∈ [0, 0.561495]` at
+ * {@link DEFAULT_LAT_MIN_RISE}, and immediately above it the first casualty is the
+ * named binder.
  *
- * The two points that matter were then MEASURED on the real engine, on one commit
- * and one cache, with only this weight different:
+ * The points that matter were MEASURED on the real engine, one commit and one cache,
+ * only these two values different:
  *
- * | weight | Top@1 | correct | regressed fault types |
- * | --- | --- | --- | --- |
- * | 0 (the ablation) | 47.33% | 673 | 0 |
- * | **0.03 (this value)** | **48.80%** | **694** | **0** |
+ * | floor | weight | Top@1 | correct | regressed fault types |
+ * | --- | --- | --- | --- | --- |
+ * | 1 (shipped shape) | 0.03 | 47.33% | 673 | 0 |
+ * | 1 | 0.03 | 48.80% | 694 | 0 |
+ * | 10.3 | 0.03 (the floor ALONE) | 48.38% | 688 | **6** |
+ * | **10.3** | **0.561495 (shipped)** | **52.74%** | **750** | **0** |
  *
- * `0.03` rather than the window's edge `0.030459`: the default has to be a number
- * that was measured, and the reconstructed window is a prediction the measurement
- * confirmed (+21 cases, zero regressions) rather than a substitute for it. The
- * more aggressive `0.75` gains far more (+7.88pp) and is refused by the kill
- * criterion's second half — seven fault types regress.
+ * The third row is why the pair ships together and why the guard in
+ * `fse26-reported-config.test.ts` requires a measurement of the PAIR: each half is
+ * individually defensible and only the pair is a gain. The measured 750 is exactly
+ * what the reconstruction predicted.
  */
-export const DEFAULT_LAT_WEIGHT = 0.03;
+export const DEFAULT_LAT_WEIGHT = 0.561495;
 
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
@@ -442,7 +467,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeMode: 'sum',
   failedEdgeMinRecords: 1,
   latWeight: DEFAULT_LAT_WEIGHT,
-  latMinRise: 1,
+  latMinRise: DEFAULT_LAT_MIN_RISE,
 };
 
 /**

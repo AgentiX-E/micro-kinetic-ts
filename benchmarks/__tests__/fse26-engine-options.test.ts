@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
 import { NON_ENGINE_OPTION_KEYS, buildFse26EngineOptions } from '../src/fse26-engine-options.js';
@@ -30,7 +30,7 @@ describe('buildFse26EngineOptions', () => {
       failedEdgeMode: 'sum',
       failedEdgeMinRecords: 1,
       latWeight: DEFAULT_LAT_WEIGHT,
-      latMinRise: 1,
+      latMinRise: DEFAULT_LAT_MIN_RISE,
     });
   });
 
@@ -94,15 +94,15 @@ describe('buildFse26EngineOptions', () => {
     ).toBe(0.75);
   });
 
-  it('forwards the latency rise floor, shipped as the no-op 1', () => {
-    // A dropped floor would run the shipped shape while the `Config:` line reported
-    // the masked one — the silent swap this file exists to prevent. The floor is not
-    // a weight, so it lives beside `latWeight` rather than inside it.
-    expect(buildFse26EngineOptions(BASE).signals.latMinRise).toBe(1);
-    expect(buildFse26EngineOptions({ ...BASE, latMinRise: 10.3 }).signals.latMinRise).toBe(10.3);
+  it('forwards the latency rise floor, shipped at the value the pair was measured with', () => {
+    // A dropped floor would run the credited-everything shape while the `Config:` line
+    // reported the masked one — the silent swap this file exists to prevent, and here
+    // it would be worth 77 cases at the shipped weight.
+    expect(buildFse26EngineOptions(BASE).signals.latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    expect(buildFse26EngineOptions({ ...BASE, latMinRise: 1 }).signals.latMinRise).toBe(1);
 
-    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--lat-min-rise', '10.3']));
-    expect(fromArgv.signals.latMinRise).toBe(10.3);
+    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--lat-min-rise', '12']));
+    expect(fromArgv.signals.latMinRise).toBe(12);
   });
 
   it('forwards rank normalization, which is load-bearing on the large topologies', () => {

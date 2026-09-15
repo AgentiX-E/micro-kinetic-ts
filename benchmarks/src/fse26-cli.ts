@@ -27,7 +27,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
-import { DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
+import { DEFAULT_LAT_MIN_RISE, DEFAULT_LAT_WEIGHT } from '../../packages/tree/src/index.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -160,9 +160,10 @@ export interface Fse26CliOptions {
   /**
    * Rise a service must clear before the latency term credits it.
    *
-   * 1 is the shipped shape (`log1p(max(0, rise − 1))` credits every rise above 1).
-   * Above 1 the term becomes a precision instrument: a rise of 1.1x and a rise of 10x
-   * are not the same evidence.
+   * Shipped as {@link DEFAULT_LAT_MIN_RISE}, the engine's own constant, because it is
+   * one half of a measured PAIR: at the shipped weight a floor of 1 scores 673 and a
+   * floor of 10.3 scores 750, and the reverse pairing (a floor of 10.3 at the old
+   * 0.03) is a 6-case regression. `1` restores the credited-everything shape.
    */
   readonly latMinRise: number;
 }
@@ -230,7 +231,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
     failedEdgeMinRecords: 1,
     latWeight: DEFAULT_LAT_WEIGHT,
-    latMinRise: 1,
+    latMinRise: DEFAULT_LAT_MIN_RISE,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -291,7 +292,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // reports a configuration the operator believes changed something, and a
       // non-finite one would drop every measurement through the mask.
       const rise = Number(argv[++i]!);
-      opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : 1;
+      opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : DEFAULT_LAT_MIN_RISE;
     }
   }
 
