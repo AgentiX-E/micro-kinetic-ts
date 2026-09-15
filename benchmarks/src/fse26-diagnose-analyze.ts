@@ -1992,7 +1992,39 @@ export function onsetEarliness(kase: DiagnosedCase): Map<string, number> {
 }
 
 /**
- * The temporal prior's per-service SLOPE for one case: `2 × (earliness − 0.5)`.
+ * The shapes of the temporal prior this screen can measure.
+ *
+ * A shape is a function of the onset evidence, and the engine's own is `earliness`.
+ * The others exist because "the engine's shape has no admissible weight" is a weaker
+ * statement than "no shape in this menu has one", and the weaker statement would leave
+ * the axis partly open on a technicality — exactly the gap a declared menu closes.
+ *
+ * - `earliness` — the engine's own: min-max normalised onset delay, so the earliest
+ *   service scores 1 and the latest 0.
+ * - `order` — the same ORDER with the magnitude discarded: linear in the onset RANK
+ *   rather than in the delay. The engine's shape is dominated by outliers (one service
+ *   that moves a minute late collapses everyone else onto ~1), so a shape that cannot
+ *   be flattened by an outlier is a genuinely different candidate.
+ * - `earliest-only` — the theory in its sharpest form: only the service(s) that moved
+ *   FIRST are credited, at all. This is the mask the register says a rise floor cannot
+ *   build, built on a different key.
+ * - `latest-only` — the CONTROL: credit whoever moved LAST. The premise is that cause
+ *   precedes effect, so a shape that helps while inverted would falsify it rather than
+ *   extend it, and a screen without this arm cannot tell a working term from a
+ *   working term with the sign flipped.
+ */
+export type OnsetShape = 'earliness' | 'order' | 'earliest-only' | 'latest-only';
+
+/** Every shape, in the order they are screened and reported. */
+export const ONSET_SHAPES: readonly OnsetShape[] = [
+  'earliness',
+  'order',
+  'earliest-only',
+  'latest-only',
+];
+
+/**
+ * The temporal prior's per-service SLOPE for one case, in one shape.
  *
  * The slope rather than the score, because that is the unit the window solver works
  * in — every candidate's score is affine in the weight, `base + w × slope`, which is
@@ -2001,18 +2033,50 @@ export function onsetEarliness(kase: DiagnosedCase): Map<string, number> {
  * TOTAL over the case's services, with 0 for one the engine left out: an omitted
  * entry would be a missing slope at the solver, and `Math.max` over an absent value
  * is how a term silently credits somebody. The inertness question is the earliness
- * map's, not this one — see {@link onsetEarliness}.
+ * map's, not this one — see {@link onsetEarliness}, and note that a shape reading the
+ * ORDER is inert exactly when the earliness map is.
  *
  * @param kase - One parsed case.
+ * @param shape - Which shape to build; defaults to the engine's own.
  * @returns The slope per service; total over the case's services.
  */
-export function onsetSlopes(kase: DiagnosedCase): Map<string, number> {
-  const earliness = onsetEarliness(kase);
-  const slopes = new Map<string, number>();
+export function onsetSlopes(
+  kase: DiagnosedCase,
+  shape: OnsetShape = 'earliness',
+): Map<string, number> {
+  const delays = new Map<string, number>();
   for (const service of kase.services) {
-    // 0.5 is the engine's neutral, and it is the engine's: a service absent from the
-    // earliness map must contribute nothing, not "earliest" and not "latest".
-    slopes.set(service.serviceId, 2 * ((earliness.get(service.serviceId) ?? 0.5) - 0.5));
+    if (service.onsetDelayMs !== undefined) delays.set(service.serviceId, service.onsetDelayMs);
+  }
+  const slopes = new Map<string, number>();
+  if (shape === 'earliness') {
+    const earliness = onsetEarliness(kase);
+    for (const service of kase.services) {
+      // 0.5 is the engine's neutral, and it is the engine's: a service absent from the
+      // earliness map must contribute nothing, not "earliest" and not "latest".
+      slopes.set(service.serviceId, 2 * ((earliness.get(service.serviceId) ?? 0.5) - 0.5));
+    }
+    return slopes;
+  }
+  // Every other shape reads the order, which min-max normalisation cannot express.
+  const ordered = [...delays.entries()].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1));
+  for (const service of kase.services) slopes.set(service.serviceId, 0);
+  if (ordered.length === 0) return slopes;
+  if (shape === 'order') {
+    const last = ordered.length - 1;
+    ordered.forEach(([serviceId], index) => {
+      // Earliest +1 … latest −1, by RANK: a service that moved a minute late cannot
+      // compress everyone else's slope onto ~1 the way min-max normalisation does.
+      slopes.set(serviceId, last === 0 ? 0 : 1 - (2 * index) / last);
+    });
+    return slopes;
+  }
+  // `earliest-only` / `latest-only`: one credited set, and ties are credited together —
+  // the reverse would make the answer depend on the service-id tiebreak inside a shape
+  // whose whole claim is about simultaneity.
+  const boundary = shape === 'earliest-only' ? ordered[0]![1] : ordered[ordered.length - 1]![1];
+  for (const [serviceId, delay] of ordered) {
+    if (delay === boundary) slopes.set(serviceId, shape === 'earliest-only' ? 1 : -1);
   }
   return slopes;
 }
@@ -2021,6 +2085,8 @@ export function onsetSlopes(kase: DiagnosedCase): Map<string, number> {
 export interface OnsetScreen {
   /** How much of the dump carries onset evidence at all. */
   readonly availability: OnsetAvailability;
+  /** Which shape of the term this window is for. */
+  readonly shape: OnsetShape;
   /** The solved window over the whole dump. */
   readonly solved: SolvedWindow;
   /** The per-fault-type split of the gain — the kill criterion's second half. */
@@ -2044,6 +2110,7 @@ export interface OnsetScreen {
 export function onsetScreen(
   cases: readonly DiagnosedCase[],
   weights: FamilyScreenWeights,
+  shape: OnsetShape = 'earliness',
 ): OnsetScreen {
   const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
   const latFloor = weights.latFloor ?? SHIPPED_LAT_FLOOR;
@@ -2058,7 +2125,7 @@ export function onsetScreen(
       latFloor,
       poolWeight,
     });
-    const slopes = onsetSlopes(kase);
+    const slopes = onsetSlopes(kase, shape);
     const scores = new Map<string, { base: number; slope: number }>();
     for (const service of kase.services) {
       scores.set(service.serviceId, {
@@ -2072,7 +2139,105 @@ export function onsetScreen(
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const gainTypes = new Map<string, number>();
   for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
-  return { availability: onsetAvailability(cases), solved, gainTypes: tallyCounter(gainTypes) };
+  return {
+    availability: onsetAvailability(cases),
+    shape,
+    solved,
+    gainTypes: tallyCounter(gainTypes),
+  };
+}
+
+/**
+ * Screen every shape in {@link ONSET_SHAPES}, in declared order.
+ *
+ * The whole menu rather than the shape someone proposed, for the reason the family
+ * screen scans every family: "no weight on THIS shape works" leaves the axis open on a
+ * technicality, and the next session would find another shape to propose. A menu cannot
+ * be asked to have missed a row — only to have missed a shape nobody declared.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The configuration to screen against.
+ * @returns One solved screen per shape.
+ */
+export function onsetShapeMenu(
+  cases: readonly DiagnosedCase[],
+  weights: FamilyScreenWeights,
+): readonly OnsetScreen[] {
+  return ONSET_SHAPES.map((shape) => onsetScreen(cases, weights, shape));
+}
+
+/**
+ * Render the whole shape menu.
+ *
+ * Availability comes first and once, because it is a property of the DUMP rather than
+ * of a shape: if the term is inert, every row below would read `gain 0` for a reason
+ * that has nothing to do with any of them.
+ *
+ * @param screens - The solved screens, one per shape.
+ * @param weights - The configuration they were solved at, for the header.
+ * @returns A multi-line report, without a trailing newline.
+ */
+export function formatOnsetMenuReport(
+  screens: readonly OnsetScreen[],
+  weights: FamilyScreenWeights,
+): string {
+  const first = screens[0];
+  if (first === undefined) return 'Temporal (onset) screen: no shape was screened';
+  const a = first.availability;
+  const lines: string[] = [];
+  lines.push(`Temporal (onset) screen (${configurationLine(weights)}):`);
+  const share =
+    a.servicesTotal === 0
+      ? 'n/a'
+      : `${((100 * a.servicesWithOnset) / a.servicesTotal).toFixed(1)}%`;
+  lines.push(
+    `  evidence: ${a.cases} cases; with an injection anchor ${a.withAnchor}; ` +
+      `with an onset ${a.withOnsets}; with an ORDER the term can act on ${a.withEarliness}`,
+  );
+  lines.push(`  services carrying an onset: ${a.servicesWithOnset}/${a.servicesTotal} (${share})`);
+  if (a.withEarliness === 0) {
+    lines.push('  the term is INERT on this dump: the engine leaves every service neutral, so no');
+    lines.push('  weight on any shape can change a ranking — a window here is an artefact.');
+    return lines.join('\n');
+  }
+  lines.push('  shape          gain  window                     width     ship      binder');
+  for (const screen of screens) {
+    const s = screen.solved;
+    const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+    const width = Number.isFinite(s.window.cap)
+      ? s.window.cap - s.gainFloor
+      : Number.POSITIVE_INFINITY;
+    lines.push(
+      `  ${screen.shape.padEnd(14)}${String(s.gain).padStart(3)}  ` +
+        `[${at(s.gainFloor)}, ${at(s.window.cap)}]`.padEnd(25) +
+        `${(Number.isFinite(width) ? width.toFixed(6) : 'unbounded').padStart(10)}  ` +
+        `${s.ship.toFixed(6).padStart(9)}  ` +
+        `${s.window.capBinder === undefined ? '-' : s.window.capBinder.datapack}`,
+    );
+  }
+  // The detail is printed for any shape with a gain, and the binder for every FINITE
+  // cap: a row of zeros with no mechanism is a verdict nobody can act on or refute.
+  for (const screen of screens) {
+    const s = screen.solved;
+    if (s.gain > 0) {
+      lines.push('');
+      lines.push(...formatOnsetScreenReport(screen, weights).split('\n').slice(3));
+    } else if (s.window.capBinder !== undefined) {
+      const b = s.window.capBinder;
+      lines.push(
+        `  ${screen.shape}: no admissible gain; cap ${s.window.cap.toFixed(6)} = ` +
+          `${b.lead.toFixed(6)} / ${b.slopeGap.toFixed(6)}, bound by ${b.datapack} ` +
+          `(${b.target} overtaken by ${b.rival})`,
+      );
+    }
+  }
+  const shippable = screens.filter(
+    (screen) => screen.solved.gain > 0 && screen.solved.lostAtShip === 0,
+  );
+  if (shippable.length === 0) {
+    lines.push('  no shape in this menu has an admissible gain at any weight');
+  }
+  return lines.join('\n');
 }
 
 /** Render the onset screen. */
@@ -2087,7 +2252,9 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
       : `${((100 * a.servicesWithOnset) / a.servicesTotal).toFixed(1)}%`;
   lines.push(
     `Temporal (onset) screen (${configurationLine(weights)}; ` +
-      'slope = 2 x (earliness - 0.5), earliness from the ENGINE’s own function):',
+      `shape=${screen.shape}` +
+      (screen.shape === 'earliness' ? ' (the engine\u2019s own, from its own function)' : '') +
+      '):',
   );
   // Availability first, because a zero gain means something completely different
   // depending on it: no evidence is a data gap, evidence with no window is a result.
@@ -3370,7 +3537,9 @@ function analyzeSectionText(
         latFloor: section.latFloor,
         poolWeight: section.poolWeight,
       };
-      return formatOnsetScreenReport(onsetScreen(cases, weights), weights);
+      // The whole declared menu, so the axis cannot be left open on the technicality
+      // that only one shape was tried.
+      return formatOnsetMenuReport(onsetShapeMenu(cases, weights), weights);
     }
     case 'discriminator': {
       // The screen fits and cross-validates its own rules, so it needs the whole

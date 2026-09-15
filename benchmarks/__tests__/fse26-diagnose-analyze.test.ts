@@ -39,6 +39,7 @@ import {
   formatFamilyScreenReport,
   formatMetricCompetitionReport,
   formatMissReport,
+  formatOnsetMenuReport,
   formatOnsetScreenReport,
   formatWeightSeparationReport,
   formatZeroRegressionWindowReport,
@@ -46,8 +47,10 @@ import {
   latencySlopes,
   MISS_DECIDED_BY,
   MISS_ORDER,
+  ONSET_SHAPES,
   onsetAvailability,
   onsetScreen,
+  onsetShapeMenu,
   onsetSlopes,
   parseAnalyzeArgs,
   parseDiagnosticDump,
@@ -2036,6 +2039,73 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     expect(screen.gainTypes).toEqual([{ key: 'JVMMemoryStress', cases: 1 }]);
   });
 
+  it('builds the ORDER shape by rank, so one late outlier cannot flatten the rest', () => {
+    // The engine's shape is min-max in the DELAY, so a single service that moved a
+    // minute late compresses everyone else onto earliness ≈ 1 — a real risk on this
+    // data, where 1088 of 1422 cases have a unique first mover but the last mover can
+    // be far away. The order shape reads the RANK instead, which cannot be flattened.
+    const kase = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-a'],
+        services: [
+          serviceLine({ serviceId: 'ts-a', onset: 0 }),
+          serviceLine({ serviceId: 'ts-b', onset: 1000 }),
+          serviceLine({ serviceId: 'ts-c', onset: 600000 }),
+        ],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+    const order = onsetSlopes(kase, 'order');
+    const earliness = onsetSlopes(kase, 'earliness');
+
+    expect(order.get('ts-a')).toBeCloseTo(1, 12);
+    expect(order.get('ts-b')).toBeCloseTo(0, 12);
+    expect(order.get('ts-c')).toBeCloseTo(-1, 12);
+    // The ENGINE's shape reads the delay: ts-b's 1 s against ts-c's 10 min is already
+    // almost all of the span, so it scores near the earliest rather than at the middle.
+    expect(earliness.get('ts-b')!).toBeGreaterThan(0.99);
+  });
+
+  it('credits a TIE at the boundary together, in both one-sided shapes', () => {
+    // A tie-break inside a shape whose whole claim is about simultaneity would make the
+    // answer depend on service ids. Both boundary shapes credit the tied set.
+    const kase = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-a'],
+        services: [
+          serviceLine({ serviceId: 'ts-a', onset: 0 }),
+          serviceLine({ serviceId: 'ts-b', onset: 0 }),
+          serviceLine({ serviceId: 'ts-c', onset: 5000 }),
+          serviceLine({ serviceId: 'ts-d', onset: 5000 }),
+        ],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+    const earliest = onsetSlopes(kase, 'earliest-only');
+    const latest = onsetSlopes(kase, 'latest-only');
+
+    expect(earliest.get('ts-a')).toBe(1);
+    expect(earliest.get('ts-b')).toBe(1);
+    expect(earliest.get('ts-c')).toBe(0);
+    expect(earliest.get('ts-d')).toBe(0);
+    expect(latest.get('ts-c')).toBe(-1);
+    expect(latest.get('ts-d')).toBe(-1);
+    expect(latest.get('ts-a')).toBe(0);
+  });
+
+  it('leaves every one-sided shape at 0 when the case carries no onset at all', () => {
+    const kase = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-a'],
+        services: [serviceLine({ serviceId: 'ts-a', onset: -1 })],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+    for (const shape of ['order', 'earliest-only', 'latest-only'] as const) {
+      expect([...onsetSlopes(kase, shape).values()].every((slope) => slope === 0)).toBe(true);
+    }
+  });
+
   it('reports no admissible gain when the term demotes a currently-correct root', () => {
     // The root is right and the term disagrees with it: the earliest onset belongs to
     // the rival, so the term hands it the lead at some weight and the window closes at
@@ -2099,6 +2169,92 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
 
     expect(report).toContain('no admissible gain: every weight that fixes a case also loses one');
     expect(report).toMatch(/cap bound by dp-1: ts-src overtaken by ts-win \(lead 0\.693147/);
+  });
+
+  it('screens the whole declared menu, in declared order, with a row per shape', () => {
+    // The menu is the point: "no weight on THIS shape works" leaves the axis open on a
+    // technicality, and the next session proposes another shape. A screen that omitted
+    // a declared row would look like a complete answer.
+    const cases = [
+      temporalCase({
+        leader: 'rival',
+        root: 'ts-src',
+        rival: 'ts-win',
+        rootOnset: 0,
+        rivalOnset: 60000,
+        groundTruth: 'ts-src',
+        prediction: 'ts-win',
+      }),
+    ];
+    const weights = { logWeight: 1, latWeight: 0, poolWeight: 0 };
+    const menu = onsetShapeMenu(cases, weights);
+    const report = formatOnsetMenuReport(menu, weights);
+
+    expect(menu.map((screen) => screen.shape)).toEqual([...ONSET_SHAPES]);
+    expect(report).toContain('shape          gain  window');
+    for (const shape of ONSET_SHAPES) expect(report).toContain(shape);
+    // `earliest-only` fixes this fixture — the root is the first mover and the rival the
+    // last — while the engine's own shape has to overcome the same metric gap with a
+    // slope gap of 2 instead of 1, so it needs twice the weight. Both are reported.
+    expect(menu.find((screen) => screen.shape === 'earliest-only')!.solved.gain).toBe(1);
+    expect(menu.find((screen) => screen.shape === 'earliness')!.solved.gain).toBe(1);
+    expect(report).not.toContain('no shape in this menu has an admissible gain');
+  });
+
+  it('says so, once, when the menu has nothing to ship', () => {
+    // A menu of zeros with no verdict line is a table nobody can act on. The line is the
+    // difference between "this axis was screened and closed" and "here are four zeros".
+    const harmed = temporalCase({
+      leader: 'root',
+      root: 'ts-src',
+      rival: 'ts-win',
+      rootOnset: 60000,
+      rivalOnset: 0,
+      groundTruth: 'ts-src',
+      prediction: 'ts-src',
+    });
+    const weights = { logWeight: 1, latWeight: 0, poolWeight: 0 };
+    const report = formatOnsetMenuReport(onsetShapeMenu([harmed], weights), weights);
+
+    expect(report).toContain('no shape in this menu has an admissible gain at any weight');
+    expect(report).toContain('cap 0.693147 = 0.693147 / 1.000000');
+  });
+
+  it('reports the menu as INERT, once, when the dump carries no order', () => {
+    // Availability is a property of the DUMP, not of a shape, so it is printed once —
+    // and when the term cannot act, four rows of `gain 0` would read as four negative
+    // results rather than as one data gap.
+    const noAnchor = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.96, onset: 0 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 1, onset: 60000 }),
+        ],
+        topPredictions: ['ts-win'],
+      }),
+    );
+    const report = formatOnsetMenuReport(onsetShapeMenu(noAnchor, { logWeight: 1 }), {
+      logWeight: 1,
+    });
+
+    expect(report.match(/INERT/g)).toHaveLength(1);
+    expect(report).not.toContain('shape          gain');
+  });
+
+  it('reports the onset share as n/a rather than as a division by zero', () => {
+    // A labelled case whose block carried no service rows: there is no denominator, and
+    // dividing by it would print `NaN%` — a number-shaped non-answer, which is worse
+    // than the absence it is standing in for.
+    const empty = parseDiagnosticDump(
+      dump({ groundTruthServices: ['ts-root'], services: [], injectTimeMs: 1 }),
+    );
+    const report = formatOnsetScreenReport(onsetScreen(empty, { logWeight: 1 }), {
+      logWeight: 1,
+    });
+
+    expect(report).toContain('services carrying an onset: 0/0 (n/a)');
+    expect(report).toContain('INERT');
   });
 
   it('renders the availability, the window and the loss at the shipped weight', () => {
