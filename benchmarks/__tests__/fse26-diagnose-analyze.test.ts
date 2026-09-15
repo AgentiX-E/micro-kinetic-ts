@@ -2232,3 +2232,99 @@ describe('computeZeroRegressionWindow — the question the flip is decided on', 
     expect(probed.some((w) => w > Math.log1p(0.5))).toBe(true);
   });
 });
+
+describe('latencySlopes — the rise floor', () => {
+  /**
+   * A floor is the generalisation of the shipped shape, not an addition to it: it
+   * asks for a rise to clear a threshold before the term credits anybody, on the
+   * theory that a rise of 1.1 is noise and a rise of 40 is a lost service. The
+   * parameter exists so the question "is the term crediting services on evidence too
+   * thin to mean anything?" is a computation rather than an opinion.
+   */
+  const parsed = (services: Parameters<typeof serviceLine>[0][]) =>
+    parseDiagnosticDump(dump({ services: services.map(serviceLine) }))[0]!.services;
+  const three = () =>
+    parsed([
+      serviceLine({ serviceId: 'ts-big', latRise: 10, latEdges: 1 }),
+      serviceLine({ serviceId: 'ts-small', latRise: 3, latEdges: 1 }),
+      serviceLine({ serviceId: 'ts-flat', latRise: 0.5, latEdges: 1 }),
+    ]);
+
+  it('is byte-identical to the shipped shape at a floor of 1', () => {
+    // THE property that makes the floor a usable axis: its boundary is today's
+    // behaviour, so every comparison starts from the shipped term rather than from
+    // an approximation of it.
+    const shipped = latencySlopes(three());
+    const atOne = latencySlopes(three(), 1);
+
+    expect([...atOne]).toEqual([...shipped]);
+  });
+
+  it('drops a rise below the floor, so the service reads as UNMEASURED', () => {
+    // Absent, not zero: a zeroed row would claim a measured flat latency, which is
+    // the one reading that means "no evidence" — and it would also keep the service
+    // rankable by this term, which is precisely what the floor exists to stop.
+    const slopes = latencySlopes(three(), 4);
+
+    expect(slopes.has('ts-small')).toBe(false);
+    expect(slopes.get('ts-big')).toBe(1);
+  });
+
+  it('keeps a rise at or below 1, which is not evidence of a rise at all', () => {
+    // Dropping it would change the shipped shape at the boundary, and the engine's
+    // rule is that such a service is present with magnitude 0 — not absent. A floor
+    // that silently redefined that would make every floor-1 comparison disagree with
+    // the engine on cases that have nothing to do with floors.
+    const slopes = latencySlopes(three(), 4);
+
+    expect(slopes.has('ts-flat')).toBe(true);
+    expect(slopes.get('ts-flat')).toBe(0);
+  });
+
+  it('cannot renormalise: dropping the small rises leaves the maximum where it was', () => {
+    // The survivor is always the case maximum, so the divisor is unchanged and the
+    // floor is a pure MASK — it deletes votes and never reweights them. That is why
+    // a floor can only reduce the term's total effect, and why it cannot remove a
+    // spurious competitor without also removing it as a creditee.
+    const slopes = latencySlopes(three(), 4);
+
+    expect(slopes.get('ts-big')).toBe(latencySlopes(three()).get('ts-big'));
+  });
+
+  it('returns an empty map when the floor is above every rise', () => {
+    const slopes = latencySlopes(three(), 11);
+
+    expect(slopes.get('ts-big')).toBeUndefined();
+    expect(slopes.size).toBe(0);
+  });
+
+  it('carries the floor into the solver, so a window can be solved for it', () => {
+    // The solver must reconstruct the term the floor DEFINES, not the shipped one:
+    // solving a masked shape's window with the unmasked slopes would report the
+    // shipped window under a candidate's name.
+    const text = dump({
+      datapack: 'dp-floor',
+      groundTruthServices: ['ts-src'],
+      services: [
+        serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, latRise: 1.2, latEdges: 1 }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0, latRise: 9, latEdges: 1 }),
+      ],
+    });
+    const atFloor1 = buildWeightSeparationCases(parseDiagnosticDump(text), { logWeight: 1 }, 'lat');
+    const atFloor4 = buildWeightSeparationCases(
+      parseDiagnosticDump(text),
+      { logWeight: 1 },
+      'lat',
+      4,
+    );
+
+    // `ts-src`'s thin rise is dropped, so it has no slope at all under the floor and
+    // the only thing that can move the case is the rival's own term.
+    expect(atFloor1[0]!.scores.get('ts-src')!.slope).toBeCloseTo(
+      Math.log1p(0.2) / Math.log1p(8),
+      12,
+    );
+    expect(atFloor4[0]!.scores.get('ts-src')!.slope).toBe(0);
+    expect(atFloor4[0]!.scores.get('ts-win')!.slope).toBe(1);
+  });
+});

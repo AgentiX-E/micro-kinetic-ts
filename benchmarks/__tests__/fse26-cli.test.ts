@@ -200,6 +200,26 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--lat-weight', '']).latWeight).toBe(DEFAULT_LAT_WEIGHT);
   });
 
+  it('parses the latency rise floor, defaulting to the shipped 1', () => {
+    // 1 is the shipped shape, and the boundary matters: a floor of 1 must be a no-op,
+    // so `--lat-min-rise 1` and no flag at all have to agree.
+    expect(parseFSE26Args([]).latMinRise).toBe(1);
+    expect(parseFSE26Args(['--lat-min-rise', '1']).latMinRise).toBe(1);
+    expect(parseFSE26Args(['--lat-min-rise', '10.3']).latMinRise).toBe(10.3);
+  });
+
+  it('refuses a rise floor below 1 rather than accepting a no-op', () => {
+    // A floor below 1 cannot mask anything the shipped shape does not already mask
+    // (magnitudes are `log1p(max(0, rise - 1))`), so accepting it would render a
+    // configuration the operator believes changed something when nothing changed.
+    // The fallback is the SHIPPED floor, like every other weight fallback.
+    expect(parseFSE26Args(['--lat-min-rise', '0.5']).latMinRise).toBe(1);
+    expect(parseFSE26Args(['--lat-min-rise', '0']).latMinRise).toBe(1);
+    expect(parseFSE26Args(['--lat-min-rise', '-3']).latMinRise).toBe(1);
+    expect(parseFSE26Args(['--lat-min-rise', 'x']).latMinRise).toBe(1);
+    expect(parseFSE26Args(['--lat-min-rise', '']).latMinRise).toBe(1);
+  });
+
   it('parses the failed-edge evidence floor, defaulting to the shipped 1', () => {
     expect(parseFSE26Args([]).failedEdgeMinRecords).toBe(1);
     expect(parseFSE26Args(['--failed-edge-min-records', '2']).failedEdgeMinRecords).toBe(2);

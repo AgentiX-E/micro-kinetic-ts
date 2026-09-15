@@ -1669,3 +1669,80 @@ describe('computeEdgeLatencyScores', () => {
     expect(0.5 + weight * (scores.get('b') ?? 0)).toBe(0.5);
   });
 });
+
+describe('computeEdgeLatencyScores — the rise floor', () => {
+  /**
+   * The floor is the generalisation of the shipped shape rather than an addition to
+   * it: the shipped term credits any rise above 1, and the floor asks a rise to clear
+   * a threshold first. Its boundary is therefore today's behaviour, which is what
+   * makes it usable as an ablation — every comparison starts from the shipped term
+   * instead of from an approximation of it.
+   */
+  const lat = (caller: string, callee: string, pre: number, post: number): FaultEdgeLatency => ({
+    caller,
+    callee,
+    preMeanMs: pre,
+    postMeanMs: post,
+  });
+  // Every caller AND callee has to be in the graph: an edge with an endpoint outside
+  // it is ignored outright, so a set that covers only the callers would make every
+  // assertion below vacuous — which is what the first draft of this fixture did.
+  const ids = new Set(['a', 'b', 'big', 'small', 'flat', 'c']);
+  const three = () => [
+    lat('a', 'big', 1, 100), // rise 100
+    lat('a', 'small', 1, 5), // rise 5
+    lat('a', 'flat', 1, 0.5), // rise 0.5 — not a rise at all
+  ];
+
+  it('is identical to the shipped shape at a floor of 1', () => {
+    expect([...computeEdgeLatencyScores(three(), ids, 1)]).toEqual([
+      ...computeEdgeLatencyScores(three(), ids),
+    ]);
+  });
+
+  it('drops a rise below the floor, so the callee reads as UNMEASURED', () => {
+    // ABSENT, not zero. A zeroed row would claim a measured flat latency, and it
+    // would keep the callee rankable by this term — which is the single thing the
+    // floor exists to stop.
+    const scores = computeEdgeLatencyScores(three(), ids, 10);
+
+    expect(scores.has('small')).toBe(false);
+    expect(scores.get('big')).toBe(1);
+  });
+
+  it('keeps a rise at or below 1, which is not evidence of a rise', () => {
+    // The engine's rule is that such a callee is present with magnitude 0, not
+    // absent. Redefining that here would make floors disagree with the engine on
+    // cases that have nothing to do with floors.
+    const scores = computeEdgeLatencyScores(three(), ids, 10);
+
+    expect(scores.has('flat')).toBe(true);
+    expect(scores.get('flat')).toBe(0);
+  });
+
+  it('cannot renormalise: the divisor is the case maximum either way', () => {
+    // A floor removes rises BELOW a threshold, so the surviving maximum is always the
+    // case maximum. The floor is therefore a pure MASK — it deletes votes and never
+    // reweights them — which is why it can never remove a spurious competitor without
+    // also removing that service as a creditee.
+    expect(computeEdgeLatencyScores(three(), ids, 10).get('big')).toBe(
+      computeEdgeLatencyScores(three(), ids).get('big'),
+    );
+  });
+
+  it('applies to the callee MAX, not to each edge', () => {
+    // The signal credits the largest rise over a callee's inbound edges, so the floor
+    // has to be applied AFTER that maximum. Applying it per edge would drop the 5x
+    // edge and keep the 20x one — a different signal, and one that would let a
+    // callee's own noisy edge decide whether it is rankable at all.
+    const scores = computeEdgeLatencyScores([lat('a', 'c', 1, 5), lat('b', 'c', 1, 20)], ids, 10);
+
+    expect(scores.get('c')).toBe(1);
+  });
+
+  it('returns an empty map when the floor is above every rise', () => {
+    const scores = computeEdgeLatencyScores(three(), ids, 101);
+
+    expect(scores.size).toBe(0);
+  });
+});

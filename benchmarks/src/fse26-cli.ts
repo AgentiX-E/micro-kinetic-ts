@@ -157,6 +157,14 @@ export interface Fse26CliOptions {
    * one. Pass 0 for the ablation.
    */
   readonly latWeight: number;
+  /**
+   * Rise a service must clear before the latency term credits it.
+   *
+   * 1 is the shipped shape (`log1p(max(0, rise − 1))` credits every rise above 1).
+   * Above 1 the term becomes a precision instrument: a rise of 1.1x and a rise of 10x
+   * are not the same evidence.
+   */
+  readonly latMinRise: number;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -222,6 +230,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
     failedEdgeMinRecords: 1,
     latWeight: DEFAULT_LAT_WEIGHT,
+    latMinRise: 1,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -277,6 +286,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // a typo must reproduce the published configuration rather than silently run
       // an experiment nobody asked for under the shipped one's name.
       opts.latWeight = parseWeight(argv[++i]!, DEFAULT_LAT_WEIGHT);
+    } else if (arg === '--lat-min-rise' && i + 1 < argv.length) {
+      // STRICT and floored at 1: a floor below 1 would be a no-op that silently
+      // reports a configuration the operator believes changed something, and a
+      // non-finite one would drop every measurement through the mask.
+      const rise = Number(argv[++i]!);
+      opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : 1;
     }
   }
 

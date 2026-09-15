@@ -78,6 +78,12 @@ export interface FSE26RunConfig {
    * field is always rendered, and a run at `0` is the ablation that scores 47.33%.
    */
   readonly latWeight: number;
+  /**
+   * Rise a service must clear before the latency term credits it. The shipped value
+   * is 1, so it is rendered only when it differs — like the failed-edge floor, and
+   * unlike the weight above, whose shipped value is not zero.
+   */
+  readonly latMinRise: number;
 }
 
 /** One fault type's cell in the summary. */
@@ -225,6 +231,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'failedEdgeMode',
   'failedEdgeMinRecords',
   'latWeight',
+  'latMinRise',
 ] as const;
 
 /**
@@ -297,6 +304,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // the failed-edge weight either: the two terms are independent, and this one can
   // be on while that one is off.
   line += ` latWeight=${config.latWeight}`;
+  // Only when it changes the configuration, like the failed-edge floor: the shipped
+  // value is 1, so a run WITH a floor is a different term and has to say so.
+  if (config.latMinRise !== 1) {
+    line += ` latMinRise=${config.latMinRise}`;
+  }
   return line;
 }
 

@@ -63,6 +63,10 @@ on:
         description: 'Weight of the per-edge latency-rise signal, which credits the CALLEE of a call whose span duration rose (empty = the runner default, which is the shipped 0.03 = the measured zero-regression point; 0 is the pre-flip ablation). It needs rcabench-latency-full or newer, whose shards carry traceEdgeLatency'
         required: false
         default: ''
+      lat_min_rise:
+        description: 'Rise a service must clear before the latency-rise signal credits it (empty = the runner default, which is 1 = the shipped shape, crediting every rise above 1). Above 1 the term becomes a precision instrument: it stops crediting rises that are too small to be evidence, which also removes them as SPURIOUS COMPETITORS. It needs rcabench-latency-full or newer'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -221,6 +225,10 @@ jobs:
           if [ -n "${{ inputs.lat_weight }}" ]; then
             LAT_ARG=(--lat-weight "${{ inputs.lat_weight }}")
           fi
+          LAT_FLOOR_ARG=()
+          if [ -n "${{ inputs.lat_min_rise }}" ]; then
+            LAT_FLOOR_ARG=(--lat-min-rise "${{ inputs.lat_min_rise }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             "${LOG_WEIGHT_ARG[@]}" \
@@ -231,6 +239,7 @@ jobs:
             "${FAILED_EDGE_MODE_ARG[@]}" \
             "${FAILED_EDGE_MIN_ARG[@]}" \
             "${LAT_ARG[@]}" \
+            "${LAT_FLOOR_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

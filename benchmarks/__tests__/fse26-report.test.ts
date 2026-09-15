@@ -40,6 +40,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     failedEdgeMode: 'sum',
     failedEdgeMinRecords: 1,
     latWeight: 0,
+    latMinRise: 1,
     ...overrides,
   };
 }
@@ -95,6 +96,7 @@ describe('FSE26 report — attribution', () => {
       'failedEdgeMode',
       'failedEdgeMinRecords',
       'latWeight',
+      'latMinRise',
     ]);
   });
 
@@ -161,6 +163,17 @@ describe('FSE26 report — the two renderings agree', () => {
     // independent, and the latency term can be on while that one is off.
     expect(formatFSE26ConfigLine(makeConfig({ latWeight: 0.75, failedEdgeWeight: 0 }))).toContain(
       'latWeight=0.75',
+    );
+  });
+
+  it('names the latency rise floor only when it is not the shipped 1', () => {
+    // The shipped floor is 1, so it stays off the line — and a run with a floor is a
+    // DIFFERENT term, not a different weight, so it has to be visible independently
+    // of `latWeight`.
+    expect(formatFSE26ConfigLine(makeConfig())).not.toContain('latMinRise');
+    expect(formatFSE26ConfigLine(makeConfig({ latMinRise: 10.3 }))).toContain('latMinRise=10.3');
+    expect(formatFSE26ConfigLine(makeConfig({ latMinRise: 10.3, latWeight: 0 }))).toContain(
+      'latMinRise=10.3',
     );
   });
 

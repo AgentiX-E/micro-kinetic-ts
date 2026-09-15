@@ -336,6 +336,27 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * `0` explicitly for the ablation that scores 47.33%.
    */
   readonly latWeight: number;
+  /**
+   * Rise a service must clear before the latency term credits it at all.
+   *
+   * Default 1, which is the shipped shape (`log1p(max(0, rise − 1))` credits every
+   * rise above 1). A floor above 1 turns the term into a *precision* instrument: a
+   * rise of 1.1× and a rise of 10× are not the same evidence, and a competitor with
+   * a moderate rise of its own can be enough to displace a source that the counts
+   * cannot see.
+   *
+   * It is a MASK, not a compression, and that matters for what it can do. It removes
+   * rises strictly between 1 and the floor, so the surviving maximum is always the
+   * case maximum, the divisor never moves, and no slope is ever raised. The term can
+   * therefore only lose votes — and it cannot remove a spurious COMPETITOR without
+   * removing that same service as a CREDITEE, so a floor pays only when the evidence
+   * it deletes is worth less than the interference it removes.
+   *
+   * A rise at or below 1 is never dropped: such a service is present with magnitude
+   * 0, exactly as the shipped shape has it, so a floor of 1 is identical to the term
+   * that shipped before this option existed.
+   */
+  readonly latMinRise?: number;
   /** The per-edge latency records the term above is computed from. */
   readonly edgeLatency?: readonly FaultEdgeLatency[];
 }
@@ -421,6 +442,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   failedEdgeMode: 'sum',
   failedEdgeMinRecords: 1,
   latWeight: DEFAULT_LAT_WEIGHT,
+  latMinRise: 1,
 };
 
 /**
@@ -695,6 +717,7 @@ export class TreePruner {
     const edgeLatencyScores = computeEdgeLatencyScores(
       options?.edgeLatency,
       new Set(callGraph.nodes.keys()),
+      this.options.latMinRise,
     );
 
     return {

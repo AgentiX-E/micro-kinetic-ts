@@ -228,6 +228,7 @@ async function main(): Promise<void> {
     failedEdgeMode: opts.failedEdgeMode,
     failedEdgeMinRecords: opts.failedEdgeMinRecords,
     latWeight: opts.latWeight,
+    latMinRise: opts.latMinRise,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark

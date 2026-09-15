@@ -83,6 +83,12 @@ interface FamilyOptions {
    */
   readonly windowSweep: number | undefined;
   /**
+   * The rise a service must clear before the latency term credits it. 1 is the
+   * shipped shape; anything else models a shape the engine does not have, so a report
+   * carrying it is a prediction. Parsed always, used only by `--window`.
+   */
+  readonly latFloor: number;
+  /**
    * Which term's score the weight solves for. `failedEdge` unless `--slope lat`
    * says otherwise: the latency term answers a DIFFERENT question (its own
    * regression set), and mixing the two would attribute one term's losses to the
@@ -97,8 +103,8 @@ type CliOptions = ComparisonOptions | FamilyOptions;
 const USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
   '--dump <dump> [--family <regex>] [--family-label <name>] [--misses <logWeight>] ' +
-  '[--weight-sweep <logWeight>] [--window <logWeight>] [--slope failedEdge|lat] ' +
-  '[--output <file>]';
+  '[--weight-sweep <logWeight>] [--window <logWeight>] [--lat-floor <rise>] ' +
+  '[--slope failedEdge|lat] [--output <file>]';
 
 function parseArgs(argv: readonly string[]): CliOptions {
   const values = new Map<string, string>();
@@ -137,6 +143,19 @@ function parseArgs(argv: readonly string[]): CliOptions {
       }
       windowSweep = parsedWindow;
     }
+    // A shape the engine does not have yet, so the default is the shipped one and a
+    // report that names a different floor is a PREDICTION about that shape. Kept
+    // separate from `--slope` because the two select orthogonal things: which term,
+    // and how thin a rise that term is willing to credit.
+    const floorArg = values.get('lat-floor');
+    let latFloor = 1;
+    if (floorArg !== undefined) {
+      const parsedFloor = Number(floorArg);
+      if (!Number.isFinite(parsedFloor) || parsedFloor < 1) {
+        throw new Error(`--lat-floor expects a rise of at least 1, got '${floorArg}'\n${USAGE}`);
+      }
+      latFloor = parsedFloor;
+    }
     // Anything that is not exactly `lat` falls back to the term this solver was
     // built for, like every other switch here: a typo has to reproduce a known
     // configuration rather than invent one.
@@ -163,6 +182,7 @@ function parseArgs(argv: readonly string[]): CliOptions {
       logWeight,
       weightSweep,
       windowSweep,
+      latFloor,
       slope,
       output,
     };
@@ -201,7 +221,12 @@ const report =
         }
         if (opts.windowSweep !== undefined) {
           sections.unshift(
-            formatZeroRegressionWindowReport(cases, { logWeight: opts.windowSweep }, opts.slope),
+            formatZeroRegressionWindowReport(
+              cases,
+              { logWeight: opts.windowSweep },
+              opts.slope,
+              opts.latFloor,
+            ),
           );
         }
         return sections.join('\n');

@@ -839,14 +839,30 @@ export type SlopeKind = 'failedEdge' | 'lat';
  * is the same distinction the engine keeps.
  *
  * @param services - The case's services, as parsed.
+ * @param minRise - Rise a service must clear to be credited at all; default 1, which
+ *   is the shipped shape. A rise **above 1 but below this** is dropped, so the
+ *   service reads as unmeasured. A rise **at or below 1** is always kept, because the
+ *   engine's rule is that such a service is present with magnitude 0 and redefining
+ *   that here would break the `minRise = 1` identity below.
  * @returns The normalised slope per measured service; empty when no measurement
  *   carries a rise, in which case every slope is 0 and the term cannot reorder.
  */
-export function latencySlopes(services: readonly DiagnosedService[]): Map<string, number> {
+export function latencySlopes(
+  services: readonly DiagnosedService[],
+  minRise = 1,
+): Map<string, number> {
   const magnitudes = new Map<string, number>();
   for (const service of services) {
     const rise = service.latRise;
     if (rise === undefined || !Number.isFinite(rise)) continue;
+    // The floor is a MASK, not a compression, and that is what makes it a different
+    // axis from any pointwise reshaping of the slope. It can only delete a service's
+    // vote: the surviving maximum is always the case maximum, so the divisor never
+    // moves and no slope is ever raised. Two consequences follow, and they are why
+    // the floor is worth parameterising at all — it cannot remove a spurious
+    // COMPETITOR without also removing that same service as a CREDITEE, so its net
+    // effect is decided entirely by whether those two roles share a service.
+    if (rise > 1 && rise < minRise) continue;
     magnitudes.set(service.serviceId, Math.log1p(Math.max(0, rise - 1)));
   }
   let max = 0;
@@ -1028,12 +1044,15 @@ export function computeWeightSeparation(cases: readonly WeightSeparationCase[]):
  * @param weights - The run's log weight.
  * @param slope - Which term's score is the coefficient. Defaults to `failedEdge`,
  *   the term this solver was built for, so existing callers are unaffected.
+ * @param latFloor - Rise a service must clear before the latency term credits it,
+ *   when `slope` is `lat`. Default 1 = the shipped shape.
  * @returns One entry per case whose target the dump describes.
  */
 export function buildWeightSeparationCases(
   cases: readonly DiagnosedCase[],
   weights: MissAttributionWeights,
   slope: SlopeKind = 'failedEdge',
+  latFloor = 1,
 ): WeightSeparationCase[] {
   const built: WeightSeparationCase[] = [];
   for (const kase of cases) {
@@ -1043,7 +1062,7 @@ export function buildWeightSeparationCases(
     if (targets.length === 0) continue;
     // Computed once per case, not per service: the latency term is max-normalised
     // ACROSS the case, so a per-service call would divide by a per-service maximum.
-    const lat = slope === 'lat' ? latencySlopes(kase.services) : undefined;
+    const lat = slope === 'lat' ? latencySlopes(kase.services, latFloor) : undefined;
     const scores = new Map<string, { base: number; slope: number }>();
     for (const service of kase.services) {
       scores.set(service.serviceId, {
@@ -1369,6 +1388,10 @@ export function zeroRegressionSamples(
  * @param cases - Parsed cases.
  * @param weights - The run's log weight.
  * @param slope - Which term's score is the coefficient.
+ * @param latFloor - Rise a service must clear for the latency term to credit it, when
+ *   `slope` is `lat`. This models a term SHAPE the engine does not have yet, so a
+ *   report that names it is a prediction rather than a measurement — the default is
+ *   the shipped shape and says so in the header.
  * @param grid - Weights to probe; defaults to {@link DEFAULT_WINDOW_GRID}.
  * @returns A multi-line report, without a trailing newline.
  */
@@ -1376,9 +1399,10 @@ export function formatZeroRegressionWindowReport(
   cases: readonly DiagnosedCase[],
   weights: MissAttributionWeights,
   slope: SlopeKind = 'failedEdge',
+  latFloor = 1,
   grid: readonly number[] = DEFAULT_WINDOW_GRID,
 ): string {
-  const built = buildWeightSeparationCases(cases, weights, slope);
+  const built = buildWeightSeparationCases(cases, weights, slope, latFloor);
   const window = computeZeroRegressionWindow(built);
   // A relative step, so the probe lands just outside the cap whatever its scale.
   const justAbove = Number.isFinite(window.cap)
@@ -1394,8 +1418,8 @@ export function formatZeroRegressionWindowReport(
   const cap = Number.isFinite(window.cap) ? window.cap.toFixed(6) : 'unbounded';
   const lines: string[] = [];
   lines.push(
-    `Weight window (slope=${slope}; logWeight=${weights.logWeight}; no case correct today ` +
-      'may become incorrect):',
+    `Weight window (slope=${slope}${latFloor > 1 ? `, latFloor=${latFloor}` : ''}; ` +
+      `logWeight=${weights.logWeight}; no case correct today may become incorrect):`,
   );
   lines.push(
     `  cases: ${window.cases}   correct at 0: ${window.satisfied}   ` +

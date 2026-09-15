@@ -55,6 +55,8 @@ export interface Fse26SignalOptions {
    * the key were ever misspelled.
    */
   readonly latWeight: number;
+  /** Rise a service must clear before the latency term credits it (1 = shipped). */
+  readonly latMinRise: number;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -95,6 +97,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       failedEdgeMode: opts.failedEdgeMode,
       failedEdgeMinRecords: opts.failedEdgeMinRecords,
       latWeight: opts.latWeight,
+      latMinRise: opts.latMinRise,
     },
     topology: {
       // Load-bearing on Train Ticket's large topologies.

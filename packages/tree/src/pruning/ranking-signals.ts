@@ -1085,6 +1085,7 @@ export function computeFailedEdgeScores(
 export function computeEdgeLatencyScores(
   edges: ReadonlyArray<FaultEdgeLatency> | undefined,
   nodeIds: ReadonlySet<ServiceId>,
+  minRise = 1,
 ): Map<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   if (edges === undefined || edges.length === 0) return scores;
@@ -1107,6 +1108,19 @@ export function computeEdgeLatencyScores(
   let max = 0;
   const compressed = new Map<ServiceId, number>();
   for (const [callee, value] of rise) {
+    // The floor is applied to the callee's MAXIMUM rise, not per edge: the signal
+    // credits the largest rise over a callee's inbound edges, so a floor applied
+    // earlier would let a callee's noisiest edge decide whether it is rankable.
+    //
+    // It is a MASK, not a compression, and that distinction is the whole point. It
+    // removes rises strictly between 1 and `minRise`, so the surviving maximum is
+    // always the case maximum, the divisor never moves, and no slope is ever raised.
+    // Two consequences follow: the term can only ever lose votes, and it cannot
+    // remove a spurious COMPETITOR without removing that same service as a CREDITEE.
+    // A rise at or below 1 is never dropped — such a callee is present with magnitude
+    // 0, exactly as the shipped shape has it, which is what makes `minRise = 1`
+    // identical to the shipped term.
+    if (value > 1 && value < minRise) continue;
     const magnitude = Math.log1p(Math.max(0, value - 1));
     compressed.set(callee, magnitude);
     if (magnitude > max) max = magnitude;

@@ -30,6 +30,7 @@ describe('buildFse26EngineOptions', () => {
       failedEdgeMode: 'sum',
       failedEdgeMinRecords: 1,
       latWeight: DEFAULT_LAT_WEIGHT,
+      latMinRise: 1,
     });
   });
 
@@ -91,6 +92,17 @@ describe('buildFse26EngineOptions', () => {
     expect(
       buildFse26EngineOptions(parseFSE26Args(['--lat-weight', '0.75'])).signals.latWeight,
     ).toBe(0.75);
+  });
+
+  it('forwards the latency rise floor, shipped as the no-op 1', () => {
+    // A dropped floor would run the shipped shape while the `Config:` line reported
+    // the masked one — the silent swap this file exists to prevent. The floor is not
+    // a weight, so it lives beside `latWeight` rather than inside it.
+    expect(buildFse26EngineOptions(BASE).signals.latMinRise).toBe(1);
+    expect(buildFse26EngineOptions({ ...BASE, latMinRise: 10.3 }).signals.latMinRise).toBe(10.3);
+
+    const fromArgv = buildFse26EngineOptions(parseFSE26Args(['--lat-min-rise', '10.3']));
+    expect(fromArgv.signals.latMinRise).toBe(10.3);
   });
 
   it('forwards rank normalization, which is load-bearing on the large topologies', () => {

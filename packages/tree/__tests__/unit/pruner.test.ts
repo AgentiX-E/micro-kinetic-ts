@@ -1663,6 +1663,22 @@ describe('TreePruner — per-edge latency-rise signal', () => {
     expect(shipped.get(CALLER)!).toBeCloseTo(ablation.get(CALLER)!, 12);
   });
 
+  it('masks the callee once the floor is above its rise, so the term is inert', () => {
+    // The fixture's edge rises 10 -> 400, i.e. 40x. A floor of 100 removes that
+    // callee from the signal entirely, so the term contributes nothing even at weight
+    // 1 — which is the whole point of a floor: it is a precision knob on WHICH
+    // evidence counts, independent of how much the surviving evidence counts for.
+    const masked = scores(new TreePruner({ latWeight: 1, latMinRise: 100 }), {
+      edgeLatency,
+    }).byService;
+    const noTerm = scores(new TreePruner({ latWeight: 0 }), { edgeLatency }).byService;
+
+    expect(masked.get(CALLEE)!).toBeCloseTo(noTerm.get(CALLEE)!, 12);
+    // And the graph itself carries no score for the callee, rather than a zeroed row.
+    const { graph } = scores(new TreePruner({ latMinRise: 100 }), { edgeLatency });
+    expect(graph.edgeLatencyScores?.size ?? 0).toBe(0);
+  });
+
   it('is independent of the failed-edge weight it mirrors', () => {
     // The two terms gate separate signals: a run can carry the latency term with
     // the failed-edge signal off, which is the configuration this axis is
