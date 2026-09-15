@@ -38,6 +38,7 @@ import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
 } from '../../../../packages/tree/src/index.js';
 
 // packages/kinetic/__tests__/unit/ → four levels up is the repository root.
@@ -404,6 +405,8 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   lat_weight: 'runner',
   lat_min_rise: 'runner',
   pool_penalty: 'runner',
+  temporal_weight: 'runner',
+  onset_shape: 'runner',
 };
 
 /**
@@ -447,6 +450,7 @@ describe('FSE26 workflow descriptions agree with the code they describe', () => 
     lat_weight: DEFAULT_LAT_WEIGHT,
     lat_min_rise: DEFAULT_LAT_MIN_RISE,
     pool_penalty: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
     diagnose_limit: 3,
   };
 

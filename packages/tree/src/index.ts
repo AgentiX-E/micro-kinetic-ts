@@ -70,12 +70,17 @@ export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 export {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
+  ONSET_SHAPES,
   TreePruner,
+  computeOnsetSlopes,
   computeTemporalEarliness,
+  isOnsetShape,
   toRankingWeights,
 } from './pruning/pruner.js';
-export type { TreePrunerOptions } from './pruning/pruner.js';
+export type { OnsetShape, TreePrunerOptions } from './pruning/pruner.js';
 
 export {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,

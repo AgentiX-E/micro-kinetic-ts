@@ -136,6 +136,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    */
   readonly temporalWeight: number;
   /**
+   * Which shape the temporal prior reads the onset delays in.
+   *
+   * The weight decides HOW MUCH the term matters; this decides WHAT it says. They are
+   * separate owners because they were measured separately: at the shipped
+   * `temporalWeight = 0` this field is provably inert whatever it says (the term is
+   * multiplied by the weight), so a shape change cannot move any published number
+   * until the weight does — which is why the shape could be enrolled and screened
+   * before the weight was chosen.
+   *
+   * Default {@link DEFAULT_ONSET_SHAPE} — the min-max earliness every published number
+   * was measured with. The other shapes are candidates, not alternatives: on FSE'26 the
+   * shipped shape and `order` have no admissible weight at all, while `earliest-only`
+   * has a measured zero-loss window worth +4 cases (`docs/fse26-onset-verdict.md`).
+   */
+  readonly onsetShape: OnsetShape;
+  /**
    * Weight of the collision-energy signal: penalise a node whose fault energy
    * is mostly INHERITED from upstream rather than self-generated.
    *
@@ -494,6 +510,55 @@ export const DEFAULT_LAT_WEIGHT = 0.561495;
  */
 export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
 
+/**
+ * How the temporal prior turns onset delays into an order.
+ *
+ * `earliness` is the shipped shape and the only one the engine rendered until the
+ * offline screen measured the alternatives: it is min-max normalisation of the DELAY,
+ * so one service that moves a minute late compresses every other service's earliness
+ * onto ≈ 1. The others exist because "no admissible weight on this shape" is a weaker
+ * statement than "no admissible weight on any declared shape", and a screen that only
+ * tried one would leave the axis open on a technicality.
+ *
+ * - `earliness` — shipped: min-max in the delay; earliest 1, latest 0.
+ * - `order` — the same ORDER with the magnitude discarded: linear in the onset RANK.
+ * - `earliest-only` — credit only the service(s) that moved FIRST, and nothing else.
+ *   A MASK on the onset, which the register notes a rise floor cannot build: there,
+ *   the spurious competitor and the credited source are the same service.
+ * - `latest-only` — the CONTROL. The premise is that cause precedes effect, so a shape
+ *   that helps while inverted would falsify it; without this arm a screen cannot tell
+ *   a working term from a working term with the sign flipped.
+ */
+export type OnsetShape = 'earliness' | 'order' | 'earliest-only' | 'latest-only';
+
+/** Every shape, in the order the screen reports and the CLI documents them. */
+export const ONSET_SHAPES: readonly OnsetShape[] = [
+  'earliness',
+  'order',
+  'earliest-only',
+  'latest-only',
+];
+
+/** The shipped shape — the one every published number was measured with. */
+export const DEFAULT_ONSET_SHAPE: OnsetShape = 'earliness';
+
+/** Whether a string names a declared shape; the CLI parses through this, not a cast. */
+export function isOnsetShape(value: string): value is OnsetShape {
+  return (ONSET_SHAPES as readonly string[]).includes(value);
+}
+
+/**
+ * Weight of the global temporal prior. **0 = off**, which is the shipped value.
+ *
+ * One owner for the number, so the pruner's defaults and the CLI's parsed fallback
+ * cannot disagree — the defect that once published a headline 24.2pp below the
+ * best-measured one. The flip to a measured value is a separate, guarded step: the
+ * recorded-runs table in `fse26-reported-config.test.ts` must gain the key first
+ * (`docs/fse26-onset-verdict.md` names the candidate, +4 cases / 0 lost at
+ * `earliest-only`).
+ */
+export const DEFAULT_TEMPORAL_WEIGHT = 0.0;
+
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
   decayAlpha: 0.8,
@@ -502,7 +567,8 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   maxCycles: 10_000,
   enableCollisionAggregation: true,
   sourceWeight: 0.0,
-  temporalWeight: 0.0,
+  temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+  onsetShape: DEFAULT_ONSET_SHAPE,
   collisionWeight: 0.0,
   topoWeight: 0.0,
   logWeight: 1.0,
@@ -1168,13 +1234,13 @@ function performTreeRCA(
     sourceScores.set(nodeId, neighbours > 0 ? later / neighbours : 0);
   }
 
-  // Global temporal earliness — the injection-time-anchored causal prior.
-  // Each service's onset delay (ms after fault injection) is min-max
-  // normalised so the EARLIEST service scores 1 and the LATEST scores 0;
-  // an undetermined delay is neutral (0.5) and contributes nothing. This is
-  // strictly more reliable than the local `sourceScores` prior above, whose
-  // onset index came from a fault-contaminated baseline.
-  const temporalEarliness = computeTemporalEarliness(postInjectOnsetDelays, injectTimeMs);
+  // Global temporal earliness — the injection-time-anchored causal prior. Each
+  // service's onset delay (ms after fault injection) becomes a SLOPE in the shape
+  // `options.onsetShape` names, which is what the score adds per unit of weight; a
+  // service the shape leaves out contributes nothing. This is strictly more reliable
+  // than the local `sourceScores` prior above, whose onset index came from a
+  // fault-contaminated baseline.
+  const onsetSlopes = computeOnsetSlopes(postInjectOnsetDelays, injectTimeMs, options.onsetShape);
 
   // Topological order: use in-degree with reverse adjacency
   // Process from leaves upward
@@ -1393,7 +1459,7 @@ function performTreeRCA(
   const poolTerm = (id: ServiceId): number => -poolPenaltyWeight * (poolMetricScores?.get(id) ?? 0);
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
-  // its lookup never falls back. The `temporalEarliness`, `topoScores`,
+  // its lookup never falls back. The `onsetSlopes`, `topoScores`,
   // `logScores`, `riseScores` and `ratioContrib` maps, in contrast, are derived
   // from OPTIONAL graph fields (or are empty when the injection time is
   // unknown), so their lookups keep a neutral fallback.
@@ -1409,7 +1475,7 @@ function performTreeRCA(
       s =
         Math.log1p(selfScores.get(id)!) +
         weights.sourceWeight * sourceScores.get(id)! +
-        weights.temporalWeight * 2 * ((temporalEarliness.get(id) ?? 0.5) - 0.5) -
+        weights.temporalWeight * (onsetSlopes.get(id) ?? 0) -
         weights.collisionWeight * (ratioContrib.get(id) ?? 0) +
         weights.topoWeight * (topoScores?.get(id) ?? 0) +
         weights.logWeight * (logScores?.get(id) ?? 0) +
@@ -1546,4 +1612,84 @@ export function computeTemporalEarliness(
     earliness.set(id, span > 0 ? 1 - (delay - minDelay) / span : 0.5);
   }
   return earliness;
+}
+
+/**
+ * The temporal prior's per-service SLOPE in one shape: what the term ADDS, per unit
+ * of `temporalWeight`.
+ *
+ * The slope rather than the score, because every candidate's final score is affine in
+ * the weight — `base + w × slope` — which is what makes a weight window solvable
+ * instead of sweepable, offline, from a dump. Both the engine's ranking and the offline
+ * screen call THIS function, so a screen cannot report a window for a term the ranking
+ * would have left inert.
+ *
+ * The `earliness` shape is `2 × (earliness − 0.5)`, computed from
+ * {@link computeTemporalEarliness}, so a service the engine excludes from the map has
+ * slope 0 here — exactly the `?? 0` the ranking used to apply to `2 × (0.5 − 0.5)`.
+ * Multiplying by 2 is exact in binary floating point, so this is bit-identical to the
+ * expression it replaces, not merely equal.
+ *
+ * ABSENT, not zero, when the term cannot act: the map is empty when there are fewer
+ * than two defined onsets or no injection time, and callers read a missing entry as
+ * "no credit". Filling it with 0.5-valued neutrals would make "nothing measured" and
+ * "everything simultaneous" the same object, and they are different statements.
+ *
+ * @param postInjectOnsetDelays - Onset delay in ms per service; negative = undetermined.
+ * @param injectTimeMs - Fault injection time; `0` or absent means unknown, and the map
+ *   is then left empty because no delay can be anchored to anything.
+ * @param shape - Which shape to build; defaults to the shipped one.
+ * @returns The slope per measurable service; empty when the term cannot act.
+ */
+export function computeOnsetSlopes(
+  postInjectOnsetDelays: ReadonlyMap<ServiceId, number> | undefined,
+  injectTimeMs: number,
+  shape: OnsetShape = DEFAULT_ONSET_SHAPE,
+): Map<ServiceId, number> {
+  const slopes = new Map<ServiceId, number>();
+  const defined: Array<{ id: ServiceId; delay: number }> = [];
+  if (injectTimeMs > 0 && postInjectOnsetDelays) {
+    for (const [id, delay] of postInjectOnsetDelays) {
+      if (Number.isFinite(delay) && delay >= 0) defined.push({ id, delay });
+    }
+  }
+  // The engine's own precondition, applied to every shape: one onset cannot establish a
+  // before/after order, and no anchor means no delay is anchored to anything.
+  if (defined.length < 2) return slopes;
+
+  if (shape === 'earliness') {
+    const earliness = computeTemporalEarliness(postInjectOnsetDelays, injectTimeMs);
+    for (const { id } of defined) {
+      // Total over the defined set, which is what `computeTemporalEarliness` returns
+      // for the same inputs — the map is non-empty here because `defined.length >= 2`.
+      slopes.set(id, 2 * (earliness.get(id)! - 0.5));
+    }
+    return slopes;
+  }
+
+  // Every other shape reads the order, which min-max normalisation cannot express. The
+  // tiebreak is the service id, as everywhere in this repo, so a screen over a dump is
+  // reproducible and the tie does not depend on Map insertion order.
+  const ordered = [...defined].sort((a, b) => a.delay - b.delay || (a.id < b.id ? -1 : 1));
+  if (shape === 'order') {
+    // A zero SPAN — every delay equal — carries no rank information, and the ranks a
+    // comparator would still produce from it are an artefact of that comparator. The
+    // test is on the delays, not on the length: a field of three tied services has
+    // three ranks to hand out and no reason to hand them out.
+    const span = ordered[ordered.length - 1]!.delay - ordered[0]!.delay;
+    const last = ordered.length - 1;
+    ordered.forEach(({ id }, index) => {
+      slopes.set(id, span > 0 ? 1 - (2 * index) / last : 0);
+    });
+    return slopes;
+  }
+  // `earliest-only` / `latest-only`: one credited set, and a TIE at the boundary is
+  // credited together — the alternative would make a shape whose whole claim is about
+  // simultaneity depend on the service-id tiebreak.
+  const boundary =
+    shape === 'earliest-only' ? ordered[0]!.delay : ordered[ordered.length - 1]!.delay;
+  for (const { id, delay } of ordered) {
+    if (delay === boundary) slopes.set(id, shape === 'earliest-only' ? 1 : -1);
+  }
+  return slopes;
 }

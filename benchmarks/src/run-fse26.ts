@@ -240,6 +240,8 @@ async function main(): Promise<void> {
     latWeight: opts.latWeight,
     latMinRise: opts.latMinRise,
     poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
+    temporalWeight: opts.temporalWeight,
+    onsetShape: opts.onsetShape,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark

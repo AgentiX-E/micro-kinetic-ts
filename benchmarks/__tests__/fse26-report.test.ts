@@ -42,6 +42,8 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     latWeight: 0,
     latMinRise: 1,
     poolMetricPenaltyWeight: 0,
+    temporalWeight: 0,
+    onsetShape: 'earliness',
     ...overrides,
   };
 }
@@ -100,6 +102,8 @@ describe('FSE26 report — attribution', () => {
       'latWeight',
       'latMinRise',
       'poolMetricPenaltyWeight',
+      'temporalWeight',
+      'onsetShape',
     ]);
   });
 
@@ -128,9 +132,14 @@ describe('FSE26 report — the two renderings agree', () => {
     // shipped value is not zero.
     const shipped = formatFSE26ConfigLine(makeConfig());
     expect(shipped).not.toContain('failedEdgeWeight');
+    // The temporal term's two fields are printed UNCONDITIONALLY, unlike this one: its
+    // weight is 0 today, so an omission rule would work — and would then render the
+    // shipped run and `--temporal-weight 0` byte-identically the day the weight flips,
+    // which is the defect the line exists to prevent. A SHAPE has no default-0 to be
+    // omitted against at all.
     expect(shipped).toBe(
       'Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0 ' +
-        'poolMetricPenaltyWeight=0',
+        'poolMetricPenaltyWeight=0 temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',

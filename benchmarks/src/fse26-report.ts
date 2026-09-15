@@ -24,6 +24,7 @@ export interface FSE26Anchor {
 }
 
 import type { FaultFailedEdge } from '../../packages/core/src/index.js';
+import type { OnsetShape } from '../../packages/tree/src/index.js';
 
 /**
  * Everything that determines the reported numbers.
@@ -90,6 +91,10 @@ export interface FSE26RunConfig {
    * configuration produced a number.
    */
   readonly poolMetricPenaltyWeight: number;
+  /** Weight of the injection-anchored temporal prior; `0` = the shipped configuration. */
+  readonly temporalWeight: number;
+  /** Which shape the prior reads the onsets in; inert while the weight is 0. */
+  readonly onsetShape: OnsetShape;
 }
 
 /** One fault type's cell in the summary. */
@@ -239,6 +244,8 @@ export const REPORTED_CONFIG_FIELDS = [
   'latWeight',
   'latMinRise',
   'poolMetricPenaltyWeight',
+  'temporalWeight',
+  'onsetShape',
 ] as const;
 
 /**
@@ -321,6 +328,12 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // byte-identical line for the shipped run and for `--pool-penalty 0`. Printing it
   // while the shipped value is still 0 costs one field and cannot go stale.
   line += ` poolMetricPenaltyWeight=${config.poolMetricPenaltyWeight}`;
+  // Both unconditional, and for a stronger reason than the pool term's: a SHAPE is not a
+  // weight, so there is no "default 0" it could be omitted against — and the weight's
+  // own default is about to become non-zero, at which point an omitted-when-default
+  // field would render the shipped run and its ablation byte-identically.
+  line += ` temporalWeight=${config.temporalWeight}`;
+  line += ` onsetShape=${config.onsetShape}`;
   return line;
 }
 

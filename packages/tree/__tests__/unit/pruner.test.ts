@@ -1850,4 +1850,101 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
     // option as required, so it always writes the number.
     expect(weights.poolMetricPenaltyWeight).toBe(0);
   });
+
+  describe('temporal prior — the shape decides what the term says, the weight how much', () => {
+    /**
+     * Three services in one call chain, their dominant metric crossing at successive
+     * samples after the injection: A first, then B, then C — and deliberately UNEVENLY
+     * spaced, with C three samples behind B.
+     *
+     * The spacing is the fixture's point, not a detail. Two services that cross one
+     * sample apart and a third that crosses much later is what separates the two shapes:
+     * an evenly spaced field makes min-max-in-the-delay and linear-in-the-rank the same
+     * function, and a test built on one would report "the shapes agree" as if that were
+     * a property of the shapes rather than of the fixture.
+     *
+     * The `injectTimeMs` anchor is what makes any of this measurable, and it is passed
+     * through the graph options rather than declared in the fixture — the engine reads
+     * it once and reuses it for the onset anchor, the log window and the graph.
+     */
+    const ANCHOR = 120000;
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+      ],
+    );
+    const metrics = makeMetrics({
+      A: [10, 10, 10, 50, 50, 50, 50, 50],
+      B: [10, 10, 10, 10, 50, 50, 50, 50],
+      C: [10, 10, 10, 10, 10, 10, 10, 50],
+    });
+    /** Every candidate's ranking score, by service. */
+    const scores = (options: ConstructorParameters<typeof TreePruner>[0]): Map<string, number> => {
+      const pruner = new TreePruner(options);
+      const graph = pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: ANCHOR });
+      return new Map(
+        pruner
+          .analyze(graph, 3)
+          .flatMap((result) =>
+            result.finalScore === undefined ? [] : [[result.serviceId, result.finalScore] as const],
+          ),
+      );
+    };
+
+    it('is inert at weight 0 whatever the shape says', () => {
+      // The property that let the shape be enrolled, screened and dispatched BEFORE a
+      // weight was chosen: the term is multiplied by the weight, so at 0 the shape's
+      // own opinion cannot reach a score. Asserted against a pruner that never mentions
+      // either field, so this cannot pass by comparing two spellings of one default.
+      const baseline = scores({});
+      for (const onsetShape of ['earliest-only', 'latest-only', 'order'] as const) {
+        expect([...scores({ temporalWeight: 0, onsetShape })].sort()).toEqual([...baseline].sort());
+      }
+    });
+
+    it('credits the first mover, and ONLY the first mover, by exactly the weight', () => {
+      // Every shape maps a case to slopes, and the score is `base + w × slope`. The
+      // assertion is therefore arithmetic: A is the first mover, so it gains exactly the
+      // weight; B and C are not the boundary set, so they do not move at all. A term
+      // that moved anybody else would be a reweighting, not this axis.
+      const baseline = scores({});
+      const credited = scores({ temporalWeight: 1, onsetShape: 'earliest-only' });
+
+      expect(credited.get('A')! - baseline.get('A')!).toBeCloseTo(1, 12);
+      expect(credited.get('B')!).toBeCloseTo(baseline.get('B')!, 12);
+      expect(credited.get('C')!).toBeCloseTo(baseline.get('C')!, 12);
+    });
+
+    it('is not symmetric under reversal, which is what makes the direction testable', () => {
+      // The premise is that cause precedes effect. If crediting whoever moved LAST
+      // helped as much, the signal would be a proxy for "extreme onset" rather than for
+      // order — so the reversed shape must credit the OTHER end, and the screen's
+      // control arm is only meaningful because this holds.
+      const baseline = scores({});
+      const reversed = scores({ temporalWeight: 1, onsetShape: 'latest-only' });
+
+      expect(reversed.get('C')! - baseline.get('C')!).toBeCloseTo(-1, 12);
+      expect(reversed.get('A')!).toBeCloseTo(baseline.get('A')!, 12);
+    });
+
+    it('reads the RANK in the order shape, so a far outlier cannot flatten the credit', () => {
+      // The delays are 60000 / 120000 / 300000 ms, so the engine's own shape — min-max
+      // in the DELAY — gives B an earliness of 0.75 and therefore a slope of 0.5, while
+      // C sits alone at the far end. The rank shape spaces the same three services
+      // evenly. Both are reported by the screen, and they are different statements about
+      // the case, which is why the screen sweeps the menu rather than one shape.
+      const baseline = scores({});
+      const engine = scores({ temporalWeight: 1, onsetShape: 'earliness' });
+      const byRank = scores({ temporalWeight: 1, onsetShape: 'order' });
+
+      expect(engine.get('A')! - baseline.get('A')!).toBeCloseTo(1, 12);
+      expect(engine.get('B')! - baseline.get('B')!).toBeCloseTo(0.5, 12);
+      expect(engine.get('C')! - baseline.get('C')!).toBeCloseTo(-1, 12);
+      expect(byRank.get('A')! - baseline.get('A')!).toBeCloseTo(1, 12);
+      expect(byRank.get('B')! - baseline.get('B')!).toBeCloseTo(0, 12);
+      expect(byRank.get('C')! - baseline.get('C')!).toBeCloseTo(-1, 12);
+    });
+  });
 });

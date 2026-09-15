@@ -20,13 +20,18 @@
  */
 
 import {
+  computeOnsetSlopes,
   computeTemporalEarliness,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  ONSET_SHAPES,
   POOL_METRIC_PREFIX,
 } from '../../packages/tree/src/index.js';
+
+import type { OnsetShape } from '../../packages/tree/src/index.js';
 
 import {
   caseOutcomes,
@@ -50,6 +55,17 @@ import {
  * find. Re-exported so every existing caller keeps its import path.
  */
 export { latencySlopes };
+
+/**
+ * The shape menu, re-exported rather than restated.
+ *
+ * It lives in the engine because the engine is what renders a shape, and it is
+ * re-exported here because this module's callers — the screen, the tests — should not
+ * have to know that. A second list would be a second menu, and the two would drift the
+ * first time a shape was added: the screen would keep reporting rows for a shape the
+ * ranking no longer implements.
+ */
+export { ONSET_SHAPES };
 
 /**
  * The score decomposition of one metric, as the `metricTop` line reports it.
@@ -1992,49 +2008,22 @@ export function onsetEarliness(kase: DiagnosedCase): Map<string, number> {
 }
 
 /**
- * The shapes of the temporal prior this screen can measure.
+ * The shapes the screen sweeps — the ENGINE's own declaration, imported.
  *
- * A shape is a function of the onset evidence, and the engine's own is `earliness`.
- * The others exist because "the engine's shape has no admissible weight" is a weaker
- * statement than "no shape in this menu has one", and the weaker statement would leave
- * the axis partly open on a technicality — exactly the gap a declared menu closes.
- *
- * - `earliness` — the engine's own: min-max normalised onset delay, so the earliest
- *   service scores 1 and the latest 0.
- * - `order` — the same ORDER with the magnitude discarded: linear in the onset RANK
- *   rather than in the delay. The engine's shape is dominated by outliers (one service
- *   that moves a minute late collapses everyone else onto ~1), so a shape that cannot
- *   be flattened by an outlier is a genuinely different candidate.
- * - `earliest-only` — the theory in its sharpest form: only the service(s) that moved
- *   FIRST are credited, at all. This is the mask the register says a rise floor cannot
- *   build, built on a different key.
- * - `latest-only` — the CONTROL: credit whoever moved LAST. The premise is that cause
- *   precedes effect, so a shape that helps while inverted would falsify it rather than
- *   extend it, and a screen without this arm cannot tell a working term from a
- *   working term with the sign flipped.
+ * Not restated here: a local copy could drift to a shape the ranking does not
+ * implement, and every row below would stay green while the screen measured a term
+ * that does not exist. `ONSET_SHAPES` is the single list the CLI documents, the
+ * workflow accepts and the screen iterates.
  */
-export type OnsetShape = 'earliness' | 'order' | 'earliest-only' | 'latest-only';
-
-/** Every shape, in the order they are screened and reported. */
-export const ONSET_SHAPES: readonly OnsetShape[] = [
-  'earliness',
-  'order',
-  'earliest-only',
-  'latest-only',
-];
 
 /**
- * The temporal prior's per-service SLOPE for one case, in one shape.
+ * One case's onset slope per service, in one shape — TOTAL over the case.
  *
- * The slope rather than the score, because that is the unit the window solver works
- * in — every candidate's score is affine in the weight, `base + w × slope`, which is
- * what makes a window solvable instead of sweepable.
- *
- * TOTAL over the case's services, with 0 for one the engine left out: an omitted
- * entry would be a missing slope at the solver, and `Math.max` over an absent value
- * is how a term silently credits somebody. The inertness question is the earliness
- * map's, not this one — see {@link onsetEarliness}, and note that a shape reading the
- * ORDER is inert exactly when the earliness map is.
+ * A thin adapter, and deliberately no more than one: the shape arithmetic lives in the
+ * engine's {@link computeOnsetSlopes} so the ranking and this screen cannot disagree
+ * about what a shape means, and all this adds is the one thing the solver needs and the
+ * engine does not — an entry for EVERY service. An omitted entry would be a missing
+ * slope at the solver, and a term that credits whoever it failed to look up.
  *
  * @param kase - One parsed case.
  * @param shape - Which shape to build; defaults to the engine's own.
@@ -2042,41 +2031,18 @@ export const ONSET_SHAPES: readonly OnsetShape[] = [
  */
 export function onsetSlopes(
   kase: DiagnosedCase,
-  shape: OnsetShape = 'earliness',
+  shape: OnsetShape = DEFAULT_ONSET_SHAPE,
 ): Map<string, number> {
   const delays = new Map<string, number>();
   for (const service of kase.services) {
     if (service.onsetDelayMs !== undefined) delays.set(service.serviceId, service.onsetDelayMs);
   }
+  const measured = computeOnsetSlopes(delays, kase.injectTimeMs ?? 0, shape);
   const slopes = new Map<string, number>();
-  if (shape === 'earliness') {
-    const earliness = onsetEarliness(kase);
-    for (const service of kase.services) {
-      // 0.5 is the engine's neutral, and it is the engine's: a service absent from the
-      // earliness map must contribute nothing, not "earliest" and not "latest".
-      slopes.set(service.serviceId, 2 * ((earliness.get(service.serviceId) ?? 0.5) - 0.5));
-    }
-    return slopes;
-  }
-  // Every other shape reads the order, which min-max normalisation cannot express.
-  const ordered = [...delays.entries()].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1));
-  for (const service of kase.services) slopes.set(service.serviceId, 0);
-  if (ordered.length === 0) return slopes;
-  if (shape === 'order') {
-    const last = ordered.length - 1;
-    ordered.forEach(([serviceId], index) => {
-      // Earliest +1 … latest −1, by RANK: a service that moved a minute late cannot
-      // compress everyone else's slope onto ~1 the way min-max normalisation does.
-      slopes.set(serviceId, last === 0 ? 0 : 1 - (2 * index) / last);
-    });
-    return slopes;
-  }
-  // `earliest-only` / `latest-only`: one credited set, and ties are credited together —
-  // the reverse would make the answer depend on the service-id tiebreak inside a shape
-  // whose whole claim is about simultaneity.
-  const boundary = shape === 'earliest-only' ? ordered[0]![1] : ordered[ordered.length - 1]![1];
-  for (const [serviceId, delay] of ordered) {
-    if (delay === boundary) slopes.set(serviceId, shape === 'earliest-only' ? 1 : -1);
+  for (const service of kase.services) {
+    // 0 for a service the engine left out, which is the same value the engine's own
+    // `?? 0` at the ranking reads: no credit, not "neutral credit".
+    slopes.set(service.serviceId, measured.get(service.serviceId) ?? 0);
   }
   return slopes;
 }

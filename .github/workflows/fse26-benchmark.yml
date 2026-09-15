@@ -71,6 +71,14 @@ on:
         description: 'Weight of the DB-connection-pool dominance PENALTY, subtracted from a service whose anomaly maximum was won by a db.client.connections.* series (empty = the runner default, which is the shipped 0.0679 = the midpoint of the measured zero-regression window w in (0.048823, 0.087011), worth +6 cases against 0 lost and 0 regressed fault types; 0 is the pre-ship ablation)'
         required: false
         default: ''
+      temporal_weight:
+        description: 'Weight of the injection-anchored temporal prior, which credits the service whose dominant metric left its pre-injection baseline FIRST (empty = the runner default, which is 0 = OFF, the value every measured headline uses). The offline screen measures the whole shape menu on the 1422-case dump in one command; on FSE''26 the shipped shape and the rank shape have NO admissible weight, while earliest-only has a zero-loss window worth +4 cases at 0.036552'
+        required: false
+        default: ''
+      onset_shape:
+        description: 'Shape the temporal prior reads the onset delays in: earliness (empty = the runner default, min-max in the delay), order (linear in the onset RANK), earliest-only (credit ONLY whoever moved first), latest-only (a REVERSED control). INERT while temporal_weight is 0, which is why it can be set without changing a published number'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -237,6 +245,14 @@ jobs:
           if [ -n "${{ inputs.pool_penalty }}" ]; then
             POOL_ARG=(--pool-penalty "${{ inputs.pool_penalty }}")
           fi
+          TEMPORAL_ARG=()
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            TEMPORAL_ARG=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          ONSET_SHAPE_ARG=()
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            ONSET_SHAPE_ARG=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
             "${LOG_WEIGHT_ARG[@]}" \
@@ -249,6 +265,8 @@ jobs:
             "${LAT_ARG[@]}" \
             "${LAT_FLOOR_ARG[@]}" \
             "${POOL_ARG[@]}" \
+            "${TEMPORAL_ARG[@]}" \
+            "${ONSET_SHAPE_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

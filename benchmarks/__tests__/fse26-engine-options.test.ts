@@ -15,7 +15,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
 } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
 import { parseFSE26Args } from '../src/fse26-cli.js';
@@ -36,7 +38,24 @@ describe('buildFse26EngineOptions', () => {
       latWeight: DEFAULT_LAT_WEIGHT,
       latMinRise: DEFAULT_LAT_MIN_RISE,
       poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+      temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+      onsetShape: DEFAULT_ONSET_SHAPE,
     });
+  });
+
+  it('forwards the temporal prior: off by default, and the shape its own owner', () => {
+    // Two fields with two different rules, and both rules matter. The WEIGHT is 0
+    // today, so a silent drop would be invisible; the SHAPE is inert while the weight
+    // is 0, so a silent drop would be invisible TWICE — which is exactly the class of
+    // no-op this mapping file exists to make impossible.
+    expect(buildFse26EngineOptions(BASE).signals.temporalWeight).toBe(DEFAULT_TEMPORAL_WEIGHT);
+    expect(buildFse26EngineOptions(BASE).signals.onsetShape).toBe(DEFAULT_ONSET_SHAPE);
+    expect(
+      buildFse26EngineOptions({ ...BASE, temporalWeight: 0.036552 }).signals.temporalWeight,
+    ).toBe(0.036552);
+    expect(
+      buildFse26EngineOptions({ ...BASE, onsetShape: 'earliest-only' }).signals.onsetShape,
+    ).toBe('earliest-only');
   });
 
   it('forwards the pool-dominance penalty, inert by default', () => {

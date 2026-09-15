@@ -30,7 +30,11 @@ import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/inde
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
+  isOnsetShape,
+  type OnsetShape,
 } from '../../packages/tree/src/index.js';
 
 /**
@@ -179,6 +183,20 @@ export interface Fse26CliOptions {
    * so a second copy here is a second shipped configuration.
    */
   readonly poolMetricPenaltyWeight: number;
+  /**
+   * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
+   * value: every measured headline is at 0, so a typo here reproduces a published
+   * configuration rather than inventing one.
+   */
+  readonly temporalWeight: number;
+  /**
+   * Which shape the temporal prior reads the onset delays in.
+   *
+   * Inert while `temporalWeight` is 0 — the term is multiplied by the weight — which is
+   * why the shape could be enrolled, screened and dispatched before the weight was
+   * chosen. `docs/fse26-onset-verdict.md` carries the measured menu.
+   */
+  readonly onsetShape: OnsetShape;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -246,6 +264,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     latWeight: DEFAULT_LAT_WEIGHT,
     latMinRise: DEFAULT_LAT_MIN_RISE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+    onsetShape: DEFAULT_ONSET_SHAPE,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -312,6 +332,17 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // fall back to the SHIPPED weight rather than select 0, which is a
       // different measured configuration (`--pool-penalty 0` is the ablation).
       opts.poolMetricPenaltyWeight = parseWeight(argv[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    } else if (arg === '--temporal-weight' && i + 1 < argv.length) {
+      // Through `parseWeight` for the empty-value reason, and the fallback is the
+      // SHIPPED 0 — which here IS the published configuration, so a typo cannot select
+      // an unmeasured ablation.
+      opts.temporalWeight = parseWeight(argv[++i]!, DEFAULT_TEMPORAL_WEIGHT);
+    } else if (arg === '--onset-shape' && i + 1 < argv.length) {
+      // Falling back to the SHIPPED shape on an unknown value, like the log mode and
+      // the failed-edge mode: a typo must reproduce a published configuration rather
+      // than invent one.
+      const shape = argv[++i]!;
+      opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
     }
   }
 

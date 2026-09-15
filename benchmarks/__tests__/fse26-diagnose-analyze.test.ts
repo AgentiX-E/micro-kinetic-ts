@@ -2255,6 +2255,11 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
 
     expect(report).toContain('services carrying an onset: 0/0 (n/a)');
     expect(report).toContain('INERT');
+    // The MENU renderer carries the same line, once, before its rows — and it needs the
+    // same guard: it is the renderer `--onset-screen` actually uses.
+    const menu = formatOnsetMenuReport(onsetShapeMenu(empty, { logWeight: 1 }), { logWeight: 1 });
+    expect(menu).toContain('services carrying an onset: 0/0 (n/a)');
+    expect(menu.match(/INERT/g)).toHaveLength(1);
   });
 
   it('renders the availability, the window and the loss at the shipped weight', () => {

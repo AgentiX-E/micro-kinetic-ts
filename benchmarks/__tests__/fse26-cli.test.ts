@@ -17,7 +17,10 @@ import type { LogSignalMode } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
+  ONSET_SHAPES,
 } from '../../packages/tree/src/index.js';
 
 import { DEFAULT_FSE26_LOG_MODE, isLogSignalMode, parseFSE26Args } from '../src/fse26-cli.js';
@@ -226,6 +229,42 @@ describe('parseFSE26Args — other flags', () => {
     // while the default is non-zero — which is why the config line prints the field
     // unconditionally rather than omitting it at the default.
     expect(parseFSE26Args(['--pool-penalty', '0']).poolMetricPenaltyWeight).toBe(0);
+  });
+
+  it('parses the temporal prior: the weight off by default, the shape its own owner', () => {
+    // The WEIGHT's shipped value is 0, and unlike every other weight here that is also
+    // the published configuration — the term is off in every measured headline — so the
+    // fallback is the shipped value without ambiguity.
+    expect(parseFSE26Args([]).temporalWeight).toBe(DEFAULT_TEMPORAL_WEIGHT);
+    expect(DEFAULT_TEMPORAL_WEIGHT).toBe(0);
+    expect(parseFSE26Args(['--temporal-weight', '0.036552']).temporalWeight).toBe(0.036552);
+    // The SHAPE is a different kind of field: it has no default-0 to be omitted against,
+    // and it is inert while the weight is 0, which is why it can be set on its own.
+    expect(parseFSE26Args([]).onsetShape).toBe(DEFAULT_ONSET_SHAPE);
+    for (const shape of ONSET_SHAPES) {
+      expect(parseFSE26Args(['--onset-shape', shape]).onsetShape).toBe(shape);
+    }
+  });
+
+  it('falls back to the SHIPPED shape on an unknown one, like every other mode flag', () => {
+    // A typo must reproduce a published configuration rather than invent one — the same
+    // rule `--log-mode` and `--failed-edge-mode` follow. A shape is not a weight, so
+    // there is no "ablation" a malformed value could accidentally select.
+    expect(parseFSE26Args(['--onset-shape', 'earliest']).onsetShape).toBe(DEFAULT_ONSET_SHAPE);
+    expect(parseFSE26Args(['--onset-shape', '']).onsetShape).toBe(DEFAULT_ONSET_SHAPE);
+  });
+
+  it('falls back to the SHIPPED temporal weight on an empty or unusable value', () => {
+    // `Number('')` is 0, which HERE happens to equal the shipped value — and the test
+    // still earns its place, because the hazard is not the number but the class: the day
+    // the default flips, an inline parse would silently run the ablation.
+    expect(parseFSE26Args(['--temporal-weight', '']).temporalWeight).toBe(DEFAULT_TEMPORAL_WEIGHT);
+    expect(parseFSE26Args(['--temporal-weight', '1x']).temporalWeight).toBe(
+      DEFAULT_TEMPORAL_WEIGHT,
+    );
+    expect(parseFSE26Args(['--temporal-weight', '-1']).temporalWeight).toBe(
+      DEFAULT_TEMPORAL_WEIGHT,
+    );
   });
 
   it('falls back to the SHIPPED pool penalty on an empty or unusable value', () => {

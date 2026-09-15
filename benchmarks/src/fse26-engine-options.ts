@@ -22,6 +22,7 @@
 import type {
   FailedEdgeMode,
   LogSignalMode,
+  OnsetShape,
   TopologyFaultGraphConfig,
 } from '../../packages/tree/src/index.js';
 
@@ -63,6 +64,21 @@ export interface Fse26SignalOptions {
    * key were ever misspelled.
    */
   readonly poolMetricPenaltyWeight: number;
+  /**
+   * Weight of the injection-anchored temporal prior. Required for the same reason as
+   * every weight above: a PARTIAL passed through here would be a silent no-op if the
+   * key were ever misspelled, and this file exists precisely because a dropped option
+   * ran the control while the `Config:` line reported the ablation.
+   */
+  readonly temporalWeight: number;
+  /**
+   * Which shape the temporal prior reads the onset delays in.
+   *
+   * Not a weight, so it cannot be omitted-when-default: it is forwarded unconditionally,
+   * and it is inert while `temporalWeight` is 0 — which is exactly why the shape is
+   * `runner`-owned and can be flipped without a second measured configuration.
+   */
+  readonly onsetShape: OnsetShape;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -105,6 +121,8 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
+      temporalWeight: opts.temporalWeight,
+      onsetShape: opts.onsetShape,
     },
     topology: {
       // Load-bearing on Train Ticket's large topologies.
