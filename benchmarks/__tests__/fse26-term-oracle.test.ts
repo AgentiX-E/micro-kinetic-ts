@@ -92,6 +92,8 @@ interface ServiceSpec {
   selfAnomaly?: number;
   latRise?: number;
   latEdges?: number;
+  /** Onset delay in ms after injection; `-1` for the engine's "undetermined". */
+  onset?: number;
   logic?: number;
   http?: number;
   /** The metric that won this service's anomaly maximum; defaults to `cpu`. */
@@ -106,6 +108,7 @@ function block(
     faultType?: string;
     groundTruth?: readonly string[];
     topPredictions?: readonly string[];
+    injectTimeMs?: number;
   } = {},
 ): string {
   const n = specs.length;
@@ -120,6 +123,7 @@ function block(
     failedEdgeRecords: 0,
     latRise: spec.latRise,
     latEdges: spec.latEdges ?? 0,
+    onsetDelayMs: spec.onset,
     errorCount: (spec.logic ?? 0) + (spec.http ?? 0),
     fatalCount: 0,
     logicExceptionCount: spec.logic ?? 0,
@@ -138,6 +142,7 @@ function block(
     services,
     topPredictions: [...(overrides.topPredictions ?? [])],
     logSignalMode: 'logicHttp',
+    ...(overrides.injectTimeMs === undefined ? {} : { injectTimeMs: overrides.injectTimeMs }),
   });
 }
 
@@ -954,6 +959,50 @@ describe('shippedRank1 — one owner of "who the modelled score puts first"', ()
     expect(
       shippedRank1(kase, { logWeight: 1, latWeight: 0, latFloor: 1, poolWeight: 0 }),
     ).toBeUndefined();
+  });
+});
+
+describe('--onset-screen wiring', () => {
+  it('is a switch, maps to its section kind, and still needs the log weight', () => {
+    // Same contract as every other reconstruction: a switch whose kebab name does not
+    // map to a section kind is accepted and never rendered, which is indistinguishable
+    // from a section with nothing to say.
+    expect(() => parseAnalyzeArgs(['--dump', 'd.txt', '--onset-screen'])).toThrow(/log-weight/);
+    const opts = parseAnalyzeArgs(['--dump', 'd.txt', '--onset-screen', '--log-weight', '1']);
+    expect(opts.kind).toBe('dump');
+    const requested = opts.kind === 'dump' ? opts.sections.map((section) => section.kind) : [];
+    expect(requested).toEqual(['onsetScreen']);
+  });
+
+  it('renders its section from the parsed dump, carrying its own configuration', () => {
+    // The section is data, so this is the only place that proves the parsed dump and
+    // the flag meet: the availability line cannot be printed from a dump that never
+    // carried an onset, and the report says so rather than solving an empty window.
+    const text = block(
+      [
+        { serviceId: 'ts-src', onset: 0 },
+        { serviceId: 'ts-win', onset: 60000 },
+      ],
+      {
+        datapack: 'onset-wiring',
+        groundTruth: ['ts-src'],
+        topPredictions: ['ts-win'],
+        injectTimeMs: 1_700_000_000_000,
+      },
+    );
+    const opts = parseAnalyzeArgs([
+      '--dump',
+      'd.txt',
+      '--onset-screen',
+      '--log-weight',
+      '1',
+      '--lat-weight',
+      '0',
+    ]);
+    const report = formatAnalyzeSections(parseDiagnosticDump(text), 'header.txt', opts as never);
+
+    expect(report).toContain('Temporal (onset) screen');
+    expect(report).toMatch(/with an injection anchor 1/);
   });
 });
 

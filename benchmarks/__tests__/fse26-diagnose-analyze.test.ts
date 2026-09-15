@@ -39,12 +39,16 @@ import {
   formatFamilyScreenReport,
   formatMetricCompetitionReport,
   formatMissReport,
+  formatOnsetScreenReport,
   formatWeightSeparationReport,
   formatZeroRegressionWindowReport,
   isTop1Correct,
   latencySlopes,
   MISS_DECIDED_BY,
   MISS_ORDER,
+  onsetAvailability,
+  onsetScreen,
+  onsetSlopes,
   parseAnalyzeArgs,
   parseDiagnosticDump,
   reconcileConfigurations,
@@ -62,6 +66,8 @@ interface ServiceSpec {
   failedEdgeRecords?: number;
   latRise?: number;
   latEdges?: number;
+  /** Onset delay in ms after injection; `-1` for the engine's "undetermined". */
+  onset?: number;
   http?: number;
   logic?: number;
   dominant?: string | undefined;
@@ -84,6 +90,7 @@ function serviceLine(spec: ServiceSpec) {
     failedEdgeRecords: spec.failedEdgeRecords ?? 0,
     latRise: spec.latRise,
     latEdges: spec.latEdges ?? 0,
+    onsetDelayMs: 'onset' in spec ? spec.onset : undefined,
     errorCount: (spec.logic ?? 0) + (spec.http ?? 0),
     fatalCount: 0,
     logicExceptionCount: spec.logic ?? 0,
@@ -228,6 +235,65 @@ describe('parseDiagnosticDump', () => {
     expect(src.latEdges).toBeUndefined();
   });
 
+  it('reads the onset delay, and reads the dash as UNKNOWN rather than as 0', () => {
+    // The dump's only TIME. Zero is a real measurement (the service moved at the
+    // injection instant) and `-` is not, so they must not parse to the same value:
+    // a temporal screen ranks by the difference of two delays, and a fabricated 0
+    // would put every unmeasured service first.
+    const text = dump({
+      services: [
+        serviceLine({ serviceId: 'ts-src', onset: 0 }),
+        serviceLine({ serviceId: 'ts-mid', onset: 120000 }),
+        serviceLine({ serviceId: 'ts-win', onset: -1 }),
+        serviceLine({ serviceId: 'ts-none' }),
+      ],
+    });
+    const parsed = parseDiagnosticDump(text)[0]!.services;
+    const byId = new Map(parsed.map((s) => [s.serviceId, s.onsetDelayMs]));
+    expect(byId.get('ts-src')).toBe(0);
+    expect(byId.get('ts-mid')).toBe(120000);
+    expect(byId.get('ts-win')).toBeUndefined();
+    expect(byId.get('ts-none')).toBeUndefined();
+  });
+
+  it('still parses every other field when the onset field is present', () => {
+    // The new group is last and anchored at `$`, so a stale `$` in the old pattern
+    // would have made the whole line stop matching — and a service line that does
+    // not match is dropped silently, which is how a parser loses a whole dump.
+    const text = dump({
+      services: [serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4, onset: 4200, logic: 7 })],
+    });
+    const src = parseDiagnosticDump(text)[0]!.services[0]!;
+    expect(src.selfAnomaly).toBeCloseTo(0.4, 6);
+    expect(src.logicExceptionCount).toBe(7);
+    expect(src.onsetDelayMs).toBe(4200);
+  });
+
+  it('reads the injection anchor, and reports an ABSENT one as undefined', () => {
+    // `0` is the engine's own "no anchor" and `absent` is "this dump predates the
+    // field". Both leave the temporal term inert — but only one of them means the
+    // dump can answer the question, and the report says which.
+    const anchored = parseDiagnosticDump(dump({ injectTimeMs: 1_700_000_000_000 }))[0]!;
+    expect(anchored.injectTimeMs).toBe(1_700_000_000_000);
+    const noAnchor = parseDiagnosticDump(dump({ injectTimeMs: 0 }))[0]!;
+    expect(noAnchor.injectTimeMs).toBe(0);
+    const legacy = parseDiagnosticDump(dump({}))[0]!;
+    expect(legacy.injectTimeMs).toBeUndefined();
+  });
+
+  it('reports the onset delay as undefined for a dump that predates the field', () => {
+    const legacy = dump({ services: [serviceLine({ serviceId: 'ts-src' })] }).replace(
+      / onset=\S+$/m,
+      '',
+    );
+    expect(legacy).not.toContain('onset=');
+    const src = parseDiagnosticDump(legacy)[0]!.services[0]!;
+    expect(src.onsetDelayMs).toBeUndefined();
+    // And the rest of the line survived the edit, which is what proves the field is
+    // additive rather than load-bearing.
+    expect(src.selfAnomaly).toBeCloseTo(0.5, 6);
+  });
+
   it('reads the call graph as written, and reports an ABSENT graph as undefined', () => {
     // "not recorded" must stay distinguishable from "recorded and empty": a
     // structural answer computed from a defaulted empty graph would call every
@@ -293,6 +359,7 @@ describe('isTop1Correct', () => {
     faultType: 'JVMMemoryStress',
     groundTruth: ['ts-order-service'],
     logSignalMode: 'logicHttp',
+    injectTimeMs: undefined,
     edges: undefined,
     services: [],
     prediction,
@@ -322,6 +389,7 @@ describe('diffDiagnostics', () => {
       faultType,
       groundTruth: ['ts-order-service'],
       logSignalMode: 'logicHttp',
+      injectTimeMs: undefined,
       edges: undefined,
       services: [],
       prediction,
@@ -385,6 +453,7 @@ describe('regressionMechanism', () => {
       faultType: 'JVMMemoryStress',
       groundTruth: ['ts-order-service'],
       logSignalMode: 'logicHttp',
+      injectTimeMs: undefined,
       edges: undefined,
       services,
       prediction: ['ts-ui', 'ts-order-service'],
@@ -401,6 +470,7 @@ describe('regressionMechanism', () => {
     failedEdgeRecords: 0,
     latRise: undefined,
     latEdges: 0,
+    onsetDelayMs: undefined,
     dominantMetric: '',
     errorCount: http + logic,
     fatalCount: 0,
@@ -1747,6 +1817,314 @@ describe('reconcileConfigurations', () => {
     expect(
       reconciled.bothCorrect + reconciled.fixed + reconciled.broken + reconciled.bothWrong,
     ).toBe(0);
+  });
+});
+
+describe('onsetSlopes — the engine’s own earliness, as a slope', () => {
+  /** A 26-candidate field with both contenders carrying an onset delay. */
+  function field(options: {
+    readonly inject?: number;
+    readonly first: { readonly serviceId: string; readonly onset?: number };
+    readonly second: { readonly serviceId: string; readonly onset?: number };
+    readonly groundTruth: string;
+    readonly prediction: string;
+  }): DiagnosedCase {
+    const candidates = 26;
+    const filler = Array.from({ length: candidates - 2 }, (_, i) =>
+      serviceLine({
+        serviceId: `ts-filler-${String(i).padStart(2, '0')}`,
+        selfAnomaly: (candidates - 1 - (i + 2)) / (candidates - 1),
+      }),
+    );
+    const text = dump({
+      groundTruthServices: [options.groundTruth],
+      services: [
+        serviceLine({
+          ...options.first,
+          selfAnomaly: 1,
+          onset: 'onset' in options.first ? options.first.onset : undefined,
+        }),
+        serviceLine({
+          ...options.second,
+          selfAnomaly: (candidates - 2) / (candidates - 1),
+          onset: 'onset' in options.second ? options.second.onset : undefined,
+        }),
+        ...filler,
+      ],
+      topPredictions: [options.prediction],
+      ...(options.inject === undefined ? {} : { injectTimeMs: options.inject }),
+    });
+    return parseDiagnosticDump(text)[0]!;
+  }
+
+  const ANCHOR = 1_700_000_000_000;
+
+  it('normalises the earliest onset to +1 and the latest to −1, as the engine does', () => {
+    // Not a re-derivation: the call goes through the engine's own function, so a
+    // screen can never report a window for a term the ranking would leave inert. The
+    // values are pinned because they are the SIGN that decides the direction.
+    const kase = field({
+      inject: ANCHOR,
+      first: { serviceId: 'ts-src', onset: 0 },
+      second: { serviceId: 'ts-win', onset: 60000 },
+      groundTruth: 'ts-src',
+      prediction: 'ts-win',
+    });
+    const slopes = onsetSlopes(kase);
+
+    expect(slopes.get('ts-src')).toBeCloseTo(1, 12);
+    expect(slopes.get('ts-win')).toBeCloseTo(-1, 12);
+    // A service with no onset is neutral: the term contributes nothing to it rather
+    // than crediting it as earliest, which is the failure that would make every
+    // unmeasured service the top candidate.
+    expect(slopes.get('ts-filler-00')).toBe(0);
+  });
+
+  it('leaves every slope at 0 when the term cannot act', () => {
+    const oneOnset = field({
+      inject: ANCHOR,
+      first: { serviceId: 'ts-src', onset: 0 },
+      second: { serviceId: 'ts-win' },
+      groundTruth: 'ts-src',
+      prediction: 'ts-win',
+    });
+    // One defined onset cannot establish a before/after order — the engine's rule,
+    // shared rather than restated.
+    expect([...onsetSlopes(oneOnset).values()].every((slope) => slope === 0)).toBe(true);
+
+    const noAnchor = field({
+      first: { serviceId: 'ts-src', onset: 0 },
+      second: { serviceId: 'ts-win', onset: 60000 },
+      groundTruth: 'ts-src',
+      prediction: 'ts-win',
+    });
+    expect([...onsetSlopes(noAnchor).values()].every((slope) => slope === 0)).toBe(true);
+  });
+});
+
+describe('onsetAvailability — a data gap is not a result', () => {
+  const ANCHOR = 1_700_000_000_000;
+
+  it('counts the anchor, the onsets and the populations separately', () => {
+    // Three different failure modes, and the report has to be able to name which one
+    // it hit: no injection time, no onsets, or onsets without an ORDER.
+    const withOrder = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', onset: 0 }),
+          serviceLine({ serviceId: 'ts-win', onset: 60000 }),
+        ],
+        injectTimeMs: ANCHOR,
+      }),
+    );
+    const withoutAnchor = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', onset: 0 }),
+          serviceLine({ serviceId: 'ts-win', onset: 60000 }),
+        ],
+      }),
+    );
+    const withoutOnsets = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [serviceLine({ serviceId: 'ts-src', onset: -1 })],
+        injectTimeMs: ANCHOR,
+      }),
+    );
+
+    expect(onsetAvailability(withOrder)).toMatchObject({
+      cases: 1,
+      withAnchor: 1,
+      withOnsets: 1,
+      withEarliness: 1,
+      servicesWithOnset: 2,
+      servicesTotal: 2,
+    });
+    // The identical two onsets, with no anchor: the engine anchors nothing, so the
+    // term is inert and the screen must say so rather than solve a window.
+    expect(onsetAvailability(withoutAnchor)).toMatchObject({ withOnsets: 1, withEarliness: 0 });
+    expect(onsetAvailability(withoutOnsets)).toMatchObject({
+      withAnchor: 1,
+      withOnsets: 0,
+      withEarliness: 0,
+      servicesWithOnset: 0,
+    });
+  });
+
+  it('leaves an unlabelled case out of every count', () => {
+    // No acceptable root means nothing to correct or lose, so counting the case would
+    // report evidence for a case that cannot be scored.
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: [],
+        services: [serviceLine({ serviceId: 'ts-a', onset: 0 })],
+        injectTimeMs: 1_700_000_000_000,
+      }),
+    );
+    expect(onsetAvailability(cases)).toMatchObject({
+      cases: 0,
+      withAnchor: 0,
+      withOnsets: 0,
+      withEarliness: 0,
+      servicesTotal: 0,
+    });
+  });
+});
+
+describe('onsetScreen — the temporal prior, solved rather than swept', () => {
+  const ANCHOR = 1_700_000_000_000;
+
+  /**
+   * A case whose onsets make the temporal term help or hurt the root.
+   *
+   * `leader` decides who the METRIC term favours, and it is a parameter rather than a
+   * fixture detail because it is the sign of the case: with the rival leading, the
+   * root is wrong at `w = 0` and the temporal term is a candidate FIX; with the root
+   * leading, the case is correct and the term is a candidate REGRESSION. A fixture
+   * that only ever built the first would leave the criterion's second half untested.
+   */
+  function temporalCase(options: {
+    readonly leader: 'root' | 'rival';
+    readonly root: string;
+    readonly rival: string;
+    readonly rootOnset: number;
+    readonly rivalOnset: number;
+    readonly groundTruth: string;
+    readonly prediction: string;
+  }): DiagnosedCase {
+    const leading = options.leader === 'root' ? options.root : options.rival;
+    const trailing = options.leader === 'root' ? options.rival : options.root;
+    const onsetOf = (serviceId: string): number =>
+      serviceId === options.root ? options.rootOnset : options.rivalOnset;
+    return parseDiagnosticDump(
+      dump({
+        groundTruthServices: [options.groundTruth],
+        services: [
+          serviceLine({ serviceId: leading, selfAnomaly: 1, onset: onsetOf(leading) }),
+          serviceLine({ serviceId: trailing, selfAnomaly: 0.96, onset: onsetOf(trailing) }),
+        ],
+        topPredictions: [options.prediction],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+  }
+
+  it('fixes a case the term agrees with, and caps only where the term disagrees', () => {
+    // The 2-candidate metric step is `log1p(1) − log1p(0) = 0.693`, so a slope gap of
+    // 2 needs `w ≥ 0.347` — a real weight, not the metric spacing's 0.0100. The
+    // fixture therefore states its own arithmetic instead of inheriting the 51-
+    // candidate case's, and the SCREEN is what is under test, not the tuner.
+    const fixable = temporalCase({
+      // The rival leads on the metric, so the case is wrong at w = 0.
+      leader: 'rival',
+      root: 'ts-src',
+      rival: 'ts-win',
+      rootOnset: 0,
+      rivalOnset: 60000,
+      groundTruth: 'ts-src',
+      prediction: 'ts-win',
+    });
+    const screen = onsetScreen([fixable], { logWeight: 1, latWeight: 0, poolWeight: 0 });
+
+    expect(screen.solved.gain).toBe(1);
+    expect(screen.solved.lostAtShip).toBe(0);
+    expect(screen.solved.gained).toEqual(['dp-1']);
+    expect(Number.isFinite(screen.solved.ship)).toBe(true);
+    expect(screen.gainTypes).toEqual([{ key: 'JVMMemoryStress', cases: 1 }]);
+  });
+
+  it('reports no admissible gain when the term demotes a currently-correct root', () => {
+    // The root is right and the term disagrees with it: the earliest onset belongs to
+    // the rival, so the term hands it the lead at some weight and the window closes at
+    // zero. A gain of 0 with a FINITE cap is the measured form of "the sign is wrong",
+    // which is what the register records the RCAEval number as.
+    const harmed = temporalCase({
+      // The root leads, so the case is CORRECT at w = 0 and the term can only hurt it.
+      leader: 'root',
+      root: 'ts-src',
+      rival: 'ts-win',
+      rootOnset: 60000,
+      rivalOnset: 0,
+      groundTruth: 'ts-src',
+      prediction: 'ts-src',
+    });
+    const screen = onsetScreen([harmed], { logWeight: 1, latWeight: 0, poolWeight: 0 });
+
+    expect(screen.solved.gain).toBe(0);
+    expect(screen.solved.ship).toBe(0);
+    expect(screen.solved.window.satisfied).toBe(1);
+    expect(screen.solved.window.cap).toBeGreaterThan(0);
+    expect(screen.solved.window.cap).toBeLessThan(1);
+  });
+
+  it('screens a dump with no anchor as inert rather than as a zero gain', () => {
+    const noAnchor = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.96, onset: 0 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 1, onset: 60000 }),
+        ],
+        topPredictions: ['ts-win'],
+      }),
+    );
+    const screen = onsetScreen(noAnchor, { logWeight: 1, latWeight: 0, poolWeight: 0 });
+    const report = formatOnsetScreenReport(screen, { logWeight: 1, latWeight: 0, poolWeight: 0 });
+
+    expect(screen.availability.withEarliness).toBe(0);
+    expect(report).toContain('INERT');
+    // And it must NOT print a window: `0` next to a solved interval is read as
+    // "measured, no effect", which is the opposite of "not measured".
+    expect(report).not.toContain('window:');
+  });
+
+  it('names the pair that closes the window when the sign is wrong', () => {
+    // A zero gain with a finite cap is the measured form of "the term points the wrong
+    // way", and the report has to say WHICH pair decided that — otherwise the number
+    // is a verdict with no mechanism, which is what this register exists to replace.
+    const harmed = temporalCase({
+      leader: 'root',
+      root: 'ts-src',
+      rival: 'ts-win',
+      rootOnset: 60000,
+      rivalOnset: 0,
+      groundTruth: 'ts-src',
+      prediction: 'ts-src',
+    });
+    const weights = { logWeight: 1, latWeight: 0, poolWeight: 0 };
+    const report = formatOnsetScreenReport(onsetScreen([harmed], weights), weights);
+
+    expect(report).toContain('no admissible gain: every weight that fixes a case also loses one');
+    expect(report).toMatch(/cap bound by dp-1: ts-src overtaken by ts-win \(lead 0\.693147/);
+  });
+
+  it('renders the availability, the window and the loss at the shipped weight', () => {
+    const screen = onsetScreen(
+      [
+        temporalCase({
+          leader: 'rival',
+          root: 'ts-src',
+          rival: 'ts-win',
+          rootOnset: 0,
+          rivalOnset: 60000,
+          groundTruth: 'ts-src',
+          prediction: 'ts-win',
+        }),
+      ],
+      { logWeight: 1, latWeight: 0, poolWeight: 0 },
+    );
+    const report = formatOnsetScreenReport(screen, { logWeight: 1, latWeight: 0, poolWeight: 0 });
+
+    expect(report).toContain('Temporal (onset) screen');
+    expect(report).toMatch(/evidence: 1 cases; with an injection anchor 1; with an onset 1; .*1$/m);
+    expect(report).toContain('services carrying an onset: 2/2 (100.0%)');
+    expect(report).toContain('window: gain 1');
+    expect(report).toContain('lost at ship 0');
+    expect(report).toContain('gains dp-1');
+    expect(report).toContain('JVMMemoryStress +1');
   });
 });
 

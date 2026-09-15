@@ -1509,9 +1509,15 @@ function computeConfidence(score: number, depth: number, errorBound: number): nu
  * an unknown injection time) carries no comparative information, so the map is
  * left empty — the temporal signal then contributes nothing to the ranking.
  *
- * @internal
+ * Exported rather than `@internal` on purpose: the offline diagnostic screen
+ * answers "would any weight on this term help?" over dumps, and a SECOND
+ * implementation of the normalisation would be a second answer to that
+ * question — the exact defect this repo's analyzer exists to find. The engine's
+ * ranking and the offline screen therefore share this function, including its
+ * "too few onsets and there is no signal" rule, so a screen can never report a
+ * window for a term the engine would have left inert.
  */
-function computeTemporalEarliness(
+export function computeTemporalEarliness(
   postInjectOnsetDelays: ReadonlyMap<ServiceId, number> | undefined,
   injectTimeMs: number,
 ): Map<ServiceId, number> {

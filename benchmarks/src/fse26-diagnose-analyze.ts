@@ -20,6 +20,7 @@
  */
 
 import {
+  computeTemporalEarliness,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
@@ -112,6 +113,18 @@ export interface DiagnosedService {
   /** Measured inbound edges, or `undefined` when the dump predates the field. */
   readonly latEdges: number | undefined;
   /**
+   * Onset delay in ms after fault injection — the service's dominant metric's
+   * first departure from its pre-injection baseline — or `undefined` when the
+   * field is absent from the block or printed `-`.
+   *
+   * This is the dump's only TIME. Every other per-service field is a magnitude,
+   * and magnitude is the axis the register has measured to exhaustion: the
+   * source's median inbound rise in the latency-involved misses is 0.97, i.e.
+   * no rise at all. Which service moved FIRST is a different quantity, and it is
+   * the engine's own theory (collision at `t₀`, propagation `τ`).
+   */
+  readonly onsetDelayMs: number | undefined;
+  /**
    * The metric that drove this service's anomaly score, or `''` when the engine
    * named none (the block prints `-` for that).
    */
@@ -152,10 +165,17 @@ export interface DiagnosedCase {
    * unconnected — a fabricated answer rather than a missing one.
    */
   readonly edges: readonly string[] | undefined;
+  /**
+   * The case's fault-injection time (Unix ms), or `undefined` when the block does
+   * not carry it. The anchor every {@link DiagnosedService.onsetDelayMs} is
+   * measured from, and the gate the engine's temporal prior tests before it will
+   * act at all.
+   */
+  readonly injectTimeMs: number | undefined;
 }
 
 const HEADER_RE =
-  /^DIAG datapack=(\S+) faultType=(\S+) GT=\[([^\]]*)\] services=(\d+)(?: logMode=(\S+))?$/;
+  /^DIAG datapack=(\S+) faultType=(\S+) GT=\[([^\]]*)\] services=(\d+)(?: logMode=(\S+))?(?: inject=(\d+))?$/;
 /**
  * One service row.
  *
@@ -169,7 +189,7 @@ const HEADER_RE =
  * nothing checked until the guard on the `prediction=` line below.
  */
 const SERVICE_RE =
-  /^ {2}(\S*)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))?(?: latRise=(\S+) latEdges=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)$/;
+  /^ {2}(\S*)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))?(?: latRise=(\S+) latEdges=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)(?: onset=(\S+))?$/;
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
 const EDGES_RE = /^ {2}edges=(.*)$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
@@ -251,6 +271,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         faultType: string;
         groundTruth: string[];
         logSignalMode: string;
+        injectTimeMs: number | undefined;
         services: MutableService[];
         /** The candidate count the header DECLARED, for the completeness check. */
         declaredServices: number;
@@ -292,6 +313,10 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         faultType: header[2]!,
         groundTruth: parseList(header[3]),
         logSignalMode: header[5] ?? '',
+        // `undefined`, never 0, when the block omits it: 0 is the engine's own
+        // spelling for "no anchor", and a screen that cannot tell the two apart
+        // would report a temporal window for a case the engine left inert.
+        injectTimeMs: header[6] === undefined ? undefined : Number(header[6]),
         services: [],
         declaredServices: Number(header[4]),
         edges: undefined,
@@ -338,6 +363,14 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         fatalCount: Number(service[11]),
         logicExceptionCount: Number(service[12]),
         httpExceptionCount: Number(service[13]),
+        // The only TIME in the block: ms after injection, or `undefined` both
+        // when the field is absent (a dump that predates it) and when it prints
+        // `-` (measured and undetermined). Those are different provenances but
+        // the same value to the temporal term, which omits both from its
+        // earliness map; a section that needs the difference counts how many
+        // services in the dump carry a NUMBER and reports that instead.
+        onsetDelayMs:
+          service[14] === undefined || service[14] === '-' ? undefined : Number(service[14]),
         metricOutcomes: undefined,
       };
       current.services.push(entries);
@@ -431,6 +464,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
           faultType: current.faultType,
           groundTruth: current.groundTruth,
           logSignalMode: current.logSignalMode,
+          injectTimeMs: current.injectTimeMs,
           edges: current.edges,
           services: current.services,
           prediction: parseList(prediction[1]),
@@ -1817,6 +1851,297 @@ function buildFamilyCases(
 }
 
 /**
+ * One weight window, solved and reduced to what a decision needs.
+ *
+ * Shared by the family screen and the onset screen so that "how a window becomes a
+ * recommendation" has ONE implementation: the midpoint rule, the maximal-gain range
+ * and the measured `lostAtShip` are what the pool penalty shipped under, and a
+ * second copy of them would let two axes be chosen by two different rules.
+ */
+interface SolvedWindow {
+  readonly window: ZeroRegressionWindow;
+  readonly steps: readonly FamilyScreenStep[];
+  readonly gain: number;
+  readonly gainFloor: number;
+  readonly bestEnd: number;
+  readonly ship: number;
+  /** Losses at {@link ship} — measured, not inferred from the cap. */
+  readonly lostAtShip: number;
+  /** The datapacks gained at {@link ship}, sorted. */
+  readonly gained: readonly string[];
+}
+
+/** Solve one candidate set's window and reduce it to a recommendation. */
+function solveWindow(built: readonly WeightSeparationCase[]): SolvedWindow {
+  const window = computeZeroRegressionWindow(built);
+  const steps = gainProfile(window.gains, window.cap);
+  const gain = steps.reduce((best, step) => (step.gained > best ? step.gained : best), 0);
+  // The maximal-gain weight range: from the FIRST weight that attains the peak to the
+  // LAST one. A range of width zero is a knife edge, and the profile says what a
+  // smaller weight would still buy.
+  const bestStart = steps.find((step) => step.gained === gain)?.weight ?? 0;
+  const bestEnd = [...steps].reverse().find((step) => step.gained === gain)?.weight ?? bestStart;
+  // The weight to ship is the midpoint of the maximal-gain range, or its single value
+  // when the range has no interior — the same rule the pool penalty shipped its own
+  // midpoint under. `0` when there is no gain at all: a positive weight that buys
+  // nothing is a configuration change with no measured effect.
+  const ship = gain === 0 ? 0 : (bestStart + bestEnd) / 2;
+  const gained =
+    gain === 0
+      ? []
+      : window.gains
+          .filter((one) => intervalsCover(one.intervals, bestStart))
+          .map((one) => one.datapack)
+          .sort();
+  return {
+    window,
+    steps,
+    gain,
+    gainFloor: bestStart,
+    bestEnd,
+    ship,
+    lostAtShip: zeroRegressionSamples(built, [ship])[0]!.lost,
+    gained,
+  };
+}
+
+/**
+ * Whether a case carries enough onset evidence for the temporal term to act at all.
+ *
+ * The engine's own rule, and the cheapest possible screen: `computeTemporalEarliness`
+ * returns an empty map unless the injection time is known AND at least two services
+ * have a defined delay — one onset cannot establish a before/after order. Counting
+ * that population first is the difference between "the term has no window" and "the
+ * term was never switched on", which a bare gain of 0 would conflate.
+ */
+export interface OnsetAvailability {
+  /** Cases the dump describes and that name at least one acceptable root. */
+  readonly cases: number;
+  /** Cases whose block carries an injection time the engine could anchor to. */
+  readonly withAnchor: number;
+  /** Cases with at least one service carrying a numeric onset delay. */
+  readonly withOnsets: number;
+  /** Cases where the earliness map is non-empty — the term can change the order. */
+  readonly withEarliness: number;
+  /** Services carrying a numeric onset delay, over every case. */
+  readonly servicesWithOnset: number;
+  /** Services in total, over every case. */
+  readonly servicesTotal: number;
+}
+
+/**
+ * Count how much onset evidence a dump carries.
+ *
+ * @param cases - Parsed cases.
+ * @returns The counts.
+ */
+export function onsetAvailability(cases: readonly DiagnosedCase[]): OnsetAvailability {
+  let cases0 = 0;
+  let withAnchor = 0;
+  let withOnsets = 0;
+  let withEarliness = 0;
+  let servicesWithOnset = 0;
+  let servicesTotal = 0;
+  for (const kase of cases) {
+    if (!kase.groundTruth.some((name) => name !== '')) continue;
+    cases0++;
+    servicesTotal += kase.services.length;
+    if ((kase.injectTimeMs ?? 0) > 0) withAnchor++;
+    let defined = 0;
+    for (const service of kase.services) {
+      if (service.onsetDelayMs === undefined) continue;
+      defined++;
+      servicesWithOnset++;
+    }
+    if (defined > 0) withOnsets++;
+    // Two is the engine's threshold, and it is the engine's: the call below is the
+    // SAME function the ranking uses, not a re-derivation of its condition. The test
+    // is on the EARLINESS map, which the engine leaves EMPTY when the term is inert —
+    // testing the slope map instead would be true for every case, because that one is
+    // deliberately total over the services.
+    if (onsetEarliness(kase).size > 0) withEarliness++;
+  }
+  return {
+    cases: cases0,
+    withAnchor,
+    withOnsets,
+    withEarliness,
+    servicesWithOnset,
+    servicesTotal,
+  };
+}
+
+/**
+ * The engine's earliness map for one parsed case, rebuilt from the dump.
+ *
+ * Deliberately EMPTY, never neutral-filled, when the term cannot act — that is the
+ * engine's own spelling and it is the one thing a screen must not paper over: a map
+ * filled with 0.5 for every service would make "no usable onsets" and "every service
+ * equally early" the same object, and the first is a data gap while the second is a
+ * result. Callers that want a value per service use {@link onsetSlopes}.
+ *
+ * @param kase - One parsed case.
+ * @returns Earliness in [0, 1] per service; empty when the term is inert.
+ */
+export function onsetEarliness(kase: DiagnosedCase): Map<string, number> {
+  const delays = new Map<string, number>();
+  for (const service of kase.services) {
+    if (service.onsetDelayMs !== undefined) delays.set(service.serviceId, service.onsetDelayMs);
+  }
+  return computeTemporalEarliness(delays, kase.injectTimeMs ?? 0);
+}
+
+/**
+ * The temporal prior's per-service SLOPE for one case: `2 × (earliness − 0.5)`.
+ *
+ * The slope rather than the score, because that is the unit the window solver works
+ * in — every candidate's score is affine in the weight, `base + w × slope`, which is
+ * what makes a window solvable instead of sweepable.
+ *
+ * TOTAL over the case's services, with 0 for one the engine left out: an omitted
+ * entry would be a missing slope at the solver, and `Math.max` over an absent value
+ * is how a term silently credits somebody. The inertness question is the earliness
+ * map's, not this one — see {@link onsetEarliness}.
+ *
+ * @param kase - One parsed case.
+ * @returns The slope per service; total over the case's services.
+ */
+export function onsetSlopes(kase: DiagnosedCase): Map<string, number> {
+  const earliness = onsetEarliness(kase);
+  const slopes = new Map<string, number>();
+  for (const service of kase.services) {
+    // 0.5 is the engine's neutral, and it is the engine's: a service absent from the
+    // earliness map must contribute nothing, not "earliest" and not "latest".
+    slopes.set(service.serviceId, 2 * ((earliness.get(service.serviceId) ?? 0.5) - 0.5));
+  }
+  return slopes;
+}
+
+/** The solved onset screen. */
+export interface OnsetScreen {
+  /** How much of the dump carries onset evidence at all. */
+  readonly availability: OnsetAvailability;
+  /** The solved window over the whole dump. */
+  readonly solved: SolvedWindow;
+  /** The per-fault-type split of the gain — the kill criterion's second half. */
+  readonly gainTypes: readonly { readonly key: string; readonly cases: number }[];
+}
+
+/**
+ * Screen the injection-anchored temporal prior for a zero-regression window.
+ *
+ * The axis the register's closing paragraph points at: the only per-service quantity
+ * in a dump that is a TIME rather than a magnitude, and the engine's own theory
+ * (collision at `t₀`, propagation `τ`). It is measured here OFFLINE, on a dump, with
+ * the same solver and the same shipping rule as the family screen — a window is a
+ * window, and the question "does any weight help without losing a case" does not
+ * change because the slope came from a clock.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The configuration to screen against.
+ * @returns The availability counts and the solved window.
+ */
+export function onsetScreen(
+  cases: readonly DiagnosedCase[],
+  weights: FamilyScreenWeights,
+): OnsetScreen {
+  const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
+  const latFloor = weights.latFloor ?? SHIPPED_LAT_FLOOR;
+  const poolWeight = weights.poolWeight ?? SHIPPED_POOL_WEIGHT;
+  const built: WeightSeparationCase[] = [];
+  for (const kase of cases) {
+    const targets = kase.groundTruth.filter((name) => name !== '');
+    if (targets.length === 0) continue;
+    const base = shippedScores(kase, {
+      logWeight: weights.logWeight,
+      latWeight,
+      latFloor,
+      poolWeight,
+    });
+    const slopes = onsetSlopes(kase);
+    const scores = new Map<string, { base: number; slope: number }>();
+    for (const service of kase.services) {
+      scores.set(service.serviceId, {
+        base: base.get(service.serviceId)!,
+        slope: slopes.get(service.serviceId)!,
+      });
+    }
+    built.push({ datapack: kase.datapack, targets, scores });
+  }
+  const solved = solveWindow(built);
+  const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
+  const gainTypes = new Map<string, number>();
+  for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
+  return { availability: onsetAvailability(cases), solved, gainTypes: tallyCounter(gainTypes) };
+}
+
+/** Render the onset screen. */
+export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScreenWeights): string {
+  const a = screen.availability;
+  const s = screen.solved;
+  const lines: string[] = [];
+  const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+  const share =
+    a.servicesTotal === 0
+      ? 'n/a'
+      : `${((100 * a.servicesWithOnset) / a.servicesTotal).toFixed(1)}%`;
+  lines.push(
+    `Temporal (onset) screen (${configurationLine(weights)}; ` +
+      'slope = 2 x (earliness - 0.5), earliness from the ENGINE’s own function):',
+  );
+  // Availability first, because a zero gain means something completely different
+  // depending on it: no evidence is a data gap, evidence with no window is a result.
+  lines.push(
+    `  evidence: ${a.cases} cases; with an injection anchor ${a.withAnchor}; ` +
+      `with an onset ${a.withOnsets}; with an ORDER the term can act on ${a.withEarliness}`,
+  );
+  lines.push(`  services carrying an onset: ${a.servicesWithOnset}/${a.servicesTotal} (${share})`);
+  if (a.withEarliness === 0) {
+    // Not "no window": the term cannot act at all, so a gain of zero here would be
+    // read as a negative result when it is a data gap. Saying which is the whole
+    // point of printing availability before the window.
+    lines.push('  the term is INERT on this dump: the engine leaves every service neutral, so no');
+    lines.push('  weight can change a ranking — a window here would be an artefact.');
+    return lines.join('\n');
+  }
+  const width = Number.isFinite(s.window.cap)
+    ? s.window.cap - s.gainFloor
+    : Number.POSITIVE_INFINITY;
+  lines.push(
+    `  window: gain ${s.gain} in [${at(s.gainFloor)}, ${at(s.bestEnd)}] ` +
+      `(cap ${at(s.window.cap)}; width ${Number.isFinite(width) ? width.toFixed(6) : 'unbounded'})`,
+  );
+  lines.push(
+    `  ship ${s.ship.toFixed(6)}; lost at ship ${s.lostAtShip}` +
+      (s.lostAtShip > 0 ? ' — the criterion’s second half FAILS' : ''),
+  );
+  const profile = s.steps.filter((step, index) =>
+    index === 0 ? step.gained > 0 : step.gained !== s.steps[index - 1]!.gained,
+  );
+  if (profile.length > 0) {
+    lines.push(
+      `  profile ${profile.map((step) => `${step.weight.toFixed(6)}→${step.gained}`).join(', ')}`,
+    );
+  }
+  if (s.gain > 0) {
+    lines.push(`  gains ${s.gained.join(', ')}`);
+    lines.push(
+      `  by fault type: ${screen.gainTypes.map((t) => `${t.key} +${t.cases}`).join(', ')}`,
+    );
+  } else {
+    lines.push('  no admissible gain: every weight that fixes a case also loses one');
+  }
+  if (s.window.capBinder !== undefined) {
+    lines.push(
+      `  cap bound by ${s.window.capBinder.datapack}: ${s.window.capBinder.target} overtaken by ` +
+        `${s.window.capBinder.rival} (lead ${s.window.capBinder.lead.toFixed(6)}, ` +
+        `slope gap ${s.window.capBinder.slopeGap.toFixed(6)})`,
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
  * Screen every observed dominant-metric family for a zero-regression window.
  *
  * This is the systematic form of the hand-registered family sets the pool penalty was
@@ -1861,46 +2186,30 @@ export function familyScreen(
   const rows: FamilyScreenRow[] = [];
   for (const family of requested) {
     const built = buildFamilyCases(cases, weights, family);
-    const window = computeZeroRegressionWindow(built);
-    const steps = gainProfile(window.gains, window.cap);
-    const gain = steps.reduce((best, step) => (step.gained > best ? step.gained : best), 0);
-    // The maximal-gain weight range: from the FIRST weight that attains the peak to the LAST
-    // one. A range of width zero is a knife edge, and the profile says what a smaller weight
-    // would still buy.
-    const bestStart = steps.find((step) => step.gained === gain)?.weight ?? 0;
-    const bestEnd = [...steps].reverse().find((step) => step.gained === gain)?.weight ?? bestStart;
-    const winners =
-      gain === 0
-        ? []
-        : window.gains
-            .filter((one) => intervalsCover(one.intervals, bestStart))
-            .map((one) => one.datapack);
+    // The window, the profile, the maximal-gain range and the shipped midpoint all
+    // come from ONE solver, shared with the onset screen: two axes chosen by two
+    // rules is how a repo ends up unable to compare them.
+    const solved = solveWindow(built);
     const gainTypes = new Map<string, number>();
-    for (const datapack of winners) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
-    const gained = [...winners].sort();
+    for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
     const labels = [...(labelsByFamily.get(family) ?? new Set<string>())].sort();
-    // The weight to ship is the midpoint of the maximal-gain range, or its single value
-    // when the range has no interior — the same rule the pool penalty shipped its own
-    // midpoint under. `0` when there is no gain at all: a positive weight that buys nothing
-    // is a configuration change with no measured effect.
-    const ship = gain === 0 ? 0 : (bestStart + bestEnd) / 2;
     rows.push({
       family,
       labels,
       services: servicesByFamily.get(family) ?? 0,
       cases: casesByFamily.get(family) ?? 0,
-      gain,
+      gain: solved.gain,
       gainTypes: tallyCounter(gainTypes),
-      gained,
-      unreachable: window.unreachable,
-      satisfied: window.satisfied,
-      cap: window.cap,
-      gainFloor: bestStart,
-      bestEnd,
-      steps,
-      ship,
-      capBinder: window.capBinder,
-      lostAtShip: zeroRegressionSamples(built, [ship])[0]!.lost,
+      gained: solved.gained,
+      unreachable: solved.window.unreachable,
+      satisfied: solved.window.satisfied,
+      cap: solved.window.cap,
+      gainFloor: solved.gainFloor,
+      bestEnd: solved.bestEnd,
+      steps: solved.steps,
+      ship: solved.ship,
+      capBinder: solved.window.capBinder,
+      lostAtShip: solved.lostAtShip,
       // The prefix is the engine's, imported: a second copy of it could drift to a family
       // the engine does not penalise while every row here stayed green.
       enginePoolFamily: labels.some((label) => label.startsWith(POOL_METRIC_PREFIX)),
@@ -2670,7 +2979,13 @@ export interface AnalyzeComparisonOptions {
 
 /** The sections that reconstruct a score from the dump. */
 export type AnalyzeSectionKind =
-  'misses' | 'weightSweep' | 'window' | 'termOracle' | 'familyScreen' | 'discriminator';
+  | 'misses'
+  | 'weightSweep'
+  | 'window'
+  | 'termOracle'
+  | 'familyScreen'
+  | 'onsetScreen'
+  | 'discriminator';
 
 /**
  * One requested section, CARRYING the weight it is computed at.
@@ -2730,6 +3045,7 @@ export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
   'weightSweep',
   'termOracle',
   'familyScreen',
+  'onsetScreen',
   'discriminator',
   'misses',
 ];
@@ -2757,7 +3073,7 @@ const ANALYZE_USAGE =
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
   '[--pool-penalty <w>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
-  '[--discriminator] ' +
+  '[--onset-screen] [--discriminator] ' +
   '[--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
@@ -2790,6 +3106,7 @@ const SWITCH_FLAGS = new Set([
   'window',
   'term-oracle',
   'family-screen',
+  'onset-screen',
   'discriminator',
 ]);
 
@@ -3042,6 +3359,18 @@ function analyzeSectionText(
         poolWeight: section.poolWeight,
       };
       return formatFamilyScreenReport(familyScreen(cases, weights), weights);
+    }
+    case 'onsetScreen': {
+      // Same configuration object as the family screen, because it is the same
+      // question over a different slope: is there a weight that gains a case without
+      // losing one? The onset screen asks it of the only TIME in the dump.
+      const weights: FamilyScreenWeights = {
+        logWeight: section.logWeight,
+        latWeight: section.latWeight,
+        latFloor: section.latFloor,
+        poolWeight: section.poolWeight,
+      };
+      return formatOnsetScreenReport(onsetScreen(cases, weights), weights);
     }
     case 'discriminator': {
       // The screen fits and cross-validates its own rules, so it needs the whole

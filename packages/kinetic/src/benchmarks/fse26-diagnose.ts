@@ -61,6 +61,21 @@ export interface FSE26DiagnosticService {
   readonly latRise: number | undefined;
   /** How many inbound edges carried a latency measurement on both sides. */
   readonly latEdges: number;
+  /**
+   * How long after fault injection this service's DOMINANT metric first left its
+   * pre-injection baseline, in milliseconds — the input of the temporal causal
+   * prior (`temporalWeight`), and the only per-service quantity in the dump that
+   * is a TIME rather than a magnitude.
+   *
+   * Passed through RAW, including the engine's own `-1` for "undetermined":
+   * interpreting it is the formatter's job, so a negative value here is data and
+   * not a bug to be patched at the call site. Optional so a producer that does
+   * not have the graph's map renders the block it rendered before, and so an
+   * ABSENT field keeps meaning "this dump predates the field" — which is not the
+   * same claim as "measured and undetermined", the way an absent `edges` line is
+   * not the same as an empty one.
+   */
+  readonly onsetDelayMs?: number | undefined;
   /** Count of post-injection ERROR log lines. */
   readonly errorCount: number;
   /** Count of post-injection FATAL log lines. */
@@ -136,6 +151,17 @@ export interface FSE26DiagnosticInput {
    * per-service fields follow.
    */
   readonly edges?: readonly string[];
+  /**
+   * The case's fault-injection time, Unix ms — the anchor every per-service
+   * `onset` is measured from.
+   *
+   * Optional and rendered last, so an older block is unchanged. It is carried
+   * because a delay is meaningless without its origin, and because the temporal
+   * term is INERT when the injection time is unknown: a reader of a dump that
+   * omits it must be able to tell "the engine had no anchor" from "the engine
+   * measured and found nothing".
+   */
+  readonly injectTimeMs?: number | undefined;
 }
 
 /**
@@ -146,6 +172,24 @@ export interface FSE26DiagnosticInput {
 function fmt(x: number): string {
   if (!Number.isFinite(x)) return 'nonfinite';
   return x.toFixed(3);
+}
+
+/**
+ * Render an onset delay in whole milliseconds, or `-` when the engine could not
+ * determine one.
+ *
+ * `-` covers the engine's `-1` sentinel AND any non-finite value, because all of
+ * them mean the same thing to every reader: this service carries no onset
+ * evidence, so the temporal term's earliness map omits it and it stays neutral.
+ * A NEGATIVE delay is therefore never printed as a number — a reader subtracting
+ * two of them would otherwise read a service that deviated before the injection
+ * as the most "causal" service in the case.
+ *
+ * @param delayMs - The engine's raw delay; negative or non-finite = undetermined.
+ * @returns The rendered field value.
+ */
+function fmtOnset(delayMs: number): string {
+  return Number.isFinite(delayMs) && delayMs >= 0 ? String(Math.round(delayMs)) : '-';
 }
 
 /** Truncate a message to `max` characters without splitting a UTF-16 pair. */
@@ -275,7 +319,8 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
   lines.push(
     `DIAG datapack=${input.datapack} faultType=${input.faultType} GT=[${input.groundTruthServices.join(
       ', ',
-    )}] services=${input.services.length} logMode=${input.logSignalMode}`,
+    )}] services=${input.services.length} logMode=${input.logSignalMode}` +
+      (input.injectTimeMs === undefined ? '' : ` inject=${input.injectTimeMs}`),
   );
   // The graph goes on ONE line rather than into the per-service blocks, because it
   // is a property of the case and every reader wants all of it at once. Rendered
@@ -299,7 +344,11 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
         `latEdges=${service.latEdges} ` +
         `dominant=${service.dominantMetric ?? '-'} ` +
         `err=${service.errorCount} fatal=${service.fatalCount} logic=${service.logicExceptionCount} ` +
-        `http=${service.httpExceptionCount}`,
+        `http=${service.httpExceptionCount}` +
+        // Appended last, and only when the producer supplied it, so a block from a
+        // producer that predates the field is byte-identical to what it rendered
+        // before — the same additive rule the `edges` line follows.
+        (service.onsetDelayMs === undefined ? '' : ` onset=${fmtOnset(service.onsetDelayMs)}`),
     );
     lines.push(`    metrics(${service.metricNames.length}): ${metricList}`);
     for (const sample of service.sampleErrorMessages) {

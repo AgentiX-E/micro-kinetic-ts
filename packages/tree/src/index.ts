@@ -72,6 +72,7 @@ export {
   DEFAULT_LAT_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   TreePruner,
+  computeTemporalEarliness,
   toRankingWeights,
 } from './pruning/pruner.js';
 export type { TreePrunerOptions } from './pruning/pruner.js';

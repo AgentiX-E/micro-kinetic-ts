@@ -182,6 +182,11 @@ function buildDiagnostic(
       failedEdgeRecords: failedEdgeRecordsByCallee.get(serviceId) ?? 0,
       latRise: latencyByCallee.get(serviceId)?.rise,
       latEdges: latencyByCallee.get(serviceId)?.count ?? 0,
+      // Read from the graph like every other term above, so the dump reports the
+      // engine's own delay rather than a re-derivation. Passed through RAW: the
+      // engine's `-1` ("undetermined") is data, and the formatter decides how it
+      // renders, so no call site can quietly turn it into a 0 or an omission.
+      onsetDelayMs: faultGraph.postInjectOnsetDelays?.get(serviceId),
       errorCount,
       fatalCount,
       logicExceptionCount,
@@ -204,6 +209,11 @@ function buildDiagnostic(
     // can. Emitted here rather than per service because every reader wants the
     // whole case's graph at once.
     edges: benchCase.callGraph.edges.map((edge) => `${edge.from}>${edge.to}`),
+    // The anchor every `onset` above is measured from. Emitted as read from the
+    // case, including a 0 — the engine's own "no anchor" — because a screen that
+    // cannot distinguish "the engine had no injection time" from "the dump omits
+    // the field" would report a temporal window for a case the engine left inert.
+    injectTimeMs: injectTime > 0 ? injectTime : 0,
   });
 }
 

@@ -63,6 +63,52 @@ describe('formatFSE26Diagnostic', () => {
     expect(unmeasured).toContain('latRise=- latEdges=0');
   });
 
+  it('renders the onset delay, and a dash for every flavour of undetermined', () => {
+    // The engine writes `-1` for "undetermined" and the formatter is the only
+    // interpreter of it: a negative delay printed as a number would let a reader
+    // subtract two of them and conclude a service deviated BEFORE the injection,
+    // which would make it look like the most causal service in the case.
+    const measured = formatFSE26Diagnostic(
+      input({ services: [service({ onsetDelayMs: 120000 })] }),
+    );
+    expect(measured).toContain('http=0 onset=120000');
+    // Rounded: a delay is a difference of Unix-ms timestamps, and a fractional
+    // millisecond is a rendering artefact, not a measurement.
+    expect(
+      formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: 120000.6 })] })),
+    ).toContain('onset=120001');
+    for (const undetermined of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: undetermined })] })),
+      ).toContain('http=0 onset=-');
+    }
+    // Zero is a MEASUREMENT, not an absence: the service moved at the injection.
+    expect(formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: 0 })] }))).toContain(
+      'onset=0',
+    );
+  });
+
+  it('renders the injection anchor only when the producer supplied it', () => {
+    // The anchor is what makes an onset delay interpretable, and the engine's temporal
+    // term is INERT without it — so the header has to distinguish "the engine had no
+    // injection time" (a `0`) from "this block predates the field" (nothing).
+    const withAnchor = formatFSE26Diagnostic(input({ injectTimeMs: 1_700_000_000_000 }));
+    expect(withAnchor).toContain('logMode=logicHttp inject=1700000000000');
+    expect(formatFSE26Diagnostic(input({ injectTimeMs: 0 }))).toContain('inject=0');
+    expect(formatFSE26Diagnostic(input({}))).not.toContain('inject');
+  });
+
+  it('omits the onset field entirely when the producer has no value for it', () => {
+    // Purely additive, so a block from a producer that predates the field is
+    // byte-identical to what it rendered before — and "absent" keeps its own
+    // meaning, the way an absent `edges` line does.
+    const withoutField = formatFSE26Diagnostic(input({ services: [service({})] }));
+    expect(withoutField).not.toContain('onset');
+    expect(withoutField).toBe(
+      formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: undefined })] })),
+    );
+  });
+
   it('renders the call graph on ONE line, sorted, when the producer supplied it', () => {
     // Structure is what a per-service scalar block cannot express, so the graph is
     // rendered as its own line rather than folded into each service.
