@@ -362,7 +362,15 @@ interface MutableService extends Omit<DiagnosedService, 'metricOutcomes' | 'deci
  * @returns The text with the transport prefix and the BOM removed.
  */
 export function stripLogPrefix(text: string): string {
-  return text.replace(/^\uFEFF/, '').replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?/gm, '');
+  // TWO passes, and the ORDER is load-bearing: the BOM sits BEFORE the timestamp, so a line that
+  // carries one matches the timestamp pattern only after the BOM is gone. The BOM is also not a
+  // file-head artefact — the transport writes one before the first line of every output CHUNK, so
+  // `^\uFEFF` has to be multiline. Miss that and the line keeps a BOM the dump's grammar cannot
+  // match: on run 35107871516, 13 of 1422 blocks had a BOM on a service row, each lost that row and
+  // was dropped whole for a count mismatch — 0.9% of the population, 10 of them cases the run got
+  // right, which is how the loss was noticed (the screen read 746 correct where the run published
+  // 756). Each pattern has one job rather than one pattern doing both.
+  return text.replace(/^\uFEFF/gm, '').replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?/gm, '');
 }
 
 /**

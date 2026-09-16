@@ -5287,6 +5287,25 @@ describe('parseDiagnosticDump — the CI log transport prefix', () => {
     expect(downloaded[0]!.prediction).toEqual(['ts-order-service', 'ts-payment-service']);
   });
 
+  it('strips a BOM that the transport puts before the first line of a CHUNK', () => {
+    // The BOM is not only at the head of the file: GitHub writes one before the first line of every
+    // output chunk, so a BOM can sit MID-LOG — and because it sits BEFORE the timestamp, a strip that
+    // removes BOMs only at the head leaves that line with neither its BOM nor its timestamp gone, so
+    // it matches no pattern at all. Measured on run 35107871516: 13 of 1422 blocks carry one on a
+    // service row, each losing a row and being DROPPED for a count mismatch — 0.9% of the population,
+    // 10 of them cases the run got right.
+    const text = SOURCE();
+    const lines = text.split('\n');
+    const row = lines.findIndex((line) => line.startsWith('  ts-payment-service'));
+    expect(row).toBeGreaterThan(-1);
+    lines[row] = `\uFEFF${TAG}${lines[row]}`;
+
+    const cases = parseDiagnosticDump(lines.join('\n'));
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.services).toHaveLength(2);
+    expect(cases[0]!.services.map((s) => s.serviceId)).toContain('ts-payment-service');
+  });
+
   it('leaves a dump that was already clean untouched', () => {
     // Both forms are on this repo's disk — the saved fixtures are the stripped form and a raw job
     // log is the tagged one — so the strip has to be idempotent rather than a one-way filter.

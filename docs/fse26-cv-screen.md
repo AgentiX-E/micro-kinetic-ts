@@ -122,47 +122,66 @@ parser is actually reading. It is idempotent, and the census output on a strippe
 **byte-identical** before and after, so both forms are accepted by construction rather than by
 review.
 
-## 4. What was measured, and what is still owed
+## 4. The full-population verdict
 
-The instrument's first act is to check itself: the base IS `shippedScores`, so `correct at 0` is also
-the number of cases the dump's own ranking got right. On a frozen 409-case snapshot of run
-`35107871516` (48 MiB of a 151 MiB log — a growing file cannot be measured twice):
+Solved on **all 1422 cases** of run `35107871516` (shipped configuration; 159 MiB log):
 
-| quantity | value |
-| --- | --- |
-| cases the screen solves | 409 |
-| cases the dump's own `prediction` gets right | **251** |
-| the screen's `correct at 0` | **251** |
-| cases no weight can fix | 141 |
+```
+cases 1422; correct at 0 756; unreachable at every weight 569
+  flip   3  [0.021536, 0.024882]  width 0.003345  ship 0.023209  lostAtShip 0
+  rank   6  [0.029860, 0.030480]  width 0.000620  ship 0.030170  lostAtShip 0
+```
 
-**251 = 251 exactly.** The reconstruction reproduces the run's own rank-1 correctness case for case,
-which is what makes a gain against it meaningful rather than a gain against a second implementation.
+**The instrument's self-check is exact.** `correct at 0` is 756, and 756/1422 = **53.16%** is the
+run's own published Top@1 — the reconstruction reproduces the engine's ranking case for case, so a
+gain measured against it is a gain against the engine rather than against a second implementation.
 
-Solved on the same snapshot — **provisional: a window is a function of the population, and more cases
-can only add constraints**:
+| shape | gain | window | width | ship | lost at ship | Top@1 | cap binder |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `flip` | 3 | `[0.021536, 0.024882]` | 0.003345 | 0.023209 | **0** | 756 → 759 (+0.21pp) | `ts5-ts-security-service-request-replace-method-7xn7ks` |
+| `rank` | **6** | `[0.029860, 0.030480]` | 0.000620 | 0.030170 | **0** | 756 → **762 (+0.42pp)** | same case |
 
-| shape | gain | window | width | ship | lost at ship | cap binder |
-| --- | --- | --- | --- | --- | --- | --- |
-| `flip` | 5 | `[0.047350, 0.050507]` | 0.003157 | 0.048928 | 0 | `ts1-ts-food-service-exception-ch2v8l` |
-| `rank` | 2 | `[0.029860, 0.031282]` | 0.001422 | 0.030571 | 0 | `ts1-ts-food-service-exception-ch2v8l` |
+Gains by fault type (`rank`): `JVMMemoryStress +2`, `HTTPResponseDelay +1`,
+`HTTPResponseReplaceBody +1`, `HTTPResponseReplaceCode +1`, `JVMException +1`. `flip` collects three
+of them.
 
-Enough to say the term is **not inert and not immediately worthless**, and nothing more: five cases of
-409 is a rate, not a verdict, and the full-population window is what the kill criterion asks about.
-The two shapes do NOT agree, which is itself the point of the menu — the magnitude buys two and a half
-times what the order does on this stratum. Note also that the window did not move between 267 and 409
-cases, which is reassuring and is not evidence: the added cases can only bind the cap further, and a
-cap that has not moved is a cap that has not been tested.
+### Verified twice, by two paths
 
-**The measurement is owed on:**
-1. the full 1422 cases of `35107871516` — the same run, the whole log;
-2. the golden 9-cell, which cannot be measured offline at all: the cv term does not exist in the
-   engine yet, so the RCAEval half of the kill criterion needs a candidate run. What that run can be
-   is constrained by construction — a new fusion weight defaults to 0, so an opt-in weight leaves the
-   golden configuration bit-for-bit unchanged and the candidate is measured by passing the flag, not
-   by moving the default.
+1. **Per-case closed forms.** Re-deriving each gained case's requirement weight from its own
+   affine scores gives `0.006672, 0.016982, 0.027498, 0.027916, 0.029710, 0.029860` — the solver's
+   gain profile **value for value**. (The first attempt at this audit re-wrote the slope as
+   `(max − cv) / max` instead of calling `cvSlopes`, which reported the `flip` floors for a `rank`
+   solve and "3 promoted" against a gain of 6. One owner, including in a throwaway script.)
+2. **Direct re-ranking**, at five weights, with no interval arithmetic involved:
 
-Both are recorded here rather than inferred: an instrument read on 29% of its population has not
-answered the question it was built for.
+| `w` | `rank` correct | lost | `flip` correct | lost |
+| --- | --- | --- | --- | --- |
+| 0 | 756 | 0 | 756 | 0 |
+| `gainFloor` | 761 | 0 | 758 | 0 |
+| `cap` | **762** | 0 | **759** | 0 |
+| `cap + ε` | 761 | **1** (`…7xn7ks`) | 758 | **1** (`…7xn7ks`) |
+| `ship` | **762** | 0 | **759** | 0 |
+
+So the two-sided claim holds: nothing is lost up to the cap, the binder case is lost immediately
+past it, and the cap is TIGHT. Note the floor is a **knife edge** — at exactly `gainFloor` the
+direct count is one short on both shapes — which is precisely why the shipping rule takes the
+MIDPOINT of `[gainFloor, cap]` rather than the floor.
+
+### What this does and does not settle
+
+Settled: the term is not inert, the zero-regression window exists on the whole population, and the
+gain is the same magnitude the **shipped pool penalty** was accepted on (6 cases). Not settled — and
+this is the half that decides it:
+
+- **The golden 9-cell is unmeasured.** The term is not in the engine, so it cannot be. It also cannot
+  be argued away: the field exists on RCAEval too, so a weight of 0.030 would act there.
+- 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight — a case with no
+  decisive composition, or none the term can separate.
+- The `flip` shape reads the MAGNITUDE of a clamped bonus (§1), so `rank` is the faithful translation
+  of the separator's rank-based rate. Any statement about this term has to name its shape.
+- A paired preference is still not a term (`fse26-term-oracle-verdict.md` §9): this table licenses a
+  candidate RUN, not a weight.
+
 
 ## 5. Acceptance of the instrument itself
 
