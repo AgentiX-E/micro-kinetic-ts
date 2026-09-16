@@ -46,6 +46,16 @@ import {
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 const WORKFLOW_PATH = resolve(repoRoot, '.github/workflows/fse26-benchmark.yml');
 /**
+ * The other workflow that can spend a flag on the ENGINE.
+ *
+ * It had no `workflow_dispatch` inputs at all until the decisive-stability candidate needed one:
+ * the golden 9-cell is the criterion's second half, and the term is inert at its default weight,
+ * so measuring it THERE means passing a flag rather than moving the default. That makes this file
+ * the second place a description can turn into a second owner of a value the runner carries — the
+ * same defect class, a different artifact — so the same two checks run on it.
+ */
+const RCAEVAL_WORKFLOW_PATH = resolve(repoRoot, '.github/workflows/benchmark-rcaeval.yml');
+/**
  * Where the runner's configuration defaults live.
  *
  * This was `run-fse26.ts` until the CLI parsing moved to `fse26-cli.ts` so that
@@ -582,6 +592,51 @@ describe('FSE26 workflow descriptions agree with the code they describe', () => 
       return /runner default, which is (?!empty)[^)]*\d/.test(description);
     });
     expect(claiming.sort()).toEqual(Object.keys(DESCRIBES_SHIPPED).sort());
+  });
+});
+
+describe('RCAEval workflow descriptions agree with the code they describe', () => {
+  /**
+   * Inputs whose description states the RUNNER's shipped value, and the constant it has to match.
+   *
+   * `stability_weight` is the first input this workflow has ever had, and it is described the way
+   * the FSE'26 workflow's are — "empty = the runner default, which is 0" — because that is what a
+   * dispatcher reads. The value is read from the engine's own constant for the reason the whole
+   * file exists: a copy here would be a third opinion about what the runner falls back to.
+   */
+  const DESCRIBES_SHIPPED: Readonly<Record<string, number>> = {
+    stability_weight: DEFAULT_STABILITY_WEIGHT,
+  };
+
+  it('names the shipped value of every input whose description quotes one', () => {
+    const yml = readFileSync(RCAEVAL_WORKFLOW_PATH, 'utf8');
+    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED)) {
+      const description = readInputDescription(yml, input);
+      expect(description, `${input} has no description to check`).toBeDefined();
+      // Numeric TOKENS, not substrings: `toContain('0')` is satisfied by a description naming
+      // `0.03017`, which is exactly the drift this guards against.
+      const numbers = [...description!.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+      expect(numbers, `${input} must name the shipped ${shipped}: ${description}`).toContain(
+        shipped,
+      );
+    }
+  });
+
+  it('covers every input whose description claims a runner default', () => {
+    const yml = readFileSync(RCAEVAL_WORKFLOW_PATH, 'utf8');
+    const claiming = readInputNames(yml).filter((name) => {
+      const description = readInputDescription(yml, name) ?? '';
+      return /runner default, which is (?!empty)[^)]*\d/.test(description);
+    });
+    expect(claiming.sort()).toEqual(Object.keys(DESCRIBES_SHIPPED).sort());
+  });
+
+  it('leaves the runner-owned default EMPTY, so the runner is the sole owner', () => {
+    // The one input here selects a weight the runner also carries, so a non-empty default would
+    // make the workflow a second owner of it — and the failure mode is silent: the run succeeds
+    // and prints a confident cell, for a configuration nobody chose.
+    const yml = readFileSync(RCAEVAL_WORKFLOW_PATH, 'utf8');
+    expect(readInputDefault(yml, 'stability_weight')).toBe('');
   });
 });
 

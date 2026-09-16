@@ -13,7 +13,8 @@
  *
  * Usage:
  *   pnpm exec tsx benchmarks/src/run-rcaeval.ts [--data-dir <path>] [--suite re1|re2|re3] [--system ob|ss|tt] [--max-cases <n>]
- *   [--trace-weight <w>] [--log-weight <w>] [--temporal-weight <w>] [--onset-shape <shape>] [--rank-normalization|--no-rank-normalization]
+ *   [--trace-weight <w>] [--log-weight <w>] [--temporal-weight <w>] [--onset-shape <shape>]
+ *   [--stability-weight <w>] [--rank-normalization|--no-rank-normalization]
  *
  * Every field this runner does not pin is the ENGINE's default, which is what makes
  * its per-cell results the golden reference for a shipped configuration — see
@@ -62,6 +63,7 @@ import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_ONSET_SHAPE,
+  DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   isOnsetShape,
   TreePruner,
@@ -138,6 +140,19 @@ interface CliOptions {
    * read from {@link DEFAULT_ONSET_SHAPE} for the same reason the weight is.
    */
   onsetShape: OnsetShape;
+  /**
+   * Strength of the decisive-stability prior (reward the service whose decisive metric is the
+   * STEADIEST one in its case).
+   *
+   * Read from {@link DEFAULT_STABILITY_WEIGHT} for the reason `temporalWeight` is: this runner IS
+   * the golden 9-cell, so a private copy of the shipped value would let the gate stay blind to a
+   * signal the engine ships. The engine's contract makes the field OPTIONAL on `RankingWeights`,
+   * which is exactly why the golden was bit-identical while the term was enrolled at weight 0 —
+   * and why measuring the term on THIS benchmark needs the flag rather than a change to the
+   * engine's default. Its weight is the same 0.03017 the FSE'26 screen solved for, so a dispatch
+   * of this input is what turns "admitted on one benchmark" into "measured on both".
+   */
+  stabilityWeight: number;
   /** Strength of the collision-energy signal (penalise upstream-inherited energy). */
   collisionWeight: number;
   /** Strength of the topological-source signal (reward no-anomalous-parent nodes). */
@@ -217,6 +232,7 @@ function parseArgs(): CliOptions {
     noInjectTime: false,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
+    stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     collisionWeight: 0,
     topoWeight: 0,
     logWeight: 1.0,
@@ -251,7 +267,9 @@ function parseArgs(): CliOptions {
       // weight is 0, so a dispatch that only meant to set the shape is safe.
       const shape = args[++i]!;
       opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
-    } else if (args[i] === '--collision-weight' && i + 1 < args.length)
+    } else if (args[i] === '--stability-weight' && i + 1 < args.length)
+      opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
+    else if (args[i] === '--collision-weight' && i + 1 < args.length)
       opts.collisionWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--topo-weight' && i + 1 < args.length)
       opts.topoWeight = parseWeight(args[++i]!, 0);
@@ -296,6 +314,7 @@ function parseArgs(): CliOptions {
 function createContainer(weights: {
   temporalWeight: number;
   onsetShape: OnsetShape;
+  stabilityWeight: number;
   collisionWeight: number;
   topoWeight: number;
   logWeight: number;
@@ -1180,7 +1199,7 @@ async function main(): Promise<void> {
     `injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight} | onsetShape: ${opts.onsetShape}`,
   );
   console.log(
-    `signals: collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients} suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`,
+    `signals: stabilityWeight=${opts.stabilityWeight} collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients} suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`,
   );
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1243,6 +1262,7 @@ async function main(): Promise<void> {
   const container = createContainer({
     temporalWeight: opts.temporalWeight,
     onsetShape: opts.onsetShape,
+    stabilityWeight: opts.stabilityWeight,
     collisionWeight: opts.collisionWeight,
     topoWeight: opts.topoWeight,
     logWeight: opts.logWeight,

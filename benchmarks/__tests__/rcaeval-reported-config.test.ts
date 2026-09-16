@@ -47,6 +47,27 @@ describe('RCAEval runner configuration ownership', () => {
   const source = code(readFileSync(RUNNER_PATH, 'utf8'));
   const pruner = code(readFileSync(PRUNER_PATH, 'utf8'));
 
+  it('declares the decisive-stability default as the engine constant, and forwards it', () => {
+    // The term is inert at the engine's default, which is why the golden 9-cell was bit-identical
+    // while it was enrolled — and why measuring it on THIS benchmark needs the flag. That makes the
+    // runner's default the only thing standing between a bare push and an unmeasured signal, so it
+    // is read from the engine rather than restated, exactly like the temporal pair.
+    expect(source).toMatch(/stabilityWeight:\s*DEFAULT_STABILITY_WEIGHT\b/);
+    expect(source).not.toMatch(/stabilityWeight:\s*[-\d]/);
+    // The flag falls back to the SHIPPED value on a malformed one, so a typo reproduces a published
+    // configuration instead of measuring a term nobody asked for.
+    expect(source).toMatch(/parseWeight\(args\[\+\+i\]!,\s*DEFAULT_STABILITY_WEIGHT\)/);
+    // Forwarded into the container, printed, and carried by the container's parameter type: three
+    // separate ways for the flag to be accepted and then ignored.
+    expect(source).toMatch(
+      /createContainer\(\{[\s\S]{0,240}?stabilityWeight:\s*opts\.stabilityWeight/,
+    );
+    expect(source).toMatch(
+      /function createContainer\(weights:\s*\{[\s\S]{0,240}?stabilityWeight:\s*number/,
+    );
+    expect(source).toMatch(/stabilityWeight=\$\{opts\.stabilityWeight\}/);
+  });
+
   it('declares both temporal defaults as the engine constants, not as literals', () => {
     // A literal here is a second owner of a value the engine already ships, and the
     // two can only drift silently: this runner prints a confident Top@1 either way.
@@ -66,11 +87,14 @@ describe('RCAEval runner configuration ownership', () => {
     const names = imports.exec(source)?.[1] ?? '';
     expect(names).toContain('DEFAULT_TEMPORAL_WEIGHT');
     expect(names).toContain('DEFAULT_ONSET_SHAPE');
+    expect(names).toContain('DEFAULT_STABILITY_WEIGHT');
     // No redeclaration anywhere in either file.
     expect(source).not.toMatch(/const\s+DEFAULT_TEMPORAL_WEIGHT\b/);
     expect(source).not.toMatch(/const\s+DEFAULT_ONSET_SHAPE\b/);
+    expect(source).not.toMatch(/const\s+DEFAULT_STABILITY_WEIGHT\b/);
     expect(pruner).toMatch(/export const DEFAULT_TEMPORAL_WEIGHT\b/);
     expect(pruner).toMatch(/export const DEFAULT_ONSET_SHAPE\b/);
+    expect(pruner).toMatch(/export const DEFAULT_STABILITY_WEIGHT\b/);
   });
 
   it('falls back to the SHIPPED pair on an unusable flag value', () => {
