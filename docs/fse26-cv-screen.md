@@ -1,13 +1,15 @@
 # The decisive-stability (cv) screen: the separator's rate turned into a term
 
-**Status:** instrument shipped and gated; **the population measurement is PENDING** the run that
-renders `metricDecisive` for every service. Deliberately NOT a `-verdict` document: the axis is
-neither closed nor established, and the register's rows are for axes that have been measured to a
-conclusion — one direction or the other. The verdict lands here, in §4, when the run does.
+**Status:** instrument shipped and gated; the population measurement is **done on both benchmarks**,
+and the first weight anyone solved for it **fails the golden**. §4 records a weight-level veto, not a
+term-level one: the term is admitted behind `--stability-weight` and the default does not move.
+Deliberately NOT a `-verdict` document: the register's rows are for axes measured to a conclusion,
+and what closed here is a WEIGHT — the statistic the row names (`decisiveCv` on the matched
+stratum) is still the only non-term candidate above the criterion.
 
-**Code:** `cvSlopes` + `cvAvailability` + `cvScreen` + `cvShapeMenu` + `formatCvScreenReport` +
-`formatCvMenuReport`, behind `--cv-screen`. **Producer:** the `metricDecisive` line,
-`packages/kinetic/src/benchmarks/fse26-diagnose.ts`.
+**Code:** `cvSlopes` + `cvAvailability` + `cvScreen` + `cvShapeMenu` + `gainResolution` +
+`formatCvScreenReport` + `formatCvMenuReport`, behind `--cv-screen`. **Producer:** the
+`metricDecisive` line, `packages/kinetic/src/benchmarks/fse26-diagnose.ts`.
 
 `fse26-separator-verdict.md` §6.2 ended with a candidate and a condition. The candidate is
 `decisiveCv` — the only non-term signal above the 0.6 criterion on the inventory-matched stratum
@@ -224,43 +226,116 @@ losing its lead is a different claim from one that would survive a whole rank, a
 says which is which. The engine remains the arbiter, which is the standing rule for this axis — the
 screen licenses a candidate run, not a weight.
 
+### The resolution, as a distribution rather than a bound
+
+The paragraph above states the bound; the instrument now measures it. `gainResolution` redraws every
+field a screen reads at the quantum the producer discarded (`selfAnomaly`, `logScore`, `latRise`,
+`cv`, each `±5.0e-4` for the formatter's three decimals) and re-solves each named gain through the
+**screen's own** builder, so the ensemble is a property of the artifact rather than of a second
+implementation. 400 draws from a seeded sequence, so two runs over one dump print the same numbers:
+
+| shape | count distribution at `ship` | gains holding in every draw |
+| --- | --- | --- |
+| `flip` | 3 in **95.3%**, 2 in 4.8% | 2 of 3 |
+| `rank` | 6 in 22.5%, **5 in 36.0%**, 4 in 30.5%, 3 in 8.8%, 2 in 2.3% | 1 of 6 |
+
+**The engine's five is the modal outcome.** That is the strongest form of the claim the margin could
+only gesture at: `gain 6` was not merely at a knife edge, it was the *least* likely of the three
+largest counts, and the run that delivered five landed on the peak of the distribution the dump
+itself implies. The `flip` shape, whose three gains hold 95% of the time, is the control: the
+instrument is not pessimistic by construction, it is sharp enough to separate the two shapes.
+
+Three properties make this usable rather than decorative:
+
+- **the quantum is imported, not restated.** `SERVICE_FIELD_DECIMALS` is the producer's own
+  constant, `fmt` renders with it, and the analyzer derives `DUMP_HALF_QUANTUM` from it — so a
+  producer that starts printing six decimals moves the reported bar without anyone editing the
+  analyzer. A local `3` would keep printing `1.0e-3` at exactly the moment the claim became wrong.
+- **the draw is a constant, not a clock.** Two runs over one dump print the same ensemble; a number
+  that moved between them would be a property of the draw and not of the dump.
+- **the box is drawn uniformly, not adversarially.** Every gain can be lost by putting the whole
+  quantum on one side of its lead, so the adversarial corner says nothing; what a reader needs is
+  how much of the box still satisfies it, which is what the histogram is and what `least` reports as
+  a sound lower bound.
+
+### The golden, measured AT the weight: the veto
+
+The nine-cell gate at the enrolling commit is the default path, where the weight is 0 — so it verifies
+the enrolment and says nothing about 0.03017. `earliest-only` is the precedent for caring: it passed
+the FSE'26 half of this criterion completely and then moved six of nine cells by up to 41pp. A
+measurement was therefore impossible from CI until the second benchmark could spend a flag, and it
+now can: `run-rcaeval.ts` gained `--stability-weight` (default read from the engine's
+`DEFAULT_STABILITY_WEIGHT`, malformed values falling back to the published one, the value forwarded
+and printed in the banner) and `benchmark-rcaeval.yml` the matching `workflow_dispatch` input.
+
+| run | configuration | RE1 OB | RE1 SS | RE1 TT | RE2 OB | RE2 SS | RE2 TT | RE3 OB | RE3 SS | RE3 TT |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| golden | default (`stabilityWeight=0`) | 80.0 | 92.8 | 68.0 | 82.4 | 88.9 | 68.1 | 80.0 | 45.0 | 51.1 |
+| `35132525118` | `stability_weight=0.03017` | **79.2** | 92.8 | **67.2** | 82.4 | 88.9 | **52.3** | 80.0 | **47.5** | 51.1 |
+
+**Four of nine cells move, one of them by 15.8pp** (`RE2 TrainTicket` 68.1 → 52.3). The term buys
+**+5** on FSE'26 and costs four golden cells: under the shared kill criterion — golden 9-cell
+identical AND zero regressed fault types — this weight is **rejected**, and the default stays 0. The
+dispatch returned 204, which is itself the proof that the input name matched the workflow definition
+(GitHub rejects an unknown input with 422), so the run genuinely carried the flag.
+
+What that settles is the WEIGHT and not the statistic. The reopening condition is therefore narrower
+than the one this document was written under, and it is now two-sided: a weight whose golden is
+identical **and** whose FSE'26 gain is not inside the dump's rounding — the second half being what
+§"The resolution" above now measures offline, before spending a dispatch.
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the
 **engine** delivered **+5 cases with zero regressed fault types** at the weight the solver named
-(756 → 761, 53.16% → 53.5%), and the **golden is untouched** — `35125060855` at the enrolling commit
-`0ab737f` reproduces all nine cells (`RE1 80 / 92.8 / 68`, `RE2 82.4 / 88.9 / 68.1`,
-`RE3 80 / 45 / 51.1`), which it must, because the weight defaults to 0. Not settled:
+(756 → 761, 53.16% → 53.5%), the **enrolment's** golden is untouched (`35125060855` at `0ab737f`
+reproduces all nine cells, which it must at weight 0), and the **weight itself is vetoed by the
+golden** (§"The golden, measured AT the weight"). Not settled:
 
-- **The golden has not been measured at the WEIGHT.** The nine cells above are the default path,
-  which the term cannot reach; the field exists on RCAEval too, so a default of 0.03017 would act
-  there and would need its own flag-free run. That is the difference between *admitting the term* and
-  *shipping it on*: `earliest-only` passed the FSE'26 half of this same criterion completely and then
-  moved six of nine cells by up to 41pp, so the ordering — measure the second benchmark first — is the
-  lesson of that revert, not an abundance of caution.
+- **Whether a narrower weight is golden-neutral.** 0.03017 is the weight the FSE'26 window solves for
+  on the faithful (`rank`) shape, and it fails; the axis is not re-opened by a smaller number picked
+  by hand. Any such candidate now has to clear both halves, and the flag exists to test it.
 - 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight — a case with no
   decisive composition, or none the term can separate.
 - The `flip` shape reads the MAGNITUDE of a clamped bonus (§1), so `rank` is the faithful translation
   of the separator's rank-based rate. Any statement about this term has to name its shape.
-- A paired preference is still not a term (`fse26-term-oracle-verdict.md` §9): this table licensed a
-  candidate RUN, the run has been taken, and what it settled is the term's admissibility at 0.03017 —
-  not a change to the default path.
+- A paired preference is still not a term (`fse26-term-oracle-verdict.md` §9). What the candidate run
+  settled is the term's admissibility at 0.03017 on FSE'26 — and the second benchmark then answered
+  the question that admissibility left open.
 
 
 ## 5. Acceptance of the instrument itself
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 612, 0 failures (was 575 at the first pass) |
-| `benchmarks` coverage | **99.82 / 97.16 / 100 / 99.82** |
+| `benchmarks` tests | 620, 0 failures (was 575 at the first pass, 613 before the resolution ensemble) |
+| `benchmarks` coverage | **99.81 / 97.15 / 100 / 99.81** |
+| root tests | 3150, 0 failures |
+| `packages/kinetic` tests | 901, 0 failures |
 | `packages` typecheck | 15 projects (nx per-package **and** the workspace tsconfig) |
 | lint / prettier | 0 warnings / clean |
-| regression proof | `--cv-screen` on the shipped dump differs from the pre-change output in **three hunks and nothing else**: the population line split, and the two new `margin:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so the solver change moved no recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`. The register's guarded numbers are untouched |
+| regression proof | `--cv-screen` on the shipped dump differs from the pre-change output only by the new lines: the population line split, the two `margin:` lines, and the two `resolution:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so neither change moved a recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`, and both now print their own ensembles per row |
 | the engine's half | candidate `35125277962` vs control `35125285784`: **+5 cases, 0 regressed fault types**, 756 → 761 |
-| the golden half | `35125060855` at the enrolling commit `0ab737f`: **9 of 9 cells byte-identical** (RE1 `80 / 92.8 / 68`, RE2 `82.4 / 88.9 / 68.1`, RE3 `80 / 45 / 51.1`) — the DEFAULT path, where the weight is 0 |
+| the enrolment's golden | `35125060855` at the enrolling commit `0ab737f`: **9 of 9 cells byte-identical** — the DEFAULT path, where the weight is 0 |
+| the weight's golden | `35132525118` at `5233678` with `stability_weight=0.03017`: **4 of 9 cells move** (RE1 OB −0.8pp, RE1 TT −0.8pp, RE2 TT **−15.8pp**, RE3 SS +2.5pp) ⇒ the weight is rejected and the default stays 0 |
 
 The tests that carry the design, and why each exists:
 
+- **a gain narrower than the formatter's quantum is not decided by the dump** — the measurement the
+  ensemble exists for: the fixture's lead is `7.2e-6` against a `5.0e-4` quantum, so the ensemble
+  must report a split, and the report must say `0 of 1`. The mirror image is asserted too: at
+  `2.147e-3` — wider than the `1.0e-3` a pairwise comparison of two three-decimal numbers can move
+  by — **no** draw in the box can flip it, which is what makes this a measurement rather than a
+  pessimism.
+- **the ensemble is reproducible from the dump and the seed** — a statistic that moved between two
+  runs of one dump would be a property of the draw.
+- **the quantum comes from the producer** — a structural guard on the producer's source
+  (`toFixed(SERVICE_FIELD_DECIMALS)`, and no `toFixed(3)` left anywhere in it), because a restated
+  `3` goes stale exactly when the claim it qualifies becomes wrong.
+- **every screen that names a weight prints its own resolution** — the wiring, asserted on all three
+  reports, since a screen recommending a weight without saying what its own inputs can resolve is the
+  defect the section exists for. The onset fixture carries an anchor and an onset ORDER, because the
+  term's availability gate would otherwise suppress the line for a reason unrelated to the wiring.
 - **the recommended weight satisfies every gain the report lists** — the invariant the profile
   exists for, asserted through the public solver. A midpoint taken between the outermost two
   samples of a peak state a gain its own interval arithmetic denies; two islands of one case's

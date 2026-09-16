@@ -190,13 +190,27 @@ export interface FSE26DiagnosticInput {
 }
 
 /**
- * Format a single `x` as a fixed 3-decimal string, guarding against non-finite
- * values (which JSON cannot legally carry but a defensive renderer must still
- * survive).
+ * The decimals {@link fmt} renders `selfAnomaly`, `logScore` and `latRise` with.
+ *
+ * Exported because it is a PROPERTY OF THE ARTIFACT, not of this file: the analyzer reads the dump
+ * and has to know how much of each number survived the render. A reader that assumed its own
+ * precision would report a margin smaller than the quantum it was computed from — measured on run
+ * `35107871516`, the decisive-stability screen claimed six gains at 0.030170 while the widest
+ * discarded digit was four times the lead that decided the sixth one.
+ *
+ * Three, not more, because a dump is a summary of 1422 cases and the extra characters would buy
+ * nothing a reader of the table needs; the analyzer states the resulting error bar instead of
+ * asking for a different artifact.
+ */
+export const SERVICE_FIELD_DECIMALS = 3;
+
+/**
+ * Format a single `x` as a fixed {@link SERVICE_FIELD_DECIMALS}-decimal string, guarding against
+ * non-finite values (which JSON cannot legally carry but a defensive renderer must still survive).
  */
 function fmt(x: number): string {
   if (!Number.isFinite(x)) return 'nonfinite';
-  return x.toFixed(3);
+  return x.toFixed(SERVICE_FIELD_DECIMALS);
 }
 
 /**

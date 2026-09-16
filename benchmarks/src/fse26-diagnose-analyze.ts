@@ -33,6 +33,8 @@ import {
 
 import type { OnsetShape } from '../../packages/tree/src/index.js';
 
+import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
+
 import {
   caseOutcomes,
   discriminatorScreen,
@@ -2151,6 +2153,8 @@ export interface FamilyScreenRow {
   readonly gained: readonly string[];
   /** {@link gained}, with the margin each case has at {@link ship}; thinnest first. */
   readonly margins: readonly WindowGainMargin[];
+  /** What this row's count survives of the digits the dump discarded. */
+  readonly resolution: GainResolution;
   /** Currently-wrong cases no weight can fix — context for a zero gain. */
   readonly unreachable: number;
   /** Cases correct at `w = 0`; the population the window protects. */
@@ -2570,6 +2574,50 @@ export interface OnsetScreen {
   readonly solved: SolvedWindow;
   /** The per-fault-type split of the gain — the kill criterion's second half. */
   readonly gainTypes: readonly { readonly key: string; readonly cases: number }[];
+  /** What the count survives of the digits the dump discarded. */
+  readonly resolution: GainResolution;
+}
+
+/**
+ * One case as the onset screen scores it: the base MINUS this term, plus the term's own slope.
+ *
+ * The term being solved is not in its own base: `temporalWeight: 0` here is the ablation this
+ * window is a distance from, and leaving the shipped weight in would measure an ADDITIONAL onset
+ * term on top of one already applied. The shape is the one under test, which is why it is the only
+ * field that comes from the caller.
+ *
+ * A function for the same reason as {@link stabilityCase}: {@link gainResolution} resamples a
+ * perturbed case through this exact arithmetic.
+ *
+ * @param kase - One parsed case.
+ * @param weights - The configuration to screen against.
+ * @param shape - Which shape of the term to solve for.
+ * @returns The case's affine scores, or `undefined` when it has no ground truth to satisfy.
+ */
+function onsetCase(
+  kase: DiagnosedCase,
+  weights: FamilyScreenWeights,
+  shape: OnsetShape,
+): WeightSeparationCase | undefined {
+  const targets = kase.groundTruth.filter((name) => name !== '');
+  if (targets.length === 0) return undefined;
+  const base = shippedScores(kase, {
+    logWeight: weights.logWeight,
+    latWeight: weights.latWeight ?? SHIPPED_LAT_WEIGHT,
+    latFloor: weights.latFloor ?? SHIPPED_LAT_FLOOR,
+    poolWeight: weights.poolWeight ?? SHIPPED_POOL_WEIGHT,
+    temporalWeight: 0,
+    onsetShape: shape,
+  });
+  const slopes = onsetSlopes(kase, shape);
+  const scores = new Map<string, { base: number; slope: number }>();
+  for (const service of kase.services) {
+    scores.set(service.serviceId, {
+      base: base.get(service.serviceId)!,
+      slope: slopes.get(service.serviceId)!,
+    });
+  }
+  return { datapack: kase.datapack, targets, scores };
 }
 
 /**
@@ -2591,34 +2639,10 @@ export function onsetScreen(
   weights: FamilyScreenWeights,
   shape: OnsetShape = 'earliness',
 ): OnsetScreen {
-  const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
-  const latFloor = weights.latFloor ?? SHIPPED_LAT_FLOOR;
-  const poolWeight = weights.poolWeight ?? SHIPPED_POOL_WEIGHT;
   const built: WeightSeparationCase[] = [];
   for (const kase of cases) {
-    const targets = kase.groundTruth.filter((name) => name !== '');
-    if (targets.length === 0) continue;
-    // The term being SOLVED is not in its own base: `temporalWeight: 0` here is the
-    // ablation this window is a distance from, and leaving the shipped weight in would
-    // measure an ADDITIONAL onset term on top of one already applied. The shape is the
-    // one under test, which is why it is the only field that comes from the caller.
-    const base = shippedScores(kase, {
-      logWeight: weights.logWeight,
-      latWeight,
-      latFloor,
-      poolWeight,
-      temporalWeight: 0,
-      onsetShape: shape,
-    });
-    const slopes = onsetSlopes(kase, shape);
-    const scores = new Map<string, { base: number; slope: number }>();
-    for (const service of kase.services) {
-      scores.set(service.serviceId, {
-        base: base.get(service.serviceId)!,
-        slope: slopes.get(service.serviceId)!,
-      });
-    }
-    built.push({ datapack: kase.datapack, targets, scores });
+    const one = onsetCase(kase, weights, shape);
+    if (one !== undefined) built.push(one);
   }
   const solved = solveZeroRegressionWindow(built);
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
@@ -2629,6 +2653,12 @@ export function onsetScreen(
     shape,
     solved,
     gainTypes: tallyCounter(gainTypes),
+    resolution: gainResolution({
+      cases,
+      gained: solved.gained,
+      ship: solved.ship,
+      screen: { kind: 'onset', weights, shape },
+    }),
   };
 }
 
@@ -2781,6 +2811,11 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
       `  by fault type: ${screen.gainTypes.map((t) => `${t.key} +${t.cases}`).join(', ')}`,
     );
     lines.push(marginLine(s));
+    // Immediately after the margin, because the two are read together: the margin is the lead and
+    // this is how much of it survives the digits the producer discarded. A screen that named a
+    // weight from a count its own inputs cannot resolve is the defect this line exists to make
+    // impossible to repeat.
+    lines.push(formatResolutionLine(screen.resolution));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -2921,6 +2956,51 @@ export function cvAvailability(cases: readonly DiagnosedCase[]): CvAvailability 
   return { cases: eligible, servicesTotal, servicesMeasured, casesComparable };
 }
 
+/**
+ * One case as the decisive-stability screen scores it: the shipped base plus the term's slope.
+ *
+ * A function rather than a loop body because {@link gainResolution} has to score a PERTURBED case
+ * with the same arithmetic — a resampling that re-derived the base would be measuring a different
+ * engine than the window it qualifies, which is the defect this module exists to find.
+ *
+ * The base is `shippedScores` for the caller's configuration, so the case this is a distance from
+ * is the engine that actually ran: the latency and pool terms are IN it, and a screen measured
+ * against a two-term blend would report a window for a ranking nobody had.
+ *
+ * @param kase - One parsed case.
+ * @param weights - The configuration to screen against.
+ * @param shape - Which reading of the statistic to solve for.
+ * @returns The case's affine scores, or `undefined` when it has no ground truth to satisfy.
+ */
+function stabilityCase(
+  kase: DiagnosedCase,
+  weights: FamilyScreenWeights,
+  shape: CvShape,
+): WeightSeparationCase | undefined {
+  const targets = kase.groundTruth.filter((name) => name !== '');
+  if (targets.length === 0) return undefined;
+  const base = shippedScores(kase, {
+    logWeight: weights.logWeight,
+    latWeight: weights.latWeight ?? SHIPPED_LAT_WEIGHT,
+    latFloor: weights.latFloor ?? SHIPPED_LAT_FLOOR,
+    poolWeight: weights.poolWeight ?? SHIPPED_POOL_WEIGHT,
+    temporalWeight: weights.temporalWeight ?? SHIPPED_TEMPORAL_WEIGHT,
+    onsetShape: weights.onsetShape ?? SHIPPED_ONSET_SHAPE,
+  });
+  const slopes = cvSlopes(kase.services, shape);
+  const scores = new Map<string, { base: number; slope: number }>();
+  for (const service of kase.services) {
+    scores.set(service.serviceId, {
+      // Total by construction — `shippedScores` assigns an entry to every service, and `cvSlopes`
+      // to every service — so the lookups assert rather than defaulting to a base or a slope
+      // nobody computed.
+      base: base.get(service.serviceId)!,
+      slope: slopes.get(service.serviceId)!,
+    });
+  }
+  return { datapack: kase.datapack, targets, scores };
+}
+
 /** One shape of the decisive-stability term, solved. */
 export interface CvScreen {
   /** How much of the dump carries a composition at all. */
@@ -2931,6 +3011,15 @@ export interface CvScreen {
   readonly solved: SolvedWindow;
   /** The per-fault-type split of the gain — the kill criterion's second half. */
   readonly gainTypes: readonly { readonly key: string; readonly cases: number }[];
+  /**
+   * What the count survives of the digits the dump discarded.
+   *
+   * On the object rather than left to the caller because it is a property of THIS measurement: a
+   * report that printed `gain 6` and stopped was readable as a claim the artifact cannot support,
+   * and a consumer that had to remember to compute this would be a second place for it to go
+   * missing.
+   */
+  readonly resolution: GainResolution;
 }
 
 /**
@@ -2956,33 +3045,10 @@ export function cvScreen(
   weights: FamilyScreenWeights,
   shape: CvShape = DEFAULT_CV_SHAPE,
 ): CvScreen {
-  const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
-  const latFloor = weights.latFloor ?? SHIPPED_LAT_FLOOR;
-  const poolWeight = weights.poolWeight ?? SHIPPED_POOL_WEIGHT;
   const built: WeightSeparationCase[] = [];
   for (const kase of cases) {
-    const targets = kase.groundTruth.filter((name) => name !== '');
-    if (targets.length === 0) continue;
-    const base = shippedScores(kase, {
-      logWeight: weights.logWeight,
-      latWeight,
-      latFloor,
-      poolWeight,
-      temporalWeight: weights.temporalWeight ?? SHIPPED_TEMPORAL_WEIGHT,
-      onsetShape: weights.onsetShape ?? SHIPPED_ONSET_SHAPE,
-    });
-    const slopes = cvSlopes(kase.services, shape);
-    const scores = new Map<string, { base: number; slope: number }>();
-    for (const service of kase.services) {
-      scores.set(service.serviceId, {
-        // Total by construction — `shippedScores` assigns an entry to every service, and
-        // `cvSlopes` to every service — so the lookups assert rather than defaulting to a base
-        // or a slope nobody computed.
-        base: base.get(service.serviceId)!,
-        slope: slopes.get(service.serviceId)!,
-      });
-    }
-    built.push({ datapack: kase.datapack, targets, scores });
+    const one = stabilityCase(kase, weights, shape);
+    if (one !== undefined) built.push(one);
   }
   const solved = solveZeroRegressionWindow(built);
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
@@ -2993,6 +3059,12 @@ export function cvScreen(
     shape,
     solved,
     gainTypes: tallyCounter(gainTypes),
+    resolution: gainResolution({
+      cases,
+      gained: solved.gained,
+      ship: solved.ship,
+      screen: { kind: 'stability', weights, shape },
+    }),
   };
 }
 
@@ -3080,6 +3152,11 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
       `  by fault type: ${screen.gainTypes.map((t) => `${t.key} +${t.cases}`).join(', ')}`,
     );
     lines.push(marginLine(s));
+    // Immediately after the margin, because the two are read together: the margin is the lead and
+    // this is how much of it survives the digits the producer discarded. A screen that named a
+    // weight from a count its own inputs cannot resolve is the defect this line exists to make
+    // impossible to repeat.
+    lines.push(formatResolutionLine(screen.resolution));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -3251,6 +3328,12 @@ export function familyScreen(
       ship: solved.ship,
       capBinder: solved.window.capBinder,
       lostAtShip: solved.lostAtShip,
+      resolution: gainResolution({
+        cases,
+        gained: solved.gained,
+        ship: solved.ship,
+        screen: { kind: 'family', weights, family },
+      }),
       // The prefix is the engine's, imported: a second copy of it could drift to a family
       // the engine does not penalise while every row here stayed green.
       enginePoolFamily: labels.some((label) => label.startsWith(POOL_METRIC_PREFIX)),
@@ -3356,6 +3439,7 @@ export function formatFamilyScreenReport(
       );
     }
     lines.push(`  ${marginLine(row).trimStart()}`);
+    lines.push(formatResolutionLine(row.resolution));
     if (row.capBinder !== undefined) {
       lines.push(
         `    cap bound by ${row.capBinder.datapack}: ${row.capBinder.target} overtaken by ` +
@@ -3403,6 +3487,263 @@ function marginLine(solved: { readonly margins: readonly WindowGainMargin[] }): 
     `  margin: thinnest ${thinnest.margin.toExponential(3)} ` +
     `(${thinnest.datapack} vs ${thinnest.rival}); one rank step ${thinnest.quantum.toExponential(3)}; ` +
     `${inside} of ${solved.margins.length} gains inside one step`
+  );
+}
+
+/**
+ * Half of the smallest difference the producer's rendering of a per-service field can express.
+ *
+ * Derived from {@link SERVICE_FIELD_DECIMALS} rather than restated, because it is a floor on the
+ * error bar of every number below rather than a property of this file: `toFixed(3)` maps a value
+ * onto the nearest `0.001`, so a field printed as `0.960` stands for anything in
+ * `[0.9595, 0.9605)`. A copy of the `3` would keep reporting `5.0e-4` the day the producer starts
+ * printing six decimals, i.e. exactly when the claim it qualifies becomes wrong.
+ */
+export const DUMP_HALF_QUANTUM = 0.5 * 10 ** -SERVICE_FIELD_DECIMALS;
+
+/**
+ * How many resamplings {@link gainResolution} reports over.
+ *
+ * 400 is the point where the histogram's tail is stable at the precision the report prints (one
+ * decimal of a percentage) while the whole ensemble stays under a second: it perturbs only the
+ * cases the window NAMES, which is a handful, not the dump's 1422.
+ */
+export const GAIN_RESOLUTION_TRIALS = 400;
+
+/**
+ * The seed of the resampling sequence.
+ *
+ * A CONSTANT, not a clock: two runs over the same dump must print the same ensemble, or a reader
+ * cannot tell a revision of the dump from a revision of the draw and the number stops being a
+ * measurement. The sequence itself is irrelevant to the estimate — it only has to be fixed and
+ * reproducible.
+ */
+const GAIN_RESOLUTION_SEED = 20260916;
+
+/** How far a screen's headline count survives the digits the dump discarded. */
+export interface GainResolution {
+  /** Resamplings drawn. */
+  readonly trials: number;
+  /** Trials by how many of `gained` held; index = that count, so it always sums to `trials`. */
+  readonly histogram: readonly number[];
+  /** The fewest that ever held — a SOUND lower bound on the count over the quantum's box. */
+  readonly least: number;
+  /** The most that ever held; `gained.length` unless the centre is itself outside the box. */
+  readonly most: number;
+  /** Gains that held in EVERY trial — the ones the dump can actually decide. */
+  readonly resolved: readonly string[];
+  /** Trials in which each gain held, in `gained` order. */
+  readonly held: readonly number[];
+}
+
+/**
+ * Draw one value from the interval a printed field stands for: `[-q, +q]`, uniform.
+ *
+ * Uniform rather than adversarial because the question is not "could this be lost" — the answer
+ * would be yes for every gain, since any lead can be closed by putting the whole quantum on one
+ * side of it — but "how much of the box still satisfies it", which is what a reader needs to tell a
+ * margin that is 1e-4 from one that is 1e-2. The adversarial corner is the `least` field's worst
+ * case and is reported as `0 of k` when it happens; the distribution is what makes the count
+ * readable in between.
+ *
+ * @param next - The next draw in `[0, 1)`.
+ * @returns The offset in `[-DUMP_HALF_QUANTUM, +DUMP_HALF_QUANTUM]`.
+ */
+function quantumDraw(next: () => number): number {
+  return (next() * 2 - 1) * DUMP_HALF_QUANTUM;
+}
+
+/**
+ * One case as the dump could have recorded it, for any value of the digits it discarded.
+ *
+ * The fields perturbed are exactly the ones a screen READS, which is not the set the dump prints:
+ * `selfAnomaly` ranks the metric term, `logScore` carries the log term at weight 1, `latRise`
+ * carries the latency term through its mask, and `cv` is the decisive-stability term's own input.
+ * `failedEdgeScore`, counts and labels are left alone — a count is exact and a label is not a
+ * number, so perturbing them would be modelling noise the format does not have.
+ *
+ * @param kase - One parsed case.
+ * @param next - The next draw in `[0, 1)`.
+ * @returns The case with every read field moved by its own quantum.
+ */
+function jitterCase(kase: DiagnosedCase, next: () => number): DiagnosedCase {
+  return {
+    ...kase,
+    services: kase.services.map((service) => {
+      const breakdown = service.decisiveOutcome?.breakdown;
+      return {
+        ...service,
+        selfAnomaly: service.selfAnomaly + quantumDraw(next),
+        logScore: service.logScore + quantumDraw(next),
+        latRise: service.latRise === undefined ? undefined : service.latRise + quantumDraw(next),
+        decisiveOutcome:
+          breakdown === undefined || service.decisiveOutcome === undefined
+            ? service.decisiveOutcome
+            : {
+                ...service.decisiveOutcome,
+                breakdown: { ...breakdown, cv: breakdown.cv + quantumDraw(next) },
+              },
+      };
+    }),
+  };
+}
+
+/**
+ * A linear congruential sequence, so the ensemble is a function of the dump and the seed alone.
+ *
+ * Numerical Recipes' constants: the period (2^32) is far above the 400 draws used, and the
+ * low-order-bit weakness of an LCG is irrelevant here because each draw is scaled to a real offset
+ * and no test of the sequence is made. A seeded sequence is what makes this a reproducible
+ * measurement rather than an experiment.
+ *
+ * @param seed - The starting state.
+ * @returns A generator of draws in `[0, 1)`.
+ */
+function seededUnit(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+/**
+ * Which screen's arithmetic a resampling is measured through.
+ *
+ * A union rather than a scoring callback, so that "resample the weight I am about to recommend"
+ * cannot be answered with an arithmetic that is not the one the window was solved with: the
+ * builder is chosen from the same declarations the screen itself uses, in this module. A caller
+ * free to pass its own rebuild could resample a different engine and report the result as this
+ * screen's resolution.
+ */
+export type GainResolutionScreen =
+  | { readonly kind: 'stability'; readonly weights: FamilyScreenWeights; readonly shape: CvShape }
+  | { readonly kind: 'onset'; readonly weights: FamilyScreenWeights; readonly shape: OnsetShape }
+  | { readonly kind: 'family'; readonly weights: FamilyScreenWeights; readonly family: string };
+
+/** What {@link gainResolution} needs: the dump, the window's answer, and which screen asked. */
+export interface GainResolutionInput {
+  readonly cases: readonly DiagnosedCase[];
+  /** The window's own `gained` — the cases the weight is being recommended FOR. */
+  readonly gained: readonly string[];
+  /** The weight being recommended. */
+  readonly ship: number;
+  readonly screen: GainResolutionScreen;
+  readonly trials?: number;
+}
+
+/**
+ * How many of a window's gains survive the digits its inputs were printed with.
+ *
+ * The count a screen reports is arithmetic on numbers the dump ROUNDED, and the screen never said
+ * so. Measured on the shipped dump of run `35107871516`: the decisive-stability screen reported
+ * `gain 6` at `0.030170`; the run dispatched at that weight delivered FIVE, and the case it did not
+ * collect held a lead of `1.054e-4` — a fifth of the `5.0e-4` the formatter had already thrown
+ * away. The count was never resolvable from the artifact, and this reports the range and the
+ * distribution it IS resolvable to.
+ *
+ * The screen's own builder is used, so each screen resamples its OWN scoring: a resampling that
+ * re-derived the base would be measuring a different engine than the window it qualifies.
+ *
+ * The set of cases under test is the window's own `gained`. A perturbation can in principle satisfy
+ * a case the unperturbed solve did not name, but a weight is only ever recommended for the gains
+ * that were MEASURED, so the question "does this weight deliver these k" is the one that decides.
+ *
+ * @param input - The dump, the window's gains, the weight it recommends, and which screen asked.
+ * @returns The histogram, its bounds, and which gains hold in every trial.
+ */
+export function gainResolution(input: GainResolutionInput): GainResolution {
+  const rebuild = rebuildFor(input.screen);
+  const trials = input.trials ?? GAIN_RESOLUTION_TRIALS;
+  const byPack = new Map(input.cases.map((kase) => [kase.datapack, kase]));
+  // `Array.from`, not `new Array(n).fill(0)`: the length form of the constructor is ambiguous with
+  // the single-element form, and a count per possible gain is a LENGTH here.
+  const histogram = Array.from({ length: input.gained.length + 1 }, () => 0);
+  const held = Array.from({ length: input.gained.length }, () => 0);
+  // Both lookups are ASSERTED rather than guarded, because both invariants are structural: every
+  // named gain comes from the same solve as `cases`, and a gained case has a ground truth, so its
+  // rebuild is defined. A `?? 0` or a `return` here could never fire, and if it did it would report
+  // an unknown datapack as a LOSS — the one failure this instrument cannot afford, because the
+  // number it produces is a recommendation.
+  const drawn = input.gained.map((datapack) => byPack.get(datapack)!);
+  // The whole `gained` list is drawn for EVERY trial, in list order, so the sequence a gain
+  // receives does not depend on how many of its neighbours held — a shared draw would make one
+  // gain's survival a function of another's, which is not a property of the dump.
+  const next = seededUnit(GAIN_RESOLUTION_SEED);
+  for (let trial = 0; trial < trials; trial++) {
+    let count = 0;
+    drawn.forEach((kase, index) => {
+      const built = rebuild(jitterCase(kase, next))!;
+      if (intervalsCover(caseWeightInterval(built), input.ship)) {
+        count++;
+        held[index] = held[index]! + 1;
+      }
+    });
+    histogram[count] = histogram[count]! + 1;
+  }
+  const seen = histogram
+    .map((count, index) => ({ count, index }))
+    .filter((entry) => entry.count > 0)
+    .map((entry) => entry.index);
+  return {
+    trials,
+    histogram,
+    least: Math.min(...seen),
+    most: Math.max(...seen),
+    resolved: input.gained.filter((_, index) => held[index] === trials),
+    held,
+  };
+}
+
+/**
+ * The scoring one screen's window was solved with, as a function of a (possibly jittered) case.
+ *
+ * @param screen - Which screen's arithmetic to rebuild with.
+ * @returns The builder, or one that reports every case as absent for a family the dump does not
+ *   carry — which the screen itself would have reported as a zero row.
+ */
+function rebuildFor(
+  screen: GainResolutionScreen,
+): (kase: DiagnosedCase) => WeightSeparationCase | undefined {
+  if (screen.kind === 'stability') {
+    return (kase) => stabilityCase(kase, screen.weights, screen.shape);
+  }
+  if (screen.kind === 'onset') {
+    return (kase) => onsetCase(kase, screen.weights, screen.shape);
+  }
+  const { weights, family } = screen;
+  return (kase) => buildFamilyCases([kase], weights, family)[0];
+}
+
+/**
+ * Render {@link gainResolution} as one line.
+ *
+ * The scale is printed in the same units as the margins it qualifies, and the distribution is
+ * printed rather than only its bounds: `gain 6` under a dump that puts 30% of its mass on six and
+ * 44% on five means something a reader can act on, while `[3, 6]` would not distinguish it from a
+ * claim with no interior at all.
+ *
+ * @param resolution - The ensemble.
+ * @returns One line, or an empty string when there was nothing to resolve — a distribution over no
+ *   gain is not a measurement, and printing an empty histogram would read like one.
+ */
+export function formatResolutionLine(resolution: GainResolution): string {
+  const gains = resolution.held.length;
+  if (gains === 0) return '';
+  const bar = (2 * DUMP_HALF_QUANTUM).toExponential(1);
+  const entries = resolution.histogram
+    .map((count, index) => ({ count, index }))
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.index - a.index)
+    .map((entry) => `${entry.index} in ${((100 * entry.count) / resolution.trials).toFixed(1)}%`);
+  const verdict =
+    resolution.resolved.length === gains
+      ? `every one of the ${gains} gains holds in all ${resolution.trials} resamplings`
+      : `${resolution.resolved.length} of ${gains} gains hold in every one`;
+  return (
+    `  resolution: the dump renders ${SERVICE_FIELD_DECIMALS} decimals, so a lead between two ` +
+    `services is only good to ±${bar}; ${resolution.trials} resamplings of that draw give ` +
+    `${entries.join(', ')} — ${verdict}`
   );
 }
 

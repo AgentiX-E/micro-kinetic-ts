@@ -10,10 +10,15 @@
  * @module benchmarks/__tests__/fse26-diagnose-analyze
  */
 
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import type { MetricDiagnostic } from '../../packages/core/src/index.js';
-import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
+import {
+  formatFSE26Diagnostic,
+  SERVICE_FIELD_DECIMALS,
+} from '../../packages/kinetic/src/benchmarks/index.js';
 import {
   computeEdgeLatencyScores,
   DEFAULT_LAT_MIN_RISE,
@@ -39,6 +44,7 @@ import {
   cvSlopes,
   DEFAULT_CV_SHAPE,
   diffDiagnostics,
+  DUMP_HALF_QUANTUM,
   familyCompetition,
   familyScreen,
   formatAnalyzeSections,
@@ -52,8 +58,11 @@ import {
   formatMissReport,
   formatOnsetMenuReport,
   formatOnsetScreenReport,
+  formatResolutionLine,
   formatWeightSeparationReport,
   formatZeroRegressionWindowReport,
+  GAIN_RESOLUTION_TRIALS,
+  gainResolution,
   guardCensus,
   isTop1Correct,
   latencySlopes,
@@ -4765,22 +4774,36 @@ function cvCase(options: {
   readonly groundTruth: string;
   readonly prediction: string;
   readonly datapack?: string;
+  /** The log term's score per service, so a fixture can tune a lead below the dump's quantum. */
+  readonly logScores?: readonly number[];
+  /** Onset delay in ms per service, with the anchor that makes it a TIME. */
+  readonly onsets?: readonly (number | undefined)[];
+  readonly injectTimeMs?: number;
+  /** The engine's named metric per service, so a fixture can spread them across families. */
+  readonly dominants?: readonly string[];
+  /** Inbound latency rise per service; omitted services carry a dash, i.e. no measurement. */
+  readonly latRises?: readonly number[];
 }): DiagnosedCase {
   const text = dump({
     datapack: options.datapack ?? 'dp-1',
     groundTruthServices: [options.groundTruth],
-    services: options.cvs.map((cv, index) =>
-      serviceLine({
+    services: options.cvs.map((cv, index) => {
+      const dominant = options.dominants?.[index] ?? 'cpu';
+      return serviceLine({
         serviceId: `ts-svc-${index}`,
         selfAnomaly: options.anomalies[index] ?? 0,
-        dominant: 'cpu',
+        logScore: options.logScores?.[index] ?? 0,
+        onset: options.onsets?.[index],
+        latRise: options.latRises?.[index],
+        dominant,
         metricOutcomes:
           cv === undefined
             ? undefined
-            : [{ label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(cv) }],
-      }),
-    ),
+            : [{ label: dominant, outcome: 'kept', score: 1, breakdown: breakdownOf(cv) }],
+      });
+    }),
     topPredictions: [options.prediction],
+    ...(options.injectTimeMs === undefined ? {} : { injectTimeMs: options.injectTimeMs }),
   });
   return parseDiagnosticDump(text)[0]!;
 }
@@ -5599,5 +5622,146 @@ describe('solveZeroRegressionWindow — the profile is a scan, not a cumulative 
     expect(solved.ship).toBeCloseTo(0.5, 12);
     expect(solved.gained).toEqual(['gain-wide-second']);
     expect(solved.lostAtShip).toBe(0);
+  });
+});
+
+/**
+ * What the dump's own rendering can decide.
+ *
+ * The screen's headline is a COUNT, and the inputs that count is computed from are printed by the
+ * producer at a fixed number of decimals. That is a measurement error bar the screen never stated:
+ * on the shipped dump the decisive-stability screen reported `gain 6` at 0.030170 and the run
+ * dispatched at that weight collected five, with the lost case's lead (1.054e-4) an order of
+ * magnitude below what the formatter can express. These tests hold the instrument to saying so.
+ */
+describe('gainResolution — the lead the formatter discards', () => {
+  const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  /**
+   * A two-service case whose lead is a fraction of the quantum: the target wins on the metric term
+   * by `log1p(1)` = 0.693147 and loses `0.694` on the log term, so at 0.00086 it leads by 7.2e-6 —
+   * smaller than the 5.0e-4 the formatter rounds `logScore` to.
+   */
+  const fixture = (extra: Partial<Parameters<typeof cvCase>[0]> = {}): DiagnosedCase =>
+    cvCase({
+      cvs: [0.1, 0.9],
+      anomalies: [1.0, 0.5],
+      logScores: [0, 0.694],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-1',
+      ...extra,
+    });
+
+  const solve = (ship: number, cases: readonly DiagnosedCase[]) =>
+    gainResolution({
+      cases,
+      gained: ['dp-1'],
+      ship,
+      screen: { kind: 'stability', weights: WEIGHTS, shape: 'rank' },
+    });
+
+  it('refuses to decide a gain whose lead is narrower than the quantum', () => {
+    // The measurement this exists for. A gain inside the quantum is not a claim the dump supports:
+    // the engine's own value could be on either side, so `gain 1` here means "somewhere in 0..1".
+    const resolution = solve(0.00086, [fixture()]);
+
+    expect(resolution.trials).toBe(GAIN_RESOLUTION_TRIALS);
+    expect(resolution.resolved).toEqual([]);
+    expect(resolution.least).toBe(0);
+    expect(resolution.held[0]).toBeLessThan(resolution.trials);
+    // Half the resamplings either way, which is what "not decided" means arithmetically.
+    expect(resolution.held[0]).toBeGreaterThan(0);
+
+    const line = formatResolutionLine(resolution);
+    expect(line).toContain('0 of 1 gains hold in every one');
+    // The bar is quoted from the producer's own precision, so a producer that prints more decimals
+    // moves this number without anyone editing the analyzer.
+    expect(line).toContain((2 * DUMP_HALF_QUANTUM).toExponential(1));
+  });
+
+  it('decides a gain whose lead is wider than the whole quantum', () => {
+    // The other half of the same claim, and the reason this is a measurement rather than a
+    // pessimism: at 0.003 the lead is 2.147e-3, wider than the 1.0e-3 a pairwise comparison of two
+    // three-decimal numbers can move by, so NO draw in the box can flip it. The latency field is
+    // present here, because a dump that measured no rise is a case the resampling must also carry.
+    const resolution = solve(0.003, [fixture({ latRises: [1.5, 2.5] })]);
+
+    expect(resolution.resolved).toEqual(['dp-1']);
+    expect(resolution.least).toBe(1);
+    expect(resolution.most).toBe(1);
+    expect(resolution.histogram[1]).toBe(resolution.trials);
+    expect(resolution.held[0]).toBe(resolution.trials);
+    expect(formatResolutionLine(resolution)).toContain(
+      `every one of the 1 gains holds in all ${GAIN_RESOLUTION_TRIALS} resamplings`,
+    );
+  });
+
+  it('reports the same ensemble for the same dump, because the draw is seeded', () => {
+    // A statistic that moves between two runs of the same dump is not a measurement of the dump.
+    // The sequence is a declared constant, so the report is reproducible byte for byte — the
+    // ensemble is a resampling of a KNOWN error bar, not an experiment.
+    const first = solve(0.00086, [fixture()]);
+    const second = solve(0.00086, [fixture()]);
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+
+  it('derives its quantum from the producer rather than restating it', () => {
+    // One owner. The analyzer cannot know the format from memory, and a second copy of `3` would
+    // keep reporting 1.0e-3 the day the producer starts printing six decimals — which is exactly
+    // how a resolution claim goes stale without a test failing.
+    expect(SERVICE_FIELD_DECIMALS).toBe(3);
+    expect(DUMP_HALF_QUANTUM).toBe(0.5 * 10 ** -SERVICE_FIELD_DECIMALS);
+    const producer = readFileSync(
+      new URL('../../packages/kinetic/src/benchmarks/fse26-diagnose.ts', import.meta.url),
+      'utf-8',
+    );
+    expect(producer).toContain('toFixed(SERVICE_FIELD_DECIMALS)');
+    expect(producer).not.toContain('toFixed(3)');
+  });
+
+  it('prints nothing for a window that gained nothing', () => {
+    // The three screens call this only inside their `gain > 0` branch, so this is the contract for
+    // a DIRECT caller: a distribution over no gain is not a measurement, and an empty histogram
+    // rendered as text would read like one.
+    expect(
+      formatResolutionLine({
+        trials: 4,
+        histogram: [4],
+        least: 0,
+        most: 0,
+        resolved: [],
+        held: [],
+      }),
+    ).toBe('');
+  });
+
+  it('is printed by every screen that names a weight to ship', () => {
+    // The wiring, asserted where a reader would notice its absence: a screen that recommends a
+    // weight without saying what its own inputs can resolve is the defect this section exists for.
+    // The onset screen needs an anchor and an ORDER before it has a window at all, so this fixture
+    // carries both rather than asserting a line the term's own availability gate suppresses.
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.9],
+        anomalies: [1.0, 0.5],
+        logScores: [0, 0.694],
+        onsets: [120, 900],
+        injectTimeMs: 1754685690000,
+        // The family screen penalises services IN a family, so its gain needs the target and the
+        // rival on different sides of that boundary — a second reason the fixture names them.
+        dominants: ['cpu', 'http.server.request.duration.max'],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    expect(formatCvScreenReport(cvScreen(cases, WEIGHTS, 'rank'), WEIGHTS)).toContain(
+      'resolution:',
+    );
+    expect(formatOnsetScreenReport(onsetScreen(cases, WEIGHTS, 'earliness'), WEIGHTS)).toContain(
+      'resolution:',
+    );
+    expect(formatFamilyScreenReport(familyScreen(cases, WEIGHTS), WEIGHTS)).toContain(
+      'resolution:',
+    );
   });
 });
