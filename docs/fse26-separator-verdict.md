@@ -270,13 +270,13 @@ contradicts it, and the dump is one read away from saying so: the engine prints 
 on the same service line, which is the metric it actually maximised over, and the rendered list is
 sorted by score — so the decisive metric is the FIRST entry, and it is the one the engine named.
 
-| measured on the shipped dump (`r35029055764`, 1422 cases) | count |
+| measured on the shipped dump (`r35006947938`, 1422 cases) | count |
 | --- | --- |
-| service rows | 71,105 |
-| rows with a rendered decomposition (`metricTop`) | 7,780 |
-| rows whose `dominant` IS the first rendered entry | **7,779 (100.0%)** |
-| rendered counts of the truncated form `metricTop(3/kept)` | **7,702 of 7,733 (99.6%)** |
-| rows where the largest-rise entry is NOT the first (score) entry | **751 (9.7%)** |
+| service rows | 72,527 |
+| rows with a rendered decomposition (`metricTop`) | 7,781 |
+| rows whose `dominant` IS the first rendered entry | **7,781 (100.0%)** |
+| rendered counts of the truncated form `metricTop(3/N)` | **7,781 (100.0%)** |
+| rows where the largest-rise entry is NOT the first (score) entry | **758 (9.7%)** |
 
 So for one row in ten, the old reader described a metric the ranking had not been decided by — and it
 could never describe a metric outside the rendered three. The fix reads the named metric, falls back
@@ -284,27 +284,28 @@ to the highest-scoring entry (never to the rise), and reports **no composition a
 as zero**: a `cv` of 0 is a measurement (a perfectly stable series), so returning it where nothing
 was decomposed would fabricate a tie between the two sides.
 
-Re-measured on the same dump with only the reader changed:
+Re-measured on the same dump with only the reader changed — and the check that the dump is the one
+the register's row was written from is that the old reader reproduces **exactly** the numbers that row
+quotes (`decisiveCv` 0.734 at p = 2.0e-40):
 
 | signal | before | after |
 | --- | --- | --- |
-| `decisiveCv` | 0.739, p=8.5e-42, 444-128, 90 ties | **0.742, p=3.0e-43, 446-125, 91 ties** |
-| `decisiveBaseline` | 0.628, p=4.0e-11 | **0.647, p=3.8e-14** |
-| `decisiveBurst` | 0.577, p=4.4e-11 | **0.585, p=1.4e-12** |
-| `HTTPResponseReplaceCode` / `decisiveCv` | 59–3, folds .92/.75/.88/.91/.96 | 58–3, folds .92/.75/.88/.91/.93 |
-| `JVMMemoryStress` / `decisiveCv` | 0.680, p=1.2e-6 | **0.687, p=4.9e-7** |
+| `decisiveCv` | 0.734, p=2.0e-40, 444-132-90 | **0.738, p=7.9e-42, 446-129-91** |
+| `decisiveBaseline` | 0.628, p=4.6e-11 | **0.644, p=8.4e-14** |
+| `decisiveBurst` | 0.571, p=1.2e-9 | **0.577, p=1.1e-10** |
+| `JVMMemoryStress` / `decisiveCv` | 0.682, p=8.5e-7 | **0.689, p=3.4e-7** |
 | `PodFailure` / `decisiveCv` | 0.958, p=3.0e-6 | **1.000, 24–0, p=1.2e-7, stable in all five folds** |
 
-Every aggregate moves in one direction, and one type-level cell becomes perfect. **The block stays
-closed**, and the reason is now a number instead of an inference:
+Every aggregate moves in one direction, and one type-level cell becomes perfect. **The unconditional
+rate does not reopen the block**, and the reason is a number rather than an inference:
 
 | confound check | value |
 | --- | --- |
-| Pearson `r(kept, decisiveCv)` over the pairs' 1,324 services | **0.436** |
-| Spearman `ρ(kept, decisiveCv)` | **0.412** |
-| pairs where the source keeps MORE metrics than the winner | 125 of 662 |
-| pairs where the source keeps FEWER | **511 of 662** |
-| pairs with an exact `kept` match (the `kept=` column) | 26 of 662 |
+| Pearson `r(kept, decisiveCv)` over the pairs' 1,332 services | **0.4325** |
+| Spearman `ρ(kept, decisiveCv)` | **0.4086** |
+| pairs where the source keeps MORE metrics than the winner | 126 of 666 |
+| pairs where the source keeps FEWER | **514 of 666** |
+| pairs with an exact `kept` match (the `kept=` column) | 26 of 666 |
 
 The signals separate in the same direction as inventory size, and the two are correlated well above
 chance, so the unconditional rate cannot be attributed to the decisive composition rather than to
@@ -327,14 +328,14 @@ unmatched rates reproduce the printed table exactly (`decisiveCv` 0.742 on 446-1
 0.585, `decisiveBaseline` 0.647, `edgeRecords` 0.453), and the probe's matched rates reproduce the new
 columns (`decisiveCv` 0.722 on 484, and 0.657 / 0.637 / 0.865 / 1.000 per type).
 
-| signal | AUC (all 662) | matched n | AUC (kept ratio ≤ 2) |
+| signal | AUC (all 666) | matched n | AUC (kept ratio ≤ 2) |
 | --- | --- | --- | --- |
-| `decisiveCv` | 0.742 | 484 | **0.722** |
-| `decisiveBaseline` | 0.647 | 484 | 0.599 |
-| `decisiveBurst` | 0.585 | 484 | 0.566 |
-| `inDegree` (best non-`decisive*` non-term) | 0.529 | 484 | 0.533 |
-| `edgeRecords` | 0.453 | 484 | 0.469 |
-| `kept` — the confound itself | 0.208 | 484 | **0.271** |
+| `decisiveCv` | 0.738 | 487 | **0.718** |
+| `decisiveBaseline` | 0.644 | 487 | 0.598 |
+| `decisiveBurst` | 0.577 | 487 | 0.556 |
+| `inDegree` (best non-`decisive*` non-term) | 0.529 | 487 | 0.533 |
+| `edgeRecords` | 0.453 | 487 | 0.467 |
+| `kept` — the confound itself | 0.209 | 487 | **0.271** |
 
 Per type, the row's best signal with its matched rate:
 
@@ -344,30 +345,41 @@ Per type, the row's best signal with its matched rate:
 | `HTTPResponseReplaceCode` | `decisiveCv` | 0.884 | 48 | 0.885 |
 | `HTTPRequestReplaceMethod` | `decisiveBaseline` | 0.794 | 50 | 0.780 |
 | `NetworkPartition` | `errLines` | 0.781 | 46 | 0.793 |
-| `ContainerKill` | `decisiveCv` | 0.711 | 40 | 0.637 |
-| `JVMMemoryStress` | `decisiveCv` | 0.687 | 86 | 0.657 |
+| `ContainerKill` | `decisiveCv` | 0.699 | 40 | 0.637 |
+| `JVMMemoryStress` | `decisiveCv` | 0.689 | 87 | 0.661 |
 | `PodFailure` | `decisiveCv` | 1.000 | 23 | **1.000** |
 
 **The confound is now excluded rather than saturated, and `decisiveCv` survives it.** Matching removes
 the inventory difference by construction — and the check that it did is that the confound stops being
-a separator: `kept` falls from 0.208 to 0.271, still far below the criterion, while `decisiveCv`
-retains **0.722 on 484 pairs**, which is the ONLY non-term rate in the table that clears the 0.6
-criterion on the matched stratum (`decisiveBaseline` 0.599 is next and falls just short).
+a separator: `kept` falls from 0.209 to 0.271, still far below the criterion, while `decisiveCv`
+retains **0.718 on 487 pairs**, which is the ONLY non-term rate in the table that clears the 0.6
+criterion on the matched stratum (`decisiveBaseline` 0.598 is next and falls short).
 
 So the block's status changes, and the change is the instrument's, not the numbers': `decisiveCv`
 moves from **not established** to **established as a separator under a stated inventory match**, with
-a candidate at the top of the table for the first time. Three caveats travel with it, all of them
-measured:
+a candidate at the top of the table for the first time. Three caveats travel with it, all measured:
 
-1. The balanced stratum is 484 of 662 pairs, and the 178 it drops are systematically the ones where
+1. The balanced stratum is 487 of 666 pairs, and the 179 it drops are systematically the ones where
    the source keeps far fewer metrics — so the matched rate describes that stratum, not the whole
-   population. The unconditional 0.742 is an upper bound; **0.722 is the number to quote.**
+   population. The unconditional 0.738 is an upper bound; **0.718 is the number to quote.**
 2. `decisiveCv`'s separations are per-population, like `edgeRecords`': the two `decisive*` siblings
-   point the same way (`Baseline` 0.599, `Burst` 0.566) but `decisiveTrend` is the other way at
-   **0.368** on the matched stratum, so the family is not one signal.
+   point the same way (`Baseline` 0.598, `Burst` 0.556) but `decisiveTrend` is the other way at
+   **0.372** on the matched stratum, so the family is not one signal.
 3. **A paired preference is still not a term.** `decisiveCv` is a candidate, and what it needs is the
    window solver on both benchmarks — it cannot be promoted from this table, for the reason
    `fse26-term-oracle-verdict.md` §9 records at length.
+
+**A provenance correction, recorded rather than quietly fixed.** The reader defect and the matched
+comparison were first measured on `r35029055764`, and both documents called that dump "the shipped
+configuration". Its header says otherwise:
+`temporalWeight=0.036552 onsetShape=earliest-only` — the onset pair the golden REJECTED and `301c430`
+reverted — and it yields **662** pairs where the shipped configuration yields **666**. Every number in
+this section has been re-measured on the shipped dump `r35006947938`
+(`poolMetricPenaltyWeight=0.0679`, `latWeight=0.561495`, `latMinRise=10.3`, no temporal override), with
+three stages on that one dump: the old reader, the fixed reader, and the fixed reader with the matched
+columns. The conclusion is unchanged — `decisiveCv` still survives the match — and the numbers moved
+by under 0.005. The lesson is the one `b7da5b4` records: a recorded run may have been taken with a
+value PINNED, so the dump's own header, not its filename, is what says which configuration it is.
 
 Two things moved as a consequence of the reader fix rather than beside it: the audit's
 `dominantMetric` entry had to be reclassified from `NOT read` to `read:` (the four scalars now declare
