@@ -526,6 +526,243 @@ export function isTop1Correct(kase: DiagnosedCase): boolean {
   return top !== undefined && kase.groundTruth.includes(top);
 }
 
+/**
+ * One fault type's metric-guard census, with a control group.
+ *
+ * The engine discards most of a fault source's inventory — `transient-return` alone
+ * removes 44% of the source side's metrics across the shipped dump's 666 misses,
+ * against 24% of the winner's — and the tempting reading is "the guard is hiding the
+ * fault". That reading is a POPULATION statement, and it cannot separate a cause from a
+ * property of the population. The control is inside the same fault type: the cases the
+ * engine already gets RIGHT. If the guard discards the source's signature just as often
+ * there, the footprint is not what decides, whatever its size.
+ *
+ * Every field is read from the dump's rendered inventories and the dump's OWN outcome,
+ * so no weight is needed and nothing is reconstructed.
+ */
+export interface GuardCensusRow {
+  readonly faultType: string;
+  readonly cases: number;
+  readonly correct: number;
+  /** Source side, over every case of this type. */
+  readonly sourceKept: number;
+  readonly sourceTransient: number;
+  /**
+   * The WRONG winner's — i.e. the rival's — kept and transient counts, over the wrong
+   * cases only.
+   *
+   * Wrong cases only, because in a correct case the rank-1 service IS the source: a
+   * column that mixed the two would add the source to its own comparison group and
+   * wash out exactly the asymmetry it is meant to show.
+   */
+  readonly wrongWinnerKept: number;
+  readonly wrongWinnerTransient: number;
+  /** Source side, over the cases this type already gets right — the control. */
+  readonly sourceKeptCorrect: number;
+  readonly sourceTransientCorrect: number;
+  /** Source side, over the cases it gets wrong. */
+  readonly sourceKeptWrong: number;
+  readonly sourceTransientWrong: number;
+  /**
+   * The source's strongest RENDERED deviation, median over each group.
+   *
+   * `undefined` when the group is empty — a median of no cases is not zero, and a
+   * fabricated 0 reads as "the source showed no excursion".
+   *
+   * Rendered, because the block prints the decomposition only for the top few kept
+   * metrics: this is a LOWER bound on the source's maximum deviation, and it is the
+   * same bound on both sides of the comparison, which is what makes it usable.
+   */
+  readonly sourceBestDevCorrect: number | undefined;
+  readonly sourceBestDevWrong: number | undefined;
+  /**
+   * The wrong winner's strongest rendered deviation, median over the wrong cases only.
+   *
+   * Not reported for the correct cases on purpose: there the winner IS the source, so
+   * the column would compare a service with itself and print a structural zero as a
+   * measurement.
+   */
+  readonly wrongWinnerBestDev: number | undefined;
+}
+
+/** The transient-return guard's word, as the engine writes it. */
+const TRANSIENT_OUTCOME = 'transient-return';
+
+/** The median of a possibly empty list, or `undefined` — never a fabricated 0. */
+function medianOrUndefined(values: readonly number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * Census a metric guard against the cases the engine already gets right.
+ *
+ * @param cases - Parsed cases; a case with no ground truth is skipped, since it has no
+ *   source side to census.
+ * @returns One row per fault type, most cases first.
+ */
+export function guardCensus(cases: readonly DiagnosedCase[]): GuardCensusRow[] {
+  interface Acc {
+    cases: number;
+    correct: number;
+    sourceKept: number;
+    sourceTransient: number;
+    wrongWinnerKept: number;
+    wrongWinnerTransient: number;
+    sourceKeptCorrect: number;
+    sourceTransientCorrect: number;
+    sourceKeptWrong: number;
+    sourceTransientWrong: number;
+    devCorrect: number[];
+    devWrong: number[];
+    devWrongWinner: number[];
+  }
+  const blank = (): Acc => ({
+    cases: 0,
+    correct: 0,
+    sourceKept: 0,
+    sourceTransient: 0,
+    wrongWinnerKept: 0,
+    wrongWinnerTransient: 0,
+    sourceKeptCorrect: 0,
+    sourceTransientCorrect: 0,
+    sourceKeptWrong: 0,
+    sourceTransientWrong: 0,
+    devCorrect: [],
+    devWrong: [],
+    devWrongWinner: [],
+  });
+  /** A service's kept count, transient count and strongest rendered deviation. */
+  const shape = (kase: DiagnosedCase, id: string) => {
+    const service = kase.services.find((s) => s.serviceId === id);
+    if (service === undefined || service.metricOutcomes === undefined) return undefined;
+    let kept = 0;
+    let transient = 0;
+    let best = 0;
+    for (const outcome of service.metricOutcomes) {
+      if (outcome.outcome === TRANSIENT_OUTCOME) transient++;
+      else if (outcome.outcome === 'kept') {
+        kept++;
+        const deviation = outcome.breakdown?.deviation ?? 0;
+        if (deviation > best) best = deviation;
+      }
+    }
+    return { kept, transient, best };
+  };
+
+  const byType = new Map<string, Acc>();
+  for (const kase of cases) {
+    const sourceId = kase.groundTruth[0] ?? '';
+    if (sourceId === '') continue;
+    const source = shape(kase, sourceId);
+    if (source === undefined) continue;
+    const winnerId = kase.prediction[0] ?? '';
+    const winner = winnerId === '' ? undefined : shape(kase, winnerId);
+    const acc = byType.get(kase.faultType) ?? blank();
+    const ok = isTop1Correct(kase);
+    acc.cases++;
+    acc.sourceKept += source.kept;
+    acc.sourceTransient += source.transient;
+    if (ok) {
+      acc.correct++;
+      acc.sourceKeptCorrect += source.kept;
+      acc.sourceTransientCorrect += source.transient;
+      acc.devCorrect.push(source.best);
+    } else {
+      acc.sourceKeptWrong += source.kept;
+      acc.sourceTransientWrong += source.transient;
+      acc.devWrong.push(source.best);
+      // The rival's counts live in the WRONG branch only: in a correct case the rank-1
+      // service is the source, so accumulating it here would add the source to its own
+      // comparison group and wash out the asymmetry.
+      if (winner !== undefined) {
+        acc.wrongWinnerKept += winner.kept;
+        acc.wrongWinnerTransient += winner.transient;
+        acc.devWrongWinner.push(winner.best);
+      }
+    }
+    byType.set(kase.faultType, acc);
+  }
+
+  return [...byType.entries()]
+    .map(([faultType, acc]) => ({
+      faultType,
+      cases: acc.cases,
+      correct: acc.correct,
+      sourceKept: acc.sourceKept,
+      sourceTransient: acc.sourceTransient,
+      wrongWinnerKept: acc.wrongWinnerKept,
+      wrongWinnerTransient: acc.wrongWinnerTransient,
+      sourceKeptCorrect: acc.sourceKeptCorrect,
+      sourceTransientCorrect: acc.sourceTransientCorrect,
+      sourceKeptWrong: acc.sourceKeptWrong,
+      sourceTransientWrong: acc.sourceTransientWrong,
+      sourceBestDevCorrect: medianOrUndefined(acc.devCorrect),
+      sourceBestDevWrong: medianOrUndefined(acc.devWrong),
+      wrongWinnerBestDev: medianOrUndefined(acc.devWrongWinner),
+    }))
+    .sort((a, b) => b.cases - a.cases || (a.faultType < b.faultType ? -1 : 1));
+}
+
+/**
+ * Render the guard census.
+ *
+ * The `Δ` column is the point of the section and it prints BESIDE both rates rather than
+ * instead of them: a reader comparing 82% against 85% can see that the guard fires
+ * almost always in BOTH groups, which no single "footprint" number conveys.
+ *
+ * @param rows - The census rows.
+ * @returns The section text.
+ */
+export function formatGuardCensus(rows: readonly GuardCensusRow[]): string {
+  const lines: string[] = [];
+  lines.push('Metric-guard census — does a guard separate RIGHT from WRONG within a type?');
+  const rate = (dropped: number, kept: number): string =>
+    dropped + kept === 0 ? 'n/a' : `${((100 * dropped) / (dropped + kept)).toFixed(1)}%`;
+  const dev = (value: number | undefined): string =>
+    value === undefined ? 'n/a' : value.toFixed(2);
+  lines.push(
+    '  faultType'.padEnd(28) +
+      'n=ok/all'.padStart(9) +
+      '  source transient-drop'.padEnd(23) +
+      'Δ vs ok'.padStart(9) +
+      '  rival (wrong)'.padEnd(16) +
+      'source best-dev wrong/ok'.padEnd(26) +
+      'rival dev',
+  );
+  for (const row of rows) {
+    const okRate = rate(row.sourceTransientCorrect, row.sourceKeptCorrect);
+    const badRate = rate(row.sourceTransientWrong, row.sourceKeptWrong);
+    const okTotal = row.sourceTransientCorrect + row.sourceKeptCorrect;
+    const badTotal = row.sourceTransientWrong + row.sourceKeptWrong;
+    const delta =
+      okTotal === 0 || badTotal === 0
+        ? 'n/a'
+        : `${(
+            (100 * row.sourceTransientWrong) / badTotal -
+            (100 * row.sourceTransientCorrect) / okTotal
+          ).toFixed(1)}pp`;
+    lines.push(
+      '  ' +
+        row.faultType.padEnd(26) +
+        `${row.correct}/${row.cases}`.padStart(9) +
+        `  ${badRate} wrong / ${okRate} ok`.padEnd(23) +
+        delta.padStart(9) +
+        `  ${rate(row.wrongWinnerTransient, row.wrongWinnerKept)}`.padEnd(16) +
+        `${dev(row.sourceBestDevWrong)} / ${dev(row.sourceBestDevCorrect)}`.padEnd(26) +
+        dev(row.wrongWinnerBestDev),
+    );
+  }
+  lines.push(
+    '  A footprint that is the SAME in both groups is not a mechanism: it says the guard',
+    '  fires on this fault type, not that firing is why the type fails. `n/a` is a group',
+    '  with no cases, never a zero.',
+  );
+  return lines.join('\n');
+}
+
 /** How a case's top-1 outcome changed between two modes. */
 export type DiagnosticDeltaKind = 'regressed' | 'gained' | 'both-correct' | 'both-wrong';
 
@@ -3165,7 +3402,28 @@ export type AnalyzeSectionKind =
   | 'termOracle'
   | 'familyScreen'
   | 'onsetScreen'
-  | 'discriminator';
+  | 'discriminator'
+  | 'guardCensus';
+
+/**
+ * The sections that reconstruct a SCORE, and therefore need the weight it ran at.
+ *
+ * Named as data because the guard and its own error message disagreed: the message
+ * listed four sections and the code required the weight of all of them, so a section
+ * that reads only the engine's rendered inventories had to be given a number nothing
+ * used. A guard that is broader than its stated reason teaches a reader to pass a
+ * meaningless flag.
+ */
+const SCORE_RECONSTRUCTING_SECTIONS: Readonly<Set<AnalyzeSectionKind>> =
+  new Set<AnalyzeSectionKind>([
+    'misses',
+    'weightSweep',
+    'window',
+    'termOracle',
+    'familyScreen',
+    'onsetScreen',
+    'discriminator',
+  ]);
 
 /**
  * One requested section, CARRYING the weight it is computed at.
@@ -3238,6 +3496,7 @@ export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
   'familyScreen',
   'onsetScreen',
   'discriminator',
+  'guardCensus',
   'misses',
 ];
 
@@ -3264,7 +3523,7 @@ const ANALYZE_USAGE =
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
   '[--pool-penalty <w>] [--temporal-weight <w>] [--onset-shape <shape>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
-  '[--onset-screen] [--discriminator] ' +
+  '[--onset-screen] [--discriminator] [--guard-census] ' +
   '[--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
@@ -3301,6 +3560,7 @@ const SWITCH_FLAGS = new Set([
   'family-screen',
   'onset-screen',
   'discriminator',
+  'guard-census',
 ]);
 
 /**
@@ -3345,11 +3605,18 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     [...switches].map((name) => name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase())),
   );
   const rawWeight = values.get('log-weight');
-  if (requested.size > 0 && rawWeight === undefined) {
+  const needsWeight = [...requested].some((kind) =>
+    SCORE_RECONSTRUCTING_SECTIONS.has(kind as AnalyzeSectionKind),
+  );
+  if (needsWeight && rawWeight === undefined) {
     // Names the flags, states which weight it is, and gives the shipped value, so
     // the reader does not have to guess between the four weights this tool knows.
+    // Fires only for the sections that actually reconstruct a score: requiring it of
+    // a section that reads the engine's own rendered inventories asks for a number
+    // the report never uses, which is how a flag becomes ritual.
     throw new Error(
-      '--misses/--weight-sweep/--window/--term-oracle reconstruct a score, so they need ' +
+      '--misses/--weight-sweep/--window/--term-oracle/--family-screen/--onset-screen/' +
+        '--discriminator reconstruct a score, so they need ' +
         "the weight that score ran at: pass --log-weight <w>, the run's LOG weight (the " +
         `coefficient on logScore; the shipped runs use 1).\n${ANALYZE_USAGE}`,
     );
@@ -3596,6 +3863,11 @@ function analyzeSectionText(
       };
       return formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
     }
+    case 'guardCensus':
+      // Reads the engine's own rendered inventories and the dump's own correct/wrong
+      // outcome, so it takes no weights — none of the section's numbers came from this
+      // report's reconstruction.
+      return formatGuardCensus(guardCensus(cases));
     case 'misses':
       // The section's OWN fields, all six. Hand-assembling a subset here is how the
       // temporal pair silently reverted to its shipped default the first time this flag was

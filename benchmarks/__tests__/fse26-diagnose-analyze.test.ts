@@ -39,12 +39,14 @@ import {
   formatAnomalyShapeReport,
   formatDiagnoseComparison,
   formatFamilyScreenReport,
+  formatGuardCensus,
   formatMetricCompetitionReport,
   formatMissReport,
   formatOnsetMenuReport,
   formatOnsetScreenReport,
   formatWeightSeparationReport,
   formatZeroRegressionWindowReport,
+  guardCensus,
   isTop1Correct,
   latencySlopes,
   MISS_DECIDED_BY,
@@ -4515,5 +4517,157 @@ describe('parseAnalyzeArgs — every section carries the whole configuration', (
     const opts = dumpMode(['--log-weight', '1', '--window', '--lat-floor', '4']);
 
     expect(opts.sections[0]!.latFloor).toBe(4);
+  });
+});
+
+describe('guardCensus — a guard’s footprint against a within-type control', () => {
+  // The question this answers is not "how much does the guard discard" — it discards a
+  // lot — but "does the amount it discards separate the cases the engine gets RIGHT
+  // from the ones it gets wrong". A footprint with no separation is not a mechanism,
+  // and a population-level footprint is exactly what an unpaired reading reports.
+  const breakdown = (deviation: number) => ({
+    deviation,
+    trend: 0,
+    cv: 0,
+    burst: 0,
+    riseRatio: 1,
+    dropRatio: 0,
+    baselineMean: 1,
+  });
+  const metric = (label: string, outcome: string, deviation?: number) => ({
+    label,
+    outcome,
+    score: outcome === 'kept' ? 1 : 0,
+    ...(deviation === undefined ? {} : { breakdown: breakdown(deviation) }),
+  });
+  const svc = (
+    serviceId: string,
+    outcomes: ReturnType<typeof metric>[],
+    selfAnomaly: number,
+    isGroundTruth = false,
+  ) => ({
+    serviceId,
+    isGroundTruth,
+    predictedRank: undefined,
+    selfAnomaly,
+    logScore: 0,
+    failedEdgeScore: 0,
+    failedEdgeRecords: 0,
+    latRise: undefined,
+    latEdges: 0,
+    onsetDelayMs: undefined,
+    dominantMetric: outcomes[0]?.label ?? '',
+    errorCount: 0,
+    fatalCount: 0,
+    logicExceptionCount: 0,
+    httpExceptionCount: 0,
+    metricOutcomes: outcomes,
+  });
+  /** One case: the source carries `sig` metric outcomes, the rival `rival`. */
+  const caseOf = (
+    datapack: string,
+    correct: boolean,
+    sourceOutcomes: ReturnType<typeof metric>[],
+    rivalOutcomes: ReturnType<typeof metric>[],
+  ) => ({
+    datapack,
+    faultType: 'JVMMemoryStress',
+    groundTruth: ['ts-src'],
+    logSignalMode: 'logicHttp',
+    injectTimeMs: undefined,
+    edges: undefined,
+    services: [
+      svc('ts-src', sourceOutcomes, correct ? 1 : 0.9, true),
+      svc('ts-rival', rivalOutcomes, correct ? 0.5 : 1),
+    ],
+    prediction: correct ? ['ts-src', 'ts-rival'] : ['ts-rival', 'ts-src'],
+  });
+
+  const sourceKeeps = [
+    metric('container.memory.usage', 'kept', 0.9),
+    metric('jvm.memory.used', 'kept', 0.5),
+  ];
+  const sourceLoses = [
+    metric('container.memory.usage', 'transient-return'),
+    metric('jvm.memory.used', 'transient-return'),
+    metric('container.cpu.time', 'transient-return'),
+  ];
+  const rival = [metric('hubble_http_request_duration_p99_seconds', 'kept', 1.2)];
+
+  it('tallies the guard per SIDE and splits the source by the case’s own outcome', () => {
+    const cases = [
+      caseOf('ok-1', true, [...sourceKeeps, metric('a', 'transient-return')], rival),
+      caseOf('ok-2', true, [...sourceKeeps, metric('a', 'transient-return')], rival),
+      caseOf('bad-1', false, [...sourceLoses], rival),
+      caseOf('bad-2', false, [...sourceLoses], rival),
+    ];
+    const rows = guardCensus(cases);
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.faultType).toBe('JVMMemoryStress');
+    expect(row.cases).toBe(4);
+    expect(row.correct).toBe(2);
+    // Per side, over every case of the type.
+    expect(row.sourceKept).toBe(2 * 2 + 2 * 0);
+    expect(row.sourceTransient).toBe(2 * 1 + 2 * 3);
+    // The rival's counts come from the WRONG cases only: in a correct case the rank-1
+    // service IS the source, and counting it here would put the source in its own
+    // comparison group.
+    expect(row.wrongWinnerKept).toBe(2 * 1);
+    expect(row.wrongWinnerTransient).toBe(0);
+    // And split by the case's own outcome, which is the control.
+    expect(row.sourceKeptCorrect).toBe(4);
+    expect(row.sourceTransientCorrect).toBe(2);
+    expect(row.sourceKeptWrong).toBe(0);
+    expect(row.sourceTransientWrong).toBe(6);
+  });
+
+  it('reports the source’s excursion in both groups and the rival’s only where it won', () => {
+    const cases = [
+      caseOf('ok-1', true, sourceKeeps, rival),
+      caseOf(
+        'bad-1',
+        false,
+        [metric('container.memory.usage', 'kept', 0.4), ...sourceLoses],
+        rival,
+      ),
+    ];
+    const row = guardCensus(cases)[0]!;
+    expect(row.sourceBestDevCorrect).toBeCloseTo(0.9, 12);
+    expect(row.sourceBestDevWrong).toBeCloseTo(0.4, 12);
+    // The rival's excursion is only meaningful where the rival WON: in a correct case
+    // the winner IS the source, so a "winner" column there would compare a service
+    // with itself and print a structural zero as a measurement.
+    expect(row.wrongWinnerBestDev).toBeCloseTo(1.2, 12);
+  });
+
+  it('renders the two rates and their difference, never a population total alone', () => {
+    const cases = [
+      caseOf('ok-1', true, [...sourceKeeps, metric('a', 'transient-return')], rival),
+      caseOf('bad-1', false, [...sourceLoses], rival),
+    ];
+    const text = formatGuardCensus(guardCensus(cases));
+    // 1/3 correct against 3/3 wrong: the guard discards the signature in BOTH groups.
+    expect(text).toContain('33.3%');
+    expect(text).toContain('100.0%');
+    expect(text).toContain('Δ');
+    expect(text).toContain('JVMMemoryStress');
+  });
+
+  it('prints n/a rather than a median over no cases', () => {
+    // A type with no correct case has no control, and a median of an empty list is not
+    // zero — a fabricated 0 would read as "the source showed no excursion".
+    const rows = guardCensus([caseOf('bad-1', false, sourceLoses, rival)]);
+    expect(rows[0]!.sourceBestDevCorrect).toBeUndefined();
+    expect(formatGuardCensus(rows)).toContain('n/a');
+  });
+
+  it('needs no weight, because it reconstructs no score', () => {
+    // The section reads the engine's own rendered inventories and the dump's own
+    // correct/wrong outcome. Requiring a log weight for it would put a number in the
+    // report that nothing in the report used.
+    expect(() => parseAnalyzeArgs(['--dump', 'd', '--guard-census'])).not.toThrow();
+    // The sections that DO reconstruct a score still fail without it.
+    expect(() => parseAnalyzeArgs(['--dump', 'd', '--misses'])).toThrow(/--log-weight/);
   });
 });
