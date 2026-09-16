@@ -226,21 +226,25 @@ screen licenses a candidate run, not a weight.
 
 ### What this does and does not settle
 
-Settled: the term is not inert, the zero-regression window exists on the whole population, and the
-**engine** delivered **+5 cases with zero regressed fault types** (756 → 761, 53.16% → 53.5%) at
-the weight the solver named. Not settled — and this is the half that decides it:
+Settled: the term is not inert, the zero-regression window exists on the whole population, the
+**engine** delivered **+5 cases with zero regressed fault types** at the weight the solver named
+(756 → 761, 53.16% → 53.5%), and the **golden is untouched** — `35125060855` at the enrolling commit
+`0ab737f` reproduces all nine cells (`RE1 80 / 92.8 / 68`, `RE2 82.4 / 88.9 / 68.1`,
+`RE3 80 / 45 / 51.1`), which it must, because the weight defaults to 0. Not settled:
 
-- **The golden 9-cell is not in this document.** The term is not in the engine's default path, so
-  the golden configuration is bit-for-bit unchanged by enrolling it; the candidate is measured by
-  passing the flag. The dispatch is `benchmark-rcaeval.yml` at the enrolling commit, and this
-  document is updated with its cells when it reports.
+- **The golden has not been measured at the WEIGHT.** The nine cells above are the default path,
+  which the term cannot reach; the field exists on RCAEval too, so a default of 0.03017 would act
+  there and would need its own flag-free run. That is the difference between *admitting the term* and
+  *shipping it on*: `earliest-only` passed the FSE'26 half of this same criterion completely and then
+  moved six of nine cells by up to 41pp, so the ordering — measure the second benchmark first — is the
+  lesson of that revert, not an abundance of caution.
 - 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight — a case with no
   decisive composition, or none the term can separate.
 - The `flip` shape reads the MAGNITUDE of a clamped bonus (§1), so `rank` is the faithful translation
   of the separator's rank-based rate. Any statement about this term has to name its shape.
-- A paired preference is still not a term (`fse26-term-oracle-verdict.md` §9): this table licenses a
-  candidate RUN, not a weight — and the run has now run, which is why the deliverable here is a
-  measurement and not a recommendation.
+- A paired preference is still not a term (`fse26-term-oracle-verdict.md` §9): this table licensed a
+  candidate RUN, the run has been taken, and what it settled is the term's admissibility at 0.03017 —
+  not a change to the default path.
 
 
 ## 5. Acceptance of the instrument itself
@@ -251,8 +255,9 @@ the weight the solver named. Not settled — and this is the half that decides i
 | `benchmarks` coverage | **99.82 / 97.16 / 100 / 99.82** |
 | `packages` typecheck | 15 projects (nx per-package **and** the workspace tsconfig) |
 | lint / prettier | 0 warnings / clean |
-| regression proof | `--cv-screen` on the shipped dump differs from the pre-change output in **three hunks and nothing else**: the population line split, and the two new `margin:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so the solver change moved no recommendation. The register's guarded numbers are untouched |
+| regression proof | `--cv-screen` on the shipped dump differs from the pre-change output in **three hunks and nothing else**: the population line split, and the two new `margin:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so the solver change moved no recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`. The register's guarded numbers are untouched |
 | the engine's half | candidate `35125277962` vs control `35125285784`: **+5 cases, 0 regressed fault types**, 756 → 761 |
+| the golden half | `35125060855` at the enrolling commit `0ab737f`: **9 of 9 cells byte-identical** (RE1 `80 / 92.8 / 68`, RE2 `82.4 / 88.9 / 68.1`, RE3 `80 / 45 / 51.1`) — the DEFAULT path, where the weight is 0 |
 
 The tests that carry the design, and why each exists:
 

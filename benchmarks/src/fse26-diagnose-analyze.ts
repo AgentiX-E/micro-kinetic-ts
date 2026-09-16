@@ -2199,8 +2199,9 @@ export interface FamilyScreenStep {
    * Both kinds are needed. An edge is a weight at which a gain can still hold (the intervals are
    * closed), while a gap's midpoint is strictly inside a stretch where no gain's coverage changes.
    * Scanning the edges alone reads two disjoint admissible intervals as ONE, because the point
-   * where the first ends is an edge of the second: `[0.20, 0.30] ∪ [0.35, ∞)` and `[0.40, ∞)`
-   * would agree at every edge and disagree everywhere between 0.30 and 0.35.
+   * where the first ends is an edge of the second: one case satisfied on `[0.20, 0.30] ∪ [0.35, ∞)`
+   * agrees with a second satisfied on `[0.30, 0.55]` at every edge, and disagrees everywhere in
+   * between.
    */
   readonly weight: number;
   /** Cases satisfied at this weight that are NOT satisfied at `w = 0`. */
@@ -2267,7 +2268,7 @@ function gainProfile(gains: readonly WindowGain[], cap: number): readonly Family
  * argument is the FAMILY's: it turns on the slope only ever hurting members. The decisive-stability
  * and failed-edge slopes are differences of two positive scores, so a rival's slope can cap a root
  * from above — there the union is a LIST of islands and the gap between them is a weight at which
- * the case is NOT satisfied. {@link gainProfile} scans the intervals so both are measured.
+ * the case is NOT satisfied. `gainProfile` scans the intervals so both are measured.
  */
 
 /**
