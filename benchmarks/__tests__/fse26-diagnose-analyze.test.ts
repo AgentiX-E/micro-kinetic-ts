@@ -32,11 +32,19 @@ import {
   classifyMiss,
   computeWeightSeparation,
   computeZeroRegressionWindow,
+  CV_SHAPES,
+  cvAvailability,
+  cvScreen,
+  cvShapeMenu,
+  cvSlopes,
+  DEFAULT_CV_SHAPE,
   diffDiagnostics,
   familyCompetition,
   familyScreen,
   formatAnalyzeSections,
   formatAnomalyShapeReport,
+  formatCvMenuReport,
+  formatCvScreenReport,
   formatDiagnoseComparison,
   formatFamilyScreenReport,
   formatGuardCensus,
@@ -4740,5 +4748,571 @@ describe('--separator-screen — wiring', () => {
       'separatorScreen',
       'guardCensus',
     ]);
+  });
+});
+
+/**
+ * One case's slope for the decisive-stability term.
+ *
+ * Every fixture below goes through the REAL formatter and the real parser, so a shape the
+ * producer cannot write is not testable here — the composition the term reads is the one
+ * `metricDecisive` actually carries.
+ */
+function cvCase(options: {
+  readonly cvs: readonly (number | undefined)[];
+  readonly anomalies: readonly number[];
+  readonly groundTruth: string;
+  readonly prediction: string;
+  readonly datapack?: string;
+}): DiagnosedCase {
+  const text = dump({
+    datapack: options.datapack ?? 'dp-1',
+    groundTruthServices: [options.groundTruth],
+    services: options.cvs.map((cv, index) =>
+      serviceLine({
+        serviceId: `ts-svc-${index}`,
+        selfAnomaly: options.anomalies[index] ?? 0,
+        dominant: 'cpu',
+        metricOutcomes:
+          cv === undefined
+            ? undefined
+            : [{ label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(cv) }],
+      }),
+    ),
+    topPredictions: [options.prediction],
+  });
+  return parseDiagnosticDump(text)[0]!;
+}
+
+describe('cvSlopes — the decisive metric’s stability, as a slope', () => {
+  it('rewards the lower coefficient of variation under `flip`', () => {
+    // The separator's own statistic, made into a coefficient: the source's decisive metric is
+    // the STABLER one, so a term has to rise as `cv` falls.
+    const kase = cvCase({
+      cvs: [1.0, 0.2, 0.1],
+      anomalies: [0.9, 0.5, 0.4],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const slopes = cvSlopes(kase.services, 'flip');
+    expect(slopes.get('ts-svc-0')).toBeCloseTo(0, 10);
+    expect(slopes.get('ts-svc-1')).toBeCloseTo(0.8, 10);
+    expect(slopes.get('ts-svc-2')).toBeCloseTo(0.9, 10);
+  });
+
+  it('gives the case’s largest cv a slope of exactly zero, so the term is a distance', () => {
+    // Max-normalised like every other fusion term: the least stable service in the case is the
+    // origin, and a term whose leader were anywhere but the origin would silently raise the
+    // whole case against cases whose services are all stable.
+    const kase = cvCase({
+      cvs: [4, 0.5],
+      anomalies: [1, 0.5],
+      groundTruth: 'ts-svc-1',
+      prediction: 'ts-svc-0',
+    });
+    const slopes = cvSlopes(kase.services, 'flip');
+    expect(slopes.get('ts-svc-0')).toBe(0);
+    expect(slopes.get('ts-svc-1')).toBeCloseTo(0.875, 10);
+  });
+
+  it('does NOT credit a service whose decisive composition the block did not render', () => {
+    // The load-bearing assertion of this family. `undefined` is not `cv = 0`, and a service the
+    // block could not decompose must not collect the term's MAXIMUM for a measurement nobody
+    // made — which is exactly what defaulting it to zero would do.
+    const kase = cvCase({
+      cvs: [undefined, 0.6],
+      anomalies: [0.9, 0.5],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    expect(kase.services[0]!.decisiveOutcome).toBeUndefined();
+    const slopes = cvSlopes(kase.services, 'flip');
+    expect(slopes.get('ts-svc-0')).toBe(0);
+    expect(slopes.get('ts-svc-1')).toBe(0);
+  });
+
+  it('is inert when the case carries no composition at all', () => {
+    const kase = cvCase({
+      cvs: [undefined, undefined],
+      anomalies: [0.9, 0.5],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    expect([...cvSlopes(kase.services, 'flip').values()]).toEqual([0, 0]);
+  });
+
+  it('is inert when every measured cv is zero', () => {
+    // A perfectly stable series is a real measurement, and it is also no comparison: with no
+    // spread there is no distance to weigh, so the term must not manufacture one.
+    const kase = cvCase({
+      cvs: [0, 0],
+      anomalies: [0.9, 0.5],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    expect([...cvSlopes(kase.services, 'flip').values()]).toEqual([0, 0]);
+  });
+
+  it('is inert with a single measured service — one cv is not a comparison', () => {
+    const kase = cvCase({
+      cvs: [0.3, undefined],
+      anomalies: [0.9, 0.5],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    expect([...cvSlopes(kase.services, 'flip').values()]).toEqual([0, 0]);
+  });
+
+  it('scores the ORDER alone under `rank`, not the magnitude', () => {
+    // The second declared shape answers a different question: does the SPREAD of cv matter, or
+    // only the order? The two are told apart by values a linear flip cannot reproduce.
+    const kase = cvCase({
+      cvs: [1.0, 0.2, 0.1],
+      anomalies: [0.9, 0.5, 0.4],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const slopes = cvSlopes(kase.services, 'rank');
+    expect(slopes.get('ts-svc-0')).toBe(0);
+    expect(slopes.get('ts-svc-1')).toBeCloseTo(0.5, 10);
+    expect(slopes.get('ts-svc-2')).toBe(1);
+  });
+
+  it('averages the ranks of equal cvs rather than ordering equals', () => {
+    // Two services with the same cv are indistinguishable to this statistic, and a shape that
+    // broke the tie by position would report a separation the dump does not contain.
+    const kase = cvCase({
+      cvs: [0.2, 0.2, 0.6],
+      anomalies: [0.9, 0.8, 0.5],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const slopes = cvSlopes(kase.services, 'rank');
+    expect(slopes.get('ts-svc-0')).toBeCloseTo(0.75, 10);
+    expect(slopes.get('ts-svc-1')).toBeCloseTo(0.75, 10);
+    expect(slopes.get('ts-svc-2')).toBe(0);
+  });
+
+  it('is inert under `rank` with fewer than two measured services', () => {
+    const kase = cvCase({
+      cvs: [0.3, undefined],
+      anomalies: [0.9, 0.5],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    expect([...cvSlopes(kase.services, 'rank').values()]).toEqual([0, 0]);
+  });
+
+  it('declares both shapes, and the default is the first', () => {
+    // Pinned so a third shape is a decision someone has to make here rather than an addition
+    // nobody reviewed. `flip` leads because it is the one the separator's rate was measured on.
+    expect(CV_SHAPES).toEqual(['flip', 'rank']);
+    expect(DEFAULT_CV_SHAPE).toBe('flip');
+  });
+});
+
+describe('cvAvailability — a data gap is not a result', () => {
+  it('counts the measured services and the cases where the term can distinguish', () => {
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.2, 0.2],
+        anomalies: [0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [undefined, undefined],
+        anomalies: [0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+    ];
+    const availability = cvAvailability(cases);
+    expect(availability.cases).toBe(3);
+    expect(availability.servicesTotal).toBe(6);
+    expect(availability.servicesMeasured).toBe(4);
+    // Only the first case carries a SPREAD. The second has two measurements and no comparison
+    // between them, which is the distinction a bare "measured" count cannot express.
+    expect(availability.casesComparable).toBe(1);
+  });
+
+  it('does not count a case with no acceptable root', () => {
+    const text = dump({
+      groundTruthServices: [],
+      services: [
+        serviceLine({
+          serviceId: 'ts-a',
+          dominant: 'cpu',
+          metricOutcomes: [
+            { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.1) },
+          ],
+        }),
+      ],
+      topPredictions: [],
+    });
+    const availability = cvAvailability(parseDiagnosticDump(text));
+    expect(availability.cases).toBe(0);
+    expect(availability.servicesMeasured).toBe(0);
+  });
+});
+
+describe('cvScreen — the cv penalty, solved rather than swept', () => {
+  /** The configuration a screen is measured against, with the other terms held off. */
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  it('reproduces the dump’s own rank-1 at w = 0, which is the instrument’s self-check', () => {
+    // The base of every affine case is `shippedScores`, so the number of cases satisfied at
+    // zero weight IS the number the dump's own ranking got right. An instrument that scored a
+    // different ranking than the run it reads would report a gain against itself.
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    expect(cvScreen(cases, WEIGHTS).solved.window.satisfied).toBe(1);
+  });
+
+  it('finds the weight at which a lower-cv root is promoted', () => {
+    // `ts-svc-0` is the root and the less anomalous service; the engine's rank-1 is the more
+    // anomalous, less stable one. The base gap is the METRIC term's own, `log1p(1) − log1p(0)`,
+    // because the metric term is a rank normalisation rather than the raw anomaly — and the
+    // promotion weight is that gap over the slope gap exactly, so this pins the closed form
+    // instead of a sampled approximation of it.
+    const cases = [
+      cvCase({
+        cvs: [0.2, 0.8],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const screen = cvScreen(cases, WEIGHTS);
+    expect(screen.solved.gain).toBe(1);
+    expect(screen.solved.gained).toEqual(['dp-1']);
+    expect(screen.solved.window.satisfied).toBe(0);
+    expect(screen.solved.ship).toBeCloseTo(Math.log1p(1) / 0.75, 9);
+    expect(screen.gainTypes).toEqual([{ key: 'JVMMemoryStress', cases: 1 }]);
+  });
+
+  it('ships 0 and gains nothing when the term cannot change an order', () => {
+    // No spread to weigh: a positive weight would be a configuration change with no measured
+    // effect, and the register records a weight that buys nothing as a defect.
+    const cases = [
+      cvCase({
+        cvs: [0.4, 0.4],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const screen = cvScreen(cases, WEIGHTS);
+    expect(screen.solved.gain).toBe(0);
+    expect(screen.solved.ship).toBe(0);
+    expect(screen.solved.lostAtShip).toBe(0);
+  });
+
+  it('loses no case that was correct at zero, on either shape', () => {
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    for (const screen of cvShapeMenu(cases, WEIGHTS)) {
+      expect(screen.solved.lostAtShip).toBe(0);
+      // The window protects the case that was right: the gain is one, and the loss is measured
+      // rather than inferred from the cap.
+      expect(screen.solved.gain).toBe(1);
+    }
+  });
+});
+
+describe('formatCvMenuReport — availability first, then one row per shape', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  it('states how much of the dump carries a composition before any window', () => {
+    // Order is the point, not decoration: a gain of 0 caused by an absent measurement and a
+    // gain of 0 caused by a term that cannot help read identically in a row, and only the
+    // availability line tells them apart.
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const report = formatCvMenuReport(cvShapeMenu(cases, WEIGHTS), WEIGHTS);
+    const lines = report.split('\n');
+    const availability = lines.findIndex((line) => line.includes('services carrying'));
+    const firstWindow = lines.findIndex((line) => line.includes('window:'));
+    expect(availability).toBeGreaterThan(-1);
+    expect(firstWindow).toBeGreaterThan(availability);
+    // Both services carry a composition, and the case is the one the term can reorder.
+    expect(report).toContain('2/2');
+    expect(report).toContain('can act on 1');
+  });
+
+  it('names every declared shape, with its own solved window', () => {
+    const cases = [
+      cvCase({
+        cvs: [0.2, 0.8],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const report = formatCvMenuReport(cvShapeMenu(cases, WEIGHTS), WEIGHTS);
+    for (const shape of CV_SHAPES) expect(report).toContain(shape);
+    expect(report).toContain('gain 1');
+  });
+
+  it('says the term is inert rather than printing a window over nothing', () => {
+    // A dump that carries no case this can act on. The share is `n/a` rather than a division by
+    // an empty population, and no `window:` line is printed at all: a gain of 0 here is a data
+    // gap, and a window row would present it as a verdict on the shape.
+    const cases = parseDiagnosticDump(
+      dump({ groundTruthServices: [], services: [], topPredictions: [] }),
+    );
+    const menu = formatCvMenuReport(cvShapeMenu(cases, WEIGHTS), WEIGHTS);
+    expect(menu).toContain('0/0 (n/a)');
+    expect(menu).toContain('the term is INERT on this dump');
+    expect(menu).not.toContain('window:');
+    expect(formatCvScreenReport(cvScreen(cases, WEIGHTS), WEIGHTS)).toContain(
+      'the term is INERT on this dump',
+    );
+  });
+
+  it('prints the binder for a finite cap even when nothing is gained', () => {
+    // A row of zeros with no mechanism is a verdict nobody can refute. One case is correct at
+    // zero and caps the weight; the other's root is behind on BOTH terms, so no weight can ever
+    // fix it — and the report has to say which of the two produced the zero.
+    const cases = [
+      cvCase({
+        datapack: 'dp-cap',
+        cvs: [0.8, 0.2],
+        anomalies: [0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        datapack: 'dp-lost',
+        cvs: [0.8, 0.2],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const single = formatCvScreenReport(cvScreen(cases, WEIGHTS), WEIGHTS);
+    expect(single).toContain('no admissible gain');
+    // The cap is `log1p(1) / 0.75` — the weight at which `dp-cap`'s correct root is overtaken.
+    expect(single).toContain('cap bound by dp-cap');
+    expect(single).toContain(`cap ${(Math.log1p(1) / 0.75).toFixed(6)}`);
+    const menu = formatCvMenuReport(cvShapeMenu(cases, WEIGHTS), WEIGHTS);
+    // Both shapes bind on the SAME pair, at weights that differ only through the slope's shape —
+    // `log1p(1)/0.75` for the magnitude and `log1p(1)/1` for the order.
+    expect(menu).toContain('bound by dp-cap');
+    expect(menu).toContain(`cap ${(Math.log1p(1) / 0.75).toFixed(6)}`);
+    expect(menu).toContain(`cap ${Math.log1p(1).toFixed(6)}`);
+    expect(menu).toContain('no shape in this menu has an admissible gain at any weight');
+  });
+});
+
+describe('cvScreen — the base is the engine that ran, not a two-term blend', () => {
+  it('satisfies at w = 0 a case the LATENCY term decided', () => {
+    // `shippedScores` is the base, and the latency and pool terms are in it. A screen built on
+    // the parsed anomaly alone would reconstruct a ranking nobody had and then report a "gain"
+    // against a run that never produced it. Measured, not argued: the root below wins on the
+    // latency term and LOSES on the metric term, so the two configurations disagree about which
+    // case is satisfied at zero.
+    //
+    // A field of 26, because one term can only be shown to decide a ranking where the other
+    // leaves room: with two candidates the metric term's top-to-bottom gap is `log1p(1)`, which
+    // the latency term's own maximum (`latWeight × 1`) cannot cross.
+    const FILLERS = 24;
+    const text = dump({
+      groundTruthServices: ['ts-late'],
+      services: [
+        serviceLine({
+          serviceId: 'ts-hot',
+          selfAnomaly: 0.9,
+          latRise: 1,
+          latEdges: 2,
+          dominant: 'cpu',
+          metricOutcomes: [
+            { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.1) },
+          ],
+        }),
+        serviceLine({
+          serviceId: 'ts-late',
+          selfAnomaly: 0.5,
+          latRise: 12,
+          latEdges: 2,
+          dominant: 'cpu',
+          metricOutcomes: [
+            { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.6) },
+          ],
+        }),
+        ...Array.from({ length: FILLERS }, (_, i) =>
+          serviceLine({
+            serviceId: `ts-filler-${String(i).padStart(2, '0')}`,
+            selfAnomaly: 0.49 - i / 100,
+          }),
+        ),
+      ],
+      topPredictions: ['ts-late'],
+    });
+    const cases = parseDiagnosticDump(text);
+    expect(
+      cvScreen(cases, { logWeight: 0, poolWeight: 0, temporalWeight: 0 }).solved.window.satisfied,
+    ).toBe(1);
+    expect(
+      cvScreen(cases, { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 }).solved
+        .window.satisfied,
+    ).toBe(0);
+  });
+});
+
+describe('parseDiagnosticDump — the CI log transport prefix', () => {
+  /** The prefix GitHub's job log puts on every line of stdout. */
+  const TAG = '2026-09-16T14:24:33.7040161Z ';
+
+  /** The same dump as a download gives it: a BOM, then a timestamp on every line. */
+  function asDownloaded(text: string): string {
+    return `\uFEFF${text
+      .split('\n')
+      .map((line) => TAG + line)
+      .join('\n')}`;
+  }
+
+  const SOURCE = () =>
+    dump({
+      groundTruthServices: ['ts-order-service'],
+      services: [
+        serviceLine({
+          serviceId: 'ts-order-service',
+          selfAnomaly: 0.9,
+          logScore: 2,
+          failedEdge: 0.4,
+          failedEdgeRecords: 3,
+          latRise: 4,
+          latEdges: 2,
+          onset: 1200,
+          logic: 8,
+          http: 5,
+          both: 2,
+          dominant: 'cpu',
+          metricOutcomes: [{ label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.3) }],
+        }),
+        serviceLine({ serviceId: 'ts-payment-service', selfAnomaly: 0.4 }),
+      ],
+      topPredictions: ['ts-order-service', 'ts-payment-service'],
+      injectTimeMs: 1_700_000_000_000,
+    });
+
+  it('reads a log exactly as a download gives it, with a timestamp on every line', () => {
+    // The module's contract says the parser "can also be pointed at a downloaded CI artifact", and
+    // a download is NOT the text the engine wrote: GitHub prefixes every line of stdout with a
+    // timestamp. The dump's grammar is column-anchored (`DIAG` at column 0, two spaces for a
+    // service, four for a metric), so an unstripped log parses to ZERO cases — a silent data gap
+    // that reads exactly like a run that produced nothing.
+    const clean = parseDiagnosticDump(SOURCE());
+    const downloaded = parseDiagnosticDump(asDownloaded(SOURCE()));
+    expect(downloaded).toEqual(clean);
+    // Pinned field by field, so the equality above cannot be satisfied by two empty parses: the
+    // header, the indented rows and the four-space metric lines each have their own anchor, and
+    // one surviving anchor would not prove the others did.
+    expect(downloaded).toHaveLength(1);
+    expect(downloaded[0]!.injectTimeMs).toBe(1_700_000_000_000);
+    expect(downloaded[0]!.services).toHaveLength(2);
+    expect(downloaded[0]!.services[0]!.decisiveOutcome?.breakdown?.cv).toBeCloseTo(0.3, 10);
+    expect(downloaded[0]!.prediction).toEqual(['ts-order-service', 'ts-payment-service']);
+  });
+
+  it('leaves a dump that was already clean untouched', () => {
+    // Both forms are on this repo's disk — the saved fixtures are the stripped form and a raw job
+    // log is the tagged one — so the strip has to be idempotent rather than a one-way filter.
+    const clean = SOURCE();
+    expect(parseDiagnosticDump(clean)).toEqual(parseDiagnosticDump(clean));
+    expect(parseDiagnosticDump(clean)[0]!.services).toHaveLength(2);
+  });
+});
+
+describe('--cv-screen wiring', () => {
+  it('parses --cv-screen into a section that carries the run’s configuration', () => {
+    const options = parseAnalyzeArgs(['--dump', 'd', '--cv-screen', '--log-weight', '1']);
+    if (options.kind !== 'dump') throw new Error('expected a dump mode');
+    expect(options.sections.map((section) => section.kind)).toEqual(['cvScreen']);
+  });
+
+  it('renders every section the parser accepts through the dispatcher', () => {
+    // The census sections had no end-to-end test, which left the dispatcher's own arms — the one
+    // place where a flag that parses and validates can still render NOTHING — outside the gate.
+    // Asserted per section rather than in aggregate: "the report is non-empty" passes on the
+    // anomaly-shape appendix that every dump mode prints.
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-order-service'],
+        services: [serviceLine({ serviceId: 'ts-order-service', selfAnomaly: 0.9 })],
+        topPredictions: ['ts-order-service'],
+      }),
+    );
+    const expected: readonly (readonly [string, string])[] = [
+      ['--separator-screen', 'Separator census'],
+      ['--guard-census', 'Metric-guard census'],
+    ];
+    for (const [flag, heading] of expected) {
+      const options = parseAnalyzeArgs(['--dump', 'd', flag, '--log-weight', '0']);
+      if (options.kind !== 'dump') throw new Error('expected a dump mode');
+      expect(formatAnalyzeSections(cases, 'd', options)).toContain(heading);
+    }
+  });
+
+  it('is enrolled in the weight guard as well as in the dispatch', () => {
+    // A section needs TWO registrations, and the pair is what this asserts: a flag wired into the
+    // dispatch but not into the guard would reconstruct `shippedScores` at a weight nobody chose,
+    // and the report would describe a ranking the run never had while looking like a measurement.
+    expect(() => parseAnalyzeArgs(['--dump', 'd', '--cv-screen'])).toThrow(/--log-weight/);
+  });
+
+  it('renders through the section dispatcher, not only through its own formatter', () => {
+    // The dispatch is the third registration: a flag in the guard and the switch set but absent
+    // from `analyzeSectionText` is accepted, validated, and silently renders nothing.
+    const cases = [
+      cvCase({
+        cvs: [0.2, 0.8],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const options = parseAnalyzeArgs(['--dump', 'd', '--cv-screen', '--log-weight', '0']);
+    if (options.kind !== 'dump') throw new Error('expected a dump mode');
+    const report = formatAnalyzeSections(cases, 'd', options);
+    expect(report).toContain('Decisive-stability screen');
+    expect(report).toContain('gain 1');
   });
 });

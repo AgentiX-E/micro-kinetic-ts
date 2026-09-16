@@ -346,6 +346,26 @@ interface MutableService extends Omit<DiagnosedService, 'metricOutcomes' | 'deci
 }
 
 /**
+ * Strip the CI log transport's per-line prefix.
+ *
+ * A download is NOT the text the engine wrote: GitHub's job log prefixes EVERY line of stdout with
+ * `YYYY-MM-DDTHH:MM:SS.fffffffZ `. The dump's grammar is column-anchored — `DIAG` at column 0, two
+ * spaces for a service, four for a metric — so an unstripped log parses to ZERO cases, which is a
+ * silent data gap that reads exactly like a run that produced nothing. Done once here rather than
+ * at every pattern: a leading `\s*` in each of them would be a second, weaker definition of the
+ * dump's indentation, and the indentation is what the parser is reading.
+ *
+ * Idempotent, because both forms live on this repo's disk: the saved fixtures are the stripped
+ * form and a raw job log is the tagged one, and the same reader has to accept each.
+ *
+ * @param text - Raw log text, tagged or clean.
+ * @returns The text with the transport prefix and the BOM removed.
+ */
+export function stripLogPrefix(text: string): string {
+  return text.replace(/^\uFEFF/, '').replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z ?/gm, '');
+}
+
+/**
  * Parse every `DIAG` block in a dump, ignoring everything around them.
  *
  * The dumps are printed into the benchmark's stdout together with the run
@@ -354,10 +374,11 @@ interface MutableService extends Omit<DiagnosedService, 'metricOutcomes' | 'deci
  * reaches its `prediction=` line is dropped: a truncated block is worse than an
  * absent one, because its `services` list would read as complete.
  *
- * @param text - The log text (or any text containing `DIAG` blocks).
+ * @param text - The log text (or any text containing `DIAG` blocks), tagged or clean.
  * @returns One entry per complete block, in file order.
  */
 export function parseDiagnosticDump(text: string): DiagnosedCase[] {
+  const lines = stripLogPrefix(text).split('\n');
   const cases: DiagnosedCase[] = [];
   let current:
     | {
@@ -397,7 +418,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
     lastService.metricOutcomes = faithful ? outcomes : undefined;
   };
 
-  for (const line of text.split('\n')) {
+  for (const line of lines) {
     const header = HEADER_RE.exec(line);
     if (header) {
       // A new header without a footer means the previous block was truncated.
@@ -2625,6 +2646,370 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
   return lines.join('\n');
 }
 
+/** The declared shapes of the decisive-stability term. */
+export const CV_SHAPES = ['flip', 'rank'] as const;
+
+/**
+ * Which reading of "the decisive metric is steadier" a slope encodes.
+ *
+ * TWO, declared as a menu rather than left to the next proposal, for the reason the onset
+ * shapes are: "no weight on THIS shape works" leaves the axis open on a technicality, and the
+ * next session finds another shape to propose. The two are different hypotheses about the same
+ * statistic — `flip` carries the MAGNITUDE of the coefficient of variation and `rank` carries
+ * only its ORDER, so a magnitude dominated by one outlier is a null `rank` does not share.
+ */
+export type CvShape = (typeof CV_SHAPES)[number];
+
+/** The shape a screen is solved under when the caller names none. */
+export const DEFAULT_CV_SHAPE: CvShape = 'flip';
+
+/**
+ * Per-service slope for the decisive-stability term, over ONE case.
+ *
+ * The separator's own statistic, turned into a coefficient: across the miss pairs the true
+ * source's decisive metric has the LOWER coefficient of variation (AUC 0.718 on the
+ * inventory-matched stratum), so a term that credits stability rises as `cv` falls.
+ *
+ * TOTAL over the services, unlike `latencySlopes`: a service the term cannot weigh still carries
+ * a base, and omitting it would make the caller default it — which is how "not measured" becomes
+ * "measured as zero". A service whose decisive composition the block did not render gets a slope
+ * of **0**, i.e. no credit; giving it the term's maximum for a measurement nobody made is the
+ * error this whole family exists to avoid.
+ *
+ * @param services - One case's parsed services.
+ * @param shape - Which reading to encode. Defaults to {@link DEFAULT_CV_SHAPE}.
+ * @returns One slope per service, zero where the term does not act.
+ */
+export function cvSlopes(
+  services: readonly DiagnosedService[],
+  shape: CvShape = DEFAULT_CV_SHAPE,
+): Map<string, number> {
+  const slopes = new Map<string, number>();
+  const measured: { readonly id: string; readonly cv: number }[] = [];
+  for (const service of services) {
+    slopes.set(service.serviceId, 0);
+    const cv = service.decisiveOutcome?.breakdown?.cv;
+    // A non-finite `cv` is a value the block printed and the engine cannot have produced; it is
+    // read as absent rather than propagated, because one `NaN` slope would make the case's
+    // interval empty and the report would read "no window" for an arithmetic accident.
+    if (cv === undefined || !Number.isFinite(cv)) continue;
+    measured.push({ id: service.serviceId, cv });
+  }
+  // ONE cv is not a comparison. Stated once, before either shape, so the two agree on when the
+  // term is inert — a case cannot be reordered by a distance measured against nothing.
+  if (measured.length < 2) return slopes;
+
+  if (shape === 'rank') {
+    const ascending = [...measured].sort((a, b) => a.cv - b.cv);
+    const n = ascending.length;
+    const ranks = new Map<string, number>();
+    let i = 0;
+    while (i < n) {
+      let j = i;
+      while (j + 1 < n && ascending[j + 1]!.cv === ascending[i]!.cv) j++;
+      // AVERAGED, not positional: two services the statistic cannot tell apart must not be
+      // separated by whichever one a sort happened to leave first.
+      const shared = (i + j) / 2;
+      for (let k = i; k <= j; k++) ranks.set(ascending[k]!.id, shared);
+      i = j + 1;
+    }
+    for (const one of measured) slopes.set(one.id, (n - 1 - ranks.get(one.id)!) / (n - 1));
+    return slopes;
+  }
+
+  const max = measured.reduce((best, one) => (one.cv > best ? one.cv : best), measured[0]!.cv);
+  // Max-normalised like every other fusion term, so the least stable service in the case is the
+  // origin and the term is a DISTANCE rather than a level. A `cv` of zero is a real measurement
+  // (a perfectly flat series), but a case where every service is flat holds no distance, and
+  // manufacturing one would rank on nothing.
+  if (max <= 0) return slopes;
+  for (const one of measured) slopes.set(one.id, (max - one.cv) / max);
+  return slopes;
+}
+
+/** How much of a dump the decisive-stability term can act on. */
+export interface CvAvailability {
+  /** Cases the dump describes and that name at least one acceptable root. */
+  readonly cases: number;
+  /** Services in total, over every such case. */
+  readonly servicesTotal: number;
+  /** Services whose decisive composition the block rendered. */
+  readonly servicesMeasured: number;
+  /**
+   * Cases holding at least two DISTINCT measured cvs — the population the term can reorder.
+   *
+   * The distinction a bare "measured" count cannot express: a case with two measurements that
+   * agree carries no more evidence than a case with one, and only this count falls.
+   */
+  readonly casesComparable: number;
+}
+
+/**
+ * Count how much decisive-stability evidence a dump carries.
+ *
+ * @param cases - Parsed cases.
+ * @returns The counts.
+ */
+export function cvAvailability(cases: readonly DiagnosedCase[]): CvAvailability {
+  let eligible = 0;
+  let servicesTotal = 0;
+  let servicesMeasured = 0;
+  let casesComparable = 0;
+  for (const kase of cases) {
+    if (!kase.groundTruth.some((name) => name !== '')) continue;
+    eligible++;
+    servicesTotal += kase.services.length;
+    const seen = new Set<number>();
+    for (const service of kase.services) {
+      const cv = service.decisiveOutcome?.breakdown?.cv;
+      if (cv === undefined || !Number.isFinite(cv)) continue;
+      servicesMeasured++;
+      seen.add(cv);
+    }
+    // Both declared shapes are strictly monotone in `cv`, so a case with one distinct value is
+    // inert under either of them and this count does not depend on the shape.
+    if (seen.size > 1) casesComparable++;
+  }
+  return { cases: eligible, servicesTotal, servicesMeasured, casesComparable };
+}
+
+/** One shape of the decisive-stability term, solved. */
+export interface CvScreen {
+  /** How much of the dump carries a composition at all. */
+  readonly availability: CvAvailability;
+  /** The shape this window is for. */
+  readonly shape: CvShape;
+  /** The solved window over the whole dump. */
+  readonly solved: SolvedWindow;
+  /** The per-fault-type split of the gain — the kill criterion's second half. */
+  readonly gainTypes: readonly { readonly key: string; readonly cases: number }[];
+}
+
+/**
+ * Screen the decisive-stability term for a zero-regression window.
+ *
+ * The term the separator's own rate licenses: it is the only non-term signal above the criterion
+ * on the inventory-matched stratum, and this is the offline instrument that decides whether a
+ * weight on it can exist. Solved with the SAME solver and the same shipping rule as the family
+ * and onset screens — a window is a window, and the question does not change because the slope
+ * came from a dispersion statistic.
+ *
+ * The base is `shippedScores` for the caller's configuration, so the case this is a distance
+ * from is the engine that actually ran. In particular the latency and pool terms are IN the base:
+ * a screen measured against a two-term blend would report a window for a ranking nobody had.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The configuration to screen against.
+ * @param shape - Which reading of the statistic to solve for.
+ * @returns The availability counts and the solved window.
+ */
+export function cvScreen(
+  cases: readonly DiagnosedCase[],
+  weights: FamilyScreenWeights,
+  shape: CvShape = DEFAULT_CV_SHAPE,
+): CvScreen {
+  const latWeight = weights.latWeight ?? SHIPPED_LAT_WEIGHT;
+  const latFloor = weights.latFloor ?? SHIPPED_LAT_FLOOR;
+  const poolWeight = weights.poolWeight ?? SHIPPED_POOL_WEIGHT;
+  const built: WeightSeparationCase[] = [];
+  for (const kase of cases) {
+    const targets = kase.groundTruth.filter((name) => name !== '');
+    if (targets.length === 0) continue;
+    const base = shippedScores(kase, {
+      logWeight: weights.logWeight,
+      latWeight,
+      latFloor,
+      poolWeight,
+      temporalWeight: weights.temporalWeight ?? SHIPPED_TEMPORAL_WEIGHT,
+      onsetShape: weights.onsetShape ?? SHIPPED_ONSET_SHAPE,
+    });
+    const slopes = cvSlopes(kase.services, shape);
+    const scores = new Map<string, { base: number; slope: number }>();
+    for (const service of kase.services) {
+      scores.set(service.serviceId, {
+        // Total by construction — `shippedScores` assigns an entry to every service, and
+        // `cvSlopes` to every service — so the lookups assert rather than defaulting to a base
+        // or a slope nobody computed.
+        base: base.get(service.serviceId)!,
+        slope: slopes.get(service.serviceId)!,
+      });
+    }
+    built.push({ datapack: kase.datapack, targets, scores });
+  }
+  const solved = solveWindow(built);
+  const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
+  const gainTypes = new Map<string, number>();
+  for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
+  return {
+    availability: cvAvailability(cases),
+    shape,
+    solved,
+    gainTypes: tallyCounter(gainTypes),
+  };
+}
+
+/**
+ * Screen every shape in {@link CV_SHAPES}, in declared order.
+ *
+ * @param cases - Parsed cases.
+ * @param weights - The configuration to screen against.
+ * @returns One solved screen per shape.
+ */
+export function cvShapeMenu(
+  cases: readonly DiagnosedCase[],
+  weights: FamilyScreenWeights,
+): readonly CvScreen[] {
+  return CV_SHAPES.map((shape) => cvScreen(cases, weights, shape));
+}
+
+/**
+ * Render one shape's decisive-stability screen.
+ *
+ * @param screen - The solved screen.
+ * @param weights - The configuration it was solved at, for the header.
+ * @returns A multi-line report, without a trailing newline.
+ */
+export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeights): string {
+  const a = screen.availability;
+  const s = screen.solved;
+  const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+  const share =
+    a.servicesTotal === 0 ? 'n/a' : `${((100 * a.servicesMeasured) / a.servicesTotal).toFixed(1)}%`;
+  const lines: string[] = [];
+  lines.push(
+    `Decisive-stability screen (${configurationLine(weights)}; shape=${screen.shape}` +
+      (screen.shape === DEFAULT_CV_SHAPE
+        ? ' (the magnitude of cv; the shape the rate was measured on)'
+        : ' (the order of cv alone)') +
+      '):',
+  );
+  // Availability first, because a zero gain means something different depending on it: an
+  // unrendered composition is a data gap, a measured spread with no window is a result.
+  lines.push(
+    `  evidence: ${a.cases} cases; with a decisive composition ${a.servicesMeasured} of ` +
+      `${a.servicesTotal} services; with a SPREAD the term can act on ${a.casesComparable}`,
+  );
+  lines.push(
+    `  services carrying a decisive composition: ${a.servicesMeasured}/${a.servicesTotal} ` +
+      `(${share})`,
+  );
+  if (a.casesComparable === 0) {
+    lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
+    lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
+    return lines.join('\n');
+  }
+  const width = Number.isFinite(s.window.cap)
+    ? s.window.cap - s.gainFloor
+    : Number.POSITIVE_INFINITY;
+  lines.push(
+    `  window: gain ${s.gain} in [${at(s.gainFloor)}, ${at(s.bestEnd)}] ` +
+      `(cap ${at(s.window.cap)}; width ${Number.isFinite(width) ? width.toFixed(6) : 'unbounded'})`,
+  );
+  lines.push(
+    `  ship ${s.ship.toFixed(6)}; lost at ship ${s.lostAtShip}` +
+      (s.lostAtShip > 0 ? ' — the criterion’s second half FAILS' : ''),
+  );
+  const profile = s.steps.filter((step, index) =>
+    index === 0 ? step.gained > 0 : step.gained !== s.steps[index - 1]!.gained,
+  );
+  if (profile.length > 0) {
+    lines.push(
+      `  profile ${profile.map((step) => `${step.weight.toFixed(6)}→${step.gained}`).join(', ')}`,
+    );
+  }
+  if (s.gain > 0) {
+    lines.push(`  gains ${s.gained.join(', ')}`);
+    lines.push(
+      `  by fault type: ${screen.gainTypes.map((t) => `${t.key} +${t.cases}`).join(', ')}`,
+    );
+  } else {
+    lines.push('  no admissible gain: every weight that fixes a case also loses one');
+  }
+  if (s.window.capBinder !== undefined) {
+    lines.push(
+      `  cap bound by ${s.window.capBinder.datapack}: ${s.window.capBinder.target} overtaken by ` +
+        `${s.window.capBinder.rival} (lead ${s.window.capBinder.lead.toFixed(6)}, ` +
+        `slope gap ${s.window.capBinder.slopeGap.toFixed(6)})`,
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Render the whole shape menu.
+ *
+ * Availability once, before any window, for the reason the onset menu prints it once: it is a
+ * property of the DUMP rather than of a shape, and an inert term would give every row below a
+ * `gain 0` that reads like a verdict on the shape.
+ *
+ * @param screens - The solved screens, one per shape.
+ * @param weights - The configuration they were solved at, for the header.
+ * @returns A multi-line report, without a trailing newline.
+ */
+export function formatCvMenuReport(
+  screens: readonly CvScreen[],
+  weights: FamilyScreenWeights,
+): string {
+  const first = screens[0];
+  if (first === undefined) return 'Decisive-stability screen: no shape was screened';
+  const a = first.availability;
+  const lines: string[] = [];
+  lines.push(`Decisive-stability screen (${configurationLine(weights)}):`);
+  const share =
+    a.servicesTotal === 0 ? 'n/a' : `${((100 * a.servicesMeasured) / a.servicesTotal).toFixed(1)}%`;
+  lines.push(
+    `  evidence: ${a.cases} cases; with a decisive composition ${a.servicesMeasured} of ` +
+      `${a.servicesTotal} services; with a SPREAD the term can act on ${a.casesComparable}`,
+  );
+  lines.push(
+    `  services carrying a decisive composition: ${a.servicesMeasured}/${a.servicesTotal} ` +
+      `(${share})`,
+  );
+  if (a.casesComparable === 0) {
+    lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
+    lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
+    return lines.join('\n');
+  }
+  lines.push('  shape          gain  window                     width     ship      binder');
+  for (const screen of screens) {
+    const s = screen.solved;
+    const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+    const width = Number.isFinite(s.window.cap)
+      ? s.window.cap - s.gainFloor
+      : Number.POSITIVE_INFINITY;
+    lines.push(
+      `  ${screen.shape.padEnd(14)}${String(s.gain).padStart(3)}  ` +
+        `[${at(s.gainFloor)}, ${at(s.window.cap)}]`.padEnd(25) +
+        `${(Number.isFinite(width) ? width.toFixed(6) : 'unbounded').padStart(10)}  ` +
+        `${s.ship.toFixed(6).padStart(9)}  ` +
+        `${s.window.capBinder === undefined ? '-' : s.window.capBinder.datapack}`,
+    );
+  }
+  // The detail is printed for any shape with a gain, and the binder for every FINITE cap: a row
+  // of zeros with no mechanism is a verdict nobody can act on or refute.
+  for (const screen of screens) {
+    const s = screen.solved;
+    if (s.gain > 0) {
+      lines.push('');
+      lines.push(...formatCvScreenReport(screen, weights).split('\n').slice(3));
+    } else if (s.window.capBinder !== undefined) {
+      const b = s.window.capBinder;
+      lines.push(
+        `  ${screen.shape}: no admissible gain; cap ${s.window.cap.toFixed(6)} = ` +
+          `${b.lead.toFixed(6)} / ${b.slopeGap.toFixed(6)}, bound by ${b.datapack} ` +
+          `(${b.target} overtaken by ${b.rival})`,
+      );
+    }
+  }
+  const shippable = screens.filter(
+    (screen) => screen.solved.gain > 0 && screen.solved.lostAtShip === 0,
+  );
+  if (shippable.length === 0) {
+    lines.push('  no shape in this menu has an admissible gain at any weight');
+  }
+  return lines.join('\n');
+}
+
 /**
  * Screen every observed dominant-metric family for a zero-regression window.
  *
@@ -3471,6 +3856,7 @@ export type AnalyzeSectionKind =
   | 'onsetScreen'
   | 'discriminator'
   | 'guardCensus'
+  | 'cvScreen'
   | 'separatorScreen';
 
 /**
@@ -3491,6 +3877,9 @@ const SCORE_RECONSTRUCTING_SECTIONS: Readonly<Set<AnalyzeSectionKind>> =
     'familyScreen',
     'onsetScreen',
     'discriminator',
+    // Reconstructs `shippedScores` as the base it measures a distance from, so it needs the
+    // weight that rebuilds the ranking the run actually had.
+    'cvScreen',
   ]);
 
 /**
@@ -3564,6 +3953,7 @@ export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
   'familyScreen',
   'onsetScreen',
   'discriminator',
+  'cvScreen',
   'separatorScreen',
   'guardCensus',
   'misses',
@@ -3592,7 +3982,8 @@ const ANALYZE_USAGE =
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
   '[--pool-penalty <w>] [--temporal-weight <w>] [--onset-shape <shape>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
-  '[--onset-screen] [--discriminator] [--separator-screen] [--guard-census] ' +
+  '[--onset-screen] [--discriminator] [--cv-screen] [--separator-screen] ' +
+  '[--guard-census] ' +
   '[--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
@@ -3629,6 +4020,7 @@ const SWITCH_FLAGS = new Set([
   'family-screen',
   'onset-screen',
   'discriminator',
+  'cv-screen',
   'separator-screen',
   'guard-census',
 ]);
@@ -3932,6 +4324,13 @@ function analyzeSectionText(
         onsetShape: section.onsetShape,
       };
       return formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
+    }
+    case 'cvScreen': {
+      // The same configuration object as the family and onset screens, because it is the same
+      // question over a different slope. The whole menu, so the axis cannot be left open on the
+      // technicality that only one reading of the statistic was tried.
+      const weights: FamilyScreenWeights = section;
+      return formatCvMenuReport(cvShapeMenu(cases, weights), weights);
     }
     case 'separatorScreen':
       // The run's own latency FLOOR, so the `lat` signal is the term the engine actually
