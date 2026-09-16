@@ -311,7 +311,9 @@ no, and the criterion is the one thing on this page that is not up for negotiati
 
 - `DEFAULT_TEMPORAL_WEIGHT` is back to `0`; `DEFAULT_ONSET_SHAPE` is back to `'earliness'`.
   The shape is inert at weight 0, so this restores the pre-flip engine exactly — and the
-  next RCAEval run is what proves it, by reproducing all nine recorded cells.
+  next RCAEval run is what proves it, by reproducing all nine recorded cells. It did
+  (below), and it is in the recorded-runs table as `defaultPath`, so the proof is looked up
+  where the weight is.
 - The SHAPE MACHINERY stays: `computeOnsetSlopes`, the `onsetShape` option, the
   `--onset-shape` flags, the `--onset-screen` menu, and the dump's `onset=`/`inject=`
   fields. They are inert at weight 0, they are what made this measurable, and deleting
@@ -319,6 +321,36 @@ no, and the criterion is the one thing on this page that is not up for negotiati
 - The **instrument** stays, and this is the part that would have hurt to lose: `blendScores`
   models the term, so a dump produced with it on reads back at `rank-1 1422/1422` with
   `unexplained 0`.
+
+### The revert, verified on both halves
+
+A revert is the one change that gets to claim it restores an engine without adding a
+feature, so it is also the one change whose claim is checkable against a measurement that
+already exists — the recorded 9-cell and the recorded fault-type table. Both were re-run on
+`301c430` **through the default path**, no `--temporal-weight`, no `--onset-shape`:
+
+| | run | result |
+| --- | --- | --- |
+| RCAEval (`re1/re2/re3`) | `35035309768` | **9 of 9 cells identical** to the record — RE1 80.0/92.8/68.0, RE2 82.4/88.9/68.1, RE3 80.0/45.0/51.1 |
+| FSE'26 (1422 cases) | `35035314921` | 756/1422 = **53.16%**; per-fault-type table **identical to the control `35021503281`, 25 of 25 types**, zero cells moved |
+
+The FSE'26 run's own banner reads
+`temporalWeight=0 onsetShape=earliness` with `logWeight=1 latWeight=0.561495 latMinRise=10.3
+poolMetricPenaltyWeight=0.0679` — the shipped pair from §6 of the sibling verdict, quoted
+back by the engine rather than by a document.
+
+The comparison is worth stating the other way round, because that is where its information
+is: against the **rejected** pair, exactly three types differ and all three are the pair's
+gain.
+
+```
+HTTPRequestDelay  56/88 → 54/88
+JVMMemoryStress   13/171 → 12/171
+JVMReturn         13/21  → 12/21
+```
+
+Four cases, three types, named in advance by the solver, all of them given back. The revert
+did not quietly cost something else.
 
 ### The guard that let this ship had one half
 

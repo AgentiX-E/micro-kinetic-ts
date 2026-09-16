@@ -276,6 +276,19 @@ const MEASURED_TEMPORAL_PAIRS: Record<
     golden: 'identical' | 'moved';
     run: string;
     goldenRun: string;
+    /**
+     * The same configuration, reached through the engine's DEFAULT path.
+     *
+     * `run` above may have been reached with the value PINNED on the command line, and a
+     * pin is a second owner of the value: the pins that produced this table's rows were
+     * written when the engine's default was something else. A configuration measured only
+     * down a pinned path is not a measurement of what SHIPS — the pin and the default can
+     * be edited apart, and when they are, the gate keeps passing for a reason that has
+     * nothing to do with the signal (see the RCAEval runner's `temporalWeight: 0` pin,
+     * `docs/closed-axes-register.md`). So anything that ships must also appear here,
+     * measured with no flag at all.
+     */
+    defaultPath?: { run: string; goldenRun: string; golden: 'identical' | 'moved' };
     /** The companion point, when this one's gain is a gain against it. */
     control?: string;
   }
@@ -289,6 +302,11 @@ const MEASURED_TEMPORAL_PAIRS: Record<
     golden: 'identical',
     run: '35021503281',
     goldenRun: '35028063290',
+    // The revert (`301c430`) had to PROVE it restored the engine, and this is that proof
+    // on both benchmarks: FSE'26 through the default path reproduces the control above
+    // fault type for fault type (25/25 identical, 756/1422), and RCAEval reproduces all
+    // nine recorded cells. Both halves, no pin.
+    defaultPath: { run: '35035314921', goldenRun: '35035309768', golden: 'identical' },
   },
   '0.036552': {
     shape: 'earliest-only',
@@ -648,6 +666,29 @@ describe('FSE26 temporal prior is a measured PAIR', () => {
     expect(shippedShape).toBe(MEASURED_TEMPORAL_PAIRS[String(shippedWeight)]!.shape);
   });
 
+  it('requires the shipped point to have been measured through the DEFAULT path', () => {
+    // A pinned flag and the engine's default are two owners of one value, and only the
+    // second one ships. The rows above were reached with the weight pinned on the command
+    // line — legitimate for a candidate, and for a control it is how the ablation is
+    // named — but that pin was written when the default was different, and the whole point
+    // of the revert is that the pin and the default can disagree. So the shipped weight
+    // must ALSO have been measured with no flag at all, on both benchmarks.
+    const shippedWeight = readConstant(
+      source,
+      DEFAULT_TEMPORAL_WEIGHT_RE,
+      'DEFAULT_TEMPORAL_WEIGHT',
+    );
+    const recorded = MEASURED_TEMPORAL_PAIRS[String(shippedWeight)]!;
+    expect(
+      recorded.defaultPath,
+      `the shipped temporal weight ${shippedWeight} has never been run without a pin`,
+    ).toBeDefined();
+    expect(recorded.defaultPath!.run).not.toBe(recorded.run);
+    expect(recorded.defaultPath!.goldenRun).not.toBe(recorded.goldenRun);
+    // Same criterion, same verdict: a default-path point that moved is a rejection too.
+    expect(recorded.defaultPath!.golden).toBe('identical');
+  });
+
   it('keeps the REJECTED candidate on the record, with both of its numbers', () => {
     // This is the test that pays for the whole table. A rejected candidate whose only
     // trace is a paragraph in a verdict document gets re-proposed as new by the next
@@ -660,6 +701,8 @@ describe('FSE26 temporal prior is a measured PAIR', () => {
     expect(rejected.regressedTypes).toBe(0);
     expect(rejected.hits).toBe(760);
     expect(rejected.control).toBe(MEASURED_TEMPORAL_PAIRS['0']!.run);
+    // And a rejected candidate has no default path, because it never was one.
+    expect(rejected.defaultPath).toBeUndefined();
   });
 
   it('names the shipped shape in the workflow input a dispatcher reads', () => {
