@@ -94,6 +94,15 @@ A case with two measurements that AGREE is listed as measured and is not counted
 a distinction a bare "measured" count cannot express, and the one that separates a data gap from a
 negative result.
 
+### The two provenances are the same measurement, checked rather than assumed
+
+`metricDecisive` renders the decisive metric for EVERY service, while `metricTop` renders at most
+three and only for the ground truth and the engine's predictions. A term may only be simulated over
+the candidates `metricTop` never mentions if the two lines agree where they OVERLAP, so they were
+compared: on the same 409-case snapshot, **2,200 of 2,200 services carrying both** agree on all seven
+decomposition fields AND on the score — **100.00%**. The pair table's reading and the simulation's
+reading are therefore one measurement, not two that happen to look alike.
+
 ## 3. The instrument defect this found before it could matter
 
 The parser's own contract says it "can also be pointed at a downloaded CI artifact". It could not:
