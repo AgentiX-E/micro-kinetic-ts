@@ -1561,3 +1561,148 @@ describe('the `all` mode — the flood the engine computes when it admits every 
     expect(formatModeScreen(screen)).toContain('novelty');
   });
 });
+
+describe('the `logicHttpJoint` gate — the fresh ablation the engine’s own doc asks for', () => {
+  /** One service's flood, in the fields the reader actually reads. */
+  const svc = (
+    serviceId: string,
+    selfAnomaly: number,
+    flood: { logic?: number; http?: number },
+  ) => ({
+    serviceId,
+    selfAnomaly,
+    logicExceptionCount: flood.logic ?? 0,
+    httpExceptionCount: flood.http ?? 0,
+    errorCount: (flood.logic ?? 0) + (flood.http ?? 0),
+    fatalCount: 0,
+    bothExceptionCount: 0,
+  });
+  /**
+   * `ts-http` is a VICTIM: it emits four framework-HTTP lines and its only callee is more
+   * anomalous, so its own downstream call is what broke. `ts-peer` emits three and its callee is
+   * not, which is the replace-code case the mode was written for.
+   */
+  const services = [
+    svc('ts-http', 0.2, { http: 4 }),
+    svc('ts-root', 0.9, { logic: 2 }),
+    svc('ts-peer', 0.5, { http: 3 }),
+  ] as never;
+  const edges = ['ts-http>ts-root'];
+
+  it('withdraws the framework-HTTP half from an emitter whose callee is more anomalous', () => {
+    const joint = logSlopesForMode(services, 'logicHttpJoint', 0.5, edges);
+    const plain = logSlopesForMode(services, 'logicHttp', 0.5, edges);
+    // The union's maximum does not move, because the denominator is level 1 and the withdrawal is
+    // level 2 — the asymmetry the engine's own comment calls load-bearing.
+    expect(plain.get('ts-http')).toBeCloseTo(1, 12);
+    expect(joint.has('ts-http')).toBe(false);
+    // The emitter whose callee is NOT more anomalous keeps the half.
+    expect(joint.get('ts-peer')).toBeCloseTo(0.75, 12);
+    // And a service with no framework-HTTP lines is untouched either way.
+    expect(joint.get('ts-root')).toBeCloseTo(0.5, 12);
+  });
+
+  it('is a STRICT inequality over the anomaly order, so a tie suppresses nothing', () => {
+    // The predicate reads scores by ORDER only, which is what makes it invariant under the
+    // rescales the engine ships; a tie is not an order, and treating it as one would suppress a
+    // half on no evidence.
+    const tied = [
+      svc('ts-http', 0.5, { http: 4 }),
+      svc('ts-root', 0.5, { logic: 2 }),
+      svc('ts-peer', 0.5, { http: 3 }),
+    ] as never;
+    expect(logSlopesForMode(tied, 'logicHttpJoint', 0.5, edges).get('ts-http')).toBeCloseTo(1, 12);
+  });
+
+  it('refuses a dump with no graph rather than rebuilding the unjointed term', () => {
+    // Defaulting here would produce a term labelled `logicHttpJoint` that is exactly `logicHttp`,
+    // which is the same defect shape as defaulting an unpinned flood.
+    expect(() => logSlopesForMode(services, 'logicHttpJoint', 0.5)).toThrow(/call graph/);
+    // And the row is not drawn for such a dump, while every other counting row still is.
+    const noGraph = casesOf(
+      block([{ serviceId: 'ts-root', logic: 2 }], { groundTruth: ['ts-root'] }),
+    );
+    expect(modeScreen(noGraph, OPTS).rows.map((row) => row.source)).not.toContain('logicHttpJoint');
+    const withGraph = noGraph.map((kase) => ({ ...kase, edges: ['ts-root>ts-other'] }));
+    expect(modeScreen(withGraph, OPTS).rows.map((row) => row.source)).toContain('logicHttpJoint');
+  });
+
+  it('self-checks a dump RECORDED in the joint mode, which it could not before', () => {
+    // The mapping was removed while the gate was not rebuilt, because a "check" against the
+    // unjointed half would have reported a disagreement on every case. Now it is rebuilt, so the
+    // dump's own mode is checkable again — and `novelty`, which still cannot be, keeps saying so.
+    const joint = casesOf(
+      block(
+        [
+          { serviceId: 'ts-http', logic: 0, http: 4, logScore: 0, selfAnomaly: 0.2 },
+          { serviceId: 'ts-root', logic: 2, logScore: 0.5, selfAnomaly: 0.9 },
+          { serviceId: 'ts-peer', http: 3, logScore: 0.75, selfAnomaly: 0.5 },
+        ],
+        {
+          groundTruth: ['ts-peer'],
+          topPredictions: ['ts-peer'],
+          logMode: 'logicHttpJoint',
+        },
+      ),
+    ).map((kase) => ({ ...kase, edges: ['ts-http>ts-root'] }));
+    const check = modeScreen(joint, OPTS).selfCheck;
+    expect(check).toEqual({
+      dumpMode: 'logicHttpJoint',
+      source: 'logicHttpJoint',
+      cases: 1,
+      violations: 0,
+      gained: 0,
+      regressed: 0,
+    });
+    expect(formatModeScreen(modeScreen(joint, OPTS))).toContain('reproduces the printed term');
+  });
+});
+
+describe('the joint gate’s footprint — the row’s net is not its mechanism', () => {
+  /** Two cases: in the first the flood owner is a victim, in the second it is not. */
+  const cases = (edges: string[]) =>
+    casesOf(
+      block(
+        [
+          { serviceId: 'ts-http', logic: 0, http: 6, selfAnomaly: 0.2 },
+          { serviceId: 'ts-root', logic: 1, selfAnomaly: 0.9 },
+          { serviceId: 'ts-quiet', selfAnomaly: 0.1 },
+        ],
+        { groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+      ),
+    ).map((kase) => ({ ...kase, edges }));
+
+  it('reports how far the withdrawal reaches and whether it takes the flood OWNER', () => {
+    // `ts-http` owns all six framework-HTTP lines and calls `ts-root`, which is more anomalous:
+    // the gate withdraws the flood from its own owner. That is the gate deleting the evidence it
+    // was built to keep, and no row's net can say it.
+    const screen = modeScreen(cases(['ts-http>ts-root']), OPTS);
+    expect(screen.jointFootprint).toEqual({
+      services: 3,
+      victims: 1,
+      medianCaseDensity: 1 / 3,
+      ownerCases: 1,
+      ownerSuppressed: 1,
+    });
+    expect(formatModeScreen(screen)).toContain('OWNER is itself withdrawn in 1/1');
+  });
+
+  it('reports the opposite case, where the owner keeps its flood', () => {
+    // The replace-code shape: the emitter that OWNS the flood calls a callee that is LESS
+    // anomalous, so its half survives — while `ts-quiet`, which calls the owner, becomes a victim
+    // instead. The footprint names both facts, which is the point: a withdrawal that reaches a
+    // bystander is not the same event as one that reaches the owner.
+    const screen = modeScreen(cases(['ts-quiet>ts-http']), OPTS);
+    expect(screen.jointFootprint).toMatchObject({ victims: 1, ownerCases: 1, ownerSuppressed: 0 });
+    expect(formatModeScreen(screen)).toContain('OWNER is itself withdrawn in 0/1');
+  });
+
+  it('is undefined when no joint row was drawn, rather than a footprint of zero', () => {
+    const noGraph = casesOf(
+      block([{ serviceId: 'ts-root', logic: 2 }], { groundTruth: ['ts-root'] }),
+    );
+    const screen = modeScreen(noGraph, OPTS);
+    expect(screen.jointFootprint).toBeUndefined();
+    expect(formatModeScreen(screen)).not.toContain('joint gate footprint');
+  });
+});

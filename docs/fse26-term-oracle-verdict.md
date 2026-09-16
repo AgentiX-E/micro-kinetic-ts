@@ -458,7 +458,47 @@ framework-HTTP half for a service whose callee is more anomalous, which this rea
 rebuild: the "check" would have compared the joint mode against its own unjointed half and
 reported a disagreement on every case.
 
-## 10. Reproduce
+## 10. `logicHttpJoint` re-attempted, because its own doc demanded it
+
+The engine's comment on the joint mode ends with an instruction: its −19.4pp loss is on the record,
+the attribution recorded with it is **provably wrong** ("normalisation is ruled out", the invariance
+suite is a proof rather than a claim), and it says —
+
+> **Do not re-attempt this mode without a fresh ablation on current data.**
+
+So it is re-attempted here, offline, on today's cache. The gate is `logicHttp` minus the
+framework-HTTP half of every emitter whose callee is more anomalous — a predicate over the call
+graph, which the dump carries, and over the anomaly ORDER, which is invariant under the rescales the
+engine ships, so the rebuild is faithful rather than similar.
+
+| configuration | correct | +/− cases | regressed types |
+| --- | --- | --- | --- |
+| `recorded` (shipped) | 756 | +0/−0 | 0 |
+| `logicHttp` (the dump's own mode) | 730 | +0/−0 | 0 |
+| **`logicHttpJoint`** | **562** | **+75/−243** | **8** |
+| `all` | 569 | +95/−282 | 17 |
+| `count` | 531 | +130/−355 | 8 |
+
+It costs **`HTTPResponseReplaceCode −104`** — against **98** in the historical run. The shape of the
+loss reproduces on current data, the magnitude is the same order, and the target type is the same
+one the mode was built for. The mode stays closed, now with a number instead of an instruction.
+
+**And the open question around it is answered by the same rebuild.** The engine's doc names its
+leading hypothesis for the loss — the victim predicate is *existential over a service's callees*, so
+on a dense cascade most emitters have at least one more-anomalous callee and the withdrawal
+approaches the whole graph. That is now measured, and it is not marginal:
+
+```
+joint gate footprint: withdraws 43.74% of all services (median case 0.43);
+  the framework-HTTP flood OWNER is itself withdrawn in 571/972 cases (58.74%)
+```
+
+The gate deletes the flood from **the very emitter that owns it** in 59% of the cases that have an
+owner. A mode whose withdrawal reaches its own evidence is not a signal decision that lost; it is a
+near-total withdrawal, and the row's net (243 cases) could never have said so — which is why the
+footprint prints with the table.
+
+## 11. Reproduce
 
 ```bash
 # the instrument, on the shipped dump (no run, no rebuild: read the CI artifact)

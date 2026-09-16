@@ -81,7 +81,8 @@ export type TermName = 'metric' | 'log' | 'lat';
  * engine's `LogSignalMode`s that can be rebuilt from the printed raw counts —
  * `novelty` cannot, because it needs per-class line counts the dump does not carry.
  */
-export type LogTermSource = 'recorded' | 'count' | 'logicHttp' | 'dominant' | 'all';
+export type LogTermSource =
+  'recorded' | 'count' | 'logicHttp' | 'logicHttpJoint' | 'dominant' | 'all';
 
 /** A service and the score a given configuration gives it. */
 interface ScoredService {
@@ -317,6 +318,51 @@ function levelOneFlood(
 }
 
 /**
+ * The modes whose gate needs the case's call graph.
+ *
+ * `logicHttpJoint` withdraws the framework-HTTP half for an emitter with a more anomalous callee,
+ * which is a statement about an EDGE. A dump that recorded no graph cannot be rebuilt in it.
+ */
+const MODE_NEEDS_GRAPH: ReadonlySet<LogTermSource> = new Set<LogTermSource>(['logicHttpJoint']);
+
+/**
+ * The services the `logicHttpJoint` gate withdraws the framework-HTTP half from.
+ *
+ * Mirrored from the engine's `computeHttpVictimSet`, adapted to what a dump carries: the predicate
+ * is `anomaly(callee) > anomaly(emitter)`, read by ORDER only, so the rank-normalised
+ * `selfAnomaly` a block prints yields exactly the set the engine's raw scores do — a strictly
+ * monotone rescale cannot change a strict inequality, which the engine's own invariance suite
+ * asserts for both of its rescales. That is what makes this rebuild faithful rather than similar.
+ *
+ * The predicate is EXISTENTIAL over a service's callees, and that is the leading explanation for
+ * the mode's historical loss: on a dense cascade most emitters have at least one more-anomalous
+ * callee, so the victim set approaches the whole graph and the mode degenerates toward `count`
+ * (`docs/fse26-logicHttpJoint-falsified.md`). This function is where that set is now countable.
+ *
+ * @param services - One case's services.
+ * @param edges - The case's call graph (`caller>callee`), or `undefined` for a dump without one.
+ * @returns The victim services; empty when the dump recorded no graph.
+ */
+function httpVictims(
+  services: DiagnosedCase['services'],
+  edges: readonly string[] | undefined,
+): Set<string> {
+  const victims = new Set<string>();
+  if (edges === undefined) return victims;
+  const anomaly = new Map(services.map((service) => [service.serviceId, service.selfAnomaly]));
+  for (const edge of edges) {
+    const separator = edge.indexOf('>');
+    if (separator <= 0) continue;
+    const from = edge.slice(0, separator);
+    const to = edge.slice(separator + 1);
+    // A service the block does not describe reads as 0, which is what the engine's own `?? 0`
+    // does for a node it has no score for.
+    if ((anomaly.get(to) ?? 0) > (anomaly.get(from) ?? 0)) victims.add(from);
+  }
+  return victims;
+}
+
+/**
  * Whether the log term can be reconstructed for a mode from a case's printed fields.
  *
  * Per-mode, because the modes need different quantities: `count` divides by the logic
@@ -357,10 +403,23 @@ export function logSlopesForMode(
   services: DiagnosedCase['services'],
   mode: Exclude<LogTermSource, 'recorded'>,
   dominance: number,
+  edges?: readonly string[],
 ): Map<string, number> {
+  if (mode === 'logicHttpJoint' && edges === undefined) {
+    // Not a default. With no graph the joint gate cannot withdraw anything, so defaulting would
+    // rebuild the UNJOINTED term and label it `logicHttpJoint` — the same shape of defect as
+    // defaulting an unpinned flood, and the reason this mode's row is drawn only for a dump that
+    // carries a graph.
+    throw new Error(
+      "the `logicHttpJoint` gate needs the case's call graph to decide which framework-HTTP " +
+        'counts to withdraw, and this dump recorded none. Only a dump produced with the graph can ' +
+        'be rebuilt in this mode.',
+    );
+  }
   const numerator = new Map<string, number>();
   const denominator = new Map<string, number>();
   const concentrated = mode === 'dominant' && httpDominance(services) >= dominance;
+  const victims = mode === 'logicHttpJoint' ? httpVictims(services, edges) : undefined;
   for (const service of services) {
     // The denominator is the mode's own level-1 flood, whatever the gate decides.
     const flood = levelOneFlood(service, mode);
@@ -378,7 +437,16 @@ export function logSlopesForMode(
     denominator.set(service.serviceId, flood);
     if (mode === 'count') numerator.set(service.serviceId, flood);
     else if (mode === 'logicHttp' || mode === 'all') numerator.set(service.serviceId, flood);
-    else {
+    else if (mode === 'logicHttpJoint') {
+      // A logic exception is self-evidently a source signature and is never withdrawn; only the
+      // framework-HTTP half goes, and only for an emitter whose callee is more anomalous.
+      const overlap = Math.max(0, service.logicExceptionCount + service.httpExceptionCount - flood);
+      const httpOnly = service.httpExceptionCount - overlap;
+      numerator.set(
+        service.serviceId,
+        service.logicExceptionCount + (victims!.has(service.serviceId) ? 0 : httpOnly),
+      );
+    } else {
       // `dominant` withdraws exactly the framework-HTTP lines that are NOT logic
       // lines, so what survives the gate is the logic set plus the http-only set.
       // Subtracting the overlap is what makes the withdrawal a subtraction rather
@@ -513,7 +581,7 @@ export function blendScores(
   const log =
     logSource === 'recorded'
       ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
-      : logSlopesForMode(kase.services, logSource, opts.dominance);
+      : logSlopesForMode(kase.services, logSource, opts.dominance, kase.edges);
   // TOTAL over the case's services, like the metric term above and for the same reason:
   // the map is built from `kase.services`, so a lookup cannot miss and an `?? 0` on it
   // could never fire — and if it ever did it would fabricate a slope of zero, i.e. a term
@@ -660,7 +728,7 @@ export function rankCase(
   const log =
     logSource === 'recorded'
       ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
-      : logSlopesForMode(kase.services, logSource, opts.dominance);
+      : logSlopesForMode(kase.services, logSource, opts.dominance, kase.edges);
   // The blend comes from `blendScores`, so the score this ranks by IS the score the
   // solver measures — one implementation, not two.
   const scores = blendScores(kase, opts, logSource, latSlopes);
@@ -1154,6 +1222,29 @@ export interface ModeScreen {
    * the self-check can name it — including when it is the reason there is no check.
    */
   readonly dumpMode: string;
+  /**
+   * What the joint gate's withdrawal footprint looks like on this dump, or `undefined` when the
+   * joint row is not drawn.
+   *
+   * A row's NET is not a mechanism, and this is the gate's: the victim predicate is EXISTENTIAL
+   * over a service's callees, so on a dense cascade most emitters have at least one more-anomalous
+   * callee and the withdrawal reaches most of the graph. The decisive number is the last one —
+   * how often the emitter that OWNS the framework-HTTP flood is itself withdrawn, which is the
+   * gate deleting the evidence it was built to keep.
+   */
+  readonly jointFootprint: JointFootprint | undefined;
+}
+
+/** The `logicHttpJoint` gate's reach on one dump. */
+export interface JointFootprint {
+  readonly services: number;
+  readonly victims: number;
+  /** Median share of a case's services that the gate withdraws. */
+  readonly medianCaseDensity: number;
+  /** Cases whose most framework-HTTP-heavy service has at least one such line. */
+  readonly ownerCases: number;
+  /** Of those, the ones where that owner is a victim — i.e. its own flood is withdrawn. */
+  readonly ownerSuppressed: number;
 }
 
 /**
@@ -1230,6 +1321,10 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
     // partition cases the source has MORE total error lines (30-3) and more SIGNATURE lines in
     // none of 29 (`fse26-separator-verdict.md`).
     { source: 'all', dominance: undefined },
+    // The joint gate: `logicHttp` minus the framework-HTTP half for an emitter whose callee is
+    // more anomalous. Re-measured here because the engine's own doc requires a FRESH ablation on
+    // current data before the mode is re-attempted, and the offline rebuild costs nothing.
+    { source: 'logicHttpJoint', dominance: undefined },
     ...opts.dominanceGrid.map((dominance) => ({ source: 'dominant' as const, dominance })),
   ];
   const rows: ModeScreenRow[] = [];
@@ -1242,7 +1337,14 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
     const rowCases =
       entry.source === 'recorded'
         ? scorable
-        : scorable.filter((kase) => canReconstructLogFlood(kase.services, entry.source));
+        : scorable.filter(
+            (kase) =>
+              canReconstructLogFlood(kase.services, entry.source) &&
+              // The joint gate is the one mode that needs a SECOND piece of data: a dump with no
+              // graph cannot decide which framework-HTTP counts to withdraw, so its row is dropped
+              // rather than drawn from an unjointed reconstruction.
+              (!MODE_NEEDS_GRAPH.has(entry.source) || kase.edges !== undefined),
+          );
     // A reconstruction with no case to measure is OMITTED, because an empty row would
     // print as a mode that scored nothing rather than as one that could not be
     // measured. The baseline is kept even when it is empty: it is the table's own
@@ -1302,7 +1404,12 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
         .sort((a, b) => (a.key < b.key ? -1 : 1)),
     });
   }
-  return { rows, selfCheck: selfCheck(cases, rows), dumpMode: cases[0]?.logSignalMode ?? '' };
+  return {
+    rows,
+    selfCheck: selfCheck(cases, rows),
+    dumpMode: cases[0]?.logSignalMode ?? '',
+    jointFootprint: jointFootprint(scorable, rows),
+  };
 }
 
 /**
@@ -1318,15 +1425,67 @@ const SELF_CHECK_MODE: Readonly<Record<string, Exclude<LogTermSource, 'recorded'
   count: 'count',
   logicHttp: 'logicHttp',
   all: 'all',
+  logicHttpJoint: 'logicHttpJoint',
   logicHttpDominant: 'dominant',
-  // `logicHttpJoint` is deliberately ABSENT. The table used to map it to `logicHttp`, which
-  // reads as a check but is not one: the joint mode withdraws the framework-HTTP half for a
-  // service whose callee is more anomalous, and this reader does not rebuild that withdrawal,
-  // so the "check" would compare the mode against its own unjointed half and report a
-  // disagreement on every case. A mode this reader cannot rebuild now says so instead
-  // (`selfCheck === undefined` plus a line naming the mode), which is the difference between a
-  // missing measurement and a clean one.
+  // `logicHttpJoint` is mapped again, and it is legitimate NOW because the gate is rebuilt: the
+  // entry was removed while this reader could not withdraw the framework-HTTP half for an emitter
+  // with a more anomalous callee, at which point "checking" a joint dump would have compared the
+  // mode against its own unjointed half. A mode this reader cannot rebuild still says so
+  // (`selfCheck === undefined` plus a line naming the mode), which the `novelty` test pins.
 };
+
+/**
+ * Measure what the joint gate's withdrawal reaches on this dump.
+ *
+ * The gate is `logicHttp` minus the framework-HTTP half of every emitter that has a
+ * more-anomalous callee. That predicate is EXISTENTIAL over a service's callees, so its reach
+ * depends on graph density in a way a row's net cannot show: on a dense cascade it approaches the
+ * whole graph, and the row's loss is then not a signal decision but a near-total withdrawal. The
+ * last two fields are the decisive pair — how often the service that OWNS the framework-HTTP flood
+ * is itself withdrawn, i.e. how often the gate deletes the evidence it was built to keep.
+ *
+ * `undefined` when no row for the joint mode was drawn, so a dump without a graph cannot report a
+ * footprint of zero.
+ *
+ * @param cases - The cases the joint row was measured on.
+ * @param rows - The rows the screen built.
+ * @returns The footprint, or `undefined` when the joint row is absent.
+ */
+function jointFootprint(
+  cases: readonly DiagnosedCase[],
+  rows: readonly ModeScreenRow[],
+): JointFootprint | undefined {
+  if (!rows.some((row) => row.source === 'logicHttpJoint')) return undefined;
+  let services = 0;
+  let victims = 0;
+  let ownerCases = 0;
+  let ownerSuppressed = 0;
+  const densities: number[] = [];
+  for (const kase of cases) {
+    const victimSet = httpVictims(kase.services, kase.edges);
+    victims += victimSet.size;
+    services += kase.services.length;
+    densities.push(victimSet.size / Math.max(1, kase.services.length));
+    let owner: DiagnosedCase['services'][number] | undefined;
+    for (const service of kase.services) {
+      if (service.httpExceptionCount === 0) continue;
+      if (owner === undefined || service.httpExceptionCount > owner.httpExceptionCount) {
+        owner = service;
+      }
+    }
+    if (owner === undefined) continue;
+    ownerCases++;
+    if (victimSet.has(owner.serviceId)) ownerSuppressed++;
+  }
+  const sorted = [...densities].sort((a, b) => a - b);
+  return {
+    services,
+    victims,
+    medianCaseDensity: sorted[sorted.length >> 1] ?? 0,
+    ownerCases,
+    ownerSuppressed,
+  };
+}
 
 /**
  * Compare the re-derived row for the dump's own mode against the printed one.
@@ -1352,7 +1511,12 @@ function selfCheck(
   for (const kase of cases) {
     if (!canReconstructLogFlood(kase.services, source)) continue;
     if (kase.logSignalMode !== dumpMode) continue;
-    const derived = logSlopesForMode(kase.services, source, DEFAULT_HTTP_DOMINANCE_THRESHOLD);
+    const derived = logSlopesForMode(
+      kase.services,
+      source,
+      DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+      kase.edges,
+    );
     for (const service of kase.services) {
       if (Math.abs((derived.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) violations++;
     }
@@ -1539,6 +1703,18 @@ export function formatModeScreen(
     lines.push(
       `  self-check: none — this reader does not rebuild the dump's mode ` +
         `(\`${screen.dumpMode}\`), so no row above is verified against the printed term`,
+    );
+  }
+  // The joint gate's footprint prints with the table, because its ROW cannot explain itself: a
+  // net loss of a quarter of the dataset reads as a signal decision, and the footprint says it is
+  // the withdrawal reaching most of the graph — including the emitter that owns the flood.
+  const footprint = screen.jointFootprint;
+  if (footprint !== undefined) {
+    lines.push(
+      `  joint gate footprint: withdraws ${pct(footprint.victims, footprint.services)} of all ` +
+        `services (median case ${footprint.medianCaseDensity.toFixed(2)}); the framework-HTTP flood ` +
+        `OWNER is itself withdrawn in ${footprint.ownerSuppressed}/${footprint.ownerCases} cases ` +
+        `(${pct(footprint.ownerSuppressed, footprint.ownerCases)})`,
     );
   }
   lines.push('  configuration           correct   +/-cases   regressed types');
