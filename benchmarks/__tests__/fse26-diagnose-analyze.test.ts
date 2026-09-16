@@ -68,6 +68,7 @@ import {
   parseDiagnosticDump,
   reconcileConfigurations,
   regressionMechanism,
+  solveZeroRegressionWindow,
   tallyDeltas,
   zeroRegressionSamples,
 } from '../src/fse26-diagnose-analyze.js';
@@ -5051,9 +5052,9 @@ describe('cvScreen — the cv penalty, solved rather than swept', () => {
 
   it('protects a population that does not depend on the shape', () => {
     // A gain with no population is unreadable: `gain 4` means one thing out of 3 correct cases and
-    // another out of 700. The counts come from the BASE, which neither shape touches, so they must
-    // agree — and `correct at 0` is also the instrument's fidelity line, because the base IS the
-    // shipped score.
+    // another out of 700. TWO of the three counts come from the BASE, which neither shape touches:
+    // the case set and the number the shipped score gets right. `correct at 0` is also the
+    // instrument's fidelity line, because the base IS the shipped score.
     const cases = [
       cvCase({
         cvs: [0.1, 0.6],
@@ -5080,6 +5081,58 @@ describe('cvScreen — the cv penalty, solved rather than swept', () => {
     expect(flip.unreachable).toBe(0);
     expect(formatCvMenuReport(menu, WEIGHTS)).toContain('correct at 0');
     expect(formatCvScreenReport(menu[0]!, WEIGHTS)).toContain('correct at 0 1');
+  });
+
+  it('does NOT claim the third count is shape-independent, because it is not', () => {
+    // `unreachable` is a count of cases whose ADMISSIBLE SET is empty, and emptiness is decided by
+    // the slopes — so the two shapes can disagree on it while agreeing on the population, and one
+    // shape's number printed above a two-row table is a number about neither row. Measured on run
+    // 35107871516: `flip` 569 against `rank` 526 over the same 1422 cases. The fixture below is a
+    // three-service case where the spacing the two shapes give the same cv ORDER decides whether
+    // the root's interval exists at all, which is the smallest input that can separate them.
+    const cases = parseDiagnosticDump(
+      dump({
+        datapack: 'dp-shape-dependent',
+        groundTruthServices: ['ts-svc-0'],
+        services: [
+          serviceLine({
+            serviceId: 'ts-svc-0',
+            selfAnomaly: 0.4,
+            metricOutcomes: [
+              { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.6) },
+            ],
+          }),
+          serviceLine({
+            serviceId: 'ts-svc-1',
+            selfAnomaly: 0.1,
+            metricOutcomes: [
+              { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.1) },
+            ],
+          }),
+          serviceLine({
+            serviceId: 'ts-svc-2',
+            selfAnomaly: 0.7,
+            metricOutcomes: [
+              { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.9) },
+            ],
+          }),
+        ],
+        topPredictions: ['ts-svc-2'],
+      }),
+    );
+    const menu = cvShapeMenu(cases, WEIGHTS);
+    const flip = menu.find((screen) => screen.shape === 'flip')!;
+    const rank = menu.find((screen) => screen.shape === 'rank')!;
+
+    expect(flip.solved.window.satisfied).toBe(rank.solved.window.satisfied);
+    expect(flip.solved.window.unreachable).toBe(1);
+    expect(rank.solved.window.unreachable).toBe(0);
+
+    const report = formatCvMenuReport(menu, WEIGHTS);
+    // Each shape's own count, named — and never one shape's number standing for the dump.
+    expect(report).toContain('flip 1');
+    expect(report).toContain('rank 0');
+    expect(report).not.toContain('unreachable at every weight 1\n');
   });
 });
 
@@ -5368,5 +5421,183 @@ describe('--cv-screen wiring', () => {
     const report = formatAnalyzeSections(cases, 'd', options);
     expect(report).toContain('Decisive-stability screen');
     expect(report).toContain('gain 1');
+  });
+});
+
+/**
+ * The frontier of a solved window, and the weight the report recommends.
+ *
+ * The window is the instrument that DECIDES which weight a benchmark run is dispatched at, so the
+ * two things it must not do are (1) claim a gain at a weight its own arithmetic does not deliver,
+ * and (2) present the claim without the margin that decides it. Both are asserted here.
+ */
+describe('the solved window reports a weight its own arithmetic delivers', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  it('reports the margin each gain has at the shipped weight, and the term\u2019s own step', () => {
+    // The measurement this exists for: on the shipped dump run 35107871516 the screen reported
+    // `gain 6` at 0.030170, and the run dispatched at that weight delivered FIVE (Top@1 756 to
+    // 761, 53.2% to 53.5%, zero regressed fault types). The case it lost is the thinnest of the
+    // six — margin 1.054e-4 against 3.129e-4 for the next — and one rank position of this term is
+    // worth `ship / (services - 1)` = 6.034e-4, six times the margin that was load-bearing. A
+    // report that prints the count and not the margin cannot be read at that resolution: the dump
+    // renders every input at three decimals, so the base itself is only good to ~1e-3.
+    //
+    // The fixture is the smallest one whose gain is not a knife edge: the target is capped from
+    // above by a faster rival AND floored by a slower one, so its admissible set is a real interval
+    // and the recommended weight sits inside it rather than on its edge.
+    const cases = [
+      cvCase({
+        cvs: [0.4, 0.9, 0.1],
+        anomalies: [0.7, 0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const screen = cvScreen(cases, WEIGHTS, 'rank');
+    const report = formatCvScreenReport(screen, WEIGHTS);
+
+    expect(screen.solved.gain).toBe(1);
+    expect(report).toContain('margin: thinnest');
+    expect(report).toContain('one rank step');
+    // The margin is quoted in the same units the report's other numbers are, and the quantum is
+    // the term's own step for THIS case — not a constant, because it scales with the weight.
+    const margin = screen.solved.margins[0]!;
+    expect(margin.datapack).toBe('dp-1');
+    expect(margin.margin).toBeGreaterThan(0);
+    expect(margin.quantum).toBeCloseTo(screen.solved.ship / (margin.services - 1), 12);
+    // The thinnest first, so a reader sees the frontier without scanning the list.
+    for (let index = 1; index < screen.solved.margins.length; index++) {
+      expect(screen.solved.margins[index]!.margin).toBeGreaterThanOrEqual(
+        screen.solved.margins[index - 1]!.margin,
+      );
+    }
+  });
+
+  it('breaks a margin tie by datapack, so two runs of the dump compare', () => {
+    // Two copies of one case have the same frontier by construction, so the tie-break is the only
+    // thing deciding the order — and an order that followed the dump's file order instead would
+    // make two runs of the same benchmark diff.
+    const same = {
+      cvs: [0.4, 0.9, 0.1],
+      anomalies: [0.7, 0.9, 0.5],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-1',
+    } as const;
+    const screen = cvScreen(
+      [cvCase({ ...same, datapack: 'dp-b' }), cvCase({ ...same, datapack: 'dp-a' })],
+      WEIGHTS,
+      'rank',
+    );
+
+    expect(screen.solved.gain).toBe(2);
+    expect(screen.solved.margins.map((one) => one.datapack)).toEqual(['dp-a', 'dp-b']);
+    expect(screen.solved.margins[0]!.margin).toEqual(screen.solved.margins[1]!.margin);
+  });
+
+  it('never recommends a weight that fails to satisfy a gain it lists', () => {
+    // The invariant the whole profile exists for. Every datapack in `gained` must be satisfied AT
+    // `ship`: the count and the weight are two halves of one claim, and a report whose midpoint
+    // lands in a gap between two islands of one case's admissible set would state a gain that its
+    // own interval arithmetic denies.
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const screen = cvScreen(cases, WEIGHTS, 'rank');
+    const listed = new Set(screen.solved.gained);
+    const covered = screen.solved.window.gains
+      .filter((one) => listed.has(one.datapack))
+      .filter((one) =>
+        one.intervals.some(
+          (interval) =>
+            screen.solved.ship >= interval.min - 1e-12 &&
+            screen.solved.ship <= interval.max + 1e-12,
+        ),
+      )
+      .map((one) => one.datapack);
+
+    expect([...covered].sort()).toEqual([...listed].sort());
+    expect(screen.solved.gain).toBe(screen.solved.gained.length);
+  });
+});
+
+describe('solveZeroRegressionWindow — the profile is a scan, not a cumulative count', () => {
+  /** A case from plain numbers, so each fixture reads as arithmetic. */
+  const affine = (
+    datapack: string,
+    targets: readonly string[],
+    scores: Record<string, [number, number]>,
+  ): WeightSeparationCase => ({
+    datapack,
+    targets,
+    scores: new Map(Object.entries(scores).map(([id, [base, slope]]) => [id, { base, slope }])),
+  });
+
+  it('does NOT carry a gain past the end of its own admissible interval', () => {
+    // `caseWeightInterval` returns a LIST because a case satisfied by either of two roots can be
+    // satisfied over two disjoint weight ranges — the caller-visible contract this module already
+    // tests. A profile that counts a gain from its floor upward reads that list as one half-line
+    // and so claims the GAP as well, which is the same defect `mergeIntervals` exists to avoid one
+    // layer down. The fixture: root `a` leads on [0.20, 0.30], the non-root `g` owns (0.30, 0.35),
+    // and root `b` from 0.35, with a protector holding the window open to 0.44. The rule that
+    // failed shipped 0.32 — the midpoint of the outer span, which is inside the gap, where its own
+    // interval arithmetic says the case is NOT satisfied.
+    const gain = affine('gain-two-islands', ['a', 'b'], {
+      a: [0.6, 1],
+      b: [-0.05, 3],
+      g: [0.3, 2],
+      c: [0.8, 0],
+    });
+    const protector = affine('protect', ['t'], { t: [0.9, 0], r: [0.46, 1] });
+    const solved = solveZeroRegressionWindow([gain, protector]);
+
+    const islands = caseWeightInterval(gain);
+    expect(islands).toHaveLength(2);
+    expect(islands[0]!.min).toBeCloseTo(0.2, 12);
+    expect(islands[0]!.max).toBeCloseTo(0.3, 12);
+    expect(islands[1]!.min).toBeCloseTo(0.35, 12);
+    expect(islands[1]!.max).toBe(Number.POSITIVE_INFINITY);
+
+    expect(solved.gain).toBe(1);
+    // The profile steps DOWN between the two islands — a cumulative count over the floors could
+    // only ever rise, so this sequence is the defect stated as an observable.
+    const counts = solved.steps.map((step) => step.gained);
+    const changes = counts.filter((count, index) => index === 0 || count !== counts[index - 1]!);
+    expect(changes).toEqual([0, 1, 0, 1]);
+    // The widest maximal-gain range is the FIRST island (0.10 wide against 0.09), so 0.25 is the
+    // recommendation — and the gain is satisfied there, which is the invariant.
+    expect(solved.gainFloor).toBeCloseTo(0.2, 12);
+    expect(solved.bestEnd).toBeCloseTo(0.3, 12);
+    expect(solved.ship).toBeCloseTo(0.25, 12);
+    expect(solved.gained).toEqual(['gain-two-islands']);
+    expect(solved.lostAtShip).toBe(0);
+  });
+
+  it('ships the midpoint of the WIDEST maximal-gain range, not of the span between them', () => {
+    // Same structure, with the second island widened instead. The outer span [0.20, 0.60] has
+    // midpoint 0.40 — the left edge of the second island, which happens to be satisfied — while
+    // the widest maximal-gain range is [0.40, 0.60] and its midpoint is 0.50. The two rules
+    // disagree here only in WHICH endpoint they trust; the assertion is that the plateau is what
+    // is measured.
+    const gain = affine('gain-wide-second', ['a', 'b'], {
+      a: [0.6, 1],
+      b: [-0.05, 3],
+      g: [0.35, 2],
+      c: [0.8, 0],
+    });
+    const protector = affine('protect', ['t'], { t: [0.9, 0], r: [0.3, 1] });
+    const solved = solveZeroRegressionWindow([gain, protector]);
+
+    expect(solved.gain).toBe(1);
+    expect(solved.gainFloor).toBeCloseTo(0.4, 12);
+    expect(solved.bestEnd).toBeCloseTo(0.6, 12);
+    expect(solved.ship).toBeCloseTo(0.5, 12);
+    expect(solved.gained).toEqual(['gain-wide-second']);
+    expect(solved.lostAtShip).toBe(0);
   });
 });

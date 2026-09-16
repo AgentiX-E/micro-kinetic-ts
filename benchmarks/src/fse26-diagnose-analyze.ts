@@ -2149,6 +2149,8 @@ export interface FamilyScreenRow {
   readonly gainTypes: readonly { readonly key: string; readonly cases: number }[];
   /** The gained cases, by datapack, so a row's gain can be audited case by case. */
   readonly gained: readonly string[];
+  /** {@link gained}, with the margin each case has at {@link ship}; thinnest first. */
+  readonly margins: readonly WindowGainMargin[];
   /** Currently-wrong cases no weight can fix — context for a zero gain. */
   readonly unreachable: number;
   /** Cases correct at `w = 0`; the population the window protects. */
@@ -2167,12 +2169,14 @@ export interface FamilyScreenRow {
    * the weight that loses one are frequently the same number, and a family's maximal gain
    * then sits at a single weight while a smaller one collects most of it. A profile of
    * `1 at 0.004, 4 at 0.006, 5 at 0.010` recommends something the interval alone cannot.
+   * Its entries are the weights {@link gainProfile} evaluated at, so a count that FALLS is in
+   * it: the profile is the one place a report can show a gain measured as absent somewhere.
    */
   readonly steps: readonly FamilyScreenStep[];
   /**
-   * The weight to ship: the MIDPOINT of `[gainFloor, cap]`, or `gainFloor` when the cap is
-   * unbounded. `0` when there is no gain — the term is then not applied at all, and a
-   * positive number here would be a weight that buys nothing.
+   * The weight to ship: the midpoint of the WIDEST maximal-gain range, or its single value when
+   * that range has no interior. `0` when there is no gain — the term is then not applied at all,
+   * and a positive number here would be a weight that buys nothing.
    */
   readonly ship: number;
   /** The pair whose ratio sets the cap; absent when the cap is unbounded. */
@@ -2188,72 +2192,83 @@ export interface FamilyScreenRow {
 
 /** One breakpoint of a family's gain profile. */
 export interface FamilyScreenStep {
-  /** A weight; the gain between this and the next breakpoint is `gained`. */
+  /**
+   * A weight the profile was EVALUATED at — an edge of some gain's admissible set, or the midpoint
+   * of the gap between two such edges.
+   *
+   * Both kinds are needed. An edge is a weight at which a gain can still hold (the intervals are
+   * closed), while a gap's midpoint is strictly inside a stretch where no gain's coverage changes.
+   * Scanning the edges alone reads two disjoint admissible intervals as ONE, because the point
+   * where the first ends is an edge of the second: `[0.20, 0.30] ∪ [0.35, ∞)` and `[0.40, ∞)`
+   * would agree at every edge and disagree everywhere between 0.30 and 0.35.
+   */
   readonly weight: number;
   /** Cases satisfied at this weight that are NOT satisfied at `w = 0`. */
   readonly gained: number;
 }
 
 /**
- * The weight from which ONE gained case is satisfied.
+ * The gain profile over `[0, cap]`, as evaluated samples.
  *
- * A gain's satisfying set is exactly `[floor, ∞)` — the union over its acceptable roots of
- * half-lines, each with a positive floor:
+ * Reported because the maximum alone hides the shippable compromise: the metric term's top step is
+ * a CONSTANT for a fixed candidate count, so the weight that wins a case and the weight that loses
+ * one are frequently the same number, and a family's maximal gain then sits at a single weight
+ * while a smaller one collects most of it.
  *
- * - a gain is a case NOT satisfied at `w = 0`, so no root's interval covers 0;
- * - a root that is NOT a family member keeps its score while members drop, so once it is
- *   first it stays first: its interval is `[floor, ∞)` with `floor > 0`;
- * - a root that IS a member is capped above by every non-member ahead of it, so its
- *   interval either covers 0 (and the case is not a gain) or is empty.
- *
- * The union is therefore `[min floor, ∞)`, which is what makes the profile a cumulative
- * count over the floors rather than a scan of endpoints. `Infinity` is the answer for a
- * gain whose far end does not exist, and the caller filters those out.
- *
- * @param gain - One currently-wrong case and the weights that satisfy it.
- * @returns The smallest weight that satisfies it.
- */
-function gainFloorOf(gain: WindowGain): number {
-  let floor = Number.POSITIVE_INFINITY;
-  for (const interval of gain.intervals) floor = Math.min(floor, interval.min);
-  return floor;
-}
-
-/**
- * The gain profile over `[0, cap]`, as breakpoints.
- *
- * Reported because the maximum alone hides the shippable compromise: the metric term's top
- * step is a CONSTANT for a fixed candidate count, so the weight that wins a case and the
- * weight that loses one are frequently the same number, and a family's maximal gain then
- * sits at a single weight while a smaller one collects most of it.
+ * A SCAN of the admissible sets, not a cumulative count over their floors. The distinction is the
+ * difference between a report and an assumption: `caseWeightInterval` returns a LIST of intervals
+ * precisely because a case satisfied by either of two roots can be satisfied over two disjoint
+ * weight ranges, so a count that rises at a gain's floor and never falls claims the gap between
+ * them — the one thing that function's own documentation says must not happen. For the FAMILY
+ * slope the two agree, because a non-member root's requirement is a half-line and the union really
+ * is `[floor, ∞)`; for the decisive-stability and failed-edge slopes the gap is reachable.
  *
  * @param gains - The window's currently-wrong cases.
  * @param cap - The window's cap, possibly unbounded.
- * @returns Ascending breakpoints: the entry at 0, one per reachable floor, and the cap.
+ * @returns Ascending samples, from `0` to the cap.
  */
 function gainProfile(gains: readonly WindowGain[], cap: number): readonly FamilyScreenStep[] {
-  // A LIST, not a set. Two cases can share a floor EXACTLY — measured on this benchmark, two
-  // of the pool family's six gains both arrive at 0.010050, which is the metric term's top
-  // step for a 51-candidate case — and a set would report five gains where there are six.
-  // That is the same collapse the metric term's tie-group mean exists to avoid.
-  const floors: number[] = [];
+  const edges = new Set<number>([0]);
   for (const gain of gains) {
-    const floor = gainFloorOf(gain);
-    if (floor <= cap + WEIGHT_EPSILON) floors.push(floor);
+    for (const interval of gain.intervals) {
+      if (interval.min <= cap + WEIGHT_EPSILON) edges.add(interval.min);
+      // A `max` of `Infinity` is not a weight, and one above the cap is outside the window.
+      if (Number.isFinite(interval.max) && interval.max <= cap + WEIGHT_EPSILON)
+        edges.add(interval.max);
+    }
   }
-  const weights = [...new Set(floors)].sort((a, b) => a - b);
-  if (Number.isFinite(cap)) weights.push(cap);
-  // The entry at 0 is kept so a reader can see the profile was evaluated there rather than
-  // assumed: its gain is 0 by definition, because a gain is not satisfied at 0.
-  const steps: FamilyScreenStep[] = [{ weight: 0, gained: 0 }];
-  for (const weight of weights) {
-    steps.push({
+  if (Number.isFinite(cap)) edges.add(cap);
+  const ascending = [...edges].sort((a, b) => a - b);
+  const samples: number[] = [...ascending];
+  for (let index = 0; index + 1 < ascending.length; index++) {
+    samples.push((ascending[index]! + ascending[index + 1]!) / 2);
+  }
+  return [...new Set(samples)]
+    .sort((a, b) => a - b)
+    .map((weight) => ({
       weight,
-      gained: floors.filter((floor) => floor <= weight + WEIGHT_EPSILON).length,
-    });
-  }
-  return steps;
+      gained: gains.filter((gain) => intervalsCover(gain.intervals, weight)).length,
+    }));
 }
+
+/*
+ * WHY a gained case is `[floor, ∞)` under a FAMILY's slope — and why that stopped being an
+ * assumption about every slope.
+ *
+ * A family penalty subtracts `w` from each member, so a root that is not a member keeps its score
+ * while the members drop:
+ *
+ * - a gain is a case NOT satisfied at `w = 0`, so no root's interval covers 0;
+ * - a non-member root that is first at any weight stays first: its interval is `[floor, ∞)`;
+ * - a member root is capped from above by every non-member ahead of it, so its interval either
+ *   covers 0 (and the case is not a gain) or is empty.
+ *
+ * The union is therefore `[min floor, ∞)`, and the family screen's profile is monotone. That
+ * argument is the FAMILY's: it turns on the slope only ever hurting members. The decisive-stability
+ * and failed-edge slopes are differences of two positive scores, so a rival's slope can cap a root
+ * from above — there the union is a LIST of islands and the gap between them is a weight at which
+ * the case is NOT satisfied. {@link gainProfile} scans the intervals so both are measured.
+ */
 
 /**
  * Build the solver's input for ONE family.
@@ -2303,55 +2318,178 @@ function buildFamilyCases(
 /**
  * One weight window, solved and reduced to what a decision needs.
  *
- * Shared by the family screen and the onset screen so that "how a window becomes a
- * recommendation" has ONE implementation: the midpoint rule, the maximal-gain range
- * and the measured `lostAtShip` are what the pool penalty shipped under, and a
- * second copy of them would let two axes be chosen by two different rules.
+ * Shared by the family screen, the onset screen and the decisive-stability screen so that "how a
+ * window becomes a recommendation" has ONE implementation: the plateau rule, the measured
+ * `gained`/`lostAtShip` pair and the margins are what the pool penalty shipped under, and a second
+ * copy of them would let three axes be chosen by three different rules.
  */
 interface SolvedWindow {
   readonly window: ZeroRegressionWindow;
   readonly steps: readonly FamilyScreenStep[];
   readonly gain: number;
+  /** The left end of the maximal-gain range {@link ship} was taken from. */
   readonly gainFloor: number;
+  /** The right end of that range. */
   readonly bestEnd: number;
   readonly ship: number;
   /** Losses at {@link ship} — measured, not inferred from the cap. */
   readonly lostAtShip: number;
   /** The datapacks gained at {@link ship}, sorted. */
   readonly gained: readonly string[];
+  /** {@link gained}, with the margin each one has at {@link ship}; thinnest first. */
+  readonly margins: readonly WindowGainMargin[];
 }
 
-/** Solve one candidate set's window and reduce it to a recommendation. */
-function solveWindow(built: readonly WeightSeparationCase[]): SolvedWindow {
+/**
+ * How much room one gained case has at the shipped weight.
+ *
+ * The count a screen reports is a COUNT, and on its own it cannot be read to the precision the
+ * decision needs. Measured on the shipped dump of run `35107871516`: the decisive-stability screen
+ * reported `gain 6` at `0.030170`, the run dispatched at that weight delivered FIVE (Top@1 756 to
+ * 761, 53.2% to 53.5%, zero regressed fault types), and the case it lost had a margin of
+ * `1.054e-4` against `3.129e-4` for the next-thinnest. One rank position of that term is worth
+ * `ship / (services - 1)` = `6.034e-4`, six times the margin the claim rested on — and the dump
+ * renders every input at three decimals, so the reconstructed base is itself only good to about
+ * `1e-3`. The margin does not choose the weight; it is what makes the count readable at all.
+ */
+export interface WindowGainMargin {
+  readonly datapack: string;
+  /** The acceptable root that leads at the shipped weight. */
+  readonly target: string;
+  /** The nearest competitor at that weight — the case's frontier. */
+  readonly rival: string;
+  /** `target - rival` at the shipped weight; positive for a case in {@link SolvedWindow.gained}. */
+  readonly margin: number;
+  /** Services in the case, so {@link quantum} can be reproduced from the report. */
+  readonly services: number;
+  /** One rank position of this case's own term at the shipped weight. */
+  readonly quantum: number;
+}
+
+/**
+ * The frontier of one gained case at `w`: the lead its best root holds over its nearest rival.
+ *
+ * Read off the case's own affine scores, so it is the same arithmetic the window was solved with
+ * rather than a second model of it. The report names the pair, because a margin with no rival is a
+ * number nobody can act on.
+ *
+ * @param one - The case, which {@link SolvedWindow.gained} guarantees is satisfied at `w`.
+ * @param w - The shipped weight.
+ * @returns The margin, the pair that sets it, and the term's own step for this case.
+ */
+function marginOf(one: WeightSeparationCase, w: number): WindowGainMargin {
+  const scored = [...one.scores].map(([id, affine]) => ({
+    id,
+    score: affine.base + w * affine.slope,
+  }));
+  const roots = scored.filter((candidate) => one.targets.includes(candidate.id));
+  // The maximum over the acceptable roots is at or above every rival's score, because the case IS
+  // satisfied here — one of the roots leads. Tie-broken by service id so the pair the report names
+  // is the same on every run of the same dump.
+  const best = [...roots].sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))[0]!;
+  let margin = Number.POSITIVE_INFINITY;
+  let rival = '';
+  for (const candidate of scored) {
+    if (one.targets.includes(candidate.id)) continue;
+    const lead = best.score - candidate.score;
+    if (lead < margin) {
+      margin = lead;
+      rival = candidate.id;
+    }
+  }
+  const services = one.scores.size;
+  return {
+    datapack: one.datapack,
+    target: best.id,
+    rival,
+    margin,
+    services,
+    // A gain ranks over at least two services by construction: a one-service case satisfies its own
+    // root at every weight, so it is never a gain and never reaches this function. The division is
+    // therefore by a positive number, and the alternative — a branch for a case that cannot arrive —
+    // would be a tolerance for a state the type already excludes.
+    quantum: w / (services - 1),
+  };
+}
+
+/**
+ * The widest run of consecutive profile samples that attains the peak gain.
+ *
+ * The RUN's span is what a recommendation is trusted on. The profile evaluates at every interval
+ * edge and at every gap's midpoint, so a step down at an edge is visible and a run is a genuine
+ * maximal-gain range rather than the span of a set: the previous rule took the midpoint of the
+ * outermost two samples, which for a case with two islands lands in the gap between them — a weight
+ * that case's own interval arithmetic says does NOT satisfy it.
+ *
+ * A tie goes to the earlier run, and the weights are distinct, so two runs of the report compare.
+ *
+ * @param steps - The evaluated profile, ascending.
+ * @param gain - The peak gain to run over.
+ * @returns The span of the widest run attaining `gain`.
+ */
+function widestPlateau(
+  steps: readonly FamilyScreenStep[],
+  gain: number,
+): { readonly from: number; readonly to: number } {
+  let best = { from: 0, to: 0, width: -1 };
+  let start = -1;
+  for (let index = 0; index <= steps.length; index++) {
+    const at = index < steps.length && steps[index]!.gained === gain;
+    if (at && start < 0) start = index;
+    if (!at && start >= 0) {
+      const from = steps[start]!.weight;
+      const to = steps[index - 1]!.weight;
+      if (to - from > best.width) best = { from, to, width: to - from };
+      start = -1;
+    }
+  }
+  return { from: best.from, to: best.to };
+}
+
+/**
+ * Solve one candidate set's window and reduce it to a recommendation.
+ *
+ * Exported because it is the rule every screen is decided by: a caller can hand it a case set and
+ * check that the weight it recommends satisfies the gains it claims, which is the invariant the
+ * three screens' reports inherit and cannot assert on their own.
+ *
+ * @param built - Input from {@link buildWeightSeparationCases} or a screen's own builder.
+ * @returns The window, its profile, and the weight to ship with its margins.
+ */
+export function solveZeroRegressionWindow(built: readonly WeightSeparationCase[]): SolvedWindow {
   const window = computeZeroRegressionWindow(built);
   const steps = gainProfile(window.gains, window.cap);
   const gain = steps.reduce((best, step) => (step.gained > best ? step.gained : best), 0);
-  // The maximal-gain weight range: from the FIRST weight that attains the peak to the
-  // LAST one. A range of width zero is a knife edge, and the profile says what a
-  // smaller weight would still buy.
-  const bestStart = steps.find((step) => step.gained === gain)?.weight ?? 0;
-  const bestEnd = [...steps].reverse().find((step) => step.gained === gain)?.weight ?? bestStart;
-  // The weight to ship is the midpoint of the maximal-gain range, or its single value
-  // when the range has no interior — the same rule the pool penalty shipped its own
-  // midpoint under. `0` when there is no gain at all: a positive weight that buys
-  // nothing is a configuration change with no measured effect.
-  const ship = gain === 0 ? 0 : (bestStart + bestEnd) / 2;
+  const plateau = widestPlateau(steps, gain);
+  // The weight to ship is the midpoint of the widest maximal-gain range, or its single value when
+  // the range has no interior — the same midpoint rule the pool penalty shipped its own weight
+  // under. `0` when there is no gain at all: a positive weight that buys nothing is a configuration
+  // change with no measured effect.
+  const ship = gain === 0 ? 0 : (plateau.from + plateau.to) / 2;
+  const byPack = new Map(built.map((one) => [one.datapack, one]));
+  // Measured AT the weight that is recommended, which is the same weight `lostAtShip` is measured
+  // at: the two halves of the claim come from one evaluation, so a report cannot name a gain its
+  // own arithmetic denies at the weight it advises.
   const gained =
     gain === 0
       ? []
       : window.gains
-          .filter((one) => intervalsCover(one.intervals, bestStart))
+          .filter((one) => intervalsCover(one.intervals, ship))
           .map((one) => one.datapack)
           .sort();
+  const margins = gained
+    .map((datapack) => marginOf(byPack.get(datapack)!, ship))
+    .sort((a, b) => a.margin - b.margin || (a.datapack < b.datapack ? -1 : 1));
   return {
     window,
     steps,
     gain,
-    gainFloor: bestStart,
-    bestEnd,
+    gainFloor: plateau.from,
+    bestEnd: plateau.to,
     ship,
     lostAtShip: zeroRegressionSamples(built, [ship])[0]!.lost,
     gained,
+    margins,
   };
 }
 
@@ -2481,7 +2619,7 @@ export function onsetScreen(
     }
     built.push({ datapack: kase.datapack, targets, scores });
   }
-  const solved = solveWindow(built);
+  const solved = solveZeroRegressionWindow(built);
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const gainTypes = new Map<string, number>();
   for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
@@ -2617,12 +2755,12 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
     lines.push('  weight can change a ranking — a window here would be an artefact.');
     return lines.join('\n');
   }
-  const width = Number.isFinite(s.window.cap)
-    ? s.window.cap - s.gainFloor
-    : Number.POSITIVE_INFINITY;
+  // The width of the range the line above NAMES — the maximal-gain span the recommendation was
+  // taken from — rather than the span to the cap, which includes weights the peak is not held at.
+  const width = s.bestEnd - s.gainFloor;
   lines.push(
     `  window: gain ${s.gain} in [${at(s.gainFloor)}, ${at(s.bestEnd)}] ` +
-      `(cap ${at(s.window.cap)}; width ${Number.isFinite(width) ? width.toFixed(6) : 'unbounded'})`,
+      `(cap ${at(s.window.cap)}; width ${width.toFixed(6)})`,
   );
   lines.push(
     `  ship ${s.ship.toFixed(6)}; lost at ship ${s.lostAtShip}` +
@@ -2641,6 +2779,7 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
     lines.push(
       `  by fault type: ${screen.gainTypes.map((t) => `${t.key} +${t.cases}`).join(', ')}`,
     );
+    lines.push(marginLine(s));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -2844,7 +2983,7 @@ export function cvScreen(
     }
     built.push({ datapack: kase.datapack, targets, scores });
   }
-  const solved = solveWindow(built);
+  const solved = solveZeroRegressionWindow(built);
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const gainTypes = new Map<string, number>();
   for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
@@ -2901,10 +3040,11 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     `  services carrying a decisive composition: ${a.servicesMeasured}/${a.servicesTotal} ` +
       `(${share})`,
   );
-  // The population this window protects. A gain with no population is unreadable — `gain 4` means one thing out of 3
-  // correct cases and another out of 700 — and these three counts come from the BASE, which no
-  // shape touches. `correct at 0` is also the instrument's fidelity line: the base IS the shipped
-  // score, so it is the number of cases the dump's own ranking got right.
+  // The population this window protects. A gain with no population is unreadable — `gain 4` means
+  // one thing out of 3 correct cases and another out of 700. `cases` and `correct at 0` come from
+  // the BASE, which no shape touches, and `correct at 0` is also the instrument's fidelity line
+  // because the base IS the shipped score; `unreachable` is this SHAPE's own count, since an empty
+  // admissible set is decided by the slopes and the shapes give the same order different spacing.
   lines.push(
     `  cases ${s.window.cases}; correct at 0 ${s.window.satisfied}; ` +
       `unreachable at every weight ${s.window.unreachable}`,
@@ -2914,12 +3054,12 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
     return lines.join('\n');
   }
-  const width = Number.isFinite(s.window.cap)
-    ? s.window.cap - s.gainFloor
-    : Number.POSITIVE_INFINITY;
+  // The width of the range the line above NAMES — the maximal-gain span the recommendation was
+  // taken from — rather than the span to the cap, which includes weights the peak is not held at.
+  const width = s.bestEnd - s.gainFloor;
   lines.push(
     `  window: gain ${s.gain} in [${at(s.gainFloor)}, ${at(s.bestEnd)}] ` +
-      `(cap ${at(s.window.cap)}; width ${Number.isFinite(width) ? width.toFixed(6) : 'unbounded'})`,
+      `(cap ${at(s.window.cap)}; width ${width.toFixed(6)})`,
   );
   lines.push(
     `  ship ${s.ship.toFixed(6)}; lost at ship ${s.lostAtShip}` +
@@ -2938,6 +3078,7 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     lines.push(
       `  by fault type: ${screen.gainTypes.map((t) => `${t.key} +${t.cases}`).join(', ')}`,
     );
+    lines.push(marginLine(s));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -2981,13 +3122,18 @@ export function formatCvMenuReport(
     `  services carrying a decisive composition: ${a.servicesMeasured}/${a.servicesTotal} ` +
       `(${share})`,
   );
-  // The population every shape shares. A gain with no population is unreadable — `gain 4` means one thing out of 3
-  // correct cases and another out of 700 — and these three counts come from the BASE, which no
-  // shape touches. `correct at 0` is also the instrument's fidelity line: the base IS the shipped
-  // score, so it is the number of cases the dump's own ranking got right.
+  // TWO of the three counts are properties of the BASE, which no shape touches: how many cases the
+  // dump describes, and how many the shipped score gets right. `correct at 0` is also the
+  // instrument's fidelity line, because the base IS the shipped score.
+  //
+  // The third is NOT. `unreachable` counts cases whose admissible set is EMPTY, and emptiness is
+  // decided by the slopes, so the shapes can disagree — measured on run `35107871516`, `flip` 569
+  // against `rank` 526 over the same 1422 cases. It is therefore printed beside the shape it
+  // belongs to: one shape's number above a two-row table is a number about neither row.
+  lines.push(`  cases ${first.solved.window.cases}; correct at 0 ${first.solved.window.satisfied}`);
   lines.push(
-    `  cases ${first.solved.window.cases}; correct at 0 ${first.solved.window.satisfied}; ` +
-      `unreachable at every weight ${first.solved.window.unreachable}`,
+    '  unreachable at every weight: ' +
+      screens.map((screen) => `${screen.shape} ${screen.solved.window.unreachable}`).join(', '),
   );
   if (a.casesComparable === 0) {
     lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
@@ -3082,7 +3228,7 @@ export function familyScreen(
     // The window, the profile, the maximal-gain range and the shipped midpoint all
     // come from ONE solver, shared with the onset screen: two axes chosen by two
     // rules is how a repo ends up unable to compare them.
-    const solved = solveWindow(built);
+    const solved = solveZeroRegressionWindow(built);
     const gainTypes = new Map<string, number>();
     for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
     const labels = [...(labelsByFamily.get(family) ?? new Set<string>())].sort();
@@ -3094,6 +3240,7 @@ export function familyScreen(
       gain: solved.gain,
       gainTypes: tallyCounter(gainTypes),
       gained: solved.gained,
+      margins: solved.margins,
       unreachable: solved.window.unreachable,
       satisfied: solved.window.satisfied,
       cap: solved.window.cap,
@@ -3207,6 +3354,7 @@ export function formatFamilyScreenReport(
         `    profile ${profile.map((step) => `${step.weight.toFixed(6)}→${step.gained}`).join(', ')}`,
       );
     }
+    lines.push(`  ${marginLine(row).trimStart()}`);
     if (row.capBinder !== undefined) {
       lines.push(
         `    cap bound by ${row.capBinder.datapack}: ${row.capBinder.target} overtaken by ` +
@@ -3228,6 +3376,32 @@ function configurationLine(weights: FamilyScreenWeights): string {
     `logWeight=${weights.logWeight} latWeight=${weights.latWeight ?? SHIPPED_LAT_WEIGHT} ` +
     `latFloor=${weights.latFloor ?? SHIPPED_LAT_FLOOR} ` +
     `poolWeight=${weights.poolWeight ?? SHIPPED_POOL_WEIGHT}`
+  );
+}
+
+/**
+ * One line naming the frontier of a solved window.
+ *
+ * The count cannot be read to the precision the decision needs on its own. The margin is the lead
+ * the thinnest gained case holds over its nearest rival at the shipped weight, and the rank step is
+ * one position of THAT case's own term — so `1.054e-4` against a step of `6.034e-4` says the weight
+ * is a tenth of a rank away from losing a case, while `1.2e-2` against the same step says a whole
+ * rank would still not cost it. The population of gains inside one step is counted against each
+ * case's own step, because the step scales with the weight and with how many services the case
+ * ranks over; the value printed is the thinnest case's.
+ *
+ * @param solved - A solved window, or any row carrying its margins. Its caller passes one only
+ *   when something was GAINED, and a gain is a case satisfied at the shipped weight — so it has a
+ *   leading root and a nearest rival there, and the list is non-empty by construction.
+ * @returns The line.
+ */
+function marginLine(solved: { readonly margins: readonly WindowGainMargin[] }): string {
+  const thinnest = solved.margins[0]!;
+  const inside = solved.margins.filter((one) => one.margin <= one.quantum).length;
+  return (
+    `  margin: thinnest ${thinnest.margin.toExponential(3)} ` +
+    `(${thinnest.datapack} vs ${thinnest.rival}); one rank step ${thinnest.quantum.toExponential(3)}; ` +
+    `${inside} of ${solved.margins.length} gains inside one step`
   );
 }
 

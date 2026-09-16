@@ -127,19 +127,31 @@ review.
 Solved on **all 1422 cases** of run `35107871516` (shipped configuration; 159 MiB log):
 
 ```
-cases 1422; correct at 0 756; unreachable at every weight 569
+cases 1422; correct at 0 756
+unreachable at every weight: flip 569, rank 526
   flip   3  [0.021536, 0.024882]  width 0.003345  ship 0.023209  lostAtShip 0
   rank   6  [0.029860, 0.030480]  width 0.000620  ship 0.030170  lostAtShip 0
 ```
+
+`unreachable` is printed **per shape**, because it is: an empty admissible set is decided by the
+slopes, and the two shapes give the same cv order different spacing. The report used to print one
+shape's number above a two-row table, on the claim that both counts came from the base — true of
+`cases` and `correct at 0`, false of this one. The smallest input that separates them is a
+three-service case whose root is capped in one spacing and not the other; the instrument's own
+tests carry it.
 
 **The instrument's self-check is exact.** `correct at 0` is 756, and 756/1422 = **53.16%** is the
 run's own published Top@1 — the reconstruction reproduces the engine's ranking case for case, so a
 gain measured against it is a gain against the engine rather than against a second implementation.
 
-| shape | gain | window | width | ship | lost at ship | Top@1 | cap binder |
+| shape | gain | window | width | ship | lost at ship | Top@1 claimed | cap binder |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `flip` | 3 | `[0.021536, 0.024882]` | 0.003345 | 0.023209 | **0** | 756 → 759 (+0.21pp) | `ts5-ts-security-service-request-replace-method-7xn7ks` |
 | `rank` | **6** | `[0.029860, 0.030480]` | 0.000620 | 0.030170 | **0** | 756 → **762 (+0.42pp)** | same case |
+
+The `rank` claim of 762 was **not** delivered: the run at that weight reached 761 (§4, "The
+dispatched run"). The prediction stands as the reconstruction's own number, and the margin list
+that now accompanies it is the reason the two differ.
 
 Gains by fault type (`rank`): `JVMMemoryStress +2`, `HTTPResponseDelay +1`,
 `HTTPResponseReplaceBody +1`, `HTTPResponseReplaceCode +1`, `JVMException +1`. `flip` collects three
@@ -167,33 +179,96 @@ past it, and the cap is TIGHT. Note the floor is a **knife edge** — at exactly
 direct count is one short on both shapes — which is precisely why the shipping rule takes the
 MIDPOINT of `[gainFloor, cap]` rather than the floor.
 
+### The dispatched run: what the engine delivered, against what the screen claimed
+
+Neither path above is independent of the other — both are the same reconstruction from the same
+dump, so they agree by construction. The third path is the engine, and it disagrees by one case.
+The pair (`stabilityWeight` is an opt-in fusion weight defaulting to 0, so the control needs no
+pin):
+
+| run | configuration | Top@1 | Top@3 | Top@5 |
+| --- | --- | --- | --- | --- |
+| `35125285784` | shipped (`stabilityWeight=0`) | 53.2% (**756**) | 66.5% | 70.3% |
+| `35125277962` | candidate (`stabilityWeight=0.03017`) | 53.5% (**761**) | 66.7% | 70.5% |
+
+The control reproduces the published headline exactly, which is what licenses reading the
+difference as the term's. The candidate gains **five** cases, one per type, and regresses **none of
+the 25 fault types**:
+
+| fault type | control | candidate |
+| --- | --- | --- |
+| `HTTPResponseReplaceCode` | 160/231 | **161/231** |
+| `JVMMemoryStress` | 12/171 | **13/171** |
+| `HTTPResponseDelay` | 52/89 | **53/89** |
+| `HTTPResponseReplaceBody` | 45/51 | **46/51** |
+| `JVMException` | 30/43 | **31/43** |
+
+So the screen claimed **6** and the engine delivered **5**. The case it did not collect is the one
+the screen's own six-way margin list names as thinnest:
+
+```
+margin: thinnest 1.054e-4 (ts0-ts-inside-payment-service-stress-5qd9rl vs ts-station-service);
+        one rank step 6.034e-4; 2 of 6 gains inside one step
+```
+
+`1.054e-4` is a sixth of one rank position of the term (`0.03017 / 50`), and the next-thinnest gain
+holds `3.129e-4`. The dump renders every input at three decimals (`fmt` = `toFixed(3)`), so the
+reconstructed base is itself only good to about `1e-3` — an order of magnitude above the margin the
+sixth gain rested on. **The sixth gain was never resolvable from the dump**, and the count alone
+could not say so: `gain 6` reads identically whether the six are separated by `1e-2` or by `1e-4`.
+
+The resolution bound is *not* a threshold that reproduces the split — `3.129e-4` is also under
+`1e-3` and the engine did collect that case — so nothing here is calibrated to the observed five.
+What the margin does is make the frontier readable **before** a run: a gain a tenth of a rank from
+losing its lead is a different claim from one that would survive a whole rank, and the report now
+says which is which. The engine remains the arbiter, which is the standing rule for this axis — the
+screen licenses a candidate run, not a weight.
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, and the
-gain is the same magnitude the **shipped pool penalty** was accepted on (6 cases). Not settled — and
-this is the half that decides it:
+**engine** delivered **+5 cases with zero regressed fault types** (756 → 761, 53.16% → 53.5%) at
+the weight the solver named. Not settled — and this is the half that decides it:
 
-- **The golden 9-cell is unmeasured.** The term is not in the engine, so it cannot be. It also cannot
-  be argued away: the field exists on RCAEval too, so a weight of 0.030 would act there.
+- **The golden 9-cell is not in this document.** The term is not in the engine's default path, so
+  the golden configuration is bit-for-bit unchanged by enrolling it; the candidate is measured by
+  passing the flag. The dispatch is `benchmark-rcaeval.yml` at the enrolling commit, and this
+  document is updated with its cells when it reports.
 - 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight — a case with no
   decisive composition, or none the term can separate.
 - The `flip` shape reads the MAGNITUDE of a clamped bonus (§1), so `rank` is the faithful translation
   of the separator's rank-based rate. Any statement about this term has to name its shape.
 - A paired preference is still not a term (`fse26-term-oracle-verdict.md` §9): this table licenses a
-  candidate RUN, not a weight.
+  candidate RUN, not a weight — and the run has now run, which is why the deliverable here is a
+  measurement and not a recommendation.
 
 
 ## 5. Acceptance of the instrument itself
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 602, 0 failures (was 575) |
+| `benchmarks` tests | 612, 0 failures (was 575 at the first pass) |
 | `benchmarks` coverage | **99.82 / 97.16 / 100 / 99.82** |
-| `packages` typecheck | 15 projects |
+| `packages` typecheck | 15 projects (nx per-package **and** the workspace tsconfig) |
 | lint / prettier | 0 warnings / clean |
-| regression proof | `--separator-screen` on the shipped dump is **byte-identical** across the change; the register's guarded numbers are untouched |
+| regression proof | `--cv-screen` on the shipped dump differs from the pre-change output in **three hunks and nothing else**: the population line split, and the two new `margin:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so the solver change moved no recommendation. The register's guarded numbers are untouched |
+| the engine's half | candidate `35125277962` vs control `35125285784`: **+5 cases, 0 regressed fault types**, 756 → 761 |
 
 The tests that carry the design, and why each exists:
+
+- **the recommended weight satisfies every gain the report lists** — the invariant the profile
+  exists for, asserted through the public solver. A midpoint taken between the outermost two
+  samples of a peak state a gain its own interval arithmetic denies; two islands of one case's
+  admissible set are the smallest input that shows it, and they are the reason the profile scans
+  the intervals instead of counting their floors.
+- **the profile can step DOWN** — the same fixture, stated as an observable: a cumulative count over
+  the floors can only ever rise, so `[0, 1, 0, 1]` is the defect in one line.
+- **the margin is reported, thinnest first, with the term's own rank step** — the number the
+  dispatched run turned on. Its fixture is the smallest case whose gain is not a knife edge (a root
+  capped from above AND floored from below), because a two-candidate case's floor is exactly
+  `log1p(1) / slopeGap` and the margin there is exactly zero.
+- **`unreachable` is not claimed shape-independent** — it is decided by the slopes, and the report
+  names each shape's own count. Measured: 569 against 526.
 
 - **`cvSlopes` does NOT credit an unmeasured service** — the load-bearing assertion of the family.
 - **`cvScreen` satisfies at `w = 0` a case the LATENCY term decided**, and does not when the latency
