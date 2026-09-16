@@ -4671,3 +4671,23 @@ describe('guardCensus — a guard’s footprint against a within-type control', 
     expect(() => parseAnalyzeArgs(['--dump', 'd', '--misses'])).toThrow(/--log-weight/);
   });
 });
+
+describe('--separator-screen — wiring', () => {
+  it('parses without a log weight, because it reconstructs no score', () => {
+    // It asks a PAIRED question of the engine's own fields, so there is no score in it to
+    // reconstruct and no weight to be right about. Requiring one would be ritual.
+    const options = parseAnalyzeArgs(['--dump', 'd', '--separator-screen']);
+    expect(options.kind).toBe('dump');
+    if (options.kind !== 'dump') return;
+    expect(options.sections.map((section) => section.kind)).toEqual(['separatorScreen']);
+  });
+
+  it('is printed in the canonical order, before the guard census', () => {
+    const options = parseAnalyzeArgs(['--dump', 'd', '--guard-census', '--separator-screen']);
+    if (options.kind !== 'dump') throw new Error('expected a dump mode');
+    expect(options.sections.map((section) => section.kind)).toEqual([
+      'separatorScreen',
+      'guardCensus',
+    ]);
+  });
+});

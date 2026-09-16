@@ -38,6 +38,12 @@ import {
   discriminatorScreen,
   formatDiscriminatorReport,
 } from './fse26-discriminator.js';
+import {
+  DEFAULT_SEPARATOR_CRITERION,
+  formatSeparatorCensus,
+  separatorCensus,
+  sourceOf,
+} from './fse26-separator.js';
 import type { TermOracleOptions } from './fse26-term-oracle.js';
 import {
   dominantFamily,
@@ -654,9 +660,12 @@ export function guardCensus(cases: readonly DiagnosedCase[]): GuardCensusRow[] {
 
   const byType = new Map<string, Acc>();
   for (const kase of cases) {
-    const sourceId = kase.groundTruth[0] ?? '';
-    if (sourceId === '') continue;
-    const source = shape(kase, sourceId);
+    // The source comes from ONE rule, shared with the separator screen. Taking
+    // `groundTruth[0]` here and the most anomalous root there would let two documents
+    // disagree about which service a case is about, with both of them looking measured.
+    const sourceService = sourceOf(kase);
+    if (sourceService === undefined) continue;
+    const source = shape(kase, sourceService.serviceId);
     if (source === undefined) continue;
     const winnerId = kase.prediction[0] ?? '';
     const winner = winnerId === '' ? undefined : shape(kase, winnerId);
@@ -3403,7 +3412,8 @@ export type AnalyzeSectionKind =
   | 'familyScreen'
   | 'onsetScreen'
   | 'discriminator'
-  | 'guardCensus';
+  | 'guardCensus'
+  | 'separatorScreen';
 
 /**
  * The sections that reconstruct a SCORE, and therefore need the weight it ran at.
@@ -3496,6 +3506,7 @@ export const ANALYZE_SECTION_ORDER: readonly AnalyzeSectionKind[] = [
   'familyScreen',
   'onsetScreen',
   'discriminator',
+  'separatorScreen',
   'guardCensus',
   'misses',
 ];
@@ -3523,7 +3534,7 @@ const ANALYZE_USAGE =
   '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
   '[--pool-penalty <w>] [--temporal-weight <w>] [--onset-shape <shape>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
-  '[--onset-screen] [--discriminator] [--guard-census] ' +
+  '[--onset-screen] [--discriminator] [--separator-screen] [--guard-census] ' +
   '[--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
@@ -3560,6 +3571,7 @@ const SWITCH_FLAGS = new Set([
   'family-screen',
   'onset-screen',
   'discriminator',
+  'separator-screen',
   'guard-census',
 ]);
 
@@ -3863,6 +3875,13 @@ function analyzeSectionText(
       };
       return formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
     }
+    case 'separatorScreen':
+      // The run's own latency FLOOR, so the `lat` signal is the term the engine actually
+      // scored rather than a credited-everything variant of it. No log weight: the section
+      // reconstructs no score.
+      return formatSeparatorCensus(
+        separatorCensus(cases, DEFAULT_SEPARATOR_CRITERION, section.latFloor),
+      );
     case 'guardCensus':
       // Reads the engine's own rendered inventories and the dump's own correct/wrong
       // outcome, so it takes no weights — none of the section's numbers came from this
