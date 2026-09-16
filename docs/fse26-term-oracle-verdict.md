@@ -409,7 +409,56 @@ node-level series in this one. The winner's side is dominated by client-duration
 `jvm.system.cpu.load_1m` — the shared series the fleet-relative candidate was built for
 and rejected.
 
-## 9. Reproduce
+## 9. The third mode: `all`, which the separator census asked for and the term refuses
+
+`all` is the mode the engine's own documentation describes as targeting "fault classes where the
+SOURCE — not the symptom — floods errors with a non-logic exception". It had never been measured,
+and `fse26-separator-verdict.md` gave it a precondition: in the network partition cases the true
+source carries MORE total error lines than the engine's pick (30-3) while carrying more
+*signature* lines in **none** of 29 — the level-1 gate is what discards that population's own
+fault evidence.
+
+It is now rebuildable from a dump and measured. Its flood is every ERROR/FATAL line, so it is
+`err + fatal` and there is **no union to recover** — which makes it the only counting mode whose
+row survives a dump that predates `both=` (and the only row above measured on all 1422 cases
+rather than the reconstructable 1391).
+
+At the shipped configuration:
+
+| configuration | correct | +/− cases | regressed types |
+| --- | --- | --- | --- |
+| `recorded` (shipped) | 756 | +0/−0 | 0 |
+| `logicHttp` (the dump's own mode) | 730 | +0/−0 | 0 |
+| `dominant@0.2` | 731 | +1/−0 | 0 |
+| **`all`** | **569** | **+95/−282** | **17** |
+| `count` | 531 | +130/−355 | 8 |
+
+**`all` is the worst row on the table**, and its 17 regressed types include every HTTP type it
+was supposed to help: `HTTPRequestDelay −48`, `HTTPResponseDelay −44`, `HTTPRequestReplaceMethod
+−28`, `HTTPResponseReplaceCode −27`. The types it costs *least* are the resource/JVM/network ones
+(−1 to −8) — the opposite of the engine's own stated target, exactly as `logicHttpDominant`'s
+prediction was the opposite of its measurement (`fse26-emitter-dominance-falsified.md`).
+
+So the register's reopening condition for this axis — "a new mode is both measured and better on
+the same cache" — is answered **negatively for `all`**: measured, and 187 cases worse than the
+shipped mode with 17 fault types against it.
+
+**The lesson is the one this pair of instruments exists to produce.** The separator census
+measures a PREFERENCE between two services; a mode is a TERM, normalised across the case. The
+source owning the flood inside a pair is a real fact — 30-3 — and it does not survive the
+case-level normalisation, because the cases where some other service floods *harder* outnumber
+them. A paired separation is a necessary condition, not a sufficient one, and the two numbers
+that have to be read together are the pair counts (`30-3`) and the frontier row (`569, 17 types`).
+
+**And the self-check stopped being silent.** `ModeScreenSelfCheck` printed only when a check
+existed, so a dump in a mode this reader cannot rebuild printed nothing — indistinguishable from
+"checked, found nothing". It now names the mode and says there is no check; and the
+`logicHttpJoint` entry was removed from the mapping, because that mode's gate withdraws the
+framework-HTTP half for a service whose callee is more anomalous, which this reader does not
+rebuild: the "check" would have compared the joint mode against its own unjointed half and
+reported a disagreement on every case.
+
+## 10. Reproduce
 
 ```bash
 # the instrument, on the shipped dump (no run, no rebuild: read the CI artifact)

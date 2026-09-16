@@ -115,6 +115,16 @@ interface ServiceSpec {
    * cannot express an overlap cannot expose the double-count.
    */
   both?: number;
+  /**
+   * ERROR lines, and FATAL lines.
+   *
+   * Default to the level-1 flood and to 0, which is what the fixtures written before the
+   * `all` mode needed. Set them where the test is about the mode that admits EVERY error
+   * line: its flood is `err + fatal`, and a fixture whose totals are derived from the
+   * signature counts cannot express a source whose errors are neither signature.
+   */
+  err?: number;
+  fatal?: number;
   /** The metric that won this service's anomaly maximum; defaults to `cpu`. */
   dominant?: string;
 }
@@ -134,14 +144,27 @@ function block(
      * recovered and the reader must say so rather than assume disjoint sets.
      */
     omitOverlap?: boolean;
+    /**
+     * The mode the block DECLARES, and the one its printed term is derived from. They are
+     * the same string by default (`logicHttp`), and separating them is what lets a test
+     * write a block the producer could actually emit in another mode.
+     */
+    logMode?: string;
+    mode?: 'logicHttp' | 'count' | 'all';
   } = {},
 ): string {
   const n = specs.length;
-  // The level-1 flood, not the sum of the two counts: a line can carry both flags,
-  // and the engine admits it once. Every fixture that leaves `both` unset has disjoint
-  // sets, so this is the same number for them.
-  const flood = (spec: ServiceSpec): number =>
-    (spec.logic ?? 0) + (spec.http ?? 0) - (spec.both ?? 0);
+  const mode = overrides.mode ?? 'logicHttp';
+  // The mode's own level-1 flood, which is what the engine divides by:
+  //   `count`    — logic exceptions alone;
+  //   the rest   — the UNION of the two signature sets (a line can carry both flags and the
+  //                engine admits it once), which for fixtures that leave `both` unset is the sum;
+  //   `all`      — every ERROR/FATAL line, so `err + fatal` and no union to recover.
+  const flood = (spec: ServiceSpec): number => {
+    if (mode === 'all') return (spec.err ?? 0) + (spec.fatal ?? 0);
+    if (mode === 'count') return spec.logic ?? 0;
+    return (spec.logic ?? 0) + (spec.http ?? 0) - (spec.both ?? 0);
+  };
   const peak = specs.reduce((max, spec) => Math.max(max, flood(spec)), 0);
   const services = specs.map((spec, i) => ({
     serviceId: spec.serviceId,
@@ -154,8 +177,10 @@ function block(
     latRise: spec.latRise,
     latEdges: spec.latEdges ?? 0,
     onsetDelayMs: spec.onset,
-    errorCount: flood(spec),
-    fatalCount: 0,
+    // Defaulted to the mode's own flood, which is what the producer's counts come from —
+    // except in `all` mode, where the fixture says them and the flood is derived FROM them.
+    errorCount: spec.err ?? flood(spec),
+    fatalCount: spec.fatal ?? 0,
     logicExceptionCount: spec.logic ?? 0,
     httpExceptionCount: spec.http ?? 0,
     // `undefined` rather than 0 when the override asks for an OLD producer: the
@@ -175,7 +200,7 @@ function block(
     groundTruthServices: [...(overrides.groundTruth ?? ['ts-root'])],
     services,
     topPredictions: [...(overrides.topPredictions ?? [])],
-    logSignalMode: 'logicHttp',
+    logSignalMode: overrides.logMode ?? mode,
     ...(overrides.injectTimeMs === undefined ? {} : { injectTimeMs: overrides.injectTimeMs }),
   });
 }
@@ -826,8 +851,23 @@ describe('modeScreen', () => {
     expect(count.gainedCases).toBe(0);
     expect(count.regressedCases).toBe(1);
     expect(count.regressedTypes).toEqual([{ key: 'NetworkLoss', cases: -1 }]);
-    // The grid's rows are present, in the grid's order, and labelled by threshold.
-    expect(screen.rows.map((row) => row.dominance)).toEqual([undefined, undefined, undefined, 0.5]);
+    // The rows are the recorded term, the two signature modes and `all`, then the grid — the
+    // grid's order and its labels included, because a sweep whose rows cannot be told apart
+    // reads as a plateau.
+    expect(screen.rows.map((row) => row.source)).toEqual([
+      'recorded',
+      'count',
+      'logicHttp',
+      'all',
+      'dominant',
+    ]);
+    expect(screen.rows.map((row) => row.dominance)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      0.5,
+    ]);
     expect(screen.rows.at(-1)!.source).toBe('dominant');
   });
 
@@ -1137,7 +1177,14 @@ describe('formatters', () => {
     expect(text).not.toContain('EXACT');
     // And no mode row is drawn from a flood it cannot recover. `count` never consults
     // the HTTP half, so its row IS drawn — the filter is per row, not per dump.
-    expect(modeScreen(old, OPTS).rows.map((row) => row.source)).toEqual(['recorded', 'count']);
+    // `all` needs no union — it admits every error line — so it is the one counting mode whose
+    // row survives a dump that predates the overlap count. The two signature modes drop, and
+    // that difference is itself the reason the mode stays measurable on the oldest cache.
+    expect(modeScreen(old, OPTS).rows.map((row) => row.source)).toEqual([
+      'recorded',
+      'count',
+      'all',
+    ]);
   });
 
   it('prints the ceilings and the conflicts', () => {
@@ -1419,5 +1466,98 @@ describe('--term-oracle wiring', () => {
     expect(text).toContain('Term oracle — dump.txt');
     expect(text).toContain('Log-term mode pre-screen');
     expect(text).toContain('logWeight=1 latWeight=0.561495 latFloor=10.3');
+  });
+});
+
+describe('the `all` mode — the flood the engine computes when it admits every error line', () => {
+  const services = [
+    {
+      serviceId: 'src',
+      logicExceptionCount: 0,
+      httpExceptionCount: 0,
+      errorCount: 8,
+      fatalCount: 0,
+    },
+    {
+      serviceId: 'victim',
+      logicExceptionCount: 0,
+      httpExceptionCount: 0,
+      errorCount: 2,
+      fatalCount: 0,
+    },
+    {
+      serviceId: 'root',
+      logicExceptionCount: 4,
+      httpExceptionCount: 0,
+      errorCount: 4,
+      fatalCount: 0,
+    },
+  ] as never;
+
+  it('credits a service whose errors are neither a logic nor a framework-HTTP signature', () => {
+    // The mode's stated target: a source that storms a PROPAGATED HTTP error, which the
+    // signature gate scores 0. Both the shipped mode and `count` see nothing here.
+    expect(logSlopesForMode(services, 'logicHttp', 0.5).has('src')).toBe(false);
+    expect(logSlopesForMode(services, 'count', 0.5).has('src')).toBe(false);
+    const all = logSlopesForMode(services, 'all', 0.5);
+    expect(all.get('src')).toBeCloseTo(1, 12);
+    expect(all.get('victim')).toBeCloseTo(0.25, 12);
+    expect(all.get('root')).toBeCloseTo(0.5, 12);
+  });
+
+  it('needs no overlap count, because every line is admitted', () => {
+    // |all| is the count of every ERROR/FATAL line, which is what `err`/`fatal` already say —
+    // there is no union to recover, so a dump that predates `both=` can still be rebuilt in
+    // this mode. That is the opposite of the two signature modes, and the reason the mode
+    // stays measurable on the oldest dump in the cache.
+    const legacy = [
+      {
+        serviceId: 'a',
+        logicExceptionCount: 3,
+        httpExceptionCount: 5,
+        errorCount: 6,
+        fatalCount: 0,
+      },
+    ] as never;
+    expect(canReconstructLogFlood(legacy, 'all')).toBe(true);
+    expect(canReconstructLogFlood(legacy, 'logicHttp')).toBe(false);
+    expect(() => logSlopesForMode(legacy, 'all', 0.5)).not.toThrow();
+    expect(logSlopesForMode(legacy, 'all', 0.5).get('a')).toBeCloseTo(1, 12);
+  });
+
+  it('is what the self-check rebuilds for a dump recorded in `all` mode', () => {
+    const recorded = casesOf(
+      block(
+        [
+          { serviceId: 'ts-root', logic: 0, http: 0, err: 6 },
+          { serviceId: 'ts-victim', logic: 0, http: 0, err: 2 },
+        ],
+        { groundTruth: ['ts-root'], topPredictions: ['ts-root'], logMode: 'all', mode: 'all' },
+      ),
+    );
+    const check = modeScreen(recorded, OPTS).selfCheck;
+    expect(check).toEqual({
+      dumpMode: 'all',
+      source: 'all',
+      cases: 1,
+      violations: 0,
+      gained: 0,
+      regressed: 0,
+    });
+    expect(formatModeScreen(modeScreen(recorded, OPTS))).toContain('reproduces the printed term');
+  });
+
+  it('refuses to claim a self-check for a mode it does not rebuild', () => {
+    // The line used to be printed only when a check EXISTED, so a dump in a mode this reader
+    // cannot rebuild printed nothing at all — which reads as "no disagreement found". Naming
+    // the mode and saying it is not rebuildable is the difference between a missing
+    // measurement and a clean one.
+    const novelty = casesOf(
+      block([{ serviceId: 'ts-root' }], { groundTruth: ['ts-root'], topPredictions: ['ts-root'] }),
+    ).map((kase) => ({ ...kase, logSignalMode: 'novelty' }));
+    const screen = modeScreen(novelty, OPTS);
+    expect(screen.selfCheck).toBeUndefined();
+    expect(formatModeScreen(screen)).toContain('self-check: none');
+    expect(formatModeScreen(screen)).toContain('novelty');
   });
 });

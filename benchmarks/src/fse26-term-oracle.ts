@@ -81,7 +81,7 @@ export type TermName = 'metric' | 'log' | 'lat';
  * engine's `LogSignalMode`s that can be rebuilt from the printed raw counts —
  * `novelty` cannot, because it needs per-class line counts the dump does not carry.
  */
-export type LogTermSource = 'recorded' | 'count' | 'logicHttp' | 'dominant';
+export type LogTermSource = 'recorded' | 'count' | 'logicHttp' | 'dominant' | 'all';
 
 /** A service and the score a given configuration gives it. */
 interface ScoredService {
@@ -304,6 +304,10 @@ function levelOneFlood(
 ): number | undefined {
   const logic = service.logicExceptionCount;
   if (mode === 'count') return logic;
+  // `all` admits EVERY ERROR/FATAL line, so its level-1 flood is the whole error count and
+  // there is no union to recover — which is why this is the one counting mode measurable on a
+  // dump that predates `both=`, and it is read straight off `err`/`fatal`.
+  if (mode === 'all') return service.errorCount + service.fatalCount;
   const http = service.httpExceptionCount;
   const both = service.bothExceptionCount;
   if (both !== undefined) return logic + http - both;
@@ -373,7 +377,7 @@ export function logSlopesForMode(
     }
     denominator.set(service.serviceId, flood);
     if (mode === 'count') numerator.set(service.serviceId, flood);
-    else if (mode === 'logicHttp') numerator.set(service.serviceId, flood);
+    else if (mode === 'logicHttp' || mode === 'all') numerator.set(service.serviceId, flood);
     else {
       // `dominant` withdraws exactly the framework-HTTP lines that are NOT logic
       // lines, so what survives the gate is the logic set plus the http-only set.
@@ -1145,6 +1149,11 @@ export interface ModeScreen {
    * which needs per-class line counts the dump does not carry).
    */
   readonly selfCheck: ModeScreenSelfCheck | undefined;
+  /**
+   * The mode the dump declares. Carried rather than re-read by the renderer, so the line about
+   * the self-check can name it — including when it is the reason there is no check.
+   */
+  readonly dumpMode: string;
 }
 
 /**
@@ -1216,6 +1225,11 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
     { source: 'recorded', dominance: undefined },
     { source: 'count', dominance: undefined },
     { source: 'logicHttp', dominance: undefined },
+    // The mode that admits every error line. Measured here because the separator census found
+    // the population where the gate is what discards the source's own evidence: in the network
+    // partition cases the source has MORE total error lines (30-3) and more SIGNATURE lines in
+    // none of 29 (`fse26-separator-verdict.md`).
+    { source: 'all', dominance: undefined },
     ...opts.dominanceGrid.map((dominance) => ({ source: 'dominant' as const, dominance })),
   ];
   const rows: ModeScreenRow[] = [];
@@ -1288,7 +1302,7 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
         .sort((a, b) => (a.key < b.key ? -1 : 1)),
     });
   }
-  return { rows, selfCheck: selfCheck(cases, rows) };
+  return { rows, selfCheck: selfCheck(cases, rows), dumpMode: cases[0]?.logSignalMode ?? '' };
 }
 
 /**
@@ -1303,8 +1317,15 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
 const SELF_CHECK_MODE: Readonly<Record<string, Exclude<LogTermSource, 'recorded'> | undefined>> = {
   count: 'count',
   logicHttp: 'logicHttp',
-  logicHttpJoint: 'logicHttp',
+  all: 'all',
   logicHttpDominant: 'dominant',
+  // `logicHttpJoint` is deliberately ABSENT. The table used to map it to `logicHttp`, which
+  // reads as a check but is not one: the joint mode withdraws the framework-HTTP half for a
+  // service whose callee is more anomalous, and this reader does not rebuild that withdrawal,
+  // so the "check" would compare the mode against its own unjointed half and report a
+  // disagreement on every case. A mode this reader cannot rebuild now says so instead
+  // (`selfCheck === undefined` plus a line naming the mode), which is the difference between a
+  // missing measurement and a clean one.
 };
 
 /**
@@ -1511,6 +1532,13 @@ export function formatModeScreen(
         `${check.violations} service(s) differ, rank-1 moves +${check.gained}/-${check.regressed} ` +
         `over ${check.cases} cases` +
         (exact ? '' : ' — a reconstruction defect: do not read the rows below'),
+    );
+  } else {
+    // Printed rather than omitted: a missing check and a check that found nothing look exactly
+    // alike in a report that only prints the second.
+    lines.push(
+      `  self-check: none — this reader does not rebuild the dump's mode ` +
+        `(\`${screen.dumpMode}\`), so no row above is verified against the printed term`,
     );
   }
   lines.push('  configuration           correct   +/-cases   regressed types');
