@@ -5225,7 +5225,9 @@ describe('parseDiagnosticDump — the CI log transport prefix', () => {
           http: 5,
           both: 2,
           dominant: 'cpu',
-          metricOutcomes: [{ label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.3) }],
+          metricOutcomes: [
+            { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(0.3) },
+          ],
         }),
         serviceLine({ serviceId: 'ts-payment-service', selfAnomaly: 0.4 }),
       ],
