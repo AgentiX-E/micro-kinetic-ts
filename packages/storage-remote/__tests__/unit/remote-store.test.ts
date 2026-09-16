@@ -2,6 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { defineStoreTests } from '../../../core/src/storage/abstract-store-test.js';
+import { StoreConnectionError } from '../../../core/src/storage/store-errors.js';
 import { RemoteStore } from '../../src/remote-store.js';
 
 // ── Echo server ──
@@ -174,5 +175,89 @@ describe('RemoteStore specifics', () => {
 
     const keys = (await store.keys('ns:')).sort();
     expect(keys).toEqual(['ns:a', 'ns:b']);
+  });
+});
+
+// ── Failure handling ──
+
+/**
+ * A real HTTP server that never succeeds: every read is a 500 and every removal is a 403.
+ *
+ * Standing up a server rather than stubbing `fetch` is what makes these assertions evidence: the
+ * store's retry loop, its status handling and its abort timer all run against a real socket.
+ */
+function startRefusingServer(): Promise<{ server: Server; port: number }> {
+  return new Promise((resolve) => {
+    const server = createServer((req, res) => {
+      if (req.method === 'DELETE') {
+        res.writeHead(403);
+      } else {
+        res.writeHead(500);
+      }
+      res.end();
+    });
+
+    server.listen(0, () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' ? addr!.port : 0;
+      resolve({ server, port });
+    });
+  });
+}
+
+describe('RemoteStore failure handling', () => {
+  let server: Server;
+  let port: number;
+
+  beforeAll(async () => {
+    const r = await startRefusingServer();
+    server = r.server;
+    port = r.port;
+  });
+
+  afterAll(() => {
+    server.close();
+  });
+
+  it('should exhaust its retry budget on a server error and report the status', async () => {
+    // `retries: 1` means two attempts: the first continues, the second gives up. Two is enough to
+    // measure the loop without paying for three.
+    const store = new RemoteStore({ baseUrl: `http://localhost:${port}`, retries: 1 });
+
+    // The error must be the one that explains the status. Falling through to the generic
+    // "request failed after N attempts" would hide a server that answered 500 every time.
+    await expect(store.get('any')).rejects.toThrow(StoreConnectionError);
+    await expect(store.get('any')).rejects.toThrow(/Server error 500/);
+
+    await store.close();
+  });
+
+  it('should retry a refused connection and report it as a connection failure', async () => {
+    const store = new RemoteStore({
+      baseUrl: 'http://127.0.0.1:1',
+      timeout: 100,
+      retries: 1,
+    });
+
+    await expect(store.get('any')).rejects.toThrow(StoreConnectionError);
+    await expect(store.get('any')).rejects.toThrow(/Request failed after 2 attempts/);
+
+    await store.close();
+  });
+
+  it('should throw when the server refuses a delete', async () => {
+    const store = new RemoteStore({ baseUrl: `http://localhost:${port}`, retries: 0 });
+
+    await expect(store.delete('k')).rejects.toThrow(/Failed to delete: 403/);
+
+    await store.close();
+  });
+
+  it('should throw when the server refuses a clear', async () => {
+    const store = new RemoteStore({ baseUrl: `http://localhost:${port}`, retries: 0 });
+
+    await expect(store.clear()).rejects.toThrow(/Failed to clear: 403/);
+
+    await store.close();
   });
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { FileSystemStore } from '@agentix-e/micro-kinetic-storage-fs';
+import { FileSystemStore, STORE_DIR_ENV } from '@agentix-e/micro-kinetic-storage-fs';
 import type { IKeyValueStore } from '@agentix-e/micro-kinetic-core';
 import {
   ModelStore,
@@ -177,18 +177,51 @@ describe('ModelStore', () => {
 });
 
 describe('saveModel / loadModel', () => {
-  it('should round-trip through the default FileSystemStore', async () => {
+  let tmpDir: string;
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'save-model-'));
+    savedEnv = process.env[STORE_DIR_ENV];
+  });
+
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env[STORE_DIR_ENV];
+    else process.env[STORE_DIR_ENV] = savedEnv;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('should round-trip through an injected store', async () => {
+    const injected = new FileSystemStore({ baseDir: join(tmpDir, 'injected') });
+    const model = await saveModel([makeRecord({ system: 'injected' })], injected);
+
+    expect(model.version).toBe(1);
+    expect(existsSync(join(tmpDir, 'injected', 'optimizer-latest.json'))).toBe(true);
+
+    const loaded = await loadModel(injected);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.records[0]!.system).toBe('injected');
+  });
+
+  it('should round-trip through the default store, inside the root the default resolves to', async () => {
+    // This test used to call the wrappers with no store at all, which meant it wrote into the
+    // developer's real `~/.micro-kinetic/store` — and then deleted `optimizer-latest` from it,
+    // destroying a trained model on any machine that had one. The default store is now
+    // relocatable, so the shipped default path is still measured, but nothing outside this
+    // temporary directory is touched.
+    const root = join(tmpDir, 'default');
+    process.env[STORE_DIR_ENV] = root;
+
     const model = await saveModel([makeRecord({ system: 'saveModel-test' })]);
     expect(model.version).toBe(1);
+
+    // If the wrappers ever go back to hard-coding a store of their own, this is the assertion
+    // that fails: the model would land outside `root`.
+    expect(existsSync(join(root, 'optimizer-latest.json'))).toBe(true);
 
     const loaded = await loadModel();
     expect(loaded).not.toBeNull();
     expect(loaded!.records).toHaveLength(1);
     expect(loaded!.records[0]!.system).toBe('saveModel-test');
-
-    // Clean up the library's own default store to avoid leaving artifacts.
-    const defaultStore = new FileSystemStore();
-    await defaultStore.delete('optimizer-latest');
-    await defaultStore.delete('optimizer-v1');
   });
 });

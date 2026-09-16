@@ -22,6 +22,10 @@ export interface PersistedModel {
 export class ModelStore {
   private readonly store: IKeyValueStore;
 
+  /**
+   * @param store - Backing store. Omit for the default FileSystemStore, which resolves its
+   *   directory from `MICRO_KINETIC_STORE_DIR` and otherwise `~/.micro-kinetic/store/`.
+   */
   constructor(store?: IKeyValueStore) {
     this.store = store ?? new FileSystemStore();
   }
@@ -59,14 +63,28 @@ export class ModelStore {
   }
 }
 
-/** Convenience: save to default FileSystemStore */
-export async function saveModel(records: readonly HistoricalRecord[]): Promise<PersistedModel> {
-  const store = new ModelStore();
-  await store.save(records);
-  return (await store.load())!;
+/**
+ * Convenience: save to a store, defaulting to the library's FileSystemStore.
+ *
+ * @param records - Historical records to persist.
+ * @param store - Where to persist them. Omit for the default FileSystemStore, whose directory is
+ *   resolved by `MICRO_KINETIC_STORE_DIR` and otherwise `~/.micro-kinetic/store/`. Passing one is
+ *   what makes this function reachable by a test that does not write to the user's home directory.
+ */
+export async function saveModel(
+  records: readonly HistoricalRecord[],
+  store?: IKeyValueStore,
+): Promise<PersistedModel> {
+  const modelStore = new ModelStore(store);
+  await modelStore.save(records);
+  return (await modelStore.load())!;
 }
 
-/** Convenience: load from default FileSystemStore */
-export async function loadModel(): Promise<PersistedModel | null> {
-  return new ModelStore().load();
+/**
+ * Convenience: load from a store, defaulting to the library's FileSystemStore.
+ *
+ * @param store - Where to read from; see {@link saveModel}.
+ */
+export async function loadModel(store?: IKeyValueStore): Promise<PersistedModel | null> {
+  return new ModelStore(store).load();
 }

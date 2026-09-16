@@ -2,7 +2,9 @@
  * RemoteStore — IKeyValueStore backed by HTTP REST API.
  *
  * Designed for S3/COS-compatible object storage via REST endpoints.
- * Uses exponential backoff retry (3 attempts) on 5xx and network errors.
+ * Retries 5xx responses and network errors: up to `retries` times (default 3, so at most four
+ * attempts). The retries are IMMEDIATE — there is no backoff delay, despite what this header used
+ * to claim. See docs/coverage-gate-audit.md §9.
  * Auth is injected via headers at construction time — never hardcoded.
  *
  * @packageDocumentation
