@@ -30,6 +30,7 @@
  *                 + failedEdgeWeight × failedEdgeScore(v)
  *                 + latWeight       × latScore(v)
  *                 − poolMetricPenaltyWeight × poolMetricScore(v)
+ *                 + stabilityWeight × stabilityScore(v)
  *
  * All weights are dimensionless and default to 0 (signal disabled).
  */
@@ -155,4 +156,31 @@ export interface RankingWeights {
    * weight vector written before this term existed still loads and means "off".
    */
   readonly poolMetricPenaltyWeight?: number;
+  /**
+   * Decisive-stability prior: rewards a node whose DOMINANT metric's dispersion bonus is the
+   * LOWEST in the case.
+   *
+   *   finalScore(v) += stabilityWeight × stabilityScore(v)
+   *
+   * `stabilityScore(v)` is the node's rank among the case's candidates by ASCENDING dominant-metric
+   * `cv` bonus, mapped to `(n − 1 − rank) / (n − 1)` with tie groups averaged — the same
+   * rank-normalisation `rankNormalizeScores` applies to the anomaly, over a different statistic.
+   * Nodes whose dominant metric carries no composition are ABSENT from the map, and the term reads
+   * them as 0 — `undefined` is not a measured `cv` of zero.
+   *
+   * The statistic it reads is `MetricBreakdown.cv`, which is a CLAMPED BONUS
+   * (`cv > 0.5 ? min(cv, 1.5) × 0.05 : 0`) rather than a coefficient of variation, so only its
+   * ORDER is usable — the magnitude saturates at 0.075 and 43.6% of services sit on one of the two
+   * endpoints. That is why this term is rank-shaped and there is no magnitude-shaped sibling.
+   *
+   * Evidence: across the miss pairs of the shipped FSE'26 dump the true source's decisive `cv` bonus
+   * is the LOWER one (AUC 0.718 on the inventory-matched stratum, `docs/fse26-separator-verdict.md`
+   * §6.2), and the zero-regression window solved over all 1422 cases of run `35107871516` gains SIX
+   * cases with none lost — `[0.029860, 0.030480]`, `docs/fse26-cv-screen.md` §4.
+   *
+   * OPTIONAL: absent means 0 (disabled). The candidate is a WINDOW, not a shipped weight: the
+   * golden half of the kill criterion cannot be measured offline because this term did not exist
+   * when the last golden run was taken, so it ships inert and is evaluated by passing the flag.
+   */
+  readonly stabilityWeight?: number;
 }

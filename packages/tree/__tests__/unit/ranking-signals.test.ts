@@ -15,6 +15,7 @@ import {
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
+  computeStabilityScores,
   computeTopoSourceScores,
   computeTraceActivityScores,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
@@ -1805,5 +1806,63 @@ describe('computePoolMetricScores', () => {
     expect(scores.get('pool-svc')).toBe(1);
     expect(scores.get('cpu-svc')).toBe(0);
     expect(POOL_METRIC_PREFIX.endsWith('.')).toBe(true);
+  });
+});
+
+describe('computeStabilityScores', () => {
+  const ids = new Set<ServiceId>(['stable', 'mid', 'noisy', 'silent']);
+
+  /** The dominant metric's record, reduced to the one field this signal reads. */
+  const dominant = (
+    entries: Record<string, number | undefined>,
+  ): ReadonlyMap<ServiceId, { breakdown?: { cv: number } }> =>
+    new Map(
+      Object.entries(entries).map(([id, cv]) => [
+        id,
+        cv === undefined ? {} : { breakdown: { cv } },
+      ]),
+    );
+
+  it('credits the LOWEST dispersion bonus in the case, and ranks the rest', () => {
+    // Rank-normalised like `rankNormalizeScores`, over the decisive metric's `cv` bonus and
+    // ASCENDING: the separator's own direction is that the true source is the steadier service.
+    const scores = computeStabilityScores(dominant({ stable: 0.02, mid: 0.05, noisy: 0.075 }), ids);
+
+    expect(scores.get('stable')).toBe(1);
+    expect(scores.get('mid')).toBeCloseTo(0.5, 12);
+    expect(scores.get('noisy')).toBe(0);
+  });
+
+  it('omits a service whose dominant metric carries no composition — never a zero', () => {
+    // `undefined` is not a measured `cv` of zero, and the distinction is the whole point: the
+    // bonus IS zero for 20% of services whose raw cv is at or below 0.5, so a service the engine
+    // could not decompose must not be ranked as though it had been measured as maximally stable.
+    const scores = computeStabilityScores(dominant({ stable: 0.02, mid: 0.05 }), ids);
+
+    expect(scores.has('silent')).toBe(false);
+    expect(scores.get('stable')).toBe(1);
+  });
+
+  it('is inert with a single measured service — one bonus is not a comparison', () => {
+    expect(computeStabilityScores(dominant({ stable: 0.02 }), ids).size).toBe(0);
+  });
+
+  it('averages the ranks of equal bonuses rather than ordering equals', () => {
+    // Two services the statistic cannot tell apart must not be separated by whichever one a sort
+    // left first — the same rule `rankNormalizeScores` applies to tied anomaly scores.
+    const scores = computeStabilityScores(
+      dominant({ a: 0.02, b: 0.02, c: 0.05 }),
+      new Set<ServiceId>(['a', 'b', 'c']),
+    );
+
+    expect(scores.get('a')).toBeCloseTo(0.75, 12);
+    expect(scores.get('b')).toBeCloseTo(0.75, 12);
+    expect(scores.get('c')).toBe(0);
+  });
+
+  it('returns an empty map when nothing was measured', () => {
+    expect(computeStabilityScores(undefined, ids).size).toBe(0);
+    expect(computeStabilityScores(new Map(), ids).size).toBe(0);
+    expect(computeStabilityScores(dominant({ silent: undefined }), ids).size).toBe(0);
   });
 });

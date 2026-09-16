@@ -678,6 +678,60 @@ export function computePoolMetricScores(
 }
 
 /**
+ * The decisive-stability prior: how STEADY each service's dominant metric is, RANKED within the case.
+ *
+ *   score(v) = (n − 1 − rank(v)) / (n − 1),   rank ascending in the dominant metric's `cv` BONUS
+ *
+ * The direction is the separator's own (`docs/fse26-separator-verdict.md` §6.2): across the miss
+ * pairs the true source's decisive metric is the LESS dispersed one, AUC 0.718 on the
+ * inventory-matched stratum. The window solved over all 1422 cases of run `35107871516` gains six
+ * cases and loses none (`docs/fse26-cv-screen.md` §4).
+ *
+ * RANKED rather than linear in the bonus, and that is not a preference: `MetricBreakdown.cv` is
+ * `cv > 0.5 ? min(cv, 1.5) × 0.05 : 0`, a CLAMPED bonus confined to `{0} ∪ [0.025, 0.075]`, with
+ * 43.6% of services on one of the two endpoints. Its magnitude carries two bits of information and
+ * its order carries the rest, so a magnitude-shaped sibling would be a different term on the same
+ * three values.
+ *
+ * Tie groups share the AVERAGE of the ranks they occupy — the same rule `rankNormalizeScores`
+ * applies to tied anomaly scores, so two services this statistic cannot separate are not separated
+ * by whichever one a sort happened to leave first. A service whose dominant metric carries no
+ * composition is ABSENT from the result rather than present with 0: `undefined` is not a measured
+ * `cv` of zero, and the bonus IS zero for a fifth of the services whose raw cv is at or below 0.5.
+ *
+ * @param dominantMetrics - Per-service dominant metric, of which only `breakdown.cv` is read.
+ * @param nodeIds - Services present in the call graph.
+ * @returns Per-service score in [0, 1]; empty when fewer than two services were measured, because
+ *   one bonus is not a comparison.
+ */
+export function computeStabilityScores(
+  dominantMetrics:
+    ReadonlyMap<ServiceId, { readonly breakdown?: { readonly cv: number } }> | undefined,
+  nodeIds: ReadonlySet<ServiceId>,
+): Map<ServiceId, number> {
+  const scores = new Map<ServiceId, number>();
+  if (!dominantMetrics || nodeIds.size === 0) return scores;
+  const measured: { readonly id: ServiceId; readonly cv: number }[] = [];
+  for (const nodeId of nodeIds) {
+    const cv = dominantMetrics.get(nodeId)?.breakdown?.cv;
+    if (cv === undefined || !Number.isFinite(cv)) continue;
+    measured.push({ id: nodeId, cv });
+  }
+  const n = measured.length;
+  if (n < 2) return scores;
+  const ascending = [...measured].sort((a, b) => a.cv - b.cv);
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && ascending[j + 1]!.cv === ascending[i]!.cv) j++;
+    const shared = (n - 1 - (i + j) / 2) / (n - 1);
+    for (let k = i; k <= j; k++) scores.set(ascending[k]!.id, shared);
+    i = j + 1;
+  }
+  return scores;
+}
+
+/**
  * Combine a raw metric direction with the log signal into a single rise
  * contribution in [−1, 1].
  *

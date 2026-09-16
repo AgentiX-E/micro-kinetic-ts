@@ -65,6 +65,7 @@ import {
   computeLogScores,
   computePoolMetricScores,
   computeRiseScores,
+  computeStabilityScores,
   computeTopoSourceScores,
   computeTraceActivityScores,
   gatedRiseContribution,
@@ -397,6 +398,22 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * one that would read as a measurement of the ablation if it ever did.
    */
   readonly poolMetricPenaltyWeight: number;
+  /**
+   * Weight on the DECISIVE-STABILITY prior: rewards a node whose dominant metric's dispersion bonus
+   * is the LOWEST in the case (see {@link RankingWeights.stabilityWeight}).
+   *
+   *   finalScore(v) += stabilityWeight × stabilityScore(v)
+   *
+   * Required, not optional, on the same rule as the pool penalty: the score term reads it without a
+   * fallback, because an `?? 0` on a field the constructor always fills is a branch no run can take
+   * and one that would read as a measurement of the ablation if it ever did.
+   *
+   * Ships at **0** — the window is solved and positive on FSE'26 but the golden half of the kill
+   * criterion cannot be measured offline (`docs/fse26-cv-screen.md` §4), so the term is evaluated by
+   * passing the flag and the default path stays bit-for-bit the configuration the golden was taken
+   * on.
+   */
+  readonly stabilityWeight: number;
 }
 
 /**
@@ -419,6 +436,7 @@ export function toRankingWeights(
     | 'failedEdgeWeight'
     | 'latWeight'
     | 'poolMetricPenaltyWeight'
+    | 'stabilityWeight'
   >,
 ): RankingWeights {
   return {
@@ -433,6 +451,7 @@ export function toRankingWeights(
     failedEdgeWeight: options.failedEdgeWeight,
     latWeight: options.latWeight,
     poolMetricPenaltyWeight: options.poolMetricPenaltyWeight,
+    stabilityWeight: options.stabilityWeight,
   };
 }
 
@@ -506,6 +525,24 @@ export const DEFAULT_LAT_WEIGHT = 0.561495;
  * moved to an unmeasured value.
  */
 export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
+
+/**
+ * Weight on the decisive-stability prior, shipped as **0 — a CANDIDATE, not a measurement.**
+ *
+ * The zero-regression window is SOLVED and positive on the whole of FSE'26: over all 1422 cases of
+ * run `35107871516` the `rank` shape gains SIX cases and loses none, `w ∈ [0.029860, 0.030480]`,
+ * Top@1 756 → 762 (`docs/fse26-cv-screen.md` §4). What is missing is the OTHER half of the kill
+ * criterion: this term did not exist when the last golden run was taken, so the 9-cell cannot be
+ * measured offline. Shipping at 0 is what makes that measurable — the default path stays
+ * bit-for-bit the configuration the golden was taken on, and the candidate is evaluated by passing
+ * the flag.
+ *
+ * The value to ship, when a golden run licenses it, is the MIDPOINT of the window (`0.030170`),
+ * on the same rule the pool penalty's own weight used: the floor is a knife edge — a direct
+ * re-ranking at exactly `gainFloor` is one case short — so a value at either boundary is a value a
+ * converter revision can move across it.
+ */
+export const DEFAULT_STABILITY_WEIGHT = 0;
 
 /**
  * How the temporal prior turns onset delays into an order.
@@ -625,6 +662,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   latWeight: DEFAULT_LAT_WEIGHT,
   latMinRise: DEFAULT_LAT_MIN_RISE,
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  stabilityWeight: DEFAULT_STABILITY_WEIGHT,
 };
 
 /**
@@ -849,6 +887,15 @@ export class TreePruner {
       dominantMetrics,
       new Set(callGraph.nodes.keys()),
     );
+    // The decisive-stability score is a FUNCTION OF THE DOMINANT METRIC'S COMPOSITION, so it is
+    // derived from the same `dominantMetrics` the pool indicator reads rather than carried on the
+    // graph: one owner for "which metric won", and the term is exactly 0 unless the weight is
+    // non-zero. Ranked ACROSS the case, because the statistic it reads is a clamped bonus whose
+    // magnitude saturates — see `computeStabilityScores`.
+    const stabilityScores = computeStabilityScores(
+      dominantMetrics,
+      new Set(callGraph.nodes.keys()),
+    );
     const deepestExceptions = computeDeepestExceptions(
       options?.logs,
       new Set(callGraph.nodes.keys()),
@@ -932,6 +979,7 @@ export class TreePruner {
       failedEdgeScores,
       edgeLatencyScores,
       poolMetricScores,
+      stabilityScores,
     };
   }
 
@@ -995,6 +1043,7 @@ export class TreePruner {
       graph.failedEdgeScores,
       graph.edgeLatencyScores,
       graph.poolMetricScores,
+      graph.stabilityScores,
     );
 
     return results;
@@ -1175,6 +1224,7 @@ function performTreeRCA(
   failedEdgeScores?: ReadonlyMap<ServiceId, number>,
   edgeLatencyScores?: ReadonlyMap<ServiceId, number>,
   poolMetricScores?: ReadonlyMap<ServiceId, number>,
+  stabilityScores?: ReadonlyMap<ServiceId, number>,
 ): RootCauseResult[] {
   // Build adjacency from remaining edges
   const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
@@ -1501,6 +1551,11 @@ function performTreeRCA(
   // which is why the lookup may fall back: only a measured dominance is punished.
   const poolPenaltyWeight = options.poolMetricPenaltyWeight;
   const poolTerm = (id: ServiceId): number => -poolPenaltyWeight * (poolMetricScores?.get(id) ?? 0);
+  // The decisive-stability term. Its map is ABSENT for a service the engine could not decompose,
+  // which is why the lookup keeps a neutral fallback: `undefined` is not a measured bonus of zero.
+  const stabilityWeight = options.stabilityWeight;
+  const stabilityTerm = (id: ServiceId): number =>
+    stabilityWeight * (stabilityScores?.get(id) ?? 0);
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -1528,7 +1583,8 @@ function performTreeRCA(
         prismTerm(id) +
         failedEdgeTerm(id) +
         latTerm(id) +
-        poolTerm(id);
+        poolTerm(id) +
+        stabilityTerm(id);
       finalScores.set(id, s);
     }
     return s;

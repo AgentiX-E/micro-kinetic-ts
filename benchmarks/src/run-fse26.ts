@@ -246,6 +246,7 @@ async function main(): Promise<void> {
     latWeight: opts.latWeight,
     latMinRise: opts.latMinRise,
     poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
+    stabilityWeight: opts.stabilityWeight,
     temporalWeight: opts.temporalWeight,
     onsetShape: opts.onsetShape,
   };

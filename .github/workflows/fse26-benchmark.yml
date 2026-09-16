@@ -71,6 +71,10 @@ on:
         description: 'Weight of the DB-connection-pool dominance PENALTY, subtracted from a service whose anomaly maximum was won by a db.client.connections.* series (empty = the runner default, which is the shipped 0.0679 = the midpoint of the measured zero-regression window w in (0.048823, 0.087011), worth +6 cases against 0 lost and 0 regressed fault types; 0 is the pre-ship ablation)'
         required: false
         default: ''
+      stability_weight:
+        description: 'Weight of the decisive-stability prior, which credits the service whose dominant metric has the LOWEST dispersion bonus (empty = the runner default, which is the SHIPPED 0). A CANDIDATE: the zero-regression window is solved on FSE\'26 at w in [0.029860, 0.030480], worth +6 cases against 0 lost, but the golden 9-cell has not been run, so the candidate is reached by passing its midpoint 0.030170 and 0 is what the golden was taken on'
+        required: false
+        default: ''
       temporal_weight:
         description: 'Weight of the injection-anchored temporal prior, which credits the service whose dominant metric left its pre-injection baseline FIRST (empty = the runner default, which is 0 = OFF). It was SHIPPED once at 0.036552 and REVERTED, and both halves of the measurement are on record: on FSE''26 it gained 4 cases of 1422 with 0 regressed fault types, while on RCAEval it moved SIX of the nine golden cells — RE1 TrainTicket 68.0 to 27.2 and RE2 68.1 to 25.7, reproduced identically on a second run. Pass 0.036552 only to re-measure the rejection, never as a candidate'
         required: false
@@ -245,6 +249,10 @@ jobs:
           if [ -n "${{ inputs.pool_penalty }}" ]; then
             POOL_ARG=(--pool-penalty "${{ inputs.pool_penalty }}")
           fi
+          STABILITY_ARG=()
+          if [ -n "${{ inputs.stability_weight }}" ]; then
+            STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
+          fi
           TEMPORAL_ARG=()
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             TEMPORAL_ARG=(--temporal-weight "${{ inputs.temporal_weight }}")
@@ -265,6 +273,7 @@ jobs:
             "${LAT_ARG[@]}" \
             "${LAT_FLOOR_ARG[@]}" \
             "${POOL_ARG[@]}" \
+            "${STABILITY_ARG[@]}" \
             "${TEMPORAL_ARG[@]}" \
             "${ONSET_SHAPE_ARG[@]}" \
             "${RISE_CEILING_ARG[@]}" \

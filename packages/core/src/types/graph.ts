@@ -323,6 +323,18 @@ export interface FaultPropagationGraph {
    */
   readonly poolMetricScores?: ReadonlyMap<ServiceId, number>;
   /**
+   * Per-service decisive-stability score in [0, 1]: the node's rank among the case's candidates by
+   * ASCENDING dominant-metric dispersion bonus, mapped to `(n − 1 − rank) / (n − 1)` with tie groups
+   * averaged. Feeds the (opt-in) `stabilityWeight` term.
+   *
+   * SPARSE, like the trace-activity map: a node whose dominant metric carried no composition is
+   * ABSENT rather than present with 0, because a fifth of the services in a real case have a raw
+   * `cv` at or below the 0.5 threshold and therefore a bonus of exactly 0 — so a 0 here would be
+   * indistinguishable from a measurement. Absent means fewer than two services were measured, in
+   * which case one bonus is not a comparison and the term is 0 for everyone.
+   */
+  readonly stabilityScores?: ReadonlyMap<ServiceId, number>;
+  /**
    * Per-service most DISTINCTIVE deepest `Caused by:` exception class (a
    * string, e.g. `MalformedJwtException`). Consumed by the evidence-grounded
    * LLM reranker so the model reasons over the actual exception identity, not

@@ -64,6 +64,8 @@ export interface Fse26SignalOptions {
    * key were ever misspelled.
    */
   readonly poolMetricPenaltyWeight: number;
+  /** Weight on the decisive-stability prior. Required for the same reason as the pool penalty. */
+  readonly stabilityWeight: number;
   /**
    * Weight of the injection-anchored temporal prior. Required for the same reason as
    * every weight above: a PARTIAL passed through here would be a silent no-op if the
@@ -121,6 +123,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
+      stabilityWeight: opts.stabilityWeight,
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
     },

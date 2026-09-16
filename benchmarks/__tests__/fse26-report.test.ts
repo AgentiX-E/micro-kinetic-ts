@@ -42,6 +42,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     latWeight: 0,
     latMinRise: 1,
     poolMetricPenaltyWeight: 0,
+    stabilityWeight: 0,
     temporalWeight: 0,
     onsetShape: 'earliness',
     ...overrides,
@@ -102,6 +103,7 @@ describe('FSE26 report — attribution', () => {
       'latWeight',
       'latMinRise',
       'poolMetricPenaltyWeight',
+      'stabilityWeight',
       'temporalWeight',
       'onsetShape',
     ]);
@@ -139,7 +141,7 @@ describe('FSE26 report — the two renderings agree', () => {
     // omitted against at all.
     expect(shipped).toBe(
       'Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0 ' +
-        'poolMetricPenaltyWeight=0 temporalWeight=0 onsetShape=earliness',
+        'poolMetricPenaltyWeight=0 stabilityWeight=0 temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(
       'failedEdgeWeight=1',

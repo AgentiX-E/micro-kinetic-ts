@@ -11,6 +11,7 @@ import {
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   ONSET_SHAPES,
   POOL_METRIC_PREFIX,
@@ -1039,6 +1040,7 @@ describe('TreePruner', () => {
         failedEdgeWeight: 0.9,
         latWeight: 0.95,
         poolMetricPenaltyWeight: 0.0679,
+        stabilityWeight: 0,
       });
 
       expect(weights).toEqual({
@@ -1053,6 +1055,7 @@ describe('TreePruner', () => {
         failedEdgeWeight: 0.9,
         latWeight: 0.95,
         poolMetricPenaltyWeight: 0.0679,
+        stabilityWeight: 0,
       });
 
       // Sanity: the pruner accepts the same fields through its constructor.
@@ -1543,6 +1546,7 @@ describe('TreePruner — failed-edge-direction signal', () => {
       failedEdgeWeight: 0.5,
       latWeight: 0.25,
       poolMetricPenaltyWeight: 0,
+      stabilityWeight: 0,
     });
 
     expect(weights.failedEdgeWeight).toBe(0.5);
@@ -1805,6 +1809,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       failedEdgeWeight: 0,
       latWeight: 0,
       poolMetricPenaltyWeight: 0.0679,
+      stabilityWeight: 0,
     });
 
     expect(weights.poolMetricPenaltyWeight).toBe(0.0679);
@@ -1832,6 +1837,7 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       failedEdgeWeight: 0,
       latWeight: 0,
       poolMetricPenaltyWeight: 0,
+      stabilityWeight: 0,
     });
 
     // The CONTRACT keeps the field optional, so a vector stored before this term
@@ -1968,5 +1974,86 @@ describe('TreePruner — DB-connection-pool dominance penalty', () => {
       expect(byRank.get('B')! - baseline.get('B')!).toBeCloseTo(0, 12);
       expect(byRank.get('C')! - baseline.get('C')!).toBeCloseTo(-1, 12);
     });
+  });
+});
+
+describe('TreePruner — decisive-stability prior', () => {
+  // Two candidates that differ ONLY in the dispersion of their dominant series: the steadier one is
+  // the service the term is about, and the other exists so "no other service moves" is a
+  // measurement rather than a claim. The series are deliberately UNEVEN in spread — a fixture with
+  // two equally noisy series would make the rank term trivially equal to any magnitude term.
+  const STABLE = 'ts-consign-service';
+  const NOISY = 'ts-order-service';
+
+  const makeCase = (): [ServiceCallGraph, MetricMap] => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      // Both series RISE after the injection (so both are candidates at all) and differ only in how
+      // evenly: cv ≈ 0.33, below the 0.5 threshold the bonus is gated at, so this bonus is exactly 0.
+      [STABLE, [makeTimeSeries('cpu_usage', [1, 1, 1, 1, 2, 2, 2, 2])]],
+      // cv ≈ 1.33, above it, so its bonus is `min(cv, 1.5) × 0.05` and the term ranks it last.
+      [NOISY, [makeTimeSeries('cpu_usage', [1, 1, 1, 1, 7, 11, 7, 11])]],
+    ]);
+    return [makeCallGraph([STABLE, NOISY], [[NOISY, STABLE]]), metrics];
+  };
+
+  const scores = (pruner: TreePruner) => {
+    const [callGraph, metrics] = makeCase();
+    const graph = pruner.buildFaultGraph(callGraph, metrics);
+    return {
+      graph,
+      byService: new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!])),
+    };
+  };
+
+  /** The same graph with the term's own field removed, so "inert" is against its ABSENCE. */
+  const withoutField = (): ReadonlyMap<string, number> => {
+    const [callGraph, metrics] = makeCase();
+    const graph = new TreePruner().buildFaultGraph(callGraph, metrics);
+    return new Map(
+      new TreePruner()
+        .analyze({ ...graph, stabilityScores: undefined })
+        .map((r) => [r.serviceId, r.finalScore!]),
+    );
+  };
+
+  it('carries the RANK of the decisive dispersion bonus in the graph it builds', () => {
+    // Credit is attributed to the right service: the one whose dominant metric is the steadier.
+    const { graph } = scores(new TreePruner());
+
+    expect(graph.stabilityScores?.get(STABLE)).toBe(1);
+    expect(graph.stabilityScores?.get(NOISY)).toBe(0);
+  });
+
+  it('ships at 0 — the candidate is a WINDOW, not a measurement', () => {
+    // The golden half of the kill criterion has never been run for this term, so the default MUST
+    // be the configuration the golden was taken on. Read from the exported constant, because the
+    // number has one owner and a literal here would be a second copy.
+    expect(DEFAULT_STABILITY_WEIGHT).toBe(0);
+    const shipped = scores(new TreePruner()).byService;
+    const absent = withoutField();
+
+    expect(shipped.get(STABLE)!).toBeCloseTo(absent.get(STABLE)!, 12);
+    expect(shipped.get(NOISY)!).toBeCloseTo(absent.get(NOISY)!, 12);
+  });
+
+  it('is inert at weight 0 even with the field present, against a pruner that never mentions it', () => {
+    // Against the graph WITHOUT the map, not against another spelling of the same default: the
+    // second would pass while both spellings drifted together.
+    const zero = scores(new TreePruner({ stabilityWeight: 0 })).byService;
+    const absent = withoutField();
+
+    expect(zero.get(STABLE)!).toBeCloseTo(absent.get(STABLE)!, 12);
+    expect(zero.get(NOISY)!).toBeCloseTo(absent.get(NOISY)!, 12);
+  });
+
+  it('RAISES the steadier service by exactly the weight and moves nobody else', () => {
+    // A new axis, not a re-weighting. The weight is stated explicitly rather than inherited, so
+    // this keeps testing the property after the default is flipped.
+    const weight = 0.25;
+    const before = scores(new TreePruner({ stabilityWeight: 0 })).byService;
+    const after = scores(new TreePruner({ stabilityWeight: weight })).byService;
+
+    expect(after.get(STABLE)! - before.get(STABLE)!).toBeCloseTo(weight, 10);
+    expect(after.get(NOISY)!).toBeCloseTo(before.get(NOISY)!, 12);
   });
 });

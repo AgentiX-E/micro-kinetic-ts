@@ -38,6 +38,7 @@ import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../../../packages/tree/src/index.js';
 
@@ -498,6 +499,7 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   lat_weight: 'runner',
   lat_min_rise: 'runner',
   pool_penalty: 'runner',
+  stability_weight: 'runner',
   temporal_weight: 'runner',
   onset_shape: 'runner',
 };
@@ -543,6 +545,10 @@ describe('FSE26 workflow descriptions agree with the code they describe', () => 
     lat_weight: DEFAULT_LAT_WEIGHT,
     lat_min_rise: DEFAULT_LAT_MIN_RISE,
     pool_penalty: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    // The runner default is 0 and the CANDIDATE is 0.030170: a description naming the candidate
+    // would satisfy a substring test for a shipped `0`, which is why the guard compares NUMERIC
+    // TOKENS and this table records the value the runner actually falls back to.
+    stability_weight: DEFAULT_STABILITY_WEIGHT,
     temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
     diagnose_limit: 3,
   };

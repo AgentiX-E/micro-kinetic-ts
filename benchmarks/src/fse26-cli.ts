@@ -32,6 +32,7 @@ import {
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   isOnsetShape,
   type OnsetShape,
@@ -186,6 +187,14 @@ export interface Fse26CliOptions {
    */
   readonly poolMetricPenaltyWeight: number;
   /**
+   * Weight on the decisive-stability prior. **0 is the SHIPPED value**, not the ablation: the
+   * window is solved but the golden half of the kill criterion has not been run, so the candidate
+   * is reached by passing `--stability-weight` and the default path is what the golden was taken
+   * on. Read from the engine's constant rather than restated — a second copy of a shipped number
+   * is how this repo published one 24.2pp off the best-measured value.
+   */
+  readonly stabilityWeight: number;
+  /**
    * Weight of the injection-anchored temporal prior. `0` = off, which is the shipped
    * value: every measured headline is at 0, so a typo here reproduces a published
    * configuration rather than inventing one.
@@ -264,6 +273,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     latWeight: DEFAULT_LAT_WEIGHT,
     latMinRise: DEFAULT_LAT_MIN_RISE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
   };
@@ -332,6 +342,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // fall back to the SHIPPED weight rather than select 0, which is a
       // different measured configuration (`--pool-penalty 0` is the ablation).
       opts.poolMetricPenaltyWeight = parseWeight(argv[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    } else if (arg === '--stability-weight' && i + 1 < argv.length) {
+      // Through `parseWeight` for the same reason as the pool penalty: an empty value must fall
+      // back to the SHIPPED weight (0 here, which happens to be the ablation — so the fallback is
+      // inert rather than wrong, but the RULE is kept so that flipping the default cannot silently
+      // turn a blank flag into a measurement of the ablation).
+      opts.stabilityWeight = parseWeight(argv[++i]!, DEFAULT_STABILITY_WEIGHT);
     } else if (arg === '--temporal-weight' && i + 1 < argv.length) {
       // Through `parseWeight` for the empty-value reason, and the fallback is the
       // SHIPPED 0 — which here IS the published configuration, so a typo cannot select

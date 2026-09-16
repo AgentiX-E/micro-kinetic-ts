@@ -17,6 +17,7 @@ import {
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../packages/tree/src/index.js';
 import type { Fse26CliOptions } from '../src/fse26-cli.js';
@@ -38,6 +39,7 @@ describe('buildFse26EngineOptions', () => {
       latWeight: DEFAULT_LAT_WEIGHT,
       latMinRise: DEFAULT_LAT_MIN_RISE,
       poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+      stabilityWeight: DEFAULT_STABILITY_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
     });

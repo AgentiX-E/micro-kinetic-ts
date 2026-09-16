@@ -91,6 +91,11 @@ export interface FSE26RunConfig {
    * configuration produced a number.
    */
   readonly poolMetricPenaltyWeight: number;
+  /**
+   * Weight on the decisive-stability prior; `0` is the SHIPPED value and the candidate is reached
+   * by passing the flag, because the golden half of the criterion has not been run.
+   */
+  readonly stabilityWeight: number;
   /** Weight of the injection-anchored temporal prior; `0` = the shipped configuration. */
   readonly temporalWeight: number;
   /** Which shape the prior reads the onsets in; inert while the weight is 0. */
@@ -244,6 +249,7 @@ export const REPORTED_CONFIG_FIELDS = [
   'latWeight',
   'latMinRise',
   'poolMetricPenaltyWeight',
+  'stabilityWeight',
   'temporalWeight',
   'onsetShape',
 ] as const;
@@ -328,6 +334,10 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // byte-identical line for the shipped run and for `--pool-penalty 0`. Printing it
   // while the shipped value is still 0 costs one field and cannot go stale.
   line += ` poolMetricPenaltyWeight=${config.poolMetricPenaltyWeight}`;
+  // Unconditional, on the same rule as the two above: the value is a candidate whose DEFAULT may
+  // become non-zero, and an omitted-when-default field would then render a byte-identical line for
+  // the shipped run and for its ablation.
+  line += ` stabilityWeight=${config.stabilityWeight}`;
   // Both unconditional, and for a stronger reason than the pool term's: a SHAPE is not a
   // weight, so there is no "default 0" it could be omitted against — and the weight's
   // own default is about to become non-zero, at which point an omitted-when-default
