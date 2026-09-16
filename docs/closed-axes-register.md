@@ -186,6 +186,15 @@ Before reading any number, check that the input was counted:
 - a diagnostic dump's miss attribution prints **`unexplained`** and **`tie`** — a
   healthy engine has zero `unexplained`, because that category means the order is
   inconsistent with the terms the dump carries (`docs/fse26-stock-attribution.md`).
+- **two modules answering "which service is this case about" is a defect, and it shows up
+  as a moved table rather than as an error.** The guard census took `groundTruth[0]` as the
+  source while the separator screen takes the most anomalous ground-truth service; on FSE'26
+  the five network types name TWO acceptable roots, so the two rules disagreed on 97-190
+  cases each and five published rows moved when they were unified
+  (`fse26-guard-census-verdict.md` §0: `NetworkPartition` Δ +4.1pp → **+6.2pp**,
+  `NetworkLoss` −1.4pp → −0.5pp, `NetworkCorrupt` −3.6pp → −2.5pp, `NetworkBandwidth`
+  +6.8pp → +9.0pp, `NetworkDelay` +1.1pp → +1.8pp). The block's own rows did not move, and a
+  table that quotes a shared definition has to be RE-DIFFED when the definition changes.
   **Read it next to `rank-1 moved`**: the claim is about the modelled terms *at the
   dump's own configuration*. When the flags move the rank-1, every case they would flip
   lands in `unexplained` too — 14 of them, and 0 of them an engine finding, the first

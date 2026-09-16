@@ -12,6 +12,33 @@ Reproduce with one command on the shipped dump:
 npx tsx benchmarks/src/analyze-fse26-diagnose.ts --dump <dump> --guard-census
 ```
 
+## 0. Correction: which service the "source side" column was about
+
+The census originally took the case's source as `groundTruth[0]`. Five fault types name **two
+acceptable roots** — the FSE'26 network faults declare a `mysql`-side service and the service
+it is co-located with — and for those the first root is not always the most anomalous one, so
+the column was sometimes about a different service than the one a reweighting would have to
+lift. The definition is now one rule, shared with the separator screen
+(`sourceOf`: the ground-truth service with the highest self-anomaly, ties by id), and **five
+rows moved**:
+
+| fault type | column | was | now |
+| --- | --- | --- | --- |
+| `NetworkPartition` | source drop rate wrong / ok | 25.3% / 21.2% (Δ +4.1pp) | 22.2% / 16.1% (Δ **+6.2pp**) |
+| `NetworkLoss` | Δ | −1.4pp | **−0.5pp** |
+| `NetworkCorrupt` | drop rate, Δ | 17.6% / 21.2%, −3.6pp | 14.9% / 17.5%, **−2.5pp** |
+| `NetworkBandwidth` | Δ | +6.8pp | **+9.0pp** |
+| `NetworkDelay` | ok rate, Δ | 18.4%, +1.1pp | 17.7%, **+1.8pp** |
+
+Nothing else moved: **every row the block's conclusions rest on is unchanged**
+(`JVMMemoryStress` 66.4%/66.8%, `ContainerKill` 65.9%/66.5%, `ReplaceCode` 32.5%/20.6%), and
+neither is the register's row, whose numbers all come from types with a unique root. What the
+correction does change is §Hypothesis 2's second family: with the correct root the network
+types mostly stop separating instead of separating 2–4×, which **narrows** the "the source is
+weak" description to the HTTP types and strengthens this document's conclusion rather than
+weakening it. It is also the more general lesson: two modules answering "which service is this
+case about" differently is a defect that shows up as a moved table, not as an error.
+
 ## Hypothesis 1 — "the transient guard is hiding the fault"
 
 The engine discards **44% of the source side's metrics** across the 666 misses under one
@@ -35,7 +62,7 @@ The census, over every case of each type. `Δ` is the source's transient-drop ra
 | **`JVMMemoryStress`** | 12/171 | 66.4% / **66.8%** | **−0.5pp** |
 | **`ContainerKill`** | 6/89 | 65.9% / **66.5%** | **−0.6pp** |
 | `HTTPRequestAbort` | 47/60 | 21.9% / 23.6% | −1.7pp |
-| `NetworkCorrupt` | 24/46 | 17.6% / 21.2% | −3.6pp |
+| `NetworkCorrupt` | 24/46 | 14.9% / 17.5% | −2.5pp |
 | `JVMReturn` | 12/21 | 24.9% / 24.6% | +0.3pp |
 | `PodKill` | 1/10 | 74.6% / 63.4% | +11.2pp |
 
@@ -60,10 +87,10 @@ over each group, plus the same for the wrong winner:
 | --- | --- | --- |
 | `HTTPResponseReplaceCode` | **0.45** / 1.33 | 1.50 |
 | `HTTPRequestReplaceMethod` | **0.52** / 1.21 | 1.69 |
-| `NetworkBandwidth` | **0.33** / 1.34 | 2.03 |
-| `NetworkPartition` | **0.38** / 1.29 | 2.26 |
-| `NetworkCorrupt` | **0.55** / 1.01 | 1.96 |
-| `NetworkLoss` | 0.76 / 1.22 | 1.98 |
+| `NetworkBandwidth` | 1.68 / 2.79 | 2.03 |
+| `NetworkPartition` | 1.55 / 2.07 | 2.26 |
+| `NetworkCorrupt` | 1.60 / 1.59 | 1.96 |
+| `NetworkLoss` | 2.02 / 1.97 | 1.98 |
 | **`JVMMemoryStress`** | **0.96** / 1.00 | 1.23 |
 | **`ContainerKill`** | **0.85** / 1.23 | 1.38 |
 | `PodKill` | 0.82 / 1.60 | 1.66 |
@@ -72,14 +99,19 @@ over each group, plus the same for the wrong winner:
 
 **Two families, and they need opposite statements.**
 
-- The **HTTP and Network** types separate: the source's excursion is 2–4× weaker in the
-  cases that fail than in the cases that succeed (0.45 against 1.33). Here "the source is
-  weak" is a real description — and it is also the half of the dataset that already works
-  (69.3% and 66.8%).
+- The **HTTP** types separate: `ReplaceCode` shows the source's excursion 3× weaker in the
+  cases that fail than in the cases that succeed (0.45 against 1.33), and `ReplaceMethod`
+  0.52 against 1.21. Here "the source is weak" is a real description — and it is also the
+  half of the dataset that already works (69.3% and 66.8%).
 - The **resource and JVM** types do **not** separate: `JVMMemoryStress` shows the source at
   **0.96 when the engine fails and 1.00 when it succeeds**. The source is equally anomalous
   either way. `ContainerKill` is 0.85 against 1.23 on six correct cases, and `PodKill`
   0.82 against 1.60 on one.
+- The **network** types read as a third case, and the correction of §0 is what shows it:
+  `NetworkLoss` (2.02 against 1.97) and `NetworkCorrupt` (1.60 against 1.59) are flat, while
+  `NetworkPartition` (1.55 against 2.07) and `NetworkBandwidth` (1.68 against 2.79) separate
+  by ~30% — weaker than the HTTP types, and on populations where the two acceptable roots are
+  a pair rather than a service.
 
 So for the block the source is **not invisible** — it is exactly as visible in the cases
 that fail. No change that makes the source's own excursion louder can help, because the
