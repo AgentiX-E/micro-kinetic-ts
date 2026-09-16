@@ -153,6 +153,20 @@ export interface DiagnosedService {
   readonly logicExceptionCount: number;
   readonly httpExceptionCount: number;
   /**
+   * How many ERROR/FATAL lines carry BOTH source-signature flags, or `undefined`
+   * when the block predates the field.
+   *
+   * The engine admits a line once, so the flood its log term divides by is
+   * `|logic ∪ http| = logic + http − both`. Adding the two counts is not an
+   * approximation of that union, it is a different quantity — and on the shipped
+   * dump the difference reaches a factor of two on 109 services.
+   *
+   * Optional because a dump that predates it has no value for it, and the reader then
+   * falls back to PROVING the union from `err`/`fatal`; it is never omitted because it
+   * is zero.
+   */
+  readonly bothExceptionCount?: number | undefined;
+  /**
    * The service's metric competition, or `undefined` when the block did not
    * report it (an older dump, or a service the formatter chose not to render).
    *
@@ -208,7 +222,7 @@ const HEADER_RE =
  * nothing checked until the guard on the `prediction=` line below.
  */
 const SERVICE_RE =
-  /^ {2}(\S*)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))?(?: latRise=(\S+) latEdges=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)(?: onset=(\S+))?$/;
+  /^ {2}(\S*)(?: \[([^\]]*)\])? selfAnomaly=(\S+) logScore=(\S+)(?: failedEdge=(\S+) failedEdgeRecords=(\d+))?(?: latRise=(\S+) latEdges=(\d+))? dominant=(\S*) err=(\d+) fatal=(\d+) logic=(\d+) http=(\d+)(?: both=(\d+))?(?: onset=(\S+))?$/;
 const PREDICTION_RE = /^ {2}prediction=\[([^\]]*)\]$/;
 const EDGES_RE = /^ {2}edges=(.*)$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
@@ -382,6 +396,13 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         fatalCount: Number(service[11]),
         logicExceptionCount: Number(service[12]),
         httpExceptionCount: Number(service[13]),
+        // The overlap of the two signature sets, and the reason the union is
+        // recoverable at all. `undefined` on a dump that predates the field, which
+        // is NOT the same claim as `0`: a zero overlap is a measurement of the
+        // flood, while an absent one means the flood cannot be reconstructed — and
+        // defaulting it to 0 would reproduce the exact double-count this field was
+        // added to remove. `logSlopesForMode` refuses such a dump instead.
+        bothExceptionCount: service[14] === undefined ? undefined : Number(service[14]),
         // The only TIME in the block: ms after injection, or `undefined` both
         // when the field is absent (a dump that predates it) and when it prints
         // `-` (measured and undetermined). Those are different provenances but
@@ -389,7 +410,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         // earliness map; a section that needs the difference counts how many
         // services in the dump carry a NUMBER and reports that instead.
         onsetDelayMs:
-          service[14] === undefined || service[14] === '-' ? undefined : Number(service[14]),
+          service[15] === undefined || service[15] === '-' ? undefined : Number(service[15]),
         metricOutcomes: undefined,
       };
       current.services.push(entries);

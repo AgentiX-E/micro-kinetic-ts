@@ -31,6 +31,7 @@ function service(overrides: Partial<FSE26DiagnosticService>): FSE26DiagnosticSer
     fatalCount: 0,
     logicExceptionCount: 0,
     httpExceptionCount: 0,
+    bothExceptionCount: 0,
     sampleErrorMessages: [],
     exceptionClasses: [],
     ...overrides,
@@ -71,7 +72,7 @@ describe('formatFSE26Diagnostic', () => {
     const measured = formatFSE26Diagnostic(
       input({ services: [service({ onsetDelayMs: 120000 })] }),
     );
-    expect(measured).toContain('http=0 onset=120000');
+    expect(measured).toContain('http=0 both=0 onset=120000');
     // Rounded: a delay is a difference of Unix-ms timestamps, and a fractional
     // millisecond is a rendering artefact, not a measurement.
     expect(
@@ -80,7 +81,7 @@ describe('formatFSE26Diagnostic', () => {
     for (const undetermined of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(
         formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: undetermined })] })),
-      ).toContain('http=0 onset=-');
+      ).toContain('http=0 both=0 onset=-');
     }
     // Zero is a MEASUREMENT, not an absence: the service moved at the injection.
     expect(formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: 0 })] }))).toContain(
@@ -263,6 +264,29 @@ describe('formatFSE26Diagnostic', () => {
     expect(out).toContain('err=3 fatal=1 logic=2');
     // Truncated to 160 chars + ellipsis.
     expect(out).toContain(`ERR: ${'x'.repeat(160)}…`);
+  });
+
+  it('renders the overlap of the two counted source signatures', () => {
+    // `logic` and `http` are counted independently, and a line can carry BOTH
+    // flags — so their SUM is not the number of lines the engine admitted, it is
+    // the sum of two overlapping sets. The overlap is the only quantity that lets
+    // a reader recover the union `|logic ∪ http|`, which is the level-1 flood the
+    // log term divides by; without it every counting mode's denominator is
+    // inflated by the overlap and the reconstructed score is too small.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-basic-service',
+            logicExceptionCount: 3495,
+            httpExceptionCount: 3499,
+            bothExceptionCount: 3495,
+            errorCount: 3499,
+          }),
+        ],
+      }),
+    );
+    expect(out).toContain('err=3499 fatal=0 logic=3495 http=3499 both=3495');
   });
 
   it('renders the framework-HTTP exception count on the service line', () => {

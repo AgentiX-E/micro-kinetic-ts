@@ -90,6 +90,31 @@ export interface FSE26DiagnosticService {
    * SPREAD cascade victim (the source-silent fault's caller).
    */
   readonly httpExceptionCount: number;
+  /**
+   * Count of post-injection ERROR/FATAL lines that are BOTH a self-caused logic
+   * exception AND a framework-HTTP exception.
+   *
+   * The queue the log term divides by is the UNION of the two signatures, not
+   * their sum: the engine admits a line once (`isSourceSignature` returns a
+   * boolean per line), and a line can carry both flags. Measured on the shipped
+   * 1422-case dump, the two sets overlap heavily wherever a framework-HTTP flood
+   * exists — one case's source carries `logic=3495` inside `http=3499` out of
+   * `err=3499` lines, so `logic + http` double-counts 3495 of them and the
+   * reconstructed flood is 2× the engine's.
+   *
+   * Printed as a PRIMITIVE rather than as the pre-combined union, because the
+   * union differs per mode: `count` admits logic lines alone, `logicHttp` and
+   * its gates admit both, `all` admits every ERROR/FATAL. With `logic`, `http`,
+   * `both` and `err`/`fatal` a reader can form the level-1 flood for every mode
+   * exactly, which is what removes the reconstruction's error bar.
+   *
+   * Optional only so a producer that predates the field renders the block it
+   * rendered before — the same additive rule `onsetDelayMs` follows. It is NEVER
+   * omitted because it is zero: `both=0` is a measurement (the sets are disjoint)
+   * and an absent field is the different claim "not measured", which is why a reader
+   * that needs the union refuses an absent one instead of defaulting it.
+   */
+  readonly bothExceptionCount?: number | undefined;
   /** A small sample of the service's ERROR/FATAL messages (truncated). */
   readonly sampleErrorMessages: readonly string[];
   /**
@@ -345,6 +370,11 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
         `dominant=${service.dominantMetric ?? '-'} ` +
         `err=${service.errorCount} fatal=${service.fatalCount} logic=${service.logicExceptionCount} ` +
         `http=${service.httpExceptionCount}` +
+        // Appended to the counts group rather than at the end of the line, so the two
+        // optional trailing fields stay distinguishable by NAME: an old block that has
+        // `onset=` and no `both=` parses as a missing overlap, which is exactly what it
+        // is. The reader's regex matches on the literals, so no index is ambiguous.
+        (service.bothExceptionCount === undefined ? '' : ` both=${service.bothExceptionCount}`) +
         // Appended last, and only when the producer supplied it, so a block from a
         // producer that predates the field is byte-identical to what it rendered
         // before — the same additive rule the `edges` line follows.

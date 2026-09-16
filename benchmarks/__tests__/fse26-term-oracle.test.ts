@@ -37,6 +37,7 @@ import {
 import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 import {
   blendScores,
+  canReconstructLogFlood,
   dominantFamily,
   dominantFamilyCensus,
   formatFamilyCensus,
@@ -84,7 +85,7 @@ interface ServiceSpec {
   serviceId: string;
   /**
    * The count the engine would print, derived from the specs' own counts exactly as
-   * the `logicHttp` mode computes it: `(logic + http) / max(logic + http)`.
+   * the `logicHttp` mode computes it: `|logic ∪ http| / max|logic ∪ http|`.
    *
    * Derived rather than defaulted to 0, because the formatter takes the printed score
    * and the raw counts as INDEPENDENT inputs — a fixture that set the counts and left
@@ -105,6 +106,15 @@ interface ServiceSpec {
   onset?: number;
   logic?: number;
   http?: number;
+  /**
+   * Lines carrying BOTH signature flags. Zero by default, i.e. the two sets are
+   * disjoint, which is the case the fixtures predating this field were written for.
+   *
+   * Set it wherever the test is about the flood's arithmetic: `logic + http` is not
+   * the number of admitted lines unless the sets are disjoint, and a fixture that
+   * cannot express an overlap cannot expose the double-count.
+   */
+  both?: number;
   /** The metric that won this service's anomaly maximum; defaults to `cpu`. */
   dominant?: string;
 }
@@ -118,25 +128,40 @@ function block(
     groundTruth?: readonly string[];
     topPredictions?: readonly string[];
     injectTimeMs?: number;
+    /**
+     * Render the block as a producer that predates the overlap count would: the
+     * field is absent from every service line, so the level-1 flood cannot be
+     * recovered and the reader must say so rather than assume disjoint sets.
+     */
+    omitOverlap?: boolean;
   } = {},
 ): string {
   const n = specs.length;
-  const peak = specs.reduce((max, spec) => Math.max(max, (spec.logic ?? 0) + (spec.http ?? 0)), 0);
+  // The level-1 flood, not the sum of the two counts: a line can carry both flags,
+  // and the engine admits it once. Every fixture that leaves `both` unset has disjoint
+  // sets, so this is the same number for them.
+  const flood = (spec: ServiceSpec): number =>
+    (spec.logic ?? 0) + (spec.http ?? 0) - (spec.both ?? 0);
+  const peak = specs.reduce((max, spec) => Math.max(max, flood(spec)), 0);
   const services = specs.map((spec, i) => ({
     serviceId: spec.serviceId,
     metricNames: ['cpu'],
     dominantMetric: spec.dominant ?? 'cpu',
     selfAnomaly: spec.selfAnomaly ?? (n < 2 ? 1 : (n - 1 - i) / (n - 1)),
-    logScore: spec.logScore ?? (peak > 0 ? ((spec.logic ?? 0) + (spec.http ?? 0)) / peak : 0),
+    logScore: spec.logScore ?? (peak > 0 ? flood(spec) / peak : 0),
     failedEdgeScore: 0,
     failedEdgeRecords: 0,
     latRise: spec.latRise,
     latEdges: spec.latEdges ?? 0,
     onsetDelayMs: spec.onset,
-    errorCount: (spec.logic ?? 0) + (spec.http ?? 0),
+    errorCount: flood(spec),
     fatalCount: 0,
     logicExceptionCount: spec.logic ?? 0,
     httpExceptionCount: spec.http ?? 0,
+    // `undefined` rather than 0 when the override asks for an OLD producer: the
+    // formatter omits the whole field, which is the only shape that lets the reader
+    // tell "measured disjoint" from "never measured".
+    bothExceptionCount: overrides.omitOverlap === true ? undefined : (spec.both ?? 0),
     sampleErrorMessages: [],
     exceptionClasses: [],
     metricOutcomes: undefined,
@@ -277,17 +302,24 @@ describe('httpDominance', () => {
 
 describe('logSlopesForMode', () => {
   const services = [
-    { serviceId: 'src', logicExceptionCount: 0, httpExceptionCount: 8 },
-    { serviceId: 'victim-a', logicExceptionCount: 0, httpExceptionCount: 1 },
-    { serviceId: 'root', logicExceptionCount: 4, httpExceptionCount: 0 },
+    { serviceId: 'src', logicExceptionCount: 0, httpExceptionCount: 8, bothExceptionCount: 0 },
+    { serviceId: 'victim-a', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+    { serviceId: 'root', logicExceptionCount: 4, httpExceptionCount: 0, bothExceptionCount: 0 },
   ] as never;
 
-  it('count mode admits logic exceptions only, against the level-1 flood', () => {
+  it('count mode admits logic exceptions only, and divides by the count it admits', () => {
+    // The engine accumulates the denominator from the SAME level-1 gate as the
+    // numerator, and `count` admits logic exceptions alone — a purely
+    // framework-HTTP line is not a `count`-mode source signature. So the flood this
+    // mode divides by is `max(logic)`, and the surviving root scores 4/4.
+    //
+    // This test used to assert `4 / 8`, on the reasoning that "the denominator stays
+    // the level-1 maximum (`logic + http`)". That reasoning was wrong twice over: the
+    // gate is mode-dependent, so the denominator must be too, and it was measured
+    // against the engine's `count` mode, whose admitted map never sees the HTTP line.
     const slopes = logSlopesForMode(services, 'count', 0.5);
     expect(slopes.has('src')).toBe(false);
-    // The denominator stays the level-1 maximum (`logic + http`), not the maximum of
-    // what `count` admits: 4 / 8, not 4 / 4.
-    expect(slopes.get('root')).toBeCloseTo(0.5, 12);
+    expect(slopes.get('root')).toBeCloseTo(1, 12);
   });
 
   it('logicHttp mode admits both signatures against the same denominator', () => {
@@ -296,36 +328,205 @@ describe('logSlopesForMode', () => {
     expect(slopes.get('root')).toBeCloseTo(0.5, 12);
   });
 
+  it('counts a line that carries BOTH signatures ONCE', () => {
+    // The defect this test was written for, with the run's own numbers.
+    //
+    // `logic` and `http` are counted independently, so a line that is both a logic
+    // exception and a framework-HTTP exception increments both — and the engine,
+    // whose gate is a boolean per line, admits it once. Here the source carries
+    // `logic=3495` entirely INSIDE `http=3499` (out of `err=3499` lines), so the
+    // union is 3499 while the sum is 6994.
+    //
+    // The dump prints the engine's own values for this case, which is what makes the
+    // arithmetic falsifiable rather than a matter of reading the code:
+    //   ts-basic-service 1.000   215/3499 = 0.0614 → printed 0.061
+    //   ts-travel-service 0.061  215/6994 = 0.0307 → the old, double-counted value
+    // 109 services across the shipped dump differed this way, and the instrument
+    // reported the disagreement as its "error bar" rather than as this defect.
+    const overlap = [
+      {
+        serviceId: 'ts-basic-service',
+        logicExceptionCount: 3495,
+        httpExceptionCount: 3499,
+        bothExceptionCount: 3495,
+      },
+      {
+        serviceId: 'ts-travel-service',
+        logicExceptionCount: 0,
+        httpExceptionCount: 215,
+        bothExceptionCount: 0,
+      },
+      {
+        serviceId: 'ts-preserve-service',
+        logicExceptionCount: 0,
+        httpExceptionCount: 13,
+        bothExceptionCount: 0,
+      },
+    ] as never;
+    const slopes = logSlopesForMode(overlap, 'logicHttp', 0.5);
+    expect(slopes.get('ts-basic-service')).toBeCloseTo(1, 12);
+    expect(slopes.get('ts-travel-service')).toBeCloseTo(215 / 3499, 12);
+    expect(slopes.get('ts-preserve-service')).toBeCloseTo(13 / 3499, 12);
+    // Not the sum: that is the value the dump contradicts.
+    expect(slopes.get('ts-travel-service')).not.toBeCloseTo(215 / 6994, 6);
+  });
+
+  it('leaves `count` mode blind to the overlap because it never admits the HTTP half', () => {
+    // Same case, `count` mode: the denominator is `max(logic)` = 3495, and the two
+    // HTTP-only services are absent rather than scored. A reader that subtracted the
+    // overlap from a sum here would move a mode the overlap cannot touch.
+    const overlap = [
+      {
+        serviceId: 'ts-basic-service',
+        logicExceptionCount: 3495,
+        httpExceptionCount: 3499,
+        bothExceptionCount: 3495,
+      },
+      {
+        serviceId: 'ts-travel-service',
+        logicExceptionCount: 0,
+        httpExceptionCount: 215,
+        bothExceptionCount: 0,
+      },
+    ] as never;
+    const slopes = logSlopesForMode(overlap, 'count', 0.5);
+    expect(slopes.get('ts-basic-service')).toBeCloseTo(1, 12);
+    expect(slopes.has('ts-travel-service')).toBe(false);
+  });
+
+  it('recovers the union from the error total on a dump without the overlap, PROVING it', () => {
+    // The fallback path, and the reason an old dump is still readable. The union is
+    // bracketed by `max(logic, http) ≤ U ≤ min(logic + http, err + fatal)`; when the
+    // bracket is a point the value is proved. Here `err=3499` equals the http count,
+    // so every error line of the flood emitter is a signature line and U = 3499 —
+    // the same value the `both=` field would have carried (3495 + 3499 − 3495).
+    const legacy = [
+      {
+        serviceId: 'ts-basic-service',
+        logicExceptionCount: 3495,
+        httpExceptionCount: 3499,
+        errorCount: 3499,
+        fatalCount: 0,
+      },
+      {
+        serviceId: 'ts-travel-service',
+        logicExceptionCount: 0,
+        httpExceptionCount: 215,
+        errorCount: 215,
+        fatalCount: 0,
+      },
+    ] as never;
+    expect(canReconstructLogFlood(legacy, 'logicHttp')).toBe(true);
+    const slopes = logSlopesForMode(legacy, 'logicHttp', 0.5);
+    expect(slopes.get('ts-basic-service')).toBeCloseTo(1, 12);
+    expect(slopes.get('ts-travel-service')).toBeCloseTo(215 / 3499, 12);
+  });
+
+  it('refuses a dump that only brackets the union, rather than defaulting either end', () => {
+    // The bracket is not the value. With 10 error lines of which only some are
+    // signature lines and a partial overlap, `logic=2 http=3` lies between 3 and 5 —
+    // and choosing the lower end understates the flood while the upper end reproduces
+    // the double-count. Both would print as measured numbers.
+    const ambiguous = [
+      {
+        serviceId: 'src',
+        logicExceptionCount: 2,
+        httpExceptionCount: 3,
+        errorCount: 10,
+        fatalCount: 0,
+      },
+    ] as never;
+    expect(canReconstructLogFlood(ambiguous, 'logicHttp')).toBe(false);
+    expect(() => logSlopesForMode(ambiguous, 'logicHttp', 0.5)).toThrow(
+      /bracket the union without pinning/,
+    );
+    // `count` never consults the HTTP half, so the same dump is still readable for it.
+    expect(canReconstructLogFlood(ambiguous, 'count')).toBe(true);
+    expect(logSlopesForMode(ambiguous, 'count', 0.5).get('src')).toBeCloseTo(1, 12);
+  });
+
+  it('takes the printed overlap when the dump carries it, even when the bracket disagrees', () => {
+    // The field is the primitive and it WINS: it is the producer's direct count, while
+    // the bracket is an argument about the same quantity. A dump that carried both and
+    // had them disagree would be a producer defect, and preferring the field keeps the
+    // reader from quietly re-deriving around it.
+    const withField = [
+      {
+        serviceId: 'src',
+        logicExceptionCount: 2,
+        httpExceptionCount: 3,
+        bothExceptionCount: 1,
+        errorCount: 10,
+        fatalCount: 0,
+      },
+    ] as never;
+    expect(canReconstructLogFlood(withField, 'logicHttp')).toBe(true);
+    // 2 + 3 − 1 = 4, not the bracket's endpoints (3 or 5).
+    expect(logSlopesForMode(withField, 'logicHttp', 0.5).get('src')).toBeCloseTo(1, 12);
+    const wider = [
+      {
+        serviceId: 'src',
+        logicExceptionCount: 2,
+        httpExceptionCount: 3,
+        bothExceptionCount: 1,
+        errorCount: 10,
+        fatalCount: 0,
+      },
+      {
+        serviceId: 'other',
+        logicExceptionCount: 0,
+        httpExceptionCount: 4,
+        errorCount: 4,
+        fatalCount: 0,
+      },
+    ] as never;
+    expect(logSlopesForMode(wider, 'logicHttp', 0.5).get('src')).toBeCloseTo(4 / 4, 12);
+  });
+
   it('dominant suppresses framework HTTP when the flood is spread', () => {
     const spread = [
-      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 1 },
-      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 1 },
-      { serviceId: 'c', logicExceptionCount: 0, httpExceptionCount: 1 },
-      { serviceId: 'd', logicExceptionCount: 0, httpExceptionCount: 1 },
-      { serviceId: 'e', logicExceptionCount: 0, httpExceptionCount: 1 },
-      { serviceId: 'root', logicExceptionCount: 4, httpExceptionCount: 0 },
+      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+      { serviceId: 'c', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+      { serviceId: 'd', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+      { serviceId: 'e', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+      { serviceId: 'root', logicExceptionCount: 4, httpExceptionCount: 0, bothExceptionCount: 0 },
     ] as never;
     const slopes = logSlopesForMode(spread, 'dominant', 0.5);
     expect(slopes.has('a')).toBe(false);
     expect(slopes.get('root')).toBeCloseTo(1, 12);
   });
 
+  it('withdraws only the HTTP-ONLY lines when the dominant gate closes', () => {
+    // The gate removes the framework-HTTP half, and "half" means the set difference:
+    // a line that is BOTH a logic exception and an HTTP exception survives, because
+    // the logic signature is self-caused and is never withdrawn. Subtracting the raw
+    // http count instead would delete the source's own evidence with the cascade's.
+    const concentrated = [
+      { serviceId: 'src', logicExceptionCount: 2, httpExceptionCount: 10, bothExceptionCount: 2 },
+      { serviceId: 'other', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+    ] as never;
+    // Dominance 10/11 ≈ 0.909 ≥ 0.5, so the gate stays open: the source keeps its
+    // whole admitted set (the union, 10) over the flood's maximum (10).
+    expect(logSlopesForMode(concentrated, 'dominant', 0.5).get('src')).toBeCloseTo(1, 12);
+  });
+
   it('keeps the level-1 denominator when the gate withdraws a flood', () => {
     // The engine's asymmetry: withdrawal can only LOWER a score and can never promote
     // a mid-tier emitter to 1.0, which is why the two maps are accumulated separately.
     const spread = [
-      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 6 },
-      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 6 },
-      { serviceId: 'c', logicExceptionCount: 0, httpExceptionCount: 6 },
-      { serviceId: 'root', logicExceptionCount: 3, httpExceptionCount: 0 },
+      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 6, bothExceptionCount: 0 },
+      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 6, bothExceptionCount: 0 },
+      { serviceId: 'c', logicExceptionCount: 0, httpExceptionCount: 6, bothExceptionCount: 0 },
+      { serviceId: 'root', logicExceptionCount: 3, httpExceptionCount: 0, bothExceptionCount: 0 },
     ] as never;
     expect(logSlopesForMode(spread, 'dominant', 0.5).get('root')).toBeCloseTo(0.5, 12);
   });
 
   it('treats the threshold as inclusive, matching the engine', () => {
     const even = [
-      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 1 },
-      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 1 },
+      { serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
+      { serviceId: 'b', logicExceptionCount: 0, httpExceptionCount: 1, bothExceptionCount: 0 },
     ] as never;
     expect(logSlopesForMode(even, 'dominant', 0.5).size).toBe(2);
     expect(logSlopesForMode(even, 'dominant', 0.5000001).size).toBe(0);
@@ -334,7 +535,14 @@ describe('logSlopesForMode', () => {
   it('returns nothing when the case carries no admitted line', () => {
     expect(
       logSlopesForMode(
-        [{ serviceId: 'a', logicExceptionCount: 0, httpExceptionCount: 0 } as never],
+        [
+          {
+            serviceId: 'a',
+            logicExceptionCount: 0,
+            httpExceptionCount: 0,
+            bothExceptionCount: 0,
+          } as never,
+        ],
         'logicHttp',
         0.5,
       ).size,
@@ -628,6 +836,70 @@ describe('modeScreen', () => {
     expect(modeScreen(casesOf(noRoot), OPTS).rows[0]!.perFaultType).toEqual([]);
   });
 
+  it("self-checks the dump's OWN mode against the printed term, case for case", () => {
+    // No extra data needed: the mode the run used is the mode the reader rebuilds, so
+    // the two must agree on every case. This is the assertion that would have caught the
+    // flood double-count — it read `+5/-0` for two iterations and was called an error
+    // bar. A coherent fixture is `+0/-0` by construction.
+    const coherent = casesOf(
+      block(
+        [
+          { serviceId: 'ts-root', logic: 4 },
+          { serviceId: 'ts-victim', logic: 1 },
+        ],
+        {
+          groundTruth: ['ts-root'],
+          topPredictions: ['ts-root'],
+        },
+      ),
+    );
+    const check = modeScreen(coherent, OPTS).selfCheck;
+    expect(check).toEqual({
+      dumpMode: 'logicHttp',
+      source: 'logicHttp',
+      cases: 1,
+      violations: 0,
+      gained: 0,
+      regressed: 0,
+    });
+    expect(formatModeScreen(modeScreen(coherent, OPTS))).toContain('reproduces the printed term');
+  });
+
+  it('reports a NON-ZERO self-check when the printed term disagrees with the counts', () => {
+    // The incoherent fixture: a printed `logScore` its own counts cannot produce. The
+    // check must surface it, because every other row is measured through the same
+    // reconstruction — and a silent `+0` here is what makes a defect look like a
+    // rounding detail.
+    //
+    // The SCORE-level count is the one that fires: two reconstructions can rank
+    // identically while disagreeing numerically, which is exactly how a double-counted
+    // flood survived on most cases.
+    const broken = casesOf(
+      block([{ serviceId: 'ts-root', logScore: 1 }, { serviceId: 'ts-victim' }], {
+        groundTruth: ['ts-root'],
+        topPredictions: ['ts-root'],
+      }),
+    );
+    const screen = modeScreen(broken, OPTS);
+    expect(screen.selfCheck!.violations).toBe(1);
+    const text = formatModeScreen(screen);
+    expect(text).toContain('DISAGREES with the printed term');
+    expect(text).toContain('do not read the rows below');
+  });
+
+  it('has no self-check for a mode this reader cannot rebuild', () => {
+    // `novelty` is IDF-weighted and needs per-class line counts the dump does not carry,
+    // so there is no reconstruction to check. Claiming one would be claiming a
+    // measurement that does not exist.
+    const novelty = casesOf(
+      block([{ serviceId: 'ts-root', logic: 4 }], { groundTruth: ['ts-root'] }).replace(
+        'logMode=logicHttp',
+        'logMode=novelty',
+      ),
+    );
+    expect(modeScreen(novelty, OPTS).selfCheck).toBeUndefined();
+  });
+
   it('reads the threshold on the ROW, so a sweep point can change the answer', () => {
     // The bug this pins: the renderer built one row per grid point and computed every
     // one of them at the options' threshold, so a sweep printed identical rows and read
@@ -802,15 +1074,70 @@ describe('formatters', () => {
     expect(text).toContain('baseline recorded');
   });
 
-  it('prints the configuration and the error bar with the fidelity numbers', () => {
+  it('prints the configuration, and labels a log-term disagreement as a DEFECT', () => {
     const text = formatFidelity(oracleFidelity(cases, OPTS), OPTS);
     expect(text).toContain('logWeight=1 latWeight=0.561495 latFloor=10.3');
-    expect(text).toContain('error bar');
+    // The line used to call the disagreement an "error bar", which is a tolerance
+    // claim — and a tolerance is a place a defect hides. The derived term is built
+    // from the same counts the engine used, so disagreement is a defect, and the
+    // rendered word says which of the two readings applies. `cases` here is the
+    // fixture whose printed logScore deliberately disagrees with its counts.
+    expect(text).toContain('NON-ZERO');
+    expect(text).toContain('a reconstruction defect, not a tolerance');
+    expect(text).not.toContain('error bar');
     expect(text).toContain('rank-1 same as the dump’s own recorded: 1/1 cases');
     // The caveat prints with the number, because the number alone is ambiguous: a
     // shortfall means "the flags are not the dump's configuration" OR "the
     // reconstruction drifted", and only a reader who knows which can act on it.
     expect(text).toContain('CONFIGURATION moving the winner');
+  });
+
+  it('says the log term is EXACT when the printed score is the flood the counts imply', () => {
+    // The reading the fixed reconstruction earns: the derived `logicHttp` term IS the
+    // dump's own mode, so the two agree service for service and the mode rows below
+    // carry no error bar at all.
+    const coherent = casesOf(
+      block([{ serviceId: 'ts-root', logic: 4 }, { serviceId: 'ts-victim' }], {
+        groundTruth: ['ts-root'],
+        topPredictions: ['ts-root'],
+      }),
+    );
+    const fidelity = oracleFidelity(coherent, OPTS);
+    expect(fidelity.recordedLogViolations).toBe(0);
+    expect(fidelity.recordedLogFlips).toBe(0);
+    expect(fidelity.unreconstructableCases).toBe(0);
+    const text = formatFidelity(fidelity, OPTS);
+    expect(text).toContain('EXACT');
+    expect(text).toContain('no error bar');
+  });
+
+  it('says the log term is UNAVAILABLE, not clean, when the fields only bracket the union', () => {
+    // The one reading that must never be inferred from a missing counter: "0
+    // violations" and "not computed" are different, and a report that prints the
+    // first for the second is the defect class this whole section exists to catch.
+    //
+    // Availability is a property of the COUNTS, not of the field's presence: the
+    // rendered fixture is coherent (`err` = the flood), so it pins the union and stays
+    // readable. Raising the error total above both signature counts leaves 7 error
+    // lines of which only some are signature lines, and the union is then bracketed by
+    // [3, 5] — genuinely unknown, so the section must say so.
+    const ambiguous = block([{ serviceId: 'ts-root', logic: 2, http: 3 }], {
+      groundTruth: ['ts-root'],
+      topPredictions: ['ts-root'],
+      omitOverlap: true,
+    }).replace('err=5 fatal=0', 'err=10 fatal=0');
+    expect(ambiguous).toContain('err=10 fatal=0');
+    const old = casesOf(ambiguous);
+    const text = formatFidelity(oracleFidelity(old, OPTS), OPTS);
+    // Both facts always print: the counters are about the reconstructable subset, so a
+    // line that showed only them would read as a clean whole-dump reconstruction.
+    expect(text).toContain('services above 6e-4: 0');
+    expect(text).toContain('1/1 cases predate the overlap count');
+    expect(text).toContain('bracketed but not pinned');
+    expect(text).not.toContain('EXACT');
+    // And no mode row is drawn from a flood it cannot recover. `count` never consults
+    // the HTTP half, so its row IS drawn — the filter is per row, not per dump.
+    expect(modeScreen(old, OPTS).rows.map((row) => row.source)).toEqual(['recorded', 'count']);
   });
 
   it('prints the ceilings and the conflicts', () => {

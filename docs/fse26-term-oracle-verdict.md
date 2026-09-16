@@ -322,7 +322,94 @@ discriminator, whose bound is now a number rather than a direction.
    claim wrongly named (`hubble_http_*`, Δ+2) is not it. Pre-screening a rule built on it
    is free.
 
-## 8. Reproduce
+## 8. The routing map at the SHIPPED configuration
+
+§6 and §7 measured the census at the pre-pool baseline, because no `diagnose` run had ever
+been dispatched with the pool penalty ON over all 1422 cases — the fourth-term row's
+reopening condition said exactly that, and said a pool-ON dump was what it needed. That
+dump now exists (`35035314921`, the shipped configuration through the default path) and
+the map below is read from it, with all four terms live.
+
+Fidelity first, because everything else is a claim made through this reconstruction:
+
+```
+  cases 1422; services 72527; logWeight=1 latWeight=0.561495 latFloor=10.3 poolWeight=0.0679
+  metric term: max |recomputed - printed| = 4.90e-4; services above 5e-4: 0
+  printed order reproduced from the printed values: 1422/1422 cases
+  rank-1 same as the dump's own recorded: 1422/1422 cases; an acceptable root: 756
+  moved by the pool penalty: 103; moved by the temporal prior: 0
+```
+
+`1422/1422` and `756` are the two numbers that license the rest: the reconstruction
+reproduces the run's own decisions, and the run's own headline.
+
+**The routing map.** 666 misses, attributed to the terms that decided them:
+
+| decided by | cases |
+| --- | --- |
+| metric alone | 261 |
+| metric+log | 106 |
+| metric+log+lat | 73 |
+| log alone | 109 |
+| metric+lat | 50 |
+| log+lat | 21 |
+| metric+log+pool | 10 |
+| lat alone | 10 |
+| log+pool | 11 |
+| metric+pool | 7 |
+| log+lat+pool | 4 |
+| pool alone | 2 |
+| lat+pool | 1 |
+| metric+log+lat+pool | 1 |
+| **silent on both sides** | **221** |
+
+Three things it settles, none of which the pre-pool reading could:
+
+- The **74 non-reweightable** cases the framing quotes are exactly `metric+log+lat` (73)
+  plus `metric+log+lat+pool` (1) — the pre-pool derivation, reproduced on a dump the
+  instrument had never read. That is a cross-check of §6, not a new claim.
+- **221 cases are silent on BOTH sides** — no error evidence for the source and none for
+  the winner. That is the weak-stock population, and it is larger than any single term's
+  miss count.
+- The pool term's footprint is **103 cases** for a net of +6, which is the §7 finding
+  unchanged: 97 of the 103 moves were on already-wrong cases.
+
+**The term-oracle ceilings at the shipped configuration** move with the added term:
+
+```
+  none 542; log 450; lat 140; metric+lat 101; log+lat 77; metric+log+lat 47; metric+log 44; metric 21
+  single-term ceiling 880 (61.88%); unreachable by any single term 542
+  menu ceiling (best of 3 blends + shipped) 878 (61.74%); shipped 756 (53.16%)
+```
+
+`878` against the pre-pool `871`, and `542` named by none against `551`: the pool term
+adds seven cases to what a perfect per-case chooser could reach, which is the headroom the
+discriminator verdict counts as 122.
+
+**The family census moves with the configuration, so §5's figures are not this run's.**
+Re-read on the shipped dump, over its 666 misses (`delta = winner − source`):
+
+| family | source | winner | delta |
+| --- | --- | --- | --- |
+| `k8s` | 122 | 47 | **−75** |
+| `container` | 47 | 23 | −24 |
+| `db.client.connections` | 48 | 25 | −23 |
+| `http.server.duration` | 139 | 127 | −12 |
+| `trace` | 17 | 6 | −11 |
+| `hubble_http` | 103 | 114 | +11 |
+| `queueSize` | 36 | 54 | +18 |
+| `jvm` | 130 | 183 | **+53** |
+| `http.client.duration` | 24 | 84 | **+60** |
+
+The source's side of the margin is still the resource families (`k8s` + `container`), but
+it is **narrower** than §5's 85/132 split and `jvm` has moved to the WINNER's side, which
+is why §5's grouping of `jvm.*` with the source's resource signature must not be reused:
+the same prefix is a source's own stress signature in one population and a shared
+node-level series in this one. The winner's side is dominated by client-duration and by
+`jvm.system.cpu.load_1m` — the shared series the fleet-relative candidate was built for
+and rejected.
+
+## 9. Reproduce
 
 ```bash
 # the instrument, on the shipped dump (no run, no rebuild: read the CI artifact)

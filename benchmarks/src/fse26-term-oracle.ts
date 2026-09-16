@@ -261,13 +261,84 @@ export function httpDominance(services: DiagnosedCase['services']): number {
 }
 
 /**
+ * The level-1 flood for one countable mode: the lines the engine's
+ * `isSourceSignature` gate ADMITS, recovered from the counts the dump prints.
+ *
+ * The gate is a boolean per line, so a line that carries both source-signature
+ * flags is admitted ONCE — the flood is the union, not the sum of the two sets.
+ * Measured on the shipped dump (`35035314921`), a framework-HTTP flood overlaps
+ * almost completely with the logic set: one case's source carries `logic=3495`
+ * inside `http=3499`, out of `err=3499` lines. Adding the counts makes the flood
+ * 6994 instead of 3499, and every reconstructed score in that case is then half
+ * the engine's — 109 services, which the instrument reported as its "error bar"
+ * rather than as the defect it was.
+ *
+ * The admitted SET is mode-dependent, which is why the union is computed here
+ * rather than printed pre-combined: `count` admits logic lines alone (a purely
+ * framework-HTTP line is not a `count`-mode source signature), the `logicHttp`
+ * family admits both, and `all` would admit every ERROR/FATAL. The denominator
+ * must follow the same gate as the numerator, or the ratio is between two
+ * different sets — and for `count` that means the HTTP half is not consulted at
+ * all, so the overlap cannot move it either.
+ *
+ * Two ways to learn the union, in order:
+ *
+ * 1. the printed `both=` count, which is the primitive and needs no argument;
+ * 2. for a dump that predates it, the arithmetic. The union is bracketed by
+ *    `max(logic, http) ≤ |logic ∪ http| ≤ min(logic + http, err + fatal)` — the
+ *    first because each set is contained in the union, the second because every
+ *    admitted line is an ERROR/FATAL line. When the bracket collapses to a point
+ *    the value is PROVED, not guessed: measured on the shipped dump, all 71105
+ *    services pin it, because a service that floods is a service whose error
+ *    lines are all signature lines. When the bracket does not collapse the value
+ *    is genuinely unknown, and this returns `undefined` rather than a bound.
+ *
+ * @param service - One service's printed counts.
+ * @param mode - Which signature set this mode admits.
+ * @returns The number of lines the mode's level-1 gate lets through, or
+ *   `undefined` when the union cannot be recovered from this service's fields.
+ */
+function levelOneFlood(
+  service: DiagnosedCase['services'][number],
+  mode: Exclude<LogTermSource, 'recorded'>,
+): number | undefined {
+  const logic = service.logicExceptionCount;
+  if (mode === 'count') return logic;
+  const http = service.httpExceptionCount;
+  const both = service.bothExceptionCount;
+  if (both !== undefined) return logic + http - both;
+  const lower = Math.max(logic, http);
+  const upper = Math.min(logic + http, service.errorCount + service.fatalCount);
+  return lower === upper ? lower : undefined;
+}
+
+/**
+ * Whether the log term can be reconstructed for a mode from a case's printed fields.
+ *
+ * Per-mode, because the modes need different quantities: `count` divides by the logic
+ * count alone and is always recoverable, while the `logicHttp` family needs the union
+ * and is recoverable only when the dump prints the overlap or the error total pins it.
+ *
+ * @param services - One case's services.
+ * @param mode - The mode whose reconstruction is being attempted.
+ * @returns `true` when every service's flood is recoverable.
+ */
+export function canReconstructLogFlood(
+  services: DiagnosedCase['services'],
+  mode: Exclude<LogTermSource, 'recorded'>,
+): boolean {
+  return services.every((service) => levelOneFlood(service, mode) !== undefined);
+}
+
+/**
  * Rebuild the log term for one of the engine's countable modes.
  *
- * The engine's denominator is the level-1 maximum — `max(logic + http)` — and it stays
- * there even when the direction gate withdraws the framework-HTTP half, because a
- * denominator taken from the post-suppression counts would promote a mid-tier emitter
- * to 1.0 and let a subtractive gate manufacture a rank. That asymmetry is reproduced
- * here, and it is the whole content of the `dominant` reconstruction.
+ * The engine's numerator is the level-1 flood minus the lines its direction gate
+ * withdraws, and its denominator is the level-1 MAXIMUM — which stays on level 1
+ * even when the gate withdraws the framework-HTTP half, because a denominator taken
+ * from the post-suppression counts would promote a mid-tier emitter to 1.0 and let a
+ * subtractive gate manufacture a rank. That asymmetry is reproduced here, and it is
+ * the whole content of the `dominant` reconstruction.
  *
  * @param services - One case's services.
  * @param mode - `count`, `logicHttp` or `dominant`.
@@ -275,6 +346,8 @@ export function httpDominance(services: DiagnosedCase['services']): number {
  * @returns The log term per positively-scored service. A service at 0 is ABSENT
  *   rather than present with a 0 — for ranking the two are the same, and the engine's
  *   own map assigns 0 to every node, so the density is not lost.
+ * @throws When a service's flood is unrecoverable (see {@link levelOneFlood});
+ *   guard with {@link canReconstructLogFlood} when reading an unknown dump.
  */
 export function logSlopesForMode(
   services: DiagnosedCase['services'],
@@ -285,14 +358,33 @@ export function logSlopesForMode(
   const denominator = new Map<string, number>();
   const concentrated = mode === 'dominant' && httpDominance(services) >= dominance;
   for (const service of services) {
-    const logic = service.logicExceptionCount;
-    // The level-1 flood: logic exceptions plus framework HTTP, for every counting
-    // mode. It is the denominator whatever the gate below decides.
-    denominator.set(service.serviceId, logic + service.httpExceptionCount);
-    if (mode === 'count') numerator.set(service.serviceId, logic);
-    else if (mode === 'logicHttp')
-      numerator.set(service.serviceId, logic + service.httpExceptionCount);
-    else numerator.set(service.serviceId, logic + (concentrated ? service.httpExceptionCount : 0));
+    // The denominator is the mode's own level-1 flood, whatever the gate decides.
+    const flood = levelOneFlood(service, mode);
+    if (flood === undefined) {
+      // A bound is not the value: defaulting to it would reproduce the double-count
+      // (upper) or silently understate the flood (lower), and the resulting scores
+      // would read exactly like measured ones.
+      throw new Error(
+        `cannot recover the level-1 flood for ${service.serviceId}: logic=${service.logicExceptionCount} ` +
+          `http=${service.httpExceptionCount} err=${service.errorCount} fatal=${service.fatalCount} ` +
+          'bracket the union without pinning it, and the dump carries no `both=` count. ' +
+          'Re-run with the current producer, whose service lines print the overlap.',
+      );
+    }
+    denominator.set(service.serviceId, flood);
+    if (mode === 'count') numerator.set(service.serviceId, flood);
+    else if (mode === 'logicHttp') numerator.set(service.serviceId, flood);
+    else {
+      // `dominant` withdraws exactly the framework-HTTP lines that are NOT logic
+      // lines, so what survives the gate is the logic set plus the http-only set.
+      // Subtracting the overlap is what makes the withdrawal a subtraction rather
+      // than a replacement of one set by another.
+      const overlap = Math.max(0, service.logicExceptionCount + service.httpExceptionCount - flood);
+      numerator.set(
+        service.serviceId,
+        service.logicExceptionCount + (concentrated ? service.httpExceptionCount - overlap : 0),
+      );
+    }
   }
   let max = 0;
   for (const value of denominator.values()) if (value > max) max = value;
@@ -620,8 +712,23 @@ export interface OracleFidelity {
   /**
    * Cases whose rank-1 the counts-derived log term moves — the instrument's error
    * bar for every mode comparison, stated as a count rather than as a caveat.
+   *
+   * `0` is the only acceptable value: the derived term is built from the same counts
+   * the engine used, so any disagreement is a defect in the reconstruction and not a
+   * tolerance. It read **5** for two iterations, and the number was attributed to
+   * rounding instead of being read as the defect claim it was — the cause was the
+   * `logic + http` flood double-counting lines that carry both flags.
    */
   readonly recordedLogFlips: number;
+  /**
+   * Cases whose level-1 flood could not be reconstructed because the dump predates
+   * the overlap count (`both=`).
+   *
+   * Non-zero makes {@link recordedLogViolations} and the mode pre-screen meaningless
+   * rather than zero: the union `|logic ∪ http|` is then knowable only as an
+   * interval, so those counters are reported as UNAVAILABLE, not as clean.
+   */
+  readonly unreconstructableCases: number;
   /**
    * Cases whose rank-1 the POOL penalty moves, measured against the same terms with the
    * penalty off. The term has no order of its own (see {@link TermName}), so this is how
@@ -662,6 +769,7 @@ export function oracleFidelity(
   let top1Correct = 0;
   let recordedLogViolations = 0;
   let recordedLogFlips = 0;
+  let unreconstructableCases = 0;
   let poolFlips = 0;
   let temporalFlips = 0;
   for (const kase of cases) {
@@ -679,22 +787,29 @@ export function oracleFidelity(
     }
     const lat = latencySlopes(kase.services, opts.latFloor);
     const recorded = rankCase(kase, opts, 'recorded', lat);
-    const derived = rankCase(kase, opts, 'logicHttp', lat);
+    // A case whose flood cannot be recovered is COUNTED, not skipped silently: the
+    // counters below are then about a subset of the dump, and reporting that subset
+    // as though it were all of it is how an error bar reads as exactness.
+    const reconstructable = canReconstructLogFlood(kase.services, 'logicHttp');
+    if (!reconstructable) unreconstructableCases++;
+    const derived = reconstructable ? rankCase(kase, opts, 'logicHttp', lat) : undefined;
     const root = new Set(kase.groundTruth.filter((name) => name !== ''));
     const winner = recorded.order[0];
     if (winner !== undefined && winner === kase.prediction[0]) top1Matches++;
     if (winner !== undefined && root.has(winner)) top1Correct++;
-    if (derived.order[0] !== winner) recordedLogFlips++;
+    if (derived !== undefined && derived.order[0] !== winner) recordedLogFlips++;
     if (rankCase(kase, { ...opts, poolWeight: 0 }, 'recorded', lat).order[0] !== winner) {
       poolFlips++;
     }
     if (rankCase(kase, { ...opts, temporalWeight: 0 }, 'recorded', lat).order[0] !== winner) {
       temporalFlips++;
     }
-    const derivedLog = logSlopesForMode(kase.services, 'logicHttp', opts.dominance);
-    for (const service of kase.services) {
-      if (Math.abs((derivedLog.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) {
-        recordedLogViolations++;
+    if (reconstructable) {
+      const derivedLog = logSlopesForMode(kase.services, 'logicHttp', opts.dominance);
+      for (const service of kase.services) {
+        if (Math.abs((derivedLog.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) {
+          recordedLogViolations++;
+        }
       }
     }
   }
@@ -708,6 +823,7 @@ export function oracleFidelity(
     top1Correct,
     recordedLogViolations,
     recordedLogFlips,
+    unreconstructableCases,
     poolFlips,
     temporalFlips,
   };
@@ -989,6 +1105,15 @@ export interface ModeScreenRow {
   readonly source: LogTermSource;
   /** The dominance threshold, or `undefined` for the sources that do not read one. */
   readonly dominance: number | undefined;
+  /**
+   * The cases this row was measured on.
+   *
+   * A mode that re-derives the log term can only be measured on the cases whose flood
+   * it can recover, and the baseline is re-measured on the same list — so this is the
+   * row's own population, not the dump's size. A row smaller than the dump is a
+   * partial measurement and must say so.
+   */
+  readonly cases: number;
   readonly correct: number;
   readonly gainedCases: number;
   readonly regressedCases: number;
@@ -1007,29 +1132,76 @@ export interface ModeScreenRow {
 export interface ModeScreen {
   /** The baseline row (`recorded`) first, then the reconstructions. */
   readonly rows: readonly ModeScreenRow[];
+  /**
+   * The dump's own log mode, re-derived from the counts, against the printed one.
+   *
+   * This is the instrument's sharpest self-check and it needs no extra data: the mode
+   * the run used is the mode the reader can rebuild, so the two must agree CASE FOR
+   * CASE — `+0/-0`. Any other value is a reconstruction defect, and it is not a small
+   * one: while the flood double-counted overlapping signature sets this row read
+   * `+5/-0` and was written off as an error bar, which is how the defect survived.
+   *
+   * `undefined` when the dump's mode is not one this reader rebuilds (e.g. `novelty`,
+   * which needs per-class line counts the dump does not carry).
+   */
+  readonly selfCheck: ModeScreenSelfCheck | undefined;
+}
+
+/**
+ * One row to pre-screen: the baseline, or a mode that has to be RE-DERIVED.
+ *
+ * Discriminated on `source` so a branch that requires a rebuildable mode can prove it
+ * is not looking at the baseline.
+ */
+type ModeScreenEntry =
+  | { readonly source: 'recorded'; readonly dominance: undefined }
+  | {
+      readonly source: Exclude<LogTermSource, 'recorded'>;
+      readonly dominance: number | undefined;
+    };
+
+/** The dump's own mode, re-derived, against the printed one. */
+export interface ModeScreenSelfCheck {
+  /** What the block declares as its mode. */
+  readonly dumpMode: string;
+  readonly source: LogTermSource;
+  readonly cases: number;
+  /**
+   * Services whose RE-DERIVED score differs from the printed one by more than 6e-4.
+   *
+   * The sharp half of the check, and the one that fires first: two reconstructions can
+   * rank identically while disagreeing numerically — which is exactly how a
+   * double-counted flood survived, because the ranks happened to hold on most cases.
+   */
+  readonly violations: number;
+  /**
+   * Cases whose rank-1 the re-derived term moves against the printed one.
+   *
+   * The half that decides whether the difference MATTERS: a score disagreement that
+   * never changes a winner is a rounding-scale statement, while one that does is a
+   * different prediction.
+   */
+  readonly gained: number;
+  readonly regressed: number;
 }
 
 /**
  * Pre-screen the log term's alternative modes against the run's own, from one dump.
  *
  * Every row is compared against the BASELINE ROW's per-case outcome, not against an
- * absolute count, because the instrument's own error bar moves the absolute count:
- * the counts-derived `logicHttp` row scores 5 cases above the run it is derived from,
- * and reporting that difference as a gain would be reporting a rounding artefact as a
- * mode's effect. Regressions are therefore counted per FAULT TYPE, which is what the
- * shared kill criterion asks about.
+ * absolute count. That was originally because the derived `logicHttp` row scored 5
+ * cases above the run it was derived from — an artefact, since the row IS the run's
+ * own mode. Those 5 were a reconstruction defect (the flood added two overlapping
+ * signature sets), now fixed, so the derived row reproduces the baseline exactly and
+ * the row-by-row difference is a mode's effect and nothing else. The per-case
+ * comparison stays: it is what makes the difference a difference of OUTCOMES rather
+ * than of rounding.
  *
  * @param cases - Parsed cases.
  * @param opts - The configuration to reconstruct at.
- * @returns The rows, baseline first.
+ * @returns The rows, baseline first; baseline only when the flood is unavailable.
  */
 export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOptions): ModeScreen {
-  const sources: readonly { source: LogTermSource; dominance: number | undefined }[] = [
-    { source: 'recorded', dominance: undefined },
-    { source: 'count', dominance: undefined },
-    { source: 'logicHttp', dominance: undefined },
-    ...opts.dominanceGrid.map((dominance) => ({ source: 'dominant' as const, dominance })),
-  ];
   // One list of scorable cases, built ONCE: a per-source rebuild of the type list
   // would pair each source's outcomes with a growing list of fault types and the
   // per-type tallies would silently read the wrong case's type.
@@ -1037,34 +1209,53 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
   const latSlopes = new Map(
     scorable.map((kase) => [kase, latencySlopes(kase.services, opts.latFloor)]),
   );
+  // A DISCRIMINATED pair rather than one record with a wide `source`: the rows below
+  // branch on whether the source is the baseline, and a union that cannot narrow would
+  // let `'recorded'` reach a function that requires a RE-DERIVABLE mode.
+  const sources: readonly ModeScreenEntry[] = [
+    { source: 'recorded', dominance: undefined },
+    { source: 'count', dominance: undefined },
+    { source: 'logicHttp', dominance: undefined },
+    ...opts.dominanceGrid.map((dominance) => ({ source: 'dominant' as const, dominance })),
+  ];
   const rows: ModeScreenRow[] = [];
-  const outcomes = new Map<string, boolean[]>();
   for (const entry of sources) {
+    // The ROW's population. A row that re-derives the log term can only be measured on
+    // the cases whose flood it can recover, and the BASELINE must be re-measured on the
+    // same list — comparing against a baseline computed on a different population would
+    // book the population difference as the mode's effect. The row therefore carries its
+    // own size, so a partial row is labelled rather than passed off as the whole dump.
+    const rowCases =
+      entry.source === 'recorded'
+        ? scorable
+        : scorable.filter((kase) => canReconstructLogFlood(kase.services, entry.source));
+    // A reconstruction with no case to measure is OMITTED, because an empty row would
+    // print as a mode that scored nothing rather than as one that could not be
+    // measured. The baseline is kept even when it is empty: it is the table's own
+    // shape, and a dump with nothing scorable is a real input whose report should still
+    // say so rather than vanish.
+    if (rowCases.length === 0 && entry.source !== 'recorded') continue;
     // The ROW's threshold, not the options': reading `opts.dominance` here rendered a
     // sweep whose every point was computed at the same threshold — a grid that printed
     // seven identical rows and read as a plateau the mode does not have. The threshold
     // has exactly one owner per row, and it is the row.
     const forRow: TermOracleOptions =
       entry.dominance === undefined ? opts : { ...opts, dominance: entry.dominance };
-    outcomes.set(
-      `${entry.source}@${entry.dominance ?? ''}`,
-      scorable.map((kase) => {
-        const root = new Set(kase.groundTruth.filter((name) => name !== ''));
-        const rankings = rankCase(kase, forRow, entry.source, latSlopes.get(kase)!);
-        return root.has(rankings.order[0] ?? '');
-      }),
-    );
-  }
-  const baseline = outcomes.get('recorded@')!;
-  for (const entry of sources) {
-    const hits = outcomes.get(`${entry.source}@${entry.dominance ?? ''}`)!;
+    const hits = rowCases.map((kase) => {
+      const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+      return root.has(rankCase(kase, forRow, entry.source, latSlopes.get(kase)!).order[0] ?? '');
+    });
+    const baselineHits = rowCases.map((kase) => {
+      const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+      return root.has(rankCase(kase, opts, 'recorded', latSlopes.get(kase)!).order[0] ?? '');
+    });
     const perType = new Map<string, { correct: number; total: number }>();
     const baseByType = new Map<string, number>();
     let correct = 0;
     let gainedCases = 0;
     let regressedCases = 0;
     for (let i = 0; i < hits.length; i++) {
-      const faultType = scorable[i]!.faultType;
+      const faultType = rowCases[i]!.faultType;
       const cell = perType.get(faultType) ?? { correct: 0, total: 0 };
       cell.total++;
       if (hits[i] === true) {
@@ -1072,9 +1263,9 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
         correct++;
       }
       perType.set(faultType, cell);
-      if (baseline[i] === true) baseByType.set(faultType, (baseByType.get(faultType) ?? 0) + 1);
-      if (hits[i] === true && baseline[i] !== true) gainedCases++;
-      if (baseline[i] === true && hits[i] !== true) regressedCases++;
+      if (baselineHits[i] === true) baseByType.set(faultType, (baseByType.get(faultType) ?? 0) + 1);
+      if (hits[i] === true && baselineHits[i] !== true) gainedCases++;
+      if (baselineHits[i] === true && hits[i] !== true) regressedCases++;
     }
     const gainedTypes = new Map<string, number>();
     const regressedTypes = new Map<string, number>();
@@ -1086,6 +1277,7 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
     rows.push({
       source: entry.source,
       dominance: entry.dominance,
+      cases: rowCases.length,
       correct,
       gainedCases,
       regressedCases,
@@ -1096,7 +1288,62 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
         .sort((a, b) => (a.key < b.key ? -1 : 1)),
     });
   }
-  return { rows };
+  return { rows, selfCheck: selfCheck(cases, rows) };
+}
+
+/**
+ * The dump's own log mode, as a row this reader can rebuild.
+ *
+ * The block declares the engine's mode name; only some of them are countable modes
+ * this reader reconstructs. `novelty` is deliberately absent: it is IDF-weighted and
+ * needs per-class line counts the dump does not carry, so it cannot be re-derived at
+ * all — claiming a self-check for it would be claiming a measurement that does not
+ * exist.
+ */
+const SELF_CHECK_MODE: Readonly<Record<string, Exclude<LogTermSource, 'recorded'> | undefined>> = {
+  count: 'count',
+  logicHttp: 'logicHttp',
+  logicHttpJoint: 'logicHttp',
+  logicHttpDominant: 'dominant',
+};
+
+/**
+ * Compare the re-derived row for the dump's own mode against the printed one.
+ *
+ * @param cases - The parsed dump, for the declared mode.
+ * @param rows - The rows the screen built.
+ * @returns The check, or `undefined` when the mode is not rebuildable or has no row.
+ */
+function selfCheck(
+  cases: readonly DiagnosedCase[],
+  rows: readonly ModeScreenRow[],
+): ModeScreenSelfCheck | undefined {
+  const dumpMode = cases[0]?.logSignalMode ?? '';
+  const source = SELF_CHECK_MODE[dumpMode];
+  if (source === undefined) return undefined;
+  // A `dominant` dump is checked at the ENGINE's default threshold, because the row for
+  // the threshold the run used is not identifiable from the dump — the block records
+  // the mode, not the threshold. The check is therefore exact for the countable modes
+  // and informative for `dominant`; saying which is being checked is the caller's job.
+  const row = rows.find((entry) => entry.source === source && entry.dominance === undefined);
+  if (row === undefined) return undefined;
+  let violations = 0;
+  for (const kase of cases) {
+    if (!canReconstructLogFlood(kase.services, source)) continue;
+    if (kase.logSignalMode !== dumpMode) continue;
+    const derived = logSlopesForMode(kase.services, source, DEFAULT_HTTP_DOMINANCE_THRESHOLD);
+    for (const service of kase.services) {
+      if (Math.abs((derived.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) violations++;
+    }
+  }
+  return {
+    dumpMode,
+    source,
+    cases: row.cases,
+    violations,
+    gained: row.gainedCases,
+    regressed: row.regressedCases,
+  };
 }
 
 /** Render a percentage with two decimals, for a report a human compares. */
@@ -1161,10 +1408,37 @@ export function formatFidelity(fidelity: OracleFidelity, opts: TermOracleOptions
     '  (a rank-1 differing from the recorded one is the CONFIGURATION moving the winner whenever ' +
       'these flags are not the dump’s own; the pool footprint above is measured, not inferred)',
   );
+  // TWO independent facts, and the first version of this line printed only one of
+  // them: how many cases cannot be reconstructed at all, and whether the ones that
+  // CAN agree with the engine. Reporting the first alone hides a defect in the rest
+  // (a non-zero violation count would never be shown), and reporting the second alone
+  // claims a clean reconstruction of a partial dump. Both, on one line, always.
+  const reconstructable = fidelity.cases - fidelity.unreconstructableCases;
+  const verdict =
+    reconstructable === 0
+      ? // No case to be exact about. "0 violations over 0 cases" is vacuously true and
+        // must not be rendered as EXACT, which is a claim about measurements taken.
+        'n/a — no case in this dump is reconstructable'
+      : fidelity.recordedLogViolations === 0 && fidelity.recordedLogFlips === 0
+        ? // The count is an EXACTNESS claim, not a tolerance: the derived term is built
+          // from the counts the engine itself used, so a non-zero value is a defect in
+          // the reconstruction. It read 5 while the flood double-counted overlapping
+          // lines, and `0` here is what says the mode rows below are exact.
+          'EXACT — the flood is the level-1 union, so the mode rows below carry no error bar'
+        : 'NON-ZERO — a reconstruction defect, not a tolerance: do not read the mode rows below';
   lines.push(
-    `  log term: counts-derived vs printed, services above 6e-4: ${fidelity.recordedLogViolations}; ` +
-      `cases whose rank-1 moves: ${fidelity.recordedLogFlips} (the error bar for any mode row below)`,
+    `  log term: services above 6e-4: ${fidelity.recordedLogViolations}; ` +
+      `cases whose rank-1 moves: ${fidelity.recordedLogFlips} (${verdict})`,
   );
+  if (fidelity.unreconstructableCases > 0) {
+    // Not a caveat but a status: the counters above are about the OTHER cases only, so
+    // printing them without this line would read as a reconstruction of the whole dump.
+    lines.push(
+      `  log term: ${fidelity.unreconstructableCases}/${fidelity.cases} cases predate the overlap count ` +
+        `(\`both=\`), so |logic ∪ http| is bracketed but not pinned there; the counters above are over the ` +
+        `other ${reconstructable}, and no mode row is drawn from an unpinned case`,
+    );
+  }
   return lines.join('\n');
 }
 
@@ -1225,9 +1499,29 @@ export function formatModeScreen(
       `  baseline ${label(baseline.source, baseline.dominance)}: ${baseline.correct} correct`,
     );
   }
+  // The self-check prints FIRST among the findings, because everything below it is
+  // measured through the same reconstruction: a reader who cannot see that the reader
+  // reproduces the run's own mode has no reason to read the rest.
+  const check = screen.selfCheck;
+  if (check !== undefined) {
+    const exact = check.violations === 0;
+    lines.push(
+      `  self-check: the dump's own mode (\`${check.dumpMode}\`) re-derived as \`${check.source}\` ` +
+        `${exact ? 'reproduces the printed term' : 'DISAGREES with the printed term'}: ` +
+        `${check.violations} service(s) differ, rank-1 moves +${check.gained}/-${check.regressed} ` +
+        `over ${check.cases} cases` +
+        (exact ? '' : ' — a reconstruction defect: do not read the rows below'),
+    );
+  }
   lines.push('  configuration           correct   +/-cases   regressed types');
+  const full = baseline?.cases ?? 0;
   for (const row of screen.rows) {
     const name = label(row.source, row.dominance).padEnd(22);
+    // A row measured on fewer cases than the baseline is a PARTIAL measurement, and the
+    // count that says so prints next to the number it qualifies: the +/- values are
+    // differences of outcomes, and a reader who cannot see the population cannot tell a
+    // mode's effect from the subset it was allowed to see.
+    const partial = row.cases < full ? ` [${row.cases}/${full} cases]` : '';
     const regressed =
       row.regressedTypes.length === 0
         ? '0  (PASSES the second half)'
@@ -1237,7 +1531,7 @@ export function formatModeScreen(
     lines.push(
       `  ${name}${String(row.correct).padStart(5)}   ` +
         `+${row.gainedCases}/-${row.regressedCases}`.padEnd(10) +
-        `  ${regressed}`,
+        `  ${regressed}${partial}`,
     );
   }
   return lines.join('\n');

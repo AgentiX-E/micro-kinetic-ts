@@ -75,6 +75,8 @@ interface ServiceSpec {
   onset?: number;
   http?: number;
   logic?: number;
+  /** Lines carrying BOTH signature flags; `0` means the two sets are disjoint. */
+  both?: number;
   dominant?: string | undefined;
   /**
    * Typed with the engine's own vocabulary rather than `string`: a test that can
@@ -96,10 +98,14 @@ function serviceLine(spec: ServiceSpec) {
     latRise: spec.latRise,
     latEdges: spec.latEdges ?? 0,
     onsetDelayMs: 'onset' in spec ? spec.onset : undefined,
-    errorCount: (spec.logic ?? 0) + (spec.http ?? 0),
+    // The error total is the level-1 UNION, not the sum of two counts that can
+    // overlap: a fixture whose `err` is smaller than `logic + http` describes a
+    // block the engine cannot write.
+    errorCount: (spec.logic ?? 0) + (spec.http ?? 0) - (spec.both ?? 0),
     fatalCount: 0,
     logicExceptionCount: spec.logic ?? 0,
     httpExceptionCount: spec.http ?? 0,
+    bothExceptionCount: spec.both ?? 0,
     sampleErrorMessages: [],
     exceptionClasses: [],
     metricOutcomes: spec.metricOutcomes,
@@ -297,6 +303,46 @@ describe('parseDiagnosticDump', () => {
     // And the rest of the line survived the edit, which is what proves the field is
     // additive rather than load-bearing.
     expect(src.selfAnomaly).toBeCloseTo(0.5, 6);
+  });
+
+  it('reads the overlap count, and reads a dump WITHOUT it as unknown rather than as zero', () => {
+    // `both=0` is a measurement (the two signature sets are disjoint) and an absent
+    // field is "not measured". The reader needs the union `|logic ∪ http|` to rebuild
+    // the log term's flood, so conflating the two would silently restore the
+    // double-count the field exists to remove.
+    const text = dump({
+      services: [
+        serviceLine({ serviceId: 'ts-flood', logic: 3495, http: 3499, both: 3495 }),
+        serviceLine({ serviceId: 'ts-clean', logic: 4, http: 6, both: 0 }),
+      ],
+    });
+    const parsed = parseDiagnosticDump(text)[0]!.services;
+    const byId = new Map(parsed.map((s) => [s.serviceId, s.bothExceptionCount]));
+    expect(byId.get('ts-flood')).toBe(3495);
+    expect(byId.get('ts-clean')).toBe(0);
+    // `ts-preserve-service` in the shipped dump is exactly the `0` case: logic 0,
+    // http 13 — a service whose overlap is measured to be nothing, not unmeasured.
+    expect(byId.get('ts-clean')).not.toBeUndefined();
+  });
+
+  it('parses an OLD line, where `onset` follows `http` with no overlap between them', () => {
+    // The positional trap this field creates: the parser reads the two optional
+    // trailing fields by index, so inserting `both` before `onset` shifts `onset` by
+    // one. An old line is the case that distinguishes the two orderings — it carries
+    // `onset` and no `both`, and a reader that still indexed `onset` at the old
+    // position would report the overlap's absence as a missing onset, or worse, take
+    // one for the other. The regex matches the two by literal, so the index follows.
+    const legacy = dump({
+      services: [serviceLine({ serviceId: 'ts-src', onset: 4200, logic: 7 })],
+    }).replace(/ both=\d+/, '');
+    expect(legacy).not.toContain('both=');
+    expect(legacy).toContain('onset=4200');
+    const src = parseDiagnosticDump(legacy)[0]!.services[0]!;
+    expect(src.onsetDelayMs).toBe(4200);
+    expect(src.bothExceptionCount).toBeUndefined();
+    // Every other field still lands where it should.
+    expect(src.logicExceptionCount).toBe(7);
+    expect(src.serviceId).toBe('ts-src');
   });
 
   it('reads the call graph as written, and reports an ABSENT graph as undefined', () => {

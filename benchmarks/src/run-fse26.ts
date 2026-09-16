@@ -156,6 +156,10 @@ function buildDiagnostic(
     let fatalCount = 0;
     let logicExceptionCount = 0;
     let httpExceptionCount = 0;
+    // The two signatures are counted independently and a line may carry both, so
+    // the union — the quantity the engine's level-1 gate actually admits — needs
+    // this third counter. Without it a reader has to add two overlapping sets.
+    let bothExceptionCount = 0;
     const sampleErrorMessages: string[] = [];
     const exceptionClassSet = new Set<string>();
     if (benchCase.logs) {
@@ -167,6 +171,7 @@ function buildDiagnostic(
         else if (log.level === 'FATAL') fatalCount++;
         if (isError && log.isLogicException) logicExceptionCount++;
         if (isError && log.isHttpException) httpExceptionCount++;
+        if (isError && log.isLogicException && log.isHttpException) bothExceptionCount++;
         if (isError && sampleErrorMessages.length < 3) sampleErrorMessages.push(log.message);
         if (isError && log.deepestExceptionClass) exceptionClassSet.add(log.deepestExceptionClass);
       }
@@ -191,6 +196,7 @@ function buildDiagnostic(
       fatalCount,
       logicExceptionCount,
       httpExceptionCount,
+      bothExceptionCount,
       sampleErrorMessages,
       exceptionClasses: [...exceptionClassSet].sort(),
       metricOutcomes,
