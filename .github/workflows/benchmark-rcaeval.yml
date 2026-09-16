@@ -7,6 +7,12 @@ on:
       - '.github/workflows/benchmark-rcaeval.yml'
       - 'scripts/convert-parquet-to-json.py'
       - 'benchmarks/src/**'
+      # The ENGINE. `packages/tree` holds the shipped score, the weights and the pruner, so it is the
+      # only tree that can move the golden 9-cell — and until this entry existed, a push touching
+      # nothing but `packages/.../src` triggered no benchmark at all. The kill criterion's second half
+      # is a claim about a RUN; a criterion nothing runs is not a criterion. Guarded by
+      # `benchmarks/__tests__/benchmark-rcaeval-trigger.test.ts`, which reads this list as text.
+      - 'packages/*/src/**'
   workflow_run:
     workflows: [Cache Benchmark Datasets]
     types: [completed]
