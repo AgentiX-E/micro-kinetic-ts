@@ -40,6 +40,7 @@ const svc = (serviceId: string, over: Partial<DiagnosedService> = {}): Diagnosed
   logicExceptionCount: 0,
   httpExceptionCount: 0,
   metricOutcomes: undefined,
+  decisiveOutcome: undefined,
   ...over,
 });
 
@@ -949,6 +950,60 @@ describe('the decisive composition — read from the metric that drove the score
     expect(read('decisiveCv', service)).toBeUndefined();
     expect(read('decisiveBurst', service)).toBeUndefined();
     expect(read('decisiveBaseline', service)).toBeUndefined();
+  });
+
+  it('prefers the composition the dump STATES over its own rendered list', () => {
+    // `metricDecisive` is rendered for every service and names the metric the engine maximised over,
+    // so it is a read rather than a re-derivation. The rendered list stays as the fallback for blocks
+    // that predate the line — which is why this fixture gives the two sources DIFFERENT numbers: a
+    // fixture that agreed could not tell the precedence from the fallback.
+    const service = svc('ts-a', {
+      dominantMetric: 'cpu.usage',
+      decisiveOutcome: {
+        label: 'cpu.usage',
+        outcome: 'kept',
+        score: 0.2,
+        breakdown: {
+          deviation: 1,
+          trend: 0.3,
+          cv: 0.07,
+          burst: 0.02,
+          riseRatio: 2,
+          dropRatio: 0.1,
+          baselineMean: 5,
+        },
+      },
+      metricOutcomes: [composed('latency-90', 0.9, { cv: 0.9, riseRatio: 40 })],
+    });
+
+    expect(read('decisiveCv', service)).toBe(0.07);
+    expect(read('decisiveBaseline', service)).toBe(5);
+  });
+
+  it('reads a composition without an inventory, and keeps the inventory unmeasurable', () => {
+    // A service the table never compares has a `metricDecisive` line and NO `metricKept` line. The
+    // composition is therefore readable while the counts are absent — and absent must stay `undefined`
+    // rather than becoming a count of zero, which is what a defaulted `kept` would report.
+    const service = svc('ts-bystander', {
+      decisiveOutcome: {
+        label: 'cpu.usage',
+        outcome: 'kept',
+        score: 0.2,
+        breakdown: {
+          deviation: 1,
+          trend: 0.3,
+          cv: 0.07,
+          burst: 0.02,
+          riseRatio: 2,
+          dropRatio: 0.1,
+          baselineMean: 5,
+        },
+      },
+    });
+
+    expect(read('decisiveCv', service)).toBe(0.07);
+    expect(read('kept', service)).toBeUndefined();
+    expect(read('bestDev', service)).toBeUndefined();
   });
 
   it('prefers the engine’s name over the score ordering when both are available', () => {

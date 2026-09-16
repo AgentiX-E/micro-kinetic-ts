@@ -141,16 +141,28 @@ interface Composition {
 /** One rendered metric outcome, as the parser produces it. */
 type Outcome = NonNullable<DiagnosedService['metricOutcomes']>[number];
 
-/** A service's rendered inventory, reduced to the numbers a signal can read. */
-interface Inventory {
+/** The four numbers a RENDERED inventory contributes. */
+interface RenderedInventory {
   readonly kept: number;
   readonly transient: number;
   /** The strongest deviation among the KEPT metrics — a lower bound, as the block is brief. */
   readonly bestDev: number;
   readonly bestRise: number;
+}
+
+/** A service's signal inventory, reduced to the numbers a signal can read. */
+interface Inventory {
   /**
-   * The composition of the metric that DROVE the score, or `undefined` when the block decomposed
-   * none of the service's kept metrics.
+   * The rendered competition, or `undefined` when the block rendered none for this service.
+   *
+   * An object rather than four loose numbers so "not rendered" stays distinguishable from a count of
+   * zero — the same rule the parser follows for the inventory itself, and the reason `kept` cannot be
+   * defaulted: the block prints the competition for the ground truth and the engine's predictions
+   * only, so every other service would otherwise report having kept nothing.
+   */
+  readonly rendered: RenderedInventory | undefined;
+  /**
+   * The composition of the metric that DROVE the score, or `undefined` when nothing stated it.
    *
    * Nested rather than spread into four numbers so that "no composition was rendered" is
    * representable: a zero `cv` is a measurement (a perfectly stable series), and reporting it for a
@@ -162,31 +174,31 @@ interface Inventory {
 /**
  * Read a service's rendered metric inventory.
  *
- * `undefined` when the block rendered none for this service, which is a different statement
- * from an inventory of nothing: `metricOutcomes` is absent when the formatter chose not to
- * print the line or the printed list was truncated, and a short list is reported as absent
- * rather than as a small one.
+ * `undefined` only when the block rendered NEITHER an inventory nor a decisive composition for this
+ * service. The two are separate provenances and either can be absent alone: the competition is
+ * rendered for the pairs the table compares, while `metricDecisive` is rendered for every service,
+ * so a service outside the table has a composition and no counts.
  */
 function inventoryOf(service: DiagnosedService): Inventory | undefined {
+  const renderedComposition = service.decisiveOutcome;
   const outcomes = service.metricOutcomes;
-  if (outcomes === undefined) return undefined;
+  if (outcomes === undefined && renderedComposition === undefined) return undefined;
+
   let kept = 0;
   let transient = 0;
   let bestDev = 0;
   let bestRise = 0;
-  // The dump answers "which metric drove the score" twice, and the two answers are not the same
-  // quantity. The engine NAMES the metric it maximised over (`dominant`), and the block renders that
-  // metric first because the list is sorted by score — but it renders at most three of them, and the
-  // list is sorted by score, not by rise. So the name is the primary answer (it survives the
-  // truncation), and the score ordering is the fallback for a dump that recorded no name.
-  //
-  // Reading the largest `riseRatio` instead — which is what this did — measures a different metric
-  // in 751 of the 7,733 rows the shipped dump decomposes (9.7%), i.e. not the metric that decided
-  // the ranking. The composition signals built on that read are unusable, which is why the
-  // `fse26-separator-verdict.md` block had to be closed as a confound rather than a null.
+  // Which metric drove the score, when the block did not state it. Two candidates, because the dump
+  // answers the question once by name and once by order: the engine NAMES the metric it maximised
+  // over (`dominant`), and the block renders that metric first because the list is sorted by score —
+  // but it renders at most three of them, and sorted by score rather than by rise. The name is the
+  // primary answer (it survives the truncation); the score ordering is the fallback for a dump that
+  // recorded no name. Reading the largest `riseRatio` instead — which this did — measures a
+  // different metric in 751 of the 7,733 rows the shipped dump decomposes (9.7%), i.e. not the
+  // metric that decided the ranking.
   let named: Outcome | undefined;
   let highest: Outcome | undefined;
-  for (const outcome of outcomes) {
+  for (const outcome of outcomes ?? []) {
     if (outcome.outcome === TRANSIENT_OUTCOME) {
       transient++;
       continue;
@@ -200,20 +212,21 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
     if (outcome.label === service.dominantMetric) named = outcome;
     if (highest === undefined || outcome.score > highest.score) highest = outcome;
   }
-  const decisive = named ?? highest;
+
+  // The dump's OWN line wins when it is there. It is a READ of the engine's answer rather than a
+  // re-derivation, and it is the only source that covers every service; the fallback exists for
+  // blocks that predate the line, and it selects by the same rule the producer uses.
+  const composition = renderedComposition?.breakdown ?? (named ?? highest)?.breakdown;
   return {
-    kept,
-    transient,
-    bestDev,
-    bestRise,
+    rendered: outcomes === undefined ? undefined : { kept, transient, bestDev, bestRise },
     decisive:
-      decisive === undefined
+      composition === undefined
         ? undefined
         : {
-            trend: decisive.breakdown!.trend,
-            cv: decisive.breakdown!.cv,
-            burst: decisive.breakdown!.burst,
-            baselineMean: decisive.breakdown!.baselineMean,
+            trend: composition.trend,
+            cv: composition.cv,
+            burst: composition.burst,
+            baselineMean: composition.baselineMean,
           },
   };
 }
@@ -340,7 +353,7 @@ export const SEPARATOR_SCALARS: readonly SeparatorScalar[] = [
     role: 'inventory',
     reads: ['metricOutcomes'],
     direction: 1,
-    of: (s) => inventoryOf(s)?.kept,
+    of: (s) => inventoryOf(s)?.rendered?.kept,
   },
   {
     name: 'transientDrops',
@@ -348,21 +361,21 @@ export const SEPARATOR_SCALARS: readonly SeparatorScalar[] = [
     reads: ['metricOutcomes'],
     // A source's signature should SURVIVE its own guards, so fewer drops is its evidence.
     direction: -1,
-    of: (s) => inventoryOf(s)?.transient,
+    of: (s) => inventoryOf(s)?.rendered?.transient,
   },
   {
     name: 'bestDev',
     role: 'inventory',
     reads: ['metricOutcomes'],
     direction: 1,
-    of: (s) => inventoryOf(s)?.bestDev,
+    of: (s) => inventoryOf(s)?.rendered?.bestDev,
   },
   {
     name: 'bestRise',
     role: 'inventory',
     reads: ['metricOutcomes'],
     direction: 1,
-    of: (s) => inventoryOf(s)?.bestRise,
+    of: (s) => inventoryOf(s)?.rendered?.bestRise,
   },
   // The COMPOSITION of the metric that drove the score. Read from the same decomposition the two
   // maxima come from, and SELECTED by the engine's own `dominant` name — so a candidate built on it
@@ -371,14 +384,14 @@ export const SEPARATOR_SCALARS: readonly SeparatorScalar[] = [
   {
     name: 'decisiveTrend',
     role: 'inventory',
-    reads: ['metricOutcomes', 'dominantMetric'],
+    reads: ['metricOutcomes', 'dominantMetric', 'decisiveOutcome'],
     direction: 1,
     of: (s) => inventoryOf(s)?.decisive?.trend,
   },
   {
     name: 'decisiveCv',
     role: 'inventory',
-    reads: ['metricOutcomes', 'dominantMetric'],
+    reads: ['metricOutcomes', 'dominantMetric', 'decisiveOutcome'],
     // An unstable series is a noisier measurement of the same excursion, so a lower coefficient
     // of variation is the source's evidence.
     direction: -1,
@@ -387,14 +400,14 @@ export const SEPARATOR_SCALARS: readonly SeparatorScalar[] = [
   {
     name: 'decisiveBurst',
     role: 'inventory',
-    reads: ['metricOutcomes', 'dominantMetric'],
+    reads: ['metricOutcomes', 'dominantMetric', 'decisiveOutcome'],
     direction: -1,
     of: (s) => inventoryOf(s)?.decisive?.burst,
   },
   {
     name: 'decisiveBaseline',
     role: 'inventory',
-    reads: ['metricOutcomes', 'dominantMetric'],
+    reads: ['metricOutcomes', 'dominantMetric', 'decisiveOutcome'],
     // The wrong winner rises from a LOWER baseline (median 0.86 against the source's 1.67), so a
     // higher baseline is the source's evidence: an absolute-level excursion, not a ratio on noise.
     direction: 1,
@@ -481,6 +494,8 @@ export const SERVICE_FIELD_AUDIT: Readonly<Record<keyof DiagnosedService, string
   bothExceptionCount: 'read: `sigLines`',
   metricOutcomes:
     'read: `kept`, `transientDrops`, `bestDev`, `bestRise` and the four composition scalars — but only for the four numbers and the decisive metric’s decomposition, not for the per-metric fate WORDS, which are a separate axis (the guard census)',
+  decisiveOutcome:
+    'read: `decisiveTrend`, `decisiveCv`, `decisiveBurst` and `decisiveBaseline` — the composition the block states for EVERY service, which is what lets a term built on it be simulated over every candidate rather than only over the pairs the table compares. It wins over the `dominantMetric` + rendered-list rule when present, and `metricOutcomes` remains the fallback for blocks that predate it',
 };
 
 /**
@@ -897,8 +912,10 @@ export function separatorCensus(
 
   /** Whether the two sides' inventories are comparable within `band`. */
   const comparable = (pair: SeparatorPair, band: number): boolean => {
-    const source = inventoryOf(pair.source);
-    const winner = inventoryOf(pair.winner);
+    const source = inventoryOf(pair.source)?.rendered;
+    const winner = inventoryOf(pair.winner)?.rendered;
+    // A pair whose block rendered no competition cannot be conditioned on one: the counts are
+    // absent, not zero, and `inventoryComparable(0, 0)` would call two unrendered sides comparable.
     return (
       source !== undefined &&
       winner !== undefined &&

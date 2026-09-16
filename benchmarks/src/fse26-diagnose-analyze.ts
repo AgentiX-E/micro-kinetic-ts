@@ -182,6 +182,19 @@ export interface DiagnosedService {
    * `gt_http = 0` for every replace-code case.
    */
   readonly metricOutcomes: readonly DiagnosedMetricOutcome[] | undefined;
+  /**
+   * The composition of the metric that drove this service's score, as the `metricDecisive` line
+   * reports it, or `undefined` when the block rendered none.
+   *
+   * A separate field from {@link metricOutcomes} because it exists for EVERY service, while the
+   * inventory is rendered only for the ground truth and the engine's predictions — and a term built
+   * on the decisive composition has to be SIMULATED over every candidate a case could promote, so
+   * the number cannot come from a line the block prints selectively.
+   *
+   * `undefined` means the block rendered no line: a dump from a producer that predates it, or a
+   * service whose named metric the block did not decompose. It is never a composition of zeroes.
+   */
+  readonly decisiveOutcome: DiagnosedMetricOutcome | undefined;
 }
 
 /** One case's diagnostic block, as data. */
@@ -240,6 +253,13 @@ const METRIC_DROP_RE = /^ {4}metricDrop\((\d+)\):(?: (.*))?$/;
  * fallback that could only ever fire on a line the producer cannot write.
  */
 const METRIC_TOP_RE = /^ {4}metricTop\((\d+)(?:\/(\d+))?\): (.+)$/;
+/**
+ * The decisive composition, one entry on a line of its own.
+ *
+ * `(.+)` rather than a shape check: the entry is validated by {@link parseTopEntry}, and a regex
+ * that spelled the seven numbers out again would be a second owner of the same shape.
+ */
+const METRIC_DECISIVE_RE = /^ {4}metricDecisive: (.+)$/;
 
 /**
  * `label=score{dev=…,trend=…,cv=…,burst=…,rise=…,drop=…,base=…}`.
@@ -269,13 +289,47 @@ function parseEntries(body: string | undefined, separator: '=' | ':'): string[][
     });
 }
 
-/** Split a bracketed list into trimmed, non-empty entries. */
+/**
+ * Split a bracketed list into trimmed, non-empty entries.
+ */
 function parseList(body: string | undefined): string[] {
   if (body === undefined) return [];
   return body
     .split(',')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Parse one `label=score{dev=…,trend=…,cv=…,burst=…,rise=…,drop=…,base=…}` entry.
+ *
+ * The seven decomposition numbers must all be finite, or the entry is rejected whole — a partially
+ * attached decomposition is worse than none, because it looks like a metric that genuinely carried
+ * no decomposition. The SCORE is returned unvalidated: the shape line never uses it (the kept
+ * scores come from `metricKept`), and the callers that do use it apply their own finiteness rule.
+ *
+ * @param entry - One space-separated entry from a composition line.
+ * @returns The parsed outcome, or `undefined` when the entry does not parse.
+ */
+function parseTopEntry(entry: string): DiagnosedMetricOutcome | undefined {
+  const m = TOP_ENTRY_RE.exec(entry);
+  if (m === null) return undefined;
+  const nums = [m[3], m[4], m[5], m[6], m[7], m[8], m[9]].map(Number);
+  if (!nums.every((n) => Number.isFinite(n))) return undefined;
+  return {
+    label: m[1]!,
+    outcome: 'kept',
+    score: Number(m[2]),
+    breakdown: {
+      deviation: nums[0]!,
+      trend: nums[1]!,
+      cv: nums[2]!,
+      burst: nums[3]!,
+      riseRatio: nums[4]!,
+      dropRatio: nums[5]!,
+      baselineMean: nums[6]!,
+    },
+  };
 }
 
 /**
@@ -286,8 +340,9 @@ function parseList(body: string | undefined): string[] {
  * thing that needs the mutable shape is the parser, and exposing it would let a
  * consumer mutate a parsed dump.
  */
-interface MutableService extends Omit<DiagnosedService, 'metricOutcomes'> {
+interface MutableService extends Omit<DiagnosedService, 'metricOutcomes' | 'decisiveOutcome'> {
   metricOutcomes: DiagnosedMetricOutcome[] | undefined;
+  decisiveOutcome: DiagnosedMetricOutcome | undefined;
 }
 
 /**
@@ -418,6 +473,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         onsetDelayMs:
           service[15] === undefined || service[15] === '-' ? undefined : Number(service[15]),
         metricOutcomes: undefined,
+        decisiveOutcome: undefined,
       };
       current.services.push(entries);
       lastService = entries;
@@ -456,6 +512,18 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
       continue;
     }
 
+    const decisive = METRIC_DECISIVE_RE.exec(line);
+    if (decisive && lastService !== undefined) {
+      // A single entry, so there is no declared count to guard: the line either parses whole or it
+      // is ignored. The SCORE is checked here rather than in the parser because this is the one
+      // place that reads it, and a `nonfinite` score is a block the inventory guard would reject
+      // anyway — accepting it here would let the composition outlive the inventory it came from.
+      const parsed = parseTopEntry(decisive[1]!);
+      lastService.decisiveOutcome =
+        parsed === undefined || !Number.isFinite(parsed.score) ? undefined : parsed;
+      continue;
+    }
+
     const top = METRIC_TOP_RE.exec(line);
     if (top && openOutcomes !== undefined) {
       // The shape line is space-separated like the other two, but each entry is
@@ -465,19 +533,9 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
       const byLabel = new Map<string, DiagnosedBreakdown>();
       let parsed = 0;
       for (const entry of raw) {
-        const m = TOP_ENTRY_RE.exec(entry);
-        if (m === null) continue;
-        const nums = [m[3], m[4], m[5], m[6], m[7], m[8], m[9]].map(Number);
-        if (!nums.every((n) => Number.isFinite(n))) continue;
-        byLabel.set(m[1]!, {
-          deviation: nums[0]!,
-          trend: nums[1]!,
-          cv: nums[2]!,
-          burst: nums[3]!,
-          riseRatio: nums[4]!,
-          dropRatio: nums[5]!,
-          baselineMean: nums[6]!,
-        });
+        const m = parseTopEntry(entry);
+        if (m === undefined || m.breakdown === undefined) continue;
+        byLabel.set(m.label, m.breakdown);
         parsed++;
       }
       // A render whose entries did not all parse, or that claims a different

@@ -315,6 +315,36 @@ function formatMetricCompetition(outcomes: readonly MetricDiagnostic[]): string[
 }
 
 /**
+ * Render the composition of the metric that drove this service's score.
+ *
+ * Rendered as a line of its own, in the same `label=score{...}` shape `metricTop` uses, for EVERY
+ * service — unlike the shape line, which is limited to the ground truth and the predictions because
+ * a reader of the table only compares those two. A term built on this composition has to be
+ * SIMULATED over every candidate a case could promote, so the number has to exist for every
+ * service, and one line is a bounded cost against a block that already prints several per service.
+ *
+ * The metric is the one the engine NAMED (`dominant`), so this reports the engine's answer rather
+ * than taking a second argmax that would be free to disagree with the ranking. There is deliberately
+ * no fallback: when the named metric carries no decomposition the line is absent, and the reader
+ * reports the composition as absent — which is a different statement from a composition of zeroes.
+ *
+ * @param service - One service's signal summary.
+ * @returns One line, or an empty array when no named metric carries a decomposition.
+ */
+function formatDecisiveComposition(service: FSE26DiagnosticService): string[] {
+  const decisive = service.metricOutcomes?.find(
+    (outcome) => outcome.outcome === 'kept' && outcome.label === service.dominantMetric,
+  );
+  const b = decisive?.breakdown;
+  if (decisive === undefined || b === undefined) return [];
+  return [
+    `    metricDecisive: ${decisive.label}=${fmt(decisive.score)}{dev=${fmt(b.deviation)},` +
+      `trend=${fmt(b.trend)},cv=${fmt(b.cv)},burst=${fmt(b.burst)},rise=${fmtRatio(b.riseRatio)},` +
+      `drop=${fmtRatio(b.dropRatio)},base=${fmtBase(b.baselineMean)}}`,
+  ];
+}
+
+/**
  * Render the per-service signal inventory for a single case.
  *
  * Services are sorted deterministically by self-anomaly (descending, then
@@ -381,6 +411,10 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
         (service.onsetDelayMs === undefined ? '' : ` onset=${fmtOnset(service.onsetDelayMs)}`),
     );
     lines.push(`    metrics(${service.metricNames.length}): ${metricList}`);
+    // Immediately after the metrics line, and outside the marked-rows condition below, because it
+    // belongs to every service: a simulation over every candidate needs it for the ones the table
+    // never compares.
+    lines.push(...formatDecisiveComposition(service));
     for (const sample of service.sampleErrorMessages) {
       lines.push(`    ERR: ${truncate(sample, 160)}`);
     }

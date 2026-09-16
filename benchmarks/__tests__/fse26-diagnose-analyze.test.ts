@@ -127,6 +127,19 @@ function dump(overrides: Partial<Parameters<typeof formatFSE26Diagnostic>[0]> = 
   });
 }
 
+/** A complete decomposition, with the one number a test here varies. */
+function breakdownOf(cv: number) {
+  return {
+    deviation: 1,
+    trend: 0.2,
+    cv,
+    burst: 0.01,
+    riseRatio: 4,
+    dropRatio: 0.1,
+    baselineMean: 2,
+  };
+}
+
 describe('parseDiagnosticDump', () => {
   it('reads a block produced by the real formatter', () => {
     const text = dump({
@@ -159,6 +172,38 @@ describe('parseDiagnosticDump', () => {
     expect(order.isGroundTruth).toBe(true);
     expect(order.predictedRank).toBe(2);
     expect(order.httpExceptionCount).toBe(0);
+  });
+
+  it('reads the decisive composition, including for a service the block never compares', () => {
+    // The line exists for EVERY service, which is the point: a term built on the decisive
+    // composition has to be simulated over every candidate a case could promote, and the table only
+    // compares the ground truth against the engine's rank-1.
+    const text = dump({
+      services: [
+        serviceLine({
+          serviceId: 'ts-bystander',
+          dominant: 'cpu',
+          metricOutcomes: [
+            { label: 'cpu', outcome: 'kept', score: 0.9, breakdown: breakdownOf(0.05) },
+            { label: 'memory', outcome: 'kept', score: 0.2, breakdown: breakdownOf(0.9) },
+          ],
+        }),
+      ],
+      topPredictions: ['ts-elsewhere'],
+    });
+
+    const service = parseDiagnosticDump(text)[0]!.services[0]!;
+    expect(service.decisiveOutcome?.label).toBe('cpu');
+    expect(service.decisiveOutcome?.breakdown?.cv).toBe(0.05);
+  });
+
+  it('reports no decisive composition for a block that predates the line', () => {
+    // A block without it is a dump whose producer printed the inventory only for the rows it
+    // compared. Absence is the honest reading: the screen then falls back on the rendered list
+    // rather than treating the missing number as a measurement.
+    const text = dump({ services: [serviceLine({ serviceId: 'ts-order-service' })] });
+
+    expect(parseDiagnosticDump(text)[0]!.services[0]!.decisiveOutcome).toBeUndefined();
   });
 
   it('ignores the surrounding log noise', () => {
@@ -530,6 +575,7 @@ describe('regressionMechanism', () => {
     logicExceptionCount: logic,
     httpExceptionCount: http,
     metricOutcomes: undefined,
+    decisiveOutcome: undefined,
   });
 
   it('recognises a silent source out-flooded by its caller', () => {
@@ -4562,6 +4608,9 @@ describe('guardCensus — a guard’s footprint against a within-type control', 
     logicExceptionCount: 0,
     httpExceptionCount: 0,
     metricOutcomes: outcomes,
+    // The guard census reads the inventory, not the decisive composition, so this fixture leaves the
+    // line absent — which is also what a block from a producer that predates it looks like.
+    decisiveOutcome: undefined,
   });
   /** One case: the source carries `sig` metric outcomes, the rival `rival`. */
   const caseOf = (

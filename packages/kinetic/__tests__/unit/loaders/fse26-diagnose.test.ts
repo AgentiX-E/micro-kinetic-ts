@@ -597,6 +597,75 @@ describe('formatFSE26Diagnostic — anomaly shape', () => {
     expect(out).not.toContain('metricTop');
   });
 
+  it('renders the decisive composition for EVERY service, marked or not', () => {
+    // The shape line above is limited to the ground truth and the predictions, because a reader of
+    // the TABLE only compares those two. A term built on the decisive composition is a different
+    // question: it has to be simulated over every candidate a case could promote, so the number has
+    // to exist for services the dump does not mark — and it is the metric the engine NAMED, so this
+    // is a report of the engine's answer rather than a second argmax free to disagree with it.
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-elsewhere'],
+        topPredictions: ['ts-also-elsewhere'],
+        services: [
+          service({
+            serviceId: 'ts-bystander',
+            dominantMetric: 'container.memory.usage',
+            metricOutcomes: [
+              { label: 'container.cpu.usage', outcome: 'kept', score: 0.9, breakdown },
+              { label: 'container.memory.usage', outcome: 'kept', score: 0.4, breakdown },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain(
+      'metricDecisive: container.memory.usage=0.400' +
+        '{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3}',
+    );
+    // The shape line is still the marked rows' line: this addition does not widen it.
+    expect(out).not.toContain('metricTop');
+  });
+
+  it('omits the decisive line when the engine named no metric', () => {
+    // `dominantMetric` is `undefined` when the engine recorded none. There is no fallback here:
+    // choosing one would be the formatter deciding which metric was decisive, and the dump already
+    // has an owner for that answer.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            dominantMetric: undefined,
+            metricOutcomes: [{ label: 'a', outcome: 'kept', score: 1, breakdown }],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).not.toContain('metricDecisive');
+  });
+
+  it('omits the decisive line when the named metric carries no decomposition', () => {
+    // A named metric the block did not decompose has no composition to report. Printing a zeroed
+    // one would turn "not rendered" into a measurement of a perfectly stable series.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            dominantMetric: 'a',
+            metricOutcomes: [
+              { label: 'a', outcome: 'kept', score: 1 },
+              { label: 'b', outcome: 'kept', score: 0.5, breakdown },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).not.toContain('metricDecisive');
+  });
+
   it('survives a non-finite decomposition value rather than printing NaN', () => {
     const render = (patch: Partial<typeof breakdown>): string =>
       formatFSE26Diagnostic(
