@@ -45,6 +45,7 @@ import type {
   CallEdge,
   MetricDiagnostic,
   MetricDiagnosticOutcome,
+  MetricScoreBreakdown,
   ServiceCallGraph,
   ServiceId,
   TimeSeries,
@@ -668,25 +669,17 @@ interface AnomalyFeatures {
 }
 
 /**
- * The raw feature-score decomposition of a metric's anomaly, for the failure
- * diagnostics. Reveals WHY a metric out-ranked another (deviation vs trend vs
- * CV vs burst), which a single scalar score cannot.
+ * The feature-score decomposition of a metric's anomaly, as the diagnostics render it. Reveals WHY
+ * a metric out-ranked another (deviation vs trend vs CV vs burst), which a single scalar score
+ * cannot.
+ *
+ * Extends the PUBLIC declaration rather than restating it. The seven shared fields' docs — three of
+ * which are bonuses, and the formulas are the only thing that says so — live in one place
+ * (`MetricScoreBreakdown` in core), and a copy here is how the bonus semantics came to be documented
+ * in this file while the public type next to seven bare names read as raw statistics. Inheritance
+ * also makes the compiler the guard: a field that stops matching fails the build.
  */
-export interface MetricBreakdown {
-  /** log10(1 + ratio) — the direction-aware deviation magnitude. */
-  readonly deviation: number;
-  /** trendStrength × 0.15 — the monotonic-slope bonus (0 when suppressed). */
-  readonly trend: number;
-  /** min(cv, 1.5) × 0.05 — the coefficient-of-variation bonus. */
-  readonly cv: number;
-  /** deviation × 0.1 — the burst bonus. */
-  readonly burst: number;
-  /** (max − baseline) / baseline — the rise component. */
-  readonly riseRatio: number;
-  /** (baseline − min) / baseline — the drop component (before discount). */
-  readonly dropRatio: number;
-  /** The pre-anomaly baseline used to compute both ratios. */
-  readonly baselineMean: number;
+export interface MetricBreakdown extends MetricScoreBreakdown {
   /** The collapseDiscount in effect when the score was computed. */
   readonly collapseDiscount: number;
 }

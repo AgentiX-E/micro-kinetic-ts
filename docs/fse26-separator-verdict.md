@@ -367,7 +367,15 @@ a candidate at the top of the table for the first time. Three caveats travel wit
    **0.372** on the matched stratum, so the family is not one signal.
 3. **A paired preference is still not a term.** `decisiveCv` is a candidate, and what it needs is the
    window solver on both benchmarks — it cannot be promoted from this table, for the reason
-   `fse26-term-oracle-verdict.md` §9 records at length.
+   `fse26-term-oracle-verdict.md` §9 records at length. That solver now exists
+   (`fse26-cv-screen.md`, behind `--cv-screen`).
+4. **The statistic is a clamped BONUS, not a coefficient of variation.** `breakdown.cv` holds the
+   engine's `cvBonus = cv > 0.5 ? Math.min(cv, 1.5) * 0.05 : 0`, so it is `0` (raw `cv ≤ 0.5`), the
+   ceiling `0.075`, or one of 50 steps between `0.025` and `0.075` — measured over the 20,787
+   services of a 409-case snapshot, **20.36% sit at exactly 0 and 23.24% at exactly the clamp**. The
+   RATE above is unaffected (an AUC is a rank statistic and the field is monotone in dispersion), but
+   it means the order is the measured part and the magnitude is not: a term built on this field must
+   say which reading it is, and `rank` is the faithful one.
 
 **A provenance correction, recorded rather than quietly fixed.** The reader defect and the matched
 comparison were first measured on `r35029055764`, and both documents called that dump "the shipped

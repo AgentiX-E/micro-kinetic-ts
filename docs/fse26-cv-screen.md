@@ -33,14 +33,47 @@ shapes are: "no weight on THIS shape works" leaves the axis open on a technicali
 
 | shape | `cvShape(v)` | what it hypothesises |
 | --- | --- | --- |
-| `flip` (default) | `(max − cv) / max` | the MAGNITUDE of the dispersion is the evidence |
-| `rank` | `(n − 1 − avgRank) / (n − 1)`, ascending in `cv` | only the ORDER is; the magnitude is noise |
+| `flip` (default) | `(max − b) / max` over the decisive **bonus** `b` | the MAGNITUDE of the bonus is the evidence |
+| `rank` | `(n − 1 − avgRank) / (n − 1)`, ascending in `b` | only the ORDER is; the magnitude is noise |
 
-`flip` is max-normalised like every other fusion term, so the least stable service in the case is the
-origin and the term is a **distance** rather than a level. Both shapes are inert when the case holds
-fewer than two measured cvs — one cv is not a comparison — and both average the ranks of equal cvs,
-because two services the statistic cannot tell apart must not be separated by whichever one a sort
-left first.
+### The field is a CLAMPED BONUS, not a coefficient of variation
+
+`metricDecisive` prints `breakdown.cv`, and that field holds the engine's `cvBonus`, not the raw
+dispersion:
+
+```ts
+// packages/tree/src/causal/topology-fault-graph.ts
+const cvBonus = cv > 0.5 ? Math.min(cv, 1.5) * 0.05 : 0;
+```
+
+So it takes only three kinds of value — `0` (raw `cv ≤ 0.5`), the ceiling `0.075` (`Math.min`
+saturating), and the 50 steps between `0.025` and `0.075`. Measured on the first 409 cases of run
+`35107871516`, over the 20,787 services carrying a composition:
+
+| value | services | share |
+| --- | --- | --- |
+| exactly `0` | 4,232 | **20.36%** |
+| exactly `0.075` (the clamp) | 4,830 | **23.24%** |
+| the 50 interior values | 11,725 | 56.40% |
+
+**43.6% of services sit on one of the two endpoints**, so `flip`'s "magnitude" is for most of the
+population a two-level bucket and for the rest a 1/40 grid. This is not a defect in the term — the
+separator's rate was measured on this same field — but it decides which shape is FAITHFUL: an AUC is
+a rank statistic, so **`rank` is the faithful translation of the finding**, and `flip` additionally
+assumes the magnitude carries information that a clamped bonus largely does not. Both are therefore
+reported, and any verdict has to name the shape it is about.
+
+The public declaration of this shape said "Raw feature-score decomposition" next to seven bare field
+names while the tree package's own copy carried the formulas — which is how a screen came to read a
+clamped bonus as a coefficient of variation. `MetricScoreBreakdown` in `packages/core` is now the one
+documented declaration, and the tree's `MetricBreakdown` extends it rather than restating it, so the
+compiler is the guard against the two drifting apart.
+
+`flip` is max-normalised like every other fusion term, so the service carrying the LARGEST bonus —
+the most dispersed one — is the origin and the term is a **distance** rather than a level. Both shapes
+are inert when the case holds fewer than two measured compositions (one bonus is not a comparison),
+and both average the ranks of equal values, because two services the statistic cannot tell apart must
+not be separated by whichever one a sort left first.
 
 ## 2. Absent is not zero, and it is measured
 
@@ -48,13 +81,13 @@ A service whose decisive composition the block did not render gets a slope of **
 Returning it the term's maximum for a measurement nobody made is the error this family exists to
 avoid, and `flip` would do exactly that if `undefined` were read as `cv = 0`.
 
-That choice is not hypothetical, so the instrument prints its footprint: on the first 267 cases of
-run `35107871516`, **13,353 of 13,619 services (98.0%)** carry a composition. The gate is on the
+That choice is not hypothetical, so the instrument prints its footprint: on the first 409 cases of
+run `35107871516`, **20,436 of 20,862 services (98.0%)** carry a composition. The gate is on the
 report, not on the reader's goodwill:
 
 ```
-  evidence: 267 cases; with a decisive composition 13353 of 13619 services; with a SPREAD the term
-  can act on 267
+  evidence: 409 cases; with a decisive composition 20436 of 20862 services; with a SPREAD the term
+  can act on 409
 ```
 
 A case with two measurements that AGREE is listed as measured and is not counted as comparable —
@@ -147,3 +180,7 @@ The tests that carry the design, and why each exists:
 - **every section the parser accepts renders through the dispatcher** — the census sections had no
   end-to-end test, which left the one place where a flag that parses and validates can still render
   nothing outside the gate.
+- **the breakdown's public declaration documents every field and names each bonus's formula** — a
+  structural guard on `packages/core/src/types/graph.ts` (a bare field fails whatever it is named),
+  because the misreading this screen made was possible only while the formulas lived in one package
+  and the public type named seven raw statistics. It failed first, as it should.

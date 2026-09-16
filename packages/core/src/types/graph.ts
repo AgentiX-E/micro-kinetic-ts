@@ -97,6 +97,41 @@ export type MetricDiagnosticOutcome =
   | 'sub-epsilon-deviation';
 
 /**
+ * The decomposition of a metric's feature-weighted anomaly score.
+ *
+ * **THREE of the seven fields hold BONUSES, not the statistics their names claim.** The names are
+ * the raw features that enter the bonus; the value is what the bonus ADDED to the score:
+ *
+ *   score = deviation + trend + cv + burst
+ *
+ * Named for what it IS rather than `MetricBreakdown`, because the failure diagnostics carry a
+ * RICHER record of the same shape — `MetricBreakdown` in the tree package, which adds the collapse
+ * discount and inherits this one. Two hand-written copies of one shape is how the bonus semantics
+ * came to be documented in one place and read as raw statistics in the other: a screen built on `cv`
+ * as if it were a coefficient of variation reported a bimodal dispersion from a clamped bonus.
+ */
+export interface MetricScoreBreakdown {
+  /** `log10(1 + ratio)` — the direction-aware deviation magnitude, the score's main term. */
+  readonly deviation: number;
+  /** The monotonic-slope BONUS: `trendStrength × 0.15`, or 0 below a strength of 0.1. */
+  readonly trend: number;
+  /**
+   * The coefficient-of-variation BONUS: `min(cv, 1.5) × 0.05`, or 0 when the raw cv is at or below
+   * 0.5. Clamped at both ends, so it takes only three kinds of value — `0`, the ceiling `0.075`,
+   * and the 50 steps between `0.025` and `0.075`.
+   */
+  readonly cv: number;
+  /** The burst BONUS: `deviation × 0.1` when a point exceeds mean + 3σ, else 0. */
+  readonly burst: number;
+  /** `(max − baseline) / baseline` — the raw rise component. */
+  readonly riseRatio: number;
+  /** `(baseline − min) / baseline` — the raw drop component. */
+  readonly dropRatio: number;
+  /** The pre-anomaly baseline both ratios were measured against. */
+  readonly baselineMean: number;
+}
+
+/**
  * The fate of one metric inside one node's anomaly competition.
  *
  * Every metric a node carries yields exactly one entry, so the list can be
@@ -115,15 +150,7 @@ export interface MetricDiagnostic {
    */
   readonly score: number;
   /** The score decomposition. Present only when `outcome` is `kept`. */
-  readonly breakdown?: {
-    readonly deviation: number;
-    readonly trend: number;
-    readonly cv: number;
-    readonly burst: number;
-    readonly riseRatio: number;
-    readonly dropRatio: number;
-    readonly baselineMean: number;
-  };
+  readonly breakdown?: MetricScoreBreakdown;
 }
 
 /**
@@ -164,20 +191,11 @@ export interface FaultPropagationGraph {
       /** Labels of metrics discarded by the transient-spike guard. */
       readonly transientSkipped: string[];
       /**
-       * Raw feature-score decomposition (deviation / trend / cv / burst /
-       * riseRatio / dropRatio / baselineMean) — a diagnostic for why one
-       * metric out-ranked another. Optional: diagnostic-only, not a ranking
-       * input.
+       * The score decomposition (see {@link MetricBreakdown} — three of its fields are BONUSES) —
+       * a diagnostic for why one metric out-ranked another. Optional: diagnostic-only, not a
+       * ranking input.
        */
-      readonly breakdown?: {
-        readonly deviation: number;
-        readonly trend: number;
-        readonly cv: number;
-        readonly burst: number;
-        readonly riseRatio: number;
-        readonly dropRatio: number;
-        readonly baselineMean: number;
-      };
+      readonly breakdown?: MetricScoreBreakdown;
     }
   >;
   /**
