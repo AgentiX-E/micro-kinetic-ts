@@ -552,12 +552,55 @@ export interface SeparatorCriterion {
 export const DEFAULT_SEPARATOR_CRITERION: SeparatorCriterion = { minAuc: 0.6, minCases: 10 };
 
 /**
+ * The inventory band a COARSENED match uses, as a ratio between the two sides' kept counts.
+ *
+ * Exact equality is the ideal conditioning and the one with no power: on the shipped dump the two
+ * sides render the same number of kept metrics in only 26 of 662 pairs, so a check built on strict
+ * equality can only ever conclude "the confound is saturated". Two — the smallest band that keeps a
+ * majority of the population (484 of 662) — is the coarsened match reported beside it, stated as a
+ * ratio so "comparable" is a number the reader can disagree with.
+ */
+export const INVENTORY_MATCH_BAND = 2;
+
+/**
+ * Whether two services' inventories are comparable, i.e. within `band` of each other.
+ *
+ * A side that kept nothing is comparable only to another side that kept nothing: `kept` is a count
+ * whose zero is a boundary, and a ratio from zero is undefined rather than large.
+ *
+ * @param sourceKept - Kept-metric count of the true source.
+ * @param winnerKept - Kept-metric count of the engine's rank-1.
+ * @param band - The largest ratio between the two counts that still counts as comparable.
+ * @returns Whether the pair can be conditioned on inventory size.
+ */
+export function inventoryComparable(
+  sourceKept: number,
+  winnerKept: number,
+  band: number = INVENTORY_MATCH_BAND,
+): boolean {
+  const low = Math.min(sourceKept, winnerKept);
+  const high = Math.max(sourceKept, winnerKept);
+  if (low === 0) return high === 0;
+  return high / low <= band;
+}
+
+/**
  * The fold count, matching the discriminator's default.
  *
  * Not configurable: it is the SAME split the discriminator fits on, and a second knob would let
  * the two modules report different held-out fifths of one dump.
  */
 const FOLDS = 5;
+
+/** A cell's counts over the inventory-MATCHED subset of its row's pairs. */
+export interface SeparatorNearCell {
+  /** Matched pairs the signal could order — this rate's own denominator. */
+  readonly pairs: number;
+  readonly source: number;
+  readonly winner: number;
+  readonly tie: number;
+  readonly auc: number | undefined;
+}
 
 /** One signal's outcome over one set of pairs. */
 export interface SeparatorCell {
@@ -574,6 +617,16 @@ export interface SeparatorCell {
   readonly auc: number | undefined;
   /** The exact two-sided permutation p-value over the NON-tie pairs, or `undefined`. */
   readonly p: number | undefined;
+  /**
+   * The same counts over the pairs whose two sides have COMPARABLE inventories.
+   *
+   * A decomposition-based signal is confounded with how many metrics each side keeps, and the
+   * confound is not hypothetical: `kept` and `decisiveCv` correlate at r = 0.436 across the pairs'
+   * services, and the source keeps fewer metrics than the winner in 511 of 662. Exact equality
+   * cannot condition that away (26 pairs), so the band-matched subset is reported beside the
+   * headline rate — descriptive, with its size, rather than a second claim selected from a scan.
+   */
+  readonly near: SeparatorNearCell;
 }
 
 /** One cell that survives the multiplicity bar: a per-type claim that is worth a run. */
@@ -622,6 +675,14 @@ export interface SeparatorRow {
    * column is how a reader sees it without running anything else.
    */
   readonly sameInventoryPairs: number;
+  /**
+   * Pairs whose two sides are within {@link INVENTORY_MATCH_BAND} of each other on kept metrics.
+   *
+   * The coarsened twin of {@link sameInventoryPairs}, and the one with power: it is what turns "the
+   * confound is saturated" into a rate on a stratum, at the price of that stratum not being the
+   * whole population (the pairs it drops are the ones where the two inventories differ most).
+   */
+  readonly nearInventoryPairs: number;
   readonly cells: readonly SeparatorCell[];
 }
 
@@ -658,6 +719,8 @@ export interface SeparatorCensus {
   readonly readings: number;
   /** The per-test significance level after the Šidák correction over {@link readings}. */
   readonly adjustedAlpha: number;
+  /** The ratio band the matched column uses; see {@link INVENTORY_MATCH_BAND}. */
+  readonly inventoryBand: number;
   /**
    * Per-type cells that clear the bar IN THE SOURCE'S FAVOUR — a signal that prefers the source
    * more often than the winner, at the corrected level. The only per-type claims worth a run.
@@ -736,8 +799,9 @@ interface Tally {
 }
 
 /** Turn a tally into a cell, computing the rate once. */
-function toCell(name: string, role: SeparatorRole, tally: Tally): SeparatorCell {
+function toCell(name: string, role: SeparatorRole, tally: Tally, near: Tally): SeparatorCell {
   const measurable = tally.source + tally.winner + tally.tie;
+  const nearMeasurable = near.source + near.winner + near.tie;
   return {
     name,
     role,
@@ -747,6 +811,13 @@ function toCell(name: string, role: SeparatorRole, tally: Tally): SeparatorCell 
     unmeasurable: tally.unmeasurable,
     auc: measurable === 0 ? undefined : (tally.source + tally.tie / 2) / measurable,
     p: separationPValue(tally.source, tally.winner),
+    near: {
+      pairs: nearMeasurable,
+      source: near.source,
+      winner: near.winner,
+      tie: near.tie,
+      auc: nearMeasurable === 0 ? undefined : (near.source + near.tie / 2) / nearMeasurable,
+    },
   };
 }
 
@@ -824,35 +895,46 @@ export function separatorCensus(
     pairs.push({ datapack: kase.datapack, faultType: kase.faultType, source, winner });
   }
 
-  /** Whether both sides render the same number of kept metrics, i.e. are comparable. */
-  const sameInventory = (pair: SeparatorPair): boolean => {
+  /** Whether the two sides' inventories are comparable within `band`. */
+  const comparable = (pair: SeparatorPair, band: number): boolean => {
     const source = inventoryOf(pair.source);
     const winner = inventoryOf(pair.winner);
-    return source !== undefined && winner !== undefined && source.kept === winner.kept;
+    return (
+      source !== undefined &&
+      winner !== undefined &&
+      inventoryComparable(source.kept, winner.kept, band)
+    );
   };
 
   const build = (faultType: string, subset: readonly SeparatorPair[]): SeparatorRow => {
+    const empty = (): Tally => ({ source: 0, winner: 0, tie: 0, unmeasurable: 0 });
     const tallies = new Map<string, Tally>(
-      SEPARATOR_SIGNALS.map((signal) => [
-        signal.name,
-        { source: 0, winner: 0, tie: 0, unmeasurable: 0 },
-      ]),
+      SEPARATOR_SIGNALS.map((signal) => [signal.name, empty()]),
+    );
+    const nearTallies = new Map<string, Tally>(
+      SEPARATOR_SIGNALS.map((signal) => [signal.name, empty()]),
     );
     for (const pair of subset) {
       const subject = subjectOf.get(pair.datapack)!;
+      const matched = comparable(pair, INVENTORY_MATCH_BAND);
       for (const signal of SEPARATOR_SIGNALS) {
-        const tally = tallies.get(signal.name)!;
         const verdict = signal.prefers(pair, subject);
+        const tally = tallies.get(signal.name)!;
         if (verdict === 'unmeasurable') tally.unmeasurable++;
         else tally[verdict]++;
+        if (!matched) continue;
+        const near = nearTallies.get(signal.name)!;
+        if (verdict === 'unmeasurable') near.unmeasurable++;
+        else near[verdict]++;
       }
     }
     return {
       faultType,
       pairs: subset.length,
-      sameInventoryPairs: subset.filter(sameInventory).length,
+      sameInventoryPairs: subset.filter((pair) => comparable(pair, 1)).length,
+      nearInventoryPairs: subset.filter((pair) => comparable(pair, INVENTORY_MATCH_BAND)).length,
       cells: SEPARATOR_SIGNALS.map((signal) =>
-        toCell(signal.name, signal.role, tallies.get(signal.name)!),
+        toCell(signal.name, signal.role, tallies.get(signal.name)!, nearTallies.get(signal.name)!),
       ),
     };
   };
@@ -952,6 +1034,7 @@ export function separatorCensus(
     criterion,
     readings,
     adjustedAlpha,
+    inventoryBand: INVENTORY_MATCH_BAND,
     survivors,
     dominated,
   };
@@ -1020,7 +1103,15 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
   lines.push(
     '  pairs a decomposition-based signal can be conditioned on, so a confound check can state its',
   );
-  lines.push('  power: saturated (few) is not the same as excluded (many)');
+  lines.push(
+    `  power: saturated (few) is not the same as excluded (many). \`kept<=\` is the COARSENED match ` +
+      `(within a factor of ${census.inventoryBand}), which is the stratum the matched columns are ` +
+      'read on:',
+  );
+  lines.push(
+    '  it is not the whole population, because the pairs it drops are the ones whose inventories',
+  );
+  lines.push('  differ most');
   lines.push(
     '  a tie counts as half a win; the p-value excludes ties, which carry no direction; `n/a` is',
   );
@@ -1033,7 +1124,9 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
     '  by fault type'.padEnd(labelWidth) +
       'n'.padStart(5) +
       '  kept='.padStart(7) +
-      '  metric      log      lat temporal   best non-term            AUC          p',
+      ' kept<='.padStart(7) +
+      '  metric      log      lat temporal   best non-term            AUC          p' +
+      '  AUC(matched)',
   );
   for (const row of [...census.rows, census.total]) {
     const label = row.faultType === '' ? 'ALL' : row.faultType;
@@ -1045,9 +1138,11 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
       best !== undefined && best.p! < census.adjustedAlpha && best.p !== undefined ? ' *' : '  ';
     lines.push(
       `  ${label.padEnd(labelWidth - 2)}${String(row.pairs).padStart(5)}` +
-        `${String(row.sameInventoryPairs).padStart(7)}${columns}   ` +
+        `${String(row.sameInventoryPairs).padStart(7)}` +
+        `${String(row.nearInventoryPairs).padStart(7)}${columns}   ` +
         `${(best?.name ?? 'none measurable').padEnd(22)}${aucText(best?.auc).padStart(6)}` +
-        `${pText(best?.p).padStart(12)}${mark}`,
+        `${pText(best?.p).padStart(12)}${mark}` +
+        `${aucText(best?.near.auc).padStart(14)}`,
     );
   }
   lines.push('');
@@ -1060,7 +1155,9 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
       'tie'.padStart(6) +
       'n/a'.padStart(6) +
       'AUC'.padStart(8) +
-      'p'.padStart(11),
+      'p'.padStart(11) +
+      `  n(kept<=${census.inventoryBand})`.padStart(15) +
+      '  AUC(matched)'.padStart(14),
   );
   for (const cell of [...census.total.cells].sort(
     (a, b) => (b.auc ?? -1) - (a.auc ?? -1) || (a.name < b.name ? -1 : 1),
@@ -1070,7 +1167,8 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
         `${String(measurableOf(cell)).padStart(6)}` +
         `${String(cell.source).padStart(8)}${String(cell.winner).padStart(8)}` +
         `${String(cell.tie).padStart(6)}${String(cell.unmeasurable).padStart(6)}` +
-        `${aucText(cell.auc).padStart(8)}${pText(cell.p).padStart(11)}`,
+        `${aucText(cell.auc).padStart(8)}${pText(cell.p).padStart(11)}` +
+        `${String(cell.near.pairs).padStart(15)}${aucText(cell.near.auc).padStart(14)}`,
     );
   }
   lines.push('');

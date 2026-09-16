@@ -4,12 +4,14 @@ import type { DiagnosedCase, DiagnosedService } from '../src/fse26-diagnose-anal
 import { foldOf } from '../src/fse26-discriminator.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
+  INVENTORY_MATCH_BAND,
   SEPARATOR_SCALARS,
   SEPARATOR_SIGNALS,
   SERVICE_FIELD_AUDIT,
   adjustedAlphaOver,
   formatSeparatorCensus,
   fromScalar,
+  inventoryComparable,
   screenedFields,
   separationPValue,
   separatorCensus,
@@ -982,6 +984,66 @@ describe('the decisive composition — read from the metric that drove the score
     for (const name of ['decisiveTrend', 'decisiveCv', 'decisiveBurst', 'decisiveBaseline']) {
       expect(scalar(name).reads, name).toContain('dominantMetric');
     }
+  });
+});
+
+describe('the coarsened inventory match — stating the stratum a confound check can use', () => {
+  /** A rendered inventory of `kept` metrics, so two sides can agree or disagree on the count. */
+  const inv = (serviceId: string, kept: number, anomaly: number) => ({
+    ...svc(serviceId, { selfAnomaly: anomaly }),
+    metricOutcomes: Array.from({ length: kept }, () => ({
+      label: 'm',
+      outcome: 'kept',
+      score: 1,
+    })),
+  });
+
+  it('treats a ratio up to the band as comparable, and zero only against zero', () => {
+    expect(INVENTORY_MATCH_BAND).toBe(2);
+    expect(inventoryComparable(10, 20)).toBe(true);
+    expect(inventoryComparable(20, 10)).toBe(true);
+    expect(inventoryComparable(10, 21)).toBe(false);
+    expect(inventoryComparable(1, 2)).toBe(true);
+    expect(inventoryComparable(1, 3)).toBe(false);
+    expect(inventoryComparable(0, 0)).toBe(true);
+    // A count's zero is a boundary rather than a small number: a ratio from zero is undefined, not
+    // large, so a side that kept nothing is comparable only to another side that kept nothing.
+    expect(inventoryComparable(0, 1)).toBe(false);
+    expect(inventoryComparable(7, 0)).toBe(false);
+  });
+
+  it('counts the band-matched pairs beside the exactly-matched ones', () => {
+    // Exact equality is the ideal conditioning and the one with no power — 26 of 662 pairs on the
+    // shipped dump. The band is what gives the check something to stand on.
+    const census = separatorCensus([
+      wrongCase('exact', undefined, [inv('ts-src', 21, 0.4), inv('ts-rival', 21, 1)]),
+      wrongCase('near', undefined, [inv('ts-src', 21, 0.4), inv('ts-rival', 30, 1)]),
+      wrongCase('far', undefined, [inv('ts-src', 5, 0.4), inv('ts-rival', 41, 1)]),
+    ]);
+    expect(census.total.pairs).toBe(3);
+    expect(census.total.sameInventoryPairs).toBe(1);
+    expect(census.total.nearInventoryPairs).toBe(2);
+    expect(census.inventoryBand).toBe(INVENTORY_MATCH_BAND);
+  });
+
+  it('reads a cell on the matched stratum rather than on the whole row', () => {
+    // `kept` is measurable for every pair, so its matched cell is the arithmetic and nothing else:
+    // the source keeps 2 against the winner's 3 (matched — a loss) and 1 against 5 (not matched,
+    // so not in this rate).
+    const census = separatorCensus([
+      wrongCase('matched', undefined, [inv('ts-src', 2, 0.4), inv('ts-rival', 3, 1)]),
+      wrongCase('unmatched', undefined, [inv('ts-src', 1, 0.4), inv('ts-rival', 5, 1)]),
+    ]);
+    const kept = census.total.cells.find((cell) => cell.name === 'kept')!;
+    expect(kept.winner).toBe(2);
+    expect(kept.near).toEqual({ pairs: 1, source: 0, winner: 1, tie: 0, auc: 0 });
+  });
+
+  it('prints the band with the matched columns, so the stratum is stated', () => {
+    const text = formatSeparatorCensus(separatorCensus([wrongCase('one')]));
+    expect(text).toContain('kept<=');
+    expect(text).toMatch(/within a factor of 2/);
+    expect(text).toContain('AUC(matched)');
   });
 });
 

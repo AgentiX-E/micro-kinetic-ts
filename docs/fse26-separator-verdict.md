@@ -306,23 +306,75 @@ closed**, and the reason is now a number instead of an inference:
 | pairs where the source keeps FEWER | **511 of 662** |
 | pairs with an exact `kept` match (the `kept=` column) | 26 of 662 |
 
-The signals separate in the same direction as inventory size, the two are correlated well above
-chance, and the exact-match conditioning has 26 pairs to stand on. So "`decisiveCv` separates" still
-cannot be attributed to the decisive composition rather than to `kept` — it is the same axis wearing
-a different name.
+The signals separate in the same direction as inventory size, and the two are correlated well above
+chance, so the unconditional rate cannot be attributed to the decisive composition rather than to
+`kept`. **That also excludes the reopening condition this section used to state.** "A dump that
+renders the decisive metric for every service" would not help: the decisive metric is already
+rendered for every service a pair compares (that is why `n/a` is 0 for all four). What is asymmetric
+is how many metrics each side KEEPS — so what the confound check needs is an **inventory-MATCHED**
+comparison, and that is now in the tool rather than in a paragraph.
 
-**That also excludes the reopening condition this section used to state.** "A dump that renders the
-decisive metric for every service" would not help: the decisive metric is already rendered for every
-service a pair compares (that is why `n/a` is 0 for all four signals). What is asymmetric is how many
-metrics each side KEEPS, so the instrument the confound check needs is an **inventory-matched**
-comparison — a coarsened `kept` band with its size printed beside the rate, in place of an exact
-match that 26 of 662 pairs can supply.
+### 6.2 The matched comparison, and the verdict it changes
 
-Two things moved as a consequence of the fix rather than beside it: the audit's `dominantMetric` entry
-had to be reclassified from `NOT read` to `read:` (the four scalars now declare it in
-`SeparatorScalar.reads`, and the field audit's two-directional check fails the build otherwise), and
-the reader's own test suite was validated by **mutation** — restoring the old largest-rise rule fails
-four of the new tests, so the assertions measure the fix rather than the fixture.
+`INVENTORY_MATCH_BAND = 2` (a ratio) is exported with `inventoryComparable`; every row counts its
+`kept<=` pairs beside its exact `kept=` ones; and every cell carries a `near` sub-cell read on that
+stratum, printed in both tables. The band is stated in the legend together with the sentence that
+keeps it honest: *the matched stratum is not the whole population, because the pairs it drops are the
+ones whose inventories differ most.*
+
+The instrument was validated against an independent probe before it was trusted: the probe's
+unmatched rates reproduce the printed table exactly (`decisiveCv` 0.742 on 446-125-91, `decisiveBurst`
+0.585, `decisiveBaseline` 0.647, `edgeRecords` 0.453), and the probe's matched rates reproduce the new
+columns (`decisiveCv` 0.722 on 484, and 0.657 / 0.637 / 0.865 / 1.000 per type).
+
+| signal | AUC (all 662) | matched n | AUC (kept ratio ≤ 2) |
+| --- | --- | --- | --- |
+| `decisiveCv` | 0.742 | 484 | **0.722** |
+| `decisiveBaseline` | 0.647 | 484 | 0.599 |
+| `decisiveBurst` | 0.585 | 484 | 0.566 |
+| `inDegree` (best non-`decisive*` non-term) | 0.529 | 484 | 0.533 |
+| `edgeRecords` | 0.453 | 484 | 0.469 |
+| `kept` — the confound itself | 0.208 | 484 | **0.271** |
+
+Per type, the row's best signal with its matched rate:
+
+| type | best non-term | AUC | matched n | AUC (matched) |
+| --- | --- | --- | --- | --- |
+| `HTTPResponseReplaceCode` | `edgeRecords` | 0.908 | 48 | 0.865 |
+| `HTTPResponseReplaceCode` | `decisiveCv` | 0.884 | 48 | 0.885 |
+| `HTTPRequestReplaceMethod` | `decisiveBaseline` | 0.794 | 50 | 0.780 |
+| `NetworkPartition` | `errLines` | 0.781 | 46 | 0.793 |
+| `ContainerKill` | `decisiveCv` | 0.711 | 40 | 0.637 |
+| `JVMMemoryStress` | `decisiveCv` | 0.687 | 86 | 0.657 |
+| `PodFailure` | `decisiveCv` | 1.000 | 23 | **1.000** |
+
+**The confound is now excluded rather than saturated, and `decisiveCv` survives it.** Matching removes
+the inventory difference by construction — and the check that it did is that the confound stops being
+a separator: `kept` falls from 0.208 to 0.271, still far below the criterion, while `decisiveCv`
+retains **0.722 on 484 pairs**, which is the ONLY non-term rate in the table that clears the 0.6
+criterion on the matched stratum (`decisiveBaseline` 0.599 is next and falls just short).
+
+So the block's status changes, and the change is the instrument's, not the numbers': `decisiveCv`
+moves from **not established** to **established as a separator under a stated inventory match**, with
+a candidate at the top of the table for the first time. Three caveats travel with it, all of them
+measured:
+
+1. The balanced stratum is 484 of 662 pairs, and the 178 it drops are systematically the ones where
+   the source keeps far fewer metrics — so the matched rate describes that stratum, not the whole
+   population. The unconditional 0.742 is an upper bound; **0.722 is the number to quote.**
+2. `decisiveCv`'s separations are per-population, like `edgeRecords`': the two `decisive*` siblings
+   point the same way (`Baseline` 0.599, `Burst` 0.566) but `decisiveTrend` is the other way at
+   **0.368** on the matched stratum, so the family is not one signal.
+3. **A paired preference is still not a term.** `decisiveCv` is a candidate, and what it needs is the
+   window solver on both benchmarks — it cannot be promoted from this table, for the reason
+   `fse26-term-oracle-verdict.md` §9 records at length.
+
+Two things moved as a consequence of the reader fix rather than beside it: the audit's
+`dominantMetric` entry had to be reclassified from `NOT read` to `read:` (the four scalars now declare
+it in `SeparatorScalar.reads`, and the field audit's two-directional check fails the build otherwise),
+and the reader's own test suite was validated by **mutation** — restoring the old largest-rise rule
+fails four of the new tests, so the assertions measure the fix rather than the fixture.
+
 
 
 **`edgeRecords` does hold, and it refines a register sentence.** It reads `failedEdgeRecords`, a raw
