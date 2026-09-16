@@ -2893,6 +2893,14 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     `  services carrying a decisive composition: ${a.servicesMeasured}/${a.servicesTotal} ` +
       `(${share})`,
   );
+  // The population this window protects. A gain with no population is unreadable — `gain 4` means one thing out of 3
+  // correct cases and another out of 700 — and these three counts come from the BASE, which no
+  // shape touches. `correct at 0` is also the instrument's fidelity line: the base IS the shipped
+  // score, so it is the number of cases the dump's own ranking got right.
+  lines.push(
+    `  cases ${s.window.cases}; correct at 0 ${s.window.satisfied}; ` +
+      `unreachable at every weight ${s.window.unreachable}`,
+  );
   if (a.casesComparable === 0) {
     lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
     lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
@@ -2965,6 +2973,14 @@ export function formatCvMenuReport(
     `  services carrying a decisive composition: ${a.servicesMeasured}/${a.servicesTotal} ` +
       `(${share})`,
   );
+  // The population every shape shares. A gain with no population is unreadable — `gain 4` means one thing out of 3
+  // correct cases and another out of 700 — and these three counts come from the BASE, which no
+  // shape touches. `correct at 0` is also the instrument's fidelity line: the base IS the shipped
+  // score, so it is the number of cases the dump's own ranking got right.
+  lines.push(
+    `  cases ${first.solved.window.cases}; correct at 0 ${first.solved.window.satisfied}; ` +
+      `unreachable at every weight ${first.solved.window.unreachable}`,
+  );
   if (a.casesComparable === 0) {
     lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
     lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
@@ -2991,7 +3007,7 @@ export function formatCvMenuReport(
     const s = screen.solved;
     if (s.gain > 0) {
       lines.push('');
-      lines.push(...formatCvScreenReport(screen, weights).split('\n').slice(3));
+      lines.push(...formatCvScreenReport(screen, weights).split('\n').slice(4));
     } else if (s.window.capBinder !== undefined) {
       const b = s.window.capBinder;
       lines.push(

@@ -82,26 +82,45 @@ review.
 
 ## 4. What was measured, and what is still owed
 
-Solved on the first 267 of the 1422 cases (the first ~26 MiB of a 151 MiB log — **provisional: a
-window is a function of the population, and more cases can only add constraints**):
+The instrument's first act is to check itself: the base IS `shippedScores`, so `correct at 0` is also
+the number of cases the dump's own ranking got right. On a frozen 409-case snapshot of run
+`35107871516` (48 MiB of a 151 MiB log — a growing file cannot be measured twice):
+
+| quantity | value |
+| --- | --- |
+| cases the screen solves | 409 |
+| cases the dump's own `prediction` gets right | **251** |
+| the screen's `correct at 0` | **251** |
+| cases no weight can fix | 141 |
+
+**251 = 251 exactly.** The reconstruction reproduces the run's own rank-1 correctness case for case,
+which is what makes a gain against it meaningful rather than a gain against a second implementation.
+
+Solved on the same snapshot — **provisional: a window is a function of the population, and more cases
+can only add constraints**:
 
 | shape | gain | window | width | ship | lost at ship | cap binder |
 | --- | --- | --- | --- | --- | --- | --- |
-| `flip` | 4 | `[0.047350, 0.050507]` | 0.003157 | 0.048928 | 0 | `ts1-ts-food-service-exception-ch2v8l` |
-| `rank` | 1 | `[0.029860, 0.031282]` | 0.001422 | 0.030571 | 0 | `ts1-ts-food-service-exception-ch2v8l` |
+| `flip` | 5 | `[0.047350, 0.050507]` | 0.003157 | 0.048928 | 0 | `ts1-ts-food-service-exception-ch2v8l` |
+| `rank` | 2 | `[0.029860, 0.031282]` | 0.001422 | 0.030571 | 0 | `ts1-ts-food-service-exception-ch2v8l` |
 
-Enough to say the term is **not inert and not immediately worthless**, and nothing more: four cases
-of 267 is a rate, not a verdict, and the full-population window is what the kill criterion asks
-about. The two shapes do NOT agree, which is itself the point of the menu — the magnitude buys four
-times what the order does on this stratum.
+Enough to say the term is **not inert and not immediately worthless**, and nothing more: five cases of
+409 is a rate, not a verdict, and the full-population window is what the kill criterion asks about.
+The two shapes do NOT agree, which is itself the point of the menu — the magnitude buys two and a half
+times what the order does on this stratum. Note also that the window did not move between 267 and 409
+cases, which is reassuring and is not evidence: the added cases can only bind the cap further, and a
+cap that has not moved is a cap that has not been tested.
 
 **The measurement is owed on:**
 1. the full 1422 cases of `35107871516` — the same run, the whole log;
 2. the golden 9-cell, which cannot be measured offline at all: the cv term does not exist in the
-   engine yet, so the RCAEval half of the kill criterion needs a candidate run.
+   engine yet, so the RCAEval half of the kill criterion needs a candidate run. What that run can be
+   is constrained by construction — a new fusion weight defaults to 0, so an opt-in weight leaves the
+   golden configuration bit-for-bit unchanged and the candidate is measured by passing the flag, not
+   by moving the default.
 
-Both are blocked on the same thing and are recorded here rather than inferred: an instrument that
-has only been read on 19% of its population has not answered the question it was built for.
+Both are recorded here rather than inferred: an instrument read on 29% of its population has not
+answered the question it was built for.
 
 ## 5. Acceptance of the instrument itself
 

@@ -5048,6 +5048,39 @@ describe('cvScreen — the cv penalty, solved rather than swept', () => {
       expect(screen.solved.gain).toBe(1);
     }
   });
+
+  it('protects a population that does not depend on the shape', () => {
+    // A gain with no population is unreadable: `gain 4` means one thing out of 3 correct cases and
+    // another out of 700. The counts come from the BASE, which neither shape touches, so they must
+    // agree — and `correct at 0` is also the instrument's fidelity line, because the base IS the
+    // shipped score.
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.9, 0.5],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const menu = cvShapeMenu(cases, WEIGHTS);
+    const flip = menu[0]!.solved.window;
+    const rank = menu[1]!.solved.window;
+    expect(flip.cases).toBe(rank.cases);
+    expect(flip.satisfied).toBe(rank.satisfied);
+    expect(flip.unreachable).toBe(rank.unreachable);
+    // One of the two cases is correct at `w = 0` — the one whose root leads on the metric term.
+    expect(flip.cases).toBe(2);
+    expect(flip.satisfied).toBe(1);
+    expect(flip.unreachable).toBe(0);
+    expect(formatCvMenuReport(menu, WEIGHTS)).toContain('correct at 0');
+    expect(formatCvScreenReport(menu[0]!, WEIGHTS)).toContain('correct at 0 1');
+  });
 });
 
 describe('formatCvMenuReport — availability first, then one row per shape', () => {
