@@ -1,0 +1,47 @@
+/**
+ * Type-check the workspace files that no package project compiles.
+ *
+ * Each package's own `tsconfig.json` is a BUILD config: it includes `src/**`
+ * and nothing else, because `tsup` emits `dist` from it and tests or tool
+ * configs must not end up in there. `rootDir: ./src` makes that explicit -- a
+ * file outside `src` would be a TS6059 error, not merely unwanted.
+ *
+ * Three sets of TypeScript therefore had no compiler reading them (written here
+ * without the literal glob, because a path like `packages/<pkg>/__tests__/**`
+ * contains a star-slash sequence that would CLOSE THIS COMMENT and leave the
+ * remaining text to be parsed as JSON):
+ *
+ *   - each package's `__tests__` tree -- the suites. This is where a production
+ *     contract is asserted, so an unchecked assertion is the cheapest way to be
+ *     wrong. Enrolling it reported 178 errors across 29 files.
+ *   - each package's own `*.ts` at its root -- `vitest.config.ts`,
+ *     `tsup.config.ts`. A typo'd option here is a configuration defect with no
+ *     execution path: every line can be covered while the tooling silently does
+ *     something else.
+ *   - `integration-tests`' root `*.ts`, which its tsconfig excludes along with
+ *     everything else outside `src`.
+ *
+ * This config is deliberately separate from the per-package ones rather than
+ * merged into them, so `dist` keeps containing only `src`; it has `noEmit`.
+ * Run it through `pnpm typecheck:workspace`, or as part of `pnpm typecheck`,
+ * which is what CI and the pre-push hook call.
+ *
+ * NOTE: like the `integration-tests/` and `benchmarks/` configs, this one
+ * resolves `@agentix-e/*` imports through each package's built `dist`
+ * declarations. Run `pnpm build` first -- the same order CI uses.
+ */
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "packages/*/*.ts",
+    "packages/*/__tests__/**/*.ts",
+    "integration-tests/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

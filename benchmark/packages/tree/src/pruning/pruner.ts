@@ -1,0 +1,1739 @@
+/**
+ * TreePruner — collision tree fault propagation graph pruner.
+ *
+ * Implements the IRCAEngine interface, mapping Deng Yu's collision tree
+ * pruning theory to AIOps root cause analysis.
+ *
+ * ## Algorithm (Deng Yu Mapping)
+ *
+ * 1. **Cycle Detection**: Enumerate all simple cycles in the fault
+ *    propagation graph using Johnson's algorithm. Each cycle corresponds
+ *    to a closed-loop collision trajectory C in the BBGKY hierarchy.
+ *
+ * 2. **Contribution Computation**: For each cycle C, compute:
+ *      w(C) = ∏_{e∈C} propagationWeight(e)
+ *    This is the collision cross-section product.
+ *
+ * 3. **Pruning**: For each cycle, remove the weakest edge (smallest
+ *    propagation weight). This discards the least-probable collision
+ *    trajectory and preserves the dominant fault-propagation paths.
+ *
+ * 4. **Tree RCA**: On the resulting acyclic tree, perform bottom-up
+ *    anomaly score accumulation in O(V+E) time.
+ *
+ * ## Critical Load Theorem
+ *
+ * Deng Yu proved: if systemLoad < λ_critical, then Σw(C) ≤ K×ε.
+ * This guarantees that in rarefied (low-load) regimes, residual
+ * cycle contribution is bounded below the prune threshold.
+ *
+ * @module pruning/pruner
+ */
+
+import {
+  DEFAULT_RCA_OPTIONS,
+  invariant,
+  invariantPositiveInt,
+  invariantRange,
+  type BuildFaultGraphOptions,
+  type DetectedCycle,
+  type FaultEdgeLatency,
+  type FaultPropagationGraph,
+  type MetricMap,
+  type PrunedEdgeRecord,
+  type PrunedTree,
+  type RCAEngineOptions,
+  type RankingWeights,
+  type RootCauseResult,
+  type ServiceCallGraph,
+  type ServiceId,
+  type ServiceNode,
+  type TreeNodeScore,
+} from '@agentix-e/micro-kinetic-core';
+
+import { aggregateFaultEnergy, type FaultGraphEdge } from '../causal/collision-aggregator.js';
+import type { TopologyFaultGraphConfig } from '../causal/topology-fault-graph.js';
+import { buildTopologyFaultGraph } from '../causal/topology-fault-graph.js';
+import { JohnsonCycleDetector, cycleKey } from '../graph/cycle-detector.js';
+import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contribution.js';
+import { computePrismScores } from './prism-signal.js';
+import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
+import {
+  computeDeepestExceptions,
+  computeEdgeLatencyScores,
+  computeFailedEdgeScores,
+  computeLogScores,
+  computePoolMetricScores,
+  computeRiseScores,
+  computeTopoSourceScores,
+  computeTraceActivityScores,
+  gatedRiseContribution,
+} from './ranking-signals.js';
+
+/**
+ * Options for TreePruner construction.
+ * Extends the core RCAEngineOptions with pruner-specific settings.
+ */
+export interface TreePrunerOptions extends RCAEngineOptions {
+  /** 1-hop decay factor α ∈ (0, 1]. Default: 0.8 */
+  readonly decayAlpha: number;
+  /** 2-hop coupling coefficient β ∈ [0, 1]. Default: 0.3 */
+  readonly decayBeta: number;
+  /** Whether to use 2-hop decay model (default: 1-hop) */
+  readonly useTwoHopDecay: boolean;
+  /** Maximum number of cycles to enumerate */
+  readonly maxCycles: number;
+  /**
+   * Enable Boltzmann Q(f,f) collision energy aggregation (I8-P3).
+   * When disabled, the engine falls back to raw anomaly scores
+   * with no collision type amplification in ranking.
+   * Default: true (collision aggregation enabled).
+   */
+  readonly enableCollisionAggregation: boolean;
+  /**
+   * Weight of the source-likelihood signal in root-cause ranking.
+   *
+   * The ranking combines a node's self-anomaly with a dataset-agnostic
+   * causality prior: a service whose anomaly ONSET precedes its causal
+   * neighbours' is more likely to be the fault source (cause precedes
+   * effect — Deng Yu's mean free time τ). A higher weight favours the
+   * source over a larger downstream symptom. `0` disables the signal
+   * (pure self-anomaly ranking).
+   *
+   * Default: 0 — the onset-ordering signal is opt-in. It is shipped
+   * disabled because, at weight 1.0, it regressed the benchmark (#193):
+   * the naive onset detection was too noisy to reliably separate source
+   * from symptom, and the signal could not overcome even a small
+   * self-anomaly gap. Re-enable at a low weight only after the onset
+   * detector has been validated against real data.
+   */
+  readonly sourceWeight: number;
+  /**
+   * Weight of the GLOBAL injection-anchored temporal prior in root-cause ranking.
+   *
+   * Unlike `sourceWeight` (a LOCAL neighbour-fraction prior based on the
+   * index-based, self-derived-baseline onset), this signal is anchored to
+   * the fault INJECTION time: each service's onset delay after injection is
+   * computed from a clean pre-injection baseline, turned into a slope by
+   * {@link computeOnsetSlopes} in whatever shape `onsetShape` names, and added in
+   * log1p space:
+   *
+   *   finalScore(v) = log1p(selfAnomaly(v)) + temporalWeight × slope(v)
+   *
+   * When the injection time is unknown, or fewer than two services have a
+   * determined onset, every slope is 0 and the signal has no effect.
+   *
+   * Default {@link DEFAULT_TEMPORAL_WEIGHT}, measured as a PAIR with
+   * {@link DEFAULT_ONSET_SHAPE} — and the shape is not decoration, it is what the
+   * weight was measured ON. The signal's only earlier measurement at a non-zero weight
+   * used the min-max `earliness` shape and was a net regression of ≈ −2.5pp on RCAEval
+   * (#207/#208): the injection-anchored onset systematically anchors to the SOURCE's
+   * slow-responding dominant metric (latency/socket), which crosses the 30% deviation
+   * threshold LATE, while a symptom's fast metrics (workload/cpu) cross it EARLY. That
+   * mechanism makes "earliest onset = source" a claim about the SHAPE, so the shape is
+   * where it was answered: `earliest-only` is one-sided and cannot demote anybody.
+   */
+  readonly temporalWeight: number;
+  /**
+   * Which shape the temporal prior reads the onset delays in.
+   *
+   * The weight decides HOW MUCH the term matters; this decides WHAT it says. They are a
+   * PAIR rather than two settings, and the pairing is measured: a weight is a claim
+   * about a shape, so a value quoted without the shape it was measured on is not a
+   * configuration. See {@link OnsetShape} for what each one asserts.
+   *
+   * Default {@link DEFAULT_ONSET_SHAPE}. Inert while `temporalWeight` is 0 — the term is
+   * multiplied by the weight — which is why the shape could be enrolled, screened and
+   * dispatched before the weight was chosen, and why flipping it alone can never move a
+   * published number.
+   */
+  readonly onsetShape: OnsetShape;
+  /**
+   * Weight of the collision-energy signal: penalise a node whose fault energy
+   * is mostly INHERITED from upstream rather than self-generated.
+   *
+   *   finalScore(v) −= collisionWeight × ratioContrib(v)
+   *
+   * `ratioContrib(v) = collisionGain / (local + collisionGain)` is the
+   * fraction of v's Boltzmann fault energy coming from its parents. A source
+   * generates its own fault (ratioContrib ≈ 0) and is untouched; a fan-in
+   * symptom aggregates upstream faults (ratioContrib → 1) and is penalised.
+   *
+   * Default: 0 (opt-in). The direction of the call-graph edges is a known
+   * assumption to validate via ablation — resource faults can propagate
+   * callee → caller, in which case this directed penalty would misfire.
+   */
+  readonly collisionWeight: number;
+  /**
+   * Weight of the topological-source signal: reward a node with no strongly
+   * anomalous upstream parent.
+   *
+   *   finalScore(v) += topoWeight × topoSource(v)
+   *
+   * `topoSource(v) = 1 − max over parents p of (propagationWeight(p→v) ×
+   * anomaly(p))` — a source has no explaining parent (score 1), a symptom is
+   * explained by an already-anomalous parent (score low). This is a PURE
+   * structural signal, deliberately distinct from the nonlinear collision
+   * gain so the two can be ablated independently.
+   *
+   * Default: 0 (opt-in).
+   */
+  readonly topoWeight: number;
+  /**
+   * Weight of the log signal: reward a node whose post-injection ERROR/FATAL
+   * log volume is highest.
+   *
+   *   finalScore(v) += logWeight × logScore(v)
+   *
+   * `logScore(v)` is the max-normalised count of SELF-CAUSED logic-exception
+   * lines emitted at/after the fault injection time (see computeLogScores).
+   * Code-level faults (uncaught exceptions, stack traces) are frequently
+   * visible only in logs, so this targets the RE3 cases that metric-shape
+   * signals cannot distinguish. The count is passed through the engine as
+   * `BuildFaultGraphOptions.logs`.
+   *
+   * Default: 1.0 (enabled). Benchmark #220 measured the logic-exception-
+   * weighted signal as net-positive with ZERO regression: RE2 resource
+   * cascades are neutral (connectivity exceptions are excluded, so the signal
+   * does not misfire onto symptoms), while RE3 code-level faults are lifted
+   * (OnlineBoutique +13.4pp, SockShop +3.3pp). It is the first ranking signal
+   * to ship enabled; the other causal priors remain opt-in.
+   */
+  readonly logWeight: number;
+  /**
+   * The log signal's scoring mode:
+   *
+   * - `count` (default): the max-normalised count of self-caused
+   *   logic-exception lines per service (benchmark-validated #220).
+   * - `novelty`: each logic-exception line is weighted by the inverse document
+   *   frequency of its DEEPEST `Caused by:` exception class, so a service
+   *   emitting a rare, specific root cause out-scores one emitting a shared
+   *   HTTP wrapper (e.g. Spring's `HttpServerErrorException`).
+   * - `logicHttp`: counts logic exceptions PLUS framework HTTP exceptions —
+   *   the source signature of FSE'26 `HTTPResponseReplaceCode`, whose source
+   *   floods `HttpClientErrorException`/`HttpServerErrorException` while the
+   *   logic gate scores it 0. Lifted Top@1 +30.0pp but regressed 15 cases
+   *   where a VICTIM floods the same direction-symmetric exception.
+   * - `logicHttpJoint`: `logicHttp` plus a call-graph TOPOLOGY gate — the
+   *   framework-HTTP half is suppressed for a service whose callee is MORE
+   *   anomalous (that callee is the real source, so the emitter is a victim).
+   *   Separates the replace-code source (healthy callee) from the
+   *   memory/bandwidth/killed-source victim (anomalous callee). FALSIFIED
+   *   (rank-normalised scores defeat the relative comparison — see
+   *   docs/fse26-logicHttpJoint-falsified.md).
+   * - `logicHttpDominant`: `logicHttp` plus an EMITTER-CONCENTRATION gate — the
+   *   framework-HTTP half is suppressed ENTIRELY when the flood is SPREAD
+   *   across many callers (a victim cascade) rather than concentrated on one
+   *   emitter (a source). Rank-normalisation-proof (never compares anomaly
+   *   scores). FALSIFIED before ablation (run 34482091814): the victim flood is
+   *   itself concentrated ~70% of the time, so concentration does not separate
+   *   source from victim — see docs/fse26-emitter-dominance-falsified.md.
+   * - `all`: the max-normalised count of EVERY ERROR/FATAL line (no
+   *   logic-exception gate). Targets fault classes whose SOURCE floods a
+   *   propagated HTTP error (e.g. FSE'26 HTTPResponseReplaceCode).
+   *
+   * `novelty`, `logicHttp`, `logicHttpJoint`, `logicHttpDominant` and `all` are
+   * opt-in until benchmarked; `count` is the shipped default.
+   */
+  readonly logSignalMode: LogSignalMode;
+  /**
+   * Weight of the metric-direction (RISE) signal: reward a node whose DOMINANT
+   * metric rises post-injection; penalise a COLLAPSE only when the node
+   * emitted NO logic exception (a silent collapse is the symptom), never when
+   * it did (a logic-exception collapse is the source's own crash).
+   *
+   *   finalScore(v) += riseWeight × gatedRiseContribution(dir(v), hasLogicException(v))
+   *
+   * `dir(v)` is `2 × (direction(v) − 0.5)` and `direction(v) =
+   * mean(tail) / (mean(head) + mean(tail))` of the dominant metric's
+   * pre/post-injection levels (see computeRiseScores + gatedRiseContribution).
+   * Default 0 (opt-in).
+   */
+  readonly riseWeight: number;
+  /**
+   * Weight of the trace-activity signal: reward the UNIQUE service whose
+   * post-injection trace span count rises significantly above its pre-injection
+   * count.
+   *
+   *   finalScore(v) += traceWeight × traceActivity(v)
+   *
+   * `traceActivity(v)` is `1` only when exactly one graph service qualifies as
+   * a significant riser (pre ≥ 500, post ≥ 1, post/pre ≥ 1.15) AND the case is
+   * a genuine silent-source fault (no graph service emitted a self-caused logic
+   * exception), and `0` for every service otherwise — see
+   * computeTraceActivityScores. This is the deterministic signature of a
+   * SILENT-SOURCE fault (RCAEval RE3 "wrong value", e.g. TrainTicket's
+   * `ts-auth-service`), which emits no exception and no error span, only a
+   * workload rise visible in the span counts. The uniqueness gate keeps
+   * route/latency cases (whose GT does not rise) neutral; the silent-source
+   * gate keeps exception-type resource faults (OB RE3 f4, RE2 TT mem) neutral
+   * so the signal defers to the log signal instead of misfiring onto a wrong
+   * service.
+   *
+   * Default: 0 (opt-in).
+   */
+  readonly traceWeight: number;
+  /**
+   * Weight of the PRISM graph-free signal: reward a node that is anomalous in
+   * BOTH its internal (cpu/memory/disk/socket) AND external (latency/error/
+   * throughput) properties.
+   *
+   *   finalScore(v) += prismWeight × prismScore(v)
+   *
+   * `prismScore(v)` is PRISM's root-cause score (arXiv:2601.21359) — the
+   * additive combination of the max-pooled internal S^I and external S^E
+   * deviation z-scores, max-normalised to [0, 1] (see computePrismScores).
+   * PRISM encodes the internal/external asymmetry: a root cause is anomalous
+   * in BOTH channels while a downstream symptom is external-only, so it is
+   * genuinely complementary to the topology-aware priors. It uses a DIFFERENT
+   * anomaly scorer (a simple standardized mean shift over the pre/post-inject
+   * windows) than the engine's own deviation/trend/cv/burst pipeline, so it
+   * surfaces faults the engine's self-anomaly term cannot see.
+   *
+   * Default: 0 (opt-in). The fusion ceiling (union of engine + PRISM correct
+   * cases = 87.5% vs 76.1%/76.7% separately) shows the two are strongly
+   * complementary, so this is the highest-value fusion candidate — but it must
+   * be ablated and read back net-positive with zero regression before the
+   * default is flipped.
+   */
+  readonly prismWeight: number;
+  /**
+   * Weight of the failed-edge-DIRECTION signal: reward a service that its
+   * callers' FAILED calls were made AGAINST (the callee of a failed edge).
+   *
+   *   finalScore(v) += failedEdgeWeight × failedEdgeScore(v)
+   *
+   * `failedEdgeScore(v)` is the max-normalised sum over edges `caller → v` of
+   * `failed − baseline`, where both counts are measured on the SAME edge over
+   * the post- and pre-injection windows (see computeFailedEdgeScores). It is
+   * the INVERSE of the log signal: the log signal credits whichever service
+   * EMITS an error — which on a propagation-carrying fault is a VICTIM that is
+   * reporting its broken dependency — while this one credits the service the
+   * error was emitted ABOUT, i.e. the dependency itself. That is the direction
+   * the log signal cannot express, and the reason this is a separate signal
+   * rather than another log mode.
+   *
+   * Default: 0 (opt-in). It must be ablated and read back net-positive with
+   * zero regression on the kill criterion (RCAEval golden 9-cell byte-identical
+   * AND FSE'26 zero regressed fault types) before the default is flipped.
+   */
+  readonly failedEdgeWeight: number;
+  /**
+   * How a callee's per-edge failures are aggregated: `sum` (the default and the
+   * measured one) or `mean` over the distinct callers that saw failures against
+   * it. `mean` removes the fan-in/volume amplification that a raw sum carries —
+   * the cache averages ~211 net failures per edge, so a high-traffic symptom can
+   * out-accumulate the source. Ablation switch; default `sum`.
+   */
+  readonly failedEdgeMode?: FailedEdgeMode;
+  /**
+   * Minimum contributing edges a callee needs before it is credited at all.
+   * Default 1 (today's behaviour). The FSE'26 measurement is why a floor exists:
+   * every one of the five regressions this signal caused had a winner with
+   * exactly ONE contributing record, and max-normalisation turns that single
+   * record into the full weight — so one failed call outranks a source whose own
+   * anomaly is maximal. One event is not a pattern.
+   */
+  readonly failedEdgeMinRecords?: number;
+  /**
+   * Weight of the per-edge inbound latency rise.
+   *
+   *   finalScore(v) += latWeight × latScore(v)
+   *   finalScore(v) −= poolMetricPenaltyWeight × poolMetricScore(v)
+   *
+   * `latScore(v)` is the largest `postMeanMs / preMeanMs` over the edges
+   * `caller → v`, `log1p`-compressed and max-normalised. It is the CONTINUOUS
+   * counterpart of `failedEdgeWeight`: that one counts failures, so a call that
+   * became slow but still succeeded is invisible to it, and so is a case where
+   * no call failed at all.
+   *
+   * Default: {@link DEFAULT_LAT_WEIGHT}, the measured zero-regression point. Pass
+   * `0` explicitly for the ablation that scores 47.33%.
+   */
+  readonly latWeight: number;
+  /**
+   * Rise a service must clear before the latency term credits it at all.
+   *
+   * Default {@link DEFAULT_LAT_MIN_RISE}. A floor turns the term into a *precision*
+   * instrument: a rise of 1.1× and a rise of 10× are not the same evidence, and a
+   * competitor with a moderate rise of its own can be enough to displace a source
+   * that the failure counts cannot see. `1` restores the credited-everything shape,
+   * and is the ablation that scores 48.80%.",
+   *
+   * It is a MASK, not a compression, and that matters for what it can do. It removes
+   * rises strictly between 1 and the floor, so the surviving maximum is always the
+   * case maximum, the divisor never moves, and no slope is ever raised. The term can
+   * therefore only lose votes — and it cannot remove a spurious COMPETITOR without
+   * removing that same service as a CREDITEE, so a floor pays only when the evidence
+   * it deletes is worth less than the interference it removes.
+   *
+   * A rise at or below 1 is never dropped: such a service is present with magnitude
+   * 0, exactly as the shipped shape has it, so a floor of 1 is identical to the term
+   * that shipped before this option existed.
+   */
+  readonly latMinRise?: number;
+  /** The per-edge latency records the term above is computed from. */
+  readonly edgeLatency?: readonly FaultEdgeLatency[];
+  /**
+   * Weight of the DB-connection-pool dominance PENALTY.
+   *
+   *   finalScore(v) −= poolMetricPenaltyWeight × poolMetricScore(v)
+   *
+   * `poolMetricScore(v)` is 1 when the metric that won `v`'s anomaly maximum is
+   * a `db.client.connections.*` series and 0 otherwise (see
+   * {@link computePoolMetricScores}) — a function of WHICH series won, not of the
+   * score, so it is not one of the metric-layer shapes the register has closed.
+   *
+   * Default {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT} = **0.0679, the MIDPOINT of the
+   * measured zero-regression window** `w ∈ (0.048823, 0.087011)`, worth **+6 cases / 0
+   * lost / 0 regressed fault types** (`34949812666` off, `34949854236` on, same commit).
+   * Both halves of the kill criterion were measured on that pair, and the value is a key
+   * of the recorded-runs table in `fse26-reported-config.test.ts`, so moving it without
+   * a run fails the suite rather than silently changing what every published number
+   * means.
+   *
+   * Required, not optional, so the score term can read it without a fallback: an
+   * `?? 0` on a field the constructor always fills is a branch no run can take, and
+   * one that would read as a measurement of the ablation if it ever did.
+   */
+  readonly poolMetricPenaltyWeight: number;
+}
+
+/**
+ * Package the ranking fusion weights into the shared, serializable
+ * {@link RankingWeights} structure. This is the single source of truth for
+ * "what are the ranking weights", used by the offline optimizer (L2) to tune
+ * and persist them without coupling to the engine's flat option fields.
+ */
+export function toRankingWeights(
+  options: Pick<
+    TreePrunerOptions,
+    | 'sourceWeight'
+    | 'temporalWeight'
+    | 'collisionWeight'
+    | 'topoWeight'
+    | 'logWeight'
+    | 'riseWeight'
+    | 'traceWeight'
+    | 'prismWeight'
+    | 'failedEdgeWeight'
+    | 'latWeight'
+    | 'poolMetricPenaltyWeight'
+  >,
+): RankingWeights {
+  return {
+    sourceWeight: options.sourceWeight,
+    temporalWeight: options.temporalWeight,
+    collisionWeight: options.collisionWeight,
+    topoWeight: options.topoWeight,
+    logWeight: options.logWeight,
+    riseWeight: options.riseWeight,
+    traceWeight: options.traceWeight,
+    prismWeight: options.prismWeight,
+    failedEdgeWeight: options.failedEdgeWeight,
+    latWeight: options.latWeight,
+    poolMetricPenaltyWeight: options.poolMetricPenaltyWeight,
+  };
+}
+
+/**
+ * Rise a service must clear before the per-edge latency term credits it.
+ *
+ * The shipped value, measured as a PAIR with {@link DEFAULT_LAT_WEIGHT} — and the
+ * pairing is the point, because this floor is not safe on its own. At the previous
+ * weight (0.03) a floor of 10.3 costs 6 cases across 6 fault types; at 0.561495 the
+ * same floor gains 56 cases across 10 with none regressed.
+ *
+ * Why it works is structural rather than tuned. The shipped shape's zero-regression
+ * window ends at 0.030459, and the single case that sets it has a target with latency
+ * slope 0 against a rival at the case maximum 1 — a **maximal** gap, which no
+ * pointwise reshaping of the term can widen (`--window` prints that arithmetic). A
+ * floor is not a pointwise reshaping: it deletes rises instead of compressing them, so
+ * it can remove a spurious competitor outright. It holds at 0.030459 until the floor
+ * passes 10.283 — the rise of the one competitor that bound the window, in
+ * `ts1-ts-food-service-exception-ch2v8l` — and then jumps to 0.561495, because that
+ * case no longer binds.
+ *
+ * 10.3 rather than a round 10: the step's boundary is a solved threshold with a named
+ * binder, and 10 does not reach it. Inside a step the optimum is its LOWER boundary,
+ * because the cap is fixed there and a higher floor only masks more credit.
+ */
+export const DEFAULT_LAT_MIN_RISE = 10.3;
+
+/**
+ * The shipped weight of the per-edge latency-rise term.
+ *
+ * Flipped from 0 to this value only after the weight was SOLVED rather than swept:
+ * the score is affine in the weight, so with both terms recorded per service in a
+ * diagnostic dump the set of weights at which a currently-correct case stays correct
+ * is an intersection of half-lines. The window is `w ∈ [0, 0.561495]` at
+ * {@link DEFAULT_LAT_MIN_RISE}, and immediately above it the first casualty is the
+ * named binder.
+ *
+ * The points that matter were MEASURED on the real engine, one commit and one cache,
+ * only these two values different:
+ *
+ * | floor | weight | Top@1 | correct | regressed fault types |
+ * | --- | --- | --- | --- | --- |
+ * | 1 (shipped shape) | 0.03 | 47.33% | 673 | 0 |
+ * | 1 | 0.03 | 48.80% | 694 | 0 |
+ * | 10.3 | 0.03 (the floor ALONE) | 48.38% | 688 | **6** |
+ * | **10.3** | **0.561495 (shipped)** | **52.74%** | **750** | **0** |
+ *
+ * The third row is why the pair ships together and why the guard in
+ * `fse26-reported-config.test.ts` requires a measurement of the PAIR: each half is
+ * individually defensible and only the pair is a gain. The measured 750 is exactly
+ * what the reconstruction predicted.
+ */
+export const DEFAULT_LAT_WEIGHT = 0.561495;
+
+/**
+ * The shipped weight of the DB-connection-pool dominance penalty.
+ *
+ * 0.0679 — the midpoint of the measured zero-regression window, not a round number:
+ * the window is `w ∈ (0.048823, 0.087011)`, bisected to 1e-6, and a value chosen at
+ * either boundary is a value a converter revision can move across it.
+ *
+ * MEASURED on FSE'26 (`34949854236`), against the same commit with the term off
+ * (`34949812666`, 750): **750 → 756, +6 cases / 0 lost, zero regressed fault types**,
+ * Top@3 65.75% → 66.46%, Top@5 70.11% → 70.25%. The offline pre-screen predicted
+ * exactly that split (`ContainerKill` +2, `HTTPResponseReplaceCode` +1, `JVMLatency`
+ * +1, `NetworkDelay` +1, `NetworkPartition` +1) and the run reproduced it case for
+ * case, which is what makes the reconstruction usable for the next candidate.
+ *
+ * The guard in `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts`
+ * requires BOTH points to be in the recorded-runs table, so this constant cannot be
+ * moved to an unmeasured value.
+ */
+export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
+
+/**
+ * How the temporal prior turns onset delays into an order.
+ *
+ * `earliness` is the shipped shape and the only one the engine rendered until the
+ * offline screen measured the alternatives: it is min-max normalisation of the DELAY,
+ * so one service that moves a minute late compresses every other service's earliness
+ * onto ≈ 1. The others exist because "no admissible weight on this shape" is a weaker
+ * statement than "no admissible weight on any declared shape", and a screen that only
+ * tried one would leave the axis open on a technicality.
+ *
+ * - `earliness` — min-max in the delay; earliest 1, latest 0.
+ * - `order` — the same ORDER with the magnitude discarded: linear in the onset RANK.
+ * - `earliest-only` — credit only the service(s) that moved FIRST, and nothing else.
+ *   A MASK on the onset, which the register notes a rise floor cannot build: there,
+ *   the spurious competitor and the credited source are the same service.
+ * - `latest-only` — the CONTROL. The premise is that cause precedes effect, so a shape
+ *   that helps while inverted would falsify it; without this arm a screen cannot tell
+ *   a working term from a working term with the sign flipped.
+ *
+ * Shipped is `earliest-only`, and the reason the shape and not the weight is the lever
+ * is measured: the two-sided shapes cannot help here. At `w = 0.5` with `earliness`,
+ * the signal was a net regression of ≈ −2.5pp on RCAEval (#207/#208) because the
+ * injection-anchored onset systematically anchors to the SOURCE's slow-responding
+ * dominant metric — latency and socket cross the 30% deviation threshold LATE — while a
+ * symptom's fast metrics (workload, cpu) cross it EARLY. "Earliest onset = source" is
+ * therefore a claim about the shape, and a two-sided normalisation is punished by the
+ * mechanism rather than by the noise. `earliest-only` is ONE-SIDED: it credits the first
+ * mover and cannot demote anybody, which is why the failure mode above is structurally
+ * unavailable to it — and why it is the only shape of the four with an admissible weight
+ * on FSE'26 (`docs/fse26-onset-verdict.md`).
+ */
+export type OnsetShape = 'earliness' | 'order' | 'earliest-only' | 'latest-only';
+
+/** Every shape, in the order the screen reports and the CLI documents them. */
+export const ONSET_SHAPES: readonly OnsetShape[] = [
+  'earliness',
+  'order',
+  'earliest-only',
+  'latest-only',
+];
+
+/**
+ * The shipped SHAPE of the injection-anchored temporal prior — inert, because the weight
+ * is 0.
+ *
+ * `earliest-only` was the shape the FSE'26 screen solved a zero-loss window for
+ * (`+4 cases`), and it shipped — then the golden suite rejected it (see
+ * {@link DEFAULT_TEMPORAL_WEIGHT}). The default is the engine's original normalisation
+ * because that is the shape every published number was measured with and a weight of 0
+ * makes the field inert either way: leaving the rejected candidate as the default would be
+ * an opinion the measurement does not support.
+ */
+export const DEFAULT_ONSET_SHAPE: OnsetShape = 'earliness';
+
+/** Whether a string names a declared shape; the CLI parses through this, not a cast. */
+export function isOnsetShape(value: string): value is OnsetShape {
+  return (ONSET_SHAPES as readonly string[]).includes(value);
+}
+
+/**
+ * The shipped weight of the injection-anchored temporal prior. **0 = off**, and the axis
+ * is closed by a rejection rather than by an absence.
+ *
+ * It was shipped once, at `0.036552` with `earliest-only` — a value SOLVED rather than
+ * swept (the term is affine in this weight, so the zero-loss window is a closed interval;
+ * it was `w ∈ [0.034920, 0.038183]` on 1422 FSE'26 cases, and the midpoint rule is the one
+ * the pool penalty shipped under). The FSE'26 half of the shared kill criterion passed
+ * completely, at case granularity: `760` against the control's `756`, three fault types up
+ * by 1/2/1, **zero regressed**, and the run flipped exactly the four datapacks the screen
+ * had named in advance with none broken.
+ *
+ * The RCAEval half failed, and that is why the value is 0:
+ *
+ *     cell      recorded  at the shipped pair
+ *     RE1 TT       68.0        27.2      (−40.8)
+ *     RE2 TT       68.1        25.7      (−42.4)
+ *     RE1 OB       80.0        79.2
+ *     RE3 SS       45.0        47.5      (+2.5)
+ *     other five   —           unchanged
+ *
+ * Six of nine cells moved, two of them by ~41pp, reproduced identically on a second run of
+ * the same engine (`35029285379`, `35030365430`). The mechanism was on record before the
+ * attempt and is now measured: on RCAEval the injection-anchored onset anchors to the
+ * SOURCE's slow-responding dominant metric, so "whoever moved first" is systematically a
+ * symptom — which is exactly why the two-sided shapes had no admissible weight either, and
+ * why a one-sided mask cannot rescue the signal on that benchmark.
+ *
+ * One owner for the value, so the pruner's default and every runner's parsed fallback
+ * cannot disagree — the defect that once published a headline 24.2pp below the
+ * best-measured one. `fse26-onset-verdict.md` §8 carries the whole record; the register
+ * row points at the −40.8 rather than at the FSE'26 gain, because the criterion is BOTH
+ * halves.
+ */
+export const DEFAULT_TEMPORAL_WEIGHT = 0.0;
+
+const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
+  ...DEFAULT_RCA_OPTIONS,
+  decayAlpha: 0.8,
+  decayBeta: 0.3,
+  useTwoHopDecay: false,
+  maxCycles: 10_000,
+  enableCollisionAggregation: true,
+  sourceWeight: 0.0,
+  temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+  onsetShape: DEFAULT_ONSET_SHAPE,
+  collisionWeight: 0.0,
+  topoWeight: 0.0,
+  logWeight: 1.0,
+  logSignalMode: 'count',
+  riseWeight: 0.0,
+  traceWeight: 0.0,
+  prismWeight: 0.0,
+  failedEdgeWeight: 0.0,
+  failedEdgeMode: 'sum',
+  failedEdgeMinRecords: 1,
+  latWeight: DEFAULT_LAT_WEIGHT,
+  latMinRise: DEFAULT_LAT_MIN_RISE,
+  poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+};
+
+/**
+ * TreePruner — implements IRCAEngine for collision tree RCA.
+ *
+ * This is the primary engine for root cause analysis using
+ * Deng Yu's collision tree pruning methodology.
+ *
+ * @example
+ * ```typescript
+ * const pruner = new TreePruner();
+ * const graph = pruner.buildFaultGraph(callGraph, metrics);
+ * const results = await pruner.analyze(graph, 10);
+ * ```
+ */
+export class TreePruner {
+  private readonly options: TreePrunerOptions;
+  private readonly cycleDetector: JohnsonCycleDetector;
+  private readonly topologyConfig?: Partial<TopologyFaultGraphConfig>;
+
+  constructor(
+    options?: Partial<TreePrunerOptions>,
+    topologyConfig?: Partial<TopologyFaultGraphConfig>,
+  ) {
+    this.options = { ...DEFAULT_TREE_PRUNER_OPTIONS, ...options };
+    this.topologyConfig = topologyConfig;
+    invariantRange(this.options.pruneEpsilon, 0, 1, 'pruneEpsilon');
+    invariantRange(this.options.criticalLoadThreshold, 0, 1, 'criticalLoadThreshold');
+    invariantPositiveInt(this.options.defaultTopK, 'defaultTopK');
+    invariantPositiveInt(this.options.maxPropagationDepth, 'maxPropagationDepth');
+
+    this.cycleDetector = new JohnsonCycleDetector({
+      maxCycles: this.options.maxCycles,
+    });
+  }
+
+  /**
+   * Build a fault propagation graph from the service call graph
+   * and time-series metrics.
+   *
+   * ### Computation:
+   *
+   * 1. **Propagation weights**: For each edge (from → to), compute
+   *    the propagation probability as the Pearson correlation between
+   *    the anomaly score of the source and target services.
+   *
+   *    p(from, to) = |corr(anomaly_from, anomaly_to)|
+   *
+   * 2. **Anomaly scores**: For each service, compute the normalized
+   *    anomaly score as the maximum metric deviation from baseline.
+   *
+   *    anomaly(s) = max(0, min(1, max_i |metric_i - baseline_i| / baseline_i))
+   *
+   * 3. **Prune threshold**: Set to ε = pruneEpsilon from options.
+   *
+   * ### Invariants
+   * - callGraph must have at least one node and one edge
+   * - metrics must have entries for all services in the call graph
+   *
+   * @param callGraph - Service call graph with topology
+   * @param metrics - Time series metrics keyed by service ID
+   * @returns Fault propagation graph ready for analysis
+   */
+  buildFaultGraph(
+    callGraph: ServiceCallGraph,
+    metrics: MetricMap,
+    options?: BuildFaultGraphOptions,
+  ): FaultPropagationGraph {
+    invariant(callGraph.nodes.size > 0, 'callGraph must have at least one node');
+    invariant(callGraph.edges.length > 0, 'callGraph must have at least one edge');
+    invariant(metrics.size > 0, 'metrics must be non-empty');
+
+    // The fault injection time, resolved once and reused by the topology
+    // builder (onset anchor), the log signal (post-injection window), and the
+    // returned graph.
+    const injectTimeMs = options?.injectTimeMs ?? this.topologyConfig?.injectTimeMs ?? 0;
+
+    // Build topology-preserving fault graph with Pearson cross-service correlation.
+    // Unlike the legacy chronological propagation tree, this preserves the YAML
+    // topology edges and computes real cross-service correlation for edge weights.
+    // The fault injection time (when known) is forwarded so the builder can anchor
+    // each service's anomaly onset to a clean pre-injection baseline.
+    const topoResult = buildTopologyFaultGraph(callGraph, metrics, {
+      ...this.topologyConfig,
+      injectTimeMs,
+    });
+    const {
+      anomalyScores,
+      anomalyOnsetTimes,
+      postInjectOnsetDelays,
+      dominantMetrics,
+      metricDiagnostics,
+      propagationWeights,
+    } = topoResult;
+
+    // Use the original call graph (topology-preserving), not a synthetic star-tree.
+    // The call graph's edges reflect the actual service dependency topology from
+    // YAML configs + semantic enhancement.
+    const topologyGraph = callGraph;
+
+    // Detect cycles using topology edges
+    const edgePairs = topologyGraph.edges.map(
+      (e) => [e.from, e.to] as readonly [ServiceId, ServiceId],
+    );
+    const cycles = this.cycleDetector.detect(edgePairs);
+
+    // Compute cycle contributions with adaptive or fixed decayAlpha
+    const effectiveAlpha = topoResult.computedDecayAlpha;
+    const analyzer = new CollisionContributionAnalyzer(topologyGraph.edges, propagationWeights, {
+      alpha: effectiveAlpha,
+      beta: this.options.decayBeta,
+    });
+
+    const contributions = this.options.useTwoHopDecay
+      ? analyzer.computeAllTwoHopContributions(cycles)
+      : analyzer.computeAllContributions(cycles);
+
+    let totalCycleContribution = 0;
+    for (const cycle of cycles) {
+      const key = cycleKey(cycle.nodePath);
+      const contrib = contributions.get(key)!;
+      totalCycleContribution += contrib;
+    }
+
+    // Classify cycles with significance
+    const classifiedCycles: DetectedCycle[] = [];
+    for (const cycle of cycles) {
+      const key = cycleKey(cycle.nodePath);
+      const contrib = contributions.get(key)!;
+      classifiedCycles.push({
+        nodePath: cycle.nodePath,
+        contribution: contrib,
+        significant: contrib >= this.options.pruneEpsilon,
+      });
+    }
+
+    // ── Collision Node Fault Aggregation (Deng Yu Boltzmann Q(f,f)) ──────────
+    // When enableCollisionAggregation is off, skip aggregation and use raw
+    // anomaly scores for all nodes. This enables apples-to-apples ablation
+    // comparison against the baseline (no collision enhancement).
+    let collisionEnergy: Map<
+      ServiceId,
+      {
+        totalEnergy: number;
+        collisionType: string;
+        collisionGain: number;
+        ratioContrib: number;
+      }
+    >;
+
+    if (this.options.enableCollisionAggregation) {
+      // Build cycle membership map for collision type classification
+      const cycleMembership = new Map<ServiceId, number>();
+      for (const cycle of cycles) {
+        for (const nodeId of cycle.nodePath) {
+          cycleMembership.set(nodeId, (cycleMembership.get(nodeId) ?? 0) + 1);
+        }
+      }
+
+      // Convert call graph edges to FaultGraphEdge format for aggregator
+      const faultEdges: FaultGraphEdge[] = topologyGraph.edges.map((e, i) => ({
+        from: e.from,
+        to: e.to,
+        weight: propagationWeights[i]!,
+      }));
+
+      collisionEnergy = new Map(
+        Array.from(
+          aggregateFaultEnergy(faultEdges, anomalyScores, cycleMembership, {
+            alpha: 0.4,
+            bottleneckCapacity: 0.5,
+            fanInThreshold: 3,
+          }).entries(),
+        ).map(([id, r]) => [
+          id,
+          {
+            totalEnergy: r.totalEnergy,
+            collisionType: r.collisionType,
+            collisionGain: r.collisionGain,
+            ratioContrib: r.ratioContrib,
+          },
+        ]),
+      );
+    } else {
+      // Collision disabled: each node gets its raw anomaly score as energy,
+      // with default 'chain' type (no amplification) and no upstream gain.
+      collisionEnergy = new Map();
+      for (const [nodeId, score] of anomalyScores) {
+        collisionEnergy.set(nodeId, {
+          totalEnergy: score,
+          collisionType: 'chain',
+          collisionGain: 0,
+          ratioContrib: 0,
+        });
+      }
+    }
+
+    // ── Auxiliary ranking signals (dataset-decoupled, opt-in) ────────────────
+    // The log signal (ERROR/FATAL volume after injection) and the topological
+    // source signal (no strongly anomalous parent) are computed here — once,
+    // on the full graph — and stored so the ranking can consume them without
+    // re-deriving per case. Both default to neutral when the case carries no
+    // logs or when collision aggregation is disabled, respectively.
+    const logScores = computeLogScores(
+      options?.logs,
+      new Set(callGraph.nodes.keys()),
+      injectTimeMs,
+      this.options.logSignalMode,
+      { edges: topologyGraph.edges, anomalyScores },
+    );
+    const topoScores = computeTopoSourceScores(
+      topologyGraph.edges,
+      propagationWeights,
+      anomalyScores,
+    );
+    const riseScores = computeRiseScores(dominantMetrics, new Set(callGraph.nodes.keys()));
+    // The pool-dominance indicator is a FUNCTION OF THE DOMINANT LABEL, so it is
+    // derived here from the same `dominantMetrics` the rise signal reads rather
+    // than being carried on the graph: one owner for "which metric won", and the
+    // term is exactly 0 unless the weight is non-zero.
+    const poolMetricScores = computePoolMetricScores(
+      dominantMetrics,
+      new Set(callGraph.nodes.keys()),
+    );
+    const deepestExceptions = computeDeepestExceptions(
+      options?.logs,
+      new Set(callGraph.nodes.keys()),
+      injectTimeMs,
+    );
+    // The trace-activity signal is the deterministic signature of a
+    // SILENT-SOURCE fault: it rewards the UNIQUE service whose post-injection
+    // span count rises significantly above its pre-injection count. The counts
+    // are pre-computed by the loader (see TraceActivityCounts) so the engine
+    // never holds raw spans — only per-service {pre, post} integers.
+    //
+    // It is gated CASE-LEVEL on the services that actually threw a self-caused
+    // logic exception (the `deepestExceptions` keys — a service is a key iff it
+    // emitted ≥1 post-injection logic-exception line, see
+    // computeDeepestExceptions). A silent wrong-value source still votes because
+    // a downstream wrapper's PROPAGATED empty-value parse failure is NOT in
+    // `deepestExceptions` (the loader flags it `isLogicException === false`):
+    // in TrainTicket RE3 f2 the source (ts-auth-service) is silent while the
+    // wrapper throws `IllegalArgumentException: Invalid UUID string`, and the
+    // wrapper is therefore excluded — the silent riser receives the vote. When a
+    // self-caused thrower IS present (OB f4 NullPointerException, RE2 memory
+    // faults), the case is not silent and the log signal already ranks it, so
+    // trace defers entirely.
+    const traceActivityScores = computeTraceActivityScores(
+      options?.traceActivity,
+      new Set(callGraph.nodes.keys()),
+      undefined,
+      new Set(deepestExceptions.keys()),
+    );
+
+    // The PRISM graph-free signal: for each graph member, compute PRISM's
+    // root-cause score (max-pooled internal/external deviation z-scores,
+    // combined additively) and max-normalise to [0, 1]. It is topology-free
+    // and uses a DIFFERENT anomaly scorer than the engine's own feature
+    // pipeline, so it is genuinely complementary to the collision/topo/log/
+    // trace priors — the fusion ceiling showed the two engines agree on only
+    // 402/615 cases, with 70 cases PRISM alone gets right. Empty (neutral)
+    // when the injection time is unknown or no service is anomalous.
+    const prismScores = computePrismScores(metrics, new Set(callGraph.nodes.keys()), injectTimeMs);
+
+    // The failed-edge-DIRECTION signal: each failed call is charged to its
+    // CALLEE — the service whose interface was failing — which is the inverse
+    // of the log signal's credit to the emitter. This is the only signal that
+    // carries the DIRECTION of a fault, so it is deliberately not a log mode.
+    const failedEdgeScores = computeFailedEdgeScores(
+      options?.failedTraceEdges,
+      new Set(callGraph.nodes.keys()),
+      this.options.failedEdgeMode,
+      this.options.failedEdgeMinRecords,
+    );
+
+    // The per-edge LATENCY signal: the continuous counterpart of the term above.
+    // It credits the callee of an edge whose mean span duration rose, which is
+    // the same direction — and it is defined on the cases where no call failed
+    // at all, which the failed-edge counts cannot see.
+    const edgeLatencyScores = computeEdgeLatencyScores(
+      options?.edgeLatency,
+      new Set(callGraph.nodes.keys()),
+      this.options.latMinRise,
+    );
+
+    return {
+      callGraph: topologyGraph,
+      propagationWeights,
+      anomalyScores,
+      anomalyOnsetTimes,
+      postInjectOnsetDelays,
+      dominantMetrics,
+      metricDiagnostics,
+      injectTimeMs,
+      detectedCycles: classifiedCycles,
+      totalCycleContribution,
+      pruneThreshold: this.options.pruneEpsilon,
+      collisionEnergy,
+      logScores,
+      topoScores,
+      riseScores,
+      deepestExceptions,
+      traceActivityScores,
+      prismScores,
+      failedEdgeScores,
+      edgeLatencyScores,
+      poolMetricScores,
+    };
+  }
+
+  /**
+   * Perform root cause analysis on the fault propagation graph.
+   *
+   * ### Algorithm Steps:
+   *
+   * 1. **Cycle Detection → Pruning**: If cycles are already detected
+   *    in the graph, use them. Otherwise detect fresh. Prune every
+   *    cycle (significant or not) by breaking its weakest edge.
+   *
+   * 2. **Tree RCA**: On the pruned acyclic tree, accumulate anomaly
+   *    scores bottom-up and rank root cause candidates.
+   *
+   * 3. **Top-K**: Return the top K results sorted by RCA score.
+   *
+   * ### Deng Yu Mapping
+   *
+   * The pruning step corresponds to removing closed-loop collision
+   * trajectories. Breaking the weakest collision cross-section edge in
+   * each cycle discards the least-probable trajectory while preserving the
+   * dominant fault-propagation paths — a valid approximation in the
+   * rarefied gas limit. Previously cycles with w(C) ≥ ε threw
+   * `GraphCycleError`, which made the engine unusable on dense real-world
+   * topologies (e.g. TrainTicket's 68-node, 267-edge graph) where feedback
+   * loops are inherent, so every cycle is now pruned uniformly.
+   *
+   * @param graph - Fault propagation graph
+   * @param topK - Number of top results to return (default from options)
+   * @returns Ranked root cause results
+   */
+  analyze(graph: FaultPropagationGraph, topK?: number): RootCauseResult[] {
+    const k = topK ?? this.options.defaultTopK;
+    invariantPositiveInt(k, 'topK');
+
+    // Prune ALL cycles — significant and insignificant alike. Breaking the
+    // weakest edge in every cycle keeps dense topologies analyzable; throwing
+    // on significant cycles previously returned "no prediction" for the whole
+    // TrainTicket benchmark.
+    const allCycles = graph.detectedCycles;
+    const prunedTree = pruneCycles(graph, allCycles.length > 0 ? allCycles : undefined);
+
+    // Perform tree RCA on the pruned tree with collision energy
+    const results = performTreeRCA(
+      prunedTree,
+      graph.anomalyScores,
+      graph.anomalyOnsetTimes,
+      graph.postInjectOnsetDelays,
+      graph.injectTimeMs ?? 0,
+      graph.callGraph.nodes,
+      graph.propagationWeights,
+      k,
+      this.options,
+      graph.collisionEnergy,
+      graph.logScores,
+      graph.topoScores,
+      graph.riseScores,
+      graph.traceActivityScores,
+      graph.prismScores,
+      graph.failedEdgeScores,
+      graph.edgeLatencyScores,
+      graph.poolMetricScores,
+    );
+
+    return results;
+  }
+
+  /**
+   * Compute the upper bound on total cycle contribution given
+   * the current system load.
+   *
+   * ### Critical Load Theorem (Deng Yu)
+   *
+   * If systemLoad < λ_critical:
+   *
+   *   Σw(C) ≤ K × ε
+   *
+   * where K is the kinetic constant and ε is the prune threshold.
+   *
+   * The bound increases with system load:
+   *
+   *   bound = systemLoad × K_0 / λ_critical
+   *
+   * where K_0 = ε × (1 + systemLoad).
+   *
+   * @param graph - Fault propagation graph
+   * @returns Upper bound on total cycle contribution
+   */
+  getCycleContributionBound(graph: FaultPropagationGraph): number {
+    const load = graph.callGraph.systemLoad;
+    invariantRange(load, 0, 1, 'systemLoad');
+
+    if (load >= this.options.criticalLoadThreshold) {
+      // Above critical load: bound grows rapidly (system is dense)
+      return load * this.options.pruneEpsilon * 2;
+    }
+
+    // Below critical load: bounded by K×ε (rarefied regime)
+    const K0 = this.options.pruneEpsilon * (1 + load);
+    return (load / this.options.criticalLoadThreshold) * K0;
+  }
+
+  /**
+   * Get the current prune epsilon threshold.
+   */
+  get pruneEpsilon(): number {
+    return this.options.pruneEpsilon;
+  }
+}
+
+/**
+ * Prune insignificant cycles from the fault propagation graph.
+ *
+ * For each insignificant cycle, find the edge with the minimum
+ * propagation weight and remove it. This breaks the cycle while
+ * preserving the strongest fault propagation paths.
+ *
+ * Deng Yu mapping: removing the weakest collision cross-section edge
+ * corresponds to discarding the least probable collision trajectory.
+ *
+ * @param graph - Fault propagation graph
+ * @param cycles - Cycles to prune (defaults to all detected cycles)
+ * @returns Pruned tree structure
+ * @internal
+ */
+function pruneCycles(graph: FaultPropagationGraph, cycles?: readonly DetectedCycle[]): PrunedTree {
+  const targetCycles = cycles ?? graph.detectedCycles;
+  const weightMap = buildEdgeWeightMap(graph.callGraph.edges, graph.propagationWeights);
+
+  // Track which edges are pruned
+  const prunedEdgeSet = new Set<string>();
+  const prunedEdges: PrunedEdgeRecord[] = [];
+
+  for (const cycle of targetCycles) {
+    // Find the weakest edge in this cycle
+    let weakestEdge: [ServiceId, ServiceId] | null = null;
+    let weakestWeight = Infinity;
+
+    const path = cycle.nodePath;
+    const n = path.length;
+    for (let i = 0; i < n; i++) {
+      const u = path[i]!;
+      const v = path[(i + 1) % n]!;
+      const key = `${u}→${v}`;
+      const w = weightMap.get(key)!;
+      if (w < weakestWeight) {
+        weakestWeight = w;
+        weakestEdge = [u, v];
+      }
+    }
+
+    if (weakestEdge) {
+      const [from, to] = weakestEdge;
+      const edgeKey = `${from}→${to}`;
+      if (!prunedEdgeSet.has(edgeKey)) {
+        prunedEdgeSet.add(edgeKey);
+        prunedEdges.push({
+          from,
+          to,
+          cycleId: cycleKey(cycle.nodePath),
+          cycleContribution: cycle.contribution,
+          marginBelowThreshold: graph.pruneThreshold - cycle.contribution,
+        });
+      }
+    }
+  }
+
+  // Build remaining edges
+  const remainingEdges = graph.callGraph.edges.filter((e) => {
+    const key = `${e.from}→${e.to}`;
+    return !prunedEdgeSet.has(key);
+  });
+
+  // Build initial node scores (just anomaly, no child propagation yet)
+  const nodes = new Map<ServiceId, TreeNodeScore>();
+  for (const [nodeId, _node] of graph.callGraph.nodes) {
+    const anomalyScore = graph.anomalyScores.get(nodeId)!;
+    nodes.set(nodeId, {
+      nodeId,
+      anomalyScore,
+      childPropagationScore: 0,
+      totalScore: anomalyScore,
+      depth: 0,
+    });
+  }
+
+  // Compute contributed removed
+  let contributionRemoved = 0;
+  for (const cycle of targetCycles) {
+    contributionRemoved += cycle.contribution;
+  }
+
+  return {
+    nodes,
+    edges: remainingEdges,
+    rootCauseScores: new Map(),
+    prunedEdges,
+    cyclesPruned: targetCycles.length,
+    contributionRemoved,
+  };
+}
+
+/**
+ * Perform RCA on the pruned tree using bottom-up anomaly score accumulation.
+ *
+ * When collisionEnergy is provided, the Boltzmann Q(f,f) collision energy
+ * replaces raw anomaly scores as the primary ranking signal, and collision
+ * type classification (chain/fan-in/bottleneck/cycle) adjusts depth bonuses.
+ *
+ * Algorithm:
+ * 1. Build adjacency from remaining edges
+ * 2. Compute in-degree for each node
+ * 3. Topological sort (leaves first)
+ * 4. Bottom-up accumulation: leaf nodes contribute upward
+ * 5. Top nodes get the highest scores → root cause candidates
+ *
+ * Time complexity: O(V + E)
+ *
+ * @internal
+ */
+function performTreeRCA(
+  tree: PrunedTree,
+  anomalyScores: ReadonlyMap<ServiceId, number>,
+  anomalyOnsetTimes: ReadonlyMap<ServiceId, number>,
+  postInjectOnsetDelays: ReadonlyMap<ServiceId, number> | undefined,
+  injectTimeMs: number,
+  allNodes: ReadonlyMap<ServiceId, ServiceNode>,
+  propagationWeights: Float64Array,
+  topK: number,
+  options: TreePrunerOptions,
+  collisionEnergy?: ReadonlyMap<
+    ServiceId,
+    { totalEnergy: number; collisionType: string; collisionGain: number; ratioContrib: number }
+  >,
+  logScores?: ReadonlyMap<ServiceId, number>,
+  topoScores?: ReadonlyMap<ServiceId, number>,
+  riseScores?: ReadonlyMap<ServiceId, number>,
+  traceActivityScores?: ReadonlyMap<ServiceId, number>,
+  prismScores?: ReadonlyMap<ServiceId, number>,
+  failedEdgeScores?: ReadonlyMap<ServiceId, number>,
+  edgeLatencyScores?: ReadonlyMap<ServiceId, number>,
+  poolMetricScores?: ReadonlyMap<ServiceId, number>,
+): RootCauseResult[] {
+  // Build adjacency from remaining edges
+  const children = new Map<ServiceId, Array<{ child: ServiceId; weight: number }>>();
+
+  for (const nodeId of allNodes.keys()) {
+    children.set(nodeId, []);
+  }
+
+  for (let i = 0; i < tree.edges.length; i++) {
+    const edge = tree.edges[i]!;
+    const childList = children.get(edge.from);
+    if (childList) {
+      childList.push({
+        child: edge.to,
+        weight: propagationWeights[i]!,
+      });
+    }
+  }
+
+  // Topological sort: start with TRUE leaves (outDegree === 0).
+  // inDegree counts incoming edges (parents); inDegree===0 means ROOT nodes.
+  // We need nodes with NO children to propagate bottom-up.
+  const leaves: ServiceId[] = [];
+  for (const [nodeId, childList] of children) {
+    if (childList.length === 0) {
+      leaves.push(nodeId);
+    }
+  }
+
+  // Fallback: if ring-connect edges create cycles with no true leaves,
+  // fall back to nodes with the FEWEST children as starting points.
+  if (leaves.length === 0) {
+    let minChildren = Infinity;
+    for (const [_nodeId, childList] of children) {
+      if (childList.length < minChildren) minChildren = childList.length;
+    }
+    for (const [nodeId, childList] of children) {
+      if (childList.length === minChildren) leaves.push(nodeId);
+    }
+  }
+
+  // Bottom-up accumulation with BFS from leaves
+  const scores = new Map<ServiceId, number>();
+  // Self anomaly per node (mixedSelf) — the primary ranking signal. Kept
+  // separate from `scores` (the accumulated totalScore) so the root cause
+  // (the fault injection point) is ranked by its OWN deviation, not by the
+  // anomaly its downstream children propagate back up to it.
+  const selfScores = new Map<ServiceId, number>();
+  const depths = new Map<ServiceId, number>();
+  // Queue for bottom-up processing: process nodes when all parents processed
+  // Actually, we process from leaf → root: initialize leaves, then propagate upward
+
+  // Initialize all scores with collision energy when available,
+  // falling back to raw anomaly scores otherwise.
+  // Also track collision type for each node (for sort-time amplification).
+  const collisionTypes = new Map<ServiceId, string>();
+  for (const [nodeId] of allNodes) {
+    const collisionResult = collisionEnergy?.get(nodeId);
+    const ce = collisionResult?.totalEnergy;
+    // Use collision energy only when it adds signal (> 0).
+    // Falls back to raw anomaly score when totalEnergy is 0 or undefined.
+    scores.set(nodeId, ce !== null && ce !== undefined && ce > 0 ? ce : anomalyScores.get(nodeId)!);
+    collisionTypes.set(nodeId, collisionResult?.collisionType ?? 'chain');
+    depths.set(nodeId, 0);
+  }
+
+  // Build reverse adjacency (parent → children)
+  const reverseAdj = new Map<ServiceId, string[]>();
+  for (const [nodeId] of allNodes) {
+    reverseAdj.set(nodeId, []);
+  }
+  for (const edge of tree.edges) {
+    const list = reverseAdj.get(edge.to);
+    if (list) {
+      list.push(edge.from);
+    }
+  }
+
+  // Source-likelihood prior: the fraction of a node's causal neighbours
+  // (children + parents in the pruned tree) whose anomaly onset is LATER
+  // than its own. The fault source's disturbance precedes its neighbours'
+  // (cause precedes effect — Deng Yu's mean free time τ), so a source has a
+  // high score while a downstream symptom (whose parent changed first) or an
+  // isolated noise service (random neighbour onsets) has a low score. Onset
+  // indices are derived purely from each service's own time series, never
+  // from dataset metadata such as inject_time.
+  const sourceScores = new Map<ServiceId, number>();
+  for (const [nodeId] of allNodes) {
+    const myOnset = anomalyOnsetTimes.get(nodeId)!;
+    let later = 0;
+    let neighbours = 0;
+    for (const { child } of children.get(nodeId)!) {
+      neighbours++;
+      if (anomalyOnsetTimes.get(child)! > myOnset) later++;
+    }
+    for (const parent of reverseAdj.get(nodeId)!) {
+      neighbours++;
+      if (anomalyOnsetTimes.get(parent)! > myOnset) later++;
+    }
+    sourceScores.set(nodeId, neighbours > 0 ? later / neighbours : 0);
+  }
+
+  // Global temporal earliness — the injection-time-anchored causal prior. Each
+  // service's onset delay (ms after fault injection) becomes a SLOPE in the shape
+  // `options.onsetShape` names, which is what the score adds per unit of weight; a
+  // service the shape leaves out contributes nothing. This is strictly more reliable
+  // than the local `sourceScores` prior above, whose onset index came from a
+  // fault-contaminated baseline.
+  const onsetSlopes = computeOnsetSlopes(postInjectOnsetDelays, injectTimeMs, options.onsetShape);
+
+  // Topological order: use in-degree with reverse adjacency
+  // Process from leaves upward
+  const processQueue = [...leaves];
+  const processed = new Set<ServiceId>();
+
+  while (processQueue.length > 0) {
+    const node = processQueue.shift()!;
+    // `node` is enqueued exactly once (see the `!processed.has(p)` guard when
+    // parents are pushed), so it can never already be processed here.
+    processed.add(node);
+
+    // Use collision-enhanced energy when available, falling back to raw anomaly.
+    // Collision energy is the Boltzmann Q(f,f) aggregate of upstream fault signals,
+    // which captures propagation dynamics that raw anomaly scores miss.
+    const collisionResult = collisionEnergy?.get(node);
+    const nodeEnergy = collisionResult?.totalEnergy ?? anomalyScores.get(node)!;
+    const nodeAnomaly = anomalyScores.get(node)!;
+    let childContrib = 0;
+    let maxChildDepth = 0;
+
+    // Accumulate from outgoing children
+    const childList = children.get(node)!;
+    for (const { child, weight } of childList) {
+      const childScore = scores.get(child)!;
+      const childDepth = depths.get(child)!;
+      // Time-delay decay: each hop attenuates by α
+      const latencyDecay = Math.pow(options.decayAlpha, 1);
+      childContrib += childScore * weight * latencyDecay;
+      if (childDepth + 1 > maxChildDepth) {
+        maxChildDepth = childDepth + 1;
+      }
+    }
+
+    // Fan-out dilution theorem (Deng Yu, 2024):
+    // In a collision tree, a parent with N children receives anomaly
+    // contributions from each child, but the total contribution is
+    // attenuated by 1/N to prevent fan-out services (like API gateways
+    // or frontends) from unfairly accumulating anomaly evidence from
+    // the entire downstream graph.
+    //
+    // Without this normalization, a frontend with 7 downstream services
+    // accumulates 7× more child contributions than a specific backend
+    // service with only 1 downstream child, artificially boosting the
+    // frontend's root cause score even when the fault originates in a
+    // downstream service.
+    const childCount = childList.length;
+    const fanOutDilution = childCount > 0 ? 1 / childCount : 1;
+
+    // Mix: collision energy (upstream-aware) + child contributions (downstream-aware)
+    // Weight: α = 0.6 collision-driven, 0.4 raw-anomaly-driven for non-collision nodes
+    // This prevents children from dominating the score of a deep bottleneck node
+    // whose collision energy already captures upstream propagation.
+    const isCollisionNode = collisionTypes.get(node) !== 'chain';
+    const collisionWeight = isCollisionNode ? 0.7 : 0.5;
+    const mixedSelf = collisionWeight * nodeEnergy + (1 - collisionWeight) * nodeAnomaly;
+    const totalScore = mixedSelf + childContrib * fanOutDilution;
+    scores.set(node, totalScore);
+    // Rank by the node's OWN raw anomaly — the fault injection point has the
+    // highest deviation. The collision energy (Q(f,f)) aggregates upstream
+    // signals and amplifies convergence points (fan-in/bottleneck), which
+    // would let a healthy convergence node outrank the true source, so it is
+    // deliberately excluded from the primary ranking signal.
+    selfScores.set(node, nodeAnomaly);
+    depths.set(node, maxChildDepth);
+
+    // Push parent nodes for processing
+    const parents = reverseAdj.get(node)!;
+    for (const p of parents) {
+      if (!processed.has(p)) {
+        // Check if all children of p have been processed. Guard against a
+        // parent absent from the node map (a dangling edge endpoint) — skip
+        // it rather than crashing the whole analysis.
+        const pChildren = children.get(p);
+        if (!pChildren) continue;
+        const allProcessed = pChildren.every((c) => processed.has(c.child));
+        if (allProcessed && !processQueue.includes(p)) {
+          processQueue.push(p);
+        }
+      }
+    }
+  }
+
+  // Compute final scores and rank
+  const scoredNodes: Array<{
+    serviceId: ServiceId;
+    score: number;
+    depth: number;
+  }> = [];
+
+  for (const [nodeId] of allNodes) {
+    const selfScore = selfScores.get(nodeId)!;
+    const depth = depths.get(nodeId)!;
+
+    // Only include nodes with significant self anomaly
+    if (selfScore > 0) {
+      scoredNodes.push({ serviceId: nodeId, score: selfScore, depth });
+    }
+  }
+
+  // Rank by self anomaly combined with eleven causal priors (all opt-in except log):
+  //
+  // 1. A LOCAL source-likelihood prior (`sourceWeight`) — the fraction of a
+  //    node's neighbours whose index-based onset is later.
+  // 2. A GLOBAL injection-anchored temporal prior (`temporalWeight`) — the earlier
+  //    a service deviated from its clean pre-injection baseline, the more likely it
+  //    is the source. What exactly the onset delays are read as is `onsetShape`'s
+  //    (`earliest-only` credits the first mover and nothing else).
+  // 3. A COLLISION-ENERGY prior (`collisionWeight`) — penalise a node whose
+  //    fault energy is mostly INHERITED from upstream (ratioContrib → 1).
+  // 4. A TOPOLOGICAL-source prior (`topoWeight`) — reward a node with no
+  //    strongly anomalous upstream parent.
+  // 5. A LOG prior (`logWeight`) — reward the service with the highest
+  //    post-injection ERROR/FATAL volume (code-level faults).
+  // 6. A RISE prior (`riseWeight`) — reward the service whose DOMINANT metric
+  //    rises post-injection (source does more work); penalise a collapse ONLY
+  //    when the service emitted no logic exception (silent symptom), never
+  //    when it did (source crash) — see gatedRiseContribution.
+  // 7. A TRACE-ACTIVITY prior (`traceWeight`) — reward the UNIQUE service whose
+  //    post-injection span count rises significantly (silent-source signature).
+  // 8. A PRISM prior (`prismWeight`) — reward the service anomalous in BOTH its
+  //    internal and external properties (the graph-free internal/external
+  //    asymmetry of PRISM).
+  // 9. A FAILED-EDGE-DIRECTION prior (`failedEdgeWeight`) — reward the CALLEE
+  //    of post-injection failed calls, i.e. the service its callers' calls
+  //    failed against. The inverse of the log prior, and the only signal that
+  //    carries a fault's DIRECTION.
+  // 10. A PER-EDGE-LATENCY prior (`latWeight`) — reward the CALLEE of the edges
+  //    whose mean span duration rose. The CONTINUOUS counterpart of 9: it exists
+  //    on the cases where no call failed at all, and its floor (`latMinRise`) is
+  //    a MASK on how thin a rise counts as evidence.
+  // 11. A POOL-DOMINANCE PENALTY (`poolMetricPenaltyWeight`) — SUBTRACT when the
+  //    metric that won a service's own anomaly maximum is a DB connection-pool
+  //    series. The only term here keyed on WHICH evidence won rather than on how
+  //    much, and the only one whose sign is a penalty on the evidence rather than
+  //    on inherited energy.
+  //
+  // This list has to grow with the score: it was one term short for a release
+  // (the per-edge latency prior shipped without an entry), and a reader counting
+  // it is how the omission was found.
+  //
+  // The root cause is the fault injection point — the service whose OWN
+  // deviation is highest AND whose onset precedes its neighbours'. A healthy
+  // parent must not accumulate its faulted children's anomaly (childContrib)
+  // and outrank the actual source, and propagation DEPTH is not used
+  // (RCAEval injects faults at arbitrary depths). The combination is in
+  // log1p space so a strong causal signal can overcome a moderately larger
+  // symptom anomaly without unbounded amplification. `log1p` (not `log`) is
+  // used because rank-normalized self anomalies live in [0, 1] — the top
+  // service maps to exactly 1.0, and `log(1.0) === 0` would collapse the
+  // base term to zero for the STRONGEST signal (the "0-score zombie"
+  // bothWrong failure), leaving the ranking to secondary signals or a
+  // service-id tiebreak. `log1p` keeps the base term strictly positive and
+  // monotonic (top → log1p(1.0) = 0.693) and also maps a zero-anomaly service
+  // to 0 instead of `log(0) = -Infinity`:
+  //
+  //   finalScore(v) = log1p(selfAnomaly(v))
+  //                 + sourceWeight    × sourceScore(v)
+  //                 + temporalWeight  × onsetSlope(v)   // shaped by `onsetShape`
+  //                 − collisionWeight × ratioContrib(v)
+  //                 + topoWeight      × topoSource(v)
+  //                 + logWeight       × logScore(v)
+  //                 + riseWeight      × gatedRiseContribution(dir(v), hasLogicException(v))
+  //                 + traceWeight     × traceActivity(v)
+  //                 + prismWeight     × prismScore(v)
+  //                 + failedEdgeWeight × failedEdgeScore(v)
+  //
+  // When self anomalies are exactly equal (or all weights are 0), the order
+  // is settled deterministically by service id.
+  const weights = toRankingWeights(options);
+  // Extract the ratioContrib of each node's collision result once, so the
+  // comparator does not re-read the (possibly undefined) collision map per
+  // comparison.
+  const ratioContrib = new Map<ServiceId, number>();
+  for (const [id, ce] of collisionEnergy ?? []) {
+    ratioContrib.set(id, ce.ratioContrib);
+  }
+  const riseWeight = options.riseWeight;
+  // Gate the collapse half of the rise signal by the log signal: a RISE is
+  // always rewarded; a COLLAPSE is penalised only when the service emitted NO
+  // logic exception (silent symptom), never when it did (source crash).
+  const riseTerm = (id: ServiceId): number =>
+    riseWeight * gatedRiseContribution(riseScores?.get(id) ?? 0.5, (logScores?.get(id) ?? 0) > 0);
+  // The trace-activity signal rewards the unique significant span-count riser
+  // (silent-source signature). It is a pure {0,1} indicator per service, so
+  // the term is simply the weight applied to whichever service was flagged.
+  const traceWeight = options.traceWeight;
+  const traceTerm = (id: ServiceId): number => traceWeight * (traceActivityScores?.get(id) ?? 0);
+  // The PRISM graph-free signal rewards the node anomalous in BOTH its internal
+  // (cpu/mem/disk/socket) and external (latency/error/throughput) channels —
+  // the internal/external asymmetry of PRISM. `prismScore` is the max-normalised
+  // PRISM M-score in [0, 1], so the term is simply the weight applied to the
+  // service's normalised score (0 when the signal is absent/neutral).
+  const prismWeight = options.prismWeight;
+  const prismTerm = (id: ServiceId): number => prismWeight * (prismScores?.get(id) ?? 0);
+  // The failed-edge-direction signal rewards the CALLEE of post-injection failed
+  // calls — the service whose interface was failing — which is the inverse of
+  // the log signal's credit to the emitter. Non-negative by construction
+  // (`computeFailedEdgeScores` clamps each edge's net at zero), so this term can
+  // only ever reward.
+  const failedEdgeWeight = options.failedEdgeWeight;
+  const failedEdgeTerm = (id: ServiceId): number =>
+    failedEdgeWeight * (failedEdgeScores?.get(id) ?? 0);
+  // The continuous counterpart of the term above, and the only term whose
+  // magnitude comes from a DURATION rather than a count: it exists exactly where
+  // the counts are zero. `edgeLatencyScores` is absent (not empty) when the case
+  // carried no per-edge measurements, so a case without the field scores exactly
+  // as it did before this term existed.
+  const latWeight = options.latWeight;
+  const latTerm = (id: ServiceId): number => latWeight * (edgeLatencyScores?.get(id) ?? 0);
+  // The DB-connection-pool penalty, and the only NEGATIVE term here whose sign is
+  // not already inside the signal (the collision term's `ratioContrib` is defined
+  // as a penalty; this indicator is 1 = pool-dominant, so the minus is the term's).
+  // An absent map and an entry of 0 mean the same thing to it — no evidence —
+  // which is why the lookup may fall back: only a measured dominance is punished.
+  const poolPenaltyWeight = options.poolMetricPenaltyWeight;
+  const poolTerm = (id: ServiceId): number => -poolPenaltyWeight * (poolMetricScores?.get(id) ?? 0);
+  // `sourceScores` is populated for every node in `allNodes` (see its
+  // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
+  // its lookup never falls back. The `onsetSlopes`, `topoScores`,
+  // `logScores`, `riseScores` and `ratioContrib` maps, in contrast, are derived
+  // from OPTIONAL graph fields (or are empty when the injection time is
+  // unknown), so their lookups keep a neutral fallback.
+  // Compute the ranking score for every candidate exactly once, so the sort
+  // comparator and the emitted results share a single source of truth. The
+  // formula matches the `finalScore(v)` documented on the ranking weights; the
+  // log term reads `selfScores` directly because `scoredNodes[i].score` is that
+  // same value (each scored node was pushed with its `selfScores` entry).
+  const finalScores = new Map<ServiceId, number>();
+  const finalScoreOf = (id: ServiceId): number => {
+    let s = finalScores.get(id);
+    if (s === undefined) {
+      s =
+        Math.log1p(selfScores.get(id)!) +
+        weights.sourceWeight * sourceScores.get(id)! +
+        weights.temporalWeight * (onsetSlopes.get(id) ?? 0) -
+        weights.collisionWeight * (ratioContrib.get(id) ?? 0) +
+        weights.topoWeight * (topoScores?.get(id) ?? 0) +
+        weights.logWeight * (logScores?.get(id) ?? 0) +
+        riseTerm(id) +
+        traceTerm(id) +
+        prismTerm(id) +
+        failedEdgeTerm(id) +
+        latTerm(id) +
+        poolTerm(id);
+      finalScores.set(id, s);
+    }
+    return s;
+  };
+
+  scoredNodes.sort((a, b) => {
+    const d = finalScoreOf(b.serviceId) - finalScoreOf(a.serviceId);
+    if (d !== 0) return d;
+    return a.serviceId < b.serviceId ? -1 : 1;
+  });
+
+  // Top-K results with collision type awareness
+  const results: RootCauseResult[] = [];
+  for (let i = 0; i < Math.min(topK, scoredNodes.length); i++) {
+    const node = scoredNodes[i]!;
+    const errorBound = estimatePropagationError(node.depth, options.decayAlpha);
+    const cResult = collisionEnergy?.get(node.serviceId);
+    const collisionType = cResult?.collisionType ?? 'chain';
+
+    // Collision-enhanced severity: non-chain types suggest systemic impact
+    let severityLabel = node.score > 0.7 ? 'critical' : node.score > 0.4 ? 'major' : 'minor';
+    if (collisionType === 'cycle') severityLabel = 'critical';
+    else if (collisionType === 'bottleneck' && severityLabel !== 'critical')
+      severityLabel = 'major';
+
+    results.push({
+      serviceId: node.serviceId,
+      faultType: {
+        category: 'UNKNOWN',
+        subType: `anomaly_propagation_${collisionType}`,
+        severity: severityLabel as 'critical' | 'major' | 'minor',
+      },
+      confidence: computeConfidence(node.score, node.depth, errorBound),
+      finalScore: finalScoreOf(node.serviceId),
+      rank: i + 1,
+      evidenceMetrics: [
+        { metric: 'rca_score', value: node.score, threshold: 0.1 },
+        ...(cResult
+          ? [{ metric: 'collision_gain', value: cResult.collisionGain, threshold: 0.3 }]
+          : []),
+      ],
+      propagationDepth: node.depth,
+      propagationErrorBound: errorBound,
+      viaTreeSearch: true,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Estimate propagation error after k hops.
+ *
+ * Error grows multiplicatively with each hop:
+ *   ε_k = 1 - α^k
+ *
+ * where α is the 1-hop propagation accuracy.
+ *
+ * Deng Yu mapping: cumulative error bound in the BBGKY truncation.
+ *
+ * @internal
+ */
+function estimatePropagationError(depth: number, decayAlpha: number): number {
+  return 1 - Math.pow(decayAlpha, Math.max(depth, 0));
+}
+
+/**
+ * Compute confidence from score, depth, and error bound.
+ *
+ * confidence = score × (1 - errorBound)
+ *
+ * High score + low error = high confidence.
+ *
+ * @internal
+ */
+function computeConfidence(score: number, depth: number, errorBound: number): number {
+  const depthPenalty = depth > 0 ? 1 / (1 + Math.log(depth + 1)) : 1;
+  return Math.max(0, Math.min(1, score * (1 - errorBound) * depthPenalty));
+}
+
+/**
+ * Compute the global temporal earliness score for each service from its
+ * post-injection onset delay.
+ *
+ * Each defined delay (ms after fault injection) is min-max normalised so the
+ * EARLIEST service scores 1 and the LATEST scores 0; an undetermined delay
+ * (absent from the map, negative, or non-finite) stays out of the map and is
+ * treated as neutral 0.5 by the caller. A single defined onset (or none, or
+ * an unknown injection time) carries no comparative information, so the map is
+ * left empty — the temporal signal then contributes nothing to the ranking.
+ *
+ * Exported rather than `@internal` on purpose: the offline diagnostic screen
+ * answers "would any weight on this term help?" over dumps, and a SECOND
+ * implementation of the normalisation would be a second answer to that
+ * question — the exact defect this repo's analyzer exists to find. The engine's
+ * ranking and the offline screen therefore share this function, including its
+ * "too few onsets and there is no signal" rule, so a screen can never report a
+ * window for a term the engine would have left inert.
+ */
+export function computeTemporalEarliness(
+  postInjectOnsetDelays: ReadonlyMap<ServiceId, number> | undefined,
+  injectTimeMs: number,
+): Map<ServiceId, number> {
+  const earliness = new Map<ServiceId, number>();
+  if (!injectTimeMs || injectTimeMs <= 0 || !postInjectOnsetDelays) return earliness;
+
+  const defined: Array<{ id: ServiceId; delay: number }> = [];
+  for (const [id, delay] of postInjectOnsetDelays) {
+    if (Number.isFinite(delay) && delay >= 0) defined.push({ id, delay });
+  }
+
+  // A single defined onset (or none) cannot establish a before/after order.
+  if (defined.length < 2) return earliness;
+
+  let minDelay = Infinity;
+  let maxDelay = -Infinity;
+  for (const { delay } of defined) {
+    if (delay < minDelay) minDelay = delay;
+    if (delay > maxDelay) maxDelay = delay;
+  }
+  const span = maxDelay - minDelay;
+
+  for (const { id, delay } of defined) {
+    // earliest → 1, latest → 0; a zero span (all tied) → neutral 0.5.
+    earliness.set(id, span > 0 ? 1 - (delay - minDelay) / span : 0.5);
+  }
+  return earliness;
+}
+
+/**
+ * The temporal prior's per-service SLOPE in one shape: what the term ADDS, per unit
+ * of `temporalWeight`.
+ *
+ * The slope rather than the score, because every candidate's final score is affine in
+ * the weight — `base + w × slope` — which is what makes a weight window solvable
+ * instead of sweepable, offline, from a dump. Both the engine's ranking and the offline
+ * screen call THIS function, so a screen cannot report a window for a term the ranking
+ * would have left inert.
+ *
+ * The `earliness` shape is `2 × (earliness − 0.5)`, computed from
+ * {@link computeTemporalEarliness}, so a service the engine excludes from the map has
+ * slope 0 here — exactly the `?? 0` the ranking used to apply to `2 × (0.5 − 0.5)`.
+ * Multiplying by 2 is exact in binary floating point, so this is bit-identical to the
+ * expression it replaces, not merely equal.
+ *
+ * ABSENT, not zero, when the term cannot act: the map is empty when there are fewer
+ * than two defined onsets or no injection time, and callers read a missing entry as
+ * "no credit". Filling it with 0.5-valued neutrals would make "nothing measured" and
+ * "everything simultaneous" the same object, and they are different statements.
+ *
+ * @param postInjectOnsetDelays - Onset delay in ms per service; negative = undetermined.
+ * @param injectTimeMs - Fault injection time; `0` or absent means unknown, and the map
+ *   is then left empty because no delay can be anchored to anything.
+ * @param shape - Which shape to build; defaults to the shipped one.
+ * @returns The slope per measurable service; empty when the term cannot act.
+ */
+export function computeOnsetSlopes(
+  postInjectOnsetDelays: ReadonlyMap<ServiceId, number> | undefined,
+  injectTimeMs: number,
+  shape: OnsetShape = DEFAULT_ONSET_SHAPE,
+): Map<ServiceId, number> {
+  const slopes = new Map<ServiceId, number>();
+  const defined: Array<{ id: ServiceId; delay: number }> = [];
+  if (injectTimeMs > 0 && postInjectOnsetDelays) {
+    for (const [id, delay] of postInjectOnsetDelays) {
+      if (Number.isFinite(delay) && delay >= 0) defined.push({ id, delay });
+    }
+  }
+  // The engine's own precondition, applied to every shape: one onset cannot establish a
+  // before/after order, and no anchor means no delay is anchored to anything.
+  if (defined.length < 2) return slopes;
+
+  if (shape === 'earliness') {
+    const earliness = computeTemporalEarliness(postInjectOnsetDelays, injectTimeMs);
+    for (const { id } of defined) {
+      // Total over the defined set, which is what `computeTemporalEarliness` returns
+      // for the same inputs — the map is non-empty here because `defined.length >= 2`.
+      slopes.set(id, 2 * (earliness.get(id)! - 0.5));
+    }
+    return slopes;
+  }
+
+  // Every other shape reads the order, which min-max normalisation cannot express. The
+  // tiebreak is the service id, as everywhere in this repo, so a screen over a dump is
+  // reproducible and the tie does not depend on Map insertion order.
+  const ordered = [...defined].sort((a, b) => a.delay - b.delay || (a.id < b.id ? -1 : 1));
+  if (shape === 'order') {
+    // A zero SPAN — every delay equal — carries no rank information, and the ranks a
+    // comparator would still produce from it are an artefact of that comparator. The
+    // test is on the delays, not on the length: a field of three tied services has
+    // three ranks to hand out and no reason to hand them out.
+    const span = ordered[ordered.length - 1]!.delay - ordered[0]!.delay;
+    const last = ordered.length - 1;
+    ordered.forEach(({ id }, index) => {
+      slopes.set(id, span > 0 ? 1 - (2 * index) / last : 0);
+    });
+    return slopes;
+  }
+  // `earliest-only` / `latest-only`: one credited set, and a TIE at the boundary is
+  // credited together — the alternative would make a shape whose whole claim is about
+  // simultaneity depend on the service-id tiebreak.
+  const boundary =
+    shape === 'earliest-only' ? ordered[0]!.delay : ordered[ordered.length - 1]!.delay;
+  for (const { id, delay } of ordered) {
+    if (delay === boundary) slopes.set(id, shape === 'earliest-only' ? 1 : -1);
+  }
+  return slopes;
+}

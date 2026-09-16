@@ -1,0 +1,192 @@
+# Adding per-edge latency evidence: feasibility and cost, before writing code
+
+`docs/fse26-data-gap-verdict.md` lists two fields as dropped:
+`attr.http.response.status_code` and the trace `duration`. Every signal tried on this
+side of the benchmark has failed, and the register's reopening condition for that
+axis is **new evidence** rather than a new use of old evidence — so this is the
+candidate, and it is assessed here before any code is written.
+
+## The framing is wrong: the fields are already read
+
+`read_trace_edges` projects only `trace_id`/`span_id`/`parent_span_id`/`service_name`,
+and its docstring says why (the engine needs the call graph, not the span list). But
+the converter reads both fields already, for other outputs:
+
+- `read_trace_derived_metrics` reads `duration` (converted ns → ms) and
+  `attr.http.response.status_code`, and derives `http.server.request.duration` plus an
+  error-rate series gated on status `>= 400`;
+- `read_failed_trace_edges` uses `FAILED_STATUS_COLUMN = "attr.http.response.status_code"`
+  and **already aggregates per edge**, with `group_by(["parent_service", "service"])`
+  and `failed`/`baseline` counts either side of the injection.
+
+So the gap is a **projection choice inside one reader**, not a missing input, a broken
+export, or a pipeline change. The per-edge aggregation machinery this needs is
+already written and already shipped.
+
+## What the change is
+
+1. extend the per-edge aggregation to carry a latency statistic per edge — the
+   duration column is already in the same frame the `failed`/`baseline` group-by
+   runs on;
+2. widen the emitted edge row from `[caller, callee, failed, baseline]`;
+3. bump `SCHEMA_VERSION` (3 → 4) and update the provenance digest — the record shape
+   changes, and an old cache must not be read as a new one;
+4. extend the loader and the engine's option type;
+5. then, and only then, a signal.
+
+## What it costs
+
+The cache is built and published by `rcabench-data`'s workflow, which **clones this
+repo at HEAD**, so any converter change requires a rebuild for the field to appear:
+
+| path | cost | what it establishes |
+| --- | --- | --- |
+| **prefix rebuild** (`download_prefix_bytes`, already exercised: 500 MB → 7 min → 47 cases) | **~10 min** | whether the new observable separates source from victim, on a subset |
+| full rebuild | ~3 h 17 m, of which 2 h 24 m is the cold-storage download | the benchmark number |
+
+The prefix path is the reason this is affordable to test: **separability first, at
+1/20th of the cost**, exactly as the last four candidates were settled. A prefix cache
+cannot produce a comparable headline number, and it does not need to.
+
+## The candidate it enables
+
+The failed/baseline counts are a **count of failures**. A call that became *slow* but
+still succeeded is invisible to them, and so is a case where no call failed at all —
+which is 70 of the 291 stock cases and 160 of the 357 wrong cases in the last dump.
+
+Per-edge latency is a continuous magnitude **measured by the caller about the callee**,
+so it carries the same direction the failed-edge signal tried to encode, but it exists
+where the counts are zero. Two properties make it worth the rebuild:
+
+- it is a different observable, not a different transform of the same one, which is
+  the only thing the register accepts as a reopening;
+- it is attributed to the callee by construction (the caller wrote down how long
+  *its* call took), so it needs no direction guess.
+
+## The test, stated before the build
+
+Take the prefix cache, run `--diagnose` over the affected types at the shipped config,
+and ask the same question that settled the last candidate: **does the per-edge latency
+rise separate the source from the victim?** Specifically, for the 58
+`ts-ui-dashboard`-sourced cases and the JVMMemoryStress regressions, whether the
+credited callee's inbound latency rise differs between the two populations. If it does
+not, the field is recorded as measured-and-inert and the axis stays closed — for the
+cost of one prefix rebuild rather than a full one.
+
+## CORRECTION: the prefix path cannot deliver the cases this probe needs
+
+The table above claims separability is testable at roughly a twentieth of the full
+rebuild, via `download_prefix_bytes`. That is **wrong**, and the prefix build that was
+run establishes it.
+
+The source is a single 13.4 GB tar, so `download_prefix_bytes` takes a byte prefix of
+the **tar stream**, not a selection of cases. At 512 MB the resulting cache contains
+**48 cases, 22 of them HTTP**, and it happens to carry the HTTP, Pod and Resource
+categories simply because they sit early in the stream. The cases this probe needs are
+58 specific `ts-ui-dashboard`-sourced `HTTPResponseReplaceCode` cases plus the JVM
+regressions, scattered through the archive — and JVM is not in the prefix at all.
+
+The full HTTP shard is 1.61 GB compressed for 796 cases against 58 MB for 22, so
+reaching the whole HTTP category alone needs an order of magnitude more prefix. There
+is no cheap subset that contains the right cases: **the full download is the cost of
+this question.**
+
+What the prefix build did establish, for 6 minutes rather than 3 h 17 m:
+
+- the cache workflow clones the converter at HEAD and the published
+  `manifest.json` records `converterRevision: c0db4e0` — the revision that added
+  `read_edge_latency`, so the new key is in the pipeline and the digest is recorded;
+- a separate `release_tag` keeps a partial cache from touching the published
+  `rcabench-full-v3`, which the default `release_tag` would otherwise replace with a
+  48-case subset;
+- the manifest reports `schemaVersion: 3` alongside the new key, which is the additive
+  claim in `read_edge_latency` checked against a real build rather than asserted.
+
+The full rebuild is dispatched as `rcabench-latency-full` with the default full
+download, so the published cache stays byte-identical for every existing result.
+
+### The correction that matters for future candidates
+
+A "cheap prefix probe" is only cheap when the cases under test sit early in the tar.
+For a fault type, a source service, or any other subset chosen by content, the prefix
+cost is essentially the full download, and the honest plan is to budget the rebuild
+rather than to promise a shortcut.
+
+## Measured: per-edge latency is real for the resource faults and inert for ReplaceCode
+
+Run `34851239065` on the rebuilt cache (`rcabench-latency-full`, converter `ada655bf`),
+`--diagnose` over 406 blocks. All 406 carry `latRise`, so the field survives the pipeline.
+
+Per-service `latRise` is the largest ratio `postMeanMs / preMeanMs` over a service's
+inbound edges.
+
+| fault type | cases | source latRise med / p90 | winner latRise med / p90 | source > winner |
+| --- | --- | --- | --- | --- |
+| JVMMemoryStress | 171 | **3.574 / 14.79** | 1.962 / 17.00 | **100/165 (61%)** |
+| HTTPResponseReplaceCode | 231 | 0.976 / 1.91 | 0.975 / 2.19 | 30/222 (14%) |
+
+Counterfactual, ranking by `latRise` alone and ignoring every other term:
+
+| fault type | Top@1 if `latRise` were the only signal | shipped |
+| --- | --- | --- |
+| JVMMemoryStress | **57/171 (33.3%)** | 4/171 (2.3%) |
+| HTTPResponseReplaceCode | 1/231 (0.4%) | 159/231 (68.8%) |
+| HTTPResponsePatchBody | 1/4 (25.0%) | 3/4 (75.0%) |
+
+### The verdict is conditional, and it points away from the case that motivated the field
+
+- **For the resource faults it is the strongest single observable found on this block.**
+  33.3% alone against a shipped 2.3% is a fourteen-fold difference on 171 cases, and it
+  is the shape the data-gap verdict predicted: a JVM memory fault's sharpest signature is
+  a latency side effect, and this reader attributes that latency to the CALLEE that the
+  caller was waiting on rather than to the network-level metric that fires on victims.
+- **For ReplaceCode it carries nothing.** Source and winner are indistinguishable (0.976
+  against 0.975) and it wins 14% of head-to-heads. So it cannot serve the 58
+  `ts-ui-dashboard` cases that motivated adding the field, and the earlier hope that the
+  same evidence would reopen the failed-edge axis is not supported.
+
+That is a better outcome than either extreme: the field is not dead, but its target is
+the four silent-source types, not the failed-edge axis. The next step is a weighted term
+over `latRise` with the affine solver run first — generalised to take a slope function
+rather than the failed-edge score — so the weight is solved before it is swept.
+
+## Simulated: a partial weight gains 26 cases on the resource block
+
+The affine solver is the wrong instrument here and was not used. It answers "does a weight
+exist that satisfies every case at once", and with `latRise` alone at 33.3% on
+JVMMemoryStress that answer is trivially no and carries no information. The validated
+simulator is the right one: it reproduces the dump's own top-1 in 406/406 cases at `w = 0`,
+so its deltas are trustworthy, and it can sweep the weight for free.
+
+Scored as `log1p(selfAnomaly) + logScore + w × latScore`, where `latScore` is
+`log1p(max(0, latRise − 1))` max-normalised across the case — the same shape and the same
+`log1p` compression the other signals use, because `latRise` spans 0.3 to 2048.
+
+| w | JVMMemoryStress | ReplaceCode | PatchBody | net vs shipped |
+| --- | --- | --- | --- | --- |
+| 0.00 | 4 | 159 | 3 | — |
+| 0.25 | **24 (+20)** | 158 (−1) | 4 (+1) | +20 |
+| 0.50 | 27 (+23) | 158 (−1) | 4 (+1) | +23 |
+| **0.75** | **30 (+26)** | **157 (−2)** | 4 (+1) | **+25** |
+| 1.00 | 35 (+31) | **85 (−74)** | 3 (0) | **−43** |
+
+Two things to read in that table. The gain is real and concentrated where the evidence is:
+JVMMemoryStress 4 → 30 at the best weight, against a term that explains 33.3% of the block
+on its own. And the collapse at `w = 1` is the same failure the failed-edge axis hit — a
+full-weight additive term decides every case it can, including the ones it is wrong about —
+so the useful region is a partial weight, not the obvious one.
+
+Three caveats that a run has to settle, none of which the simulation can:
+
+1. **ReplaceCode regresses by 2 cases at the best weight**, so the kill criterion's "zero
+   regressed fault types" is not met by simulation. The magnitude is small and the gain is
+   +26, but the rule does not have an exception for a favourable ratio.
+2. **This dump covers 406 of 1422 cases.** The term applies to every case, so the other
+   1016 — Network, Resource, Pod, Time, DNS and most of HTTP — are unmeasured. A +25 on
+   this subset can be eaten by a −30 elsewhere.
+3. **The simulator uses a simpler tie-break than the engine**, which is why its `w = 0`
+   counts reproduce the real ones only to within a case or two.
+
+So the next step is to build the term, not to claim the result: an off-by-default
+`latWeight`, `SCHEMA`-free because the field is already cached, and then the paired
+measurement against the shipped configuration.
