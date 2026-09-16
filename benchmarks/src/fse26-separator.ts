@@ -61,6 +61,15 @@ export interface SeparatorSubject {
 export interface SeparatorScalar {
   readonly name: string;
   readonly role: SeparatorRole;
+  /**
+   * The `DiagnosedService` fields this scalar reads.
+   *
+   * Declared rather than inferred, because TypeScript types do not exist at runtime and an audit
+   * needs a list. It is what makes "which fields does NO signal read" answerable, and it is checked
+   * in both directions: every key here must be a real field, and every field is either read by a
+   * scalar or classified in {@link SERVICE_FIELD_AUDIT}.
+   */
+  readonly reads: readonly (keyof DiagnosedService)[];
   /** `1` when a LARGER value is the source's evidence, `-1` when a smaller one is. */
   readonly direction: 1 | -1;
   /**
@@ -127,6 +136,12 @@ interface Inventory {
   /** The strongest deviation among the KEPT metrics — a lower bound, as the block is brief. */
   readonly bestDev: number;
   readonly bestRise: number;
+  /** The composition of the metric that DROVE the score: the kept one with the largest rise. */
+  readonly decisiveTrend: number;
+  readonly decisiveCv: number;
+  readonly decisiveBurst: number;
+  /** Its pre-anomaly baseline — the denominator the two ratios are measured against. */
+  readonly decisiveBaseline: number;
 }
 
 /**
@@ -144,6 +159,7 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
   let transient = 0;
   let bestDev = 0;
   let bestRise = 0;
+  let decisive: Inventory | undefined;
   for (const outcome of outcomes) {
     if (outcome.outcome === TRANSIENT_OUTCOME) {
       transient++;
@@ -151,12 +167,39 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
     }
     if (outcome.outcome !== 'kept') continue;
     kept++;
-    const deviation = outcome.breakdown?.deviation ?? 0;
+    const breakdown = outcome.breakdown;
+    const deviation = breakdown?.deviation ?? 0;
     if (deviation > bestDev) bestDev = deviation;
-    const rise = outcome.breakdown?.riseRatio ?? 0;
-    if (rise > bestRise) bestRise = rise;
+    // A decomposition is what makes a metric's composition knowable at all, so the decisive record
+    // is built only when one EXISTS — written as a guard rather than as four `?? 0` fallbacks,
+    // because those fallbacks would be unreachable and would report "no composition" as zeroes.
+    if (breakdown !== undefined && breakdown.riseRatio > bestRise) {
+      bestRise = breakdown.riseRatio;
+      // The metric that drove the score is the one with the largest rise, and its composition is
+      // what the score was made of. Built here rather than read later, so the composition and the
+      // ratio cannot come from two different metrics.
+      decisive = {
+        kept: 0,
+        transient: 0,
+        bestDev: 0,
+        bestRise: 0,
+        decisiveTrend: breakdown.trend,
+        decisiveCv: breakdown.cv,
+        decisiveBurst: breakdown.burst,
+        decisiveBaseline: breakdown.baselineMean,
+      };
+    }
   }
-  return { kept, transient, bestDev, bestRise };
+  return {
+    kept,
+    transient,
+    bestDev,
+    bestRise,
+    decisiveTrend: decisive?.decisiveTrend ?? 0,
+    decisiveCv: decisive?.decisiveCv ?? 0,
+    decisiveBurst: decisive?.decisiveBurst ?? 0,
+    decisiveBaseline: decisive?.decisiveBaseline ?? 0,
+  };
 }
 
 /**
@@ -252,67 +295,195 @@ function inDegreeOf(
  */
 export const SEPARATOR_SCALARS: readonly SeparatorScalar[] = [
   // The engine's own terms. Reported, never promotable — see `SeparatorRole`.
-  { name: 'metric', role: 'term', direction: 1, of: (service) => service.selfAnomaly },
-  { name: 'log', role: 'term', direction: 1, of: (service) => service.logScore },
+  { name: 'metric', role: 'term', reads: ['selfAnomaly'], direction: 1, of: (s) => s.selfAnomaly },
+  { name: 'log', role: 'term', reads: ['logScore'], direction: 1, of: (s) => s.logScore },
   {
     name: 'lat',
     role: 'term',
+    reads: ['latRise'],
     direction: 1,
     of: (service, subject) => subject.latSlopes.get(service.serviceId) ?? 0,
   },
   {
     name: 'temporal',
     role: 'term',
+    reads: ['onsetDelayMs'],
     direction: 1,
     of: (service, subject) => subject.onsetSlopes.get(service.serviceId) ?? 0,
   },
-  { name: 'failedEdge', role: 'term', direction: 1, of: (service) => service.failedEdgeScore },
+  {
+    name: 'failedEdge',
+    role: 'term',
+    reads: ['failedEdgeScore'],
+    direction: 1,
+    of: (s) => s.failedEdgeScore,
+  },
   // What the engine's guards DID to the service's own inventory.
-  { name: 'kept', role: 'inventory', direction: 1, of: (service) => inventoryOf(service)?.kept },
+  {
+    name: 'kept',
+    role: 'inventory',
+    reads: ['metricOutcomes'],
+    direction: 1,
+    of: (s) => inventoryOf(s)?.kept,
+  },
   {
     name: 'transientDrops',
     role: 'inventory',
+    reads: ['metricOutcomes'],
     // A source's signature should SURVIVE its own guards, so fewer drops is its evidence.
     direction: -1,
-    of: (service) => inventoryOf(service)?.transient,
+    of: (s) => inventoryOf(s)?.transient,
   },
   {
     name: 'bestDev',
     role: 'inventory',
+    reads: ['metricOutcomes'],
     direction: 1,
-    of: (service) => inventoryOf(service)?.bestDev,
+    of: (s) => inventoryOf(s)?.bestDev,
   },
   {
     name: 'bestRise',
     role: 'inventory',
+    reads: ['metricOutcomes'],
     direction: 1,
-    of: (service) => inventoryOf(service)?.bestRise,
+    of: (s) => inventoryOf(s)?.bestRise,
+  },
+  // The COMPOSITION of the metric that drove the score. Read from the same decomposition the two
+  // maxima come from, so a candidate built on it can be gated on the same evidence.
+  {
+    name: 'decisiveTrend',
+    role: 'inventory',
+    reads: ['metricOutcomes'],
+    direction: 1,
+    of: (s) => inventoryOf(s)?.decisiveTrend,
+  },
+  {
+    name: 'decisiveCv',
+    role: 'inventory',
+    reads: ['metricOutcomes'],
+    // An unstable series is a noisier measurement of the same excursion, so a lower coefficient
+    // of variation is the source's evidence.
+    direction: -1,
+    of: (s) => inventoryOf(s)?.decisiveCv,
+  },
+  {
+    name: 'decisiveBurst',
+    role: 'inventory',
+    reads: ['metricOutcomes'],
+    direction: -1,
+    of: (s) => inventoryOf(s)?.decisiveBurst,
+  },
+  {
+    name: 'decisiveBaseline',
+    role: 'inventory',
+    reads: ['metricOutcomes'],
+    // The wrong winner rises from a LOWER baseline (median 0.86 against the source's 1.67), so a
+    // higher baseline is the source's evidence: an absolute-level excursion, not a ratio on noise.
+    direction: 1,
+    of: (s) => inventoryOf(s)?.decisiveBaseline,
   },
   // The raw evidence the terms are computed FROM — a different quantity from the term.
   {
     name: 'sigLines',
     role: 'evidence',
+    reads: ['logicExceptionCount', 'httpExceptionCount', 'bothExceptionCount'],
     direction: 1,
     // The engine admits a line once, so the source-signature set is the UNION.
-    of: (service) =>
-      service.logicExceptionCount + service.httpExceptionCount - (service.bothExceptionCount ?? 0),
+    of: (s) => s.logicExceptionCount + s.httpExceptionCount - (s.bothExceptionCount ?? 0),
   },
   {
     name: 'errLines',
     role: 'evidence',
+    reads: ['errorCount', 'fatalCount'],
     direction: 1,
-    of: (service) => service.errorCount + service.fatalCount,
+    of: (s) => s.errorCount + s.fatalCount,
   },
-  { name: 'inLatEdges', role: 'evidence', direction: 1, of: (service) => service.latEdges },
+  {
+    name: 'inLatEdges',
+    role: 'evidence',
+    reads: ['latEdges'],
+    direction: 1,
+    of: (s) => s.latEdges,
+  },
+  {
+    name: 'edgeRecords',
+    role: 'evidence',
+    reads: ['failedEdgeRecords'],
+    direction: 1,
+    // The VOLUME behind `failedEdgeScore`, which the engine's direction gate treats as a mask. The
+    // register closes the weight on the score; the raw count is a different quantity and was only
+    // ever measured as a marginal rate.
+    of: (s) => s.failedEdgeRecords,
+  },
   // The dump's only TIME. A smaller delay is the evidence, so the direction is inverted.
-  { name: 'onset', role: 'time', direction: -1, of: (service) => service.onsetDelayMs },
+  {
+    name: 'onset',
+    role: 'time',
+    reads: ['onsetDelayMs'],
+    direction: -1,
+    of: (s) => s.onsetDelayMs,
+  },
   {
     name: 'inDegree',
     role: 'topology',
+    reads: ['serviceId'],
     direction: 1,
     of: (service, subject) => inDegreeOf(service.serviceId, adjacencyOf(subject.kase.edges)),
   },
 ];
+
+/**
+ * Every field a `DIAG` service line carries, and who reads it.
+ *
+ * The map is `Record<keyof DiagnosedService, string>`, so **adding a field to the reader breaks the
+ * build until it is classified here** — a compile-time guard rather than a comment, and the same
+ * discipline as the coverage allow-list that had three holes. A field is either read by a scalar
+ * (named here) or carries the reason it is not: the reason is the deliverable, because "nobody
+ * screened this" and "this was screened and closed" are different statements and only one of them
+ * should stop a proposal.
+ */
+export const SERVICE_FIELD_AUDIT: Readonly<Record<keyof DiagnosedService, string>> = {
+  serviceId: 'read: every scalar addresses a service BY it (`inDegree` reads it as a graph node)',
+  isGroundTruth: 'NOT read: it is the label — a scalar that read it would be reading the answer',
+  predictedRank:
+    'NOT read: degenerate — the winner is rank 1 by construction, so the comparison would restate the pairing',
+  selfAnomaly: 'read: `metric`',
+  logScore: 'read: `log`',
+  failedEdgeScore: 'read: `failedEdge`',
+  failedEdgeRecords: 'read: `edgeRecords`',
+  latRise: 'read: `lat`',
+  latEdges: 'read: `inLatEdges`',
+  onsetDelayMs: 'read: `onset`, and `temporal` through the engine’s own slope map',
+  dominantMetric:
+    'NOT read: a LABEL, not a magnitude — the label/family axis is closed by `fse26-family-screen-verdict.md`, which scanned every family hand-registered and measured',
+  errorCount: 'read: `errLines`',
+  fatalCount: 'read: `errLines`',
+  logicExceptionCount: 'read: `sigLines`',
+  httpExceptionCount: 'read: `sigLines`',
+  bothExceptionCount: 'read: `sigLines`',
+  metricOutcomes:
+    'read: `kept`, `transientDrops`, `bestDev`, `bestRise` and four composition scalars — but only for the four numbers and the decisive metric’s decomposition, not for the per-metric fate WORDS, which are a separate axis (the guard census)',
+};
+
+/**
+ * The fields no scalar reads, with the reason each is not screened.
+ *
+ * @returns One entry per field whose audit text is not a `read:`.
+ */
+export function unscreenedFields(): readonly (keyof DiagnosedService)[] {
+  return (Object.keys(SERVICE_FIELD_AUDIT) as (keyof DiagnosedService)[]).filter(
+    (field) => !SERVICE_FIELD_AUDIT[field].startsWith('read:'),
+  );
+}
+
+/**
+ * The fields at least one scalar reads, as the scalars declare them.
+ *
+ * @returns The union of every scalar's `reads`.
+ */
+export function screenedFields(): readonly (keyof DiagnosedService)[] {
+  return [...new Set(SEPARATOR_SCALARS.flatMap((scalar) => scalar.reads))].sort();
+}
 
 /**
  * The one PAIR signal: does the call graph let the source reach the engine's rank-1?
@@ -422,6 +593,17 @@ export interface SeparatorRow {
   /** The fault type, or `''` for the total row. */
   readonly faultType: string;
   readonly pairs: number;
+  /**
+   * Pairs whose two sides render the SAME NUMBER of kept metrics — the only pairs a
+   * decomposition-based signal can be conditioned on.
+   *
+   * The count is printed because a confound check has to state its power: the block renders a
+   * decomposition in proportion to how many metrics a service keeps, so "does this composition
+   * signal survive the rendering?" can only be asked where the two sides agree. In the weak block
+   * that is 1 pair of 159 and 0 of 83 — the confound is SATURATED rather than excluded, and this
+   * column is how a reader sees it without running anything else.
+   */
+  readonly sameInventoryPairs: number;
   readonly cells: readonly SeparatorCell[];
 }
 
@@ -435,6 +617,15 @@ export interface SeparatorCensus {
   readonly rows: readonly SeparatorRow[];
   readonly total: SeparatorRow;
   /** Pairs where no non-`term` signal prefers the source. */
+  /**
+   * Pairs where no non-`term` signal prefers the source.
+   *
+   * **A menu-relative statistic, and the menu size must be printed with it.** It read 43/666 over
+   * ten non-term signals and 0/666 over fifteen: adding better signals does not mean the earlier 43
+   * pairs stopped being hard, it means the question "is there any evidence at all" is answered by
+   * the MENU. Printed as a bare count it invites exactly the wrong reading, so
+   * {@link formatSeparatorCensus} names the menu beside it.
+   */
   readonly noNonTermPreference: number;
   /** The signals that cleared {@link SeparatorCriterion}, best AUC first. */
   readonly candidates: readonly string[];
@@ -615,6 +806,13 @@ export function separatorCensus(
     pairs.push({ datapack: kase.datapack, faultType: kase.faultType, source, winner });
   }
 
+  /** Whether both sides render the same number of kept metrics, i.e. are comparable. */
+  const sameInventory = (pair: SeparatorPair): boolean => {
+    const source = inventoryOf(pair.source);
+    const winner = inventoryOf(pair.winner);
+    return source !== undefined && winner !== undefined && source.kept === winner.kept;
+  };
+
   const build = (faultType: string, subset: readonly SeparatorPair[]): SeparatorRow => {
     const tallies = new Map<string, Tally>(
       SEPARATOR_SIGNALS.map((signal) => [
@@ -634,6 +832,7 @@ export function separatorCensus(
     return {
       faultType,
       pairs: subset.length,
+      sameInventoryPairs: subset.filter(sameInventory).length,
       cells: SEPARATOR_SIGNALS.map((signal) =>
         toCell(signal.name, signal.role, tallies.get(signal.name)!),
       ),
@@ -646,9 +845,15 @@ export function separatorCensus(
     if (list === undefined) byType.set(pair.faultType, [pair]);
     else list.push(pair);
   }
-  const rows = [...byType.entries()]
-    .map(([faultType, subset]) => build(faultType, subset))
-    .sort((a, b) => b.pairs - a.pairs || (a.faultType < b.faultType ? -1 : 1));
+  // The rows CARRY their subsets. A second lookup by fault type would need a fallback that cannot
+  // fire (rows are the type map), and a fallback that cannot fire is dead code pretending to be
+  // defensive — the same reason the earlier `?? []` was removed.
+  const built = [...byType.entries()].map(([faultType, subset]) => ({
+    row: build(faultType, subset),
+    subset,
+  }));
+  built.sort((a, b) => b.row.pairs - a.row.pairs || (a.row.faultType < b.row.faultType ? -1 : 1));
+  const rows = built.map((entry) => entry.row);
   const total = build('', pairs);
 
   const cellOf = (row: SeparatorRow, name: string) => row.cells.find((cell) => cell.name === name)!;
@@ -688,11 +893,7 @@ export function separatorCensus(
   const adjustedAlpha = adjustedAlphaOver(readings);
   const survivors: SeparatorSurvivor[] = [];
   const dominated: SeparatorSurvivor[] = [];
-  const subsets = new Map([...byType.entries()]);
-  for (const row of rows) {
-    // The row's own pairs, carried rather than looked up behind a fallback: rows ARE the type map,
-    // so a `?? []` there could only ever be dead code pretending to be defensive.
-    const subset = subsets.get(row.faultType) ?? [];
+  for (const { row, subset } of built) {
     for (const cell of row.cells) {
       if (cell.role === 'term' || cell.p === undefined) continue;
       if (cell.p >= adjustedAlpha) continue;
@@ -796,6 +997,13 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
       '`*` marks a cell that clears it',
   );
   lines.push(
+    '  `kept=` is how many pairs render the same number of kept metrics on both sides — the only',
+  );
+  lines.push(
+    '  pairs a decomposition-based signal can be conditioned on, so a confound check can state its',
+  );
+  lines.push('  power: saturated (few) is not the same as excluded (many)');
+  lines.push(
     '  a tie counts as half a win; the p-value excludes ties, which carry no direction; `n/a` is',
   );
   lines.push('  a pair one side could not measure, and it is outside the rate rather than a loss');
@@ -806,6 +1014,7 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
   lines.push(
     '  by fault type'.padEnd(labelWidth) +
       'n'.padStart(5) +
+      '  kept='.padStart(7) +
       '  metric      log      lat temporal   best non-term            AUC          p',
   );
   for (const row of [...census.rows, census.total]) {
@@ -817,7 +1026,8 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
     const mark =
       best !== undefined && best.p! < census.adjustedAlpha && best.p !== undefined ? ' *' : '  ';
     lines.push(
-      `  ${label.padEnd(labelWidth - 2)}${String(row.pairs).padStart(5)}${columns}   ` +
+      `  ${label.padEnd(labelWidth - 2)}${String(row.pairs).padStart(5)}` +
+        `${String(row.sameInventoryPairs).padStart(7)}${columns}   ` +
         `${(best?.name ?? 'none measurable').padEnd(22)}${aucText(best?.auc).padStart(6)}` +
         `${pText(best?.p).padStart(12)}${mark}`,
     );
@@ -878,7 +1088,9 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
   );
   lines.push(
     `  ${census.noNonTermPreference}/${census.total.pairs} pairs carry no non-term preference for ` +
-      'the source: only new evidence can reach them.',
+      `the source, over the ${census.total.cells.filter((cell) => cell.role !== 'term').length} ` +
+      'non-term signals screened — menu-relative by construction, so compare it only against the ' +
+      'same menu',
   );
   return lines.join('\n');
 }

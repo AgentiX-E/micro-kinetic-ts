@@ -6,11 +6,14 @@ import {
   DEFAULT_SEPARATOR_CRITERION,
   SEPARATOR_SCALARS,
   SEPARATOR_SIGNALS,
+  SERVICE_FIELD_AUDIT,
   adjustedAlphaOver,
   formatSeparatorCensus,
   fromScalar,
+  screenedFields,
   separationPValue,
   separatorCensus,
+  unscreenedFields,
 } from '../src/fse26-separator.js';
 
 /**
@@ -130,7 +133,13 @@ describe('fromScalar — one preference rule for both sides', () => {
     onsetSlopes: new Map<string, number>(),
   };
   const scalar = (of: (service: DiagnosedService) => number | undefined, direction: 1 | -1 = 1) =>
-    fromScalar({ name: 'x', role: 'inventory', of: (service) => of(service), direction });
+    fromScalar({
+      name: 'x',
+      role: 'inventory',
+      reads: ['selfAnomaly'],
+      of: (service) => of(service),
+      direction,
+    });
 
   it('says which side the evidence favours, and in which direction', () => {
     expect(scalar((s) => s.selfAnomaly).prefers(pair, subject)).toBe('winner');
@@ -426,6 +435,9 @@ describe('the multiplicity bar, and the exact test behind it', () => {
     // Both directions are printed, so `0 for` cannot be read as `nothing was measured`.
     expect(text).toContain('separate FOR the source');
     expect(text).toContain('separate AGAINST it');
+    // And the count that moved from 43 to 0 when five signals were added names its MENU: it is a
+    // function of the signal set, not of the dump, and a bare count invites the wrong reading.
+    expect(text).toContain('non-term signals screened');
   });
 
   it('keeps a significantly WRONG-WAY cell out of the candidate list', () => {
@@ -800,5 +812,91 @@ describe('the survivor list under a scan wide enough to need the ellipsis', () =
     ];
     const census = separatorCensus(cases);
     expect(census.rows.map((row) => row.faultType)).toEqual(['AA', 'ZZ']);
+  });
+});
+
+describe('the field audit — which fields no signal reads, and why that is a claim', () => {
+  it('classifies every field a DIAG service line carries, in both directions', () => {
+    // The map is typed `Record<keyof DiagnosedService, string>`, so a field added to the reader
+    // cannot reach main unclassified. What a type cannot check is the SPLIT: that the two lists are
+    // disjoint, that together they are the whole schema, and that a `read:` names a real signal.
+    const screened = screenedFields();
+    const unscreened = unscreenedFields();
+    const names = new Set(SEPARATOR_SCALARS.map((scalar) => scalar.name));
+    for (const field of Object.keys(SERVICE_FIELD_AUDIT) as (keyof DiagnosedService)[]) {
+      const entry = SERVICE_FIELD_AUDIT[field];
+      expect(entry.trim().length, `${field} has no audit text`).toBeGreaterThan(0);
+      if (!entry.startsWith('read:')) continue;
+      // Every `read:` entry names at least one declared scalar, read off the text.
+      const named = [...entry.matchAll(/`([a-zA-Z]+)`/g)].map((match) => match[1]!);
+      expect(
+        named.filter((name) => names.has(name)),
+        `${field} names no signal`,
+      ).not.toHaveLength(0);
+    }
+    expect(screened.filter((field) => unscreened.includes(field))).toEqual([]);
+    expect([...screened, ...unscreened].sort()).toEqual(
+      (Object.keys(SERVICE_FIELD_AUDIT) as (keyof DiagnosedService)[]).sort(),
+    );
+  });
+
+  it('names exactly the three fields nothing screens, and each carries its reason', () => {
+    // Pinned rather than computed: a field moving between these lists is a decision, and the test
+    // is what forces it to be reviewed. Each of the three is either the label, degenerate, or an
+    // axis already measured and closed.
+    expect([...unscreenedFields()].sort()).toEqual([
+      'dominantMetric',
+      'isGroundTruth',
+      'predictedRank',
+    ]);
+    expect(SERVICE_FIELD_AUDIT.dominantMetric).toContain('fse26-family-screen-verdict.md');
+    expect(SERVICE_FIELD_AUDIT.isGroundTruth).toContain('label');
+  });
+
+  it('says which scalar reads each screened field', () => {
+    expect(screenedFields()).toContain('failedEdgeRecords');
+    expect(screenedFields()).toContain('metricOutcomes');
+    expect(SEPARATOR_SCALARS.find((scalar) => scalar.name === 'edgeRecords')!.reads).toEqual([
+      'failedEdgeRecords',
+    ]);
+  });
+});
+
+describe('the conditioning column — a confound check has to state its power', () => {
+  /** A rendered inventory with `kept` metrics, so two sides can agree or disagree on the count. */
+  const fate = (outcome: string) => ({ label: 'm', outcome, score: 1 });
+  const withInventory = (serviceId: string, kept: number, anomaly: number) => ({
+    ...svc(serviceId, { selfAnomaly: anomaly }),
+    metricOutcomes: [...Array.from({ length: kept }, () => fate('kept')), fate('transient-return')],
+  });
+
+  it('counts the pairs whose two sides render the same number of kept metrics', () => {
+    // Two pairs of one type: the first agrees on the count, the second does not. Only the first is
+    // conditionable, and the row says so — the block renders a decomposition in proportion to how
+    // many metrics a service keeps, so "does this composition signal survive that?" can only be
+    // asked where the two sides agree.
+    const census = separatorCensus([
+      wrongCase('agree', undefined, [
+        withInventory('ts-src', 3, 0.4),
+        withInventory('ts-rival', 3, 1),
+      ]),
+      wrongCase('differ', undefined, [
+        withInventory('ts-src', 3, 0.4),
+        withInventory('ts-rival', 9, 1),
+      ]),
+    ]);
+    expect(census.rows[0]!.pairs).toBe(2);
+    expect(census.rows[0]!.sameInventoryPairs).toBe(1);
+    expect(census.total.sameInventoryPairs).toBe(1);
+    // And it prints with the table, because a saturated confound and an excluded one look alike in
+    // every other column.
+    expect(formatSeparatorCensus(census)).toContain('kept=');
+  });
+
+  it('does not count a pair whose inventory the block did not render at all', () => {
+    // `undefined` is not a count of zero: an unrendered inventory cannot be compared, so it is not
+    // conditionable either.
+    const census = separatorCensus([wrongCase('no-inventory')]);
+    expect(census.total.sameInventoryPairs).toBe(0);
   });
 });

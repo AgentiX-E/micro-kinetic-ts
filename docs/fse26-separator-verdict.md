@@ -195,7 +195,95 @@ free pre-screen is the next iteration, not this one.
    from. The 4 survivors were selected by scanning 250 cells; the fold vector is the weakest
    correction, not the last word.
 
-## 6. Reproduce
+## 6. The field audit, and the five signals it named
+
+The register asks any candidate to *name the context feature*. That makes "which fields does no
+signal read" a question with a checkable answer, and the answer is now structural rather than
+rhetorical: every scalar declares the `DiagnosedService` fields it reads
+(`SeparatorScalar.reads`), and `SERVICE_FIELD_AUDIT` is typed
+`Record<keyof DiagnosedService, string>` — **adding a field to the reader breaks the build until it
+is classified**. The audit names three fields nothing screens, each with its reason:
+
+| field | why no signal reads it |
+| --- | --- |
+| `isGroundTruth` | it is the LABEL — a scalar that read it would be reading the answer |
+| `predictedRank` | degenerate: the winner is rank 1 by construction, so the comparison would restate the pairing |
+| `dominantMetric` | a LABEL, not a magnitude — the family axis is closed by `fse26-family-screen-verdict.md` |
+
+The audit then named fields that were **read but not screened**: the decomposition of the metric that
+drove the score (`trend`, `cv`, `burst`, `baselineMean`), and the raw `failedEdge` record COUNT behind
+its normalised score. Five scalars were added for them — `decisiveTrend`, `decisiveCv`,
+`decisiveBurst`, `decisiveBaseline`, `edgeRecords` — and the census re-run over **375 non-term cells**,
+which raises the multiplicity bar to `p < 1.4e-4`.
+
+The new fields are the strongest this screen has ever found, and two of them invert a previous
+conclusion:
+
+| cell | source–winner | AUC | p | folds |
+| --- | --- | --- | --- | --- |
+| `HTTPResponseReplaceCode` / `edgeRecords` | **60–2** | **0.908** | 8.5e-16 | .81/.85/1.00/.97/.93 stable |
+| `HTTPResponseReplaceCode` / `decisiveCv` | 59–3 | 0.884 | 1.7e-14 | .92/.75/.88/.91/.96 stable |
+| `HTTPResponseReplaceCode` / `decisiveBaseline` | 61–10 | 0.823 | 4.6e-10 | .83/.80/1.00/.88/.79 stable |
+| `HTTPRequestReplaceMethod` / `edgeRecords` | 39–4 | 0.815 | 3.1e-8 | .68/.79/.82/.79/.79 stable |
+| `JVMMemoryStress` / `decisiveCv` | 98–40 | 0.682 | 8.5e-7 | .66/.57/.74/.72/.71 stable |
+| `NetworkPartition` / `errLines` | 30–3 | 0.781 | 1.4e-6 | .77/.70/.83/.92/.77 stable |
+
+Overall the screen now reports **13/375 cells for the source and 37/375 against** it (from 4 and 35
+over 250), and the global leader is `decisiveCv` at **AUC 0.734, p = 2.0e-40** — a non-term,
+non-graph feature.
+
+**Two of those three hold, and one does not — because the confound check has no power.**
+
+**The four `decisive*` signals cannot be separated from the renderer's own brevity.** All four are
+read from the block's rendered decomposition, and the block renders a decomposition for a service in
+proportion to how many metrics it KEEPS — which the paired screen already shows is nearly
+deterministic in the wrong direction (`JVMMemoryStress/kept` **0–158**). The conditioning that would
+settle it — same number of kept metrics on both sides — has almost nothing to stand on:
+
+| type | pairs | same `kept` count (`kept=`, printed by the command) |
+| --- | --- | --- |
+| `JVMMemoryStress` | 159 | **1** |
+| `ContainerKill` | 83 | **0** |
+| `HTTPResponseReplaceCode` | 71 | **5** |
+| `PodFailure` | 24 | **1** |
+
+The conditioned rates themselves (AUC 0.000 on `JVMMemoryStress` at n=1, n/a on `ContainerKill`,
+0.333 at n=3 on `ReplaceCode`) are computed by a one-off probe over the same pairs and are reported
+here as such — with three pairs or fewer they carry no information, which is the point. The count
+that establishes the saturation is a column of the shipped table, so the reason is reproducible even
+though the conditioned rate is not.
+
+So the honest reading is not "`cv` survives the confound" but **"the confound is saturated, and this
+instrument cannot tell the two apart"**. `decisiveCv`, `decisiveBaseline`, `decisiveBurst` and
+`decisiveTrend` are therefore recorded as **not established** — their separation is a fact about the
+pair, and the pair's rendering is what produces it. The reopening condition is instrumentation rather
+than a weight: a dump that renders the decisive metric for EVERY service, or a way to condition on
+the rendering, would let the same screen answer it in one run. (The `0–158` above is also the
+sharpest statement of the block's inventory asymmetry: in the weak block's misses the engine's pick
+keeps more metrics than the source in every one of 158 decisive pairs.)
+
+**`edgeRecords` does hold, and it refines a register sentence.** It reads `failedEdgeRecords`, a raw
+count that the rendering does not touch, so the confound above does not reach it: **60–2 on
+`HTTPResponseReplaceCode` (AUC 0.908, p=8.5e-16, stable in all five folds)** and **39–4 on
+`HTTPRequestReplaceMethod` (0.815)**. The register says per-edge failure counts "do not separate
+source from victim at any weight" — and the *score* does not (`failedEdge` 0.457; its direction gate
+is a mask, and the register's row is about the weighted score). The raw COUNT separates at 0.908 in
+the population the mode was built for. Both statements are true, and the distance between them is
+the finding: the engine's failed-edge term divides by a case maximum and applies a floor, and what
+survives is a quantity that no longer separates.
+
+**And a paired preference is still not a term** — the lesson `fse26-term-oracle-verdict.md` §9 records
+at length. `edgeRecords` is a candidate, not a change: it needs the window solver on both benchmarks,
+and it is a per-POPULATION signal (the two network types point the other way: `NetworkLoss` 0–19,
+`NetworkPartition` 8–32), so the same conflict that closed the graph-direction axis applies to it.
+
+**And one of the census's own lines had to change with the menu.** "Pairs with no non-term
+preference" read **43/666** over ten signals and **0/666** over fifteen. Nothing about those pairs
+became easier; the question "is there any evidence at all" is answered by the MENU. The line now
+prints its menu size, because a statistic whose meaning moves with an input must say so — the same
+discipline as the `defaultPath` guard on the recorded-runs table.
+
+## 7. Reproduce
 
 ```bash
 # the census, on the shipped-configuration dump (no run, no rebuild)
@@ -206,5 +294,7 @@ npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
 cd benchmarks && npx vitest run __tests__/fse26-separator.test.ts
 ```
 
-Every number in this document is printed by that command and recomputed from the dump on each
-run; none of them is pasted.
+Every number in this document is printed by that command and recomputed from the dump on each run,
+with one stated exception: the conditioned rates in §6's confound paragraph come from a one-off probe
+over the same pairs, and §6 says so where they appear. The counts that establish the saturation —
+the `kept=` column — are printed by the command.
