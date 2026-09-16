@@ -840,17 +840,14 @@ describe('the field audit — which fields no signal reads, and why that is a cl
     );
   });
 
-  it('names exactly the three fields nothing screens, and each carries its reason', () => {
+  it('names exactly the two fields nothing screens, and each carries its reason', () => {
     // Pinned rather than computed: a field moving between these lists is a decision, and the test
-    // is what forces it to be reviewed. Each of the three is either the label, degenerate, or an
-    // axis already measured and closed.
-    expect([...unscreenedFields()].sort()).toEqual([
-      'dominantMetric',
-      'isGroundTruth',
-      'predictedRank',
-    ]);
-    expect(SERVICE_FIELD_AUDIT.dominantMetric).toContain('fse26-family-screen-verdict.md');
+    // is what forces it to be reviewed. Both are the label — reading either would be reading the
+    // answer. `dominantMetric` moved OFF this list when the four composition scalars started using
+    // it as a selector, which is a use of the field and not a use of the label's family value.
+    expect([...unscreenedFields()].sort()).toEqual(['isGroundTruth', 'predictedRank']);
     expect(SERVICE_FIELD_AUDIT.isGroundTruth).toContain('label');
+    expect(SERVICE_FIELD_AUDIT.dominantMetric).toContain('fse26-family-screen-verdict.md');
   });
 
   it('says which scalar reads each screened field', () => {
@@ -859,6 +856,132 @@ describe('the field audit — which fields no signal reads, and why that is a cl
     expect(SEPARATOR_SCALARS.find((scalar) => scalar.name === 'edgeRecords')!.reads).toEqual([
       'failedEdgeRecords',
     ]);
+  });
+});
+
+describe('the decisive composition — read from the metric that drove the score', () => {
+  interface Composition {
+    readonly deviation?: number;
+    readonly trend?: number;
+    readonly cv?: number;
+    readonly burst?: number;
+    readonly riseRatio?: number;
+    readonly dropRatio?: number;
+    readonly baselineMean?: number;
+  }
+
+  /** One kept metric carrying a decomposition. */
+  const composed = (label: string, score: number, over: Composition = {}) => ({
+    label,
+    outcome: 'kept',
+    score,
+    breakdown: {
+      deviation: 0,
+      trend: 0,
+      cv: 0,
+      burst: 0,
+      riseRatio: 0,
+      dropRatio: 0,
+      baselineMean: 0,
+      ...over,
+    },
+  });
+
+  /** A kept metric with no decomposition — the fate of a metric the block did not decompose. */
+  const opaque = (label: string, score: number) => ({ label, outcome: 'kept', score });
+
+  const scalar = (name: string) => SEPARATOR_SCALARS.find((s) => s.name === name)!;
+  const subject = { kase: kase('probe'), latSlopes: new Map(), onsetSlopes: new Map() };
+  const read = (name: string, service: DiagnosedService) => scalar(name).of(service, subject);
+
+  it('reads the composition of the metric the engine named, not of the largest rise', () => {
+    // The two disagree on the shipped dump: in 751 of 7,733 rendered rows (9.7%) the largest-rise
+    // entry is NOT the entry the score was maximised over, so an argmax over `riseRatio` measures a
+    // different metric from the one that decided the ranking — and the four `decisive*` signals were
+    // read that way.
+    const service = svc('ts-a', {
+      dominantMetric: 'cpu.usage',
+      metricOutcomes: [
+        composed('cpu.usage', 0.9, { cv: 0.01, riseRatio: 3, trend: 0.5 }),
+        composed('latency-90', 0.2, { cv: 0.9, riseRatio: 40, trend: 9 }),
+      ],
+    });
+
+    expect(read('decisiveCv', service)).toBe(0.01);
+    expect(read('decisiveTrend', service)).toBe(0.5);
+  });
+
+  it('falls back to the highest-scoring metric when the dump names no dominant one', () => {
+    // `dominantMetric` is `''` when the engine recorded none. The fallback is the score ordering the
+    // block itself uses — never the rise, which is a different quantity.
+    const service = svc('ts-a', {
+      metricOutcomes: [
+        composed('cpu.usage', 0.9, { cv: 0.01, riseRatio: 3 }),
+        composed('latency-90', 0.2, { cv: 0.9, riseRatio: 40 }),
+      ],
+    });
+
+    expect(read('decisiveCv', service)).toBe(0.01);
+  });
+
+  it('falls back to the highest-scoring metric when the named one was not rendered', () => {
+    // A name outside the rendered list cannot be looked up. The next best answer is the metric the
+    // score was maximised over, which the block renders first.
+    const service = svc('ts-a', {
+      dominantMetric: 'not.rendered',
+      metricOutcomes: [
+        composed('cpu.usage', 0.9, { cv: 0.01, riseRatio: 3 }),
+        composed('latency-90', 0.2, { cv: 0.9, riseRatio: 40 }),
+      ],
+    });
+
+    expect(read('decisiveCv', service)).toBe(0.01);
+  });
+
+  it('reports no composition as absent, not as zero', () => {
+    // A kept metric the block did not decompose has no composition to report. Zero is a measurement
+    // — a perfectly stable series — so returning it here would turn "nothing was rendered" into a
+    // tie between the two sides, which is a claim the dump does not support.
+    const service = svc('ts-a', { metricOutcomes: [opaque('m', 1), opaque('n', 0.5)] });
+
+    expect(read('decisiveCv', service)).toBeUndefined();
+    expect(read('decisiveBurst', service)).toBeUndefined();
+    expect(read('decisiveBaseline', service)).toBeUndefined();
+  });
+
+  it('prefers the engine’s name over the score ordering when both are available', () => {
+    // On the shipped dump the two agree in 7,779 of 7,780 decomposed rows, so this pins a
+    // precedence rather than a behaviour: it is here so that "the block renders the decisive metric
+    // first" cannot be simplified into an assumption when only the name is actually the answer. The
+    // divergence it guards against is the one that produced this fix — reading a metric the score
+    // was not maximised over.
+    const service = svc('ts-a', {
+      dominantMetric: 'second',
+      metricOutcomes: [
+        composed('first', 0.9, { cv: 0.9, riseRatio: 1 }),
+        composed('second', 0.4, { cv: 0.2, riseRatio: 1 }),
+      ],
+    });
+
+    expect(read('decisiveCv', service)).toBe(0.2);
+  });
+
+  it('keeps reading the other four inventory numbers the same way', () => {
+    // The composition changed; the maxima did not. `kept` and `transient` still count fates, and
+    // `bestRise` is still the strongest rise among decomposed metrics.
+    const service = svc('ts-a', {
+      metricOutcomes: [opaque('m', 1), composed('n', 0.5, { deviation: 0.7, riseRatio: 12 })],
+    });
+
+    expect(read('kept', service)).toBe(2);
+    expect(read('bestDev', service)).toBe(0.7);
+    expect(read('bestRise', service)).toBe(12);
+  });
+
+  it('declares the selector field it depends on', () => {
+    for (const name of ['decisiveTrend', 'decisiveCv', 'decisiveBurst', 'decisiveBaseline']) {
+      expect(scalar(name).reads, name).toContain('dominantMetric');
+    }
   });
 });
 

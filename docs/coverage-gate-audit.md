@@ -233,3 +233,22 @@ both times. No test writes to `$HOME` any more.
   therefore does not survive a new `BrowserStore()`, while the header reads as though it would. Not
   fixed: what the backend promises has to change, and no other module in this repository imports
   `BrowserStore` yet, so nothing here depends on either answer.
+
+## 6. The same shape in the lint gate
+
+`pnpm lint` scanned `packages/*/src/`, `packages/*/__tests__/` and `integration-tests/src/` — not
+`benchmarks/`, which is typechecked and coverage-gated but had never been linted. Adding it was safe
+(oxlint exits 0 on warnings) but noisy: 512 `no-console` warnings, from a harness whose job is to
+print its reports. An `overrides` block turns `no-console` off for `benchmarks/**` only, and once the
+scope is real it pays for itself immediately — **four findings, none of them a console statement**:
+
+| finding | location | resolution |
+| --- | --- | --- |
+| `computeAccuracy` declared and never called, plus the `RunResult` import that existed only to type it | `benchmarks/src/optimize-all.ts` | both deleted |
+| `fromAlias` destructured and never read | `benchmarks/src/rcaeval-semantic.ts` | iterate `yamlEdgeMap.values()` |
+| `new Array(dimension).fill(0.5)` — the single-argument form is ambiguous by construction | `benchmarks/__tests__/semantic-config.test.ts` | `Array.from({ length: dimension }, () => 0.5)` |
+| `2 * 2 + 2 * 0` — a term that always collapses to nothing | `benchmarks/__tests__/fse26-diagnose-analyze.test.ts` | `2 * 2`, with the zero case stated in prose |
+
+The enrolment rule is the one §1 applies to the coverage matrix: a tree that is typechecked and
+measured but never *linted* is a tree whose dead code is invisible, and the gap does not have to be a
+red job to be real.

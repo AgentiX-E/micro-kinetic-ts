@@ -129,19 +129,34 @@ export function fromScalar(scalar: SeparatorScalar): SeparatorSignal {
 /** The transient-return guard's word, as the engine writes it. */
 const TRANSIENT_OUTCOME = 'transient-return';
 
-/** A service's rendered inventory, reduced to the four numbers a signal can read. */
+/** The composition of the metric that drove a service's anomaly score. */
+interface Composition {
+  readonly trend: number;
+  readonly cv: number;
+  readonly burst: number;
+  /** Its pre-anomaly baseline — the denominator the two ratios are measured against. */
+  readonly baselineMean: number;
+}
+
+/** One rendered metric outcome, as the parser produces it. */
+type Outcome = NonNullable<DiagnosedService['metricOutcomes']>[number];
+
+/** A service's rendered inventory, reduced to the numbers a signal can read. */
 interface Inventory {
   readonly kept: number;
   readonly transient: number;
   /** The strongest deviation among the KEPT metrics — a lower bound, as the block is brief. */
   readonly bestDev: number;
   readonly bestRise: number;
-  /** The composition of the metric that DROVE the score: the kept one with the largest rise. */
-  readonly decisiveTrend: number;
-  readonly decisiveCv: number;
-  readonly decisiveBurst: number;
-  /** Its pre-anomaly baseline — the denominator the two ratios are measured against. */
-  readonly decisiveBaseline: number;
+  /**
+   * The composition of the metric that DROVE the score, or `undefined` when the block decomposed
+   * none of the service's kept metrics.
+   *
+   * Nested rather than spread into four numbers so that "no composition was rendered" is
+   * representable: a zero `cv` is a measurement (a perfectly stable series), and reporting it for a
+   * metric nobody decomposed would turn an absent field into a tie between the two sides.
+   */
+  readonly decisive: Composition | undefined;
 }
 
 /**
@@ -159,7 +174,18 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
   let transient = 0;
   let bestDev = 0;
   let bestRise = 0;
-  let decisive: Inventory | undefined;
+  // The dump answers "which metric drove the score" twice, and the two answers are not the same
+  // quantity. The engine NAMES the metric it maximised over (`dominant`), and the block renders that
+  // metric first because the list is sorted by score — but it renders at most three of them, and the
+  // list is sorted by score, not by rise. So the name is the primary answer (it survives the
+  // truncation), and the score ordering is the fallback for a dump that recorded no name.
+  //
+  // Reading the largest `riseRatio` instead — which is what this did — measures a different metric
+  // in 751 of the 7,733 rows the shipped dump decomposes (9.7%), i.e. not the metric that decided
+  // the ranking. The composition signals built on that read are unusable, which is why the
+  // `fse26-separator-verdict.md` block had to be closed as a confound rather than a null.
+  let named: Outcome | undefined;
+  let highest: Outcome | undefined;
   for (const outcome of outcomes) {
     if (outcome.outcome === TRANSIENT_OUTCOME) {
       transient++;
@@ -168,37 +194,27 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
     if (outcome.outcome !== 'kept') continue;
     kept++;
     const breakdown = outcome.breakdown;
-    const deviation = breakdown?.deviation ?? 0;
-    if (deviation > bestDev) bestDev = deviation;
-    // A decomposition is what makes a metric's composition knowable at all, so the decisive record
-    // is built only when one EXISTS — written as a guard rather than as four `?? 0` fallbacks,
-    // because those fallbacks would be unreachable and would report "no composition" as zeroes.
-    if (breakdown !== undefined && breakdown.riseRatio > bestRise) {
-      bestRise = breakdown.riseRatio;
-      // The metric that drove the score is the one with the largest rise, and its composition is
-      // what the score was made of. Built here rather than read later, so the composition and the
-      // ratio cannot come from two different metrics.
-      decisive = {
-        kept: 0,
-        transient: 0,
-        bestDev: 0,
-        bestRise: 0,
-        decisiveTrend: breakdown.trend,
-        decisiveCv: breakdown.cv,
-        decisiveBurst: breakdown.burst,
-        decisiveBaseline: breakdown.baselineMean,
-      };
-    }
+    if (breakdown === undefined) continue;
+    if (breakdown.deviation > bestDev) bestDev = breakdown.deviation;
+    if (breakdown.riseRatio > bestRise) bestRise = breakdown.riseRatio;
+    if (outcome.label === service.dominantMetric) named = outcome;
+    if (highest === undefined || outcome.score > highest.score) highest = outcome;
   }
+  const decisive = named ?? highest;
   return {
     kept,
     transient,
     bestDev,
     bestRise,
-    decisiveTrend: decisive?.decisiveTrend ?? 0,
-    decisiveCv: decisive?.decisiveCv ?? 0,
-    decisiveBurst: decisive?.decisiveBurst ?? 0,
-    decisiveBaseline: decisive?.decisiveBaseline ?? 0,
+    decisive:
+      decisive === undefined
+        ? undefined
+        : {
+            trend: decisive.breakdown!.trend,
+            cv: decisive.breakdown!.cv,
+            burst: decisive.breakdown!.burst,
+            baselineMean: decisive.breakdown!.baselineMean,
+          },
   };
 }
 
@@ -349,38 +365,40 @@ export const SEPARATOR_SCALARS: readonly SeparatorScalar[] = [
     of: (s) => inventoryOf(s)?.bestRise,
   },
   // The COMPOSITION of the metric that drove the score. Read from the same decomposition the two
-  // maxima come from, so a candidate built on it can be gated on the same evidence.
+  // maxima come from, and SELECTED by the engine's own `dominant` name — so a candidate built on it
+  // can be gated on the same evidence, and cannot silently describe a different metric from the one
+  // that decided the ranking.
   {
     name: 'decisiveTrend',
     role: 'inventory',
-    reads: ['metricOutcomes'],
+    reads: ['metricOutcomes', 'dominantMetric'],
     direction: 1,
-    of: (s) => inventoryOf(s)?.decisiveTrend,
+    of: (s) => inventoryOf(s)?.decisive?.trend,
   },
   {
     name: 'decisiveCv',
     role: 'inventory',
-    reads: ['metricOutcomes'],
+    reads: ['metricOutcomes', 'dominantMetric'],
     // An unstable series is a noisier measurement of the same excursion, so a lower coefficient
     // of variation is the source's evidence.
     direction: -1,
-    of: (s) => inventoryOf(s)?.decisiveCv,
+    of: (s) => inventoryOf(s)?.decisive?.cv,
   },
   {
     name: 'decisiveBurst',
     role: 'inventory',
-    reads: ['metricOutcomes'],
+    reads: ['metricOutcomes', 'dominantMetric'],
     direction: -1,
-    of: (s) => inventoryOf(s)?.decisiveBurst,
+    of: (s) => inventoryOf(s)?.decisive?.burst,
   },
   {
     name: 'decisiveBaseline',
     role: 'inventory',
-    reads: ['metricOutcomes'],
+    reads: ['metricOutcomes', 'dominantMetric'],
     // The wrong winner rises from a LOWER baseline (median 0.86 against the source's 1.67), so a
     // higher baseline is the source's evidence: an absolute-level excursion, not a ratio on noise.
     direction: 1,
-    of: (s) => inventoryOf(s)?.decisiveBaseline,
+    of: (s) => inventoryOf(s)?.decisive?.baselineMean,
   },
   // The raw evidence the terms are computed FROM — a different quantity from the term.
   {
@@ -455,14 +473,14 @@ export const SERVICE_FIELD_AUDIT: Readonly<Record<keyof DiagnosedService, string
   latEdges: 'read: `inLatEdges`',
   onsetDelayMs: 'read: `onset`, and `temporal` through the engine’s own slope map',
   dominantMetric:
-    'NOT read: a LABEL, not a magnitude — the label/family axis is closed by `fse26-family-screen-verdict.md`, which scanned every family hand-registered and measured',
+    'read: `decisiveTrend`, `decisiveCv`, `decisiveBurst` and `decisiveBaseline` use it as the SELECTOR of which rendered decomposition is the decisive one. The label is still not screened as a VALUE — the label/family axis is closed by `fse26-family-screen-verdict.md`, which scanned every family hand-registered and measured — but which metric drove a score is data the engine already answered, and reading it is what stops those four from measuring a different metric from the one that decided the ranking',
   errorCount: 'read: `errLines`',
   fatalCount: 'read: `errLines`',
   logicExceptionCount: 'read: `sigLines`',
   httpExceptionCount: 'read: `sigLines`',
   bothExceptionCount: 'read: `sigLines`',
   metricOutcomes:
-    'read: `kept`, `transientDrops`, `bestDev`, `bestRise` and four composition scalars — but only for the four numbers and the decisive metric’s decomposition, not for the per-metric fate WORDS, which are a separate axis (the guard census)',
+    'read: `kept`, `transientDrops`, `bestDev`, `bestRise` and the four composition scalars — but only for the four numbers and the decisive metric’s decomposition, not for the per-metric fate WORDS, which are a separate axis (the guard census)',
 };
 
 /**

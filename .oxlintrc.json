@@ -6,5 +6,13 @@
     "prefer-const": "error",
     "no-var": "error",
     "eqeqeq": ["error", "always"]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["benchmarks/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
 }

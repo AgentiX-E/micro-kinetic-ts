@@ -13,7 +13,6 @@
  *   pnpm exec tsx benchmarks/src/optimize-all.ts
  */
 
-import type { RunResult } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import { SyntheticBenchmarkGenerator } from '../../packages/kinetic/src/benchmarks/synthetic/data-generator.js';
 
 import type { RCAConfiguration } from '../../packages/optimize/src/config-space.js';
@@ -50,10 +49,6 @@ function createOracle(): (config: RCAConfiguration) => Promise<number> {
 
     return suite.cases.length > 0 ? correct / suite.cases.length : 0;
   };
-}
-
-function computeAccuracy(results: RunResult): number {
-  return results.avgTop1;
 }
 
 // ── Main ──────────────────────────────────────────────────

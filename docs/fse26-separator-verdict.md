@@ -256,11 +256,74 @@ though the conditioned rate is not.
 So the honest reading is not "`cv` survives the confound" but **"the confound is saturated, and this
 instrument cannot tell the two apart"**. `decisiveCv`, `decisiveBaseline`, `decisiveBurst` and
 `decisiveTrend` are therefore recorded as **not established** — their separation is a fact about the
-pair, and the pair's rendering is what produces it. The reopening condition is instrumentation rather
-than a weight: a dump that renders the decisive metric for EVERY service, or a way to condition on
-the rendering, would let the same screen answer it in one run. (The `0–158` above is also the
-sharpest statement of the block's inventory asymmetry: in the weak block's misses the engine's pick
-keeps more metrics than the source in every one of 158 decisive pairs.)
+pair, and the pair's rendering is what produces it. (The `0–158` above is also the sharpest
+statement of the block's inventory asymmetry: in the weak block's misses the engine's pick keeps more
+metrics than the source in every one of 158 decisive pairs.)
+
+### 6.1 The reader was wrong — and correcting it does not reopen the block
+
+The four composition signals were not merely confounded; the quantity they read was the wrong one.
+
+`inventoryOf` (this screen's reader) selected the decomposition by **largest `riseRatio`**, on the
+stated premise that "the metric that drove the score is the one with the largest rise". The dump
+contradicts it, and the dump is one read away from saying so: the engine prints **`dominant=<label>`**
+on the same service line, which is the metric it actually maximised over, and the rendered list is
+sorted by score — so the decisive metric is the FIRST entry, and it is the one the engine named.
+
+| measured on the shipped dump (`r35029055764`, 1422 cases) | count |
+| --- | --- |
+| service rows | 71,105 |
+| rows with a rendered decomposition (`metricTop`) | 7,780 |
+| rows whose `dominant` IS the first rendered entry | **7,779 (100.0%)** |
+| rendered counts of the truncated form `metricTop(3/kept)` | **7,702 of 7,733 (99.6%)** |
+| rows where the largest-rise entry is NOT the first (score) entry | **751 (9.7%)** |
+
+So for one row in ten, the old reader described a metric the ranking had not been decided by — and it
+could never describe a metric outside the rendered three. The fix reads the named metric, falls back
+to the highest-scoring entry (never to the rise), and reports **no composition as absent rather than
+as zero**: a `cv` of 0 is a measurement (a perfectly stable series), so returning it where nothing
+was decomposed would fabricate a tie between the two sides.
+
+Re-measured on the same dump with only the reader changed:
+
+| signal | before | after |
+| --- | --- | --- |
+| `decisiveCv` | 0.739, p=8.5e-42, 444-128, 90 ties | **0.742, p=3.0e-43, 446-125, 91 ties** |
+| `decisiveBaseline` | 0.628, p=4.0e-11 | **0.647, p=3.8e-14** |
+| `decisiveBurst` | 0.577, p=4.4e-11 | **0.585, p=1.4e-12** |
+| `HTTPResponseReplaceCode` / `decisiveCv` | 59–3, folds .92/.75/.88/.91/.96 | 58–3, folds .92/.75/.88/.91/.93 |
+| `JVMMemoryStress` / `decisiveCv` | 0.680, p=1.2e-6 | **0.687, p=4.9e-7** |
+| `PodFailure` / `decisiveCv` | 0.958, p=3.0e-6 | **1.000, 24–0, p=1.2e-7, stable in all five folds** |
+
+Every aggregate moves in one direction, and one type-level cell becomes perfect. **The block stays
+closed**, and the reason is now a number instead of an inference:
+
+| confound check | value |
+| --- | --- |
+| Pearson `r(kept, decisiveCv)` over the pairs' 1,324 services | **0.436** |
+| Spearman `ρ(kept, decisiveCv)` | **0.412** |
+| pairs where the source keeps MORE metrics than the winner | 125 of 662 |
+| pairs where the source keeps FEWER | **511 of 662** |
+| pairs with an exact `kept` match (the `kept=` column) | 26 of 662 |
+
+The signals separate in the same direction as inventory size, the two are correlated well above
+chance, and the exact-match conditioning has 26 pairs to stand on. So "`decisiveCv` separates" still
+cannot be attributed to the decisive composition rather than to `kept` — it is the same axis wearing
+a different name.
+
+**That also excludes the reopening condition this section used to state.** "A dump that renders the
+decisive metric for every service" would not help: the decisive metric is already rendered for every
+service a pair compares (that is why `n/a` is 0 for all four signals). What is asymmetric is how many
+metrics each side KEEPS, so the instrument the confound check needs is an **inventory-matched**
+comparison — a coarsened `kept` band with its size printed beside the rate, in place of an exact
+match that 26 of 662 pairs can supply.
+
+Two things moved as a consequence of the fix rather than beside it: the audit's `dominantMetric` entry
+had to be reclassified from `NOT read` to `read:` (the four scalars now declare it in
+`SeparatorScalar.reads`, and the field audit's two-directional check fails the build otherwise), and
+the reader's own test suite was validated by **mutation** — restoring the old largest-rise rule fails
+four of the new tests, so the assertions measure the fix rather than the fixture.
+
 
 **`edgeRecords` does hold, and it refines a register sentence.** It reads `failedEdgeRecords`, a raw
 count that the rendering does not touch, so the confound above does not reach it: **60–2 on

@@ -4607,8 +4607,10 @@ describe('guardCensus — a guard’s footprint against a within-type control', 
     expect(row.faultType).toBe('JVMMemoryStress');
     expect(row.cases).toBe(4);
     expect(row.correct).toBe(2);
-    // Per side, over every case of the type.
-    expect(row.sourceKept).toBe(2 * 2 + 2 * 0);
+    // Per side, over every case of the type. The two wrong cases keep nothing, so the sum collapses
+    // to the correct ones — written as a product rather than as a `2 * 0` term, which is a zero the
+    // reader has to evaluate.
+    expect(row.sourceKept).toBe(2 * 2);
     expect(row.sourceTransient).toBe(2 * 1 + 2 * 3);
     // The rival's counts come from the WRONG cases only: in a correct case the rank-1
     // service IS the source, and counting it here would put the source in its own

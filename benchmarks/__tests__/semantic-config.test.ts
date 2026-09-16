@@ -154,10 +154,13 @@ describe('Semantic configuration factory — the embedding OVERRIDES', () => {
     provider._setFetch((url) => {
       urls.push(String(url));
       return Promise.resolve(
-        new Response(JSON.stringify({ data: [{ embedding: new Array(dimension).fill(0.5) }] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({ data: [{ embedding: Array.from({ length: dimension }, () => 0.5) }] }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
       );
     });
     await provider.embed(['ts-order-service']);

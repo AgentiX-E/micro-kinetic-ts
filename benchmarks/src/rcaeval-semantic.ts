@@ -256,8 +256,9 @@ export class RCAEvalSemanticEnhancer {
         });
       }
 
-      // Also find edges where the matched alias is the target
-      for (const [fromAlias, outgoing] of yamlEdgeMap) {
+      // Also find edges where the matched alias is the target. The YAML alias itself is not needed:
+      // the edge carries its own `from`, which is what the emitted edge uses.
+      for (const outgoing of yamlEdgeMap.values()) {
         for (const edge of outgoing) {
           if (edge.to === matched) {
             edges.push({
