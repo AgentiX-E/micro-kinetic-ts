@@ -33,7 +33,10 @@ import {
 
 import type { OnsetShape } from '../../packages/tree/src/index.js';
 
-import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
+import {
+  ONSET_FIELD_HALF_QUANTUM,
+  SERVICE_FIELD_DECIMALS,
+} from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 
 import {
   caseOutcomes,
@@ -3020,6 +3023,15 @@ export interface OnsetScreen {
   readonly gainTypes: readonly { readonly key: string; readonly cases: number }[];
   /** What the count survives of the digits the dump discarded. */
   readonly resolution: GainResolution;
+  /**
+   * Where the window's own cap lands under the digits the dump discarded.
+   *
+   * The same second channel the stability screen reports, through the same function and the same box
+   * — and it matters MORE here, because this term's column is the millisecond-rounded onset: a
+   * sub-millisecond draw can break the tie that `earliest-only` credits together, so the cap is a
+   * function of the print in a way the base fields alone are not.
+   */
+  readonly capNoise: CapResolution;
 }
 
 /**
@@ -3097,6 +3109,11 @@ export function onsetScreen(
     availability: onsetAvailability(cases),
     shape,
     solved,
+    capNoise: capResolution({
+      cases,
+      ship: solved.ship,
+      screen: { kind: 'onset', weights, shape },
+    }),
     gainTypes: tallyCounter(gainTypes),
     resolution: gainResolution({
       cases,
@@ -3270,6 +3287,7 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
     // weight from a count its own inputs cannot resolve is the defect this line exists to make
     // impossible to repeat.
     lines.push(formatResolutionLine(screen.resolution));
+    lines.push(formatCapResolutionLine(screen.capNoise, s.ship));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -4126,6 +4144,12 @@ const GAIN_RESOLUTION_SEED = 20260916;
 export interface GainResolution {
   /** Resamplings drawn. */
   readonly trials: number;
+  /**
+   * The box these draws came from — reported rather than held privately, because the line that prints
+   * the result has to name the resolution it drew IN. A reader took `3 decimals` as the quantum of a
+   * screen whose only input is printed in whole milliseconds, and nothing in the object could say so.
+   */
+  readonly fields: JitterFields;
   /** Trials by how many of `gained` held; index = that count, so it always sums to `trials`. */
   readonly histogram: readonly number[];
   /** The fewest that ever held — a SOUND lower bound on the count over the quantum's box. */
@@ -4156,19 +4180,81 @@ function quantumDraw(next: () => number): number {
 }
 
 /**
+ * The columns an ensemble draws, beyond the base fields every screen reads.
+ *
+ * The base — `selfAnomaly`, `logScore`, `latRise` — is in EVERY screen's box, because every screen's
+ * base is `shippedScores` over those three. What varies is the column the screen takes its SLOPE from,
+ * and it is a different column per screen: the decisive-stability screen reads `cv`, the temporal
+ * screen reads the millisecond-rounded onset delay, and a family's slopes come from the `logic`/`http`/
+ * `both` counts, which are exact integers with no discarded fraction at all.
+ *
+ * A single fixed set was the defect this type exists to remove: the box was the STABILITY screen's, so
+ * the temporal screen's ensemble held its own only input fixed and reported the resulting stillness as
+ * a result. Measured on run `35107871516`, `earliest-only` survives **22 of 100** draws of ±0.5 ms
+ * while the report that never drew that field printed `100.0%`.
+ */
+export interface JitterFields {
+  /** Whether the screen's slope comes from the rendered `cv`. */
+  readonly cv: boolean;
+  /** Whether it comes from the onset delay, rendered in WHOLE milliseconds. */
+  readonly onset: boolean;
+}
+
+/**
+ * The box one screen's ensembles draw — the single owner linking a screen to the fields it reads.
+ *
+ * Derived from the same declaration that chooses the rebuild, so a caller cannot resample a different
+ * screen's box than the arithmetic it is measuring: `gainResolution` and `capResolution` both take the
+ * screen and ask this function, rather than accepting a set from their caller.
+ *
+ * @param screen - Which screen's arithmetic is being measured.
+ * @returns The two extra columns to draw, each `false` where the screen cannot read it.
+ */
+export function jitterFieldsFor(screen: GainResolutionScreen): JitterFields {
+  if (screen.kind === 'stability') return { cv: true, onset: false };
+  if (screen.kind === 'onset') return { cv: false, onset: true };
+  // A family's slope is a COUNT of log lines or a metric label lookup, both exact: there is no
+  // discarded fraction in an integer, and drawing one would model noise the format does not have.
+  return { cv: false, onset: false };
+}
+
+/**
+ * One draw of an onset delay, inside the cell its print stands for.
+ *
+ * Its own function because the cell is NOT symmetric: the renderer prints `-` for any negative delay,
+ * so a printed `0` stands for `[0, 0.5]` and nothing below it. A draw that went negative would take a
+ * service out of the engine's `delay >= 0` filter — a value the artifact would have had to spell
+ * DIFFERENTLY rather than one it discarded, which is a modelling error and not extra conservatism.
+ * Measured on run `35107871516`, dropping that clamp moves the `earliest-only` window in 78 of 100
+ * draws against 34 of 60 with it.
+ *
+ * @param printedMs - The delay as the dump records it, in whole milliseconds.
+ * @param unit - The next draw in `[0, 1)`.
+ * @returns The drawn delay, never negative.
+ */
+export function drawOnsetDelay(printedMs: number, unit: number): number {
+  return Math.max(0, printedMs + (unit * 2 - 1) * ONSET_FIELD_HALF_QUANTUM);
+}
+
+/**
  * One case as the dump could have recorded it, for any value of the digits it discarded.
  *
- * The fields perturbed are exactly the ones a screen READS, which is not the set the dump prints:
- * `selfAnomaly` ranks the metric term, `logScore` carries the log term at weight 1, `latRise`
- * carries the latency term through its mask, and `cv` is the decisive-stability term's own input.
- * `failedEdgeScore`, counts and labels are left alone — a count is exact and a label is not a
+ * The base fields are always drawn: `selfAnomaly` ranks the metric term, `logScore` carries the log
+ * term at weight 1, and `latRise` carries the latency term through its mask — every screen's base
+ * reads all three, at the {@link SERVICE_FIELD_DECIMALS} the renderer prints them with. The screen's
+ * own slope column is drawn when `fields` says so, and `cv` and the onset delay are drawn at DIFFERENT
+ * resolutions because the producer renders them differently: three decimals for `cv`, whole
+ * milliseconds for the onset (`ONSET_FIELD_HALF_QUANTUM`).
+ *
+ * `failedEdgeScore`, the counts and the labels are left alone — a count is exact and a label is not a
  * number, so perturbing them would be modelling noise the format does not have.
  *
  * @param kase - One parsed case.
  * @param next - The next draw in `[0, 1)`.
+ * @param fields - Which extra columns this screen reads; see {@link jitterFieldsFor}.
  * @returns The case with every read field moved by its own quantum.
  */
-function jitterCase(kase: DiagnosedCase, next: () => number): DiagnosedCase {
+function jitterCase(kase: DiagnosedCase, next: () => number, fields: JitterFields): DiagnosedCase {
   return {
     ...kase,
     services: kase.services.map((service) => {
@@ -4178,12 +4264,23 @@ function jitterCase(kase: DiagnosedCase, next: () => number): DiagnosedCase {
         selfAnomaly: service.selfAnomaly + quantumDraw(next),
         logScore: service.logScore + quantumDraw(next),
         latRise: service.latRise === undefined ? undefined : service.latRise + quantumDraw(next),
+        // Drawn ONLY when the screen reads it, and at the millisecond render's own resolution rather
+        // than the base's: a draw of ±5.0e-4 on a field whose print steps in whole milliseconds would
+        // be three orders of magnitude too small to move a single order statistic.
+        // Through its own draw, which is where the cell's one-sidedness at zero lives.
+        onsetDelayMs:
+          !fields.onset || service.onsetDelayMs === undefined
+            ? service.onsetDelayMs
+            : drawOnsetDelay(service.onsetDelayMs, next()),
         decisiveOutcome:
           breakdown === undefined || service.decisiveOutcome === undefined
             ? service.decisiveOutcome
             : {
                 ...service.decisiveOutcome,
-                breakdown: { ...breakdown, cv: breakdown.cv + quantumDraw(next) },
+                breakdown: {
+                  ...breakdown,
+                  cv: fields.cv ? breakdown.cv + quantumDraw(next) : breakdown.cv,
+                },
               },
       };
     }),
@@ -4272,6 +4369,7 @@ export interface GainResolutionInput extends ResolutionInput {
  */
 export function gainResolution(input: GainResolutionInput): GainResolution {
   const rebuild = rebuildFor(input.screen);
+  const fields = jitterFieldsFor(input.screen);
   const trials = input.trials ?? GAIN_RESOLUTION_TRIALS;
   const byPack = new Map(input.cases.map((kase) => [kase.datapack, kase]));
   // `Array.from`, not `new Array(n).fill(0)`: the length form of the constructor is ambiguous with
@@ -4291,7 +4389,7 @@ export function gainResolution(input: GainResolutionInput): GainResolution {
   for (let trial = 0; trial < trials; trial++) {
     let count = 0;
     drawn.forEach((kase, index) => {
-      const built = rebuild(jitterCase(kase, next))!;
+      const built = rebuild(jitterCase(kase, next, fields))!;
       if (intervalsCover(caseWeightInterval(built), input.ship)) {
         count++;
         held[index] = held[index]! + 1;
@@ -4305,6 +4403,7 @@ export function gainResolution(input: GainResolutionInput): GainResolution {
     .map((entry) => entry.index);
   return {
     trials,
+    fields,
     histogram,
     least: Math.min(...seen),
     most: Math.max(...seen),
@@ -4350,6 +4449,8 @@ function rebuildFor(
 export interface CapResolution {
   /** Resamplings drawn. */
   readonly trials: number;
+  /** The box these draws came from; see {@link GainResolution.fields}. */
+  readonly fields: JitterFields;
   /** The cap each draw produced, in draw order. */
   readonly caps: readonly number[];
   /** The smallest cap any draw produced. */
@@ -4394,6 +4495,7 @@ export interface CapResolution {
  */
 export function capResolution(input: ResolutionInput): CapResolution {
   const rebuild = rebuildFor(input.screen);
+  const fields = jitterFieldsFor(input.screen);
   const trials = input.trials ?? CAP_RESOLUTION_TRIALS;
   const next = seededUnit(GAIN_RESOLUTION_SEED);
   const caps: number[] = [];
@@ -4401,7 +4503,7 @@ export function capResolution(input: ResolutionInput): CapResolution {
   let lostAtShip = 0;
   let worstLost = 0;
   for (let trial = 0; trial < trials; trial++) {
-    const drawn = input.cases.map((kase) => rebuild(jitterCase(kase, next)));
+    const drawn = input.cases.map((kase) => rebuild(jitterCase(kase, next, fields)));
     const built = drawn.filter((one): one is WeightSeparationCase => one !== undefined);
     const cap = computeZeroRegressionWindow(built).cap;
     caps.push(cap);
@@ -4414,6 +4516,7 @@ export function capResolution(input: ResolutionInput): CapResolution {
   }
   return {
     trials,
+    fields,
     caps,
     least: Math.min(...caps),
     most: Math.max(...caps),
@@ -4446,7 +4549,8 @@ export function formatCapResolutionLine(resolution: CapResolution, ship: number)
       ? ` — the recommendation survives the digits its inputs were printed with`
       : ` — so \`lost at ship 0\` above holds for the PRINTED digits, not for the box they stand for`;
   return (
-    `  cap resolution: over ${resolution.trials} draws of the discarded digits the cap lands in ` +
+    `  cap resolution: over ${resolution.trials} draws of the discarded digits ` +
+    `(${drawnResolutionClause(resolution.fields)}) the cap lands in ` +
     `[${at(resolution.least)}, ${at(resolution.most)}] (a minimum over every satisfied case, so the ` +
     `range sits low); at the shipped ${at(ship)} the window stays intact in ${intact} of the ` +
     `${resolution.trials} draws, losing at most ${resolution.worstLost}` +
@@ -4469,7 +4573,6 @@ export function formatCapResolutionLine(resolution: CapResolution, ship: number)
 export function formatResolutionLine(resolution: GainResolution): string {
   const gains = resolution.held.length;
   if (gains === 0) return '';
-  const bar = (2 * DUMP_HALF_QUANTUM).toExponential(1);
   const entries = resolution.histogram
     .map((count, index) => ({ count, index }))
     .filter((entry) => entry.count > 0)
@@ -4480,10 +4583,40 @@ export function formatResolutionLine(resolution: GainResolution): string {
       ? `every one of the ${gains} gains holds in all ${resolution.trials} resamplings`
       : `${resolution.resolved.length} of ${gains} gains hold in every one`;
   return (
-    `  resolution: the dump renders ${SERVICE_FIELD_DECIMALS} decimals, so a lead between two ` +
-    `services is only good to ±${bar}; ${resolution.trials} resamplings of that draw give ` +
-    `${entries.join(', ')} — ${verdict}`
+    `  resolution: ${drawnResolutionClause(resolution.fields)}; ${resolution.trials} resamplings ` +
+    `of that draw give ${entries.join(', ')} — ${verdict}`
   );
+}
+
+/**
+ * The resolution an ensemble actually drew IN, as a clause naming each column and its own quantum.
+ *
+ * ONE owner, because two reports print it and the sentence is the one place a reader is told what a
+ * margin is measured against. It used to be a single hard-coded `the dump renders 3 decimals, so a
+ * lead between two services is only good to ±1.0e-3` — true of the base fields and of the decisive
+ * `cv`, and false of the onset delay, which the renderer prints in WHOLE MILLISECONDS: three orders of
+ * magnitude away, and on the screen whose only input it is.
+ *
+ * Each column is named as the screen READS it rather than as the dump spells it, so a reader cannot
+ * take one quantum for another, and the constants come from the producer that renders them —
+ * `SERVICE_FIELD_DECIMALS` for the decimal fields, `ONSET_FIELD_HALF_QUANTUM` for the onset.
+ *
+ * @param fields - The box the ensemble drew from; see {@link jitterFieldsFor}.
+ * @returns The clause, without a leading space.
+ */
+function drawnResolutionClause(fields: JitterFields): string {
+  const base =
+    `the dump renders ${SERVICE_FIELD_DECIMALS} decimals, so a gap between two services is ` +
+    `only good to ±${(2 * DUMP_HALF_QUANTUM).toExponential(1)}`;
+  const columns = [
+    fields.cv ? `the decisive cv (±${(2 * DUMP_HALF_QUANTUM).toExponential(1)})` : undefined,
+    fields.onset
+      ? `the onset delay in whole milliseconds (±${(2 * ONSET_FIELD_HALF_QUANTUM).toFixed(1)} ms)`
+      : undefined,
+  ].filter((one) => one !== undefined);
+  return columns.length === 0
+    ? base
+    : `${base}, and this term's own column is drawn with it: ${columns.join(' and ')}`;
 }
 
 /**

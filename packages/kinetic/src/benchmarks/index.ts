@@ -117,7 +117,11 @@ export type {
 
 // ── FSE'26 diagnostic formatter and its builder ───────────
 
-export { SERVICE_FIELD_DECIMALS, formatFSE26Diagnostic } from './fse26-diagnose.js';
+export {
+  ONSET_FIELD_HALF_QUANTUM,
+  SERVICE_FIELD_DECIMALS,
+  formatFSE26Diagnostic,
+} from './fse26-diagnose.js';
 export type { FSE26DiagnosticInput, FSE26DiagnosticService } from './fse26-diagnose.js';
 export { buildFSE26Diagnostic } from './fse26-diagnostic-builder.js';
 export type { DiagnosticCaseInput } from './fse26-diagnostic-builder.js';

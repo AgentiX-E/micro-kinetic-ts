@@ -219,6 +219,25 @@ export interface FSE26DiagnosticInput {
 export const SERVICE_FIELD_DECIMALS = 3;
 
 /**
+ * How much of an ONSET DELAY the render discards: half a millisecond, and it is the same kind of
+ * fact as {@link SERVICE_FIELD_DECIMALS} — a property of the artifact, not of this file.
+ *
+ * {@link fmtOnset} rounds to whole milliseconds, so every printed delay stands for a real value
+ * somewhere in `[printed − 0.5, printed + 0.5]` ms. Two consequences, and the second is the one that
+ * bites: a reader cannot tell a 0.4 ms gap from a tie, and the temporal term is an ORDER over these
+ * numbers (`computeOnsetSlopes` sorts by delay, ties by service id), so inside one rounded
+ * millisecond the engine's order is not recoverable from the dump at all.
+ *
+ * Exported for the same reason as the decimals above, and it is a DIFFERENT number: the analyzer's
+ * ensembles must draw each field at ITS OWN resolution. A screen that drew the onset field at the
+ * base fields' `5.0e-4` would model a precision the artifact does not have and, worse, a magnitude
+ * three orders of magnitude away from the one that decides the term — measured on run `35107871516`,
+ * the onset screen's `earliest-only` shape survives in 22 of 100 draws of ±0.5 ms while the screen
+ * that never drew this field reported `100.0%`.
+ */
+export const ONSET_FIELD_HALF_QUANTUM = 0.5;
+
+/**
  * Format a single `x` as a fixed {@link SERVICE_FIELD_DECIMALS}-decimal string, guarding against
  * non-finite values (which JSON cannot legally carry but a defensive renderer must still survive).
  */

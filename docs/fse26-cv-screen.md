@@ -9,8 +9,10 @@ not depend on the correction (it is a run's own measurement), and neither does a
 correction moved the golden's window figures and left all seven `correct at 0` counts and the whole
 FSE'26 half bit-identical, because 0 of that dump's 1422 cases is below the threshold the base got
 wrong.**
-**What the instrument now says about its own verdict.** The counts above are conditional on an artifact
-that renders every input at three decimals, and both sides of the count now carry their own frontier: the
+**What the instrument now says about its own verdict.** Every ensemble draws the box ITS SCREEN reads and
+names it in the report (§"The ensemble's box was ONE screen's"), so a resolution figure can no longer be a
+statement about a column the screen cannot read. The counts above are conditional on an artifact that
+renders every input at three decimals, and both sides of the count now carry their own frontier: the
 unreachable count partitions into five causes, **two of which are the artifact's resolution** (236 of
 FSE'26's 569 unreachable cases read a deciding pair as EQUAL and 25 of `re3-noinject`'s 37), and the
 satisfied side reports that **the cap is an UPPER bound** — 510 of FSE'26's 756 protected cases and 31 of
@@ -728,8 +730,9 @@ nobody asked whether the **protected cases** survive, which is the other half of
 screen's own `lost at ship 0` was therefore a one-digit-set measurement.
 
 `capResolution` draws the same box (100 draws, the same seed, every case jittered, the window re-solved
-with the same solver) and reports both readings — with the caveat that each is an extreme value of the
-ensemble, so each is printed with what makes it readable:
+with the same solver — and the box is now the SCREEN's own, see §"The ensemble's box was ONE screen's")
+and reports both readings — with the caveat that each is an extreme value of the ensemble, so each is
+printed with what makes it readable:
 
 | dump | shape | `cap` | cap over 100 draws | draws the window stays intact at `ship` | worst loss in a draw |
 | --- | --- | --- | --- | --- | --- |
@@ -755,6 +758,62 @@ run at `0.030170` delivered **+5 cases with 0 regressed fault types**. The real 
 recorded is the bound and not a probability: **85% of the digit-sets the artifact is consistent with would
 cost a protected case at the recommended weight, and the engine's own run is the one reading that says
 otherwise.**
+
+### The ensemble's box was ONE screen's, and the onset screen reads a column it did not contain
+
+`gainResolution` and `capResolution` have been resampling "the digits the dump discarded" since they were
+written. What they actually drew was a FIXED set — `selfAnomaly`, `logScore`, `latRise` and `cv` — which is
+the DECISIVE-STABILITY screen's input list. The temporal screen reads none of `cv` and all of
+`onsetDelayMs`, and that field was never drawn: the ensemble held the term's only input fixed and reported
+the resulting stillness as a result. Measured on run `35107871516`:
+
+| dump | shape | the report said | under the term's own column |
+| --- | --- | --- | --- |
+| FSE'26 (1422 cases) | `earliest-only` (gain 4) | `4 in 100.0%` | **`4 in 56.0%, 3 in 44.0%`** |
+| `re3` (90, `traceWeight=1`) | `earliest-only` (gain 1) | `1 in 100.0%` | **`1 in 60.5%, 0 in 39.5%`** |
+| `re3` / `re1` / `re2` | `earliness`, `order`, `latest-only` | `100.0%` | `100.0%` — unchanged, see below |
+| all five dumps | `cv` shapes | unchanged | **byte-identical** (the box is the same one) |
+
+**On `re3` the window's single gain does not survive the artifact's own digits at all**: `0 of 1 gains hold
+in every one`, in 39.5% of the draws. The line that read `every one of the 1 gains holds in all 400
+resamplings` was a statement about the printed digits and nothing else.
+
+**The mechanism is the tie, and it is why only ONE shape is exposed.** `earliest-only` credits the whole
+group of services AT the minimum delay, deliberately — the shape is about simultaneity, so it does not let
+the service-id comparator decide. The millisecond render is what CREATES those ties: two services at `5000`
+stand for real delays anywhere in `[4999.5, 5000.5]`, and the engine's boundary group is an exact-equality
+test on them. A sub-millisecond draw therefore does not nudge the slope vector, it REMOVES a member from it
+— a discontinuous change, and the only one available to this term. `earliness` is min-max in the delay, so
+it moves continuously and by far less than the base's own `±1.0e-3`; `order` and `latest-only` read ranks,
+which adjacent integers cannot swap. All three read `100.0%` on every dump, which is a result rather than a
+silence: the box is now the right one and the answer is that they are insensitive to it.
+
+**Two things had to be right about the column itself, and one of them was wrong in the first draft.**
+
+- **Its quantum is its own.** The renderer is `Math.round`, so the onset's half-quantum is **0.5 ms** —
+  three orders of magnitude from the base's `5.0e-4`, and an ensemble drawing it at the base's resolution
+  would be modelling a precision the artifact does not have. It is now an exported owner in the producer
+  (`ONSET_FIELD_HALF_QUANTUM`), beside the decimals constant, pinned by the test that also asserts the
+  renderer rounds rather than truncates. Measured limit: no behavioural fixture can separate the two
+  magnitudes, because ANY nonzero draw breaks an exact tie — so the magnitude is pinned where it is defined
+  rather than where it is used.
+- **Its cell is ONE-SIDED at zero.** `fmtOnset` prints `-` for any negative delay, so a printed `0` stands
+  for `[0, 0.5]` and nothing below it. An unclamped draw takes the service out of the engine's `delay >= 0`
+  filter — a value the artifact would have had to spell DIFFERENTLY, not one it discarded. The first draft
+  drew it symmetrically: **78 of 100 draws moved the window, against 34 of 60 once the draw stays inside the
+  cell.** Half of the mobility the first probe measured was a modelling error of mine rather than a property
+  of the dump, and the clamp is now its own exported function so that the boundary is testable.
+
+The report was the third thing, and it was the one a reader acts on: its resolution line stated ONE quantum
+for every screen (`the dump renders 3 decimals, so a lead between two services is only good to ±1.0e-3`),
+which is the base's and the `cv`'s, and false of the onset. Both ensembles now carry the box they drew and
+the report names each column with its own quantum — from one function, so the sentence and the arithmetic
+cannot drift.
+
+**The box is a function of the screen, not a superset.** `jitterFieldsFor(screen)` is the single owner,
+and a family screen draws neither extra column: its slopes come from the `logic`/`http`/`both` COUNTS, which
+are exact integers with no discarded fraction, so drawing one would model noise the format does not have. A
+superset box would be the mirror error — noise from fields the screen cannot read.
 
 ### What this does and does not settle
 
@@ -805,8 +864,8 @@ Not settled:
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 671, 0 failures (was 666 before the second channel, 656 before the satisfied-side class, 650 before that, 639 before the base correction; 575 at the first pass) |
-| `benchmarks` coverage | **99.80 / 97.08 / 100 / 99.80**, the accumulator at 100 / 100 / 100 / 100 |
+| `benchmarks` tests | 677, 0 failures (was 671 before the per-screen box, 666 before the second channel, 656 before the satisfied-side class, 650 before that, 639 before the base correction; 575 at the first pass) |
+| `benchmarks` coverage | **99.80 / 97.11 / 100 / 99.80**, the accumulator at 100 / 100 / 100 / 100 |
 | root tests | 3163, 0 failures |
 | `packages/kinetic` tests | 911, 0 failures |
 | `packages/tree` tests | 650, **100 / 100 / 100 / 100** |
@@ -822,6 +881,8 @@ Not settled:
 | the class's own BOUND — a count is not a bound | `lossFloor` is derived, not asserted: `lead / span` with `span = (g − 1)/(n − 1)`, and it is the smallest such value over the class, so it is the earliest weight the artifact permits a protected case to be cost. Every dumps' verdict is measured (FSE'26 8× below its cap, `re1`'s `rank` half of it, `re2` above at both shapes, `re3*` 0.016 against 0.18/0.32), and the ONE engine measurement that exists rejects the permission: the FSE'26 candidate lost no fault type at `0.030170`, so the bound is loose by more than 8× there. MUTATIONS: reading the wording off the binder's existence instead of the comparison fails the report test, and `span = (g − 1)/n` fails three |
 | the second channel — the `lost at ship 0` claim was a ONE-DIGIT-SET measurement | `gainResolution` resampled the discarded digits but asked only whether the GAINS survive, so nothing asked whether the PROTECTED cases do; `capResolution` does, over 100 draws of the same box. Measured: FSE'26 `rank` intact in **15 of 100** (up to 4 cases go), `re3-noinject` in 1 and 0 of 100 (up to 7 and 8), `re1` `flip` — a point window — in 50. Both readings are extreme values of the ensemble and are printed with what makes them readable (the cap's range sits low because it is a minimum; the loss count falls with the population the window protects, so its severity travels with it). MUTATIONS: disabling the loss counter fails the fragile fixture, and zeroing the draw fails it together with the gain ensemble's thin-lead test |
 | the second channel's GOLDEN | `35232749251` at `d513781` (the `capResolution` instrument): **9 of 9 cells byte-identical** with every job green, plus `CI` and `Release` green on the same commit. Worth stating explicitly because this instrument makes a FRAGILITY claim about the window — 15 of 100 draws intact on FSE'26's `rank` shape — and a run is the only thing that can reject it: the engine at `0.030170` regressed **0 fault types**, so the reading is a bound and not a prediction |
+| the ensemble's box was ONE screen's | a FIXED field set (the stability screen's) was drawn for every screen, so the temporal screen's ensemble held its OWN column fixed: on FSE'26 the `earliest-only` window's `4 in 100.0%` is **`4 in 56.0%, 3 in 44.0%`** under the term's own column, and on `re3` **`0 of 1 gains hold in every one`** (39.5% of draws lose it). The mechanism is the tie `earliest-only` credits at the minimum, which the millisecond render CREATES and the raw field does not have — so it is the only shape exposed, and `earliness`/`order`/`latest-only` read `100.0%` on all five dumps as a RESULT rather than a silence. `jitterFieldsFor(screen)` is the single owner of the box; a family screen draws neither column, and the cv screens' numbers are BYTE-IDENTICAL to the ones this document already published |
+| the onset column's quantum and its one-sided cell | `Math.round` gives up half a MILLISECOND — three orders of magnitude from the base's `5.0e-4` — and it is now an exported owner in the producer; a printed `0` stands for `[0, 0.5]` and nothing below it, because the renderer spells a negative as `-`, so the draw is clamped. The first draft had neither: drawing it symmetrically moved the window in **78 of 100** draws against **34 of 60** once the draw stays inside the cell, i.e. half the mobility first measured was MY modelling error. The magnitude itself has no behavioural fixture that can separate it from the base's (any nonzero draw breaks an exact tie), and the test says so rather than pretending otherwise |
 | the price of the class being a claim | a pair equal at `0` because the term weighed NEITHER side is excluded — that pair is equal in the engine too, so counting it would report a hidden ordering on the engine's own legal output. The exclusion is asserted by a test, and both directions are exercises of the same predicate: one requires the declaration of provenance, the other reads its absence as `weighed` |
 | the split's own wiring hazard, caught by its first draft | the clause first carried a LEGEND line, and the menu's per-shape detail blocks are `formatCvScreenReport(...).split('\n').slice(4)` — so the new line leaked into every one of them and one sentence printed three times. The labels now carry their own meaning and the suite asserts the clause appears ONCE per menu, which is what fails if the report's head grows past four lines |
 | regression proof | `--cv-screen` on the shipped dump differs from the pre-change output only by the new lines: the population line split, the two `margin:` lines, and the two `resolution:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so neither change moved a recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`, and both now print their own ensembles per row |

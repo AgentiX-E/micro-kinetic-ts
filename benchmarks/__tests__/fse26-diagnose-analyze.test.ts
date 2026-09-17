@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import type { MetricDiagnostic } from '../../packages/core/src/index.js';
 import {
   formatFSE26Diagnostic,
+  ONSET_FIELD_HALF_QUANTUM,
   SERVICE_FIELD_DECIMALS,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
@@ -46,6 +47,7 @@ import {
   cvSlopes,
   DEFAULT_CV_SHAPE,
   diffDiagnostics,
+  drawOnsetDelay,
   DUMP_HALF_QUANTUM,
   familyCompetition,
   familyScreen,
@@ -68,6 +70,7 @@ import {
   gainResolution,
   guardCensus,
   isTop1Correct,
+  jitterFieldsFor,
   latencySlopes,
   MISS_DECIDED_BY,
   MISS_ORDER,
@@ -6205,6 +6208,213 @@ describe('capResolution — the second channel: the cap under the digits the dum
   });
 });
 
+describe('the ensemble draws each screen’s OWN fields, at each field’s own resolution', () => {
+  const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0 } as const;
+  const ANCHOR = 1_700_000_000_000;
+
+  /**
+   * A case whose two earliest services print the SAME onset, with a third rival far behind.
+   *
+   * `earliest-only` credits the whole tie group at the minimum, deliberately — the shape is about
+   * simultaneity, so it does not let the service-id comparator decide. The print is what MAKES that
+   * tie: the render rounds to whole milliseconds, so two services at `5000` stand for real delays
+   * anywhere in `[4999.5, 5000.5]`, and a sub-millisecond difference is invisible to it.
+   *
+   * The arithmetic is the fixture's own. `ts-win` leads the base (`log1p(1) = 0.6931` against the
+   * root's `log1p(0.9) = 0.6419`), so the case is wrong at `w = 0` and the term must close `0.0512`;
+   * `ts-decoy` sits far below both (`log1p(0.5) = 0.4055`) so it can never block the root; and the
+   * BOUNDARY GROUP is what gives the root its slope. Printed, that group is `{ts-src, ts-decoy}`, so
+   * both carry slope 1 and the root's gap to the winner is exactly 1 — the case is fixable. Under the
+   * box the print stands for, the group almost surely loses a member, and if the one it loses is the
+   * root then the root's slope is 0, the gap is 0, and the fix is gone.
+   */
+  const tiedBoundary = (): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.9, onset: 5_000 }),
+          serviceLine({ serviceId: 'ts-decoy', selfAnomaly: 0.5, onset: 5_000 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 1, onset: 60_000 }),
+        ],
+        topPredictions: ['ts-win'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+
+  /**
+   * Two services, one of them the root, whose printed onsets are EQUAL — so the term is INERT.
+   *
+   * With both at the boundary the slope gap is 0 and the root is behind on the base
+   * (`log1p(0.9) < log1p(1)`), which no weight can close. The printed artifact therefore says the
+   * term cannot touch this case at all, and that is the reading a screen built on the base fields
+   * alone reports as a perfectly resolved zero.
+   */
+  const tiedPair = (): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.9, onset: 5_000 }),
+          serviceLine({ serviceId: 'ts-decoy', selfAnomaly: 1, onset: 5_000 }),
+        ],
+        topPredictions: ['ts-decoy'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+
+  it('names the fields a screen reads, and only those', () => {
+    // The single owner linking a screen to the box its ensemble draws. The set is not "the fields a
+    // dump prints": it is the fields THIS screen's arithmetic reads, and the screens that take a slope
+    // from a different column must not be handed each other's.
+    expect(jitterFieldsFor({ kind: 'stability', weights: WEIGHTS, shape: 'flip' })).toEqual({
+      cv: true,
+      onset: false,
+    });
+    expect(jitterFieldsFor({ kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' })).toEqual({
+      cv: false,
+      onset: true,
+    });
+    // A family's slopes come from `logic`/`http`/`both` COUNTS, which are exact integers: there is no
+    // discarded fraction to draw, so a family ensemble varies only through the base.
+    expect(jitterFieldsFor({ kind: 'family', weights: WEIGHTS, family: 'pool' })).toEqual({
+      cv: false,
+      onset: false,
+    });
+  });
+
+  it('turns a printed TIE the term cannot touch into a fix in some draws and a loss in others', () => {
+    // The defect, on the smallest case that shows it. Printed, the two candidates' onsets are EQUAL,
+    // so `earliest-only` credits them together and the term's slope gap is 0 — the term is INERT, and
+    // a screen that drew the base fields alone would report that as a perfectly resolved zero. The
+    // render is what created the tie; under the box the print stands for, the group almost surely
+    // breaks and the case becomes fixable by a weight of the base gap, or fixable in the wrong
+    // direction. Measured on run `35107871516`, `earliest-only` holds in **34 of 60** draws (the
+    // window's cap rises from `0.038183` to `0.061875` in the rest) while the ensemble reported
+    // `100.0%`.
+    const cases = [tiedBoundary()];
+    const window = onsetScreen(cases, WEIGHTS, 'earliest-only').solved;
+    expect(window.gain).toBe(1);
+    // The fixture's own arithmetic: `log1p(1) − log1p(0.9) = 0.0512933`, closed by a slope gap of
+    // exactly 1 because the boundary group credits both of its members.
+    expect(window.ship).toBeCloseTo(0.0512933, 6);
+
+    // The weight is passed EXPLICITLY rather than taken from `window.ship`, and that is the fixture's
+    // own fact rather than a convenience: the root is the boundary, so no rival can have a larger
+    // slope and its interval is unbounded above — which makes the widest maximal-gain range a single
+    // point at the lower edge, and `ship` that edge. Measuring the survival AT the edge would let the
+    // base's own ±1e-3 decide every draw, and the assertion could pass for a reason that has nothing
+    // to do with the onset column.
+    const SHIP = 0.3;
+    expect(SHIP).toBeGreaterThan(window.ship);
+    const resolution = gainResolution({
+      cases,
+      gained: window.gained,
+      ship: SHIP,
+      screen: { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' },
+    });
+    // The histogram has an INTERIOR: the root keeps its slope in the draws where the boundary group
+    // keeps it a member, and loses it in the rest. Pre-fix this box did not contain the onset column
+    // at all, so every draw read `1 in 100.0%` and the interior had nothing to show.
+    expect(resolution.fields).toEqual({ cv: false, onset: true });
+    expect(resolution.resolved).toEqual([]);
+    expect(resolution.least).toBe(0);
+    expect(resolution.most).toBe(1);
+  });
+
+  it('leaves a case the printed tie makes INERT readable as the tie it is', () => {
+    // The same mechanism on a case the term genuinely cannot touch: with both candidates at the
+    // boundary the slope gap is 0, so no weight exists — and that zero is a fact about the RENDER,
+    // because the raw field has no such tie. Stating which column the screen drew is what lets a
+    // reader see that the zero was measured rather than decided.
+    const cases = [tiedPair()];
+    const window = onsetScreen(cases, WEIGHTS, 'earliest-only').solved;
+    expect(window.gain).toBe(0);
+    const resolution = capResolution({
+      cases,
+      ship: 0,
+      screen: { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' },
+    });
+    expect(resolution.fields).toEqual({ cv: false, onset: true });
+    // Nothing is satisfied at 0 and nothing can be, so the cap is the unbounded sentinel in every
+    // draw — the draw cannot invent a bound the printed artifact does not have.
+    expect(resolution.caps.every((cap) => !Number.isFinite(cap))).toBe(true);
+  });
+
+  it('is NOT moved by the same draw through the STABILITY screen’s box, which cannot read it', () => {
+    // The mirror, and the reason the set is per screen rather than a superset: a box that drew every
+    // column for every screen would report noise from fields the screen cannot read. Both screens name
+    // the columns they drew, so the difference is visible in the result rather than only in the code.
+    const cases = [tiedBoundary()];
+    const ship = onsetScreen(cases, WEIGHTS, 'earliest-only').solved.ship;
+    const onsetBox = capResolution({
+      cases,
+      ship,
+      screen: { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' },
+    });
+    const stabilityBox = capResolution({
+      cases,
+      ship,
+      screen: { kind: 'stability', weights: WEIGHTS, shape: 'flip' },
+    });
+    expect(onsetBox.fields).toEqual({ cv: false, onset: true });
+    expect(stabilityBox.fields).toEqual({ cv: true, onset: false });
+    // The base is drawn in both boxes, so a difference in the caps is not the evidence — the evidence
+    // is the names above. What this asserts is that the onset screen's own column reaches the result.
+    expect(onsetBox.caps.length).toBe(GAIN_RESOLUTION_TRIALS > 0 ? onsetBox.trials : 0);
+  });
+
+  it('draws an onset inside the cell its print stands for, which is one-sided at zero', () => {
+    // The renderer prints `-` for any negative delay, so a printed `0` stands for `[0, 0.5]` and
+    // nothing below it — a NEGATIVE draw is a value the artifact would have had to spell differently,
+    // not one it discarded. The clamp is observable exactly here, and it matters because the engine
+    // filters on `delay >= 0`: an unclamped draw can drop a service out of the term entirely.
+    // Measured on run `35107871516`, that mistake moves the `earliest-only` window in 78 of 100 draws.
+    expect(drawOnsetDelay(0, 1)).toBeCloseTo(0.5, 12);
+    expect(drawOnsetDelay(0, 0.4)).toBe(0);
+    expect(drawOnsetDelay(5_000, 1)).toBeCloseTo(5_000.5, 12);
+    expect(drawOnsetDelay(5_000, 0)).toBeCloseTo(4_999.5, 12);
+    // `unit` is the module's own draw, so the midpoint is the printed value — no drift.
+    expect(drawOnsetDelay(5_000, 0.5)).toBeCloseTo(5_000, 12);
+  });
+
+  it('prints the resolution it actually drew, in the units of the field it drew', () => {
+    // The line stated ONE quantum for every screen — `the dump renders 3 decimals, so a lead between
+    // two services is only good to ±1.0e-3` — which is the base's, not the onset's. That render gives
+    // up at most half a MILLISECOND, three orders of magnitude away, and a reader who took the printed
+    // quantum for the term's own would size its margin against the wrong ruler.
+    const line = formatResolutionLine(
+      gainResolution({
+        cases: [tiedBoundary()],
+        gained: onsetScreen([tiedBoundary()], WEIGHTS, 'earliest-only').solved.gained,
+        ship: onsetScreen([tiedBoundary()], WEIGHTS, 'earliest-only').solved.ship,
+        screen: { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' },
+      }),
+    );
+    expect(line).toContain('onset delay in whole milliseconds (±1.0 ms)');
+    expect(line).not.toContain('the decisive cv');
+
+    // And the stability screen's line names its own column, not the onset's.
+    const stabilityLine = formatResolutionLine(
+      gainResolution({
+        cases: [
+          cvCase({
+            cvs: [0.2, 0.8],
+            anomalies: [0.5, 0.9],
+            groundTruth: 'ts-svc-0',
+            prediction: 'ts-svc-1',
+          }),
+        ],
+        gained: ['dp-1'],
+        ship: 0.1,
+        screen: { kind: 'stability', weights: WEIGHTS, shape: 'flip' },
+      }),
+    );
+    expect(stabilityLine).toContain('the decisive cv');
+    expect(stabilityLine).not.toContain('onset delay');
+  });
+});
+
 describe('gainResolution — the lead the formatter discards', () => {
   const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
 
@@ -6289,6 +6499,14 @@ describe('gainResolution — the lead the formatter discards', () => {
     );
     expect(producer).toContain('toFixed(SERVICE_FIELD_DECIMALS)');
     expect(producer).not.toContain('toFixed(3)');
+
+    // The onset field is a SECOND resolution, and it is the producer's rounder that owns it. Without
+    // this the two could drift apart silently: an ensemble drawing the onset at the base's `5.0e-4`
+    // would be three orders of magnitude too small to move a single order statistic, and — measured —
+    // no behavioural fixture can tell the two apart, because ANY nonzero draw breaks an exact tie. So
+    // the magnitude is pinned where it is defined rather than where it is used.
+    expect(ONSET_FIELD_HALF_QUANTUM).toBe(0.5);
+    expect(producer).toContain('Math.round(delayMs)');
   });
 
   it('prints nothing for a window that gained nothing', () => {
@@ -6298,6 +6516,7 @@ describe('gainResolution — the lead the formatter discards', () => {
     expect(
       formatResolutionLine({
         trials: 4,
+        fields: { cv: false, onset: false },
         histogram: [4],
         least: 0,
         most: 0,
