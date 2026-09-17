@@ -23,11 +23,14 @@
  * Two details do have to be got right, and both are REPORTED rather than assumed:
  *
  * 1. Whether a case was rescaled is a property of its node count, and the header's `services=`
- *    carries it. So the instrument counts the cases on each side of the threshold and checks
- *    the side it can: at or above it the rendered maximum must be exactly 1.000, because BOTH
- *    of the engine's rescales map the case maximum to 1. Below it no such claim is made — a
- *    raw maximum is whatever the case's own deviation was, and 1.000 there would be a
- *    coincidence rather than a defect.
+ *    carries it. So the instrument counts the cases on each side of the threshold and checks the
+ *    side it can: at or above it no value may EXCEED 1, because both of the engine's rescales map
+ *    the case maximum to 1 and neither can produce anything above it. Below it no claim is made —
+ *    a raw deviation is unbounded in the rise direction. The stronger form of that check ("the
+ *    maximum IS exactly 1.000") was written first and the first REAL dump falsified it: a tied top
+ *    anomaly takes its tie group's MEAN rank, so 34 of the FSE'26 dump's 1422 rescaled cases carry
+ *    0.95–0.99. The falsifiable half and the tie count are two lines, and neither is a claim about
+ *    the other.
  * 2. The printed order is re-derived from the printed values through the printer's own
  *    comparator, not taken from the array order, so a caller that has re-sorted the services
  *    still gets the engine's ranks. Whether the two agree is itself a reported number: a dump

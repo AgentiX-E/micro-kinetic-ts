@@ -239,6 +239,15 @@ reconstructed base is itself only good to about `1e-3` — an order of magnitude
 sixth gain rested on. **The sixth gain was never resolvable from the dump**, and the count alone
 could not say so: `gain 6` reads identically whether the six are separated by `1e-2` or by `1e-4`.
 
+**That is now the WHOLE explanation rather than one of two.** While the reconstructor's metric term was
+building a different quantity on part of the population, this paragraph had to leave room for a second
+cause — a base whose gaps are wrong by a comparable amount produces the same one-case error with no
+rounding involved. Measured after the correction (§"The cause, and the fix"), the FSE'26 dump has **0
+of its 1422 cases below the engine's rescale threshold** (all 1417 + 5 are 51- or 52-service systems),
+so the old base could not have contributed anything on this benchmark at all, and the gap is the
+render's. The two statements are not in tension: the resolution bound is a SCALE and was already
+measured, and the base defect is now known to have had an empty population here.
+
 The resolution bound is *not* a threshold that reproduces the split — `3.129e-4` is also under
 `1e-3` and the engine did collect that case — so nothing here is calibrated to the observed five.
 What the margin does is make the frontier readable **before** a run: a gain a tenth of a rank from
@@ -604,8 +613,8 @@ Not settled:
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 649, 0 failures (was 639 before the base correction; 575 at the first pass; 633 before the dump accumulator) |
-| `benchmarks` coverage | **99.81 / 97.21 / 100 / 99.81**, the accumulator at 100 / 100 / 100 / 100 |
+| `benchmarks` tests | 650, 0 failures (was 639 before the base correction; 575 at the first pass; 633 before the dump accumulator) |
+| `benchmarks` coverage | **99.81 / 97.26 / 100 / 99.81**, the accumulator at 100 / 100 / 100 / 100 |
 | root tests | 3163, 0 failures |
 | `packages/kinetic` tests | 911, 0 failures |
 | `packages/tree` tests | 650, **100 / 100 / 100 / 100** |
