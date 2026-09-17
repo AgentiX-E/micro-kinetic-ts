@@ -26,6 +26,34 @@ const REGISTER_PATH = resolve(DOCS, 'closed-axes-register.md');
 
 const register = readFileSync(REGISTER_PATH, 'utf8');
 
+/**
+ * Every `.ts` file in the two source trees, excluding build output and dependencies.
+ *
+ * The walk is over DIRECTORIES rather than a glob because the repo has no glob helper in this
+ * package, and the skip list is the three directories that hold copies of the sources.
+ *
+ * @param except - A path to leave out. The ratchet below passes its OWN file, because the names it
+ *   forbids appear in its list by construction and the check would otherwise be its own
+ *   counterexample — measured: it fired on all seven names, all of them here.
+ * @returns Every `.ts` file, sorted.
+ */
+function sourceFiles(except: string): string[] {
+  const SKIP = new Set(['node_modules', 'dist', 'coverage', '.nx', 'tmp', '.turbo']);
+  const found: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!SKIP.has(entry.name)) walk(resolve(dir, entry.name));
+      } else if (entry.name.endsWith('.ts')) {
+        const path = resolve(dir, entry.name);
+        if (path !== except) found.push(path);
+      }
+    }
+  };
+  for (const root of ['packages', 'benchmarks']) walk(resolve(repoRoot, root));
+  return found.sort();
+}
+
 /** The verdict documents that exist on disk. */
 function verdictDocs(): string[] {
   return readdirSync(DOCS)
@@ -91,6 +119,35 @@ describe('closed-axes register', () => {
     expect(rows.length).toBeGreaterThanOrEqual(verdictDocs().length);
     const unmeasured = rows.filter((cells) => cells[2]!.length === 0).map((cells) => cells[0]);
     expect(unmeasured).toEqual([]);
+  });
+
+  it('keeps a RETIRED axis retired, in code as well as in prose', () => {
+    // The register's rows are prose, and one of them closed its axis by REMOVING code: the two
+    // LLM-coupled ranking slices and the two ablation flags behind them. A row cannot stop a layer
+    // from coming back, and this layer is exactly the kind a later session re-proposes — it WAS
+    // re-proposed, from a record that lived outside this repo.
+    //
+    // The check is a RATCHET, not a prohibition on LLM code: `packages/optimize`'s advisor, the
+    // embedding providers and the semantic-alignment CONTRACT are retained and legal, so only the
+    // retired RANKING slice's own symbols are forbidden. Measured before writing it: every name
+    // below returns zero matches OUTSIDE this file, and all seven returned exactly one match inside
+    // it — which is why the walk excludes it.
+    const RETIRED = [
+      'RerankingEngine',
+      'InvestigatorEngine',
+      'InvestigatorToolkit',
+      'EvidenceGroundedReranker',
+      'IRootCauseReranker',
+      'llmReranker',
+      'agenticInvestigation',
+    ];
+    const offenders = sourceFiles(fileURLToPath(import.meta.url)).flatMap((path) => {
+      const text = readFileSync(path, 'utf8');
+      return RETIRED.filter((name) => text.includes(name)).map((name) => `${name} in ${path}`);
+    });
+    // The failure message names the register's row, so a developer who trips this reads the
+    // measurement that closed the axis before re-adding it.
+    expect(offenders, 'retired LLM ranking layer — see the register row on it').toEqual([]);
   });
 
   it('states the kill criterion in full, both halves', () => {
