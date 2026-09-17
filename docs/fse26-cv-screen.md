@@ -2,10 +2,22 @@
 
 **Status:** instrument shipped and gated; the population measurement is **done on both benchmarks**,
 and the first weight anyone solved for it **fails the golden**. §4 records a weight-level veto, not a
-term-level one: the term is admitted behind `--stability-weight` and the default does not move.
+term-level one: the term is admitted behind `--stability-weight` and the default does not move. **The
+screens this document is built on were then found to rest on a base with the engine's order and not its
+gaps — see the caveat below and §"The cause"; the veto does not depend on it, but no window figure
+does.**
 Deliberately NOT a `-verdict` document: the register's rows are for axes measured to a conclusion,
 and what closed here is a WEIGHT — the statistic the row names (`decisiveCv` on the matched
 stratum) is still the only non-term candidate above the criterion.
+
+**CAVEAT, measured after the fact — this governs every window figure below.** The reconstructor the
+screens are built on takes `log1p` of the RANK-NORMALISED metric term while the engine takes `log1p` of
+the RAW anomaly (`pruner.ts` 1400/1575 against `fse26-term-oracle.ts` 219). Monotone normalisation
+preserves ORDER, so the fidelity line has always been exact and could never have caught it; but a
+perturbation's flips are decided by GAPS, and a paired dispatch at `stability_weight=0.030170` has the
+model reporting `+7 / −13` on RE1 where the engine delivers `+1 / −3`. The ENGINE-side conclusions in
+§4 stand — the veto is a run's own measurement — but no window, margin or `--at-weight` figure here may
+be quoted as the engine's own arithmetic until the base is corrected. See §"The cause".
 
 **Code:** `cvSlopes` + `cvAvailability` + `cvScreen` + `cvShapeMenu` + `gainResolution` +
 `formatCvScreenReport` + `formatCvMenuReport`, behind `--cv-screen`. **Producer:** the
@@ -418,18 +430,53 @@ the flag is REFUSED unless `--cv-screen` or `--onset-screen` was also requested 
 `--log-weight` rule, applied to the other side of the same question, because a flag accepted and
 rendered nowhere is how a flag becomes ritual.
 
-**One open question this instrument now makes askable, and it is why a paired dispatch is in flight.**
-The screen reads `re1` at 295 — six cases below its own 301 — while the dispatched run's RE1 cells move
-by about two cases (`OnlineBoutique 80.0 → 79.2`, `TrainTicket 68.0 → 67.2`, `SockShop` unchanged, and
-those are averages of six per-fault-type rates, so they round). The analyzer's `rank` shape is written
-to BE the engine's function — `(n − 1 − avgRank) / (n − 1)` with ascending `cv`, ties averaged, `n` the
-MEASURED services, unmeasured services scoring 0 — and at `w = 0` it reproduces the run's own pooled
-count exactly, which is what the fidelity line checks. Whether it also reproduces it AT a positive
-weight is not the same claim: it needs a run dispatched with `stability_weight` AND `diagnose_dump`
-together, so that the dump's own `prediction=` list is the engine's ranking at that weight and
-`correct at 0` on it becomes the engine's count there. If the two agree, the −6 is the truth and the
-cell averages were hiding four cases; if they disagree, the `rank` translation is not the engine's
-function and that is a defect with a number rather than a doubt.
+**That verdict does not agree with the engine, and the disagreement is a defect in the base the
+screens reconstruct — not in the number above.** The paired dispatch (`35181249060`, `stability_weight`
+AND `diagnose_dump` together) makes the dump's own `prediction=` list the engine's ranking AT the
+weight, so `correct at 0` on it is the engine's count there and the two are the same measurement by two
+routes:
+
+| dump | model `correct` at 0.030170 | engine `correct` at 0.030170 | model gained / lost | engine gained / lost |
+| --- | --- | --- | --- | --- |
+| `re1` | 295 | **299** | 7 / 13 | **1 / 3** |
+| `re2` | 107 | **111** | 0 / 12 | **0 / 8** |
+| `re3-noinject` | 37 | **38** | 0 / 0 | **1 / 0** |
+
+The engine's columns are a case-by-case diff of the two dumps' `prediction=` lists, so they are the
+engine's OWN flips; on `re1` it loses three cases and the model names thirteen.
+
+### The cause
+
+A wrong QUANTITY in `blendScores`, not a rounded one. The engine's `finalScore` takes
+`Math.log1p(selfScores.get(id))`, and `selfScores` is filled by `selfScores.set(node, nodeAnomaly)` —
+the node's **own raw anomaly** (`pruner.ts` 1400 and 1575). The reconstructor computes
+`Math.log1p(metricSlopes(...))`, and `metricSlopes` returns the **rank-normalised** value in `[0, 1]`
+(`fse26-term-oracle.ts` 219, whose own docstring calls it "the metric term, exactly as
+`rankNormalizeScores` computes it"). Rank normalisation is monotone, so the reconstruction has the
+engine's ORDER and not its GAPS.
+
+That is the signature measured, and it explains three things that were each read on their own:
+
+- **the fidelity line could not have caught it, by construction.** `correct at 0` is an order-only
+  statement and rank normalisation preserves order — 301 = 301, 756 = 756 across 1422 cases, and the
+  reconstruction is still not the engine's score. An exact fidelity counter is not evidence that the
+  reconstruction's ARITHMETIC is right, only that its ranking is.
+- **the model over-reports movement in BOTH directions** — 7 gained against 1, 13 lost against 3 — which
+  is what a gap error does to a perturbation, since every flip is decided by a gap.
+- **the FSE'26 `gain 6` against a delivered `5` is not fully explained by the formatter's three
+  decimals.** §"The resolution" measured that the sixth gain sits `1.054e-4` from its rival, inside the
+  `5.0e-4` quantum — a real resolution bound. A base whose gaps are wrong by a comparable amount
+  produces the same one-case error with no rounding involved, and this table is the first evidence that
+  separates the two possibilities. Both statements belong on the record; the second is not yet
+  quantified.
+
+`selfAnomaly` in the dump IS the raw value (a case's services read 2.295 / 1.568 / 1.505 / 0.442 …, and
+only 125 of the 375 RE1 cases have a maximum of exactly 1.0), so the fix belongs on the reconstructor's
+side: blend `log1p(selfAnomaly)` and keep `rankNormalizeScores` for whatever the engine applies it to.
+It is NOT done here, and it must not be done casually — `blendScores` is the base of every window in
+this document, of the term oracle, and of `--at-weight`, so correcting it restates every published
+number at once. What this document now states explicitly is that **every window figure above rests on a
+base whose ORDER is the engine's and whose GAPS are not**, and that the engine remains the arbiter.
 
 ### What this does and does not settle
 
