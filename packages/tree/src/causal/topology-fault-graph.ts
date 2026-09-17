@@ -171,7 +171,8 @@ export interface TopologyFaultGraphConfig {
    */
   readonly collapseDiscount: number;
   /**
-   * Rank-based anomaly-score normalization for large topologies (≥ 20 nodes).
+   * Rank-based anomaly-score normalization for large topologies (at or above
+   * {@link ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes — the flag cannot act below it).
    *
    * When `true`, the min-max rescale of `anomalyScores` is replaced by a
    * uniform-rank mapping (average rank / (n − 1), ties averaged). Min-max is
@@ -418,6 +419,24 @@ export function rankNormalizeScores(
 }
 
 /**
+ * Above this many nodes, and only above it, the anomaly scores a case is RANKED on are
+ * rescaled (step 1b of {@link buildTopologyFaultGraph}).
+ *
+ * Exported because it is the one number that lets a reader INTERPRET a score the engine
+ * reported — the difference between "self-anomaly 1.000 is the case maximum by construction"
+ * and "1.000 is a raw deviation that happened to be the largest". A consumer holding a
+ * per-service anomaly vector and its node count cannot tell those apart without it, and the
+ * failure is silent: a below-threshold vector's values are a different quantity, not a
+ * differently-scaled one, so a reader that assumes the rescale has the engine's ORDER (any
+ * rescale here is strictly monotone) and NOT its gaps.
+ *
+ * The two clauses of the condition are separate axes and both are load-bearing: the flag
+ * {@link TopologyFaultGraphConfig.rankNormalization} picks WHICH rescale, this threshold
+ * decides WHETHER one happens at all. Neither can be inferred from the other.
+ */
+export const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
+
+/**
  * Build a topology-preserving fault graph from a service call graph and metrics.
  *
  * Unlike the chronological propagation tree, this builder:
@@ -569,12 +588,11 @@ export function buildTopologyFaultGraph(
   // normalization rescales them to [0, 1], making the root cause stand
   // out against the noise floor.
   //
-  // We only apply this on graphs with ≥ 20 nodes so that small, well-
-  // studied topologies (OnlineBoutique 12–14, SockShop 12–14) retain
-  // their existing calibrated scoring.  The threshold is deliberately
-  // conservative — any system large enough to need this has well over
-  // 20 services and the overhead of an extra pass is negligible.
-  const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
+  // We only apply this on graphs with ≥ {@link ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes so
+  // that small, well-studied topologies (OnlineBoutique 12–14, SockShop 12–14) retain
+  // their existing calibrated scoring. The threshold is deliberately conservative — any
+  // system large enough to need this has well over 20 services — and it is exported
+  // rather than inlined so a reader of a score can tell WHICH side of it the run was on.
   if (callGraph.nodes.size >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
     if (cfg.rankNormalization) {
       // Rank normalization: robust to a single outlier, semantics-agnostic.

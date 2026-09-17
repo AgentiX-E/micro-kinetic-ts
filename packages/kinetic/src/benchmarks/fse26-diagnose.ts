@@ -28,7 +28,21 @@ export interface FSE26DiagnosticService {
   readonly metricNames: readonly string[];
   /** The metric that drove the engine's self-anomaly score (if any). */
   readonly dominantMetric: string | undefined;
-  /** The engine's rank-normalised self-anomaly in [0, 1]. */
+  /**
+   * The per-service score the engine RANKED on — the exact input of its `finalScore`'s
+   * `log1p`, read off the fault graph after the builder finished with it.
+   *
+   * Deliberately not documented as "[0, 1] rank-normalised", which is what this field's
+   * contract claimed until it was measured: the topology builder rescales the anomaly
+   * vector only for a graph with at least `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes, and
+   * which rescale it applies there is the `rankNormalization` flag's business. Above the
+   * threshold this value is therefore in [0, 1] with a maximum of exactly 1; below it the
+   * value is the RAW deviation, unbounded in the rise direction. A reader that assumed the
+   * rescaled form was reading a different quantity for every case below the threshold —
+   * one with the engine's order (any rescale here is monotone) and not the engine's gaps —
+   * which is the defect `docs/fse26-cv-screen.md` §"The cause, and the fix" records. Print the value and
+   * read it; do not rebuild it from the row order.
+   */
   readonly selfAnomaly: number;
   /** The engine's max-normalised logic-exception log score in [0, 1]. */
   readonly logScore: number;

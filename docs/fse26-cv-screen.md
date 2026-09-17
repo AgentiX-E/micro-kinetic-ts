@@ -3,21 +3,29 @@
 **Status:** instrument shipped and gated; the population measurement is **done on both benchmarks**,
 and the first weight anyone solved for it **fails the golden**. §4 records a weight-level veto, not a
 term-level one: the term is admitted behind `--stability-weight` and the default does not move. **The
-screens this document is built on were then found to rest on a base with the engine's order and not its
-gaps — see the caveat below and §"The cause"; the veto does not depend on it, but no window figure
-does.**
+screens this document is built on rested on a base with the engine's order and not its gaps; that base
+has since been CORRECTED and every figure re-measured — see §"The cause, and the fix". The veto does
+not depend on the correction (it is a run's own measurement), and neither does any fidelity number: the
+correction moved the golden's window figures and left all seven `correct at 0` counts and the whole
+FSE'26 half bit-identical, because 0 of that dump's 1422 cases is below the threshold the base got
+wrong.**
 Deliberately NOT a `-verdict` document: the register's rows are for axes measured to a conclusion,
 and what closed here is a WEIGHT — the statistic the row names (`decisiveCv` on the matched
 stratum) is still the only non-term candidate above the criterion.
 
-**CAVEAT, measured after the fact — this governs every window figure below.** The reconstructor the
-screens are built on takes `log1p` of the RANK-NORMALISED metric term while the engine takes `log1p` of
-the RAW anomaly (`pruner.ts` 1400/1575 against `fse26-term-oracle.ts` 219). Monotone normalisation
-preserves ORDER, so the fidelity line has always been exact and could never have caught it; but a
-perturbation's flips are decided by GAPS, and a paired dispatch at `stability_weight=0.030170` has the
-model reporting `+7 / −13` on RE1 where the engine delivers `+1 / −3`. The ENGINE-side conclusions in
-§4 stand — the veto is a run's own measurement — but no window, margin or `--at-weight` figure here may
-be quoted as the engine's own arithmetic until the base is corrected. See §"The cause".
+**The correction, in one paragraph.** The reconstructor the screens are built on took `log1p` of a
+RE-DERIVED rank rescale of the metric term while the engine takes `log1p` of the node's own anomaly
+(`pruner.ts` 1400/1575) — and the engine applies that rescale **only when the graph has at least
+`ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes** (`topology-fault-graph.ts` step 1b). Above the threshold
+the substitute was the same quantity; below it the reconstruction had the engine's ORDER (the rescale
+is strictly monotone, so no order-only check could ever fail) and invented its gaps. That is **407 of
+the golden's 615 cases** (re1 250 of 375, re2 100 of 150, re3 57 of 90 — the OB and SS systems, 12–19
+services) and **0 of the 1422 cases on the FSE'26 side**, where every case is a 51- or 52-service
+system. The fidelity line that should have caught it was printing the wrong thing instead: on `re1` it
+read `metric term: max |recomputed - printed| = 2.51e+0; services above 5e-4: 3500`, a deviation with
+no unit and no interpretation, and it was read as a rounding detail for as long as the defect existed.
+See §"The cause, and the fix" for the fix, the two engine-arbitrated residuals, and the measured
+before/after.
 
 **Code:** `cvSlopes` + `cvAvailability` + `cvScreen` + `cvShapeMenu` + `gainResolution` +
 `formatCvScreenReport` + `formatCvMenuReport`, behind `--cv-screen`. **Producer:** the
@@ -369,15 +377,20 @@ be held to, and because it is the one number a reconstruction cannot talk its wa
 the dumps the fixed runner produced (`35175577233` at `ecfc439`, all SEVEN of them now holding every
 system the suite covered):
 
-| dump | cases | groups | `traceWeight` | dump `prediction=` | screen `correct at 0` | Δ |
-| --- | --- | --- | --- | --- | --- | --- |
-| `re1` | 375 | ob 125 / ss 125 / tt 125 | 0 | 301 | **301** | 0 |
-| `re1-noinject` | 375 | ob 125 / ss 125 / tt 125 | 0 | 301 | **301** | 0 |
-| `re2` | 150 | ob 50 / ss 50 / tt 50 | 0 | 119 | **119** | 0 |
-| `re2-noinject` | 150 | ob 50 / ss 50 / tt 50 | 0 | 119 | **119** | 0 |
-| `re3` | 90 | ob 30 / ss 30 / tt 30 | **1** | 48 | 35 | **−13** |
-| `re3-noinject` | 90 | ob 30 / ss 30 / tt 30 | 0 | 37 | **37** | 0 |
-| `re3-novelty` | 90 | ob 30 / ss 30 / tt 30 | 0 | 37 | **37** | 0 |
+| dump | cases | groups | `traceWeight` | dump `prediction=` | screen `correct at 0` | Δ | cases raw / rescaled |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `re1` | 375 | ob 125 / ss 125 / tt 125 | 0 | 301 | **301** | 0 | 250 / 125 |
+| `re1-noinject` | 375 | ob 125 / ss 125 / tt 125 | 0 | 301 | **301** | 0 | 250 / 125 |
+| `re2` | 150 | ob 50 / ss 50 / tt 50 | 0 | 119 | **119** | 0 | 100 / 50 |
+| `re2-noinject` | 150 | ob 50 / ss 50 / tt 50 | 0 | 119 | **119** | 0 | 100 / 50 |
+| `re3` | 90 | ob 30 / ss 30 / tt 30 | **1** | 48 | 35 | **−13** | 57 / 33 |
+| `re3-noinject` | 90 | ob 30 / ss 30 / tt 30 | 0 | 37 | **37** | 0 | 57 / 33 |
+| `re3-novelty` | 90 | ob 30 / ss 30 / tt 30 | 0 | 37 | **37** | 0 | 57 / 33 |
+
+The last column is the base correction's own footprint, read off the instrument
+(`metric term: read from each row (N cases raw, below the engine's rescale at 20 nodes; M rescaled)`,
+with `values above 1: 0 cases` on all seven): **407 of the golden's 615 cases are below the
+threshold the old base got wrong**, and every one of them is an OnlineBoutique or SockShop case.
 
 **Six of seven exact, and the seventh is the one term the reconstruction does not model.** The `re1`
 number is the strongest single check available, because it is checkable against the published table
@@ -403,24 +416,28 @@ run, which states it as cells moved rather than as cases gained and lost. `--cv-
 named, with the datapacks behind both counts:
 
 ```
-  at 0.030170: correct 295, gained 7, lost 13
+  at 0.030170: correct 294, gained 6, lost 13
     lost: rcaeval-re1_re1tt_ts-auth-service_delay_4, ... (13 named)
-    gained: rcaeval-re1_re1ob_productcatalogservice_cpu_3, ... (7 named)
+    gained: rcaeval-re1_re1tt_ts-auth-service_cpu_5, ... (6 named)
 ```
 
 Measured on the dumps the fixed runner produced (`35175577233` at `ecfc439`), for the weight FSE'26
-solves for and the golden vetoes:
+solves for and the golden vetoes, at the screen's DEFAULT (`flip`) shape:
 
 | dump | cases | correct at 0 | at `0.030170` | gained | lost |
 | --- | --- | --- | --- | --- | --- |
-| `re1` | 375 | 301 | **295** | **7** | **13** |
+| `re1` | 375 | 301 | **294** | **6** | **13** |
 | `re2` | 150 | 119 | **107** | **0** | **12** |
 | `re3-noinject` | 90 | 37 | 37 | 0 | 0 |
 
+(These three rows were `295 / 7 / 13` for `re1` before the base correction; the other two are unchanged.
+Relative to the engine's OWN term — the `rank` shape — the counts are `300 / 1 / 2`, `111 / 0 / 8` and
+`37 / 0 / 0`, and those are the rows to compare against a run: see §"The cause, and the fix".)
+
 So the trade the veto rests on, in the units the FSE'26 side reported (`+5 cases, 0 regressed fault
-types`), is **+5 there against `+7 / −13` on RE1 and `+0 / −12` on RE2** — a net −18 on the golden,
+types`), is **+5 there against `+6 / −13` on RE1 and `+0 / −12` on RE2** — a net −19 on the golden,
 and every one of the 25 given-up cases is NAMED rather than inferred from a rounded cell. Note too
-that the window on `re1` closes at `0.015112`, so `0.030170` is twice past the cap the screen would
+that the window on `re1` closes at `0.015233`, so `0.030170` is twice past the cap the screen would
 have shipped under: the recommendation and the veto are not in tension, they are two readings of one
 model at two different weights.
 
@@ -430,69 +447,154 @@ the flag is REFUSED unless `--cv-screen` or `--onset-screen` was also requested 
 `--log-weight` rule, applied to the other side of the same question, because a flag accepted and
 rendered nowhere is how a flag becomes ritual.
 
-**That verdict does not agree with the engine, and the disagreement is a defect in the base the
-screens reconstruct — not in the number above.** The paired dispatch (`35181249060`, `stability_weight`
-AND `diagnose_dump` together) makes the dump's own `prediction=` list the engine's ranking AT the
-weight, so `correct at 0` on it is the engine's count there and the two are the same measurement by two
+**That verdict is measured on the shape the ENGINE does not use, and the shape it does use agrees with
+the engine on 613 of 615 flips.** The table above is the screen's DEFAULT row — the `flip` shape, which
+reads the MAGNITUDE of the clamped bonus — while the engine's own term is a RANK of it:
+`computeStabilityScores` assigns `(n − 1 − avgRank) / (n − 1)` over the dominant metrics' `breakdown.cv`
+(`ranking-signals.ts` 707), i.e. the screen's `rank` shape, which §1 calls the faithful translation. The
+paired dispatch (`35181249060`, `stability_weight` AND `diagnose_dump` together) makes the dump's own
+`prediction=` list the engine's ranking AT the weight, so the three counts are one measurement by two
 routes:
 
-| dump | model `correct` at 0.030170 | engine `correct` at 0.030170 | model gained / lost | engine gained / lost |
+| dump | screen `rank` at 0.030170 | engine at 0.030170 | screen gained / lost | engine gained / lost |
 | --- | --- | --- | --- | --- |
-| `re1` | 295 | **299** | 7 / 13 | **1 / 3** |
-| `re2` | 107 | **111** | 0 / 12 | **0 / 8** |
+| `re1` | 300 | **299** | 1 / 2 | **1 / 3** |
+| `re2` | **111** | **111** | **0 / 8** | **0 / 8** |
 | `re3-noinject` | 37 | **38** | 0 / 0 | **1 / 0** |
 
 The engine's columns are a case-by-case diff of the two dumps' `prediction=` lists, so they are the
-engine's OWN flips; on `re1` it loses three cases and the model names thirteen.
+engine's OWN flips. On `re2` the screen reproduces the engine exactly, names included. The two cases
+where it still does not are NAMED rather than inferred, and both are the same mechanism — see the end
+of §"The cause, and the fix".
 
-### The cause
+### The cause, and the fix
 
-A wrong QUANTITY in `blendScores`, not a rounded one. The engine's `finalScore` takes
-`Math.log1p(selfScores.get(id))`, and `selfScores` is filled by `selfScores.set(node, nodeAnomaly)` —
-the node's **own raw anomaly** (`pruner.ts` 1400 and 1575). The reconstructor computes
-`Math.log1p(metricSlopes(...))`, and `metricSlopes` returns the **rank-normalised** value in `[0, 1]`
-(`fse26-term-oracle.ts` 219, whose own docstring calls it "the metric term, exactly as
-`rankNormalizeScores` computes it"). Rank normalisation is monotone, so the reconstruction has the
-engine's ORDER and not its GAPS.
+A wrong QUANTITY in `blendScores`, and a CONDITION on the engine's side that the reconstruction did not
+have. The engine's `finalScore` takes `Math.log1p(selfScores.get(id))`, and `selfScores` is filled by
+`selfScores.set(node, nodeAnomaly)` — the node's anomaly score **as the topology builder left it**
+(`pruner.ts` 1400 and 1575). That builder rescales the vector in step 1b, and step 1b is guarded:
 
-That is the signature measured, and it explains three things that were each read on their own:
+```ts
+if (callGraph.nodes.size >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {   // 20, now an exported owner
+  if (cfg.rankNormalization) { … rankNormalizeScores(anomalyScores) } else { … min-max … }
+}
+```
 
-- **the fidelity line could not have caught it, by construction.** `correct at 0` is an order-only
-  statement and rank normalisation preserves order — 301 = 301, 756 = 756 across 1422 cases, and the
-  reconstruction is still not the engine's score. An exact fidelity counter is not evidence that the
-  reconstruction's ARITHMETIC is right, only that its ranking is.
-- **the model over-reports movement in BOTH directions** — 7 gained against 1, 13 lost against 3 — which
-  is what a gap error does to a perturbation, since every flip is decided by a gap.
-- **the FSE'26 `gain 6` against a delivered `5` is not fully explained by the formatter's three
-  decimals.** §"The resolution" measured that the sixth gain sits `1.054e-4` from its rival, inside the
-  `5.0e-4` quantum — a real resolution bound. A base whose gaps are wrong by a comparable amount
-  produces the same one-case error with no rounding involved, and this table is the first evidence that
-  separates the two possibilities. Both statements belong on the record; the second is not yet
-  quantified.
+So the column is a **rescaled position** at or above 20 nodes and a **raw deviation** below it — and the
+reconstruction substituted `Math.log1p(metricSlopes(...))` for it UNCONDITIONALLY. `metricSlopes` was
+the engine's rank rescale (`(n − 1 − i) / (n − 1)`, tie groups averaged), which is the same quantity
+only where the engine rescaled. Below the threshold the reconstruction had the engine's ORDER (any
+rescale here is strictly monotone, so every order-only check passed and always would have) and invented
+its GAPS — and every flip under a perturbation is decided by a gap.
 
-`selfAnomaly` in the dump IS the raw value (a case's services read 2.295 / 1.568 / 1.505 / 0.442 …, and
-only 125 of the 375 RE1 cases have a maximum of exactly 1.0), so the fix belongs on the reconstructor's
-side: blend `log1p(selfAnomaly)` and keep `rankNormalizeScores` for whatever the engine applies it to.
-It is NOT done here, and it must not be done casually — `blendScores` is the base of every window in
-this document, of the term oracle, and of `--at-weight`, so correcting it restates every published
-number at once. What this document now states explicitly is that **every window figure above rests on a
-base whose ORDER is the engine's and whose GAPS are not**, and that the engine remains the arbiter.
+**The population the substitution could not have been right on is 407 of the golden's 615 cases** (re1
+250 of 375, re2 100 of 150, re3 57 of 90 — the OB and SS systems, at 12–19 services) and **0 of the
+1422 cases on the FSE'26 side**, where every case is a 51- or 52-service system (measured: `{51: 1417,
+52: 5}`, below-20 count `0`). Which is why the FSE'26 half of this document never saw it.
+
+**The fidelity line was printing a number that could not fail.** `metric term: max |recomputed −
+printed| = 2.51e+0; services above 5e-4: 3500` on `re1` — a maximum deviation of 2.51 across 3500 of
+11557 services, rendered as one more figure in a section whose entire job is to say whether the
+reconstruction reproduces the run. It has no unit: a reader cannot tell "the last printed digit" from "a
+different quantity", and 5e-4 was quoted as a threshold without one. The check that CAN fail was not
+being made, and the direction it can fail is the one the defect lived in: at or above the threshold no
+value may EXCEED 1, because both of the engine's rescales put the case maximum at 1 and neither can
+produce anything above it. Below the threshold no claim is made, since a raw deviation is unbounded in
+the rise direction and is whatever the case's data made it.
+
+**The stronger form of that check was written first, and the first dump it was pointed at falsified
+it.** "At or above the threshold the maximum IS exactly `1.000`" reads 34 failures on the FSE'26 dump —
+and the dump is right, the claim was wrong. `rankNormalizeScores` gives a value's TIE GROUP the MEAN of
+the ranks it occupies, so a case whose largest anomaly is shared by six services reads
+`47.5 / 50 = 0.95` (one of the 34, `ts2-ts-route-plan-service-request-abort-rnjzzl`, is exactly that);
+only a strictly unique maximum maps to 1. So the line reports `values above 1: N cases` as the defect
+claim and the sub-1.000 maxima as a POPULATION fact with its cause named — because a reader who sees a
+0.95 maximum needs to know it is arithmetic rather than a missing rescale.
+
+**The fix is to READ the column.** `blendScores` and `rankCase` now take `Math.log1p(service.selfAnomaly)`
+— the engine's own `selfScores` entry, the value the producer prints on the row — so the reconstruction
+is faithful on both sides of the boundary without having to know where the boundary is. `metricSlopes` is
+gone: it existed only to derive a quantity the artifact already carries, and it is the mechanism by which
+a consumer could silently substitute a transformation for a measurement. The threshold is now an exported
+owner (`ANOMALY_NORMALIZE_NODE_THRESHOLD`, with a test that pins both sides of it on a real graph), the
+producer's `selfAnomaly` contract no longer claims "[0, 1] rank-normalised" — which was false for every
+case below the threshold — and the fidelity section reports the POPULATION the threshold decides plus the
+falsifiable check, instead of a deviation. On the golden's four dumps the check reads `0` across the 208
+rescaled cases and the population line reads `250 raw / 125 rescaled` (re1), `100 / 50` (re2), `57 / 33`
+(re3) — the defect's size, printed by the instrument, for the dump being read. On the FSE'26 dump the
+same two counters read `0 raw / 1422 rescaled`, `values above 1: 0` and `below 1.000: 34`.
+
+**What the correction moved, and what it did not** (same dumps, `35175577233` at `ecfc439`, before →
+after):
+
+| measurement | before | after |
+| --- | --- | --- |
+| `correct at 0`, all seven dumps | 301 / 301 / 119 / 119 / 35 / 37 / 37 | **identical** |
+| `rank-1 same as the dump’s own recorded` | 375/375, 150/150, 90/90, 70/90 | **identical** |
+| `re1` `flip` ship / window | `0.007968` / `[0.007968, 0.007968]` | `0.008032` / `[0.008032, 0.008032]` |
+| `re1` `rank` cap | `0.015112` | `0.015233` |
+| `re1` at `0.030170`, `flip` | 295, gained 7, lost 13 | **294, gained 6, lost 13** |
+| `re1` at `0.030170`, `rank` | 300, gained 1, lost 2 | **identical** |
+| `re2` at `0.030170`, both shapes | 107 (0/12) and 111 (0/8) | **identical** |
+| `re3-noinject` at `0.030170`, both shapes | 37 (0/0) | **identical** |
+| FSE'26 (1422 cases): `correct at 0` 756, `rank` gain 6 at `[0.029860, 0.030480]`, ship `0.030170`, `flip` gain 3 at `[0.021536, 0.024882]`, both margins | — | **identical, byte for byte** |
+
+So every fidelity number survived, the whole FSE'26 half is unchanged, and what moved is exactly the
+golden's window arithmetic — restated above and nowhere else in this document, because the other
+figures in §"The resolution" are the FSE'26 ones that did not move. The one FSE'26 number that DID move
+is the resolution histogram, and for a reason worth stating: `gainResolution` resamples the render's
+discarded digits, and under the old base a resampled row was re-RANKED, so a jittered input could move
+the term by a whole rank step (≈`1/50`) instead of by the digit error it was meant to represent. At
+`0.030170` the `rank` shape's six gains now hold in 23.5% of the 400 seeded draws, five in 37.3%, four
+in 29.3%, three in 9.3%, two in 0.8%, and **2 of 6 in every draw** (the old base read 22.5 / 36.0 / 30.5
+/ 8.8 / 2.3 and **1 of 6**). The claim that matters is unchanged: the count the screen ships is not the
+count the dump can decide.
+
+### The two residuals, named
+
+The screen and the engine still disagree on two of the golden's 615 flips, and both are the artifact's
+own precision rather than the reconstruction's arithmetic:
+
+- `re1ob_currencyservice_delay_4` (13 services): the engine flips `currencyservice` (anomaly 2.207) to
+  `checkoutservice` (2.199) — a metric gap of `log1p` difference `0.0080` — and the two contenders'
+  decisive compositions both render `cv=0.050`.
+- `re3ss_front-end_f3_2` (15 services): the engine flips `user` (0.753) to `front-end` (0.751), the
+  ground truth, and the deciding pair both renders `cv=0.045`.
+
+The engine's stability term ranks on the UNROUNDED `breakdown.cv` (`ranking-signals.ts` 707 reads the
+field, not the dump), so a pair the artifact renders as one tie is a pair the engine can order — and no
+weight can reorder it from the dump, at any magnitude. They are inside the `unreachable at every weight`
+counts this document already reports (48 `flip` / 56 `rank` on `re1`), which is why the screen does not
+claim them as reachable; what is new here is that they are now NAMED, and that "unreachable" has a
+second cause besides "no decisive composition" and "the term cannot cross the gap": **the render cannot
+express the order the term ranks by.**
 
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the
 **engine** delivered **+5 cases with zero regressed fault types** at the weight the solver named
 (756 → 761, 53.16% → 53.5%), the **enrolment's** golden is untouched (`35125060855` at `0ab737f`
-reproduces all nine cells, which it must at weight 0), and the **weight itself is vetoed by the
-golden** (§"The golden, measured AT the weight"). Not settled:
+reproduces all nine cells, which it must at weight 0), the **weight itself is vetoed by the
+golden** (§"The golden, measured AT the weight"), and the base the screens reconstruct now reads the
+engine's own metric term on both sides of the threshold it turns on (§"The cause, and the fix").
+Not settled:
 
 - **Whether a narrower weight is golden-neutral.** 0.03017 is the weight the FSE'26 window solves for
   on the faithful (`rank`) shape, and it fails; the axis is not re-opened by a smaller number picked
   by hand. Any such candidate now has to clear both halves, and the flag exists to test it.
+- **Whether a narrower weight is even worth a run now.** The base correction moved `re1`'s `rank` cap
+  from `0.015112` to `0.015233` and its `flip` window to `[0.008032, 0.008032]`, so the golden's
+  admissible set has to be re-read before the next dispatch — but the weight it would test is the
+  same 0.03017 the golden has already vetoed, and a candidate inside the corrected window would be a
+  different question, not a smaller one.
 - 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight — a case with no
-  decisive composition, or none the term can separate.
+  decisive composition, or none the term can separate. On the golden the same count is 48 / 56 for
+  `re1`, and §"The two residuals, named" adds a third cause to that list: **the render cannot express
+  the order the term ranks by.**
 - The `flip` shape reads the MAGNITUDE of a clamped bonus (§1), so `rank` is the faithful translation
-  of the separator's rank-based rate. Any statement about this term has to name its shape.
+  of the separator's rank-based rate. Any statement about this term has to name its shape — and any
+  statement about the ENGINE has to use `rank`, which is why the comparison table in §"The golden,
+  measured AT the weight" now says so.
 - A paired preference is still not a term (`fse26-term-oracle-verdict.md` §9). What the candidate run
   settled is the term's admissibility at 0.03017 on FSE'26 — and the second benchmark then answered
   the question that admissibility left open.
@@ -502,12 +604,15 @@ golden** (§"The golden, measured AT the weight"). Not settled:
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 639, 0 failures (was 575 at the first pass; 633 before the dump accumulator) |
-| `benchmarks` coverage | **99.81 / 97.18 / 100 / 99.81**, the accumulator at 100 / 100 / 100 / 100 |
-| root tests | 3150, 0 failures |
-| `packages/kinetic` tests | 901, 0 failures |
+| `benchmarks` tests | 649, 0 failures (was 639 before the base correction; 575 at the first pass; 633 before the dump accumulator) |
+| `benchmarks` coverage | **99.81 / 97.21 / 100 / 99.81**, the accumulator at 100 / 100 / 100 / 100 |
+| root tests | 3163, 0 failures |
+| `packages/kinetic` tests | 911, 0 failures |
+| `packages/tree` tests | 650, **100 / 100 / 100 / 100** |
 | `packages` typecheck | 15 projects (nx per-package **and** the workspace tsconfig) |
 | lint / prettier | 0 warnings / clean |
+| the base correction's own proof | the threshold is an exported OWNER with a test that pins BOTH sides on a real graph (`ANOMALY_NORMALIZE_NODE_THRESHOLD` at 19 raw vs 20 rescaled, and the flag provably inert below it); `blendScores` is asserted to score a row by `log1p` of ITS OWN `selfAnomaly`, with the gap pinned as the row's own `0.305` rather than the substitution's `0.693`; the new fidelity counter is asserted to FAIL on a case at the threshold carrying a value above 1 and to make NO such claim one candidate below, and its stronger twin is asserted NOT to be claimed (a tied top reads as the tie group's mean rank); and `metricSlopes` — the function whose whole job was to derive the printed column — no longer exists |
+| the new counter, on its first real run | **it fired 34 times, and the claim was wrong rather than the dump**: 34 of the FSE'26 dump's 1422 rescaled cases carry a maximum of 0.95–0.99, because a TIED top anomaly takes its tie group's MEAN rank (`47.5 / 50` for a six-way tie). The check was split into the falsifiable half (`values above 1: 0` everywhere it was measured) and the population fact, which is what it should have been from the start — a counter that fires on the engine's own legal output is worse than no counter |
 | regression proof | `--cv-screen` on the shipped dump differs from the pre-change output only by the new lines: the population line split, the two `margin:` lines, and the two `resolution:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so neither change moved a recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`, and both now print their own ensembles per row |
 | the engine's half | candidate `35125277962` vs control `35125285784`: **+5 cases, 0 regressed fault types**, 756 → 761 |
 | the enrolment's golden | `35125060855` at the enrolling commit `0ab737f`: **9 of 9 cells byte-identical** — the DEFAULT path, where the weight is 0 |

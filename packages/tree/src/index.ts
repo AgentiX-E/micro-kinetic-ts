@@ -51,6 +51,12 @@ export type { JohnsonCycleOptions } from './graph/cycle-detector.js';
 // rescale (rank or min-max). Consumers need to be able to verify that property
 // rather than infer it — see the invariance suite in `ranking-signals.test.ts`.
 export { rankNormalizeScores } from './causal/topology-fault-graph.js';
+// The threshold is public for the same reason `rankNormalizeScores` is, one step earlier in the
+// chain: it decides WHETHER a case's anomaly scores were rescaled at all, so a consumer holding a
+// per-service vector and a node count can say which quantity it is looking at. Without it, a
+// below-threshold vector reads as a rescaled one and the reader inherits the engine's ORDER while
+// silently inventing its gaps — the defect `docs/fse26-cv-screen.md` §"The cause, and the fix" records.
+export { ANOMALY_NORMALIZE_NODE_THRESHOLD } from './causal/topology-fault-graph.js';
 // The topology config is part of the public surface: `TreePruner` takes a
 // `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a
 // consumer that wants to name the object it builds — rather than infer it — needs

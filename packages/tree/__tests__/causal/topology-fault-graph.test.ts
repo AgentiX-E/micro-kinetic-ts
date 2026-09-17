@@ -11,6 +11,7 @@ import type { ServiceCallGraph, ServiceId, TimeSeries } from '@agentix-e/micro-k
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   buildTopologyFaultGraph,
   rankNormalizeScores,
 } from '../../src/causal/topology-fault-graph.js';
@@ -2281,6 +2282,71 @@ describe('buildTopologyFaultGraph — rank normalization', () => {
     // causal signals (trace/topo) can tip the ranking toward the true source.
     expect(rankOutlier).toBeCloseTo(1.0);
     expect(rankSource).toBeGreaterThan(0.9);
+  });
+});
+
+describe('buildTopologyFaultGraph — the rescale is a POPULATION boundary, not a flag', () => {
+  // The two clauses of the condition are separate axes, and a reader that knows only the
+  // flag cannot tell a rescaled vector from a raw one. These tests exist because the
+  // offline reconstruction of 1422 cases assumed the rescale always happened: the flag
+  // was ON in the run, so the ORDER the reconstruction inherited was the engine's, while
+  // its GAPS belonged to a quantity the engine never ranked on. Measured on the RCAEval
+  // dumps, that is 407 of 615 cases — every case below the threshold.
+  /** One case's shape at a given node count: flat background, one modest rise, one near-zero spike. */
+  function caseAt(nodeCount: number): {
+    ids: ServiceId[];
+    metrics: Map<ServiceId, readonly TimeSeries[]>;
+  } {
+    const ids: ServiceId[] = Array.from({ length: nodeCount }, (_, i) => `svc-${i}`);
+    const entries: Array<[ServiceId, TimeSeries[]]> = [];
+    for (let i = 0; i < nodeCount - 2; i++) {
+      entries.push([
+        ids[i]!,
+        [
+          makeTimeSeries(
+            'cpu',
+            Array.from({ length: 8 }, () => 1.0),
+          ),
+        ],
+      ]);
+    }
+    entries.push([
+      ids[nodeCount - 2]!,
+      [makeTimeSeries('cpu', [1.0, 1.0, 1.0, 1.0, 1.5, 1.5, 1.5, 1.5])],
+    ]);
+    entries.push([
+      ids[nodeCount - 1]!,
+      [makeTimeSeries('cpu', [0.01, 0.01, 0.01, 0.01, 3.0, 3.0, 3.0, 3.0])],
+    ]);
+    return { ids, metrics: makeMetrics(entries) };
+  }
+
+  it('leaves the scores RAW one node below the threshold — the spike keeps its own magnitude', () => {
+    const { ids, metrics } = caseAt(ANOMALY_NORMALIZE_NODE_THRESHOLD - 1);
+    const result = buildTopologyFaultGraph(makeCallGraph(ids, []), metrics, {
+      rankNormalization: true,
+    });
+    // log10(3.0 / 0.01) ≈ 2.48, and nothing rescaled it: a maximum of exactly 1 here would
+    // mean the threshold had been crossed by a graph one node short of it.
+    expect(result.anomalyScores.get(ids[ids.length - 1]!)).toBeGreaterThan(2);
+  });
+
+  it('rescales them AT the threshold — the maximum becomes 1 by construction', () => {
+    const { ids, metrics } = caseAt(ANOMALY_NORMALIZE_NODE_THRESHOLD);
+    const result = buildTopologyFaultGraph(makeCallGraph(ids, []), metrics, {
+      rankNormalization: true,
+    });
+    expect(result.anomalyScores.get(ids[ids.length - 1]!)).toBeCloseTo(1.0, 9);
+  });
+
+  it('the flag cannot act below the threshold: both readings are the SAME vector', () => {
+    const { ids, metrics } = caseAt(ANOMALY_NORMALIZE_NODE_THRESHOLD - 1);
+    const graph = makeCallGraph(ids, []);
+    const off = buildTopologyFaultGraph(graph, metrics, { rankNormalization: false });
+    const on = buildTopologyFaultGraph(graph, metrics, { rankNormalization: true });
+    for (const id of ids) {
+      expect(on.anomalyScores.get(id)).toBe(off.anomalyScores.get(id));
+    }
   });
 });
 

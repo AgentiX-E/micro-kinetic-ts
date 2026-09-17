@@ -1742,13 +1742,13 @@ const pool = `${POOL_METRIC_PREFIX}use_time.max`;
 /**
  * Two named contenders at the top of a 26-candidate field, the rest filler.
  *
- * 26 and not two, because the metric term is RANK-normalised: two candidates give
- * the runner-up a term of 0, so the gap to the leader is `log1p(1) = 0.693` and no
- * admissible pool weight can close it. At 26 the step is `1/25` and the gap is
- * `log1p(1) − log1p(0.96) = 0.0198`, which is the width the shipped 0.0679 has to
- * work with — the same arithmetic that made the pool penalty's window `0.038` wide
- * on the real 51-candidate cases. A fixture that ignored the spacing would be
- * testing a ranking the engine cannot produce.
+ * 26 and not two, because the field is where the metric term's SPACING comes from: this case
+ * is at or above the engine's rescale threshold, so its printed values are the rank rescale,
+ * the runner-up sits one step below the leader at `24/25`, and the gap the shipped 0.0679 has
+ * to work with is `log1p(1) − log1p(0.96) = 0.0198` — the same arithmetic that made the pool
+ * penalty's window `0.038` wide on the real 51-candidate cases. A two-candidate field would
+ * need its two anomalies written by hand to have any gap at all, and a fixture that ignored
+ * the spacing would be testing a ranking the engine cannot produce.
  */
 function rankedField(options: {
   readonly leader: ServiceSpec;
@@ -2157,10 +2157,11 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
   }
 
   it('fixes a case the term agrees with, and caps only where the term disagrees', () => {
-    // The 2-candidate metric step is `log1p(1) − log1p(0) = 0.693`, so a slope gap of
-    // 2 needs `w ≥ 0.347` — a real weight, not the metric spacing's 0.0100. The
-    // fixture therefore states its own arithmetic instead of inheriting the 51-
-    // candidate case's, and the SCREEN is what is under test, not the tuner.
+    // The fixture's two candidates print 1.000 and 0.960, so the metric gap the term has to
+    // overcome is `log1p(1) − log1p(0.96) = 0.0202` — the rows' OWN gap. It read 0.693 here
+    // while the reconstruction substituted the rank rescale for both values, which put them
+    // at 1 and 0. The fixture states its own arithmetic either way; the SCREEN is what is
+    // under test, not the tuner.
     const fixable = temporalCase({
       // The rival leads on the metric, so the case is wrong at w = 0.
       leader: 'rival',
@@ -2309,7 +2310,8 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     const report = formatOnsetScreenReport(onsetScreen([harmed], weights), weights);
 
     expect(report).toContain('no admissible gain: every weight that fixes a case also loses one');
-    expect(report).toMatch(/cap bound by dp-1: ts-src overtaken by ts-win \(lead 0\.693147/);
+    // The lead is the fixture's own metric gap: `log1p(1) − log1p(0.96)`.
+    expect(report).toMatch(/cap bound by dp-1: ts-src overtaken by ts-win \(lead 0\.020203/);
   });
 
   it('screens the whole declared menu, in declared order, with a row per shape', () => {
@@ -2358,7 +2360,7 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     const report = formatOnsetMenuReport(onsetShapeMenu([harmed], weights), weights);
 
     expect(report).toContain('no shape in this menu has an admissible gain at any weight');
-    expect(report).toContain('cap 0.693147 = 0.693147 / 1.000000');
+    expect(report).toContain('cap 0.020203 = 0.020203 / 1.000000');
   });
 
   it('reports the menu as INERT, once, when the dump carries no order', () => {
@@ -3609,9 +3611,10 @@ describe('familyScreen — a family penalty, SOLVED instead of swept', () => {
    *     root finally overtakes that winner is a closed form — so the whole screen is
    *     solved, never sampled.
    *
-   * `logScore` is the fixture knob that sets a deficit to a size worth testing: with
-   * three candidates the metric term's steps are `log1p(1) - log1p(0.5) = 0.2877`, and the
-   * log term adds any smaller amount on top, exactly as `logWeight = 1` scales it.
+   * `logScore` is the fixture knob that sets a deficit to a size worth testing: the rows
+   * print 0.900 and 0.500, so the metric term's top step is `log1p(0.9) - log1p(0.5) =
+   * 0.2364`, and the log term adds any smaller amount on top, exactly as `logWeight = 1`
+   * scales it.
    */
   const K8S = 'k8s.pod.phase';
   const JVM = 'jvm.system.cpu.load_1m';
@@ -3679,14 +3682,16 @@ describe('familyScreen — a family penalty, SOLVED instead of swept', () => {
     });
 
   /**
-   * The two weights the fixture's own arithmetic implies.
+   * The four metric terms this fixture prints, which are what the screen solves against.
    *
-   * With FOUR candidates the metric term's steps are `log1p(1)`, `log1p(2/3)`, `log1p(1/3)`
-   * and `0` — an earlier draft of this fixture divided by two candidates and produced a cap
-   * BELOW the gain floor, so the screen correctly reported no gain and the fixture, not the
-   * screen, was wrong.
+   * `threeWay` writes the rows 0.900 / 0.500 / 0.100 / 0.000 and the reconstruction READS
+   * those values, so these are the terms and not a step function: an earlier draft listed
+   * the rank rescale of four candidates (`log1p(1)`, `log1p(2/3)`, `log1p(1/3)`, `0`) —
+   * the shape the reconstruction substituted for every case, which is the engine's quantity
+   * only at or above `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes. The two steps the window
+   * needs are the PRINTED ones.
    */
-  const STEPS = [Math.log1p(1), Math.log1p(2 / 3), Math.log1p(1 / 3), 0];
+  const STEPS = [Math.log1p(0.9), Math.log1p(0.5), Math.log1p(0.1), 0];
   /** The gaining case's deficit: the winner leads by the step difference, less the root's log. */
   const FLOOR = STEPS[0]! - STEPS[1]! - 0.12;
   /** The protecting case's lead: the root's step, plus its log, less the rival's step. */
@@ -3777,8 +3782,11 @@ describe('familyScreen — a family penalty, SOLVED instead of swept', () => {
         (row) => row.family === 'db.client.connections',
       )!;
 
+    // `0.1` rather than a weight that swallows the whole cap: the shift has to LEAVE room, or
+    // the window closes and the cap reads as unbounded, which is a different statement from
+    // "shifted by the weight already applied".
     expect(pick(0).cap).toBeCloseTo(CAP, 9);
-    expect(pick(0.2).cap).toBeCloseTo(CAP - 0.2, 9);
+    expect(pick(0.1).cap).toBeCloseTo(CAP - 0.1, 9);
   });
 
   it('handles a family with an unbounded window by shipping the floor', () => {
@@ -5013,10 +5021,12 @@ describe('cvScreen — the cv penalty, solved rather than swept', () => {
 
   it('finds the weight at which a lower-cv root is promoted', () => {
     // `ts-svc-0` is the root and the less anomalous service; the engine's rank-1 is the more
-    // anomalous, less stable one. The base gap is the METRIC term's own, `log1p(1) − log1p(0)`,
-    // because the metric term is a rank normalisation rather than the raw anomaly — and the
-    // promotion weight is that gap over the slope gap exactly, so this pins the closed form
-    // instead of a sampled approximation of it.
+    // anomalous, less stable one. The base gap is the METRIC term's own — the rows print 0.500
+    // and 0.900, so it is `log1p(0.9) − log1p(0.5) = 0.2364`, which is these two services' own
+    // gap and NOT `log1p(1) − log1p(0)`: the metric term is read off the row, and the rank
+    // rescale that would have produced 1 and 0 is the engine's quantity only at or above its
+    // node threshold. The promotion weight is that gap over the slope gap exactly, so this
+    // pins the closed form instead of a sampled approximation of it.
     const cases = [
       cvCase({
         cvs: [0.2, 0.8],
@@ -5029,7 +5039,7 @@ describe('cvScreen — the cv penalty, solved rather than swept', () => {
     expect(screen.solved.gain).toBe(1);
     expect(screen.solved.gained).toEqual(['dp-1']);
     expect(screen.solved.window.satisfied).toBe(0);
-    expect(screen.solved.ship).toBeCloseTo(Math.log1p(1) / 0.75, 9);
+    expect(screen.solved.ship).toBeCloseTo((Math.log1p(0.9) - Math.log1p(0.5)) / 0.75, 9);
     expect(screen.gainTypes).toEqual([{ key: 'JVMMemoryStress', cases: 1 }]);
   });
 
@@ -5237,15 +5247,17 @@ describe('formatCvMenuReport — availability first, then one row per shape', ()
     ];
     const single = formatCvScreenReport(cvScreen(cases, WEIGHTS), WEIGHTS);
     expect(single).toContain('no admissible gain');
-    // The cap is `log1p(1) / 0.75` — the weight at which `dp-cap`'s correct root is overtaken.
+    // The cap is `GAP / 0.75` — the weight at which `dp-cap`'s correct root is overtaken, where
+    // GAP is the metric gap its own rows print (0.900 and 0.500).
+    const GAP = Math.log1p(0.9) - Math.log1p(0.5);
     expect(single).toContain('cap bound by dp-cap');
-    expect(single).toContain(`cap ${(Math.log1p(1) / 0.75).toFixed(6)}`);
+    expect(single).toContain(`cap ${(GAP / 0.75).toFixed(6)}`);
     const menu = formatCvMenuReport(cvShapeMenu(cases, WEIGHTS), WEIGHTS);
     // Both shapes bind on the SAME pair, at weights that differ only through the slope's shape —
-    // `log1p(1)/0.75` for the magnitude and `log1p(1)/1` for the order.
+    // `GAP/0.75` for the magnitude and `GAP/1` for the order.
     expect(menu).toContain('bound by dp-cap');
-    expect(menu).toContain(`cap ${(Math.log1p(1) / 0.75).toFixed(6)}`);
-    expect(menu).toContain(`cap ${Math.log1p(1).toFixed(6)}`);
+    expect(menu).toContain(`cap ${(GAP / 0.75).toFixed(6)}`);
+    expect(menu).toContain(`cap ${GAP.toFixed(6)}`);
     expect(menu).toContain('no shape in this menu has an admissible gain at any weight');
   });
 });
@@ -5259,8 +5271,9 @@ describe('cvScreen — the base is the engine that ran, not a two-term blend', (
     // case is satisfied at zero.
     //
     // A field of 26, because one term can only be shown to decide a ranking where the other
-    // leaves room: with two candidates the metric term's top-to-bottom gap is `log1p(1)`, which
-    // the latency term's own maximum (`latWeight × 1`) cannot cross.
+    // leaves room: the two named services print 0.900 and 0.500, so the metric term separates
+    // them by 0.236 — wider than the latency term's own `latWeight × 1` — and a two-candidate
+    // field with no filler would leave the metric gap negligible instead.
     const FILLERS = 24;
     const text = dump({
       groundTruthServices: ['ts-late'],
@@ -5638,14 +5651,15 @@ describe('gainResolution — the lead the formatter discards', () => {
   const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
 
   /**
-   * A two-service case whose lead is a fraction of the quantum: the target wins on the metric term
-   * by `log1p(1)` = 0.693147 and loses `0.694` on the log term, so at 0.00086 it leads by 7.2e-6 —
-   * smaller than the 5.0e-4 the formatter rounds `logScore` to.
+   * A two-service case whose lead is a fraction of the quantum: the rows print 1.000 and 0.000,
+   * so the target wins on the metric term by `log1p(1) − log1p(0)` = 0.693147 — its own printed
+   * values — and loses `0.694` on the log term, so at 0.00086 it leads by 7.2e-6, smaller than
+   * the 5.0e-4 the formatter rounds `logScore` to.
    */
   const fixture = (extra: Partial<Parameters<typeof cvCase>[0]> = {}): DiagnosedCase =>
     cvCase({
       cvs: [0.1, 0.9],
-      anomalies: [1.0, 0.5],
+      anomalies: [1.0, 0.0],
       logScores: [0, 0.694],
       groundTruth: 'ts-svc-0',
       prediction: 'ts-svc-1',

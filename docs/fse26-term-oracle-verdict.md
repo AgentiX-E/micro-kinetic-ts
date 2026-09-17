@@ -30,23 +30,38 @@
 
 ## 1. The instrument, and why it is exact
 
-The shipped score is `log1p(A) + logWeight·logScore + latWeight·lat` with `A` from
-`rankNormalizeScores`. The dump carries enough to rebuild all three:
+The shipped score is `log1p(A) + logWeight·logScore + latWeight·lat` with `A` the engine's own
+per-service anomaly. The dump carries enough to rebuild all three:
 
 | term | source in the dump | exactness |
 | --- | --- | --- |
-| metric `A` | the printed service ORDER (the formatter sorts by self-anomaly) and `n` | **exact**: `A` is the mean rank of a value's tie group over `n − 1` |
+| metric `A` | the per-service `selfAnomaly` field — the value `finalScore` takes `log1p` of | **read, not rebuilt**: the field IS the engine's `selfScores` entry |
 | log | the per-service `logScore` field, or rebuilt from the printed `logic`/`http` counts | printed to 3 dp; a rebuild is within **±5 cases** (below) |
 | latency | `latRise` + the rise floor, `log1p(max(0, rise − 1))` max-normalised | same shape as the engine's `computeEdgeLatencyScores` |
 
+`A` is treated differently from the other two, and the difference is the point of this paragraph:
+there is nothing to REBUILD. An earlier version of this instrument derived `A` from the printed
+service ORDER, on the reasoning that the formatter sorts by self-anomaly and `rankNormalizeScores`
+assigns a tie group the mean of its ranks — and that derivation is the same quantity only where the
+engine RESCALED the vector, which it does only at or above `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes.
+Below that threshold the field is a raw deviation, so the derived value had the engine's order and not
+its gaps. **On this document's dump the two are identical** — every one of its 1422 cases is a 51- or
+52-service system, so every case was rescaled (`0 cases raw` as the fidelity line now reports) — and
+that is exactly why the defect survived here: the claim below was true, and true only on this
+population. It was false on 407 of the RCAEval golden's 615 cases, and the register's `decisiveCv` row
+records the correction and its measurements.
+
 Two details are load-bearing, and both are easy to get wrong:
 
-- **`A` is the TIE-GROUP MEAN, not the position.** `rankNormalizeScores` assigns
-  `(i + j) / 2 / (n − 1)` to a group of services sharing a value, so reading a rank off a
-  row's position reports two distinct values for two services the engine scored equally.
-  The groups are recoverable because the printed value IS the group mean, and the
-  reconstruction reproduces the printed value to `4.90e-4` on **all 72,527 printed
-  services** (`0` above `5e-4`). The report prints that number instead of asserting it.
+- **`A` is read, and the reason is that a substitution is invisible in ORDER.** Under the old
+  derivation a tie group was recovered from the printed values (the printed value IS the group's mean),
+  and the reconstruction reproduced the printed value to `4.90e-4` on **all 72,527 printed services**
+  (`0` above `5e-4`) — on this dump. A deviation of zero is not evidence that the reconstruction read
+  the right QUANTITY, only that two monotone functions of one field agree; the instrument now reports
+  the population the rescale threshold decides instead of a deviation, plus the one check that can fail
+  (at or above the threshold no value may exceed 1 — measured `0`), and separately the cases whose
+  maximum is below 1.000 because a TIED top anomaly takes its tie group's mean rank (`34` of 1422
+  here, one of them a six-way tie reading `47.5 / 50`).
 - **The order is re-derived through the printer's comparator, never taken from the array
   order.** The two agree on `1422/1422` cases, which is itself reported: a dump where they
   disagree is a defect, not a nuance.
@@ -55,16 +70,25 @@ The instrument is then validated the only way that matters — against the run i
 derived from:
 
 ```
-cases 1422; services 72527; logWeight=1 latWeight=0.561495 latFloor=10.3
-metric term: max |recomputed - printed| = 4.90e-4; services above 5e-4: 0
+cases 1422; services 72527; logWeight=1 latWeight=0.561495 latFloor=10.3 poolWeight=0
+metric term: read from each row (0 cases raw, below the engine's rescale at 20 nodes; 1422 rescaled);
+  values above 1: 0 cases
+rescaled cases whose maximum is BELOW 1.000 (a TIED top anomaly, so the rescale gives the tie group its
+  mean rank): 34
 printed order reproduced from the printed values: 1422/1422 cases
-rank-1 reproduced: 1422/1422 cases; rank-1 an acceptable root: 750
+rank-1 same as the dump's own recorded: 1319/1422 cases; an acceptable root: 750
 log term: counts-derived vs printed, services above 6e-4: 109; cases whose rank-1 moves: 5
 ```
 
-**Reproducing rank-1 on all 1422 cases with `750` correct is the shipped headline,
-recomputed from the log text.** That is the whole claim: the reconstructed terms ARE the
-terms the run scored with.
+The `1319/1422` is the pool weight being read as zero, which is why this block's `750` is the pool-off
+headline rather than the shipped one: the paragraph below already says so, and this document's
+configuration is stated on the block rather than left to the reader. The two metric-term lines are
+pool-independent — they are properties of the dump's own column.
+
+**Reproducing the run's own ranking with `750` correct, on the pool-off configuration this block names,
+is the pool-off headline recomputed from the log text** (the shipped configuration's own number, with the
+pool penalty on, is `756/1422` and reproduces at `rank-1 same as the dump's own recorded: 1422/1422`).
+That is the whole claim: the reconstructed terms ARE the terms the run scored with.
 
 **The error bar is 5 cases, and it is stated rather than hidden.** The dump prints
 `logScore` at three decimals while the counts behind it reach thousands, so RE-DERIVING
@@ -334,7 +358,10 @@ Fidelity first, because everything else is a claim made through this reconstruct
 
 ```
   cases 1422; services 72527; logWeight=1 latWeight=0.561495 latFloor=10.3 poolWeight=0.0679
-  metric term: max |recomputed - printed| = 4.90e-4; services above 5e-4: 0
+  metric term: read from each row (0 cases raw, below the engine's rescale at 20 nodes; 1422 rescaled);
+    values above 1: 0 cases
+  rescaled cases whose maximum is BELOW 1.000 (a TIED top anomaly, so the rescale gives the tie group
+    its mean rank): 34
   printed order reproduced from the printed values: 1422/1422 cases
   rank-1 same as the dump's own recorded: 1422/1422 cases; an acceptable root: 756
   moved by the pool penalty: 103; moved by the temporal prior: 0

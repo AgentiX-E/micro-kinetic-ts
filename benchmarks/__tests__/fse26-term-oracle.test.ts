@@ -5,21 +5,27 @@
  * Blocks are produced by the REAL formatter and read back by the real parser, so a
  * format change fails here rather than making the oracle quietly rank nothing.
  *
- * The fixtures are RANK-CONSISTENT by default. The formatter prints `selfAnomaly` as
- * the rank-normalised value, so a hand-built block whose anomalies are not
- * `(n - 1 - i) / (n - 1)` over `n` candidates is a dump the engine could not have
- * produced — and the oracle's fidelity check, whose entire job is to notice exactly
- * that, would (correctly) flag every such fixture. Deriving the values from the
- * service order keeps the fixtures physical, leaves the fidelity assertion
- * meaningful, and is why the tests below order their services deliberately.
+ * The fixtures carry a strictly ordered, well-spread `selfAnomaly` vector by default.
+ * Above the engine's rescale threshold that vector IS the rank rescale the producer
+ * prints; below it the same numbers are a legal RAW vector, since a raw deviation is
+ * whatever the case's data made it. This header used to claim the rank shape was the
+ * only thing the producer could print, and that claim is what the reconstruction was
+ * built on: it rebuilt the metric term from the row order, which is the engine's
+ * quantity only where the engine rescaled. The check that should have caught it
+ * (`max == 1.000 above the threshold`) now exists, and so does the test that a case
+ * below the threshold is not asked for one.
  *
  * @module benchmarks/__tests__/fse26-term-oracle
  */
 
 import { describe, expect, it } from 'vitest';
 
-import { formatFSE26Diagnostic } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
+  formatFSE26Diagnostic,
+  SERVICE_FIELD_DECIMALS,
+} from '../../packages/kinetic/src/benchmarks/index.js';
+import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   computePoolMetricScores,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_ONSET_SHAPE,
@@ -49,7 +55,6 @@ import {
   isPoolDominantLabel,
   latencySlopes,
   logSlopesForMode,
-  metricSlopes,
   modeScreen,
   oracleCensus,
   oracleFidelity,
@@ -95,9 +100,12 @@ interface ServiceSpec {
    */
   logScore?: number;
   /**
-   * Defaults to the RANK-NORMALISED value implied by the spec's position, which is
-   * what the producer prints. Set it only where the test is about the matcher rather
-   * than about the data — a tie group, or a single candidate.
+   * Defaults to a strictly ordered, well-spread vector derived from the spec's position.
+   *
+   * At or above `ANOMALY_NORMALIZE_NODE_THRESHOLD` candidates that is EXACTLY what the
+   * producer prints, because the engine rescales there; below it the same numbers are a
+   * legal raw vector rather than the implied one. Set it explicitly wherever the test is
+   * about the metric term itself, a tie group, or a single candidate.
    */
   selfAnomaly?: number;
   latRise?: number;
@@ -252,64 +260,87 @@ describe('latencySlopes', () => {
   });
 });
 
-describe('metricSlopes', () => {
-  it('gives distinct values their own rank divided by n - 1', () => {
-    const slopes = metricSlopes([
-      { serviceId: 'a', selfAnomaly: 1 } as never,
-      { serviceId: 'b', selfAnomaly: 0.5 } as never,
-      { serviceId: 'c', selfAnomaly: 0 } as never,
-    ]);
-    expect(slopes.get('a')).toBeCloseTo(1, 12);
-    expect(slopes.get('b')).toBeCloseTo(0.5, 12);
-    expect(slopes.get('c')).toBeCloseTo(0, 12);
+describe('the metric term is READ off the row, never rebuilt', () => {
+  it('scores each service with log1p of ITS OWN printed anomaly', () => {
+    // The engine ranks on `log1p(selfScores.get(id))` (`pruner.ts` 1400/1575), and the row
+    // prints that value, so the reconstruction must not substitute anything for it. The
+    // metric term is isolated by zeroing the other three, which is what makes the expected
+    // number the term's own rather than a blend's.
+    const kase = casesOf(
+      block([
+        { serviceId: 'ts-high', selfAnomaly: 0.9 },
+        { serviceId: 'ts-low', selfAnomaly: 0.4 },
+      ]),
+    )[0]!;
+    const scores = blendScores(
+      kase,
+      { ...OPTS, logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 },
+      'recorded',
+      new Map(),
+    );
+    expect(scores.get('ts-high')!).toBeCloseTo(Math.log1p(0.9), 12);
+    expect(scores.get('ts-low')!).toBeCloseTo(Math.log1p(0.4), 12);
   });
 
-  it('gives a tie group the AVERAGE of the ranks it occupies', () => {
-    // This is the reconstruction's whole content: `rankNormalizeScores` collapses a
-    // tie group to its mean rank, so reading ranks off positions reports the distinct
-    // ranks the engine collapsed.
-    const slopes = metricSlopes([
-      { serviceId: 'a', selfAnomaly: 1 } as never,
-      { serviceId: 'b', selfAnomaly: 0.25 } as never,
-      { serviceId: 'c', selfAnomaly: 0.25 } as never,
-    ]);
-    expect(slopes.get('b')).toBeCloseTo((3 - 1 - 1.5) / 2, 12);
-    expect(slopes.get('c')).toBe(slopes.get('b'));
-    expect(slopes.get('b')).not.toBeCloseTo(0, 3);
+  it('keeps the row’s own GAP, which is what a flip under a perturbation is decided by', () => {
+    // The defect in one number. A reconstruction that rebuilt the rank rescale from the row
+    // order would put these two services at log1p(1) and log1p(0), i.e. a gap of 0.693 — 2.3×
+    // the row's own 0.305 — and every window, margin and `--at-weight` verdict solved on that
+    // base is solved on a quantity the engine never ranked on. Measured on the paired
+    // dispatch, the model's gained/lost counts were 7/13 against the engine's 1/3.
+    const kase = casesOf(
+      block([
+        { serviceId: 'ts-high', selfAnomaly: 0.9 },
+        { serviceId: 'ts-low', selfAnomaly: 0.4 },
+      ]),
+    )[0]!;
+    const scores = blendScores(
+      kase,
+      { ...OPTS, logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 },
+      'recorded',
+      new Map(),
+    );
+    const gap = scores.get('ts-high')! - scores.get('ts-low')!;
+    expect(gap).toBeCloseTo(Math.log1p(0.9) - Math.log1p(0.4), 12);
+    expect(gap).toBeLessThan(Math.log1p(1) - Math.log1p(0));
   });
 
-  it('counts a candidate with an empty id in n, as the engine does', () => {
-    // The unlabelled `k8s.*` row is one of the n candidates, and n is the divisor, so
-    // dropping it changes every other service's metric term.
-    const withRow = metricSlopes([
-      { serviceId: 'a', selfAnomaly: 1 } as never,
-      { serviceId: 'b', selfAnomaly: 1 } as never,
-      { serviceId: '', selfAnomaly: 0 } as never,
-    ]);
-    expect(withRow.get('a')).toBeCloseTo(0.75, 12);
+  it('reads a RESCALED row as the rescaled value, not as the rank it implies', () => {
+    // The mirror image, at or above the threshold: the printed value IS the rank rescale, and
+    // reading it gives that value rather than a second derivation of it. For a case at the
+    // threshold the top two services are 1.000 and 0.947 — not 1 and 0.9 — so a reconstruction
+    // that replaced one with the other is wrong on this side of the boundary too. The expected
+    // numbers are the RENDERED ones, because that is all the artifact carries.
+    const specs = Array.from({ length: ANOMALY_NORMALIZE_NODE_THRESHOLD }, (_, i) => ({
+      serviceId: `ts-${i}`,
+    }));
+    const kase = casesOf(block(specs))[0]!;
+    const scores = blendScores(
+      kase,
+      { ...OPTS, logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 },
+      'recorded',
+      new Map(),
+    );
+    const n = ANOMALY_NORMALIZE_NODE_THRESHOLD;
+    const second = Number(((n - 2) / (n - 1)).toFixed(SERVICE_FIELD_DECIMALS));
+    expect(scores.get('ts-0')!).toBeCloseTo(Math.log1p(1), 12);
+    expect(scores.get('ts-1')!).toBeCloseTo(Math.log1p(second), 12);
+    expect(second).toBeLessThan(1);
   });
 
-  it('is independent of the array order, including inside a tie group', () => {
-    const forward = metricSlopes([
-      { serviceId: 'ts-a', selfAnomaly: 0.9 } as never,
-      { serviceId: 'ts-b', selfAnomaly: 0.4 } as never,
+  it('the metric term’s own order is the rows’ order, ties broken by id', () => {
+    const kase = casesOf(
+      block([
+        { serviceId: 'ts-b', selfAnomaly: 0.5 },
+        { serviceId: 'ts-a', selfAnomaly: 0.5 },
+        { serviceId: 'ts-c', selfAnomaly: 0.9 },
+      ]),
+    )[0]!;
+    expect(rankCase(kase, OPTS, 'recorded', new Map()).byTerm.metric).toEqual([
+      'ts-c',
+      'ts-a',
+      'ts-b',
     ]);
-    const reversed = metricSlopes([
-      { serviceId: 'ts-b', selfAnomaly: 0.4 } as never,
-      { serviceId: 'ts-a', selfAnomaly: 0.9 } as never,
-    ]);
-    expect(reversed.get('a')).toBe(forward.get('a'));
-    expect(reversed.get('b')).toBe(forward.get('b'));
-    // A tie makes the comparator read the ids in BOTH directions.
-    const tie = metricSlopes([
-      { serviceId: 'ts-b', selfAnomaly: 0.5 } as never,
-      { serviceId: 'ts-a', selfAnomaly: 0.5 } as never,
-    ]);
-    expect(tie.get('ts-a')).toBe(tie.get('ts-b'));
-  });
-
-  it('returns the raw score for a single candidate rather than dividing by zero', () => {
-    expect(metricSlopes([{ serviceId: 'a', selfAnomaly: 0.37 } as never]).get('a')).toBe(0.37);
   });
 });
 
@@ -618,8 +649,11 @@ describe('oracleFidelity', () => {
     const fidelity = oracleFidelity(cases, OPTS);
     expect(fidelity.cases).toBe(1);
     expect(fidelity.services).toBe(3);
-    expect(fidelity.metricViolations).toBe(0);
-    expect(fidelity.metricMaxDeviation).toBeLessThan(5e-4);
+    // Three candidates is below the engine's rescale threshold, so the rows carry raw
+    // deviations — the population on which the metric term must be read rather than rebuilt.
+    expect(fidelity.rawCases).toBe(1);
+    expect(fidelity.rescaledCases).toBe(0);
+    expect(fidelity.aboveOneAtOrAboveThreshold).toBe(0);
     expect(fidelity.orderConsistent).toBe(1);
     expect(fidelity.top1Matches).toBe(1);
     expect(fidelity.top1Correct).toBe(1);
@@ -646,16 +680,69 @@ describe('oracleFidelity', () => {
     expect(oracleFidelity(cases, { ...OPTS, temporalWeight: 1 }).temporalFlips).toBe(1);
   });
 
-  it('notices a block whose anomalies are not rank-normalised for its own n', () => {
-    // The check earns its place here: this is a block the engine cannot emit, and a
-    // reader that trusted the array order instead of re-deriving it would rank it.
-    const impossible = casesOf(
-      block([
-        { serviceId: 'ts-a', selfAnomaly: 0.9 },
-        { serviceId: 'ts-b', selfAnomaly: 0.9 },
-      ]),
+  it('flags a case at or above the threshold carrying a value ABOVE 1', () => {
+    // The counter that replaces the deviation line, in the direction that can actually FAIL:
+    // BOTH of the engine's rescales map the case maximum to 1, so a case this large carrying a
+    // value above 1 is a case whose scores were not rescaled at all — the threshold moved, or
+    // something else wrote the dump. This fixture is exactly that case, which the engine cannot
+    // emit.
+    const specs = Array.from({ length: ANOMALY_NORMALIZE_NODE_THRESHOLD }, (_, i) => ({
+      serviceId: `ts-${i}`,
+      selfAnomaly: 1.4 - i * 0.01,
+    }));
+    const fidelity = oracleFidelity(casesOf(block(specs)), OPTS);
+    expect(fidelity.rescaledCases).toBe(1);
+    expect(fidelity.rawCases).toBe(0);
+    expect(fidelity.aboveOneAtOrAboveThreshold).toBe(1);
+  });
+
+  it('makes NO such claim one candidate below the threshold', () => {
+    // A raw deviation above 1 is perfectly legal — it is what a modest case's own data looks
+    // like — so the same block one candidate short must not be reported as a defect: a check
+    // that fires on the engine's own output is worse than no check, because it teaches its
+    // reader to ignore it.
+    const specs = Array.from({ length: ANOMALY_NORMALIZE_NODE_THRESHOLD - 1 }, (_, i) => ({
+      serviceId: `ts-${i}`,
+      selfAnomaly: 1.4 - i * 0.01,
+    }));
+    const fidelity = oracleFidelity(casesOf(block(specs)), OPTS);
+    expect(fidelity.rawCases).toBe(1);
+    expect(fidelity.rescaledCases).toBe(0);
+    expect(fidelity.aboveOneAtOrAboveThreshold).toBe(0);
+  });
+
+  it('does NOT claim a 1.000 maximum — a TIED top reads as the tie group’s mean rank', () => {
+    // The stronger form of the check was written first and is false, and the first dump it was
+    // pointed at said so in one line: 34 of the FSE'26 dump's 1422 rescaled cases carry a
+    // maximum of 0.95–0.99, one of them a six-way tie at the top reading `47.5 / 50`. The
+    // fixture is that arithmetic in the smallest form the engine can emit: with the top TWO of
+    // 20 candidates tied, `rankNormalizeScores` gives the group the mean of ranks 18 and 19, so
+    // both read `18.5 / 19 = 0.9737` — below 1, and on a case with nothing above 1 in it.
+    const n = ANOMALY_NORMALIZE_NODE_THRESHOLD;
+    // The mean of the last two 0-indexed ranks, over `n - 1`.
+    const tied = (n - 2 + (n - 1)) / 2 / (n - 1);
+    const specs = Array.from({ length: n }, (_, i) => ({
+      serviceId: `ts-${i}`,
+      selfAnomaly: i < 2 ? tied : Math.max(0, tied - 0.05 * (i - 1)),
+    }));
+    const fidelity = oracleFidelity(casesOf(block(specs)), OPTS);
+    expect(tied).toBeLessThan(1);
+    expect(fidelity.aboveOneAtOrAboveThreshold).toBe(0);
+    expect(fidelity.subUnitMaximumCases).toBe(1);
+  });
+
+  it('counts an unlabelled row towards the node count the threshold reads', () => {
+    // The `k8s.*` row with no service id is a candidate like any other, and the case's NODE
+    // count is what decides whether the engine rescaled. A reader that dropped the row would
+    // put a 20-node case below the threshold and then read a rescaled column as a raw one.
+    const specs: Array<{ serviceId: string; selfAnomaly?: number }> = Array.from(
+      { length: ANOMALY_NORMALIZE_NODE_THRESHOLD - 1 },
+      (_, i) => ({ serviceId: `ts-${i}` }),
     );
-    expect(oracleFidelity(impossible, OPTS).metricViolations).toBeGreaterThan(0);
+    specs.push({ serviceId: '', selfAnomaly: 0 });
+    const fidelity = oracleFidelity(casesOf(block(specs)), OPTS);
+    expect(fidelity.services).toBe(ANOMALY_NORMALIZE_NODE_THRESHOLD);
+    expect(fidelity.rescaledCases).toBe(1);
   });
 
   it('counts a block whose printed log score is not the count ratio', () => {

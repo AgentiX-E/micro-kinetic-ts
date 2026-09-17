@@ -10,28 +10,38 @@
  * what makes this module an INSTRUMENT rather than a model. Every number it reports
  * is a free read: no run, no cache rebuild.
  *
- * Two details make it exact, and both are easy to get wrong:
+ * The metric term is READ off the row rather than rebuilt. The engine ranks on `log1p` of its
+ * own per-service anomaly (`pruner.ts` 1400 and 1575) and the formatter prints that value on
+ * every row, so a reconstruction has no business re-deriving it. It used to: it rebuilt the
+ * engine's rank rescale from the printed order, which is the same quantity ONLY where the
+ * engine rescaled, i.e. at or above `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes. Below that
+ * threshold the row carries a RAW deviation, and the substitution silently handed the
+ * reconstruction the engine's ORDER (any rescale here is strictly monotone) and not its gaps.
+ * Measured on the RCAEval dumps that is 407 of 615 cases, and on the paired dispatch which
+ * cases the reconstruction got wrong was exactly the two below the threshold.
  *
- * 1. `rankNormalizeScores` assigns the AVERAGE 0-indexed rank of a value's TIE
- *    GROUP, divided by `n - 1`. Reading a rank off a service's POSITION instead is
- *    wrong wherever two services share a printed anomaly — the rows then receive the
- *    distinct ranks the engine collapsed into their mean, and the error is largest
- *    exactly where the ordering is tightest. The groups are recoverable because the
- *    printed value IS the group's mean, so the reconstruction reproduces the printed
- *    value to 5e-4 on every service of every case; the report CHECKS that rather
- *    than assuming it.
- * 2. The printed order is re-derived from the printed values through the printer's
- *    own comparator, not taken from the array order, so a caller that has re-sorted
- *    the services still gets the engine's ranks. Whether the two agree is itself a
- *    reported number: a dump where they disagree is a defect, not a nuance.
+ * Two details do have to be got right, and both are REPORTED rather than assumed:
+ *
+ * 1. Whether a case was rescaled is a property of its node count, and the header's `services=`
+ *    carries it. So the instrument counts the cases on each side of the threshold and checks
+ *    the side it can: at or above it the rendered maximum must be exactly 1.000, because BOTH
+ *    of the engine's rescales map the case maximum to 1. Below it no such claim is made — a
+ *    raw maximum is whatever the case's own deviation was, and 1.000 there would be a
+ *    coincidence rather than a defect.
+ * 2. The printed order is re-derived from the printed values through the printer's own
+ *    comparator, not taken from the array order, so a caller that has re-sorted the services
+ *    still gets the engine's ranks. Whether the two agree is itself a reported number: a dump
+ *    where they disagree is a defect, not a nuance. It disagrees where the three-decimal
+ *    render collapses two distinct anomalies onto one string, which is a resolution limit of
+ *    the artifact and NOT a statement about the engine.
  *
  * An EMPTY service id is a real candidate and not a parse artefact. In 1421 of the
  * 1422 cases one printed row has no service name — it carries the ten unlabelled
  * `k8s.*` series (`k8s.container.*`, `k8s.pod.phase`, …) and nothing else — and it
- * participates in the engine's normalisation: it is one of the `n` candidates, which
- * is what puts the metric term's step at exactly `1/50`. Dropping it silently, as an
- * id-requiring regex does, shifts `n` and therefore every service's metric term, so
- * this module keeps it and reports its occurrence.
+ * participates in the engine's normalisation: it is one of the candidates the header's
+ * `services=` counts, which is exactly what the rescale threshold above is read against.
+ * Dropping it silently, as an id-requiring regex does, also makes the parsed row count
+ * disagree with that header.
  *
  * The LOG term has a precision limit that the report prints rather than hides: the
  * dump prints `logScore` at three decimals while the counts behind it reach
@@ -45,6 +55,7 @@
  */
 
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   computeOnsetSlopes,
   computeTemporalEarliness,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
@@ -194,48 +205,15 @@ export function latencySlopes(
 /**
  * The printer's comparator: self-anomaly descending, service id ascending.
  *
- * Reproduced rather than assumed, which is what makes the metric term's
- * reconstruction independent of the array order. `''` sorts first among equals,
- * which is also what the ENGINE's comparator does with an empty id.
+ * Reproduced rather than assumed, which is what makes the fidelity check below
+ * independent of the array order the parser happened to produce. `''` sorts first among
+ * equals, which is also what the ENGINE's comparator does with an empty id.
  */
 function printedOrder(services: DiagnosedCase['services']): DiagnosedCase['services'][number][] {
   return [...services].sort((a, b) => {
     if (b.selfAnomaly !== a.selfAnomaly) return b.selfAnomaly - a.selfAnomaly;
     return a.serviceId < b.serviceId ? -1 : 1;
   });
-}
-
-/**
- * The metric term, exactly as `rankNormalizeScores` computes it.
- *
- * The tie-group mean is recovered from the printed values: the printed value IS that
- * mean, so consecutive services sharing a value are one group and receive the average
- * of the ranks they occupy. With distinct values this reduces to `(n - 1 - i) / (n - 1)`
- * for position `i`, which is the shipped shape.
- *
- * @param services - One case's services.
- * @returns The metric term per service, in [0, 1].
- */
-export function metricSlopes(services: DiagnosedCase['services']): Map<string, number> {
-  const ordered = printedOrder(services);
-  const n = ordered.length;
-  const slopes = new Map<string, number>();
-  // A single candidate is its own maximum; `n - 1` would divide by zero. The engine
-  // returns the raw scores unchanged in that case, and a raw score is not in [0, 1],
-  // but with one candidate nothing can reorder, so the value is never decisive.
-  if (n < 2) {
-    for (const service of ordered) slopes.set(service.serviceId, service.selfAnomaly);
-    return slopes;
-  }
-  let i = 0;
-  while (i < n) {
-    let j = i;
-    while (j + 1 < n && ordered[j + 1]!.selfAnomaly === ordered[i]!.selfAnomaly) j++;
-    const mean = (n - 1 - (i + j) / 2) / (n - 1);
-    for (let k = i; k <= j; k++) slopes.set(ordered[k]!.serviceId, mean);
-    i = j + 1;
-  }
-  return slopes;
 }
 
 /**
@@ -555,9 +533,17 @@ export function onsetSlopes(
 /**
  * The score the shipped engine ranks by, per service.
  *
- * `log1p(metric) + logWeight·log + latWeight·lat + temporalWeight·onset
+ * `log1p(selfAnomaly) + logWeight·log + latWeight·lat + temporalWeight·onset
  * − poolWeight·[pool-dominant]`, which is the engine's own `finalScore` with the priors
  * this benchmark leaves off.
+ *
+ * The first term is the row's OWN `selfAnomaly`, because that is what the engine ranked
+ * on: `selfScores` is filled with the node's anomaly score as the topology builder left
+ * it (`pruner.ts` 1400/1575), which is RAW below `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes
+ * and rescaled to [0, 1] at or above it. Reading the printed value is faithful on BOTH
+ * sides of that boundary without the reconstruction having to know where it is — and a
+ * reconstruction that instead rebuilt the rescale from the printed order would have the
+ * engine's ORDER and invent its gaps on every case below the threshold.
  *
  * Exported because a candidate penalty's zero-regression window is solved from SCORE
  * GAPS between two services, and a solver that re-derived the blend would be a second
@@ -577,25 +563,23 @@ export function blendScores(
   logSource: LogTermSource,
   latSlopes: ReadonlyMap<string, number>,
 ): Map<string, number> {
-  const metric = metricSlopes(kase.services);
   const log =
     logSource === 'recorded'
       ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
       : logSlopesForMode(kase.services, logSource, opts.dominance, kase.edges);
-  // TOTAL over the case's services, like the metric term above and for the same reason:
+  // TOTAL over the case's services, like the latency term below and for the same reason:
   // the map is built from `kase.services`, so a lookup cannot miss and an `?? 0` on it
   // could never fire — and if it ever did it would fabricate a slope of zero, i.e. a term
   // that silently stopped voting.
   const onset = onsetSlopes(kase, opts.onsetShape);
   const scores = new Map<string, number>();
   for (const service of kase.services) {
-    // The metric term's map is TOTAL — {@link metricSlopes} assigns an entry to every
-    // service — so its lookup asserts rather than falling back. A `?? 0` here could
-    // never fire, and if it ever did it would fabricate a metric term of zero for a
-    // service the map cannot be missing: the term would silently stop voting.
+    // The metric term needs no map at all any more: it is a field of the row it scores,
+    // which is the whole point — the map that used to sit here existed only to hold a
+    // value the reconstruction had substituted for this one.
     scores.set(
       service.serviceId,
-      Math.log1p(metric.get(service.serviceId)!) +
+      Math.log1p(service.selfAnomaly) +
         opts.logWeight * (log.get(service.serviceId) ?? 0) +
         opts.latWeight * (latSlopes.get(service.serviceId) ?? 0) +
         opts.temporalWeight * onset.get(service.serviceId)! -
@@ -706,7 +690,7 @@ export interface CaseRankings {
 /**
  * Rebuild one case's terms and the orderings they induce.
  *
- * The blended order is `log1p(metric) + logWeight·log + latWeight·lat`, which is the
+ * The blended order is `log1p(selfAnomaly) + logWeight·log + latWeight·lat`, which is the
  * shipped formula with the priors this benchmark leaves off. The per-term orders are
  * separate because "which term alone would have named the root" is a different
  * question from "what does the blend say", and conflating them is how a blend's
@@ -724,7 +708,6 @@ export function rankCase(
   logSource: LogTermSource,
   latSlopes: ReadonlyMap<string, number>,
 ): CaseRankings {
-  const metric = metricSlopes(kase.services);
   const log =
     logSource === 'recorded'
       ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
@@ -739,8 +722,11 @@ export function rankCase(
   return {
     order: rankScored(blended),
     byTerm: {
+      // The metric term's own order, scored through the same `log1p` the blend applies to
+      // it — not by the row's raw value, so that a term order and the blend agree about
+      // which of two services the term prefers even when their anomalies are close.
       metric: rankScored(
-        kase.services.map((s) => ({ serviceId: s.serviceId, score: metric.get(s.serviceId)! })),
+        kase.services.map((s) => ({ serviceId: s.serviceId, score: Math.log1p(s.selfAnomaly) })),
       ),
       log: rankScored(
         // The log term's own order is over the log term ALONE, so a service with no
@@ -769,10 +755,50 @@ export function rankCase(
 export interface OracleFidelity {
   readonly cases: number;
   readonly services: number;
-  /** Largest |reconstructed metric term − printed selfAnomaly|. */
-  readonly metricMaxDeviation: number;
-  /** Services where that deviation exceeds 5e-4 — the printed precision. */
-  readonly metricViolations: number;
+  /**
+   * Cases at or above the engine's rescale threshold, where its own rescale ran.
+   *
+   * Counted per case rather than per service because the decision is per case: the
+   * threshold reads the graph's NODE count, so every service in one case is on the same
+   * side of it. Reported as a population because it is what a reader needs in order to
+   * know which quantity the `selfAnomaly` column holds — a rescaled position in [0, 1],
+   * or a raw deviation that is unbounded in the rise direction.
+   */
+  readonly rescaledCases: number;
+  /**
+   * Cases BELOW that threshold, where no rescale ran and the column holds a raw deviation.
+   *
+   * The population on which a reconstruction must NOT rebuild the metric term from the
+   * printed order: it would inherit the engine's order (any rescale here is strictly
+   * monotone) and invent its gaps. Measured on the RCAEval dumps this is 407 of 615 cases
+   * — two thirds of the population every window figure in `fse26-cv-screen.md` rests on.
+   */
+  readonly rawCases: number;
+  /**
+   * Cases at or above the threshold that carry a value ABOVE 1.000 — a DEFECT claim.
+   *
+   * The check that replaces the deviation line, and its direction is the one that can actually
+   * be falsified: BOTH of the engine's rescales map the case maximum to 1, so a case this large
+   * carrying a value above 1 is a case whose scores were NOT rescaled — the threshold moved, or
+   * something else wrote the dump. Zero on every dump measured so far.
+   *
+   * The mirror claim — "at or above the threshold the maximum IS exactly 1.000" — was written
+   * first and is FALSE, which the first dump it was pointed at said in one line: 34 of the 1422
+   * FSE'26 cases carry a maximum of 0.95–0.99. A tie at the top is why. `rankNormalizeScores`
+   * gives a value's TIE GROUP the mean of the ranks it occupies, so six services sharing the
+   * largest anomaly take ranks 45..50 and all read `47.5 / 50 = 0.95`; only a STRICTLY unique
+   * maximum maps to exactly 1. A counter that fires on the engine's own legal output is worse
+   * than no counter, because it teaches its reader to ignore it.
+   */
+  readonly aboveOneAtOrAboveThreshold: number;
+  /**
+   * Cases at or above the threshold whose maximum is BELOW 1.000 — a population fact, not a
+   * defect: the largest anomaly is TIED in them, so the rescale gives the tie group its mean
+   * rank. Reported because it is the number that falsified the stronger claim above, and
+   * because a reader who sees a 0.95 maximum needs to know it is arithmetic rather than a
+   * missing rescale.
+   */
+  readonly subUnitMaximumCases: number;
   /** Cases whose array order is the order the printer's comparator induces. */
   readonly orderConsistent: number;
   /** Cases where the reconstruction reproduces the dump's own rank-1. */
@@ -834,8 +860,10 @@ export function oracleFidelity(
   opts: TermOracleOptions,
 ): OracleFidelity {
   let services = 0;
-  let metricMaxDeviation = 0;
-  let metricViolations = 0;
+  let rescaledCases = 0;
+  let rawCases = 0;
+  let aboveOneAtOrAboveThreshold = 0;
+  let subUnitMaximumCases = 0;
   let orderConsistent = 0;
   let top1Matches = 0;
   let top1Correct = 0;
@@ -845,17 +873,34 @@ export function oracleFidelity(
   let poolFlips = 0;
   let temporalFlips = 0;
   for (const kase of cases) {
-    const metric = metricSlopes(kase.services);
     const ordered = printedOrder(kase.services);
     if (ordered.every((service, i) => service.serviceId === kase.services[i]?.serviceId)) {
       orderConsistent++;
     }
+    // The engine's own condition, read from the ONE owner of the threshold and from the
+    // node count the header declares (the parser refuses a block whose row count
+    // disagrees with it). At or above it the engine rescaled, so no value can EXCEED 1 —
+    // the falsifiable half, and the counter that would have caught a consumer assuming a
+    // rescale that never ran. Below it the column is raw and no claim is made: a raw
+    // deviation is unbounded in the rise direction, and in both directions it is whatever
+    // the case's data made it.
+    const n = kase.services.length;
+    let max = Number.NEGATIVE_INFINITY;
+    let over = 0;
     for (const service of kase.services) {
       services++;
-      // Total by construction, as in `rankCase`.
-      const deviation = Math.abs(metric.get(service.serviceId)! - service.selfAnomaly);
-      if (deviation > metricMaxDeviation) metricMaxDeviation = deviation;
-      if (deviation > 5e-4) metricViolations++;
+      if (service.selfAnomaly > max) max = service.selfAnomaly;
+      if (service.selfAnomaly > 1) over++;
+    }
+    if (n >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
+      rescaledCases++;
+      if (over > 0) aboveOneAtOrAboveThreshold++;
+      // Not a claim, a measurement: a tied maximum reads as the tie group's MEAN rank over
+      // `n - 1`, which is below 1 for every group of two or more. Measured on the FSE'26
+      // dump, 34 of 1422 cases — one of them a six-way tie at the top reading `47.5/50`.
+      if (max < 1) subUnitMaximumCases++;
+    } else {
+      rawCases++;
     }
     const lat = latencySlopes(kase.services, opts.latFloor);
     const recorded = rankCase(kase, opts, 'recorded', lat);
@@ -888,8 +933,10 @@ export function oracleFidelity(
   return {
     cases: cases.length,
     services,
-    metricMaxDeviation,
-    metricViolations,
+    rescaledCases,
+    rawCases,
+    aboveOneAtOrAboveThreshold,
+    subUnitMaximumCases,
     orderConsistent,
     top1Matches,
     top1Correct,
@@ -1562,13 +1609,27 @@ export function formatFidelity(fidelity: OracleFidelity, opts: TermOracleOptions
       `logWeight=${opts.logWeight} latWeight=${opts.latWeight} latFloor=${opts.latFloor} ` +
       `poolWeight=${opts.poolWeight}`,
   );
+  // The metric term's line reports the POPULATION the threshold decides, not a deviation
+  // between two quantities. It used to report `max |recomputed - printed|` with a `5e-4`
+  // count, which is a number with no unit and no interpretation: it read `2.51e+0` and
+  // `3500 of 11557` on the RCAEval dump for as long as the reconstruction substituted a rank
+  // rescale for the engine's own value, and a reader had no way to tell "the last printed
+  // digit" from "a different quantity". The threshold is a fact about the input, so the line
+  // states the input's own split and then the check that can FAIL — plus the one measurement
+  // that falsified the stronger form of that check, so a 0.95 maximum reads as arithmetic.
   lines.push(
-    `  metric term: max |recomputed - printed| = ${fidelity.metricMaxDeviation.toExponential(2)}; ` +
-      `services above 5e-4: ${fidelity.metricViolations}`,
+    `  metric term: read from each row (${fidelity.rawCases} cases raw, below the engine’s ` +
+      `rescale at ${ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes; ${fidelity.rescaledCases} rescaled); ` +
+      `values above 1: ${fidelity.aboveOneAtOrAboveThreshold} cases`,
+  );
+  lines.push(
+    `  rescaled cases whose maximum is BELOW 1.000 (a TIED top anomaly, so the rescale gives ` +
+      `the tie group its mean rank): ${fidelity.subUnitMaximumCases}`,
   );
   lines.push(
     `  printed order reproduced from the printed values: ` +
-      `${fidelity.orderConsistent}/${fidelity.cases} cases`,
+      `${fidelity.orderConsistent}/${fidelity.cases} cases ` +
+      `(${fidelity.cases - fidelity.orderConsistent} where the three-decimal render ties two distinct anomalies)`,
   );
   lines.push(
     `  rank-1 same as the dump’s own recorded: ${fidelity.top1Matches}/${fidelity.cases} cases; ` +
