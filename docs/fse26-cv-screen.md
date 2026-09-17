@@ -284,6 +284,43 @@ than the one this document was written under, and it is now two-sided: a weight 
 identical **and** whose FSE'26 gain is not inside the dump's rounding — the second half being what
 §"The resolution" above now measures offline, before spending a dispatch.
 
+### The second benchmark now produces the same artifact
+
+Every screen in this document reads one input: a diagnostic dump. Until now only the FSE'26 runner
+produced one, so a weight's golden half had to be measured by a dispatch — one run per weight, ~50
+minutes each, and the answer arrives only after the money is spent. `run-rcaeval.ts` now emits the
+SAME dump (`--diagnose-dump <path>`, driven by `benchmark-rcaeval.yml`'s `diagnose_dump` input), so
+one dispatch buys every subsequent weight: the screens run on the golden's own case set, offline.
+
+Three things had to be true for that to be one artifact rather than two that look alike:
+
+- **One writer.** The block is assembled by `buildFSE26Diagnostic`, which moved out of the FSE'26
+  runner into the engine's package beside the formatter. It is what found the second defect: that
+  runner read the two per-case quantities it derives — the failed-edge RECORD count and the inbound
+  latency rise — out of the raw converter's tuples, while the loaded case already carried the
+  loader's normalised form of both, filtered the same way (the conversion is 1:1, asserted). Two
+  sources for one number is a defect even when they agree, and it was the reason a second runner
+  could not reuse the builder at all.
+- **One hook.** `BenchmarkRunner.runSuite` takes an optional per-case sink and hands it the case, the
+  graph the engine built and the ranking it returned — nothing pre-chewed, and nothing for a case
+  whose analysis threw. The runner does not know the format; the sink does.
+- **The mapping is a function, not a closure.** `renderDiagnosedCase` decides the three things that
+  are benchmark-specific and each of them can make a dump lie: the accepted SET (multi-label cases
+  must be whole), the injection ANCHOR (`0` when the run disabled it — reporting the case's own time
+  would license a temporal window the engine never ran), and the case id (or no reader can join the
+  dump to the results table).
+
+What an RCAEval dump does NOT carry, stated because a reader will notice it: RCAEval cases have no
+`edgeLatency` and no `failedTraceEdges`, so `latRise` renders as `-` (absent, never `0`) and
+`failedEdgeRecords` is `0` for every service — the truth about the engine's INPUT, not a measurement
+of the case. The instrument says so itself: `correct at 0` in the screen's own header is the
+reconstruction's fidelity line, and a dump whose latency term cannot be reproduced lowers it
+visibly instead of silently.
+
+The measurement this unlocks is the next one: dispatch `diagnose_dump`, then solve the stability
+window (and the family and onset windows) against the golden's own cases and compare the weight the
+golden side permits with the `0.03017` the FSE'26 side wants.
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the

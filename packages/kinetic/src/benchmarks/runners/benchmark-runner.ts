@@ -13,17 +13,19 @@
 
 import {
   DI_TOKENS,
+  type FaultPropagationGraph,
   type FaultType,
   type IContainer,
   type IFaultClassifier,
   type IRCAEngine,
   type RootCauseResult,
+  type ServiceCallGraph,
   bestHypothesisToFaultType,
 } from '@agentix-e/micro-kinetic-core';
 
 import type { TimeSeries, TraceSpan } from '@agentix-e/micro-kinetic-core';
 
-import type { BenchmarkSuite } from '../loaders/types.js';
+import type { BenchmarkCase, BenchmarkSuite } from '../loaders/types.js';
 
 import { toFaultGraphOptions } from './fault-graph-options.js';
 import { computeAvgAtK, computeTA } from './metrics.js';
@@ -195,9 +197,40 @@ export interface CasePrediction {
   readonly top2Score?: number;
 }
 
+/**
+ * One diagnosed case, handed to a {@link CaseDiagnosticSink}.
+ *
+ * Carries the three objects the engine produced and nothing else: the case it scored, the graph it
+ * built, and the ranking it returned. A sink that needs a per-service magnitude re-derives it from
+ * these, which is the point — a runner that pre-chewed them would be a second implementation of the
+ * scoring it just delegated.
+ */
+export interface DiagnosedCaseRecord {
+  readonly case: BenchmarkCase;
+  /** The graph the engine built and ranked over — the input to every diagnostic. */
+  readonly graph: FaultPropagationGraph;
+  readonly ranking: readonly RootCauseResult[];
+  /**
+   * The call graph the engine consumed, AFTER any trace-topology refinement.
+   *
+   * Not `case.callGraph`: a runner with trace validation enabled prunes and discovers edges before
+   * scoring, and a diagnostic that reported the pre-refinement graph would describe a topology the
+   * ranking never saw.
+   */
+  readonly callGraph: ServiceCallGraph;
+}
+
+/**
+ * A per-case hook, called once per SUCCESSFULLY diagnosed case.
+ *
+ * A case whose analysis threw is not handed over, because there is no graph and no ranking to
+ * report — and a record with an empty graph would read, in every downstream analysis, as a case the
+ * engine scored and got wrong rather than one it never scored.
+ */
+export type CaseDiagnosticSink = (record: DiagnosedCaseRecord) => void;
+
 /** Result of running a single benchmark suite. */
 export interface RunResult {
-  /** Suite name. */
   readonly suiteName: string;
   /** Total cases run. */
   readonly totalCases: number;
@@ -340,9 +373,13 @@ export class BenchmarkRunner {
    * Run a single benchmark suite and return metrics.
    *
    * @param suite - The benchmark suite to run.
+   * @param onDiagnosedCase - Optional per-case hook, handed the case, the graph the engine built and
+   *   the ranking it returned. It is how a runner emits a diagnostic dump without owning the format:
+   *   the assembler lives beside the dump's formatter, and this runner only forwards what it already
+   *   has in hand.
    * @returns RunResult with all computed metrics.
    */
-  async runSuite(suite: BenchmarkSuite): Promise<RunResult> {
+  async runSuite(suite: BenchmarkSuite, onDiagnosedCase?: CaseDiagnosticSink): Promise<RunResult> {
     const startTime = Date.now();
     const engine = this.container.resolve<IRCAEngine>(DI_TOKENS.RCA_ENGINE);
     const topK = 5;
@@ -393,6 +430,17 @@ export class BenchmarkRunner {
           toFaultGraphOptions(benchCase, this.useInjectTime ? benchCase.injectTime : 0),
         );
         const results = await engine.analyze(faultGraph, topK);
+
+        // The diagnostic hook, after the ranking exists and before anything else touches the case:
+        // what it is handed is what the engine just produced, not a copy that later steps may
+        // enrich. Inside the `try` on purpose, so a case whose analysis threw is never reported as
+        // one the engine scored.
+        onDiagnosedCase?.({
+          case: benchCase,
+          graph: faultGraph,
+          ranking: results,
+          callGraph: effectiveCallGraph,
+        });
 
         // Capture the full ranked service-ID list for correct Avg@K.
         caseRankedPredictions.push(results.slice(0, topK).map((r) => r.serviceId));

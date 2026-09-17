@@ -2013,3 +2013,122 @@ describe('BenchmarkRunner trace topology validation (I9)', () => {
     expect(result.duration).toBeGreaterThanOrEqual(0);
   });
 });
+
+/**
+ * The per-case diagnostic hook.
+ *
+ * It exists so a runner can emit a diagnostic dump without owning the format: the assembler lives
+ * beside the dump's formatter, and this runner forwards the case, the graph it built and the ranking
+ * it returned. What these tests pin is the CONTRACT the assembler depends on — one call per
+ * successfully diagnosed case, the engine's own objects rather than copies, and nothing at all for a
+ * case the engine never scored.
+ */
+describe('BenchmarkRunner — the per-case diagnostic hook', () => {
+  // A seeded generator, like every other block that needs a suite: the cases must be identical
+  // between a run and its rerun or an assertion about a case id is about the seed.
+  const generator = new SyntheticBenchmarkGenerator(42);
+
+  /** An engine that builds a graph the hook can recognise and ranks one service. */
+  function diagnosticEngine(): IRCAEngine {
+    return {
+      buildFaultGraph: vi.fn((callGraph, metrics) => ({
+        callGraph,
+        propagationWeights: new Float64Array(callGraph.edges.length),
+        anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.5])),
+        anomalyOnsetTimes: new Map(),
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+        metricDiagnostics: new Map([...callGraph.nodes.keys()].map((id) => [id, []])),
+        // A sentinel the test can recognise, so the assertion is about the graph the engine RETURNED
+        // rather than one the runner rebuilt.
+        injectTimeMs: metrics.size,
+      })),
+      // The return type is ANNOTATED rather than inferred: the workspace gate checks `__tests__`
+      // too, and a bare literal widens `category` and `severity` to `string`. The assertion is about
+      // the hook, so the fixture should not be the thing that fails to typecheck.
+      analyze: vi.fn(async (graph): Promise<RootCauseResult[]> => [
+        {
+          serviceId: [...graph.callGraph.nodes.keys()][0]!,
+          faultType: { category: 'CPU', subType: '', severity: 'major' },
+          confidence: 0.9,
+          rank: 1,
+          timestamp: 0,
+          evidenceMetrics: [],
+          propagationDepth: 0,
+          propagationErrorBound: 0.01,
+          viaTreeSearch: true,
+        },
+      ]),
+      getCycleContributionBound: () => 0,
+    };
+  }
+
+  it('hands over the engine’s own graph and ranking, once per diagnosed case', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, diagnosticEngine);
+    const runner = new BenchmarkRunner(container);
+    const suite = generator.generateRCAEvalSuite('hook-suite', 3);
+
+    const seen: Array<{
+      caseId: string;
+      edges: number;
+      ranked: number;
+      sentinel: number | undefined;
+    }> = [];
+    const result = await runner.runSuite(suite, (record) => {
+      seen.push({
+        caseId: record.case.id,
+        edges: record.callGraph.edges.length,
+        ranked: record.ranking.length,
+        sentinel: record.graph.injectTimeMs,
+      });
+    });
+
+    expect(result.totalCases).toBe(3);
+    expect(seen.map((one) => one.caseId)).toEqual(suite.cases.map((one) => one.id));
+    for (const one of seen) {
+      // The graph is the ENGINE's — its own `injectTimeMs` sentinel survived — and the call graph is
+      // the case's, because this runner ran without trace validation.
+      expect(one.sentinel).toBeGreaterThan(0);
+      expect(one.ranked).toBe(1);
+    }
+  });
+
+  it('hands over nothing for a case the engine never scored', async () => {
+    // A record with an empty graph would read, in every downstream analysis, as a case the engine
+    // scored and got wrong rather than one it never scored — the two have different fixes.
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, () => ({
+      buildFaultGraph: vi.fn(() => ({
+        callGraph: { nodes: new Map(), edges: [], systemLoad: 0 },
+        propagationWeights: new Float64Array(0),
+        anomalyScores: new Map(),
+        anomalyOnsetTimes: new Map(),
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+      })),
+      analyze: vi.fn(() => Promise.reject(new Error('Engine crashed'))),
+      getCycleContributionBound: () => 0,
+    }));
+    const runner = new BenchmarkRunner(container);
+
+    let calls = 0;
+    const result = await runner.runSuite(generator.generateRCAEvalSuite('hook-fail', 2), () => {
+      calls++;
+    });
+
+    expect(result.failures.length).toBe(2);
+    expect(calls).toBe(0);
+  });
+
+  it('is optional, so every existing caller keeps its behaviour', async () => {
+    const container = new Container();
+    container.register(DI_TOKENS.RCA_ENGINE, diagnosticEngine);
+    const runner = new BenchmarkRunner(container);
+    const result = await runner.runSuite(generator.generateRCAEvalSuite('hook-none', 2));
+
+    expect(result.totalCases).toBe(2);
+  });
+});

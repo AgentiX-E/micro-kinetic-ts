@@ -15,6 +15,7 @@
  *   pnpm exec tsx benchmarks/src/run-rcaeval.ts [--data-dir <path>] [--suite re1|re2|re3] [--system ob|ss|tt] [--max-cases <n>]
  *   [--trace-weight <w>] [--log-weight <w>] [--temporal-weight <w>] [--onset-shape <shape>]
  *   [--stability-weight <w>] [--rank-normalization|--no-rank-normalization]
+ *   [--diagnose-dump <path>]
  *
  * Every field this runner does not pin is the ENGINE's default, which is what makes
  * its per-cell results the golden reference for a shipped configuration — see
@@ -59,6 +60,7 @@ import type {
   RunResult,
 } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
+
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
@@ -70,6 +72,7 @@ import {
 } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { parseWeight } from './cli-args.js';
+import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
@@ -220,6 +223,18 @@ interface CliOptions {
    * frontier can be derived offline. Pairs with the benchmark table.
    */
   routingProbe: string;
+  /**
+   * When set, write the FSE'26 signal diagnostic for every diagnosed case to this path.
+   *
+   * The SAME artifact the FSE'26 runner emits, assembled by the same function, so the analyzer's
+   * screens — the weight solver, the family screen, the decisive-stability screen — run on THIS
+   * benchmark with no second instrument. That is what makes a weight's second half checkable before
+   * a dispatch instead of after one: `benchmark-rcaeval.yml` can produce the dump once, and every
+   * candidate weight is then solved offline against it.
+   *
+   * Empty means "do not write one": the flag allocates the file, not the runner.
+   */
+  diagnoseDump: string;
 }
 
 function parseArgs(): CliOptions {
@@ -251,6 +266,7 @@ function parseArgs(): CliOptions {
     suppressNearZeroBaselineRise: false,
     fusionCeiling: '',
     routingProbe: '',
+    diagnoseDump: '',
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -304,6 +320,8 @@ function parseArgs(): CliOptions {
       opts.fusionCeiling = args[++i]!;
     } else if (args[i] === '--routing-probe' && i + 1 < args.length) {
       opts.routingProbe = args[++i]!;
+    } else if (args[i] === '--diagnose-dump' && i + 1 < args.length) {
+      opts.diagnoseDump = args[++i]!;
     }
   }
   return opts;
@@ -1381,6 +1399,10 @@ async function main(): Promise<void> {
 
     // Run each fault type separately
     const results = new Map<string, RunResult>();
+    // The diagnostic blocks for this group, accumulated in case order and written once: a dump
+    // assembled from a partially written file would parse as a run that produced fewer cases, which
+    // is the one failure mode the analyzer's fidelity line cannot distinguish from a real one.
+    const dumpBlocks: string[] = [];
     for (const [ft, ftCases] of byFaultType) {
       if (ftCases.length === 0) continue;
       const suite: BenchmarkSuite = {
@@ -1388,7 +1410,29 @@ async function main(): Promise<void> {
         cases: ftCases,
         totalCases: ftCases.length,
       };
-      results.set(ft, await runner.runSuite(suite));
+      results.set(
+        ft,
+        await runner.runSuite(
+          suite,
+          opts.diagnoseDump === ''
+            ? undefined
+            : (record) => {
+                dumpBlocks.push(
+                  renderDiagnosedCase(record, {
+                    logSignalMode: opts.logSignalMode,
+                    useInjectTime: !opts.noInjectTime,
+                  }),
+                );
+              },
+        ),
+      );
+    }
+    if (opts.diagnoseDump !== '') {
+      writeFileSync(opts.diagnoseDump, dumpBlocks.join(''));
+      console.log(
+        `  diagnose dump: ${opts.diagnoseDump} (${stats.cases.length} cases, ` +
+          `${dumpBlocks.length} blocks)`,
+      );
     }
 
     // ── Fusion-ceiling records for this group ──

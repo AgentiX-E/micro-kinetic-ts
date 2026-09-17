@@ -58,3 +58,55 @@ describe('the golden benchmark is triggered by the engine it measures', () => {
     expect(wouldFire).toEqual([]);
   });
 });
+
+/**
+ * The dump switch, guarded where it can silently do nothing.
+ *
+ * `diagnose_dump` exists so the golden benchmark produces the SAME artifact the FSE'26 runner emits,
+ * which is what lets a weight's second half be solved offline instead of costing a dispatch each
+ * time. Three things can go wrong without a single test failing: the input can be declared and read
+ * nowhere, an invocation can be missed (there are seven), and two invocations can write the same
+ * file — the last one silently overwriting the others, leaving a dump of one configuration that
+ * still parses.
+ */
+describe('the golden benchmark can emit the diagnostic dump', () => {
+  const invocations = [
+    ...WORKFLOW.matchAll(/pnpm exec tsx benchmarks\/src\/run-rcaeval\.ts ([^\n]*)/g),
+  ];
+
+  it('declares the input with an EMPTY default, so a push-triggered run is unchanged', () => {
+    expect(WORKFLOW).toMatch(/^\s{6}diagnose_dump:/m);
+    const block = /^\s{6}diagnose_dump:\n((?:\s{8}[^\n]*\n)+)/m.exec(WORKFLOW)?.[1] ?? '';
+    expect(block).toContain("default: ''");
+  });
+
+  it('passes the flag on EVERY invocation, and there is more than one', () => {
+    // One missed invocation is one suite whose cells cannot be diagnosed — and the miss is invisible,
+    // because the other suites still produce a dump.
+    expect(invocations.length).toBeGreaterThan(5);
+    for (const one of invocations) {
+      expect(one[1]).toContain('"${DIAGNOSE_ARG[@]}"');
+    }
+    expect(WORKFLOW.match(/DIAGNOSE_ARG=\(--diagnose-dump [^)]+\)/g)?.length).toBe(
+      invocations.length,
+    );
+  });
+
+  it('gives every invocation its own file and ships it', () => {
+    // The three RE3 invocations share a job, so a shared path would leave only the last
+    // configuration on disk — a dump that is one configuration while looking like all of them.
+    const dumps = [...WORKFLOW.matchAll(/DIAGNOSE_ARG=\(--diagnose-dump ([^)]+)\)/g)].map(
+      (m) => m[1]!,
+    );
+    expect(new Set(dumps).size).toBe(dumps.length);
+    for (const dump of dumps) {
+      expect(WORKFLOW).toContain(`            ${dump}`);
+    }
+  });
+
+  it('is off unless the dispatch asks for it', () => {
+    // Every block is gated on the input being non-empty, so a push or a scheduled run pays nothing.
+    const gated = WORKFLOW.match(/if \[ -n "\$\{\{ inputs\.diagnose_dump \}\}" \]; then/g);
+    expect(gated?.length).toBe(invocations.length);
+  });
+});
