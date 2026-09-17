@@ -1879,12 +1879,69 @@ export interface ZeroRegressionWindow {
   readonly satisfied: number;
   /** Cases no weight can satisfy, and that are not satisfied at 0 either. */
   readonly unreachable: number;
+  /**
+   * WHY those cases are unreachable — a partition of {@link unreachable}, not a second count.
+   *
+   * A count with no mechanism is the shape this register replaces: `48` reads the same whether
+   * the term has no input in those cases, or reads a deciding pair as EQUAL, or can separate
+   * every rival and still not satisfy them together. The three answers close different axes —
+   * a data gap, the artifact's resolution, and the term's reach — and one of them is what the
+   * paired dispatch's residual turned out to be, found by HAND because this number did not say.
+   */
+  readonly unreachableByCause: UnreachableCauses;
   /** The largest weight at which no currently-correct case loses rank 1. */
   readonly cap: number;
   /** The case that sets `cap`, and the pair whose ratio the cap is. */
   readonly capBinder?: WindowCapBinder;
   /** Currently-wrong cases a weight can fix, with the weights that fix them. */
   readonly gains: readonly WindowGain[];
+}
+
+/**
+ * The four ways a case can be unreachable at every weight, in the order they are attributed.
+ *
+ * The order is part of the measurement: a case can fail for more than one reason, and the
+ * classes are tried in the order of how far UPSTREAM the obstacle is — a root the display never
+ * describes is a data gap, a case with one coefficient has nothing to weigh, a pair the term
+ * reads as equal is decided by the base at every weight, and only what remains is the term
+ * failing to reach.
+ */
+export interface UnreachableCauses {
+  /**
+   * No acceptable root of the case is in the coefficient map at all.
+   *
+   * The block names a ground-truth service it does not print a row for, or prints it without a
+   * decisive composition, so `targetInterval` has nothing to solve. A DATA gap: it is reported
+   * rather than folded into the term's reach, because the same count under the other label
+   * would read as a property of the signal.
+   */
+  readonly rootWithoutRow: number;
+  /**
+   * The case holds at most ONE distinct slope, so no weight can reorder anything in it.
+   *
+   * The term is inert there by construction — the same condition {@link cvAvailability} counts
+   * as "with a SPREAD". It is not a failure of the weight: there is no distance to weigh.
+   */
+  readonly noSpread: number;
+  /**
+   * An acceptable root is behind a rival the term reads as EQUAL, at every weight.
+   *
+   * `targetInterval`'s third case: equal slopes and a higher base on the rival means the base
+   * decides the pair forever. For `cv` that is the artifact's three decimals — two services
+   * whose cvs render equal share a slope whatever the weight, while the ENGINE ranked the
+   * unrounded field, and the tie group can hide several rank positions at once. A genuine
+   * engine-side tie lands in the same class and is not distinguishable from the dump, which is
+   * why the class is named for what the artifact shows.
+   */
+  readonly tied: number;
+  /**
+   * Every rival is separable and no single weight satisfies the floors and the caps at once.
+   *
+   * The remaining class: the term CAN act here, and the case is out of its reach — the weight
+   * that would fix it against one rival costs it more against another. This is the only one of
+   * the four that is a statement about the SIGNAL.
+   */
+  readonly outOfReach: number;
 }
 
 /** One currently-wrong case, and the weights at which it becomes correct. */
@@ -2021,6 +2078,49 @@ function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | 
 }
 
 /**
+ * Which of {@link UnreachableCauses} an unreachable case falls into.
+ *
+ * Read off the CONSTRAINTS the solver already built, so the classification cannot disagree with
+ * the answer it explains: the slopes decide whether anything can be weighed and whether a pair is
+ * ordered by the base forever, and both are the same numbers `targetInterval` intersected.
+ *
+ * @param one - The case, as {@link buildWeightSeparationCases} left it.
+ * @returns The cause, by the precedence the type documents.
+ */
+function unreachableCause(one: WeightSeparationCase): keyof UnreachableCauses {
+  // 1. A root the map does not describe. Checked FIRST and over every target, so a case whose
+  //    only root is missing is reported as the data gap it is rather than as a term that cannot
+  //    reach — the two have different fixes.
+  if (one.targets.every((name) => !one.scores.has(name))) return 'rootWithoutRow';
+  // 2. At most one distinct slope: nothing for the weight to separate. Compared with the same
+  //    tolerance the interval solver uses, so "equal" means the same thing here and there.
+  let spread = false;
+  let first: number | undefined;
+  for (const { slope } of one.scores.values()) {
+    if (first === undefined) first = slope;
+    else if (Math.abs(slope - first) > WEIGHT_EPSILON) {
+      spread = true;
+      break;
+    }
+  }
+  if (!spread) return 'noSpread';
+  // 3. A rival the term reads as EQUAL, ahead of an acceptable root. This is exactly the
+  //    condition `targetInterval` answers with an empty interval for (`max = -Infinity`), so the
+  //    class cannot be empty on a case the solver reached by that branch.
+  for (const name of one.targets) {
+    const target = one.scores.get(name);
+    if (target === undefined) continue;
+    for (const [rival, other] of one.scores) {
+      if (rival === name) continue;
+      if (Math.abs(other.slope - target.slope) <= WEIGHT_EPSILON && other.base > target.base) {
+        return 'tied';
+      }
+    }
+  }
+  return 'outOfReach';
+}
+
+/**
  * Solve the zero-regression window for a case set.
  *
  * @param cases - Input from {@link buildWeightSeparationCases}.
@@ -2030,7 +2130,9 @@ export function computeZeroRegressionWindow(
   cases: readonly WeightSeparationCase[],
 ): ZeroRegressionWindow {
   let satisfied = 0;
-  let unreachable = 0;
+  // One counter per cause plus the total they partition, so a reader can neither quote a class
+  // as the whole nor read the whole as a class. The partition is asserted in the suite.
+  const causes = { rootWithoutRow: 0, noSpread: 0, tied: 0, outOfReach: 0 };
   let cap = Number.POSITIVE_INFINITY;
   let capCase: WeightSeparationCase | undefined;
   const gains: WindowGain[] = [];
@@ -2042,7 +2144,7 @@ export function computeZeroRegressionWindow(
       // Not correct at w = 0. It cannot regress, so it never caps the window: an
       // empty interval means no weight satisfies it, which is a gain that is out of
       // reach rather than a constraint.
-      if (allowed.length === 0) unreachable++;
+      if (allowed.length === 0) causes[unreachableCause(one)]++;
       else gains.push({ datapack: one.datapack, intervals: allowed });
       continue;
     }
@@ -2059,7 +2161,8 @@ export function computeZeroRegressionWindow(
   return {
     cases: cases.length,
     satisfied,
-    unreachable,
+    unreachable: causes.rootWithoutRow + causes.noSpread + causes.tied + causes.outOfReach,
+    unreachableByCause: causes,
     cap,
     capBinder: capCase === undefined ? undefined : capBinderOf(capCase, cap),
     gains,
@@ -2157,6 +2260,8 @@ export interface FamilyScreenRow {
   readonly resolution: GainResolution;
   /** Currently-wrong cases no weight can fix — context for a zero gain. */
   readonly unreachable: number;
+  /** {@link unreachable}, split by why: a zero gain means different things per class. */
+  readonly unreachableByCause: UnreachableCauses;
   /** Cases correct at `w = 0`; the population the window protects. */
   readonly satisfied: number;
   /** The largest weight at which no currently-correct case loses rank 1. */
@@ -3188,6 +3293,32 @@ export function cvShapeMenu(
 }
 
 /**
+ * The unreachable count with the causes it partitions into, as one clause.
+ *
+ * One owner, because three reports print it: a summary that gave the number without the causes
+ * would put a mechanism-less count back in front of a reader who had just been shown what the
+ * mechanisms are.
+ *
+ * The labels carry their own meaning, which is why there is no legend line: this clause appears in
+ * a menu summary AND in each shape's detail block below it, and a legend printed with each would
+ * be three copies of one sentence. The nuance a bare label cannot carry — that a GENUINE
+ * engine-side tie lands in the same class as a render tie — is in {@link UnreachableCauses} and in
+ * `docs/fse26-cv-screen.md`.
+ *
+ * @param window - The solved window.
+ * @returns The clause, without a leading space.
+ */
+function unreachableClause(
+  window: Pick<ZeroRegressionWindow, 'unreachable' | 'unreachableByCause'>,
+): string {
+  const c = window.unreachableByCause;
+  return (
+    `${window.unreachable} (root without a row ${c.rootWithoutRow}, no spread ${c.noSpread}, ` +
+    `tied at the render ${c.tied}, out of reach ${c.outOfReach})`
+  );
+}
+
+/**
  * Render one shape's decisive-stability screen.
  *
  * @param screen - The solved screen.
@@ -3223,9 +3354,11 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
   // the BASE, which no shape touches, and `correct at 0` is also the instrument's fidelity line
   // because the base IS the shipped score; `unreachable` is this SHAPE's own count, since an empty
   // admissible set is decided by the slopes and the shapes give the same order different spacing.
+  // It is printed WITH its causes: the count alone reads the same whether the term has no input
+  // here, reads a deciding pair as equal, or cannot reach — and those close different axes.
   lines.push(
     `  cases ${s.window.cases}; correct at 0 ${s.window.satisfied}; ` +
-      `unreachable at every weight ${s.window.unreachable}`,
+      `unreachable at every weight ${unreachableClause(s.window)}`,
   );
   lines.push(...namedWeightLines(s.at));
   if (a.casesComparable === 0) {
@@ -3317,7 +3450,9 @@ export function formatCvMenuReport(
   lines.push(`  cases ${first.solved.window.cases}; correct at 0 ${first.solved.window.satisfied}`);
   lines.push(
     '  unreachable at every weight: ' +
-      screens.map((screen) => `${screen.shape} ${screen.solved.window.unreachable}`).join(', '),
+      screens
+        .map((screen) => `${screen.shape} ${unreachableClause(screen.solved.window)}`)
+        .join(', '),
   );
   if (a.casesComparable === 0) {
     lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
@@ -3431,6 +3566,7 @@ export function familyScreen(
       gained: solved.gained,
       margins: solved.margins,
       unreachable: solved.window.unreachable,
+      unreachableByCause: solved.window.unreachableByCause,
       satisfied: solved.window.satisfied,
       cap: solved.window.cap,
       gainFloor: solved.gainFloor,
@@ -3533,7 +3669,7 @@ export function formatFamilyScreenReport(
     lines.push(
       `  ${row.family}: +${row.gain} (${row.gainTypes
         .map((type) => `${type.key} +${type.cases}`)
-        .join(', ')}) · lost at ship ${row.lostAtShip} · unreachable ${row.unreachable}`,
+        .join(', ')}) · lost at ship ${row.lostAtShip} · unreachable ${unreachableClause(row)}`,
     );
     lines.push(
       `    gains ${row.gained.slice(0, 4).join(', ')}${row.gained.length > 4 ? ', …' : ''}`,
@@ -3908,7 +4044,7 @@ export function formatZeroRegressionWindowReport(
   );
   lines.push(
     `  cases: ${window.cases}   correct at 0: ${window.satisfied}   ` +
-      `unreachable at every weight: ${window.unreachable}`,
+      `unreachable at every weight: ${unreachableClause(window)}`,
   );
   lines.push(
     window.capBinder === undefined

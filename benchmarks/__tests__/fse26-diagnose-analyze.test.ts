@@ -5262,6 +5262,153 @@ describe('formatCvMenuReport — availability first, then one row per shape', ()
   });
 });
 
+describe('unreachable at every weight — the count and the causes it partitions into', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+  const windowOf = (...cases: readonly DiagnosedCase[]) => cvScreen(cases, WEIGHTS).solved.window;
+
+  it('attributes a root the block never describes to the DATA gap', () => {
+    // The register's rule for a missing input, applied to the population: an acceptable root with
+    // no row at all is reported as a gap rather than folded into the term's reach, because the
+    // same count under the other label reads as a property of the SIGNAL.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-absent',
+        prediction: 'ts-svc-1',
+      }),
+    );
+    expect(window.unreachable).toBe(1);
+    expect(window.unreachableByCause).toEqual({
+      rootWithoutRow: 1,
+      noSpread: 0,
+      tied: 0,
+      outOfReach: 0,
+    });
+  });
+
+  it('attributes a case with nothing to weigh to NO SPREAD', () => {
+    // ONE measured cv is not a comparison — `cvSlopes` states that once, before either shape, so
+    // both candidates carry slope 0 and no weight can reorder anything. Not a failure of the
+    // weight: there is no distance in the case to weigh.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.4, undefined],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    );
+    expect(window.unreachableByCause.noSpread).toBe(1);
+    expect(window.unreachable).toBe(1);
+  });
+
+  it('attributes a deciding pair the term reads as EQUAL to TIED', () => {
+    // `re3ss_front-end_f3_2`'s shape, in three candidates: the root is behind a rival whose
+    // RENDERED cv is the same, so the two share a slope at every weight and the base decides that
+    // pair forever. The engine ranked the UNROUNDED field, where they differ — which is why the
+    // class is named for what the artifact shows and not for what the engine did.
+    // The third candidate is what makes this the tie class rather than `noSpread`: it gives the
+    // case a spread, so the tie is the obstacle rather than the absence of any.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.5, 0.9, 0.3],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    );
+    expect(window.unreachableByCause.tied).toBe(1);
+    expect(window.unreachable).toBe(1);
+  });
+
+  it('attributes a case the term can separate and still not satisfy to OUT OF REACH', () => {
+    // The only one of the four that is a statement about the SIGNAL: every rival is separable,
+    // and the rival to beat is both ahead on the base AND more stable, so the term rewards it
+    // more than the root at every weight. The weight that would fix the case does not exist.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.3, 0.1, 0.5],
+        anomalies: [0.5, 0.9, 0.3],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    );
+    expect(window.unreachableByCause.outOfReach).toBe(1);
+    expect(window.unreachable).toBe(1);
+  });
+
+  it('partitions the total: the four classes sum to `unreachable`, never over or under', () => {
+    // The identity that makes the split worth printing. A class count that drifted from the total
+    // would let a reader quote one as the other — the failure mode of every count that travels
+    // without its own frontier.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-absent',
+        prediction: 'ts-svc-1',
+      }),
+      cvCase({
+        cvs: [0.4, undefined],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+        datapack: 'dp-nospread',
+      }),
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.5, 0.9, 0.3],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+        datapack: 'dp-tied',
+      }),
+      cvCase({
+        cvs: [0.3, 0.1, 0.5],
+        anomalies: [0.5, 0.9, 0.3],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+        datapack: 'dp-reach',
+      }),
+    );
+    const c = window.unreachableByCause;
+    expect(c).toEqual({ rootWithoutRow: 1, noSpread: 1, tied: 1, outOfReach: 1 });
+    expect(c.rootWithoutRow + c.noSpread + c.tied + c.outOfReach).toBe(window.unreachable);
+    expect(window.unreachable).toBe(4);
+  });
+
+  it('prints the causes, with labels that carry their own meaning', () => {
+    // A count with no mechanism is what this replaced, so the clause is asserted through the
+    // REPORTS a flag actually prints. The labels are self-describing because the clause appears in
+    // the menu summary AND in each shape's detail block: a legend line would be printed once per
+    // block, which is how one sentence becomes three.
+    const tied = cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.5, 0.9, 0.3],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-1',
+    });
+
+    const text = formatCvScreenReport(cvScreen([tied], WEIGHTS), WEIGHTS);
+    expect(text).toContain(
+      'unreachable at every weight 1 (root without a row 0, no spread 0, tied at the render 1, ' +
+        'out of reach 0)',
+    );
+
+    // And the MENU carries the clause per shape rather than a bare number above two rows — ONCE,
+    // in its summary. The per-shape detail blocks are `formatCvScreenReport(...).split('\n')
+    // .slice(4)`, so a line added to the report's HEAD leaks into every one of them: the legend
+    // this clause first carried did exactly that and printed twice more. The count is what says the
+    // head is still four lines long.
+    const menu = formatCvMenuReport(cvShapeMenu([tied], WEIGHTS), WEIGHTS);
+    expect(menu).toContain('flip 1 (root without a row 0,');
+    expect(menu).toContain('rank 1 (root without a row 0,');
+    expect(
+      menu.split('\n').filter((line) => line.includes('unreachable at every weight')),
+    ).toHaveLength(1);
+  });
+});
+
 describe('cvScreen — the base is the engine that ran, not a two-term blend', () => {
   it('satisfies at w = 0 a case the LATENCY term decided', () => {
     // `shippedScores` is the base, and the latency and pool terms are in it. A screen built on
