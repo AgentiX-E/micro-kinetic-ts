@@ -3500,6 +3500,11 @@ export interface CvScreen {
    * missing.
    */
   readonly resolution: GainResolution;
+  /**
+   * Where the window's cap lands under the dump's discarded digits — the SECOND channel of cap
+   * uncertainty, and the one {@link UnrepresentableFrontier.lossFloor} does not model.
+   */
+  readonly capNoise: CapResolution;
 }
 
 /**
@@ -3543,6 +3548,11 @@ export function cvScreen(
     resolution: gainResolution({
       cases,
       gained: solved.gained,
+      ship: solved.ship,
+      screen: { kind: 'stability', weights, shape },
+    }),
+    capNoise: capResolution({
+      cases,
       ship: solved.ship,
       screen: { kind: 'stability', weights, shape },
     }),
@@ -3709,6 +3719,11 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     // weight from a count its own inputs cannot resolve is the defect this line exists to make
     // impossible to repeat.
     lines.push(formatResolutionLine(screen.resolution));
+    // Directly after the margin's own ensemble, because the two answer the two halves of one
+    // question: that one says whether the GAINS survive the discarded digits, this says whether the
+    // WINDOW'S OWN right-hand end does. A reader just told the gain count is unresolvable needs to know
+    // whether the weight it is measured at is inside its own cap's noise.
+    lines.push(formatCapResolutionLine(screen.capNoise, s.ship));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -4086,6 +4101,18 @@ export const DUMP_HALF_QUANTUM = 0.5 * 10 ** -SERVICE_FIELD_DECIMALS;
 export const GAIN_RESOLUTION_TRIALS = 400;
 
 /**
+ * How many resamplings {@link capResolution} reports over.
+ *
+ * FEWER than the gain ensemble, and for a reason that is about cost rather than statistics: each draw
+ * here re-solves the WHOLE window, where the gain ensemble perturbs only the handful of cases the window
+ * names. Measured on the FSE'26 dump (1422 cases, 2.3 s for the whole two-shape screen): one solve is
+ * ~5 ms, so 100 draws is ~0.5 s per screen and 400 would be ~2 s of pure re-solving. 100 draws already
+ * resolve the cap to 1% of the range the report prints it over, which is two orders finer than the
+ * `1e-3` quantum they are drawn from.
+ */
+export const CAP_RESOLUTION_TRIALS = 100;
+
+/**
  * The seed of the resampling sequence.
  *
  * A CONSTANT, not a clock: two runs over the same dump must print the same ensemble, or a reader
@@ -4197,14 +4224,30 @@ export type GainResolutionScreen =
   | { readonly kind: 'family'; readonly weights: FamilyScreenWeights; readonly family: string };
 
 /** What {@link gainResolution} needs: the dump, the window's answer, and which screen asked. */
-export interface GainResolutionInput {
+/**
+ * The dump, the weight under discussion, and which screen's arithmetic to rebuild with.
+ *
+ * The shared shape of both ensembles: they draw from the SAME discarded digits, with the same seed and
+ * the same trial count, but read different outputs from them — how many of the window's gains survive,
+ * and where the window's own cap lands.
+ */
+export interface ResolutionInput {
   readonly cases: readonly DiagnosedCase[];
-  /** The window's own `gained` — the cases the weight is being recommended FOR. */
-  readonly gained: readonly string[];
-  /** The weight being recommended. */
+  /**
+   * The weight under discussion.
+   *
+   * For {@link gainResolution} it is the weight being recommended; for {@link capResolution} it is the
+   * weight whose position AGAINST the cap is being read, which is the same number whenever a window
+   * recommends one.
+   */
   readonly ship: number;
   readonly screen: GainResolutionScreen;
   readonly trials?: number;
+}
+
+export interface GainResolutionInput extends ResolutionInput {
+  /** The window's own `gained` — the cases the weight is being recommended FOR. */
+  readonly gained: readonly string[];
 }
 
 /**
@@ -4288,6 +4331,127 @@ function rebuildFor(
   }
   const { weights, family } = screen;
   return (kase) => buildFamilyCases([kase], weights, family)[0];
+}
+
+/**
+ * Where the window's own CAP lands once the dump's discarded digits are drawn.
+ *
+ * The second of the two channels {@link UnrepresentableFrontier.lossFloor} does NOT model. That floor
+ * says how far the ENGINE may go below a cap the model reads off the printed numbers; this says how
+ * much that cap is itself a function of which numbers were printed — the base is reconstructed from
+ * `selfAnomaly`, `logScore` and `latRise` at three decimals, and the cap is a MINIMUM over the cases
+ * the base gets right, so a draw that closes one lead moves it.
+ *
+ * The count that matters is {@link belowShip}: the draws in which the cap lands UNDER the weight the
+ * window recommends. Those are the draws in which the recommendation's own premise — "no satisfied case
+ * is lost at this weight" — is not what the artifact says, and a screen that printed only `cap 0.030480`
+ * could not tell whether that happened once or never.
+ */
+export interface CapResolution {
+  /** Resamplings drawn. */
+  readonly trials: number;
+  /** The cap each draw produced, in draw order. */
+  readonly caps: readonly number[];
+  /** The smallest cap any draw produced. */
+  readonly least: number;
+  /** The largest. */
+  readonly most: number;
+  /** Draws whose cap fell strictly BELOW `ship`. */
+  readonly belowShip: number;
+  /**
+   * Draws in which the window actually LOSES a case at `ship` — the unbiased reading.
+   *
+   * {@link belowShip} cannot be read on its own, and the reason is structural: the cap is a MINIMUM
+   * over every satisfied case, and the minimum of many noisy quantities sits below the minimum of their
+   * centres. So `belowShip` reports the extremal draw of a hundred, not the typical one, and on a dump
+   * with hundreds of competing cases it can read `100 of 100` about a window that loses nothing. This
+   * field asks the question the recommendation is actually about — "at the weight being shipped, does
+   * any case the window protects get lost?" — which no minimum can bias.
+   */
+  readonly lostAtShip: number;
+  /**
+   * The most protected cases any single draw lost — the SEVERITY to pair with {@link lostAtShip}'s
+   * frequency.
+   *
+   * `lostAtShip` is an OR over the window's cases, so it too is an extreme-value reading: it rises with
+   * how many cases the window protects, even when each one is individually unlikely to move. Without a
+   * severity beside it, `99 of 100` cannot be told apart from "one case on the boundary moved in almost
+   * every draw" — and those two call for opposite decisions.
+   */
+  readonly worstLost: number;
+}
+
+/**
+ * Draw the discarded digits and re-solve the window's cap, once per draw.
+ *
+ * Every case is drawn, in `cases` order, and the window is re-solved with the SAME solver the
+ * recommendation came from — not by tracking the one case that set the cap, because the draw decides
+ * WHICH case that is: a jittered case can become the new minimum, or stop being satisfied at zero
+ * altogether, and a shortcut that assumed otherwise would report the cap of a window nobody solved.
+ *
+ * @param input - The dump, the weight to compare against, and which screen asked.
+ * @returns The caps, their bounds, and how many draws put the cap below `ship`.
+ */
+export function capResolution(input: ResolutionInput): CapResolution {
+  const rebuild = rebuildFor(input.screen);
+  const trials = input.trials ?? CAP_RESOLUTION_TRIALS;
+  const next = seededUnit(GAIN_RESOLUTION_SEED);
+  const caps: number[] = [];
+  let belowShip = 0;
+  let lostAtShip = 0;
+  let worstLost = 0;
+  for (let trial = 0; trial < trials; trial++) {
+    const drawn = input.cases.map((kase) => rebuild(jitterCase(kase, next)));
+    const built = drawn.filter((one): one is WeightSeparationCase => one !== undefined);
+    const cap = computeZeroRegressionWindow(built).cap;
+    caps.push(cap);
+    if (cap < input.ship) belowShip++;
+    // The unbiased reading, from the SAME drawn window: the two helpers each derive their own intervals
+    // from `built`, which is the cost of not re-implementing either of them here.
+    const lost = zeroRegressionSamples(built, [input.ship])[0]!.lost;
+    if (lost > 0) lostAtShip++;
+    if (lost > worstLost) worstLost = lost;
+  }
+  return {
+    trials,
+    caps,
+    least: Math.min(...caps),
+    most: Math.max(...caps),
+    belowShip,
+    lostAtShip,
+    worstLost,
+  };
+}
+
+/**
+ * Render {@link capResolution} as one line.
+ *
+ * Printed beside the cap it qualifies, and it names the count that decides rather than the range alone:
+ * `[0.0031, 0.0412]` reads as a curiosity, while `12 of 100 draws put the cap below the weight being
+ * recommended` is a verdict on the recommendation.
+ *
+ * @param resolution - The ensemble.
+ * @param ship - The weight being recommended.
+ * @returns One line, without a leading space.
+ */
+export function formatCapResolutionLine(resolution: CapResolution, ship: number): string {
+  const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+  const intact = resolution.trials - resolution.lostAtShip;
+  // Both readings are extreme values of the same ensemble (a MINIMUM over the cases for the cap, an OR
+  // over them for the loss) so both are printed WITH what makes them readable: the cap with the reason
+  // its range sits low, the loss with its frequency AND its severity. A verdict is in the last clause,
+  // and it is about the sentence above — `lost at ship 0` — not about the window being wrong.
+  const tail =
+    resolution.lostAtShip === 0
+      ? ` — the recommendation survives the digits its inputs were printed with`
+      : ` — so \`lost at ship 0\` above holds for the PRINTED digits, not for the box they stand for`;
+  return (
+    `  cap resolution: over ${resolution.trials} draws of the discarded digits the cap lands in ` +
+    `[${at(resolution.least)}, ${at(resolution.most)}] (a minimum over every satisfied case, so the ` +
+    `range sits low); at the shipped ${at(ship)} the window stays intact in ${intact} of the ` +
+    `${resolution.trials} draws, losing at most ${resolution.worstLost}` +
+    tail
+  );
 }
 
 /**

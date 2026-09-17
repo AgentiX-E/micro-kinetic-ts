@@ -33,6 +33,8 @@ import type { DiagnosedCase, WeightSeparationCase } from '../src/fse26-diagnose-
 import {
   anomalyShape,
   buildWeightSeparationCases,
+  CAP_RESOLUTION_TRIALS,
+  capResolution,
   caseWeightInterval,
   classifyMiss,
   computeWeightSeparation,
@@ -49,6 +51,7 @@ import {
   familyScreen,
   formatAnalyzeSections,
   formatAnomalyShapeReport,
+  formatCapResolutionLine,
   formatCvMenuReport,
   formatCvScreenReport,
   formatDiagnoseComparison,
@@ -6113,6 +6116,95 @@ describe('solveZeroRegressionWindow — the profile is a scan, not a cumulative 
  * dispatched at that weight collected five, with the lost case's lead (1.054e-4) an order of
  * magnitude below what the formatter can express. These tests hold the instrument to saying so.
  */
+describe('capResolution — the second channel: the cap under the digits the dump discarded', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+  /**
+   * A satisfied case whose own interval ends at the cap it sets, under the default shape.
+   *
+   * `cvCase`'s default screen shape is `flip`, where this case's interval is `[0, 0.7898795]` — so a
+   * weight just under that end has a margin a fraction of the quantum, and a weight far under it has
+   * nothing to do with the quantum at all.
+   */
+  const leading = (): DiagnosedCase =>
+    cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+
+  const solve = (ship: number, cases: readonly DiagnosedCase[]) =>
+    capResolution({ cases, ship, screen: { kind: 'stability', weights: WEIGHTS, shape: 'flip' } });
+
+  it('finds a recommendation living inside its own cap noise', () => {
+    // The measurement the second channel exists for. `lostAtShip` is not the cap's position, which a
+    // minimum over hundreds of cases biases low, but the question the recommendation is about.
+    const resolution = solve(0.789, [leading()]);
+    expect(resolution.trials).toBe(CAP_RESOLUTION_TRIALS);
+    expect(resolution.caps).toHaveLength(CAP_RESOLUTION_TRIALS);
+    // The cap moves: it is a ratio of two printed numbers and both of them were rounded.
+    expect(resolution.least).toBeLessThan(resolution.most);
+    expect(resolution.lostAtShip).toBeGreaterThan(0);
+    expect(resolution.worstLost).toBeGreaterThanOrEqual(1);
+    expect(resolution.worstLost).toBeLessThanOrEqual(CAP_RESOLUTION_TRIALS);
+
+    const line = formatCapResolutionLine(resolution, 0.789);
+    expect(line).toContain(
+      `stays intact in ${CAP_RESOLUTION_TRIALS - resolution.lostAtShip} of the ` +
+        `${CAP_RESOLUTION_TRIALS} draws`,
+    );
+    expect(line).toContain('holds for the PRINTED digits');
+  });
+
+  it('says so when the recommendation survives the digits it was printed with', () => {
+    // The other direction, and the reason this is a measurement rather than a pessimism: a weight two
+    // orders below the cap has nothing to do with the quantum, so NO draw can cost a case at it.
+    const resolution = solve(0.1, [leading()]);
+    expect(resolution.lostAtShip).toBe(0);
+    expect(resolution.worstLost).toBe(0);
+    const line = formatCapResolutionLine(resolution, 0.1);
+    expect(line).toContain(
+      `intact in ${CAP_RESOLUTION_TRIALS} of the ${CAP_RESOLUTION_TRIALS} draws, losing at most 0`,
+    );
+    expect(line).toContain('survives the digits');
+  });
+
+  it('is a function of the dump and the seed, like the gain ensemble beside it', () => {
+    // Both ensembles draw from the same discarded digits with the same seeded sequence, so neither may
+    // move between two runs of one dump: a statistic that does is a property of the draw.
+    expect(solve(0.789, [leading()])).toEqual(solve(0.789, [leading()]));
+  });
+
+  it('reaches the screen and its report', () => {
+    // The field is on `CvScreen` and printed in a shape's detail, beside the gain ensemble it shares its
+    // draws with: the two answer the two halves of one question, and a screen that reported only the
+    // first would be qualifying the gain count while saying nothing about the weight it is measured at.
+    const screen = cvScreen(
+      [
+        leading(),
+        cvCase({
+          cvs: [0.2, 0.9],
+          anomalies: [0.1, 0.9],
+          groundTruth: 'ts-svc-0',
+          prediction: 'ts-svc-1',
+          datapack: 'dp-gain',
+        }),
+      ],
+      WEIGHTS,
+    );
+    expect(screen.capNoise.trials).toBe(CAP_RESOLUTION_TRIALS);
+    const text = formatCvScreenReport(screen, WEIGHTS);
+    if (screen.solved.gain > 0) {
+      expect(text).toContain('cap resolution:');
+    }
+    // And it is NOT printed by a screen whose detail is suppressed, which is what keeps the menu from
+    // carrying the same sentence in two branches.
+    expect(formatCvScreenReport(cvScreen([leading()], WEIGHTS), WEIGHTS)).not.toContain(
+      'cap resolution:',
+    );
+  });
+});
+
 describe('gainResolution — the lead the formatter discards', () => {
   const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
 
