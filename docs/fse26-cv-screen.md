@@ -321,6 +321,62 @@ The measurement this unlocks is the next one: dispatch `diagnose_dump`, then sol
 window (and the family and onset windows) against the golden's own cases and compare the weight the
 golden side permits with the `0.03017` the FSE'26 side wants.
 
+### What the first dispatch measured — and the two defects it exposed
+
+The dispatch ran (`35170948792`, `diagnose_dump=1`, `5233678`), the artifacts came back, and the
+dumps are readable. Two of the seven described less of their run than they appeared to.
+
+**The dump held one system of three.** `--suite re1` evaluates 125 cases in each of Online Boutique,
+SockShop and Train Ticket; the artifact held **125 blocks and every one of them was tagged `re1tt`**.
+The runner built the text per group and called `writeFileSync` INSIDE the group loop, so each system
+truncated the last one's, and the console printed the same `125 cases, 125 blocks` three times while
+it happened — a number that reads as complete precisely because it is plausible for RE1. It is the
+same failure the workflow's own per-invocation filenames were added to prevent, one layer down: three
+systems share one invocation.
+
+**The dump carried no configuration.** `Config:` appears **0** times in all seven RCAEval dumps,
+against the FSE'26 dump, which opens with the run's own line. The consequence is not aesthetic: the
+`re3` dump is the only one dispatched with `traceWeight=1`, and it reconstructs to `correct at 0 1`
+against its own `prediction=` 15 — an alarm no reader of that file could explain, because the file
+did not say the trace term was on.
+
+Both are fixed by one owner for the file (`DiagnoseDump`, `benchmarks/src/fse26-diagnose-dump.ts`):
+records accumulate across every group, `write()` happens once after the last group, a record after
+the write and a second write both RAISE, and the file opens with `formatSignalLine(opts)` — the very
+string the console banner prints, so the two cannot describe different modes. The console line now
+reports the count with its groups: `9 cases: OnlineBoutique:RE1 3, SockShop:RE1 3, TrainTicket:RE1 3`.
+
+Measured on a three-system fixture, same input, old code vs new: **3 blocks, all `re1tt`, no header**
+versus **9 blocks, `re1ob 3 / re1ss 3 / re1tt 3`, header = the banner line.**
+
+### Fidelity: which dumps the screens may be run on
+
+`correct at 0` is the reconstruction's own fidelity line, and the seven dumps separate cleanly against
+the count their run reported. The comparison is against the dump's OWN `prediction=` list — the rank
+the engine returned — because that is the only headline an artifact can be held to:
+
+| dump | `traceWeight` | run's pooled Top@1 (TT) | dump `prediction=` | screen `correct at 0` |
+| --- | --- | --- | --- | --- |
+| `re1` | 0 | 85/125 (68.0%) | 85 | **85** |
+| `re1-noinject` | 0 | 85/125 (68.0%) | 85 | **85** |
+| `re2` | 0 | 33/50 (66.0%) | 33 | **33** |
+| `re3` | **1** | 15/30 (50.0%) | 15 | **1** |
+| `re3-noinject` | 0 | 1/30 (3.3%) | 1 | **1** |
+| `re3-novelty` | 0 | 1/30 (3.3%) | 1 | **1** |
+
+Four exact, and the fifth is exact too — the counter reproduces even a run that scores 1 of 30. The
+one divergence is the only dump whose ranking was augmented by trace topology, a term the
+reconstruction does not model, and the fidelity line reports it as one case against fifteen rather
+than as a screen with a small gain. **So a `traceWeight=0` dump is screenable and a
+`traceWeight>0` dump is not, and the instrument says which it is holding** — which is the whole
+reason the line exists.
+
+Note what the run's own numbers show: the pooled rate and the table's average agree for `re1`
+(85/125 = 68.0%) and differ for `re2` (33/50 = 66.0% pooled against 68.1% averaged over seven fault
+types). The goldens are quoted as the table's average — an average of rates, not a rate — so a
+reconstruction has to be compared against the POOLED count, which is what the dump's `prediction=`
+list gives.
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the
@@ -345,8 +401,8 @@ golden** (§"The golden, measured AT the weight"). Not settled:
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 620, 0 failures (was 575 at the first pass, 613 before the resolution ensemble) |
-| `benchmarks` coverage | **99.81 / 97.15 / 100 / 99.81** |
+| `benchmarks` tests | 639, 0 failures (was 575 at the first pass; 633 before the dump accumulator) |
+| `benchmarks` coverage | **99.81 / 97.18 / 100 / 99.81**, the accumulator at 100 / 100 / 100 / 100 |
 | root tests | 3150, 0 failures |
 | `packages/kinetic` tests | 901, 0 failures |
 | `packages` typecheck | 15 projects (nx per-package **and** the workspace tsconfig) |
@@ -355,6 +411,8 @@ golden** (§"The golden, measured AT the weight"). Not settled:
 | the engine's half | candidate `35125277962` vs control `35125285784`: **+5 cases, 0 regressed fault types**, 756 → 761 |
 | the enrolment's golden | `35125060855` at the enrolling commit `0ab737f`: **9 of 9 cells byte-identical** — the DEFAULT path, where the weight is 0 |
 | the weight's golden | `35132525118` at `5233678` with `stability_weight=0.03017`: **4 of 9 cells move** (RE1 OB −0.8pp, RE1 TT −0.8pp, RE2 TT **−15.8pp**, RE3 SS +2.5pp) ⇒ the weight is rejected and the default stays 0 |
+| the dump's completeness | the first dispatch's `re1` artifact held **125 of the 375 evaluated cases, all tagged `re1tt`**; on a three-system fixture with the same input the pre-change code writes **3 blocks, all `re1tt`, no header** and the fixed code writes **9 blocks, `re1ob 3 / re1ss 3 / re1tt 3`, header = the banner line** |
+| the dump's fidelity | against each dump's OWN `prediction=` rank: **exact on all four `traceWeight=0` dumps** (85, 85, 33, 1) and divergent only on the `traceWeight=1` one (15 → 1), which is the term the reconstruction does not model — so the file says which configurations it may be solved on |
 
 The tests that carry the design, and why each exists:
 
@@ -369,6 +427,13 @@ The tests that carry the design, and why each exists:
 - **the quantum comes from the producer** — a structural guard on the producer's source
   (`toFixed(SERVICE_FIELD_DECIMALS)`, and no `toFixed(3)` left anywhere in it), because a restated
   `3` goes stale exactly when the claim it qualifies becomes wrong.
+- **the dump holds every group of one invocation, and refuses to be written twice** — the measurement
+  the accumulator exists for: three groups must land in ONE file with the count reported against their
+  names, a record arriving after the write must raise (that is the shipped defect, made unreachable
+  rather than documented), a duplicate datapack must raise, and a second `write()` must raise. A
+  POSITION check on the runner's source backs it up — one `write()`, after the group loop, and no
+  `writeFileSync` on the flag's own path — because both ways to get it wrong are invisible in a
+  single-group run.
 - **every screen that names a weight prints its own resolution** — the wiring, asserted on all three
   reports, since a screen recommending a weight without saying what its own inputs can resolve is the
   defect the section exists for. The onset fixture carries an anchor and an onset ORDER, because the

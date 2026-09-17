@@ -72,6 +72,7 @@ import {
 } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { parseWeight } from './cli-args.js';
+import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
@@ -231,6 +232,10 @@ interface CliOptions {
    * benchmark with no second instrument. That is what makes a weight's second half checkable before
    * a dispatch instead of after one: `benchmark-rcaeval.yml` can produce the dump once, and every
    * candidate weight is then solved offline against it.
+   *
+   * The file is written ONCE per invocation and opens with the run's signal configuration, so one
+   * artifact states its own mode and holds every group the suite covered — `--suite re1` evaluates
+   * three systems, and a file per group would keep only the last one.
    *
    * Empty means "do not write one": the flag allocates the file, not the runner.
    */
@@ -1198,6 +1203,29 @@ function reportDeepestExceptionDiagnostics(
   }
 }
 
+/**
+ * The signal configuration, as one line.
+ *
+ * One owner for two renderings: the console banner and the dump's header. A dump that restated the
+ * weights would be a second source for the mode a run was made under, and the day the two drifted
+ * the artifact would describe a configuration nobody ran — which is the defect the `re3` dump hid,
+ * where a trace-augmented ranking reconstructs to one case against its own prediction of fifteen
+ * and nothing in the file says the trace term was on.
+ *
+ * @param opts - The parsed options.
+ * @returns The line the banner prints and the dump stores verbatim.
+ */
+function formatSignalLine(opts: CliOptions): string {
+  return (
+    `signals: stabilityWeight=${opts.stabilityWeight} collisionWeight=${opts.collisionWeight} ` +
+    `topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} ` +
+    `collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} ` +
+    `prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} ` +
+    `suppressIdleTransients=${opts.suppressIdleTransients} ` +
+    `suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1216,9 +1244,7 @@ async function main(): Promise<void> {
   console.log(
     `injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight} | onsetShape: ${opts.onsetShape}`,
   );
-  console.log(
-    `signals: stabilityWeight=${opts.stabilityWeight} collisionWeight=${opts.collisionWeight} topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} suppressIdleTransients=${opts.suppressIdleTransients} suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`,
-  );
+  console.log(formatSignalLine(opts));
 
   const allCases = discoverAllCases(opts.dataDir);
   console.log(`Cases discovered: ${allCases.length}`);
@@ -1326,6 +1352,14 @@ async function main(): Promise<void> {
   // Per-case routing-feasibility records (engine ranking scores + PRISM
   // M-scores), consumed by the routing-probe report emitted after the loop.
   const routingRecords: RoutingProbeRecord[] = [];
+  // The dump is ONE file for the whole invocation, owned here rather than inside the group loop
+  // below: `--suite re1` covers three systems, and the first version of this feature wrote the file
+  // once per group, so each system truncated the last one's and the artifact held a third of the
+  // run while the console printed the same count three times.
+  const diagnoseDump =
+    opts.diagnoseDump === ''
+      ? undefined
+      : new DiagnoseDump(opts.diagnoseDump, formatSignalLine(opts));
 
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
@@ -1399,10 +1433,6 @@ async function main(): Promise<void> {
 
     // Run each fault type separately
     const results = new Map<string, RunResult>();
-    // The diagnostic blocks for this group, accumulated in case order and written once: a dump
-    // assembled from a partially written file would parse as a run that produced fewer cases, which
-    // is the one failure mode the analyzer's fidelity line cannot distinguish from a real one.
-    const dumpBlocks: string[] = [];
     for (const [ft, ftCases] of byFaultType) {
       if (ftCases.length === 0) continue;
       const suite: BenchmarkSuite = {
@@ -1414,10 +1444,12 @@ async function main(): Promise<void> {
         ft,
         await runner.runSuite(
           suite,
-          opts.diagnoseDump === ''
+          diagnoseDump === undefined
             ? undefined
             : (record) => {
-                dumpBlocks.push(
+                diagnoseDump.record(
+                  groupKey,
+                  record.case.id,
                   renderDiagnosedCase(record, {
                     logSignalMode: opts.logSignalMode,
                     useInjectTime: !opts.noInjectTime,
@@ -1425,13 +1457,6 @@ async function main(): Promise<void> {
                 );
               },
         ),
-      );
-    }
-    if (opts.diagnoseDump !== '') {
-      writeFileSync(opts.diagnoseDump, dumpBlocks.join(''));
-      console.log(
-        `  diagnose dump: ${opts.diagnoseDump} (${stats.cases.length} cases, ` +
-          `${dumpBlocks.length} blocks)`,
       );
     }
 
@@ -1501,6 +1526,13 @@ async function main(): Promise<void> {
     results.clear();
     if (typeof globalThis.gc === 'function') globalThis.gc();
     await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  // ── The diagnostic dump ──
+  // Written once, after the last group: the file is a function of the whole invocation, and the
+  // accumulator refuses a second write for exactly the reason this line is not inside the loop.
+  if (diagnoseDump !== undefined) {
+    console.log(`  diagnose dump: ${formatDiagnoseDumpLine(diagnoseDump.write())}`);
   }
 
   // ── Fusion-ceiling report ──

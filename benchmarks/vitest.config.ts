@@ -59,6 +59,7 @@ export default defineConfig({
         'src/rcaeval-topology.ts',
         'src/rcaeval-semantic.ts',
         'src/fse26-report.ts',
+        'src/fse26-diagnose-dump.ts',
         'src/fse26-diagnose-sink.ts',
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
