@@ -2343,6 +2343,35 @@ interface SolvedWindow {
   readonly gained: readonly string[];
   /** {@link gained}, with the margin each one has at {@link ship}; thinnest first. */
   readonly margins: readonly WindowGainMargin[];
+  /**
+   * The same case set read at a weight the CALLER named, when one was named.
+   *
+   * The window answers "which weight is best here". A re-opening condition asks the other question —
+   * "is candidate W neutral on this benchmark" — and until this existed the answer could only come
+   * from a dispatched RUN, which states it as cells moved rather than as cases gained and lost. Two
+   * benchmarks can only be compared on one axis if the same instrument produces both halves.
+   */
+  readonly at?: NamedWeightVerdict;
+}
+
+/**
+ * What a case set does at one named weight.
+ *
+ * Counts AND the datapacks behind them: `lost 1` decides the criterion, but which case was given up
+ * is what a reader has to check, for the same reason the window's cap names its binder.
+ */
+export interface NamedWeightVerdict {
+  readonly weight: number;
+  /** Cases satisfied at this weight. */
+  readonly correct: number;
+  /** Satisfied here, unsatisfied at `w = 0`. */
+  readonly gained: number;
+  /** Satisfied at `w = 0`, unsatisfied here — the regressions the criterion forbids. */
+  readonly lost: number;
+  /** {@link gained}, sorted. */
+  readonly gainedDatapacks: readonly string[];
+  /** {@link lost}, sorted. */
+  readonly lostDatapacks: readonly string[];
 }
 
 /**
@@ -2461,7 +2490,10 @@ function widestPlateau(
  * @param built - Input from {@link buildWeightSeparationCases} or a screen's own builder.
  * @returns The window, its profile, and the weight to ship with its margins.
  */
-export function solveZeroRegressionWindow(built: readonly WeightSeparationCase[]): SolvedWindow {
+export function solveZeroRegressionWindow(
+  built: readonly WeightSeparationCase[],
+  at?: number,
+): SolvedWindow {
   const window = computeZeroRegressionWindow(built);
   const steps = gainProfile(window.gains, window.cap);
   const gain = steps.reduce((best, step) => (step.gained > best ? step.gained : best), 0);
@@ -2495,6 +2527,67 @@ export function solveZeroRegressionWindow(built: readonly WeightSeparationCase[]
     lostAtShip: zeroRegressionSamples(built, [ship])[0]!.lost,
     gained,
     margins,
+    ...(at === undefined ? {} : { at: namedWeightVerdict(built, at) }),
+  };
+}
+
+/**
+ * Render a named-weight verdict, or nothing when no weight was named.
+ *
+ * Shared by the two screens that solve a window, so a reader comparing the decisive-stability
+ * screen's verdict on one benchmark with the temporal screen's on another is reading the same
+ * sentence. Placed after the population line in both, so the two MENUS — which render a shape's
+ * detail by dropping that fixed prefix — carry it without a second printing.
+ *
+ * @param at - The verdict, when a weight was named.
+ * @returns Zero or three lines, the first indented by two spaces.
+ */
+function namedWeightLines(at: NamedWeightVerdict | undefined): readonly string[] {
+  if (at === undefined) return [];
+  const lines = [
+    `  at ${at.weight.toFixed(6)}: correct ${at.correct}, gained ${at.gained}, lost ${at.lost}`,
+  ];
+  // Both lists when both are non-empty: a weight that buys some cases and costs others is the case
+  // the criterion exists for, and naming only one side is how a veto reads as a trade.
+  if (at.lost > 0) lines.push(`    lost: ${at.lostDatapacks.join(', ')}`);
+  if (at.gained > 0) lines.push(`    gained: ${at.gainedDatapacks.join(', ')}`);
+  return lines;
+}
+
+/**
+ * Read a case set at one weight, per case.
+ *
+ * Deliberately computed from the SAME `built` array the window was solved from — not from the
+ * window — because the two answer different questions: `correct` here counts what the case set
+ * satisfies at the named weight, which a window's `satisfied`/`cap` pair cannot reproduce (the cap
+ * is where the FIRST case leaves; cases may have left and returned since).
+ *
+ * @param built - Input from {@link buildWeightSeparationCases} or a screen's own builder.
+ * @param at - The weight to read.
+ * @returns The counts and the datapacks behind them, both sorted.
+ */
+function namedWeightVerdict(
+  built: readonly WeightSeparationCase[],
+  at: number,
+): NamedWeightVerdict {
+  const gainedDatapacks: string[] = [];
+  const lostDatapacks: string[] = [];
+  let correct = 0;
+  for (const one of built) {
+    const intervals = caseWeightInterval(one);
+    const here = intervalsCover(intervals, at);
+    const atZero = intervalsCover(intervals, 0);
+    if (here) correct++;
+    if (here && !atZero) gainedDatapacks.push(one.datapack);
+    if (!here && atZero) lostDatapacks.push(one.datapack);
+  }
+  return {
+    weight: at,
+    correct,
+    gained: gainedDatapacks.length,
+    lost: lostDatapacks.length,
+    gainedDatapacks: gainedDatapacks.sort(),
+    lostDatapacks: lostDatapacks.sort(),
   };
 }
 
@@ -2638,13 +2731,14 @@ export function onsetScreen(
   cases: readonly DiagnosedCase[],
   weights: FamilyScreenWeights,
   shape: OnsetShape = 'earliness',
+  at?: number,
 ): OnsetScreen {
   const built: WeightSeparationCase[] = [];
   for (const kase of cases) {
     const one = onsetCase(kase, weights, shape);
     if (one !== undefined) built.push(one);
   }
-  const solved = solveZeroRegressionWindow(built);
+  const solved = solveZeroRegressionWindow(built, at);
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const gainTypes = new Map<string, number>();
   for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
@@ -2677,8 +2771,9 @@ export function onsetScreen(
 export function onsetShapeMenu(
   cases: readonly DiagnosedCase[],
   weights: FamilyScreenWeights,
+  at?: number,
 ): readonly OnsetScreen[] {
-  return ONSET_SHAPES.map((shape) => onsetScreen(cases, weights, shape));
+  return ONSET_SHAPES.map((shape) => onsetScreen(cases, weights, shape, at));
 }
 
 /**
@@ -2713,6 +2808,10 @@ export function formatOnsetMenuReport(
   if (a.withEarliness === 0) {
     lines.push('  the term is INERT on this dump: the engine leaves every service neutral, so no');
     lines.push('  weight on any shape can change a ranking — a window here is an artefact.');
+    // BEFORE the return, because this is the menu's other early exit: a named weight has a verdict
+    // on an inert dump too — "the term changes nothing" is a measurement — and an inert dump is
+    // exactly where "the weight is harmless" is the tempting conclusion the flag exists to check.
+    for (const screen of screens) lines.push(...namedWeightLines(screen.solved.at));
     return lines.join('\n');
   }
   lines.push('  shape          gain  window                     width     ship      binder');
@@ -2734,7 +2833,10 @@ export function formatOnsetMenuReport(
   // cap: a row of zeros with no mechanism is a verdict nobody can act on or refute.
   for (const screen of screens) {
     const s = screen.solved;
-    if (s.gain > 0) {
+    // `|| s.at !== undefined` because a NAMED weight has a verdict whether or not the window found
+    // a gain — and a shape with no gain is exactly where a reader would otherwise conclude that the
+    // weight is harmless. Printing the detail only `if (s.gain > 0)` rendered the flag nowhere.
+    if (s.gain > 0 || s.at !== undefined) {
       lines.push('');
       lines.push(...formatOnsetScreenReport(screen, weights).split('\n').slice(3));
     } else if (s.window.capBinder !== undefined) {
@@ -2778,6 +2880,7 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
       `with an onset ${a.withOnsets}; with an ORDER the term can act on ${a.withEarliness}`,
   );
   lines.push(`  services carrying an onset: ${a.servicesWithOnset}/${a.servicesTotal} (${share})`);
+  lines.push(...namedWeightLines(s.at));
   if (a.withEarliness === 0) {
     // Not "no window": the term cannot act at all, so a gain of zero here would be
     // read as a negative result when it is a data gap. Saying which is the whole
@@ -3044,13 +3147,14 @@ export function cvScreen(
   cases: readonly DiagnosedCase[],
   weights: FamilyScreenWeights,
   shape: CvShape = DEFAULT_CV_SHAPE,
+  at?: number,
 ): CvScreen {
   const built: WeightSeparationCase[] = [];
   for (const kase of cases) {
     const one = stabilityCase(kase, weights, shape);
     if (one !== undefined) built.push(one);
   }
-  const solved = solveZeroRegressionWindow(built);
+  const solved = solveZeroRegressionWindow(built, at);
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const gainTypes = new Map<string, number>();
   for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
@@ -3078,8 +3182,9 @@ export function cvScreen(
 export function cvShapeMenu(
   cases: readonly DiagnosedCase[],
   weights: FamilyScreenWeights,
+  at?: number,
 ): readonly CvScreen[] {
-  return CV_SHAPES.map((shape) => cvScreen(cases, weights, shape));
+  return CV_SHAPES.map((shape) => cvScreen(cases, weights, shape, at));
 }
 
 /**
@@ -3122,6 +3227,7 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     `  cases ${s.window.cases}; correct at 0 ${s.window.satisfied}; ` +
       `unreachable at every weight ${s.window.unreachable}`,
   );
+  lines.push(...namedWeightLines(s.at));
   if (a.casesComparable === 0) {
     lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
     lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
@@ -3216,6 +3322,9 @@ export function formatCvMenuReport(
   if (a.casesComparable === 0) {
     lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
     lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
+    // Same reason as the onset menu's identical placement: the verdict precedes the exit, because
+    // the menu returns before the loop that renders a shape's detail.
+    for (const screen of screens) lines.push(...namedWeightLines(screen.solved.at));
     return lines.join('\n');
   }
   lines.push('  shape          gain  window                     width     ship      binder');
@@ -3237,7 +3346,9 @@ export function formatCvMenuReport(
   // of zeros with no mechanism is a verdict nobody can act on or refute.
   for (const screen of screens) {
     const s = screen.solved;
-    if (s.gain > 0) {
+    // Same reason as the onset menu's identical guard: a named weight's verdict must survive a menu
+    // whose every row reads `gain 0`.
+    if (s.gain > 0 || s.at !== undefined) {
       lines.push('');
       lines.push(...formatCvScreenReport(screen, weights).split('\n').slice(4));
     } else if (s.window.capBinder !== undefined) {
@@ -4473,6 +4584,15 @@ export interface AnalyzeSection {
    */
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
+  /**
+   * A weight to READ the case set at, alongside the weight the window would solve for.
+   *
+   * The window answers "which weight is best here"; a re-opening condition asks "is candidate W
+   * neutral here", and that question used to be answerable only by buying a run — which states it as
+   * cells moved rather than as cases gained and lost. `undefined` (never 0) when nobody named one,
+   * so the default report is the one it was before this flag existed.
+   */
+  readonly atWeight?: number;
 }
 
 export interface AnalyzeDumpOptions {
@@ -4524,7 +4644,7 @@ const ANALYZE_USAGE =
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
   '[--onset-screen] [--discriminator] [--cv-screen] [--separator-screen] ' +
   '[--guard-census] ' +
-  '[--family <regex>] ' +
+  '[--at-weight <w>] [--family <regex>] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
 /**
@@ -4549,6 +4669,7 @@ const VALUE_FLAGS = new Set([
   'pool-penalty',
   'slope',
   'temporal-weight',
+  'at-weight',
 ]);
 
 /** Flags that take no value. */
@@ -4674,6 +4795,27 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
   const onsetShape: OnsetShape =
     rawShape !== undefined && isOnsetShape(rawShape) ? rawShape : DEFAULT_ONSET_SHAPE;
 
+  // A named weight, for the screens that can read one. STRICT like the log weight, and refused
+  // unless a screen that PRINTS it was also requested: a flag accepted and rendered nowhere is how
+  // a flag becomes ritual, which is the rule this file already applies to `--log-weight`.
+  const rawAt = values.get('at-weight');
+  let atWeight: number | undefined;
+  if (rawAt !== undefined) {
+    const parsed = Number(rawAt);
+    if (rawAt.trim() === '' || !Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(`--at-weight expects a non-negative finite number, got '${rawAt}'`);
+    }
+    if (!requested.has('cvScreen') && !requested.has('onsetScreen')) {
+      throw new Error(
+        '--at-weight reads a case set at ONE named weight, which only the screens that solve a ' +
+          'window can render: pass --cv-screen or --onset-screen as well. On its own it would be ' +
+          'accepted and printed nowhere.\n' +
+          ANALYZE_USAGE,
+      );
+    }
+    atWeight = parsed;
+  }
+
   const family = values.get('family');
 
   return {
@@ -4693,6 +4835,7 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
       poolWeight,
       temporalWeight,
       onsetShape,
+      atWeight,
     })),
     // Anything that is not exactly `lat` falls back to the term this solver was
     // built for, like every other switch here: a typo has to reproduce a known
@@ -4848,7 +4991,7 @@ function analyzeSectionText(
       const weights: FamilyScreenWeights = section;
       // The whole declared menu, so the axis cannot be left open on the technicality
       // that only one shape was tried.
-      return formatOnsetMenuReport(onsetShapeMenu(cases, weights), weights);
+      return formatOnsetMenuReport(onsetShapeMenu(cases, weights, section.atWeight), weights);
     }
     case 'discriminator': {
       // The screen fits and cross-validates its own rules, so it needs the whole
@@ -4870,7 +5013,7 @@ function analyzeSectionText(
       // question over a different slope. The whole menu, so the axis cannot be left open on the
       // technicality that only one reading of the statistic was tried.
       const weights: FamilyScreenWeights = section;
-      return formatCvMenuReport(cvShapeMenu(cases, weights), weights);
+      return formatCvMenuReport(cvShapeMenu(cases, weights, section.atWeight), weights);
     }
     case 'separatorScreen':
       // The run's own latency FLOOR, so the `lat` signal is the term the engine actually

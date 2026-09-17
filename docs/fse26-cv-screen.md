@@ -382,6 +382,55 @@ reconstruction produces a POOLED count. For `re2` the golden cells are `82.4 / 8
 TrainTicket is `68.1%` averaged over seven fault types where the pooled rate is `33/50 = 66.0%`.
 Compare against the dump's `prediction=` list, never against the average.
 
+### A weight the CALLER names, read on the golden's own cases
+
+The window answers "which weight is best here". The re-opening condition asks the other question —
+"is candidate W neutral on this benchmark" — and until now that could only be answered by buying a
+run, which states it as cells moved rather than as cases gained and lost. `--cv-screen` and
+`--onset-screen` now take `--at-weight <w>` and report the SAME case set read at the weight the caller
+named, with the datapacks behind both counts:
+
+```
+  at 0.030170: correct 295, gained 7, lost 13
+    lost: rcaeval-re1_re1tt_ts-auth-service_delay_4, ... (13 named)
+    gained: rcaeval-re1_re1ob_productcatalogservice_cpu_3, ... (7 named)
+```
+
+Measured on the dumps the fixed runner produced (`35175577233` at `ecfc439`), for the weight FSE'26
+solves for and the golden vetoes:
+
+| dump | cases | correct at 0 | at `0.030170` | gained | lost |
+| --- | --- | --- | --- | --- | --- |
+| `re1` | 375 | 301 | **295** | **7** | **13** |
+| `re2` | 150 | 119 | **107** | **0** | **12** |
+| `re3-noinject` | 90 | 37 | 37 | 0 | 0 |
+
+So the trade the veto rests on, in the units the FSE'26 side reported (`+5 cases, 0 regressed fault
+types`), is **+5 there against `+7 / −13` on RE1 and `+0 / −12` on RE2** — a net −18 on the golden,
+and every one of the 25 given-up cases is NAMED rather than inferred from a rounded cell. Note too
+that the window on `re1` closes at `0.015112`, so `0.030170` is twice past the cap the screen would
+have shipped under: the recommendation and the veto are not in tension, they are two readings of one
+model at two different weights.
+
+Two properties make the number usable, and both are asserted. It is absent from the report when no
+weight is named, so the default output is byte-identical to what it was before the flag existed. And
+the flag is REFUSED unless `--cv-screen` or `--onset-screen` was also requested — the file's own
+`--log-weight` rule, applied to the other side of the same question, because a flag accepted and
+rendered nowhere is how a flag becomes ritual.
+
+**One open question this instrument now makes askable, and it is why a paired dispatch is in flight.**
+The screen reads `re1` at 295 — six cases below its own 301 — while the dispatched run's RE1 cells move
+by about two cases (`OnlineBoutique 80.0 → 79.2`, `TrainTicket 68.0 → 67.2`, `SockShop` unchanged, and
+those are averages of six per-fault-type rates, so they round). The analyzer's `rank` shape is written
+to BE the engine's function — `(n − 1 − avgRank) / (n − 1)` with ascending `cv`, ties averaged, `n` the
+MEASURED services, unmeasured services scoring 0 — and at `w = 0` it reproduces the run's own pooled
+count exactly, which is what the fidelity line checks. Whether it also reproduces it AT a positive
+weight is not the same claim: it needs a run dispatched with `stability_weight` AND `diagnose_dump`
+together, so that the dump's own `prediction=` list is the engine's ranking at that weight and
+`correct at 0` on it becomes the engine's count there. If the two agree, the −6 is the truth and the
+cell averages were hiding four cases; if they disagree, the `rank` translation is not the engine's
+function and that is a defect with a number rather than a doubt.
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the

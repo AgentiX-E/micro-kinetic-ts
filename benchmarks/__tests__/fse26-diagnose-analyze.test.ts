@@ -5765,3 +5765,204 @@ describe('gainResolution — the lead the formatter discards', () => {
     );
   });
 });
+
+/**
+ * A weight the CALLER names, evaluated by the instrument that solved the window.
+ *
+ * The reopening condition this axis carries is two-sided and names a weight: "is candidate W
+ * golden-neutral?" The screen could only answer the other question — "which weight is best here" —
+ * so a veto arrived as an observation about a run ("4 of 9 cells moved") rather than as a per-case
+ * account comparable, case for case, with the `+5 / 0 regressed types` the FSE'26 side reported. Same
+ * instrument, same units: that is the whole point of evaluating a NAMED weight rather than a solved
+ * one.
+ */
+describe('a named weight, evaluated per case', () => {
+  /** A case from plain numbers, so each fixture reads as arithmetic. */
+  const affine = (
+    datapack: string,
+    targets: readonly string[],
+    scores: Record<string, [number, number]>,
+  ): WeightSeparationCase => ({
+    datapack,
+    targets,
+    scores: new Map(Object.entries(scores).map(([id, [base, slope]]) => [id, { base, slope }])),
+  });
+
+  /**
+   * Root `a` leads on `[0.20, 0.30]` and `b` from `0.35` — a gain with two islands, so a weight in
+   * the gap is a weight at which the case is NOT fixed. `protect` is correct at 0 and stays correct
+   * only to 0.44, so a weight past it is a LOSS: the fixture can hold a gain and a loss at once,
+   * which is the shape a veto has.
+   */
+  const gain = (): WeightSeparationCase =>
+    affine('gain-two-islands', ['a', 'b'], {
+      a: [0.6, 1],
+      b: [-0.05, 3],
+      g: [0.3, 2],
+      c: [0.8, 0],
+    });
+  const protector = (): WeightSeparationCase =>
+    affine('protect', ['t'], { t: [0.9, 0], r: [0.46, 1] });
+
+  it('reports correct, gained and lost at the named weight, and NAMES the losses', () => {
+    // A count is not a verdict: `lost 1` decides the criterion, but WHICH case was lost is what a
+    // reader has to check — the same reason the pool penalty's window names its cap binder.
+    const solved = solveZeroRegressionWindow([gain(), protector()], 0.5);
+
+    expect(solved.at).toBeDefined();
+    expect(solved.at!.weight).toBe(0.5);
+    expect(solved.at!.gained).toBe(1);
+    expect(solved.at!.lost).toBe(1);
+    expect(solved.at!.correct).toBe(1);
+    expect(solved.at!.gainedDatapacks).toEqual(['gain-two-islands']);
+    expect(solved.at!.lostDatapacks).toEqual(['protect']);
+    // The solved recommendation is untouched by the question: this is a second reading of the same
+    // window, not a re-solve that could move the weight the screen would have shipped.
+    expect(solved.ship).toBeCloseTo(0.25, 12);
+    expect(solved.gain).toBe(1);
+  });
+
+  it('is absent when no weight is named, so nothing about the default report moves', () => {
+    const solved = solveZeroRegressionWindow([gain(), protector()]);
+    expect(solved.at).toBeUndefined();
+  });
+
+  it('counts a weight inside the gain island as a gain with no loss', () => {
+    const solved = solveZeroRegressionWindow([gain(), protector()], 0.25);
+    expect(solved.at!.gained).toBe(1);
+    expect(solved.at!.lost).toBe(0);
+    expect(solved.at!.lostDatapacks).toEqual([]);
+    expect(solved.at!.correct).toBe(2);
+  });
+
+  it('reports a gain of zero in the gap between the case’s own islands', () => {
+    // 0.32 is inside `[0.20, 0.30] ∪ [0.35, ∞)`'s gap, so the case is untouched there. An instrument
+    // that read the union as one half-line would report it as gained — the defect this module's
+    // profile fix was about, now reachable through a second door.
+    const solved = solveZeroRegressionWindow([gain(), protector()], 0.32);
+    expect(solved.at!.gained).toBe(0);
+    expect(solved.at!.gainedDatapacks).toEqual([]);
+    expect(solved.at!.lost).toBe(0);
+    expect(solved.at!.correct).toBe(1);
+  });
+
+  it('prints the block with the count and the names, and nothing when no weight was named', () => {
+    // A weight past the case's own cap, so the block reports a real loss and names the case that
+    // paid for it. The cap is where the rival overtakes: with a lead of 0.693147 and a slope gap of
+    // 1.0 it sits at 0.693147, so 1.0 is past it whatever the numbers are set to.
+    const fixture = () =>
+      cvCase({
+        cvs: [0.1, 0.6],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-1',
+        prediction: 'ts-svc-1',
+      });
+    const named = formatCvScreenReport(cvScreen([fixture()], { logWeight: 1 }, 'rank', 1), {
+      logWeight: 1,
+    });
+
+    expect(named).toContain('at 1.000000');
+    expect(named).toContain('lost 1');
+    expect(named).toContain('lost: dp-1');
+
+    const unnamed = formatCvScreenReport(cvScreen([fixture()], { logWeight: 1 }, 'rank'), {
+      logWeight: 1,
+    });
+    expect(unnamed).not.toContain(' at 1.000000');
+  });
+});
+
+describe('a named weight reaches every report that solves a window', () => {
+  const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  /**
+   * A case the window has NO gain on, and a named weight that LOSES it.
+   *
+   * Service 1 is the ground truth and leads on the metric term at `w = 0`; it is also the LEAST
+   * stable one, so the term's slope belongs to service 0 and any positive weight overtakes it at
+   * 0.2364. Gain 0, lost 1 at `w = 0.5` — the exact shape of a veto, and the shape both menus would
+   * otherwise print nothing about.
+   */
+  const losing = (): DiagnosedCase =>
+    cvCase({
+      cvs: [0.1, 0.6],
+      anomalies: [0.5, 0.9],
+      groundTruth: 'ts-svc-1',
+      prediction: 'ts-svc-1',
+    });
+
+  it('is printed by the cv MENU even when the shape has no gain at any weight', () => {
+    // The trap: both menus printed a shape's detail only `if (s.gain > 0)`, so a named weight that
+    // gains nothing — precisely the case where a reader would conclude "harmless" — was rendered
+    // NOWHERE. The single-screen formatter had it and the menu, which is what the CLI prints, did not.
+    const menu = formatCvMenuReport(cvShapeMenu([losing()], WEIGHTS, 1), WEIGHTS);
+
+    expect(menu).toContain(' at 1.000000');
+    expect(menu).toContain('lost 1');
+    expect(menu).toContain('lost: dp-1');
+    // And the same verdict is what the single-screen formatter prints, so the two cannot disagree.
+    expect(formatCvScreenReport(cvScreen([losing()], WEIGHTS, 'rank', 1), WEIGHTS)).toContain(
+      ' at 1.000000',
+    );
+  });
+
+  it('names a GAIN and no loss when the named weight only helps', () => {
+    // The positive counterpart of the veto, and the branch the other fixtures leave uncovered: a
+    // weight that fixes a case and costs none. It prints `gained:` and no `lost:` line — which is
+    // what a reader is looking for, and the reason the two lists are printed independently rather
+    // than as one "changed" list.
+    // The target is the MOST stable service (cv 0.1, so its slope is 1) and behind on the metric
+    // term by 0.5466, so a weight of 1 overtakes the rival. Nothing was correct at 0, so nothing can
+    // be lost.
+    const helping = cvCase({
+      cvs: [0.6, 0.1],
+      anomalies: [0.9, 0.1],
+      groundTruth: 'ts-svc-1',
+      prediction: 'ts-svc-0',
+    });
+    const report = formatCvScreenReport(cvScreen([helping], WEIGHTS, 'rank', 1), WEIGHTS);
+
+    expect(report).toContain('at 1.000000');
+    expect(report).toContain('gained 1');
+    expect(report).toContain('lost 0');
+    expect(report).toContain('gained: dp-1');
+    expect(report).not.toContain('    lost:');
+  });
+
+  it('survives a dump where the term is INERT, which is the menu’s other early exit', () => {
+    // The second trap, found by probing rather than by reading: the menus return as soon as they
+    // learn the term cannot act, BEFORE the loops that render a shape's detail — so on an inert dump
+    // the flag was dropped a second time, and an inert dump is exactly where "the weight changes
+    // nothing" is the tempting conclusion. `losing()` carries no onset delays, which is what makes
+    // the temporal screen inert.
+    const menu = formatOnsetMenuReport(onsetShapeMenu([losing()], WEIGHTS, 1), WEIGHTS);
+
+    expect(menu).toContain('the term is INERT');
+    expect(menu).toContain(' at 1.000000');
+  });
+
+  it('is parsed from --at-weight, and refused when no screen would print it', () => {
+    // A flag that is accepted and rendered nowhere is how a flag becomes ritual: the file's own
+    // `log-weight` rule, applied to the other side of the same question.
+    const dumpMode = (argv: readonly string[]) => {
+      const opts = parseAnalyzeArgs(['--dump', 'd.txt', ...argv]);
+      if (opts.kind !== 'dump') throw new Error('expected dump mode');
+      return opts;
+    };
+
+    const opts = dumpMode(['--log-weight', '1', '--cv-screen', '--at-weight', '0.03017']);
+    expect(opts.sections[0]!.atWeight).toBe(0.03017);
+    // Absent, not 0: the default report must be the one it was before the flag existed.
+    expect(dumpMode(['--log-weight', '1', '--cv-screen']).sections[0]!.atWeight).toBeUndefined();
+
+    expect(() => dumpMode(['--log-weight', '1', '--cv-screen', '--at-weight', 'oops'])).toThrow(
+      /at-weight/,
+    );
+    expect(() => dumpMode(['--log-weight', '1', '--cv-screen', '--at-weight', '-1'])).toThrow(
+      /at-weight/,
+    );
+    expect(() => dumpMode(['--log-weight', '1', '--misses', '--at-weight', '0.03'])).toThrow(
+      /cv-screen/,
+    );
+  });
+});
