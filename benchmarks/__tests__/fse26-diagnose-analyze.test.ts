@@ -5282,7 +5282,8 @@ describe('unreachable at every weight — the count and the causes it partitions
     expect(window.unreachableByCause).toEqual({
       rootWithoutRow: 1,
       noSpread: 0,
-      tied: 0,
+      unweighed: 0,
+      tiedAtRender: 0,
       outOfReach: 0,
     });
   });
@@ -5303,7 +5304,7 @@ describe('unreachable at every weight — the count and the causes it partitions
     expect(window.unreachable).toBe(1);
   });
 
-  it('attributes a deciding pair the term reads as EQUAL to TIED', () => {
+  it('attributes a deciding pair the term reads as EQUAL to TIED AT THE RENDER', () => {
     // `re3ss_front-end_f3_2`'s shape, in three candidates: the root is behind a rival whose
     // RENDERED cv is the same, so the two share a slope at every weight and the base decides that
     // pair forever. The engine ranked the UNROUNDED field, where they differ — which is why the
@@ -5318,7 +5319,26 @@ describe('unreachable at every weight — the count and the causes it partitions
         prediction: 'ts-svc-1',
       }),
     );
-    expect(window.unreachableByCause.tied).toBe(1);
+    expect(window.unreachableByCause.tiedAtRender).toBe(1);
+    expect(window.unreachable).toBe(1);
+  });
+
+  it('attributes a pair the term never weighed to UNWEIGHED, not to the render', () => {
+    // Two ways arrive at an equal slope and they are different findings. Here the root and the
+    // rival that beats it BOTH carry no decisive composition, so both score `0` — and the engine's
+    // map has no entry for either, which its consumer reads as `0` as well. The pair is equal on
+    // both sides, so the artifact is not what blocks the case and no weight will move it: the fix
+    // is a measurement. The two measured services are what keep the case out of `noSpread`.
+    const window = windowOf(
+      cvCase({
+        cvs: [undefined, undefined, 0.1, 0.9],
+        anomalies: [0.5, 0.9, 0.3, 0.2],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    );
+    expect(window.unreachableByCause.unweighed).toBe(1);
+    expect(window.unreachableByCause.tiedAtRender).toBe(0);
     expect(window.unreachable).toBe(1);
   });
 
@@ -5338,7 +5358,7 @@ describe('unreachable at every weight — the count and the causes it partitions
     expect(window.unreachable).toBe(1);
   });
 
-  it('partitions the total: the four classes sum to `unreachable`, never over or under', () => {
+  it('partitions the total: the five classes sum to `unreachable`, never over or under', () => {
     // The identity that makes the split worth printing. A class count that drifted from the total
     // would let a reader quote one as the other — the failure mode of every count that travels
     // without its own frontier.
@@ -5357,6 +5377,13 @@ describe('unreachable at every weight — the count and the causes it partitions
         datapack: 'dp-nospread',
       }),
       cvCase({
+        cvs: [undefined, undefined, 0.1, 0.9],
+        anomalies: [0.5, 0.9, 0.3, 0.2],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+        datapack: 'dp-unweighed',
+      }),
+      cvCase({
         cvs: [0.5, 0.5, 0.1],
         anomalies: [0.5, 0.9, 0.3],
         groundTruth: 'ts-svc-0',
@@ -5372,9 +5399,17 @@ describe('unreachable at every weight — the count and the causes it partitions
       }),
     );
     const c = window.unreachableByCause;
-    expect(c).toEqual({ rootWithoutRow: 1, noSpread: 1, tied: 1, outOfReach: 1 });
-    expect(c.rootWithoutRow + c.noSpread + c.tied + c.outOfReach).toBe(window.unreachable);
-    expect(window.unreachable).toBe(4);
+    expect(c).toEqual({
+      rootWithoutRow: 1,
+      noSpread: 1,
+      unweighed: 1,
+      tiedAtRender: 1,
+      outOfReach: 1,
+    });
+    expect(c.rootWithoutRow + c.noSpread + c.unweighed + c.tiedAtRender + c.outOfReach).toBe(
+      window.unreachable,
+    );
+    expect(window.unreachable).toBe(5);
   });
 
   it('prints the causes, with labels that carry their own meaning', () => {
@@ -5391,8 +5426,8 @@ describe('unreachable at every weight — the count and the causes it partitions
 
     const text = formatCvScreenReport(cvScreen([tied], WEIGHTS), WEIGHTS);
     expect(text).toContain(
-      'unreachable at every weight 1 (root without a row 0, no spread 0, tied at the render 1, ' +
-        'out of reach 0)',
+      'unreachable at every weight 1 (root without a row 0, no spread 0, unweighed 0, ' +
+        'tied at the render 1, out of reach 0)',
     );
 
     // And the MENU carries the clause per shape rather than a bare number above two rows — ONCE,
@@ -5406,6 +5441,230 @@ describe('unreachable at every weight — the count and the causes it partitions
     expect(
       menu.split('\n').filter((line) => line.includes('unreachable at every weight')),
     ).toHaveLength(1);
+  });
+});
+
+describe('the satisfied side — the cap is an UPPER bound when the artifact cannot order the pair', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+  const windowOf = (...cases: readonly DiagnosedCase[]) => cvScreen(cases, WEIGHTS).solved.window;
+
+  it('counts a satisfied case that LEADS a rival the term reads as EQUAL', () => {
+    // The mirror of `tiedAtRender`, and the reason the cap needs qualifying: `ts-svc-0` leads
+    // `ts-svc-1` by 0.236 on the base while their rendered cvs are both `0.5`, so the model reads
+    // the pair as one that can never change and imposes NO bound from it. The engine, ranking the
+    // unrounded cv, gives the two different slopes — and that is exactly how a case the model keeps
+    // correct at every weight is lost by an engine at a weight inside the model's own window. The
+    // cap here comes from `ts-svc-2`, which IS separable, so this case is the binder's own case.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.9, 0.5, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+    );
+    expect(window.satisfied).toBe(1);
+    expect(window.capUnrepresentable).toEqual({
+      declared: 1,
+      cases: 1,
+      datapacks: ['dp-1'],
+      setsCap: true,
+    });
+  });
+
+  it('says when the cap does NOT come from such a case', () => {
+    // The distinction the two numbers exist for. A second, tighter case sets the cap, and its own
+    // pairs are all separable — so the cap VALUE is exact while the population it protects still
+    // holds a case the artifact cannot speak for. Reporting only the count would leave a reader
+    // unable to tell which of the two situations they are in.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.9, 0.5, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.6, 0.1, 0.9],
+        anomalies: [0.9, 0.5, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        datapack: 'dp-tighter',
+      }),
+    );
+    expect(window.satisfied).toBe(2);
+    expect(window.capUnrepresentable).toEqual({
+      declared: 2,
+      cases: 1,
+      datapacks: ['dp-1'],
+      setsCap: false,
+    });
+    expect(window.capBinder?.datapack).toBe('dp-tighter');
+  });
+
+  it('does NOT count a pair that is equal because the term weighed NEITHER side', () => {
+    // `ts-svc-1` carries no decisive composition, so its slope is `0` — the same value as the
+    // least stable service's. Counting that as a hidden ordering would report one on the engine's
+    // own legal output: the engine's map has no entry for it either, and its consumer reads `0`. A
+    // counter that fires where the model is RIGHT is worse than no counter.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.5, undefined, 0.1],
+        anomalies: [0.9, 0.01, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+    );
+    expect(window.satisfied).toBe(1);
+    expect(window.capUnrepresentable).toEqual({
+      declared: 1,
+      cases: 0,
+      datapacks: [],
+      setsCap: false,
+    });
+  });
+
+  it('does NOT count a case whose equal pair is read with the RIVAL ahead', () => {
+    // The unreachable side of the same geometry. Such a case is not satisfied at any weight, so it
+    // is not part of the population the cap protects — and counting it here would have the counter
+    // describe a case the window never claimed to protect.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.5, 0.9, 0.3],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    );
+    expect(window.unreachableByCause.tiedAtRender).toBe(1);
+    expect(window.capUnrepresentable).toEqual({
+      declared: 0,
+      cases: 0,
+      datapacks: [],
+      setsCap: false,
+    });
+  });
+
+  it('makes NO claim for a builder that does not declare its slopes’ provenance', () => {
+    // The same geometry as the first test, built by hand WITHOUT the declaration: an equal slope
+    // could be a rendered tie or a placeholder, and the window cannot tell. Stating the count here
+    // would be the substitution this module exists to find — a claim about an input the caller
+    // never described.
+    const bare = computeZeroRegressionWindow([
+      {
+        datapack: 'dp-bare',
+        targets: ['a'],
+        scores: new Map([
+          ['a', { base: 2, slope: 0 }],
+          ['b', { base: 1, slope: 0 }],
+          ['c', { base: 0, slope: 1 }],
+        ]),
+      },
+    ]);
+    expect(bare.satisfied).toBe(1);
+    expect(bare.capUnrepresentable).toEqual({
+      declared: 0,
+      cases: 0,
+      datapacks: [],
+      setsCap: false,
+    });
+  });
+
+  it('is a property of the INPUTS, not of the shape', () => {
+    // Both shapes are strictly monotone in `cv`, so two services the render ties are tied under
+    // either of them — and indeed every golden dump reports the same count for `flip` and `rank`
+    // (31/301, 14/119, 13/37, 12/35). Asserting it here keeps a future shape that reorders `cv`
+    // differently from quietly changing what the class means.
+    const cases = [
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.9, 0.5, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.6, 0.1, 0.9],
+        anomalies: [0.9, 0.5, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        datapack: 'dp-tighter',
+      }),
+    ];
+    const flip = cvScreen(cases, WEIGHTS, 'flip').solved.window.capUnrepresentable;
+    const rank = cvScreen(cases, WEIGHTS, 'rank').solved.window.capUnrepresentable;
+    expect(flip).toEqual(rank);
+    expect(flip.cases).toBe(1);
+  });
+
+  it('prints the qualification beside the cap, with the binder clause that fits it', () => {
+    // Asserted through the REPORT, because that is where the claim lands: `cap 0.030480` on its own
+    // reads as a bound the artifact decided, and the whole point is that it is an upper end.
+    const leading = cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const tighter = cvCase({
+      cvs: [0.6, 0.1, 0.9],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+      datapack: 'dp-tighter',
+    });
+    const both = formatCvScreenReport(cvScreen([leading, tighter], WEIGHTS), WEIGHTS);
+    expect(both).toContain(
+      'cap UPPER bound: 1 of 2 satisfied cases hold a rival the term reads as EQUAL',
+    );
+    expect(both).toContain('its own case is not one of them');
+    // The membership is on the OBJECT rather than in the report, and that is a decision rather than
+    // an omission: on the FSE'26 dump this class holds 510 of 756 cases, so a printed list would be
+    // a page nobody reads. What the report owes a reader is the count with its DEFINITION, which is
+    // printed; what a caller cross-checking a paired dispatch's own lost cases needs is the
+    // membership, and that is here.
+    expect(
+      cvScreen([leading, tighter], WEIGHTS).solved.window.capUnrepresentable.datapacks,
+    ).toEqual(['dp-1']);
+
+    const only = formatCvScreenReport(cvScreen([leading], WEIGHTS), WEIGHTS);
+    expect(only).toContain(
+      'cap UPPER bound: 1 of 1 satisfied cases hold a rival the term reads as EQUAL',
+    );
+    expect(only).toContain('its own case is one of them');
+    expect(only).not.toContain('cases the artifact cannot order');
+  });
+
+  it('carries the qualification for a shape whose detail the menu does NOT print', () => {
+    // The menu prints a shape's detail only when it has something to advise, so a shape with no
+    // admissible gain and a finite cap is summarised in ONE line — and `re1`'s `rank` shape, the shape
+    // the engine's own comparison is read on, is exactly that case. Without this branch the menu
+    // states a cap on the face of it for the shapes that most need qualifying.
+    const leading = cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const menu = formatCvMenuReport(cvShapeMenu([leading], WEIGHTS), WEIGHTS);
+    expect(menu).toContain('no admissible gain;');
+    expect(menu).toContain('cap UPPER bound: 1 of 1 satisfied cases hold a rival');
+    // ONCE per shape, which is what the two branches being exclusive buys: the shape's own sentence,
+    // never the detail's and the summary's together.
+    expect(menu.match(/cap UPPER bound/g)).toHaveLength(2);
+  });
+
+  it('prints no qualification when the artifact could order every pair', () => {
+    // A line that always printed `0 of N` would be read as a passing check rather than as the
+    // absence of a finding, which is the shape this repo keeps removing.
+    const clean = cvCase({
+      cvs: [0.6, 0.1, 0.9],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const text = formatCvScreenReport(cvScreen([clean], WEIGHTS), WEIGHTS);
+    expect(text).not.toContain('cap UPPER bound');
+    expect(text).toContain('cap bound by');
   });
 });
 

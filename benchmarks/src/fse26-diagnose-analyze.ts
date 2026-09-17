@@ -1556,6 +1556,23 @@ export interface WeightSeparationCase {
   readonly targets: readonly string[];
   /** Per-service affine score, `base` at `w = 0` and `slope` as the coefficient. */
   readonly scores: ReadonlyMap<string, { readonly base: number; readonly slope: number }>;
+  /**
+   * The services whose `slope` is a MEASUREMENT, stated by a builder whose term can leave some of
+   * them unweighed.
+   *
+   * `slope` alone cannot answer the question the window's own classes ask — "is this pair EQUAL
+   * because the term read the same number twice, or because it read nothing at all?" — because both
+   * arrive as `0`. The first is a pair the ENGINE resolves on the unrounded field, so a case blocked
+   * by it is blocked by the artifact's resolution; the second is a pair the engine cannot separate
+   * either, because its own map has no entry and its consumer reads that as zero. Two different
+   * findings, two different fixes, and only the builder can say which.
+   *
+   * ABSENT means the caller makes no claim about a rendered tie: the window then attributes an equal
+   * pair the way it did before this field existed, and the satisfied side's {@link
+   * UnrepresentableFrontier} stays empty rather than guessing. The `failedEdge` and `lat` producers
+   * omit it; the decisive-stability screen states it.
+   */
+  readonly weighed?: ReadonlySet<string>;
 }
 
 /** The interval of weights, if any, at which EVERY case puts its target first. */
@@ -1889,6 +1906,12 @@ export interface ZeroRegressionWindow {
    * paired dispatch's residual turned out to be, found by HAND because this number did not say.
    */
   readonly unreachableByCause: UnreachableCauses;
+  /**
+   * The satisfied cases the MODEL cannot hold a bound on, because the artifact cannot order a pair
+   * the engine can — the satisfied side of the same two services {@link unreachableByCause} files
+   * under `tiedAtRender`.
+   */
+  readonly capUnrepresentable: UnrepresentableFrontier;
   /** The largest weight at which no currently-correct case loses rank 1. */
   readonly cap: number;
   /** The case that sets `cap`, and the pair whose ratio the cap is. */
@@ -1898,13 +1921,13 @@ export interface ZeroRegressionWindow {
 }
 
 /**
- * The four ways a case can be unreachable at every weight, in the order they are attributed.
+ * The ways a case can be unreachable at every weight, in the order they are attributed.
  *
- * The order is part of the measurement: a case can fail for more than one reason, and the
- * classes are tried in the order of how far UPSTREAM the obstacle is — a root the display never
- * describes is a data gap, a case with one coefficient has nothing to weigh, a pair the term
- * reads as equal is decided by the base at every weight, and only what remains is the term
- * failing to reach.
+ * The order is part of the measurement: a case can fail for more than one reason, and the classes
+ * are tried in the order of how far UPSTREAM the obstacle is — a root the display never describes is
+ * a data gap, a case with one coefficient has nothing to weigh, a pair the term never measured is a
+ * pair nothing can weigh later either, a pair the term reads as equal is decided by the base at
+ * every weight, and only what remains is the term failing to reach.
  */
 export interface UnreachableCauses {
   /**
@@ -1924,7 +1947,17 @@ export interface UnreachableCauses {
    */
   readonly noSpread: number;
   /**
-   * An acceptable root is behind a rival the term reads as EQUAL, at every weight.
+   * An acceptable root sits behind an equal-slope rival, and the term weighed NEITHER of that pair.
+   *
+   * Two services the block never decomposed both carry a slope of `0`, and the engine's map has no
+   * entry for either — so the pair is equal on both sides and no weight will ever move it. Reported
+   * apart from {@link tiedAtRender} because the two have opposite fixes: this one needs a
+   * MEASUREMENT, and under the other label it reads as a resolution limit of a term that was never
+   * given an input.
+   */
+  readonly unweighed: number;
+  /**
+   * An acceptable root is behind a rival the term reads as EQUAL, with both sides weighed.
    *
    * `targetInterval`'s third case: equal slopes and a higher base on the rival means the base
    * decides the pair forever. For `cv` that is the artifact's three decimals — two services
@@ -1933,15 +1966,57 @@ export interface UnreachableCauses {
    * engine-side tie lands in the same class and is not distinguishable from the dump, which is
    * why the class is named for what the artifact shows.
    */
-  readonly tied: number;
+  readonly tiedAtRender: number;
   /**
    * Every rival is separable and no single weight satisfies the floors and the caps at once.
    *
    * The remaining class: the term CAN act here, and the case is out of its reach — the weight
    * that would fix it against one rival costs it more against another. This is the only one of
-   * the four that is a statement about the SIGNAL.
+   * the five that is a statement about the SIGNAL.
    */
   readonly outOfReach: number;
+}
+
+/**
+ * The satisfied cases on the OTHER side of the same geometry: the ones that can be LOST.
+ *
+ * A satisfied case whose root LEADS a rival the term reads as EQUAL has, in the model, no bound from
+ * that pair — equal slopes mean the score gap between them is the base gap at every weight. The
+ * engine, ranking the unrounded field, splits the pair and gets a real bound out of the same two
+ * services, so the model's cap is an UPPER end rather than the cap. Measured on the run this class
+ * was built from: the case the engine lost at `0.030170` is one of these.
+ */
+export interface UnrepresentableFrontier {
+  /**
+   * Satisfied cases whose builder stated which services the term weighed — the denominator.
+   *
+   * Without it the count has no population: `3` reads the same whether the dump holds thirty
+   * decidable cases or three thousand.
+   */
+  readonly declared: number;
+  /**
+   * Of those, the cases holding a rival the term reads as EQUAL behind an acceptable root.
+   *
+   * A pair the term weighed on NEITHER side does not count: it is equal in the engine too, so it
+   * hides no ordering, and counting it would report one on the engine's own legal output.
+   */
+  readonly cases: number;
+  /**
+   * {@link cases}, by name, sorted.
+   *
+   * The class a reader can CHECK rather than a number they must take: it is the set of cases in which
+   * the model and the engine are free to disagree, so a paired dispatch's own lost cases have to be a
+   * subset of it. A count with no membership cannot be refuted, and the whole point of this field is
+   * that one case the engine lost was found by hand-diffing two runs.
+   */
+  readonly datapacks: readonly string[];
+  /**
+   * Whether the case that SETS `cap` is one of them.
+   *
+   * The difference between "the cap value is exact, and other cases may leave earlier" and "the cap
+   * itself is only the upper end of a bound the artifact cannot decide".
+   */
+  readonly setsCap: boolean;
 }
 
 /** One currently-wrong case, and the weights at which it becomes correct. */
@@ -2078,6 +2153,54 @@ function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | 
 }
 
 /**
+ * Whether the case declares `service`'s slope as a MEASUREMENT.
+ *
+ * Absent provenance reads as WEIGHED, which is deliberately the LOOSER reading here and the stricter
+ * one in {@link leadsRenderTiedRival}: this helper answers the unreachable side's question ("would
+ * the term have separated the pair?"), and a builder that says nothing about provenance keeps the
+ * attribution it had before the field existed. The satisfied side makes a CLAIM about a rendered
+ * tie, so it requires the declaration rather than assuming one.
+ *
+ * @param one - The case.
+ * @param service - The service to look up.
+ * @returns Whether the term weighed it, or the caller declared nothing.
+ */
+function weighed(one: WeightSeparationCase, service: string): boolean {
+  return one.weighed === undefined || one.weighed.has(service);
+}
+
+/**
+ * Whether an acceptable root LEADS a rival the term reads as EQUAL.
+ *
+ * The mirror of the unreachable side's `tiedAtRender` branch: there the equal pair is read with the
+ * rival ahead, so no weight satisfies the case at all; here the root is ahead, so the model reads
+ * the pair as one that can never change and imposes no bound — while the engine, ranking the
+ * UNROUNDED field, splits the pair and gets a real bound out of the same two services. That is how a
+ * case the model keeps correct at every weight is lost by an engine at a weight inside the model's
+ * own window.
+ *
+ * Requires that the term WEIGHED both sides, and requires the declaration: a pair equal at `0`
+ * because neither was weighed is a pair the engine cannot separate either, so it hides no ordering,
+ * and counting it would report one on the engine's own legal output.
+ *
+ * @param one - The case.
+ * @returns Whether such a pair exists.
+ */
+function leadsRenderTiedRival(one: WeightSeparationCase): boolean {
+  if (one.weighed === undefined) return false;
+  for (const name of one.targets) {
+    const target = one.scores.get(name);
+    if (target === undefined || !one.weighed.has(name)) continue;
+    for (const [rival, other] of one.scores) {
+      if (rival === name || !one.weighed.has(rival)) continue;
+      if (Math.abs(other.slope - target.slope) > WEIGHT_EPSILON) continue;
+      if (other.base < target.base) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Which of {@link UnreachableCauses} an unreachable case falls into.
  *
  * Read off the CONSTRAINTS the solver already built, so the classification cannot disagree with
@@ -2104,19 +2227,25 @@ function unreachableCause(one: WeightSeparationCase): keyof UnreachableCauses {
     }
   }
   if (!spread) return 'noSpread';
-  // 3. A rival the term reads as EQUAL, ahead of an acceptable root. This is exactly the
-  //    condition `targetInterval` answers with an empty interval for (`max = -Infinity`), so the
-  //    class cannot be empty on a case the solver reached by that branch.
+  // 3. An equal-slope rival ahead of an acceptable root, split by whether the term had a number for
+  //    BOTH sides. Equal slopes mean the base decides the pair at every weight either way, but the
+  //    two ways a pair arrives at an equal slope are different findings: a pair the term never
+  //    weighed is equal in the ENGINE too, so its fix is a measurement, while a rendered tie is the
+  //    artifact's resolution and the engine has already ordered it. `unweighed` outranks the render
+  //    because it is further upstream — the same precedence the two measurements have in the dump.
+  let renderTie = false;
   for (const name of one.targets) {
     const target = one.scores.get(name);
     if (target === undefined) continue;
     for (const [rival, other] of one.scores) {
       if (rival === name) continue;
-      if (Math.abs(other.slope - target.slope) <= WEIGHT_EPSILON && other.base > target.base) {
-        return 'tied';
-      }
+      if (Math.abs(other.slope - target.slope) > WEIGHT_EPSILON) continue;
+      if (other.base <= target.base) continue;
+      if (weighed(one, name) && weighed(one, rival)) renderTie = true;
+      else return 'unweighed';
     }
   }
+  if (renderTie) return 'tiedAtRender';
   return 'outOfReach';
 }
 
@@ -2132,9 +2261,11 @@ export function computeZeroRegressionWindow(
   let satisfied = 0;
   // One counter per cause plus the total they partition, so a reader can neither quote a class
   // as the whole nor read the whole as a class. The partition is asserted in the suite.
-  const causes = { rootWithoutRow: 0, noSpread: 0, tied: 0, outOfReach: 0 };
+  const causes = { rootWithoutRow: 0, noSpread: 0, unweighed: 0, tiedAtRender: 0, outOfReach: 0 };
   let cap = Number.POSITIVE_INFINITY;
   let capCase: WeightSeparationCase | undefined;
+  let declared = 0;
+  const unrepresentable: string[] = [];
   const gains: WindowGain[] = [];
 
   for (const one of cases) {
@@ -2149,6 +2280,14 @@ export function computeZeroRegressionWindow(
       continue;
     }
     satisfied++;
+    // The other side of the same geometry. A satisfied case that leads a rival the term reads as
+    // EQUAL carries no bound from that pair, and the engine's own ordering of it is a bound the
+    // artifact cannot express — so it is counted here, beside the cap it qualifies, rather than
+    // left for a reader to find by diffing a run against the screen.
+    if (one.weighed !== undefined) {
+      declared++;
+      if (leadsRenderTiedRival(one)) unrepresentable.push(one.datapack);
+    }
     // With a union of intervals per case, the intersection's component at 0 ends at
     // the SMALLEST of the per-case component ends — the case that reaches the least
     // far is the one that binds.
@@ -2161,8 +2300,22 @@ export function computeZeroRegressionWindow(
   return {
     cases: cases.length,
     satisfied,
-    unreachable: causes.rootWithoutRow + causes.noSpread + causes.tied + causes.outOfReach,
+    unreachable:
+      causes.rootWithoutRow +
+      causes.noSpread +
+      causes.unweighed +
+      causes.tiedAtRender +
+      causes.outOfReach,
     unreachableByCause: causes,
+    capUnrepresentable: {
+      declared,
+      cases: unrepresentable.length,
+      datapacks: [...unrepresentable].sort(),
+      // Asked of the FINAL binder rather than tracked in the loop, so the answer cannot disagree
+      // with the case `capBinder` names: one predicate, one owner of "who sets the cap".
+      setsCap:
+        capCase !== undefined && capCase.weighed !== undefined && leadsRenderTiedRival(capCase),
+    },
     cap,
     capBinder: capCase === undefined ? undefined : capBinderOf(capCase, cap),
     gains,
@@ -3055,6 +3208,29 @@ export type CvShape = (typeof CV_SHAPES)[number];
 export const DEFAULT_CV_SHAPE: CvShape = 'flip';
 
 /**
+ * The `cv` the block rendered for a service's decisive metric, when it rendered a usable one.
+ *
+ * ONE owner, because three places must agree on it: {@link cvSlopes} assigns its slope from this
+ * value, {@link cvAvailability} counts it, and the window's classes ask whether two services'
+ * coefficients are EQUAL because the term read the same number twice or because it read NOTHING.
+ * That last question cannot be answered from `slope`, where both arrive as `0` — the least stable
+ * service and a service the block never decomposed are indistinguishable there, while the ENGINE
+ * tells them apart by leaving the score ABSENT (`pruner.ts` falls back to `0`, an equality of
+ * absence rather than a hidden ordering).
+ *
+ * A non-finite `cv` is a value the block printed and the engine cannot have produced; it is read as
+ * absent rather than propagated, because one `NaN` slope would make the case's interval empty and
+ * the report would read "no window" for an arithmetic accident.
+ *
+ * @param service - One parsed service row.
+ * @returns The rendered `cv`, or `undefined` when there is none to weigh.
+ */
+function decisiveCv(service: DiagnosedService): number | undefined {
+  const cv = service.decisiveOutcome?.breakdown?.cv;
+  return cv === undefined || !Number.isFinite(cv) ? undefined : cv;
+}
+
+/**
  * Per-service slope for the decisive-stability term, over ONE case.
  *
  * The separator's own statistic, turned into a coefficient: across the miss pairs the true
@@ -3079,11 +3255,8 @@ export function cvSlopes(
   const measured: { readonly id: string; readonly cv: number }[] = [];
   for (const service of services) {
     slopes.set(service.serviceId, 0);
-    const cv = service.decisiveOutcome?.breakdown?.cv;
-    // A non-finite `cv` is a value the block printed and the engine cannot have produced; it is
-    // read as absent rather than propagated, because one `NaN` slope would make the case's
-    // interval empty and the report would read "no window" for an arithmetic accident.
-    if (cv === undefined || !Number.isFinite(cv)) continue;
+    const cv = decisiveCv(service);
+    if (cv === undefined) continue;
     measured.push({ id: service.serviceId, cv });
   }
   // ONE cv is not a comparison. Stated once, before either shape, so the two agree on when the
@@ -3152,8 +3325,8 @@ export function cvAvailability(cases: readonly DiagnosedCase[]): CvAvailability 
     servicesTotal += kase.services.length;
     const seen = new Set<number>();
     for (const service of kase.services) {
-      const cv = service.decisiveOutcome?.breakdown?.cv;
-      if (cv === undefined || !Number.isFinite(cv)) continue;
+      const cv = decisiveCv(service);
+      if (cv === undefined) continue;
       servicesMeasured++;
       seen.add(cv);
     }
@@ -3197,7 +3370,13 @@ function stabilityCase(
   });
   const slopes = cvSlopes(kase.services, shape);
   const scores = new Map<string, { base: number; slope: number }>();
+  // The provenance, stated because THIS term can weigh only part of a case: `cvSlopes` gives `0` to
+  // a service whose decisive composition the block did not render, which is the same value it gives
+  // the least stable service. The window's classes ask the difference, and only this builder knows
+  // it.
+  const weighed = new Set<string>();
   for (const service of kase.services) {
+    if (decisiveCv(service) !== undefined) weighed.add(service.serviceId);
     scores.set(service.serviceId, {
       // Total by construction — `shippedScores` assigns an entry to every service, and `cvSlopes`
       // to every service — so the lookups assert rather than defaulting to a base or a slope
@@ -3206,7 +3385,7 @@ function stabilityCase(
       slope: slopes.get(service.serviceId)!,
     });
   }
-  return { datapack: kase.datapack, targets, scores };
+  return { datapack: kase.datapack, targets, scores, weighed };
 }
 
 /** One shape of the decisive-stability term, solved. */
@@ -3314,7 +3493,26 @@ function unreachableClause(
   const c = window.unreachableByCause;
   return (
     `${window.unreachable} (root without a row ${c.rootWithoutRow}, no spread ${c.noSpread}, ` +
-    `tied at the render ${c.tied}, out of reach ${c.outOfReach})`
+    `unweighed ${c.unweighed}, tied at the render ${c.tiedAtRender}, out of reach ${c.outOfReach})`
+  );
+}
+
+/**
+ * The cap's qualification, as one sentence.
+ *
+ * One owner because TWO reports print it — a shape's detail, where the cap is named, and the menu's
+ * one-liner for a shape whose cap is finite but whose gain is not. The two branches are mutually
+ * exclusive per shape, so the sentence appears exactly once for each shape that needs it, and a
+ * second copy of it is how the two would come to disagree.
+ *
+ * @param u - The window's own counts.
+ * @returns The sentence, without a leading space.
+ */
+function capUpperBoundClause(u: UnrepresentableFrontier): string {
+  return (
+    `${u.cases} of ${u.declared} satisfied cases hold a rival the term reads as EQUAL, which the ` +
+    `engine orders on the unrounded cv — so the cap can be lower, and its own case is ` +
+    `${u.setsCap ? '' : 'not '}one of them`
   );
 }
 
@@ -3406,6 +3604,13 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
         `slope gap ${s.window.capBinder.slopeGap.toFixed(6)})`,
     );
   }
+  // The cap's own qualification, and it is a SEPARATE line from the binder above rather than a
+  // clause inside it: the binder names ONE pair, while the question here is about the whole
+  // satisfied population — and a binder line carrying a number about other cases would read as a
+  // property of the pair it names. Printed only when it applies: a line that always said
+  // `0 of N` would be read as a passing check instead of as the absence of a finding.
+  const u = s.window.capUnrepresentable;
+  if (u.cases > 0) lines.push(`  cap UPPER bound: ${capUpperBoundClause(u)}`);
   return lines.join('\n');
 }
 
@@ -3493,6 +3698,12 @@ export function formatCvMenuReport(
           `${b.lead.toFixed(6)} / ${b.slopeGap.toFixed(6)}, bound by ${b.datapack} ` +
           `(${b.target} overtaken by ${b.rival})`,
       );
+    }
+    // The cap's qualification for a shape whose DETAIL is not printed above. Without this branch the
+    // menu states a cap on the face of it for exactly the shapes that have no gain — and `re1`'s
+    // `rank` shape, the one the engine's own comparison is read on, is such a shape.
+    if (s.gain === 0 && s.at === undefined && s.window.capUnrepresentable.cases > 0) {
+      lines.push(`    cap UPPER bound: ${capUpperBoundClause(s.window.capUnrepresentable)}`);
     }
   }
   const shippable = screens.filter(

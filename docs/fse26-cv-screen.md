@@ -9,6 +9,14 @@ not depend on the correction (it is a run's own measurement), and neither does a
 correction moved the golden's window figures and left all seven `correct at 0` counts and the whole
 FSE'26 half bit-identical, because 0 of that dump's 1422 cases is below the threshold the base got
 wrong.**
+**What the instrument now says about its own verdict.** The counts above are conditional on an artifact
+that renders every input at three decimals, and both sides of the count now carry their own frontier: the
+unreachable count partitions into five causes, **two of which are the artifact's resolution** (236 of
+FSE'26's 569 unreachable cases read a deciding pair as EQUAL and 25 of `re3-noinject`'s 37), and the
+satisfied side reports that **the cap is an UPPER bound** — 510 of FSE'26's 756 protected cases and 31 of
+`re1`'s 301 hold a rival the artifact cannot order. See §"The unreachable count now says WHY" and §"The
+cap is an UPPER bound".
+
 Deliberately NOT a `-verdict` document: the register's rows are for axes measured to a conclusion,
 and what closed here is a WEIGHT — the statistic the row names (`decisiveCv` on the matched
 stratum) is still the only non-term candidate above the criterion.
@@ -573,7 +581,9 @@ own precision rather than the reconstruction's arithmetic:
   `checkoutservice` (2.199) — a metric gap of `log1p` difference `0.0080` — and the two contenders'
   decisive compositions both render `cv=0.050`. **This one is the CAP side**: the case is correct at
   `w = 0` and the model keeps it correct at every weight, so it is NOT in the unreachable count at all.
-  Its class is the next instrument (see below), and until then the window's cap is an upper bound.
+  **It is now named by the instrument**: it is one of the 31 members of the `cap UPPER bound` class on
+  `re1` (§"The cap is an UPPER bound"), which is the class a reader is told to distrust rather than a
+  case that has to be found by diffing two runs.
 
 The engine's stability term ranks on the UNROUNDED `breakdown.cv` (`ranking-signals.ts` 707 reads the
 field, not the dump), so a pair the artifact renders as one tie is a pair the engine can order — and no
@@ -585,21 +595,85 @@ once: at 3 decimals two services can render `0.050` while their ranks differ by 
 `unreachable at every weight` was one number, and it read the same whether the term had no input, read a
 pair as equal, or genuinely could not reach. It is now a partition, measured on the same dumps:
 
-| dump | shape | total | root without a row | no spread | **tied at the render** | out of reach |
-| --- | --- | --- | --- | --- | --- | --- |
-| FSE'26 (`35107871516`, 1422 cases) | `flip` | 569 | 0 | 0 | **236** | 333 |
-| FSE'26 | `rank` | 526 | 0 | 0 | **226** | 300 |
-| `re1` (375 cases) | `flip` | 46 | 0 | 3 | **18** | 25 |
-| `re1` | `rank` | 52 | 0 | 0 | **20** | 32 |
-| `re2` (150) | `rank` | 24 | 0 | 0 | **11** | 13 |
-| `re3-noinject` (90) | `rank` | 37 | 0 | 0 | **25** | 12 |
+| dump | shape | total | root without a row | no spread | unweighed | **tied at the render** | out of reach |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| FSE'26 (`35107871516`, 1422 cases) | `flip` | 569 | 0 | 0 | 0 | **236** | 333 |
+| FSE'26 | `rank` | 526 | 0 | 0 | 0 | **226** | 300 |
+| `re1` (375 cases) | `flip` | 46 | 0 | 3 | 0 | **18** | 25 |
+| `re1` | `rank` | 52 | 0 | 0 | 0 | **20** | 32 |
+| `re2` (150) | `rank` | 24 | 0 | 0 | 0 | **11** | 13 |
+| `re3-noinject` (90) | `rank` | 37 | 0 | 0 | 0 | **25** | 12 |
 
 **41.5% of the FSE'26 unreachable population and 68% of `re3-noinject`'s are cases no weight can decide
 from this artifact** — they are the resolution limit of the `cv` field, printed as a class instead of
-being discovered by hand. The two classes that read `0` everywhere here are real and can fire: the
-fixtures pin each of the four, and the partition identity (`sum == total`) is asserted. The totals
-themselves did not move — measured before and after the split on the same dumps: 46/52, 25/24, 39/37 and
-569/526, identical — which is what makes this a refinement of the count rather than a new count.
+being discovered by hand. The totals themselves did not move — measured before and after the split on the
+same dumps: 46/52, 25/24, 39/37 and 569/526, identical — which is what makes this a refinement of the
+count rather than a new count.
+
+**The fifth class is the one the split had been conflating, and it reads `0` everywhere above**: an equal
+slope where the term weighed NEITHER side. Equal slopes arrive two ways — the render collapsed two
+measured services, or one of them was never measured at all — and they have opposite fixes, so they are
+now two classes. On these five dumps every equal pair is a render tie, so no attribution moved; the class
+is pinned by a fixture (`cvs: [undefined, undefined, 0.1, 0.9]`) and by a mutation of the classifier that
+merges it back into `tied at the render` and fails exactly two assertions.
+
+### The cap is an UPPER bound, and now says so
+
+The mirror of `tied at the render`, on the side the window promises to PROTECT. A satisfied case whose
+acceptable root LEADS a rival the term reads as EQUAL carries no bound from that pair in the model —
+equal slopes mean the score gap between them is the base gap at every weight — while the engine, ranking
+the unrounded field, splits the pair and gets a real bound out of the same two services. So the cap is
+not the cap; it is an upper end, and one case the engine lost at `0.030170` was exactly this.
+
+Measured on the same dumps, for both shapes (the class is a property of the INPUTS — both shapes are
+strictly monotone in `cv`, so a tied pair is tied under either — and every dump below reports the same
+count twice):
+
+| dump | satisfied | cases the artifact cannot order | of which the cap's own case |
+| --- | --- | --- | --- |
+| FSE'26 (`35107871516`, 1422 cases) | 756 | **510** (67.5%) | **yes** |
+| `re1` (375) | 301 | **31** | no |
+| `re1-noinject` (375) | 301 | **31** | no |
+| `re2` (150) | 119 | **14** | `flip` yes / `rank` no |
+| `re2-noinject` (150) | 119 | **14** | `flip` yes / `rank` no |
+| `re3` (90, `traceWeight=1`) | 35 | **12** | no |
+| `re3-noinject` (90) | 37 | **13** | no |
+| `re3-novelty` (90) | 37 | **13** | no |
+
+**On FSE'26 two thirds of the population the cap protects is a case the artifact cannot decide, and the
+cap's own case is one of them** — so that window's right-hand end is not merely loose, it is set by a
+pair the artifact renders as one number. On the golden the class is 31 / 14 / 13 and, for `re2`'s `flip`
+shape, the binder is a member.
+
+**The class is a NECESSARY condition, and that is what makes it checkable**: the model and the engine are
+free to disagree only inside it. Measured against the paired dispatch (`35181249060`, `stability_weight`
+AND `diagnose_dump` together, engine read in its own `rank` shape):
+
+| suite | class | model / engine correct at `0.030170` | engine lost | the engine lost, the model kept |
+| --- | --- | --- | --- | --- |
+| `re1` | 31 | 300 / **299** | 3 | `currencyservice_delay_4` — **in the class** |
+| `re2` | 14 | 111 / 111 | 8 | (none: the two agree case for case) |
+| `re3-noinject` | 13 | 37 / **38** | 0 | (none: the engine's one move is a GAIN, on the unreachable side) |
+
+**Exactly one case on the satisfied side is a disagreement — and it is inside the class.** Every other
+case the engine lost at that weight is one the model predicts losing as well (2 of the 3 on `re1`, all 8
+on `re2`, where the two lists are the same eight names), so the class is a superset of the disagreements
+rather than a prediction of the losses: 31 cases to distrust for 1 actual failure. That direction
+matters. A class that MISSED a disagreement would be a defect; a class that is wider than the
+disagreements is a statement of what the artifact cannot express.
+
+Two things the work found:
+
+- **A shape whose detail the menu does not print was stating its cap unqualified.** The menu renders a
+  shape's detail only when that shape has something to advise, and summarises the rest in one line — so
+  `re2`'s whole screen, and `re1`'s `rank` shape (the one the engine's own comparison is read on), showed
+  a cap with no qualification at all. The sentence has ONE owner and both branches now print it, so the
+  two cannot drift; what prevents the sentence from appearing twice for a shape is that the branches are
+  mutually exclusive per shape, which the suite asserts by counting.
+- **The membership is on the OBJECT, not in the report.** On FSE'26 the class holds 510 cases, so a
+  printed list would be a page nobody reads. The report owes a reader the count with its DEFINITION
+  (printed); a caller cross-checking a paired dispatch's own losses needs the membership, and
+  `capUnrepresentable.datapacks` is where a reader — or a test — gets it.
 
 ### What this does and does not settle
 
@@ -624,11 +698,12 @@ Not settled:
   EQUAL**, i.e. the `cv` field's three decimals decide whether the case is screenable at all; the rest
   are 333 out of the term's reach and 0 with no coefficient at all. On the golden the counts are 46 / 52
   for `re1`, of which 18 / 20 are the tie class.
-- **Whether the CAP is decidable from the dump is not yet measured, and one of the two residuals says it
-  is not.** `re1ob_currencyservice_delay_4` is correct at `w = 0` and kept correct by the model at every
-  weight, while the engine loses it at `0.030170` — so the model's cap is an UPPER bound, and the split
-  above (which is about the unreachable side) does not cover it. The next instrument is the mirror of
-  this one: count the satisfied cases whose frontier is held by a render tie, and say so beside the cap.
+- **The cap is an UPPER bound, and how far up is now measured** (§"The cap is an UPPER bound"): 31 of
+  `re1`'s 301 satisfied cases, 14 of `re2`'s 119 and **510 of FSE'26's 756** hold a rival the artifact
+  cannot order, and on FSE'26 the cap's own case is one of them. What is still NOT settled is the SIZE of
+  the gap: the class says which cases may be lost before the cap, not how far below the cap the first
+  loss is — a dispatched run is still the only thing that answers that, and the `--at-weight` verdict is
+  what it is compared against.
 - The `flip` shape reads the MAGNITUDE of a clamped bonus (§1), so `rank` is the faithful translation
   of the separator's rank-based rate. Any statement about this term has to name its shape — and any
   statement about the ENGINE has to use `rank`, which is why the comparison table in §"The golden,
@@ -642,7 +717,7 @@ Not settled:
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 656, 0 failures (was 650 after the base correction, 639 before it; 575 at the first pass; 633 before the dump accumulator) |
+| `benchmarks` tests | 666, 0 failures (was 656 before the satisfied-side class, 650 before that, 639 before the base correction; 575 at the first pass) |
 | `benchmarks` coverage | **99.81 / 97.24 / 100 / 99.81**, the accumulator at 100 / 100 / 100 / 100 |
 | root tests | 3163, 0 failures |
 | `packages/kinetic` tests | 911, 0 failures |
@@ -651,8 +726,11 @@ Not settled:
 | lint / prettier | 0 warnings / clean |
 | the base correction's own proof | the threshold is an exported OWNER with a test that pins BOTH sides on a real graph (`ANOMALY_NORMALIZE_NODE_THRESHOLD` at 19 raw vs 20 rescaled, and the flag provably inert below it); `blendScores` is asserted to score a row by `log1p` of ITS OWN `selfAnomaly`, with the gap pinned as the row's own `0.305` rather than the substitution's `0.693`; the new fidelity counter is asserted to FAIL on a case at the threshold carrying a value above 1 and to make NO such claim one candidate below, and its stronger twin is asserted NOT to be claimed (a tied top reads as the tie group's mean rank); and `metricSlopes` — the function whose whole job was to derive the printed column — no longer exists |
 | the correction's GOLDEN | `35199445631` at `8bcf16c` (the engine's statements untouched, so this is the criterion's second half rather than a coincidence): **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — with every job green (`rcaeval-re1`, `rcaeval-re2`, `rcaeval-re3`, `optimize-rcaeval`, `ablation-re1`, `ablation-re2`, `ablation-re3`, `dashboard`, `synthetic`) and `CI` + `Release` green on the same commit. The push that carried the change triggered it on its own, because the workflow's paths include `packages/*/src/**` and `benchmarks/src/**`. **A second run on the next commit** (`35200188245` at `6b36536`, a comment-only diff) reads the same nine cells to the tenth of a point, which matters for a reason beyond redundancy: the VETO and every re-opened axis here are read as *cells moved*, so a golden that drifted between two runs of one engine would make the whole scale meaningless |
+| the split's golden | `35208713413` at `339bf39`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — every job green plus `CI` and `Release` on the same commit. Same reason as the correction's own run: a benchmarks-side change CANNOT move the engine, which is precisely why the run is owed rather than assumed |
 | the new counter, on its first real run | **it fired 34 times, and the claim was wrong rather than the dump**: 34 of the FSE'26 dump's 1422 rescaled cases carry a maximum of 0.95–0.99, because a TIED top anomaly takes its tie group's MEAN rank (`47.5 / 50` for a six-way tie). The check was split into the falsifiable half (`values above 1: 0` everywhere it was measured) and the population fact, which is what it should have been from the start — a counter that fires on the engine's own legal output is worse than no counter |
-| the unreachable split — a REFINEMENT, not a new count | the four classes sum to the total by construction and the identity is asserted; measured before and after the split on the same dumps, every total is identical (`re1` 46/52, `re2` 25/24, `re3-noinject` 39/37, FSE'26 569/526). Each class has its own test, and a MUTATION of the classifier (`noSpread` → `outOfReach`) fails exactly the two tests that assert it — the check was run rather than assumed |
+| the unreachable split — a REFINEMENT, not a new count | the five classes sum to the total by construction and the identity is asserted; measured before and after the split on the same dumps, every total is identical (`re1` 46/52, `re2` 25/24, `re3-noinject` 39/37, FSE'26 569/526). Each class has its own test, and the classifier was MUTATED rather than assumed: merging `unweighed` back into `tied at the render` fails exactly the two assertions on it, and (in the split's first version) sending `noSpread` to `outOfReach` failed exactly the two on that class |
+| the satisfied-side class — a NECESSARY condition, checked against a run | every satisfied-side disagreement between the model and the engine at `0.030170` falls inside it (**1 of 1**: `re1ob_currencyservice_delay_4`), and the class does NOT claim to be a prediction — it holds 31 cases on `re1` for that one failure, because every other case the engine lost at that weight (2 of 3 on `re1`, all 8 on `re2`) is one the model predicts losing too. Both branches of the report print the sentence from ONE owner and the suite counts it, and the shape-independence the dumps show (31/31, 14/14, 13/13, 12/12) is asserted rather than noted |
+| the price of the class being a claim | a pair equal at `0` because the term weighed NEITHER side is excluded — that pair is equal in the engine too, so counting it would report a hidden ordering on the engine's own legal output. The exclusion is asserted by a test, and both directions are exercises of the same predicate: one requires the declaration of provenance, the other reads its absence as `weighed` |
 | the split's own wiring hazard, caught by its first draft | the clause first carried a LEGEND line, and the menu's per-shape detail blocks are `formatCvScreenReport(...).split('\n').slice(4)` — so the new line leaked into every one of them and one sentence printed three times. The labels now carry their own meaning and the suite asserts the clause appears ONCE per menu, which is what fails if the report's head grows past four lines |
 | regression proof | `--cv-screen` on the shipped dump differs from the pre-change output only by the new lines: the population line split, the two `margin:` lines, and the two `resolution:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so neither change moved a recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`, and both now print their own ensembles per row |
 | the engine's half | candidate `35125277962` vs control `35125285784`: **+5 cases, 0 regressed fault types**, 756 → 761 |
