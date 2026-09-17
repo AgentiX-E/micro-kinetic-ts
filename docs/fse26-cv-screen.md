@@ -351,31 +351,36 @@ versus **9 blocks, `re1ob 3 / re1ss 3 / re1tt 3`, header = the banner line.**
 
 ### Fidelity: which dumps the screens may be run on
 
-`correct at 0` is the reconstruction's own fidelity line, and the seven dumps separate cleanly against
-the count their run reported. The comparison is against the dump's OWN `prediction=` list — the rank
-the engine returned — because that is the only headline an artifact can be held to:
+`correct at 0` is the reconstruction's own fidelity line. The comparison is against the dump's OWN
+`prediction=` list — the rank the engine returned — because that is the only headline an artifact can
+be held to, and because it is the one number a reconstruction cannot talk its way around. Measured on
+the dumps the fixed runner produced (`35175577233` at `ecfc439`, all SEVEN of them now holding every
+system the suite covered):
 
-| dump | `traceWeight` | run's pooled Top@1 (TT) | dump `prediction=` | screen `correct at 0` |
-| --- | --- | --- | --- | --- |
-| `re1` | 0 | 85/125 (68.0%) | 85 | **85** |
-| `re1-noinject` | 0 | 85/125 (68.0%) | 85 | **85** |
-| `re2` | 0 | 33/50 (66.0%) | 33 | **33** |
-| `re3` | **1** | 15/30 (50.0%) | 15 | **1** |
-| `re3-noinject` | 0 | 1/30 (3.3%) | 1 | **1** |
-| `re3-novelty` | 0 | 1/30 (3.3%) | 1 | **1** |
+| dump | cases | groups | `traceWeight` | dump `prediction=` | screen `correct at 0` | Δ |
+| --- | --- | --- | --- | --- | --- | --- |
+| `re1` | 375 | ob 125 / ss 125 / tt 125 | 0 | 301 | **301** | 0 |
+| `re1-noinject` | 375 | ob 125 / ss 125 / tt 125 | 0 | 301 | **301** | 0 |
+| `re2` | 150 | ob 50 / ss 50 / tt 50 | 0 | 119 | **119** | 0 |
+| `re2-noinject` | 150 | ob 50 / ss 50 / tt 50 | 0 | 119 | **119** | 0 |
+| `re3` | 90 | ob 30 / ss 30 / tt 30 | **1** | 48 | 35 | **−13** |
+| `re3-noinject` | 90 | ob 30 / ss 30 / tt 30 | 0 | 37 | **37** | 0 |
+| `re3-novelty` | 90 | ob 30 / ss 30 / tt 30 | 0 | 37 | **37** | 0 |
 
-Four exact, and the fifth is exact too — the counter reproduces even a run that scores 1 of 30. The
-one divergence is the only dump whose ranking was augmented by trace topology, a term the
-reconstruction does not model, and the fidelity line reports it as one case against fifteen rather
-than as a screen with a small gain. **So a `traceWeight=0` dump is screenable and a
-`traceWeight>0` dump is not, and the instrument says which it is holding** — which is the whole
-reason the line exists.
+**Six of seven exact, and the seventh is the one term the reconstruction does not model.** The `re1`
+number is the strongest single check available, because it is checkable against the published table
+independently of the dump: `80.0% × 125 + 92.8% × 125 + 68.0% × 125 = 100 + 116 + 85 = 301`, i.e. the
+pooled counter reproduces all three of RE1's golden cells at once. And the divergence is not small
+noise — 48 against 35 — which is the point: a reconstruction that cannot express a term must not
+return a number that looks like a slightly worse run. **So a `traceWeight=0` dump is screenable and a
+`traceWeight>0` dump is not, and the instrument says which it is holding.**
 
-Note what the run's own numbers show: the pooled rate and the table's average agree for `re1`
-(85/125 = 68.0%) and differ for `re2` (33/50 = 66.0% pooled against 68.1% averaged over seven fault
-types). The goldens are quoted as the table's average — an average of rates, not a rate — so a
-reconstruction has to be compared against the POOLED count, which is what the dump's `prediction=`
-list gives.
+The denominator trap is worth stating in the same breath, because it makes a correct reconstruction
+look like a defect: the published tables quote an AVERAGE of per-fault-type rates, while a
+reconstruction produces a POOLED count. For `re2` the golden cells are `82.4 / 88.9 / 68.1`, whose
+`× 50` gives `41.2 + 44.45 + 34.05 = 119.7` against the pooled 119 — and for a single system, `re2`'s
+TrainTicket is `68.1%` averaged over seven fault types where the pooled rate is `33/50 = 66.0%`.
+Compare against the dump's `prediction=` list, never against the average.
 
 ### What this does and does not settle
 
@@ -411,8 +416,8 @@ golden** (§"The golden, measured AT the weight"). Not settled:
 | the engine's half | candidate `35125277962` vs control `35125285784`: **+5 cases, 0 regressed fault types**, 756 → 761 |
 | the enrolment's golden | `35125060855` at the enrolling commit `0ab737f`: **9 of 9 cells byte-identical** — the DEFAULT path, where the weight is 0 |
 | the weight's golden | `35132525118` at `5233678` with `stability_weight=0.03017`: **4 of 9 cells move** (RE1 OB −0.8pp, RE1 TT −0.8pp, RE2 TT **−15.8pp**, RE3 SS +2.5pp) ⇒ the weight is rejected and the default stays 0 |
-| the dump's completeness | the first dispatch's `re1` artifact held **125 of the 375 evaluated cases, all tagged `re1tt`**; on a three-system fixture with the same input the pre-change code writes **3 blocks, all `re1tt`, no header** and the fixed code writes **9 blocks, `re1ob 3 / re1ss 3 / re1tt 3`, header = the banner line** |
-| the dump's fidelity | against each dump's OWN `prediction=` rank: **exact on all four `traceWeight=0` dumps** (85, 85, 33, 1) and divergent only on the `traceWeight=1` one (15 → 1), which is the term the reconstruction does not model — so the file says which configurations it may be solved on |
+| the dump's completeness | the first dispatch's `re1` artifact held **125 of the 375 evaluated cases, all tagged `re1tt`**; after the fix all seven dumps hold every system — `re1` **375 (ob 125 / ss 125 / tt 125)**, `re2` **150 (50/50/50)**, `re3` **90 (30/30/30)** — and each opens with the banner's own signal line (the `re3-novelty` header reads `logSignalMode=novelty`, so it is per-run and not a constant). On a three-system fixture with the same input: pre-change **3 blocks, all `re1tt`, no header** against post-change **9 blocks, `re1ob 3 / re1ss 3 / re1tt 3`, header = the banner line** |
+| the dump's fidelity | against each dump's OWN `prediction=` rank: **six of seven exact** (`re1` 301, `re1-noinject` 301, `re2` 119, `re2-noinject` 119, `re3-noinject` 37, `re3-novelty` 37) and divergent only on the `traceWeight=1` dump (48 → 35). RE1's 301 is checkable against the published table independently of the dump: `80.0% × 125 + 92.8% × 125 + 68.0% × 125 = 100 + 116 + 85` |
 
 The tests that carry the design, and why each exists:
 
