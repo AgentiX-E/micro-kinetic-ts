@@ -5464,12 +5464,62 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
       }),
     );
     expect(window.satisfied).toBe(1);
-    expect(window.capUnrepresentable).toEqual({
-      declared: 1,
-      cases: 1,
-      datapacks: ['dp-1'],
-      setsCap: true,
+    // And the FLOOR, which is what makes "the cap is an upper bound" a measurement rather than a
+    // caveat: the pair leads by `log1p(0.9) − log1p(0.5) = 0.2363888`, the tie group holds 2 of the
+    // case's 3 weighed services, so the widest slope gap the ENGINE can have for the pair is
+    // `1/(3−1) = 0.5` and the earliest weight at which it can cost the case is `0.4727776`.
+    //
+    // Note what the floor is compared AGAINST: `windowOf` screens at the default shape, so the cap
+    // here is `0.7898795` (the `flip` reading of the same case) and the floor sits BELOW it — while
+    // the `rank` cap of the same case is `0.8425381`. The floor is shape-independent (it is a BASE
+    // gap over the engine's own slope spacing) and the cap is not, which is why the comparison is
+    // printed per shape rather than once.
+    expect(window.capUnrepresentable.cases).toBe(1);
+    expect(window.capUnrepresentable.declared).toBe(1);
+    expect(window.capUnrepresentable.datapacks).toEqual(['dp-1']);
+    expect(window.capUnrepresentable.setsCap).toBe(true);
+    expect(window.capUnrepresentable.lossFloor).toBeCloseTo(0.4727776, 6);
+    expect(window.capUnrepresentable.lossFloorBinder).toEqual({
+      datapack: 'dp-1',
+      target: 'ts-svc-0',
+      rival: 'ts-svc-1',
+      lead: expect.closeTo(0.2363888, 6),
+      span: 0.5,
+      group: 2,
+      weighed: 3,
+      floor: expect.closeTo(0.4727776, 6),
     });
+    expect(window.cap).toBeCloseTo(0.7898795, 6);
+    expect(window.capUnrepresentable.lossFloor).toBeLessThan(window.cap);
+  });
+
+  it('says when the floor CANNOT bind below the cap', () => {
+    // The other half of the claim, and the one a reader needs to decide whether to trust the cap: a
+    // member whose pair sits in a two-service tie of a case the engine can reorder slowly can only be
+    // cost ABOVE the cap — so for every weight the window actually covers, the term cannot cost it.
+    // Measured, not argued: the second case below caps at `0.1251288` and the member's floor is
+    // `0.4727776`, so the comparison falls the other way without anything about the member changing.
+    const window = windowOf(
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.9, 0.5, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.9, 0.5, 0.1],
+        anomalies: [0.9, 0.5, 0.7],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        datapack: 'dp-tight',
+      }),
+    );
+    expect(window.capBinder?.datapack).toBe('dp-tight');
+    expect(window.cap).toBeCloseTo(0.1251288, 6);
+    // The COMPARISON is the finding, and it is the member's own floor against the cap — not a floor
+    // the cap was folded into, which would have erased which side they fall on.
+    expect(window.capUnrepresentable.lossFloor).toBeCloseTo(0.4727776, 6);
+    expect(window.capUnrepresentable.lossFloor).toBeGreaterThan(window.cap);
   });
 
   it('says when the cap does NOT come from such a case', () => {
@@ -5493,12 +5543,10 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
       }),
     );
     expect(window.satisfied).toBe(2);
-    expect(window.capUnrepresentable).toEqual({
-      declared: 2,
-      cases: 1,
-      datapacks: ['dp-1'],
-      setsCap: false,
-    });
+    expect(window.capUnrepresentable.declared).toBe(2);
+    expect(window.capUnrepresentable.cases).toBe(1);
+    expect(window.capUnrepresentable.datapacks).toEqual(['dp-1']);
+    expect(window.capUnrepresentable.setsCap).toBe(false);
     expect(window.capBinder?.datapack).toBe('dp-tighter');
   });
 
@@ -5516,12 +5564,14 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
       }),
     );
     expect(window.satisfied).toBe(1);
-    expect(window.capUnrepresentable).toEqual({
-      declared: 1,
-      cases: 0,
-      datapacks: [],
-      setsCap: false,
-    });
+    expect(window.capUnrepresentable.declared).toBe(1);
+    expect(window.capUnrepresentable.cases).toBe(0);
+    expect(window.capUnrepresentable.datapacks).toEqual([]);
+    expect(window.capUnrepresentable.setsCap).toBe(false);
+    // No member, so the floor is UNBOUNDED — nothing in this channel can cost a protected case, and
+    // the binder's absence is what the report reads as "cannot bind below the cap".
+    expect(window.capUnrepresentable.lossFloor).toBe(Number.POSITIVE_INFINITY);
+    expect(window.capUnrepresentable.lossFloorBinder).toBeUndefined();
   });
 
   it('does NOT count a case whose equal pair is read with the RIVAL ahead', () => {
@@ -5537,12 +5587,9 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
       }),
     );
     expect(window.unreachableByCause.tiedAtRender).toBe(1);
-    expect(window.capUnrepresentable).toEqual({
-      declared: 0,
-      cases: 0,
-      datapacks: [],
-      setsCap: false,
-    });
+    expect(window.capUnrepresentable.cases).toBe(0);
+    expect(window.capUnrepresentable.datapacks).toEqual([]);
+    expect(window.capUnrepresentable.setsCap).toBe(false);
   });
 
   it('makes NO claim for a builder that does not declare its slopes’ provenance', () => {
@@ -5562,12 +5609,10 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
       },
     ]);
     expect(bare.satisfied).toBe(1);
-    expect(bare.capUnrepresentable).toEqual({
-      declared: 0,
-      cases: 0,
-      datapacks: [],
-      setsCap: false,
-    });
+    expect(bare.capUnrepresentable.declared).toBe(0);
+    expect(bare.capUnrepresentable.cases).toBe(0);
+    expect(bare.capUnrepresentable.setsCap).toBe(false);
+    expect(bare.capUnrepresentable.lossFloor).toBe(Number.POSITIVE_INFINITY);
   });
 
   it('is a property of the INPUTS, not of the shape', () => {
@@ -5616,7 +5661,17 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     expect(both).toContain(
       'cap UPPER bound: 1 of 2 satisfied cases hold a rival the term reads as EQUAL',
     );
-    expect(both).toContain('its own case is not one of them');
+    expect(both).toContain('the cap’s own case is not one of them');
+    // The floor and its comparison, both in the report: the count says HOW MANY cases are loose, and
+    // the floor says whether the looseness can bite inside the window the cap describes.
+    expect(both).toContain('the lowest weight at which one of them can be lost is 0.472778');
+    expect(both).toContain('(dp-1: ts-svc-0 / ts-svc-1, a tie group of 2 among 3 weighed)');
+    // Here the cap is `0.425500` from `dp-tighter`, which the member's floor clears — so the sentence
+    // reads `AT OR ABOVE`, and says so rather than leaving a reader to compare two numbers three
+    // clauses apart. The comparison is against `window.cap`, the INTERSECTION over the satisfied
+    // cases, not against either case's own bound.
+    expect(both).toContain('AT OR ABOVE the cap 0.425500, so this channel cannot bind below it');
+    expect(both).not.toContain('BELOW the cap 0.425500');
     // The membership is on the OBJECT rather than in the report, and that is a decision rather than
     // an omission: on the FSE'26 dump this class holds 510 of 756 cases, so a printed list would be
     // a page nobody reads. What the report owes a reader is the count with its DEFINITION, which is
@@ -5630,7 +5685,12 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     expect(only).toContain(
       'cap UPPER bound: 1 of 1 satisfied cases hold a rival the term reads as EQUAL',
     );
-    expect(only).toContain('its own case is one of them');
+    expect(only).toContain('the cap’s own case is one of them');
+    // BELOW, and it is the same member: without a tighter case the cap is this case's own `0.789879`,
+    // which the floor `0.472778` sits under — so here the artifact permits the engine to cost the case
+    // first, and the sentence says so rather than leaving a reader to subtract.
+    expect(only).toContain('the cap 0.789879, so the engine can lose one first');
+    expect(only).toContain('BELOW');
     expect(only).not.toContain('cases the artifact cannot order');
   });
 

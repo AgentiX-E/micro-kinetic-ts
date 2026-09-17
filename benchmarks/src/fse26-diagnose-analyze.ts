@@ -2017,6 +2017,24 @@ export interface UnrepresentableFrontier {
    * itself is only the upper end of a bound the artifact cannot decide".
    */
   readonly setsCap: boolean;
+  /**
+   * The earliest weight at which this channel can cost a PROTECTED case — `lead / span` of the pair
+   * that grants the engine the widest gap, `+Infinity` when there is no member.
+   *
+   * The number that turns "the cap is an upper bound" from a caveat into a measurement: compared with
+   * `cap`, it says whether the looseness can bite anywhere inside the window the cap describes.
+   * ABOVE the cap, every member is unthreatened for every weight the window covers; BELOW it, the
+   * artifact permits the engine to lose a case the model keeps, and {@link CapFloorBinder} names the
+   * pair that permits it first — so a reader can neither dismiss the class as theoretical nor read it
+   * as a prediction of which case will go.
+   *
+   * It is the TIE channel ONLY. The base is reconstructed from the same three-decimal dump, so its
+   * own resolution is a second channel with its own measurement (`gainResolution`), and this number
+   * says nothing about it.
+   */
+  readonly lossFloor: number;
+  /** The pair that sets {@link lossFloor}; absent exactly when the class is empty. */
+  readonly lossFloorBinder?: CapFloorBinder;
 }
 
 /** One currently-wrong case, and the weights at which it becomes correct. */
@@ -2170,34 +2188,94 @@ function weighed(one: WeightSeparationCase, service: string): boolean {
 }
 
 /**
- * Whether an acceptable root LEADS a rival the term reads as EQUAL.
+ * One pair an acceptable root LEADS, where the term reads both sides as EQUAL.
+ *
+ * `span` is the widest gap the ENGINE can have for the pair, and it is derivable rather than assumed:
+ * two services whose rendered `cv` is equal have unrounded values inside one rounding cell, so their
+ * ranks are CONSECUTIVE among the cell's `g` members and their slope gap cannot exceed
+ * `(g − 1)/(n − 1)`. The engine's own bound from this pair is `lead / gap ≥ lead / span`, which is what
+ * makes `lead / span` the earliest weight at which the pair can cost the case — an upper end of the
+ * damage, and the reason a bare count of such cases cannot be turned into a claim about the cap.
+ */
+export interface RenderedTiePair {
+  readonly target: string;
+  readonly rival: string;
+  /** `target.base − rival.base`, always positive: only a pair the root LEADS is one it can lose. */
+  readonly lead: number;
+  /** The widest slope gap the engine can have for the pair, `(g − 1) / (n − 1)`. */
+  readonly span: number;
+  /** Services in the pair's rendered tie group — `g`. */
+  readonly group: number;
+  /** The case's weighed services — the engine's `n`, which is the divisor. */
+  readonly weighed: number;
+}
+
+/** The pair that grants the engine the widest gap, and the weight that follows from it. */
+export interface CapFloorBinder extends RenderedTiePair {
+  readonly datapack: string;
+  /** `lead / span` — the earliest weight at which this pair can cost the case. */
+  readonly floor: number;
+}
+
+/**
+ * The pairs an acceptable root of the case LEADS while the term reads both sides as EQUAL.
  *
  * The mirror of the unreachable side's `tiedAtRender` branch: there the equal pair is read with the
- * rival ahead, so no weight satisfies the case at all; here the root is ahead, so the model reads
- * the pair as one that can never change and imposes no bound — while the engine, ranking the
- * UNROUNDED field, splits the pair and gets a real bound out of the same two services. That is how a
- * case the model keeps correct at every weight is lost by an engine at a weight inside the model's
- * own window.
+ * rival ahead, so no weight satisfies the case at all; here the root is ahead, so the model reads the
+ * pair as one that can never change and imposes no bound — while the engine, ranking the UNROUNDED
+ * field, splits the pair and gets a real bound out of the same two services.
  *
- * Requires that the term WEIGHED both sides, and requires the declaration: a pair equal at `0`
- * because neither was weighed is a pair the engine cannot separate either, so it hides no ordering,
- * and counting it would report one on the engine's own legal output.
+ * Counts the group by equal SLOPE, which is exact rather than a shortcut: every shape builds a slope
+ * as one arithmetic expression over `cv`, so equal `cv` gives bit-identical coefficients while two
+ * different cells differ by at least `1/(n − 1)`. A service the term never weighed is EXCLUDED, and
+ * that is not a detail — it carries `0` with nothing behind it, and the engine reads `0` for it too,
+ * so a pair equal only because both sides are placeholders hides no ordering.
  *
  * @param one - The case.
- * @returns Whether such a pair exists.
+ * @returns The pairs, empty when the case declares no provenance or holds none.
  */
-function leadsRenderTiedRival(one: WeightSeparationCase): boolean {
-  if (one.weighed === undefined) return false;
+function renderedTiePairs(one: WeightSeparationCase): readonly RenderedTiePair[] {
+  if (one.weighed === undefined) return [];
+  const n = one.weighed.size;
+  if (n < 2) return [];
+  const groups = new Map<number, number>();
+  for (const [service, { slope }] of one.scores) {
+    if (!one.weighed.has(service)) continue;
+    groups.set(slope, (groups.get(slope) ?? 0) + 1);
+  }
+  const pairs: RenderedTiePair[] = [];
   for (const name of one.targets) {
     const target = one.scores.get(name);
     if (target === undefined || !one.weighed.has(name)) continue;
     for (const [rival, other] of one.scores) {
       if (rival === name || !one.weighed.has(rival)) continue;
-      if (Math.abs(other.slope - target.slope) > WEIGHT_EPSILON) continue;
-      if (other.base < target.base) return true;
+      if (other.slope !== target.slope) continue;
+      if (other.base >= target.base) continue;
+      const group = groups.get(target.slope)!;
+      pairs.push({
+        target: name,
+        rival,
+        lead: target.base - other.base,
+        span: (group - 1) / (n - 1),
+        group,
+        weighed: n,
+      });
     }
   }
-  return false;
+  return pairs;
+}
+
+/**
+ * Whether the case holds such a pair at all.
+ *
+ * A view of {@link renderedTiePairs} rather than a second scan, so the count and the floor cannot
+ * come from two different notions of a tie.
+ *
+ * @param one - The case.
+ * @returns Whether the case has at least one.
+ */
+function leadsRenderTiedRival(one: WeightSeparationCase): boolean {
+  return renderedTiePairs(one).length > 0;
 }
 
 /**
@@ -2266,6 +2344,8 @@ export function computeZeroRegressionWindow(
   let capCase: WeightSeparationCase | undefined;
   let declared = 0;
   const unrepresentable: string[] = [];
+  let lossFloor = Number.POSITIVE_INFINITY;
+  let lossFloorBinder: CapFloorBinder | undefined;
   const gains: WindowGain[] = [];
 
   for (const one of cases) {
@@ -2286,7 +2366,18 @@ export function computeZeroRegressionWindow(
     // left for a reader to find by diffing a run against the screen.
     if (one.weighed !== undefined) {
       declared++;
-      if (leadsRenderTiedRival(one)) unrepresentable.push(one.datapack);
+      const pairs = renderedTiePairs(one);
+      if (pairs.length > 0) unrepresentable.push(one.datapack);
+      // The floor, from the SAME pairs the count comes from: each grants the engine a gap of at most
+      // `span`, so each can cost the case no earlier than `lead / span`, and the earliest of them is
+      // what a reader compares against the cap.
+      for (const pair of pairs) {
+        const floor = pair.lead / pair.span;
+        if (floor < lossFloor) {
+          lossFloor = floor;
+          lossFloorBinder = { datapack: one.datapack, ...pair, floor };
+        }
+      }
     }
     // With a union of intervals per case, the intersection's component at 0 ends at
     // the SMALLEST of the per-case component ends — the case that reaches the least
@@ -2315,6 +2406,8 @@ export function computeZeroRegressionWindow(
       // with the case `capBinder` names: one predicate, one owner of "who sets the cap".
       setsCap:
         capCase !== undefined && capCase.weighed !== undefined && leadsRenderTiedRival(capCase),
+      lossFloor,
+      ...(lossFloorBinder === undefined ? {} : { lossFloorBinder }),
     },
     cap,
     capBinder: capCase === undefined ? undefined : capBinderOf(capCase, cap),
@@ -3506,13 +3599,35 @@ function unreachableClause(
  * second copy of it is how the two would come to disagree.
  *
  * @param u - The window's own counts.
+ * @param cap - The cap the sentence qualifies.
  * @returns The sentence, without a leading space.
  */
-function capUpperBoundClause(u: UnrepresentableFrontier): string {
+function capUpperBoundClause(u: UnrepresentableFrontier, cap: number): string {
+  const binder = u.lossFloorBinder;
+  const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+  // The COMPARISON is the finding, and it is the floor against the cap — NOT "is there a binder",
+  // which is a different question: a binder exists whenever the class does, and it is present on both
+  // sides of the cap. Reading the wording off the binder's existence would have said `BELOW` about a
+  // floor the cap already covers, which is the one thing this sentence must not do.
+  //
+  // TWO branches and not three, because the CONCLUSION is binary: the engine's cap is at least
+  // `min(cap, floor)`, so the channel can hide a loss below the cap exactly when the floor is under
+  // it. `AT OR ABOVE` is the wording for the other side because the dumps produce equality — `re1`'s
+  // `flip` shape has a floor of `0.008032` against a cap of `0.008032`, two different cases whose
+  // leads are the same double — and calling that `ABOVE` would be a claim the numbers do not support.
+  const binds = binder !== undefined && u.lossFloor < cap;
+  const comparison = binds
+    ? `the cap ${at(cap)}, so the engine can lose one first`
+    : `the cap ${at(cap)}, so this channel cannot bind below it`;
   return (
-    `${u.cases} of ${u.declared} satisfied cases hold a rival the term reads as EQUAL, which the ` +
-    `engine orders on the unrounded cv — so the cap can be lower, and its own case is ` +
-    `${u.setsCap ? '' : 'not '}one of them`
+    `${u.cases} of ${u.declared} satisfied cases hold a rival the term reads as EQUAL, and the ` +
+    `cap’s own case is ${u.setsCap ? '' : 'not '}one of them; the lowest weight at which one of them ` +
+    `can be lost is ${at(u.lossFloor)}` +
+    (binder === undefined
+      ? ''
+      : ` (${binder.datapack}: ${binder.target} / ${binder.rival}, a tie group of ${binder.group} ` +
+        `among ${binder.weighed} weighed)`) +
+    ` — ${binds ? 'BELOW' : 'AT OR ABOVE'} ${comparison}`
   );
 }
 
@@ -3610,7 +3725,7 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
   // property of the pair it names. Printed only when it applies: a line that always said
   // `0 of N` would be read as a passing check instead of as the absence of a finding.
   const u = s.window.capUnrepresentable;
-  if (u.cases > 0) lines.push(`  cap UPPER bound: ${capUpperBoundClause(u)}`);
+  if (u.cases > 0) lines.push(`  cap UPPER bound: ${capUpperBoundClause(u, s.window.cap)}`);
   return lines.join('\n');
 }
 
@@ -3703,7 +3818,9 @@ export function formatCvMenuReport(
     // menu states a cap on the face of it for exactly the shapes that have no gain — and `re1`'s
     // `rank` shape, the one the engine's own comparison is read on, is such a shape.
     if (s.gain === 0 && s.at === undefined && s.window.capUnrepresentable.cases > 0) {
-      lines.push(`    cap UPPER bound: ${capUpperBoundClause(s.window.capUnrepresentable)}`);
+      lines.push(
+        `    cap UPPER bound: ${capUpperBoundClause(s.window.capUnrepresentable, s.window.cap)}`,
+      );
     }
   }
   const shippable = screens.filter(

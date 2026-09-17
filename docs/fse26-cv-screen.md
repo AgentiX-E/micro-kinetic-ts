@@ -14,8 +14,10 @@ that renders every input at three decimals, and both sides of the count now carr
 unreachable count partitions into five causes, **two of which are the artifact's resolution** (236 of
 FSE'26's 569 unreachable cases read a deciding pair as EQUAL and 25 of `re3-noinject`'s 37), and the
 satisfied side reports that **the cap is an UPPER bound** — 510 of FSE'26's 756 protected cases and 31 of
-`re1`'s 301 hold a rival the artifact cannot order. See §"The unreachable count now says WHY" and §"The
-cap is an UPPER bound".
+`re1`'s 301 hold a rival the artifact cannot order, with the level it can be undercut to derived rather
+than acknowledged (`lossFloor`: **0.003873 against a cap of 0.030480 on FSE'26**, i.e. 8× — and the one
+engine run that measured it lost **no** fault type at the recommended weight, so the bound is loose).
+See §"The unreachable count now says WHY" and §"The cap is an UPPER bound".
 
 Deliberately NOT a `-verdict` document: the register's rows are for axes measured to a conclusion,
 and what closed here is a WEIGHT — the statistic the row names (`decisiveCv` on the matched
@@ -645,6 +647,32 @@ cap's own case is one of them** — so that window's right-hand end is not merel
 pair the artifact renders as one number. On the golden the class is 31 / 14 / 13 and, for `re2`'s `flip`
 shape, the binder is a member.
 
+**A count is not a bound, so the class carries one.** How far the looseness can reach is derivable
+rather than merely acknowledged: two services whose rendered `cv` is equal have unrounded values inside
+one rounding cell, so their ranks are CONSECUTIVE among the cell's `g` members and their slope gap
+cannot exceed `(g − 1)/(n − 1)`. The earliest weight at which such a pair can cost its case is therefore
+`lead / span`, and the smallest of those over the class is the `lossFloor` the report prints beside the
+cap. What it buys is a verdict per shape, measured on the same dumps:
+
+| dump | shape | `lossFloor` | `cap` | verdict |
+| --- | --- | --- | --- | --- |
+| FSE'26 | `flip` | **0.003873** | 0.024882 | **BELOW** — the artifact permits an earlier loss |
+| FSE'26 | `rank` | **0.003873** | 0.030480 | **BELOW** |
+| `re1` / `re1-noinject` | `flip` | 0.008032 | 0.008032 | AT OR ABOVE |
+| `re1` / `re1-noinject` | `rank` | **0.008032** | 0.015233 | **BELOW** |
+| `re2` / `re2-noinject` | both | 0.069256 | 0.007528 / 0.012161 | AT OR ABOVE |
+| `re3` / `re3-noinject` / `re3-novelty` | both | **0.016369** | 0.180534 / 0.316068 | **BELOW** |
+
+**So the caveat was not a figure of speech, and it is not uniform.** On FSE'26 the recommended window's
+right end `0.030480` sits **8× above** the lowest weight the artifact permits a protected case to be
+cost; on `re1`'s `rank` shape (the one the engine comparison is read on) the floor is half the cap; on
+`re2` the channel cannot bind at all. The floor is NOT a prediction of when a case will go: it is the
+earliest the artifact *permits*, and the one engine measurement that exists says the permission is not
+exercised — the FSE'26 candidate run delivered **+5 cases with 0 regressed fault types** at `0.030170`,
+i.e. the engine's own cap is above that weight, **more than 8× the floor**. A bound that is loose by a
+factor is still the difference between "the cap is the cap" and "the cap is the most the model can
+claim", and only a run settles which.
+
 **The class is a NECESSARY condition, and that is what makes it checkable**: the model and the engine are
 free to disagree only inside it. Measured against the paired dispatch (`35181249060`, `stability_weight`
 AND `diagnose_dump` together, engine read in its own `rank` shape):
@@ -662,8 +690,20 @@ rather than a prediction of the losses: 31 cases to distrust for 1 actual failur
 matters. A class that MISSED a disagreement would be a defect; a class that is wider than the
 disagreements is a statement of what the artifact cannot express.
 
-Two things the work found:
+Four things the work found:
 
+- **The floor is shape-independent and the cap is not, so the verdict is per shape.** The floor is a
+  BASE gap over the engine's own slope spacing; the cap is the shape's own reading of the same cases. So
+  the same dump can read `AT OR ABOVE` for `flip` and `BELOW` for `rank` — `re1` does exactly that — and
+  a single verdict printed above the two-row table would be a number about neither row. That is the same
+  defect this document already records for `unreachable`, and the sentence carries the comparison rather
+  than leaving it to a reader.
+- **A degenerate tie group is the WIDEST possible span, and that is the honest bound.** `re1`'s floor is
+  set by a case whose 53 weighed services all share one slope — every `cv` renders `0.000`, so `flip`
+  reads one flat group and `rank` gives the whole group its single mean. The engine can still order those
+  53 on the unrounded field, by up to a full `52/52 = 1` slope gap, so `span = 1` is the widest gap the
+  artifact permits rather than a parsing artefact. Cases that render flat are the most exposed, not the
+  least: the model has literally no term left to order them with.
 - **A shape whose detail the menu does not print was stating its cap unqualified.** The menu renders a
   shape's detail only when that shape has something to advise, and summarises the rest in one line — so
   `re2`'s whole screen, and `re1`'s `rank` shape (the one the engine's own comparison is read on), showed
@@ -700,10 +740,13 @@ Not settled:
   for `re1`, of which 18 / 20 are the tie class.
 - **The cap is an UPPER bound, and how far up is now measured** (§"The cap is an UPPER bound"): 31 of
   `re1`'s 301 satisfied cases, 14 of `re2`'s 119 and **510 of FSE'26's 756** hold a rival the artifact
-  cannot order, and on FSE'26 the cap's own case is one of them. What is still NOT settled is the SIZE of
-  the gap: the class says which cases may be lost before the cap, not how far below the cap the first
-  loss is — a dispatched run is still the only thing that answers that, and the `--at-weight` verdict is
-  what it is compared against.
+  cannot order, and on FSE'26 the cap's own case is one of them. The bound is `lossFloor`, the earliest
+  weight the artifact PERMITS a protected case to be cost — **0.003873 on FSE'26 against a cap of
+  0.030480, 8× below it**; half the cap on `re1`'s `rank` shape; above the cap on `re2`, where the
+  channel cannot bind at all. What is still NOT settled is how far below the cap the engine actually
+  goes: the floor is a permission and the one run that measured it (FSE'26 at `0.030170`, +5 cases and
+  **0 regressed fault types**) shows the permission is not exercised there, so a dispatched run remains
+  the only instrument that answers it — the `--at-weight` verdict is what it is compared against.
 - The `flip` shape reads the MAGNITUDE of a clamped bonus (§1), so `rank` is the faithful translation
   of the separator's rank-based rate. Any statement about this term has to name its shape — and any
   statement about the ENGINE has to use `rank`, which is why the comparison table in §"The golden,
@@ -730,6 +773,7 @@ Not settled:
 | the new counter, on its first real run | **it fired 34 times, and the claim was wrong rather than the dump**: 34 of the FSE'26 dump's 1422 rescaled cases carry a maximum of 0.95–0.99, because a TIED top anomaly takes its tie group's MEAN rank (`47.5 / 50` for a six-way tie). The check was split into the falsifiable half (`values above 1: 0` everywhere it was measured) and the population fact, which is what it should have been from the start — a counter that fires on the engine's own legal output is worse than no counter |
 | the unreachable split — a REFINEMENT, not a new count | the five classes sum to the total by construction and the identity is asserted; measured before and after the split on the same dumps, every total is identical (`re1` 46/52, `re2` 25/24, `re3-noinject` 39/37, FSE'26 569/526). Each class has its own test, and the classifier was MUTATED rather than assumed: merging `unweighed` back into `tied at the render` fails exactly the two assertions on it, and (in the split's first version) sending `noSpread` to `outOfReach` failed exactly the two on that class |
 | the satisfied-side class — a NECESSARY condition, checked against a run | every satisfied-side disagreement between the model and the engine at `0.030170` falls inside it (**1 of 1**: `re1ob_currencyservice_delay_4`), and the class does NOT claim to be a prediction — it holds 31 cases on `re1` for that one failure, because every other case the engine lost at that weight (2 of 3 on `re1`, all 8 on `re2`) is one the model predicts losing too. Both branches of the report print the sentence from ONE owner and the suite counts it, and the shape-independence the dumps show (31/31, 14/14, 13/13, 12/12) is asserted rather than noted |
+| the class's own BOUND — a count is not a bound | `lossFloor` is derived, not asserted: `lead / span` with `span = (g − 1)/(n − 1)`, and it is the smallest such value over the class, so it is the earliest weight the artifact permits a protected case to be cost. Every dumps' verdict is measured (FSE'26 8× below its cap, `re1`'s `rank` half of it, `re2` above at both shapes, `re3*` 0.016 against 0.18/0.32), and the ONE engine measurement that exists rejects the permission: the FSE'26 candidate lost no fault type at `0.030170`, so the bound is loose by more than 8× there. MUTATIONS: reading the wording off the binder's existence instead of the comparison fails the report test, and `span = (g − 1)/n` fails three |
 | the price of the class being a claim | a pair equal at `0` because the term weighed NEITHER side is excluded — that pair is equal in the engine too, so counting it would report a hidden ordering on the engine's own legal output. The exclusion is asserted by a test, and both directions are exercises of the same predicate: one requires the declaration of provenance, the other reads its absence as `weighed` |
 | the split's own wiring hazard, caught by its first draft | the clause first carried a LEGEND line, and the menu's per-shape detail blocks are `formatCvScreenReport(...).split('\n').slice(4)` — so the new line leaked into every one of them and one sentence printed three times. The labels now carry their own meaning and the suite asserts the clause appears ONCE per menu, which is what fails if the report's head grows past four lines |
 | regression proof | `--cv-screen` on the shipped dump differs from the pre-change output only by the new lines: the population line split, the two `margin:` lines, and the two `resolution:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so neither change moved a recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`, and both now print their own ensembles per row |
