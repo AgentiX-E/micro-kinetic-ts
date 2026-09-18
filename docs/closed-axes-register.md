@@ -226,6 +226,23 @@ Before reading any number, check that the input was counted:
   implemented subset (`?`, `!`, a segment-internal `**`) instead of reading a filter as something it is
   not. A push that does match raises rather than being explained away
   (`docs/golden-reader-audit.md`).
+- **"THE ARTIFACT BINDS IT" IS A CLAIM ABOUT SCALE, and a scale has to be measured at more than one.** The
+  screens' refusals were read as proof that the dump's three decimals were the binding constraint on BOTH
+  axes and that a finer render would buy decidable windows — a claim argued from the SIZE of the error bar
+  and never measured at another size. It is false in that form. A sweep that moves the box and nothing else
+  (a quantum `10^-k` smaller in every field, same seed and trial counts, `k = 0` returned from the ensembles
+  the report already has) shows FSE'26's `earliest-only` unchanged by six more digits: the weakest gain
+  survives **56.0% of draws at a millionth of the quantum against 56.0% at the artifact's own box**. An
+  UNMOVED survival rate is the signature of a rendered TIE, which a finer render CHANGES rather than
+  refines. What survived is what was measured — two windows (`re3`'s and `re3-noinject`'s stability `flip`)
+  answer `needs 1`, and only those justify a finer dump. Three traps travel with it: **a resolution shortfall
+  does not imply the resolution is the OBSTACLE** (the reachable refusal reasons are scale-free by
+  construction, so the inference was structural, not empirical); **a refusal's two channels are correlated**,
+  so a clause must name the bar that is still failing rather than assert the mechanism its own trajectory
+  contradicts (`re1`'s `order` has a weakest gain CLIMBING to 100.0% while the window is still refused); and
+  **a column a screen does not read must not spend a draw**, because one shared sequence means an unread
+  column's draw shifts every value after it — the box identical and the numbers not
+  (`docs/fse26-cv-screen.md`).
 
 ## What is left
 

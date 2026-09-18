@@ -845,16 +845,43 @@ exists, and keeps its one sentence when none does.
 **The temporal axis does have admissible windows — on the golden, and they are worth exactly one case.**
 `earliness`, the engine's own shape, is admissible on all three suites and its gain is 1 case per suite;
 `re3`'s `earliest-only` — the shape with the widest window — is refused, and FSE'26's own shape gains
-nothing. So the axis is not closed by the signal: it is closed, on the benchmark that would ship it, by
-the artifact.
+nothing.
 
-**And the binding constraint on BOTH axes is now the dump's own resolution.** Every refusal above is a
-`gain not resolved` or a `cap not resolved`, and both come from the three-decimal render: the base's
-`±1.0e-3` is the same order as the margins that decide these windows, so a window that looks decisive in
-the report is a coin flip on the box the print stands for. `SERVICE_FIELD_DECIMALS` was chosen with the
-argument that *"the extra characters would buy nothing a reader of the table needs"* — and the instrument
-now says they would buy decidable windows, on both axes at once. That is a claim to re-measure rather
-than to assume, and the `diagnose_dump` input already exists to produce the finer artifact.
+**And the next question was answered by measurement, which REFUTED the answer first written here.** This
+section first said the binding constraint on both axes was the dump's own resolution and that a finer render
+would buy decidable windows. That is a claim about SCALE, so it was measured by moving the scale and nothing
+else — the same dump, the same seed and trial counts, the same solved window, and a quantum `10^-k` smaller
+in EVERY field (`refinementFrontier`: one function, `k = 0` short-circuited through the ensembles the report
+already has, so nothing published moves). The result, on every dump whose windows the verdict refuses:
+
+| dump | screen | shape | gain | refinement frontier |
+| --- | --- | --- | --- | --- |
+| FSE'26 (`35035314921`) | temporal | `earliest-only` | 4 | **`beyond`** — weakest survival **56.0% at every `k` up to 6** |
+| `re1` | temporal | `earliness` | 2 | **`already`** — admissible at the artifact's own box |
+| `re1` | temporal | `order` | 2 | **`beyond`** — the gain side RESOLVES (52.8% → 100.0%) and the cap still moves at `10^-6` |
+| `re1` | stability | `flip` | 1 | **`beyond`** — plateau at 46.3% |
+| `re3` | stability | `flip` | 7 | **`needs 1`** — one more digit admits it |
+| `re3` | stability | `rank` | 4 | **`beyond`** — plateau at 26.8% |
+| `re3-noinject` | stability | `flip` | 7 | **`needs 1`** — one more digit admits it |
+| `re2` | both | all | 0 | **`structural`** — no gain, so precision is not the question and the sweep is not run |
+
+**A survival rate that does not move is the signature of a rendered TIE.** `earliest-only` credits the root
+together with whatever else prints its minimum, and two equal prints are re-ordered by any nonzero draw,
+however small — so no refinement of the DRAW settles their order, and the plateau is exact: FSE'26's
+`earliest-only` reads `56.0%` at the artifact's own box and `56.0%` at a quantum a million times smaller.
+What a finer dump does there is CHANGE the tie rather than refine it, which is a different question from the
+one the sweep asks: the sweep holds the print fixed, so it cannot model digits it does not have.
+
+**So the honest form of the claim is narrower than the one first written.** The render IS the obstacle for
+exactly two measured windows — `re3`'s and `re3-noinject`'s stability `flip`, both `needs 1` — and for the
+rest the residue is either a rendered tie or the other channel. `re1`'s `order` is the case that keeps the
+instrument honest: its weakest gain climbs to `100.0%` while the window is still refused, so a clause reading
+every `beyond` as a tie would contradict its own evidence; the printed sentence reports BOTH readings and
+names the bar still failing.
+
+The pre-registered prediction follows, and it is cheap because it is bounded: **a dump rendered at four
+decimals admits `re3`'s and `re3-noinject`'s stability `flip` windows.** That is a claim about a real
+artifact, which is the one thing the sweep cannot decide for itself.
 
 Two smaller things the work found, both measured:
 

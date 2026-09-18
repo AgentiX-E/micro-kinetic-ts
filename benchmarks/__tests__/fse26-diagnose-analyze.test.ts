@@ -33,6 +33,7 @@ import {
 import type {
   Admissibility,
   DiagnosedCase,
+  RefinementFrontier,
   WeightSeparationCase,
 } from '../src/fse26-diagnose-analyze.js';
 import {
@@ -69,6 +70,7 @@ import {
   formatMissReport,
   formatOnsetMenuReport,
   formatOnsetScreenReport,
+  formatRefinementFrontierLine,
   formatResolutionLine,
   formatWeightSeparationReport,
   formatZeroRegressionWindowReport,
@@ -89,6 +91,8 @@ import {
   parseDiagnosticDump,
   reconcileConfigurations,
   regressionMechanism,
+  RESOLUTION_FRONTIER_MAX_DIGITS,
+  resolutionBoxFor,
   solveZeroRegressionWindow,
   tallyDeltas,
   zeroRegressionSamples,
@@ -6330,6 +6334,117 @@ describe('the menu’s verdict consumes its own error bars', () => {
     expect(mixed).toMatch(/earliest-only\s+refused: the gain holds for the printed digits only/);
   });
 
+  it('answers `already` for a window the render decides, without drawing another grid', () => {
+    // The sweep's own economy: a window the artifact's box already decides needs no second opinion, so the
+    // trajectory is the ONE step the caller already had. This is also what keeps the frontier free for
+    // the shapes that pass — the cost is paid only by the refusals it is asking about.
+    const screen = onsetScreen([fixable(), companion(0.6, 'dp-wide')], WEIGHTS, 'earliest-only');
+    expect(screen.frontier.kind).toBe('already');
+    expect(screen.frontier.trajectory).toHaveLength(1);
+    expect(screen.frontier.trajectory[0]!.extraDigits).toBe(0);
+    expect(screen.frontier.verdict.admissible).toBe(true);
+    expect(formatRefinementFrontierLine(screen.frontier)).toContain(
+      'the render already decides this window',
+    );
+  });
+
+  it('answers `structural` for a refusal that is not about resolution, and does not sweep', () => {
+    // The distinction that makes the sweep worth running: this shape's `no gain` is a statement about the
+    // TERM — the rival it must beat is a pair the term reads as equal — so no precision is involved and
+    // six grids would buy nothing. Reported as `structural` rather than as a null refinement, because
+    // "we swept and found nothing" and "there is nothing here to sweep" are different claims.
+    const screen = onsetScreen([unfixable()], WEIGHTS, 'earliest-only');
+    expect(screen.solved.gain).toBe(0);
+    expect(screen.frontier.kind).toBe('structural');
+    expect(screen.frontier.trajectory).toHaveLength(1);
+    expect(screen.frontier.trajectory[0]!.weakest).toBeUndefined();
+    expect(screen.frontier.verdict.reasons).toEqual(['no gain']);
+    expect(formatRefinementFrontierLine(screen.frontier)).toContain('not a resolution question');
+  });
+
+  it('finds the refinement that admits a window whose cap moves at the artifact’s own box', () => {
+    // The `cap not resolved` fixture, asked the NEXT question. Its window is 1e-3 wide against a quantum
+    // that moves each score by up to `±5e-4`, so the cap is inside the noise at three decimals — and at
+    // four the quantum is ten times smaller and the pair separates. So here the artifact's OWN precision
+    // IS the obstacle, and the sweep says how much finer it must be instead of that it is hopeless.
+    const screen = onsetScreen(
+      [fixable(), companion(0.299, 'dp-narrow')],
+      WEIGHTS,
+      'earliest-only',
+    );
+    expect(screen.capNoise.lostAtShip).toBeGreaterThan(0);
+    expect(screen.frontier.kind).toBe('needs');
+    // Narrowed for the compiler, which cannot see through `expect(...).toBe`: `digits` lives on the
+    // `needs` arm only, and that is the union's whole purpose.
+    if (screen.frontier.kind !== 'needs') throw new Error('unreachable: asserted above');
+    expect(screen.frontier.digits).toBe(1);
+    // The trajectory is the evidence rather than the endpoint: the weakest gain's survival rises from
+    // `0.915` to `1.000` and the cap stops moving (`21` → `0` draws) at the SAME step the verdict clears.
+    expect(screen.frontier.trajectory[0]!.weakest).toBeCloseTo(0.915, 3);
+    expect(screen.frontier.trajectory[1]!.weakest).toBe(1);
+    expect(screen.frontier.trajectory[0]!.lostAtShip).toBeGreaterThan(0);
+    expect(screen.frontier.trajectory[1]!.lostAtShip).toBe(0);
+    const line = formatRefinementFrontierLine(screen.frontier);
+    expect(line).toContain('a FINER dump settles it');
+    expect(line).toContain('1 more digit(s)');
+  });
+
+  it('answers `beyond` when tightening does NOT move the weakest gain, and prints the plateau', () => {
+    // The case the previous session's strategic claim did NOT survive. That claim was "the artifact's
+    // three decimals bind both axes, so a finer dump would buy decidable windows"; this fixture is the
+    // mechanism that refutes it. `earliest-only` credits the root TOGETHER with a service printing the
+    // SAME onset, so which of the two holds the boundary is decided by the draw's ORDER — and any nonzero
+    // draw re-randomises an order between equal centres, however small it is. So the survival rate is a
+    // PLATEAU: the SAME value at every refinement, which no amount of precision can lift.
+    const screen = onsetScreen(
+      [fixableOnlyAtThePrint(), companion(0.6, 'dp-wide')],
+      WEIGHTS,
+      'earliest-only',
+    );
+    expect(screen.solved.gain).toBeGreaterThan(0);
+    expect(screen.frontier.kind).toBe('beyond');
+    expect(screen.frontier.trajectory).toHaveLength(RESOLUTION_FRONTIER_MAX_DIGITS + 1);
+    // The plateau, asserted as a plateau rather than as a repeated literal: one distinct survival rate
+    // across every step, so a fixture whose rate drifts would fail here even if the verdict still refused.
+    const rates = screen.frontier.trajectory.map((step) => step.weakest);
+    expect(new Set(rates).size).toBe(1);
+    expect(rates[0]).toBeGreaterThan(0);
+    expect(rates[0]).toBeLessThan(1);
+    const line = formatRefinementFrontierLine(screen.frontier);
+    expect(line).toContain('no refinement up to 6 more digit(s)');
+    expect(line).toContain('UNMOVED');
+    // The clause reports both readings rather than asserting one, and NAMES the bar still failing:
+    // measured on `re1`'s `order` window the weakest gain climbs `52.8%` → `100.0%` while the cap still
+    // moves, so a sentence attributing every `beyond` to a tie would contradict its own evidence.
+    expect(line).toContain('while a survival that ROSE puts the residue in the other channel');
+    expect(line).toContain('what is still failing');
+    expect(line).toContain('for the printed digits');
+  });
+
+  it('renders a frontier that names no gain without inventing a rate', () => {
+    // A DIRECT caller can hand the formatter a `beyond` whose steps name no gain — `refinementFrontier`
+    // never produces one, because it refuses to sweep a shape with no gain at all — but the formatter is
+    // public, and `Infinity%` (an empty `Math.min`) or `undefined%` would be worse than the words.
+    const frontier: RefinementFrontier<string> = {
+      kind: 'beyond',
+      max: 6,
+      verdict: {
+        shape: 'x',
+        admissible: false,
+        reasons: ['no gain'],
+        clause: 'no weight fixes a case',
+      },
+      trajectory: [
+        { extraDigits: 0, resolved: 0, weakest: undefined, lostAtShip: 0 },
+        { extraDigits: 6, resolved: 0, weakest: undefined, lostAtShip: 0 },
+      ],
+    };
+    const line = formatRefinementFrontierLine(frontier);
+    expect(line).toContain('no gains');
+    expect(line).not.toContain('undefined%');
+    expect(line).not.toContain('Infinity');
+  });
+
   it('keeps the negative line for a menu with no admissible shape', () => {
     // The existing sentence stays for the state it was written for, and it is now the SAME predicate
     // rather than a parallel one, so a menu of total refusals says so instead of printing a block.
@@ -6501,6 +6616,93 @@ describe('the ensemble draws each screen’s OWN fields, at each field’s own r
       cv: false,
       onset: false,
     });
+  });
+
+  it('scales every column’s OWN quantum when the render is refined', () => {
+    // The box is two numbers that have to agree with a set of flags, so ONE function builds it from the
+    // screen and the refinement together. The scaling is per FIELD, from that field's own render: a
+    // millisecond onset refined by a digit steps in tenths of a millisecond, NOT in the ten-thousandths a
+    // service field would step in — the mistake the two-column split was introduced to fix, one level up.
+    expect(resolutionBoxFor({ kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' })).toEqual({
+      service: DUMP_HALF_QUANTUM,
+      onset: ONSET_FIELD_HALF_QUANTUM,
+      fields: { cv: false, onset: true },
+    });
+    expect(
+      resolutionBoxFor({ kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' }, 2),
+    ).toEqual({
+      service: DUMP_HALF_QUANTUM / 100,
+      onset: ONSET_FIELD_HALF_QUANTUM / 100,
+      fields: { cv: false, onset: true },
+    });
+    // A screen that does not read the onset column gets no onset quantum at all, which is what lets
+    // `jitterCase` SKIP the draw rather than spend one: a draw with a zero quantum would leave the box
+    // identical and shift the sequence every later field reads.
+    expect(resolutionBoxFor({ kind: 'stability', weights: WEIGHTS, shape: 'flip' }).onset).toBe(0);
+    expect(resolutionBoxFor({ kind: 'family', weights: WEIGHTS, family: 'pool' }).onset).toBe(0);
+  });
+
+  it('draws the artifact’s own box when no refinement is asked for, and says so', () => {
+    // Inertness stated where it can fail: `extraDigits` ABSENT and `extraDigits: 0` are the same draw, so
+    // nothing already published moves — and the result carries the box it came from, so a swept ensemble
+    // can never be printed as a measurement of the dump.
+    const cases = [tiedBoundary()];
+    const gained = onsetScreen(cases, WEIGHTS, 'earliest-only').solved.gained;
+    const screen = { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' } as const;
+    const plain = gainResolution({ cases, gained, ship: 0.3, screen });
+    const zero = gainResolution({ cases, gained, ship: 0.3, screen, extraDigits: 0 });
+    expect(zero).toEqual(plain);
+    expect(plain.extraDigits).toBe(0);
+    expect(plain.fields).toEqual({ cv: false, onset: true });
+    expect(gainResolution({ cases, gained, ship: 0.3, screen, extraDigits: 1 }).extraDigits).toBe(
+      1,
+    );
+    // The cap ensemble carries it too: it is one of the two channels a verdict consumes, so a caller able
+    // to refine one and not the other could read a mixed pair as a single box.
+    const cap = capResolution({ cases, ship: 0.3, screen, extraDigits: 3 });
+    expect(cap.extraDigits).toBe(3);
+    expect(capResolution({ cases, ship: 0.3, screen }).extraDigits).toBe(0);
+  });
+
+  it('spends no draw on a column the screen does not read', () => {
+    // The sequence is SHARED: `jitterCase` asks ONE generator for every field, in service order, so a draw
+    // spent on a column the screen does not read shifts every value after it — the box would be identical
+    // and the numbers would not. Asserted through a cv screen, whose box holds the base and `cv` and NOT
+    // the onset, so whether the cases carry onsets must make no difference to its ensemble at all.
+    //
+    // Measured rather than argued: removing the `box.onset === 0` guard leaves all 322 other tests
+    // passing, because the drawn VALUE is unchanged (`Math.max(0, x + 0)` is `x`) and only the sequence
+    // moves. The raw per-draw caps are compared rather than a count, because a count is an integer that
+    // two different sequences can agree on.
+    const shape = {
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    } as const;
+    const withOnsets = cvCase({
+      ...shape,
+      onsets: [5_000, 60_000, 90_000],
+      injectTimeMs: 1_700_000_000_000,
+    });
+    const withoutOnsets = cvCase(shape);
+    const screen = {
+      kind: 'stability',
+      weights: { logWeight: 1, latWeight: 0, poolWeight: 0, temporalWeight: 0 },
+      shape: 'flip',
+    } as const;
+    const caps = (kase: DiagnosedCase): readonly number[] =>
+      capResolution({ cases: [kase], ship: 0, screen, trials: 8 }).caps;
+    // The fixture's caps must be FINITE and draw-sensitive or this asserts nothing — measured, when the
+    // first draft's two-service fixture returned `Infinity` on every draw and the check passed under both
+    // bodies of code.
+    expect(caps(withOnsets).every((cap) => Number.isFinite(cap))).toBe(true);
+    expect(new Set(caps(withOnsets)).size).toBeGreaterThan(1);
+    expect(caps(withOnsets)).toEqual(caps(withoutOnsets));
+    // The fixture is not silently inert: the two cases DO differ in the field one screen reads and the
+    // other does not, so an equality that came from identical inputs would prove nothing.
+    expect(withOnsets.services.some((one) => one.onsetDelayMs !== undefined)).toBe(true);
+    expect(withoutOnsets.services.some((one) => one.onsetDelayMs !== undefined)).toBe(false);
   });
 
   it('turns a printed TIE the term cannot touch into a fix in some draws and a loss in others', () => {
@@ -6737,6 +6939,7 @@ describe('gainResolution — the lead the formatter discards', () => {
       formatResolutionLine({
         trials: 4,
         fields: { cv: false, onset: false },
+        extraDigits: 0,
         histogram: [4],
         least: 0,
         most: 0,

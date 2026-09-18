@@ -3032,6 +3032,13 @@ export interface OnsetScreen {
    * function of the print in a way the base fields alone are not.
    */
   readonly capNoise: CapResolution;
+  /**
+   * How much finer the render would have to be before this shape's refusal clears.
+   *
+   * The verdict says every refusal is a resolution bar; this says whether the RENDER is the obstacle,
+   * which is a different question with a different fix. See {@link refinementFrontier}.
+   */
+  readonly frontier: RefinementFrontier<OnsetShape>;
 }
 
 /**
@@ -3164,6 +3171,191 @@ export function admissibilityLines<S extends string>(
 }
 
 /**
+ * How many more digits {@link refinementFrontier} sweeps to before it reports "none".
+ *
+ * Six, so the sweep reaches `10^-9` on a service field and `10^-6` ms on an onset: far enough that a
+ * shape which is still refused there is decided by something the render's OWN structure creates (a
+ * rendered tie, or a margin inside the digits) rather than by a resolution any practical dump could
+ * buy. A bound rather than a search: past it the answer stops being about the artifact.
+ */
+export const RESOLUTION_FRONTIER_MAX_DIGITS = 6;
+
+/** What {@link refinementFrontier} needs. */
+export interface FrontierInput<S extends string> {
+  /** The gain ensemble's own arguments — the dump, the weight, and which screen asked. */
+  readonly gain: GainResolutionInput;
+  /** The window's solved answer, which the sweep holds FIXED: only the box moves. */
+  readonly solved: SolvedWindow;
+  readonly shape: S;
+  /**
+   * The ensembles AT the artifact's own box, which the caller already has.
+   *
+   * Passed in rather than re-derived, for two reasons that both matter: `k = 0` must be the SAME answer
+   * the report prints (a second draw of the same box is the same draw only because the seed is fixed,
+   * and an instrument should not depend on that for its agreement with itself), and it is free.
+   */
+  readonly atArtifact: {
+    readonly resolution: GainResolution;
+    readonly capNoise: CapResolution;
+  };
+  readonly max?: number;
+}
+
+/** One refinement's reading, so a `beyond` answer can show it is a plateau rather than a bound. */
+export interface FrontierStep {
+  /** The refinement this step drew at; `0` is the artifact's own box. */
+  readonly extraDigits: number;
+  /** Gains that held in EVERY draw at this refinement. */
+  readonly resolved: number;
+  /**
+   * The WEAKEST gain's survival rate — the least-surviving gain's fraction of draws.
+   *
+   * The number that distinguishes the two reasons a sweep can end in `beyond`. If it CLIMBS as the box
+   * tightens, the shortfall is proportional to the discarded digits and the bound was simply too small.
+   * If it does not move, the shortfall is scale-free — which is what a rendered TIE produces, because
+   * two equal prints are re-ordered by any nonzero draw however small, so no refinement of the draw can
+   * settle their order. `resolved` alone cannot tell those apart: it is an integer that clips at the
+   * same value on both paths.
+   *
+   * `undefined` when the window names no gain at all, which is the `structural` case: there is no
+   * survival rate to report, and `Math.min` of nothing is `Infinity` — a number that would print as a
+   * percentage and mean the opposite of the truth.
+   */
+  readonly weakest: number | undefined;
+  /** Draws in which the window lost a protected case at this refinement. */
+  readonly lostAtShip: number;
+}
+
+/**
+ * The refinement a window needs before its refusal clears — the scale the render binds it at.
+ *
+ * Four answers, and they call for four different pieces of work, which is why they are four cases rather
+ * than a nullable number:
+ *
+ * - `already` — the render decides the window; the refusal is nothing to do with precision.
+ * - `needs` — the artifact's OWN precision is the obstacle, and `digits` is how much finer it must be.
+ * - `beyond` — swept to `max` with the weakest gain's survival UNMOVED, so the shortfall is scale-free:
+ *   the residue is the TIES the render created, which a finer render CHANGES rather than refines.
+ * - `structural` — the refusal is not a resolution bar at all (the printed digits carry no gain), so the
+ *   sweep was not run. Distinguishing this from `beyond` is the point: `beyond` is a claim about the
+ *   render and this is a refusal to make one.
+ */
+export type RefinementFrontier<S extends string> = (
+  | { readonly kind: 'already' }
+  | {
+      readonly kind: 'needs';
+      /** The fewest extra digits at which the window becomes admissible. */
+      readonly digits: number;
+    }
+  | { readonly kind: 'beyond' }
+  | { readonly kind: 'structural' }
+) & {
+  /** The bound the sweep searched to. */
+  readonly max: number;
+  /** The verdict the answer rests on: at the artifact for `already`/`structural`, at the bound otherwise. */
+  readonly verdict: Admissibility<S>;
+  /** One entry per refinement swept, in order, `k = 0` first. */
+  readonly trajectory: readonly FrontierStep[];
+};
+
+/**
+ * Sweep the render's precision and report the scale at which a shape's refusal clears.
+ *
+ * Every refusal the verdict reports is a resolution bar BY CONSTRUCTION rather than by measurement:
+ * `gain not resolved` is only reached once the printed digits already carry a gain, and
+ * `cap not resolved` only once the solved cap is already intact — so both name a conclusion that holds
+ * for the print and not for the box it stands for. What that does NOT say is whether the render is the
+ * OBSTACLE. A window whose deciding gaps sit at `1e-4` is settled by one more digit; one decided by a
+ * rendered tie, or by a margin an order of magnitude inside the discarded digits, is settled by no
+ * practical render at all — and the two call for opposite work. So "the artifact's decimals bind this
+ * axis" is a claim about SCALE, and it is measured here by moving the scale and nothing else.
+ *
+ * The sweep holds one thing fixed and varies one: the same dump, the same seed and trial counts, the
+ * same solved window, and a box scaled by `10^-k` in EVERY field — each field from its own render, so a
+ * millisecond onset stays a millisecond onset.
+ *
+ * What the sweep CANNOT do is model the finer dump itself, and the distinction is the reason
+ * {@link FrontierStep.weakest} is recorded. A finer render is not a better-known version of these
+ * numbers; its discarded digits are different numbers. So `needs` is the case where the truth sitting
+ * near the print would settle the window, and `beyond` is the case where tightening changes nothing —
+ * which is a statement about the ties THIS render made, not a prediction about the next one.
+ *
+ * A shape the printed digits give NO gain for is not swept: its refusal is a statement about the term,
+ * not about the render, and spending six grids on it would produce a sentence about precision where the
+ * honest answer is that precision has nothing to do with it.
+ *
+ * @param input - The sweep's inputs; see {@link FrontierInput}.
+ * @returns Which of the four answers the window's refusal is, with the evidence it rests on.
+ */
+export function refinementFrontier<S extends string>(
+  input: FrontierInput<S>,
+): RefinementFrontier<S> {
+  const max = input.max ?? RESOLUTION_FRONTIER_MAX_DIGITS;
+  const step = (extraDigits: number, resolution: GainResolution, lost: number): FrontierStep => ({
+    extraDigits,
+    resolved: resolution.resolved.length,
+    // `undefined` rather than `Math.min()` of an empty list, which is `Infinity`: a window that names no
+    // gain has no survival rate, and the guard keeps that fact from being spelled as a number.
+    weakest:
+      resolution.held.length === 0 ? undefined : Math.min(...resolution.held) / resolution.trials,
+    lostAtShip: lost,
+  });
+  const verdictAt = (resolution: GainResolution, capNoise: CapResolution): Admissibility<S> =>
+    admissibilityOf({ shape: input.shape, solved: input.solved, resolution, capNoise });
+  const atArtifact = verdictAt(input.atArtifact.resolution, input.atArtifact.capNoise);
+  const opened = step(0, input.atArtifact.resolution, input.atArtifact.capNoise.lostAtShip);
+  const trajectory: FrontierStep[] = [opened];
+  if (atArtifact.admissible) return { kind: 'already', max, verdict: atArtifact, trajectory };
+  if (input.solved.gain === 0) return { kind: 'structural', max, verdict: atArtifact, trajectory };
+  let verdict = atArtifact;
+  for (let extraDigits = 1; extraDigits <= max; extraDigits++) {
+    const resolution = gainResolution({ ...input.gain, extraDigits });
+    const capNoise = capResolution({ ...input.gain, extraDigits });
+    trajectory.push(step(extraDigits, resolution, capNoise.lostAtShip));
+    verdict = verdictAt(resolution, capNoise);
+    if (verdict.admissible) return { kind: 'needs', digits: extraDigits, max, verdict, trajectory };
+  }
+  return { kind: 'beyond', max, verdict, trajectory };
+}
+
+/**
+ * Render a refinement frontier as the clause a report prints beside the window.
+ *
+ * The four answers read as four different pieces of work, which is the whole reason the sweep exists:
+ * `already` means the report already said what decides the window; `needs` means the artifact's own
+ * precision is the obstacle and a finer dump is the fix, with the number saying how much finer; and
+ * `beyond` means tightening changed nothing, which is printed WITH the two survival rates that say so —
+ * the claim that a render is not the obstacle is exactly the kind that must arrive with its evidence.
+ *
+ * @param frontier - The sweep's answer.
+ * @returns One line, prefixed like the other error-bar lines.
+ */
+export function formatRefinementFrontierLine(frontier: RefinementFrontier<string>): string {
+  const first = frontier.trajectory[0]!;
+  const last = frontier.trajectory[frontier.trajectory.length - 1]!;
+  // Rendered through a helper so a window with no gains prints "no gains" rather than a number: the
+  // field is `undefined` exactly there, and an unguarded interpolation would read `undefined%`.
+  const survival = (rate: number | undefined): string =>
+    rate === undefined ? 'no gains' : `${(rate * 100).toFixed(1)}%`;
+  const clause =
+    frontier.kind === 'already'
+      ? 'the render already decides this window'
+      : frontier.kind === 'needs'
+        ? `the window turns on gaps the render discards, so a FINER dump settles it: ` +
+          `${frontier.digits} more digit(s) — a quantum 10^${frontier.digits} smaller — admits it ` +
+          `(${frontier.verdict.clause})`
+        : frontier.kind === 'beyond'
+          ? `no refinement up to ${frontier.max} more digit(s) admits it: at a quantum 10^` +
+            `${frontier.max} smaller the weakest gain survives ${survival(last.weakest)} of draws ` +
+            `against ${survival(first.weakest)} at the artifact's own box, and what is still failing ` +
+            `there is ${frontier.verdict.clause} — an UNMOVED survival means the draw is re-ordering ` +
+            `two equal prints, which no refinement settles, while a survival that ROSE puts the ` +
+            `residue in the other channel`
+          : `not a resolution question: ${frontier.verdict.clause}`;
+  return `  refinement: ${clause}`;
+}
+
+/**
  * One case as the onset screen scores it: the base MINUS this term, plus the term's own slope.
  *
  * The term being solved is not in its own base: `temporalWeight: 0` here is the ablation this
@@ -3234,22 +3426,20 @@ export function onsetScreen(
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const gainTypes = new Map<string, number>();
   for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
+  // Built ONCE and shared with the frontier, so the sweep's `k = 0` is literally the same ensembles the
+  // report prints rather than a second draw of the same box that agrees only because the seed is fixed.
+  const screen: GainResolutionScreen = { kind: 'onset', weights, shape };
+  const gain: GainResolutionInput = { cases, gained: solved.gained, ship: solved.ship, screen };
+  const resolution = gainResolution(gain);
+  const capNoise = capResolution({ cases, ship: solved.ship, screen });
   return {
     availability: onsetAvailability(cases),
     shape,
     solved,
-    capNoise: capResolution({
-      cases,
-      ship: solved.ship,
-      screen: { kind: 'onset', weights, shape },
-    }),
+    capNoise,
     gainTypes: tallyCounter(gainTypes),
-    resolution: gainResolution({
-      cases,
-      gained: solved.gained,
-      ship: solved.ship,
-      screen: { kind: 'onset', weights, shape },
-    }),
+    resolution,
+    frontier: refinementFrontier({ gain, solved, shape, atArtifact: { resolution, capNoise } }),
   };
 }
 
@@ -3420,6 +3610,10 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
     // impossible to repeat.
     lines.push(formatResolutionLine(screen.resolution));
     lines.push(formatCapResolutionLine(screen.capNoise, s.ship));
+    // After the two ensembles, because it is the question they provoke: every refusal they produce is a
+    // resolution bar, and this is the only reading that says whether a FINER render would clear it — so a
+    // reader told the count is unresolvable learns here whether that is fixable or structural.
+    lines.push(formatRefinementFrontierLine(screen.frontier));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -3655,6 +3849,14 @@ export interface CvScreen {
    * uncertainty, and the one {@link UnrepresentableFrontier.lossFloor} does not model.
    */
   readonly capNoise: CapResolution;
+  /**
+   * How much finer the render would have to be before this shape's refusal clears.
+   *
+   * The same sweep the onset screen runs, through the same function — and the contrast between the two
+   * screens' answers is the point: "the render binds this axis" is a claim per (dump, shape), and only a
+   * sweep can tell a window that one more digit settles from one no digit does.
+   */
+  readonly frontier: RefinementFrontier<CvShape>;
 }
 
 /**
@@ -3690,22 +3892,19 @@ export function cvScreen(
   const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const gainTypes = new Map<string, number>();
   for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
+  // Built ONCE and shared with the frontier; see `onsetScreen` for why `k = 0` must be these ensembles.
+  const screen: GainResolutionScreen = { kind: 'stability', weights, shape };
+  const gain: GainResolutionInput = { cases, gained: solved.gained, ship: solved.ship, screen };
+  const resolution = gainResolution(gain);
+  const capNoise = capResolution({ cases, ship: solved.ship, screen });
   return {
     availability: cvAvailability(cases),
     shape,
     solved,
     gainTypes: tallyCounter(gainTypes),
-    resolution: gainResolution({
-      cases,
-      gained: solved.gained,
-      ship: solved.ship,
-      screen: { kind: 'stability', weights, shape },
-    }),
-    capNoise: capResolution({
-      cases,
-      ship: solved.ship,
-      screen: { kind: 'stability', weights, shape },
-    }),
+    resolution,
+    capNoise,
+    frontier: refinementFrontier({ gain, solved, shape, atArtifact: { resolution, capNoise } }),
   };
 }
 
@@ -3874,6 +4073,9 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     // WINDOW'S OWN right-hand end does. A reader just told the gain count is unresolvable needs to know
     // whether the weight it is measured at is inside its own cap's noise.
     lines.push(formatCapResolutionLine(screen.capNoise, s.ship));
+    // The frontier, last: the two ensembles above say WHAT is unresolved, and this is the only line that
+    // says whether a finer render would resolve it. See the onset report's identical line.
+    lines.push(formatRefinementFrontierLine(screen.frontier));
   } else {
     lines.push('  no admissible gain: every weight that fixes a case also loses one');
   }
@@ -4285,6 +4487,14 @@ export interface GainResolution {
    * screen whose only input is printed in whole milliseconds, and nothing in the object could say so.
    */
   readonly fields: JitterFields;
+  /**
+   * The refinement these draws were taken at; `0` means the artifact's OWN box.
+   *
+   * Reported for the same reason {@link fields} is: the numbers here are a statement about the dump
+   * only at `0`, and a reader who cannot see which box produced them would read a hypothetical as a
+   * measurement the moment a caller swept the frontier.
+   */
+  readonly extraDigits: number;
   /** Trials by how many of `gained` held; index = that count, so it always sums to `trials`. */
   readonly histogram: readonly number[];
   /** The fewest that ever held — a SOUND lower bound on the count over the quantum's box. */
@@ -4308,10 +4518,14 @@ export interface GainResolution {
  * readable in between.
  *
  * @param next - The next draw in `[0, 1)`.
- * @returns The offset in `[-DUMP_HALF_QUANTUM, +DUMP_HALF_QUANTUM]`.
+ * @param halfQuantum - Half the smallest difference the field's render can express. Taken as an
+ *   argument rather than read from {@link DUMP_HALF_QUANTUM} because the same draw has to serve the
+ *   artifact's own box AND a hypothetical finer one; the owner of that choice is
+ *   {@link resolutionBoxFor}.
+ * @returns The offset in `[-halfQuantum, +halfQuantum]`.
  */
-function quantumDraw(next: () => number): number {
-  return (next() * 2 - 1) * DUMP_HALF_QUANTUM;
+function quantumDraw(next: () => number, halfQuantum: number): number {
+  return (next() * 2 - 1) * halfQuantum;
 }
 
 /**
@@ -4365,10 +4579,63 @@ export function jitterFieldsFor(screen: GainResolutionScreen): JitterFields {
  *
  * @param printedMs - The delay as the dump records it, in whole milliseconds.
  * @param unit - The next draw in `[0, 1)`.
+ * @param halfQuantum - Half the step the render steps in; {@link ONSET_FIELD_HALF_QUANTUM} unless a
+ *   caller is sweeping the refinement, in which case {@link resolutionBoxFor} supplies its own.
  * @returns The drawn delay, never negative.
  */
-export function drawOnsetDelay(printedMs: number, unit: number): number {
-  return Math.max(0, printedMs + (unit * 2 - 1) * ONSET_FIELD_HALF_QUANTUM);
+export function drawOnsetDelay(
+  printedMs: number,
+  unit: number,
+  halfQuantum: number = ONSET_FIELD_HALF_QUANTUM,
+): number {
+  return Math.max(0, printedMs + (unit * 2 - 1) * halfQuantum);
+}
+
+/**
+ * The half-quanta one screen's ensembles draw, at a chosen render precision.
+ *
+ * ONE owner for the box, because a box is two numbers that must agree with a set of flags: the screen
+ * decides WHICH columns are drawn ({@link jitterFieldsFor}) and the artifact decides HOW FINELY each is
+ * printed. Composing them here is what stops a caller from drawing the onset column at the decimals
+ * quantum, or drawing a stability screen's column at all — the two defects this pair of functions was
+ * split out of.
+ *
+ * `extraDigits` is the REFINEMENT, and it is a scale rather than a fudge factor: `0` is the artifact's
+ * own box, and `k` asks what the ensemble would say if every rendered field carried `k` more digits.
+ * It exists because "the render is what binds" is a claim about SCALE — a window whose deciding gaps
+ * sit at `1e-4` is settled by one more digit, while one decided by a rendered tie is settled by no
+ * number of them — and a claim about scale has to be measured at more than one scale. Every field's
+ * OWN quantum is scaled, rather than one factor applied to the base, so each column stays at the
+ * resolution its own render has.
+ *
+ * @param screen - Which screen's arithmetic is being measured.
+ * @param extraDigits - How many more digits every rendered field is imagined to carry.
+ * @returns The per-service half-quantum, the onset half-quantum (`0` when that column is not read),
+ *   and the flags the two were built from.
+ */
+export function resolutionBoxFor(screen: GainResolutionScreen, extraDigits = 0): ResolutionBox {
+  const scale = 10 ** -extraDigits;
+  const fields = jitterFieldsFor(screen);
+  return {
+    service: DUMP_HALF_QUANTUM * scale,
+    onset: fields.onset ? ONSET_FIELD_HALF_QUANTUM * scale : 0,
+    fields,
+  };
+}
+
+/**
+ * The two quanta one screen reads at, with the flags that chose them.
+ *
+ * Carried together so {@link jitterCase} cannot be handed a box that disagrees with the columns it was
+ * told to draw: the flags ARE the box's `onset > 0`, by construction in {@link resolutionBoxFor}.
+ */
+export interface ResolutionBox {
+  /** Half-quantum for `selfAnomaly`, `logScore`, `latRise`, and `cv` when that column is drawn. */
+  readonly service: number;
+  /** Half-quantum for the whole-millisecond onset delay; `0` when the screen does not read it. */
+  readonly onset: number;
+  /** Which extra columns the box was built for. */
+  readonly fields: JitterFields;
 }
 
 /**
@@ -4386,27 +4653,34 @@ export function drawOnsetDelay(printedMs: number, unit: number): number {
  *
  * @param kase - One parsed case.
  * @param next - The next draw in `[0, 1)`.
- * @param fields - Which extra columns this screen reads; see {@link jitterFieldsFor}.
+ * @param box - The quanta and the columns this screen reads; see {@link resolutionBoxFor}.
  * @returns The case with every read field moved by its own quantum.
  */
-function jitterCase(kase: DiagnosedCase, next: () => number, fields: JitterFields): DiagnosedCase {
+function jitterCase(kase: DiagnosedCase, next: () => number, box: ResolutionBox): DiagnosedCase {
+  const fields = box.fields;
   return {
     ...kase,
     services: kase.services.map((service) => {
       const breakdown = service.decisiveOutcome?.breakdown;
       return {
         ...service,
-        selfAnomaly: service.selfAnomaly + quantumDraw(next),
-        logScore: service.logScore + quantumDraw(next),
-        latRise: service.latRise === undefined ? undefined : service.latRise + quantumDraw(next),
+        selfAnomaly: service.selfAnomaly + quantumDraw(next, box.service),
+        logScore: service.logScore + quantumDraw(next, box.service),
+        latRise:
+          service.latRise === undefined
+            ? undefined
+            : service.latRise + quantumDraw(next, box.service),
         // Drawn ONLY when the screen reads it, and at the millisecond render's own resolution rather
         // than the base's: a draw of ±5.0e-4 on a field whose print steps in whole milliseconds would
         // be three orders of magnitude too small to move a single order statistic.
-        // Through its own draw, which is where the cell's one-sidedness at zero lives.
+        // Through its own draw, which is where the cell's one-sidedness at zero lives. The guard is
+        // `box.onset === 0` rather than a call with a zero quantum, because a draw SPENT there would
+        // shift the sequence every later field reads — the box would be identical and the numbers
+        // would not.
         onsetDelayMs:
-          !fields.onset || service.onsetDelayMs === undefined
+          box.onset === 0 || service.onsetDelayMs === undefined
             ? service.onsetDelayMs
-            : drawOnsetDelay(service.onsetDelayMs, next()),
+            : drawOnsetDelay(service.onsetDelayMs, next(), box.onset),
         decisiveOutcome:
           breakdown === undefined || service.decisiveOutcome === undefined
             ? service.decisiveOutcome
@@ -4414,7 +4688,7 @@ function jitterCase(kase: DiagnosedCase, next: () => number, fields: JitterField
                 ...service.decisiveOutcome,
                 breakdown: {
                   ...breakdown,
-                  cv: fields.cv ? breakdown.cv + quantumDraw(next) : breakdown.cv,
+                  cv: fields.cv ? breakdown.cv + quantumDraw(next, box.service) : breakdown.cv,
                 },
               },
       };
@@ -4475,6 +4749,16 @@ export interface ResolutionInput {
   readonly ship: number;
   readonly screen: GainResolutionScreen;
   readonly trials?: number;
+  /**
+   * How many more digits every rendered field is imagined to carry; `0` (the default) is the box the
+   * artifact actually has.
+   *
+   * Not a knob for tuning a number: it is the SCALE `refinementFrontier` sweeps, and reading an
+   * ensemble drawn at `k > 0` as a statement about the dump would be reading a hypothetical. The
+   * result carries the value back out, so a printed line can never describe a refined ensemble as the
+   * artifact's own.
+   */
+  readonly extraDigits?: number;
 }
 
 export interface GainResolutionInput extends ResolutionInput {
@@ -4504,7 +4788,10 @@ export interface GainResolutionInput extends ResolutionInput {
  */
 export function gainResolution(input: GainResolutionInput): GainResolution {
   const rebuild = rebuildFor(input.screen);
-  const fields = jitterFieldsFor(input.screen);
+  // ONE box per ensemble, built from the screen and the refinement together, so the quanta and the
+  // columns cannot come from two different answers to "what does this screen read".
+  const extraDigits = input.extraDigits ?? 0;
+  const box = resolutionBoxFor(input.screen, extraDigits);
   const trials = input.trials ?? GAIN_RESOLUTION_TRIALS;
   const byPack = new Map(input.cases.map((kase) => [kase.datapack, kase]));
   // `Array.from`, not `new Array(n).fill(0)`: the length form of the constructor is ambiguous with
@@ -4524,7 +4811,7 @@ export function gainResolution(input: GainResolutionInput): GainResolution {
   for (let trial = 0; trial < trials; trial++) {
     let count = 0;
     drawn.forEach((kase, index) => {
-      const built = rebuild(jitterCase(kase, next, fields))!;
+      const built = rebuild(jitterCase(kase, next, box))!;
       if (intervalsCover(caseWeightInterval(built), input.ship)) {
         count++;
         held[index] = held[index]! + 1;
@@ -4538,7 +4825,8 @@ export function gainResolution(input: GainResolutionInput): GainResolution {
     .map((entry) => entry.index);
   return {
     trials,
-    fields,
+    fields: box.fields,
+    extraDigits,
     histogram,
     least: Math.min(...seen),
     most: Math.max(...seen),
@@ -4586,6 +4874,8 @@ export interface CapResolution {
   readonly trials: number;
   /** The box these draws came from; see {@link GainResolution.fields}. */
   readonly fields: JitterFields;
+  /** The refinement these draws were taken at; see {@link GainResolution.extraDigits}. */
+  readonly extraDigits: number;
   /** The cap each draw produced, in draw order. */
   readonly caps: readonly number[];
   /** The smallest cap any draw produced. */
@@ -4630,7 +4920,8 @@ export interface CapResolution {
  */
 export function capResolution(input: ResolutionInput): CapResolution {
   const rebuild = rebuildFor(input.screen);
-  const fields = jitterFieldsFor(input.screen);
+  const extraDigits = input.extraDigits ?? 0;
+  const box = resolutionBoxFor(input.screen, extraDigits);
   const trials = input.trials ?? CAP_RESOLUTION_TRIALS;
   const next = seededUnit(GAIN_RESOLUTION_SEED);
   const caps: number[] = [];
@@ -4638,7 +4929,7 @@ export function capResolution(input: ResolutionInput): CapResolution {
   let lostAtShip = 0;
   let worstLost = 0;
   for (let trial = 0; trial < trials; trial++) {
-    const drawn = input.cases.map((kase) => rebuild(jitterCase(kase, next, fields)));
+    const drawn = input.cases.map((kase) => rebuild(jitterCase(kase, next, box)));
     const built = drawn.filter((one): one is WeightSeparationCase => one !== undefined);
     const cap = computeZeroRegressionWindow(built).cap;
     caps.push(cap);
@@ -4651,7 +4942,8 @@ export function capResolution(input: ResolutionInput): CapResolution {
   }
   return {
     trials,
-    fields,
+    fields: box.fields,
+    extraDigits,
     caps,
     least: Math.min(...caps),
     most: Math.max(...caps),
