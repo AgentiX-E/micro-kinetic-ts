@@ -837,8 +837,8 @@ exists, and keeps its one sentence when none does.
 
 | dump | screen | shape | verdict |
 | --- | --- | --- | --- |
-| FSE'26 (1422 cases) | temporal | all four | **refused** — `earliest-only` at 56 of 100 draws |
-| FSE'26 | stability | all four | **refused** — `flip` 2 of 3 gains hold in every draw, `rank` 2 of 6 |
+| FSE'26 (1422 cases, run `35035314921`) | temporal | all four | **refused** — `earliest-only` at 56 of 100 draws |
+| FSE'26 (1422 cases, run **`35107871516`**) | stability | all four | **refused** — `flip` 3 gains at `[0.021536, 0.024882]` with 2 of 3 holding in every draw, `rank` 6 at `[0.029860, 0.030480]` with 2 of 6 |
 | `re1` (375) | temporal | `earliness` | ADMISSIBLE (1 gain, 400 of 400 draws, cap intact 100 of 100) |
 | `re2` (150) | temporal | `earliness`, `latest-only` | ADMISSIBLE |
 | `re3` (90) | temporal | `earliness`, `order`, `latest-only` | ADMISSIBLE |
@@ -855,9 +855,19 @@ can change a ranking — a window here is an artefact"*. That is a different sta
 is a verdict about a menu that was EVALUATED, and nothing was evaluated here. The distinction matters because
 "no shape has a gain" invites a search for a gain, while "inert" says the search is empty by construction.
 
-Each row also gains its population, because a verdict is about the artifact it ran on: `re1` 375 cases is
-`re1ob 125 + re1ss 125 + re1tt 125`, and a copy holding only the `tt` third is a different population wearing
-the suite's name (`scripts/dump_coverage.py` refuses such a comparison; see the audit).
+Each row also gains its population AND its run, because a verdict is about the artifact it ran on: `re1` 375
+cases is `re1ob 125 + re1ss 125 + re1tt 125`, and a copy holding only the `tt` third is a different population
+wearing the suite's name (`scripts/dump_coverage.py` refuses such a comparison; see the audit). **And the
+FSE'26 rows are about TWO artifacts, which is why they now name one each**: the temporal reading is on run
+`35035314921`, whose dump is `.bench-cache/dump-35035314921.txt`; the stability reading is on run
+`35107871516`, whose report is `artifacts/r35107871516/fse26-results.txt`. The composition line was added to
+the producer between them, so the first CANNOT evaluate the stability term at all — it holds 1422 cases and
+72527 service rows and **not one** decisive composition, where the second holds **71161**. Run the analyzer on
+the first and the screen says so in as many words: `the term is UNEVALUABLE on this dump … a dump whose
+producer emitted metricDecisive is needed`. Re-measured on the second, every number above reproduces byte for
+byte. (The report now distinguishes the two absences by name — `INERT` for a term that cannot reorder what the
+artifact records, `UNEVALUABLE` for one whose input the artifact does not carry — because printing the second
+as the first is how an artifact's age reads as a result about the benchmark.)
 
 **Two things follow, and the second is the one that matters.**
 

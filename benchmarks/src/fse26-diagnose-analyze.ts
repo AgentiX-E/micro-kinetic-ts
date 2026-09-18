@@ -3033,6 +3033,64 @@ export function onsetAvailability(cases: readonly DiagnosedCase[]): OnsetAvailab
   };
 }
 
+/** WHICH absence stops the temporal screen — named, because they close different things. */
+export type OnsetInertCause = 'no-cases' | 'no-anchor' | 'no-onset' | 'no-order';
+
+/**
+ * Why the temporal term cannot act on this artifact.
+ *
+ * The menu printed ONE sentence for all of these, and it asserted a fact about the ENGINE — *"the engine
+ * leaves every service neutral"* — for causes that are facts about the DATA or about the CONFIGURATION.
+ * `no-order` is reachable with hundreds of services carrying an onset (measured: 120 of 2900 on a golden
+ * dump), where the anchor was given and the delays ARE recorded and what is missing is an ORDER. Recording
+ * that as "every service neutral" points the reader at the engine when the finding is about the spread.
+ *
+ * @param a - The counts the availability pass produced.
+ * @returns The first absence that stops the term, in the order they nest.
+ */
+export function onsetInertCause(a: OnsetAvailability): OnsetInertCause {
+  if (a.cases === 0) return 'no-cases';
+  if (a.withAnchor === 0) return 'no-anchor';
+  if (a.withOnsets === 0) return 'no-onset';
+  return 'no-order';
+}
+
+/**
+ * The sentence a temporal menu prints INSTEAD of a window, with the label its cause earns.
+ *
+ * `INERT` when the term cannot reorder what the artifact RECORDS — a result about the axis — and
+ * `UNEVALUABLE` when the artifact does not carry the input at all, which invites a different ARTIFACT
+ * rather than a conclusion about the engine. Two pieces of work, so two words.
+ *
+ * @param a - The counts the availability pass produced.
+ * @returns One or more indented lines.
+ */
+export function onsetInertSentence(a: OnsetAvailability): string[] {
+  switch (onsetInertCause(a)) {
+    case 'no-cases':
+      return [
+        '  the term is UNEVALUABLE on this dump: it names no case with an acceptable root, so there is',
+        '  nothing to screen — a gap in the ARTIFACT rather than a result about the data.',
+      ];
+    case 'no-anchor':
+      return [
+        '  the term is INERT on this dump: no case carries an injection anchor, so the engine was given',
+        '  no time to order — an artefact of the CONFIGURATION, not a finding about the engine.',
+      ];
+    case 'no-onset':
+      return [
+        `  the term is INERT on this dump: all ${a.withAnchor} anchored cases hold no service carrying an`,
+        '  onset delay, so there is no time to order — a window here is an artefact.',
+      ];
+    default:
+      return [
+        `  the term is INERT on this dump: onsets ARE recorded (${a.servicesWithOnset} of`,
+        `  ${a.servicesTotal} services) and the engine's own earliness map is empty for every case, so no`,
+        '  weight can reorder anything — a window here is an artefact.',
+      ];
+  }
+}
+
 /** The solved onset screen. */
 export interface OnsetScreen {
   /** How much of the dump carries onset evidence at all. */
@@ -3515,8 +3573,7 @@ export function formatOnsetMenuReport(
   );
   lines.push(`  services carrying an onset: ${a.servicesWithOnset}/${a.servicesTotal} (${share})`);
   if (a.withEarliness === 0) {
-    lines.push('  the term is INERT on this dump: the engine leaves every service neutral, so no');
-    lines.push('  weight on any shape can change a ranking — a window here is an artefact.');
+    lines.push(...onsetInertSentence(a));
     // BEFORE the return, because this is the menu's other early exit: a named weight has a verdict
     // on an inert dump too — "the term changes nothing" is a measurement — and an inert dump is
     // exactly where "the weight is harmless" is the tempting conclusion the flag exists to check.
@@ -3597,8 +3654,7 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
     // Not "no window": the term cannot act at all, so a gain of zero here would be
     // read as a negative result when it is a data gap. Saying which is the whole
     // point of printing availability before the window.
-    lines.push('  the term is INERT on this dump: the engine leaves every service neutral, so no');
-    lines.push('  weight can change a ranking — a window here would be an artefact.');
+    lines.push(...onsetInertSentence(a));
     return lines.join('\n');
   }
   // The width of the range the line above NAMES — the maximal-gain span the recommendation was
@@ -3750,8 +3806,7 @@ export function cvSlopes(
   return slopes;
 }
 
-/** How much of a dump the decisive-stability term can act on. */
-export interface CvAvailability {
+/** How much of a dump the decisive-stability term can act on. */ export interface CvAvailability {
   /** Cases the dump describes and that name at least one acceptable root. */
   readonly cases: number;
   /** Services in total, over every such case. */
@@ -3794,6 +3849,57 @@ export function cvAvailability(cases: readonly DiagnosedCase[]): CvAvailability 
     if (seen.size > 1) casesComparable++;
   }
   return { cases: eligible, servicesTotal, servicesMeasured, casesComparable };
+}
+
+/** WHICH absence stops the stability screen — named, because they close different things. */
+export type CvInertCause = 'no-cases' | 'no-composition' | 'no-spread';
+
+/**
+ * Why the decisive-stability term cannot act on this artifact.
+ *
+ * The menu printed ONE sentence for all of these — *"no case holds two distinct coefficients of
+ * variation"* — and on an artifact that records no composition at all that claim is TRUE AND VACUOUS
+ * while reading as a result about the benchmark. Measured: the FSE'26 dump on disk holds 1422 cases and
+ * 72527 service rows and **not one** decisive composition, because it predates the line the composition
+ * is rendered on, while a later render of the SAME run reports `71161 of 72527`. So the cause is named:
+ * `no-composition` is a gap in the artifact, and only `no-spread` is a result.
+ *
+ * @param a - The counts the availability pass produced.
+ * @returns The first absence that stops the term, in the order they nest.
+ */
+export function cvInertCause(a: CvAvailability): CvInertCause {
+  if (a.cases === 0) return 'no-cases';
+  if (a.servicesMeasured === 0) return 'no-composition';
+  return 'no-spread';
+}
+
+/**
+ * The sentence a stability menu prints INSTEAD of a window, with the label its cause earns.
+ *
+ * @param a - The counts the availability pass produced.
+ * @returns One or more indented lines.
+ */
+export function cvInertSentence(a: CvAvailability): string[] {
+  switch (cvInertCause(a)) {
+    case 'no-cases':
+      return [
+        '  the term is UNEVALUABLE on this dump: it names no case with an acceptable root, so there is',
+        '  nothing to screen — a gap in the ARTIFACT rather than a result about the data.',
+      ];
+    case 'no-composition':
+      return [
+        `  the term is UNEVALUABLE on this dump: its blocks record a decisive composition for NONE of`,
+        `  their ${a.servicesTotal} services (0 of ${a.servicesTotal}), so no stability question can be`,
+        '  asked OF THIS ARTIFACT — a dump whose producer emitted `metricDecisive` is needed, and a',
+        '  spread conclusion is unavailable here in either direction.',
+      ];
+    default:
+      return [
+        `  the term is INERT on this dump: the composition IS recorded (${a.servicesMeasured} of`,
+        `  ${a.servicesTotal} services) and no case holds two distinct coefficients of variation, so no`,
+        '  weight can change a ranking — a window here is an artefact.',
+      ];
+  }
 }
 
 /**
@@ -4056,8 +4162,7 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
   );
   lines.push(...namedWeightLines(s.at));
   if (a.casesComparable === 0) {
-    lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
-    lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
+    lines.push(...cvInertSentence(a));
     return lines.join('\n');
   }
   // The width of the range the line above NAMES — the maximal-gain span the recommendation was
@@ -4164,8 +4269,7 @@ export function formatCvMenuReport(
         .join(', '),
   );
   if (a.casesComparable === 0) {
-    lines.push('  the term is INERT on this dump: no case holds two distinct coefficients of');
-    lines.push('  variation, so no weight can change a ranking — a window here is an artefact.');
+    lines.push(...cvInertSentence(a));
     // Same reason as the onset menu's identical placement: the verdict precedes the exit, because
     // the menu returns before the loop that renders a shape's detail.
     for (const screen of screens) lines.push(...namedWeightLines(screen.solved.at));

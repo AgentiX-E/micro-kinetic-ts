@@ -267,6 +267,21 @@ Before reading any number, check that the input was counted:
   shape admits. Recording that as *"refused — no shape has a gain at all"* invites a search for a gain, while
   the truth is that the evaluation is empty BY CONSTRUCTION. A refusal is a verdict about a menu that ran; an
   inertness is a statement that it did not (`docs/fse26-cv-screen.md`).
+- **AND WITHIN "CANNOT ACT" THERE ARE TWO ABSENCES, SO THERE ARE TWO WORDS: `INERT` versus `UNEVALUABLE`.**
+  Each menu printed ONE sentence — *"the engine leaves every service neutral"* for the temporal screen, *"no
+  case holds two distinct coefficients of variation"* for the stability one — for causes that include the
+  artifact not carrying the input AT ALL. On run `35035314921`'s FSE'26 dump that sentence is TRUE AND VACUOUS:
+  1422 cases, 72527 service rows, **not one** decisive composition, because the dump predates the line the
+  composition is rendered on, while run `35107871516` — the same benchmark, a later render — holds **71161**
+  and reports the windows the record quotes. So the cause is NAMED (`no-cases | no-anchor | no-onset |
+  no-order`, `no-cases | no-composition | no-spread`), the label says which question is open, and ONE owner per
+  screen serves both menus: `INERT` for a term that cannot reorder what the artifact RECORDS (a result about
+  the axis, `docs/fse26-cv-screen.md`), `UNEVALUABLE` for one whose input
+  the artifact does not carry (a finding about the ARTIFACT, which invites a different artifact rather than a
+  conclusion). **And the detector of the earlier mistake was itself a defect**: `fetch_dump2.log` recorded
+  `metricDecisive lines: 0` for the artifact that holds 71161, because it counted lines STARTING with the
+  literal while the transport prefixes a BOM and an ISO timestamp to every line start — a probe measuring the
+  TRANSPORT, reported as a property of the artifact.
 - **THE GOLDEN IS THE RUN A *PUSH* STARTED, not the newest run at the commit.** One commit can carry two
   benchmark runs — a push and a `workflow_dispatch` — and a dispatch runs at whatever inputs the caller
   passed, so its cells measure that configuration rather than the bytes the paths rule owes. A selector

@@ -52,6 +52,8 @@ import {
   computeZeroRegressionWindow,
   CV_SHAPES,
   cvAvailability,
+  cvInertCause,
+  cvInertSentence,
   cvScreen,
   cvShapeMenu,
   cvSlopes,
@@ -89,6 +91,8 @@ import {
   MISS_ORDER,
   ONSET_SHAPES,
   onsetAvailability,
+  onsetInertCause,
+  onsetInertSentence,
   onsetScreen,
   onsetShapeMenu,
   onsetSlopes,
@@ -2433,6 +2437,23 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     const menu = formatOnsetMenuReport(onsetShapeMenu(empty, { logWeight: 1 }), { logWeight: 1 });
     expect(menu).toContain('services carrying an onset: 0/0 (n/a)');
     expect(menu.match(/INERT/g)).toHaveLength(1);
+  });
+
+  it('calls a dump with no usable case UNEVALUABLE, on the temporal side too', () => {
+    // The stability menu had this cause covered and the temporal one did not — which is exactly how two
+    // menus drift apart while both print "the term is INERT on this dump": the sentence was written at
+    // four sites and tested at two. Nothing here names an acceptable root, so there is nothing to
+    // screen, and that is a gap in the ARTIFACT rather than a statement about the engine.
+    const none = parseDiagnosticDump(
+      dump({ groundTruthServices: [], services: [], topPredictions: [] }),
+    );
+    const menu = formatOnsetMenuReport(onsetShapeMenu(none, { logWeight: 1 }), { logWeight: 1 });
+    expect(menu).toContain('the term is UNEVALUABLE on this dump');
+    expect(menu).toContain('no case with an acceptable root');
+    expect(menu).not.toContain('shape          gain');
+    expect(
+      formatOnsetScreenReport(onsetScreen(none, { logWeight: 1 }), { logWeight: 1 }),
+    ).toContain('the term is UNEVALUABLE on this dump');
   });
 
   it('renders the availability, the window and the loss at the shipped weight', () => {
@@ -5240,19 +5261,25 @@ describe('formatCvMenuReport — availability first, then one row per shape', ()
     expect(report).toContain('gain 1');
   });
 
-  it('says the term is inert rather than printing a window over nothing', () => {
+  it('calls a dump with no usable case UNEVALUABLE, which is what its zero is', () => {
     // A dump that carries no case this can act on. The share is `n/a` rather than a division by
     // an empty population, and no `window:` line is printed at all: a gain of 0 here is a data
     // gap, and a window row would present it as a verdict on the shape.
+    //
+    // The sentence used to read "the term is INERT on this dump: no case holds two distinct coefficients
+    // of variation" — which is true of a population of zero and says nothing about WHY, so a reader met a
+    // claim about the benchmark where the finding is about the artifact. The cause is now named and the
+    // label distinguishes the two: `UNEVALUABLE` when the input is not there.
     const cases = parseDiagnosticDump(
       dump({ groundTruthServices: [], services: [], topPredictions: [] }),
     );
     const menu = formatCvMenuReport(cvShapeMenu(cases, WEIGHTS), WEIGHTS);
     expect(menu).toContain('0/0 (n/a)');
-    expect(menu).toContain('the term is INERT on this dump');
+    expect(menu).toContain('the term is UNEVALUABLE on this dump');
+    expect(menu).toContain('no case with an acceptable root');
     expect(menu).not.toContain('window:');
     expect(formatCvScreenReport(cvScreen(cases, WEIGHTS), WEIGHTS)).toContain(
-      'the term is INERT on this dump',
+      'the term is UNEVALUABLE on this dump',
     );
   });
 
@@ -7340,6 +7367,171 @@ describe('the box comes from the artifact’s own declared precision', () => {
     expect(line(rendered(6))).not.toContain(`±${(2 * halfQuantumFor(3)).toExponential(1)}`);
     expect(line(legacy())).toContain(
       `±${(2 * halfQuantumFor(HISTORICAL_FIELD_DECIMALS)).toExponential(1)}`,
+    );
+  });
+});
+
+/**
+ * WHY a screen cannot act — one owner per absence, and a label that says whether the artifact
+ * could have answered at all.
+ *
+ * Both menus printed one sentence for every cause: *"the engine leaves every service neutral"* for the
+ * temporal screen and *"no case holds two distinct coefficients of variation"* for the stability one.
+ * Measured on the real dumps, both sentences were sometimes FALSE and always indistinguishable:
+ *
+ * - the FSE'26 dump on disk records **no decisive composition at all** (`0 of 72527` services), so the
+ *   stability screen printed a claim about the DATA — that no case holds two distinct cvs — which is
+ *   vacuously true there and reads as a result about FSE'26. The truth is a gap in the ARTIFACT: it
+ *   predates the line the composition is rendered on, so no stability question can be asked of it;
+ * - a temporal dump with onsets but no case reaching the engine's own earliness is not "every service
+ *   neutral" either: the onsets ARE recorded, and plotting them makes the difference visible.
+ *
+ * So the cause is NAMED and the label distinguishes INERT (the term cannot reorder what the artifact
+ * records — a result) from UNEVALUABLE (the artifact does not record the input — a gap).
+ */
+describe('why a screen cannot act', () => {
+  /** A sentence is wrapped to the report's width, so its content is read with the wrapping normalised. */
+  const textOf = (lines: readonly string[]): string => lines.join(' ').replace(/\s+/g, ' ');
+
+  it('names WHICH absence for the temporal screen', () => {
+    const none = {
+      cases: 0,
+      withAnchor: 0,
+      withOnsets: 0,
+      withEarliness: 0,
+      servicesWithOnset: 0,
+      servicesTotal: 0,
+    };
+    const anchored = {
+      cases: 90,
+      withAnchor: 90,
+      withOnsets: 90,
+      withEarliness: 0,
+      servicesWithOnset: 120,
+      servicesTotal: 2900,
+    };
+    expect(onsetInertCause(none)).toBe('no-cases');
+    expect(onsetInertCause({ ...none, cases: 90, servicesTotal: 2900 })).toBe('no-anchor');
+    expect(onsetInertCause({ ...none, cases: 90, servicesTotal: 2900, withAnchor: 90 })).toBe(
+      'no-onset',
+    );
+    expect(onsetInertCause(anchored)).toBe('no-order');
+  });
+
+  it('names WHICH absence for the stability screen', () => {
+    expect(
+      cvInertCause({ cases: 0, servicesTotal: 0, servicesMeasured: 0, casesComparable: 0 }),
+    ).toBe('no-cases');
+    // The real FSE'26 artifact: 1422 cases, 72527 service rows, and NOT ONE decisive composition.
+    expect(
+      cvInertCause({ cases: 1422, servicesTotal: 72527, servicesMeasured: 0, casesComparable: 0 }),
+    ).toBe('no-composition');
+    expect(
+      cvInertCause({
+        cases: 1422,
+        servicesTotal: 72527,
+        servicesMeasured: 71161,
+        casesComparable: 0,
+      }),
+    ).toBe('no-spread');
+  });
+
+  it('calls a gap in the ARTIFACT unevaluable, and a measured absence inert', () => {
+    // The distinction that matters: a gap invites a different artifact, a result invites a different axis.
+    const noComposition = textOf(
+      cvInertSentence({
+        cases: 1422,
+        servicesTotal: 72527,
+        servicesMeasured: 0,
+        casesComparable: 0,
+      }),
+    );
+    const noSpread = textOf(
+      cvInertSentence({
+        cases: 1422,
+        servicesTotal: 72527,
+        servicesMeasured: 71161,
+        casesComparable: 0,
+      }),
+    );
+    expect(noComposition).toContain('UNEVALUABLE');
+    expect(noComposition).toContain('0 of 72527');
+    expect(noSpread).toContain('INERT');
+    expect(noSpread).toContain('71161 of 72527');
+  });
+
+  it('does NOT make the vacuous claim when there is nothing to hold a spread', () => {
+    // "no case holds two distinct cvs" is true and useless when no service carries a cv at all — it is
+    // the sentence that let a reader conclude something about FSE'26 from an artifact that cannot answer.
+    const lines = textOf(
+      cvInertSentence({
+        cases: 1422,
+        servicesTotal: 72527,
+        servicesMeasured: 0,
+        casesComparable: 0,
+      }),
+    );
+    expect(lines).not.toContain('no case holds two distinct');
+    // The word that sends a reader to a different ARTIFACT rather than to a different axis.
+    expect(lines.toLowerCase()).toContain('artifact');
+  });
+
+  it('does NOT blame the engine for a gap in the data', () => {
+    const noOrder = textOf(
+      onsetInertSentence({
+        cases: 90,
+        withAnchor: 90,
+        withOnsets: 90,
+        withEarliness: 0,
+        servicesWithOnset: 120,
+        servicesTotal: 2900,
+      }),
+    );
+    expect(noOrder).not.toContain('leaves every service neutral');
+    expect(noOrder).toContain('120 of 2900');
+    // The cause that IS a neutral engine keeps saying so, and names the anchor.
+    const noAnchor = textOf(
+      onsetInertSentence({
+        cases: 90,
+        withAnchor: 0,
+        withOnsets: 0,
+        withEarliness: 0,
+        servicesWithOnset: 0,
+        servicesTotal: 2900,
+      }),
+    );
+    expect(noAnchor).toContain('INERT');
+    expect(noAnchor).toContain('injection anchor');
+  });
+
+  it('reads a real block that records no composition as UNEVALUABLE, not as a result', () => {
+    // The fixture is the condition the real artifact is in: services whose block carries no
+    // `metricDecisive` line at all.
+    const parsed = parseDiagnosticDump(
+      dump({
+        services: [
+          serviceLine({ serviceId: 'a', selfAnomaly: 0.9 }),
+          serviceLine({ serviceId: 'b', selfAnomaly: 0.8 }),
+        ],
+      }),
+    );
+    expect(cvAvailability(parsed).servicesMeasured).toBe(0);
+    expect(cvInertCause(cvAvailability(parsed))).toBe('no-composition');
+  });
+
+  it('has ONE owner for each sentence, across both menus', () => {
+    // The defect survived because the same two lines were written at four sites. A literal that comes
+    // back into the formatters is a second copy, invisible to every assertion above.
+    const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
+    const source = readFileSync(resolve(root, 'benchmarks/src/fse26-diagnose-analyze.ts'), 'utf8');
+    expect(source).not.toContain('the term is INERT on this dump: no case holds two distinct');
+    expect(source).not.toContain(
+      'the term is INERT on this dump: the engine leaves every service neutral',
+    );
+    // The sentence is never PUSHED as a literal: both menus reach it through the helper, twice each.
+    expect(source.match(/lines\.push\('  the term is/g) ?? []).toHaveLength(0);
+    expect(source.match(/lines\.push\(\.\.\.(?:onset|cv)InertSentence\(a\)\)/g) ?? []).toHaveLength(
+      4,
     );
   });
 });
