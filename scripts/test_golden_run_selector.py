@@ -179,6 +179,85 @@ class SelectRunsTest(unittest.TestCase):
         self.assertEqual(selector.select_runs([]), {})
 
 
+class RunsGroupedTest(unittest.TestCase):
+    """What is AT a commit is a fact; which run answers for it is a CHOICE."""
+
+    def run_of(self, path: str, created: str, run_id: int = 1, event: str = 'push') -> dict:
+        return {
+            'id': run_id,
+            'path': f'.github/workflows/{path}',
+            'created_at': created,
+            'event': event,
+        }
+
+    def test_it_keeps_EVERY_run_of_a_file_oldest_first(self) -> None:
+        runs = [
+            self.run_of('ci.yml', '2026-09-18T02:00:00Z', 2),
+            self.run_of('ci.yml', '2026-09-18T00:00:00Z', 1),
+        ]
+        self.assertEqual([one['id'] for one in selector.runs_grouped(runs)['ci.yml']], [1, 2])
+
+    def test_a_file_with_no_runs_is_ABSENT_rather_than_an_empty_list(self) -> None:
+        # Absent and empty are different statements: the first says no run of this file exists, the
+        # second would say one exists and contributed nothing.
+        self.assertEqual(selector.runs_grouped([]), {})
+
+
+class OwedGoldenRunTest(unittest.TestCase):
+    """The golden is owed by a PUSH, so the push run is the one that answers for the commit."""
+
+    def run_of(
+        self,
+        path: str = 'benchmark-rcaeval.yml',
+        created: str = '2026-09-18T00:00:00Z',
+        run_id: int = 1,
+        event: str = 'push',
+    ) -> dict:
+        return {
+            'id': run_id,
+            'path': f'.github/workflows/{path}',
+            'created_at': created,
+            'event': event,
+        }
+
+    def test_the_golden_is_the_PUSH_run_even_when_a_DISPATCH_is_newer(self) -> None:
+        # Measured, not hypothetical: `4a370b8` carries push `35316003267` and a dispatch
+        # `35316048737` created 37 seconds later. `select_runs` answers the dispatch, and reading it
+        # as the golden would report a MEASUREMENT of whatever inputs the caller passed as if the
+        # paths rule's owed bytes had been verified.
+        push = self.run_of(created='2026-09-18T06:41:50Z', run_id=35316003267)
+        dispatch = self.run_of(
+            created='2026-09-18T06:42:27Z', run_id=35316048737, event='workflow_dispatch'
+        )
+        self.assertEqual(selector.owed_golden_run([push, dispatch])['id'], 35316003267)
+        # The defect, stated: the newest-per-file selector prefers the dispatch.
+        self.assertEqual(
+            selector.select_runs([push, dispatch])['benchmark-rcaeval.yml']['id'], 35316048737
+        )
+
+    def test_a_commit_with_only_a_DISPATCH_owes_no_golden(self) -> None:
+        self.assertIsNone(
+            selector.owed_golden_run([self.run_of(event='workflow_dispatch')])
+        )
+
+    def test_two_PUSH_runs_at_one_sha_are_an_AMBIGUITY_not_a_choice(self) -> None:
+        # Nothing in the data says which of two push runs a criterion about "the golden" refers to,
+        # so picking one would be inventing the answer.
+        with self.assertRaises(selector.QueryError):
+            selector.owed_golden_run([self.run_of(run_id=1), self.run_of(run_id=2)])
+
+    def test_it_reads_only_the_workflow_it_was_asked_about(self) -> None:
+        self.assertIsNone(selector.owed_golden_run([self.run_of(path='ci.yml')]))
+
+    def test_a_run_without_an_EVENT_is_loud_rather_than_assumed(self) -> None:
+        # Defaulting a missing `event` would decide "not a push" for a page that failed to carry the
+        # field, i.e. it would answer "no golden is owed" in exactly the direction that hides an owed
+        # one. The API always sends it, so a KeyError here means the page is not what this reads.
+        with self.assertRaises(KeyError):
+            selector.owed_golden_run([{'id': 1, 'path': '.github/workflows/benchmark-rcaeval.yml',
+                                       'created_at': '2026-09-18T00:00:00Z'}])
+
+
 class TriggerPathsTest(unittest.TestCase):
     """The rule is read from the workflow, so there is one owner for it."""
 
@@ -435,6 +514,15 @@ class PollerUsesTheSelectorTest(unittest.TestCase):
     def test_the_poller_does_not_assert_the_paths_rule_in_a_sentence(self) -> None:
         text = self.poller.read_text('utf-8')
         self.assertNotIn('does not touch a path that can move the engine', text)
+
+    def test_the_poller_reads_the_golden_by_EVENT_not_by_recency(self) -> None:
+        # Two runs at one commit is not hypothetical — `4a370b8` carries a push and a dispatch of the
+        # benchmark — and a dispatch's cells measure the caller's inputs rather than the paths rule's
+        # owed bytes. So the poller takes the push run, and reports the rest as what they are.
+        text = self.poller.read_text('utf-8')
+        self.assertIn('owed_golden_run', text)
+        self.assertIn('runs_grouped', text)
+        self.assertIn('not the golden', text)
 
 
 if __name__ == '__main__':

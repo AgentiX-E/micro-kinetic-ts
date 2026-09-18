@@ -234,15 +234,41 @@ Before reading any number, check that the input was counted:
   the report already has) shows FSE'26's `earliest-only` unchanged by six more digits: the weakest gain
   survives **56.0% of draws at a millionth of the quantum against 56.0% at the artifact's own box**. An
   UNMOVED survival rate is the signature of a rendered TIE, which a finer render CHANGES rather than
-  refines. What survived is what was measured — two windows (`re3`'s and `re3-noinject`'s stability `flip`)
-  answer `needs 1`, and only those justify a finer dump. Three traps travel with it: **a resolution shortfall
-  does not imply the resolution is the OBSTACLE** (the reachable refusal reasons are scale-free by
-  construction, so the inference was structural, not empirical); **a refusal's two channels are correlated**,
-  so a clause must name the bar that is still failing rather than assert the mechanism its own trajectory
-  contradicts (`re1`'s `order` has a weakest gain CLIMBING to 100.0% while the window is still refused); and
-  **a column a screen does not read must not spend a draw**, because one shared sequence means an unread
-  column's draw shifts every value after it — the box identical and the numbers not
-  (`docs/fse26-cv-screen.md`).
+  refines. **CORRECTED IN PLACE 2026-09-18**: what this bullet then said was that two windows —
+  `re3`'s and `re3-noinject`'s stability `flip` — answer `needs 1` and that only those justify a finer
+  dump. **Every RCAEval coordinate in that reading came from `.bench-cache/rcaeval-dumps/*.txt`, which
+  hold ONE system per suite** (`re3` 30 of 90 cases, `re1` 125 of 375, first case `rcaeval-re3_re3tt_…`),
+  and on the artifacts the workflow produces now **no window answers `needs 1`**. What was measured and
+  stands is FSE'26's plateau and the three traps below. Three traps travel with it: **a resolution
+  shortfall does not imply the resolution is the OBSTACLE** (the reachable refusal reasons are scale-free
+  by construction, so the inference was structural, not empirical); **a refusal's two channels are
+  correlated**, so a clause must name the bar that is still failing rather than assert the mechanism its
+  own trajectory contradicts (`re1`'s `order` has a weakest gain CLIMBING to 100.0% while the window is
+  still refused); and **a column a screen does not read must not spend a draw**, because one shared
+  sequence means an unread column's draw shifts every value after it — the box identical and the numbers
+  not (`docs/fse26-cv-screen.md`).
+- **A MEASUREMENT IS ABOUT THE ARTIFACT IT RAN ON, and a record that a fix landed does not refresh the file
+  it fixed.** The RCAEval dumps used above were TrainTicket-only COPIES made before the dump-completeness
+  fix, sitting on disk beside a log that said all seven dumps hold every system; an evidence table and a
+  pre-registered prediction were derived from them, and both were about a subpopulation. So a row names its
+  artifact's COVERAGE (`re3` 90 cases, FSE'26 1422) and a comparison states it is like-for-like — which is
+  how the same iteration found that a finer render does not refine a window but **MOVES** it (`ship`
+  `0.177070 → 0.181919` on the same 90 cases, because the printed margins are INPUTS to the solve), while
+  lifting the gain channel's own-box survival `98.8% → 100.0%` and leaving the cap channel as the failing bar.
+- **THE GOLDEN IS THE RUN A *PUSH* STARTED, not the newest run at the commit.** One commit can carry two
+  benchmark runs — a push and a `workflow_dispatch` — and a dispatch runs at whatever inputs the caller
+  passed, so its cells measure that configuration rather than the bytes the paths rule owes. A selector
+  keeping the newest run per workflow per `head_sha` reads the dispatch: measured on `4a370b8`, where it read
+  `35316048737` under the heading "GOLDEN" while the owed run was `35316003267`. `owed_golden_run` reads
+  `event`, REFUSES rather than picks when two push runs share a SHA, and raises on a page that failed to
+  carry the field — defaulting it would answer "no golden is owed" in exactly the direction that hides one
+  (`docs/golden-reader-audit.md`).
+- **A FLAG WHOSE BAD VALUE KILLS THE RUN IS A DIFFERENT CLASS FROM ONE THAT ANSWERS WRONGLY.** A weight's
+  malformed value produces a plausible benchmark at the ablation's configuration; a render precision's
+  malformed value makes `toFixed` raise `RangeError` — accepted domain `[0, 100]`, so `200` is out — on the
+  first rendered case, after a suite is loaded and inside a loop that runs once per field per service. So the
+  bound is EXPORTED FROM THE MODULE THAT CALLS `toFixed` and imported by the parser that reads the flag,
+  never restated, and the test measures it against `toFixed` itself (`docs/fse26-cv-screen.md`).
 - **AN ARTIFACT MUST DECLARE THE QUANTITY A READER'S ERROR BAR COMES FROM.** The ensembles draw each rendered
   field inside the cell its print stands for, and they took that cell from a constant the reader and the
   producer shared — a copy of `3` that is correct only while the two AGREE, and that models the box of the

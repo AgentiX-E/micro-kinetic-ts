@@ -340,6 +340,59 @@ def select_runs(runs: list[dict]) -> dict[str, dict]:
     return by_path
 
 
+def runs_grouped(runs: list[dict]) -> dict[str, list[dict]]:
+    """
+    Every run per workflow FILE, oldest first.
+
+    :func:`select_runs` answers "which run of this file answers for the commit", which is a CHOICE.
+    This answers "what is AT this commit", which is a FACT — and the two differ the moment a commit
+    carries two runs of one file, which happens whenever a push and a ``workflow_dispatch`` land on
+    the same SHA. A page that reported only the chosen run would hide a run that exists.
+
+    @param runs: One page of the API's ``workflow_runs``.
+    @returns: Filename to every run of it, oldest first.
+    """
+    grouped: dict[str, list[dict]] = {}
+    for run in sorted(runs, key=lambda one: one['created_at']):
+        grouped.setdefault(run['path'].split('/')[-1], []).append(run)
+    return grouped
+
+
+def owed_golden_run(runs: list[dict], *, workflow: str = BENCHMARK_WORKFLOW) -> dict | None:
+    """
+    The PUSH-triggered run of `workflow` — the run whose result the criterion is about.
+
+    Not the NEWEST run, which is the mistake this function exists to prevent. A
+    ``workflow_dispatch`` carries whatever inputs the caller passed, so its cells are a MEASUREMENT
+    of that configuration rather than the golden: measured on `4a370b8`, where a dispatch created 37
+    seconds AFTER the push is the run a newest-per-file selector answers with, while the push run is
+    the one whose bytes the paths rule owed. The two roles are stated by ``event``, so ``event`` is
+    what this reads.
+
+    @param runs: One page of the API's ``workflow_runs``.
+    @param workflow: The filename that can produce the golden.
+    @returns: The push-triggered run, or ``None`` when no push started this workflow at this commit.
+    @raises QueryError: If two push runs exist at one commit. Nothing in the data says which one a
+        criterion about "the golden" refers to, so refusing is the only honest answer.
+    @raises KeyError: If a run carries no ``event``. Read by subscript rather than with ``.get``
+        because defaulting it would decide "not a push" for a page that failed to carry the field —
+        answering "no golden is owed" in exactly the direction that hides an owed one. The API
+        always sends it, so a raise here means the page is not what this reads.
+    """
+    pushes = [
+        run
+        for run in runs
+        if run['path'].split('/')[-1] == workflow and run['event'] == 'push'
+    ]
+    if len(pushes) > 1:
+        named = ', '.join(str(run['id']) for run in pushes)
+        raise QueryError(
+            f'{len(pushes)} push-triggered runs of {workflow} exist at one commit ({named}), so '
+            f'there is no single run the golden can refer to — name the run id explicitly'
+        )
+    return pushes[0] if pushes else None
+
+
 def explain_absent_run(
     *, revision: str, changed: list[str], patterns: list[str], workflow: str
 ) -> str:

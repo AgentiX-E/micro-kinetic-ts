@@ -862,14 +862,23 @@ already has, so nothing published moves). The result, on every dump whose window
 
 | dump | screen | shape | gain | refinement frontier |
 | --- | --- | --- | --- | --- |
-| FSE'26 (`35035314921`) | temporal | `earliest-only` | 4 | **`beyond`** — weakest survival **56.0% at every `k` up to 6** |
-| `re1` | temporal | `earliness` | 2 | **`already`** — admissible at the artifact's own box |
-| `re1` | temporal | `order` | 2 | **`beyond`** — the gain side RESOLVES (52.8% → 100.0%) and the cap still moves at `10^-6` |
-| `re1` | stability | `flip` | 1 | **`beyond`** — plateau at 46.3% |
-| `re3` | stability | `flip` | 7 | **`needs 1`** — one more digit admits it |
-| `re3` | stability | `rank` | 4 | **`beyond`** — plateau at 26.8% |
-| `re3-noinject` | stability | `flip` | 7 | **`needs 1`** — one more digit admits it |
-| `re2` | both | all | 0 | **`structural`** — no gain, so precision is not the question and the sweep is not run |
+| FSE'26 (`35035314921`, **1422 cases — complete**) | temporal | `earliest-only` | 4 | **`beyond`** — weakest survival **56.0% at every `k` up to 6** |
+| `re1` (375 cases) | temporal | — | 1 | **`already`** — admissible at the artifact's own box |
+| `re1` (375 cases) | stability | `flip` | 1 | **`beyond`** |
+| `re2` (requires 270) | temporal | — | 1 | **`already`** |
+| `re3` (90 cases) | temporal | — | 1 | **`already`** ×2, **`beyond`** ×1 |
+| `re3` (90 cases) | stability | `flip` | 5 | **`beyond`** |
+| `re3` (90 cases) | stability | `rank` | 6 | **`beyond`** |
+| `re3-noinject` (90 cases) | stability | `flip` | 5 | **`beyond`** |
+| `re3-noinject` (90 cases) | stability | `rank` | 6 | **`beyond`** |
+
+**CORRECTED 2026-09-18, and the correction is the most important row in this table.** The RCAEval rows above
+were first written from `.bench-cache/rcaeval-dumps/*.txt`, and those local copies are **TrainTicket-only**:
+`re3.txt` holds 30 cases of 90 and `re1.txt` 125 of 375, first case `rcaeval-re3_re3tt_…`. They predate the
+completeness fix, and the table stated `re3`'s `flip` as **`needs 1` with 7 gains** on that subpopulation. On
+the artifact the workflow actually produces — **90 cases, every system** — `flip` has **5 gains and answers
+`beyond`**, and no window on any suite answers `needs 1`. A measurement is only about the artifact it was run
+on, and the record that said the fix had landed sat beside a stale copy on disk.
 
 **A survival rate that does not move is the signature of a rendered TIE.** `earliest-only` credits the root
 together with whatever else prints its minimum, and two equal prints are re-ordered by any nonzero draw,
@@ -878,16 +887,34 @@ however small — so no refinement of the DRAW settles their order, and the plat
 What a finer dump does there is CHANGE the tie rather than refine it, which is a different question from the
 one the sweep asks: the sweep holds the print fixed, so it cannot model digits it does not have.
 
-**So the honest form of the claim is narrower than the one first written.** The render IS the obstacle for
-exactly two measured windows — `re3`'s and `re3-noinject`'s stability `flip`, both `needs 1` — and for the
-rest the residue is either a rendered tie or the other channel. `re1`'s `order` is the case that keeps the
-instrument honest: its weakest gain climbs to `100.0%` while the window is still refused, so a clause reading
-every `beyond` as a tie would contradict its own evidence; the printed sentence reports BOTH readings and
-names the bar still failing.
+**The narrower form of the claim: the render is the obstacle for NO measured window.** Every window the
+verdict refuses answers `beyond` — and on the corrected artifacts nothing answers `needs 1`. `re1`'s
+`order` is the case that keeps the instrument honest about WHY: its weakest gain climbs toward `100.0%`
+while the window is still refused, so a clause reading every `beyond` as a tie would contradict its own
+evidence; the printed sentence reports BOTH readings and names the bar still failing.
 
-The pre-registered prediction follows, and it is cheap because it is bounded: **a dump rendered at four
-decimals admits `re3`'s and `re3-noinject`'s stability `flip` windows.** That is a claim about a real
-artifact, which is the one thing the sweep cannot decide for itself.
+The pre-registered prediction that followed from `needs 1` — *a four-decimal dump admits `re3`'s and
+`re3-noinject`'s stability `flip`* — was **tested and REFUTED**: at four decimals, on the same 90 cases, both
+windows are still refused (see the pair immediately below). It was refuted as a consequence of the stale
+archive above: the premise belonged to the subpopulation, so the prediction inherited it.
+
+**The like-for-like pair, and it is the only comparison that means anything here.** Both artifacts come from
+`4a370b8`, the same configuration, the **same 90 cases**, and differ ONLY in the declared precision:
+
+| | `flip` window | `ship` | `rank` window | `ship` | `flip` frontier |
+| --- | --- | --- | --- | --- | --- |
+| **3 decimals** (`35318624817`) | `[0.173606, 0.180534]` | `0.177070` | `[0.311995, 0.316068]` | `0.314032` | `beyond` — own-box survival **98.8%**, at `10^-6` **100.0%** |
+| **4 decimals** (`35316048737`) | `[0.175467, 0.188371]` | `0.181919` | `[0.312472, 0.316068]` | `0.314270` | `beyond` — own-box survival **100.0%**, at `10^-6` **100.0%** |
+
+Three things this pair settles, and they are three different things:
+
+- **Neither window is admitted by four decimals.** Prediction refuted on the artifact it was about.
+- **The finer render does not merely refine the window — it MOVES it.** Every bound and the ship value
+  change, because the printed margins are INPUTS to the solve. A finer artifact is a different window, which
+  is why "one more digit admits it" could only ever be tested by producing one.
+- **The precision is visible on the GAIN channel and not on the cap.** The gain side's own-box survival rises
+  `98.8% → 100.0%` — the finer render resolves it — while the refusal at four decimals is entirely the cap
+  channel (`lost in 99 of 100 draws`). So a finer artifact improves exactly the half it can reach.
 
 Two smaller things the work found, both measured:
 
@@ -976,6 +1003,7 @@ Not settled:
 | the frontier's GOLDEN | `35299550262` at `2b3717c`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — every job green, `CI` and `Release` green on the same commit. The expected outcome rather than a coincidence: the change is diagnostic-side and cannot move a ranking, and it is the criterion's second half for an instrument that only REPORTS. `k = 0` is inert at the level of the report too: on the FSE'26 dump the whole output differs from the pre-change text by **exactly one added line**, with every previously printed number byte-identical |
 | the verdict's own GOLDEN, and the reader that said it was owed nothing | `35292724888` at `d2625d0`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — every job green, `CI` and `Release` green on the same commit. Recorded with the caveat it earned: the reader answered **"no benchmark run: this push does not touch a path that can move the engine, so no golden is owed"** for this commit while the run was in flight. The commit changes `benchmarks/src/fse26-diagnose-analyze.ts`, so the paths rule DOES apply to it and the run was owed; the reader had asked GitHub with an abbreviated revision, which the `head_sha` filter answers with zero runs (`docs/golden-reader-audit.md`). The golden was owed, and it passed |
 | the artifact declares its own precision, and its GOLDEN | `35308723247` at `9b62aef`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — with `Release` green on the same commit. The `CI` run on that commit was **cancelled** by the follow-up docs-only push (`ci.yml`'s `cancel-in-progress`), so the verified `CI` belongs to `78fd495`; `benchmark-rcaeval.yml` has **no** concurrency group, so an owed golden cannot be cancelled that way. The expected outcome rather than a coincidence: the change is diagnostic-side, and moving the reader's box from a shared constant to the artifact is inert on every dump that exists — all of them predate the header field, so they take the historical fallback and their numbers are byte-identical |
+| the dispatchable precision, its GOLDEN, and the two runs at one commit | `35316003267` at `4a370b8`: **9 of 9 cells byte-identical**. It is the **push**-triggered run, and NAMING THAT is the point: the same commit also carries the dispatch `35316048737`, which is **9 of 9 as well** — so the precision parameter is inert on the ENGINE, not only on the archive — but a dispatch runs at whatever inputs the caller passed, so it is a measurement and never the owed golden. A selector that keeps the newest run per workflow per `head_sha` answers the dispatch (`scripts/golden_run_selector.owed_golden_run` now reads the run whose `event` is `push`, and refuses rather than picks when two push runs share a SHA) |
 | the price of the class being a claim | a pair equal at `0` because the term weighed NEITHER side is excluded — that pair is equal in the engine too, so counting it would report a hidden ordering on the engine's own legal output. The exclusion is asserted by a test, and both directions are exercises of the same predicate: one requires the declaration of provenance, the other reads its absence as `weighed` |
 | the split's own wiring hazard, caught by its first draft | the clause first carried a LEGEND line, and the menu's per-shape detail blocks are `formatCvScreenReport(...).split('\n').slice(4)` — so the new line leaked into every one of them and one sentence printed three times. The labels now carry their own meaning and the suite asserts the clause appears ONCE per menu, which is what fails if the report's head grows past four lines |
 | regression proof | `--cv-screen` on the shipped dump differs from the pre-change output only by the new lines: the population line split, the two `margin:` lines, and the two `resolution:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so neither change moved a recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`, and both now print their own ensembles per row |
