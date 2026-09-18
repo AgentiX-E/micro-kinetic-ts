@@ -30,8 +30,14 @@ import {
   POOL_METRIC_PREFIX,
 } from '../../packages/tree/src/index.js';
 
-import type { DiagnosedCase, WeightSeparationCase } from '../src/fse26-diagnose-analyze.js';
+import type {
+  Admissibility,
+  DiagnosedCase,
+  WeightSeparationCase,
+} from '../src/fse26-diagnose-analyze.js';
 import {
+  admissibilityLines,
+  admissibilityOf,
   anomalyShape,
   buildWeightSeparationCases,
   CAP_RESOLUTION_TRIALS,
@@ -2347,7 +2353,13 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     // slope gap of 2 instead of 1, so it needs twice the weight. Both are reported.
     expect(menu.find((screen) => screen.shape === 'earliest-only')!.solved.gain).toBe(1);
     expect(menu.find((screen) => screen.shape === 'earliness')!.solved.gain).toBe(1);
-    expect(report).not.toContain('no shape in this menu has an admissible gain');
+    // Both shapes have a gain, and BOTH are now refused — which is the change this test caught. The
+    // fixture has no satisfied case, so the window is unbounded above and the shipped weight lands
+    // exactly on the gain's own floor: under the base's `±1.0e-3` the count survives in roughly half the
+    // draws, and `gain > 0 && lostAtShip === 0` could not see that. So the sentence is back, and the
+    // per-shape resolution lines above it are what a reader now has to act on.
+    expect(report).toContain('no shape in this menu has an admissible gain at any weight');
+    expect(report).toMatch(/resamplings of that draw give 1 in \d+\.\d%, 0 in \d+\.\d%/);
   });
 
   it('says so, once, when the menu has nothing to ship', () => {
@@ -6119,6 +6131,214 @@ describe('solveZeroRegressionWindow — the profile is a scan, not a cumulative 
  * dispatched at that weight collected five, with the lost case's lead (1.054e-4) an order of
  * magnitude below what the formatter can express. These tests hold the instrument to saying so.
  */
+describe('the menu’s verdict consumes its own error bars', () => {
+  const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0 } as const;
+  const ANCHOR = 1_700_000_000_000;
+
+  /**
+   * Every service carries the same anomaly and the gaps are written EXACTLY as `logScore`, which the
+   * log term reads at `logWeight = 1` — so a fixture's arithmetic is its own parameter instead of a
+   * `log1p` recovered from an anomaly.
+   */
+  const line = (
+    serviceId: string,
+    logScore: number,
+    onset: number,
+  ): ReturnType<typeof serviceLine> =>
+    serviceLine({ serviceId, selfAnomaly: 0.5, logScore, onset });
+
+  /**
+   * A case the term can fix, whose fix holds in EVERY draw.
+   *
+   * `ts-src` is the ONLY service at the minimum onset, so it cannot lose its slope: the boundary group
+   * is a singleton and the jitter cannot shrink it past it. `ts-win` sits a minute later at slope 0 and
+   * leads the base by `0.298`, so the fix's lowest admissible weight is exactly that gap.
+   */
+  const fixable = (): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [line('ts-src', 0, 0), line('ts-win', 0.298, 60_000)],
+        topPredictions: ['ts-win'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+
+  /**
+   * The same fix, with the boundary group TIED — so the print's exact equality is what holds the root's
+   * slope and a sub-millisecond draw can take it away.
+   *
+   * `ts-decoy` prints the same onset as the root, which is what `earliest-only` credits together; under
+   * the box the print stands for, the group almost surely loses a member, and when the member it loses
+   * is the root the fix is gone.
+   */
+  const fixableOnlyAtThePrint = (): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          line('ts-src', 0, 5_000),
+          line('ts-decoy', 0, 5_000),
+          line('ts-win', 0.298, 60_000),
+        ],
+        topPredictions: ['ts-win'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+
+  /**
+   * A satisfied case that caps the window at `cap`: the target leads the base by exactly that and the
+   * RIVAL carries the larger slope, so it overtakes at `w = cap` and nowhere else.
+   *
+   * The rival is therefore the one at the minimum onset, not the target: a target holding the boundary
+   * would carry the larger slope and never be overtaken, which leaves the window unbounded — measured,
+   * when the first draft had them the other way round, as a `cap` of `Infinity` and a `ship` sitting on
+   * the gain's own floor.
+   */
+  const companion = (cap: number, datapack: string): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        datapack,
+        groundTruthServices: ['ts-good'],
+        services: [line('ts-good', cap, 60_000), line('ts-threat', 0, 0)],
+        topPredictions: ['ts-good'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+
+  /** A case the term cannot touch: the root is behind a rival the term reads as EQUAL. */
+  const unfixable = (): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [line('ts-src', 0, 5_000), line('ts-decoy', 0.298, 5_000)],
+        topPredictions: ['ts-decoy'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+
+  const verdict = (cases: readonly DiagnosedCase[], at?: number): Admissibility<string> =>
+    admissibilityOf(onsetScreen(cases, WEIGHTS, 'earliest-only', at));
+
+  it('admits a window whose gain AND cap both survive the artifact’s own digits', () => {
+    // The positive branch, so the verdict is a measurement rather than a pessimism. The companion caps
+    // the window at `0.6`, which puts the shipped weight two orders above the fix's floor and two below
+    // the cap — far from both, so neither bar is decided by the base's own `±1.0e-3`.
+    const one = verdict([fixable(), companion(0.6, 'dp-wide')]);
+    expect(one.admissible).toBe(true);
+    expect(one.reasons).toEqual([]);
+    expect(one.clause).toContain('every one of the 1 gains holds in all 400 draws');
+    expect(one.clause).toContain('cap intact in 100 of 100');
+  });
+
+  it('refuses a shape the dump gives no gain at all, and says so about the SIGNAL', () => {
+    // The one reason that is a statement about the TERM rather than about the artifact: no weight makes
+    // this dump's miss correct, because the rival the root must beat is a pair the term reads as equal.
+    // Nothing about resolution is quoted, because there is no count to be resolved.
+    const one = verdict([unfixable()]);
+    expect(one.admissible).toBe(false);
+    expect(one.reasons).toEqual(['no gain']);
+    expect(one.clause).toContain('no weight fixes a case');
+  });
+
+  it('refuses a window whose GAIN does not survive, which the old rule admitted', () => {
+    // The defect in one assertion. `gain > 0 && lostAtShip === 0` — the menu's own copy of the rule —
+    // reads this window as shippable while the line directly above it prints that the gain holds for the
+    // printed digits only. Measured on run `35107871516`: `earliest-only` holds in 56 of 100 draws on
+    // FSE'26 and 60.5 on `re3`, and both were being treated as admissible.
+    const screen = onsetScreen(
+      [fixableOnlyAtThePrint(), companion(0.6, 'dp-wide')],
+      WEIGHTS,
+      'earliest-only',
+    );
+    expect(screen.solved.gain).toBe(1);
+    expect(screen.solved.lostAtShip).toBe(0);
+    expect(screen.resolution.resolved).toEqual([]);
+    const one = admissibilityOf(screen);
+    expect(one.admissible).toBe(false);
+    expect(one.reasons).toEqual(['gain not resolved']);
+    expect(one.clause).toContain('for the printed digits');
+  });
+
+  it('refuses a window whose CAP moves under the same draw', () => {
+    // The bar the old rule could not see at all: `lost at ship 0` is measured on ONE digit-set, and a
+    // 0.001-wide window whose cap is set by a pair `±1.0e-3` apart is inside the artifact's noise. The
+    // gain is the ROBUST one here — a singleton boundary group — so this fixture isolates the cap.
+    const cases = [fixable(), companion(0.299, 'dp-narrow')];
+    const screen = onsetScreen(cases, WEIGHTS, 'earliest-only');
+    expect(screen.solved.lostAtShip).toBe(0);
+    expect(screen.capNoise.lostAtShip).toBeGreaterThan(0);
+    const one = admissibilityOf(screen);
+    expect(one.admissible).toBe(false);
+    expect(one.reasons).toContain('cap not resolved');
+    expect(one.clause).toContain('the window is lost in');
+  });
+
+  it('reads a NAMED weight’s loss first, because that is what the flag asks', () => {
+    // `--at-weight` puts the weight where the caller says — deliberately past the cap if that is what
+    // they are asking about — so a loss there is the answer, not a resolution figure.
+    const screen = onsetScreen([fixable(), companion(0.6, 'dp-wide')], WEIGHTS, 'earliest-only', 5);
+    // The loss is read from the NAMED WEIGHT's own verdict: `lostAtShip` is measured at the SOLVED ship,
+    // which `--at-weight` does not move — the flag adds an answer at the caller's weight beside the
+    // window's, it does not replace the window. Reading `lostAtShip` here reported the weight as
+    // harmless, which is the one reading the flag exists to prevent.
+    expect(screen.solved.at?.lost).toBe(1);
+    expect(screen.solved.lostAtShip).toBe(0);
+    const one = admissibilityOf(screen);
+    expect(one.admissible).toBe(false);
+    expect(one.reasons[0]).toBe('lost at ship');
+    expect(one.clause).toContain('lost at the named weight');
+  });
+
+  it('lists EVERY bar that failed, not just the first', () => {
+    // A reader has to be able to act on the verdict, and two failures have two different fixes. The
+    // named weight is outside the window AND the gain does not resolve, so both are reported.
+    const screen = onsetScreen(
+      [fixableOnlyAtThePrint(), companion(0.6, 'dp-wide')],
+      WEIGHTS,
+      'earliest-only',
+      5,
+    );
+    const one = admissibilityOf(screen);
+    expect(one.reasons).toEqual(['lost at ship', 'gain not resolved']);
+    expect(one.clause).toContain(' and ');
+  });
+
+  it('prints the verdict for EVERY shape, and names the reason each was refused', () => {
+    // The menu's own rule was a second copy of the admissibility test, and it printed only when the list
+    // was EMPTY — so a menu WITH candidates said nothing about them and a reader had to infer the verdict
+    // from the rows. One owner decides now, and the block names every shape.
+    // The block, from a case set where every shape stands: one line per declared shape, named.
+    const admissible = onsetShapeMenu([fixable(), companion(0.6, 'dp-wide')], WEIGHTS);
+    const menu = formatOnsetMenuReport(admissible, WEIGHTS);
+    expect(menu).toContain('admissibility, on the error bars above:');
+    for (const shape of ONSET_SHAPES) {
+      expect(menu).toMatch(new RegExp(`${shape}\\s+ADMISSIBLE`));
+    }
+
+    // The REFUSAL rendering, which no single case set reaches on its own — measured, and the reason is
+    // worth keeping: a printed tie breaks the `earliest-only` gain, and it breaks `earliness` too, because
+    // the tie's jitter leaves the pair with a slope difference of order `1e-5` and the weight that would
+    // separate them then runs to `±100`. All four shapes therefore fail TOGETHER on any set containing
+    // such a case, and the menu falls back to its sentence. The renderer is exercised from two REAL
+    // screens instead of from a hand-built one, so nothing here spells a state the engine cannot produce.
+    const refused = onsetShapeMenu([fixableOnlyAtThePrint(), companion(0.6, 'dp-wide')], WEIGHTS);
+    const mixed = admissibilityLines([...admissible.slice(0, 1), ...refused.slice(2, 3)]).join(
+      '\n',
+    );
+    expect(mixed).toMatch(/earliness\s+ADMISSIBLE/);
+    expect(mixed).toMatch(/earliest-only\s+refused: the gain holds for the printed digits only/);
+  });
+
+  it('keeps the negative line for a menu with no admissible shape', () => {
+    // The existing sentence stays for the state it was written for, and it is now the SAME predicate
+    // rather than a parallel one, so a menu of total refusals says so instead of printing a block.
+    const menu = formatOnsetMenuReport(onsetShapeMenu([unfixable()], WEIGHTS), WEIGHTS);
+    expect(menu).toContain('no shape in this menu has an admissible gain at any weight');
+    expect(menu).not.toContain('refused');
+  });
+});
+
 describe('capResolution — the second channel: the cap under the digits the dump discarded', () => {
   const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
   /**

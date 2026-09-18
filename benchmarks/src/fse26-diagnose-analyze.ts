@@ -3035,6 +3035,135 @@ export interface OnsetScreen {
 }
 
 /**
+ * The ways a window can fail to be shippable, in the order the report lists them.
+ *
+ * Every one is a MEASURED bar rather than a style rule, and only the first is a statement about the
+ * SIGNAL — the rest are the artifact's own resolution, which is what makes them worth separating.
+ */
+export type RefusalReason =
+  /** A case is lost at the weight the caller NAMED — the direct answer to `--at-weight`. */
+  | 'lost at ship'
+  /** No weight makes any of this dump's misses correct: there is nothing to ship. */
+  | 'no gain'
+  /** The gain count holds for the printed digits but not for the box they stand for. */
+  | 'gain not resolved'
+  /** The window's right-hand end moves under the same draw, so its protection is not the artifact's. */
+  | 'cap not resolved';
+
+/** One shape's verdict, with every bar it rests on stated. */
+export interface Admissibility<S extends string> {
+  readonly shape: S;
+  /** True only when {@link reasons} is empty. */
+  readonly admissible: boolean;
+  /**
+   * EVERY bar that failed, not just the first.
+   *
+   * Two failures have two different fixes — a shape with no gain is a statement about the term while an
+   * unresolved count is a statement about the artifact — so a verdict naming one would send a reader to
+   * the wrong change. Empty when the window is shippable.
+   */
+  readonly reasons: readonly RefusalReason[];
+  /** The sentence a report prints: the measured numbers when admissible, the failures otherwise. */
+  readonly clause: string;
+}
+
+/**
+ * What a verdict needs from a solved screen — the four fields BOTH menus already compute.
+ *
+ * A structural type rather than a union over the two screens, so the rule has ONE implementation: the
+ * decisive-stability menu and the temporal menu were carrying the same `gain > 0 && lostAtShip === 0`
+ * verbatim, which is a test of the window on ONE digit-set and blind to both resampling ensembles. A
+ * shape whose gain holds in 56 of 100 draws was therefore listed as admissible by a line sitting under a
+ * report that said exactly that, on BOTH axes.
+ */
+export interface ShippableWindow<S extends string> {
+  readonly shape: S;
+  readonly solved: SolvedWindow;
+  readonly resolution: GainResolution;
+  readonly capNoise: CapResolution;
+}
+
+/**
+ * A solved shape's verdict, computed from the same fields its report prints.
+ *
+ * `--at-weight` is read first and separately: the caller has asked about a NAMED weight rather than about
+ * the window, so a loss there is the answer, while the resolution figures describe another question.
+ *
+ * @param screen - The solved screen.
+ * @returns The verdict, with every failing bar named.
+ */
+export function admissibilityOf<S extends string>(screen: ShippableWindow<S>): Admissibility<S> {
+  const s = screen.solved;
+  const gains = screen.resolution.held.length;
+  const resolved = screen.resolution.resolved.length;
+  const reasons: RefusalReason[] = [];
+  const clauses: string[] = [];
+  // The NAMED weight's own verdict, not `lostAtShip`: that one is measured at the SOLVED ship, which
+  // `--at-weight` does not move — the flag answers "what happens at the weight I name" BESIDE the
+  // window's own reading, so a loss there has to be read from `at.lost` or the branch never fires.
+  if (s.at !== undefined && s.at.lost > 0) {
+    reasons.push('lost at ship');
+    clauses.push(
+      `a case is lost at the named weight ${s.at.weight.toFixed(6)} (${s.at.lost} lost)`,
+    );
+  }
+  if (s.gain === 0) {
+    reasons.push('no gain');
+    clauses.push('no weight fixes a case');
+  } else {
+    if (resolved < gains) {
+      reasons.push('gain not resolved');
+      clauses.push(
+        `the gain holds for the printed digits only (${resolved} of ${gains} hold in every draw)`,
+      );
+    }
+    if (screen.capNoise.lostAtShip > 0) {
+      reasons.push('cap not resolved');
+      clauses.push(
+        `the window is lost in ${screen.capNoise.lostAtShip} of ${screen.capNoise.trials} draws of ` +
+          `the discarded digits, losing at most ${screen.capNoise.worstLost}`,
+      );
+    }
+  }
+  if (reasons.length === 0) {
+    return {
+      shape: screen.shape,
+      admissible: true,
+      reasons,
+      clause:
+        `every one of the ${gains} gains holds in all ${screen.resolution.trials} draws, ` +
+        `cap intact in ${screen.capNoise.trials - screen.capNoise.lostAtShip} of ` +
+        `${screen.capNoise.trials}`,
+    };
+  }
+  return { shape: screen.shape, admissible: false, reasons, clause: clauses.join(' and ') };
+}
+
+/**
+ * Render every shape's verdict, or an empty array when no shape is admissible.
+ *
+ * A menu prints a block when a candidate exists and one sentence when none does, and this function decides
+ * which — so the block and the sentence cannot disagree about whether one exists. It used to be reachable
+ * one way only: the sentence was all there was, and a menu WITH candidates said nothing about them.
+ *
+ * @param screens - The solved screens, one per shape.
+ * @returns One line per shape, or an empty array.
+ */
+export function admissibilityLines<S extends string>(
+  screens: readonly ShippableWindow<S>[],
+): readonly string[] {
+  const verdicts = screens.map((screen) => admissibilityOf(screen));
+  if (verdicts.every((one) => !one.admissible)) return [];
+  const lines: string[] = ['  admissibility, on the error bars above:'];
+  for (const one of verdicts) {
+    lines.push(
+      `    ${one.shape.padEnd(14)}${one.admissible ? 'ADMISSIBLE' : 'refused'}: ${one.clause}`,
+    );
+  }
+  return lines;
+}
+
+/**
  * One case as the onset screen scores it: the base MINUS this term, plus the term's own slope.
  *
  * The term being solved is not in its own base: `temporalWeight: 0` here is the ablation this
@@ -3216,11 +3345,14 @@ export function formatOnsetMenuReport(
       );
     }
   }
-  const shippable = screens.filter(
-    (screen) => screen.solved.gain > 0 && screen.solved.lostAtShip === 0,
-  );
-  if (shippable.length === 0) {
+  // One owner of the verdict. The rule used to live HERE as `gain > 0 && lostAtShip === 0` — a test of
+  // the window on one digit-set, blind to both ensembles — and it was reachable one way only: a menu
+  // WITH candidates said nothing about them, because the sentence was all there was.
+  const verdicts = admissibilityLines(screens);
+  if (verdicts.length === 0) {
     lines.push('  no shape in this menu has an admissible gain at any weight');
+  } else {
+    lines.push(...verdicts);
   }
   return lines.join('\n');
 }
@@ -3856,11 +3988,14 @@ export function formatCvMenuReport(
       );
     }
   }
-  const shippable = screens.filter(
-    (screen) => screen.solved.gain > 0 && screen.solved.lostAtShip === 0,
-  );
-  if (shippable.length === 0) {
+  // The same ONE owner as the temporal menu, over the same four fields: this menu carried a verbatim
+  // copy of the blind rule, so a `cv` shape whose window was inside its own noise was listed as
+  // admissible by the line under a report that said so.
+  const verdicts = admissibilityLines(screens);
+  if (verdicts.length === 0) {
     lines.push('  no shape in this menu has an admissible gain at any weight');
+  } else {
+    lines.push(...verdicts);
   }
   return lines.join('\n');
 }

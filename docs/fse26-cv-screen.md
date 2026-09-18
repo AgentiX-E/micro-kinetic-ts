@@ -815,6 +815,60 @@ and a family screen draws neither extra column: its slopes come from the `logic`
 are exact integers with no discarded fraction, so drawing one would model noise the format does not have. A
 superset box would be the mirror error — noise from fields the screen cannot read.
 
+### The verdict now consumes its own error bars — and on FSE'26 it refuses everything
+
+Both menus carried the same rule, verbatim: `gain > 0 && lostAtShip === 0`. That is a test of the window
+on ONE digit-set, blind to both resampling ensembles, and it printed only when the resulting list was
+EMPTY — so a shape whose gain holds in **56 of 100 draws** was treated as admissible by a line sitting
+under a report that said exactly that. The rule did not move when the error bars did, which is the same
+defect as a count that travels without its frontier.
+
+It is now one owner, `admissibilityOf`, generic over the four fields the two screens already compute
+(`shape`, `solved`, `resolution`, `capNoise`), and it reports **every** bar that failed rather than the
+first — a shape with no gain is a statement about the SIGNAL while an unresolved count is a statement
+about the artifact, and the two have different fixes. The menu prints a line per shape when a candidate
+exists, and keeps its one sentence when none does.
+
+| dump | screen | shape | verdict |
+| --- | --- | --- | --- |
+| FSE'26 (1422 cases) | temporal | all four | **refused** — `earliest-only` at 56 of 100 draws |
+| FSE'26 | stability | all four | **refused** — `flip` 2 of 3 gains hold in every draw, `rank` 2 of 6 |
+| `re1` (375) | temporal | `earliness` | ADMISSIBLE (1 gain, 400 of 400 draws, cap intact 100 of 100) |
+| `re2` (150) | temporal | `earliness`, `latest-only` | ADMISSIBLE |
+| `re3` (90) | temporal | `earliness`, `order`, `latest-only` | ADMISSIBLE |
+| `re3` | temporal | `earliest-only` | refused — the gain holds for the printed digits only (0 of 1) |
+| `re1` | stability | `flip` (a POINT window at its own cap) | refused — the cap moves in 50 of 100 draws |
+| `re3-noinject` | temporal | all four | refused — no shape has a gain at all |
+
+**Two things follow, and the second is the one that matters.**
+
+**The temporal axis does have admissible windows — on the golden, and they are worth exactly one case.**
+`earliness`, the engine's own shape, is admissible on all three suites and its gain is 1 case per suite;
+`re3`'s `earliest-only` — the shape with the widest window — is refused, and FSE'26's own shape gains
+nothing. So the axis is not closed by the signal: it is closed, on the benchmark that would ship it, by
+the artifact.
+
+**And the binding constraint on BOTH axes is now the dump's own resolution.** Every refusal above is a
+`gain not resolved` or a `cap not resolved`, and both come from the three-decimal render: the base's
+`±1.0e-3` is the same order as the margins that decide these windows, so a window that looks decisive in
+the report is a coin flip on the box the print stands for. `SERVICE_FIELD_DECIMALS` was chosen with the
+argument that *"the extra characters would buy nothing a reader of the table needs"* — and the instrument
+now says they would buy decidable windows, on both axes at once. That is a claim to re-measure rather
+than to assume, and the `diagnose_dump` input already exists to produce the finer artifact.
+
+Two smaller things the work found, both measured:
+
+- **The four shapes' verdicts are CORRELATED, which is why the menu now prints a block or a sentence and
+  rarely a mix.** A printed tie destroys the `earliest-only` gain and `earliness`'s as well: for the
+  continuous shape the tie's jitter leaves the pair with a slope difference of order `1e-5`, and the
+  weight that would separate them then runs to `±100`. So a case set containing such a pair refuses all
+  four shapes together — which is why the refusal rendering is asserted from two real screens rather than
+  from a fixture, and why no fixture reaches a mixed menu.
+- **A named weight's loss is not `lostAtShip`.** That field is measured at the SOLVED ship, which
+  `--at-weight` does not move — the flag answers *"what happens at the weight I name"* BESIDE the
+  window's own reading, so a loss there lives in the named verdict (`at.lost`). Reading `lostAtShip`
+  reported the named weight as harmless, which is the one reading the flag exists to prevent.
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the
@@ -864,8 +918,8 @@ Not settled:
 
 | gate | result |
 | --- | --- |
-| `benchmarks` tests | 677, 0 failures (was 671 before the per-screen box, 666 before the second channel, 656 before the satisfied-side class, 650 before that, 639 before the base correction; 575 at the first pass) |
-| `benchmarks` coverage | **99.80 / 97.11 / 100 / 99.80**, the accumulator at 100 / 100 / 100 / 100 |
+| `benchmarks` tests | 685, 0 failures (was 671 before the per-screen box, 666 before the second channel, 656 before the satisfied-side class, 650 before that, 639 before the base correction; 575 at the first pass) |
+| `benchmarks` coverage | **99.80 / 97.14 / 100 / 99.80**, the accumulator at 100 / 100 / 100 / 100 |
 | root tests | 3163, 0 failures |
 | `packages/kinetic` tests | 911, 0 failures |
 | `packages/tree` tests | 650, **100 / 100 / 100 / 100** |
@@ -884,6 +938,7 @@ Not settled:
 | the ensemble's box was ONE screen's | a FIXED field set (the stability screen's) was drawn for every screen, so the temporal screen's ensemble held its OWN column fixed: on FSE'26 the `earliest-only` window's `4 in 100.0%` is **`4 in 56.0%, 3 in 44.0%`** under the term's own column, and on `re3` **`0 of 1 gains hold in every one`** (39.5% of draws lose it). The mechanism is the tie `earliest-only` credits at the minimum, which the millisecond render CREATES and the raw field does not have — so it is the only shape exposed, and `earliness`/`order`/`latest-only` read `100.0%` on all five dumps as a RESULT rather than a silence. `jitterFieldsFor(screen)` is the single owner of the box; a family screen draws neither column, and the cv screens' numbers are BYTE-IDENTICAL to the ones this document already published |
 | the onset column's quantum and its one-sided cell | `Math.round` gives up half a MILLISECOND — three orders of magnitude from the base's `5.0e-4` — and it is now an exported owner in the producer; a printed `0` stands for `[0, 0.5]` and nothing below it, because the renderer spells a negative as `-`, so the draw is clamped. The first draft had neither: drawing it symmetrically moved the window in **78 of 100** draws against **34 of 60** once the draw stays inside the cell, i.e. half the mobility first measured was MY modelling error. The magnitude itself has no behavioural fixture that can separate it from the base's (any nonzero draw breaks an exact tie), and the test says so rather than pretending otherwise |
 | the per-screen box's GOLDEN | `35242705643` at `1c47be6`: **9 of 9 cells byte-identical**, every job green, `CI` and `Release` green on the same commit. Owed rather than incidental — the change touches `benchmarks/src` and the producer's exported constant, so the paths rule bought the run — and it is the criterion's second half for an instrument that moved only what the instrument REPORTS |
+| the verdict consumes the error bars | both menus carried the same `gain > 0 && lostAtShip === 0`, a one-digit-set test blind to both ensembles, printed only when the list was EMPTY — so a shape at **56 of 100 draws** was treated as admissible under a report saying so. One owner now (`admissibilityOf`, generic over the four shared fields), reporting EVERY failing bar. Measured: FSE'26 refuses all four shapes on BOTH screens; the golden's temporal `earliness` is admissible on all three suites at 1 gain; `re3`'s `earliest-only` and `re1`'s stability `flip` (a point window) are refused. **Every refusal is `gain not resolved` or `cap not resolved`, so the artifact's three decimals are now the binding constraint on both axes** — which contradicts the producer's documented rationale for that precision and is the next thing to re-measure |
 | the price of the class being a claim | a pair equal at `0` because the term weighed NEITHER side is excluded — that pair is equal in the engine too, so counting it would report a hidden ordering on the engine's own legal output. The exclusion is asserted by a test, and both directions are exercises of the same predicate: one requires the declaration of provenance, the other reads its absence as `weighed` |
 | the split's own wiring hazard, caught by its first draft | the clause first carried a LEGEND line, and the menu's per-shape detail blocks are `formatCvScreenReport(...).split('\n').slice(4)` — so the new line leaked into every one of them and one sentence printed three times. The labels now carry their own meaning and the suite asserts the clause appears ONCE per menu, which is what fails if the report's head grows past four lines |
 | regression proof | `--cv-screen` on the shipped dump differs from the pre-change output only by the new lines: the population line split, the two `margin:` lines, and the two `resolution:` lines. Every number the report printed before is byte-identical — `rank` gain 6, `[0.029860, 0.030480]`, ship 0.030170, `lostAtShip` 0 — so neither change moved a recommendation. The other two screens that share the solver are unmoved for the same reason (a monotone profile's plateau IS its `[floor, cap]`): `--onset-screen` still closes `earliness` at `[0, 0.005361]` and `order` at `[0, 0.005976]` with gain 0, and still ships the rejected `earliest-only` pair at **0.036552**; `--family-screen` still reports the pool family at its `0.010050` point and `protected at w=0: 756`, and both now print their own ensembles per row |
