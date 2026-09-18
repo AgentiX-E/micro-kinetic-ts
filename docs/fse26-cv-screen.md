@@ -844,7 +844,20 @@ exists, and keeps its one sentence when none does.
 | `re3` (90) | temporal | `earliness`, `order`, `latest-only` | ADMISSIBLE |
 | `re3` | temporal | `earliest-only` | refused — the gain holds for the printed digits only (0 of 1) |
 | `re1` | stability | `flip` (a POINT window at its own cap) | refused — the cap moves in 50 of 100 draws |
-| `re3-noinject` | temporal | all four | refused — no shape has a gain at all |
+| `re3-noinject` | temporal | all four | **NOT EVALUATED** — the artifact declares the term INERT (`with an injection anchor 0`) |
+
+**RE-VERIFIED 2026-09-18, and one row corrected.** Every ADMISSIBLE/refused reading above was re-measured
+against the artifacts the workflow now produces — `re1` 375 cases, `re2` 150, `re3` 90, each holding all three
+systems — and it reproduces **exactly**, including that `re2` admits two shapes and `re3` three of four. The
+one correction is the last row: the report does not print a window table for a `--no-inject-time` dump at all,
+it prints *"the term is INERT on this dump: the engine leaves every service neutral, so no weight on any shape
+can change a ranking — a window here is an artefact"*. That is a different statement from "refused": a refusal
+is a verdict about a menu that was EVALUATED, and nothing was evaluated here. The distinction matters because
+"no shape has a gain" invites a search for a gain, while "inert" says the search is empty by construction.
+
+Each row also gains its population, because a verdict is about the artifact it ran on: `re1` 375 cases is
+`re1ob 125 + re1ss 125 + re1tt 125`, and a copy holding only the `tt` third is a different population wearing
+the suite's name (`scripts/dump_coverage.py` refuses such a comparison; see the audit).
 
 **Two things follow, and the second is the one that matters.**
 

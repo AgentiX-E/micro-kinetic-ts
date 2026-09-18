@@ -255,6 +255,18 @@ Before reading any number, check that the input was counted:
   how the same iteration found that a finer render does not refine a window but **MOVES** it (`ship`
   `0.177070 → 0.181919` on the same 90 cases, because the printed margins are INPUTS to the solve), while
   lifting the gain channel's own-box survival `98.8% → 100.0%` and leaving the cap channel as the failing bar.
+  **A DIRECTORY NAME IS NOT PROVENANCE**: THREE directories of "the dumps" existed and the one whose name read
+  as canonical was written 83 minutes BEFORE the completeness fix, while two newer complete ones sat beside it
+  under names that read as drafts. So the rule is enforced rather than intended — `scripts/dump_coverage.py`
+  reads a dump's population from its case IDS and `require_like_for_like` REFUSES a comparison whose two
+  artifacts are about different populations, naming the per-group difference; the declared precision is
+  deliberately NOT part of that check, because it is the quantity such a comparison is about.
+- **"REFUSED" AND "NOT EVALUATED" ARE DIFFERENT STATEMENTS.** A `--no-inject-time` artifact does not print a
+  window table at all — it prints *"the term is INERT … no weight on any shape can change a ranking — a window
+  here is an artefact"*, with `with an injection anchor 0`, and `admissibilityLines` prints nothing because no
+  shape admits. Recording that as *"refused — no shape has a gain at all"* invites a search for a gain, while
+  the truth is that the evaluation is empty BY CONSTRUCTION. A refusal is a verdict about a menu that ran; an
+  inertness is a statement that it did not (`docs/fse26-cv-screen.md`).
 - **THE GOLDEN IS THE RUN A *PUSH* STARTED, not the newest run at the commit.** One commit can carry two
   benchmark runs — a push and a `workflow_dispatch` — and a dispatch runs at whatever inputs the caller
   passed, so its cells measure that configuration rather than the bytes the paths rule owes. A selector
