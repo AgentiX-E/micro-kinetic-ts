@@ -210,6 +210,22 @@ Before reading any number, check that the input was counted:
   dump's own configuration*. When the flags move the rank-1, every case they would flip
   lands in `unexplained` too — 14 of them, and 0 of them an engine finding, the first
   time it was read that way (`fse26-shipped-config-verdict.md` §2).
+- **a tool that reports "nothing to check" must have MEASURED the nothing.** The reader that finds a
+  commit's benchmark run asked GitHub for it through the `head_sha` filter, which matches the FULL
+  forty-character SHA: `head_sha=d2625d0` answers `total_count: 0` while
+  `head_sha=d2625d05d33576f8d2575858c3d04ed3c6d309ca` answers **three runs for the same commit**
+  (`ci.yml`, `release.yml`, `benchmark-rcaeval.yml`). A short revision is the NORMAL argument here, so
+  the empty answer was the common case — and the reader turned it into the sentence *"this push does not
+  touch a path that can move the engine, so no golden is owed"*, which is `benchmark-rcaeval.yml`'s own
+  `push.paths` rule restated in prose and applied to a commit it had never been evaluated against. Two
+  answers that must never be the same — "the query was wrong" and "no run is owed" — printed
+  identically, which is the same shape as a search that cannot fail. The rule now has one owner, under
+  the python gate at 100% branch coverage: `scripts/golden_run_selector.py` resolves the revision before
+  it is queried, builds the URL at the only place that knows the full-SHA requirement, reads the trigger
+  list FROM the workflow rather than restating it, and REFUSES a pattern construct outside the
+  implemented subset (`?`, `!`, a segment-internal `**`) instead of reading a filter as something it is
+  not. A push that does match raises rather than being explained away
+  (`docs/golden-reader-audit.md`).
 
 ## What is left
 
