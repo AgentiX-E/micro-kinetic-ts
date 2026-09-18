@@ -278,8 +278,15 @@ Before reading any number, check that the input was counted:
   `re3`'s and `re3-noinject`'s stability `flip` — answer `needs 1` and that only those justify a finer
   dump. **Every RCAEval coordinate in that reading came from `.bench-cache/rcaeval-dumps/*.txt`, which
   hold ONE system per suite** (`re3` 30 of 90 cases, `re1` 125 of 375, first case `rcaeval-re3_re3tt_…`),
-  and on the artifacts the workflow produces now **no window answers `needs 1`**. What was measured and
-  stands is FSE'26's plateau and the three traps below. Three traps travel with it: **a resolution
+  and on the artifacts the workflow produces now **no RCAEval suite answers `needs 1`**. What was measured
+  and stands is FSE'26's plateau and the three traps below. **CORRECTED AGAIN 2026-09-18, because the
+  generalisation was one word wider than the measurement**: the sweep's stated population is *every window
+  the verdict refuses*, the FSE'26 STABILITY screen is one of them, and its `flip` window — on
+  `35107871516`, the only FSE'26 dump whose producer emitted `metricDecisive` — answers **`needs 1`**. No
+  table in the record ever listed it, so the population was short by exactly the member that had a positive
+  answer, and the sentence "no window anywhere answers `needs 1`" was false. The render is the obstacle for
+  ONE measured window, and the prediction it licenses (a four-decimal FSE'26 dump admits it) is UNTESTED;
+  `--diagnose-decimals` makes it one dispatch. Three traps travel with the bullet: **a resolution
   shortfall does not imply the resolution is the OBSTACLE** (the reachable refusal reasons are scale-free
   by construction, so the inference was structural, not empirical); **a refusal's two channels are
   correlated**, so a clause must name the bar that is still failing rather than assert the mechanism its
@@ -287,7 +294,14 @@ Before reading any number, check that the input was counted:
   still refused); and **a column a screen does not read must not spend a draw**, because one shared
   sequence means an unread column's draw shifts every value after it — the box identical and the numbers
   not (`docs/fse26-cv-screen.md`).
-- **A MEASUREMENT IS ABOUT THE ARTIFACT IT RAN ON, and a record that a fix landed does not refresh the file
+- **A POPULATION ASSEMBLED FROM A TABLE MISSES EXACTLY THE MEMBER THAT WAS NEVER IN ONE.** The refinement
+  sweep's stated population is *every window the verdict refuses*, and its table listed the FSE'26 temporal
+  screen, `re1`'s temporal and stability screens and `re3`/`re3-noinject`'s — missing FSE'26's STABILITY
+  screen, which `admissibilityOf` refuses and which is the ONLY window that answers `needs 1`. The record
+  then generalised the absence ("no window answers `needs 1`") from a hand-assembled list, which is the
+  discovery-by-filename defect one level up: a list is a copy, and a copy needs a guard. Ask what the
+  population is DEFINED as, and check the definition against the list rather than the list against itself.
+- **A measurement is about the artifact it ran on, and a record that a fix landed does not refresh the file
   it fixed.** The RCAEval dumps used above were TrainTicket-only COPIES made before the dump-completeness
   fix, sitting on disk beside a log that said all seven dumps hold every system; an evidence table and a
   pre-registered prediction were derived from them, and both were about a subpopulation. So a row names its
@@ -454,3 +468,15 @@ itself reaches **98.13%** of the shipped artifact's rows (`71161/72527`) — and
 carry no line at all were exactly the rows whose inventory is not rendered either, so their absence was
 unattributable. A candidate must therefore say whether it needs the channel or the VALUE: `onset` is the
 warning, reaching every row and carrying a number on **87.5%** of them.
+
+**And the criterion itself is now an intersection rather than a comparison in prose.** Its two halves live on
+two benchmarks — a candidate must GAIN on one and cost another nothing — so the object it asks for is the
+intersection of two sets of WEIGHTS, and the record compared them by hand four times, three of them ending up
+with a number the artifacts did not support. One command now computes it (`criterionReadings` +
+`criterionVerdicts` + `formatCriterionReport`, by repeating `--dump`, each artifact solved on its own
+population and in its own box) and the answer on the stability axis is a refusal with causes: the golden is
+loss-free up to `0.007528`/`0.012161` and FSE'26 gains from `0.004134`/`0.006672`, so a golden-neutral weight
+exists on both shapes — worth ONE case — and **FSE'26's own tie class permits a loss from `0.003873`, below
+the first gain**, which is what closes it. The weight the solver recommends is **2.5×–4.0× above the golden's
+ceiling**, which is the number the vetoed run measured as four moved cells. **A proposal on any axis that
+spans both benchmarks must state its intersection, and it can now be computed rather than argued.**

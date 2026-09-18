@@ -30,6 +30,17 @@ const report =
         parseDiagnosticDump(readFileSync(opts.after, 'utf-8')),
         `${opts.before} -> ${opts.after}`,
       )
-    : formatAnalyzeSections(parseDiagnosticDump(readFileSync(opts.dump, 'utf-8')), opts.dump, opts);
+    : formatAnalyzeSections(
+        parseDiagnosticDump(readFileSync(opts.dump, 'utf-8')),
+        opts.dump,
+        opts,
+        // Each sibling is parsed from its OWN file, because the sections that compare artifacts
+        // solve each on its own population and in its own rounding box: one concatenated case list
+        // would draw one benchmark's digits in another's quantum.
+        (opts.extraDumps ?? []).map((path) => ({
+          label: path,
+          cases: parseDiagnosticDump(readFileSync(path, 'utf-8')),
+        })),
+      );
 process.stdout.write(report);
 if (opts.output !== undefined) writeFileSync(opts.output, report);

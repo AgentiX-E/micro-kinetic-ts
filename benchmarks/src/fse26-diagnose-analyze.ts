@@ -4339,6 +4339,226 @@ export function formatCvMenuReport(
 }
 
 /**
+ * One artifact's reading of ONE shape's three boundaries — the pair the kill criterion compares.
+ *
+ * The criterion has two halves and they live on DIFFERENT benchmarks: a candidate must gain on
+ * one and cost another nothing. Both halves are a weight, so both halves are a NUMBER, and until
+ * this type existed the two numbers came out of two tables and were compared in prose — which is
+ * how a record came to state an intersection it had never computed.
+ */
+export interface CriterionReading {
+  /** The artifact, by the RUN it came from. A copy's filename is not a provenance. */
+  readonly artifact: string;
+  /** The shape this reading is for. Two shapes are two different questions and are never mixed. */
+  readonly shape: CvShape;
+  /**
+   * The first weight at which this artifact gains a case, or `undefined` when no weight does.
+   *
+   * Deliberately NOT {@link SolvedWindow.gainFloor}, which is the left end of the range carrying
+   * the MAXIMUM gain: a shape whose best gain is six can already be gaining one case far below it,
+   * and it is the FIRST gain, not the best one, that the criterion's first half asks about.
+   */
+  readonly gainsFrom: number | undefined;
+  /** The first weight this artifact's own solver costs a protected case. */
+  readonly losesFrom: number;
+  /**
+   * The earliest weight this artifact PERMITS a protected case to be cost.
+   *
+   * A lower bound on the truth, from the tie class the artifact cannot order. The model's
+   * {@link losesFrom} is an UPPER bound on where the loss-free region ends and this is a lower
+   * one, so a candidate between them is one no artifact can decide — which is why a verdict has to
+   * consume both rather than the friendlier of the two.
+   */
+  readonly permittedFrom: number;
+  /**
+   * Every gain's own admissible weight interval, so a COUNT at any weight is re-derivable here.
+   *
+   * Carried rather than summarised because the number a candidate is judged on is the gain at the
+   * weight it would ship, and that is not any of the three boundaries above.
+   */
+  readonly gains: readonly (readonly WeightInterval[])[];
+}
+
+/** What one artifact's menu says, as readings the criterion can intersect. */
+export function criterionReadings(
+  screens: readonly CvScreen[],
+  artifact: string,
+): readonly CriterionReading[] {
+  return screens.map((screen) => {
+    const w = screen.solved.window;
+    let first = Number.POSITIVE_INFINITY;
+    for (const gain of w.gains) {
+      for (const interval of gain.intervals) {
+        if (interval.min < first) first = interval.min;
+      }
+    }
+    return {
+      artifact,
+      shape: screen.shape,
+      gainsFrom: Number.isFinite(first) ? first : undefined,
+      losesFrom: w.cap,
+      permittedFrom: w.capUnrepresentable.lossFloor,
+      gains: w.gains.map((gain) => gain.intervals),
+    };
+  });
+}
+
+/** How many cases one artifact gains at a weight — counted, never inferred from a boundary. */
+export function gainsAtWeight(reading: CriterionReading, weight: number): number {
+  let n = 0;
+  for (const intervals of reading.gains) {
+    if (intervals.some((one) => weight >= one.min && weight <= one.max)) n += 1;
+  }
+  return n;
+}
+
+/**
+ * The criterion, per shape, as the interval of weights that satisfies both halves.
+ *
+ * `ADMISSIBLE` means a weight exists at which at least one artifact gains a case and NO artifact
+ * costs one — and the interval is bounded by the PESSIMISTIC end of every artifact's uncertainty,
+ * so an artifact that permits a loss before the model predicts one closes the region rather than
+ * being averaged away. That distinction is the whole verdict: this repository has a dispatched run
+ * whose weight was inside the model's region and outside the artifacts'.
+ *
+ * The witness is {@link gainsFrom} ITSELF, which is what makes a comparison of two boundaries
+ * sufficient: a gain interval is closed at its `min`, so a weight equal to the smallest of them is
+ * inside a gain — and every loss is ruled out there because the ceiling is the earliest one.
+ */
+export interface CriterionVerdict {
+  readonly shape: CvShape;
+  /** The first weight any artifact gains a case, and which artifact that is. */
+  readonly gainsFrom: number | undefined;
+  readonly gainArtifact: string | undefined;
+  /** Cases the gain side collects at {@link gainsFrom} — the magnitude the region would buy. */
+  readonly gainAtFloor: number;
+  /** The first weight any artifact's model costs a protected case, and which artifact sets it. */
+  readonly losesFrom: number;
+  readonly lossArtifact: string;
+  /** The earliest permission to cost one, over every artifact, and which artifact grants it. */
+  readonly permittedFrom: number;
+  readonly permittedArtifact: string;
+  /** {@link losesFrom}, or the earlier {@link permittedFrom} when one exists. */
+  readonly ceiling: number;
+  /** The artifact whose permission closed the region below the model's cap, when one did. */
+  readonly closedBy: string | undefined;
+  readonly admissible: boolean;
+  /** {@link ceiling} minus {@link gainsFrom}; zero when the region is empty. */
+  readonly width: number;
+}
+
+/**
+ * Intersect the artifacts' readings, shape by shape.
+ *
+ * Shapes are never mixed: `flip` and `rank` are different quantities, and a region computed across
+ * them would be a weight for a term nobody would ship. A shape no artifact can gain on is reported
+ * as unadmissible rather than omitted, because "no gain anywhere" and "no gain measured" are two
+ * different answers and only one of them is about the signal.
+ *
+ * @param readings - Every artifact's menu, per shape.
+ * @returns One verdict per shape, in {@link CV_SHAPES} order.
+ */
+export function criterionVerdicts(
+  readings: readonly CriterionReading[],
+): readonly CriterionVerdict[] {
+  const shapes = CV_SHAPES.filter((shape) => readings.some((one) => one.shape === shape));
+  return shapes.map((shape) => {
+    const group = readings.filter((one) => one.shape === shape);
+    let gain: CriterionReading | undefined;
+    for (const one of group) {
+      if (
+        one.gainsFrom !== undefined &&
+        (gain?.gainsFrom === undefined || one.gainsFrom < gain.gainsFrom)
+      ) {
+        gain = one;
+      }
+    }
+    let loss = group[0]!;
+    let permitted = group[0]!;
+    for (const one of group) {
+      if (one.losesFrom < loss.losesFrom) loss = one;
+      if (one.permittedFrom < permitted.permittedFrom) permitted = one;
+    }
+    // The ceiling is the PESSIMISTIC of the two: a loss is PREDICTED below the cap and PERMITTED
+    // from the floor, so a region that ends at the cap alone is one an artifact can already close.
+    const ceiling = Math.min(loss.losesFrom, permitted.permittedFrom);
+    const closedBy = permitted.permittedFrom < loss.losesFrom ? permitted.artifact : undefined;
+    const gainsFrom = gain?.gainsFrom;
+    const admissible = gainsFrom !== undefined && gainsFrom < ceiling;
+    return {
+      shape,
+      gainsFrom,
+      gainArtifact: gain?.artifact,
+      gainAtFloor:
+        gain === undefined || gainsFrom === undefined ? 0 : gainsAtWeight(gain, gainsFrom),
+      losesFrom: loss.losesFrom,
+      lossArtifact: loss.artifact,
+      permittedFrom: permitted.permittedFrom,
+      permittedArtifact: permitted.artifact,
+      ceiling,
+      closedBy,
+      admissible,
+      width: admissible ? ceiling - gainsFrom : 0,
+    };
+  });
+}
+
+/**
+ * Render the criterion as a report the record can quote.
+ *
+ * Printed whenever more than one artifact was named, because a single artifact's boundaries answer
+ * no question the criterion asks: both halves are about a comparison BETWEEN benchmarks, and the
+ * comparison is the thing a hand-read record got wrong.
+ *
+ * @param readings - Every artifact's menu, per shape.
+ * @param artifacts - The artifact labels, in the order they were read.
+ * @returns The report text.
+ */
+export function formatCriterionReport(
+  readings: readonly CriterionReading[],
+  artifacts: readonly string[],
+): string {
+  const lines: string[] = [];
+  const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'never');
+  lines.push(
+    `Kill criterion over ${artifacts.length} artifacts — a weight that gains a case on one ` +
+      'benchmark and costs another none:',
+  );
+  lines.push(
+    '  artifact                 shape   gains from      loses from      permits a loss from',
+  );
+  for (const artifact of artifacts) {
+    for (const one of readings.filter((r) => r.artifact === artifact)) {
+      lines.push(
+        `  ${artifact.padEnd(24)}${one.shape.padEnd(8)}` +
+          `${at(one.gainsFrom ?? Number.POSITIVE_INFINITY).padStart(11)}  ` +
+          `${at(one.losesFrom).padStart(14)}  ${at(one.permittedFrom).padStart(18)}`,
+      );
+    }
+  }
+  for (const verdict of criterionVerdicts(readings)) {
+    const gain =
+      verdict.gainsFrom === undefined
+        ? `no artifact gains on \`${verdict.shape}\` at any weight`
+        : `gains from ${at(verdict.gainsFrom)} (${verdict.gainArtifact}), worth ` +
+          `${verdict.gainAtFloor} case(s) at that floor`;
+    const loss = `loses from ${at(verdict.losesFrom)} (${verdict.lossArtifact})`;
+    const close =
+      verdict.closedBy === undefined
+        ? ''
+        : `, and ${verdict.closedBy} PERMITS a protected case to be cost from ` +
+          `${at(verdict.permittedFrom)}`;
+    const region = verdict.admissible
+      ? `ADMISSIBLE [${at(verdict.gainsFrom ?? 0)}, ${at(verdict.ceiling)}) width ` +
+        `${verdict.width.toFixed(6)}`
+      : 'NO ADMISSIBLE WEIGHT';
+    lines.push('');
+    lines.push(`  ${verdict.shape}: ${gain}; ${loss}${close} — ${region}`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/**
  * Screen every observed dominant-metric family for a zero-regression window.
  *
  * This is the systematic form of the hand-registered family sets the pool penalty was
@@ -5985,6 +6205,15 @@ export interface AnalyzeSection {
 export interface AnalyzeDumpOptions {
   readonly kind: 'dump';
   readonly dump: string;
+  /**
+   * Further artifacts read in the same invocation, in the order they were named.
+   *
+   * A list rather than one more path because the sections that consume it iterate: the kill
+   * criterion is a COMPARISON between benchmarks, and its members are not interchangeable — the
+   * first dump is the one whose own report is printed, and the rest are the artifacts it is
+   * compared against.
+   */
+  readonly extraDumps?: readonly string[];
   readonly family: MetricFamily | undefined;
   /** The sections to print, in canonical order; empty when none was requested. */
   readonly sections: readonly AnalyzeSection[];
@@ -6026,7 +6255,7 @@ export const DEFAULT_TERM_ORACLE_DOMINANCE_GRID: readonly number[] = [
  */
 const ANALYZE_USAGE =
   'usage: analyze-fse26-diagnose --before <dump> --after <dump> | ' +
-  '--dump <dump> [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
+  '--dump <dump> [--dump <dump>]… [--log-weight <w>] [--lat-weight <w>] [--lat-floor <rise>] ' +
   '[--pool-penalty <w>] [--temporal-weight <w>] [--onset-shape <shape>] ' +
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
   '[--onset-screen] [--discriminator] [--cv-screen] [--separator-screen] ' +
@@ -6085,6 +6314,10 @@ const SWITCH_FLAGS = new Set([
 export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
   const values = new Map<string, string>();
   const switches = new Set<string>();
+  // The ONE value flag that may repeat. The kill criterion compares two benchmarks, so the artifact
+  // that must GAIN and the artifacts that must be PROTECTED are solved in one invocation — each on
+  // its own population and in its own rounding box, which a single `--dump` cannot express.
+  const dumps: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (SWITCH_FLAGS.has(token.replace(/^--/, ''))) {
@@ -6096,7 +6329,9 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
       throw new Error(unrecognised(token, argv[i - 1]) + '\n' + ANALYZE_USAGE);
     }
     if (i + 1 >= argv.length) throw new Error(`--${name} expects a value\n${ANALYZE_USAGE}`);
-    values.set(name, argv[++i]!);
+    const value = argv[++i]!;
+    if (name === 'dump') dumps.push(value);
+    else values.set(name, value);
   }
 
   const output = values.get('output');
@@ -6106,8 +6341,9 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
     return { kind: 'comparison', before, after, output };
   }
 
-  const dump = values.get('dump');
+  const dump = dumps[0];
   if (dump === undefined) throw new Error(ANALYZE_USAGE);
+  const extraDumps = dumps.slice(1);
 
   // Kebab to camel, in one place: a switch whose name does not map to its section
   // kind is silently never rendered, which is how a flag can be accepted and ignored.
@@ -6208,6 +6444,9 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
   return {
     kind: 'dump',
     dump,
+    // Carried on the options as well as handed to the reader, so a consumer that never sees the
+    // loaded cases can still tell that a comparison was asked for.
+    extraDumps,
     // An invalid pattern is a loud failure, never a report whose family silently
     // matches nothing.
     family:
@@ -6301,16 +6540,30 @@ export function formatAnalyzeSections(
   cases: readonly DiagnosedCase[],
   dumpLabel: string,
   opts: AnalyzeDumpOptions,
+  siblings: readonly AnalyzeSibling[] = [],
 ): string {
   const sections: string[] = [];
   if (opts.family !== undefined) {
     sections.push(formatMetricCompetitionReport(cases, opts.family, dumpLabel));
   }
   for (const section of opts.sections) {
-    sections.push(analyzeSectionText(cases, section, opts, dumpLabel));
+    sections.push(analyzeSectionText(cases, section, opts, dumpLabel, siblings));
   }
   sections.push(formatAnomalyShapeReport(cases, dumpLabel));
   return sections.join('\n');
+}
+
+/**
+ * A second artifact read in the same invocation, for the sections whose question is a COMPARISON.
+ *
+ * The kill criterion compares two benchmarks, so it cannot be answered from one dump however the
+ * section is written — and it has been answered by hand instead, four times, with three of those
+ * comparisons ending up in the record carrying a number the artifacts did not support.
+ */
+export interface AnalyzeSibling {
+  /** The artifact's label, which a reader must be able to trace to a run. */
+  readonly label: string;
+  readonly cases: readonly DiagnosedCase[];
 }
 
 /**
@@ -6332,6 +6585,7 @@ function analyzeSectionText(
   section: AnalyzeSection,
   opts: AnalyzeDumpOptions,
   dumpLabel: string,
+  siblings: readonly AnalyzeSibling[] = [],
 ): string {
   switch (section.kind) {
     case 'window':
@@ -6400,7 +6654,20 @@ function analyzeSectionText(
       // question over a different slope. The whole menu, so the axis cannot be left open on the
       // technicality that only one reading of the statistic was tried.
       const weights: FamilyScreenWeights = section;
-      return formatCvMenuReport(cvShapeMenu(cases, weights, section.atWeight), weights);
+      const menu = formatCvMenuReport(cvShapeMenu(cases, weights, section.atWeight), weights);
+      if (siblings.length === 0) return menu;
+      // The criterion's two halves are a comparison, so it is rendered only when a second artifact
+      // was named — and every artifact is solved on its OWN population and its OWN box, because a
+      // concatenation would draw one artifact's digits in another's quantum.
+      const readings: CriterionReading[] = [
+        ...criterionReadings(cvShapeMenu(cases, weights, section.atWeight), dumpLabel),
+        ...siblings.flatMap((sibling) =>
+          criterionReadings(cvShapeMenu(sibling.cases, weights, section.atWeight), sibling.label),
+        ),
+      ];
+      return (
+        menu + '\n' + formatCriterionReport(readings, [dumpLabel, ...siblings.map((s) => s.label)])
+      );
     }
     case 'separatorScreen':
       // The run's own latency FLOOR, so the `lat` signal is the term the engine actually

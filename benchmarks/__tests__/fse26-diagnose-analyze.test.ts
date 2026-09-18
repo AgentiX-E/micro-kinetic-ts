@@ -34,6 +34,7 @@ import {
 
 import type {
   Admissibility,
+  CriterionReading,
   DiagnosedCase,
   DumpPrecision,
   RefinementFrontier,
@@ -50,6 +51,8 @@ import {
   classifyMiss,
   computeWeightSeparation,
   computeZeroRegressionWindow,
+  criterionReadings,
+  criterionVerdicts,
   CV_SHAPES,
   cvAvailability,
   cvInertCause,
@@ -66,6 +69,7 @@ import {
   formatAnalyzeSections,
   formatAnomalyShapeReport,
   formatCapResolutionLine,
+  formatCriterionReport,
   formatCvMenuReport,
   formatCvScreenReport,
   formatDiagnoseComparison,
@@ -81,6 +85,7 @@ import {
   formatZeroRegressionWindowReport,
   GAIN_RESOLUTION_TRIALS,
   gainResolution,
+  gainsAtWeight,
   guardCensus,
   halfQuantumFor,
   HISTORICAL_FIELD_DECIMALS,
@@ -6023,6 +6028,229 @@ describe('--cv-screen wiring', () => {
     const report = formatAnalyzeSections(cases, 'd', options);
     expect(report).toContain('Decisive-stability screen');
     expect(report).toContain('gain 1');
+  });
+});
+
+describe('--dump repeats, because the criterion is a comparison between benchmarks', () => {
+  it('collects every path in order and keeps the first as the one whose report is printed', () => {
+    const options = parseAnalyzeArgs([
+      '--dump',
+      'fse26.txt',
+      '--dump',
+      're1.txt',
+      '--dump',
+      're2.txt',
+      '--cv-screen',
+      '--log-weight',
+      '1',
+    ]);
+    if (options.kind !== 'dump') throw new Error('expected a dump mode');
+    expect(options.dump).toBe('fse26.txt');
+    expect(options.extraDumps).toEqual(['re1.txt', 're2.txt']);
+    // The reports that read ONE artifact are unaffected: the single-dump form is the same line.
+    const single = parseAnalyzeArgs(['--dump', 'fse26.txt', '--cv-screen', '--log-weight', '1']);
+    if (single.kind !== 'dump') throw new Error('expected a dump mode');
+    expect(single.dump).toBe('fse26.txt');
+    expect(single.extraDumps).toEqual([]);
+  });
+
+  it('renders no criterion block from one artifact, and the SAME report it rendered before', () => {
+    // The change has to be inert for a single dump: a criterion needs both halves, and a report
+    // that printed one artifact's boundaries as a verdict would be a comparison with itself.
+    const cases = [
+      cvCase({
+        cvs: [0.2, 0.8],
+        anomalies: [0.5, 0.9],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-1',
+      }),
+    ];
+    const single = parseAnalyzeArgs(['--dump', 'd', '--cv-screen', '--log-weight', '0']);
+    if (single.kind !== 'dump') throw new Error('expected a dump mode');
+    const alone = formatAnalyzeSections(cases, 'd', single);
+    expect(alone).not.toContain('Kill criterion');
+    // Same cases, same options, a sibling named: the menu is byte-identical and the block is extra.
+    const withSibling = formatAnalyzeSections(cases, 'd', single, [{ label: 'other', cases }]);
+    const [beforeBlock, afterBlock] = withSibling.split('Kill criterion');
+    expect(alone.startsWith(beforeBlock!.trimEnd())).toBe(true);
+    expect(`Kill criterion${afterBlock!}`).toContain("FSE'26 anomaly shape");
+    expect(withSibling).toContain('Kill criterion over 2 artifacts');
+  });
+});
+
+/**
+ * The kill criterion, as an object rather than as a comparison done in prose.
+ *
+ * The two halves live on different benchmarks — a candidate must GAIN on one and cost another
+ * nothing — so the quantity a proposal has to state is an INTERSECTION of two weight sets. Every
+ * fixture below pins one of the ways that intersection can be got wrong: reading the maximal-gain
+ * floor instead of the first gain, averaging away an artifact that PERMITS a loss before the model
+ * predicts one, or mixing two shapes into one interval.
+ */
+describe('the kill criterion — an intersection, not a comparison in prose', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+  /** The gain weight of a two-service case whose base gap is `log1p(a1)` over a slope gap of 1. */
+  const gaining = (anomaly: number, datapack: string): DiagnosedCase =>
+    cvCase({
+      cvs: [0, 1],
+      anomalies: [0, anomaly],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-1',
+      datapack,
+    });
+  const reading = (shape: 'flip' | 'rank', cases: readonly DiagnosedCase[]): CriterionReading =>
+    criterionReadings(cvShapeMenu(cases, WEIGHTS), 'a')[shape === 'flip' ? 0 : 1]!;
+
+  it('reports the FIRST gain, which is not the left end of the maximal-gain range', () => {
+    // The defect this field exists to avoid. `gainFloor` is where the BEST gain starts, so on a
+    // case set whose two cases gain one after the other it reads the LATER weight — and a criterion
+    // bounded by it would refuse a region that exists.
+    const cases = [gaining(1, 'dp-a'), gaining(3, 'dp-b')];
+    const one = reading('flip', cases);
+    expect(one.gainsFrom).toBeCloseTo(Math.log1p(1), 9);
+    expect(one.gains).toHaveLength(2);
+    // The same case set's own `gainFloor` is the later one — so the two fields really do differ,
+    // and the assertion above is about the choice rather than about the fixture.
+    const solved = cvScreen(cases, WEIGHTS).solved;
+    expect(solved.gain).toBe(2);
+    expect(solved.gainFloor).toBeCloseTo(Math.log1p(3), 9);
+    expect(one.gainsFrom!).toBeLessThan(solved.gainFloor);
+  });
+
+  it('counts the gains a weight collects, so the magnitude is measured and not inferred', () => {
+    const one = reading('flip', [gaining(1, 'dp-a'), gaining(3, 'dp-b')]);
+    expect(gainsAtWeight(one, 0)).toBe(0);
+    expect(gainsAtWeight(one, Math.log1p(1))).toBe(1);
+    expect(gainsAtWeight(one, Math.log1p(3))).toBe(2);
+    // Beyond a gain's own interval the count falls back: an interval is not a threshold.
+    expect(one.gains[1]!.every((i) => Math.log1p(3) >= i.min && Math.log1p(3) <= i.max)).toBe(true);
+  });
+
+  it('says a shape gains NOTHING rather than reporting a floor of zero', () => {
+    // A zero would be the most permissive answer possible for the least informative artifact: a
+    // satisfied-only case set gains at no weight, and `0` would read as "gains immediately".
+    const satisfied = cvCase({
+      cvs: [0.5, 1],
+      anomalies: [3, 1],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const one = reading('flip', [satisfied]);
+    expect(one.gainsFrom).toBeUndefined();
+    expect(one.gains).toEqual([]);
+    expect(criterionVerdicts([one])[0]!.admissible).toBe(false);
+    expect(formatCriterionReport([one], ['a'])).toContain('no artifact gains');
+  });
+
+  it('never mixes two shapes into one interval', () => {
+    // `flip` and `rank` are two different quantities; a region spanning them would be a weight for
+    // a term nobody would ship, and the report would name one shape while computing another.
+    const menu = criterionReadings(
+      cvShapeMenu([gaining(1, 'dp-a'), gaining(3, 'dp-b')], WEIGHTS),
+      'a',
+    );
+    expect(menu.map((one) => one.shape)).toEqual([...CV_SHAPES]);
+    expect(criterionVerdicts(menu).map((one) => one.shape)).toEqual([...CV_SHAPES]);
+  });
+
+  it('closes the region on an artifact that PERMITS a loss before the model predicts one', () => {
+    // The pessimistic end, and the reason the ceiling is not the cap. `a` gains from 0.007 and the
+    // model's first predicted loss is at 0.010 — so the model alone would call this admissible —
+    // but `b` permits a protected case to be cost from 0.006, BELOW the first gain, so the region
+    // is one no artifact can decide and a verdict that averaged that away would recommend a weight
+    // its own error bars refuse.
+    const readings: readonly CriterionReading[] = [
+      {
+        artifact: 'a',
+        shape: 'flip',
+        gainsFrom: 0.007,
+        losesFrom: 0.01,
+        permittedFrom: 0.05,
+        gains: [[{ min: 0.007, max: 1 }]],
+      },
+      {
+        artifact: 'b',
+        shape: 'flip',
+        gainsFrom: undefined,
+        losesFrom: 0.02,
+        permittedFrom: 0.006,
+        gains: [],
+      },
+    ];
+    const verdict = criterionVerdicts(readings)[0]!;
+    expect(verdict.losesFrom).toBe(0.01);
+    expect(verdict.lossArtifact).toBe('a');
+    expect(verdict.permittedFrom).toBe(0.006);
+    expect(verdict.permittedArtifact).toBe('b');
+    expect(verdict.ceiling).toBe(0.006);
+    expect(verdict.closedBy).toBe('b');
+    expect(verdict.gainsFrom!).toBeGreaterThan(verdict.ceiling);
+    expect(verdict.admissible).toBe(false);
+    expect(verdict.width).toBe(0);
+    const text = formatCriterionReport(readings, ['a', 'b']);
+    expect(text).toContain('NO ADMISSIBLE WEIGHT');
+    expect(text).toContain('b PERMITS a protected case to be cost from 0.006000');
+  });
+
+  it('admits the region, and names which artifact bought each end of it', () => {
+    // The mirror: here the permission is LATER than the model's loss, so the cap governs and the
+    // region survives — and both ends carry the artifact they came from, because "gains somewhere"
+    // and "loses nowhere" are claims about two different benchmarks.
+    const readings: readonly CriterionReading[] = [
+      {
+        artifact: 'a',
+        shape: 'flip',
+        gainsFrom: 0.004,
+        losesFrom: 0.01,
+        permittedFrom: 0.05,
+        gains: [[{ min: 0.004, max: 1 }]],
+      },
+      {
+        artifact: 'b',
+        shape: 'flip',
+        gainsFrom: undefined,
+        losesFrom: 0.02,
+        permittedFrom: 0.012,
+        gains: [],
+      },
+    ];
+    const verdict = criterionVerdicts(readings)[0]!;
+    expect(verdict.ceiling).toBe(0.01);
+    expect(verdict.closedBy).toBeUndefined();
+    expect(verdict.admissible).toBe(true);
+    expect(verdict.width).toBeCloseTo(0.006, 12);
+    expect(verdict.gainArtifact).toBe('a');
+    expect(verdict.lossArtifact).toBe('a');
+    expect(verdict.gainAtFloor).toBe(1);
+    const text = formatCriterionReport(readings, ['a', 'b']);
+    expect(text).toContain('ADMISSIBLE [0.004000, 0.010000) width 0.006000');
+    expect(text).toContain('worth 1 case(s) at that floor');
+  });
+
+  it('prints every artifact’s three boundaries, so the verdict can be checked', () => {
+    const readings: readonly CriterionReading[] = [
+      {
+        artifact: 'fse26',
+        shape: 'flip',
+        gainsFrom: 0.004134,
+        losesFrom: 0.024882,
+        permittedFrom: 0.003873,
+        gains: [[{ min: 0.004134, max: 1 }]],
+      },
+      {
+        artifact: 're2',
+        shape: 'flip',
+        gainsFrom: undefined,
+        losesFrom: 0.007528,
+        permittedFrom: 0.069256,
+        gains: [],
+      },
+    ];
+    const text = formatCriterionReport(readings, ['fse26', 're2']);
+    expect(text).toContain('Kill criterion over 2 artifacts');
+    expect(text).toMatch(/fse26\s+flip\s+0\.004134\s+0\.024882\s+0\.003873/);
+    // A shape with no gain prints `never` rather than a zero, in the table as well as the verdict.
+    expect(text).toMatch(/re2\s+flip\s+never\s+0\.007528\s+0\.069256/);
   });
 });
 

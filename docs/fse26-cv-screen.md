@@ -900,8 +900,27 @@ were first written from `.bench-cache/rcaeval-dumps/*.txt`, and those local copi
 `re3.txt` holds 30 cases of 90 and `re1.txt` 125 of 375, first case `rcaeval-re3_re3tt_…`. They predate the
 completeness fix, and the table stated `re3`'s `flip` as **`needs 1` with 7 gains** on that subpopulation. On
 the artifact the workflow actually produces — **90 cases, every system** — `flip` has **5 gains and answers
-`beyond`**, and no window on any suite answers `needs 1`. A measurement is only about the artifact it was run
+`beyond`**, and **no RCAEval suite answers `needs 1`**. A measurement is only about the artifact it was run
 on, and the record that said the fix had landed sat beside a stale copy on disk.
+
+**AND THE SWEEP'S POPULATION WAS ITSELF SHORT BY ONE MEMBER — corrected 2026-09-18, second pass.** That
+sentence was read as "no window answers `needs 1`" and generalised past the artifacts it had been measured
+on. The sweep's stated population is *every window the verdict refuses*, and the FSE'26 stability screen is
+one of them: `admissibilityOf` refuses both of its shapes (§"The verdict now consumes its own error bars"),
+so its `flip` window belongs in the table above and no row carries it. Re-run on the artifact that screen is
+about (`35107871516`, the only FSE'26 dump whose producer emitted `metricDecisive`), **it answers `needs 1`**
+— *"1 more digit(s) — a quantum `10^1` smaller — admits it (every one of the 3 gains holds in all 400 draws,
+cap intact in 100 of 100)"* — and its `rank` shape answers `beyond`. So the corrected sentence is narrower,
+not broader: **the render is the obstacle for exactly ONE measured window, FSE'26's stability `flip`, and for
+no RCAEval one.** This is the register's own discovery defect one level up — a population assembled by hand
+from a table misses precisely the member that was never in a table.
+
+**This is a DISCOVERY defect with a MEASUREMENT attached, not a bookkeeping one.** The point of the sweep is
+to decide whether a finer dump is worth producing, and it answers "only here" while the record said "nowhere"
+— which turns the one actionable frontier this axis has into one the record denies exists. There is one such
+artifact per dispatch and the producer's precision is now an input to all seven dump steps
+(`--diagnose-decimals`), so the same dispatch that renders FSE'26 at four decimals also settles whether the
+window is admitted.
 
 **A survival rate that does not move is the signature of a rendered TIE.** `earliest-only` credits the root
 together with whatever else prints its minimum, and two equal prints are re-ordered by any nonzero draw,
@@ -910,16 +929,20 @@ however small — so no refinement of the DRAW settles their order, and the plat
 What a finer dump does there is CHANGE the tie rather than refine it, which is a different question from the
 one the sweep asks: the sweep holds the print fixed, so it cannot model digits it does not have.
 
-**The narrower form of the claim: the render is the obstacle for NO measured window.** Every window the
-verdict refuses answers `beyond` — and on the corrected artifacts nothing answers `needs 1`. `re1`'s
-`order` is the case that keeps the instrument honest about WHY: its weakest gain climbs toward `100.0%`
-while the window is still refused, so a clause reading every `beyond` as a tie would contradict its own
-evidence; the printed sentence reports BOTH readings and names the bar still failing.
+**The narrower form of the claim: the render is the obstacle for ONE measured window.** Every OTHER window
+the verdict refuses answers `beyond` — `re3`'s and `re1`'s stability `flip` included, re-measured on the
+current artifacts — and `re2`'s answers `structural`, because it has no gain below its own cap and a sweep
+with nothing to move is not run at all. `re1`'s `order` is the case that keeps the instrument honest about
+WHY: its weakest gain climbs toward `100.0%` while the window is still refused, so a clause reading every
+`beyond` as a tie would contradict its own evidence; the printed sentence reports BOTH readings and names the
+bar still failing.
 
 The pre-registered prediction that followed from `needs 1` — *a four-decimal dump admits `re3`'s and
 `re3-noinject`'s stability `flip`* — was **tested and REFUTED**: at four decimals, on the same 90 cases, both
 windows are still refused (see the pair immediately below). It was refuted as a consequence of the stale
-archive above: the premise belonged to the subpopulation, so the prediction inherited it.
+archive above: the premise belonged to the subpopulation, so the prediction inherited it. **The prediction
+now has a second form, on the artifact that does license it, and it is UNTESTED**: a four-decimal **FSE'26**
+dump admits the stability `flip` window. One dispatch settles it, and the precision is a dispatch input.
 
 **The like-for-like pair, and it is the only comparison that means anything here.** Both artifacts come from
 `4a370b8`, the same configuration, the **same 90 cases**, and differ ONLY in the declared precision:
@@ -952,6 +975,81 @@ Two smaller things the work found, both measured:
   window's own reading, so a loss there lives in the named verdict (`at.lost`). Reading `lostAtShip`
   reported the named weight as harmless, which is the one reading the flag exists to prevent.
 
+### The criterion, intersected — because the two halves are on two benchmarks
+
+Every question above was answered per artifact, and the kill criterion is not a per-artifact question: a
+candidate must **gain on FSE'26** and **cost the golden nothing**. Both halves are a WEIGHT, so the object the
+criterion asks for is the INTERSECTION of two sets of weights — and the record has compared those sets in
+prose, by hand, four times, three of them ending up carrying a number the artifacts did not support.
+
+`criterionReadings` + `criterionVerdicts` + `formatCriterionReport` are that object, behind a repeated
+`--dump` (the first is the artifact whose report is printed; the rest are what it is compared against). Each
+artifact is solved on its OWN population and in its OWN rounding box — a concatenated case list would draw
+one benchmark's digits in another's quantum — and the verdict is a `min` per shape over three fields the
+screens already compute:
+
+| field | what it is | which half it bounds |
+| --- | --- | --- |
+| `gainsFrom` | the FIRST weight this artifact gains a case at | the gain half |
+| `losesFrom` | the first weight its model costs a protected case | the loss half, as an UPPER bound |
+| `permittedFrom` | the earliest weight it PERMITS one to be cost (`lossFloor`) | the loss half, as a LOWER bound |
+
+`gainsFrom` is deliberately **not** the window's `gainFloor`: that field is the left end of the range
+carrying the MAXIMUM gain, and the criterion's first half asks about the first gain. On `re2`'s `flip` shape
+the two differ by a whole regime — no window at all, and a first gain at `0.043497`, above the shape's own
+cap.
+
+Measured on the four artifacts (`r35107871516` = FSE'26 with compositions, `re1`/`re2`/`re3` = the golden's
+own dumps, all three systems each):
+
+```
+  artifact                 shape   gains from      loses from      permits a loss from
+  …/r35107871516/fse26     flip       0.004134        0.024882            0.003873
+  …/r35107871516/fse26     rank       0.006672        0.030480            0.003873
+  …/rcaeval-dumps/re1.txt  flip       0.008032        0.008032            0.008032
+  …/rcaeval-dumps/re1.txt  rank       0.015783        0.015233            0.008032
+  …/rcaeval-dumps/re2.txt  flip       0.043497        0.007528            0.069256
+  …/rcaeval-dumps/re2.txt  rank       0.149687        0.012161            0.069256
+  …/rcaeval-dumps/re3.txt  flip       0.091685        0.180534            0.016369
+  …/rcaeval-dumps/re3.txt  rank       0.077599        0.316068            0.016369
+
+  flip: gains from 0.004134 (FSE'26), worth 1 case at that floor; loses from 0.007528 (re2), and
+        FSE'26 PERMITS a protected case to be cost from 0.003873 — NO ADMISSIBLE WEIGHT
+  rank: gains from 0.006672 (FSE'26), worth 1 case at that floor; loses from 0.012161 (re2), and
+        FSE'26 PERMITS a protected case to be cost from 0.003873 — NO ADMISSIBLE WEIGHT
+```
+
+**Three things this settles that no per-artifact table could, and the third is the one that matters.**
+
+1. **The weight the solver recommends is 2.5×–4.0× above the golden's own loss-free ceiling.** FSE'26's
+   `rank` window is `[0.029860, 0.030480]` and it SHIPS `0.030170`; the golden's first predicted loss is at
+   `0.012161` (`re2`, `rank`) — so the vetoed run's four moved cells are not a surprise the run delivered but
+   a number this command predicts. The same holds on `flip`: `0.023209` against `0.007528`, 3.1×.
+2. **The golden is loss-free where FSE'26 starts gaining, by a factor of 1.8×/1.8×.** The golden's ceiling is
+   `0.007528` (`flip`) and `0.012161` (`rank`) while FSE'26's first gain is `0.004134` / `0.006672`, so a
+   golden-neutral weight exists on BOTH shapes by the models — the answer to "whether a narrower weight is
+   golden-neutral", which this document listed as not settled, is **yes**, and the question it was standing
+   in for is the one below.
+3. **And it is worth ONE case, and FSE'26 itself closes it.** The region is `[0.004134, 0.007528)` wide by
+   `0.0034` on `flip` and `[0.006672, 0.012161)` wide by `0.0055` on `rank`, and FSE'26's own tie class
+   PERMITS a protected case there to be cost from **`0.003873`** — below the first gain on both shapes. So
+   the region is one no artifact can decide, the verdict reads `NO ADMISSIBLE WEIGHT`, and the gain at its
+   floor is one case. That is the honest form of the closure: **the statistic that separates at AUC 0.718
+   cannot be converted into a shippable gain beyond one case without leaving a region the artifacts can
+   resolve** — and the run that would test it is the one whose weight this command places `2.5×` outside the
+   golden's ceiling.
+
+The pessimistic end is not a preference: `lossFloor` is where the artifact *permits* a loss and the cap is
+where the model *predicts* one, so the truth is between them and a verdict has to consume both — the same
+rule `admissibilityOf` applies to the ensembles, applied here to the intersection. The one dispatched run
+that measured FSE'26's own half rejected the permission (it delivered **0 regressed fault types** at
+`0.030170`), which is why the entry is recorded as a bound the engine beat rather than as a prediction it
+failed.
+
+**This tool is also what the register's re-opening rule needed.** A candidate is now measured by naming the
+artifacts and letting the intersection be computed, instead of by picking a weight by hand and dispatching —
+which is the form the rule always demanded and never had an instrument for.
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the
@@ -962,14 +1060,20 @@ golden** (§"The golden, measured AT the weight"), and the base the screens reco
 engine's own metric term on both sides of the threshold it turns on (§"The cause, and the fix").
 Not settled:
 
-- **Whether a narrower weight is golden-neutral.** 0.03017 is the weight the FSE'26 window solves for
-  on the faithful (`rank`) shape, and it fails; the axis is not re-opened by a smaller number picked
-  by hand. Any such candidate now has to clear both halves, and the flag exists to test it.
-- **Whether a narrower weight is even worth a run now.** The base correction moved `re1`'s `rank` cap
-  from `0.015112` to `0.015233` and its `flip` window to `[0.008032, 0.008032]`, so the golden's
-  admissible set has to be re-read before the next dispatch — but the weight it would test is the
-  same 0.03017 the golden has already vetoed, and a candidate inside the corrected window would be a
-  different question, not a smaller one.
+- **Whether a narrower weight is golden-neutral — SETTLED, and the answer is yes.** Re-read on the
+  current artifacts, the golden's loss-free ceiling is `0.007528` (`flip`, `re2`) and `0.012161` (`rank`,
+  `re2`) while FSE'26's first gain is `0.004134` / `0.006672`, so the two sets overlap on both shapes.
+  What the overlap is worth is ONE case, and FSE'26's own permission closes the region below the first
+  gain (§"The criterion, intersected") — so a narrower weight is golden-neutral, and it is worth a run
+  only as a test of the intersection rather than as a shipment.
+- **Whether a narrower weight is even worth a run now — the re-read the last one asked for is done, and
+  it changed the answer's shape.** The base correction moved `re1`'s `rank` cap to `0.015233` and its
+  `flip` window to a point at `0.008032`; with `re2`'s `0.012161`/`0.007528` beside them the golden's
+  admissible set is now a NUMBER rather than a question. The weight 0.03017 is 2.5× above it on `rank`,
+  which is why the run moved four cells, and a candidate inside it would buy one case.
+- **Whether a four-decimal FSE'26 dump admits the stability `flip` window** — the pre-registered
+  prediction the refinement sweep licenses, untested, and settled by one dispatch because the precision
+  is now an input. See §"The verdict now consumes its own error bars".
 - 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight, and the count now carries
   its causes (§"The unreachable count now says WHY"): **236 of the 569 (41.5%) read a deciding pair as
   EQUAL**, i.e. the `cv` field's three decimals decide whether the case is screenable at all; the rest
@@ -1022,7 +1126,7 @@ Not settled:
 | the onset column's quantum and its one-sided cell | `Math.round` gives up half a MILLISECOND — three orders of magnitude from the base's `5.0e-4` — and it is now an exported owner in the producer; a printed `0` stands for `[0, 0.5]` and nothing below it, because the renderer spells a negative as `-`, so the draw is clamped. The first draft had neither: drawing it symmetrically moved the window in **78 of 100** draws against **34 of 60** once the draw stays inside the cell, i.e. half the mobility first measured was MY modelling error. The magnitude itself has no behavioural fixture that can separate it from the base's (any nonzero draw breaks an exact tie), and the test says so rather than pretending otherwise |
 | the per-screen box's GOLDEN | `35242705643` at `1c47be6`: **9 of 9 cells byte-identical**, every job green, `CI` and `Release` green on the same commit. Owed rather than incidental — the change touches `benchmarks/src` and the producer's exported constant, so the paths rule bought the run — and it is the criterion's second half for an instrument that moved only what the instrument REPORTS |
 | the verdict consumes the error bars | both menus carried the same `gain > 0 && lostAtShip === 0`, a one-digit-set test blind to both ensembles, printed only when the list was EMPTY — so a shape at **56 of 100 draws** was treated as admissible under a report saying so. One owner now (`admissibilityOf`, generic over the four shared fields), reporting EVERY failing bar. Measured: FSE'26 refuses all four shapes on BOTH screens; the golden's temporal `earliness` is admissible on all three suites at 1 gain; `re3`'s `earliest-only` and `re1`'s stability `flip` (a point window) are refused. **Every refusal is `gain not resolved` or `cap not resolved` — and that is true BY CONSTRUCTION rather than by measurement**: each reason is reachable only once the print already carries a gain and an intact cap. The inference first drawn from it here — that the artifact's three decimals were therefore the binding constraint on both axes — is **REFUTED by the next row** |
-| the refinement sweep: is the RENDER the obstacle? | `refinementFrontier` moves the box and nothing else (a quantum `10^-k` smaller in EVERY field, same seed and trial counts, `k = 0` taken from the ensembles the report already has), answering `already` / `needs d` / `beyond` / `structural` (`structural` = no gain, so no sweep is run at all). Measured, `k` up to 6: FSE'26's `earliest-only` is **`beyond` with the weakest gain at 56.0% for EVERY k** — an unmoved survival rate is a rendered TIE, which a finer dump CHANGES rather than refines; `re1`'s `earliness` is `already`; `re1`'s `order` is `beyond` with its weakest gain CLIMBING 52.8% → 100.0% while the cap still moves; `re1`'s stability `flip` plateaus at 46.3% and `re3`'s at 26.8%; and exactly TWO windows — `re3`'s and `re3-noinject`'s stability `flip` — answer **`needs 1`**. So the render is the obstacle for those two and for nothing else measured, and the pre-registered prediction they license is **a dump at four decimals admits them** |
+| the refinement sweep: is the RENDER the obstacle? | `refinementFrontier` moves the box and nothing else (a quantum `10^-k` smaller in EVERY field, same seed and trial counts, `k = 0` taken from the ensembles the report already has), answering `already` / `needs d` / `beyond` / `structural` (`structural` = no gain, so no sweep is run at all). Measured, `k` up to 6: FSE'26's `earliest-only` is **`beyond` with the weakest gain at 56.0% for EVERY k** — an unmoved survival rate is a rendered TIE, which a finer dump CHANGES rather than refines; `re1`'s `earliness` is `already`; `re1`'s `order` is `beyond` with its weakest gain CLIMBING 52.8% → 100.0% while the cap still moves; `re1`'s stability `flip` plateaus at 46.3% and `re3`'s at 26.8%. **CORRECTED 2026-09-18, second pass**: this row used to end by naming `re3`'s and `re3-noinject`'s stability `flip` as the two windows answering `needs 1`, which was a reading of the TrainTicket-only copies; on the current artifacts both answer `beyond`. The window that DOES answer `needs 1` is **FSE'26's stability `flip`** on `35107871516` (1 more digit admits it), and the sweep's own table never listed it — so the population was short by one member and the member it was short by was the only one with a positive answer. **NO WINDOW on any artifact answers `needs 1`** is therefore the sentence that was false, and the reachable question is the untested prediction below |
 | the frontier's GOLDEN | `35299550262` at `2b3717c`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — every job green, `CI` and `Release` green on the same commit. The expected outcome rather than a coincidence: the change is diagnostic-side and cannot move a ranking, and it is the criterion's second half for an instrument that only REPORTS. `k = 0` is inert at the level of the report too: on the FSE'26 dump the whole output differs from the pre-change text by **exactly one added line**, with every previously printed number byte-identical |
 | the verdict's own GOLDEN, and the reader that said it was owed nothing | `35292724888` at `d2625d0`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — every job green, `CI` and `Release` green on the same commit. Recorded with the caveat it earned: the reader answered **"no benchmark run: this push does not touch a path that can move the engine, so no golden is owed"** for this commit while the run was in flight. The commit changes `benchmarks/src/fse26-diagnose-analyze.ts`, so the paths rule DOES apply to it and the run was owed; the reader had asked GitHub with an abbreviated revision, which the `head_sha` filter answers with zero runs (`docs/golden-reader-audit.md`). The golden was owed, and it passed |
 | the artifact declares its own precision, and its GOLDEN | `35308723247` at `9b62aef`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — with `Release` green on the same commit. The `CI` run on that commit was **cancelled** by the follow-up docs-only push (`ci.yml`'s `cancel-in-progress`), so the verified `CI` belongs to `78fd495`; `benchmark-rcaeval.yml` has **no** concurrency group, so an owed golden cannot be cancelled that way. The expected outcome rather than a coincidence: the change is diagnostic-side, and moving the reader's box from a shared constant to the artifact is inert on every dump that exists — all of them predate the header field, so they take the historical fallback and their numbers are byte-identical |
@@ -1036,6 +1140,8 @@ Not settled:
 | the weight's golden | `35132525118` at `5233678` with `stability_weight=0.03017`: **4 of 9 cells move** (RE1 OB −0.8pp, RE1 TT −0.8pp, RE2 TT **−15.8pp**, RE3 SS +2.5pp) ⇒ the weight is rejected and the default stays 0 |
 | the dump's completeness | the first dispatch's `re1` artifact held **125 of the 375 evaluated cases, all tagged `re1tt`**; after the fix all seven dumps hold every system — `re1` **375 (ob 125 / ss 125 / tt 125)**, `re2` **150 (50/50/50)**, `re3` **90 (30/30/30)** — and each opens with the banner's own signal line (the `re3-novelty` header reads `logSignalMode=novelty`, so it is per-run and not a constant). On a three-system fixture with the same input: pre-change **3 blocks, all `re1tt`, no header** against post-change **9 blocks, `re1ob 3 / re1ss 3 / re1tt 3`, header = the banner line** |
 | the dump's fidelity | against each dump's OWN `prediction=` rank: **six of seven exact** (`re1` 301, `re1-noinject` 301, `re2` 119, `re2-noinject` 119, `re3-noinject` 37, `re3-novelty` 37) and divergent only on the `traceWeight=1` dump (48 → 35). RE1's 301 is checkable against the published table independently of the dump: `80.0% × 125 + 92.8% × 125 + 68.0% × 125 = 100 + 116 + 85` |
+| the criterion as an INTERSECTION | `criterionReadings` + `criterionVerdicts` + `formatCriterionReport`, reachable by repeating `--dump`. Three fixtures pin the three ways the intersection is got wrong: the FIRST gain rather than the maximal-gain floor (`gainsFrom` `log1p(1)` against the same case set's `gainFloor` `log1p(3)`), an artifact that PERMITS a loss below the model's cap (region closed, the permitting artifact NAMED), and a shape no artifact gains on (reported as `never`, not as zero). Two more pin the wiring: ONE dump renders no block at all and the report it rendered before, byte for byte, and a second dump appends the block inside the section rather than after the trailing anomaly-shape report. Measured on the four artifacts: `NO ADMISSIBLE WEIGHT` on both shapes, closed by FSE'26's own permission at `0.003873` |
+| the intersection's own numbers | the table above is reproduced by one command whose four `correct at 0` totals are the runs' own published headlines: `r35107871516` 756 / 1422 (`53.16%`), `re1` 301 / 375, `re2` 119 / 150, `re3` 35 / 90. Each artifact is solved on its own population and in its own box — the concatentation a single case list would imply is exactly the error the box model exists to prevent |
 
 The tests that carry the design, and why each exists:
 
