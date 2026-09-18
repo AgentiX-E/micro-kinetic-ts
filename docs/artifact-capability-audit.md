@@ -29,6 +29,22 @@ the reading the module exists to stop. `require_channel` refuses a read before a
 it, and the refusal names the artifact, the channel, the measured coverage, the population the number is over
 and the code that has to change.
 
+**And a channel is two quantities, not one: RENDERED and VALUED.** The producer has two ways of writing
+"rendered and undetermined" — `-` (`onset=-`, `latRise=-`, and now `metricDecisive: -`) and an EMPTY value
+(`dominant= err=0`) — and folding them into one number made `onset every` read as "every row carries an
+onset" while **12.5%** of the FSE'26 artifact prints `onset=-`. The census reports both, and prints the second
+only when it differs:
+
+| artifact | `onset` | `dominant-metric` |
+| --- | --- | --- |
+| `re1.txt` | `every`, valued **4299/11557** | `every`, valued **9991/11557** |
+| `re3.txt` | `every`, valued **1635/2900** | `every`, valued **2631/2900** |
+| `dump-35035314921.txt` | `every`, valued **63489/72527** | `every`, valued **71161/72527** |
+| `artifacts/r35107871516/fse26-results.txt` | `every`, valued **63489/72527** | `every`, valued **71161/72527** |
+
+The `63489/72527` is **87.5%**, which is the number `fse26-onset-verdict.md` had recorded independently — a
+cross-check of the census by a document written before it.
+
 ## The measured matrix
 
 | artifact | cases | rows | declared precision | decisive composition |
@@ -37,9 +53,16 @@ and the code that has to change.
 | `rcaeval-dumps/re2.txt` | 150 | 4806 | `every` | **`some` (4219/4806)** |
 | `rcaeval-dumps/re3.txt` | 90 | 2900 | `every` | **`some` (2631/2900)** |
 | `dump-35035314921.txt` (FSE'26, shipped config) | 1422 | 72527 | **`none`** | **`none`** |
+| `artifacts/r35107871516/fse26-results.txt` | 1422 | 72527 | **`none`** | **`some` (71161/72527)** |
 
-`onset`, `latEdges`, `failedEdge` and `dominant` reach `every` on all four; `both=` (the union primitive)
-reaches `every` on the three RCAEval artifacts and `none` on the FSE'26 one.
+`onset`, `latEdges`, `failedEdge` and `dominant` reach `every` on all five; `both=` (the union primitive)
+reaches `every` on the three RCAEval artifacts and `none` on both FSE'26 ones.
+
+The two FSE'26 runs are the pair the record needs: the same 1422 cases, one carrying the decisive composition
+on **71161** rows and one carrying none. That is also the cross-check behind the composition's own value
+reach — `71161` is the number of rows naming a dominant metric on the run that does NOT render the
+composition, and the number of compositions the other run DOES render, which is the same set measured from
+two sides.
 
 ## Finding 1 — the artifact the record's FSE'26 rows are read from answers neither question
 
@@ -89,13 +112,45 @@ a suite's name is a subset however many cases it holds) and the subset it refuse
 current artifact** rather than recalled. Fixing the archive can no longer make the test vacuous, and it can
 no longer pass by being skipped where the evidence lives.
 
+## Finding 5 — the composition's absence was unattributable, and the producer now says so
+
+`formatDecisiveComposition` rendered the line only where the service's NAMED metric turned out to be a `kept`
+outcome carrying a decomposition, and **omitted it otherwise**. On `re1.txt` that left **1566 rows** with no
+line — and those rows are exactly the ones whose inventory is not rendered either, because the inventory is
+printed only for the ground truth and the engine's predictions. So for 1566 rows a reader could not tell
+*"this service's dominant metric was not decomposed"* from *"this dump predates the line"*, which is the same
+silence for two different facts — precisely the distinction the INERT/UNEVALUABLE work exists to keep.
+
+The line is now **rendered for every row**, carrying `-` where there is no composition, the marker `onset`,
+`latRise` and `dominant` already use. The CHANNEL becomes universal and the VALUE is what it reports, which
+is why the census needed the rendered/valued split in the same iteration: the two changes are one statement.
+Measured after: `decisive-composition` reaches **every** row of a fresh dump, and the composition itself
+reaches **98.13%** of them (`71161/72527`) — the remainder are rows that name no dominant metric at all, and
+now say so.
+
+## Finding 6 — the census measured the TRANSPORT on a fetched artifact
+
+Pointing the census at `artifacts/r35107871516/fse26-results.txt` — the other FSE'26 run, fetched through the
+log transport, so every line carries a BOM and an ISO timestamp — returned **`0 cases, 0 rows`** with every
+channel `none`, for a file holding **1422 cases and 71161 compositions**. Every anchor in the grammar is `^`,
+so the prefix hid the whole artifact, and the answer was a reading about the fetch reported as a property of
+the artifact. This is the third time this repository has paid for that: a probe once recorded
+`metricDecisive lines: 0` for the same file by counting lines that *start* with the literal.
+
+The prefix is stripped now (BOM, then an ISO timestamp and **exactly one** space — the producer's own
+indentation follows it, and consuming the run of spaces turns a two-space service row into one that starts a
+row nowhere). After: the same file reads `1422 cases, 72527 rows; … decisive-composition some
+(71161/72527 rows)`.
+
 ## What a candidate must now say
 
 1. **Which channels it reads**, and the **reach** it needs of each — `every` if it sums or simulates over
    every candidate, `some` if it only asks whether the artifact has the channel.
-2. **Which artifact** it reads them from, by run, with that artifact's coverage — because the two FSE'26
+2. **Whether it needs the channel or the VALUE**, because a channel can reach every row and carry nothing on
+   a third of them (`onset`).
+3. **Which artifact** it reads them from, by run, with that artifact's coverage — because the two FSE'26
    artifacts differ in exactly the channel the composition family depends on.
-3. If the reach it needs is not `every`, the **producer change** that would make it so, stated before the
+4. If the reach it needs is not `every`, the **producer change** that would make it so, stated before the
    measurement rather than after.
 
 ## Gates

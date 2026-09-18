@@ -446,3 +446,11 @@ engine:
 
 A candidate that has not named the channels it reads, the reach it needs of each, and the artifact — by run
 — it reads them from, has not engaged this either.
+
+**And the reach is now TWO numbers, because the composition's own line stopped being selective.** The
+producer renders `metricDecisive` on **every** row now (the `-` marker where the named metric carries no
+decomposition, the same marker `onset` and `latRise` use), so the channel is universal while the composition
+itself reaches **98.13%** of the shipped artifact's rows (`71161/72527`) — and the 1566 rows that used to
+carry no line at all were exactly the rows whose inventory is not rendered either, so their absence was
+unattributable. A candidate must therefore say whether it needs the channel or the VALUE: `onset` is the
+warning, reaching every row and carrying a number on **87.5%** of them.

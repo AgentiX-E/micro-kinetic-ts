@@ -184,6 +184,79 @@ class CapabilityOfTest(unittest.TestCase):
         # A block that declares nothing cannot be short of it, and a surplus cannot happen at all.
         self.assertEqual(dc.capability_of(case('a_cpu_1', FULL_ROW)).short_blocks, 0)
 
+    def test_a_channel_rendered_EVERYWHERE_but_valued_nowhere_is_not_called_complete(self) -> None:
+        # The defect this distinction answers, measured on the shipped artifact: `onset` is rendered on all
+        # 72527 rows and carries a NUMBER on 63489 of them (87.5%), so `onset every` on its own read as
+        # "every row carries an onset". Both numbers are printed whenever they differ.
+        text = (
+            'DIAG datapack=a_cpu_1 faultType=cpu services=3 decimals=3\n'
+            '  adservice [#1] selfAnomaly=0.5 logScore=0.0 onset=34000 latEdges=1 failedEdge=0.0 dominant=cpu\n'
+            '    metricDecisive: cpu=0.5{dev=0.5}\n'
+            '  cartservice selfAnomaly=0.4 logScore=0.0 onset=- latEdges=1 failedEdge=0.0 dominant= mem\n'
+            '    metricDecisive: -\n'
+            '  third selfAnomaly=0.3 logScore=0.0 onset=- latEdges=1 failedEdge=0.0 dominant=mem\n'
+            '    metricDecisive: mem=0.3{dev=0.3}\n'
+        )
+        capability = dc.capability_of(text)
+        self.assertEqual(capability.rows, 3)
+        self.assertEqual(capability.channel('onset').reach, dc.EVERY)
+        self.assertEqual(capability.channel('onset').rows_valued, 1)
+        self.assertEqual(capability.channel('onset').value_reach, dc.SOME)
+        self.assertEqual(capability.channel('dominant-metric').rows_valued, 2)
+        # And the sub-line marker's two shapes: a composition, and the `-` the producer prints for a row
+        # whose named metric carries none.
+        self.assertEqual(capability.channel('decisive-composition').rows_reached, 3)
+        self.assertEqual(capability.channel('decisive-composition').rows_valued, 2)
+        self.assertEqual(capability.channel('decisive-composition').value_reach, dc.SOME)
+        line = dc.describe(capability)
+        self.assertIn('onset every, valued 1/3 rows', line)
+        self.assertIn('dominant-metric every, valued 2/3 rows', line)
+        self.assertIn('decisive-composition every, valued 2/3 rows', line)
+        # A channel whose two counts agree prints ONE number: the suffix is for a difference, not a habit.
+        self.assertEqual(dc.describe(capability).count('latency-edges every'), 1)
+        self.assertNotIn('latency-edges every, valued', dc.describe(capability))
+
+    def test_both_of_the_producers_undetermined_markers_are_not_values(self) -> None:
+        # `-` (onset, latRise, and now metricDecisive) and an EMPTY value (`dominant= err=0`, how a row with
+        # no named metric prints) both mean rendered-and-undetermined, and a third shape that is neither.
+        self.assertFalse(dc.isValued('-'))
+        self.assertFalse(dc.isValued(''))
+        self.assertTrue(dc.isValued('34000'))
+        self.assertTrue(dc.isValued('latency-50'))
+        # The property is defined for a case-scoped channel too, so a reader can ask either question of any
+        # channel rather than only of the ones that happen to be row-scoped.
+        scoped = dc.ChannelCoverage('declared-precision', 3, 4, None, 10, cases_valued=3)
+        self.assertEqual(scoped.value_reach, dc.SOME)
+        self.assertEqual(scoped.rows_valued, None)
+
+    def test_a_FETCHED_artifact_reports_what_it_holds_and_not_what_the_transport_added(self) -> None:
+        # The defect, measured on `artifacts/r35107871516/fse26-results.txt`: every line arrives with a BOM and
+        # an ISO timestamp, the block's grammar is anchored, and the census answered `0 cases, 0 rows` with
+        # every channel `none` for a file holding 1422 cases and 71161 compositions. Zero cases is not
+        # distinguishable, in that output, from an artifact that renders nothing.
+        block = case('a_cpu_1', FULL_ROW, FULL_ROW)
+        prefixed = ''.join(f'\ufeff2026-09-16T14:25:47.5725271Z {line}\n' for line in block.splitlines())
+        plain = dc.capability_of(block)
+        through = dc.capability_of(prefixed)
+        self.assertEqual(through.cases, 1)
+        self.assertEqual(through.rows, 2)
+        self.assertEqual(through, plain)
+        self.assertEqual(dc.describe(through), dc.describe(plain))
+
+    def test_the_strip_removes_exactly_the_transport(self) -> None:
+        # Pinned by shape rather than by example: a BOM, optionally a timestamp and the space after it, and
+        # nothing else — a strip that ate more would turn a producer's own line into a line that matches.
+        self.assertEqual(dc.strip_transport('DIAG datapack=a'), 'DIAG datapack=a')
+        self.assertEqual(dc.strip_transport('\ufeffDIAG datapack=a'), 'DIAG datapack=a')
+        self.assertEqual(
+            dc.strip_transport('\ufeff2026-09-16T14:25:47.5725271Z DIAG datapack=a'),
+            'DIAG datapack=a',
+        )
+        self.assertEqual(dc.strip_transport('   adservice selfAnomaly=1'), '   adservice selfAnomaly=1')
+        # A line the producer really starts with a timestamp is left alone: the pattern needs the Z and the
+        # space that the transport's own format carries.
+        self.assertEqual(dc.strip_transport('2026-09-16 raw line'), '2026-09-16 raw line')
+
     def test_a_typo_in_a_channel_name_raises_rather_than_reading_as_not_carried(self) -> None:
         capability = dc.capability_of(case('a_cpu_1', FULL_ROW))
         with self.assertRaises(KeyError):

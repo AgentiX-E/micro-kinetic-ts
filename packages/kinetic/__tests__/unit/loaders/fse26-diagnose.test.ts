@@ -631,10 +631,12 @@ describe('formatFSE26Diagnostic — anomaly shape', () => {
     expect(out).not.toContain('metricTop');
   });
 
-  it('omits the decisive line when the engine named no metric', () => {
-    // `dominantMetric` is `undefined` when the engine recorded none. There is no fallback here:
-    // choosing one would be the formatter deciding which metric was decisive, and the dump already
-    // has an owner for that answer.
+  it('marks the decisive line undetermined when the engine named no metric', () => {
+    // `dominantMetric` is `undefined` when the engine recorded none. There is still no fallback —
+    // choosing one would be the formatter deciding which metric was decisive, and the dump already has an
+    // owner for that answer — but the LINE is rendered with the producer's `-`, because a row that omits
+    // it cannot tell a reader "nothing was named here" apart from "this dump predates the line". That is
+    // the defect this claim replaces: the channel is now universal and the VALUE is what it reports.
     const out = formatFSE26Diagnostic(
       input({
         services: [
@@ -646,12 +648,14 @@ describe('formatFSE26Diagnostic — anomaly shape', () => {
       }),
     );
 
-    expect(out).not.toContain('metricDecisive');
+    expect(out).toContain('metricDecisive: -');
+    expect(out).not.toContain('metricDecisive: a=');
   });
 
-  it('omits the decisive line when the named metric carries no decomposition', () => {
-    // A named metric the block did not decompose has no composition to report. Printing a zeroed
-    // one would turn "not rendered" into a measurement of a perfectly stable series.
+  it('marks the decisive line undetermined when the named metric carries no decomposition', () => {
+    // A named metric the block did not decompose has no composition to report, and printing a zeroed one
+    // would turn "no composition" into a measurement of a perfectly stable series. The marker is the
+    // answer instead: present on every row, undetermined where there is nothing to report.
     const out = formatFSE26Diagnostic(
       input({
         services: [
@@ -666,7 +670,10 @@ describe('formatFSE26Diagnostic — anomaly shape', () => {
       }),
     );
 
-    expect(out).not.toContain('metricDecisive');
+    // The second metric HAS a decomposition and is still not the composition: the engine named `a`, and a
+    // second argmax here would be the formatter disagreeing with the ranking.
+    expect(out).toContain('metricDecisive: -');
+    expect(out).not.toContain('metricDecisive: b=');
   });
 
   it('survives a non-finite decomposition value rather than printing NaN', () => {

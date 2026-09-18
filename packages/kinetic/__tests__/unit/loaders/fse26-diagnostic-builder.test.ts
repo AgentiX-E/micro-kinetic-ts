@@ -143,6 +143,11 @@ describe('buildFSE26Diagnostic', () => {
     // per-service map here is optional or partial — and the block has to report a score of zero for
     // it rather than dropping the service, because a service missing from the dump is a service no
     // reader can ask about at all.
+    //
+    // Both populations render the decisive line and MARK it undetermined, which is the change this
+    // assertion used to deny: the CHANNEL is universal, and what a graph without diagnostics decides is
+    // the VALUE. A channel that vanished instead would leave a reader unable to tell "no composition
+    // here" from "this dump predates the line".
     const base = caseOf({ metrics: new Map() });
     const [a, b] = idsOf(base);
     const text = render(
@@ -156,7 +161,8 @@ describe('buildFSE26Diagnostic', () => {
     expect(text).toContain('selfAnomaly=0.900');
     expect(text).toContain(`${b} selfAnomaly=0.000`);
     expect(text).toContain('dominant=-');
-    expect(text).not.toContain('metricDecisive:');
+    expect(text.match(/metricDecisive: -/g)).toHaveLength(2);
+    expect(text).not.toContain('metricDecisive: cpu');
     expect(text).not.toContain('metricTop');
   });
 

@@ -249,6 +249,48 @@ describe('parseDiagnosticDump', () => {
     expect(parseDiagnosticDump(text)[0]!.services[0]!.decisiveOutcome).toBeUndefined();
   });
 
+  it('reads a rendered `-` as undetermined WITHOUT misreading its neighbours', () => {
+    // The producer marks a row whose named metric carries no decomposition instead of omitting the line,
+    // so that "no composition here" and "this dump predates the line" stop being the same silence. What
+    // this test adds to the one above is the SECOND service: the `-` line must consume itself and not a
+    // line of the block that follows, and the value must read as undetermined rather than as a
+    // composition of zeroes.
+    const text = dump({
+      services: [
+        serviceLine({
+          serviceId: 'ts-named-but-not-decomposed',
+          dominant: 'cpu',
+          metricOutcomes: [{ label: 'cpu', outcome: 'kept', score: 0.9 }],
+          logScore: 0.375,
+          logic: 3,
+        }),
+        serviceLine({
+          serviceId: 'ts-decomposed',
+          dominant: 'cpu',
+          metricOutcomes: [
+            { label: 'cpu', outcome: 'kept', score: 0.9, breakdown: breakdownOf(0.05) },
+          ],
+          logScore: 0.125,
+        }),
+      ],
+    });
+    // The line is rendered for BOTH rows — the channel is universal — and only one carries a value.
+    expect(text.match(/metricDecisive: /g)).toHaveLength(2);
+    expect(text).toContain('metricDecisive: -');
+
+    // The block sorts by self-anomaly then by id, so the two rows are looked up BY ID rather than by
+    // position — the same tie the producer's own reader sees.
+    const parsed = parseDiagnosticDump(text)[0]!.services;
+    const first = parsed.find((s) => s.serviceId === 'ts-named-but-not-decomposed')!;
+    const second = parsed.find((s) => s.serviceId === 'ts-decomposed')!;
+    expect(first.decisiveOutcome).toBeUndefined();
+    expect(second.decisiveOutcome?.breakdown?.cv).toBe(0.05);
+    // And the row that printed `-` kept every other field: the marker is a line, not a desynchroniser.
+    expect(first.logScore).toBeCloseTo(0.375, 10);
+    expect(first.logicExceptionCount).toBe(3);
+    expect(second.logScore).toBeCloseTo(0.125, 10);
+  });
+
   it('ignores the surrounding log noise', () => {
     const text = [
       "Micro-Kinetic — FSE'26 RCABench",

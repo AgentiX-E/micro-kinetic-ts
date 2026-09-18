@@ -406,20 +406,26 @@ function formatMetricCompetition(
  * service, and one line is a bounded cost against a block that already prints several per service.
  *
  * The metric is the one the engine NAMED (`dominant`), so this reports the engine's answer rather
- * than taking a second argmax that would be free to disagree with the ranking. There is deliberately
- * no fallback: when the named metric carries no decomposition the line is absent, and the reader
- * reports the composition as absent — which is a different statement from a composition of zeroes.
+ * than taking a second argmax that would be free to disagree with the ranking. When the named metric
+ * carries no decomposition the line is rendered with `-`, the same marker `onset`, `latRise` and
+ * `dominant` use for "measured and undetermined" — and NOT omitted, which is the defect this
+ * replaced. Measured on `rcaeval-dumps/re1.txt` (run `35318624817`): the line was present on 9991 of
+ * 11557 rows and the inventory that decides it is rendered only for the ground truth and the
+ * predictions, so for the 1566 rows without it a reader could not tell "this service's dominant
+ * metric was not decomposed" from "this dump predates the line". The channel is now universal and its
+ * VALUE is what it says it is, which `scripts/dump_capability.py` measures as two numbers:
+ * `decisive-composition` reaches every row, and the composition itself reaches 86.45% of them.
  *
  * @param service - One service's signal summary.
  * @param decimals - The precision the header declares; see {@link formatAnomalyShape}.
- * @returns One line, or an empty array when no named metric carries a decomposition.
+ * @returns One line, always.
  */
 function formatDecisiveComposition(service: FSE26DiagnosticService, decimals: number): string[] {
   const decisive = service.metricOutcomes?.find(
     (outcome) => outcome.outcome === 'kept' && outcome.label === service.dominantMetric,
   );
   const b = decisive?.breakdown;
-  if (decisive === undefined || b === undefined) return [];
+  if (decisive === undefined || b === undefined) return ['    metricDecisive: -'];
   return [
     `    metricDecisive: ${decisive.label}=${fmt(decisive.score, decimals)}{dev=${fmt(b.deviation, decimals)},` +
       `trend=${fmt(b.trend, decimals)},cv=${fmt(b.cv, decimals)},burst=${fmt(b.burst, decimals)},` +
