@@ -101,5 +101,11 @@ no longer pass by being skipped where the evidence lives.
 ## Gates
 
 `benchmarks` 721 at 99.81 / 97.23 / 100 / 99.81 · `kinetic` 919 at 100 / 99.44 / 100 / 100 · both typechecks ·
-lint 0/0 · format clean · register guard 7/7 · python gate 286 tests with **100.00% branch coverage on all
-eight scripts** (1003 statements, 380 branches), the new module included.
+lint 0/0 · format clean · register guard 7/7 · python gate 290 tests with **100.00% branch coverage on all
+eight scripts** (1016 statements, 380 branches), the new module included.
+
+**And its golden passed.** `9943b6c` touches `benchmarks/src/**` (the corrected comment), so the paths rule
+owed one, and run **`35336041761`** reproduces **9 of 9 cells byte-identical** (`RE1 80.0 / 92.8 / 68.0`,
+`RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1`), with `CI` (run `35336041695`) and `Release` (run
+`35336041714`) green on the same commit. A cell could only move if the comment had altered a verdict; the
+change is text, and the same seven-channel census prints either way.
