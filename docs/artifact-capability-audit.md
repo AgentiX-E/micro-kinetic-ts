@@ -155,12 +155,20 @@ row nowhere). After: the same file reads `1422 cases, 72527 rows; … decisive-c
 
 ## Gates
 
-`benchmarks` 721 at 99.81 / 97.23 / 100 / 99.81 · `kinetic` 919 at 100 / 99.44 / 100 / 100 · both typechecks ·
-lint 0/0 · format clean · register guard 7/7 · python gate 290 tests with **100.00% branch coverage on all
-eight scripts** (1016 statements, 380 branches), the new module included.
+`benchmarks` **724** at 99.81 / **97.40** / 100 / 99.81 · `kinetic` **926** at 100 / 99.44 / 100 / 100 · both
+typechecks · lint 0/0 · format clean · register guard 14/14 · the census module at **100.00% branch coverage**
+(174 statements, 74 branches, 30 tests).
 
-**And its golden passed.** `9943b6c` touches `benchmarks/src/**` (the corrected comment), so the paths rule
-owed one, and run **`35336041761`** reproduces **9 of 9 cells byte-identical** (`RE1 80.0 / 92.8 / 68.0`,
-`RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1`), with `CI` (run `35336041695`) and `Release` (run
-`35336041714`) green on the same commit. A cell could only move if the comment had altered a verdict; the
-change is text, and the same seven-channel census prints either way.
+**One gate is red for an environment reason, recorded rather than worked around.** The python gate's
+`test_golden_run_selector.py` reads `.github/workflows/benchmark-rcaeval.yml` at import time, and this sandbox's
+file broker answers that sensitive path with `PermissionError: Sensitive content approval timed out`. The same
+gate ran 290 tests green earlier in the same session, the failure is inside the module's own `read_text`, and
+no file this iteration touched is involved — so **CI is the authority for the python gate here**, and the local
+run is not evidence either way. It is written down because a gate that is quietly skipped is the defect this
+whole document is about.
+
+**And its golden passed.** `aa702ba` touches `packages/kinetic/src/**` and `benchmarks/src/**` (a rendered
+line), so the paths rule owed one, and run **`35357010476`** reproduces **9 of 9 cells byte-identical**
+(`RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1`), with `CI` (run `35357010442`)
+and `Release` (run `35357010444`) green on the same commit. A cell could only move if the rendered marker had
+altered a verdict, and no ranking term reads it.
