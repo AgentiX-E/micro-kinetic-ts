@@ -291,10 +291,16 @@ instrument is not pessimistic by construction, it is sharp enough to separate th
 
 Three properties make this usable rather than decorative:
 
-- **the quantum is imported, not restated.** `SERVICE_FIELD_DECIMALS` is the producer's own
-  constant, `fmt` renders with it, and the analyzer derives `DUMP_HALF_QUANTUM` from it — so a
-  producer that starts printing six decimals moves the reported bar without anyone editing the
-  analyzer. A local `3` would keep printing `1.0e-3` at exactly the moment the claim became wrong.
+- **the quantum comes from the ARTIFACT, which DECLARES it.** This bullet first read "the quantum is
+  imported, not restated": the producer's `SERVICE_FIELD_DECIMALS` was shared, `fmt` rendered with it, and
+  the analyzer derived its quantum from it — which covered only the case where both sides move TOGETHER, and
+  modelled every dump at three decimals regardless. Measured: a dump rendered at another precision would have
+  been drawn at a cell a thousand times too wide, with nothing in the pipeline saying so. The header now
+  carries `decimals=N`, `fmt` renders at a PARAMETER, and `resolutionBoxFor` takes the precision from the
+  artifact — so a finer dump is possible at all, and a reader cannot model the box of the dump it expected.
+  A dump that predates the field gets `HISTORICAL_FIELD_DECIMALS`, and the report SAYS which of the two it
+  used: an archived dump's precision is a historical fact, an inference is a claim by the reader, and a line
+  that could not tell them apart would let the second pass as the first.
 - **the draw is a constant, not a clock.** Two runs over one dump print the same ensemble; a number
   that moved between them would be a property of the draw and not of the dump.
 - **the box is drawn uniformly, not adversarially.** Every gain can be lost by putting the whole

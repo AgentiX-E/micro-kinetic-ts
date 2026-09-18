@@ -11,6 +11,8 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
@@ -33,6 +35,7 @@ import {
 import type {
   Admissibility,
   DiagnosedCase,
+  DumpPrecision,
   RefinementFrontier,
   WeightSeparationCase,
 } from '../src/fse26-diagnose-analyze.js';
@@ -55,7 +58,7 @@ import {
   DEFAULT_CV_SHAPE,
   diffDiagnostics,
   drawOnsetDelay,
-  DUMP_HALF_QUANTUM,
+  dumpPrecisionOf,
   familyCompetition,
   familyScreen,
   formatAnalyzeSections,
@@ -77,6 +80,8 @@ import {
   GAIN_RESOLUTION_TRIALS,
   gainResolution,
   guardCensus,
+  halfQuantumFor,
+  HISTORICAL_FIELD_DECIMALS,
   isTop1Correct,
   jitterFieldsFor,
   latencySlopes,
@@ -492,6 +497,7 @@ describe('isTop1Correct', () => {
     groundTruth: ['ts-order-service'],
     logSignalMode: 'logicHttp',
     injectTimeMs: undefined,
+    fieldDecimals: undefined,
     edges: undefined,
     services: [],
     prediction,
@@ -522,6 +528,7 @@ describe('diffDiagnostics', () => {
       groundTruth: ['ts-order-service'],
       logSignalMode: 'logicHttp',
       injectTimeMs: undefined,
+      fieldDecimals: undefined,
       edges: undefined,
       services: [],
       prediction,
@@ -586,6 +593,7 @@ describe('regressionMechanism', () => {
       groundTruth: ['ts-order-service'],
       logSignalMode: 'logicHttp',
       injectTimeMs: undefined,
+      fieldDecimals: undefined,
       edges: undefined,
       services,
       prediction: ['ts-ui', 'ts-order-service'],
@@ -4672,6 +4680,7 @@ describe('guardCensus — a guard’s footprint against a within-type control', 
     groundTruth: ['ts-src'],
     logSignalMode: 'logicHttp',
     injectTimeMs: undefined,
+    fieldDecimals: undefined,
     edges: undefined,
     services: [
       svc('ts-src', sourceOutcomes, correct ? 1 : 0.9, true),
@@ -6618,50 +6627,66 @@ describe('the ensemble draws each screen’s OWN fields, at each field’s own r
     });
   });
 
+  /** The artifact's own precision, as a STATED one — what a screen's ensembles are handed. */
+  const ARTIFACT: DumpPrecision = { decimals: SERVICE_FIELD_DECIMALS, stated: true };
+
   it('scales every column’s OWN quantum when the render is refined', () => {
     // The box is two numbers that have to agree with a set of flags, so ONE function builds it from the
-    // screen and the refinement together. The scaling is per FIELD, from that field's own render: a
-    // millisecond onset refined by a digit steps in tenths of a millisecond, NOT in the ten-thousandths a
-    // service field would step in — the mistake the two-column split was introduced to fix, one level up.
-    expect(resolutionBoxFor({ kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' })).toEqual({
-      service: DUMP_HALF_QUANTUM,
+    // screen, the ARTIFACT's declared precision and the refinement together. The scaling is per FIELD, from
+    // that field's own render: a millisecond onset refined by a digit steps in tenths of a millisecond, NOT
+    // in the ten-thousandths a service field would step in — the mistake the two-column split was introduced
+    // to fix, one level up.
+    expect(
+      resolutionBoxFor({ kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' }, ARTIFACT),
+    ).toEqual({
+      service: halfQuantumFor(SERVICE_FIELD_DECIMALS),
       onset: ONSET_FIELD_HALF_QUANTUM,
       fields: { cv: false, onset: true },
+      precision: ARTIFACT,
+      extraDigits: 0,
     });
     expect(
-      resolutionBoxFor({ kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' }, 2),
+      resolutionBoxFor({ kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' }, ARTIFACT, 2),
     ).toEqual({
-      service: DUMP_HALF_QUANTUM / 100,
+      service: halfQuantumFor(SERVICE_FIELD_DECIMALS) / 100,
       onset: ONSET_FIELD_HALF_QUANTUM / 100,
       fields: { cv: false, onset: true },
+      precision: ARTIFACT,
+      extraDigits: 2,
     });
     // A screen that does not read the onset column gets no onset quantum at all, which is what lets
     // `jitterCase` SKIP the draw rather than spend one: a draw with a zero quantum would leave the box
     // identical and shift the sequence every later field reads.
-    expect(resolutionBoxFor({ kind: 'stability', weights: WEIGHTS, shape: 'flip' }).onset).toBe(0);
-    expect(resolutionBoxFor({ kind: 'family', weights: WEIGHTS, family: 'pool' }).onset).toBe(0);
+    expect(
+      resolutionBoxFor({ kind: 'stability', weights: WEIGHTS, shape: 'flip' }, ARTIFACT).onset,
+    ).toBe(0);
+    expect(
+      resolutionBoxFor({ kind: 'family', weights: WEIGHTS, family: 'pool' }, ARTIFACT).onset,
+    ).toBe(0);
   });
 
   it('draws the artifact’s own box when no refinement is asked for, and says so', () => {
     // Inertness stated where it can fail: `extraDigits` ABSENT and `extraDigits: 0` are the same draw, so
-    // nothing already published moves — and the result carries the box it came from, so a swept ensemble
-    // can never be printed as a measurement of the dump.
+    // nothing already published moves — and the result carries the BOX it came from, quanta, columns and
+    // declared precision together, so a swept ensemble can never be printed as a measurement of the dump.
     const cases = [tiedBoundary()];
     const gained = onsetScreen(cases, WEIGHTS, 'earliest-only').solved.gained;
     const screen = { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' } as const;
     const plain = gainResolution({ cases, gained, ship: 0.3, screen });
     const zero = gainResolution({ cases, gained, ship: 0.3, screen, extraDigits: 0 });
     expect(zero).toEqual(plain);
-    expect(plain.extraDigits).toBe(0);
-    expect(plain.fields).toEqual({ cv: false, onset: true });
-    expect(gainResolution({ cases, gained, ship: 0.3, screen, extraDigits: 1 }).extraDigits).toBe(
-      1,
-    );
+    expect(plain.box.extraDigits).toBe(0);
+    expect(plain.box.fields).toEqual({ cv: false, onset: true });
+    // The box names the artifact it models, and `tiedBoundary()` was rendered by the CURRENT producer,
+    // which declares its precision — so the box reports a STATED 3 rather than an inferred one.
+    expect(plain.box.precision).toEqual({ decimals: SERVICE_FIELD_DECIMALS, stated: true });
+    expect(
+      gainResolution({ cases, gained, ship: 0.3, screen, extraDigits: 1 }).box.extraDigits,
+    ).toBe(1);
     // The cap ensemble carries it too: it is one of the two channels a verdict consumes, so a caller able
     // to refine one and not the other could read a mixed pair as a single box.
-    const cap = capResolution({ cases, ship: 0.3, screen, extraDigits: 3 });
-    expect(cap.extraDigits).toBe(3);
-    expect(capResolution({ cases, ship: 0.3, screen }).extraDigits).toBe(0);
+    expect(capResolution({ cases, ship: 0.3, screen, extraDigits: 3 }).box.extraDigits).toBe(3);
+    expect(capResolution({ cases, ship: 0.3, screen }).box.extraDigits).toBe(0);
   });
 
   it('spends no draw on a column the screen does not read', () => {
@@ -6738,7 +6763,7 @@ describe('the ensemble draws each screen’s OWN fields, at each field’s own r
     // The histogram has an INTERIOR: the root keeps its slope in the draws where the boundary group
     // keeps it a member, and loses it in the rest. Pre-fix this box did not contain the onset column
     // at all, so every draw read `1 in 100.0%` and the interior had nothing to show.
-    expect(resolution.fields).toEqual({ cv: false, onset: true });
+    expect(resolution.box.fields).toEqual({ cv: false, onset: true });
     expect(resolution.resolved).toEqual([]);
     expect(resolution.least).toBe(0);
     expect(resolution.most).toBe(1);
@@ -6757,7 +6782,7 @@ describe('the ensemble draws each screen’s OWN fields, at each field’s own r
       ship: 0,
       screen: { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' },
     });
-    expect(resolution.fields).toEqual({ cv: false, onset: true });
+    expect(resolution.box.fields).toEqual({ cv: false, onset: true });
     // Nothing is satisfied at 0 and nothing can be, so the cap is the unbounded sentinel in every
     // draw — the draw cannot invent a bound the printed artifact does not have.
     expect(resolution.caps.every((cap) => !Number.isFinite(cap))).toBe(true);
@@ -6779,8 +6804,8 @@ describe('the ensemble draws each screen’s OWN fields, at each field’s own r
       ship,
       screen: { kind: 'stability', weights: WEIGHTS, shape: 'flip' },
     });
-    expect(onsetBox.fields).toEqual({ cv: false, onset: true });
-    expect(stabilityBox.fields).toEqual({ cv: true, onset: false });
+    expect(onsetBox.box.fields).toEqual({ cv: false, onset: true });
+    expect(stabilityBox.box.fields).toEqual({ cv: true, onset: false });
     // The base is drawn in both boxes, so a difference in the caps is not the evidence — the evidence
     // is the names above. What this asserts is that the onset screen's own column reaches the result.
     expect(onsetBox.caps.length).toBe(GAIN_RESOLUTION_TRIALS > 0 ? onsetBox.trials : 0);
@@ -6878,9 +6903,10 @@ describe('gainResolution — the lead the formatter discards', () => {
 
     const line = formatResolutionLine(resolution);
     expect(line).toContain('0 of 1 gains hold in every one');
-    // The bar is quoted from the producer's own precision, so a producer that prints more decimals
-    // moves this number without anyone editing the analyzer.
-    expect(line).toContain((2 * DUMP_HALF_QUANTUM).toExponential(1));
+    // The bar is quoted from the BOX these draws came from, so a producer that prints more decimals moves
+    // this number without anyone editing the analyzer — and it is the same object the draws used, rather
+    // than a constant that could name a different artifact.
+    expect(line).toContain((2 * resolution.box.service).toExponential(1));
   });
 
   it('decides a gain whose lead is wider than the whole quantum', () => {
@@ -6909,17 +6935,22 @@ describe('gainResolution — the lead the formatter discards', () => {
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
   });
 
-  it('derives its quantum from the producer rather than restating it', () => {
-    // One owner. The analyzer cannot know the format from memory, and a second copy of `3` would
-    // keep reporting 1.0e-3 the day the producer starts printing six decimals — which is exactly
-    // how a resolution claim goes stale without a test failing.
+  it('reads the quantum off the ARTIFACT, not off a constant either side owns', () => {
+    // This test used to assert the quantum was DERIVED from the producer's constant rather than restated
+    // here — a mitigation that only ever covered the case where both sides move TOGETHER, and that went on
+    // drawing `5.0e-4` for a dump rendered at another precision. The artifact declares its own now, so the
+    // assertion is about the producer's half of that contract: it renders at a PARAMETER and writes the
+    // value into the header, which is what lets the number mean anything to a reader.
     expect(SERVICE_FIELD_DECIMALS).toBe(3);
-    expect(DUMP_HALF_QUANTUM).toBe(0.5 * 10 ** -SERVICE_FIELD_DECIMALS);
+    expect(HISTORICAL_FIELD_DECIMALS).toBe(3);
+    // The two are equal TODAY and are deliberately separate bindings; see the test that holds the reader to
+    // its own constant.
     const producer = readFileSync(
       new URL('../../packages/kinetic/src/benchmarks/fse26-diagnose.ts', import.meta.url),
       'utf-8',
     );
-    expect(producer).toContain('toFixed(SERVICE_FIELD_DECIMALS)');
+    expect(producer).toContain('x.toFixed(decimals)');
+    expect(producer).toContain('decimals=${decimals}');
     expect(producer).not.toContain('toFixed(3)');
 
     // The onset field is a SECOND resolution, and it is the producer's rounder that owns it. Without
@@ -6938,8 +6969,13 @@ describe('gainResolution — the lead the formatter discards', () => {
     expect(
       formatResolutionLine({
         trials: 4,
-        fields: { cv: false, onset: false },
-        extraDigits: 0,
+        box: {
+          service: halfQuantumFor(HISTORICAL_FIELD_DECIMALS),
+          onset: 0,
+          fields: { cv: false, onset: false },
+          precision: { decimals: HISTORICAL_FIELD_DECIMALS, stated: false },
+          extraDigits: 0,
+        },
         histogram: [4],
         least: 0,
         most: 0,
@@ -7177,6 +7213,133 @@ describe('a named weight reaches every report that solves a window', () => {
     );
     expect(() => dumpMode(['--log-weight', '1', '--misses', '--at-weight', '0.03'])).toThrow(
       /cv-screen/,
+    );
+  });
+});
+
+/**
+ * The box comes from the ARTIFACT's own declared precision.
+ *
+ * The ensembles draw every decimal field inside the cell its render stands for, and they used to take that
+ * cell from {@link DUMP_HALF_QUANTUM} — a constant this module shares with the producer. So the box was the
+ * one belonging to the dump the reader EXPECTED: a dump rendered at four decimals would have been modelled
+ * at three, by a factor of ten per digit, with nothing in the pipeline saying so. The header now carries the
+ * precision, and these tests hold the reader to it.
+ */
+describe('the box comes from the artifact’s own declared precision', () => {
+  const WEIGHTS = { logWeight: 1, latWeight: 0, poolWeight: 0 } as const;
+  const SCREEN = { kind: 'onset', weights: WEIGHTS, shape: 'earliest-only' } as const;
+  const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
+
+  /** One fixable case, as the CURRENT producer renders it — or as a producer that predates the field did. */
+  const rendered = (fieldDecimals?: number): DiagnosedCase[] =>
+    parseDiagnosticDump(
+      dump({
+        // The ground truth must be a service the block carries, or the case has NO target and the window is
+        // empty — which would make the assertions below vacuously true rather than wrong.
+        groundTruthServices: ['ts-src'],
+        services: [
+          // `ts-src` is the only service at the minimum onset, so nothing can take its slope away, and
+          // `ts-win` leads the base by exactly 0.298 — `logScore`, read at weight 1. A case the term FIXES.
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, logScore: 0, onset: 0 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.5, logScore: 0.298, onset: 60_000 }),
+        ],
+        topPredictions: ['ts-win'],
+        injectTimeMs: 1_700_000_000_000,
+        ...(fieldDecimals === undefined ? {} : { fieldDecimals }),
+      }),
+    );
+
+  /** The same block with the header's precision field REMOVED — what every dump written before it is. */
+  const legacy = (): DiagnosedCase[] => {
+    const text = dump({
+      groundTruthServices: ['ts-src'],
+      services: [
+        serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.5, logScore: 0, onset: 0 }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.5, logScore: 0.298, onset: 60_000 }),
+      ],
+      topPredictions: ['ts-win'],
+      injectTimeMs: 1_700_000_000_000,
+      // `$` without `m` anchors to the end of the WHOLE block and the header is its FIRST line, so the strip
+      // silently does nothing and the "legacy" fixture is a modern one — which is exactly how a fallback test
+      // passes without ever reaching the fallback. Measured: that is what the first draft did.
+    }).replace(/ decimals=\d+$/m, '');
+    return parseDiagnosticDump(text);
+  };
+
+  it('reads the precision the header declares, and reports it as STATED', () => {
+    expect(rendered(6)[0]!.fieldDecimals).toBe(6);
+    expect(dumpPrecisionOf(rendered(6))).toEqual({ decimals: 6, stated: true });
+    expect(dumpPrecisionOf(rendered())).toEqual({ decimals: SERVICE_FIELD_DECIMALS, stated: true });
+  });
+
+  it('an ABSENT field is the historical precision, reported as INFERRED', () => {
+    // Every dump that already exists is in this state — the 141 MiB FSE'26 dump and all seven RCAEval
+    // dumps — so this is the branch the archived measurements actually travel through, not a hypothetical.
+    expect(rendered()[0]!.fieldDecimals).toBe(SERVICE_FIELD_DECIMALS);
+    expect(legacy()[0]!.fieldDecimals).toBeUndefined();
+    expect(dumpPrecisionOf(legacy())).toEqual({
+      decimals: HISTORICAL_FIELD_DECIMALS,
+      stated: false,
+    });
+  });
+
+  it('draws the cell the artifact HAS, not the cell the constant names', () => {
+    // The defect in one assertion: six decimals is a hundredth of the cell the shared constant names, so a
+    // reader that used the constant would draw a box a thousand times too wide — and report the resulting
+    // coin flip as the artifact's own resolution.
+    expect(resolutionBoxFor(SCREEN, dumpPrecisionOf(rendered(6))).service).toBeCloseTo(
+      0.5 * 10 ** -6,
+      15,
+    );
+    expect(resolutionBoxFor(SCREEN, dumpPrecisionOf(rendered())).service).toBeCloseTo(
+      halfQuantumFor(SERVICE_FIELD_DECIMALS),
+      15,
+    );
+    expect(resolutionBoxFor(SCREEN, dumpPrecisionOf(legacy())).service).toBeCloseTo(
+      0.5 * 10 ** -HISTORICAL_FIELD_DECIMALS,
+      15,
+    );
+    // And the refinement composes with it rather than replacing it: one more digit on a six-decimal dump
+    // is `10^-7`, not `10^-4`.
+    expect(resolutionBoxFor(SCREEN, dumpPrecisionOf(rendered(6)), 1).service).toBeCloseTo(
+      0.5 * 10 ** -7,
+      15,
+    );
+  });
+
+  it('keeps the historical value a SEPARATE binding from the producer’s default', () => {
+    // Two equal numbers with two different meanings, and only the TEXT can tell them apart: the default is
+    // what a NEW dump is rendered with, the historical value is what an ARCHIVED one was. A reader that
+    // spelled the fallback as `SERVICE_FIELD_DECIMALS` would satisfy every runtime assertion above TODAY and
+    // silently re-model every archived dump the day that default moves — which is the whole failure this
+    // constant exists to prevent, so the reader is held to its own constant as text.
+    const source = readFileSync(
+      resolve(repoRoot, 'benchmarks/src/fse26-diagnose-analyze.ts'),
+      'utf8',
+    );
+    expect(source).toMatch(/export const HISTORICAL_FIELD_DECIMALS = 3;/);
+    expect(source).toMatch(/stated: false/);
+    expect(source).toMatch(/decimals: HISTORICAL_FIELD_DECIMALS/);
+  });
+
+  it('tells a reader whether the precision was stated or inferred', () => {
+    // The round trip a screen actually prints, because a box the reader SUPPLIED is a different claim from
+    // one the artifact made, and a line that could not tell them apart would let an inference pass as a
+    // measurement.
+    const line = (cases: readonly DiagnosedCase[]): string =>
+      formatResolutionLine(onsetScreen(cases, WEIGHTS, 'earliest-only').resolution);
+    expect(line(rendered(6))).toContain('states 6 decimals');
+    expect(line(legacy())).toContain('does not state its precision');
+    expect(line(legacy())).toContain(`read as the ${HISTORICAL_FIELD_DECIMALS} used before`);
+    // And the BAR it quotes is the artifact's, not a constant's: at six decimals it is a thousandth of the
+    // one a three-decimal dump has, so a clause that printed the shared constant's number would describe a
+    // cell three orders of magnitude too wide. Pinned explicitly because the two AGREE at three decimals,
+    // which is where a mutation hiding behind that coincidence would live.
+    expect(line(rendered(6))).toContain(`±${(2 * halfQuantumFor(6)).toExponential(1)}`);
+    expect(line(rendered(6))).not.toContain(`±${(2 * halfQuantumFor(3)).toExponential(1)}`);
+    expect(line(legacy())).toContain(
+      `±${(2 * halfQuantumFor(HISTORICAL_FIELD_DECIMALS)).toExponential(1)}`,
     );
   });
 });

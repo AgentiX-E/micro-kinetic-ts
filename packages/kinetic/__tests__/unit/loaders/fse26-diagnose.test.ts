@@ -739,3 +739,77 @@ describe('formatFSE26Diagnostic — anomaly shape', () => {
     }
   });
 });
+
+/**
+ * The dump DECLARES the precision it was rendered with.
+ *
+ * The reader's ensembles draw every decimal field inside the cell its render stands for, so they need to
+ * know how wide that cell is. They took it from a constant shared with this module — a copy of `3` that
+ * happens to be right only while the two agree, and that models the wrong box by a factor of ten per digit
+ * the moment they do not. `services=` is on the header for the same reason: a reader that must know
+ * something about the artifact has to be able to READ it rather than assume it.
+ */
+describe('formatFSE26Diagnostic — the header declares the render precision', () => {
+  /** The decomposition the assertions below read the refined digits off. */
+  const decomposition = {
+    deviation: 3.203,
+    trend: 0.04,
+    cv: 0.048,
+    burst: 0,
+    riseRatio: 1954.3,
+    dropRatio: 0.02,
+    baselineMean: 0.0017,
+  };
+
+  it('states the default, so a reader need not assume it', () => {
+    expect(formatFSE26Diagnostic(input({}))).toContain('decimals=3');
+  });
+
+  it('renders every decimal field at the precision the header states', () => {
+    // One owner: the header's number and the fields' digits come from the SAME value, so a dump cannot
+    // claim six decimals while carrying three.
+    const out = formatFSE26Diagnostic(
+      input({
+        fieldDecimals: 6,
+        services: [service({ selfAnomaly: 0.1234567, logScore: 0.5 })],
+      }),
+    );
+    expect(out).toContain('decimals=6');
+    expect(out).toContain('selfAnomaly=0.123457');
+    expect(out).toContain('logScore=0.500000');
+  });
+
+  it('refines the breakdown fields with the fields they belong to', () => {
+    // A dump whose per-service fields carry six decimals and whose `cv` carried three would be two
+    // artifacts under one header — and the box is per FIELD, so the reader would model the wrong one.
+    const out = formatFSE26Diagnostic(
+      input({
+        fieldDecimals: 5,
+        services: [
+          service({
+            selfAnomaly: 0.5,
+            metricOutcomes: [
+              {
+                label: 'cpu',
+                outcome: 'kept',
+                score: 0.25,
+                breakdown: { ...decomposition, cv: 0.123456 },
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(out).toContain('cv=0.12346');
+    expect(out).toContain('dev=3.20300');
+  });
+
+  it('leaves the onset alone, because its render is a different decision', () => {
+    // `fmtOnset` rounds to WHOLE milliseconds and reports that resolution through its own exported
+    // constant. A shared decimals value would be a second owner of a render this one does not make.
+    const out = formatFSE26Diagnostic(
+      input({ fieldDecimals: 6, services: [service({ onsetDelayMs: 123.6 })] }),
+    );
+    expect(out).toContain('onset=124');
+  });
+});

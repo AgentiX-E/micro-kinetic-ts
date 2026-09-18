@@ -174,6 +174,19 @@ export interface FSE26DiagnosticInput {
    */
   readonly logSignalMode: string;
   /**
+   * How many decimals to render the per-service decimal fields with; defaults to
+   * {@link SERVICE_FIELD_DECIMALS}.
+   *
+   * The value is DECLARED in the header rather than left implicit, because the reader's ensembles draw each
+   * field inside the cell its render stands for and a reader that assumed a precision would model the wrong
+   * box — by a factor of ten per digit, silently. Optional so an existing caller keeps the bytes it had.
+   *
+   * It refines the FIELDS ONLY: the onset delay's whole-millisecond render is a separate decision with its
+   * own exported constant, and a single value for both would be a second owner of a render this one does not
+   * make.
+   */
+  readonly fieldDecimals?: number;
+  /**
    * The case's call-graph edges, as `caller>callee`, sorted and de-duplicated.
    *
    * The per-service block carries only SCALARS, so no dump can answer a question
@@ -213,8 +226,8 @@ export interface FSE26DiagnosticInput {
  * discarded digit was four times the lead that decided the sixth one.
  *
  * Three, not more, because a dump is a summary of 1422 cases and the extra characters would buy
- * nothing a reader of the table needs; the analyzer states the resulting error bar instead of
- * asking for a different artifact.
+ * nothing a reader of the table needs BY DEFAULT — but the choice is the ARTIFACT's now rather than this
+ * file's, and the header states it so a reader draws the cell the dump actually has.
  */
 export const SERVICE_FIELD_DECIMALS = 3;
 
@@ -241,9 +254,9 @@ export const ONSET_FIELD_HALF_QUANTUM = 0.5;
  * Format a single `x` as a fixed {@link SERVICE_FIELD_DECIMALS}-decimal string, guarding against
  * non-finite values (which JSON cannot legally carry but a defensive renderer must still survive).
  */
-function fmt(x: number): string {
+function fmt(x: number, decimals: number): string {
   if (!Number.isFinite(x)) return 'nonfinite';
-  return x.toFixed(SERVICE_FIELD_DECIMALS);
+  return x.toFixed(decimals);
 }
 
 /**
@@ -308,9 +321,10 @@ const SHAPE_TOP_K = 3;
  * decomposition for, and the counts make a partial render detectable.
  *
  * @param outcomes - The engine's outcome list for one service.
+ * @param decimals - The precision the header declares, so a line cannot carry digits the header denies.
  * @returns One line, or an empty array when no kept metric carries one.
  */
-function formatAnomalyShape(outcomes: readonly MetricDiagnostic[]): string[] {
+function formatAnomalyShape(outcomes: readonly MetricDiagnostic[], decimals: number): string[] {
   const kept = outcomes.filter((d) => d.outcome === 'kept');
   const withBreakdown = kept
     .filter((d) => d.breakdown !== undefined)
@@ -319,9 +333,9 @@ function formatAnomalyShape(outcomes: readonly MetricDiagnostic[]): string[] {
   const shown = withBreakdown.slice(0, SHAPE_TOP_K).map((d) => {
     const b = d.breakdown!;
     return (
-      `${d.label}=${fmt(d.score)}{dev=${fmt(b.deviation)},trend=${fmt(b.trend)},` +
-      `cv=${fmt(b.cv)},burst=${fmt(b.burst)},rise=${fmtRatio(b.riseRatio)},` +
-      `drop=${fmtRatio(b.dropRatio)},base=${fmtBase(b.baselineMean)}}`
+      `${d.label}=${fmt(d.score, decimals)}{dev=${fmt(b.deviation, decimals)},` +
+      `trend=${fmt(b.trend, decimals)},cv=${fmt(b.cv, decimals)},burst=${fmt(b.burst, decimals)},` +
+      `rise=${fmtRatio(b.riseRatio)},drop=${fmtRatio(b.dropRatio)},base=${fmtBase(b.baselineMean)}}`
     );
   });
   // The declared count is what FOLLOWS on the line, and the denominator is the
@@ -344,13 +358,17 @@ function formatAnomalyShape(outcomes: readonly MetricDiagnostic[]): string[] {
  * examined".
  *
  * @param outcomes - The engine's outcome list for one service.
+ * @param decimals - The precision the header declares; see {@link formatAnomalyShape}.
  * @returns Two formatted lines.
  */
-function formatMetricCompetition(outcomes: readonly MetricDiagnostic[]): string[] {
+function formatMetricCompetition(
+  outcomes: readonly MetricDiagnostic[],
+  decimals: number,
+): string[] {
   const kept = outcomes
     .filter((d) => d.outcome === 'kept')
     .sort((a, b) => b.score - a.score || (a.label < b.label ? -1 : 1))
-    .map((d) => `${d.label}=${fmt(d.score)}`);
+    .map((d) => `${d.label}=${fmt(d.score, decimals)}`);
   const dropped = outcomes
     .filter((d) => d.outcome !== 'kept')
     .sort((a, b) => (a.label < b.label ? -1 : 1))
@@ -376,18 +394,19 @@ function formatMetricCompetition(outcomes: readonly MetricDiagnostic[]): string[
  * reports the composition as absent — which is a different statement from a composition of zeroes.
  *
  * @param service - One service's signal summary.
+ * @param decimals - The precision the header declares; see {@link formatAnomalyShape}.
  * @returns One line, or an empty array when no named metric carries a decomposition.
  */
-function formatDecisiveComposition(service: FSE26DiagnosticService): string[] {
+function formatDecisiveComposition(service: FSE26DiagnosticService, decimals: number): string[] {
   const decisive = service.metricOutcomes?.find(
     (outcome) => outcome.outcome === 'kept' && outcome.label === service.dominantMetric,
   );
   const b = decisive?.breakdown;
   if (decisive === undefined || b === undefined) return [];
   return [
-    `    metricDecisive: ${decisive.label}=${fmt(decisive.score)}{dev=${fmt(b.deviation)},` +
-      `trend=${fmt(b.trend)},cv=${fmt(b.cv)},burst=${fmt(b.burst)},rise=${fmtRatio(b.riseRatio)},` +
-      `drop=${fmtRatio(b.dropRatio)},base=${fmtBase(b.baselineMean)}}`,
+    `    metricDecisive: ${decisive.label}=${fmt(decisive.score, decimals)}{dev=${fmt(b.deviation, decimals)},` +
+      `trend=${fmt(b.trend, decimals)},cv=${fmt(b.cv, decimals)},burst=${fmt(b.burst, decimals)},` +
+      `rise=${fmtRatio(b.riseRatio)},drop=${fmtRatio(b.dropRatio)},base=${fmtBase(b.baselineMean)}}`,
   ];
 }
 
@@ -418,11 +437,16 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
   });
 
   const lines: string[] = [];
+  // ONE value, read once, and it renders the header AND every decimal field below: the artifact's
+  // declared precision and the digits it carries cannot come from two different numbers.
+  const decimals = input.fieldDecimals ?? SERVICE_FIELD_DECIMALS;
   lines.push(
     `DIAG datapack=${input.datapack} faultType=${input.faultType} GT=[${input.groundTruthServices.join(
       ', ',
     )}] services=${input.services.length} logMode=${input.logSignalMode}` +
-      (input.injectTimeMs === undefined ? '' : ` inject=${input.injectTimeMs}`),
+      (input.injectTimeMs === undefined ? '' : ` inject=${input.injectTimeMs}`) +
+      // Last, so a block written before this field parses exactly as it did.
+      ` decimals=${decimals}`,
   );
   // The graph goes on ONE line rather than into the per-service blocks, because it
   // is a property of the case and every reader wants all of it at once. Rendered
@@ -439,10 +463,10 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
     const tag = markers.length > 0 ? ` [${markers.join(',')}]` : '';
     const metricList = service.metricNames.join(',');
     lines.push(
-      `  ${service.serviceId}${tag} selfAnomaly=${fmt(service.selfAnomaly)} ` +
-        `logScore=${fmt(service.logScore)} failedEdge=${fmt(service.failedEdgeScore)} ` +
+      `  ${service.serviceId}${tag} selfAnomaly=${fmt(service.selfAnomaly, decimals)} ` +
+        `logScore=${fmt(service.logScore, decimals)} failedEdge=${fmt(service.failedEdgeScore, decimals)} ` +
         `failedEdgeRecords=${service.failedEdgeRecords} ` +
-        `latRise=${service.latRise === undefined ? '-' : fmt(service.latRise)} ` +
+        `latRise=${service.latRise === undefined ? '-' : fmt(service.latRise, decimals)} ` +
         `latEdges=${service.latEdges} ` +
         `dominant=${service.dominantMetric ?? '-'} ` +
         `err=${service.errorCount} fatal=${service.fatalCount} logic=${service.logicExceptionCount} ` +
@@ -461,7 +485,7 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
     // Immediately after the metrics line, and outside the marked-rows condition below, because it
     // belongs to every service: a simulation over every candidate needs it for the ones the table
     // never compares.
-    lines.push(...formatDecisiveComposition(service));
+    lines.push(...formatDecisiveComposition(service, decimals));
     for (const sample of service.sampleErrorMessages) {
       lines.push(`    ERR: ${truncate(sample, 160)}`);
     }
@@ -475,8 +499,8 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
     // has ~51 services carrying ~70 metrics each; rendering all of them would
     // grow the dump by an order of magnitude for rows nothing reads.
     if (service.metricOutcomes !== undefined && (gt.has(service.serviceId) || rank !== undefined)) {
-      lines.push(...formatMetricCompetition(service.metricOutcomes));
-      lines.push(...formatAnomalyShape(service.metricOutcomes));
+      lines.push(...formatMetricCompetition(service.metricOutcomes, decimals));
+      lines.push(...formatAnomalyShape(service.metricOutcomes, decimals));
     }
   }
 

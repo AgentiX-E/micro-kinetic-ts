@@ -53,6 +53,7 @@ const kase = (datapack: string, over: Partial<DiagnosedCase> = {}): DiagnosedCas
   prediction: [],
   edges: undefined,
   injectTimeMs: undefined,
+  fieldDecimals: undefined,
   ...over,
 });
 

@@ -33,10 +33,7 @@ import {
 
 import type { OnsetShape } from '../../packages/tree/src/index.js';
 
-import {
-  ONSET_FIELD_HALF_QUANTUM,
-  SERVICE_FIELD_DECIMALS,
-} from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
+import { ONSET_FIELD_HALF_QUANTUM } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 
 import {
   caseOutcomes,
@@ -229,10 +226,28 @@ export interface DiagnosedCase {
    * act at all.
    */
   readonly injectTimeMs: number | undefined;
+  /**
+   * How many decimals the block DECLARED its decimal fields were rendered with, or `undefined` when the
+   * header does not carry the field — which is every dump written before it existed.
+   *
+   * Read here rather than assumed by every consumer: an ensemble's box is a property of the artifact, and a
+   * consumer that reached for a constant would draw the cell of the dump it expected. `undefined` is
+   * deliberately distinct from a stated value, and {@link dumpPrecisionOf} is the ONE place that turns the
+   * two into a precision — with the historical fallback named there rather than inlined.
+   */
+  readonly fieldDecimals: number | undefined;
 }
 
+/**
+ * The header line, with the render precision OPTIONAL and LAST.
+ *
+ * `decimals=` is what the producer declares its per-service fields were rounded to, and it is optional so
+ * that a block written before the field parses exactly as it did — every dump that already exists is in that
+ * state, the 141 MiB FSE/26 dump and all seven RCAEval dumps included. An absent field is NOT read as the
+ * producer's current default: see {@link HISTORICAL_FIELD_DECIMALS}.
+ */
 const HEADER_RE =
-  /^DIAG datapack=(\S+) faultType=(\S+) GT=\[([^\]]*)\] services=(\d+)(?: logMode=(\S+))?(?: inject=(\d+))?$/;
+  /^DIAG datapack=(\S+) faultType=(\S+) GT=\[([^\]]*)\] services=(\d+)(?: logMode=(\S+))?(?: inject=(\d+))?(?: decimals=(\d+))?$/;
 /**
  * One service row.
  *
@@ -400,6 +415,8 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         groundTruth: string[];
         logSignalMode: string;
         injectTimeMs: number | undefined;
+        /** The header's declared render precision, or `undefined` when it predates the field. */
+        fieldDecimals: number | undefined;
         services: MutableService[];
         /** The candidate count the header DECLARED, for the completeness check. */
         declaredServices: number;
@@ -445,6 +462,10 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
         // spelling for "no anchor", and a screen that cannot tell the two apart
         // would report a temporal window for a case the engine left inert.
         injectTimeMs: header[6] === undefined ? undefined : Number(header[6]),
+        // `undefined` when the header does not carry it, which is what every archived dump looks like — and
+        // deliberately NOT defaulted here: the fallback is `HISTORICAL_FIELD_DECIMALS`, applied by
+        // `dumpPrecisionOf`, so the reader never has to guess which of the two it is holding.
+        fieldDecimals: header[7] === undefined ? undefined : Number(header[7]),
         services: [],
         declaredServices: Number(header[4]),
         edges: undefined,
@@ -603,6 +624,7 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
           groundTruth: current.groundTruth,
           logSignalMode: current.logSignalMode,
           injectTimeMs: current.injectTimeMs,
+          fieldDecimals: current.fieldDecimals,
           edges: current.edges,
           services: current.services,
           prediction: parseList(prediction[1]),
@@ -4436,15 +4458,61 @@ function marginLine(solved: { readonly margins: readonly WindowGainMargin[] }): 
 }
 
 /**
- * Half of the smallest difference the producer's rendering of a per-service field can express.
+ * What a dump that does NOT declare a precision was rendered with.
  *
- * Derived from {@link SERVICE_FIELD_DECIMALS} rather than restated, because it is a floor on the
- * error bar of every number below rather than a property of this file: `toFixed(3)` maps a value
- * onto the nearest `0.001`, so a field printed as `0.960` stands for anything in
- * `[0.9595, 0.9605)`. A copy of the `3` would keep reporting `5.0e-4` the day the producer starts
- * printing six decimals, i.e. exactly when the claim it qualifies becomes wrong.
+ * Every dump written before the header carried the field is in this state — the 141 MiB FSE'26 dump and all
+ * seven RCAEval dumps — and their precision is a HISTORICAL fact rather than the producer's current default:
+ * `toFixed(HISTORICAL_FIELD_DECIMALS)` is what wrote them, whatever the default becomes.
+ *
+ * A separate binding on purpose, and the distinction is invisible while the two agree. Naming the producer's
+ * default here would satisfy every assertion today and silently re-model the whole archive the day that
+ * default moves — which is precisely the failure the header field was added to end.
  */
-export const DUMP_HALF_QUANTUM = 0.5 * 10 ** -SERVICE_FIELD_DECIMALS;
+export const HISTORICAL_FIELD_DECIMALS = 3;
+
+/**
+ * Half the smallest difference a render at `decimals` places can express — the ONE owner of a cell's width.
+ *
+ * `toFixed(3)` maps a value onto the nearest `0.001`, so a field printed as `0.960` stands for anything in
+ * `[0.9595, 0.9605)`. A parameter rather than a constant because the width is a property of the ARTIFACT:
+ * every caller that used one constant was modelling the dump it expected, and a copy of `3` would keep
+ * drawing `5.0e-4` for a dump that says six decimals — the claim it qualifies going wrong without a test.
+ */
+export function halfQuantumFor(decimals: number): number {
+  return 0.5 * 10 ** -decimals;
+}
+
+/**
+ * The precision an artifact was rendered with, and whether the artifact SAID so.
+ *
+ * Two fields rather than one, because the two facts have different consequences: a stated precision is a
+ * property of the artifact, while an inferred one is a claim the READER is making — and a report that printed
+ * `±1.0e-3` without saying which would let an inference pass as a measurement.
+ */
+export interface DumpPrecision {
+  /** The decimals the per-service fields were rendered with. */
+  readonly decimals: number;
+  /** True when the dump declared it; false when the reader supplied {@link HISTORICAL_FIELD_DECIMALS}. */
+  readonly stated: boolean;
+}
+
+/**
+ * The precision of one dump, from the cases it was parsed into — the ONE place `undefined` becomes a number.
+ *
+ * The cases of one dump share a header, so they share a precision; a set that disagreed would mean two
+ * artifacts concatenated, which the parser already treats as two blocks. The first case's answer is therefore
+ * the answer, and an EMPTY set is reported as an unstated historical render because there is no artifact to
+ * have stated anything — a caller with no cases has no numbers to draw either.
+ *
+ * @param cases - The parsed cases of one dump.
+ * @returns What the artifact declared, or the historical precision with `stated: false`.
+ */
+export function dumpPrecisionOf(cases: readonly DiagnosedCase[]): DumpPrecision {
+  const declared = cases[0]?.fieldDecimals;
+  return declared === undefined
+    ? { decimals: HISTORICAL_FIELD_DECIMALS, stated: false }
+    : { decimals: declared, stated: true };
+}
 
 /**
  * How many resamplings {@link gainResolution} reports over.
@@ -4482,19 +4550,15 @@ export interface GainResolution {
   /** Resamplings drawn. */
   readonly trials: number;
   /**
-   * The box these draws came from — reported rather than held privately, because the line that prints
-   * the result has to name the resolution it drew IN. A reader took `3 decimals` as the quantum of a
-   * screen whose only input is printed in whole milliseconds, and nothing in the object could say so.
-   */
-  readonly fields: JitterFields;
-  /**
-   * The refinement these draws were taken at; `0` means the artifact's OWN box.
+   * The box these draws came from — quanta, columns, the ARTIFACT's declared precision and the refinement.
    *
-   * Reported for the same reason {@link fields} is: the numbers here are a statement about the dump
-   * only at `0`, and a reader who cannot see which box produced them would read a hypothetical as a
-   * measurement the moment a caller swept the frontier.
+   * Reported rather than held privately, because the line that prints the result has to name the resolution
+   * it drew IN, and because the numbers here are a statement about the dump only at `extraDigits: 0`: a reader
+   * who cannot see which box produced them would read a hypothetical as a measurement. Carrying the precision
+   * also means a line quoting a quantum reads it from the same object the draws came from, instead of from a
+   * module constant that describes a different artifact.
    */
-  readonly extraDigits: number;
+  readonly box: ResolutionBox;
   /** Trials by how many of `gained` held; index = that count, so it always sums to `trials`. */
   readonly histogram: readonly number[];
   /** The fewest that ever held — a SOUND lower bound on the count over the quantum's box. */
@@ -4519,9 +4583,8 @@ export interface GainResolution {
  *
  * @param next - The next draw in `[0, 1)`.
  * @param halfQuantum - Half the smallest difference the field's render can express. Taken as an
- *   argument rather than read from {@link DUMP_HALF_QUANTUM} because the same draw has to serve the
- *   artifact's own box AND a hypothetical finer one; the owner of that choice is
- *   {@link resolutionBoxFor}.
+ *   argument rather than read from a constant because the same draw has to serve the artifact's own box
+ *   AND a hypothetical finer one; the owner of that choice is {@link resolutionBoxFor}.
  * @returns The offset in `[-halfQuantum, +halfQuantum]`.
  */
 function quantumDraw(next: () => number, halfQuantum: number): number {
@@ -4592,42 +4655,53 @@ export function drawOnsetDelay(
 }
 
 /**
- * The half-quanta one screen's ensembles draw, at a chosen render precision.
+ * The half-quanta one screen's ensembles draw, off the artifact its cases came from.
  *
- * ONE owner for the box, because a box is two numbers that must agree with a set of flags: the screen
- * decides WHICH columns are drawn ({@link jitterFieldsFor}) and the artifact decides HOW FINELY each is
- * printed. Composing them here is what stops a caller from drawing the onset column at the decimals
- * quantum, or drawing a stability screen's column at all — the two defects this pair of functions was
- * split out of.
+ * ONE owner for the box, because a box is two numbers that must agree with a set of flags AND a declared
+ * precision: the screen decides WHICH columns are drawn ({@link jitterFieldsFor}), the artifact decides HOW
+ * FINELY each is printed ({@link DumpPrecision}), and the caller's `extraDigits` decides the sweep. Composing
+ * them here is what stops a caller from drawing the onset column at the decimals quantum, from drawing a
+ * stability screen's column at all, or — the defect this signature exists for — from modelling a dump at the
+ * precision of a constant this module happens to share with the producer.
  *
- * `extraDigits` is the REFINEMENT, and it is a scale rather than a fudge factor: `0` is the artifact's
- * own box, and `k` asks what the ensemble would say if every rendered field carried `k` more digits.
- * It exists because "the render is what binds" is a claim about SCALE — a window whose deciding gaps
- * sit at `1e-4` is settled by one more digit, while one decided by a rendered tie is settled by no
- * number of them — and a claim about scale has to be measured at more than one scale. Every field's
- * OWN quantum is scaled, rather than one factor applied to the base, so each column stays at the
- * resolution its own render has.
+ * `precision` is REQUIRED rather than defaulted: a caller that has cases has an artifact, and a default here
+ * would be the same assumption one level down, in a place where nothing could report it.
+ *
+ * `extraDigits` is the REFINEMENT, and it is a scale rather than a fudge factor: `0` is the artifact's own
+ * box, and `k` asks what the ensemble would say if every rendered field carried `k` more digits. It exists
+ * because "the render is what binds" is a claim about SCALE — a window whose deciding gaps sit at `1e-4` is
+ * settled by one more digit, while one decided by a rendered tie is settled by no number of them — and a
+ * claim about scale has to be measured at more than one scale. Every field's OWN quantum is scaled, rather
+ * than one factor applied to the base, so each column stays at the resolution its own render has.
  *
  * @param screen - Which screen's arithmetic is being measured.
+ * @param precision - What the artifact declared, from {@link dumpPrecisionOf}.
  * @param extraDigits - How many more digits every rendered field is imagined to carry.
- * @returns The per-service half-quantum, the onset half-quantum (`0` when that column is not read),
- *   and the flags the two were built from.
+ * @returns The box: both quanta, the columns they were built for, the precision and the refinement.
  */
-export function resolutionBoxFor(screen: GainResolutionScreen, extraDigits = 0): ResolutionBox {
+export function resolutionBoxFor(
+  screen: GainResolutionScreen,
+  precision: DumpPrecision,
+  extraDigits = 0,
+): ResolutionBox {
   const scale = 10 ** -extraDigits;
   const fields = jitterFieldsFor(screen);
   return {
-    service: DUMP_HALF_QUANTUM * scale,
+    service: halfQuantumFor(precision.decimals) * scale,
     onset: fields.onset ? ONSET_FIELD_HALF_QUANTUM * scale : 0,
     fields,
+    precision,
+    extraDigits,
   };
 }
 
 /**
- * The two quanta one screen reads at, with the flags that chose them.
+ * The two quanta one screen reads at, with everything that chose them.
  *
  * Carried together so {@link jitterCase} cannot be handed a box that disagrees with the columns it was
- * told to draw: the flags ARE the box's `onset > 0`, by construction in {@link resolutionBoxFor}.
+ * told to draw (the flags ARE the box's `onset > 0`, by construction in {@link resolutionBoxFor}), and so
+ * that a line PRINTING a quantum reads it from the same object the draws came from: the formatter used to
+ * quote a module constant, which is the same wrong owner one step later.
  */
 export interface ResolutionBox {
   /** Half-quantum for `selfAnomaly`, `logScore`, `latRise`, and `cv` when that column is drawn. */
@@ -4636,6 +4710,10 @@ export interface ResolutionBox {
   readonly onset: number;
   /** Which extra columns the box was built for. */
   readonly fields: JitterFields;
+  /** The precision the ARTIFACT declared, and whether it declared it. */
+  readonly precision: DumpPrecision;
+  /** How many more digits every field is imagined to carry; `0` is the artifact's own box. */
+  readonly extraDigits: number;
 }
 
 /**
@@ -4788,10 +4866,10 @@ export interface GainResolutionInput extends ResolutionInput {
  */
 export function gainResolution(input: GainResolutionInput): GainResolution {
   const rebuild = rebuildFor(input.screen);
-  // ONE box per ensemble, built from the screen and the refinement together, so the quanta and the
-  // columns cannot come from two different answers to "what does this screen read".
-  const extraDigits = input.extraDigits ?? 0;
-  const box = resolutionBoxFor(input.screen, extraDigits);
+  // ONE box per ensemble, built from the screen, the ARTIFACT's own declared precision and the refinement
+  // together — so the quanta, the columns and the precision cannot come from three different answers to
+  // "what does this screen read, and how finely was it printed".
+  const box = resolutionBoxFor(input.screen, dumpPrecisionOf(input.cases), input.extraDigits);
   const trials = input.trials ?? GAIN_RESOLUTION_TRIALS;
   const byPack = new Map(input.cases.map((kase) => [kase.datapack, kase]));
   // `Array.from`, not `new Array(n).fill(0)`: the length form of the constructor is ambiguous with
@@ -4825,8 +4903,7 @@ export function gainResolution(input: GainResolutionInput): GainResolution {
     .map((entry) => entry.index);
   return {
     trials,
-    fields: box.fields,
-    extraDigits,
+    box,
     histogram,
     least: Math.min(...seen),
     most: Math.max(...seen),
@@ -4872,10 +4949,8 @@ function rebuildFor(
 export interface CapResolution {
   /** Resamplings drawn. */
   readonly trials: number;
-  /** The box these draws came from; see {@link GainResolution.fields}. */
-  readonly fields: JitterFields;
-  /** The refinement these draws were taken at; see {@link GainResolution.extraDigits}. */
-  readonly extraDigits: number;
+  /** The box these draws came from; see {@link GainResolution.box}. */
+  readonly box: ResolutionBox;
   /** The cap each draw produced, in draw order. */
   readonly caps: readonly number[];
   /** The smallest cap any draw produced. */
@@ -4920,8 +4995,7 @@ export interface CapResolution {
  */
 export function capResolution(input: ResolutionInput): CapResolution {
   const rebuild = rebuildFor(input.screen);
-  const extraDigits = input.extraDigits ?? 0;
-  const box = resolutionBoxFor(input.screen, extraDigits);
+  const box = resolutionBoxFor(input.screen, dumpPrecisionOf(input.cases), input.extraDigits);
   const trials = input.trials ?? CAP_RESOLUTION_TRIALS;
   const next = seededUnit(GAIN_RESOLUTION_SEED);
   const caps: number[] = [];
@@ -4942,8 +5016,7 @@ export function capResolution(input: ResolutionInput): CapResolution {
   }
   return {
     trials,
-    fields: box.fields,
-    extraDigits,
+    box,
     caps,
     least: Math.min(...caps),
     most: Math.max(...caps),
@@ -4977,7 +5050,7 @@ export function formatCapResolutionLine(resolution: CapResolution, ship: number)
       : ` — so \`lost at ship 0\` above holds for the PRINTED digits, not for the box they stand for`;
   return (
     `  cap resolution: over ${resolution.trials} draws of the discarded digits ` +
-    `(${drawnResolutionClause(resolution.fields)}) the cap lands in ` +
+    `(${drawnResolutionClause(resolution.box)}) the cap lands in ` +
     `[${at(resolution.least)}, ${at(resolution.most)}] (a minimum over every satisfied case, so the ` +
     `range sits low); at the shipped ${at(ship)} the window stays intact in ${intact} of the ` +
     `${resolution.trials} draws, losing at most ${resolution.worstLost}` +
@@ -5010,7 +5083,7 @@ export function formatResolutionLine(resolution: GainResolution): string {
       ? `every one of the ${gains} gains holds in all ${resolution.trials} resamplings`
       : `${resolution.resolved.length} of ${gains} gains hold in every one`;
   return (
-    `  resolution: ${drawnResolutionClause(resolution.fields)}; ${resolution.trials} resamplings ` +
+    `  resolution: ${drawnResolutionClause(resolution.box)}; ${resolution.trials} resamplings ` +
     `of that draw give ${entries.join(', ')} — ${verdict}`
   );
 }
@@ -5025,25 +5098,37 @@ export function formatResolutionLine(resolution: GainResolution): string {
  * magnitude away, and on the screen whose only input it is.
  *
  * Each column is named as the screen READS it rather than as the dump spells it, so a reader cannot
- * take one quantum for another, and the constants come from the producer that renders them —
- * `SERVICE_FIELD_DECIMALS` for the decimal fields, `ONSET_FIELD_HALF_QUANTUM` for the onset.
+ * take one quantum for another — and every quantum here comes off the BOX the draws came from, including
+ * the artifact's own declared precision. The version before that read a module constant quoted the right
+ * number only for a dump rendered at the producer's current default.
  *
- * @param fields - The box the ensemble drew from; see {@link jitterFieldsFor}.
+ * @param box - The box the ensemble drew from; see {@link resolutionBoxFor}.
  * @returns The clause, without a leading space.
  */
-function drawnResolutionClause(fields: JitterFields): string {
-  const base =
-    `the dump renders ${SERVICE_FIELD_DECIMALS} decimals, so a gap between two services is ` +
-    `only good to ±${(2 * DUMP_HALF_QUANTUM).toExponential(1)}`;
+function drawnResolutionClause(box: ResolutionBox): string {
+  const { decimals, stated } = box.precision;
+  // A reader has to be able to tell a precision the ARTIFACT declared from one the reader SUPPLIED: an
+  // archived dump carries no precision field, and a sentence printed the same way for both would let an
+  // inference pass as a measurement. The quantum is read off the box the draws came from — never off a
+  // constant, which is the wrong owner one step later and was modelling a different artifact entirely.
+  const bar = (2 * box.service).toExponential(1);
+  const base = stated
+    ? `the dump states ${decimals} decimals, so a gap between two services is only good to ±${bar}`
+    : `the dump does not state its precision — read as the ${decimals} used before the header carried ` +
+      `it, so a gap between two services is only good to ±${bar}`;
   const columns = [
-    fields.cv ? `the decisive cv (±${(2 * DUMP_HALF_QUANTUM).toExponential(1)})` : undefined,
-    fields.onset
-      ? `the onset delay in whole milliseconds (±${(2 * ONSET_FIELD_HALF_QUANTUM).toFixed(1)} ms)`
+    box.fields.cv ? `the decisive cv (±${bar})` : undefined,
+    box.fields.onset
+      ? `the onset delay in whole milliseconds (±${(2 * box.onset).toFixed(1)} ms)`
       : undefined,
   ].filter((one) => one !== undefined);
-  return columns.length === 0
-    ? base
-    : `${base}, and this term's own column is drawn with it: ${columns.join(' and ')}`;
+  const body =
+    columns.length === 0
+      ? base
+      : `${base}, and this term's own column is drawn with it: ${columns.join(' and ')}`;
+  // A REFINED box is a hypothetical rather than a measurement, so the sentence has to say so: the frontier's
+  // intermediate ensembles go through this clause too.
+  return box.extraDigits === 0 ? body : `${body} (at ${box.extraDigits} digits beyond that)`;
 }
 
 /**
