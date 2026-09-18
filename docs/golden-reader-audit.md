@@ -113,10 +113,17 @@ Two tests are worth pointing out for what they avoid:
   row in `fse26-cv-screen.md` was read by **run id** (`35223783105`, `35242705643`,
   `35208713413`, …) through `verify_cells.py`, which takes the id directly and never consults
   `head_sha`. The exposure was entirely forward-looking, and the false answer never reached a document.
-- **The paths rule itself is unchanged.** `scripts/golden_run_selector.py` is not one of the four
-  trigger entries; only `scripts/convert-parquet-to-json.py` is, because only it decides a published
-  benchmark number. So the push carrying this fix owes **no** golden — and the repaired tool now
-  *measures* that instead of asserting it. That is the difference this document is about.
-- **The engine cannot move, and that is not what needed proving.** Nothing here is on the RCAEval path;
-  the gate that runs is `CI`'s `converter-tests` job. A golden on this push would prove nothing about
-  the change, which is precisely why the rule does not ask for one.
+- **The classification has one timing edge, and it errs toward noise rather than silence.** GitHub can take a
+  few seconds to list a run, so a commit whose paths *do* match a trigger can meet the empty response before
+  its run exists and get a `GoldenOwedError`. That is the safe direction — the remedy the message names
+  (re-run) is the right one, and the alternative is the silent false "none is owed" that this document is
+  about — but it is a reason to repeat a failing pass before drawing a conclusion from it.
+- **The rule itself is unchanged.** `scripts/golden_run_selector.py` is not one of the four trigger entries;
+  only `scripts/convert-parquet-to-json.py` is, because only it decides a published benchmark number. So the
+  push carrying this fix owes **no** golden — and the repaired tool now *measures* that instead of asserting
+  it. Measured on the commit that carried it (`c75c8c6`): `ci.yml` and `release.yml` were triggered and no
+  benchmark run was, and the classifier named all four changed paths before saying so.
+- **The engine cannot move, and that is not what needed proving.** Nothing here is on the RCAEval path; the
+  gate that runs is `CI`'s `converter-tests` job, which is where the 44 tests and the branch-coverage floor
+  were read. A golden on this push would prove nothing about the change, which is precisely why the rule does
+  not ask for one.
