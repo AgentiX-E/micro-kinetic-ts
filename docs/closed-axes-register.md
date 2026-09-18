@@ -165,6 +165,15 @@ Before reading any number, check that the input was counted:
   on BOTH benchmarks (`35035314921` / `35035309768`), which is also what makes a revert
   checkable rather than merely asserted — the recorded 9-cell and the recorded fault-type
   table are measurements that already exist, so "this restores the engine" is a diff.
+- **a reader's COUNT must be checkable against the artifact's own declaration.** The census
+  that answers "what does this artifact carry" first required a non-empty service id and so
+  dropped the unlabelled series the engine ranks — one row per case, **1422** of them on the
+  FSE'26 dump — and that error runs one way only: a row that is not counted can never make a
+  channel look LESS universal, so every `every` it produced was optimistic. The engine's own
+  parser had the same defect for the same reason, and its count disagreed with the header's
+  `services=` in **1421 of 1422** cases, unchecked. A block that renders fewer rows than it
+  declares is now counted and named, and the row population is asserted against the number the
+  engine's parser reaches on the same file (`docs/artifact-capability-audit.md`).
 - **a guard that compares TEXT is comparing a substring.** The same table's description
   check used `toContain(String(shipped))`, which for a value of `0` is satisfied by a
   description naming `0.036552` — so the moment a value reverted to zero the check stopped
@@ -384,3 +393,25 @@ inferred: the reconstruction reproduces the run's own rank-1 **1422/1422**, the 
 map is complete, and **221 of the 666 misses are silent on both sides**, which is larger
 than any single term's attributable share. A candidate that has not said which of those
 it addresses has not engaged the map.
+
+**And a candidate must now say what its ARTIFACT carries** (`docs/artifact-capability-audit.md`). Three
+iterations each found, by hand, a claim resting on a quantity its artifact does not hold — a precision
+nobody declared, a population that was a subset, a composition the named run never rendered — and the
+generalisation is an instrument: `scripts/dump_capability.py` reports every channel as `every` / `some` /
+`none`, over the artifact's own case and row counts, and refuses a read the artifact cannot serve.
+
+Two facts from it bear directly on the lever above, and both are about the artifacts rather than about the
+engine:
+
+- The FSE'26 dump this record reads (`35035314921`, 1422 cases, 72527 rows) carries **no declared precision,
+  no decisive composition and no `both=`** — 141 MB in which `metricDecisive` appears zero times. A
+  composition-based candidate is **UNEVALUABLE** there and must name the artifact that carries it, exactly as
+  the stability rows had to name `35107871516`.
+- Where the decisive composition does exist it reaches **`some`**, not `every` — 86.45% of `re1`'s rows,
+  90.72% of `re3`'s — while the field's own comment opened by claiming it "exists for EVERY service". A term
+  built on the composition has to be simulated over *every* candidate a case could promote, so its
+  precondition is a **producer change**, and that is now what the comment says instead of the claim it
+  contradicted two sentences later.
+
+A candidate that has not named the channels it reads, the reach it needs of each, and the artifact — by run
+— it reads them from, has not engaged this either.

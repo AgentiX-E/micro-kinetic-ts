@@ -5,6 +5,11 @@ Every test here corresponds to a way the measured defect could have been caught 
 copies were strict TrainTicket-only subsets, so a guard that reads the POPULATION out of the artifact
 would have refused the comparison before any number was attributed to precision.
 
+The archive those copies lived in has since been replaced by the artifacts the workflow produces, and two
+tests here had to change with it. One asserted the DEFECT as if it were the benchmark (`re3.txt` is 30 cases);
+it now asserts the SHAPE that makes a subset detectable, and the subset it refuses is rebuilt from the
+current artifact rather than recalled.
+
 @module scripts/test_dump_coverage
 """
 
@@ -29,6 +34,29 @@ def dump(*cases: str, decimals: int | None = None) -> str:
     return ''.join(
         f'DIAG datapack={case} faultType=cpu services=3{tail}\n  edges=a>b\n' for case in cases
     )
+
+
+def only_system(text: str, marker: str) -> str:
+    """
+    The subset of a dump a reader gets by keeping one system's cases.
+
+    The defect that motivated this module was three such subsets sitting under whole-suite names, so the way
+    to keep the evidence from going stale is to REBUILD the subset in the test rather than to archive it: the
+    archive has since been replaced by the artifacts the workflow produces, and a test pinned to the old copy
+    asserted the defect as if it were the benchmark.
+
+    @param text - The artifact.
+    @param marker - The suite/system marker the kept cases carry, e.g. `_re3tt_`.
+    @returns: Those cases' blocks, and nothing else.
+    """
+    kept: list[str] = []
+    keeping = False
+    for line in text.splitlines():
+        if line.startswith('DIAG datapack='):
+            keeping = marker in line
+        if keeping:
+            kept.append(line)
+    return '\n'.join(kept) + '\n'
 
 
 class CoverageOfTest(unittest.TestCase):
@@ -137,20 +165,41 @@ class RequireLikeForLikeTest(unittest.TestCase):
 class RealArtifactsTest(unittest.TestCase):
     """Measured against the files this guard was built for, when they are still on disk."""
 
-    def test_the_local_copies_and_the_downloaded_artifacts_disagree(self) -> None:
-        local = LOCAL_DUMPS / 're3.txt'
-        if not local.exists():
+    def _text(self, name: str) -> str:
+        artifact = LOCAL_DUMPS / name
+        if not artifact.exists():
             self.skipTest('the archived copy is not on this machine')
-        coverage = dc.coverage_of(local.read_text('utf-8', errors='replace'))
-        self.assertEqual(coverage.cases, 30)
-        # The claim this guard exists to make: 30 cases of `re3tt` is NOT `re3`.
-        self.assertEqual(coverage.as_dict(), {'re3tt': 30})
-        self.assertEqual(coverage.decimals, ())
+        return artifact.read_text('utf-8', errors='replace')
 
-    def test_the_claim_is_that_a_whole_suite_is_three_systems(self) -> None:
-        # The number the artifact should hold, so the guard's own assertion is about the benchmark
-        # rather than about the copy: `re3` evaluates 30 cases per system.
-        self.assertEqual(30 * 3, 90)
+    def test_every_archived_suite_is_three_systems_at_equal_share(self) -> None:
+        # The defect: three files under suite names held TrainTicket-only copies — `re3` 30 cases of 90 — so
+        # every number read from them was about one system reported as three. The claim is therefore NOT
+        # "re3 is 30 cases"; that was the DEFECT, and pinning it would make the archive's repair look like a
+        # regression. The claim is the SHAPE: a suite is three systems at equal share, so a single-system
+        # artifact under a suite's name is a subset however many cases it holds.
+        for name in ('re1.txt', 're2.txt', 're3.txt'):
+            coverage = dc.coverage_of(self._text(name))
+            self.assertEqual(len(coverage.as_dict()), 3, f'{name}: {coverage.as_dict()}')
+            self.assertEqual(len(set(coverage.as_dict().values())), 1, f'{name}: {coverage.as_dict()}')
+            # And the archive states the precision it was rendered at, which is what a reader's error bar
+            # comes from. Asserted as "states one", not as "states 3": a dispatch may legitimately ask for a
+            # different one, and the other binding (`does not state`) is what must stay distinguishable.
+            self.assertTrue(coverage.decimals, f'{name} does not state its precision')
+
+    def test_the_MEASURED_defect_is_refused_when_it_is_rebuilt_from_the_archive_itself(self) -> None:
+        # The comparison that was actually run, rebuilt from the artifact that is on disk rather than from a
+        # stale copy of it: keep one system's cases and compare against the whole suite. Fixing the archive
+        # cannot make this test vacuous, because the subset is derived here and would be re-derived if the
+        # archive moved on.
+        whole = dc.coverage_of(self._text('re3.txt'))
+        one_system = dc.coverage_of(only_system(self._text('re3.txt'), '_re3tt_'))
+        self.assertEqual(one_system.cases, 30)
+        self.assertEqual(one_system.as_dict(), {'re3tt': 30})
+        with self.assertRaises(dc.ComparisonError) as caught:
+            dc.require_like_for_like(
+                left_name='the one-system copy', left=one_system, right_name='re3', right=whole
+            )
+        self.assertIn('re3ob: 0 vs 30', str(caught.exception))
 
 
 if __name__ == '__main__':

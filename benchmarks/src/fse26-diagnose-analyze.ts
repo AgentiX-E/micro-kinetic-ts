@@ -188,10 +188,17 @@ export interface DiagnosedService {
    * The composition of the metric that drove this service's score, as the `metricDecisive` line
    * reports it, or `undefined` when the block rendered none.
    *
-   * A separate field from {@link metricOutcomes} because it exists for EVERY service, while the
-   * inventory is rendered only for the ground truth and the engine's predictions — and a term built
-   * on the decisive composition has to be SIMULATED over every candidate a case could promote, so
-   * the number cannot come from a line the block prints selectively.
+   * A separate field from {@link metricOutcomes} because it was MEANT to exist for every service, while the
+   * inventory is rendered only for the ground truth and the engine's predictions — and a term built on the
+   * decisive composition has to be SIMULATED over every candidate a case could promote, so the number cannot
+   * come from a line the block prints selectively.
+   *
+   * IT DOES NOT REACH EVERY SERVICE, and the last sentence of this comment always said so: a service "whose
+   * named metric the block did not decompose" is a service without this value. Measured — by
+   * `scripts/dump_capability.py`, which is the guard rather than this paragraph — it is present on **86.45%**
+   * of `re1`'s rows, **90.72%** of `re3`'s, and **none** of the FSE'26 artifact's (`dump-35035314921.txt`).
+   * So a candidate that must be simulated over every candidate of a case cannot be built on this line as it
+   * stands: the channel reaches `some`, and a producer change is its precondition rather than an optimisation.
    *
    * `undefined` means the block rendered no line: a dump from a producer that predates it, or a
    * service whose named metric the block did not decompose. It is never a composition of zeroes.
