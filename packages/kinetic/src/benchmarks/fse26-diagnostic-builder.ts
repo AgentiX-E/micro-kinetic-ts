@@ -66,6 +66,15 @@ export interface DiagnosticCaseInput {
   readonly logSignalMode: string;
   /** The case's fault-injection time in ms, or `0` for "the engine had no anchor". */
   readonly injectTimeMs: number;
+  /**
+   * How many decimals to render the per-service decimal fields with.
+   *
+   * Optional, and deliberately NOT defaulted here: the ONE default is
+   * {@link formatFSE26Diagnostic}'s, so a builder that invented a second one would be a second copy
+   * of a value a reader's error bar is derived from. Omitted means "the producer's default", which
+   * is what every caller that predates this field means.
+   */
+  readonly fieldDecimals?: number | undefined;
 }
 
 /**
@@ -187,5 +196,8 @@ export function buildFSE26Diagnostic(input: DiagnosticCaseInput): string {
     // injection time" from "the dump omits the field" would report a temporal window for a case the
     // engine left inert.
     injectTimeMs: injectTime,
+    // Passed through UNCHANGED, including `undefined`: the default lives in the formatter, so a
+    // builder that supplied one would be the second owner of the number a reader's box comes from.
+    fieldDecimals: input.fieldDecimals,
   });
 }

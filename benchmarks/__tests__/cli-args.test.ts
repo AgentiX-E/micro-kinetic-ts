@@ -14,7 +14,11 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseWeight } from '../src/cli-args.js';
+import {
+  MAX_FIELD_DECIMALS,
+  SERVICE_FIELD_DECIMALS,
+} from '../../packages/kinetic/src/benchmarks/index.js';
+import { parseFieldDecimals, parseWeight } from '../src/cli-args.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH_SRC = resolve(HERE, '../src');
@@ -79,6 +83,87 @@ describe('parseWeight', () => {
       const source = readFileSync(resolve(BENCH_SRC, file), 'utf8');
       expect(source, `${file} defines its own parseWeight`).not.toMatch(
         /function parseWeight\s*\(/,
+      );
+    }
+  });
+});
+
+/**
+ * The dump's render precision, which is the one flag whose misuse makes the RUN crash rather than
+ * answer wrongly.
+ *
+ * `toFixed` accepts `0` to `100` digits and raises `RangeError` outside that, so an unguarded parse
+ * turns `--diagnose-decimals 200` into a run that dies on the first rendered case — after the loader
+ * has read a suite. The bound is not a policy about how fine a dump should be: it is the renderer's
+ * own domain, imported from the module that calls `toFixed` so the two cannot drift.
+ */
+describe('parseFieldDecimals', () => {
+  it('accepts an integer the renderer can express', () => {
+    expect(parseFieldDecimals('4', 3)).toBe(4);
+    expect(parseFieldDecimals('6', 3)).toBe(6);
+    expect(parseFieldDecimals('10', 3)).toBe(10);
+    // Surrounding whitespace is not part of the value, as in `parseWeight`.
+    expect(parseFieldDecimals(' 4 ', 3)).toBe(4);
+  });
+
+  it('keeps an explicit ZERO, which is a request rather than an absence', () => {
+    // Integer rendering is a legal artifact and the coarsest box the reader can be handed; a helper
+    // that treated `0` as "unset" would make it unreachable and silently hand back three decimals.
+    expect(parseFieldDecimals('0', 3)).toBe(0);
+    expect(parseFieldDecimals('00', 3)).toBe(0);
+    // `-0` is zero too, and the artifact does not distinguish them: `String(-0)` is `'0'`, so the
+    // header says `decimals=0`, and `toFixed(-0)` is `toFixed(0)`. Normalised with `+ 0` only because
+    // `Object.is` separates the two zeroes while the RENDER does not — rejecting `-0` would need a
+    // special case that names nothing a reader could observe.
+    expect(parseFieldDecimals('-0', 3) + 0).toBe(0);
+  });
+
+  it('takes the bound from the RENDERER, measured rather than restated', () => {
+    // The constant is only worth importing if it really is `toFixed`'s domain, so the claim is tested
+    // against `toFixed` itself instead of asserted. If the language ever widened the range this
+    // fails, which is the only way the imported bound could go stale.
+    expect(Number.prototype.toFixed.call(1, MAX_FIELD_DECIMALS)).toBeTruthy();
+    expect(() => Number.prototype.toFixed.call(1, MAX_FIELD_DECIMALS + 1)).toThrow(RangeError);
+    expect(parseFieldDecimals(String(MAX_FIELD_DECIMALS), 3)).toBe(MAX_FIELD_DECIMALS);
+  });
+
+  it('falls back to the shipped value for a precision the renderer would REJECT', () => {
+    // The severe half: these are the values that would raise inside `formatFSE26Diagnostic` mid-run.
+    expect(parseFieldDecimals(String(MAX_FIELD_DECIMALS + 1), 3)).toBe(3);
+    expect(parseFieldDecimals('200', 3)).toBe(3);
+    expect(parseFieldDecimals('999', 3)).toBe(3);
+  });
+
+  it('falls back to the shipped value for everything that is not a precision', () => {
+    for (const raw of [
+      '',
+      '   ',
+      'four',
+      '4x',
+      'x4',
+      '4.5',
+      '-1',
+      'NaN',
+      'Infinity',
+      '-Infinity',
+      '1e3',
+    ]) {
+      expect(parseFieldDecimals(raw, 3), `raw=${JSON.stringify(raw)}`).toBe(3);
+    }
+  });
+
+  it('returns the shipped value verbatim, so a caller can pass the producer’s constant', () => {
+    expect(parseFieldDecimals('nonsense', SERVICE_FIELD_DECIMALS)).toBe(SERVICE_FIELD_DECIMALS);
+    expect(parseFieldDecimals('200', SERVICE_FIELD_DECIMALS)).toBe(SERVICE_FIELD_DECIMALS);
+  });
+
+  it('is the only copy of the rule in the benchmark CLIs', () => {
+    // Narrowed to the definition, because the callers mention the NAME in their imports: only a second
+    // implementation is a second rule, and the drift it causes is invisible to either copy's tests.
+    for (const file of ['fse26-cli.ts', 'run-rcaeval.ts']) {
+      const source = readFileSync(resolve(BENCH_SRC, file), 'utf8');
+      expect(source, `${file} defines its own parseFieldDecimals`).not.toMatch(
+        /function parseFieldDecimals\s*\(/,
       );
     }
   });

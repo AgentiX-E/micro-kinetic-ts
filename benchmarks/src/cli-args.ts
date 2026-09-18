@@ -10,6 +10,8 @@
  * @module benchmarks/cli-args
  */
 
+import { MAX_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/index.js';
+
 /**
  * Parse one weight from a flag's raw value.
  *
@@ -29,4 +31,30 @@ export function parseWeight(raw: string, shipped: number): number {
   if (raw.trim() === '') return shipped;
   const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : shipped;
+}
+
+/**
+ * Parse one render precision from a flag's raw value.
+ *
+ * The same strictness as {@link parseWeight} and one extra bound, because this flag's failure mode is
+ * different in kind: a wrong weight answers wrongly, while a wrong precision makes the RUN die.
+ * `Number.prototype.toFixed` accepts `0` to {@link MAX_FIELD_DECIMALS} digits and raises `RangeError`
+ * outside that, so an unguarded parse turns `--diagnose-decimals 200` into a crash on the first
+ * rendered case — after a suite has been loaded and benchmarked. The bound is taken from the module
+ * that calls `toFixed` rather than restated, so the two cannot drift.
+ *
+ * A non-integer is refused rather than rounded: `4.5` digits is not a request the renderer can
+ * satisfy, and rounding it would silently produce one of two legal artifacts, neither of which the
+ * dispatch named. An explicit `0` is KEPT — integer rendering is a legal artifact and the coarsest box
+ * a reader can be handed — so "coarsen this dump" stays reachable through the CLI.
+ *
+ * @param raw - The flag value as written on the command line.
+ * @param shipped - The precision the runner would have used had the flag been absent.
+ * @returns `raw` when it is an integer the renderer can express; `shipped` otherwise.
+ */
+export function parseFieldDecimals(raw: string, shipped: number): number {
+  if (raw.trim() === '') return shipped;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > MAX_FIELD_DECIMALS) return shipped;
+  return value;
 }

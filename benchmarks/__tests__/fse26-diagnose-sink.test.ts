@@ -10,11 +10,20 @@
  * @module benchmarks/__tests__/fse26-diagnose-sink
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { FaultPropagationGraph } from '../../packages/core/src/index.js';
-import { SyntheticBenchmarkGenerator } from '../../packages/kinetic/src/benchmarks/index.js';
+
+import {
+  SERVICE_FIELD_DECIMALS,
+  SyntheticBenchmarkGenerator,
+} from '../../packages/kinetic/src/benchmarks/index.js';
 import type { DiagnosedCaseRecord } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import { parseDiagnosticDump } from '../src/fse26-diagnose-analyze.js';
 import { diagnoseDumpInput, renderDiagnosedCase } from '../src/fse26-diagnose-sink.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const generator = new SyntheticBenchmarkGenerator(7);
 
@@ -61,7 +70,11 @@ describe('renderDiagnosedCase', () => {
       },
     };
     const parsed = parseDiagnosticDump(
-      renderDiagnosedCase(multi, { logSignalMode: 'logicHttp', useInjectTime: true }),
+      renderDiagnosedCase(multi, {
+        logSignalMode: 'logicHttp',
+        useInjectTime: true,
+        fieldDecimals: SERVICE_FIELD_DECIMALS,
+      }),
     )[0]!;
 
     expect(parsed.groundTruth).toEqual([a, b]);
@@ -78,17 +91,23 @@ describe('renderDiagnosedCase', () => {
     const withoutAnchor = diagnoseDumpInput(record, {
       logSignalMode: 'logicHttp',
       useInjectTime: false,
+      fieldDecimals: SERVICE_FIELD_DECIMALS,
     });
     expect(withoutAnchor.injectTimeMs).toBe(0);
 
     const withAnchor = diagnoseDumpInput(record, {
       logSignalMode: 'logicHttp',
       useInjectTime: true,
+      fieldDecimals: SERVICE_FIELD_DECIMALS,
     });
     expect(withAnchor.injectTimeMs).toBe(record.case.injectTime);
 
     const parsed = parseDiagnosticDump(
-      renderDiagnosedCase(record, { logSignalMode: 'logicHttp', useInjectTime: false }),
+      renderDiagnosedCase(record, {
+        logSignalMode: 'logicHttp',
+        useInjectTime: false,
+        fieldDecimals: SERVICE_FIELD_DECIMALS,
+      }),
     )[0]!;
     expect(parsed.injectTimeMs).toBe(0);
   });
@@ -96,7 +115,11 @@ describe('renderDiagnosedCase', () => {
   it('carries the case id, the ranking and the log mode, so the block joins the artifact table', () => {
     const record = recordOf();
     const parsed = parseDiagnosticDump(
-      renderDiagnosedCase(record, { logSignalMode: 'novelty', useInjectTime: true }),
+      renderDiagnosedCase(record, {
+        logSignalMode: 'novelty',
+        useInjectTime: true,
+        fieldDecimals: SERVICE_FIELD_DECIMALS,
+      }),
     )[0]!;
 
     expect(parsed.datapack).toBe(record.case.id);
@@ -113,9 +136,60 @@ describe('renderDiagnosedCase', () => {
     const block = renderDiagnosedCase(record, {
       logSignalMode: 'logicHttp',
       useInjectTime: true,
+      fieldDecimals: SERVICE_FIELD_DECIMALS,
     });
 
     expect(parseDiagnosticDump(block)).toHaveLength(1);
     expect(parseDiagnosticDump(block + block)).toHaveLength(2);
+  });
+});
+
+/**
+ * The precision the run rendered at, which the sink must FORWARD rather than choose.
+ *
+ * The reader's ensembles draw every decimal field inside the cell its render stands for, and the
+ * artifact is the only thing that knows how wide that cell is. Two ways for the sink to get this
+ * wrong, and both leave a file that parses: it can drop the option (so a four-decimal run is read as
+ * a three-decimal one, by a factor of ten per digit), or it can carry a default of its own (a second
+ * default, which is the same defect as two owners of a constant).
+ */
+describe('renderDiagnosedCase — the run’s render precision', () => {
+  it('puts the run’s precision in the block, and the block still parses as one case', () => {
+    const record = recordOf();
+    const parsed = parseDiagnosticDump(
+      renderDiagnosedCase(record, {
+        logSignalMode: 'logicHttp',
+        useInjectTime: true,
+        fieldDecimals: 6,
+      }),
+    )[0]!;
+
+    expect(parsed.fieldDecimals).toBe(6);
+  });
+
+  it('renders the FIELDS at that precision too, not only the header', () => {
+    // The header and the digits are one value in the producer; this is the sink's half of that claim,
+    // because a block whose header said six while its numbers carried three would hand the reader a
+    // box three orders of magnitude too wide while looking self-consistent.
+    const record = recordOf();
+    const block = renderDiagnosedCase(record, {
+      logSignalMode: 'logicHttp',
+      useInjectTime: true,
+      fieldDecimals: 6,
+    });
+    const selfAnomaly = /selfAnomaly=([\d.]+)/.exec(block)?.[1] ?? '';
+
+    expect(block).toContain('decimals=6');
+    expect(selfAnomaly.split('.')[1]).toHaveLength(6);
+  });
+
+  it('has NO default of its own: the option is required of every caller', () => {
+    // Read as text, because that is the only thing that can see the difference: an optional field
+    // with a fallback would satisfy every runtime assertion here and become a second default the day
+    // the producer's moves. The sink chooses WHERE the precision goes, never what it is.
+    const source = readFileSync(resolve(HERE, '../src/fse26-diagnose-sink.ts'), 'utf8');
+    expect(source).toMatch(/readonly fieldDecimals: number;/);
+    expect(source).not.toMatch(/fieldDecimals\?:/);
+    expect(source).not.toMatch(/fieldDecimals: number \| undefined/);
   });
 });

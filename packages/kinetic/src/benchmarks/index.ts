@@ -118,6 +118,7 @@ export type {
 // ── FSE'26 diagnostic formatter and its builder ───────────
 
 export {
+  MAX_FIELD_DECIMALS,
   ONSET_FIELD_HALF_QUANTUM,
   SERVICE_FIELD_DECIMALS,
   formatFSE26Diagnostic,

@@ -232,6 +232,23 @@ export interface FSE26DiagnosticInput {
 export const SERVICE_FIELD_DECIMALS = 3;
 
 /**
+ * The finest precision the renderer can express — `Number.prototype.toFixed`'s own upper bound.
+ *
+ * A FACT ABOUT THE RENDERER rather than a policy about how fine a dump should be, and it is exported
+ * for exactly that reason: the CLI that lets a dispatch ask for a precision has to refuse the values
+ * that would make THIS code throw, and the only honest way to know which those are is to take the
+ * bound from the module that calls `toFixed`. A copy would go stale the day the language widened the
+ * range, and it would go stale in the direction that crashes a run rather than the direction that
+ * answers wrongly.
+ *
+ * The bound is also the reason `fieldDecimals` is validated at the entry to
+ * {@link formatFSE26Diagnostic}: `fmt` is called once per field per service, so an impossible value
+ * reaching it fails deep inside the loop, and `toFixed`'s own `RangeError` names the digit count
+ * without saying whose.
+ */
+export const MAX_FIELD_DECIMALS = 100;
+
+/**
  * How much of an ONSET DELAY the render discards: half a millisecond, and it is the same kind of
  * fact as {@link SERVICE_FIELD_DECIMALS} — a property of the artifact, not of this file.
  *
@@ -440,6 +457,17 @@ export function formatFSE26Diagnostic(input: FSE26DiagnosticInput): string {
   // ONE value, read once, and it renders the header AND every decimal field below: the artifact's
   // declared precision and the digits it carries cannot come from two different numbers.
   const decimals = input.fieldDecimals ?? SERVICE_FIELD_DECIMALS;
+  // Refused at the ENTRY rather than in `fmt`, because `fmt` is called once per field per service:
+  // `toFixed` raises `RangeError` outside `[0, MAX_FIELD_DECIMALS]`, and inside the loop that message
+  // reports the digit count without saying whose — while a caller that CLAMPED the value instead
+  // would publish a block whose header misstates its own fields. The formatter cannot choose a
+  // precision, so naming an impossible one is the only honest response.
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_FIELD_DECIMALS) {
+    throw new RangeError(
+      `fieldDecimals must be an integer in [0, ${MAX_FIELD_DECIMALS}], got ${String(decimals)}: ` +
+        `Number.prototype.toFixed cannot render it, so this block has no defined digits`,
+    );
+  }
   lines.push(
     `DIAG datapack=${input.datapack} faultType=${input.faultType} GT=[${input.groundTruthServices.join(
       ', ',

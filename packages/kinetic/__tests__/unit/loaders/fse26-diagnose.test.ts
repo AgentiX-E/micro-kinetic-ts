@@ -14,7 +14,10 @@ import type {
   FSE26DiagnosticInput,
   FSE26DiagnosticService,
 } from '../../../src/benchmarks/fse26-diagnose.js';
-import { formatFSE26Diagnostic } from '../../../src/benchmarks/fse26-diagnose.js';
+import {
+  formatFSE26Diagnostic,
+  MAX_FIELD_DECIMALS,
+} from '../../../src/benchmarks/fse26-diagnose.js';
 
 function service(overrides: Partial<FSE26DiagnosticService>): FSE26DiagnosticService {
   return {
@@ -811,5 +814,56 @@ describe('formatFSE26Diagnostic — the header declares the render precision', (
       input({ fieldDecimals: 6, services: [service({ onsetDelayMs: 123.6 })] }),
     );
     expect(out).toContain('onset=124');
+  });
+});
+
+/**
+ * The precision the renderer REFUSES.
+ *
+ * `Number.prototype.toFixed` accepts `0` to `MAX_FIELD_DECIMALS` digits and raises beyond that, so a
+ * caller that hands the formatter an impossible precision fails inside the per-field loop with a
+ * message about the language rather than about the artifact — or, worse, a caller that clamps it
+ * silently would publish a dump whose header misstates its own fields. The formatter cannot choose a
+ * precision, so refusing an impossible one is the only honest thing it can do.
+ */
+describe('formatFSE26Diagnostic — the precision it refuses', () => {
+  it('takes its bound from the renderer rather than from a number of its own', () => {
+    // The constant is only worth exporting if it really is `toFixed`'s domain, so the claim is
+    // measured against `toFixed` instead of restated. Nothing else can make it go stale.
+    expect(Number.prototype.toFixed.call(1, MAX_FIELD_DECIMALS)).toBeTruthy();
+    expect(() => Number.prototype.toFixed.call(1, MAX_FIELD_DECIMALS + 1)).toThrow(RangeError);
+  });
+
+  it('refuses a precision outside that domain, and names the value it was given', () => {
+    for (const bad of [
+      MAX_FIELD_DECIMALS + 1,
+      200,
+      -1,
+      2.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(
+        () => formatFSE26Diagnostic(input({ fieldDecimals: bad })),
+        `fieldDecimals=${bad}`,
+      ).toThrow(RangeError);
+    }
+    // Named, so the message says which flag is wrong: a bare language `RangeError` from `toFixed`
+    // reports the digit count without saying whose.
+    expect(() => formatFSE26Diagnostic(input({ fieldDecimals: 200 }))).toThrow(/fieldDecimals/);
+  });
+
+  it('does NOT fire on legal output, at either end of the domain', () => {
+    // Both ends are real artifacts — integer rendering is the coarsest box a reader can be handed and
+    // the bound is the finest — so a guard that fired on either would make it unreachable.
+    const coarsest = formatFSE26Diagnostic(
+      input({ fieldDecimals: 0, services: [service({ selfAnomaly: 0.9 })] }),
+    );
+    expect(coarsest).toContain('decimals=0');
+    const rendered = /selfAnomaly=(\S+)/.exec(coarsest)?.[1] ?? '';
+    expect(rendered).toMatch(/^\d+$/);
+    expect(formatFSE26Diagnostic(input({ fieldDecimals: MAX_FIELD_DECIMALS }))).toContain(
+      `decimals=${MAX_FIELD_DECIMALS}`,
+    );
   });
 });

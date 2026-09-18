@@ -28,6 +28,18 @@ export interface DiagnoseDumpOptions {
    * describe the configuration that produced the number next to it.
    */
   readonly useInjectTime: boolean;
+  /**
+   * How many decimals the dump's per-service fields are rendered with.
+   *
+   * REQUIRED of every caller, because the sink is where a run's precision becomes a fact about a file:
+   * the reader's ensembles draw each field inside the cell its render stands for, so a sink with a
+   * default of its own would be a second default — and the failure is silent in both directions, a
+   * four-decimal run read as a three-decimal one having a box three orders of magnitude too wide,
+   * while every file still parses and still declares a precision.
+   *
+   * The VALUE is the caller's to choose; the sink only decides that it travels.
+   */
+  readonly fieldDecimals: number;
 }
 
 /**
@@ -53,6 +65,7 @@ export function diagnoseDumpInput(
     groundTruthServices: record.case.groundTruth.serviceIds ?? [record.case.groundTruth.serviceId],
     logSignalMode: options.logSignalMode,
     injectTimeMs: options.useInjectTime ? record.case.injectTime : 0,
+    fieldDecimals: options.fieldDecimals,
   };
 }
 

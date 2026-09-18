@@ -13,6 +13,7 @@
 import type { FaultPropagationGraph, ServiceCallGraph } from '../../packages/core/src/index.js';
 import {
   buildFSE26Diagnostic,
+  SERVICE_FIELD_DECIMALS,
   SyntheticBenchmarkGenerator,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
@@ -83,7 +84,12 @@ function graphOf(
   };
 }
 
-function render(benchCase: BenchmarkCase, graph: FaultPropagationGraph, withLatency = false) {
+function render(
+  benchCase: BenchmarkCase,
+  graph: FaultPropagationGraph,
+  withLatency = false,
+  fieldDecimals?: number,
+) {
   return buildFSE26Diagnostic({
     case: withLatency
       ? benchCase
@@ -96,6 +102,7 @@ function render(benchCase: BenchmarkCase, graph: FaultPropagationGraph, withLate
     groundTruthServices: [benchCase.groundTruth.serviceId],
     logSignalMode: 'logicHttp',
     injectTimeMs: benchCase.injectTime,
+    ...(fieldDecimals === undefined ? {} : { fieldDecimals }),
   });
 }
 
@@ -211,6 +218,22 @@ describe('buildFSE26Diagnostic — the block the analyzer reads back', () => {
       expect(b.latRise).toBeCloseTo(20, 3);
       expect(b.latEdges).toBe(3);
     }
+  });
+
+  it('carries the caller’s render precision through to the header', () => {
+    // The builder sits between the runner and the formatter, so a field dropped HERE is a run that
+    // rendered at six decimals and published an artifact claiming three: the reader would draw a box
+    // a thousand times too wide for numbers that are actually finer, and every screen would then
+    // report a resolution the artifact does not have.
+    const benchCase = caseOf();
+    const graph = graphOf(benchCase.callGraph);
+
+    expect(parseDiagnosticDump(render(benchCase, graph, false, 6))[0]!.fieldDecimals).toBe(6);
+    // And an OMITTED precision is the producer's default rather than a value of the builder's: the
+    // builder chooses where the number goes, never what it is.
+    expect(parseDiagnosticDump(render(benchCase, graph))[0]!.fieldDecimals).toBe(
+      SERVICE_FIELD_DECIMALS,
+    );
   });
 
   it('renders an unmeasured rise as absent, never as zero', () => {

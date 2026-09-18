@@ -110,3 +110,58 @@ describe('the golden benchmark can emit the diagnostic dump', () => {
     expect(gated?.length).toBe(invocations.length);
   });
 });
+
+/** The precision the dump is rendered at, which a dispatch has to be able to ASK for. */
+const DUMP_ARG = /DIAGNOSE_ARG=\(--diagnose-dump [^)]+\)/g;
+const DECIMALS_FORWARD = '--diagnose-decimals "${{ inputs.diagnose_decimals }}"';
+
+describe('the dump’s render precision is a dispatch input', () => {
+  it('declares the input with an EMPTY default, so a push-triggered run is unchanged', () => {
+    expect(WORKFLOW).toMatch(/^\s{6}diagnose_decimals:/m);
+    const block = /^\s{6}diagnose_decimals:\n((?:\s{8,}[^\n]*\n)+)/m.exec(WORKFLOW)?.[1] ?? '';
+    expect(block).toContain("default: ''");
+    // `''` is a VALUE here rather than an absence, so the description has to say what it selects —
+    // and it has to say that the precision is the ARTIFACT's, because that is what a reader's box
+    // comes from and the whole reason the value is stated in the dump at all.
+    expect(block).toContain('empty');
+    expect(block).toContain('precision');
+  });
+
+  it('forwards it on EVERY dump invocation, exactly one per dump', () => {
+    // One missed suite is one artifact written at the default precision while the others are finer —
+    // and nothing downstream can see it, because every file still parses and still declares a
+    // precision. It would just declare the wrong one. Counted on the ARGUMENT rather than on the flag
+    // name, so a future description mentioning the flag does not make this pass or fail by accident.
+    const dumps = WORKFLOW.match(DUMP_ARG) ?? [];
+    expect(dumps.length).toBeGreaterThan(5);
+    expect(WORKFLOW.match(/DIAGNOSE_ARG\+=\(--diagnose-decimals /g)?.length).toBe(dumps.length);
+  });
+
+  it('ties the flag to the dump’s OWN block, so it can never be passed without one', () => {
+    // Asserted positionally rather than by counting: the precision is an argument OF the dump, and a
+    // forward that drifted into another step's block would still satisfy a total count while handing
+    // two suites the same precision from one input — or handing a suite a flag with no dump to
+    // render. Each block is the text from its `--diagnose-dump` up to the next invocation.
+    const chunks = WORKFLOW.split(/DIAGNOSE_ARG=\(--diagnose-dump /).slice(1);
+    expect(chunks.length).toBeGreaterThan(5);
+    for (const chunk of chunks) {
+      const own = chunk.split('DIAGNOSE_ARG=(')[0]!;
+      expect(own).toContain(DECIMALS_FORWARD);
+      // And inside the gate, so a dispatch that sets only the precision adds no flag: an ungated
+      // forward would be a second way to state the default, on every push and every schedule.
+      expect(own).toContain('if [ -n "${{ inputs.diagnose_decimals }}" ]; then');
+    }
+  });
+
+  it('is a flag the runner actually ACCEPTS, defaulting to the producer’s constant', () => {
+    // A declared input forwarded to a runner that ignores the flag produces a successful dispatch,
+    // an artifact at the default precision, and no failure anywhere. Read as text for the default,
+    // because a hardcoded `3` here would be a second copy of a value the producer owns and would
+    // keep rendering three decimals the day the producer starts rendering four.
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-rcaeval.ts'), 'utf8');
+    expect(runner).toContain("'--diagnose-decimals'");
+    expect(runner).toMatch(/diagnoseDecimals: SERVICE_FIELD_DECIMALS/);
+    expect(runner).not.toMatch(/diagnoseDecimals: 3\b/);
+    expect(runner).toMatch(/parseFieldDecimals\(args\[\+\+i\]!, SERVICE_FIELD_DECIMALS\)/);
+  });
+});

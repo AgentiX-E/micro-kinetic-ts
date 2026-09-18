@@ -50,6 +50,7 @@ import {
   countTraceActivityByService,
   extractExceptionNames,
   RCAEvalLoader,
+  SERVICE_FIELD_DECIMALS,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
   BenchmarkCase,
@@ -71,7 +72,7 @@ import {
   TreePruner,
 } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
-import { parseWeight } from './cli-args.js';
+import { parseFieldDecimals, parseWeight } from './cli-args.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
@@ -240,6 +241,14 @@ interface CliOptions {
    * Empty means "do not write one": the flag allocates the file, not the runner.
    */
   diagnoseDump: string;
+  /**
+   * How many decimals the dump's per-service fields are rendered with.
+   *
+   * Defaults to the producer's {@link SERVICE_FIELD_DECIMALS}, so a dispatch that says nothing gets
+   * exactly the artifact every existing dump is — and the dump STATES the value it got in its header,
+   * so a reader never has to know which invocation produced the file.
+   */
+  diagnoseDecimals: number;
 }
 
 function parseArgs(): CliOptions {
@@ -272,6 +281,7 @@ function parseArgs(): CliOptions {
     fusionCeiling: '',
     routingProbe: '',
     diagnoseDump: '',
+    diagnoseDecimals: SERVICE_FIELD_DECIMALS,
   };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && i + 1 < args.length) opts.dataDir = args[++i]!;
@@ -327,6 +337,11 @@ function parseArgs(): CliOptions {
       opts.routingProbe = args[++i]!;
     } else if (args[i] === '--diagnose-dump' && i + 1 < args.length) {
       opts.diagnoseDump = args[++i]!;
+    } else if (args[i] === '--diagnose-decimals' && i + 1 < args.length) {
+      // Strict, falling back to the SHIPPED precision, for the same reason `--onset-shape` does: a
+      // typo must reproduce a published artifact rather than invent one — and here it must also not
+      // crash the run, which is what an out-of-domain digit count would do inside `toFixed`.
+      opts.diagnoseDecimals = parseFieldDecimals(args[++i]!, SERVICE_FIELD_DECIMALS);
     }
   }
   return opts;
@@ -1453,6 +1468,7 @@ async function main(): Promise<void> {
                   renderDiagnosedCase(record, {
                     logSignalMode: opts.logSignalMode,
                     useInjectTime: !opts.noInjectTime,
+                    fieldDecimals: opts.diagnoseDecimals,
                   }),
                 );
               },
@@ -1532,7 +1548,14 @@ async function main(): Promise<void> {
   // Written once, after the last group: the file is a function of the whole invocation, and the
   // accumulator refuses a second write for exactly the reason this line is not inside the loop.
   if (diagnoseDump !== undefined) {
-    console.log(`  diagnose dump: ${formatDiagnoseDumpLine(diagnoseDump.write())}`);
+    // The precision is named HERE as well as inside the file, because the CI log is what an operator
+    // reads to confirm a dispatch produced the artifact they asked for — and a `--diagnose-decimals`
+    // value that fell back to the shipped default is otherwise only visible after downloading the
+    // dump. The file remains the authority; this is a convenience that can be checked against it.
+    console.log(
+      `  diagnose dump: ${formatDiagnoseDumpLine(diagnoseDump.write())}` +
+        ` at ${opts.diagnoseDecimals} decimals per service field`,
+    );
   }
 
   // ── Fusion-ceiling report ──

@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
         type: string
+      diagnose_decimals:
+        description: "Decimals per service field in the diagnostic dump — the precision of the ARTIFACT rather than of the run. Leave it empty for the runner default (3), which is the artifact every dump written so far is. Raise it only to test a claim about the reader's error bar: every block header states this number, so a reader takes its resolution box from the file itself, and a finer artifact re-opens windows the three-decimal render could not decide. A value the renderer cannot express falls back to the default instead of crashing the run (empty = the runner default)"
+        required: false
+        default: ''
+        type: string
   push:
     paths:
       - '.github/workflows/benchmark-rcaeval.yml'
@@ -110,6 +115,9 @@ jobs:
           # that is silently one configuration is what the fidelity line cannot see.
           if [ -n "${{ inputs.diagnose_dump }}" ]; then
             DIAGNOSE_ARG=(--diagnose-dump rcaeval-diagnose-re1.txt)
+            if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+              DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+            fi
           fi
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-results.txt
       - name: Upload RE1 results
@@ -140,6 +148,9 @@ jobs:
           # that is silently one configuration is what the fidelity line cannot see.
           if [ -n "${{ inputs.diagnose_dump }}" ]; then
             DIAGNOSE_ARG=(--diagnose-dump rcaeval-diagnose-re1-noinject.txt)
+            if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+              DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+            fi
           fi
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-noinject-results.txt
       - name: Upload RE1 no-inject results
@@ -193,6 +204,9 @@ jobs:
           # that is silently one configuration is what the fidelity line cannot see.
           if [ -n "${{ inputs.diagnose_dump }}" ]; then
             DIAGNOSE_ARG=(--diagnose-dump rcaeval-diagnose-re2.txt)
+            if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+              DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+            fi
           fi
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
@@ -223,6 +237,9 @@ jobs:
           # that is silently one configuration is what the fidelity line cannot see.
           if [ -n "${{ inputs.diagnose_dump }}" ]; then
             DIAGNOSE_ARG=(--diagnose-dump rcaeval-diagnose-re2-noinject.txt)
+            if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+              DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+            fi
           fi
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --no-inject-time "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
       - name: Upload RE2 no-inject results
@@ -276,6 +293,9 @@ jobs:
           # that is silently one configuration is what the fidelity line cannot see.
           if [ -n "${{ inputs.diagnose_dump }}" ]; then
             DIAGNOSE_ARG=(--diagnose-dump rcaeval-diagnose-re3.txt)
+            if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+              DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+            fi
           fi
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
@@ -307,6 +327,9 @@ jobs:
           # that is silently one configuration is what the fidelity line cannot see.
           if [ -n "${{ inputs.diagnose_dump }}" ]; then
             DIAGNOSE_ARG=(--diagnose-dump rcaeval-diagnose-re3-noinject.txt)
+            if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+              DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+            fi
           fi
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-noinject-results.txt
       - name: Upload RE3 no-inject results
@@ -338,6 +361,9 @@ jobs:
           # that is silently one configuration is what the fidelity line cannot see.
           if [ -n "${{ inputs.diagnose_dump }}" ]; then
             DIAGNOSE_ARG=(--diagnose-dump rcaeval-diagnose-re3-novelty.txt)
+            if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+              DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+            fi
           fi
           pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-novelty-results.txt
       - name: Upload RE3 novelty results
