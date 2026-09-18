@@ -266,14 +266,16 @@ export function httpDominance(services: DiagnosedCase['services']): number {
  * Two ways to learn the union, in order:
  *
  * 1. the printed `both=` count, which is the primitive and needs no argument;
- * 2. for a dump that predates it, the arithmetic. The union is bracketed by
- *    `max(logic, http) ≤ |logic ∪ http| ≤ min(logic + http, err + fatal)` — the
- *    first because each set is contained in the union, the second because every
- *    admitted line is an ERROR/FATAL line. When the bracket collapses to a point
- *    the value is PROVED, not guessed: measured on the shipped dump, all 71105
- *    services pin it, because a service that floods is a service whose error
- *    lines are all signature lines. When the bracket does not collapse the value
- *    is genuinely unknown, and this returns `undefined` rather than a bound.
+ * 2. for a dump that predates it, the arithmetic ({@link recoveredFlood}). The union is bracketed by
+ *    `max(logic, http) ≤ |logic ∪ http| ≤ min(logic + http, err + fatal)` — the first because each set is
+ *    contained in the union, the second because every admitted line is an ERROR/FATAL line. When the bracket
+ *    collapses to a point the value is PROVED, not guessed: measured on the shipped dump, **72496 of the
+ *    72527 service rows** pin it. When it does not collapse the value is genuinely unknown, and this returns
+ *    `undefined` rather than a bound — which is the state of **31 rows in 31 cases** of that dump, refused
+ *    over an interval 1 to 7 lines wide. The claim this paragraph used to carry ("all 71105 services pin
+ *    it") was false twice: 71105 is the count a parser that drops the UNLABELLED rows produces, and 31 rows
+ *    do not pin. The reach is a printed quantity now ({@link logFloodReach}, one row of the mode screen),
+ *    because a comment is a copy and a copy drifts.
  *
  * @param service - One service's printed counts.
  * @param mode - Which signature set this mode admits.
@@ -284,18 +286,13 @@ function levelOneFlood(
   service: DiagnosedCase['services'][number],
   mode: Exclude<LogTermSource, 'recorded'>,
 ): number | undefined {
-  const logic = service.logicExceptionCount;
-  if (mode === 'count') return logic;
+  if (mode === 'count') return service.logicExceptionCount;
   // `all` admits EVERY ERROR/FATAL line, so its level-1 flood is the whole error count and
   // there is no union to recover — which is why this is the one counting mode measurable on a
   // dump that predates `both=`, and it is read straight off `err`/`fatal`.
   if (mode === 'all') return service.errorCount + service.fatalCount;
-  const http = service.httpExceptionCount;
-  const both = service.bothExceptionCount;
-  if (both !== undefined) return logic + http - both;
-  const lower = Math.max(logic, http);
-  const upper = Math.min(logic + http, service.errorCount + service.fatalCount);
-  return lower === upper ? lower : undefined;
+  const recovered = recoveredFlood(service);
+  return recovered.proved ? recovered.value : undefined;
 }
 
 /**
@@ -344,6 +341,85 @@ function httpVictims(
 }
 
 /**
+ * The union `levelOneFlood` recovers, and how wide the interval it had to be chosen from is.
+ *
+ * One owner for the arithmetic, because two questions are asked of it — may this be read at all, and what
+ * does a refusal cost — and a second copy of the bracket is how the two come to disagree. A `proved` result
+ * is the union; a refused one carries the interval's width, i.e. how many lines the value is UNKNOWN within.
+ * Naming the width is what makes a refusal quantifiable, and it is why the refusal is not merely conservative:
+ * measured on the shipped FSE'26 dump (`35035314921`), the 31 refused rows are refused over intervals of
+ * **1 to 32 lines**, and relative to the floods they divide (31 to 12809) that is one line in seventeen of
+ * them but **a third of the flood** in the smallest (`logic=22 http=11 err=33`, refused over 11) — so the
+ * reader is refusing where the answer would actually move. The cause is that the artifact predates the
+ * printed `both=`, and a fresh dispatch ends the question entirely.
+ *
+ * @param service - One service's printed counts.
+ * @returns The union when the bracket collapsed, or the width of the interval when it did not.
+ */
+function recoveredFlood(
+  service: DiagnosedCase['services'][number],
+):
+  | { readonly proved: true; readonly value: number }
+  | { readonly proved: false; readonly width: number } {
+  const logic = service.logicExceptionCount;
+  const http = service.httpExceptionCount;
+  const declared = service.bothExceptionCount;
+  if (declared !== undefined) return { proved: true, value: logic + http - declared };
+  const lower = Math.max(logic, http);
+  const upper = Math.min(logic + http, service.errorCount + service.fatalCount);
+  return lower === upper ? { proved: true, value: lower } : { proved: false, width: upper - lower };
+}
+
+/** What a mode's reconstruction reaches on a set of services. */
+export interface LogFloodReach {
+  /** Services whose union is proved, or comes from the printed `both=`. */
+  readonly proved: number;
+  /** Services the reconstruction must refuse. */
+  readonly unproved: number;
+  /**
+   * The widest interval a refusal was made over, in lines — `0` when nothing was refused.
+   *
+   * The cost of the refusal, in the units the flood is counted in, so a reader can tell "refused over one
+   * line of a 12802-line flood" from "refused over half of it".
+   */
+  readonly widestRefusal: number;
+}
+
+/**
+ * What a mode's reconstruction reaches on a set of services — the number its readers are entitled to.
+ *
+ * `levelOneFlood`'s doc used to assert that every service of the shipped dump pinned its union, and the
+ * assertion was false twice over: the population it named (71105) was the count a parser that DROPS the
+ * unlabelled rows produces — the artifact's own `services=` sums to **72527** — and even at that population
+ * 31 rows do not pin, in 31 distinct cases, over intervals of 1 to 32 lines. The report showed the
+ * consequence without the mechanism (`[1391/1422 cases]`); this function is the mechanism, and the row prints
+ * both. The modes that need no union (`count`, `all`) are reachable by construction, so their failures are
+ * zero and are returned as such rather than walked.
+ *
+ * @param services - The services a reconstruction would be run over.
+ * @param mode - The mode whose reconstruction is being attempted.
+ * @returns How many services it reaches, how many it must refuse, and the widest refusal.
+ */
+export function logFloodReach(
+  services: DiagnosedCase['services'],
+  mode: Exclude<LogTermSource, 'recorded'>,
+): LogFloodReach {
+  if (mode === 'count' || mode === 'all') {
+    // Neither consults the union, so neither can be refused — by construction, not by luck.
+    return { proved: services.length, unproved: 0, widestRefusal: 0 };
+  }
+  let unproved = 0;
+  let widestRefusal = 0;
+  for (const service of services) {
+    const recovered = recoveredFlood(service);
+    if (recovered.proved) continue;
+    unproved += 1;
+    widestRefusal = Math.max(widestRefusal, recovered.width);
+  }
+  return { proved: services.length - unproved, unproved, widestRefusal };
+}
+
+/**
  * Whether the log term can be reconstructed for a mode from a case's printed fields.
  *
  * Per-mode, because the modes need different quantities: `count` divides by the logic
@@ -358,7 +434,7 @@ export function canReconstructLogFlood(
   services: DiagnosedCase['services'],
   mode: Exclude<LogTermSource, 'recorded'>,
 ): boolean {
-  return services.every((service) => levelOneFlood(service, mode) !== undefined);
+  return logFloodReach(services, mode).unproved === 0;
 }
 
 /**
@@ -1236,6 +1312,27 @@ export interface ModeScreenRow {
    * partial measurement and must say so.
    */
   readonly cases: number;
+  /**
+   * Service rows this row's reconstruction had to REFUSE across the scorable cases.
+   *
+   * The mechanism behind a short row: a mode that re-derives the log term can only be read where the union
+   * between the logic and framework-HTTP signature sets is recoverable, and that union is recoverable only
+   * where the dump prints `both=` or where the printed counts pin it. Measured on the shipped FSE'26 dump
+   * (`35035314921`): **31 rows in 31 cases** are refused, which is exactly why the `logicHttp` rows read
+   * `[1391/1422 cases]` — the reach at the row level, next to the population at the case level.
+   *
+   * `undefined` for the baseline row, which reconstructs nothing and therefore refuses nothing: a `0` there
+   * would read as "every service was proved", a claim about a reconstruction that never ran.
+   */
+  readonly unprovedRows: number | undefined;
+  /**
+   * The widest interval a refusal above was made over, in lines, or `undefined` for the baseline.
+   *
+   * The COST of the refusal in the units the flood is counted in: `[31 rows unproved over ≤ 7 lines]` is a
+   * rounding-error refusal, while the same count over thousands of lines would be a signal the artifact
+   * cannot carry at all. Printed with the count so the number cannot be read as either without the other.
+   */
+  readonly widestRefusal: number | undefined;
   readonly correct: number;
   readonly gainedCases: number;
   readonly regressedCases: number;
@@ -1401,6 +1498,25 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
     // shape, and a dump with nothing scorable is a real input whose report should still
     // say so rather than vanish.
     if (rowCases.length === 0 && entry.source !== 'recorded') continue;
+    // The REACH, which is a different number from the row's size: the row says how many cases survived the
+    // reconstruction, this says how many service rows it refused — the mechanism behind a short row. Measured
+    // per mode over the whole scorable population rather than over `rowCases`, because the refusals are
+    // exactly the cases the row cannot show.
+    const refusals =
+      entry.source === 'recorded'
+        ? undefined
+        : scorable.reduce(
+            (acc, kase) => {
+              const reach = logFloodReach(kase.services, entry.source);
+              return {
+                rows: acc.rows + reach.unproved,
+                widest: Math.max(acc.widest, reach.widestRefusal),
+              };
+            },
+            { rows: 0, widest: 0 },
+          );
+    const unprovedRows = refusals?.rows;
+    const widestRefusal = refusals?.widest;
     // The ROW's threshold, not the options': reading `opts.dominance` here rendered a
     // sweep whose every point was computed at the same threshold — a grid that printed
     // seven identical rows and read as a plateau the mode does not have. The threshold
@@ -1444,6 +1560,8 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
       source: entry.source,
       dominance: entry.dominance,
       cases: rowCases.length,
+      unprovedRows,
+      widestRefusal,
       correct,
       gainedCases,
       regressedCases,
@@ -1790,6 +1908,15 @@ export function formatModeScreen(
     // differences of outcomes, and a reader who cannot see the population cannot tell a
     // mode's effect from the subset it was allowed to see.
     const partial = row.cases < full ? ` [${row.cases}/${full} cases]` : '';
+    // The refusals print beside the population, because a short row without them sends a reader looking
+    // for a defect in the mode rather than for the primitive the artifact does not carry. `both=` absent
+    // is the ONLY way to be refused (a printed overlap is returned directly), so the cause is derivable
+    // from the count and is named rather than guessed.
+    const refused =
+      row.unprovedRows === undefined || row.unprovedRows === 0
+        ? ''
+        : ` [${row.unprovedRows} service row(s) unproved over ≤ ${row.widestRefusal} line(s): ` +
+          'no `both=` in this dump, so the union is bracketed]';
     const regressed =
       row.regressedTypes.length === 0
         ? '0  (PASSES the second half)'
@@ -1799,7 +1926,7 @@ export function formatModeScreen(
     lines.push(
       `  ${name}${String(row.correct).padStart(5)}   ` +
         `+${row.gainedCases}/-${row.regressedCases}`.padEnd(10) +
-        `  ${regressed}${partial}`,
+        `  ${regressed}${partial}${refused}`,
     );
   }
   return lines.join('\n');

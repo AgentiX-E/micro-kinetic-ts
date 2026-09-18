@@ -54,6 +54,7 @@ import {
   httpDominance,
   isPoolDominantLabel,
   latencySlopes,
+  logFloodReach,
   logSlopesForMode,
   modeScreen,
   oracleCensus,
@@ -537,6 +538,85 @@ describe('logSlopesForMode', () => {
       },
     ] as never;
     expect(logSlopesForMode(wider, 'logicHttp', 0.5).get('src')).toBeCloseTo(4 / 4, 12);
+  });
+
+  it('reports the REACH of a mode, and counts a refusal exactly where it refuses', () => {
+    // One walk, two readings: "may this be read at all" is `unproved === 0`, and the count is what a report
+    // needs to say WHY a row is short. The three services below are the three states of the bracket, and two
+    // of them are the shipped dump's own shapes — `logic=3495 http=3499 err=3499` pins at 3499, and
+    // `logic=1407 http=1 err=1408` is refused over a ONE-line interval. Run `35035314921` refuses 31 rows in
+    // 31 cases over intervals of 1 to 32 lines, measured through this same function.
+    const mixed = [
+      {
+        serviceId: 'pinned',
+        logicExceptionCount: 3495,
+        httpExceptionCount: 3499,
+        errorCount: 3499,
+        fatalCount: 0,
+      },
+      {
+        serviceId: 'refused',
+        logicExceptionCount: 1407,
+        httpExceptionCount: 1,
+        errorCount: 1408,
+        fatalCount: 0,
+      },
+      {
+        serviceId: 'declared',
+        logicExceptionCount: 2,
+        httpExceptionCount: 3,
+        bothExceptionCount: 1,
+        errorCount: 10,
+        fatalCount: 0,
+      },
+    ] as never;
+    // `logic=1407 http=1 err=1408` leaves `max = 1407` against `min = 1408`: the union is unknown within
+    // ONE line, which is the shape of all 31 refusals on the shipped dump (widest 7).
+    expect(logFloodReach(mixed, 'logicHttp')).toEqual({ proved: 2, unproved: 1, widestRefusal: 1 });
+    // The boolean is the count, not a second walk that could disagree with it.
+    expect(canReconstructLogFlood(mixed, 'logicHttp')).toBe(false);
+    // The modes that need no union cannot be refused at all — by construction, not usually.
+    expect(logFloodReach(mixed, 'count')).toEqual({ proved: 3, unproved: 0, widestRefusal: 0 });
+    expect(logFloodReach(mixed, 'all')).toEqual({ proved: 3, unproved: 0, widestRefusal: 0 });
+    expect(logFloodReach([], 'logicHttp')).toEqual({ proved: 0, unproved: 0, widestRefusal: 0 });
+  });
+
+  it("prints a mode row's refusals, and gives the baseline none to claim", () => {
+    // The reach has to travel with the row: a reader who sees `[1/2 cases]` and not the refusals looks for a
+    // defect in the MODE rather than for the primitive the artifact does not carry. The baseline row
+    // reconstructs nothing, so it carries `undefined` — a `0` there would read as "every service was proved",
+    // which is a claim about a reconstruction that never ran.
+    const text =
+      block(
+        [
+          { serviceId: 'ts-root', selfAnomaly: 1, logic: 2, http: 3, err: 10, onset: 1 },
+          { serviceId: 'ts-other', selfAnomaly: 0.5, logic: 1, http: 1, err: 2, onset: 2 },
+        ],
+        { omitOverlap: true, groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+      ) +
+      block([{ serviceId: 'ts-root', selfAnomaly: 1, logic: 1, http: 0, onset: 1 }], {
+        datapack: 'dp-2',
+      });
+    const cases = parseDiagnosticDump(text);
+    expect(cases).toHaveLength(2);
+    const screen = modeScreen(cases, OPTS);
+    const logicHttpRow = screen.rows.find((row) => row.source === 'logicHttp')!;
+    // TWO rows refused, in ONE case: the row-level count and the case-level population are different
+    // populations, which is why the report prints both and why a reader must not read one as the other.
+    expect(logicHttpRow.unprovedRows).toBe(2);
+    // The widest refusal, in the lines the flood is counted in: `logic=2 http=3 err=10` leaves
+    // `max = 3` and `min = 5`, i.e. the union is unknown within two lines — the cost, not just the count.
+    expect(logicHttpRow.widestRefusal).toBe(2);
+    expect(logicHttpRow.cases).toBe(1);
+    expect(screen.rows[0]!.unprovedRows).toBeUndefined();
+    expect(screen.rows[0]!.widestRefusal).toBeUndefined();
+    const printed = formatModeScreen(screen);
+    expect(printed).toContain('2 service row(s) unproved over ≤ 2 line(s)');
+    expect(printed).toContain('no `both=` in this dump');
+    expect(printed).toContain('[1/2 cases]');
+    // A mode that needs no union prints no refusal at all, on the same dump.
+    const countRow = screen.rows.find((row) => row.source === 'count')!;
+    expect(countRow.unprovedRows).toBe(0);
   });
 
   it('dominant suppresses framework HTTP when the flood is spread', () => {

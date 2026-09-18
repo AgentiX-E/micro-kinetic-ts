@@ -94,6 +94,25 @@ The refusal is per mode, so `count` remains readable on a dump that cannot suppl
 union at all. On the shipped dump, 31 of 1422 cases stay unpinned and every row that
 needs the union is now measured on the other 1391, labelled `[1391/1422 cases]`.
 
+**What the refusal COSTS, and why it is not merely conservative.** An unproved row is not
+refused over a rounding error in every case: measured through the reader's own
+`logFloodReach`, the 31 rows are refused over intervals of **1 to 32 lines**, and relative
+to the floods they divide (31 to 12809) that is one line in seventeen of them but **a third
+of the flood** in the smallest — `logic=22 http=11 err=33` is refused over 11. So the
+reader is refusing where the answer would actually move, and the cost is a two-percent
+population it cannot read rather than a precision it gave up. The count and the widest
+interval are now printed WITH the row (`[31 service row(s) unproved over ≤ 32 line(s): no
+both= in this dump, so the union is bracketed]`), because the count alone reads as either
+"a rounding error" or "half the flood" depending on who is reading it.
+
+**And the number in the CODE is a copy, which is why it drifted.** `levelOneFlood`'s doc
+asserted that *all 71105 services* pin the union: 71105 is the count a parser that drops
+the UNLABELLED rows produces — the artifact's own `services=` sums to **72527** — and even
+at that population 31 rows do not pin. The document above had both numbers right; the
+comment in the reader did not, and a reader deciding whether to call an unguarded path
+consults the comment. The reach is a printed quantity now (`logFloodReach`, one row of the
+mode screen), so the next drift is a failing test rather than a false sentence.
+
 ## The corrected pre-screen, at the shipped configuration
 
 1391 cases for the rows that rebuild the log term, 1422 for `count` and the baseline;
