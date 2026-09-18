@@ -243,6 +243,21 @@ Before reading any number, check that the input was counted:
   **a column a screen does not read must not spend a draw**, because one shared sequence means an unread
   column's draw shifts every value after it — the box identical and the numbers not
   (`docs/fse26-cv-screen.md`).
+- **AN ARTIFACT MUST DECLARE THE QUANTITY A READER'S ERROR BAR COMES FROM.** The ensembles draw each rendered
+  field inside the cell its print stands for, and they took that cell from a constant the reader and the
+  producer shared — a copy of `3` that is correct only while the two AGREE, and that models the box of the
+  dump the reader EXPECTED: a dump rendered at four decimals would have been drawn at three, by a factor of ten
+  per digit, with nothing in the pipeline saying so. The header already carried `services=` for exactly this
+  reason; it carries `decimals=N` now, `fmt` renders at a PARAMETER, and the box comes from
+  `resolutionBoxFor(screen, precision, …)` with `halfQuantumFor(decimals)` as the ONE owner of a cell's width
+  — replacing a constant whose NAME asserted that there is a single quantum "of the dump". The clearest
+  statement of the change is a lint warning: once the box stopped reading the shared constant, the analyzer
+  imported it and no longer used it. Two traps travel with the fix. A dump that PREDATES the field must fall
+  back to a HISTORICAL binding, not to the current default — the two are equal today, so naming the default
+  would satisfy every assertion and silently re-model the whole archive the day it moves, and only a text
+  check can tell the two bindings apart. And the report must SAY which of the two it used, because an
+  inference is a claim by the reader while a stated precision is a property of the artifact
+  (`docs/fse26-cv-screen.md`).
 
 ## What is left
 
