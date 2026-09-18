@@ -113,6 +113,13 @@ comment in the reader did not, and a reader deciding whether to call an unguarde
 consults the comment. The reach is a printed quantity now (`logFloodReach`, one row of the
 mode screen), so the next drift is a failing test rather than a false sentence.
 
+**And its golden passed.** `c619d1c` touches `benchmarks/src/**` (the printed refusal line
+and the comments), so the paths rule owed one: run **`35345866184`** reproduces **9 of 9
+cells byte-identical** (`RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`,
+`RE3 80.0 / 45.0 / 51.1`), with `CI` (run `35345866197`) and `Release` (run `35345866286`)
+green on the same commit. A cell can move only if the refusal line altered a verdict, and
+it is a report line.
+
 ## The corrected pre-screen, at the shipped configuration
 
 1391 cases for the rows that rebuild the log term, 1422 for `count` and the baseline;
