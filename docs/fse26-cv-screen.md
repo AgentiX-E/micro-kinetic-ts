@@ -1096,14 +1096,42 @@ The run's own config line reads `stabilityWeight=0.007352`, and the single type 
 zero types regressed, so the permission was loose, which is the same direction the one earlier engine
 measurement pointed.
 
-**What this verdict does and does not mean.** It means the intersection instrument has produced its first
-prediction and the prediction held, at case granularity, on both benchmarks — the thing `fse26-onset-verdict.md`
-§6 asked for and could not get for `earliest-only`. It does **not** mean the term ships: the default is still
-`0`, and moving it needs the enrolment discipline every other shipped term has (the weight read out of source
-as text, required to be a key of the recorded-runs table, the workflow descriptions that quote it corrected in
-the same commit) plus **the golden re-measured through the DEFAULT path**, because a candidate measured by
-passing a flag is not a measurement of what ships (the register's own rule, learned from the RCAEval runner's
-`temporalWeight: 0` pin).
+**What this verdict means.** The intersection instrument produced its first prediction and the prediction held,
+at case granularity, on both benchmarks — the thing `fse26-onset-verdict.md` §6 asked for and could not get for
+`earliest-only`. The term then went through the enrolment discipline every other shipped term has, and it ships:
+see §"The enrolment".
+
+**And it has walked the default path**, which is the half a flag cannot supply. Run **`35416576350`** passes NO
+input at all — its config line reads `stabilityWeight=0.007352` because that is what the constant says — and it
+gives **757/1422** against the **same-commit** control **`35416580279`** (`stability_weight=0`, 756): one case,
+`HTTPResponseReplaceCode 160 → 161`, and nothing moving the other way. The push's own golden, run
+**`35416556932`**, is **9 of 9 byte-identical**. A control on the same commit is what makes the +1 one case
+rather than one case plus a drift, and the `defaultPath` sub-record is now required by the guard — a candidate
+measured by passing a flag is a measurement of the flag and not of what ships (the register's own rule, learned
+from the RCAEval runner's `temporalWeight: 0` pin).
+
+### The enrolment: the number that ships is the intersection's, not the window's
+
+Both halves green, so the default moved — and the number is deliberately **not** the one this document's own
+window recommends. `0.030170` is the midpoint of the FSE'26 window and it is a **REJECTED** point (five cases
+gained, four golden cells moved, one by 15.8pp). What ships is the midpoint of the **INTERSECTION**: **`0.007352`**,
+4.1× smaller.
+
+There was no second copy to correct: `DEFAULT_STABILITY_WEIGHT` lives in `pruner.ts` and both runners and the
+CLI's parsed default already read it, so the enrolment was the flip plus its guard rather than a rewiring.
+
+| surface | change |
+| --- | --- |
+| `DEFAULT_STABILITY_WEIGHT` | `0` → `0.007352`; the doc comment that named `0.030170` as "the value to ship" was wrong and is rewritten |
+| both workflow descriptions | they quoted "the runner default, which is 0" — corrected in the same commit, because a description is the documentation a dispatcher reads *instead of* the code |
+| `MEASURED_STABILITY_WEIGHTS` | new table keyed by the weight (no shape half: the engine's `computeStabilityScores` **is** the `rank` reading). A shipped weight must be a key whose run is green on BOTH halves — `regressedTypes === 0` **and** `golden: 'identical'` — **and** which carries a `defaultPath` sub-record |
+| the rejected `0.030170` | kept as DATA with its gain (+5, zero regressed types) and the half it failed. A rejection that lives only in prose is re-proposed as new, and this one's passing half is genuinely attractive |
+| pruner tests | `new TreePruner()` is now the SHIPPED arm, so an ablation names `{ stabilityWeight: 0 }` explicitly, and one assertion pins that the two arms differ by **exactly** the shipped weight |
+| the `stabilityWeight` config line | already printed unconditionally, which is what makes a run at the default distinguishable from its ablation |
+
+**Revert condition, written before the push:** a moved cell on either benchmark reverts the WEIGHT to `0` and
+keeps everything else — the term is inert at weight 0, so the revert is checkable as a diff against measurements
+that already exist (FSE'26 type for type, 25 of 25 at 756, and the golden 9-cell).
 
 ### What this does and does not settle
 

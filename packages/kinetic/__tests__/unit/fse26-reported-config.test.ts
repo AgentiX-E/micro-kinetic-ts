@@ -376,7 +376,19 @@ const MEASURED_STABILITY_WEIGHTS: Record<
     goldenRun: string;
     /** The companion point this one's gain is measured against. */
     control?: string;
-    defaultPath?: { run: string; goldenRun: string; golden: 'identical' | 'moved' };
+    /**
+     * The same configuration reached with NO flag, on both benchmarks.
+     *
+     * `run` is the FSE'26 arm; `control` is the same commit with the term ablated to 0, so the
+     * gain is measured against a companion built from the same sources rather than from a commit
+     * that has drifted.
+     */
+    defaultPath?: {
+      run: string;
+      goldenRun: string;
+      golden: 'identical' | 'moved';
+      control?: string;
+    };
   }
 > = {
   '0': {
@@ -397,6 +409,17 @@ const MEASURED_STABILITY_WEIGHTS: Record<
     run: '35411806524',
     goldenRun: '35411810992',
     control: '35125285784',
+    // The point that SHIPS, reached with NO flag at all. Every measurement above was taken by
+    // passing `stability_weight`, and a flag is a second owner of the value — one that can be
+    // edited apart from the engine's default, which is exactly the failure the RCAEval runner's own
+    // `temporalWeight: 0` pin produced. Its control is on the SAME commit, so the +1 is one case
+    // and not a drift between commits.
+    defaultPath: {
+      run: '35416576350',
+      goldenRun: '35416556932',
+      golden: 'identical',
+      control: '35416580279',
+    },
   },
   '0.030170': {
     topAt1: 761 / 1422,
@@ -544,6 +567,39 @@ describe('FSE26 decisive-stability weight is a measured claim on BOTH halves', (
     expect(recorded!.regressedTypes).toBe(0);
     // The half that rejected the window's own midpoint.
     expect(recorded!.golden).toBe('identical');
+  });
+
+  it('has walked the DEFAULT path — a flag is a second owner of the value', () => {
+    // Every other measurement of this weight was taken by PASSING `stability_weight`, and the
+    // register's own rule is that such a point measures the flag and not what ships: the RCAEval
+    // runner once pinned `temporalWeight: 0` while the engine's default moved, and the run that
+    // followed was a measurement of the pin. So the shipped point must ALSO have been reached with
+    // no input at all, and that arm has to be green on both halves too.
+    const shippedWeight = readConstant(
+      source,
+      DEFAULT_STABILITY_WEIGHT_RE,
+      'DEFAULT_STABILITY_WEIGHT',
+    );
+    const recorded = MEASURED_STABILITY_WEIGHTS[String(shippedWeight)]!;
+    const walked = recorded.defaultPath;
+    expect(
+      walked,
+      `the shipped stability weight ${shippedWeight} has no default-path run`,
+    ).toBeDefined();
+    expect(walked!.golden).toBe('identical');
+    // It must be a DIFFERENT run from the flag arm's, not a second name for it. Without this the
+    // guard is satisfied by the flag measurement it exists to replace — measured: reading
+    // `recorded` instead of `recorded.defaultPath` passes every other assertion here, because
+    // both arms are green and both have a control.
+    expect(walked!.run).not.toBe(recorded.run);
+    expect(walked!.goldenRun).not.toBe(recorded.goldenRun);
+    // And the default path has its OWN control, on the same commit: a one-case gain measured
+    // against a companion from another commit is a gain plus a drift.
+    expect(walked!.control).toBeDefined();
+    expect(walked!.control).not.toBe(recorded.control);
+    // The flag path and the default path reach the same number, which is what makes the flag arm a
+    // measurement of the engine rather than of itself.
+    expect(recorded.hits).toBe(757);
   });
 
   it('keeps the REJECTED window midpoint on the record, with both of its numbers', () => {

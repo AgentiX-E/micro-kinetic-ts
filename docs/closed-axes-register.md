@@ -499,6 +499,9 @@ candidate it named has now CLEARED BOTH HALVES and been ENROLLED** (`fse26-cv-sc
 only move), with the RCAEval golden **9 of 9 byte-identical** (`35411810992`). The prediction was **+1** and
 the run delivered +1 case for case. **So the stability axis's re-opening condition is MET and the term has been ENROLLED**: `DEFAULT_STABILITY_WEIGHT`
 is now `0.007352`, guarded as text and required to be a key of `MEASURED_STABILITY_WEIGHTS` with BOTH halves
-recorded, alongside the REJECTED `0.030170` kept as data. What is still owed is the `defaultPath` sub-record —
-the same configuration reached with NO flag, on both benchmarks — which the runs the flip commit triggers
-supply; a point measured by passing a flag is a measurement of the flag and not of what ships.
+recorded, alongside the REJECTED `0.030170` kept as data. **And it has now walked the DEFAULT path**: run
+`35416576350` passes no input at all and reads `stabilityWeight=0.007352` off the constant, giving `757/1422`
+against the same-commit control `35416580279` at `756` — one case, `HTTPResponseReplaceCode 160 → 161`, nothing
+moving the other way — with the push's own golden (`35416556932`) 9 of 9 byte-identical. That is the
+`defaultPath` sub-record, and the guard now requires it: a point measured by passing a flag is a measurement
+of the flag and not of what ships.
