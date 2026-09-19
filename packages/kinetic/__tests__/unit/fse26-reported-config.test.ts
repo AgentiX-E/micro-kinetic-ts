@@ -283,8 +283,14 @@ const MEASURED_TEMPORAL_PAIRS: Record<
      * claim about fault TYPES on one benchmark, and nothing here could record that the
      * golden 9-cell had moved. It had — by 40.8pp on one cell — and the table said
      * nothing, so the guard said nothing.
+     *
+     * `unmeasured` is the honest reading of a candidate the OTHER half already rejected:
+     * buying a golden run to confirm a rejection the FSE'26 half has delivered is a run
+     * spent to learn nothing, and recording `moved` would be a measurement nobody took.
+     * The guard requires `identical` on the shipped point, so an unmeasured row can never
+     * be green — which is the only property it needs.
      */
-    golden: 'identical' | 'moved';
+    golden: 'identical' | 'moved' | 'unmeasured';
     run: string;
     goldenRun: string;
     /**
@@ -331,6 +337,25 @@ const MEASURED_TEMPORAL_PAIRS: Record<
     run: '35021510164',
     goldenRun: '35029285379',
     control: '35021503281',
+  },
+  // The ONE region the intersection left open on this axis — `earliness`
+  // `[0.007722, 0.010108)` — dispatched at its midpoint and REJECTED on the half that can
+  // be dispatched. Net ZERO cases (757 → 757) with ONE fault type regressed:
+  // `HTTPResponseDelay 52 → 53` and `NetworkBandwidth 13 → 12`. The screen had flagged
+  // exactly this as `costsOnGainSide` (the gain is bought at or above FSE'26's own cap of
+  // `0.005361`), and this time the run AGREED with the caveat — the stability axis's
+  // identical caveat was the one the run rejected, so the two are not the same claim.
+  '0.008915': {
+    shape: 'earliness',
+    topAt1: 757 / 1422,
+    hits: 757,
+    cases: 1422,
+    regressedTypes: 1,
+    golden: 'unmeasured',
+    run: '35420303504',
+    // No golden run, and none bought: the criterion is an AND and this half failed.
+    goldenRun: '',
+    control: '35420305720',
   },
 };
 
@@ -934,6 +959,56 @@ describe('FSE26 temporal prior is a measured PAIR', () => {
     expect(rejected.control).toBe(MEASURED_TEMPORAL_PAIRS['0']!.run);
     // And a rejected candidate has no default path, because it never was one.
     expect(rejected.defaultPath).toBeUndefined();
+  });
+
+  it('keeps the region the intersection left open on the record, rejected by a RUN', () => {
+    // The intersection instrument left exactly one temporal region open — `earliness`
+    // `[0.007722, 0.010108)` — and named the bar it could not decide (`costsOnGainSide`:
+    // the gain is bought at or above FSE'26's own cap of `0.005361`, so whether a case is
+    // cost there is a fault-TYPE count no screen can make). This is the run that made the
+    // count, at the midpoint the solver's own rule recommends.
+    const rejected = MEASURED_TEMPORAL_PAIRS['0.008915']!;
+    expect(rejected.shape).toBe('earliness');
+    expect(rejected.regressedTypes).toBe(1);
+    // Net zero: it gained one type and cost one, so even the type that improved bought
+    // nothing — the control on the same commit (`temporalWeight=0`) totals 757 too. A
+    // rejection that costs a case is not a rejection that gained a case.
+    expect(rejected.hits).toBe(757);
+    // And the record does not CLAIM the other half: it was never run, because a criterion
+    // that is an AND needs only one failure. `unmeasured` is not `moved`.
+    expect(rejected.golden).toBe('unmeasured');
+    expect(rejected.defaultPath).toBeUndefined();
+    // Its control is the same commit with the term ablated — `temporalWeight=0` — so the
+    // trade is measured against a companion built from the same sources.
+    expect(rejected.control).toBe('35420305720');
+  });
+
+  it('refuses to read an UNMEASURED golden half as anything but a failure', () => {
+    // The table now holds a row whose other half was never run, so the guard's own
+    // predicate has to be stated: only `identical` is green, and `unmeasured` is a row that
+    // must never be shipped. Asserted over the whole table rather than one key, because the
+    // next rejected candidate is the one that would otherwise be added quietly.
+    const green = Object.entries(MEASURED_TEMPORAL_PAIRS).filter(
+      ([, m]) => m.golden === 'identical',
+    );
+    // A guard that finds no green row is a guard over an empty table, which passes for
+    // every candidate — the vacuity this file pays attention to.
+    expect(green.length).toBeGreaterThan(0);
+    for (const [weight, m] of Object.entries(MEASURED_TEMPORAL_PAIRS)) {
+      if (m.golden !== 'identical') continue;
+      expect(m.regressedTypes, weight).toBe(0);
+      expect(m.defaultPath, weight).toBeDefined();
+    }
+    // And every row that skipped the other half did so because this half had already
+    // failed: `unmeasured` is a row that was REJECTED, never one that was not checked.
+    const unmeasured = Object.entries(MEASURED_TEMPORAL_PAIRS).filter(
+      ([, m]) => m.golden === 'unmeasured',
+    );
+    expect(unmeasured.length).toBeGreaterThan(0);
+    for (const [weight, m] of unmeasured) {
+      expect(m.regressedTypes, weight).toBeGreaterThan(0);
+      expect(m.defaultPath, weight).toBeUndefined();
+    }
   });
 
   it('names the shipped shape in the workflow input a dispatcher reads', () => {

@@ -428,3 +428,40 @@ exactly that and reported `earliness` admissible from `0.001664`, a weight at wh
 
 **The pre-screen is free and is now the first thing a temporal proposal must run.** One command, four
 populations, no dispatch: a candidate that has not intersected has not stated what it buys where.
+
+## 10. The one region the intersection left open — dispatched, and REJECTED by a run
+
+§9 left exactly one temporal region open: `earliness` `[0.007722, 0.010108)`, worth one case, with a bar the
+screen could not settle — `costsOnGainSide`, because the gain is bought at or above FSE'26's own cap
+(`0.005361`), so whether a case is cost there is a **fault-type count**, and a screen does not make those.
+
+That is the same bar the stability axis carried into its dispatch, and there the run **rejected the caveat**
+(zero regressed types). Here it did not. Dispatched at the midpoint the solver's own rule recommends
+(`0.008915`), with a control on the same commit ablating the term (`temporalWeight=0`):
+
+| arm | run | config | measured |
+| --- | --- | --- | --- |
+| candidate | `35420303504` | `temporalWeight=0.008915 onsetShape=earliness` | **757/1422** |
+| control, same commit | `35420305720` | `temporalWeight=0` | **757/1422** |
+
+Net **zero** cases, and the composition of that zero is the finding:
+
+- `HTTPResponseDelay 52 → 53` (**+1**)
+- `NetworkBandwidth 13 → 12` (**−1**)
+
+**One fault type regressed, so the FSE'26 half of the kill criterion fails — and the criterion is an AND.**
+No golden run was bought to confirm it: a run spent to learn that a rejection holds is a run spent to learn
+nothing, and recording the other half as `moved` would be a measurement nobody took. The row is in
+`MEASURED_TEMPORAL_PAIRS` with `golden: 'unmeasured'`, and the guard requires `identical` on anything that
+ships, so an unmeasured row can never be green — which is the only property it needs.
+
+**Two caveats, two verdicts, and they are not the same claim.** `costsOnGainSide` was loose on the stability
+axis and correct on this one: the same instrument produced both warnings, and only a run can tell which is
+which. That is the reason the instrument prints the caveat instead of applying it.
+
+**The temporal axis is now closed by a RUN rather than by a screen.** `earliest-only` was closed by the
+intersection (the golden caps it at `0.004717`, 2.2× below FSE'26's first gain there); `earliness` was
+admissible on everything a screen can decide and is closed by one fault type at the midpoint; `order` and
+`latest-only` were closed on both sides by the intersection. Reopening needs either a discriminator on the
+onset itself (§"What this does and does not settle") or a weight the intersection does not currently admit —
+and by the register's rule, a narrower number is not that.
