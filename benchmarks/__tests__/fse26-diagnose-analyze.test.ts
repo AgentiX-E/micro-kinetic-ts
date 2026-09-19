@@ -6089,6 +6089,15 @@ describe('--dump repeats, because the criterion is a comparison between benchmar
  */
 describe('the kill criterion — an intersection, not a comparison in prose', () => {
   const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+  /**
+   * A box for the fixtures whose subject is the INTERSECTION ARITHMETIC.
+   *
+   * Every reading carries the box its boundaries were solved in, because a weight is drawn in a quantum —
+   * but these fixtures are about which of two numbers bounds a region, not about which render produced
+   * them. Naming the box once keeps that visible: a test that had to invent one per literal would be
+   * saying something about renders it does not mean.
+   */
+  const BOX: DumpPrecision = { decimals: SERVICE_FIELD_DECIMALS, stated: true };
   /** The gain weight of a two-service case whose base gap is `log1p(a1)` over a slope gap of 1. */
   const gaining = (anomaly: number, datapack: string): DiagnosedCase =>
     cvCase({
@@ -6163,6 +6172,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const readings: readonly CriterionReading[] = [
       {
         artifact: 'a',
+        box: BOX,
         role: 'gain',
         shape: 'flip',
         gainsFrom: 0.007,
@@ -6172,6 +6182,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
       {
         artifact: 'b',
+        box: BOX,
         role: 'protect',
         shape: 'flip',
         gainsFrom: undefined,
@@ -6204,6 +6215,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const readings: readonly CriterionReading[] = [
       {
         artifact: 'a',
+        box: BOX,
         role: 'gain',
         shape: 'flip',
         gainsFrom: 0.004,
@@ -6213,6 +6225,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
       {
         artifact: 'b',
+        box: BOX,
         role: 'protect',
         shape: 'flip',
         gainsFrom: undefined,
@@ -6297,6 +6310,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const protectedGains: readonly CriterionReading[] = [
       {
         artifact: 'golden-re3',
+        box: BOX,
         role: 'protect',
         shape: 'earliness',
         gainsFrom: 0.001664,
@@ -6306,6 +6320,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
       {
         artifact: 'fse26',
+        box: BOX,
         role: 'gain',
         shape: 'earliness',
         gainsFrom: 0.007722,
@@ -6341,6 +6356,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const onlyGain: readonly CriterionReading[] = [
       {
         artifact: 'fse26',
+        box: BOX,
         role: 'gain',
         shape: 'flip',
         gainsFrom: 0.004,
@@ -6363,6 +6379,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const readings: readonly CriterionReading[] = [
       {
         artifact: 'fse26',
+        box: BOX,
         role: 'gain',
         shape: 'flip',
         gainsFrom: 0.004134,
@@ -6372,6 +6389,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
       {
         artifact: 're2',
+        box: BOX,
         role: 'protect',
         shape: 'flip',
         gainsFrom: undefined,
@@ -6382,9 +6400,14 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     ];
     const text = formatCriterionReport(readings, ['fse26', 're2']);
     expect(text).toContain('Kill criterion over 2 artifacts');
-    expect(text).toMatch(/fse26\s+flip\s+gain\s+0\.004134\s+0\.024882\s+0\.003873/);
+    // The BOX comes first after the artifact, because every boundary to its right is a weight drawn inside
+    // it: a row that named the numbers without the box would let two runs of one benchmark at two
+    // precisions print indistinguishable rows, which is the comparison this report is read for.
+    expect(text).toMatch(/fse26\s+3 dec\s+flip\s+gain\s+0\.004134\s+0\.024882\s+0\.003873/);
     // A shape with no gain prints `never` rather than a zero, in the table as well as the verdict.
-    expect(text).toMatch(/re2\s+flip\s+protect\s+never\s+0\.007528\s+0\.069256/);
+    expect(text).toMatch(/re2\s+3 dec\s+flip\s+protect\s+never\s+0\.007528\s+0\.069256/);
+    // And the header names the column, so the number below it is readable rather than inferable.
+    expect(text).toMatch(/artifact\s+box\s+shape\s+role/);
   });
 });
 
@@ -7772,6 +7795,160 @@ describe('the box comes from the artifact’s own declared precision', () => {
     expect(line(legacy())).toContain(
       `±${(2 * halfQuantumFor(HISTORICAL_FIELD_DECIMALS)).toExponential(1)}`,
     );
+  });
+});
+
+/**
+ * One population, one box — and a reading that says WHICH box it was solved in.
+ *
+ * Two defects at one seam, and both were silent:
+ *
+ * - **`dumpPrecisionOf` took the population's box from `cases[0]`.** Its own doc asserts the premise
+ *   (*"the cases of one dump share a header, so they share a precision"*) and then names the case that
+ *   breaks it (*"a set that disagreed would mean two artifacts concatenated"*) — and dismisses that case
+ *   because *"the parser already treats as two blocks"*. **The parser returning two blocks as ONE LIST
+ *   is exactly why the premise has to be checked**: a concatenation at two precisions was read entirely
+ *   at the first block's box, and every error bar drawn from it was out by a power of ten while the
+ *   report still named a precision with confidence.
+ * - **`CriterionReading` identified its artifact by RUN and said nothing about the box**, while the box
+ *   is what every boundary it reports is drawn in. The screen already carried it
+ *   (`GainResolution.box.precision`); the criterion's own structural interface exposed neither, so a
+ *   reader comparing one benchmark's two runs at two precisions had nothing but the labels to tell them
+ *   apart — on the exact comparison this instrument exists to make.
+ *
+ * The box is not re-derived anywhere here: `criterionReadings` reads the SCREEN's own object, so a
+ * reading cannot be handed a box that disagrees with the numbers beside it.
+ */
+describe('one population, one box, and a reading that names it', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  /** One dumped block, at a chosen declaration; `undefined` strips the field to what an archive is. */
+  const blockText = (decimals: number | undefined, datapack: string): string => {
+    const text = dump({
+      datapack,
+      groundTruthServices: ['ts-svc-0'],
+      services: [
+        serviceLine({ serviceId: 'ts-svc-0', selfAnomaly: 0.5, logScore: 0 }),
+        serviceLine({ serviceId: 'ts-svc-1', selfAnomaly: 0, logScore: 0 }),
+      ],
+      topPredictions: ['ts-svc-1'],
+      ...(decimals === undefined ? {} : { fieldDecimals: decimals }),
+    });
+    // `$` with `m`, because the header is the block's FIRST line and an unanchored strip would silently
+    // do nothing — which is how a "legacy" fixture stays modern and its test never reaches the fallback.
+    return decimals === undefined ? text.replace(/ decimals=\d+$/m, '') : text;
+  };
+
+  /** A population built from block TEXTS, so the parser's own block handling is part of the fixture. */
+  const blocks = (...specs: readonly (readonly [number | undefined, string])[]): DiagnosedCase[] =>
+    parseDiagnosticDump(
+      specs.map(([decimals, datapack]) => blockText(decimals, datapack)).join('\n'),
+    );
+
+  it('REFUSES a population whose cases declare DIFFERENT boxes', () => {
+    // The counter that must be able to fail. Two blocks, two precisions, one list: there is no single
+    // box for this population, and answering with the first case's number is a confident claim about
+    // 1422 error bars drawn in a quantum only some of them have.
+    const mixed = blocks([4, 'dp-fine'], [3, 'dp-coarse']);
+    expect(mixed.map((c) => c.fieldDecimals)).toEqual([4, 3]);
+    const message = (() => {
+      try {
+        dumpPrecisionOf(mixed);
+        return '';
+      } catch (error) {
+        return String(error);
+      }
+    })();
+    expect(message).toMatch(/one box/);
+    expect(message).toContain('4');
+    expect(message).toContain('3');
+    expect(message).toMatch(/1 of 2/);
+  });
+
+  it('reports a population that only PARTLY states its precision as INFERRED', () => {
+    // Effective precisions agree (3 either way), so there is one box and no refusal — but the artifact as
+    // a whole did not SAY so, and the two facts have different consequences. `stated` is a fact about the
+    // population, so it is true only when every case carries the field.
+    const half = blocks([3, 'dp-stated'], [undefined, 'dp-silent']);
+    expect(half.map((c) => c.fieldDecimals)).toEqual([3, undefined]);
+    expect(dumpPrecisionOf(half)).toEqual({
+      decimals: HISTORICAL_FIELD_DECIMALS,
+      stated: false,
+    });
+    // And a population that states it uniformly is still STATED, so the rule is not "any silence wins".
+    expect(dumpPrecisionOf(blocks([3, 'dp-a'], [3, 'dp-b']))).toEqual({
+      decimals: 3,
+      stated: true,
+    });
+  });
+
+  /** A case the stability screen can solve, at a chosen declaration. */
+  const at = (fieldDecimals: number): DiagnosedCase => ({
+    ...cvCase({
+      cvs: [0, 1],
+      anomalies: [0, 1],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-1',
+    }),
+    fieldDecimals,
+  });
+
+  it('reads the box from the SCREEN’s own object, not from a re-derivation', () => {
+    // `toBe`, not `toEqual`: the reading must carry the very object the screen solved in. An equal copy
+    // would agree today and diverge the moment a screen is solved at an `extraDigits` refinement — and
+    // the object identity is what makes "the reading cannot be handed a different box" a fact.
+    for (const decimals of [3, 4, 6]) {
+      const screens = cvShapeMenu([at(decimals)], WEIGHTS);
+      const readings = criterionReadings(screens, `run-${decimals}`, 'gain');
+      expect(readings).toHaveLength(screens.length);
+      for (let i = 0; i < readings.length; i++) {
+        expect(readings[i]!.box).toBe(screens[i]!.resolution.box.precision);
+        expect(readings[i]!.box).toEqual({ decimals, stated: true });
+      }
+    }
+  });
+
+  it('prints the box PER READING, so two runs at two precisions are tellable apart', () => {
+    // The comparison this instrument exists to make is one benchmark solved in two boxes, and until the
+    // reading carried its box the report's rows differed only by the label a caller had chosen.
+    const coarse = criterionReadings(cvShapeMenu([at(3)], WEIGHTS), 'run-3dec', 'gain');
+    const fine = criterionReadings(cvShapeMenu([at(4)], WEIGHTS), 'run-4dec', 'gain');
+    const text = formatCriterionReport([...coarse, ...fine], ['run-3dec', 'run-4dec']);
+    const rowOf = (label: string): string =>
+      text.split('\n').find((line) => line.includes(label)) ?? '';
+    expect(rowOf('run-3dec')).toContain('3 dec');
+    expect(rowOf('run-4dec')).toContain('4 dec');
+    expect(text).not.toContain('dec*');
+  });
+
+  it('marks an INFERRED box, so an inference cannot pass as the artifact’s statement', () => {
+    const legacy: DiagnosedCase[] = [
+      {
+        ...cvCase({
+          cvs: [0, 1],
+          anomalies: [0, 1],
+          groundTruth: 'ts-svc-0',
+          prediction: 'ts-svc-1',
+        }),
+        fieldDecimals: undefined,
+      },
+    ];
+    const reading = criterionReadings(cvShapeMenu(legacy, WEIGHTS), 'silent', 'gain')[0]!;
+    expect(reading.box).toEqual({ decimals: HISTORICAL_FIELD_DECIMALS, stated: false });
+    const text = formatCriterionReport([reading], ['silent']);
+    expect(text).toContain(`${HISTORICAL_FIELD_DECIMALS} dec*`);
+    // The marker is not decoration: it is what tells a reader that the box was SUPPLIED by the reader
+    // rather than stated by the artifact, and the legend says which value was supplied.
+    expect(text).toMatch(/does not state its precision/);
+  });
+
+  it('keeps both shapes of one artifact in THAT artifact’s box', () => {
+    // A verdict intersects shapes that were solved together, so a per-shape box that disagreed with its
+    // own menu would make the intersection a comparison of two quanta — the defect one layer up.
+    const screens = cvShapeMenu([at(4)], WEIGHTS);
+    const readings = criterionReadings(screens, 'run-4dec', 'gain');
+    expect(new Set(readings.map((r) => r.box.decimals))).toEqual(new Set([4]));
+    expect(readings.length).toBeGreaterThan(1);
   });
 });
 

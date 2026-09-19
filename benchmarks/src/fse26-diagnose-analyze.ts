@@ -4366,6 +4366,18 @@ export type CriterionRole =
 export interface CriterionReading {
   /** The artifact, by the RUN it came from. A copy's filename is not a provenance. */
   readonly artifact: string;
+  /**
+   * The BOX every boundary below was solved in — the artifact's own declared precision.
+   *
+   * A WEIGHT is a claim about a quantum: the three fields below are all "the first weight at which
+   * something happens", and what happens depends on the cell the printed digits stand for. Two runs of ONE
+   * benchmark at two precisions therefore produce two sets of boundaries that are indistinguishable in a
+   * report that carries only a label — which is precisely the comparison this instrument exists to make,
+   * and the comparison the record makes most often (every `needs d` prediction is one). It is read from the
+   * SCREEN's own resolution rather than re-derived, so a reading cannot carry a box that disagrees with the
+   * numbers beside it.
+   */
+  readonly box: DumpPrecision;
   /** The shape this reading is for. Two shapes are two different questions and are never mixed. */
   readonly shape: string;
   /** Which half of the criterion this artifact was read for. */
@@ -4409,6 +4421,15 @@ export interface CriterionReading {
 export interface CriterionScreen {
   readonly shape: string;
   readonly solved: { readonly window: ZeroRegressionWindow };
+  /**
+   * The BOX the window was solved in, reached through the screen's own resolution.
+   *
+   * Named here because the criterion is a question about a WEIGHT and a weight is drawn in a quantum: a
+   * reading built from this screen has to be able to say which box its boundaries belong to, and it must
+   * take that from the object the error bars were drawn from. `GainResolution.box.precision` IS the
+   * artifact's declared precision, so this is a path to the owner and not a second opinion about it.
+   */
+  readonly resolution: { readonly box: { readonly precision: DumpPrecision } };
 }
 
 /** What one artifact's menu says, as readings the criterion can intersect. */
@@ -4427,6 +4448,10 @@ export function criterionReadings(
     }
     return {
       artifact,
+      // The screen's OWN precision object, by reference: a reading whose box were a fresh
+      // `dumpPrecisionOf(...)` would agree with the screen today and could disagree the moment a screen is
+      // solved at a refinement, which is the failure the box exists to make visible.
+      box: screen.resolution.box.precision,
       shape: screen.shape,
       role,
       gainsFrom: Number.isFinite(first) ? first : undefined,
@@ -4588,21 +4613,34 @@ export function formatCriterionReport(
 ): string {
   const lines: string[] = [];
   const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'never');
+  // The box, in the reader's own terms. `*` marks an INFERRED precision — the artifact did not state it and
+  // the reader supplied the historical value — because a box the reader supplied is a different claim from
+  // one the artifact made, and a column that could not tell them apart would let an inference pass as a
+  // measurement. Every window below was solved inside this box, so it is printed beside each of them.
+  const boxOf = (one: CriterionReading): string =>
+    `${one.box.decimals} dec${one.box.stated ? '' : '*'}`;
   lines.push(
     `Kill criterion over ${artifacts.length} artifacts — a weight that gains a case on the one named ` +
       'FIRST and costs every other none:',
   );
   lines.push(
-    '  artifact                 shape          role     gains from      loses from      permits a loss from',
+    '  artifact                 box       shape          role     gains from      loses from      permits a loss from',
   );
   for (const artifact of artifacts) {
     for (const one of readings.filter((r) => r.artifact === artifact)) {
       lines.push(
-        `  ${artifact.padEnd(24)}${one.shape.padEnd(15)}${one.role.padEnd(9)}` +
+        `  ${artifact.padEnd(24)}${boxOf(one).padEnd(10)}${one.shape.padEnd(15)}${one.role.padEnd(9)}` +
           `${at(one.gainsFrom ?? Number.POSITIVE_INFINITY).padStart(11)}  ` +
           `${at(one.losesFrom).padStart(14)}  ${at(one.permittedFrom).padStart(18)}`,
       );
     }
+  }
+  if (readings.some((one) => !one.box.stated)) {
+    lines.push(
+      '  * this artifact does not state its precision, so it is read at the ' +
+        `${HISTORICAL_FIELD_DECIMALS} every dump predating the field was rendered with — the BOX is the ` +
+        "reader's claim rather than the artifact's, and the two differ whenever the producer's default moves.",
+    );
   }
   for (const verdict of criterionVerdicts(readings)) {
     const gain =
@@ -4911,19 +4949,47 @@ export interface DumpPrecision {
 /**
  * The precision of one dump, from the cases it was parsed into — the ONE place `undefined` becomes a number.
  *
- * The cases of one dump share a header, so they share a precision; a set that disagreed would mean two
- * artifacts concatenated, which the parser already treats as two blocks. The first case's answer is therefore
- * the answer, and an EMPTY set is reported as an unstated historical render because there is no artifact to
- * have stated anything — a caller with no cases has no numbers to draw either.
+ * The cases of one dump share a header, so they share a precision — and that premise is now CHECKED
+ * rather than assumed. It used to be argued and then waved through: *"a set that disagreed would mean two
+ * artifacts concatenated, which the parser already treats as two blocks."* The parser does treat them as
+ * two blocks — **and hands them back as ONE case list**, which is exactly why the check has to exist here.
+ * A file holding a three-decimal block and a four-decimal one was read entirely at the FIRST block's box,
+ * so every error bar drawn from the second block's cases was out by a power of ten while the report named a
+ * precision with confidence. A population that cannot be described by one quantum has no answer to give,
+ * so it is REFUSED: no number this function could return would be true of every case.
+ *
+ * `stated` is a fact about the POPULATION, so it is true only when every case carries the field. A set that
+ * is half stated and half silent has one effective precision but no declaration, and the two have different
+ * consequences: a stated precision is a property of the artifact, an inferred one is a claim the READER is
+ * making. An EMPTY set is unstated for the same reason there is no artifact to have said anything — a
+ * caller with no cases has no numbers to draw either.
  *
  * @param cases - The parsed cases of one dump.
  * @returns What the artifact declared, or the historical precision with `stated: false`.
+ * @throws When the cases do not agree on an effective precision.
  */
 export function dumpPrecisionOf(cases: readonly DiagnosedCase[]): DumpPrecision {
-  const declared = cases[0]?.fieldDecimals;
-  return declared === undefined
-    ? { decimals: HISTORICAL_FIELD_DECIMALS, stated: false }
-    : { decimals: declared, stated: true };
+  const seen = new Map<number, number>();
+  let everyCaseStated = true;
+  for (const kase of cases) {
+    const decimals = kase.fieldDecimals ?? HISTORICAL_FIELD_DECIMALS;
+    seen.set(decimals, (seen.get(decimals) ?? 0) + 1);
+    if (kase.fieldDecimals === undefined) everyCaseStated = false;
+  }
+  if (seen.size > 1) {
+    // Named with their counts, because which block is the larger one is what tells a reader whether the
+    // concatenation put the artifact they meant first or second.
+    const parts = [...seen.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([decimals, n]) => `${decimals} decimals (${n} of ${cases.length})`)
+      .join(' and ');
+    throw new Error(
+      `a population cannot be solved in one box: its cases declare ${parts}. Split the artifact by ` +
+        'block — error bars drawn from one quantum across two renders are wrong by a power of ten.',
+    );
+  }
+  if (seen.size === 0) return { decimals: HISTORICAL_FIELD_DECIMALS, stated: false };
+  return { decimals: [...seen.keys()][0]!, stated: everyCaseStated };
 }
 
 /**

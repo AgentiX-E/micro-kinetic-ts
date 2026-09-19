@@ -361,6 +361,25 @@ Before reading any number, check that the input was counted:
   lets the gain artifact's own permission BOUND the other half (stability printed `NO ADMISSIBLE WEIGHT` for
   both shapes when both have a region). Declare the role per reading, print it, and state which half an empty
   side leaves unread — an absent bound is not a permissive one.
+- **A READER'S BOX IS PART OF EVERY NUMBER IT REPORTS, AND THE CRITERION DROPPED IT IN TWO PLACES.** Both were
+  silent. **First**, `dumpPrecisionOf` took the population's box from `cases[0]`, and its own doc asserted the
+  premise — *"the cases of one dump share a header, so they share a precision"* — while NAMING the case that
+  breaks it (*"a set that disagreed would mean two artifacts concatenated"*) and waving it through, because
+  *"the parser already treats as two blocks"*. **The parser handing those two blocks back as ONE case list is
+  precisely why the premise had to be checked**: a file holding a three-decimal block and a four-decimal one
+  was read entirely at the FIRST block's box, so every error bar drawn from the second block's cases was out
+  by a power of ten while the report named a precision with confidence. It now REFUSES a population that no
+  single quantum describes, naming each precision with its count — a number it could return would be true of
+  some cases and false of the rest. **Second**, `CriterionReading` identified its artifact by RUN and said
+  nothing about the box, though a weight is drawn in a quantum and every boundary in the row is one. The
+  screen already carried it (`GainResolution.box.precision`); the criterion's structural interface exposed
+  only `{shape, solved}`, so one benchmark's two runs at two precisions printed rows that differed only by the
+  label a caller had chosen — on the exact comparison this instrument exists to make, and the one every
+  `needs d` prediction is. The reading now carries the screen's OWN object (**not** a re-derivation, asserted
+  by identity) and the report prints it per row, with `*` and a legend for an INFERRED box, because a box the
+  reader SUPPLIED is a different claim from one the artifact made. `stated` is a fact about the POPULATION, so
+  it is true only when EVERY case carries the field — a set that is half stated has one effective precision
+  and no declaration.
 - **A POPULATION ASSEMBLED FROM A TABLE MISSES EXACTLY THE MEMBER THAT WAS NEVER IN ONE.** The refinement
   sweep's stated population is *every window the verdict refuses*, and its table listed the FSE'26 temporal
   screen, `re1`'s temporal and stability screens and `re3`/`re3-noinject`'s — missing FSE'26's STABILITY
@@ -565,3 +584,27 @@ against the same-commit control `35416580279` at `756` — one case, `HTTPRespon
 moving the other way — with the push's own golden (`35416556932`) 9 of 9 byte-identical. That is the
 `defaultPath` sub-record, and the guard now requires it: a point measured by passing a flag is a measurement
 of the flag and not of what ships.
+
+**AND THE CLOSURE HAS NOW BEEN RE-SOLVED IN A TEN-TIMES-FINER BOX, which is the one thing those numbers had
+never been asked.** Every window above was computed from a dump rendered at three decimals, and the two
+preceding iterations proved twice over that a finer render MOVES a window rather than refining it. There is
+now a four-decimal FSE'26 artifact of the SAME 1422 cases (run `35436069639`, identical fault-type
+histogram), so the gain half was re-solved in it against the identical golden protect half:
+
+| gain artifact | `flip` | `rank` |
+| --- | --- | --- |
+| 3 dec (`35107871516`) | gains from `0.004134`, `[0.004134, 0.007528)` width `0.003395` | gains from `0.006672`, `[0.006672, 0.008032)` width `0.001360` |
+| 4 dec (`35436069639`) | gains from `0.003765`, `[0.003765, 0.007528)` width `0.003764` | gains from `0.006096`, `[0.006096, 0.008032)` width `0.001937` |
+
+**`0.007352` is inside BOTH shapes' regions in BOTH boxes, so the weight is not box-fragile and the axis stays
+closed.** Only the GAIN end moves; both ceilings are identical (`0.007528` from `re2`, `0.008032` from `re1`)
+because the protect half is the same three-decimal golden in both invocations — a clean decomposition worth
+stating: **a window's gain end is a function of the gain artifact's box, its ceiling a function of the protect
+artifacts' box.** The finer render widens the region at the gain end rather than narrowing it (`flip`
+`0.004134 → 0.003765`, `rank` `0.006672 → 0.006096`), so what moves is not admissibility but the weight's
+POSITION in it: `0.007352` is the `rank` region's midpoint at three decimals (50.0% up) and sits 64.8% up the
+finer one. **The midpoint rationale is therefore box-dependent and the weight is not** — and the weight is
+what the criterion asks about, since the render is a dump-only parameter that moves no cell (the same
+dispatch that produced this dump is 9 of 9 golden byte-identical and reports `correct at 0 756`, unchanged).
+A candidate at the finer midpoint `0.007064` is a NAMED follow-up, not a re-opening: it would have to clear
+the criterion's own two halves by a dispatch, and the criterion is satisfied where the weight already is.
