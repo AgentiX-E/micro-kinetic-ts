@@ -1,0 +1,350 @@
+/**
+ * FSE'26 RCABench runner — fault-propagation-aware microservice RCA.
+ *
+ * RCABench (arXiv:2510.04711) is the hardest public RCA target: 1,430 validated
+ * failure cases on Train Ticket (50+ services), 25 fault types across 6
+ * categories, with dynamic workloads and hierarchical ground-truth labels. The
+ * 11 SOTA models re-evaluated on it average only 0.21 Top@1 (best 0.37).
+ *
+ * The Parquet bridge (`scripts/fse26_convert.py`) normalises each datapack into
+ * a single `case.json`; this runner consumes that JSON via {@link FSE26Loader}
+ * and scores the production {@link TreePruner} engine against the benchmark's
+ * dual-label ground truth (network faults accept BOTH the injection point's
+ * source and target service).
+ *
+ * Unlike the RCAEval runner, the engine is invoked directly (not through the
+ * {@link BenchmarkRunner}) so the dual-label accepted set is scored exactly —
+ * the shared runner scores against `groundTruth.serviceId` (the FIRST label),
+ * which would under-count a correct target-service prediction on a network
+ * fault.
+ *
+ * Usage:
+ *   pnpm exec tsx benchmarks/src/run-fse26.ts [--data-dir <json-root>] \
+ *     [--max-cases N] [--log-weight <w>] [--no-rank-normalization] [--output <path>] \
+ *     [--diagnose <fault-types>] [--diagnose-limit N] [--diagnose-decimals N] \
+ *     [--drop-metrics <names>]
+ *
+ * `--drop-metrics` is the component-ablation switch: it filters the named
+ * metric series out of every case before scoring, so a ranking change can be
+ * attributed to one of the bridge's metric sources without a cache rebuild.
+ * `--diagnose-decimals` sets the precision the diagnostic dump DECLARES and
+ * renders at; it is what a reader's error bar is drawn from.
+ * Read-only: never writes to the data directory.
+ *
+ * @module benchmarks/run-fse26
+ */
+
+import { readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import type { FaultPropagationGraph, RootCauseResult } from '../../packages/core/src/index.js';
+
+import type { BenchmarkCase, FSE26RawCase } from '../../packages/kinetic/src/benchmarks/index.js';
+import {
+  buildFSE26Diagnostic,
+  computeAvgAtKMultiLabel,
+  dropFSE26MetricNames,
+  FSE26Loader,
+  toFaultGraphOptions,
+} from '../../packages/kinetic/src/benchmarks/index.js';
+import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+import { buildFse26EngineOptions } from './fse26-engine-options.js';
+
+import { parseFSE26Args } from './fse26-cli.js';
+import {
+  buildFSE26Report,
+  formatFailedEdgeCoverageLine,
+  formatFSE26ConfigLine,
+  summariseFailedEdgeCoverage,
+  type FSE26RunConfig,
+} from './fse26-report.js';
+
+/**
+ * Discover every case directory (a `case.json` present) under `dataDir`, via a
+ * breadth-first walk. Datapack directories are flat under the bridge output
+ * root, but the walk tolerates a nested layout without matching on names.
+ */
+function discoverCaseDirs(dataDir: string): string[] {
+  const dirs: string[] = [];
+  const queue = [dataDir];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    let entries;
+    try {
+      entries = readdirSync(cur, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    const hasCase = entries.some((e) => e.isFile() && e.name === 'case.json');
+    if (hasCase) {
+      dirs.push(cur);
+      continue;
+    }
+    for (const e of entries) {
+      if (e.isDirectory() && !e.name.startsWith('.')) queue.push(join(cur, e.name));
+    }
+  }
+  dirs.sort();
+  return dirs;
+}
+
+/** The published FSE'26 anchor: 11 SOTA models average 0.21 Top@1 (best 0.37). */
+const ANCHOR_AVG = 0.21;
+const ANCHOR_BEST = 0.37;
+
+/** Per-fault-type accuracy accumulator. */
+interface FaultCell {
+  total: number;
+  correct: number;
+}
+
+/**
+ * Render the `--diagnose` block for one case.
+ *
+ * A thin adapter over the shared builder, which lives in the engine's own package: the dump's
+ * writer is ONE function, and this runner passes what only it knows — the raw datapack's labels and
+ * the dual-label accepted set it scored against — while every per-service magnitude comes from the
+ * graph the engine built.
+ *
+ * `fieldDecimals` is threaded rather than defaulted, for the reason the shared input now REQUIRES
+ * it: the dump declares its own precision and a reader derives its error bar from that declaration,
+ * so an omission here is not a cosmetic default but a different artifact under the same name.
+ */
+function buildDiagnostic(
+  raw: FSE26RawCase,
+  benchCase: BenchmarkCase,
+  faultGraph: FaultPropagationGraph,
+  ranking: RootCauseResult[],
+  logSignalMode: string,
+  fieldDecimals: number,
+): string {
+  return buildFSE26Diagnostic({
+    case: benchCase,
+    graph: faultGraph,
+    ranking,
+    callGraph: benchCase.callGraph,
+    datapack: raw.datapack,
+    faultType: raw.faultType,
+    groundTruthServices: raw.groundTruthServices,
+    logSignalMode,
+    injectTimeMs: benchCase.injectTime > 0 ? benchCase.injectTime : 0,
+    fieldDecimals,
+  });
+}
+
+async function main(): Promise<void> {
+  const opts = parseFSE26Args(process.argv.slice(2));
+  const loader = new FSE26Loader();
+  const dropSet = new Set(opts.dropMetrics);
+
+  // The run configuration, built once. Both renderings of it — the header line
+  // and the `config` object in the JSON artifact — come from this object, so
+  // they cannot disagree about the mode; that is how the JSON lost `logMode`
+  // while the line kept it, leaving two artifacts 24.2pp apart with byte-equal
+  // `config` blocks.
+  const runConfig: FSE26RunConfig = {
+    logWeight: opts.logWeight,
+    logSignalMode: opts.logMode,
+    rankNormalization: opts.rankNormalization,
+    dropMetrics: opts.dropMetrics,
+    metricRiseCeiling: opts.metricRiseCeiling,
+    metricFleetBaseline: opts.metricFleetBaseline,
+    failedEdgeWeight: opts.failedEdgeWeight,
+    failedEdgeMode: opts.failedEdgeMode,
+    failedEdgeMinRecords: opts.failedEdgeMinRecords,
+    latWeight: opts.latWeight,
+    latMinRise: opts.latMinRise,
+    poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
+    stabilityWeight: opts.stabilityWeight,
+    temporalWeight: opts.temporalWeight,
+    onsetShape: opts.onsetShape,
+  };
+
+  // Production ranking config: the log signal is shipped enabled (benchmark
+  // #220 net-positive, zero regression); every other causal prior is opt-in.
+  // Rank normalization is load-bearing on Train Ticket's large topologies.
+  const engineOptions = buildFse26EngineOptions(opts);
+  const pruner = new TreePruner(engineOptions.signals, engineOptions.topology);
+
+  console.log("Micro-Kinetic — FSE'26 RCABench");
+  console.log('═'.repeat(65));
+  console.log(`Data:   ${opts.dataDir}`);
+  console.log(formatFSE26ConfigLine(runConfig));
+  if (opts.dropMetrics.length > 0) {
+    console.log(`Ablation: dropping metric names [${opts.dropMetrics.join(', ')}]`);
+  }
+  console.log(`Anchor: SOTA avg=${ANCHOR_AVG} best=${ANCHOR_BEST} Top@1`);
+  console.log('═'.repeat(65));
+
+  const dirs = discoverCaseDirs(opts.dataDir);
+  const selected = opts.maxCases > 0 ? dirs.slice(0, opts.maxCases) : dirs;
+  console.log(`Cases discovered: ${dirs.length}; evaluated: ${selected.length}`);
+  console.log('═'.repeat(65));
+
+  // ── Per-case accumulation (small; the loaded cases are released per case) ──
+  const predictionsPerCase: string[][] = [];
+  const acceptedPerCase: string[][] = [];
+  const faultTypeOfCase: string[] = [];
+  // One compact projection per case for the failed-edge coverage counter: the
+  // metric KEYS only, because a case's series are large and are released after
+  // scoring. See summariseFailedEdgeCoverage for why the input is counted at all.
+  const failedEdgeCases: Array<{
+    failedTraceEdges?: BenchmarkCase['failedTraceEdges'];
+    metricKeys: ReadonlySet<string>;
+  }> = [];
+  const faultCells = new Map<string, FaultCell>();
+  let loadErrors = 0;
+  let engineErrors = 0;
+  let emptyGraphs = 0;
+  const diagnosed = new Map<string, number>();
+
+  for (const dir of selected) {
+    let raw: FSE26RawCase;
+    try {
+      raw = loader.loadCase(dir);
+    } catch (err) {
+      loadErrors++;
+      // Surface the first few failures verbatim — a silent count hides the
+      // root cause (e.g. non-finite values producing unparseable JSON).
+      if (loadErrors <= 3) {
+        console.error(`[loadError] ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      continue;
+    }
+    if (dropSet.size > 0) raw = dropFSE26MetricNames(raw, dropSet);
+    const benchCase = loader.toBenchmarkCase(raw);
+    // Count what the ranking can actually use, from the SAME node set the signal
+    // filters on (`callGraph.nodes` is exactly the metric-keyed service set), so
+    // the counter cannot disagree with the signal about what was usable.
+    failedEdgeCases.push({
+      failedTraceEdges: benchCase.failedTraceEdges,
+      metricKeys: new Set(benchCase.callGraph.nodes.keys()),
+    });
+    // Dual-label accepted set: the raw case's full ground-truth list (two
+    // labels for network faults, one otherwise).
+    const accepted =
+      raw.groundTruthServices.length > 0
+        ? [...raw.groundTruthServices]
+        : [benchCase.groundTruth.serviceId];
+    const faultType = benchCase.groundTruth.faultType ?? 'unknown';
+
+    let ranking: RootCauseResult[] = [];
+    let faultGraph: FaultPropagationGraph | undefined;
+    try {
+      if (benchCase.callGraph.edges.length === 0) {
+        // The engine requires ≥ 1 edge; a single-service case is degenerate.
+        emptyGraphs++;
+      } else {
+        // ONE owner for the case -> options mapping. This call site used to
+        // spell the options out inline and had silently dropped `traceActivity`
+        // and `failedTraceEdges`, so both signals were dead on the benchmark
+        // with the largest case count — reporting "no change", which reads as a
+        // result. See packages/kinetic/src/benchmarks/runners/fault-graph-options.ts.
+        faultGraph = pruner.buildFaultGraph(
+          benchCase.callGraph,
+          benchCase.metrics,
+          toFaultGraphOptions(benchCase, benchCase.injectTime),
+        );
+        ranking = pruner.analyze(faultGraph, 5);
+      }
+    } catch {
+      engineErrors++;
+    }
+
+    // ── Optional per-case signal diagnostic (--diagnose) ──
+    // Dump the source vs symptom signal inventory for a weak fault type so its
+    // gap can be traced to a data gap or a signal gap.
+    if (opts.diagnose.includes(faultType)) {
+      const dumped = diagnosed.get(faultType) ?? 0;
+      const unlimited = opts.diagnoseLimit === 0;
+      if (unlimited || dumped < opts.diagnoseLimit) {
+        diagnosed.set(faultType, dumped + 1);
+        if (faultGraph) {
+          console.log(
+            buildDiagnostic(
+              raw,
+              benchCase,
+              faultGraph,
+              ranking,
+              opts.logMode,
+              opts.diagnoseDecimals,
+            ),
+          );
+        }
+      }
+    }
+
+    predictionsPerCase.push(ranking.map((r) => r.serviceId));
+    acceptedPerCase.push(accepted);
+    faultTypeOfCase.push(faultType);
+
+    const cell = faultCells.get(faultType) ?? { total: 0, correct: 0 };
+    cell.total++;
+    if (ranking.length > 0 && accepted.includes(ranking[0]!.serviceId)) cell.correct++;
+    faultCells.set(faultType, cell);
+  }
+
+  // ── Aggregate ────────────────────────────────────────────
+  const top1 = computeAvgAtKMultiLabel(predictionsPerCase, acceptedPerCase, 1);
+  const top3 = computeAvgAtKMultiLabel(predictionsPerCase, acceptedPerCase, 3);
+  const top5 = computeAvgAtKMultiLabel(predictionsPerCase, acceptedPerCase, 5);
+
+  // Printed with the RESULTS, not only in the header: a signal that received
+  // nothing produces "no change", which is indistinguishable from a measured
+  // null unless the input is counted next to the number. See
+  // summariseFailedEdgeCoverage.
+  const failedEdgeCoverage = formatFailedEdgeCoverageLine(
+    summariseFailedEdgeCoverage(failedEdgeCases),
+  );
+
+  const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
+  console.log('');
+  console.log(`${'═'.repeat(65)}`);
+  console.log("  FSE'26 RCABench — Micro-Kinetic (production TreePruner)");
+  console.log(`${'═'.repeat(65)}`);
+  console.log(`  Top@1 = ${pct(top1)}   Top@3 = ${pct(top3)}   Top@5 = ${pct(top5)}`);
+  console.log(
+    `  Cases = ${predictionsPerCase.length}   loadErrors=${loadErrors} ` +
+      `engineErrors=${engineErrors} emptyGraphs=${emptyGraphs}`,
+  );
+  console.log(`  ${failedEdgeCoverage}`);
+  console.log('');
+  console.log(`  vs published anchor: SOTA avg ${pct(ANCHOR_AVG)} / best ${pct(ANCHOR_BEST)}`);
+  const delta = top1 - ANCHOR_AVG;
+  console.log(`  Δ vs SOTA avg: ${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)}pp`);
+  console.log('');
+  console.log('  Per-fault-type Top@1:');
+  const sortedFaults = [...faultCells.entries()].sort((a, b) => b[1].total - a[1].total);
+  for (const [ft, cell] of sortedFaults) {
+    const acc = cell.total > 0 ? cell.correct / cell.total : 0;
+    console.log(
+      `    ${ft.padEnd(24)} ${cell.correct.toString().padStart(3)}/${cell.total
+        .toString()
+        .padEnd(3)} ${pct(acc)}`,
+    );
+  }
+  console.log(`${'═'.repeat(65)}`);
+
+  // ── Structured output (for CI artifact) ──────────────────
+  if (opts.output) {
+    const report = buildFSE26Report({
+      anchor: { sotaAvgTop1: ANCHOR_AVG, sotaBestTop1: ANCHOR_BEST },
+      config: runConfig,
+      cases: predictionsPerCase.length,
+      top1,
+      top3,
+      top5,
+      loadErrors,
+      engineErrors,
+      emptyGraphs,
+      perFaultType: faultCells,
+    });
+    writeFileSync(opts.output, JSON.stringify(report, null, 2));
+    console.log(`\nResults written to ${opts.output}`);
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});

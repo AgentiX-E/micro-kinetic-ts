@@ -1,0 +1,876 @@
+/**
+ * Unit tests for the FSE'26 diagnostic formatter.
+ *
+ * Covers deterministic service ordering, ground-truth and prediction markers,
+ * metric-name listing, non-finite guard, message truncation, and the empty
+ * case. The formatter is pure, so the tests assert exact output lines.
+ *
+ * @module __tests__/unit/loaders/fse26-diagnose.test
+ */
+
+import { describe, expect, it } from 'vitest';
+
+import type {
+  FSE26DiagnosticInput,
+  FSE26DiagnosticService,
+} from '../../../src/benchmarks/fse26-diagnose.js';
+import {
+  formatFSE26Diagnostic,
+  MAX_FIELD_DECIMALS,
+} from '../../../src/benchmarks/fse26-diagnose.js';
+
+function service(overrides: Partial<FSE26DiagnosticService>): FSE26DiagnosticService {
+  return {
+    serviceId: 'ts-order-service',
+    metricNames: ['container.cpu.usage', 'container.memory.usage'],
+    dominantMetric: 'container.cpu.usage',
+    selfAnomaly: 0.5,
+    logScore: 0,
+    failedEdgeScore: 0,
+    failedEdgeRecords: 0,
+    latRise: undefined,
+    latEdges: 0,
+    errorCount: 0,
+    fatalCount: 0,
+    logicExceptionCount: 0,
+    httpExceptionCount: 0,
+    bothExceptionCount: 0,
+    sampleErrorMessages: [],
+    exceptionClasses: [],
+    ...overrides,
+  };
+}
+
+function input(overrides: Partial<FSE26DiagnosticInput>): FSE26DiagnosticInput {
+  return {
+    datapack: 'ts5-ts-order-service-stress-svfvxk',
+    faultType: 'JVMMemoryStress',
+    groundTruthServices: ['ts-order-service'],
+    services: [],
+    topPredictions: [],
+    logSignalMode: 'logicHttp',
+    ...overrides,
+  };
+}
+
+describe('formatFSE26Diagnostic', () => {
+  it('renders the inbound latency rise, and a dash when no caller measured one', () => {
+    // `-` rather than `1.000`: "no caller measured a change" and "every caller
+    // measured exactly the same latency" are different statements, and a defaulted
+    // 1 would report the second for both.
+    const measured = formatFSE26Diagnostic(
+      input({ services: [service({ latRise: 2.5, latEdges: 3 })] }),
+    );
+    expect(measured).toContain('latRise=2.500 latEdges=3');
+
+    const unmeasured = formatFSE26Diagnostic(input({ services: [service({})] }));
+    expect(unmeasured).toContain('latRise=- latEdges=0');
+  });
+
+  it('renders the onset delay, and a dash for every flavour of undetermined', () => {
+    // The engine writes `-1` for "undetermined" and the formatter is the only
+    // interpreter of it: a negative delay printed as a number would let a reader
+    // subtract two of them and conclude a service deviated BEFORE the injection,
+    // which would make it look like the most causal service in the case.
+    const measured = formatFSE26Diagnostic(
+      input({ services: [service({ onsetDelayMs: 120000 })] }),
+    );
+    expect(measured).toContain('http=0 both=0 onset=120000');
+    // Rounded: a delay is a difference of Unix-ms timestamps, and a fractional
+    // millisecond is a rendering artefact, not a measurement.
+    expect(
+      formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: 120000.6 })] })),
+    ).toContain('onset=120001');
+    for (const undetermined of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: undetermined })] })),
+      ).toContain('http=0 both=0 onset=-');
+    }
+    // Zero is a MEASUREMENT, not an absence: the service moved at the injection.
+    expect(formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: 0 })] }))).toContain(
+      'onset=0',
+    );
+  });
+
+  it('renders the injection anchor only when the producer supplied it', () => {
+    // The anchor is what makes an onset delay interpretable, and the engine's temporal
+    // term is INERT without it — so the header has to distinguish "the engine had no
+    // injection time" (a `0`) from "this block predates the field" (nothing).
+    const withAnchor = formatFSE26Diagnostic(input({ injectTimeMs: 1_700_000_000_000 }));
+    expect(withAnchor).toContain('logMode=logicHttp inject=1700000000000');
+    expect(formatFSE26Diagnostic(input({ injectTimeMs: 0 }))).toContain('inject=0');
+    expect(formatFSE26Diagnostic(input({}))).not.toContain('inject');
+  });
+
+  it('omits the onset field entirely when the producer has no value for it', () => {
+    // Purely additive, so a block from a producer that predates the field is
+    // byte-identical to what it rendered before — and "absent" keeps its own
+    // meaning, the way an absent `edges` line does.
+    const withoutField = formatFSE26Diagnostic(input({ services: [service({})] }));
+    expect(withoutField).not.toContain('onset');
+    expect(withoutField).toBe(
+      formatFSE26Diagnostic(input({ services: [service({ onsetDelayMs: undefined })] })),
+    );
+  });
+
+  it('renders the call graph on ONE line, sorted, when the producer supplied it', () => {
+    // Structure is what a per-service scalar block cannot express, so the graph is
+    // rendered as its own line rather than folded into each service.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [service({ serviceId: 'ts-a' })],
+        edges: ['ts-b>ts-a', 'ts-a>ts-b'],
+      }),
+    );
+
+    expect(out).toContain('\n  edges=ts-a>ts-b,ts-b>ts-a\n');
+  });
+
+  it('renders no edges line at all when the producer did not supply one', () => {
+    // An absent line means "not recorded". Rendering `edges=` empty would claim the
+    // case has no edges, which is a different and fabricated statement.
+    const out = formatFSE26Diagnostic(input({ services: [service({})] }));
+
+    expect(out).not.toContain('edges=');
+  });
+
+  it('renders an EMPTY edges line when the producer recorded an empty graph', () => {
+    // The other side of the same rule: a supplied-but-empty graph is a real
+    // observation and must be distinguishable from an absent one.
+    const out = formatFSE26Diagnostic(input({ services: [service({})], edges: [] }));
+
+    expect(out).toContain('\n  edges=\n');
+  });
+
+  it('renders the header with ground truth and service count', () => {
+    const out = formatFSE26Diagnostic(input({}));
+    expect(out).toContain(
+      'DIAG datapack=ts5-ts-order-service-stress-svfvxk faultType=JVMMemoryStress ' +
+        'GT=[ts-order-service] services=0',
+    );
+    expect(out).toContain('prediction=[]');
+  });
+
+  it('names the log-signal mode the counts were gated by', () => {
+    // The `logic` and `http` counts are mode-dependent, so the block has to say
+    // which mode produced it or it cannot be read after being lifted out of a log.
+    expect(formatFSE26Diagnostic(input({}))).toContain('logMode=logicHttp');
+    expect(formatFSE26Diagnostic(input({ logSignalMode: 'count' }))).toContain('logMode=count');
+  });
+
+  it('sorts services by self-anomaly descending, then service id ascending', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({ serviceId: 'ts-basic-service', selfAnomaly: 0.2 }),
+          service({ serviceId: 'ts-order-service', selfAnomaly: 0.9 }),
+          service({ serviceId: 'ts-auth-service', selfAnomaly: 0.9 }),
+        ],
+      }),
+    );
+    // Service lines start with two spaces; the header/GT lines are excluded so
+    // `indexOf` cannot collide with the ground-truth list in the header.
+    const serviceLines = out
+      .split('\n')
+      .filter((line) => line.startsWith('  ts-'))
+      .map((line) => line.slice(2).split(' ')[0]!);
+    // ts-order-service and ts-auth-service tie at 0.9 → service id ascending
+    // (auth before order); ts-basic-service (0.2) sorts last.
+    expect(serviceLines).toEqual(['ts-auth-service', 'ts-order-service', 'ts-basic-service']);
+  });
+
+  it('tags ground-truth services and top predictions with markers', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-order-service'],
+        services: [service({ serviceId: 'ts-order-service', selfAnomaly: 0.7 })],
+        topPredictions: ['ts-basic-service', 'ts-order-service'],
+      }),
+    );
+    // The ground-truth service is the #2 prediction, so it carries both markers.
+    expect(out).toContain('ts-order-service [GT,#2]');
+  });
+
+  it('lists metric names and the dominant metric on the service line', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-order-service',
+            metricNames: ['container.cpu.usage', 'container.memory.usage'],
+            dominantMetric: 'container.memory.usage',
+            selfAnomaly: 0.42,
+            logScore: 0.5,
+          }),
+        ],
+      }),
+    );
+    expect(out).toContain('selfAnomaly=0.420 logScore=0.500');
+    expect(out).toContain('dominant=container.memory.usage');
+    expect(out).toContain('metrics(2): container.cpu.usage,container.memory.usage');
+  });
+
+  it('renders the failed-edge score next to the log score', () => {
+    // The two are INVERSES — the log score credits whoever emits an error (a
+    // victim), the failed-edge score credits the callee those calls failed
+    // against (the source). A dump that shows only one cannot attribute a
+    // regression the other causes, so both are rendered on the same line.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-order-service',
+            selfAnomaly: 0.9,
+            logScore: 0,
+            failedEdgeScore: 1,
+            failedEdgeRecords: 7,
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('logScore=0.000 failedEdge=1.000 failedEdgeRecords=7');
+  });
+
+  it('renders zero failed-edge evidence as zero, not as an absent field', () => {
+    // A service with no failed calls against it must be visibly neutral in the
+    // dump: an omitted field would be indistinguishable from a field the
+    // formatter forgot to render.
+    const out = formatFSE26Diagnostic(input({ services: [service({})] }));
+
+    expect(out).toContain('failedEdge=0.000 failedEdgeRecords=0');
+  });
+
+  it('renders a dash for an absent dominant metric', () => {
+    const out = formatFSE26Diagnostic(
+      input({ services: [service({ dominantMetric: undefined, selfAnomaly: 0 })] }),
+    );
+    expect(out).toContain('dominant=-');
+  });
+
+  it('renders error counts and truncated sample messages', () => {
+    const longMessage = 'x'.repeat(200);
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-order-service',
+            selfAnomaly: 0.1,
+            errorCount: 3,
+            fatalCount: 1,
+            logicExceptionCount: 2,
+            sampleErrorMessages: [longMessage],
+          }),
+        ],
+      }),
+    );
+    expect(out).toContain('err=3 fatal=1 logic=2');
+    // Truncated to 160 chars + ellipsis.
+    expect(out).toContain(`ERR: ${'x'.repeat(160)}…`);
+  });
+
+  it('renders the overlap of the two counted source signatures', () => {
+    // `logic` and `http` are counted independently, and a line can carry BOTH
+    // flags — so their SUM is not the number of lines the engine admitted, it is
+    // the sum of two overlapping sets. The overlap is the only quantity that lets
+    // a reader recover the union `|logic ∪ http|`, which is the level-1 flood the
+    // log term divides by; without it every counting mode's denominator is
+    // inflated by the overlap and the reconstructed score is too small.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-basic-service',
+            logicExceptionCount: 3495,
+            httpExceptionCount: 3499,
+            bothExceptionCount: 3495,
+            errorCount: 3499,
+          }),
+        ],
+      }),
+    );
+    expect(out).toContain('err=3499 fatal=0 logic=3495 http=3499 both=3495');
+  });
+
+  it('renders the framework-HTTP exception count on the service line', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-basic-service',
+            selfAnomaly: 0.1,
+            errorCount: 1560,
+            logicExceptionCount: 0,
+            httpExceptionCount: 1560,
+          }),
+        ],
+      }),
+    );
+    // err/logic/http are all rendered on the single service line, so the count
+    // is directly observable (distinct from `err` and `logic`).
+    expect(out).toContain('err=1560 fatal=0 logic=0 http=1560');
+  });
+
+  it('leaves a short sample message untruncated', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-order-service',
+            selfAnomaly: 0.1,
+            sampleErrorMessages: ['Connection refused'],
+          }),
+        ],
+      }),
+    );
+    expect(out).toContain('ERR: Connection refused');
+  });
+
+  it('renders the distinct exception classes and omits the line when empty', () => {
+    const withClasses = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            serviceId: 'ts-basic-service',
+            selfAnomaly: 0.1,
+            exceptionClasses: ['HttpClientErrorException', 'HttpServerErrorException'],
+          }),
+          service({ serviceId: 'ts-order-service', selfAnomaly: 0.05, exceptionClasses: [] }),
+        ],
+      }),
+    );
+    expect(withClasses).toContain('exc(2): HttpClientErrorException,HttpServerErrorException');
+    // Only the service WITH exception classes emits an exc line — the empty one
+    // contributes nothing, so exactly one exc line exists in the whole output.
+    expect(withClasses.split('exc(').length - 1).toBe(1);
+  });
+
+  it('guards against non-finite self-anomaly values', () => {
+    const out = formatFSE26Diagnostic(input({ services: [service({ selfAnomaly: Number.NaN })] }));
+    expect(out).toContain('selfAnomaly=nonfinite');
+  });
+
+  it('renders the full prediction list in rank order', () => {
+    const out = formatFSE26Diagnostic(
+      input({ topPredictions: ['ts-basic-service', 'ts-order-service', 'ts-auth-service'] }),
+    );
+    expect(out).toContain('prediction=[ts-basic-service, ts-order-service, ts-auth-service]');
+  });
+
+  it('keeps the first rank for a duplicate prediction', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({ serviceId: 'ts-order-service', selfAnomaly: 0.9 }),
+          service({ serviceId: 'ts-basic-service', selfAnomaly: 0.2 }),
+        ],
+        topPredictions: ['ts-basic-service', 'ts-basic-service', 'ts-order-service'],
+      }),
+    );
+    // The duplicate second occurrence is ignored; ts-basic-service stays #1.
+    expect(out).toContain('ts-basic-service [#1]');
+  });
+
+  it('tie-breaks a reversed two-service tie by service id ascending', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: [],
+        services: [
+          service({ serviceId: 'ts-order-service', selfAnomaly: 0.5 }),
+          service({ serviceId: 'ts-auth-service', selfAnomaly: 0.5 }),
+        ],
+      }),
+    );
+    const serviceLines = out
+      .split('\n')
+      .filter((line) => line.startsWith('  ts-'))
+      .map((line) => line.slice(2).split(' ')[0]!);
+    expect(serviceLines).toEqual(['ts-auth-service', 'ts-order-service']);
+  });
+
+  it('tie-breaks an already-sorted two-service tie without swapping', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: [],
+        services: [
+          service({ serviceId: 'ts-auth-service', selfAnomaly: 0.5 }),
+          service({ serviceId: 'ts-order-service', selfAnomaly: 0.5 }),
+        ],
+      }),
+    );
+    const serviceLines = out
+      .split('\n')
+      .filter((line) => line.startsWith('  ts-'))
+      .map((line) => line.slice(2).split(' ')[0]!);
+    expect(serviceLines).toEqual(['ts-auth-service', 'ts-order-service']);
+  });
+});
+
+describe('formatFSE26Diagnostic — metric competition', () => {
+  it('renders the metric competition for a ground-truth service', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [
+              { label: 'container.memory.rss', outcome: 'kept', score: 0.412 },
+              { label: 'jvm.memory.used', outcome: 'transient-return', score: 0 },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricKept(1): container.memory.rss=0.412');
+    expect(out).toContain('metricDrop(1): jvm.memory.used:transient-return');
+  });
+
+  it('renders the metric competition for a predicted service', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-some-other-service'],
+        topPredictions: ['ts-order-service'],
+        services: [service({ metricOutcomes: [{ label: 'http', outcome: 'kept', score: 1 }] })],
+      }),
+    );
+
+    expect(out).toContain('metricKept(1): http=1.000');
+  });
+
+  it('omits the metric competition for a service that is neither ground truth nor predicted', () => {
+    // 51 services carry ~70 metrics each; rendering the competition for all of
+    // them would multiply the dump by an order of magnitude for rows nothing
+    // reads. The bound is part of the contract, so it is pinned here.
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-elsewhere'],
+        topPredictions: ['ts-also-elsewhere'],
+        services: [
+          service({
+            serviceId: 'ts-bystander',
+            metricOutcomes: [{ label: 'http', outcome: 'kept', score: 1 }],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).not.toContain('metricKept');
+    expect(out).not.toContain('metricDrop');
+  });
+
+  it('omits the metric competition when the caller supplied no outcomes', () => {
+    // An engine that does not report metric diagnostics must produce exactly the
+    // block it produced before, so the addition stays purely additive.
+    const out = formatFSE26Diagnostic(input({ services: [service({})] }));
+
+    expect(out).not.toContain('metricKept');
+    expect(out).not.toContain('metricDrop');
+  });
+
+  it('states zero counts rather than omitting the lines for an empty inventory', () => {
+    // "the dataset carries no metrics for this service" and "this service was
+    // never examined" are different findings; only the lines' presence separates
+    // them, so an empty inventory still renders.
+    const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: [] })] }));
+
+    expect(out).toContain('metricKept(0):');
+    expect(out).toContain('metricDrop(0):');
+  });
+
+  it('orders kept metrics by score descending then label ascending', () => {
+    // Both input orders, because a small-array sort is free to call the
+    // comparator in either direction and only one order exercises both arms of
+    // the score-then-label chain.
+    const outcomes = [
+      { label: 'z-low', outcome: 'kept' as const, score: 0.1 },
+      { label: 'a-high', outcome: 'kept' as const, score: 0.9 },
+      { label: 'b-high', outcome: 'kept' as const, score: 0.9 },
+    ];
+
+    for (const order of [outcomes, [...outcomes].reverse()]) {
+      const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: order })] }));
+      expect(out).toContain('metricKept(3): a-high=0.900 b-high=0.900 z-low=0.100');
+    }
+  });
+
+  it('orders dropped metrics by label ascending with their reason', () => {
+    const outcomes = [
+      { label: 'zeta', outcome: 'too-few-samples' as const, score: 0 },
+      { label: 'alpha', outcome: 'duty-cycled-idle' as const, score: 0 },
+    ];
+
+    for (const order of [outcomes, [...outcomes].reverse()]) {
+      const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: order })] }));
+      expect(out).toContain('metricDrop(2): alpha:duty-cycled-idle zeta:too-few-samples');
+    }
+  });
+});
+
+describe('formatFSE26Diagnostic — anomaly shape', () => {
+  const breakdown = {
+    deviation: 3.203,
+    trend: 0.04,
+    cv: 0.048,
+    burst: 0,
+    riseRatio: 1954.3,
+    dropRatio: 0.02,
+    baselineMean: 0.0017,
+  };
+
+  it('renders the decomposition of the metrics that decided the service score', () => {
+    // The score alone cannot say whether a metric won on a genuine deviation or
+    // on a bonus, nor how large its rise was. Anomaly scores are unbounded in
+    // the RISE direction only, so the rise is what has to be visible.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [
+              {
+                label: 'hubble_http_request_duration_p99_seconds',
+                outcome: 'kept',
+                score: 3.291,
+                breakdown,
+              },
+              {
+                label: 'container.cpu.usage',
+                outcome: 'kept',
+                score: 0.358,
+                breakdown: { ...breakdown, deviation: 0.35, riseRatio: 1.24, baselineMean: 0.42 },
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain(
+      'metricTop(2): hubble_http_request_duration_p99_seconds=3.291' +
+        '{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3} ' +
+        'container.cpu.usage=0.358' +
+        '{dev=0.350,trend=0.040,cv=0.048,burst=0.000,rise=1.24,drop=0.02,base=4.200e-1}',
+    );
+  });
+
+  it('renders only the breakdowns it has, and states the count it rendered', () => {
+    // A kept outcome the caller reported without a decomposition must not be
+    // printed as if it had one, and the count has to say how many of the kept
+    // metrics carry a decomposition so a partial render is detectable.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [
+              { label: 'a', outcome: 'kept', score: 0.9, breakdown },
+              { label: 'b', outcome: 'kept', score: 0.5 },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricTop(1/2): a=0.900{');
+    expect(out).not.toContain(' b=0.500{');
+  });
+
+  it('omits the shape line when no kept metric carries a decomposition', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [service({ metricOutcomes: [{ label: 'a', outcome: 'kept', score: 1 }] })],
+      }),
+    );
+
+    expect(out).not.toContain('metricTop');
+  });
+
+  it('does not render the shape line for a service that is neither ground truth nor predicted', () => {
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-elsewhere'],
+        topPredictions: ['ts-also-elsewhere'],
+        services: [
+          service({
+            serviceId: 'ts-bystander',
+            metricOutcomes: [{ label: 'a', outcome: 'kept', score: 1, breakdown }],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).not.toContain('metricTop');
+  });
+
+  it('renders the decisive composition for EVERY service, marked or not', () => {
+    // The shape line above is limited to the ground truth and the predictions, because a reader of
+    // the TABLE only compares those two. A term built on the decisive composition is a different
+    // question: it has to be simulated over every candidate a case could promote, so the number has
+    // to exist for services the dump does not mark — and it is the metric the engine NAMED, so this
+    // is a report of the engine's answer rather than a second argmax free to disagree with it.
+    const out = formatFSE26Diagnostic(
+      input({
+        groundTruthServices: ['ts-elsewhere'],
+        topPredictions: ['ts-also-elsewhere'],
+        services: [
+          service({
+            serviceId: 'ts-bystander',
+            dominantMetric: 'container.memory.usage',
+            metricOutcomes: [
+              { label: 'container.cpu.usage', outcome: 'kept', score: 0.9, breakdown },
+              { label: 'container.memory.usage', outcome: 'kept', score: 0.4, breakdown },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain(
+      'metricDecisive: container.memory.usage=0.400' +
+        '{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3}',
+    );
+    // The shape line is still the marked rows' line: this addition does not widen it.
+    expect(out).not.toContain('metricTop');
+  });
+
+  it('marks the decisive line undetermined when the engine named no metric', () => {
+    // `dominantMetric` is `undefined` when the engine recorded none. There is still no fallback —
+    // choosing one would be the formatter deciding which metric was decisive, and the dump already has an
+    // owner for that answer — but the LINE is rendered with the producer's `-`, because a row that omits
+    // it cannot tell a reader "nothing was named here" apart from "this dump predates the line". That is
+    // the defect this claim replaces: the channel is now universal and the VALUE is what it reports.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            dominantMetric: undefined,
+            metricOutcomes: [{ label: 'a', outcome: 'kept', score: 1, breakdown }],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricDecisive: -');
+    expect(out).not.toContain('metricDecisive: a=');
+  });
+
+  it('marks the decisive line undetermined when the named metric carries no decomposition', () => {
+    // A named metric the block did not decompose has no composition to report, and printing a zeroed one
+    // would turn "no composition" into a measurement of a perfectly stable series. The marker is the
+    // answer instead: present on every row, undetermined where there is nothing to report.
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            dominantMetric: 'a',
+            metricOutcomes: [
+              { label: 'a', outcome: 'kept', score: 1 },
+              { label: 'b', outcome: 'kept', score: 0.5, breakdown },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    // The second metric HAS a decomposition and is still not the composition: the engine named `a`, and a
+    // second argmax here would be the formatter disagreeing with the ranking.
+    expect(out).toContain('metricDecisive: -');
+    expect(out).not.toContain('metricDecisive: b=');
+  });
+
+  it('survives a non-finite decomposition value rather than printing NaN', () => {
+    const render = (patch: Partial<typeof breakdown>): string =>
+      formatFSE26Diagnostic(
+        input({
+          services: [
+            service({
+              metricOutcomes: [
+                { label: 'a', outcome: 'kept', score: 1, breakdown: { ...breakdown, ...patch } },
+              ],
+            }),
+          ],
+        }),
+      );
+
+    const infinite = render({ riseRatio: Number.POSITIVE_INFINITY });
+    expect(infinite).not.toContain('Infinity');
+    expect(infinite).toContain('rise=nonfinite');
+
+    // A baseline is the one value whose exact zero and whose non-finite cases
+    // are both reachable: an exact-zero row (the metric never moved off zero)
+    // and a NaN from a degenerate series.
+    expect(render({ baselineMean: 0 })).toContain('base=0');
+    expect(render({ baselineMean: Number.NaN })).not.toContain('NaN');
+    expect(render({ baselineMean: Number.NaN })).toContain('base=nonfinite');
+  });
+
+  it('declares the entries it printed when the kept list is longer than the render', () => {
+    // The declaration is a count of what FOLLOWS on the line. Declaring the kept
+    // count instead asserts entries that were never printed, which is exactly
+    // what a truncated line looks like — and the reader rejects those, so the
+    // whole line became unreadable whenever a service carried more kept metrics
+    // than the render shows. Every fixture in this suite had at most three, so
+    // 100% line and branch coverage did not see it.
+    const entry = (label: string, score: number) => ({
+      label,
+      outcome: 'kept' as const,
+      score,
+      breakdown,
+    });
+    const out = formatFSE26Diagnostic(
+      input({
+        services: [
+          service({
+            metricOutcomes: [entry('a', 0.9), entry('b', 0.8), entry('c', 0.7), entry('d', 0.6)],
+          }),
+        ],
+      }),
+    );
+
+    expect(out).toContain('metricTop(3/4): a=0.900{');
+    expect(out).not.toContain('d=0.600{');
+  });
+
+  it('orders the shape line by score then label, in either comparator order', () => {
+    const entry = (label: string, score: number) => ({
+      label,
+      outcome: 'kept' as const,
+      score,
+      breakdown,
+    });
+    const outcomes = [entry('z-flat', 0.9), entry('a-flat', 0.9), entry('m-low', 0.1)];
+
+    for (const order of [outcomes, [...outcomes].reverse()]) {
+      const out = formatFSE26Diagnostic(input({ services: [service({ metricOutcomes: order })] }));
+      expect(out).toContain(
+        'metricTop(3): a-flat=0.900{dev=3.203,trend=0.040,cv=0.048,burst=0.000,' +
+          'rise=1.954e+3,drop=0.02,base=1.700e-3} ' +
+          'z-flat=0.900{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3} ' +
+          'm-low=0.100{dev=3.203,trend=0.040,cv=0.048,burst=0.000,rise=1.954e+3,drop=0.02,base=1.700e-3}',
+      );
+    }
+  });
+});
+
+/**
+ * The dump DECLARES the precision it was rendered with.
+ *
+ * The reader's ensembles draw every decimal field inside the cell its render stands for, so they need to
+ * know how wide that cell is. They took it from a constant shared with this module — a copy of `3` that
+ * happens to be right only while the two agree, and that models the wrong box by a factor of ten per digit
+ * the moment they do not. `services=` is on the header for the same reason: a reader that must know
+ * something about the artifact has to be able to READ it rather than assume it.
+ */
+describe('formatFSE26Diagnostic — the header declares the render precision', () => {
+  /** The decomposition the assertions below read the refined digits off. */
+  const decomposition = {
+    deviation: 3.203,
+    trend: 0.04,
+    cv: 0.048,
+    burst: 0,
+    riseRatio: 1954.3,
+    dropRatio: 0.02,
+    baselineMean: 0.0017,
+  };
+
+  it('states the default, so a reader need not assume it', () => {
+    expect(formatFSE26Diagnostic(input({}))).toContain('decimals=3');
+  });
+
+  it('renders every decimal field at the precision the header states', () => {
+    // One owner: the header's number and the fields' digits come from the SAME value, so a dump cannot
+    // claim six decimals while carrying three.
+    const out = formatFSE26Diagnostic(
+      input({
+        fieldDecimals: 6,
+        services: [service({ selfAnomaly: 0.1234567, logScore: 0.5 })],
+      }),
+    );
+    expect(out).toContain('decimals=6');
+    expect(out).toContain('selfAnomaly=0.123457');
+    expect(out).toContain('logScore=0.500000');
+  });
+
+  it('refines the breakdown fields with the fields they belong to', () => {
+    // A dump whose per-service fields carry six decimals and whose `cv` carried three would be two
+    // artifacts under one header — and the box is per FIELD, so the reader would model the wrong one.
+    const out = formatFSE26Diagnostic(
+      input({
+        fieldDecimals: 5,
+        services: [
+          service({
+            selfAnomaly: 0.5,
+            metricOutcomes: [
+              {
+                label: 'cpu',
+                outcome: 'kept',
+                score: 0.25,
+                breakdown: { ...decomposition, cv: 0.123456 },
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(out).toContain('cv=0.12346');
+    expect(out).toContain('dev=3.20300');
+  });
+
+  it('leaves the onset alone, because its render is a different decision', () => {
+    // `fmtOnset` rounds to WHOLE milliseconds and reports that resolution through its own exported
+    // constant. A shared decimals value would be a second owner of a render this one does not make.
+    const out = formatFSE26Diagnostic(
+      input({ fieldDecimals: 6, services: [service({ onsetDelayMs: 123.6 })] }),
+    );
+    expect(out).toContain('onset=124');
+  });
+});
+
+/**
+ * The precision the renderer REFUSES.
+ *
+ * `Number.prototype.toFixed` accepts `0` to `MAX_FIELD_DECIMALS` digits and raises beyond that, so a
+ * caller that hands the formatter an impossible precision fails inside the per-field loop with a
+ * message about the language rather than about the artifact — or, worse, a caller that clamps it
+ * silently would publish a dump whose header misstates its own fields. The formatter cannot choose a
+ * precision, so refusing an impossible one is the only honest thing it can do.
+ */
+describe('formatFSE26Diagnostic — the precision it refuses', () => {
+  it('takes its bound from the renderer rather than from a number of its own', () => {
+    // The constant is only worth exporting if it really is `toFixed`'s domain, so the claim is
+    // measured against `toFixed` instead of restated. Nothing else can make it go stale.
+    expect(Number.prototype.toFixed.call(1, MAX_FIELD_DECIMALS)).toBeTruthy();
+    expect(() => Number.prototype.toFixed.call(1, MAX_FIELD_DECIMALS + 1)).toThrow(RangeError);
+  });
+
+  it('refuses a precision outside that domain, and names the value it was given', () => {
+    for (const bad of [
+      MAX_FIELD_DECIMALS + 1,
+      200,
+      -1,
+      2.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ]) {
+      expect(
+        () => formatFSE26Diagnostic(input({ fieldDecimals: bad })),
+        `fieldDecimals=${bad}`,
+      ).toThrow(RangeError);
+    }
+    // Named, so the message says which flag is wrong: a bare language `RangeError` from `toFixed`
+    // reports the digit count without saying whose.
+    expect(() => formatFSE26Diagnostic(input({ fieldDecimals: 200 }))).toThrow(/fieldDecimals/);
+  });
+
+  it('does NOT fire on legal output, at either end of the domain', () => {
+    // Both ends are real artifacts — integer rendering is the coarsest box a reader can be handed and
+    // the bound is the finest — so a guard that fired on either would make it unreachable.
+    const coarsest = formatFSE26Diagnostic(
+      input({ fieldDecimals: 0, services: [service({ selfAnomaly: 0.9 })] }),
+    );
+    expect(coarsest).toContain('decimals=0');
+    const rendered = /selfAnomaly=(\S+)/.exec(coarsest)?.[1] ?? '';
+    expect(rendered).toMatch(/^\d+$/);
+    expect(formatFSE26Diagnostic(input({ fieldDecimals: MAX_FIELD_DECIMALS }))).toContain(
+      `decimals=${MAX_FIELD_DECIMALS}`,
+    );
+  });
+});
