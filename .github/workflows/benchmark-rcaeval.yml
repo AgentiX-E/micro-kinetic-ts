@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       stability_weight:
-        description: "Decisive-stability weight for the ranking (empty = the runner default, which is 0). Set it to the FSE'26 candidate to measure that term on THIS benchmark, which is the golden gate the criterion requires before a default may move"
+        description: "Decisive-stability weight for the ranking (empty = the runner default, which is the SHIPPED 0.007352, the midpoint of the criterion intersection). Set it to the REJECTED FSE'26 window midpoint 0.030170 to see why that point is rejected: it moved four of the nine cells, two of them by ~41pp"
         required: false
         default: ''
         type: string

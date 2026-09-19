@@ -2024,16 +2024,20 @@ describe('TreePruner — decisive-stability prior', () => {
     expect(graph.stabilityScores?.get(NOISY)).toBe(0);
   });
 
-  it('ships at 0 — the candidate is a WINDOW, not a measurement', () => {
-    // The golden half of the kill criterion has never been run for this term, so the default MUST
-    // be the configuration the golden was taken on. Read from the exported constant, because the
-    // number has one owner and a literal here would be a second copy.
-    expect(DEFAULT_STABILITY_WEIGHT).toBe(0);
+  it('ships the measured point, and the constructor default IS that point', () => {
+    // Read from the exported constant: the number has one owner and a literal here would be a
+    // second copy. Asserted rather than merely used, because the whole class of tests that used
+    // `new TreePruner()` as their "term off" arm silently stops testing anything the day the
+    // default flips — this is the assertion that says which side of that day we are on.
+    expect(DEFAULT_STABILITY_WEIGHT).toBe(0.007352);
     const shipped = scores(new TreePruner()).byService;
-    const absent = withoutField();
+    const ablated = scores(new TreePruner({ stabilityWeight: 0 })).byService;
 
-    expect(shipped.get(STABLE)!).toBeCloseTo(absent.get(STABLE)!, 12);
-    expect(shipped.get(NOISY)!).toBeCloseTo(absent.get(NOISY)!, 12);
+    // So `new TreePruner()` is the SHIPPED arm now, not the ablation: a test that inherited the
+    // constructor default as its "term off" would silently have both arms carrying the term.
+    expect(shipped.get(STABLE)!).not.toBeCloseTo(ablated.get(STABLE)!, 12);
+    expect(shipped.get(STABLE)! - ablated.get(STABLE)!).toBeCloseTo(DEFAULT_STABILITY_WEIGHT, 10);
+    expect(shipped.get(NOISY)!).toBeCloseTo(ablated.get(NOISY)!, 12);
   });
 
   it('is inert at weight 0 even with the field present, against a pruner that never mentions it', () => {

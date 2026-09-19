@@ -342,6 +342,77 @@ const MEASURED_TEMPORAL_PAIRS: Record<
  */
 const DEFAULT_TEMPORAL_WEIGHT_RE = /DEFAULT_TEMPORAL_WEIGHT\s*=\s*([0-9.]+)/;
 
+/**
+ * Where the engine's shipped decisive-stability weight is declared.
+ *
+ * Read as TEXT, like every other constant in this file: the defect it guards is a disagreement
+ * between two files, which a typed import cannot see.
+ */
+const DEFAULT_STABILITY_WEIGHT_RE = /DEFAULT_STABILITY_WEIGHT\s*=\s*([0-9.]+)/;
+
+/**
+ * Every decisive-stability weight that has been measured on a full benchmark, keyed by the weight.
+ *
+ * Unlike {@link MEASURED_TEMPORAL_PAIRS} there is no shape to pair this with: the engine's
+ * `computeStabilityScores` IS the `rank` reading of the statistic, so a weight quoted alone is a
+ * complete configuration and the shape half of the key cannot drift.
+ *
+ * The table exists for one reason — the two halves of the criterion DISAGREE on this axis, and the
+ * disagreement is not a rounding matter. `0.030170` is the midpoint of the FSE'26 window and gained
+ * five cases with zero regressed fault types; it is recorded here as a REJECTION because it moved
+ * four of the nine golden cells. `0.007352` is the midpoint of the INTERSECTION and gained one.
+ */
+const MEASURED_STABILITY_WEIGHTS: Record<
+  string,
+  {
+    topAt1: number;
+    hits: number;
+    cases: number;
+    /** The FSE'26 half: fault TYPES that regressed. */
+    regressedTypes: number;
+    /** The golden half, recorded as data. `moved` is a rejection whatever the other half says. */
+    golden: 'identical' | 'moved';
+    run: string;
+    goldenRun: string;
+    /** The companion point this one's gain is measured against. */
+    control?: string;
+    defaultPath?: { run: string; goldenRun: string; golden: 'identical' | 'moved' };
+  }
+> = {
+  '0': {
+    topAt1: 0.5316455696202531,
+    hits: 756,
+    cases: 1422,
+    regressedTypes: 0,
+    golden: 'identical',
+    run: '35021503281',
+    goldenRun: '35028063290',
+  },
+  '0.007352': {
+    topAt1: 757 / 1422,
+    hits: 757,
+    cases: 1422,
+    regressedTypes: 0,
+    golden: 'identical',
+    run: '35411806524',
+    goldenRun: '35411810992',
+    control: '35125285784',
+  },
+  '0.030170': {
+    topAt1: 761 / 1422,
+    hits: 761,
+    cases: 1422,
+    // BOTH halves, and they disagree. Kept as DATA: the FSE'26 half is genuinely attractive
+    // (+5, zero regressed types), so the next session has to find the rejection where it finds the
+    // values, not in a paragraph.
+    regressedTypes: 0,
+    golden: 'moved',
+    run: '35125277962',
+    goldenRun: '35132525118',
+    control: '35125285784',
+  },
+};
+
 describe('FSE26 reported configuration', () => {
   const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
   const runner = readFileSync(RUNNER_PATH, 'utf8');
@@ -449,6 +520,49 @@ describe('FSE26 latency rise floor — shipped as a PAIR with the weight', () =>
     if (Number(shippedWeight) > DEFAULT_SHIPPED_WEIGHT_WITHOUT_FLOOR) {
       expect(Number(shippedFloor)).toBeGreaterThan(1);
     }
+  });
+});
+
+describe('FSE26 decisive-stability weight is a measured claim on BOTH halves', () => {
+  const source = readFileSync(PRUNER_PATH, 'utf8');
+
+  it('ships a weight whose recorded run has BOTH halves of the criterion green', () => {
+    // The two halves disagree on this axis by more than 4x in the weight, and the difference is a
+    // REJECTION, not a preference: 0.030170 gained five cases on FSE'26 and moved four golden
+    // cells. So a default here is a claim about two benchmarks and the table is what holds both.
+    const shippedWeight = readConstant(
+      source,
+      DEFAULT_STABILITY_WEIGHT_RE,
+      'DEFAULT_STABILITY_WEIGHT',
+    );
+    const recorded = MEASURED_STABILITY_WEIGHTS[String(shippedWeight)];
+    expect(
+      recorded,
+      `no recorded run for the shipped stability weight ${shippedWeight}`,
+    ).toBeDefined();
+    expect(recorded!.cases).toBe(1422);
+    expect(recorded!.regressedTypes).toBe(0);
+    // The half that rejected the window's own midpoint.
+    expect(recorded!.golden).toBe('identical');
+  });
+
+  it('keeps the REJECTED window midpoint on the record, with both of its numbers', () => {
+    // The test that pays for the table. The rejected point is the FSE'26 solver's own
+    // recommendation — +5 cases, zero regressed fault types — so a paragraph is not enough to stop
+    // it being re-proposed. Its gain AND the half it failed are data here.
+    const rejected = MEASURED_STABILITY_WEIGHTS['0.030170']!;
+    expect(rejected.golden).toBe('moved');
+    expect(rejected.regressedTypes).toBe(0);
+    expect(rejected.hits).toBe(761);
+    // And the shipped point is the intersection's midpoint, NOT the window's: the two are 4.1x
+    // apart, which is the number this table exists to make unmissable.
+    const shippedWeight = readConstant(
+      source,
+      DEFAULT_STABILITY_WEIGHT_RE,
+      'DEFAULT_STABILITY_WEIGHT',
+    );
+    expect(Number(shippedWeight)).toBeLessThan(0.03017);
+    expect(MEASURED_STABILITY_WEIGHTS[String(shippedWeight)]!.golden).toBe('identical');
   });
 });
 

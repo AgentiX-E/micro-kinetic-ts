@@ -72,7 +72,7 @@ on:
         required: false
         default: ''
       stability_weight:
-        description: 'Weight of the decisive-stability prior, which credits the service whose dominant metric has the LOWEST dispersion bonus (empty = the runner default, which is the SHIPPED 0). A CANDIDATE: the zero-regression window is solved on FSE''26 at w in [0.029860, 0.030480], worth +6 cases against 0 lost, but the golden 9-cell has not been run, so the candidate is reached by passing its midpoint 0.030170 and 0 is what the golden was taken on'
+        description: 'Weight of the decisive-stability prior, which credits the service whose dominant metric has the LOWEST dispersion bonus (empty = the runner default, which is the SHIPPED 0.007352 = the midpoint of the criterion intersection, not of the FSE''26 window). The window solved on this benchmark alone is [0.029860, 0.030480] worth +6, but 0.030170 moved four of the nine golden cells, so that point is REJECTED and 0.007352 is the value the intersection licenses: +1 case, zero regressed fault types, golden byte-identical'
         required: false
         default: ''
       temporal_weight:

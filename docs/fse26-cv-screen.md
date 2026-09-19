@@ -1,9 +1,12 @@
 # The decisive-stability (cv) screen: the separator's rate turned into a term
 
-**Status:** instrument shipped and gated; the population measurement is **done on both benchmarks**,
-and the first weight anyone solved for it **fails the golden**. §4 records a weight-level veto, not a
-term-level one: the term is admitted behind `--stability-weight` and the default does not move. **The
-screens this document is built on rested on a base with the engine's order and not its gaps; that base
+**Status:** instrument shipped and gated, and the term **SHIPS at `0.007352`** — the midpoint of the
+CRITERION INTERSECTION, not of the FSE'26 window. The first weight anyone solved for it (`0.030170`,
+the window's own midpoint) **fails the golden** and is recorded as a rejected point; the intersection
+named a weight 4.1× below it and the dispatch confirmed BOTH halves (§"The dispatched criterion
+verdict"). The default that moved is `DEFAULT_STABILITY_WEIGHT`; see §"The criterion, intersected" for
+why the two numbers differ and §"The dispatched criterion verdict" for the run that licensed the flip.
+**The screens this document is built on rested on a base with the engine's order and not its gaps; that base
 has since been CORRECTED and every figure re-measured — see §"The cause, and the fix". The veto does
 not depend on the correction (it is a run's own measurement), and neither does any fidelity number: the
 correction moved the golden's window figures and left all seven `correct at 0` counts and the whole

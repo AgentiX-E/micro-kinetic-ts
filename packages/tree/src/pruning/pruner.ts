@@ -527,22 +527,36 @@ export const DEFAULT_LAT_WEIGHT = 0.561495;
 export const DEFAULT_POOL_METRIC_PENALTY_WEIGHT = 0.0679;
 
 /**
- * Weight on the decisive-stability prior, shipped as **0 — a CANDIDATE, not a measurement.**
+ * Weight on the decisive-stability prior — the midpoint of the CRITERION INTERSECTION, not of the
+ * FSE'26 window.
  *
- * The zero-regression window is SOLVED and positive on the whole of FSE'26: over all 1422 cases of
- * run `35107871516` the `rank` shape gains SIX cases and loses none, `w ∈ [0.029860, 0.030480]`,
- * Top@1 756 → 762 (`docs/fse26-cv-screen.md` §4). What is missing is the OTHER half of the kill
- * criterion: this term did not exist when the last golden run was taken, so the 9-cell cannot be
- * measured offline. Shipping at 0 is what makes that measurable — the default path stays
- * bit-for-bit the configuration the golden was taken on, and the candidate is evaluated by passing
- * the flag.
+ * The history is the point, because the two numbers differ by more than 4× and the first one was
+ * vetoed. The FSE'26 half of the criterion was solved and positive: over all 1422 cases of run
+ * `35107871516` the `rank` shape gains six cases and loses none, `w ∈ [0.029860, 0.030480]`, and
+ * the solver recommended its midpoint `0.030170`. The dispatched run at that weight delivered
+ * **+5 cases with zero regressed fault types** — and moved **four of the nine golden cells**, one
+ * of them by 15.8pp. So `0.030170` is a REJECTED point, and it stays in the recorded-runs table as
+ * data (§"keeps the REJECTED candidate on the record").
  *
- * The value to ship, when a golden run licenses it, is the MIDPOINT of the window (`0.030170`),
- * on the same rule the pool penalty's own weight used: the floor is a knife edge — a direct
- * re-ranking at exactly `gainFloor` is one case short — so a value at either boundary is a value a
- * converter revision can move across it.
+ * What ships is the intersection of the criterion's two halves, computed offline by
+ * `criterionVerdicts` over four artifacts (`docs/fse26-cv-screen.md` §"The criterion,
+ * intersected"): FSE'26 gains its first case at `0.006672` on the `rank` shape, and the golden is
+ * loss-free only below `0.008032` (`re1`'s permission). The midpoint of that region is
+ * **`0.007352`**, and the dispatch at `2f10a82` confirmed BOTH halves: FSE'26 **757/1422 =
+ * 53.23%** (was 756), Top@3 66.5%, Top@5 70.4%, **zero regressed fault types** (`run
+ * 35411806524`), RCAEval golden **9 of 9 byte-identical** (`run 35411810992`).
+ *
+ * The engine's own `computeStabilityScores` is the `rank` reading of the statistic, so the weight's
+ * meaning is fixed and there is no shape to pair it with — which is why the recorded-runs table is
+ * keyed by the weight alone here, where the temporal prior's is keyed by a pair.
+ *
+ * The guard in `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts` reads this constant
+ * out of the source (all three of them are read as text — a typed import cannot see a disagreement
+ * between two files) and requires the shipped value to be one whose recorded run has BOTH halves
+ * green: `regressedTypes === 0` on FSE'26 AND `golden: 'identical'`. So the rejected point can
+ * never become the default, and neither can any value nobody has run.
  */
-export const DEFAULT_STABILITY_WEIGHT = 0;
+export const DEFAULT_STABILITY_WEIGHT = 0.007352;
 
 /**
  * How the temporal prior turns onset delays into an order.
