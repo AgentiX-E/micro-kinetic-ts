@@ -190,13 +190,22 @@ once:
 | the workflow (`fse26-benchmark.yml`) | no `diagnose_decimals` input | a dispatcher had nothing to fill in |
 
 The middle row is the one that would have survived a naive repair. The shared builder's `fieldDecimals` was
-**optional**, on its own recorded argument ("omitted means the producer's default, which is what every caller
-that predates this field means") — and an optional field is not a fence over the callers that need it. The
-RCAEval runner threads the value through a sink that REQUIRES it; the FSE'26 runner reaches the builder
-directly and omitted it, so **two dumps of the same engine rendered the same fields at different precisions
-and both declared a precision**. An omission here is not a cosmetic default: a reader derives its error bar
-from the declaration, so a four-decimal request answered by a three-decimal file has a box three orders of
-magnitude too wide while every parse succeeds.
+**optional**, and that was not an oversight — it was a **recorded design decision**, argued for on the ground
+that the builder must not choose a value at all: it passes `undefined` through to the ONE default in the
+formatter, and a default at that layer would be a second owner of a number a reader's error bar derives from.
+Everything in that argument is correct about not inventing a second default. The step it skips is the one that
+mattered: **optional at the builder layer is a fence over the BUILDER and over nobody else** — it does not stop
+a CALLER from taking the default, and one did.
+
+The RCAEval runner reaches the builder through a sink that REQUIRES the value, and a test held that sink to
+the requirement **as text**; the FSE'26 runner reaches the builder directly and omitted it. So **two dumps of
+one engine rendered the same fields at different precisions, both declaring a precision**, while every parse
+succeeded. That test was correct and did exactly what it claimed — it was pointed at one of the two callers.
+**A property asserted at ONE layer is a statement about that layer, and "required here" is read as "required
+everywhere" by every sentence that then cites it**, which is how a design decision with a test attached became
+an unexamined premise. The omission is not cosmetic either: a reader derives its error bar from the
+declaration, so a four-decimal request answered by a three-decimal file has a box three orders of magnitude
+too wide.
 
 The prediction was therefore not one dispatch away. It was **unreachable**, which is the failure this
 repository already names one register bullet down: *a repaired pin whose replacement is unreachable is still a
