@@ -952,12 +952,64 @@ bar still failing.
 The pre-registered prediction that followed from `needs 1` — *a four-decimal dump admits `re3`'s and
 `re3-noinject`'s stability `flip`* — was **tested and REFUTED**: at four decimals, on the same 90 cases, both
 windows are still refused (see the pair immediately below). It was refuted as a consequence of the stale
-archive above: the premise belonged to the subpopulation, so the prediction inherited it. **The prediction
-now has a second form, on the artifact that does license it, and it is UNTESTED**: a four-decimal **FSE'26**
-dump admits the stability `flip` window. One dispatch settles it — and, since 2026-09-19, one dispatch
-genuinely CAN: the sentence that used to close this paragraph ("the precision is a dispatch input") was true
-only of the RCAEval side, which is not the benchmark the prediction is about. What a dispatch had to be able
-to say, it can now say.
+archive above: the premise belonged to the subpopulation, so the prediction inherited it.
+
+**The prediction's second form — on the artifact that DOES license it — was tested on 2026-09-19 and CONFIRMED.**
+It read: *a four-decimal **FSE'26** dump admits the stability `flip` window.* It could not be dispatched until
+`432462a`: the sentence that used to close this paragraph ("the precision is a dispatch input") was true only
+of the RCAEval side, and on the FSE'26 side no parser accepted the flag, no runner threaded it and no workflow
+declared it. Run **`35436069639`** (`diagnose=<all 25 fault types> diagnose_limit=0 diagnose_decimals=4`) is
+that dispatch, and the artifact declares the precision it was asked for in **all 1422 of its headers**
+(`decimals=4`; the three-decimal artifact `35107871516` predates the field and is read at
+`HISTORICAL_FIELD_DECIMALS` = 3 through a separate binding).
+
+**`needs 1` was TRUE here.** The window is `flip` with 3 gains; at three decimals the screen printed *"the
+window turns on gaps the render discards, so a FINER dump settles it: 1 more digit(s) — a quantum `10^1`
+smaller — admits it (every one of the 3 gains holds in all 400 draws, cap intact in 100 of 100)"*, and the
+menu-level verdict was **"no shape in this menu has an admissible gain at any weight"**. At four decimals the
+same command on the same cases reads **`refinement: the render already decides this window`** and
+**`flip ADMISSIBLE`**.
+
+**This is the first VINDICATION of a `needs` clause in this project, against one refutation** — and the two
+together say something the clause's text does not: it is **checkable per artifact, not sound in general.** The
+`re3` refutation is attributable to its stale premise, so the surrogate is not contradicted there; but the
+pair below shows the finer render **MOVES** a window even when it clears it, so a `needs d` is a claim about a
+DIFFERENT artifact than the one it solved. Nothing about `needs` licenses a number until the finer dump
+exists. See `docs/dispatch-surface-audit.md` and the register for the dispatchability defect that kept this
+untested, and `REFINEMENT_FRONTIER_AUDIT.md` for the instrument.
+
+**The FSE'26 pair, like-for-like in the strict sense.** Same population — the two dumps' fault-type
+histograms are **identical, 25 types, 1422 cases** — same command, same weights, same seed and draw counts,
+differing ONLY in the declared precision:
+
+| | `flip` window | `ship` | `rank` window | `flip` frontier | menu verdict |
+| --- | --- | --- | --- | --- | --- |
+| **3 decimals** (`35107871516`) | `[0.021536, 0.024882]` | `0.023209` | gain **6** `[0.029860, 0.030480]` | **`needs 1`** | no shape admissible at any weight |
+| **4 decimals** (`35436069639`) | `[0.021353, 0.024882]` | `0.023118` | gain **5** `[0.029860, 0.030480]` | **`already`** | `flip` **ADMISSIBLE** |
+
+Three things this pair settles, and they are the same three the RCAEval pair settled:
+
+- **The finer render MOVES the window even when it admits it.** The left end goes `0.021536 → 0.021353` and
+  `ship` goes `0.023209 → 0.023118`; every margin is an INPUT to the solve, so the four-decimal window is a
+  different window that happens to clear. The right end is unchanged at `0.024882` because it is a minimum
+  over satisfied cases and the binding case and its margin are the same one — which is why a `needs` read
+  about the PRINT says nothing definite about the artifact that replaces it.
+- **The precision reaches the GAIN channel and not the cap.** At three decimals the gain channel's own-box
+  survival is **94.8%** (2 of 3 gains hold in every draw) and the refusal is `gain holds for the printed
+  digits only`; at four it is **100.0%** (every one of the 3 holds in all 400) with the cap `intact in 100 of
+  100`. A finer artifact improves exactly the half it can reach.
+- **`rank` moves DOWN, not up.** Its gain count falls `6 → 5` on the same cases, so the finer render
+  re-orders the `rank` shape's decisive cases as well. Both shapes move; only one of them clears.
+
+**What this does NOT do: it does not re-open the stability axis.** The screen's `flip` window is not the
+criterion's solved window. The shipped weight came from the criterion intersection, where the FSE'26 gain half
+is the `rank` shape — the shape `computeStabilityScores` actually IS — crossed with the golden's protect half,
+and that closure (`DEFAULT_STABILITY_WEIGHT = 0.007352`) is untouched by a screen-level reading at a different
+precision. What this pair licenses is exactly one statement: the pre-registered prediction is settled and it
+held. Whether an admissible `flip` window at a four-decimal artifact survives the criterion's OWN intersection
+on BOTH halves is a different solve on a different instrument, and it is the next question rather than an
+answer.
+
 
 **The like-for-like pair, and it is the only comparison that means anything here.** Both artifacts come from
 `4a370b8`, the same configuration, the **same 90 cases**, and differ ONLY in the declared precision:
@@ -1166,12 +1218,14 @@ Not settled:
   `flip` window to a point at `0.008032`; with `re2`'s `0.012161`/`0.007528` beside them the golden's
   admissible set is now a NUMBER rather than a question. The weight 0.03017 is 2.5× above it on `rank`,
   which is why the run moved four cells, and a candidate inside it would buy one case.
-- **Whether a four-decimal FSE'26 dump admits the stability `flip` window** — the pre-registered
-  prediction the refinement sweep licenses, untested, one dispatch away **since 2026-09-19 and not before**:
-  until then the FSE'26 chain could not ask for a precision at all, so the dispatch this line invited would
-  have re-rendered at three decimals and reported the answer as if it had been asked. See §"The verdict now
-  consumes its own error bars".
-- 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight, and the count now carries
+- **SETTLED 2026-09-19 — a four-decimal FSE'26 dump DOES admit the stability `flip` window.** The
+  pre-registered prediction the refinement sweep licensed was dispatched (run `35436069639`, the same 1422
+  cases as `35107871516`, `decimals=4` declared in all 1422 headers) and it **HELD**: `flip` goes from
+  `needs 1` / "no shape admissible at any weight" to `already` / **`ADMISSIBLE`**. It could not be tested
+  before that day — the FSE'26 chain could not ask for a precision at all, so the dispatch this line used to
+  invite would have re-rendered at three decimals and reported the answer as if it had been asked. See
+  §"The verdict now consumes its own error bars" for the pair and for what the result does NOT license.
+- 569 of 1422 cases (`flip`; 525 for `rank`) are unreachable at every weight, and the count now carries
   its causes (§"The unreachable count now says WHY"): **236 of the 569 (41.5%) read a deciding pair as
   EQUAL**, i.e. the `cv` field's three decimals decide whether the case is screenable at all; the rest
   are 333 out of the term's reach and 0 with no coefficient at all. On the golden the counts are 46 / 52

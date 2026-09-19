@@ -330,7 +330,23 @@ Before reading any number, check that the input was counted:
   register already carries one bullet down (*a repaired pin whose replacement is unreachable is still a
   pin*). The FSE'26 chain now accepts and forwards it, and the census asserts the general rule that would have
   found it: an artifact-shaping flag a runner accepts must be reachable from the workflow that drives it, or
-  be named as an exception WITH its reason. Three traps travel with the bullet: **a resolution
+  be named as an exception WITH its reason.
+  **AND THE PREDICTION ITSELF WAS TESTED THE SAME DAY, AND IT HELD.** Run `35436069639` rendered the same
+  1422 cases at four decimals (declared in all 1422 headers), and the stability `flip` window goes from
+  `needs 1` — with the menu verdict *"no shape in this menu has an admissible gain at any weight"* — to
+  `refinement: the render already decides this window` and **`flip ADMISSIBLE`**. So `needs 1` was TRUE here:
+  the render really was the obstacle and one more digit really admits the window. **That is the first
+  VINDICATION of a `needs` clause in this project, against exactly one refutation** (`re3`'s, whose premise
+  came from a 30-case subpopulation) — and the two together say what the clause's own text does not: it is
+  **checkable per artifact, not sound in general.** The finer render MOVES a window even when it clears it
+  (the left end `0.021536 → 0.021353`, `ship` `0.023209 → 0.023118`; and `rank`'s gain count falls `6 → 5` on
+  the same cases), so a `needs d` describes a DIFFERENT artifact than the one it solved. **This does NOT
+  re-open the axis:** the screen's `flip` window is not the criterion's solved window, the shipped weight came
+  from the intersection whose FSE'26 gain half is the `rank` shape — the shape `computeStabilityScores` IS —
+  and `DEFAULT_STABILITY_WEIGHT = 0.007352` is untouched by a screen-level reading at a different precision.
+  What it names is the NEXT question rather than an answer: whether an admissible `flip` window at a
+  four-decimal artifact survives the criterion's OWN intersection on BOTH halves.
+  Three traps travel with the bullet: **a resolution
   shortfall does not imply the resolution is the OBSTACLE** (the reachable refusal reasons are scale-free
   by construction, so the inference was structural, not empirical); **a refusal's two channels are
   correlated**, so a clause must name the bar that is still failing rather than assert the mechanism its
