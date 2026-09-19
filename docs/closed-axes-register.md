@@ -56,6 +56,17 @@ them.** If it cannot, the first thing to do is read that row's document. If it i
 resting on a necessary-condition count, the second thing is to look for the row that
 measured the change — the count cannot tell you whether it was ever run.
 
+**And a row is found by the KNOB's name, so a search has to know all three of them.**
+A ranking knob is reachable as a `workflow_dispatch` input (`fleet_baseline`), as a
+CLI flag (`--fleet-baseline`) and as an engine option (`metricFleetBaseline`), and only the
+first two are related by a rule. The documents and this register's rows are written in the
+third — so a search for the input name reports four measured-and-rejected knobs as
+unmeasured, which happened here and produced a drafted candidate before an instrument
+caught it. `docs/dispatch-surface-audit.md` is the table that closes it: every ranking knob,
+its three names and its owner, with `packages/kinetic/__tests__/unit/dispatch-surface-census.test.ts`
+requiring that owner to exist, that the four non-derivable names stay an exact set, and that
+the flag a workflow passes is one its runner accepts.
+
 A fifth axis was missing from this table altogether, and it is the first whose record
 lived outside this repo: the LLM-dependent ranking layer — the single-shot
 evidence-grounded reranker and the GALA+ Phase-III multi-hop agent — was measured,
@@ -155,6 +166,18 @@ Any candidate that changes the shipped ranking must move **both**:
 A headline gain does not buy silence about regressions — that rule has rejected
 +0.14pp, +0.28pp, +0.49pp and +5.8pp alike, and it is what the two above it are
 for.
+
+**The criterion is an AND, so it is only decidable where BOTH halves can be
+dispatched — and that is currently ONE knob.** Measured in
+`docs/dispatch-surface-audit.md`: the FSE'26 workflow can dispatch all 14 ranking flags its
+runner accepts, and `benchmark-rcaeval.yml` **1 of 17** — sixteen are unreachable, including
+four of the five knobs both runners accept (`--log-weight`, `--no-rank-normalization`,
+`--onset-shape`, `--temporal-weight`). So the set of axes whose criterion a dispatch can
+settle is the one-element intersection `{stabilityWeight}`, and that element exists because
+the stability candidate needed it. The temporal rejection's `golden: 'unmeasured'` is the
+first instance: `run-rcaeval.ts` accepts `--temporal-weight` and no dispatch can pass it, so
+the golden half could not have been measured without moving the default. A candidate on any
+other axis must therefore say **which input it will add** before it can claim a golden half.
 
 ## The two invariants that make a measurement trustworthy
 
