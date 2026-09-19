@@ -43,6 +43,8 @@ import {
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../../../packages/tree/src/index.js';
+// The PRODUCER's constant, from the module that calls `toFixed`, imported for the same reason.
+import { SERVICE_FIELD_DECIMALS } from '../../../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 
 // packages/kinetic/__tests__/unit/ → four levels up is the repository root.
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
@@ -696,6 +698,7 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   log_mode: 'runner',
   diagnose: 'runner',
   diagnose_limit: 'runner',
+  diagnose_decimals: 'runner',
   rise_ceiling: 'runner',
   fleet_baseline: 'runner',
   no_rank_normalization: 'runner',
@@ -761,6 +764,12 @@ describe('FSE26 workflow descriptions agree with the code they describe', () => 
     stability_weight: DEFAULT_STABILITY_WEIGHT,
     temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
     diagnose_limit: 3,
+    // The dump's render precision. Registered when the input was added, and the entry is what makes
+    // the description's "3" a CLAIM rather than a remark: `SERVICE_FIELD_DECIMALS` is the owner, so a
+    // reader of the workflow and a reader of the producer cannot end up with two precisions — which
+    // is the failure this whole family of guards exists for, since a dump declares its own and a
+    // reader derives the error bar from the declaration.
+    diagnose_decimals: SERVICE_FIELD_DECIMALS,
   };
 
   it('names the shipped value of every input whose description quotes one', () => {

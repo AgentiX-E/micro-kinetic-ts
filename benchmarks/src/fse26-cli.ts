@@ -26,6 +26,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_LAT_MIN_RISE,
@@ -39,7 +40,7 @@ import {
   type OnsetShape,
 } from '../../packages/tree/src/index.js';
 
-import { hasValue, parseWeight } from './cli-args.js';
+import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -110,6 +111,23 @@ export interface Fse26CliOptions {
   readonly diagnose: readonly string[];
   /** Max diagnostic dumps per matching fault type (0 = unlimited). */
   readonly diagnoseLimit: number;
+  /**
+   * How many decimals the dump's per-service fields are rendered with.
+   *
+   * The dump DECLARES this in its header, and a reader's error bar is drawn from the declaration
+   * (`resolutionBoxFor`): the ensembles that decide an admissibility verdict draw each field inside
+   * the cell its render stands for. So this is not a display setting — a four-decimal request
+   * answered by a three-decimal file has a box three orders of magnitude too wide, and the two
+   * artifacts parse identically.
+   *
+   * Defaults to the producer's {@link SERVICE_FIELD_DECIMALS}, so a bare dispatch writes exactly the
+   * artifact every existing FSE'26 dump is. It exists because the register records the ONE window
+   * anywhere that answers `needs 1` — this screen's stability `flip` on `35107871516` — and the
+   * prediction it licenses, that a finer FSE'26 dump admits it, is settled only by producing one.
+   * Until this option existed the precision was not a dispatch input on this side at all, and the
+   * prediction was recorded as "one dispatch away" while being unreachable.
+   */
+  readonly diagnoseDecimals: number;
   /**
    * Metric names to filter out of every case before scoring (empty = none).
    * Component-ablation switch: the bridge merges four metric sources into one
@@ -265,6 +283,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     output: '',
     diagnose: [] as string[],
     diagnoseLimit: 3,
+    diagnoseDecimals: SERVICE_FIELD_DECIMALS,
     dropMetrics: [] as string[],
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
@@ -297,6 +316,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     else if (arg === '--diagnose' && hasValue(argv, i + 1)) opts.diagnose = csv(argv[++i]!);
     else if (arg === '--diagnose-limit' && hasValue(argv, i + 1))
       opts.diagnoseLimit = parseInt(argv[++i]!, 10) || 0;
+    else if (arg === '--diagnose-decimals' && hasValue(argv, i + 1))
+      // Through `parseFieldDecimals`, whose bound comes from the module that calls `toFixed`: an
+      // unguarded parse turns `--diagnose-decimals 200` into a `RangeError` on the first rendered
+      // case, i.e. after a suite has been loaded and scored. A non-integer falls back to the
+      // producer's precision rather than being rounded, because `4.5` digits names no artifact.
+      opts.diagnoseDecimals = parseFieldDecimals(argv[++i]!, SERVICE_FIELD_DECIMALS);
     else if (arg === '--drop-metrics' && hasValue(argv, i + 1)) opts.dropMetrics = csv(argv[++i]!);
     else if (arg === '--rise-ceiling' && hasValue(argv, i + 1)) {
       // STRICT, unlike the other numeric flags: `parseFloat('1O')` is 1, so a

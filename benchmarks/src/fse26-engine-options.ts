@@ -95,7 +95,10 @@ export interface Fse26EngineOptions {
  * `dropMetrics` is applied at LOAD time — the bridge filters the named series out
  * of each case before scoring, so it changes the input rather than the engine.
  * The rest are run harness concerns: where the data is, how many cases to take,
- * where to write the artifact, and which fault types to dump a diagnostic for.
+ * where to write the artifact, which fault types to dump a diagnostic for, and
+ * at what precision that diagnostic renders its per-service fields — the last
+ * being a property of the written ARTIFACT that a reader derives its error bar
+ * from, and of nothing the engine computes.
  */
 export const NON_ENGINE_OPTION_KEYS = [
   'dataDir',
@@ -103,6 +106,7 @@ export const NON_ENGINE_OPTION_KEYS = [
   'output',
   'diagnose',
   'diagnoseLimit',
+  'diagnoseDecimals',
   'dropMetrics',
 ] as const;
 

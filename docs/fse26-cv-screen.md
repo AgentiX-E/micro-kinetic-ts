@@ -920,10 +920,19 @@ from a table misses precisely the member that was never in a table.
 
 **This is a DISCOVERY defect with a MEASUREMENT attached, not a bookkeeping one.** The point of the sweep is
 to decide whether a finer dump is worth producing, and it answers "only here" while the record said "nowhere"
-— which turns the one actionable frontier this axis has into one the record denies exists. There is one such
-artifact per dispatch and the producer's precision is now an input to all seven dump steps
-(`--diagnose-decimals`), so the same dispatch that renders FSE'26 at four decimals also settles whether the
-window is admitted.
+— which turns the one actionable frontier this axis has into one the record denies exists. **And the sentence
+that followed it here was wrong about which benchmark it described (corrected 2026-09-19).** It read: *the
+producer's precision is now an input to all seven dump steps (`--diagnose-decimals`), so the same dispatch
+that renders FSE'26 at four decimals also settles whether the window is admitted.* The seven dump steps are
+the **RCAEval** suites. On the FSE'26 side the flag was reachable nowhere, in three places at once — the
+parser tested no such argument, the runner called the shared builder without `fieldDecimals` (which was
+OPTIONAL, so every FSE'26 dump silently took the producer's three decimals), and the workflow declared no such
+input. The one dispatch that was supposed to settle the prediction would therefore have measured **nothing**,
+and would have measured it silently: the dump parses either way and declares a precision either way. The
+prediction was not one dispatch away; it was **unreachable**. The chain now accepts and forwards the flag, and
+the census carries the general rule that finds this class — an artifact-shaping flag a runner ACCEPTS must be
+reachable from the workflow that drives it, or be named as an exception with its reason
+(`docs/dispatch-surface-audit.md`).
 
 **A survival rate that does not move is the signature of a rendered TIE.** `earliest-only` credits the root
 together with whatever else prints its minimum, and two equal prints are re-ordered by any nonzero draw,
@@ -945,7 +954,10 @@ The pre-registered prediction that followed from `needs 1` — *a four-decimal d
 windows are still refused (see the pair immediately below). It was refuted as a consequence of the stale
 archive above: the premise belonged to the subpopulation, so the prediction inherited it. **The prediction
 now has a second form, on the artifact that does license it, and it is UNTESTED**: a four-decimal **FSE'26**
-dump admits the stability `flip` window. One dispatch settles it, and the precision is a dispatch input.
+dump admits the stability `flip` window. One dispatch settles it — and, since 2026-09-19, one dispatch
+genuinely CAN: the sentence that used to close this paragraph ("the precision is a dispatch input") was true
+only of the RCAEval side, which is not the benchmark the prediction is about. What a dispatch had to be able
+to say, it can now say.
 
 **The like-for-like pair, and it is the only comparison that means anything here.** Both artifacts come from
 `4a370b8`, the same configuration, the **same 90 cases**, and differ ONLY in the declared precision:
@@ -1155,8 +1167,10 @@ Not settled:
   admissible set is now a NUMBER rather than a question. The weight 0.03017 is 2.5× above it on `rank`,
   which is why the run moved four cells, and a candidate inside it would buy one case.
 - **Whether a four-decimal FSE'26 dump admits the stability `flip` window** — the pre-registered
-  prediction the refinement sweep licenses, untested, and settled by one dispatch because the precision
-  is now an input. See §"The verdict now consumes its own error bars".
+  prediction the refinement sweep licenses, untested, one dispatch away **since 2026-09-19 and not before**:
+  until then the FSE'26 chain could not ask for a precision at all, so the dispatch this line invited would
+  have re-rendered at three decimals and reported the answer as if it had been asked. See §"The verdict now
+  consumes its own error bars".
 - 569 of 1422 cases (`flip`; 526 for `rank`) are unreachable at every weight, and the count now carries
   its causes (§"The unreachable count now says WHY"): **236 of the 569 (41.5%) read a deciding pair as
   EQUAL**, i.e. the `cv` field's three decimals decide whether the case is screenable at all; the rest

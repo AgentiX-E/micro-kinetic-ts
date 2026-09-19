@@ -171,6 +171,43 @@ treating it as an unmeasured ranking axis. The census classifies it explicitly r
 "not a ranking knob" and "a ranking knob nobody has measured" are the same shape in a set — the confusion this
 census exists to prevent.
 
+## Finding 5 — an artifact-shaping flag can be accepted, documented as dispatchable, and reachable from no workflow at all
+
+The census's dispatchability assertions are about **ranking knobs**, and they exempt `OPERATIONAL_OPTIONS`
+by design. That exemption is where a false claim lived.
+
+`docs/fse26-cv-screen.md` and `docs/closed-axes-register.md` both stated that the dump precision "is now an
+input to all seven dump steps (`--diagnose-decimals`), so the same dispatch that renders FSE'26 at four
+decimals also settles whether the window is admitted", and the register recorded the ONE window anywhere that
+answers `needs 1` — FSE'26's stability `flip` on `35107871516` — as a prediction **one dispatch away**. The
+seven dump steps are the RCAEval suites. On the FSE'26 side the flag was reachable nowhere, in three places at
+once:
+
+| seam | state before | consequence |
+| --- | --- | --- |
+| the parser (`fse26-cli.ts`) | no `--diagnose-decimals` arm | the flag was refused loudly (the chain throws on an unknown argument), so it could not be passed at all |
+| the runner (`run-fse26.ts`) | called the shared builder WITHOUT `fieldDecimals` | every FSE'26 dump took the producer's three decimals |
+| the workflow (`fse26-benchmark.yml`) | no `diagnose_decimals` input | a dispatcher had nothing to fill in |
+
+The middle row is the one that would have survived a naive repair. The shared builder's `fieldDecimals` was
+**optional**, on its own recorded argument ("omitted means the producer's default, which is what every caller
+that predates this field means") — and an optional field is not a fence over the callers that need it. The
+RCAEval runner threads the value through a sink that REQUIRES it; the FSE'26 runner reaches the builder
+directly and omitted it, so **two dumps of the same engine rendered the same fields at different precisions
+and both declared a precision**. An omission here is not a cosmetic default: a reader derives its error bar
+from the declaration, so a four-decimal request answered by a three-decimal file has a box three orders of
+magnitude too wide while every parse succeeds.
+
+The prediction was therefore not one dispatch away. It was **unreachable**, which is the failure this
+repository already names one register bullet down: *a repaired pin whose replacement is unreachable is still a
+pin*. The dispatch the record invited would have re-rendered at three decimals and reported the answer as if
+the question had been asked.
+
+**The repair has three parts, and the fence is the one that matters.** The flag is threaded end to end; the
+shared input's `fieldDecimals` is now **required**, so the omission is a COMPILE error (verified: dropping the
+argument with the field required fails `tsc` with `TS2345`, and with the field relaxed back to optional the
+source assertion in the new guard fails instead); and the census gains the direction that finds this class.
+
 ## What the guard checks
 
 1. Each runner's accepted flag set is read from its **parser chain**, and every accepted flag must bind an
@@ -188,11 +225,34 @@ census exists to prevent.
 4. The four non-derivable option names, the one-element dispatchable intersection, and the sixteen
    RCAEval-undispatchable flags are recorded as **exact sets** — so a new non-derivable name, a newly
    dispatchable knob, or a newly unreachable one is a failing test rather than a discovery.
+5. **Every artifact-shaping flag a runner ACCEPTS is reachable from the workflow that drives it**, or is
+   named in an exception table WITH its reason — the direction the ranking tables cannot cover. Reachability
+   is read in CODE, not in prose: these workflows document their flags in `#` blocks directly above the code
+   that passes them, and a plain text search reports a flag as reached on its own description. Measured, not
+   assumed: with `--diagnose-decimals` renamed at the one place it is passed, the text search still matched —
+   on a comment four lines above. The rule excludes `[a-z0-9-]` after the flag so `--diagnose` is not
+   "reached" by `--diagnose-decimals`, and the stripping is one-way (removing text can only make a flag look
+   UNREACHED, which fails loudly). Two exceptions are named today: `--routing-probe` and `--system`, both
+   RCAEval-only, both recorded with why.
+   The sharper companion assertion: among the artifact-shaping options **both** runners accept — derived, not
+   listed: `dataDir`, `maxCases`, `diagnoseDecimals` — each must be reachable from **both** workflows. A
+   dump both screens read, renderable at two precisions by one runner and one by the other, is the exact
+   state `diagnoseDecimals` was in.
+6. **The workflow side is guarded at its own seam, in the other file**: `fse26-dump-precision.test.ts`
+   asserts the input is declared, FORWARDED at the flag's own spelling, gated on non-emptiness, and that
+   **every argument array the run step builds is expanded into a command** — because
+   `DIAGNOSE_DECIMALS_ARG=(--diagnose-decimals …)` is a complete, correct-looking declaration of the flag,
+   and deleting the one line that expands it leaves the flag spelled exactly as before while the runner never
+   sees it. The input's `default: ''` is deliberately NOT re-asserted there: `fse26-reported-config.test.ts`
+   already requires every runner-owned input to have an empty default, and a second assertion would be a
+   second owner of one rule.
 
 ## Gates
 
-Register guard 14/14 · census 9 tests · `kinetic` (full) at 100 / 99.44 / 100 / 100 · benchmarks 737 ·
-both typechecks · lint 0/0 · format clean. **Eleven mutations killed on the first pass** — every one a change to
+Register guard 14/14 · census **13 tests** · `kinetic` (full, 946 tests) at 100 / 99.44 / 100 / 100 ·
+benchmarks **762 tests** at 99.84 / 97.37 / 100 / 99.84 · tree 650 at 100/100/100/100 · both typechecks
+(0 `error TS`) · lint 0/0 (337 files) · format clean · root `pnpm coverage` green (127 files, 3198 tests).
+**Eleven mutations killed on the first pass** — every one a change to
 the DATA or a MECHANISM, not to an assertion: a knob marked unowned, an owner naming a document that does not
 exist, a knob deleted (the population shrinking to fit the table), a row naming a flag that binds a different
 option, a row naming the other runner's flag, a dispatch it does not have, the non-derivable set trimmed to
@@ -202,4 +262,28 @@ candidate mutation was **discarded as equivalent** (it replaced an assertion wit
 about the system); the exact pairing check it appeared to threaten was shown able to fail by two data
 mutations instead.
 
-**No golden is owed**: this iteration touches `docs/` and `__tests__/` only.
+**Finding 5 added eleven more, and the first pass of them was WRONG in the instructive way.** The harness
+reported "KILLED" for every mutation including ones that had to survive, because it ran `vitest` with a
+repo-relative path from a package-relative cwd: the file was not found, so `vitest` exited non-zero and the
+harness read that as a kill. **A COUNTER MUST BE ABLE TO FAIL AND MUST NOT FIRE ON LEGAL OUTPUT** — this one
+fired on its own broken invocation. Re-run with the paths corrected, three of the eleven SURVIVED, and each
+survivor was real: the census was satisfied by a **comment** naming the flag; the workflow guard did not
+notice an argument array that is **built and never expanded**; and one mutation was a bad mutation (it
+inserted a second `default:` instead of replacing the first, so the assertion was still correctly satisfied).
+All three are now closed and re-killed. The complete set:
+
+| mutation | killed by |
+| --- | --- |
+| forwarded flag misspelled in the workflow | census + dump-precision |
+| arg array built but never appended | dump-precision |
+| input's `default` made non-empty | `fse26-reported-config` (its owner) |
+| input declared but never read (`if -n` re-pointed) | dump-precision |
+| runner passes a COPY of the constant instead of the option | dump-precision |
+| parser arm deleted | dump-precision + census |
+| parser drops `hasValue`, swallowing the next flag | dump-precision |
+| parser drops the bound (raw `Number`) | dump-precision |
+| fence removed at both ends (field optional, argument dropped) | dump-precision |
+| **fence in place, argument dropped** | **`tsc` — `TS2345`** |
+
+**A golden IS owed**: `packages/kinetic/src/**`, `benchmarks/src/**` and `.github/workflows/**` all changed.
+The default path passes no flag, so the nine cells must stay byte-identical.

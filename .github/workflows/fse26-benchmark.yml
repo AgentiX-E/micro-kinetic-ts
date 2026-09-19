@@ -31,6 +31,10 @@ on:
         description: 'Max diagnostic dumps per matching fault type (empty = the runner default, which is 3; 0 = unlimited)'
         required: false
         default: ''
+      diagnose_decimals:
+        description: 'Decimals the diagnostic dump renders its per-service fields at, and DECLARES in its header (empty = the runner default, which is 3). A reader derives its error bar from that declaration, so a finer dump is the only way to test whether the one window that answers `needs 1` survives the change'
+        required: false
+        default: ''
       rise_ceiling:
         description: 'Ceiling on the relative deviation one metric may contribute (empty = the runner default, which is unbounded)'
         required: false
@@ -196,6 +200,14 @@ jobs:
           if [ -n "${{ inputs.diagnose_limit }}" ]; then
             DIAGNOSE_LIMIT_ARG=(--diagnose-limit "${{ inputs.diagnose_limit }}")
           fi
+          #   The dump's render precision. Passed only when the input is non-empty, like every
+          #   other override here, so the runner's own default stays the single owner: an empty
+          #   `--diagnose-decimals` parses to the producer's default rather than to 0, which would
+          #   be a legal but entirely different artifact.
+          DIAGNOSE_DECIMALS_ARG=()
+          if [ -n "${{ inputs.diagnose_decimals }}" ]; then
+            DIAGNOSE_DECIMALS_ARG=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
+          fi
           LOG_WEIGHT_ARG=()
           if [ -n "${{ inputs.log_weight }}" ]; then
             LOG_WEIGHT_ARG=(--log-weight "${{ inputs.log_weight }}")
@@ -281,6 +293,7 @@ jobs:
             "${MAX_CASES_ARG[@]}" \
             "${DIAGNOSE_ARG[@]}" \
             "${DIAGNOSE_LIMIT_ARG[@]}" \
+            "${DIAGNOSE_DECIMALS_ARG[@]}" \
             --output fse26-results.json 2>&1 | tee fse26-results.txt
 
       - name: Upload results

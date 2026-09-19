@@ -13,6 +13,7 @@
 import type { FaultPropagationGraph, ServiceCallGraph } from '@agentix-e/micro-kinetic-core';
 import { describe, expect, it } from 'vitest';
 
+import { SERVICE_FIELD_DECIMALS } from '../../../src/benchmarks/fse26-diagnose.js';
 import { buildFSE26Diagnostic } from '../../../src/benchmarks/fse26-diagnostic-builder.js';
 import {
   toFSE26EdgeLatency,
@@ -63,6 +64,9 @@ function render(benchCase: BenchmarkCase, graph: FaultPropagationGraph): string 
     groundTruthServices: ['first'],
     logSignalMode: 'logicHttp',
     injectTimeMs: benchCase.injectTime,
+    // The producer's precision, named rather than omitted: the shared input REQUIRES it, so a
+    // caller that wants "what the engine would have used" has to say so.
+    fieldDecimals: SERVICE_FIELD_DECIMALS,
   });
 }
 

@@ -21,11 +21,14 @@
  * Usage:
  *   pnpm exec tsx benchmarks/src/run-fse26.ts [--data-dir <json-root>] \
  *     [--max-cases N] [--log-weight <w>] [--no-rank-normalization] [--output <path>] \
- *     [--diagnose <fault-types>] [--diagnose-limit N] [--drop-metrics <names>]
+ *     [--diagnose <fault-types>] [--diagnose-limit N] [--diagnose-decimals N] \
+ *     [--drop-metrics <names>]
  *
  * `--drop-metrics` is the component-ablation switch: it filters the named
  * metric series out of every case before scoring, so a ranking change can be
  * attributed to one of the bridge's metric sources without a cache rebuild.
+ * `--diagnose-decimals` sets the precision the diagnostic dump DECLARES and
+ * renders at; it is what a reader's error bar is drawn from.
  * Read-only: never writes to the data directory.
  *
  * @module benchmarks/run-fse26
@@ -102,6 +105,10 @@ interface FaultCell {
  * writer is ONE function, and this runner passes what only it knows — the raw datapack's labels and
  * the dual-label accepted set it scored against — while every per-service magnitude comes from the
  * graph the engine built.
+ *
+ * `fieldDecimals` is threaded rather than defaulted, for the reason the shared input now REQUIRES
+ * it: the dump declares its own precision and a reader derives its error bar from that declaration,
+ * so an omission here is not a cosmetic default but a different artifact under the same name.
  */
 function buildDiagnostic(
   raw: FSE26RawCase,
@@ -109,6 +116,7 @@ function buildDiagnostic(
   faultGraph: FaultPropagationGraph,
   ranking: RootCauseResult[],
   logSignalMode: string,
+  fieldDecimals: number,
 ): string {
   return buildFSE26Diagnostic({
     case: benchCase,
@@ -120,6 +128,7 @@ function buildDiagnostic(
     groundTruthServices: raw.groundTruthServices,
     logSignalMode,
     injectTimeMs: benchCase.injectTime > 0 ? benchCase.injectTime : 0,
+    fieldDecimals,
   });
 }
 
@@ -251,7 +260,16 @@ async function main(): Promise<void> {
       if (unlimited || dumped < opts.diagnoseLimit) {
         diagnosed.set(faultType, dumped + 1);
         if (faultGraph) {
-          console.log(buildDiagnostic(raw, benchCase, faultGraph, ranking, opts.logMode));
+          console.log(
+            buildDiagnostic(
+              raw,
+              benchCase,
+              faultGraph,
+              ranking,
+              opts.logMode,
+              opts.diagnoseDecimals,
+            ),
+          );
         }
       }
     }

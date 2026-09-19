@@ -69,12 +69,19 @@ export interface DiagnosticCaseInput {
   /**
    * How many decimals to render the per-service decimal fields with.
    *
-   * Optional, and deliberately NOT defaulted here: the ONE default is
-   * {@link formatFSE26Diagnostic}'s, so a builder that invented a second one would be a second copy
-   * of a value a reader's error bar is derived from. Omitted means "the producer's default", which
-   * is what every caller that predates this field means.
+   * REQUIRED, and still not defaulted here: the ONE default lives at
+   * {@link formatFSE26Diagnostic}, so a builder that invented a second one would be a second copy of
+   * a value a reader's error bar is derived from.
+   *
+   * It was OPTIONAL for one revision, on the argument that omitting it means "the producer's
+   * default", which is what every caller predating the field meant. That argument is how the FSE'26
+   * runner came to omit it while the RCAEval runner threaded it, and nothing caught the difference:
+   * both dumps parsed, both declared a precision, and the one window anywhere that answers `needs 1`
+   * stayed recorded as a prediction "one dispatch away" while the FSE'26 side could not ask for a
+   * finer render at all. An optional field is not a fence over the callers that need it; a required
+   * one is, because the omission stops being a silent default and becomes a compile error.
    */
-  readonly fieldDecimals?: number | undefined;
+  readonly fieldDecimals: number;
 }
 
 /**

@@ -320,8 +320,17 @@ Before reading any number, check that the input was counted:
   `35107871516`, the only FSE'26 dump whose producer emitted `metricDecisive` — answers **`needs 1`**. No
   table in the record ever listed it, so the population was short by exactly the member that had a positive
   answer, and the sentence "no window anywhere answers `needs 1`" was false. The render is the obstacle for
-  ONE measured window, and the prediction it licenses (a four-decimal FSE'26 dump admits it) is UNTESTED;
-  `--diagnose-decimals` makes it one dispatch. Three traps travel with the bullet: **a resolution
+  ONE measured window, and the prediction it licenses (a four-decimal FSE'26 dump admits it) is UNTESTED.
+  **CORRECTED AGAIN 2026-09-19, and this one was false in the direction the record least expects**: the words
+  "`--diagnose-decimals` makes it one dispatch" were true of the RCAEval benchmark and FALSE of the one the
+  prediction is about. Seven dump steps accept the flag and all seven are RCAEval suites; on the FSE'26 side
+  no parser tested it, no runner threaded it — the shared builder's `fieldDecimals` was OPTIONAL and the
+  FSE'26 caller omitted it, so every FSE'26 dump took the producer's three decimals — and no workflow input
+  declared it. The prediction was not one dispatch away; it was **unreachable**, which is the sentence this
+  register already carries one bullet down (*a repaired pin whose replacement is unreachable is still a
+  pin*). The FSE'26 chain now accepts and forwards it, and the census asserts the general rule that would have
+  found it: an artifact-shaping flag a runner accepts must be reachable from the workflow that drives it, or
+  be named as an exception WITH its reason. Three traps travel with the bullet: **a resolution
   shortfall does not imply the resolution is the OBSTACLE** (the reachable refusal reasons are scale-free
   by construction, so the inference was structural, not empirical); **a refusal's two channels are
   correlated**, so a clause must name the bar that is still failing rather than assert the mechanism its

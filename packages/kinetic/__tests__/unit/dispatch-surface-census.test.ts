@@ -102,6 +102,32 @@ function flagOfInput(name: string): string {
 }
 
 /**
+ * Whether a workflow's text can reach a flag — in CODE, not in prose.
+ *
+ * Two rules, both measured rather than assumed:
+ *
+ * The flag's own spelling at a TOKEN boundary, not a substring, so `--diagnose` is not "reached" by
+ * `--diagnose-decimals` — the prefix trap.
+ *
+ * And COMMENT text does not count. These workflows document their flags in `#` blocks right above
+ * the code that passes them, so a plain text search reports a flag as REACHED when its only mention
+ * is the sentence describing it. Measured: with `--diagnose-decimals` renamed at the one place it is
+ * passed, this guard still passed — on a comment four lines above. A usage string lists flags that
+ * may not be handled; a comment lists flags that may not exist.
+ *
+ * The stripping is deliberately crude, and the crudeness is ONE-WAY: removing text can only make a
+ * flag look UNREACHED, which fails the guard loudly, never silently passes it.
+ */
+function reaches(flag: string, text: string): boolean {
+  const code = text
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .map((line) => line.replace(/\s#.*$/, ''))
+    .join('\n');
+  return new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![a-z0-9-])').test(code);
+}
+
+/**
  * Inputs that bind something other than a runner flag.
  *
  * `shard_tag` selects the dataset release and `categories` filters the converter's output,
@@ -373,6 +399,35 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   '--trace-weight',
 ];
 
+/**
+ * Artifact-shaping flags a runner ACCEPTS and its own workflow cannot reach, as an exact set.
+ *
+ * The dispatchability assertions above are written for RANKING knobs, and they exempt
+ * {@link OPERATIONAL_OPTIONS} by design — which is precisely where a false claim came to live.
+ * `fse26-cv-screen.md` states that the dump precision "is now an input to all seven dump steps
+ * (`--diagnose-decimals`), so the same dispatch that renders FSE'26 at four decimals also settles
+ * whether the window is admitted", and the register records the ONE `needs 1` window — FSE'26's
+ * stability `flip` — as a prediction **one dispatch away**. The seven steps are the RCAEval suites.
+ * On the FSE'26 side the flag was accepted by no parser, threaded by no runner and declared by no
+ * workflow, so the prediction was not one dispatch away; it was unreachable.
+ *
+ * A ranking knob's absence is caught by the tables above. An OPERATIONAL option's absence was
+ * caught by nothing, because "not a ranking knob" and "a knob nobody wired" are the same shape in a
+ * set — the same reason {@link OPERATIONAL_OPTIONS} carries its reasons. So this check runs in the
+ * direction that finds it: what a runner accepts must be REACHABLE from the workflow that drives
+ * it, or be named here WITH its reason.
+ *
+ * The reachability test is the flag's own spelling at a token boundary, not a substring: a
+ * substring search would let `--diagnose` be "reached" by `--diagnose-decimals`, which is the
+ * prefix trap, and would make the check pass on a workflow that never passes the flag.
+ */
+const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
+  '--routing-probe':
+    'writes a routing-feasibility probe; an output path the workflow does not read back',
+  '--system':
+    'narrows one suite to a single microservice system; the workflow dispatches whole suites',
+};
+
 const fse26Flags = flagToOption(readFileSync(FSE26_CLI, 'utf8'));
 const rcaevalFlags = flagToOption(readFileSync(RCAEVAL_CLI, 'utf8'));
 const fse26Inputs = inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'));
@@ -578,5 +633,84 @@ describe('the dispatch surface has one owner per knob', () => {
       .sort();
     expect(unreachable).toEqual([...UNDISPATCHABLE_ON_RCAEVAL].sort());
     expect(unreachable.length).toBeGreaterThan(10);
+  });
+
+  it('reaches every artifact-shaping flag a runner accepts, or names the exception', () => {
+    // The direction the ranking tables cannot cover, and the one that would have caught the FSE'26
+    // dump precision: an OPERATIONAL flag a runner accepts and no workflow ever passes. Ranked
+    // flags have a table each; operational options had an exemption, and the exemption is where a
+    // document could assert a dispatch that did not exist.
+    const unreached = (accepted: Map<string, string>, text: string): string[] =>
+      [...accepted.keys()]
+        .filter((flag) => accepted.get(flag)! in OPERATIONAL_OPTIONS)
+        .filter((flag) => !reaches(flag, text))
+        .sort();
+    const found = [
+      ...unreached(fse26Flags, readFileSync(FSE26_WORKFLOW, 'utf8')),
+      ...unreached(rcaevalFlags, readFileSync(RCAEVAL_WORKFLOW, 'utf8')),
+    ].sort();
+    expect(found).toEqual(Object.keys(OPERATIONAL_FLAGS_UNREACHABLE).sort());
+    // Non-vacuity: the check must have a population to walk on BOTH sides, or it is asserting over
+    // one runner and reporting the other as clean.
+    for (const [which, accepted] of [
+      ['fse26', fse26Flags],
+      ['rcaeval', rcaevalFlags],
+    ] as const) {
+      const population = [...accepted.keys()].filter(
+        (flag) => accepted.get(flag)! in OPERATIONAL_OPTIONS,
+      );
+      expect(population.length, `${which} operational population`).toBeGreaterThan(3);
+    }
+    // And the two traps the boundary-and-comment rules exist for, asserted directly rather than
+    // trusted: the flags share a prefix, and this workflow names the flag in a comment above the
+    // single line that passes it. A text search that ignores either reports a rehearsal as a
+    // dispatch.
+    expect('${DIAGNOSE_ARG[@]}'.includes('--diagnose')).toBe(false);
+    expect(reaches('--diagnose-decimals', '#   `--diagnose-decimals` parses to the default')).toBe(
+      false,
+    );
+    expect(reaches('--diagnose-decimals', '  --diagnose-decimals "${{ inputs.x }}" \\')).toBe(true);
+    expect(reaches('--diagnose-decimals', '--diagnose-decimals-typo')).toBe(false);
+  });
+
+  it('reaches from BOTH workflows every artifact-shaping option BOTH runners accept', () => {
+    // The sharper form of the rule above, and the one the FSE'26 dump precision failed. The kill
+    // criterion's two halves live on two benchmarks, and the dump is the artifact BOTH screens read
+    // — so an artifact-shaping option both runners accept but only one workflow passes makes the
+    // two dumps incomparable in a way no reader can see: each still parses, and each still declares
+    // a precision. `diagnoseDecimals` was in exactly that state, and the prediction that depended on
+    // it — FSE'26's one `needs 1` window — was recorded as one dispatch away.
+    //
+    // The population is derived, not listed: an option here is one that BOTH parsers accept AND
+    // that the reason table classifies as operational. `output` is absent because only the FSE'26
+    // parser has it in this sense; `diagnose` and `diagnoseLimit` because only the FSE'26 one does.
+    const both = Object.keys(OPERATIONAL_OPTIONS)
+      .filter((option) => {
+        const inFse26 = [...fse26Flags.values()].includes(option);
+        const inRcaeval = [...rcaevalFlags.values()].includes(option);
+        return inFse26 && inRcaeval;
+      })
+      .sort();
+    expect(both).toEqual(['dataDir', 'diagnoseDecimals', 'maxCases']);
+    // Non-vacuity: the derived population must not be empty, and it must be a strict subset of
+    // what one runner accepts — otherwise "both" would be measuring a single runner twice.
+    expect(both.length).toBeGreaterThan(1);
+    expect(both.length).toBeLessThan(
+      [...fse26Flags.values()].filter((o) => o in OPERATIONAL_OPTIONS).length,
+    );
+    // Each runner's OWN flag is the one looked for, because the two spellings can differ even for
+    // a shared option; and each workflow must reach it.
+    const texts = {
+      fse26: readFileSync(FSE26_WORKFLOW, 'utf8'),
+      rcaeval: readFileSync(RCAEVAL_WORKFLOW, 'utf8'),
+    };
+    const accepted = { fse26: fse26Flags, rcaeval: rcaevalFlags };
+    for (const option of both) {
+      for (const which of ['fse26', 'rcaeval'] as const) {
+        const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
+        expect(flag, `${which} accepts ${option}`).toBeDefined();
+        expect(reaches(flag!, texts[which]), `${which} must reach ${flag}`).toBe(true);
+      }
+    }
   });
 });

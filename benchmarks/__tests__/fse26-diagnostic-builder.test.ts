@@ -102,7 +102,9 @@ function render(
     groundTruthServices: [benchCase.groundTruth.serviceId],
     logSignalMode: 'logicHttp',
     injectTimeMs: benchCase.injectTime,
-    ...(fieldDecimals === undefined ? {} : { fieldDecimals }),
+    // Named rather than spread-in: the shared input REQUIRES the precision, so a helper that wants
+    // the producer's default has to say which default it means.
+    fieldDecimals: fieldDecimals ?? SERVICE_FIELD_DECIMALS,
   });
 }
 
