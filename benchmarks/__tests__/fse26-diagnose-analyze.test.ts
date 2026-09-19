@@ -6099,7 +6099,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       datapack,
     });
   const reading = (shape: 'flip' | 'rank', cases: readonly DiagnosedCase[]): CriterionReading =>
-    criterionReadings(cvShapeMenu(cases, WEIGHTS), 'a')[shape === 'flip' ? 0 : 1]!;
+    criterionReadings(cvShapeMenu(cases, WEIGHTS), 'a', 'gain')[shape === 'flip' ? 0 : 1]!;
 
   it('reports the FIRST gain, which is not the left end of the maximal-gain range', () => {
     // The defect this field exists to avoid. `gainFloor` is where the BEST gain starts, so on a
@@ -6139,7 +6139,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     expect(one.gainsFrom).toBeUndefined();
     expect(one.gains).toEqual([]);
     expect(criterionVerdicts([one])[0]!.admissible).toBe(false);
-    expect(formatCriterionReport([one], ['a'])).toContain('no artifact gains');
+    expect(formatCriterionReport([one], ['a'])).toContain('no GAIN artifact gains');
   });
 
   it('never mixes two shapes into one interval', () => {
@@ -6148,6 +6148,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const menu = criterionReadings(
       cvShapeMenu([gaining(1, 'dp-a'), gaining(3, 'dp-b')], WEIGHTS),
       'a',
+      'gain',
     );
     expect(menu.map((one) => one.shape)).toEqual([...CV_SHAPES]);
     expect(criterionVerdicts(menu).map((one) => one.shape)).toEqual([...CV_SHAPES]);
@@ -6162,6 +6163,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const readings: readonly CriterionReading[] = [
       {
         artifact: 'a',
+        role: 'gain',
         shape: 'flip',
         gainsFrom: 0.007,
         losesFrom: 0.01,
@@ -6170,6 +6172,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
       {
         artifact: 'b',
+        role: 'protect',
         shape: 'flip',
         gainsFrom: undefined,
         losesFrom: 0.02,
@@ -6178,8 +6181,10 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
     ];
     const verdict = criterionVerdicts(readings)[0]!;
-    expect(verdict.losesFrom).toBe(0.01);
-    expect(verdict.lossArtifact).toBe('a');
+    // The loss side is the PROTECTED artifacts only: `a`'s own cap of 0.01 is not a bound the
+    // golden half imposes, and folding it in would make the gain artifact bound itself.
+    expect(verdict.losesFrom).toBe(0.02);
+    expect(verdict.lossArtifact).toBe('b');
     expect(verdict.permittedFrom).toBe(0.006);
     expect(verdict.permittedArtifact).toBe('b');
     expect(verdict.ceiling).toBe(0.006);
@@ -6199,6 +6204,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const readings: readonly CriterionReading[] = [
       {
         artifact: 'a',
+        role: 'gain',
         shape: 'flip',
         gainsFrom: 0.004,
         losesFrom: 0.01,
@@ -6207,30 +6213,157 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
       {
         artifact: 'b',
+        role: 'protect',
         shape: 'flip',
         gainsFrom: undefined,
         losesFrom: 0.02,
-        permittedFrom: 0.012,
+        permittedFrom: 0.05,
         gains: [],
       },
     ];
     const verdict = criterionVerdicts(readings)[0]!;
-    expect(verdict.ceiling).toBe(0.01);
+    expect(verdict.ceiling).toBe(0.02);
     expect(verdict.closedBy).toBeUndefined();
     expect(verdict.admissible).toBe(true);
-    expect(verdict.width).toBeCloseTo(0.006, 12);
+    expect(verdict.width).toBeCloseTo(0.016, 12);
     expect(verdict.gainArtifact).toBe('a');
-    expect(verdict.lossArtifact).toBe('a');
+    expect(verdict.lossArtifact).toBe('b');
+    expect(verdict.costsOnGainSide).toBe(false);
     expect(verdict.gainAtFloor).toBe(1);
     const text = formatCriterionReport(readings, ['a', 'b']);
-    expect(text).toContain('ADMISSIBLE [0.004000, 0.010000) width 0.006000');
+    expect(text).toContain('ADMISSIBLE [0.004000, 0.020000) width 0.016000');
     expect(text).toContain('worth 1 case(s) at that floor');
+  });
+
+  it('reaches the SAME intersection from the temporal menu, because the criterion is a weight', () => {
+    // The generalisation the whole block exists for. The intersection is not a question about the
+    // stability statistic — it is a question about a WEIGHT — so the temporal menu must reach it
+    // through the same function, or a comparison between the two axes is two implementations.
+    const early = cvCase({
+      cvs: [undefined, undefined],
+      anomalies: [0, 1],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-1',
+      // A real anchor: `injectTimeMs: 0` is the engine's spelling of NO anchor, so a fixture that
+      // passed it would be an inert term wearing a gain's fixture.
+      injectTimeMs: 1_700_000_000_000,
+      onsets: [0, 100],
+      datapack: 'dp-early',
+    });
+    const menu = criterionReadings(onsetShapeMenu([early], WEIGHTS), 'a', 'gain');
+    const earliness = menu.find((one) => one.shape === 'earliness')!;
+    // Asserted through the OWNER rather than a literal: the promotion weight is `lead / slopeGap`,
+    // and the temporal term's own slope spacing is not 1 (measured: 0.3465736, i.e. a gap of 2 over
+    // a lead of `log1p(1)`), so a fixture written against a gap of one would pin the wrong number.
+    const slopes = onsetSlopes(early, 'earliness');
+    const gap = (slopes.get('ts-svc-0') ?? 0) - (slopes.get('ts-svc-1') ?? 0);
+    expect(gap).toBeGreaterThan(0);
+    expect(earliness.gainsFrom).toBeCloseTo(Math.log1p(1) / gap, 9);
+    // Every shape the temporal menu declares is read, in the menu's own order — the verdict is
+    // generic, so it cannot hard-code one screen's list and must still preserve another's.
+    expect(criterionVerdicts(menu).map((one) => one.shape)).toEqual(
+      onsetShapeMenu([early], WEIGHTS).map((screen) => screen.shape),
+    );
+  });
+
+  it('renders the block for the onset screen too, and never from one artifact', () => {
+    const early = cvCase({
+      cvs: [undefined, undefined],
+      anomalies: [0, 1],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-1',
+      // A real anchor: `injectTimeMs: 0` is the engine's spelling of NO anchor, so a fixture that
+      // passed it would be an inert term wearing a gain's fixture.
+      injectTimeMs: 1_700_000_000_000,
+      onsets: [0, 100],
+    });
+    const options = parseAnalyzeArgs(['--dump', 'd', '--onset-screen', '--log-weight', '0']);
+    if (options.kind !== 'dump') throw new Error('expected a dump mode');
+    expect(formatAnalyzeSections([early], 'd', options)).not.toContain('Kill criterion');
+    const paired = formatAnalyzeSections([early], 'd', options, [
+      { label: 'other', cases: [early] },
+    ]);
+    expect(paired).toContain('Kill criterion over 2 artifacts');
+  });
+
+  it('does NOT credit a gain on the PROTECTED side — the criterion is asymmetric', () => {
+    // THE defect this block shipped with, and it is not a rounding one. The first version took the
+    // min over EVERY artifact for both halves, so a gain on the benchmark a candidate must leave
+    // alone bought the region: on the temporal axis it reported `earliness` admissible from
+    // `0.001664`, which is the golden's `re3` gaining a case, while FSE'26 — the only half the
+    // criterion's first half is about — gains nothing before `0.007722`, ABOVE its own cap of
+    // `0.005361`. The interval was real, the question was wrong, and the wrong answer was the
+    // friendlier one.
+    const protectedGains: readonly CriterionReading[] = [
+      {
+        artifact: 'golden-re3',
+        role: 'protect',
+        shape: 'earliness',
+        gainsFrom: 0.001664,
+        losesFrom: 0.02613,
+        permittedFrom: Number.POSITIVE_INFINITY,
+        gains: [[{ min: 0.001664, max: 1 }]],
+      },
+      {
+        artifact: 'fse26',
+        role: 'gain',
+        shape: 'earliness',
+        gainsFrom: 0.007722,
+        losesFrom: 0.005361,
+        permittedFrom: Number.POSITIVE_INFINITY,
+        gains: [[{ min: 0.007722, max: 1 }]],
+      },
+    ];
+    const verdict = criterionVerdicts(protectedGains)[0]!;
+    // The first half comes from the GAIN artifact alone.
+    expect(verdict.gainsFrom).toBe(0.007722);
+    expect(verdict.gainArtifact).toBe('fse26');
+    // The second from the PROTECTED one alone, so a gain on it buys nothing.
+    expect(verdict.losesFrom).toBe(0.02613);
+    expect(verdict.lossArtifact).toBe('golden-re3');
+    // And the real answer: the gain costs a case where it was to be gained — the gain artifact's
+    // own cap sits BELOW its first gain. Printed, not applied: the second half there is a TYPE
+    // count and a screen cannot count types.
+    expect(verdict.costsOnGainSide).toBe(true);
+    expect(formatCriterionReport(protectedGains, ['fse26', 'golden-re3'])).toContain(
+      "AT OR ABOVE fse26's own cap",
+    );
+    // The golden half does NOT bound it — so the region is admissible on what a screen CAN decide
+    // and the unresolved bar is the caveat above, printed rather than applied. The symmetric reading
+    // would have reported `0.001664` and hidden the cost; this one reports `0.007722` and names it.
+    expect(verdict.admissible).toBe(true);
+    expect(verdict.gainsFrom).toBeGreaterThan(0.005361);
+  });
+
+  it('names an unread half rather than reading the absence as a permission', () => {
+    // An empty protected side must not read as "nothing can be lost": a region bounded by nothing is
+    // not a region, and defaulting the missing bound to infinity is the permissive answer.
+    const onlyGain: readonly CriterionReading[] = [
+      {
+        artifact: 'fse26',
+        role: 'gain',
+        shape: 'flip',
+        gainsFrom: 0.004,
+        losesFrom: 0.01,
+        permittedFrom: 0.05,
+        gains: [[{ min: 0.004, max: 1 }]],
+      },
+    ];
+    const verdict = criterionVerdicts(onlyGain)[0]!;
+    expect(verdict.lossArtifact).toBe('');
+    expect(verdict.permittedArtifact).toBe('');
+    // Not admissible, and the reason is printed rather than silently read as `Infinity`.
+    expect(verdict.admissible).toBe(false);
+    expect(formatCriterionReport(onlyGain, ['fse26'])).toContain(
+      'no artifact in the record PROTECTS this shape',
+    );
   });
 
   it('prints every artifact’s three boundaries, so the verdict can be checked', () => {
     const readings: readonly CriterionReading[] = [
       {
         artifact: 'fse26',
+        role: 'gain',
         shape: 'flip',
         gainsFrom: 0.004134,
         losesFrom: 0.024882,
@@ -6239,6 +6372,7 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
       },
       {
         artifact: 're2',
+        role: 'protect',
         shape: 'flip',
         gainsFrom: undefined,
         losesFrom: 0.007528,
@@ -6248,9 +6382,9 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     ];
     const text = formatCriterionReport(readings, ['fse26', 're2']);
     expect(text).toContain('Kill criterion over 2 artifacts');
-    expect(text).toMatch(/fse26\s+flip\s+0\.004134\s+0\.024882\s+0\.003873/);
+    expect(text).toMatch(/fse26\s+flip\s+gain\s+0\.004134\s+0\.024882\s+0\.003873/);
     // A shape with no gain prints `never` rather than a zero, in the table as well as the verdict.
-    expect(text).toMatch(/re2\s+flip\s+never\s+0\.007528\s+0\.069256/);
+    expect(text).toMatch(/re2\s+flip\s+protect\s+never\s+0\.007528\s+0\.069256/);
   });
 });
 

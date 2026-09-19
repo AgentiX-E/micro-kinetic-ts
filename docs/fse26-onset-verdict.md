@@ -368,3 +368,63 @@ a way that did not help: the screen's own note that "a mask on the onset, where 
 competitor and the credited source are not the same quantity" (true — and the competitor is
 on the other benchmark), and §5's insistence that the gate had to be able to SEE the term
 before any of this could be believed. It saw it, and it said no.
+
+## 9. The criterion, intersected: the golden's `earliest-only` ceiling, and what it explains
+
+Every weight above was solved on ONE artifact. The criterion is a comparison between two, so the object it
+asks for is the **intersection of two sets of weights** — and `criterionReadings` / `criterionVerdicts` /
+`formatCriterionReport` now compute it, reached by repeating `--dump` (the FIRST artifact is the one a
+candidate must IMPROVE; every other is one it must leave untouched). Each artifact is solved on its own
+population and in its own rounding box.
+
+Measured with FSE'26 (`dump-35035314921`) named first and the golden's three suites protected:
+
+```
+  artifact                 shape          role     gains from      loses from      permits a loss from
+  …/dump-35035314921.txt   earliness      gain        0.007722        0.005361              never
+  …/dump-35035314921.txt   order          gain        0.006700        0.005976              never
+  …/dump-35035314921.txt   earliest-only  gain        0.010257        0.038183              never
+  …/dump-35035314921.txt   latest-only    gain        0.281658        0.010050              never
+  …/rcaeval-dumps/re1.txt earliness      protect     0.004348        0.010108              never
+  …/rcaeval-dumps/re1.txt order          protect     0.005870        0.003931              never
+  …/rcaeval-dumps/re1.txt earliest-only  protect     0.016129        0.004717              never
+  …/rcaeval-dumps/re1.txt latest-only    protect     0.443976        0.040848              never
+  …/rcaeval-dumps/re2.txt earliness      protect     0.010589        0.026349              never
+  …/rcaeval-dumps/re2.txt order          protect     0.015537        0.006775              never
+  …/rcaeval-dumps/re2.txt earliest-only  protect     0.122616        0.007528              never
+  …/rcaeval-dumps/re2.txt latest-only    protect     0.017757        0.274495              never
+  …/rcaeval-dumps/re3.txt earliness      protect     0.001664        0.026130              never
+  …/rcaeval-dumps/re3.txt order          protect     0.001664        0.015049              never
+  …/rcaeval-dumps/re3.txt earliest-only  protect     0.003328        0.022757              never
+  …/rcaeval-dumps/re3.txt latest-only    protect     0.003328        0.052260              never
+```
+
+**Three facts follow, and the second is what §8 could only describe as nine moved cells.**
+
+1. **`earliest-only` is the ONE temporal shape whose FSE'26 gain is free on FSE'26** — its own cap
+   (`0.038183`) sits ABOVE the floor of its own window (`0.034920`), which is why the pair passed that half
+   completely in §7. Every other shape's first gain is at or above its own cap: `earliness` `0.007722`
+   against `0.005361`, `order` `0.006700` against `0.005976`, `latest-only` `0.281658` against `0.010050`.
+2. **And the golden closes it at `0.004717`.** `re1`'s cap on that shape is `0.004717`, so the criterion's
+   intersection is empty for every weight at which FSE'26 gains anything at all on `earliest-only`
+   (`0.010257` is the first, so the golden is binding from **2.2× below** it). The weight the solver
+   recommended, `0.036552`, is **7.7× above that ceiling** — which is the number §8 was missing when it
+   recorded "six of the nine golden cells moved, two of them by ~41pp". The revert was not a surprise; it was
+   a vertical drop against a ceiling a third of a rank step wide, and the screen cannot see the ceiling's
+   *position* on another artifact without being told to look.
+3. **`earliness`, the engine's own shape, is open on the golden and paid for on FSE'26.** Its intersection is
+   `[0.007722, 0.010108)` — width `0.002386`, worth one case — and the weight that buys that case sits at or
+   above FSE'26's own cap (`0.005361`), so it costs a case on the benchmark it was supposed to improve. That
+   half is a fault-TYPE count, which a screen cannot make, so the report PRINTS it rather than applying it:
+   the region is admissible on what a screen can decide, and the bar that remains is named.
+
+**So the temporal axis does not convert.** Its golden-side windows stay exactly as §5 recorded them — open,
+one case each, `re1` `earliness`, `re2` `earliness`+`latest-only`, `re3` three of four — and that is a
+statement about the GOLDEN. What the intersection adds is the other half: **no temporal weight gains a case
+on FSE'26 without costing a case somewhere**, either on the golden (every shape but `earliest-only`) or on
+FSE'26 itself (`earliest-only` is the exception, and the golden closes it first). A gain on the protected
+half is worth nothing, which is the asymmetry the instrument had to be taught — its first version credited
+exactly that and reported `earliness` admissible from `0.001664`, a weight at which FSE'26 gains nothing.
+
+**The pre-screen is free and is now the first thing a temporal proposal must run.** One command, four
+populations, no dispatch: a candidate that has not intersected has not stated what it buys where.

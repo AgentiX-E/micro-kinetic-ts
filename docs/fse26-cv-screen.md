@@ -999,27 +999,53 @@ carrying the MAXIMUM gain, and the criterion's first half asks about the first g
 the two differ by a whole regime — no window at all, and a first gain at `0.043497`, above the shape's own
 cap.
 
+**THE HALVES ARE ASYMMETRIC, AND THE FIRST VERSION OF THIS BLOCK WAS NOT — corrected 2026-09-19, and it
+produced a wrong headline in both directions.** The first version took the `min` over EVERY artifact for both
+halves. Two consequences, one of them a FALSE NEGATIVE:
+
+1. **It credited a gain on the PROTECTED side.** On the temporal axis it reported `earliness` admissible
+   from `0.001664`, which is the GOLDEN's `re3` gaining a case — while FSE'26, the only half the criterion's
+   first half is about, gains nothing before `0.007722`. The interval was real and the question was wrong,
+   and the wrong answer was the friendlier one.
+2. **It folded the GAIN artifact's own permission into the protected side's ceiling**, which closed the
+   stability axis below: at `0.003873` FSE'26's tie class permits a loss *on FSE'26*, and the criterion's
+   second half is about the GOLDEN. The first version therefore printed `NO ADMISSIBLE WEIGHT` for both
+   shapes; the corrected one prints an admissible region for both. **A `min` across artifacts that carries
+   different ROLES is a bound on nothing.**
+
+The fix is a declared role per reading — the artifact named FIRST on the command line is the one a candidate
+is supposed to IMPROVE, every other is one it must leave untouched — and a `costsOnGainSide` flag that names
+the case where the gain is bought at or above the gain artifact's OWN cap (the second half there is a fault
+TYPE count, which a screen cannot make, so it is printed rather than applied). An empty protected side is
+**not** a permissive one: the bound is absent, the verdict says which half is unread, and `admissible` is
+false.
+
 Measured on the four artifacts (`r35107871516` = FSE'26 with compositions, `re1`/`re2`/`re3` = the golden's
-own dumps, all three systems each):
+own dumps, all three systems each), with FSE'26 named first:
 
 ```
-  artifact                 shape   gains from      loses from      permits a loss from
-  …/r35107871516/fse26     flip       0.004134        0.024882            0.003873
-  …/r35107871516/fse26     rank       0.006672        0.030480            0.003873
-  …/rcaeval-dumps/re1.txt  flip       0.008032        0.008032            0.008032
-  …/rcaeval-dumps/re1.txt  rank       0.015783        0.015233            0.008032
-  …/rcaeval-dumps/re2.txt  flip       0.043497        0.007528            0.069256
-  …/rcaeval-dumps/re2.txt  rank       0.149687        0.012161            0.069256
-  …/rcaeval-dumps/re3.txt  flip       0.091685        0.180534            0.016369
-  …/rcaeval-dumps/re3.txt  rank       0.077599        0.316068            0.016369
+  artifact                 shape   role     gains from      loses from      permits a loss from
+  …/r35107871516/fse26     flip    gain        0.004134        0.024882            0.003873
+  …/r35107871516/fse26     rank    gain        0.006672        0.030480            0.003873
+  …/rcaeval-dumps/re1.txt  flip    protect     0.008032        0.008032            0.008032
+  …/rcaeval-dumps/re1.txt  rank    protect     0.015783        0.015233            0.008032
+  …/rcaeval-dumps/re2.txt  flip    protect     0.043497        0.007528            0.069256
+  …/rcaeval-dumps/re2.txt  rank    protect     0.149687        0.012161            0.069256
+  …/rcaeval-dumps/re3.txt  flip    protect     0.091685        0.180534            0.016369
+  …/rcaeval-dumps/re3.txt  rank    protect     0.077599        0.316068            0.016369
 
-  flip: gains from 0.004134 (FSE'26), worth 1 case at that floor; loses from 0.007528 (re2), and
-        FSE'26 PERMITS a protected case to be cost from 0.003873 — NO ADMISSIBLE WEIGHT
-  rank: gains from 0.006672 (FSE'26), worth 1 case at that floor; loses from 0.012161 (re2), and
-        FSE'26 PERMITS a protected case to be cost from 0.003873 — NO ADMISSIBLE WEIGHT
+  flip: gains from 0.004134 (FSE'26), worth 1 case at that floor; loses from 0.007528 (re2) — and that
+        weight is AT OR ABOVE FSE'26's own cap, so it costs a case where it was to gain one (a run
+        settles it; the screen cannot count types) — ADMISSIBLE [0.004134, 0.007528) width 0.003395
+  rank: gains from 0.006672 (FSE'26), worth 1 case at that floor; loses from 0.012161 (re2), and re1
+        PERMITS a protected case to be cost from 0.008032 — ADMISSIBLE [0.006672, 0.008032) width 0.001360
 ```
 
-**Three things this settles that no per-artifact table could, and the third is the one that matters.**
+**And the shape the ENGINE has is `rank`**, so the shippable candidate is its midpoint: **`0.007352`**, in
+`[0.006672, 0.008032)` — predicted to gain ONE case on FSE'26 with the golden loss-free, and carrying
+FSE'26's own permission (`0.003873`, below the first gain) as the one bar only a run can settle.
+
+**Three things this settles that no per-artifact table could.**
 
 1. **The weight the solver recommends is 2.5×–4.0× above the golden's own loss-free ceiling.** FSE'26's
    `rank` window is `[0.029860, 0.030480]` and it SHIPS `0.030170`; the golden's first predicted loss is at
@@ -1027,24 +1053,23 @@ own dumps, all three systems each):
    a number this command predicts. The same holds on `flip`: `0.023209` against `0.007528`, 3.1×.
 2. **The golden is loss-free where FSE'26 starts gaining, by a factor of 1.8×/1.8×.** The golden's ceiling is
    `0.007528` (`flip`) and `0.012161` (`rank`) while FSE'26's first gain is `0.004134` / `0.006672`, so a
-   golden-neutral weight exists on BOTH shapes by the models — the answer to "whether a narrower weight is
-   golden-neutral", which this document listed as not settled, is **yes**, and the question it was standing
-   in for is the one below.
-3. **And it is worth ONE case, and FSE'26 itself closes it.** The region is `[0.004134, 0.007528)` wide by
-   `0.0034` on `flip` and `[0.006672, 0.012161)` wide by `0.0055` on `rank`, and FSE'26's own tie class
-   PERMITS a protected case there to be cost from **`0.003873`** — below the first gain on both shapes. So
-   the region is one no artifact can decide, the verdict reads `NO ADMISSIBLE WEIGHT`, and the gain at its
-   floor is one case. That is the honest form of the closure: **the statistic that separates at AUC 0.718
-   cannot be converted into a shippable gain beyond one case without leaving a region the artifacts can
-   resolve** — and the run that would test it is the one whose weight this command places `2.5×` outside the
-   golden's ceiling.
+   golden-neutral weight exists on BOTH shapes — the answer to "whether a narrower weight is golden-neutral",
+   which this document listed as not settled, is **yes**, and it is now the shippable candidate above rather
+   than a caveat.
+3. **It is worth ONE case on both shapes, and the window is a THIRD OF A RANK STEP.** `[0.004134, 0.007528)`
+   is `0.0034` wide and `[0.006672, 0.008032)` is `0.0014`; the term's own rank step on FSE'26 is `6.034e-4`,
+   so the `rank` window is about two steps. A gain that arrives one case at a time over a window two rank
+   steps wide is what a statistic whose maximal-gain plateau starts at `0.029860` looks like when the
+   constraint is the other benchmark — and **the honest form of the closure is that the term ships one case
+   at a time, not that it cannot ship**: the earlier `NO ADMISSIBLE WEIGHT` reading was the instrument's
+   error, not the axis's answer.
 
 The pessimistic end is not a preference: `lossFloor` is where the artifact *permits* a loss and the cap is
 where the model *predicts* one, so the truth is between them and a verdict has to consume both — the same
-rule `admissibilityOf` applies to the ensembles, applied here to the intersection. The one dispatched run
-that measured FSE'26's own half rejected the permission (it delivered **0 regressed fault types** at
-`0.030170`), which is why the entry is recorded as a bound the engine beat rather than as a prediction it
-failed.
+rule `admissibilityOf` applies to the ensembles, applied here to the intersection, and bounded to the side
+the artifact was read for. The one dispatched run that measured FSE'26's own half rejected the permission (it
+delivered **0 regressed fault types** at `0.030170`), which is why the caveat is recorded as a bound the
+engine beat rather than as a prediction it failed.
 
 **This tool is also what the register's re-opening rule needed.** A candidate is now measured by naming the
 artifacts and letting the intersection be computed, instead of by picking a weight by hand and dispatching —
@@ -1142,6 +1167,7 @@ Not settled:
 | the dump's fidelity | against each dump's OWN `prediction=` rank: **six of seven exact** (`re1` 301, `re1-noinject` 301, `re2` 119, `re2-noinject` 119, `re3-noinject` 37, `re3-novelty` 37) and divergent only on the `traceWeight=1` dump (48 → 35). RE1's 301 is checkable against the published table independently of the dump: `80.0% × 125 + 92.8% × 125 + 68.0% × 125 = 100 + 116 + 85` |
 | the criterion as an INTERSECTION | `criterionReadings` + `criterionVerdicts` + `formatCriterionReport`, reachable by repeating `--dump`. Three fixtures pin the three ways the intersection is got wrong: the FIRST gain rather than the maximal-gain floor (`gainsFrom` `log1p(1)` against the same case set's `gainFloor` `log1p(3)`), an artifact that PERMITS a loss below the model's cap (region closed, the permitting artifact NAMED), and a shape no artifact gains on (reported as `never`, not as zero). Two more pin the wiring: ONE dump renders no block at all and the report it rendered before, byte for byte, and a second dump appends the block inside the section rather than after the trailing anomaly-shape report. Measured on the four artifacts: `NO ADMISSIBLE WEIGHT` on both shapes, closed by FSE'26's own permission at `0.003873` |
 | the intersection's own numbers | the table above is reproduced by one command whose four `correct at 0` totals are the runs' own published headlines: `r35107871516` 756 / 1422 (`53.16%`), `re1` 301 / 375, `re2` 119 / 150, `re3` 35 / 90. Each artifact is solved on its own population and in its own box — the concatentation a single case list would imply is exactly the error the box model exists to prevent |
+| the criterion's ROLES, and the headline they correct | the halves are asymmetric (gain on the artifact named FIRST, cost nothing on the rest) and the first version of this block was not. Both of its errors are pinned by tests: a gain on a PROTECTED artifact must NOT be credited (`gainsFrom` reads the gain artifact's `0.007722`, not the protected one's `0.001664`), and an artifact's own permission must not bound the other half (the stability shapes come out `ADMISSIBLE`, where the symmetric version printed `NO ADMISSIBLE WEIGHT` for both). A third asserts an unread half is NAMED rather than read as `Infinity` — an absent bound is not a permissive one. Measured end-to-end on BOTH axes with the same function: stability `flip` `[0.004134, 0.007528)` and `rank` `[0.006672, 0.008032)`, temporal `earliness` `[0.007722, 0.010108)` with the cost on the gain side and the other three temporal shapes closed |
 | the criterion's own GOLDEN | `35366331873` at `717ab5a`: **9 of 9 cells byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` — with every job green, `CI` (run `35366331766`) and `Release` (run `35366331841`) green on the same commit. Owed by the paths rule (`benchmarks/src/**`) and the expected outcome: the change is a new section plus a REPEATABLE flag, so no ranking term reads it — and the one-dump case is asserted to render the report it rendered before, byte for byte |
 
 The tests that carry the design, and why each exists:

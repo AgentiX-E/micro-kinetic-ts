@@ -4346,11 +4346,30 @@ export function formatCvMenuReport(
  * this type existed the two numbers came out of two tables and were compared in prose — which is
  * how a record came to state an intersection it had never computed.
  */
+/**
+ * Which half of the criterion an artifact is being read for.
+ *
+ * The criterion is ASYMMETRIC — a candidate must GAIN on one benchmark and cost another NOTHING —
+ * so a gain on the protected half is worth nothing and a loss on the gain half is a different
+ * question again. An earlier version of this block took the min over every artifact for both halves
+ * and therefore credited a gain on the WRONG benchmark: on the temporal axis it reported
+ * `earliness` admissible from 0.001664, which is the GOLDEN's `re3` gaining a case while FSE'26 —
+ * the only half the criterion's first half is about — gains nothing until 0.007722, above its own
+ * cap. The interval was real and the question was wrong.
+ */
+export type CriterionRole =
+  /** The benchmark a candidate is supposed to IMPROVE. Its gain is the criterion's first half. */
+  | 'gain'
+  /** The benchmark a candidate must leave untouched. Its loss is the second half. */
+  | 'protect';
+
 export interface CriterionReading {
   /** The artifact, by the RUN it came from. A copy's filename is not a provenance. */
   readonly artifact: string;
   /** The shape this reading is for. Two shapes are two different questions and are never mixed. */
-  readonly shape: CvShape;
+  readonly shape: string;
+  /** Which half of the criterion this artifact was read for. */
+  readonly role: CriterionRole;
   /**
    * The first weight at which this artifact gains a case, or `undefined` when no weight does.
    *
@@ -4379,10 +4398,24 @@ export interface CriterionReading {
   readonly gains: readonly (readonly WeightInterval[])[];
 }
 
+/**
+ * The least a solved screen has to expose for the criterion to read it.
+ *
+ * Structural rather than a naming of one screen's type, because the criterion is not a question about
+ * the stability statistic: it is a question about a WEIGHT, and every screen in this file solves one.
+ * The temporal menu and the stability menu therefore reach the same intersection through the same
+ * function, which is what makes a comparison between the two axes a read rather than a re-implementation.
+ */
+export interface CriterionScreen {
+  readonly shape: string;
+  readonly solved: { readonly window: ZeroRegressionWindow };
+}
+
 /** What one artifact's menu says, as readings the criterion can intersect. */
 export function criterionReadings(
-  screens: readonly CvScreen[],
+  screens: readonly CriterionScreen[],
   artifact: string,
+  role: CriterionRole,
 ): readonly CriterionReading[] {
   return screens.map((screen) => {
     const w = screen.solved.window;
@@ -4395,6 +4428,7 @@ export function criterionReadings(
     return {
       artifact,
       shape: screen.shape,
+      role,
       gainsFrom: Number.isFinite(first) ? first : undefined,
       losesFrom: w.cap,
       permittedFrom: w.capUnrepresentable.lossFloor,
@@ -4426,7 +4460,7 @@ export function gainsAtWeight(reading: CriterionReading, weight: number): number
  * inside a gain — and every loss is ruled out there because the ceiling is the earliest one.
  */
 export interface CriterionVerdict {
-  readonly shape: CvShape;
+  readonly shape: string;
   /** The first weight any artifact gains a case, and which artifact that is. */
   readonly gainsFrom: number | undefined;
   readonly gainArtifact: string | undefined;
@@ -4435,13 +4469,23 @@ export interface CriterionVerdict {
   /** The first weight any artifact's model costs a protected case, and which artifact sets it. */
   readonly losesFrom: number;
   readonly lossArtifact: string;
-  /** The earliest permission to cost one, over every artifact, and which artifact grants it. */
+  /** The earliest permission to cost one, over the protected artifacts, and which grants it. */
   readonly permittedFrom: number;
   readonly permittedArtifact: string;
   /** {@link losesFrom}, or the earlier {@link permittedFrom} when one exists. */
   readonly ceiling: number;
   /** The artifact whose permission closed the region below the model's cap, when one did. */
   readonly closedBy: string | undefined;
+  /**
+   * Whether the GAIN artifact's own cap sits below its first gain — i.e. the weight that buys the
+   * gain also costs a case on the very benchmark it was supposed to improve.
+   *
+   * Not a veto: the criterion's second half is ZERO REGRESSED FAULT TYPES, and a screen cannot
+   * count types, so this is a caveat a run has to settle rather than a bar the screen can apply.
+   * Printed either way, because an interval that reads `ADMISSIBLE` on the golden half alone is
+   * otherwise one a reader would ship from.
+   */
+  readonly costsOnGainSide: boolean;
   readonly admissible: boolean;
   /** {@link ceiling} minus {@link gainsFrom}; zero when the region is empty. */
   readonly width: number;
@@ -4461,11 +4505,20 @@ export interface CriterionVerdict {
 export function criterionVerdicts(
   readings: readonly CriterionReading[],
 ): readonly CriterionVerdict[] {
-  const shapes = CV_SHAPES.filter((shape) => readings.some((one) => one.shape === shape));
+  // Shapes in the order they FIRST appear, which is the order the artifact's own menu presents them:
+  // the verdict is generic over screens, so it cannot hard-code one screen's declared list.
+  const shapes = readings
+    .filter((one, index) => readings.findIndex((other) => other.shape === one.shape) === index)
+    .map((one) => one.shape);
   return shapes.map((shape) => {
     const group = readings.filter((one) => one.shape === shape);
+    // The halves are ASYMMETRIC: only a `gain` artifact may supply the first half, and only a
+    // `protect` artifact may bound the second. Mixing them is how an interval came to be read off
+    // the wrong benchmark.
+    const gainers = group.filter((one) => one.role === 'gain');
+    const protectedSide = group.filter((one) => one.role === 'protect');
     let gain: CriterionReading | undefined;
-    for (const one of group) {
+    for (const one of gainers) {
       if (
         one.gainsFrom !== undefined &&
         (gain?.gainsFrom === undefined || one.gainsFrom < gain.gainsFrom)
@@ -4473,30 +4526,45 @@ export function criterionVerdicts(
         gain = one;
       }
     }
-    let loss = group[0]!;
-    let permitted = group[0]!;
-    for (const one of group) {
-      if (one.losesFrom < loss.losesFrom) loss = one;
-      if (one.permittedFrom < permitted.permittedFrom) permitted = one;
-    }
+    const loser = protectedSide.reduce<CriterionReading | undefined>(
+      (best, one) => (best === undefined || one.losesFrom < best.losesFrom ? one : best),
+      undefined,
+    );
+    const permitter = protectedSide.reduce<CriterionReading | undefined>(
+      (best, one) => (best === undefined || one.permittedFrom < best.permittedFrom ? one : best),
+      undefined,
+    );
+    // An empty side is NOT a permissive one: "no artifact protects anything" must not read as
+    // "nothing can be lost", so the bound is ABSENT and the verdict names the half it cannot read.
+    const losesFrom = loser?.losesFrom ?? Number.POSITIVE_INFINITY;
+    const permittedFrom = permitter?.permittedFrom ?? Number.POSITIVE_INFINITY;
     // The ceiling is the PESSIMISTIC of the two: a loss is PREDICTED below the cap and PERMITTED
     // from the floor, so a region that ends at the cap alone is one an artifact can already close.
-    const ceiling = Math.min(loss.losesFrom, permitted.permittedFrom);
-    const closedBy = permitted.permittedFrom < loss.losesFrom ? permitted.artifact : undefined;
+    const ceiling = Math.min(losesFrom, permittedFrom);
+    const closedBy =
+      permitter !== undefined && permittedFrom < losesFrom ? permitter.artifact : undefined;
     const gainsFrom = gain?.gainsFrom;
-    const admissible = gainsFrom !== undefined && gainsFrom < ceiling;
+    // A region needs BOTH halves read. An unprotected shape has no bound the criterion can claim,
+    // so an absent loss side is not a permissive one — `Infinity` would read as "nothing can be lost".
+    const admissible = gainsFrom !== undefined && Number.isFinite(ceiling) && gainsFrom < ceiling;
     return {
       shape,
       gainsFrom,
       gainArtifact: gain?.artifact,
       gainAtFloor:
         gain === undefined || gainsFrom === undefined ? 0 : gainsAtWeight(gain, gainsFrom),
-      losesFrom: loss.losesFrom,
-      lossArtifact: loss.artifact,
-      permittedFrom: permitted.permittedFrom,
-      permittedArtifact: permitted.artifact,
+      losesFrom,
+      lossArtifact: loser?.artifact ?? '',
+      permittedFrom,
+      permittedArtifact: permitter?.artifact ?? '',
       ceiling,
       closedBy,
+      // The gain side's OWN cost, reported because the second half is a TYPE count and a screen
+      // cannot count types: the weight that buys the gain may cost a case where it was to be gained.
+      costsOnGainSide:
+        gain !== undefined &&
+        gainsFrom !== undefined &&
+        Math.min(gain.losesFrom, gain.permittedFrom) <= gainsFrom,
       admissible,
       width: admissible ? ceiling - gainsFrom : 0,
     };
@@ -4521,16 +4589,16 @@ export function formatCriterionReport(
   const lines: string[] = [];
   const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'never');
   lines.push(
-    `Kill criterion over ${artifacts.length} artifacts — a weight that gains a case on one ` +
-      'benchmark and costs another none:',
+    `Kill criterion over ${artifacts.length} artifacts — a weight that gains a case on the one named ` +
+      'FIRST and costs every other none:',
   );
   lines.push(
-    '  artifact                 shape   gains from      loses from      permits a loss from',
+    '  artifact                 shape          role     gains from      loses from      permits a loss from',
   );
   for (const artifact of artifacts) {
     for (const one of readings.filter((r) => r.artifact === artifact)) {
       lines.push(
-        `  ${artifact.padEnd(24)}${one.shape.padEnd(8)}` +
+        `  ${artifact.padEnd(24)}${one.shape.padEnd(15)}${one.role.padEnd(9)}` +
           `${at(one.gainsFrom ?? Number.POSITIVE_INFINITY).padStart(11)}  ` +
           `${at(one.losesFrom).padStart(14)}  ${at(one.permittedFrom).padStart(18)}`,
       );
@@ -4539,21 +4607,31 @@ export function formatCriterionReport(
   for (const verdict of criterionVerdicts(readings)) {
     const gain =
       verdict.gainsFrom === undefined
-        ? `no artifact gains on \`${verdict.shape}\` at any weight`
+        ? `no GAIN artifact gains on \`${verdict.shape}\` at any weight`
         : `gains from ${at(verdict.gainsFrom)} (${verdict.gainArtifact}), worth ` +
           `${verdict.gainAtFloor} case(s) at that floor`;
-    const loss = `loses from ${at(verdict.losesFrom)} (${verdict.lossArtifact})`;
+    const loss =
+      verdict.losesFrom === Number.POSITIVE_INFINITY
+        ? 'no artifact in the record PROTECTS this shape'
+        : `loses from ${at(verdict.losesFrom)} (${verdict.lossArtifact})`;
     const close =
       verdict.closedBy === undefined
         ? ''
         : `, and ${verdict.closedBy} PERMITS a protected case to be cost from ` +
           `${at(verdict.permittedFrom)}`;
+    // A weight can be loss-free on the golden and still cost the benchmark it was to improve. The
+    // second half there is a TYPE count, which a screen cannot make — so it is printed, not applied.
+    const local =
+      verdict.costsOnGainSide && verdict.gainArtifact !== undefined
+        ? ` — and that weight is AT OR ABOVE ${verdict.gainArtifact}'s own cap, so it costs a case ` +
+          'where it was to gain one (a run settles it; the screen cannot count types)'
+        : '';
     const region = verdict.admissible
       ? `ADMISSIBLE [${at(verdict.gainsFrom ?? 0)}, ${at(verdict.ceiling)}) width ` +
         `${verdict.width.toFixed(6)}`
       : 'NO ADMISSIBLE WEIGHT';
     lines.push('');
-    lines.push(`  ${verdict.shape}: ${gain}; ${loss}${close} — ${region}`);
+    lines.push(`  ${verdict.shape}: ${gain}; ${loss}${close}${local} — ${region}`);
   }
   return `${lines.join('\n')}\n`;
 }
@@ -6554,6 +6632,45 @@ export function formatAnalyzeSections(
 }
 
 /**
+ * Append the criterion block to a screen's own menu, when a second artifact was named.
+ *
+ * One owner for both screens that reach it, because the block is identical and the screen is not: the
+ * criterion is a question about a WEIGHT, so the temporal menu and the stability menu intersect through
+ * the same function and a comparison between the two axes is a read rather than a second implementation.
+ *
+ * @param menu - The screen's own report, printed on its own either way.
+ * @param solve - The screen's own menu, so each artifact is solved by the code that owns its slopes.
+ * @param cases - This artifact's cases.
+ * @param dumpLabel - This artifact's label, which a reader must be able to trace to a run.
+ * @param siblings - The artifacts this one is compared against; empty means no block.
+ * @returns The menu, with the criterion block after it when a comparison was asked for.
+ */
+function withCriterion(
+  menu: string,
+  solve: (cases: readonly DiagnosedCase[]) => readonly CriterionScreen[],
+  cases: readonly DiagnosedCase[],
+  dumpLabel: string,
+  siblings: readonly AnalyzeSibling[],
+): string {
+  // The criterion's two halves are a COMPARISON, so it is rendered only when a second artifact was
+  // named — and every artifact is solved on its OWN population and its OWN box, because a
+  // concatenation would draw one artifact's digits in another's quantum.
+  if (siblings.length === 0) return menu;
+  // The FIRST artifact is the one a candidate is supposed to IMPROVE and every sibling is one it
+  // must leave untouched, which is the criterion's own asymmetry rather than a convenience: the
+  // order of `--dump` is the order the halves were meant in.
+  const readings: CriterionReading[] = [
+    ...criterionReadings(solve(cases), dumpLabel, 'gain'),
+    ...siblings.flatMap((sibling) =>
+      criterionReadings(solve(sibling.cases), sibling.label, 'protect'),
+    ),
+  ];
+  return (
+    menu + '\n' + formatCriterionReport(readings, [dumpLabel, ...siblings.map((s) => s.label)])
+  );
+}
+
+/**
  * A second artifact read in the same invocation, for the sections whose question is a COMPARISON.
  *
  * The kill criterion compares two benchmarks, so it cannot be answered from one dump however the
@@ -6632,7 +6749,13 @@ function analyzeSectionText(
       const weights: FamilyScreenWeights = section;
       // The whole declared menu, so the axis cannot be left open on the technicality
       // that only one shape was tried.
-      return formatOnsetMenuReport(onsetShapeMenu(cases, weights, section.atWeight), weights);
+      return withCriterion(
+        formatOnsetMenuReport(onsetShapeMenu(cases, weights, section.atWeight), weights),
+        (c) => onsetShapeMenu(c, weights, section.atWeight),
+        cases,
+        dumpLabel,
+        siblings,
+      );
     }
     case 'discriminator': {
       // The screen fits and cross-validates its own rules, so it needs the whole
@@ -6655,18 +6778,12 @@ function analyzeSectionText(
       // technicality that only one reading of the statistic was tried.
       const weights: FamilyScreenWeights = section;
       const menu = formatCvMenuReport(cvShapeMenu(cases, weights, section.atWeight), weights);
-      if (siblings.length === 0) return menu;
-      // The criterion's two halves are a comparison, so it is rendered only when a second artifact
-      // was named — and every artifact is solved on its OWN population and its OWN box, because a
-      // concatenation would draw one artifact's digits in another's quantum.
-      const readings: CriterionReading[] = [
-        ...criterionReadings(cvShapeMenu(cases, weights, section.atWeight), dumpLabel),
-        ...siblings.flatMap((sibling) =>
-          criterionReadings(cvShapeMenu(sibling.cases, weights, section.atWeight), sibling.label),
-        ),
-      ];
-      return (
-        menu + '\n' + formatCriterionReport(readings, [dumpLabel, ...siblings.map((s) => s.label)])
+      return withCriterion(
+        menu,
+        (c) => cvShapeMenu(c, weights, section.atWeight),
+        cases,
+        dumpLabel,
+        siblings,
       );
     }
     case 'separatorScreen':
