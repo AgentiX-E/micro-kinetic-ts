@@ -76,6 +76,7 @@ export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 export {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,

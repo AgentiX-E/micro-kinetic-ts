@@ -653,6 +653,25 @@ export function isOnsetShape(value: string): value is OnsetShape {
  */
 export const DEFAULT_TEMPORAL_WEIGHT = 0.0;
 
+/**
+ * Weight on the log signal, the largest term in the ranking and the first to ship enabled.
+ *
+ * Benchmark #220 measured it as net-positive with zero regression — RE2 resource cascades are
+ * neutral (connectivity exceptions are excluded, so the signal does not misfire onto symptoms)
+ * while RE3 code-level faults are lifted (OnlineBoutique +13.4pp, SockShop +3.3pp) — and it has
+ * been 1.0 ever since.
+ *
+ * One owner, and it was the LAST value here to get one. Every other shipped weight was given an
+ * exported constant when it acquired a second owner; the log weight was a bare `1.0` in four
+ * files — this default, each parser's parsed default, and each parser's `parseWeight` fallback —
+ * with nothing to compare them against. Both workload descriptions quote it ("empty = the runner
+ * default, which is the measured 1.0"), so a guard on those descriptions could only be satisfied
+ * by typing a fourth literal into a test. The one that found it is
+ * `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts`, whose `DESCRIBES_SHIPPED` table
+ * was the only entry in it not read from an owner.
+ */
+export const DEFAULT_LOG_WEIGHT = 1.0;
+
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
   decayAlpha: 0.8,
@@ -665,7 +684,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   onsetShape: DEFAULT_ONSET_SHAPE,
   collisionWeight: 0.0,
   topoWeight: 0.0,
-  logWeight: 1.0,
+  logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: 'count',
   riseWeight: 0.0,
   traceWeight: 0.0,

@@ -175,7 +175,7 @@ const KNOBS: Readonly<
     flag: '--log-weight',
     owner: 'fse26-shipped-config-verdict.md',
     fse26: 'log_weight',
-    rcaeval: null,
+    rcaeval: 'log_weight',
   },
   logMode: {
     flag: '--log-mode',
@@ -193,7 +193,7 @@ const KNOBS: Readonly<
     flag: '--no-rank-normalization',
     owner: 'fse26-shipped-config-verdict.md',
     fse26: 'no_rank_normalization',
-    rcaeval: null,
+    rcaeval: 'no_rank_normalization',
   },
   metricRiseCeiling: {
     flag: '--rise-ceiling',
@@ -253,13 +253,13 @@ const KNOBS: Readonly<
     flag: '--temporal-weight',
     owner: 'fse26-onset-verdict.md',
     fse26: 'temporal_weight',
-    rcaeval: null,
+    rcaeval: 'temporal_weight',
   },
   onsetShape: {
     flag: '--onset-shape',
     owner: 'fse26-onset-verdict.md',
     fse26: 'onset_shape',
-    rcaeval: null,
+    rcaeval: 'onset_shape',
   },
   collisionWeight: {
     flag: '--collision-weight',
@@ -342,7 +342,13 @@ const NON_DERIVABLE_OPTIONS: readonly string[] = [
  * the knob added for the stability candidate: everything measured before it was pre-screened
  * through FSE'26 alone or solved offline on dumps.
  */
-const DISPATCHABLE_ON_BOTH: readonly string[] = ['stabilityWeight'];
+const DISPATCHABLE_ON_BOTH: readonly string[] = [
+  'logWeight',
+  'onsetShape',
+  'rankNormalization',
+  'stabilityWeight',
+  'temporalWeight',
+];
 
 /**
  * The accepted ranking flags RCAEval cannot dispatch, as an exact set.
@@ -357,16 +363,12 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   '--collision-weight',
   '--fusion-ceiling',
   '--log-signal-mode',
-  '--log-weight',
-  '--no-rank-normalization',
   '--no-suppress-idle-transients',
   '--no-suppress-near-zero-baseline-rise',
-  '--onset-shape',
   '--prism-weight',
   '--rank-normalization',
   '--suppress-idle-transients',
   '--suppress-near-zero-baseline-rise',
-  '--temporal-weight',
   '--topo-weight',
   '--trace-weight',
 ];
@@ -498,6 +500,72 @@ describe('the dispatch surface has one owner per knob', () => {
     const rcaevalOnly = Object.values(KNOBS).filter((k) => k.rcaeval !== null).length;
     expect(fse26Only).toBeGreaterThan(both.length);
     expect(rcaevalOnly).toBe(both.length);
+  });
+
+  it('reads the shipped weight from its OWNER, so a moved constant cannot leave a copy behind', () => {
+    // A parser that falls back to a literal agrees with the engine today and diverges the moment the
+    // constant moves — the failure mode that once published a headline 24.2pp below the best-measured
+    // one. It cannot be caught behaviourally, because the two agree NOW, so it is caught in the
+    // SOURCE: a term with an exported default must name it, and only `0` — the unambiguous "off"
+    // value of an opt-in term that has no constant of its own — may be a literal fallback.
+    const owned = [
+      'logWeight',
+      'latWeight',
+      'poolMetricPenaltyWeight',
+      'stabilityWeight',
+      'temporalWeight',
+    ];
+    const sources = [
+      { name: 'fse26-cli', text: readFileSync(FSE26_CLI, 'utf8'), accepted: fse26Flags },
+      { name: 'rcaeval-cli', text: readFileSync(RCAEVAL_CLI, 'utf8'), accepted: rcaevalFlags },
+    ];
+    for (const { name, text, accepted } of sources) {
+      // Non-vacuity DERIVED rather than listed: the owned knobs a parser must name are the owned
+      // knobs whose flag that parser accepts, which the extraction above already knows.
+      const expected = Object.entries(KNOBS)
+        .filter(([, knob]) => accepted.has(knob.flag))
+        .map(([option]) => option)
+        .filter((option) => owned.includes(option));
+      expect(expected.length, `${name} must own at least one of them`).toBeGreaterThan(0);
+      for (const knob of expected) {
+        expect(text, `${name}: ${knob} must read its constant`).not.toMatch(
+          new RegExp(`${knob}: (?!DEFAULT_)\\d`),
+        );
+        expect(text, `${name} names ${knob}`).toContain(knob);
+      }
+      expect(text, `${name}: no non-zero literal fallback`).not.toMatch(
+        /parseWeight\([^)]*!, (?!0\b)(?!DEFAULT_)\d/,
+      );
+    }
+    // And the extraction really does cover both parsers, so the loop is not asserting over one.
+    expect(sources.map((s) => s.accepted.size).every((n) => n > 10)).toBe(true);
+  });
+
+  it('records every dispatch a workflow actually has, not merely the ones it claims', () => {
+    // The direction that was missing, and it was missing in the expensive way: every other assertion
+    // reads the table and asks whether the workflow agrees, so a table that UNDER-REPORTS a dispatch
+    // passes all of them. Measured, not hypothesised: four inputs were added to the RCAEval workflow
+    // and the guard stayed green, because the intersection it checks is computed from this table
+    // rather than from the workflows.
+    const declared = (inputs: readonly string[], accepted: Map<string, string>): string[] =>
+      inputs
+        .filter((name) => !(name in OPERATIONAL_INPUTS))
+        .map((name) => accepted.get(flagOfInput(name)))
+        .filter(
+          (option): option is string => option !== undefined && !(option in OPERATIONAL_OPTIONS),
+        );
+    const recorded = (side: 'fse26' | 'rcaeval'): string[] =>
+      Object.entries(KNOBS)
+        .filter(([, knob]) => knob[side] !== null)
+        .map(([option]) => option);
+    expect(new Set(declared(rcaevalInputs, rcaevalFlags))).toEqual(new Set(recorded('rcaeval')));
+    expect(new Set(declared(fse26Inputs, fse26Flags))).toEqual(new Set(recorded('fse26')));
+    // Non-vacuity both ways: each workflow must declare something, and the sets must be unequal
+    // because RCAEval still exposes fewer knobs than FSE'26 does.
+    expect(declared(rcaevalInputs, rcaevalFlags).length).toBeGreaterThan(1);
+    expect(declared(fse26Inputs, fse26Flags).length).toBeGreaterThan(
+      declared(rcaevalInputs, rcaevalFlags).length,
+    );
   });
 
   it('records the flags RCAEval accepts but cannot dispatch, as an exact set', () => {

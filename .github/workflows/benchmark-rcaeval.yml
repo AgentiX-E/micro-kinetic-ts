@@ -8,6 +8,26 @@ on:
         required: false
         default: ''
         type: string
+      log_weight:
+        description: "Weight on the log signal (empty = the runner default, which is 1). Added so the golden half of the kill criterion is measurable by DISPATCH: until it existed, a candidate whose knob only the FSE'26 workflow could pass had an undecidable other half, which is why the REJECTED temporal candidate is recorded with `golden: 'unmeasured'`"
+        required: false
+        default: ''
+        type: string
+      temporal_weight:
+        description: "Weight of the injection-anchored temporal prior (empty = the runner default, which is 0). The runner has accepted this flag all along and no dispatch could reach it — a pin whose replacement is unreachable is still a pin"
+        required: false
+        default: ''
+        type: string
+      onset_shape:
+        description: "Shape the temporal prior reads the onset delays in (empty = the runner default, earliness). A weight is a claim about a SHAPE, so the two travel together or neither is a configuration"
+        required: false
+        default: ''
+        type: string
+      no_rank_normalization:
+        description: "Set to anything non-empty to DISABLE rank normalisation (empty = the runner default, which is ON). Spelled as the negation because that is the only pole the FSE'26 parser exposes, so the same value means the same thing in both workflows"
+        required: false
+        default: ''
+        type: string
       diagnose_dump:
         description: "Write the FSE'26 signal diagnostic for every diagnosed case, one file per invocation, uploaded as an artifact. This is what lets the weight solver, the family screen and the decisive-stability screen run on THIS benchmark offline, instead of costing a dispatch per weight (empty = off)"
         required: false
@@ -109,6 +129,24 @@ jobs:
           if [ -n "${{ inputs.stability_weight }}" ]; then
             STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
           fi
+          RANKING_ARG=()
+          # The knobs BOTH runners accept, so a candidate on any of them can be measured on this
+          # benchmark without moving a default to do it — the golden half of the kill criterion.
+          # Every one is empty by default, so a PUSH passes no flag at all and the nine cells stay
+          # byte-identical; the guard that keeps that true is the same one that reads the accepted
+          # set out of each parser.
+          if [ -n "${{ inputs.log_weight }}" ]; then
+            RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
+          if [ -n "${{ inputs.no_rank_normalization }}" ]; then
+            RANKING_ARG+=(--no-rank-normalization)
+          fi
           DIAGNOSE_ARG=()
           # One file per STEP, because the three RE3 invocations share a job: a single
           # path would leave only the last configuration's cases on disk, and a dump
@@ -119,7 +157,7 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-results.txt
       - name: Upload RE1 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -142,6 +180,24 @@ jobs:
           if [ -n "${{ inputs.stability_weight }}" ]; then
             STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
           fi
+          RANKING_ARG=()
+          # The knobs BOTH runners accept, so a candidate on any of them can be measured on this
+          # benchmark without moving a default to do it — the golden half of the kill criterion.
+          # Every one is empty by default, so a PUSH passes no flag at all and the nine cells stay
+          # byte-identical; the guard that keeps that true is the same one that reads the accepted
+          # set out of each parser.
+          if [ -n "${{ inputs.log_weight }}" ]; then
+            RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
+          if [ -n "${{ inputs.no_rank_normalization }}" ]; then
+            RANKING_ARG+=(--no-rank-normalization)
+          fi
           DIAGNOSE_ARG=()
           # One file per STEP, because the three RE3 invocations share a job: a single
           # path would leave only the last configuration's cases on disk, and a dump
@@ -152,7 +208,7 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-noinject-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-noinject-results.txt
       - name: Upload RE1 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
@@ -198,6 +254,24 @@ jobs:
           if [ -n "${{ inputs.stability_weight }}" ]; then
             STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
           fi
+          RANKING_ARG=()
+          # The knobs BOTH runners accept, so a candidate on any of them can be measured on this
+          # benchmark without moving a default to do it — the golden half of the kill criterion.
+          # Every one is empty by default, so a PUSH passes no flag at all and the nine cells stay
+          # byte-identical; the guard that keeps that true is the same one that reads the accepted
+          # set out of each parser.
+          if [ -n "${{ inputs.log_weight }}" ]; then
+            RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
+          if [ -n "${{ inputs.no_rank_normalization }}" ]; then
+            RANKING_ARG+=(--no-rank-normalization)
+          fi
           DIAGNOSE_ARG=()
           # One file per STEP, because the three RE3 invocations share a job: a single
           # path would leave only the last configuration's cases on disk, and a dump
@@ -208,7 +282,7 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -231,6 +305,24 @@ jobs:
           if [ -n "${{ inputs.stability_weight }}" ]; then
             STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
           fi
+          RANKING_ARG=()
+          # The knobs BOTH runners accept, so a candidate on any of them can be measured on this
+          # benchmark without moving a default to do it — the golden half of the kill criterion.
+          # Every one is empty by default, so a PUSH passes no flag at all and the nine cells stay
+          # byte-identical; the guard that keeps that true is the same one that reads the accepted
+          # set out of each parser.
+          if [ -n "${{ inputs.log_weight }}" ]; then
+            RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
+          if [ -n "${{ inputs.no_rank_normalization }}" ]; then
+            RANKING_ARG+=(--no-rank-normalization)
+          fi
           DIAGNOSE_ARG=()
           # One file per STEP, because the three RE3 invocations share a job: a single
           # path would leave only the last configuration's cases on disk, and a dump
@@ -241,7 +333,7 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --no-inject-time "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
       - name: Upload RE2 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
@@ -287,6 +379,24 @@ jobs:
           if [ -n "${{ inputs.stability_weight }}" ]; then
             STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
           fi
+          RANKING_ARG=()
+          # The knobs BOTH runners accept, so a candidate on any of them can be measured on this
+          # benchmark without moving a default to do it — the golden half of the kill criterion.
+          # Every one is empty by default, so a PUSH passes no flag at all and the nine cells stay
+          # byte-identical; the guard that keeps that true is the same one that reads the accepted
+          # set out of each parser.
+          if [ -n "${{ inputs.log_weight }}" ]; then
+            RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
+          if [ -n "${{ inputs.no_rank_normalization }}" ]; then
+            RANKING_ARG+=(--no-rank-normalization)
+          fi
           DIAGNOSE_ARG=()
           # One file per STEP, because the three RE3 invocations share a job: a single
           # path would leave only the last configuration's cases on disk, and a dump
@@ -297,7 +407,7 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -321,6 +431,24 @@ jobs:
           if [ -n "${{ inputs.stability_weight }}" ]; then
             STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
           fi
+          RANKING_ARG=()
+          # The knobs BOTH runners accept, so a candidate on any of them can be measured on this
+          # benchmark without moving a default to do it — the golden half of the kill criterion.
+          # Every one is empty by default, so a PUSH passes no flag at all and the nine cells stay
+          # byte-identical; the guard that keeps that true is the same one that reads the accepted
+          # set out of each parser.
+          if [ -n "${{ inputs.log_weight }}" ]; then
+            RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
+          if [ -n "${{ inputs.no_rank_normalization }}" ]; then
+            RANKING_ARG+=(--no-rank-normalization)
+          fi
           DIAGNOSE_ARG=()
           # One file per STEP, because the three RE3 invocations share a job: a single
           # path would leave only the last configuration's cases on disk, and a dump
@@ -331,7 +459,7 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-noinject-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-noinject-results.txt
       - name: Upload RE3 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
@@ -355,6 +483,24 @@ jobs:
           if [ -n "${{ inputs.stability_weight }}" ]; then
             STABILITY_ARG=(--stability-weight "${{ inputs.stability_weight }}")
           fi
+          RANKING_ARG=()
+          # The knobs BOTH runners accept, so a candidate on any of them can be measured on this
+          # benchmark without moving a default to do it — the golden half of the kill criterion.
+          # Every one is empty by default, so a PUSH passes no flag at all and the nine cells stay
+          # byte-identical; the guard that keeps that true is the same one that reads the accepted
+          # set out of each parser.
+          if [ -n "${{ inputs.log_weight }}" ]; then
+            RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          if [ -n "${{ inputs.temporal_weight }}" ]; then
+            RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
+          fi
+          if [ -n "${{ inputs.onset_shape }}" ]; then
+            RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")
+          fi
+          if [ -n "${{ inputs.no_rank_normalization }}" ]; then
+            RANKING_ARG+=(--no-rank-normalization)
+          fi
           DIAGNOSE_ARG=()
           # One file per STEP, because the three RE3 invocations share a job: a single
           # path would leave only the last configuration's cases on disk, and a dump
@@ -365,7 +511,7 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty "${STABILITY_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-novelty-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-novelty-results.txt
       - name: Upload RE3 novelty results
         if: always()
         uses: actions/upload-artifact@v4

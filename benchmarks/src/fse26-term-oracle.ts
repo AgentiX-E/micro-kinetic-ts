@@ -62,6 +62,7 @@ import {
   computeOnsetSlopes,
   computeTemporalEarliness,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
+  DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   POOL_METRIC_PREFIX,
   type OnsetShape,
@@ -1203,7 +1204,7 @@ function menuConfigurations(
   opts: TermOracleOptions,
 ): readonly { readonly name: string; readonly logWeight: number; readonly latWeight: number }[] {
   return [
-    { name: 'log only', logWeight: 1, latWeight: 0 },
+    { name: 'log only', logWeight: DEFAULT_LOG_WEIGHT, latWeight: 0 },
     { name: 'metric only', logWeight: 0, latWeight: 0 },
     { name: 'lat only', logWeight: 0, latWeight: opts.latWeight },
   ];

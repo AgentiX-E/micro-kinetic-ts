@@ -168,16 +168,21 @@ A headline gain does not buy silence about regressions — that rule has rejecte
 for.
 
 **The criterion is an AND, so it is only decidable where BOTH halves can be
-dispatched — and that is currently ONE knob.** Measured in
-`docs/dispatch-surface-audit.md`: the FSE'26 workflow can dispatch all 14 ranking flags its
-runner accepts, and `benchmark-rcaeval.yml` **1 of 17** — sixteen are unreachable, including
-four of the five knobs both runners accept (`--log-weight`, `--no-rank-normalization`,
-`--onset-shape`, `--temporal-weight`). So the set of axes whose criterion a dispatch can
-settle is the one-element intersection `{stabilityWeight}`, and that element exists because
-the stability candidate needed it. The temporal rejection's `golden: 'unmeasured'` is the
-first instance: `run-rcaeval.ts` accepts `--temporal-weight` and no dispatch can pass it, so
-the golden half could not have been measured without moving the default. A candidate on any
-other axis must therefore say **which input it will add** before it can claim a golden half.
+dispatched.** Measured in `docs/dispatch-surface-audit.md`: the FSE'26 workflow dispatches all
+14 ranking flags its parser accepts, and `benchmark-rcaeval.yml` used to dispatch **1 of 17** —
+which made the decidable set the one-element intersection `{stabilityWeight}`, an element that
+existed only because the stability candidate needed it. **That gap is closed**: the workflow now
+exposes the four knobs BOTH runners accept, so the intersection is
+`{logWeight, rankNormalization, onsetShape, stabilityWeight, temporalWeight}` — five, with 12
+ranking flags still unreachable. The four added are exactly the both-runners set; an
+RCAEval-only knob would grow the surface without growing the set of answerable questions.
+Two consequences are worth keeping: the temporal rejection's `golden: 'unmeasured'` was the
+only reading *available* (`run-rcaeval.ts` accepted `--temporal-weight` and no dispatch could
+pass it), and the register's note that the temporal axis was once unfalsifiable because
+`run-rcaeval` pinned `temporalWeight: 0` acquires a sequel — the pin was removed, the
+replacement was unreachable, and **a repaired pin whose replacement is unreachable is still a
+pin**. A candidate on an axis whose knob is still undispatchable must say **which input it will
+add** before it can claim a golden half.
 
 ## The invariants that make a measurement trustworthy
 

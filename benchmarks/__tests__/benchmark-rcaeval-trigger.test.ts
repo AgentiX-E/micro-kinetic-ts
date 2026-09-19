@@ -22,6 +22,12 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 const WORKFLOW = readFileSync(resolve(repoRoot, '.github/workflows/benchmark-rcaeval.yml'), 'utf8');
+/**
+ * The two PARSERS, read as text: what a workflow may dispatch is bounded by what its runner
+ * ACCEPTS, and the accepted set is the argument chain inside each of these.
+ */
+const FSE26_CLI = readFileSync(resolve(repoRoot, 'benchmarks/src/fse26-cli.ts'), 'utf8');
+const RCAEVAL_CLI = readFileSync(resolve(repoRoot, 'benchmarks/src/rcaeval-cli.ts'), 'utf8');
 
 /**
  * The `push.paths` entries, exactly as written.
@@ -69,6 +75,71 @@ describe('the golden benchmark is triggered by the engine it measures', () => {
  * file — the last one silently overwriting the others, leaving a dump of one configuration that
  * still parses.
  */
+/**
+ * The four knobs BOTH runners accept, guarded where a declared input can do nothing.
+ *
+ * The kill criterion is an AND over FSE'26 and this benchmark, so a knob only one workflow can pass
+ * has an UNDECIDABLE other half — which is why the REJECTED temporal candidate is recorded with
+ * `golden: 'unmeasured'`. Adding the input is the fix; the failure mode is the same three this file
+ * already guards for `diagnose_dump`: an input declared and read nowhere, an invocation missed (there
+ * are seven), and a value that never reaches the runner while the dispatch reports success.
+ */
+describe('the golden benchmark can dispatch every knob both runners accept', () => {
+  const invocations = [
+    ...WORKFLOW.matchAll(/pnpm exec tsx benchmarks\/src\/run-rcaeval\.ts ([^\n]*)/g),
+  ];
+  /** flag -> the shell line that appends it, per the inputs this suite is about. */
+  const ARGS: readonly (readonly [string, string, string])[] = [
+    ['log_weight', '--log-weight', 'RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")'],
+    [
+      'temporal_weight',
+      '--temporal-weight',
+      'RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")',
+    ],
+    ['onset_shape', '--onset-shape', 'RANKING_ARG+=(--onset-shape "${{ inputs.onset_shape }}")'],
+    ['no_rank_normalization', '--no-rank-normalization', 'RANKING_ARG+=(--no-rank-normalization)'],
+  ];
+
+  it('declares each input with an EMPTY default, so a push-triggered run is unchanged', () => {
+    // The nine cells are the gate, and they were measured at the shipped configuration. A default
+    // that is not empty would move the gate's own measurement in the commit that added the surface.
+    for (const [input] of ARGS) {
+      expect(WORKFLOW, input).toMatch(new RegExp(`^\\s{6}${input}:`, 'm'));
+      const block =
+        new RegExp(`^\\s{6}${input}:\\n((?:\\s{8}[^\\n]*\\n)+)`, 'm').exec(WORKFLOW)?.[1] ?? '';
+      expect(block, input).toContain("default: ''");
+    }
+    expect(ARGS.length).toBe(4);
+  });
+
+  it('threads the array into EVERY invocation, so no suite is left at the default', () => {
+    expect(invocations.length).toBeGreaterThan(5);
+    for (const one of invocations) {
+      expect(one[1]).toContain('"${RANKING_ARG[@]}"');
+    }
+  });
+
+  it('appends each flag in EVERY invocation, counted rather than sampled', () => {
+    // The count is the assertion: one missed invocation is one suite measured at the default while
+    // the run reports success, and the other six suites still show the requested configuration.
+    for (const [input, flag, line] of ARGS) {
+      const built = WORKFLOW.split(line).length - 1;
+      expect(built, `${flag} appended ${built} time(s)`).toBe(invocations.length);
+      expect(WORKFLOW, `${input} -> ${flag}`).toContain(flag);
+    }
+  });
+
+  it('is the set BOTH runners accept, which is what makes the criterion decidable on them', () => {
+    // The boundary is principled rather than convenient: a knob the FSE'26 runner does not accept
+    // cannot make the criterion decidable on the OTHER half either, so adding it here would grow the
+    // surface without growing the set of answerable questions.
+    for (const [, flag] of ARGS) {
+      expect(FSE26_CLI, flag).toContain(`'${flag}'`);
+      expect(RCAEVAL_CLI, flag).toContain(`'${flag}'`);
+    }
+  });
+});
+
 describe('the golden benchmark can emit the diagnostic dump', () => {
   const invocations = [
     ...WORKFLOW.matchAll(/pnpm exec tsx benchmarks\/src\/run-rcaeval\.ts ([^\n]*)/g),

@@ -1,10 +1,15 @@
 # The dispatch surface: every ranking knob, its three names, and its owner
 
 **Status:** instrument shipped and gated (`packages/kinetic/__tests__/unit/dispatch-surface-census.test.ts`,
-9 tests, 11 mutations all killed). It found four things, one of which was produced **while writing it**: a
-careful hand search of the register and every document concluded that two knobs were never measured, and a
-candidate was drafted around one of them. Both had been measured and rejected. The error was in the join
-between three names, and nothing owned that join.
+10 tests, 13 mutations all killed), and the structural gap it found is **closed**: the four knobs both runners
+accept were dispatchable on the FSE'26 half alone, so the kill criterion was decidable for exactly ONE knob;
+`benchmark-rcaeval.yml` now exposes all five, and every input is threaded into all seven invocations
+(`benchmarks/__tests__/benchmark-rcaeval-trigger.test.ts`).
+
+It found four things, one of which was produced **while writing it**: a careful hand search of the register and
+every document concluded that two knobs were never measured, and a candidate was drafted around one of them.
+Both had been measured and rejected. The error was in the join between three names, and nothing owned that
+join.
 
 ## The three names
 
@@ -37,10 +42,10 @@ it at all**, which is a fact about the kill criterion rather than bookkeeping.
 
 | knob (engine option) | flag | fse26 | rcaeval | owner |
 | --- | --- | --- | --- | --- |
-| `logWeight` | `--log-weight` | `log_weight` | — | `fse26-shipped-config-verdict.md` |
+| `logWeight` | `--log-weight` | `log_weight` | `log_weight` | `fse26-shipped-config-verdict.md` |
 | `logMode` | `--log-mode` | `log_mode` | — | `fse26-metric-gap-verdict.md` |
 | `logSignalMode` | `--log-signal-mode` | — | — | `fse26-result-attribution.md` |
-| `rankNormalization` | `--no-rank-normalization` | `no_rank_normalization` | — | `fse26-shipped-config-verdict.md` |
+| `rankNormalization` | `--no-rank-normalization` | `no_rank_normalization` | `no_rank_normalization` | `fse26-shipped-config-verdict.md` |
 | `metricRiseCeiling` | `--rise-ceiling` | `rise_ceiling` | — | `fse26-metric-competition-verdict.md` |
 | `metricFleetBaseline` | `--fleet-baseline` | `fleet_baseline` | — | `fse26-metric-competition-verdict.md` |
 | `failedEdgeWeight` | `--failed-edge-weight` | `failed_edge_weight` | — | `fse26-failed-edge-verdict.md` |
@@ -50,8 +55,8 @@ it at all**, which is a fact about the kill criterion rather than bookkeeping.
 | `latMinRise` | `--lat-min-rise` | `lat_min_rise` | — | `fse26-latency-term-verdict.md` |
 | `poolMetricPenaltyWeight` | `--pool-penalty` | `pool_penalty` | — | `fse26-pool-penalty-verdict.md` |
 | `stabilityWeight` | `--stability-weight` | `stability_weight` | `stability_weight` | `fse26-cv-screen.md` |
-| `temporalWeight` | `--temporal-weight` | `temporal_weight` | — | `fse26-onset-verdict.md` |
-| `onsetShape` | `--onset-shape` | `onset_shape` | — | `fse26-onset-verdict.md` |
+| `temporalWeight` | `--temporal-weight` | `temporal_weight` | `temporal_weight` | `fse26-onset-verdict.md` |
+| `onsetShape` | `--onset-shape` | `onset_shape` | `onset_shape` | `fse26-onset-verdict.md` |
 | `collisionWeight` | `--collision-weight` | — | — | `re3-fault-ceiling.md` |
 | `topoWeight` | `--topo-weight` | — | — | `fse26-metric-competition-verdict.md` |
 | `traceWeight` | `--trace-weight` | — | — | `rank-collapse-falsified.md` |
@@ -64,7 +69,9 @@ it at all**, which is a fact about the kill criterion rather than bookkeeping.
 23 knobs, 26 flags (three switches have two poles, and the RCAEval runner exposes both while the FSE'26 parser
 exposes one). 14 ranking flags are accepted by the FSE'26 CLI (`benchmarks/src/fse26-cli.ts`) and 17 by the RCAEval
 parser (`benchmarks/src/rcaeval-cli.ts`, extracted from `run-rcaeval.ts` so a test can drive it — see
-`docs/cli-argument-rejection-audit.md`).
+`docs/cli-argument-rejection-audit.md`). **Five knobs are dispatchable on BOTH benchmarks**, which is the set on
+which the kill criterion is decidable at all: `logWeight`, `rankNormalization`, `onsetShape`, `stabilityWeight`,
+`temporalWeight`.
 
 ## Finding 1 — no ranking knob is merely unmeasured, and that claim needed the right key
 
@@ -79,32 +86,69 @@ descriptions and every document, concluded that `fleet_baseline` and `rise_ceili
 drafted a candidate on the stronger of the two. The register could not have prevented it: its rows are written
 in the resolution's vocabulary (`deviation`, `pool`, `earliness`), and a knob's option name is not in them.
 
-## Finding 2 — the golden half is dispatchable for ONE ranking flag out of seventeen
+## Finding 2 — the golden half was dispatchable for ONE ranking flag out of seventeen. It is now five, and that is the set the criterion is decidable on.
 
 The kill criterion is an **AND**: a candidate must gain on FSE'26 and cost the golden 9-cell nothing. That makes
 the dispatch surface a first-class constraint — an axis whose knob only one benchmark can dispatch has an
-**undecidable** other half. Measured:
+**undecidable** other half. Measured, before the fix:
 
-| benchmark | ranking flags accepted by its runner | dispatchable through its workflow |
+| benchmark | ranking flags accepted by its parser | dispatchable through its workflow |
 | --- | --- | --- |
 | FSE'26 | 14 | **14** |
 | RCAEval (the golden half) | 17 | **1** (`--stability-weight`) |
 
-Sixteen ranking flags are unreachable through `benchmark-rcaeval.yml`, including four of the five knobs **both**
-runners accept (`--log-weight`, `--no-rank-normalization`, `--onset-shape`, `--temporal-weight`; only
-`--stability-weight` is wired). The set of knobs whose criterion is decidable by dispatch is therefore the
-one-element intersection `{stabilityWeight}` — and that one element exists because the stability candidate
+Sixteen ranking flags were unreachable through `benchmark-rcaeval.yml`, including **four of the five knobs both
+runners accept** (`--log-weight`, `--no-rank-normalization`, `--onset-shape`, `--temporal-weight`; only
+`--stability-weight` was wired). The set of knobs whose criterion is decidable by dispatch was therefore the
+one-element intersection `{stabilityWeight}` — and that element existed only because the stability candidate
 needed it.
 
-**This gives an instance in the record a structural cause.** The temporal rejection (`2eb5827`) carries
-`golden: 'unmeasured'`, recorded as the honest reading of a candidate the other half had already rejected. True
-— and it is also the only reading *available*: `run-rcaeval.ts` accepts `--temporal-weight` and the workflow
-cannot pass it, so the temporal golden half could not have been measured without moving the default.
+**Closed, and the boundary is principled rather than convenient.** `benchmark-rcaeval.yml` now exposes those
+four inputs, so the intersection is `{logWeight, rankNormalization, onsetShape, stabilityWeight,
+temporalWeight}` — five knobs, 12 ranking flags still unreachable. The four added are exactly the knobs BOTH
+runners accept: adding an RCAEval-only knob (`--collision-weight`, `--trace-weight`, …) would grow the surface
+without growing the set of answerable questions, because the FSE'26 half would still be unreachable.
 
-**And it names a half-finished repair.** `docs/closed-axes-register.md` records that the temporal axis was once
-*unfalsifiable* because `run-rcaeval` carried `temporalWeight: 0` — the term's own ablation — as a pin. The pin
-was removed: the runner now takes the flag. No dispatch can reach it. A repaired pin whose replacement is
-unreachable is still a pin, and the census is what makes that visible.
+| benchmark | accepted | dispatchable | undispatchable |
+| --- | --- | --- | --- |
+| FSE'26 | 14 | **14** | 0 |
+| RCAEval | 17 | **5** | 12 |
+
+**Two instances in the record acquire a structural cause, and one of them is a closed loop:**
+
+1. The temporal rejection (`2eb5827`) carries `golden: 'unmeasured'`, recorded as the honest reading of a
+   candidate the other half had already rejected. True — and it was also the only reading *available*:
+   `run-rcaeval.ts` accepted `--temporal-weight` and no dispatch could pass it, so the temporal golden half
+   could not have been measured without moving the default.
+2. `docs/closed-axes-register.md` records that the temporal axis was once *unfalsifiable* because `run-rcaeval`
+   carried `temporalWeight: 0` — the term's own ablation — as a pin. The pin was removed and the runner took the
+   flag; **no dispatch could reach it**, so **a repaired pin whose replacement is unreachable is still a pin.**
+   The input now exists, and the flag is passed on all seven invocations.
+
+**A declared input is not a threaded one**, and that is guarded separately: `benchmark-rcaeval-trigger.test.ts`
+requires each of the four to have an empty default (so a push measures nothing new), to be appended to the
+argument array in EVERY invocation, and to name a flag BOTH parsers accept — the count, not a sample, because
+one missed invocation is one suite measured at the default while the run reports success.
+
+## A limit found on the way, recorded rather than left to silence
+
+The guard on the workflow DESCRIPTIONS (`packages/kinetic/__tests__/unit/fse26-reported-config.test.ts`)
+compares numeric and string claims against the engine's constants, and its string half is **positive only**:
+a registered input must name its constant, but a NEW string claim is not detected. The detection regex for
+that direction requires a digit, because `runner default, which is the SHIPPED 0.007352` and
+`runner default, which is all downloaded` are the same shape to a matcher — so a description reading
+`runner default, which is earliest-only` (the REJECTED shape) would satisfy every assertion in the file
+while `DEFAULT_ONSET_SHAPE` says `earliness`. Registered and checked today: `onset_shape` in both workflows.
+The remaining work is a claim detector that distinguishes a constant's value from prose, which is a design
+choice rather than a patch.
+
+**And the guard found a real defect the moment it was pointed at four new inputs.** Both `DESCRIBES_SHIPPED`
+tables had to name the shipped log weight, and the engine had **no constant to read it from**:
+`logWeight`'s default was a bare `1.0` in four files — the pruner's option block, both parsers' parsed
+defaults, and both `parseWeight` fallbacks — while every other shipped weight had an exported constant. It is
+the LARGEST term in the ranking and the first to ship enabled. `DEFAULT_LOG_WEIGHT` now owns it, the two
+oracle menus that typed `logWeight: 1` under a comment saying they must not read it from the options
+(`menuConfigurations`) read it too, and both tables name the constant instead of a literal.
 
 ## Finding 3 — `collapseDiscount` is a ranking knob whose only record is a comment
 
@@ -136,7 +180,11 @@ census exists to prevent.
    have caught the historical `--log-mode count` defect, where a dispatch asked for one mode and silently ran
    another.
 3. Every ranking knob has an owner: a document that **exists on disk**, or one of two sentinels that are
-   themselves exact sets.
+   themselves exact sets. And the relationship between this table and the WORKFLOWS is asserted in **both**
+   directions — every dispatch the table claims must exist, and every dispatch a workflow actually has must be
+   in the table. The second direction was missing, in the expensive way: four inputs were added to the RCAEval
+   workflow and the guard stayed green, because the intersection it checked was computed from the table rather
+   than from the workflows.
 4. The four non-derivable option names, the one-element dispatchable intersection, and the sixteen
    RCAEval-undispatchable flags are recorded as **exact sets** — so a new non-derivable name, a newly
    dispatchable knob, or a newly unreachable one is a failing test rather than a discovery.

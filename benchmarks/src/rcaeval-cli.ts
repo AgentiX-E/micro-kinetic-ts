@@ -35,6 +35,7 @@ import { join } from 'node:path';
 
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
+  DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -203,7 +204,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     collisionWeight: 0,
     topoWeight: 0,
-    logWeight: 1.0,
+    logWeight: DEFAULT_LOG_WEIGHT,
     logSignalMode: 'count',
     collapseDiscount: 0,
     traceWeight: 0,
@@ -247,7 +248,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a
       // configuration this runner never described and never recorded.
-      opts.logWeight = parseWeight(args[++i]!, 1.0);
+      opts.logWeight = parseWeight(args[++i]!, DEFAULT_LOG_WEIGHT);
     else if (args[i] === '--trace-weight' && hasValue(args, i + 1))
       opts.traceWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--prism-weight' && hasValue(args, i + 1))

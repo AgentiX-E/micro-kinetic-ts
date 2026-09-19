@@ -30,6 +30,7 @@ import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/inde
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
@@ -258,7 +259,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
   const opts = {
     dataDir: join(homedir(), 'RCABench-json'),
     maxCases: 0,
-    logWeight: 1.0,
+    logWeight: DEFAULT_LOG_WEIGHT,
     logMode: DEFAULT_FSE26_LOG_MODE as LogSignalMode,
     rankNormalization: true,
     output: '',
@@ -287,7 +288,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // The fallback is the SHIPPED weight (1.0), not 0 — 0 is a *different*
       // measured configuration (14.98% Top@1), so silently selecting it would
       // publish an ablation nobody chose. See `parseWeight` for the empty value.
-      opts.logWeight = parseWeight(argv[++i]!, 1.0);
+      opts.logWeight = parseWeight(argv[++i]!, DEFAULT_LOG_WEIGHT);
     } else if (arg === '--log-mode' && hasValue(argv, i + 1)) {
       const mode = argv[++i]!;
       opts.logMode = isLogSignalMode(mode) ? mode : DEFAULT_FSE26_LOG_MODE;

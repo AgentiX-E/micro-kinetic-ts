@@ -37,6 +37,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -744,7 +746,10 @@ describe('FSE26 workflow descriptions agree with the code they describe', () => 
    * the defect is a disagreement between two files, which no runtime path can see.
    */
   const DESCRIBES_SHIPPED: Readonly<Record<string, number>> = {
-    log_weight: 1,
+    // The largest term in the ranking, and the last one to get an owner: this entry used to be a
+    // bare `1`, because the engine's default was a bare `1.0` in four files. The guard could only
+    // be satisfied by a fifth copy until `DEFAULT_LOG_WEIGHT` existed.
+    log_weight: DEFAULT_LOG_WEIGHT,
     failed_edge_weight: 0,
     failed_edge_min_records: 1,
     lat_weight: DEFAULT_LAT_WEIGHT,
@@ -775,6 +780,30 @@ describe('FSE26 workflow descriptions agree with the code they describe', () => 
     }
   });
 
+  /**
+   * Inputs whose description states a STRING-valued runner default, and the constant it must name.
+   *
+   * The numeric table above cannot see this class at all: its detection regex requires a digit, so a
+   * description advertising `earliest-only` — the REJECTED shape — would satisfy every assertion in
+   * this file while the constant says `earliness`. The check here is POSITIVE (a registered entry
+   * must name its constant), which is the direction the register's own precedent came from: the
+   * `pool_penalty` description read "0 = INERT" for a session after 0.0679 shipped, i.e. a KNOWN
+   * claim drifting rather than an unknown one arriving. A NEW string claim is still undetected, and
+   * that limit is recorded in `docs/dispatch-surface-audit.md` rather than implied by silence.
+   */
+  const DESCRIBES_SHIPPED_STRING: Readonly<Record<string, string>> = {
+    onset_shape: DEFAULT_ONSET_SHAPE,
+  };
+
+  it('names the shipped STRING default of every input whose description quotes one', () => {
+    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
+    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED_STRING)) {
+      const description = readInputDescription(yml, input) ?? '';
+      expect(description, `${input} has no description to check`).not.toBe('');
+      expect(description, `${input} must name the shipped '${shipped}'`).toContain(shipped);
+    }
+  });
+
   it('covers every runner-owned input whose description quotes a value', () => {
     // The table above is hand-registered, so this keeps it honest: an input claiming
     // "the runner default, which is <something with a digit>" must be in the table or
@@ -801,6 +830,8 @@ describe('RCAEval workflow descriptions agree with the code they describe', () =
    */
   const DESCRIBES_SHIPPED: Readonly<Record<string, number>> = {
     stability_weight: DEFAULT_STABILITY_WEIGHT,
+    log_weight: DEFAULT_LOG_WEIGHT,
+    temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
   };
 
   it('names the shipped value of every input whose description quotes one', () => {
@@ -814,6 +845,30 @@ describe('RCAEval workflow descriptions agree with the code they describe', () =
       expect(numbers, `${input} must name the shipped ${shipped}: ${description}`).toContain(
         shipped,
       );
+    }
+  });
+
+  /**
+   * Inputs whose description states a STRING-valued runner default, and the constant it must name.
+   *
+   * The numeric table above cannot see this class at all: its detection regex requires a digit, so a
+   * description advertising `earliest-only` — the REJECTED shape — would satisfy every assertion in
+   * this file while the constant says `earliness`. The check here is POSITIVE (a registered entry
+   * must name its constant), which is the direction the register's own precedent came from: the
+   * `pool_penalty` description read "0 = INERT" for a session after 0.0679 shipped, i.e. a KNOWN
+   * claim drifting rather than an unknown one arriving. A NEW string claim is still undetected, and
+   * that limit is recorded in `docs/dispatch-surface-audit.md` rather than implied by silence.
+   */
+  const DESCRIBES_SHIPPED_STRING: Readonly<Record<string, string>> = {
+    onset_shape: DEFAULT_ONSET_SHAPE,
+  };
+
+  it('names the shipped STRING default of every input whose description quotes one', () => {
+    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
+    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED_STRING)) {
+      const description = readInputDescription(yml, input) ?? '';
+      expect(description, `${input} has no description to check`).not.toBe('');
+      expect(description, `${input} must name the shipped '${shipped}'`).toContain(shipped);
     }
   });
 

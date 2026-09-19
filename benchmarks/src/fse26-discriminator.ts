@@ -24,7 +24,7 @@
  * @module benchmarks/fse26-discriminator
  */
 
-import { POOL_METRIC_PREFIX } from '../../packages/tree/src/index.js';
+import { DEFAULT_LOG_WEIGHT, POOL_METRIC_PREFIX } from '../../packages/tree/src/index.js';
 
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 import type { TermOracleOptions } from './fse26-term-oracle.js';
@@ -50,7 +50,7 @@ export interface DiscriminatorConfig {
 /** A configuration point of the shipped formula, named and fully stated. */
 export function discriminatorConfigs(opts: TermOracleOptions): readonly DiscriminatorConfig[] {
   return [
-    { name: 'log only', logWeight: 1, latWeight: 0 },
+    { name: 'log only', logWeight: DEFAULT_LOG_WEIGHT, latWeight: 0 },
     { name: 'metric only', logWeight: 0, latWeight: 0 },
     { name: 'lat only', logWeight: 0, latWeight: opts.latWeight },
     { name: 'shipped', logWeight: opts.logWeight, latWeight: opts.latWeight },
