@@ -158,7 +158,10 @@ describe('the dump’s render precision is a dispatch input', () => {
     // an artifact at the default precision, and no failure anywhere. Read as text for the default,
     // because a hardcoded `3` here would be a second copy of a value the producer owns and would
     // keep rendering three decimals the day the producer starts rendering four.
-    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/run-rcaeval.ts'), 'utf8');
+    // The PARSER's file, which is where the flag is accepted and the default is read: the chain moved
+    // out of the runner so that a test could drive it, and a guard left pointing at the runner would
+    // have gone on passing while checking nothing.
+    const runner = readFileSync(resolve(repoRoot, 'benchmarks/src/rcaeval-cli.ts'), 'utf8');
     expect(runner).toContain("'--diagnose-decimals'");
     expect(runner).toMatch(/diagnoseDecimals: SERVICE_FIELD_DECIMALS/);
     expect(runner).not.toMatch(/diagnoseDecimals: 3\b/);

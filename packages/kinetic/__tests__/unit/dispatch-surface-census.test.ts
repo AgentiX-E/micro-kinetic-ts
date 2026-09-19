@@ -48,7 +48,14 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 const DOCS = resolve(repoRoot, 'docs');
 const FSE26_CLI = resolve(repoRoot, 'benchmarks/src/fse26-cli.ts');
-const RCAEVAL_RUNNER = resolve(repoRoot, 'benchmarks/src/run-rcaeval.ts');
+/**
+ * The RCAEval parser, which moved out of `run-rcaeval.ts` for the reason the FSE'26 one already
+ * records about itself: a module that calls `main()` at import time cannot be imported by a test,
+ * so its parser was unreachable to every guard and its chain could not be driven directly. This
+ * guard noticed the move by finding **zero** accepted flags, which is the vacuity floor below
+ * doing its job rather than a coincidence.
+ */
+const RCAEVAL_CLI = resolve(repoRoot, 'benchmarks/src/rcaeval-cli.ts');
 const FSE26_WORKFLOW = resolve(repoRoot, '.github/workflows/fse26-benchmark.yml');
 const RCAEVAL_WORKFLOW = resolve(repoRoot, '.github/workflows/benchmark-rcaeval.yml');
 
@@ -365,7 +372,7 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
 ];
 
 const fse26Flags = flagToOption(readFileSync(FSE26_CLI, 'utf8'));
-const rcaevalFlags = flagToOption(readFileSync(RCAEVAL_RUNNER, 'utf8'));
+const rcaevalFlags = flagToOption(readFileSync(RCAEVAL_CLI, 'utf8'));
 const fse26Inputs = inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'));
 const rcaevalInputs = inputNames(readFileSync(RCAEVAL_WORKFLOW, 'utf8'));
 

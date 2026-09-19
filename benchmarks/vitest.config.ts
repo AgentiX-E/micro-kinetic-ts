@@ -74,6 +74,7 @@ export default defineConfig({
         // allow-list's own hole, a third time. `__tests__/coverage-scope.test.ts` now
         // diffs this list against the modules the tests import, in both directions.
         'src/cli-args.ts',
+        'src/rcaeval-cli.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

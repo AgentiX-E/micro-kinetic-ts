@@ -62,7 +62,9 @@ it at all**, which is a fact about the kill criterion rather than bookkeeping.
 | `fusionCeiling` | `--fusion-ceiling` | — | — | **not a ranking knob** |
 
 23 knobs, 26 flags (three switches have two poles, and the RCAEval runner exposes both while the FSE'26 parser
-exposes one). 14 ranking flags are accepted by the FSE'26 CLI and 17 by the RCAEval runner.
+exposes one). 14 ranking flags are accepted by the FSE'26 CLI (`benchmarks/src/fse26-cli.ts`) and 17 by the RCAEval
+parser (`benchmarks/src/rcaeval-cli.ts`, extracted from `run-rcaeval.ts` so a test can drive it — see
+`docs/cli-argument-rejection-audit.md`).
 
 ## Finding 1 — no ranking knob is merely unmeasured, and that claim needed the right key
 
@@ -130,7 +132,7 @@ census exists to prevent.
 1. Each runner's accepted flag set is read from its **parser chain**, and every accepted flag must bind an
    `opts.<name>` — so a flag that reaches no option cannot be dropped from the population silently.
 2. Every workflow input maps to `--<name with underscores as hyphens>` and that flag is **accepted by the
-   runner it feeds**, unless it is an operational input named in a reason table. This is the check that would
+   parser it feeds**, unless it is an operational input named in a reason table. This is the check that would
    have caught the historical `--log-mode count` defect, where a dispatch asked for one mode and silently ran
    another.
 3. Every ranking knob has an owner: a document that **exists on disk**, or one of two sentinels that are

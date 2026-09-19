@@ -13,6 +13,28 @@
 import { MAX_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/index.js';
 
 /**
+ * Whether `argv[index]` is a VALUE rather than the next flag.
+ *
+ * A flag must not swallow the next flag, and the chains used to test only `index < argv.length`:
+ * `--log-weight --log-mode count` consumed `--log-mode` as the weight. `parseWeight` fell back to
+ * the shipped default, `count` was left as a stray token, and the run used the shipped log mode —
+ * so a dispatcher who forgot one value had their whole request replaced by two defaults, with
+ * nothing in the artifact to say the flags had been asked for at all.
+ *
+ * A value never begins with `--` in these CLIs: every value is a number, a mode name, a path or a
+ * comma-separated list. The rule is therefore exact rather than a heuristic, and a flag left
+ * without a value is reported at the flag rather than silently defaulted.
+ *
+ * @param argv - The argument vector.
+ * @param index - The position being tested as a value.
+ * @returns `true` when the token exists and is not itself a flag.
+ */
+export function hasValue(argv: readonly string[], index: number): boolean {
+  const next = argv[index];
+  return next !== undefined && !next.startsWith('--');
+}
+
+/**
  * Parse one weight from a flag's raw value.
  *
  * The parse is STRICT and the fallback is the caller's SHIPPED value, for the same

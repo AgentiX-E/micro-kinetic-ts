@@ -38,7 +38,7 @@ import {
   type OnsetShape,
 } from '../../packages/tree/src/index.js';
 
-import { parseWeight } from './cli-args.js';
+import { hasValue, parseWeight } from './cli-args.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -280,24 +280,24 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--data-dir' && i + 1 < argv.length) opts.dataDir = argv[++i]!;
-    else if (arg === '--max-cases' && i + 1 < argv.length)
+    if (arg === '--data-dir' && hasValue(argv, i + 1)) opts.dataDir = argv[++i]!;
+    else if (arg === '--max-cases' && hasValue(argv, i + 1))
       opts.maxCases = parseInt(argv[++i]!, 10) || 0;
-    else if (arg === '--log-weight' && i + 1 < argv.length) {
+    else if (arg === '--log-weight' && hasValue(argv, i + 1)) {
       // The fallback is the SHIPPED weight (1.0), not 0 — 0 is a *different*
       // measured configuration (14.98% Top@1), so silently selecting it would
       // publish an ablation nobody chose. See `parseWeight` for the empty value.
       opts.logWeight = parseWeight(argv[++i]!, 1.0);
-    } else if (arg === '--log-mode' && i + 1 < argv.length) {
+    } else if (arg === '--log-mode' && hasValue(argv, i + 1)) {
       const mode = argv[++i]!;
       opts.logMode = isLogSignalMode(mode) ? mode : DEFAULT_FSE26_LOG_MODE;
     } else if (arg === '--no-rank-normalization') opts.rankNormalization = false;
-    else if (arg === '--output' && i + 1 < argv.length) opts.output = argv[++i]!;
-    else if (arg === '--diagnose' && i + 1 < argv.length) opts.diagnose = csv(argv[++i]!);
-    else if (arg === '--diagnose-limit' && i + 1 < argv.length)
+    else if (arg === '--output' && hasValue(argv, i + 1)) opts.output = argv[++i]!;
+    else if (arg === '--diagnose' && hasValue(argv, i + 1)) opts.diagnose = csv(argv[++i]!);
+    else if (arg === '--diagnose-limit' && hasValue(argv, i + 1))
       opts.diagnoseLimit = parseInt(argv[++i]!, 10) || 0;
-    else if (arg === '--drop-metrics' && i + 1 < argv.length) opts.dropMetrics = csv(argv[++i]!);
-    else if (arg === '--rise-ceiling' && i + 1 < argv.length) {
+    else if (arg === '--drop-metrics' && hasValue(argv, i + 1)) opts.dropMetrics = csv(argv[++i]!);
+    else if (arg === '--rise-ceiling' && hasValue(argv, i + 1)) {
       // STRICT, unlike the other numeric flags: `parseFloat('1O')` is 1, so a
       // typo would run a plausible but DIFFERENT ablation than the one asked
       // for — `--rise-ceiling 1O` meaning 10 would silently measure 1. `Number`
@@ -307,58 +307,63 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const ceiling = Number(argv[++i]!);
       opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
     } else if (arg === '--fleet-baseline') opts.metricFleetBaseline = true;
-    else if (arg === '--failed-edge-min-records' && i + 1 < argv.length) {
+    else if (arg === '--failed-edge-min-records' && hasValue(argv, i + 1)) {
       // Strict, and it falls back to the SHIPPED floor of 1 — a floor of 0 would
       // credit a callee on no evidence at all, which is not a configuration
       // anyone asked for. A non-integer is rejected for the same reason the
       // other numeric switches reject trailing garbage.
       const floor = Number(argv[++i]!);
       opts.failedEdgeMinRecords = Number.isInteger(floor) && floor >= 1 ? floor : 1;
-    } else if (arg === '--failed-edge-mode' && i + 1 < argv.length) {
+    } else if (arg === '--failed-edge-mode' && hasValue(argv, i + 1)) {
       // Falling back to the SHIPPED mode on an unknown value, like the log mode:
       // a typo must reproduce a published configuration, never invent one.
       const mode = argv[++i]!;
       opts.failedEdgeMode = isFailedEdgeMode(mode) ? mode : DEFAULT_FAILED_EDGE_MODE;
-    } else if (arg === '--failed-edge-weight' && i + 1 < argv.length) {
+    } else if (arg === '--failed-edge-weight' && hasValue(argv, i + 1)) {
       // Same strictness as the other numeric ablation switches, and the same
       // safe fallback: the SHIPPED weight is 0 (the signal is off), so a typo
       // reproduces a published configuration instead of inventing one.
       const weight = Number(argv[++i]!);
       opts.failedEdgeWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
-    } else if (arg === '--lat-weight' && i + 1 < argv.length) {
+    } else if (arg === '--lat-weight' && hasValue(argv, i + 1)) {
       // Same rule and the same fallback as `--log-weight`: the SHIPPED weight, NOT
       // 0. Zero is a *different measured* configuration — the 47.33% ablation — so
       // a typo must reproduce the published configuration rather than silently run
       // an experiment nobody asked for under the shipped one's name.
       opts.latWeight = parseWeight(argv[++i]!, DEFAULT_LAT_WEIGHT);
-    } else if (arg === '--lat-min-rise' && i + 1 < argv.length) {
+    } else if (arg === '--lat-min-rise' && hasValue(argv, i + 1)) {
       // STRICT and floored at 1: a floor below 1 would be a no-op that silently
       // reports a configuration the operator believes changed something, and a
       // non-finite one would drop every measurement through the mask.
       const rise = Number(argv[++i]!);
       opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : DEFAULT_LAT_MIN_RISE;
-    } else if (arg === '--pool-penalty' && i + 1 < argv.length) {
+    } else if (arg === '--pool-penalty' && hasValue(argv, i + 1)) {
       // Through `parseWeight`, not an inline `Number(...)`: an empty value must
       // fall back to the SHIPPED weight rather than select 0, which is a
       // different measured configuration (`--pool-penalty 0` is the ablation).
       opts.poolMetricPenaltyWeight = parseWeight(argv[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
-    } else if (arg === '--stability-weight' && i + 1 < argv.length) {
+    } else if (arg === '--stability-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` for the same reason as the pool penalty: an empty value must fall
       // back to the SHIPPED weight (0 here, which happens to be the ablation — so the fallback is
       // inert rather than wrong, but the RULE is kept so that flipping the default cannot silently
       // turn a blank flag into a measurement of the ablation).
       opts.stabilityWeight = parseWeight(argv[++i]!, DEFAULT_STABILITY_WEIGHT);
-    } else if (arg === '--temporal-weight' && i + 1 < argv.length) {
+    } else if (arg === '--temporal-weight' && hasValue(argv, i + 1)) {
       // Through `parseWeight` for the empty-value reason, and the fallback is the
       // SHIPPED 0 — which here IS the published configuration, so a typo cannot select
       // an unmeasured ablation.
       opts.temporalWeight = parseWeight(argv[++i]!, DEFAULT_TEMPORAL_WEIGHT);
-    } else if (arg === '--onset-shape' && i + 1 < argv.length) {
+    } else if (arg === '--onset-shape' && hasValue(argv, i + 1)) {
       // Falling back to the SHIPPED shape on an unknown value, like the log mode and
       // the failed-edge mode: a typo must reproduce a published configuration rather
       // than invent one.
       const shape = argv[++i]!;
       opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
+    } else {
+      throw new Error(
+        `unrecognised argument ${arg} — either this runner does not accept it, ` +
+          'or the flag before it is missing its value',
+      );
     }
   }
 

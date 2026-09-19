@@ -65,8 +65,14 @@ describe('parseFSE26Args — log mode', () => {
     expect(parseFSE26Args(['--log-mode', 'LOGICHTTP']).logMode).toBe(DEFAULT_FSE26_LOG_MODE);
   });
 
-  it('ignores a trailing --log-mode with no value', () => {
-    expect(parseFSE26Args(['--log-mode']).logMode).toBe(DEFAULT_FSE26_LOG_MODE);
+  it('refuses a trailing --log-mode with no value', () => {
+    // A missing value is not the same decision as an unusable one, and the two used to be conflated.
+    // An unusable VALUE falls back to the shipped configuration, deliberately: a typo must reproduce
+    // a published configuration rather than invent one. A missing value has nothing to fall back
+    // FROM — the flag was asked for — so the run would report the shipped configuration as if it
+    // were the answer to a question nobody can read out of the artifact.
+    expect(() => parseFSE26Args(['--log-mode'])).toThrow(/--log-mode/);
+    expect(parseFSE26Args(['--log-mode', 'LOGICHTTP']).logMode).toBe(DEFAULT_FSE26_LOG_MODE);
   });
 
   it('defaults to the measured best mode with no arguments', () => {
@@ -351,7 +357,10 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--rise-ceiling', '']).metricRiseCeiling).toBe(0);
     expect(parseFSE26Args(['--rise-ceiling', '-4']).metricRiseCeiling).toBe(0);
     expect(parseFSE26Args(['--rise-ceiling', 'Infinity']).metricRiseCeiling).toBe(0);
-    expect(parseFSE26Args(['--rise-ceiling']).metricRiseCeiling).toBe(0);
+    // The VALUE fallback above is unchanged. The flag with NO value is refused instead: there is
+    // nothing to fall back from, and 0 is also the "off" value, so a silent default would make an
+    // unhonoured request indistinguishable from a deliberate ablation.
+    expect(() => parseFSE26Args(['--rise-ceiling'])).toThrow(/--rise-ceiling/);
   });
 
   it('turns on the fleet-relative metric baseline only when asked', () => {
@@ -361,13 +370,25 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--fleet-baseline', '--rise-ceiling', '10']).metricRiseCeiling).toBe(10);
   });
 
-  it('ignores unknown flags', () => {
-    expect(parseFSE26Args(['--verbose', '--log-mode', 'count']).logMode).toBe('count');
+  it('refuses a flag it does not test instead of discarding it', () => {
+    // This asserted the opposite until now, and a discarded flag is invisible in exactly the way
+    // that costs a run: the parser proceeds at the shipped configuration and the artifact says
+    // confidently what that configuration scored. The intent the old assertion was reaching for —
+    // a stray token must not corrupt the ACCEPTED flags around it — is asserted directly below it.
+    expect(() => parseFSE26Args(['--verbose', '--log-mode', 'count'])).toThrow(/--verbose/);
+    expect(parseFSE26Args(['--log-mode', 'count']).logMode).toBe('count');
   });
 
   it('does not consume the next flag when the value is missing', () => {
-    // A flag with no value must not swallow the following flag.
-    expect(parseFSE26Args(['--failed-edge-weight']).failedEdgeWeight).toBe(0);
-    expect(parseFSE26Args(['--log-weight', '--log-mode']).logMode).toBe('logicHttp');
+    // The name and the comment above were right; the assertion could not tell the two readings
+    // apart. `--log-weight --log-mode` DID swallow `--log-mode` as the weight, `parseWeight` fell
+    // back to `1.0`, and the following `count` was discarded as a stray token — so the assertion
+    // passed only because the swallowed flag's own default equals the value it checked for. The
+    // property is now true and checkable, at the flag whose value is missing.
+    expect(() => parseFSE26Args(['--failed-edge-weight'])).toThrow(/--failed-edge-weight/);
+    expect(() => parseFSE26Args(['--log-weight', '--log-mode'])).toThrow(/--log-weight/);
+    expect(() => parseFSE26Args(['--log-weight', '--log-mode', 'count'])).toThrow(/--log-weight/);
+    // The intent, in the form that honours it.
+    expect(parseFSE26Args(['--log-weight', '0.5', '--log-mode', 'count']).logMode).toBe('count');
   });
 });

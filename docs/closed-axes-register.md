@@ -179,12 +179,19 @@ first instance: `run-rcaeval.ts` accepts `--temporal-weight` and no dispatch can
 the golden half could not have been measured without moving the default. A candidate on any
 other axis must therefore say **which input it will add** before it can claim a golden half.
 
-## The two invariants that make a measurement trustworthy
+## The invariants that make a measurement trustworthy
 
 Before reading any number, check that the input was counted:
 
 - the FSE'26 run prints **`Data: failed edges in …`** — a signal that received
   nothing reports the same headline as a signal with no effect;
+- an argument the runner cannot honour **fails before a case is loaded** — both benchmark
+  parsers used to discard an unrecognised flag silently, so a dispatch asking for a
+  configuration it could not express ran the shipped one and printed a confident number for
+  it (`docs/cli-argument-rejection-audit.md`). A flag whose *value* is missing was worse: it
+  consumed the next flag, so the request was replaced by two defaults. The rule now is
+  **an unusable value falls back to a published configuration; an absent one is refused**,
+  and the flag itself is never discarded;
 - a workflow input's **description** is a second owner of any value it quotes. Two had
   drifted to the pre-ship configuration (`lat_weight` "0.03" for a shipped `0.561495`,
   `lat_min_rise` "1" for a shipped `10.3`; a dispatcher following either would have

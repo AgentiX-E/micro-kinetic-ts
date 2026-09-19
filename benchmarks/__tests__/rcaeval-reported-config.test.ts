@@ -28,6 +28,16 @@ import { describe, expect, it } from 'vitest';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '../..');
 const RUNNER_PATH = resolve(REPO_ROOT, 'benchmarks/src/run-rcaeval.ts');
+/**
+ * The RCAEval PARSER, which is now its own module.
+ *
+ * It was inline in the runner, and the runner calls `main()` at import time, so the chain
+ * that decides what a bare dispatch measures could not be driven by a test — the same
+ * defect the FSE'26 parser was extracted for. The ownership assertions below read BOTH
+ * files rather than one: a default is declared in the parser and forwarded in the runner,
+ * and a swap to either alone would stop checking half of that.
+ */
+const CLI_PATH = resolve(REPO_ROOT, 'benchmarks/src/rcaeval-cli.ts');
 const PRUNER_PATH = resolve(REPO_ROOT, 'packages/tree/src/pruning/pruner.ts');
 
 /**
@@ -44,7 +54,7 @@ function code(text: string): string {
 }
 
 describe('RCAEval runner configuration ownership', () => {
-  const source = code(readFileSync(RUNNER_PATH, 'utf8'));
+  const source = code(readFileSync(RUNNER_PATH, 'utf8')) + code(readFileSync(CLI_PATH, 'utf8'));
   const pruner = code(readFileSync(PRUNER_PATH, 'utf8'));
 
   it('declares the decisive-stability default as the engine constant, and forwards it', () => {
@@ -82,9 +92,16 @@ describe('RCAEval runner configuration ownership', () => {
     // The import is what makes them the SAME value: a local `const
     // DEFAULT_TEMPORAL_WEIGHT = 0` would satisfy the assertion above while being a
     // copy with nothing keeping it equal to the engine's.
-    const imports =
-      /import\s*\{([^}]*)\}\s*from\s*'\.\.\/\.\.\/packages\/tree\/src\/pruning\/pruner\.js'/;
-    const names = imports.exec(source)?.[1] ?? '';
+    // EVERY import group from that module, not the first one: with the parser in its own file there
+    // are two, and each names what its own module needs. Reading only the first would have asserted
+    // about whichever file came first in the concatenation, which is a page order, not an owner.
+    const groups = [
+      ...source.matchAll(
+        /import\s*\{([^}]*)\}\s*from\s*'\.\.\/\.\.\/packages\/tree\/src\/pruning\/pruner\.js'/g,
+      ),
+    ];
+    expect(groups.length).toBeGreaterThanOrEqual(2);
+    const names = groups.map(([, list]) => list).join(',');
     expect(names).toContain('DEFAULT_TEMPORAL_WEIGHT');
     expect(names).toContain('DEFAULT_ONSET_SHAPE');
     expect(names).toContain('DEFAULT_STABILITY_WEIGHT');
