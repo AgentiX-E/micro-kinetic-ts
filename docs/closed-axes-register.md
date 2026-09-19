@@ -492,4 +492,13 @@ class permitting a loss from `0.003873` as the one bar a run must settle — whi
 empty on all four shapes: `earliest-only` is the only one whose FSE'26 gain is free on FSE'26, and the golden
 caps that shape at `0.004717`, **2.2× below the first weight at which FSE'26 gains anything there** and 7.7×
 below the `0.036552` the solver recommended. **A proposal that spans both benchmarks must state its
-intersection, name each artifact's role, and it can now be computed rather than argued.**
+intersection, name each artifact's role, and it can now be computed rather than argued.** **And the first
+candidate it named has now CLEARED BOTH HALVES** (`fse26-cv-screen.md` §"The dispatched criterion verdict"):
+`stabilityWeight=0.007352` on `2f10a82` — the `rank` region's midpoint — gives FSE'26 **757/1422 = 53.23%**
+(was 756), Top@3 66.5%, Top@5 70.4%, **0 regressed fault types** (`HTTPResponseReplaceCode 160 → 161` is the
+only move), with the RCAEval golden **9 of 9 byte-identical** (`35411810992`). The prediction was **+1** and
+the run delivered +1 case for case. **So the stability axis's re-opening condition is MET and the axis is no
+longer closed on its weight** — what remains is enrolment, not evidence: the default is still `0`, and moving
+it needs the weight guarded as text, a `MEASURED_STABILITY_PAIRS` key, the descriptions that quote it, and the
+golden re-measured **through the default path**, because a point measured by passing a flag is not a
+measurement of what ships.

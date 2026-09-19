@@ -1075,6 +1075,33 @@ engine beat rather than as a prediction it failed.
 artifacts and letting the intersection be computed, instead of by picking a weight by hand and dispatching —
 which is the form the rule always demanded and never had an instrument for.
 
+### The dispatched criterion verdict, and it is the instrument's first
+
+The candidate the intersection named — `0.007352`, the midpoint of the `rank` region — was dispatched on both
+workflows at commit `2f10a82` (`fse26-benchmark` run **`35411806524`**, `benchmark-rcaeval` run
+**`35411810992`**), and **both halves of the kill criterion pass**:
+
+| half | run | measured | predicted |
+| --- | --- | --- | --- |
+| RCAEval golden 9-cell | `35411810992` | **9 of 9 byte-identical** — `RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1` | loss-free below `0.008032` |
+| FSE'26 gain | `35411806524` | **757/1422 = 53.23%** (was 756), Top@3 66.5%, Top@5 70.4%, **0 regressed fault types** | **+1 case** |
+
+The run's own config line reads `stabilityWeight=0.007352`, and the single type that moves is
+`HTTPResponseReplaceCode 160 → 161` against the control `35125285784` (25 types, 756) — **exactly the +1 the
+`rank` profile's first gain at `0.006672` promised**, and nothing else moves in either direction. The
+`costsOnGainSide` caveat (FSE'26's own tie class permitting a loss from `0.003873`) is **rejected by the run**:
+zero types regressed, so the permission was loose, which is the same direction the one earlier engine
+measurement pointed.
+
+**What this verdict does and does not mean.** It means the intersection instrument has produced its first
+prediction and the prediction held, at case granularity, on both benchmarks — the thing `fse26-onset-verdict.md`
+§6 asked for and could not get for `earliest-only`. It does **not** mean the term ships: the default is still
+`0`, and moving it needs the enrolment discipline every other shipped term has (the weight read out of source
+as text, required to be a key of the recorded-runs table, the workflow descriptions that quote it corrected in
+the same commit) plus **the golden re-measured through the DEFAULT path**, because a candidate measured by
+passing a flag is not a measurement of what ships (the register's own rule, learned from the RCAEval runner's
+`temporalWeight: 0` pin).
+
 ### What this does and does not settle
 
 Settled: the term is not inert, the zero-regression window exists on the whole population, the
