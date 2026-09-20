@@ -5885,11 +5885,13 @@ describe('the frontier’s span is the SHAPE’s own law, not one law for every 
       groundTruth: 'ts-svc-0',
       prediction: 'ts-svc-0',
     });
-    const rank = cvScreen([wide], WEIGHTS, 'rank').solved.window.capUnrepresentable.lossFloorBinder!;
+    const rank = cvScreen([wide], WEIGHTS, 'rank').solved.window.capUnrepresentable
+      .lossFloorBinder!;
     expect(rank.group).toBe(3);
     expect(rank.weighed).toBe(4);
     expect(rank.span).toBeCloseTo(2 / 3, 12);
-    const flip = cvScreen([wide], WEIGHTS, 'flip').solved.window.capUnrepresentable.lossFloorBinder!;
+    const flip = cvScreen([wide], WEIGHTS, 'flip').solved.window.capUnrepresentable
+      .lossFloorBinder!;
     expect(flip.group).toBe(3);
     expect(flip.span).toBeCloseTo(0.001 / 0.499, 12);
   });
