@@ -165,6 +165,16 @@ jobs:
   # number, and they are plain Python: gate them on their own unit tests, which
   # run against synthetic Parquet/JSON in about a second and need no download.
   # Branch coverage is enforced, not just line coverage.
+  #
+  # CORRECTED 2026-09-20: this comment was TRUE of the sharder and FALSE of the
+  # bridge, which the `--omit` below excluded — the file that produces
+  # `~/RCAEval-json`, which every RCAEval benchmark including the golden is read
+  # from. The omit list turned out to be exactly the three filenames containing a
+  # hyphen, i.e. a name `import` cannot address; `evaluate-openrca.py` is 264
+  # lines of pure standard library and was excluded by four characters of its
+  # name. The bridge is now measured at 100% (and its reader, pandas, is
+  # installed by the line above). The two that remain out are a RECORDED
+  # decision, checked in both directions by `scripts/test_coverage_omissions.py`.
   converter-tests:
     runs-on: ubuntu-latest
     steps:
@@ -182,6 +192,6 @@ jobs:
         working-directory: scripts
         run: |
           coverage run --branch --source=. \
-            --omit='test_*,convert-parquet-to-json.py,download-and-benchmark.py,evaluate-openrca.py' \
+            --omit='test_*,download-and-benchmark.py,evaluate-openrca.py' \
             -m unittest discover -s . -p 'test_*.py'
           coverage report --fail-under=95 --precision=2

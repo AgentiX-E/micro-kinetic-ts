@@ -26,6 +26,30 @@ def log(msg: str) -> None:
     print(f"[{ts}] {msg}", flush=True)
 
 
+def dataframe_is_readable(df) -> bool:
+    """Did the reader actually read a TABLE, as opposed to returning nothing at all?
+
+    The distinction is the whole point, and it is not one pandas draws for us. Measured on 2026-09-20
+    with pandas 3.0.6, `read_parquet` on a path that is a DIRECTORY **does not raise** — it returns a
+    frame with neither rows nor columns, `(0, 0)`. A truncated file, a 0-byte file and a text file
+    named `.parquet` all raise `ArrowInvalid` and are handled by the `except` beside every call; the
+    `(0, 0)` frame is the one shape that arrives as a SUCCESS with nothing in it.
+
+    Writing an artefact from that frame publishes a one-byte `traces.csv` containing just a newline,
+    which is indistinguishable by existence from a converted trace — so "this case has no traces" and
+    "the traces could not be read" become the same file. The METRICS arm already refuses the same
+    frame (its channel detection finds nothing, so `metrics_ok` stays false and the case is reported
+    as failed); this keeps one answer to one question.
+
+    The line is drawn at COLUMNS, not at rows: a trace table with a schema and no rows is a real
+    table, and a header-only CSV is the correct artefact for it.
+
+    @param df - A frame returned by `read_parquet`.
+    @returns Whether at least one column was read.
+    """
+    return len(df.columns) > 0
+
+
 def convert_case(case_src: Path, case_dst: Path, case_idx: int, total: int) -> bool:
     """Convert a single case directory. Returns True if metrics.json was created successfully."""
     case_dst.mkdir(parents=True, exist_ok=True)
@@ -165,7 +189,13 @@ def convert_case(case_src: Path, case_dst: Path, case_idx: int, total: int) -> b
             try:
                 import pandas as pd
                 df = pd.read_parquet(traces_pq)
-                df.to_csv(case_dst / "traces.csv", index=False)
+                if dataframe_is_readable(df):
+                    df.to_csv(case_dst / "traces.csv", index=False)
+                else:
+                    log(
+                        f"  [{case_idx}/{total}] WARN {case_src.name}: traces.parquet carried no "
+                        f"columns — nothing was read, so no traces.csv is written"
+                    )
             except Exception as te:
                 log(f"  [{case_idx}/{total}] WARN {case_src.name}: traces.parquet conversion failed: {te}")
 
@@ -175,7 +205,13 @@ def convert_case(case_src: Path, case_dst: Path, case_idx: int, total: int) -> b
             try:
                 import pandas as pd
                 df = pd.read_parquet(logs_pq)
-                df.to_csv(case_dst / "logs.csv", index=False)
+                if dataframe_is_readable(df):
+                    df.to_csv(case_dst / "logs.csv", index=False)
+                else:
+                    log(
+                        f"  [{case_idx}/{total}] WARN {case_src.name}: logs.parquet carried no "
+                        f"columns — nothing was read, so no logs.csv is written"
+                    )
             except Exception as le:
                 log(f"  [{case_idx}/{total}] WARN {case_src.name}: logs.parquet conversion failed: {le}")
 

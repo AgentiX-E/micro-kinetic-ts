@@ -76,6 +76,11 @@ Three properties are worth naming, because each was a choice against the easier 
 `scripts/test_golden_run_selector.py`: **44 tests**, and the module is at **100% branch coverage**
 (111 statements, 52 branches) inside the CI's own command, which is unchanged:
 
+**CORRECTED 2026-09-20 — the command is no longer unchanged, and the figures below are the reading of
+that day rather than of today.** `--omit` lost `convert-parquet-to-json.py`, which that command had
+excluded while the comment above it claimed to gate it; see `coverage-gate-audit.md` §9. The totals
+quoted here are kept as written, because they are what the gate read then.
+
 ```
 coverage run --branch --source=. --omit='test_*,convert-parquet-to-json.py,…' -m unittest discover -s . -p 'test_*.py'
 coverage report --fail-under=95 --precision=2

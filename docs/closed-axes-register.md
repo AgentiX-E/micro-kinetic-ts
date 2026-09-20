@@ -140,7 +140,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | document | what it holds |
 | --- | --- |
 | `benchmarks-typecheck-audit.md` | the `benchmarks/` type-check and coverage audit |
-| `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid — §1 the six packages missing from the CI matrix, §7 that the ROOT command enforced nothing at all and printed a number that was the coverage of nothing in particular, §8 that the python gate's own number read 99.88% in CI against 100.00% locally, entirely from one skipped class reading artifacts by absolute path |
+| `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid — §1 the six packages missing from the CI matrix, §7 that the ROOT command enforced nothing at all and printed a number that was the coverage of nothing in particular, §8 that the python gate's own number read 99.88% in CI against 100.00% locally, entirely from one skipped class reading artifacts by absolute path, §9 that the job claiming to gate the Parquet → JSON bridge EXCLUDED it, the omit list being exactly the three filenames containing a hyphen |
 | `tests-typecheck-enrollment.md` | the test suites and tool configs that were the last TypeScript no compiler read |
 | `fse26-converter-integrity.md` | the converter-integrity verdict that gates the FSE'26 pipeline |
 | `fse26-result-attribution.md` | why the result artifact must carry the configuration that produced it |
@@ -318,6 +318,23 @@ Before reading any number, check that the input was counted:
   every pending job against **its own** bound (`dashboard` declares ten minutes where the ablations declare
   sixty), licences the wait with the soonest boundary, and **has no cancel path at all**
   (`docs/golden-reader-audit.md` §6).
+- **A GATE'S POPULATION IS PART OF ITS CLAIM, AND AN EXCLUSION NOBODY DECIDED IS NOT AN EXCLUSION.** The
+  `converter-tests` job says in its own comment that the Parquet → JSON bridge is gated on unit tests with
+  branch coverage, and its `--omit` excluded that file — the one that produces `~/RCAEval-json`, which every
+  RCAEval benchmark including the golden is read from. The three omitted names were **exactly the three in
+  `scripts/` containing a hyphen**, i.e. a name `import` cannot address, and the proof that NAMING rather than
+  judgement decided the list is the third of them: `evaluate-openrca.py`, **264 lines of pure standard
+  library**, needing no dependency at all to be tested. Of the eight hyphen-less non-test scripts, all eight
+  read **100.00%**. Enrolling the bridge found a silent success on its first run: `read_parquet` on a path that
+  is a DIRECTORY **does not raise** (pandas 3.0.6 returns a `(0, 0)` frame), so the defensive `except` never
+  fired, a **one-byte `traces.csv` containing a newline** was written and the case reported as **converted** —
+  while the metrics arm refuses exactly that frame. The rule is now a fence
+  (`scripts/test_coverage_omissions.py`) with the omit list read FROM the workflow, the script list DERIVED
+  from the filesystem, the remaining two exclusions recorded as decisions whose reasons are **re-derived**
+  (`download-and-benchmark.py` executes on import, checked by AST), and the complement asserted too: every
+  measured script must have a test that NAMES it — which found its second instance immediately,
+  `fse26_convert_tar.py` at 100% from twelve references inside another module's tests and no test of its own
+  (`docs/coverage-gate-audit.md` §9).
 - **"THE ARTIFACT BINDS IT" IS A CLAIM ABOUT SCALE, and a scale has to be measured at more than one.** The
   screens' refusals were read as proof that the dump's three decimals were the binding constraint on BOTH
   axes and that a finer render would buy decidable windows — a claim argued from the SIZE of the error bar

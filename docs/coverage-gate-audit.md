@@ -402,3 +402,89 @@ number changes when it does is not.
 The gate passed either way — `--fail-under=95` against 99.88% has 4.88 points of headroom — so this was never
 a red gate. It is the other kind of fault: **a number that is not the gate's, read as if it were**, which is
 how a real 4.9-point drop could go unnoticed inside a rounding of the story.
+
+## 9. The gate's population was decided by a CHARACTER IN A FILENAME (2026-09-20)
+
+§7 and §8 were about a command that ran no bar and a number that belonged to the machine. This one is about
+the POPULATION, and it is the plainest of the three: **the job that says it gates the Parquet → JSON bridge
+excluded the bridge.**
+
+```yaml
+# The Parquet → JSON bridge and the sharder decide every published benchmark number, and
+# they are plain Python: gate them on their own unit tests... Branch coverage is enforced.
+coverage run --branch --source=. \
+  --omit='test_*,convert-parquet-to-json.py,download-and-benchmark.py,evaluate-openrca.py' ...
+```
+
+`convert-parquet-to-json.py` is run by `cache-datasets.yml` (`python3 scripts/convert-parquet-to-json.py`,
+after an inline `pip install pandas pyarrow`) to produce `~/RCAEval-json` — **the artifact every RCAEval
+benchmark, including the golden nine-cell, is read from.** It was in no coverage gate at all.
+
+### Why it was excluded, which is the part worth keeping
+
+The three omitted names are **exactly the three in `scripts/` containing a hyphen** — a name `import` cannot
+address — and that is the only thing they have in common:
+
+| script | third-party imports | omitted before | after |
+| --- | --- | --- | --- |
+| `convert-parquet-to-json.py` | pandas | yes | **measured, 100%** |
+| `download-and-benchmark.py` | `RCAEval.utility` (external, in no requirements file) | yes | omitted, recorded |
+| `evaluate-openrca.py` | **none — pure standard library** | yes | omitted, recorded |
+| the other eight non-test scripts | polars, or nothing | no — all **100.00%** | unchanged |
+
+The third row is the proof that naming, not judgement, decided the list: `evaluate-openrca.py` is 264 lines of
+pure standard library, needing no dependency at all, kept out of a branch-coverage gate by four characters of
+its filename. **A hyphen is not a statement about what a file decides.**
+
+`download-and-benchmark.py` is 101 lines of **top-level statements** — it executes on import — so it is not a
+module a test can address; that reason is now recorded in the fence and **checked by parsing the file**, so
+the day it grows a `main()` guard the fence fails and it has to be enrolled.
+
+### What enrolment immediately found
+
+With the bridge measured, a synthetic source laid bare a silent success: **`read_parquet` on a path that is a
+DIRECTORY does not raise** — pandas 3.0.6 returns a frame with **neither rows nor columns**, `(0, 0)` — so the
+defensive `except` around the traces/logs conversion never fired, `to_csv` wrote a **one-byte `traces.csv`
+containing a single newline**, and `convert_case` returned **True**. An artefact that exists and holds nothing
+reads as "this case has no traces" when the truth is "the traces could not be read".
+
+Measured against every realistic corruption, to keep the claim honest: a 0-byte file, a text file named
+`.parquet` and a truncated parquet **all raise `ArrowInvalid`** and were already handled. So the trigger is
+narrow — a source that yields no schema at all. What makes it a defect rather than a curiosity is the
+ASYMMETRY: the **metrics** arm refuses exactly this frame (its channel detection finds nothing, `metrics_ok`
+stays false and the case is reported as failed), while the **traces** arm published it as a converted
+artefact. One question now has one answer: `dataframe_is_readable` draws the line at **columns, not rows**, so
+a trace table with a schema and no rows still produces its header-only CSV — the correct artefact for it.
+
+### The fence: the population as a rule, not a habit
+
+`scripts/test_coverage_omissions.py` (9 tests) reads the `--omit` list **from the workflow** and the script
+list from the **filesystem**, then holds four things:
+
+| rule | why |
+| --- | --- |
+| the bridge may not be omitted, and `test_convert_parquet_to_json.py` must exist | the finding, as a permanent fence |
+| every omitted name must still exist on disk | a stale entry is an exclusion nobody decided, and it silently stops measuring whatever takes the name next |
+| an omitted name may not be importable | a hyphen-less module can be addressed, so its omission is not about addressability |
+| the omitted set must EQUAL the recorded decisions, **both directions** | nothing omitted without a decision; no decision left for a file that is no longer omitted |
+| each recorded reason must still HOLD | falsifiable: `download-and-benchmark.py`'s top-level side effects are re-derived by AST |
+
+And the complement — a rule about what is omitted is half a rule without it: **every measured script must have
+a test that names it**, whether by filename or by a recorded substitution, and the substitution is falsified by
+reading the named test for the module's stem. That fence found its second instance on its first run:
+`fse26_convert_tar.py` reads 100.00% with **no test of its own** — 12 references inside
+`test_fse26_convert.py` are what measure it. Real coverage, real dependency, previously invisible.
+
+### Acceptance
+
+| | |
+| --- | --- |
+| the bridge | **158 statements, 64 branches, 100.00%**, 29 tests |
+| the python gate | `coverage report --fail-under=95` passes; every measured module at 100% |
+| the fence | 9 tests; the omit list is two recorded decisions |
+| `scripts/requirements-fse26-dev.txt` | now pins `pandas==3.0.6` and `pyarrow==25.0.1`, the reader the bridge needs and the writer its tests build synthetic input with |
+
+**One divergence this leaves open, named rather than silently reconciled**: `cache-datasets.yml` installs
+`pandas pyarrow` **unpinned**, so production may run a different reader than the gate measures. Pinning it
+there would move the cached artifact every run reads, which is a change to make deliberately and not as a
+side effect of this one.
