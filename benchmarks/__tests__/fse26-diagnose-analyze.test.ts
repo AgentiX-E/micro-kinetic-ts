@@ -5871,6 +5871,29 @@ describe('the frontier’s span is the SHAPE’s own law, not one law for every 
     expect(flip.lossFloor).toBeCloseTo(117.958, 3);
   });
 
+  it('scales a RANK cell with its members and a VALUE cell not at all', () => {
+    // The asymmetry the whole split exists for, and the fixture that shows BOTH halves: three
+    // services render one value, so the rank cell holds two rank steps — its members are handed
+    // consecutive ranks — while the value cell holds ONE quantum however many members share it,
+    // because they all render the same number and differ by at most the quantum regardless.
+    //
+    // This is the assertion a cell of TWO members cannot make: with `g = 2` the two laws' formulas
+    // coincide, so a mutation that drops the per-member factor survives on every other fixture here.
+    const wide = cvCase({
+      cvs: [0.5, 0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.2, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const rank = cvScreen([wide], WEIGHTS, 'rank').solved.window.capUnrepresentable.lossFloorBinder!;
+    expect(rank.group).toBe(3);
+    expect(rank.weighed).toBe(4);
+    expect(rank.span).toBeCloseTo(2 / 3, 12);
+    const flip = cvScreen([wide], WEIGHTS, 'flip').solved.window.capUnrepresentable.lossFloorBinder!;
+    expect(flip.group).toBe(3);
+    expect(flip.span).toBeCloseTo(0.001 / 0.499, 12);
+  });
+
   it('bounds every slope gap by 1 when the case’s own scale is inside a quantum', () => {
     // A `cv` of zero is a REAL measurement — a perfectly flat series — so a case can hold nothing but
     // zeros, and then the scale the `value` law normalises by is inside one quantum of nothing. The
@@ -6616,12 +6639,14 @@ describe('the solved window reports a weight its own arithmetic delivers', () =>
     expect(screen.solved.gain).toBe(1);
     expect(report).toContain('margin: thinnest');
     expect(report).toContain('one rank step');
-    // The margin is quoted in the same units the report's other numbers are, and the quantum is
-    // the term's own step for THIS case — not a constant, because it scales with the weight.
+    // The margin is quoted in the same units the report's other numbers are, and the step is the
+    // term's own for THIS case — not a constant, because it scales with the weight — and it comes
+    // from the case's own declaration rather than from the case's service count.
     const margin = screen.solved.margins[0]!;
     expect(margin.datapack).toBe('dp-1');
     expect(margin.margin).toBeGreaterThan(0);
-    expect(margin.quantum).toBeCloseTo(screen.solved.ship / (margin.services - 1), 12);
+    expect(margin.step?.measurement.law).toEqual({ kind: 'rank' });
+    expect(margin.step?.width).toBeCloseTo(screen.solved.ship / (margin.services - 1), 12);
     // The thinnest first, so a reader sees the frontier without scanning the list.
     for (let index = 1; index < screen.solved.margins.length; index++) {
       expect(screen.solved.margins[index]!.margin).toBeGreaterThanOrEqual(
@@ -8307,5 +8332,128 @@ describe('why a screen cannot act', () => {
     expect(source.match(/lines\.push\(\.\.\.(?:onset|cv)InertSentence\(a\)\)/g) ?? []).toHaveLength(
       4,
     );
+  });
+});
+
+describe('the margin’s step is the SHAPE’s own, not one rank step for every shape', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+  /**
+   * A window with one GAIN and a FINITE cap, which is what a margin line needs.
+   *
+   * The first case is behind on the base at `w = 0` and lifted by the term — that is what makes it a
+   * gain rather than a member of the satisfied side — and the second caps the window from above, so
+   * the solver has a bounded interval to place a shipped weight in.
+   */
+  const gained = (): DiagnosedCase[] => [
+    cvCase({
+      cvs: [0.1, 0.5, 0.5],
+      anomalies: [0.1, 0.9, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    }),
+    cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+      datapack: 'dp-cap',
+    }),
+  ];
+
+  it('derives the VALUE shape’s step from its own quantum', () => {
+    // One position of a value shape's ordering is ONE QUANTUM of the rendered field: the slope moves
+    // by `quantum/(scale − quantum)` and the score by that times the weight. The fixture renders at
+    // `SERVICE_FIELD_DECIMALS` = 3 with a scale of 0.5, so the step is `ship × 0.001/0.499` — and the
+    // old reading called `ship/(services − 1)`, a RANK position, "one rank step" for this shape.
+    const solved = cvScreen(gained(), WEIGHTS, 'flip').solved;
+    expect(solved.gain).toBe(1);
+    const one = solved.margins[0]!;
+    expect(one.step?.measurement.law).toEqual({ kind: 'value', scale: 0.5 });
+    expect(one.step?.width).toBeCloseTo(solved.ship * (0.001 / 0.499), 12);
+    // The verdict the rank yardstick got wrong: the margin clears the shape's own step by 29×, so
+    // this gain is not a knife edge — and the rank reading said it was INSIDE one step.
+    expect(one.margin).toBeGreaterThan(one.step!.width * 10);
+  });
+
+  it('keeps the RANK shape’s step as one rank position', () => {
+    // The engine re-ranks, so one position of ITS ordering is one rank step, `1/(n − 1)` — and the
+    // number is unchanged from the one-law version, because for this shape the law was right. The
+    // fixture has three measured services, so the step is `ship/2`.
+    const solved = cvScreen(gained(), WEIGHTS, 'rank').solved;
+    expect(solved.gain).toBe(1);
+    const one = solved.margins[0]!;
+    expect(one.step?.measurement.law).toEqual({ kind: 'rank' });
+    expect(one.step?.width).toBeCloseTo(solved.ship / 2, 12);
+    expect(one.margin).toBeLessThan(one.step!.width);
+    // The same margin, the same datapack — and the two shapes' steps differ by 250× on it.
+    expect(solved.margins[0]!.step!.measurement.law.kind).toBe('rank');
+  });
+
+  it('counts the rank step over the MEASURED services, not over every service', () => {
+    // The rank shape's spacing divides by the services the term weighed, because that is what its
+    // ranks are handed out over — while `WindowGainMargin.services` counts the case. One service
+    // carries no decisive composition here, so the two differ and the step says which it used.
+    const cases = [
+      cvCase({
+        cvs: [0.1, 0.5, undefined],
+        anomalies: [0.1, 0.9, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+      cvCase({
+        cvs: [0.5, 0.5, 0.1],
+        anomalies: [0.9, 0.5, 0.01],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        datapack: 'dp-cap',
+      }),
+    ];
+    const solved = cvScreen(cases, WEIGHTS, 'rank').solved;
+    expect(solved.gain).toBe(1);
+    const one = solved.margins[0]!;
+    expect(one.services).toBe(3);
+    // `1/(2 − 1)`, not `1/(3 − 1)`: two services are measured, three are counted.
+    expect(one.step?.width).toBeCloseTo(solved.ship, 12);
+  });
+
+  it('prints each shape’s own step, and counts the gains against THAT step', () => {
+    const flip = formatCvScreenReport(cvScreen(gained(), WEIGHTS, 'flip'), WEIGHTS);
+    expect(flip).toContain('one printed-digit step');
+    expect(flip).not.toContain('one rank step');
+    // The verdict, in one assertion: the flip term has no rank to step by, and read at its own
+    // quantum the margin is 29× the step, so NOTHING is inside one step — while the one-law version
+    // reported `1 of 1`.
+    expect(flip).toContain('0 of 1 gains inside one step');
+    const rank = formatCvScreenReport(cvScreen(gained(), WEIGHTS, 'rank'), WEIGHTS);
+    expect(rank).toContain('one rank step');
+    expect(rank).toContain('1 of 1 gains inside one step');
+  });
+
+  it('says a builder stated no law, rather than printing the rank law for it', () => {
+    // The temporal screen's builder states no law, and there is a reason rather than an omission:
+    // `CellLaw`'s two branches describe the DECISIVE-COMPOSITION screen's normalisations, and the
+    // onset shapes have their own — `order` spaces its positions by `2/(measured − 1)`, not
+    // `1/(measured − 1)`, and `earliest-only` is an indicator whose step is neither. A step is a
+    // property of a law, so there is nothing to take one from, and printing the rank law for a term
+    // that may have none is the defect this line exists to stop.
+    const cases: DiagnosedCase[] = [
+      cvCase({
+        cvs: [0.1, 0.5, 0.5],
+        anomalies: [0.1, 0.9, 0.01],
+        onsets: [1000, 90000, 5000],
+        injectTimeMs: 1000,
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+      }),
+    ];
+    const screen = onsetScreen(cases, { logWeight: 1, latWeight: 0, poolWeight: 0 });
+    expect(screen.solved.gain).toBeGreaterThan(0);
+    const report = formatOnsetScreenReport(screen, { logWeight: 1, latWeight: 0, poolWeight: 0 });
+    expect(report).toContain('no step stated');
+    expect(report).not.toContain('one rank step');
+    // And the count says how much of its population it could count, so `0 of 1` cannot read as a
+    // whole when the whole was never countable.
+    expect(report).toContain('0 of 1 gains inside one step (1 without a law)');
+    expect(screen.solved.margins[0]!.step).toBeUndefined();
   });
 });

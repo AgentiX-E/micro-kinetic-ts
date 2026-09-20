@@ -251,7 +251,10 @@ margin: thinnest 1.054e-4 (ts0-ts-inside-payment-service-stress-5qd9rl vs ts-sta
         one rank step 6.034e-4; 2 of 6 gains inside one step
 ```
 
-`1.054e-4` is a sixth of one rank position of the term (`0.03017 / 50`), and the next-thinnest gain
+`1.054e-4` is a sixth of one rank position of the term (`0.03017 / 50`) — and `50` is the case's
+**MEASURED** count, which is what the rank shape's ranks are handed out over; the case's SERVICE count is a
+different quantity and the step is not over it. The line names the law for exactly that reason: the same
+screen's `flip` row is a printed-digit step and reads `15×` smaller. The next-thinnest gain
 holds `3.129e-4`. The dump renders every input at three decimals (`fmt` = `toFixed(3)`), so the
 reconstructed base is itself only good to about `1e-3` — an order of magnitude above the margin the
 sixth gain rested on. **The sixth gain was never resolvable from the dump**, and the count alone
@@ -1124,8 +1127,9 @@ FSE'26's own permission (`0.003873`, below the first gain) as the one bar only a
    which this document listed as not settled, is **yes**, and it is now the shippable candidate above rather
    than a caveat.
 3. **It is worth ONE case on both shapes, and the window is a THIRD OF A RANK STEP.** `[0.004134, 0.007528)`
-   is `0.0034` wide and `[0.006672, 0.008032)` is `0.0014`; the term's own rank step on FSE'26 is `6.034e-4`,
-   so the `rank` window is about two steps. A gain that arrives one case at a time over a window two rank
+   is `0.0034` wide and `[0.006672, 0.008032)` is `0.0014`; the `rank` shape's own step on FSE'26 is
+   `6.034e-4` (that shape's step, not "the term's": the `flip` row's is a printed-digit step at
+   `3.086e-5`, 15× smaller and moving with the box), so the `rank` window is about two steps. A gain that arrives one case at a time over a window two rank
    steps wide is what a statistic whose maximal-gain plateau starts at `0.029860` looks like when the
    constraint is the other benchmark — and **the honest form of the closure is that the term ships one case
    at a time, not that it cannot ship**: the earlier `NO ADMISSIBLE WEIGHT` reading was the instrument's

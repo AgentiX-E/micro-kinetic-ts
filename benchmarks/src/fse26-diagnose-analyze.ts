@@ -1621,33 +1621,44 @@ export interface MeasurementProvenance {
 }
 
 /**
- * The widest slope gap ONE render cell can hide, in this shape's own units.
+ * The slope a shape moves when its own ordering moves ONE position.
  *
- * The bound is deliberately a FULL quantum rather than half of one. Round-to-nearest and truncation
- * differ by exactly that much, and the number must be an UPPER bound while the renderer's convention
- * is a premise this module has no way to check — so the slack is the larger of the two.
+ * The two laws agree on almost nothing, and this quantity is the cleanest place to see it:
+ *
+ * - `rank` — one position is one RANK, so the slope moves `1/(n − 1)` where `n` is what the ranks
+ *   are handed out over: the services the term WEIGHED, not the services the case holds.
+ * - `value` — the ordering is the rendered field itself, so one position is one QUANTUM of it:
+ *   `quantum/(scale − quantum)`, with the same full-quantum slack {@link cellSpanWidth} documents.
  *
  * A `value` law's slope is confined to `[0, 1]` by its own normalisation, which is what bounds the
- * answer when the case's scale is itself within a quantum of zero: the widest gap any two slopes can
- * have is 1, and that is a ceiling the SHAPE imposes rather than a fallback.
+ * answer when the case's scale is itself within a quantum of zero: no two slopes are further apart
+ * than 1, and that is a ceiling the SHAPE imposes rather than a fallback.
  *
- * @param measurement - The builder's provenance, for the law and the box.
- * @param group - Services sharing one rendered value, i.e. `g`.
- * @param weighed - The case's weighed services — the engine's `n`, which is the divisor.
- * @returns The widest gap, in slope units.
+ * @param measurement - The builder's provenance, for the law, the box and the counted set.
+ * @returns The step, in slope units.
  */
-export function cellSpanWidth(
-  measurement: MeasurementProvenance,
-  group: number,
-  weighed: number,
-): number {
-  if (measurement.law.kind === 'rank') {
-    // `g ≤ n`, so this is at most 1 without needing the ceiling the value law needs.
-    return (group - 1) / (weighed - 1);
-  }
+export function shapeStep(measurement: MeasurementProvenance): number {
+  if (measurement.law.kind === 'rank') return 1 / (measurement.weighed.size - 1);
   const quantum = 10 ** -measurement.decimals;
   const { scale } = measurement.law;
   return scale > quantum ? Math.min(1, quantum / (scale - quantum)) : 1;
+}
+
+/**
+ * The widest slope gap ONE render cell can hide, in this shape's own units.
+ *
+ * A cell of `g` members is `g − 1` positions apart for a shape that RE-RANKS — its members hold
+ * consecutive ranks — and exactly ONE position apart for a shape that is linear in the value, whose
+ * members all render the same value and so differ by at most a quantum whatever the cell's size.
+ * That asymmetry is the whole reason this cannot be one formula, and it is stated once, here.
+ *
+ * @param measurement - The builder's provenance, for the law and the box.
+ * @param group - Services sharing one rendered value, i.e. `g`.
+ * @returns The widest gap, in slope units.
+ */
+export function cellSpanWidth(measurement: MeasurementProvenance, group: number): number {
+  const step = shapeStep(measurement);
+  return measurement.law.kind === 'rank' ? (group - 1) * step : step;
 }
 
 /**
@@ -2387,7 +2398,7 @@ function renderedTiePairs(one: WeightSeparationCase): readonly RenderedTiePair[]
         target: name,
         rival,
         lead: target.base - other.base,
-        span: cellSpanWidth(measured, group, n),
+        span: cellSpanWidth(measured, group),
         group,
         weighed: n,
         measurement: measured,
@@ -2877,10 +2888,21 @@ export interface WindowGainMargin {
   readonly rival: string;
   /** `target - rival` at the shipped weight; positive for a case in {@link SolvedWindow.gained}. */
   readonly margin: number;
-  /** Services in the case, so {@link quantum} can be reproduced from the report. */
+  /** Services in the CASE, which is what a reader reproduces the case's own population from. */
   readonly services: number;
-  /** One rank position of this case's own term at the shipped weight. */
-  readonly quantum: number;
+  /**
+   * One position of THIS SHAPE's own ordering, at the weight the margin was measured at.
+   *
+   * ONE field carrying both the width and the law it was drawn from, for the reason the case's
+   * provenance is one field: a width without its law is a number nobody can reproduce, and a law
+   * without its width is not what a reader compares against the margin. ABSENT when the builder
+   * stated no law — a step is a property of a law, so there is nothing to take one from, and
+   * printing the RANK law for a term that may have none is the defect this field exists to stop.
+   */
+  readonly step?: {
+    readonly width: number;
+    readonly measurement: MeasurementProvenance;
+  };
 }
 
 /**
@@ -2921,11 +2943,14 @@ function marginOf(one: WeightSeparationCase, w: number): WindowGainMargin {
     rival,
     margin,
     services,
-    // A gain ranks over at least two services by construction: a one-service case satisfies its own
-    // root at every weight, so it is never a gain and never reaches this function. The division is
-    // therefore by a positive number, and the alternative — a branch for a case that cannot arrive —
-    // would be a tolerance for a state the type already excludes.
-    quantum: w / (services - 1),
+    // The step comes from the case's OWN declaration, so a builder that never said which law its
+    // slopes obey cannot have a step printed for it. The old reading took `w / (services - 1)` here
+    // and called it "one rank step" for every shape: right for a shape the engine re-ranks, and
+    // wrong by 250x for one that is linear in the value — where the ordering is the rendered field
+    // and no rank exists to step by.
+    ...(one.measured === undefined
+      ? {}
+      : { step: { width: w * shapeStep(one.measured), measurement: one.measured } }),
   };
 }
 
@@ -5041,12 +5066,20 @@ function configurationLine(weights: FamilyScreenWeights): string {
  * One line naming the frontier of a solved window.
  *
  * The count cannot be read to the precision the decision needs on its own. The margin is the lead
- * the thinnest gained case holds over its nearest rival at the shipped weight, and the rank step is
- * one position of THAT case's own term — so `1.054e-4` against a step of `6.034e-4` says the weight
- * is a tenth of a rank away from losing a case, while `1.2e-2` against the same step says a whole
- * rank would still not cost it. The population of gains inside one step is counted against each
- * case's own step, because the step scales with the weight and with how many services the case
- * ranks over; the value printed is the thinnest case's.
+ * the thinnest gained case holds over its nearest rival at the shipped weight, and the STEP is one
+ * position of that case's own term — so `1.054e-4` against a step of `6.034e-4` says the weight is a
+ * tenth of a step away from losing a case, while `1.2e-2` against the same step says a whole step
+ * would still not cost it.
+ *
+ * The step is the SHAPE's, and the line names which: a shape the engine re-ranks steps by one rank,
+ * and a shape that is linear in the value steps by one quantum of the rendered field — the two
+ * differed by 250× on the fixture that caught the one-law version. The population of gains inside
+ * one step is counted against each case's own step, because the step scales with the weight and with
+ * how many services the case ranks over; the value printed is the thinnest case's.
+ *
+ * A row whose builder stated no law has no step, and the line says so rather than substituting the
+ * rank law: it counts the rows that HAVE one and names the population it counted, so a partial
+ * population cannot read as a whole.
  *
  * @param solved - A solved window, or any row carrying its margins. Its caller passes one only
  *   when something was GAINED, and a gain is a case satisfied at the shipped weight — so it has a
@@ -5055,11 +5088,23 @@ function configurationLine(weights: FamilyScreenWeights): string {
  */
 function marginLine(solved: { readonly margins: readonly WindowGainMargin[] }): string {
   const thinnest = solved.margins[0]!;
-  const inside = solved.margins.filter((one) => one.margin <= one.quantum).length;
+  const stepped = solved.margins.filter((one) => one.step !== undefined);
+  const inside = stepped.filter((one) => one.margin <= one.step!.width).length;
+  // The law's own name, read off the law rather than chosen here: the two are separate quantities,
+  // and one word for both is what let the rank law answer a value shape's question.
+  const law =
+    thinnest.step === undefined
+      ? 'no step stated'
+      : `${thinnest.step.measurement.law.kind === 'rank' ? 'one rank step' : 'one printed-digit step'} ` +
+        thinnest.step.width.toExponential(3);
+  // The denominator is the POPULATION, and how many of it could be counted is stated, so a reader
+  // told `0 of 5` cannot mistake a partial count for a whole one.
+  const without = solved.margins.length - stepped.length;
   return (
     `  margin: thinnest ${thinnest.margin.toExponential(3)} ` +
-    `(${thinnest.datapack} vs ${thinnest.rival}); one rank step ${thinnest.quantum.toExponential(3)}; ` +
-    `${inside} of ${solved.margins.length} gains inside one step`
+    `(${thinnest.datapack} vs ${thinnest.rival}); ${law}; ` +
+    `${inside} of ${solved.margins.length} gains inside one step` +
+    (without === 0 ? '' : ` (${without} without a law)`)
   );
 }
 
