@@ -34,10 +34,12 @@ import {
 
 import type {
   Admissibility,
+  CellLaw,
   CriterionReading,
   CvShape,
   DiagnosedCase,
   DumpPrecision,
+  MeasurementProvenance,
   RefinementFrontier,
   WeightSeparationCase,
 } from '../src/fse26-diagnose-analyze.js';
@@ -3902,6 +3904,23 @@ describe('familyScreen — a family penalty, SOLVED instead of swept', () => {
     expect(k8s.lostAtShip).toBe(0);
   });
 
+  it('says a builder that stated no law has no step, rather than borrowing one', () => {
+    // The other half of the margin line's contract, still reachable and still truthful: the FAMILY
+    // screen's slopes come from `failedEdge` and `lat`, and neither builder states a law — so there
+    // is nothing to take a step from, and the line counts how much of its population it could
+    // actually count. The clause is the difference between a step that is UNKNOWN and one that does
+    // not exist, and printing the rank law for the first would be the defect it exists to stop.
+    const rows = familyScreen([gainCase()], { logWeight: 1 });
+    expect(rows.some((row) => row.gain > 0)).toBe(true);
+    const report = formatFamilyScreenReport(rows, { logWeight: 1 });
+    expect(report).toContain('no step stated');
+    expect(report).not.toContain('one rank step');
+    expect(report).toMatch(/gains inside one step \(\d+ without a law\)/);
+    for (const row of rows) {
+      for (const one of row.margins ?? []) expect(one.step).toBeUndefined();
+    }
+  });
+
   it('reports a POINT window as a point, and the profile it sits on', () => {
     // The shape the real benchmark produces most often, and the reason the profile exists:
     // the metric term's top step is a constant for a fixed candidate count, so the weight
@@ -5765,11 +5784,13 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     expect(both).toContain('the cap’s own case is not one of them');
     // The floor and its comparison, both in the report: the count says HOW MANY cases are loose, and
     // the floor says whether the looseness can bite inside the window the cap describes. This is the
-    // DEFAULT shape's sentence, so the span is the VALUE law's and the clause says so — the scale and
-    // the box, not a tie group, because a tie group is not what set this number.
+    // DEFAULT shape's sentence, so the span is the VALUE law's and the clause names that law's OWN
+    // inputs — the cell, the field it is a cell of, the normaliser, and the ceiling — rather than a
+    // tie group, which is not what set this number.
     expect(both).toContain('the lowest weight at which one of them can be lost is 117.958000');
     expect(both).toContain(
-      '(dp-1: ts-svc-0 / ts-svc-1, a render cell of 0.001000 on a scale of 0.500000, at 3 decimals)',
+      '(dp-1: ts-svc-0 / ts-svc-1, a render cell of 0.001000 cv against a normaliser of ' +
+        '0.500000, bounded by 1.000000)',
     );
     // Here the cap is `0.425500` from `dp-tighter`, which the member's floor clears — so the sentence
     // reads `AT OR ABOVE`, and says so rather than leaving a reader to compare two numbers three
@@ -5865,7 +5886,13 @@ describe('the frontier’s span is the SHAPE’s own law, not one law for every 
     // The slack is a FULL quantum rather than half of one on purpose: the bound must not depend on
     // which way the producer rounded, and truncation and round-to-nearest differ by exactly that.
     const flip = frontierOf('flip');
-    expect(flip.lossFloorBinder?.measurement.law).toEqual({ kind: 'value', scale: 0.5 });
+    expect(flip.lossFloorBinder?.measurement.law).toEqual({
+      kind: 'value',
+      field: 'cv',
+      quantum: 0.001,
+      scale: 0.5,
+      range: 1,
+    });
     expect(flip.lossFloorBinder?.measurement.decimals).toBe(SERVICE_FIELD_DECIMALS);
     expect(flip.lossFloorBinder?.span).toBeCloseTo(0.002004008, 9);
     expect(flip.lossFloor).toBeCloseTo(117.958, 3);
@@ -5909,7 +5936,13 @@ describe('the frontier’s span is the SHAPE’s own law, not one law for every 
       prediction: 'ts-svc-0',
     });
     const flip = cvScreen([flat], WEIGHTS, 'flip').solved.window.capUnrepresentable;
-    expect(flip.lossFloorBinder?.measurement.law).toEqual({ kind: 'value', scale: 0 });
+    expect(flip.lossFloorBinder?.measurement.law).toEqual({
+      kind: 'value',
+      field: 'cv',
+      quantum: 0.001,
+      scale: 0,
+      range: 1,
+    });
     expect(flip.lossFloorBinder?.span).toBe(1);
     expect(flip.lossFloor).toBeCloseTo(0.2363888, 6);
   });
@@ -5939,10 +5972,16 @@ describe('the frontier’s span is the SHAPE’s own law, not one law for every 
     // changes the SLACK too. A test that asserted `× 10` would be asserting the wrong arithmetic.
     expect(binderAt(at4).lossFloor).toBeCloseTo(1181.7075015, 6);
     expect(binderAt(at4).lossFloor / binderAt(at3).lossFloor).toBeCloseTo(10.0180361, 6);
-    // And the box reaches the sentence, so a reader comparing two rows can see which is which.
-    expect(formatCvScreenReport(cvScreen([at4], WEIGHTS, 'flip'), WEIGHTS)).toContain(
-      'at 4 decimals',
-    );
+    // And the box reaches the sentence — through the law's OWN quantum, which is the quantity the
+    // span is drawn from. The clause no longer appends `at N decimals` for a value shape: that
+    // clause belongs to the RANK law, whose cell SIZES move with the box, while a value law states
+    // the cell it divides by. On the onset screen the two numbers are not even the same kind of
+    // fact, which is what makes one shared clause wrong there.
+    const report = formatCvScreenReport(cvScreen([at4], WEIGHTS, 'flip'), WEIGHTS);
+    expect(report).toContain('a render cell of 0.000100 cv against a normaliser of 0.500000');
+    expect(report).toContain('bounded by 1.000000');
+    const rank = formatCvScreenReport(cvScreen([at4], WEIGHTS, 'rank'), WEIGHTS);
+    expect(rank).toContain('at 4 decimals');
   });
 
   it('keeps the RANK shape’s span as consecutive ranks inside the cell', () => {
@@ -5951,16 +5990,20 @@ describe('the frontier’s span is the SHAPE’s own law, not one law for every 
     // same lead — and the two laws disagree by a factor of 250 here, which is why a single formula
     // cannot serve both.
     const rank = frontierOf('rank');
-    expect(rank.lossFloorBinder?.measurement.law).toEqual({ kind: 'rank' });
+    expect(rank.lossFloorBinder?.measurement.law).toEqual({ kind: 'rank', range: 1 });
     expect(rank.lossFloorBinder?.span).toBeCloseTo(0.5, 12);
     expect(rank.lossFloor).toBeCloseTo(0.4727776, 7);
   });
 
-  it('reports the two laws with the terms each of them was derived from', () => {
+  it('reports each law with the terms it was actually derived from', () => {
     // A sentence that printed the span's inputs with the OTHER law's words would describe a
-    // derivation nobody performed, so the clause is a property of the law rather than of the report.
+    // derivation nobody performed, so the clause is a property of the law rather than of the report:
+    // the value's own cell and the field it is a cell OF, and the rank's tie group with the box its
+    // sizes are a function of.
     const flip = formatCvScreenReport(cvScreen([tied()], WEIGHTS, 'flip'), WEIGHTS);
-    expect(flip).toContain('a render cell of 0.001000 on a scale of 0.500000, at 3 decimals');
+    expect(flip).toContain(
+      'a render cell of 0.001000 cv against a normaliser of 0.500000, bounded by 1.000000',
+    );
     expect(flip).not.toContain('a tie group of');
     const rank = formatCvScreenReport(cvScreen([tied()], WEIGHTS, 'rank'), WEIGHTS);
     expect(rank).toContain('a tie group of 2 among 3 weighed, at 3 decimals');
@@ -6017,13 +6060,19 @@ describe('the frontier’s span is the SHAPE’s own law, not one law for every 
     expect(dumpPrecisionOf([coarse])).toEqual({ decimals: SERVICE_FIELD_DECIMALS, stated: true });
     const report = formatCvScreenReport(cvScreen([coarse], WEIGHTS, 'flip'), WEIGHTS);
     // The box travels with the count: it is on the SAME line as the count, so a reader who greps the
-    // count has the quantum that decided it. Asserted by locating the line rather than by a regex over
-    // the whole report, because a match that could span lines would not be saying that.
+    // count has the quantum that decided it. For a VALUE law the box's evidence is the cell the law
+    // divides by — `0.001` here, `0.0001` at four decimals — and for a RANK law it is the decimal
+    // count its group sizes are a function of. Asserted by locating the line rather than by a regex
+    // over the whole report, because a match that could span lines would not be saying that.
     const line = report.split('\n').find((one) => one.includes('cap UPPER bound'));
     expect(line, 'the qualification must be printed').toBeDefined();
     expect(line).toContain('hold a rival the term reads as EQUAL');
-    expect(line).toMatch(/at \d+ decimals/);
-    expect(line).toContain('on a scale of');
+    expect(line).toContain(`a render cell of ${(10 ** -SERVICE_FIELD_DECIMALS).toFixed(6)} cv`);
+    const rankLine = formatCvScreenReport(cvScreen([coarse], WEIGHTS, 'rank'), WEIGHTS)
+      .split('\n')
+      .find((one) => one.includes('cap UPPER bound'));
+    expect(rankLine).toMatch(/at \d+ decimals/);
+    expect(rankLine).toContain('a tie group of');
   });
 });
 
@@ -6647,7 +6696,7 @@ describe('the solved window reports a weight its own arithmetic delivers', () =>
     const margin = screen.solved.margins[0]!;
     expect(margin.datapack).toBe('dp-1');
     expect(margin.margin).toBeGreaterThan(0);
-    expect(margin.step?.measurement.law).toEqual({ kind: 'rank' });
+    expect(margin.step?.measurement.law).toEqual({ kind: 'rank', range: 1 });
     expect(margin.step?.width).toBeCloseTo(screen.solved.ship / (margin.services - 1), 12);
     // The thinnest first, so a reader sees the frontier without scanning the list.
     for (let index = 1; index < screen.solved.margins.length; index++) {
@@ -8370,7 +8419,13 @@ describe('the margin’s step is the SHAPE’s own, not one rank step for every 
     const solved = cvScreen(gained(), WEIGHTS, 'flip').solved;
     expect(solved.gain).toBe(1);
     const one = solved.margins[0]!;
-    expect(one.step?.measurement.law).toEqual({ kind: 'value', scale: 0.5 });
+    expect(one.step?.measurement.law).toEqual({
+      kind: 'value',
+      field: 'cv',
+      quantum: 0.001,
+      scale: 0.5,
+      range: 1,
+    });
     expect(one.step?.width).toBeCloseTo(solved.ship * (0.001 / 0.499), 12);
     // The verdict the rank yardstick got wrong: the margin clears the shape's own step by 29×, so
     // this gain is not a knife edge — and the rank reading said it was INSIDE one step.
@@ -8384,7 +8439,7 @@ describe('the margin’s step is the SHAPE’s own, not one rank step for every 
     const solved = cvScreen(gained(), WEIGHTS, 'rank').solved;
     expect(solved.gain).toBe(1);
     const one = solved.margins[0]!;
-    expect(one.step?.measurement.law).toEqual({ kind: 'rank' });
+    expect(one.step?.measurement.law).toEqual({ kind: 'rank', range: 1 });
     expect(one.step?.width).toBeCloseTo(solved.ship / 2, 12);
     expect(one.margin).toBeLessThan(one.step!.width);
     // The same margin, the same datapack — and the two shapes' steps differ by 250× on it.
@@ -8420,7 +8475,7 @@ describe('the margin’s step is the SHAPE’s own, not one rank step for every 
 
   it('prints each shape’s own step, and counts the gains against THAT step', () => {
     const flip = formatCvScreenReport(cvScreen(gained(), WEIGHTS, 'flip'), WEIGHTS);
-    expect(flip).toContain('one printed-digit step');
+    expect(flip).toContain('one render cell');
     expect(flip).not.toContain('one rank step');
     // The verdict, in one assertion: the flip term has no rank to step by, and read at its own
     // quantum the margin is 29× the step, so NOTHING is inside one step — while the one-law version
@@ -8430,32 +8485,281 @@ describe('the margin’s step is the SHAPE’s own, not one rank step for every 
     expect(rank).toContain('one rank step');
     expect(rank).toContain('1 of 1 gains inside one step');
   });
+});
 
-  it('says a builder stated no law, rather than printing the rank law for it', () => {
-    // The temporal screen's builder states no law, and there is a reason rather than an omission:
-    // `CellLaw`'s two branches describe the DECISIVE-COMPOSITION screen's normalisations, and the
-    // onset shapes have their own — `order` spaces its positions by `2/(measured − 1)`, not
-    // `1/(measured − 1)`, and `earliest-only` is an indicator whose step is neither. A step is a
-    // property of a law, so there is nothing to take one from, and printing the rank law for a term
-    // that may have none is the defect this line exists to stop.
-    const cases: DiagnosedCase[] = [
-      cvCase({
-        cvs: [0.1, 0.5, 0.5],
-        anomalies: [0.1, 0.9, 0.01],
-        onsets: [1000, 90000, 5000],
-        injectTimeMs: 1000,
-        groundTruth: 'ts-svc-0',
-        prediction: 'ts-svc-0',
-      }),
-    ];
-    const screen = onsetScreen(cases, { logWeight: 1, latWeight: 0, poolWeight: 0 });
-    expect(screen.solved.gain).toBeGreaterThan(0);
-    const report = formatOnsetScreenReport(screen, { logWeight: 1, latWeight: 0, poolWeight: 0 });
-    expect(report).toContain('no step stated');
-    expect(report).not.toContain('one rank step');
-    // And the count says how much of its population it could count, so `0 of 1` cannot read as a
-    // whole when the whole was never countable.
-    expect(report).toContain('0 of 1 gains inside one step (1 without a law)');
-    expect(screen.solved.margins[0]!.step).toBeUndefined();
+/**
+ * The ONSET shapes' own laws — the follow-up iteration 13 named and deliberately did not invent.
+ *
+ * `CellLaw`'s branches described the decisive-composition screen's normalisations, so the temporal
+ * builder stated no law and all four shapes printed `no step stated`. Every one of them HAS a law,
+ * and two of them are laws the shared branches would get WRONG:
+ *
+ * - `order` is `1 − 2·index/(n − 1)` — a rank law whose RANGE is 2, so one position is
+ *   `2/(n − 1)`; the rank branch hardcodes the range at 1 and would halve it.
+ * - `earliness` is `2 × (earliness − 0.5)` = `(max − delay)/(span/2) − 1` — LINEAR in the printed
+ *   delay, so one position of it is ONE MILLISECOND of that column rather than `10^-decimals` of a
+ *   service field. The artifact has TWO resolutions and the provenance's box names only one.
+ * - `earliest-only` and `latest-only` are INDICATORS: a single boundary, so one position of their
+ *   ordering is their whole range.
+ *
+ * A describe of its own rather than a corner of the margin one, so a mutation of the temporal law
+ * has a guard that can own it: a row pointed at the wrong describe reports a gap that is not there.
+ */
+describe('every shape states its own law, and the onset shapes are not lawless', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  /** One case whose root is behind on the base AND earliest in time, so the term lifts it. */
+  const lifted = (delays: readonly number[], datapack = 'dp-1'): DiagnosedCase =>
+    cvCase({
+      cvs: [0.1, 0.5, 0.5],
+      anomalies: [0.1, 0.9, 0.01],
+      onsets: delays,
+      injectTimeMs: 1000,
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+      datapack,
+    });
+
+  it('states no law for a case the term has no ordering over', () => {
+    // ONE rule for both screens, because it is the ENGINE's precondition rather than a convention of
+    // either builder: `cvSlopes` and `computeOnsetSlopes` both return zero slopes below two measured
+    // services, so there is no ordering for a law to describe and `shapeStep` would divide by
+    // `n − 1 = 0`. Such a case still counts as SATISFIED — it is a member of the class's own
+    // denominator — so the class reports it as uncountable rather than pretending it is not there.
+    // Measured on the whole FSE'26 dump: 1422 of 1422 cases carry two or more in both columns, so
+    // this predicate moves no number the report prints.
+    const oneCv = cvCase({
+      cvs: [0.9, undefined, undefined],
+      anomalies: [0.9, 0.1, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const oneOnset = cvCase({
+      cvs: [0.9, 0.5, 0.5],
+      anomalies: [0.9, 0.1, 0.01],
+      onsets: [0],
+      injectTimeMs: 1000,
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const cvWindow = cvScreen([oneCv], WEIGHTS, 'rank').solved.window;
+    const onsetWindow = onsetScreen([oneOnset], WEIGHTS, 'order').solved.window;
+    expect(cvWindow.satisfied).toBe(1);
+    expect(onsetWindow.satisfied).toBe(1);
+    expect(cvWindow.capUnrepresentable.declared).toBe(0);
+    expect(onsetWindow.capUnrepresentable.declared).toBe(0);
+    // And the same cases with ONE more measured service DO state one, so the assertion above is
+    // about the precondition rather than about a builder that never states anything.
+    const twoCv = cvCase({
+      cvs: [0.9, 0.5, undefined],
+      anomalies: [0.9, 0.1, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const twoOnset = cvCase({
+      cvs: [0.9, 0.5, 0.5],
+      anomalies: [0.9, 0.1, 0.01],
+      onsets: [0, 100],
+      injectTimeMs: 1000,
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    expect(cvScreen([twoCv], WEIGHTS, 'rank').solved.window.capUnrepresentable.declared).toBe(1);
+    expect(
+      onsetScreen([twoOnset], WEIGHTS, 'order').solved.window.capUnrepresentable.declared,
+    ).toBe(1);
+  });
+
+  it('prints the cap’s qualification for the onset screen, where the term is a threshold', () => {
+    // The class this screen can report now and could not before. The term credits the earliest
+    // printed millisecond, so two services the render ties AT the boundary are separated by a
+    // sub-millisecond draw and by nothing else — the hazard the resolution and refinement lines
+    // assert in prose ("the gain holds for the printed digits only") without naming the class that
+    // makes it true. It was computed and left unprinted, which is the one state a measurement must
+    // not be left in.
+    const tiedAtBoundary = cvCase({
+      cvs: [0.9, 0.5, 0.5],
+      anomalies: [0.9, 0.1, 0.01],
+      onsets: [0, 0, 5000],
+      injectTimeMs: 1000,
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const report = formatOnsetScreenReport(
+      onsetScreen([tiedAtBoundary], WEIGHTS, 'earliest-only'),
+      WEIGHTS,
+    );
+    expect(report).toContain(
+      'cap UPPER bound: 1 of 1 satisfied cases hold a rival the term reads as EQUAL',
+    );
+    expect(report).toContain('a tie inside the credited set, worth its whole 1.000000');
+    // And absent where it does not apply, so a line reading `0 of N` cannot be taken for a passing
+    // check rather than for the absence of a finding.
+    const apart = cvCase({
+      cvs: [0.9, 0.5, 0.5],
+      anomalies: [0.9, 0.1, 0.01],
+      onsets: [0, 5000, 9000],
+      injectTimeMs: 1000,
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    expect(
+      formatOnsetScreenReport(onsetScreen([apart], WEIGHTS, 'earliest-only'), WEIGHTS),
+    ).not.toContain('cap UPPER bound');
+  });
+
+  it('steps the ORDER shape by its own range, which is 2 and not 1', () => {
+    // The fixture's delays are `[0, 89000, 4000]` ms, so the term's ranks run over three services
+    // and the root — the earliest — takes the top position. One position of this shape is
+    // `2/(3 − 1) = 1`, not `1/(3 − 1) = 0.5`: `order` spaces its positions over the whole `[−1, 1]`
+    // because a two-sided normalisation is what makes the shape's claim about the FIRST mover.
+    const solved = onsetScreen([lifted([0, 89000, 4000])], WEIGHTS, 'order').solved;
+    expect(solved.gain).toBe(1);
+    expect(solved.ship).toBeGreaterThan(0);
+    const one = solved.margins[0]!;
+    expect(one.step?.measurement.law).toEqual({ kind: 'rank', range: 2 });
+    expect(one.step?.width).toBeCloseTo(solved.ship, 12);
+  });
+
+  it('reads the EARLINESS shape’s cell in MILLISECONDS, not in service decimals', () => {
+    // `earliness` divides a `max − delay` distance by `span/2`, so the quantity one position moves is
+    // a millisecond of the ONSET column — and that column is rendered by different arithmetic from
+    // the service fields: `fmtOnset` rounds to whole milliseconds. Read at the artifact's own
+    // `SERVICE_FIELD_DECIMALS` the step would be a thousand times smaller, which is the defect. The
+    // normaliser is a LOWER bound on the true one, so the step is an upper bound: a true span can be
+    // as small as `span − 2·quantum`.
+    const solved = onsetScreen([lifted([0, 89000, 4000])], WEIGHTS, 'earliness').solved;
+    expect(solved.gain).toBe(1);
+    expect(solved.ship).toBeGreaterThan(0);
+    const one = solved.margins[0]!;
+    expect(one.step?.measurement.law).toEqual({
+      kind: 'value',
+      field: 'onset delay (ms)',
+      quantum: 1,
+      scale: 44500,
+      range: 2,
+    });
+    expect(one.step?.width).toBeCloseTo(solved.ship * (1 / (44500 - 1)), 12);
+  });
+
+  it('caps the earliness step at the shape’s own range when the span is inside a cell', () => {
+    // The second half, so the ceiling is a ceiling and not a value that happens to be right: a 2 ms
+    // span puts the normaliser INSIDE the quantum, and then no two slopes can be further apart than
+    // the shape's own range. `2` and not `1`: the shape normalises to `[−1, 1]`.
+    const solved = onsetScreen([lifted([0, 2, 1])], WEIGHTS, 'earliness').solved;
+    expect(solved.gain).toBe(1);
+    const one = solved.margins[0]!;
+    expect(one.step?.measurement.law).toEqual({
+      kind: 'value',
+      field: 'onset delay (ms)',
+      quantum: 1,
+      scale: 1,
+      range: 2,
+    });
+    expect(one.step?.width).toBeCloseTo(solved.ship * 2, 12);
+  });
+
+  it('reads an INDICATOR shape’s one position as its whole range', () => {
+    // `earliest-only` credits `1` and leaves everyone else at `0`; `latest-only` credits `−1` and
+    // leaves the rest at `0`. Either way the ordering has ONE boundary, so crossing it moves the
+    // slope by 1 — and the fixture's earliest service is the root, so both shapes lift it.
+    for (const shape of ['earliest-only', 'latest-only'] as const) {
+      const solved = onsetScreen([lifted([0, 89000, 4000])], WEIGHTS, shape).solved;
+      expect(solved.gain, shape).toBe(1);
+      expect(solved.ship, shape).toBeGreaterThan(0);
+      const one = solved.margins[0]!;
+      expect(one.step?.measurement.law, shape).toEqual({ kind: 'indicator', range: 1 });
+      expect(one.step?.width, shape).toBeCloseTo(solved.ship, 12);
+    }
+  });
+
+  it('prints the onset shape’s own step instead of `no step stated`', () => {
+    // The reading the record quotes: on FSE'26 the only onset shape that gains is `earliest-only`,
+    // and its line changes from `no step stated … 0 of 4 gains inside one step (4 without a law)` to
+    // its own step — a whole crediting flip, which is `ship × 1`. That is the honest yardstick for a
+    // binary shape and it is 46× the rank step the shared law would have printed for it.
+    const weights = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+    const report = formatOnsetScreenReport(
+      onsetScreen([lifted([0, 89000, 4000])], WEIGHTS),
+      WEIGHTS,
+    );
+    expect(report).toContain('one render cell');
+    expect(report).not.toContain('no step stated');
+    expect(report).not.toContain('without a law');
+    const indicator = formatOnsetScreenReport(
+      onsetScreen([lifted([0, 89000, 4000])], WEIGHTS, 'earliest-only'),
+      WEIGHTS,
+    );
+    expect(indicator).toContain('one crediting step');
+    expect(indicator).not.toContain('one rank step');
+    // The screen's own configuration object is the ONE the caller passed, and it is what the family
+    // report prints — asserted so the two reports cannot come to disagree about the weight.
+    expect(formatOnsetScreenReport(onsetScreen([lifted([0, 89000, 4000])], weights), weights)).toBe(
+      report,
+    );
+  });
+});
+
+/**
+ * A tie the term ITSELF cannot separate is not a frontier.
+ *
+ * The class already excluded a pair the term weighed on NEITHER side, for a stated reason: "it is
+ * equal in the engine too, so it hides no ordering, and counting it would report one on the engine's
+ * own legal output". An INDICATOR shape reaches the same state by a second route — two services at
+ * its neutral value are equal for every realisation of the digits, so no weight can move either — and
+ * the first version of the law would have granted that pair the shape's whole range, reporting a
+ * hazard no weight can produce.
+ */
+describe('a tie no realisation separates is not a frontier', () => {
+  const measured = (law: CellLaw): MeasurementProvenance => ({
+    weighed: new Set(['ts-svc-0', 'ts-svc-1']),
+    decimals: 3,
+    law,
+  });
+
+  /** One satisfied case whose only target leads one rival, both at the slope the caller names. */
+  const window = (slope: number, law: CellLaw) =>
+    computeZeroRegressionWindow([
+      {
+        datapack: 'dp-tie',
+        targets: ['ts-svc-0'],
+        scores: new Map([
+          ['ts-svc-0', { base: 1, slope }],
+          ['ts-svc-1', { base: 0, slope }],
+        ]),
+        measured: measured(law),
+      },
+    ]);
+
+  it('grants a CREDITED indicator tie the shape’s whole range', () => {
+    // Both services are credited, and a sub-millisecond difference decides which of them truly is
+    // the earliest — so the lead can be spent by one flip, at `w = lead / range`.
+    const one = window(1, { kind: 'indicator', range: 1 });
+    expect(one.capUnrepresentable.cases).toBe(1);
+    expect(one.capUnrepresentable.datapacks).toEqual(['dp-tie']);
+    expect(one.capUnrepresentable.lossFloor).toBeCloseTo(1, 12);
+  });
+
+  it('excludes a NEUTRAL indicator tie, because the engine reads 0 for both', () => {
+    // The same pair at the shape's neutral value: neither can be credited in any realisation, since
+    // a service the render ties with the boundary cannot be the earliest by less than a whole cell.
+    // No weight separates them, so the pair bounds nothing and the floor stays at infinity.
+    const one = window(0, { kind: 'indicator', range: 1 });
+    expect(one.capUnrepresentable.declared).toBe(1);
+    expect(one.capUnrepresentable.cases).toBe(0);
+    expect(one.capUnrepresentable.datapacks).toEqual([]);
+    expect(one.capUnrepresentable.lossFloor).toBe(Number.POSITIVE_INFINITY);
+    expect(one.capUnrepresentable.lossFloorBinder).toBeUndefined();
+  });
+
+  it('still counts the same pair under a RANK law, so the exclusion is not a blanket skip', () => {
+    // The other direction, which is what makes the rule a rule rather than a way of reporting
+    // nothing: a re-ranking shape's tie holds CONSECUTIVE positions, so the same two services and
+    // the same lead ARE a frontier — with a width of one position.
+    const one = window(0.5, { kind: 'rank', range: 1 });
+    expect(one.capUnrepresentable.cases).toBe(1);
+    expect(one.capUnrepresentable.lossFloor).toBeCloseTo(1, 12);
+    expect(one.capUnrepresentable.lossFloorBinder?.group).toBe(2);
+    expect(one.capUnrepresentable.lossFloorBinder?.span).toBeCloseTo(1, 12);
   });
 });

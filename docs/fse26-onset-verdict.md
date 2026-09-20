@@ -465,3 +465,93 @@ admissible on everything a screen can decide and is closed by one fault type at 
 `latest-only` were closed on both sides by the intersection. Reopening needs either a discriminator on the
 onset itself (§"What this does and does not settle") or a weight the intersection does not currently admit —
 and by the register's rule, a narrower number is not that.
+
+## 11. The four shapes' own laws, and the class the screen computed and did not print
+
+The screen said `no step stated` for all four shapes, and a previous iteration recorded why rather than
+inventing a law: `CellLaw`'s branches described the DECISIVE-COMPOSITION screen's normalisations (`rank`
+steps by `1/(n − 1)`, the value shape divides by `10^-decimals` of a service field), and the temporal
+shapes have their own. Reading them off `computeOnsetSlopes` rather than choosing them:
+
+| shape | the engine's arithmetic | the law | one position |
+|---|---|---|---|
+| `order` | `1 − 2·index/(n − 1)` | `rank`, range **2** | `2/(n − 1)` — the decisive screen's rank law hardcodes 1 and would halve it |
+| `earliness` | `2 × (earliness − 0.5)` = `(max − delay)/(span/2) − 1` | `value`, field `onset delay (ms)`, quantum **1 ms**, scale `span/2`, range 2 | `1/(span/2 − 1)` in slope units |
+| `earliest-only` | credits `1`, reads `0` for everyone else | `indicator`, range 1 | the whole range |
+| `latest-only` | credits `−1`, reads `0` for everyone else | `indicator`, range 1 | the whole range |
+
+Two of the three quantities the law needs were IMPLICIT and both were wrong outside the
+decisive-composition screen:
+- **the RANGE**, because a shape normalised to `[0, 1]` steps by `1/(n − 1)` and one normalised to
+  `[−1, 1]` steps by `2/(n − 1)`;
+- **the QUANTUM**, because an artifact has a resolution per COLUMN: `MeasurementProvenance.decimals`
+  describes the service magnitude fields, while `fmtOnset` prints the onset in WHOLE MILLISECONDS. The
+  resampler has drawn that column at its own resolution since before the law existed
+  (`ONSET_FIELD_HALF_QUANTUM`), so a law reading its cell off `decimals` disagreed with the ensemble
+  measuring the same artifact. Measured on FSE'26 (4 decimals, `ts5-ts-basic-service-request-delay-4qpvfj`,
+  47 measured onsets over a 202307 ms span):
+
+| shape | step the screen printed | step its own law gives | apart |
+|---|---|---|---|
+| `earliest-only` | `w/46 = 2.174e-2` (rank law) | `1.000e0` | **46×** |
+| `earliness` | `w/46 = 2.174e-2` (rank law) | `9.886e-6` | **2200×** |
+| `order` | — | `2/46 = 4.348e-2` | 2× the rank law's |
+
+So the margin line became a reading instead of an absence, and the direction is the ALARMING one — which
+is the honest direction here:
+
+```
+before:  margin: thinnest 1.632e-3 (…) vs ts-travel-service); no step stated; 0 of 4 gains inside one step (4 without a law)
+after:   margin: thinnest 1.632e-3 (…) vs ts-travel-service); one crediting step 3.655e-2; 4 of 4 gains inside one step
+```
+
+Every gained case is within one crediting FLIP at the shipped weight, which is what the screen's own
+resolution line was already saying in prose (`3 of 4 gains hold in every draw`) without naming a yardstick.
+A binary shape's positions are coarse by construction: the shape either credits a service or does not, so
+"one position" is the whole range and `4 of 4` is the correct count rather than an over-statement.
+
+**And the cap's class, which the screen computed and never printed.** The onset screen has carried
+`capUnrepresentable` since the class existed, and it was empty for exactly one reason — the builder stated
+no law — so no line was due. With the law stated it holds **15 of FSE'26's 756 satisfied cases at BOTH
+boxes** (a threshold's membership is the PRINTED boundary, and its tie groups did not move across the two
+renders), and the sentence that prints it names the pair and the law:
+
+```
+cap UPPER bound: 15 of 756 satisfied cases hold a rival the term reads as EQUAL, and the cap's own case is
+not one of them; the lowest weight at which one of them can be lost is 0.026668
+(ts3-ts-contacts-service-partition-g7s7mn: mysql / ts-payment-service, a tie inside the credited set,
+worth its whole 1.000000) — BELOW the cap 0.038183, so the engine can lose one first
+```
+
+`0.026668` is below the window's cap `0.038183` **and below the `0.036552` the solver recommended** — so
+on this screen's own arithmetic the recommendation sits in a region where the artifact permits the engine
+to lose a case the model keeps, which is the same story as `3 of 4 gains hold in every draw` told as a
+weight. It does not reopen anything: the AXIS is closed by the golden at `0.004717`, well below the
+`0.010257` at which FSE'26 gains its first case, and the criterion's verdict for `earliest-only` is
+`NO ADMISSIBLE WEIGHT` before and after. What changed in the intersection is one COLUMN — the FSE'26 side's
+own `permits a loss from`:
+
+| shape | permits a loss from, 4 dec | 3 dec |
+|---|---|---|
+| `earliest-only` | **0.026668** | **0.026668** |
+| `earliness` | 216.414837 | 216.531973 |
+| `order` | never | never |
+| `latest-only` | never | never |
+
+Every one of those read `never` before this change, because an unstated law makes the class empty and
+`lossFloor` infinite. **A tie at an INDICATOR's CREDITED value is a frontier** — a sub-millisecond draw
+decides which of the tied services is the earliest — while **a tie at its NEUTRAL value is not**, and the
+class drops it: two services the render ties away from the boundary cannot be credited in ANY realisation
+(a service tied with the boundary differs from it by less than a whole cell, so it cannot be the earliest),
+so no weight separates them. That is the class's OWN stated exclusion — "a pair the term weighed on neither
+side… is equal in the engine too, so it hides no ordering" — reached by a second mechanism, and the first
+version of these laws would have granted the neutral tie the shape's whole range: a hazard no weight can
+produce, reported as a bound.
+
+**Two more things fell out of the same seam.** The three laws need `n ≥ 2` (one onset cannot establish an
+order, and `shapeStep` would divide by `n − 1 = 0`), so both builders now state no law for such a case —
+the class reports it as uncountable rather than as empty. Measured on the whole dump: 1422 of 1422 cases
+carry two or more onsets AND two or more compositions, so this predicate moves no printed number; it
+removes a state the type would otherwise admit. And the criterion's temporal table now reads
+`permits a loss from` for the FSE'26 side as a number where it read `never` — the same "computed and not
+printed" defect, one layer up, in the table the axis is decided from.

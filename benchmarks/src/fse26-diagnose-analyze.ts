@@ -1573,24 +1573,64 @@ export function formatMissReport(
  * render's quantum, and the difference is a whole order of magnitude on a real case:
  *
  * - `rank` — the engine RE-RANKS. A sub-quantum difference in the field can move a service a whole
- *   RANK STEP, so the widest gap inside a group of `g` is `(g − 1)/(n − 1)`.
- * - `value` — the slope is LINEAR in the field, normalised by the case's own maximum. A sub-quantum
- *   difference moves the slope by the quantum itself, so the widest gap is `quantum/(scale − quantum)`.
+ *   RANK STEP, so the widest gap inside a group of `g` is `(g − 1) × range/(n − 1)`.
+ * - `value` — the slope is AFFINE in the field. A sub-quantum difference moves the slope by one
+ *   cell of it, `quantum/(scale − quantum)`, capped by the range.
  *
  * There is no formula for both, which is why this is a property of the SHAPE rather than of the
  * window: `flip` was measured a factor of 250 narrower than its `rank` reading on the same two
  * services of `ts5-ts-order-other-service-partition-42lwf5` (`docs/closed-axes-register.md`).
+ *
+ * EVERY quantity the formula needs is a field of the law, including the two that used to be
+ * implicit — and both implicits were wrong for a shape outside the decisive-composition screen:
+ *
+ * - the RANGE, because a shape normalised to `[0, 1]` steps by `1/(n − 1)` while one normalised to
+ *   `[−1, 1]` steps by `2/(n − 1)`. The temporal screen's `order` shape is the second, and the
+ *   version that hardcoded 1 halved its step.
+ * - the QUANTUM, because an artifact has more than one resolution: the service fields are rendered
+ *   at `SERVICE_FIELD_DECIMALS`, while the onset column is rendered in WHOLE MILLISECONDS by
+ *   `fmtOnset` ({@link ONSET_FIELD_HALF_QUANTUM} is its half-cell). A law that read its cell off
+ *   `MeasurementProvenance.decimals` would have reported the `earliness` step a thousand times too
+ *   small — and the resampler has drawn the onset column at its own resolution since before this
+ *   type existed, so the two would have disagreed about the artifact.
  */
 export type CellLaw =
-  /** Consecutive ranks inside one cell: the width depends on the cell's size. */
-  | { readonly kind: 'rank' }
   /**
-   * Linear in the value: the width depends on the case's SCALE, not on the cell's size.
+   * Consecutive ranks inside one cell: the width depends on the cell's size.
    *
-   * `scale` is the case's own rendered maximum of the field — a LOWER bound on the maximum the
-   * engine normalises by, since a service the block never rendered is excluded on both sides.
+   * `range` is the span one position moves the slope over, i.e. the shape's own normalisation
+   * interval: `1` for a `[0, 1]` normalisation, `2` for a `[−1, 1]` one.
    */
-  | { readonly kind: 'value'; readonly scale: number };
+  | { readonly kind: 'rank'; readonly range: number }
+  /**
+   * Affine in a rendered field: the width depends on that field's own cell, not on the cell's size.
+   *
+   * `field` names the column the quantum is a quantum OF, because a quantum without its field is
+   * not a number: `0.001` is a service field's cell and `1` is a millisecond of the onset column,
+   * and the two are the same shape's law on two different screens.
+   *
+   * `scale` is a LOWER bound on the normaliser the shape divides by — the case's own rendered
+   * maximum for a max-normalised reading, half the printed span for an `earliness` reading — so
+   * that dividing by `scale − quantum` upper-bounds the step over every value the render could have
+   * stood for. `range` is the interval the shape's normalisation confines the slope to, which is
+   * what bounds the answer when the case's `scale` is itself inside a quantum.
+   */
+  | {
+      readonly kind: 'value';
+      readonly field: string;
+      readonly quantum: number;
+      readonly scale: number;
+      readonly range: number;
+    }
+  /**
+   * A THRESHOLD: the shape credits one end of its ordering and reads the same value for everyone
+   * else, so its ordering has a single boundary and one position of it is the whole range.
+   *
+   * `range` is that span — `1` where the credited value is `1` and the neutral one `0` (or `−1` and
+   * `0`, as `latest-only` has it). See {@link cellSpanWidth} for why a tie at the NEUTRAL value is
+   * not a frontier at all.
+   */
+  | { readonly kind: 'indicator'; readonly range: number };
 
 /**
  * What a builder states when its term's coefficient is a MEASUREMENT rather than a constant.
@@ -1603,18 +1643,26 @@ export type CellLaw =
  * ABSENT means the caller makes no claim about a rendered tie: the window then attributes an equal
  * pair the way it did before this field existed, and the satisfied side's
  * {@link UnrepresentableFrontier} stays empty rather than guessing. The `failedEdge` and `lat`
- * producers omit it; the decisive-stability screen states it.
+ * producers omit it; the decisive-stability and temporal screens state it.
  */
 export interface MeasurementProvenance {
-  /** The services the term actually weighed; a service it read nothing for is EXCLUDED. */
+  /**
+   * The services the term actually weighed; a service it read nothing for is EXCLUDED.
+   *
+   * At least TWO, which is the engine's own precondition stated once per term: one onset cannot
+   * establish a before/after order and one `cv` is not a comparison, so below it the shape has no
+   * ordering at all, there is no law to state and no step to print. A builder that stated a law for
+   * such a case would have `shapeStep` divide by `n − 1 = 0`.
+   */
   readonly weighed: ReadonlySet<string>;
   /**
-   * The box: the decimals every per-service field of this case was rendered with.
+   * The box: the decimals every per-service magnitude field of this case was rendered with.
    *
-   * Carried because BOTH laws' answers are drawn in it — the `value` law divides by the quantum it
-   * names, and the `rank` law's cell SIZES are themselves a function of it (a finer render splits a
-   * cell, so the same two services fall in a smaller group). Measured on FSE'26: the satisfied
-   * side's class holds **510 of 756 cases at three decimals and 356 at four**.
+   * The `rank` law's answer is drawn in it — its cell SIZES are a function of the box, since a finer
+   * render splits a cell and the same two services then fall in a smaller group. Measured on FSE'26:
+   * the satisfied side's class holds **510 of 756 cases at three decimals and 356 at four**. It is
+   * NOT where the `value` law's quantum comes from: an artifact has a resolution per COLUMN, and the
+   * onset delay is rendered in whole milliseconds whatever this says.
    */
   readonly decimals: number;
   readonly law: CellLaw;
@@ -1623,42 +1671,63 @@ export interface MeasurementProvenance {
 /**
  * The slope a shape moves when its own ordering moves ONE position.
  *
- * The two laws agree on almost nothing, and this quantity is the cleanest place to see it:
+ * The three laws agree on almost nothing, and this quantity is the cleanest place to see it:
  *
- * - `rank` — one position is one RANK, so the slope moves `1/(n − 1)` where `n` is what the ranks
- *   are handed out over: the services the term WEIGHED, not the services the case holds.
+ * - `rank` — one position is one RANK, so the slope moves `range/(n − 1)` where `n` is what the
+ *   ranks are handed out over: the services the term WEIGHED, not the services the case holds.
  * - `value` — the ordering is the rendered field itself, so one position is one QUANTUM of it:
  *   `quantum/(scale − quantum)`, with the same full-quantum slack {@link cellSpanWidth} documents.
+ * - `indicator` — the ordering has one boundary, so one position is the whole `range`.
  *
- * A `value` law's slope is confined to `[0, 1]` by its own normalisation, which is what bounds the
- * answer when the case's scale is itself within a quantum of zero: no two slopes are further apart
- * than 1, and that is a ceiling the SHAPE imposes rather than a fallback.
+ * Every branch reads its own law's fields; none of them reads `decimals`, and that is the point:
+ * a quantum is a fact about the COLUMN the shape is linear in, which is not always the column the
+ * box describes.
  *
- * @param measurement - The builder's provenance, for the law, the box and the counted set.
+ * The `value` law's slope is confined to `[0, 1]` by the decisive-composition normalisation and to
+ * `[−1, 1]` by the temporal one, so `range` bounds the answer when the case's `scale` is itself
+ * within a quantum of zero: no two slopes are further apart than the range, and that is a ceiling
+ * the SHAPE imposes rather than a fallback.
+ *
+ * @param measurement - The builder's provenance, for the law and the counted set.
  * @returns The step, in slope units.
  */
 export function shapeStep(measurement: MeasurementProvenance): number {
-  if (measurement.law.kind === 'rank') return 1 / (measurement.weighed.size - 1);
-  const quantum = 10 ** -measurement.decimals;
-  const { scale } = measurement.law;
-  return scale > quantum ? Math.min(1, quantum / (scale - quantum)) : 1;
+  const { law } = measurement;
+  if (law.kind === 'rank') return law.range / (measurement.weighed.size - 1);
+  if (law.kind === 'indicator') return law.range;
+  return law.scale > law.quantum
+    ? Math.min(law.range, law.quantum / (law.scale - law.quantum))
+    : law.range;
 }
 
 /**
  * The widest slope gap ONE render cell can hide, in this shape's own units.
  *
  * A cell of `g` members is `g − 1` positions apart for a shape that RE-RANKS — its members hold
- * consecutive ranks — and exactly ONE position apart for a shape that is linear in the value, whose
- * members all render the same value and so differ by at most a quantum whatever the cell's size.
- * That asymmetry is the whole reason this cannot be one formula, and it is stated once, here.
+ * consecutive ranks — and exactly ONE position apart for a shape that is affine in the field, whose
+ * members all render the same value and so differ by at most a cell whatever the cell's size. That
+ * asymmetry is the whole reason this cannot be one formula, and it is stated once, here.
  *
- * @param measurement - The builder's provenance, for the law and the box.
- * @param group - Services sharing one rendered value, i.e. `g`.
- * @returns The widest gap, in slope units.
+ * A THRESHOLD shape is the case where the answer is ZERO, and the zero is the finding rather than a
+ * degenerate value: two services at the shape's neutral value are equal for EVERY realisation of the
+ * digits, because neither can cross the boundary by less than a whole cell — so no weight separates
+ * them, and the pair is not a resolution bar at all. {@link renderedTiePairs} drops such a pair for
+ * the same reason it drops a pair the term weighed on neither side: it hides no ordering, and
+ * counting it would report one on the engine's own legal output.
+ *
+ * @param measurement - The builder's provenance, for the law.
+ * @param tie - The pair as the law needs to see it: the size of its slope group, and the slope it is
+ *   tied at (a threshold shape's answer depends on WHERE the tie is, not on how large it is).
+ * @returns The widest gap, in slope units; `0` when no realisation separates the pair.
  */
-export function cellSpanWidth(measurement: MeasurementProvenance, group: number): number {
+export function cellSpanWidth(
+  measurement: MeasurementProvenance,
+  tie: { readonly group: number; readonly slope: number },
+): number {
   const step = shapeStep(measurement);
-  return measurement.law.kind === 'rank' ? (group - 1) * step : step;
+  if (measurement.law.kind === 'rank') return (tie.group - 1) * step;
+  if (measurement.law.kind === 'indicator') return tie.slope === 0 ? 0 : step;
+  return step;
 }
 
 /**
@@ -2363,14 +2432,20 @@ export interface CapFloorBinder extends RenderedTiePair {
  * pair as one that can never change and imposes no bound — while the engine, ranking the UNROUNDED
  * field, splits the pair and gets a real bound out of the same two services.
  *
- * Counts the group by equal SLOPE, which is exact rather than a shortcut: every shape builds a slope
- * as one arithmetic expression over the rendered field, so equal values give bit-identical
- * coefficients while two different cells give coefficients a slope-step apart — for a shape that
- * re-ranks, at least `1/(n − 1)`; for one that is linear in the value, at least one quantum over the
- * scale. Which of the two applies is the shape's own business and is settled by {@link CellLaw}. A
- * service the term never weighed is EXCLUDED, and that is not a detail — it carries `0` with nothing
- * behind it, and the engine reads `0` for it too, so a pair equal only because both sides are
- * placeholders hides no ordering.
+ * Counts the group by equal SLOPE. For a shape that RE-RANKS or is AFFINE in the field this is exact
+ * rather than a shortcut: the slope is one arithmetic expression over the rendered field, so equal
+ * values give bit-identical coefficients while two different cells give coefficients a slope-step
+ * apart — at least `range/(n − 1)`, or one quantum over the scale. A THRESHOLD shape is the
+ * exception, and it is why {@link cellSpanWidth} can answer `0`: there an equal slope is not a
+ * shared cell at all but the shape's own indifference, which reaches services in different cells.
+ *
+ * Two kinds of pair are EXCLUDED, for one reason: a pair no realisation can separate hides no
+ * ordering, so counting it would report one on the engine's own legal output.
+ *
+ * 1. A service the term never weighed, which carries `0` with nothing behind it — the engine reads
+ *    `0` for it too.
+ * 2. A pair whose cell width is zero, which a threshold shape produces at its neutral value: neither
+ *    side can cross the boundary by less than a whole cell, so no weight can move either.
  *
  * @param one - The case.
  * @returns The pairs, empty when the case declares no provenance or holds none.
@@ -2394,11 +2469,13 @@ function renderedTiePairs(one: WeightSeparationCase): readonly RenderedTiePair[]
       if (other.slope !== target.slope) continue;
       if (other.base >= target.base) continue;
       const group = groups.get(target.slope)!;
+      const span = cellSpanWidth(measured, { group, slope: target.slope });
+      if (span === 0) continue;
       pairs.push({
         target: name,
         rival,
         lead: target.base - other.base,
-        span: cellSpanWidth(measured, group),
+        span,
         group,
         weighed: n,
         measurement: measured,
@@ -3583,6 +3660,76 @@ export function formatRefinementFrontierLine(frontier: RefinementFrontier<string
  * @param shape - Which shape of the term to solve for.
  * @returns The case's affine scores, or `undefined` when it has no ground truth to satisfy.
  */
+/**
+ * One cell of the onset COLUMN, in milliseconds — the quantum the temporal shapes step by.
+ *
+ * Derived from the producer's own half-cell rather than written as `1`, because the two are one fact
+ * stated twice: `fmtOnset` prints `Math.round(delayMs)` and {@link drawOnsetDelay} draws inside
+ * `±ONSET_FIELD_HALF_QUANTUM` of the printed value. A renderer that ever stepped by anything else
+ * would move this with it, which is what a literal here would prevent.
+ *
+ * At the artifact's own box this is `1` ms, and it is NOT `10^-decimals`: the box describes the
+ * service magnitude fields, and this column has a resolution of its own.
+ */
+const ONSET_FIELD_QUANTUM = 2 * ONSET_FIELD_HALF_QUANTUM;
+
+/**
+ * The temporal prior's own {@link CellLaw}, shape by shape.
+ *
+ * Read off `computeOnsetSlopes`' arithmetic rather than chosen, because these four shapes are the
+ * reason `CellLaw` carries its range and its quantum at all — two of them are laws the
+ * decisive-composition screen's branches would get wrong.
+ *
+ * - `order` is `1 − 2·index/(n − 1)`: a RANK law over `[−1, 1]`, so its step is `2/(n − 1)` where the
+ *   decisive screen's `rank` shape steps by `1/(n − 1)`.
+ * - `earliness` is `2 × (earliness − 0.5)` = `(max − delay)/(span/2) − 1`: AFFINE in the printed
+ *   delay with normaliser `span/2`, so one position is one MILLISECOND of that column, and the
+ *   range is `2`.
+ * - `earliest-only` and `latest-only` credit one end of the order and read `0` for everyone else: an
+ *   INDICATOR whose one position is the whole range.
+ *
+ * `quantum` is `1` ms — the column's own cell, set by {@link ONSET_FIELD_HALF_QUANTUM}'s producer
+ * `fmtOnset`, which rounds to whole milliseconds. It is deliberately NOT `10^-decimals`: the box
+ * describes the service magnitude fields, and the resampler has drawn this column at its own
+ * resolution since before this type existed.
+ *
+ * `scale` is half the PRINTED span, a lower bound on the true normaliser for the same reason the
+ * decisive screen's is the printed maximum: the true extremes can each sit a cell inside the printed
+ * ones, so the true span is at least `span − 2·quantum` and dividing by `span/2 − quantum`
+ * upper-bounds the step.
+ *
+ * @param shape - Which reading of the term.
+ * @param span - The printed delays' own span, in milliseconds.
+ * @returns The law.
+ */
+function onsetLaw(shape: OnsetShape, span: number): CellLaw {
+  if (shape === 'order') return { kind: 'rank', range: 2 };
+  if (shape === 'earliest-only' || shape === 'latest-only') return { kind: 'indicator', range: 1 };
+  return {
+    kind: 'value',
+    field: 'onset delay (ms)',
+    quantum: ONSET_FIELD_QUANTUM,
+    scale: span / 2,
+    range: 2,
+  };
+}
+
+/**
+ * One case as the onset screen scores it: the base MINUS this term, plus the term's own slope.
+ *
+ * The term being solved is not in its own base: `temporalWeight: 0` here is the ablation this
+ * window is a distance from, and leaving the shipped weight in would measure an ADDITIONAL onset
+ * term on top of one already applied. The shape is the one under test, which is why it is the only
+ * field that comes from the caller.
+ *
+ * A function for the same reason as {@link stabilityCase}: {@link gainResolution} resamples a
+ * perturbed case through this exact arithmetic.
+ *
+ * @param kase - One parsed case.
+ * @param weights - The configuration to screen against.
+ * @param shape - Which shape of the term to solve for.
+ * @returns The case's affine scores, or `undefined` when it has no ground truth to satisfy.
+ */
 function onsetCase(
   kase: DiagnosedCase,
   weights: FamilyScreenWeights,
@@ -3600,13 +3747,43 @@ function onsetCase(
   });
   const slopes = onsetSlopes(kase, shape);
   const scores = new Map<string, { base: number; slope: number }>();
+  // The provenance, stated because this term can weigh only part of a case: a service whose onset
+  // the block printed as `-` is omitted from the engine's earliness map, and `onsetSlopes` gives it
+  // `0` — the same value it gives the LATEST service. The window's classes ask the difference, and
+  // only this builder knows it.
+  const delays: number[] = [];
   for (const service of kase.services) {
+    if (service.onsetDelayMs !== undefined) delays.push(service.onsetDelayMs);
     scores.set(service.serviceId, {
+      // Total by construction — `shippedScores` assigns an entry to every service, and `onsetSlopes`
+      // to every service — so the lookups assert rather than defaulting to a base or a slope nobody
+      // computed.
       base: base.get(service.serviceId)!,
       slope: slopes.get(service.serviceId)!,
     });
   }
-  return { datapack: kase.datapack, targets, scores };
+  const weighed = new Set(
+    kase.services.filter((s) => s.onsetDelayMs !== undefined).map((s) => s.serviceId),
+  );
+  const span = delays.length === 0 ? 0 : Math.max(...delays) - Math.min(...delays);
+  return {
+    datapack: kase.datapack,
+    targets,
+    scores,
+    // Same threshold and same reason as {@link stabilityCase}: below two onsets the engine cannot
+    // establish an order at all (`computeOnsetSlopes` returns an empty map and every slope is `0`),
+    // so there is no law to state. Measured on the whole FSE'26 dump: 1422 of 1422 cases carry two
+    // or more onsets.
+    ...(weighed.size < 2
+      ? {}
+      : {
+          measured: {
+            weighed,
+            decimals: kase.fieldDecimals ?? HISTORICAL_FIELD_DECIMALS,
+            law: onsetLaw(shape, span),
+          },
+        }),
+  };
 }
 
 /**
@@ -3834,6 +4011,14 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
         `slope gap ${s.window.capBinder.slopeGap.toFixed(6)})`,
     );
   }
+  // The cap's own qualification, printed here for the same reason the decisive-stability report
+  // prints it: this screen's term is a THRESHOLD over the millisecond column, so a pair the render
+  // ties can be separated by a sub-millisecond draw whenever the tie sits AT the boundary — and the
+  // report already says as much in prose ("the gain holds for the printed digits only") without
+  // naming the class that makes it true. It was computed and not printed before this line existed,
+  // which is the one state a measurement must not be left in.
+  const u = s.window.capUnrepresentable;
+  if (u.cases > 0) lines.push(`  cap UPPER bound: ${capUpperBoundClause(u, s.window.cap)}`);
   return lines.join('\n');
 }
 
@@ -4093,21 +4278,41 @@ function stabilityCase(
     datapack: kase.datapack,
     targets,
     scores,
-    measured: {
-      weighed,
-      // The case's OWN box, falling back to the historical one only for a block that predates the
-      // header field. The same single owner `dumpPrecisionOf` reads, so a span and an error bar
-      // drawn from one artifact cannot be drawn in two boxes.
-      decimals: kase.fieldDecimals ?? HISTORICAL_FIELD_DECIMALS,
-      // The shape's spacing, from the shape's OWN arithmetic: `rank` re-ranks, so a sub-quantum
-      // difference can move a service a whole rank step; `flip` is LINEAR in the value, so it can
-      // only move it by the quantum. Measured on one real case the two differ by a factor of 250,
-      // which is why the law is declared by the builder rather than assumed by the window.
-      law:
-        shape === 'rank'
-          ? { kind: 'rank' }
-          : { kind: 'value', scale: rendered.reduce((best, cv) => (cv > best ? cv : best), 0) },
-    },
+    // Stated only where the term can ACT, which is the engine's own precondition rather than a
+    // convention of this file: `cvSlopes` returns zero slopes for a case with fewer than two
+    // compositions, so such a case has no ordering for a law to describe and `shapeStep` would
+    // divide by `n − 1 = 0`. The onset builder states nothing for the same reason and the same
+    // threshold. Measured on the whole FSE'26 dump: 1422 of 1422 cases carry two or more, so this
+    // predicate moves no number the report prints — it removes a state the type would otherwise
+    // admit.
+    ...(weighed.size < 2
+      ? {}
+      : {
+          measured: {
+            weighed,
+            // The case's OWN box, falling back to the historical one only for a block that predates
+            // the header field. The same single owner `dumpPrecisionOf` reads, so a span and an
+            // error bar drawn from one artifact cannot be drawn in two boxes.
+            decimals: kase.fieldDecimals ?? HISTORICAL_FIELD_DECIMALS,
+            // The shape's spacing, from the shape's OWN arithmetic: `rank` re-ranks, so a
+            // sub-quantum difference can move a service a whole rank step; `flip` is AFFINE in the
+            // value, so it can only move it by the cell. Measured on one real case the two differ by
+            // a factor of 250, which is why the law is declared by the builder rather than assumed
+            // by the window. Both state their own range and the `flip` branch its own quantum,
+            // because `decimals` is the box of the service fields and this law's quantum IS one of
+            // those cells — the equivalence is stated here, by the builder that knows both.
+            law:
+              shape === 'rank'
+                ? { kind: 'rank', range: 1 }
+                : {
+                    kind: 'value',
+                    field: 'cv',
+                    quantum: 10 ** -(kase.fieldDecimals ?? HISTORICAL_FIELD_DECIMALS),
+                    scale: rendered.reduce((best, cv) => (cv > best ? cv : best), 0),
+                    range: 1,
+                  },
+          },
+        }),
   };
 }
 
@@ -4247,17 +4452,60 @@ function unreachableClause(
  * @param binder - The pair that set the floor.
  * @returns The clause, without leading or trailing punctuation.
  */
-function spanDerivationClause(binder: CapFloorBinder): string {
+/**
+ * Which law a step was drawn from, in the law's own terms.
+ *
+ * One owner, because TWO sentences print it — the frontier's qualification and the margin line — and
+ * a single word for all three laws is what let the rank law answer a value shape's question. Each
+ * branch names the law's OWN inputs rather than a shared abbreviation:
+ *
+ * - `rank` prints the tie group and the counted set, which are the two numbers the formula divides,
+ *   plus the position's worth where it is not the identity, and the BOX — the only branch that needs
+ *   it, because its cell SIZES are a function of the box while the other two laws state their own
+ *   resolution.
+ * - `value` prints the cell and the field it is a cell OF, then the normaliser it is divided by. The
+ *   field's NAME belongs here: `0.001` and `1` are the same shape's law on two screens, and a
+ *   quantum without its column is not a number.
+ * - `indicator` prints the range, because a threshold's one position is its whole range and there is
+ *   no group or cell to name.
+ *
+ * @param law - The law the step came from.
+ * @param measurement - Its provenance, for the box and the counted set.
+ * @param group - The tie group the span was counted over.
+ * @returns The clause, without a leading space.
+ */
+function lawDerivationClause(
+  law: CellLaw,
+  measurement: MeasurementProvenance,
+  group: number,
+): string {
   const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
-  const law =
-    binder.measurement.law.kind === 'rank'
-      ? `a tie group of ${binder.group} among ${binder.weighed} weighed`
-      : `a render cell of ${at(10 ** -binder.measurement.decimals)} on a scale of ` +
-        `${at(binder.measurement.law.scale)}`;
-  // The BOX is part of both laws' answers — the value law divides by its quantum, and the rank law's
-  // group SIZES are a function of it — so the count in this sentence would otherwise be a count of
-  // nothing in particular. Measured on FSE'26 the two boxes differ by 154 cases of 756.
-  return `${law}, at ${binder.measurement.decimals} decimals`;
+  if (law.kind === 'rank') {
+    const position = law.range === 1 ? '' : `, each position worth ${at(law.range)}`;
+    return (
+      `a tie group of ${group} among ${measurement.weighed.size} weighed${position}, ` +
+      `at ${measurement.decimals} decimals`
+    );
+  }
+  if (law.kind === 'value') {
+    return (
+      `a render cell of ${at(law.quantum)} ${law.field} against a normaliser of ` +
+      `${at(law.scale)}, bounded by ${at(law.range)}`
+    );
+  }
+  return `a tie inside the credited set, worth its whole ${at(law.range)}`;
+}
+
+/**
+ * Which law a step was drawn from, as the short name the reports use.
+ *
+ * @param law - The law.
+ * @returns The name, e.g. `one rank step`.
+ */
+function lawName(law: CellLaw): string {
+  if (law.kind === 'rank') return 'one rank step';
+  if (law.kind === 'value') return 'one render cell';
+  return 'one crediting step';
 }
 
 /**
@@ -4295,7 +4543,8 @@ function capUpperBoundClause(u: UnrepresentableFrontier, cap: number): string {
     `can be lost is ${at(u.lossFloor)}` +
     (binder === undefined
       ? ''
-      : ` (${binder.datapack}: ${binder.target} / ${binder.rival}, ${spanDerivationClause(binder)})`) +
+      : ` (${binder.datapack}: ${binder.target} / ${binder.rival}, ` +
+        `${lawDerivationClause(binder.measurement.law, binder.measurement, binder.group)})`) +
     ` — ${binds ? 'BELOW' : 'AT OR ABOVE'} ${comparison}`
   );
 }
@@ -5071,15 +5320,19 @@ function configurationLine(weights: FamilyScreenWeights): string {
  * tenth of a step away from losing a case, while `1.2e-2` against the same step says a whole step
  * would still not cost it.
  *
- * The step is the SHAPE's, and the line names which: a shape the engine re-ranks steps by one rank,
- * and a shape that is linear in the value steps by one quantum of the rendered field — the two
- * differed by 250× on the fixture that caught the one-law version. The population of gains inside
- * one step is counted against each case's own step, because the step scales with the weight and with
- * how many services the case ranks over; the value printed is the thinnest case's.
+ * The step is the SHAPE's, and the line names which, through ONE owner ({@link lawName}): a shape
+ * the engine re-ranks steps by one rank, one that is affine in the rendered field steps by one cell
+ * of it, and one that is a THRESHOLD steps by its whole range. The first and second differed by 250×
+ * on the fixture that caught the one-law version, and the second and third by 2200× on the temporal
+ * screen's real artifact — so a single word for all three is the same defect three times over. The
+ * population of gains inside one step is counted against each case's own step, because the step
+ * scales with the weight; the value printed is the thinnest case's.
  *
  * A row whose builder stated no law has no step, and the line says so rather than substituting the
  * rank law: it counts the rows that HAVE one and names the population it counted, so a partial
- * population cannot read as a whole.
+ * population cannot read as a whole. That clause is still reachable — the family screen's `failedEdge`
+ * and `lat` slopes state none — and it is what tells a reader the difference between a term whose
+ * step is unknown and one whose step does not exist.
  *
  * @param solved - A solved window, or any row carrying its margins. Its caller passes one only
  *   when something was GAINED, and a gain is a case satisfied at the shipped weight — so it has a
@@ -5090,13 +5343,12 @@ function marginLine(solved: { readonly margins: readonly WindowGainMargin[] }): 
   const thinnest = solved.margins[0]!;
   const stepped = solved.margins.filter((one) => one.step !== undefined);
   const inside = stepped.filter((one) => one.margin <= one.step!.width).length;
-  // The law's own name, read off the law rather than chosen here: the two are separate quantities,
-  // and one word for both is what let the rank law answer a value shape's question.
+  // The law's own name, read off the law rather than chosen here: three laws are three quantities,
+  // and one word for all of them is what let the rank law answer a value shape's question.
   const law =
     thinnest.step === undefined
       ? 'no step stated'
-      : `${thinnest.step.measurement.law.kind === 'rank' ? 'one rank step' : 'one printed-digit step'} ` +
-        thinnest.step.width.toExponential(3);
+      : `${lawName(thinnest.step.measurement.law)} ${thinnest.step.width.toExponential(3)}`;
   // The denominator is the POPULATION, and how many of it could be counted is stated, so a reader
   // told `0 of 5` cannot mistake a partial count for a whole one.
   const without = solved.margins.length - stepped.length;
