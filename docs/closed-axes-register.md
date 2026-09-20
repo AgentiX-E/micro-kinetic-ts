@@ -140,7 +140,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | document | what it holds |
 | --- | --- |
 | `benchmarks-typecheck-audit.md` | the `benchmarks/` type-check and coverage audit |
-| `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid |
+| `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid — §1 the six packages missing from the CI matrix, §7 that the ROOT command enforced nothing at all and printed a number that was the coverage of nothing in particular |
 | `tests-typecheck-enrollment.md` | the test suites and tool configs that were the last TypeScript no compiler read |
 | `fse26-converter-integrity.md` | the converter-integrity verdict that gates the FSE'26 pipeline |
 | `fse26-result-attribution.md` | why the result artifact must carry the configuration that produced it |

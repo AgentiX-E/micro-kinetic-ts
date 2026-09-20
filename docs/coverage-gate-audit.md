@@ -252,3 +252,104 @@ scope is real it pays for itself immediately — **four findings, none of them a
 The enrolment rule is the one §1 applies to the coverage matrix: a tree that is typechecked and
 measured but never *linted* is a tree whose dead code is invisible, and the gap does not have to be a
 red job to be real.
+
+## 7. The root command was not the gate: a merged workspace run loses the populations AND the thresholds
+
+§1 measured the gate by running **each package in its own directory**, which is what `nx test <package>
+-- --coverage` and the CI matrix do. The repository also had a root script — `pnpm coverage`, which the
+project's own notes called *"the root coverage gate"* — and it was `vitest run --coverage`: **ONE
+workspace run**. Measured on 2026-09-20, that is not a gate at all.
+
+**The population is the whole repository, and the per-project `include`/`exclude` are not carried into
+the merged report.** The merged JSON held **191 files**: all `packages/*/src/**`, `benchmarks/src/**`,
+`scripts/**`, built output (`packages/ai/dist/index.cjs`, `packages/kinetic/dist/trace-validator-*.js`),
+`packages/kinetic/bin/cli.js`, and even files a package explicitly EXCLUDES
+(`packages/core/src/types/graph.ts`, `packages/core/src/interfaces/**`). Its `All files` row read
+**58.08% over 27,432 statements**, of which **10,896 were uncovered and 40% of the denominator came from
+three places the root run does not test** — `benchmarks/src/**` (8,551, whose tests are a separate CI
+job), a built `packages/ai/dist/**` (1,292) and `scripts/**` (1,053). The tree under test reads **96.35%**.
+
+**The thresholds were dropped too, and that is the part that matters.** The SAME project through the
+workspace and through its own directory:
+
+| how it ran | files in the report | `All files` | exit |
+|---|---|---|---|
+| `--project @agentix-e/micro-kinetic-ai` from the root (workspace) | **191** | `54.47 / 92.14 / 75.55 / 54.47` | **0** |
+| `vitest run --coverage` in `packages/ai` (what `nx test` does) | **6** | `100 / 100 / 100 / 100` | 0 |
+
+`packages/ai/vitest.config.ts` asks for 95% on all four dimensions; the workspace run printed 54.47% and
+exited 0. To separate "the numbers are wrong" from "the gate is not reading them", the same run was
+repeated with an impossible bar supplied on the command line:
+
+```
+vitest run --project @agentix-e/micro-kinetic-ai --coverage --coverage.thresholds.statements=100 …
+ERROR: Coverage for statements (54.47%) does not meet global threshold (100%)   → exit 1
+```
+
+So a threshold supplied from outside IS enforced — **against the merged, repo-wide percentage** — while
+every project's CONFIGURED threshold is silently absent from that mode. The command that the notes
+called a gate enforced nothing, and printed a number that was the coverage of nothing in particular.
+
+**A second site, the same shape.** `integration-tests/vitest.config.ts` carried a `coverage` block with
+a `provider` and a reporter and **neither an `include` nor a `thresholds`**. Its population resolved to
+nothing — `src/` holds one file, `pipeline.spec.ts`, and specs are excluded by default — so it printed
+
+```
+All files |       0 |        0 |        0 |        0 |
+```
+
+over **zero files**, exit 0. A table that reads as a measurement and enforces nothing; it is now gone,
+with the reason written into the config: this suite measures the PACKAGES (each of which carries its own
+population and bar), its own gate is that it RUNS, and the root command excludes it by name.
+
+### The fix: one command, the gates it claims
+
+| | |
+|---|---|
+| `pnpm coverage` | `nx run-many --target=test --all --exclude=@agentix-e/micro-kinetic-integration-tests --parallel=1 --skip-nx-cache -- --coverage` |
+| why `nx run-many --target=test` | it is the command CI gates each package with, so a local run and the gate cannot disagree |
+| why `--skip-nx-cache` | `nx.json`'s cacheable `test` target takes its `inputs` from `{projectRoot}/src/**` and `{projectRoot}/__tests__/**`, which do NOT include a `vitest.config.ts` — a threshold raised from 95 to 100 would leave the hash unchanged and a cached run would replay the old numbers as if they had been measured on this tree |
+| why `--parallel=1` | one project at a time: the tables print in a fixed order instead of interleaving, and a memory-tight machine never has two vitest processes alive at once |
+| why the exclusion | `integration-tests` carries no bar, so there is nothing to run — and the exclusion list is checked against the configs in both directions, below |
+
+### The fence
+
+`packages/kinetic/__tests__/unit/coverage-population.test.ts` makes the population a rule rather than a
+habit, with a population DERIVED from the filesystem (`packages/*` by readdir, plus `benchmarks/` and
+`integration-tests/`) so a new package enters it by existing:
+
+- a config that declares coverage MUST declare `include` (non-empty) and `thresholds` on all four
+  dimensions at **≥ 95**;
+- the root coverage script MUST be the per-project target and MUST NOT be a merged `vitest run`, because
+  that is the mode that loses the populations and the thresholds;
+- the script's `--exclude` list must equal, **in both directions**, the set of projects with no bar — a
+  one-sided check would let either half drift alone;
+- `pnpm test`, `pnpm test:integration` and `pnpm test:all` must not grow a `--coverage`, so no second
+  command can claim to be the gate.
+
+Eight mutations, **8/8 as declared**, including a NO-OP CONTROL that survived and seven rows that remove
+a mechanism (the merged script, the cache skip, the exclusion, a second gate, an empty coverage block, a
+95 → 90 threshold, a dropped `include`).
+
+### Acceptance: every dimension of every project, measured
+
+`pnpm coverage` on this change, exit 0, `NX Successfully ran target test for 14 projects`:
+
+| project | stmts | branch | funcs | lines | project | stmts | branch | funcs | lines |
+|---|---|---|---|---|---|---|---|---|---|
+| core | 99.88 | 96.61 | 100 | 99.88 | storage-fs | 100 | 100 | 100 | 100 |
+| tree | 100 | 100 | 100 | 100 | storage-browser | 100 | 100 | 100 | 100 |
+| cutting | 98.43 | 95.17 | 100 | 98.43 | storage-remote | 100 | 100 | 100 | 100 |
+| noise | 100 | 100 | 100 | 100 | optimize | 100 | 100 | 100 | 100 |
+| wave | 99.61 | 95.00 | 100 | 99.61 | causal | 100 | 100 | 100 | 100 |
+| scaling | 100 | 95.49 | 100 | 100 | kinetic | 100 | 99.44 | 100 | 100 |
+| ai | 100 | 100 | 100 | 100 | benchmarks | 99.84 | 97.46 | 100 | 99.84 |
+
+**14 projects, 56 dimensions, the worst of them 95.00%** — the same numbers CI gates, now produced by
+the command the record tells a reader to run. The merged 58.08% headline no longer exists.
+
+**What deliberately did NOT change**: the CI matrix (already per package, §1), every package's own
+config, and `pnpm test` — the workspace run that executes the whole suite (127 files, 3198 tests) and
+carries no coverage claim. The workspace file also still exists, with vitest's own deprecation notice
+(`test.projects` in a root config is where it is heading); migrating it is a separate change with its
+own measurement, and it is not needed to make the coverage numbers honest.

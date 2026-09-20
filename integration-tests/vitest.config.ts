@@ -29,9 +29,18 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.spec.ts', 'src/**/*.test.ts'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json'],
-    },
+    // NO coverage block, and its absence is a decision rather than an omission.
+    //
+    // A `coverage` block is a POPULATION plus a BAR, and this suite has neither. Its `src/` holds
+    // exactly one file — `pipeline.spec.ts`, the suite itself — so a population of `src/**` would
+    // measure the tests covering themselves, and the block that used to sit here (a `provider` and a
+    // reporter, nothing else) resolved to an EMPTY population: measured on 2026-09-20 it printed
+    // `All files | 0 | 0 | 0 | 0` over zero files and exited 0, which is a table that reads as a
+    // measurement and enforces nothing.
+    //
+    // What this suite measures is the PACKAGES, end to end, and each package carries its own
+    // population and bar (`packages/*/vitest.config.ts`, `benchmarks/vitest.config.ts`). This suite's
+    // own gate is that it RUNS — `nx test @agentix-e/micro-kinetic-integration-tests` and the CI
+    // `integration` job — and the root `pnpm coverage` excludes it by name for the same reason.
   },
 });

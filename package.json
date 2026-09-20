@@ -17,7 +17,7 @@
     "test:ui": "vitest --ui",
     "test:integration": "vitest run --config integration-tests/vitest.config.ts",
     "test:all": "pnpm test && pnpm test:integration",
-    "coverage": "vitest run --coverage",
+    "coverage": "nx run-many --target=test --all --exclude=@agentix-e/micro-kinetic-integration-tests --parallel=1 --skip-nx-cache -- --coverage",
     "typecheck": "nx run-many --target=typecheck --all && tsc -p tsconfig.workspace.json",
     "typecheck:src": "nx run-many --target=typecheck --all",
     "typecheck:workspace": "tsc -p tsconfig.workspace.json",
