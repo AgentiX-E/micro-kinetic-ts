@@ -301,6 +301,23 @@ Before reading any number, check that the input was counted:
   implemented subset (`?`, `!`, a segment-internal `**`) instead of reading a filter as something it is
   not. A push that does match raises rather than being explained away
   (`docs/golden-reader-audit.md`).
+- **A WAIT MUST BE LICENSED BY THE SUBJECT'S OWN DECLARED BOUND, AND AN UNLICENSED ONE ACTS ON A FEELING.**
+  Three golden runs were cancelled because the record said the workflow's three `ablation-*` jobs *do not
+  finish* — one of them "still `in_progress` EIGHT HOURS after starting" — so that *a job that never
+  finishes denies the record its own standard reader*. Measured over **25 runs and 222 job intervals, the
+  longest interval this workflow has EVER produced is 53.0 minutes** (`ablation-re2`, `success`); none
+  exceeds an hour and none exceeds three, because every job declares `timeout-minutes: 60` and GitHub
+  enforces it — the eight-hour figure is outside the range of anything the workflow can produce. **Every
+  run that was not cancelled has all three ablations `success`** (`re1` 12.9–13.8, `re3` 27.9–30.5, `re2`
+  32.4–53.0; run total 45–62), and every cancelled one was cancelled by this session at 13.5 / 22.3 / 37.4
+  minutes. The cancel **caused** the 404 it was meant to work around and destroyed the evidence it claimed
+  to protect: ablation artifacts 3 of 3 on the run nobody cancelled, and 0 of 3, 0 of 3 and 1 of 3 on the
+  three that were — the third keeping only the job that had already finished. The rule now has one owner at
+  100% branch coverage: `scripts/golden_run_landing.py` reads each job's bound FROM the workflow that
+  declares it, falls back to GitHub's own 360-minute default and **names which owner answered**, judges
+  every pending job against **its own** bound (`dashboard` declares ten minutes where the ablations declare
+  sixty), licences the wait with the soonest boundary, and **has no cancel path at all**
+  (`docs/golden-reader-audit.md` §6).
 - **"THE ARTIFACT BINDS IT" IS A CLAIM ABOUT SCALE, and a scale has to be measured at more than one.** The
   screens' refusals were read as proof that the dump's three decimals were the binding constraint on BOTH
   axes and that a finer render would buy decidable windows — a claim argued from the SIZE of the error bar

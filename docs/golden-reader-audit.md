@@ -127,3 +127,118 @@ Two tests are worth pointing out for what they avoid:
   gate that runs is `CI`'s `converter-tests` job, which is where the 44 tests and the branch-coverage floor
   were read. A golden on this push would prove nothing about the change, which is precisely why the rule does
   not ask for one.
+
+## 6. The other half: a run reported as hung that was never measured (2026-09-20)
+
+§1–§5 are about a "nothing to check" answer that was never checked. This section is the same defect one
+layer out, and it cost more: a **"they never finish" answer that was never measured**, acted on with an
+irreversible remedy.
+
+The record said, of three consecutive golden runs:
+
+> the workflow's three `ablation-*` jobs **do not finish**. On the previous golden (§12's run
+> `35482507910`) they were still `in_progress` **eight hours** after starting … Since the whole-run log
+> archive answers **404 until the run completes**, *a job that never finishes denies the record its own
+> standard reader* … Making them land — or making the reader independent of them — is a named follow-up.
+
+Every clause is false, and the causation is inverted.
+
+## 6.1 The measurement
+
+Twenty-five `benchmark-rcaeval.yml` runs, every job interval each of them produced — **222 intervals**:
+
+| longest intervals (minutes) | job | run | conclusion |
+| --- | --- | --- | --- |
+| **53.0** | `ablation-re2` | `35366331873` | success |
+| 52.5 | `ablation-re2` | `35357010476` | success |
+| 51.0 | `ablation-re2` | `35411810992` | success |
+| 50.7 | `ablation-re2` | `35497179322` | success |
+| 49.9 | `ablation-re2` | `35411790522` | success |
+
+**No interval exceeds one hour. None exceeds three.** The figure of *eight hours* is not a misreading of
+one run — it is outside the range of anything this workflow has ever produced or can produce, because
+every job declares `timeout-minutes: 60` and GitHub enforces it.
+
+The three runs in question, and the four that were left alone:
+
+| run | total | `re1` | `re2` | `re3` | conclusions |
+| --- | --- | --- | --- | --- | --- |
+| `35497182235` | 61.1 | 13.4 | 48.6 | 27.9 | all `success` |
+| `35443324311` | 62.1 | 13.5 | 49.4 | 30.1 | all `success` |
+| `35435866603` | 45.1 | 12.9 | 32.4 | 30.3 | all `success` |
+| `35433489124` | 62.4 | 13.8 | 49.7 | 30.5 | all `success` |
+| `35482507910` | 37.4 | 13.4 `success` | 26.0 `cancelled` | 27.5 `cancelled` | cancelled at **37.4** min |
+| `35485933840` | 22.3 | 10.9 | 10.6 | 10.7 | cancelled at **22.3** min |
+| `35489493441` | 13.5 | 1.1 | 1.4 | 3.4 | cancelled at **13.5** min |
+
+**Every run that was not cancelled has all three ablations `success`.** Every cancelled run is one this
+session cancelled, at 13.5 / 22.3 / 37.4 minutes, into work that needs 45–62 minutes. The jobs were never
+the problem.
+
+## 6.2 Why the record believed it
+
+There was no instrument that could tell "still working" from "stuck", so the answer was a **feeling** —
+*this is taking too long* — and the action taken on a feeling (cancel) is irreversible. Two things then
+compounded it:
+
+1. **The rows were read back as evidence of the claim.** After the cancel, the jobs read `cancelled`, and
+   `cancelled` was cited as proof that the jobs do not finish. The cancellation was the *cause* of the
+   observation being cited as the *effect*.
+2. **The remedy manufactured the symptom.** The whole-run archive answers 404 until a run completes, so
+   the cancel was applied "to make the archive land" — and then the resulting 404 on the *next* run was
+   read as further evidence of the hang. Two consecutive runs, same three jobs, "no completion" was
+   recorded as *a property of those jobs*, when it was a property of the operator.
+
+The number that explains the whole episode needs no mystery: **`ablation-re2` is the long pole at 49–53
+minutes against its own 60-minute bound.** A waiter with a constant of "twenty minutes" cancels it every
+single time.
+
+## 6.3 The fix: a wait licensed by the subject's own bound
+
+`scripts/golden_run_landing.py`, under the same python gate as `golden_run_selector.py` (100% statements
+and 100% branch):
+
+| element | what it does | why it is not a constant |
+| --- | --- | --- |
+| `job_bounds` | reads each job's `timeout-minutes` **from the workflow that declares it**, scoped to the `jobs:` block | `on:`'s trigger keys sit at the same two-space indentation and are not jobs — eleven indented keys, nine of them jobs |
+| `resolve_bound` | falls back to GitHub's own **360-minute** default and **names which owner answered** | a job the workflow does not bound is not unbounded; it is bounded at six hours, and a waiter must know which of the two it got |
+| `classify_job` | judges each job against **its own** bound | `dashboard` declares ten minutes where the ablations declare sixty, so one constant calls one of the two wrong |
+| `landing` | one verdict, plus the licence: the **soonest** pending boundary | the number that licenses "read again in N minutes" is a property of the subject |
+| the module | **has no cancel path** — no HTTP, no subprocess, no socket | the tool cannot do the thing it warns against, checked by a test over its own source rather than left to discipline |
+
+Replayed against run `35482507910` at the instant of the cancellation, from that run's own timestamps:
+
+```
+golden landing — run in_progress
+  ablation-re1      completed    60 min (workflow)    13.4     —    COMPLETED success
+  ablation-re2      in_progress  60 min (workflow)    26.0  34.0    WORKING
+  ablation-re3      in_progress  60 min (workflow)    27.5  32.5    WORKING
+
+verdict WORKING — every pending job is inside its OWN bound; the longest licensed wait is 32.5 min left.
+```
+
+**The cancel was issued with 32.5 minutes of licensed wait left.**
+
+## 6.4 Two defects found while building it
+
+- **The fixture vouched for a payload the API never sends.** The first version accepted a bare array for
+  the jobs payload — because that is what the *tests* handed it — and refused every real invocation with
+  `expected a JSON list of jobs`. Running it once on a real response is what found it. The runs endpoint
+  returns the run object and the jobs endpoint returns an **envelope** around the array; the tool now
+  reads what the API sends and refuses anything else, and the fixture was corrected rather than the tool.
+- **A fence no test could fail.** The block's "a line at the mapping's own indentation ends the scan"
+  guard was written WITH a test, and the mutation that removes the guard **survived**: the fixture put
+  only a top-level key after the block, so a two-space bound under it matched nothing either way. The
+  fixture now carries a key that *would* be picked up as a job, and the guard is killed. **A guard whose
+  test cannot fail is not a guard** — the same lesson as §2, arrived at by mutation rather than by reading.
+
+## 6.5 What did not change
+
+- **No cell, window, cap or floor moves.** The change is a reader of run *liveness* under `scripts/`,
+  which is not a golden trigger; the nine cells are produced by the workflow and are untouched.
+- **No golden is owed, and that is measured rather than assumed.** `golden_run_selector.benchmark_run_owed`
+  over this change set returns `(False, ())`, and the same predicate returns `(True, ('packages/*/src/**',))`
+  for a path that does match — so the trigger list is read, not bypassed.
+- **The archive still needs the run to finish.** Nothing here makes the reader independent of that, and
+  nothing should: the corrected rule is to wait for the run's own bound rather than pre-empt it, and the
+  four uncancelled runs show the wait is 45–62 minutes, once.
