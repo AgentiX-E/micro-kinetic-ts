@@ -120,6 +120,41 @@ class CapabilityOfTest(unittest.TestCase):
         for name in dc.CHANNELS:
             self.assertEqual(empty.channel(name).reach, dc.NONE, name)
 
+    def test_a_line_inside_a_case_that_carries_NO_channel_is_skipped(self) -> None:
+        # Written from a MEASUREMENT rather than from the code, and it is the only test here whose
+        # motive is the gate rather than the census.
+        #
+        # `dump_capability.py` reads an artifact in three shapes — a case header, a service row, and a
+        # sub-line belonging to the row above — and it SKIPS any other line inside a case. That skip
+        # is a real branch, and on 2026-09-20 the same commit read **100.00% locally and 99.88% in
+        # CI**, the whole difference being two arcs of this module (`330->288`, `332->330`) that only
+        # a real artifact reaches. The four tests that reach them live in `RealArtifactsTest`, which
+        # reads `.bench-cache/` by ABSOLUTE PATH and `skipTest`s where those files are absent — as
+        # they are on every runner. So the gate's own number depended on which machine ran it, and
+        # the smaller number was the gate's.
+        #
+        # Reproduced exactly by copying this directory and pointing the two constants at paths that
+        # do not exist: `dump_capability.py 174 0 74 2 99.19%`, missing `330->288` and `332->330`.
+        # With this test the same reproduction reads `0` partial branches, so the number no longer
+        # depends on the machine — and the behaviour below is pinned, which nothing pinned before:
+        # a line carrying no channel belongs to NO row and NO channel.
+        text = (
+            'DIAG datapack=a_cpu_1 faultType=cpu services=2 decimals=3\n'
+            '  adservice [#1] selfAnomaly=0.255 onset=34000\n'
+            '    metricDecisive: latency-50=0.255{dev=0.192}\n'
+            '\n'
+            '  -- noise the producer writes between rows --\n'
+            '  cartservice [#2] selfAnomaly=0.100 onset=-\n'
+        )
+        capability = dc.capability_of(text)
+        # The two unmatched lines start no row and reach no channel: the population is the SERVICE
+        # ROWS, and the blank line is not one of them.
+        self.assertEqual(capability.cases, 1)
+        self.assertEqual(capability.rows, 2)
+        self.assertEqual(capability.channel('onset').rows_reached, 2)
+        self.assertEqual(capability.channel('onset').reach, dc.EVERY)
+        self.assertEqual(capability.channel('decisive-composition').rows_reached, 1)
+
     def test_a_line_before_the_first_header_is_ignored_rather_than_attributed(self) -> None:
         # The producer writes a `signals:` banner. Attributing a marker in it to a case would invent a case.
         capability = dc.capability_of('signals: onset=1 latEdges=1\n' + case('a_cpu_1', FULL_ROW))

@@ -353,3 +353,52 @@ config, and `pnpm test` — the workspace run that executes the whole suite (127
 carries no coverage claim. The workspace file also still exists, with vitest's own deprecation notice
 (`test.projects` in a root config is where it is heading); migrating it is a separate change with its
 own measurement, and it is not needed to make the coverage numbers honest.
+
+## 8. A gate's number belongs to its POPULATION, its BAR — and its ENVIRONMENT (2026-09-20)
+
+§7 established that the root command's number was the coverage of nothing in particular. This section is the
+same lesson with a third input, and it was found by reading the gate's own log rather than by suspecting it:
+**`converter-tests` — the python gate — read 99.88% on CI for a commit that reads 100.00% on a developer
+machine**, and the whole difference was two branch arcs in `dump_capability.py`:
+
+| where | `dump_capability.py` | missing arcs |
+| --- | --- | --- |
+| local (this machine) | `174 0 74 0` — **100.00%** | — |
+| CI (`converter-tests` log, run `35501838974`) | `174 0 74 2` — **99.19%** | `330->288`, `332->330` |
+
+**The mechanism.** `test_dump_capability.py` carries a `RealArtifactsTest` class whose four cases read
+artifacts the census was built for — `.bench-cache/rcaeval-dumps/re1.txt` and
+`.bench-cache/dump-35035314921.txt` — by **absolute path**, and `skipTest` where they are absent:
+
+```python
+    def _capability(self, path: Path) -> dc.DumpCapability:
+        if not path.exists():
+            self.skipTest(f'{path.name} is not on this machine')
+```
+
+Those files are a workspace cache, not repository content, so on every runner all four tests skip. Locally
+they run. And the two arcs — *a line inside a case that carries no channel is skipped* — were reachable **only**
+through them, because no synthetic fixture put an unmatched line inside a case block. So the smaller number
+was the gate's, and the larger one was a property of the machine that happened to hold the dumps.
+
+**Reproduced exactly, then closed.** Copying `scripts/` and pointing the two constants at paths that do not
+exist reproduces CI's reading to the digit — `dump_capability.py 174 0 74 2 99.19%`, the same two arcs — which
+is what makes the fix checkable without a CI round trip. One hermetic test that puts a blank line and a
+decorator line inside a case block now covers both arcs, and the SAME reproduction reads
+`174 0 74 0 100.00%`:
+
+| | before | after |
+| --- | --- | --- |
+| the CI condition, `dump_capability.py` | `99.19%`, missing `330->288` `332->330` | **`100.00%`**, no missing arcs |
+
+**What was deliberately NOT changed: the four skipped tests.** They assert measured facts about specific
+archived artifacts (`re1` is 375 cases, FSE'26 is 1422 cases over 72527 rows), which is exactly the
+provenance a synthetic fixture cannot supply. Deleting the skip would make CI fail for a file it is not
+supposed to have; making the path repo-relative would move the artifacts, which are a cache and not source.
+The honest resolution is the one taken: **the behaviour is pinned hermetically so the GATE's number is
+machine-independent, and the provenance tests stay opportunistic.** A test that skips is fine; a gate whose
+number changes when it does is not.
+
+The gate passed either way — `--fail-under=95` against 99.88% has 4.88 points of headroom — so this was never
+a red gate. It is the other kind of fault: **a number that is not the gate's, read as if it were**, which is
+how a real 4.9-point drop could go unnoticed inside a rounding of the story.
