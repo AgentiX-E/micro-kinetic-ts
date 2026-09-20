@@ -35,6 +35,7 @@ import {
 import type {
   Admissibility,
   CriterionReading,
+  CvShape,
   DiagnosedCase,
   DumpPrecision,
   RefinementFrontier,
@@ -5569,41 +5570,25 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
       }),
     );
     expect(window.satisfied).toBe(1);
-    // And the FLOOR, which is what makes "the cap is an upper bound" a measurement rather than a
-    // caveat: the pair leads by `log1p(0.9) − log1p(0.5) = 0.2363888`, the tie group holds 2 of the
-    // case's 3 weighed services, so the widest slope gap the ENGINE can have for the pair is
-    // `1/(3−1) = 0.5` and the earliest weight at which it can cost the case is `0.4727776`.
-    //
-    // Note what the floor is compared AGAINST: `windowOf` screens at the default shape, so the cap
-    // here is `0.7898795` (the `flip` reading of the same case) and the floor sits BELOW it — while
-    // the `rank` cap of the same case is `0.8425381`. The floor is shape-independent (it is a BASE
-    // gap over the engine's own slope spacing) and the cap is not, which is why the comparison is
-    // printed per shape rather than once.
+    // The class is a property of the INPUTS — two services one render cell cannot tell apart — and so
+    // are its membership, its count and the cap it qualifies. What is NOT a property of the inputs is
+    // the BOUND that membership implies: that is the SHAPE's own spacing law, and the two shapes' laws
+    // differ by a factor of 250 on this very fixture. Kept in one place, so the floor's numbers are
+    // asserted where the law they came from is named.
     expect(window.capUnrepresentable.cases).toBe(1);
     expect(window.capUnrepresentable.declared).toBe(1);
     expect(window.capUnrepresentable.datapacks).toEqual(['dp-1']);
     expect(window.capUnrepresentable.setsCap).toBe(true);
-    expect(window.capUnrepresentable.lossFloor).toBeCloseTo(0.4727776, 6);
-    expect(window.capUnrepresentable.lossFloorBinder).toEqual({
-      datapack: 'dp-1',
-      target: 'ts-svc-0',
-      rival: 'ts-svc-1',
-      lead: expect.closeTo(0.2363888, 6),
-      span: 0.5,
-      group: 2,
-      weighed: 3,
-      floor: expect.closeTo(0.4727776, 6),
-    });
+    // `windowOf` screens at the default shape, so this is the `flip` reading of the case.
     expect(window.cap).toBeCloseTo(0.7898795, 6);
-    expect(window.capUnrepresentable.lossFloor).toBeLessThan(window.cap);
   });
 
   it('says when the floor CANNOT bind below the cap', () => {
     // The other half of the claim, and the one a reader needs to decide whether to trust the cap: a
-    // member whose pair sits in a two-service tie of a case the engine can reorder slowly can only be
+    // member whose pair sits in a render tie of a case the engine can only reorder slowly can only be
     // cost ABOVE the cap — so for every weight the window actually covers, the term cannot cost it.
     // Measured, not argued: the second case below caps at `0.1251288` and the member's floor is
-    // `0.4727776`, so the comparison falls the other way without anything about the member changing.
+    // `117.958`, so the comparison falls the other way without anything about the member changing.
     const window = windowOf(
       cvCase({
         cvs: [0.5, 0.5, 0.1],
@@ -5623,7 +5608,7 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     expect(window.cap).toBeCloseTo(0.1251288, 6);
     // The COMPARISON is the finding, and it is the member's own floor against the cap — not a floor
     // the cap was folded into, which would have erased which side they fall on.
-    expect(window.capUnrepresentable.lossFloor).toBeCloseTo(0.4727776, 6);
+    expect(window.capUnrepresentable.lossFloor).toBeCloseTo(117.958, 3);
     expect(window.capUnrepresentable.lossFloor).toBeGreaterThan(window.cap);
   });
 
@@ -5720,11 +5705,14 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     expect(bare.capUnrepresentable.lossFloor).toBe(Number.POSITIVE_INFINITY);
   });
 
-  it('is a property of the INPUTS, not of the shape', () => {
-    // Both shapes are strictly monotone in `cv`, so two services the render ties are tied under
-    // either of them — and indeed every golden dump reports the same count for `flip` and `rank`
-    // (31/301, 14/119, 13/37, 12/35). Asserting it here keeps a future shape that reorders `cv`
-    // differently from quietly changing what the class means.
+  it('is a property of the INPUTS for MEMBERSHIP, and of the SHAPE for the BOUND', () => {
+    // Two facts that were one sentence, and the conflation is what let a wrong law live: the CLASS is
+    // a property of the inputs — both shapes are strictly monotone in `cv`, so two services the render
+    // ties are tied under either of them, and every golden dump reports the same count for `flip` and
+    // `rank` (31/301, 14/119, 13/37, 12/35, all at the three decimals those dumps declare) — while the
+    // BOUND the class implies is a property of the SHAPE's spacing, which the two shapes do not share.
+    // Asserting both keeps a future shape that reorders `cv` differently from quietly changing what
+    // the class means, AND keeps the two laws from being silently collapsed again.
     const cases = [
       cvCase({
         cvs: [0.5, 0.5, 0.1],
@@ -5742,8 +5730,16 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     ];
     const flip = cvScreen(cases, WEIGHTS, 'flip').solved.window.capUnrepresentable;
     const rank = cvScreen(cases, WEIGHTS, 'rank').solved.window.capUnrepresentable;
-    expect(flip).toEqual(rank);
     expect(flip.cases).toBe(1);
+    expect(flip.cases).toBe(rank.cases);
+    expect(flip.datapacks).toEqual(rank.datapacks);
+    expect(flip.declared).toBe(rank.declared);
+    expect(flip.setsCap).toBe(rank.setsCap);
+    // And the half that is NOT shared: one member, one lead, two laws, and a floor 250× apart.
+    expect(flip.lossFloorBinder?.measurement.law.kind).toBe('value');
+    expect(rank.lossFloorBinder?.measurement.law.kind).toBe('rank');
+    expect(flip.lossFloor).toBeCloseTo(117.958, 3);
+    expect(rank.lossFloor).toBeCloseTo(0.4727776, 7);
   });
 
   it('prints the qualification beside the cap, with the binder clause that fits it', () => {
@@ -5768,9 +5764,13 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     );
     expect(both).toContain('the cap’s own case is not one of them');
     // The floor and its comparison, both in the report: the count says HOW MANY cases are loose, and
-    // the floor says whether the looseness can bite inside the window the cap describes.
-    expect(both).toContain('the lowest weight at which one of them can be lost is 0.472778');
-    expect(both).toContain('(dp-1: ts-svc-0 / ts-svc-1, a tie group of 2 among 3 weighed)');
+    // the floor says whether the looseness can bite inside the window the cap describes. This is the
+    // DEFAULT shape's sentence, so the span is the VALUE law's and the clause says so — the scale and
+    // the box, not a tie group, because a tie group is not what set this number.
+    expect(both).toContain('the lowest weight at which one of them can be lost is 117.958000');
+    expect(both).toContain(
+      '(dp-1: ts-svc-0 / ts-svc-1, a render cell of 0.001000 on a scale of 0.500000, at 3 decimals)',
+    );
     // Here the cap is `0.425500` from `dp-tighter`, which the member's floor clears — so the sentence
     // reads `AT OR ABOVE`, and says so rather than leaving a reader to compare two numbers three
     // clauses apart. The comparison is against `window.cap`, the INTERSECTION over the satisfied
@@ -5778,10 +5778,10 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     expect(both).toContain('AT OR ABOVE the cap 0.425500, so this channel cannot bind below it');
     expect(both).not.toContain('BELOW the cap 0.425500');
     // The membership is on the OBJECT rather than in the report, and that is a decision rather than
-    // an omission: on the FSE'26 dump this class holds 510 of 756 cases, so a printed list would be
-    // a page nobody reads. What the report owes a reader is the count with its DEFINITION, which is
-    // printed; what a caller cross-checking a paired dispatch's own lost cases needs is the
-    // membership, and that is here.
+    // an omission: on FSE'26 at four decimals this class holds 356 of 756 cases (510 at three), so a
+    // printed list would be a page nobody reads. What the report owes a reader is the count with its
+    // DEFINITION and its box, which are printed; what a caller cross-checking a paired dispatch's own
+    // lost cases needs is the membership, and that is here.
     expect(
       cvScreen([leading, tighter], WEIGHTS).solved.window.capUnrepresentable.datapacks,
     ).toEqual(['dp-1']);
@@ -5791,12 +5791,16 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
       'cap UPPER bound: 1 of 1 satisfied cases hold a rival the term reads as EQUAL',
     );
     expect(only).toContain('the cap’s own case is one of them');
-    // BELOW, and it is the same member: without a tighter case the cap is this case's own `0.789879`,
-    // which the floor `0.472778` sits under — so here the artifact permits the engine to cost the case
-    // first, and the sentence says so rather than leaving a reader to subtract.
-    expect(only).toContain('the cap 0.789879, so the engine can lose one first');
-    expect(only).toContain('BELOW');
-    expect(only).not.toContain('cases the artifact cannot order');
+    // And on the shape whose span really is the consecutive-ranks one, the SAME member reads BELOW
+    // its own cap: this is the branch that says the artifact permits the engine to cost the case
+    // first, and it is shape-specific rather than a property of the member.
+    const rankOnly = formatCvScreenReport(cvScreen([leading], WEIGHTS, 'rank'), WEIGHTS);
+    expect(rankOnly).toContain('a tie group of 2 among 3 weighed, at 3 decimals');
+    expect(rankOnly).toContain('the cap 0.842538, so the engine can lose one first');
+    expect(rankOnly).toContain('BELOW');
+    expect(rankOnly).not.toContain('cases the artifact cannot order');
+    // The default shape, whose cell is 250× narrower, reads the other way on the same services.
+    expect(only).toContain('AT OR ABOVE the cap 0.789879, so this channel cannot bind below it');
   });
 
   it('carries the qualification for a shape whose detail the menu does NOT print', () => {
@@ -5830,6 +5834,171 @@ describe('the satisfied side — the cap is an UPPER bound when the artifact can
     const text = formatCvScreenReport(cvScreen([clean], WEIGHTS), WEIGHTS);
     expect(text).not.toContain('cap UPPER bound');
     expect(text).toContain('cap bound by');
+  });
+});
+
+describe('the frontier’s span is the SHAPE’s own law, not one law for every shape', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+  /**
+   * Two services the render cannot tell apart, leading on the base by `log1p(0.9) − log1p(0.5)`.
+   *
+   * The SAME two services are read by both shapes, which is what makes the pair below a comparison
+   * of the LAWS rather than of two fixtures: `cvSlopes` gives `flip` and `rank` different slopes for
+   * the same `cv`, and the span a render cell can hide is a property of that slope — so the two
+   * shapes cannot share one formula.
+   */
+  const tied = (): DiagnosedCase =>
+    cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+  const frontierOf = (shape: CvShape) =>
+    cvScreen([tied()], WEIGHTS, shape).solved.window.capUnrepresentable;
+
+  it('derives the VALUE shape’s span from its own normalisation', () => {
+    // `flip`'s slope is `(max − cv)/max` — LINEAR in the value — so two services in one render cell
+    // sit one QUANTUM apart in `cv` and therefore `quantum/(scale − quantum)` apart in slope. The
+    // fixture renders at `SERVICE_FIELD_DECIMALS` = 3, so the cell is `0.001/0.499`.
+    //
+    // The slack is a FULL quantum rather than half of one on purpose: the bound must not depend on
+    // which way the producer rounded, and truncation and round-to-nearest differ by exactly that.
+    const flip = frontierOf('flip');
+    expect(flip.lossFloorBinder?.measurement.law).toEqual({ kind: 'value', scale: 0.5 });
+    expect(flip.lossFloorBinder?.measurement.decimals).toBe(SERVICE_FIELD_DECIMALS);
+    expect(flip.lossFloorBinder?.span).toBeCloseTo(0.002004008, 9);
+    expect(flip.lossFloor).toBeCloseTo(117.958, 3);
+  });
+
+  it('bounds every slope gap by 1 when the case’s own scale is inside a quantum', () => {
+    // A `cv` of zero is a REAL measurement — a perfectly flat series — so a case can hold nothing but
+    // zeros, and then the scale the `value` law normalises by is inside one quantum of nothing. The
+    // slack cannot be `quantum/(scale − quantum)` there, and the honest answer is not a fallback but
+    // the ceiling the SHAPE imposes on itself: a max-normalised slope lies in `[0, 1]`, so no two of
+    // them are further apart than 1 — and the earliest weight that can cost the case is the whole lead.
+    const flat = cvCase({
+      cvs: [0, 0, 0],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const flip = cvScreen([flat], WEIGHTS, 'flip').solved.window.capUnrepresentable;
+    expect(flip.lossFloorBinder?.measurement.law).toEqual({ kind: 'value', scale: 0 });
+    expect(flip.lossFloorBinder?.span).toBe(1);
+    expect(flip.lossFloor).toBeCloseTo(0.2363888, 6);
+  });
+
+  it('scales the value shape’s span with the box, because the quantum IS the cell', () => {
+    // **A number's box is part of it.** The value law's span is `quantum/(scale − quantum)`, so a
+    // ten-times-finer render makes the cell ten times narrower and the floor ten times higher — the
+    // SAME case, the same two services, the same lead, one digit apart. Relabelling the box while the
+    // rendered values stay put is deliberate: this asserts the FORMULA's dependence on the box, and
+    // the end-to-end dependence is measured on the real artifact instead (FSE'26's `flip` binder reads
+    // `0.144055` at three decimals and `1.457280` at four).
+    const at3 = cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const at4: DiagnosedCase = { ...at3, fieldDecimals: 4 };
+    const binderAt = (one: DiagnosedCase) =>
+      cvScreen([one], WEIGHTS, 'flip').solved.window.capUnrepresentable;
+    expect(binderAt(at3).lossFloorBinder?.measurement.decimals).toBe(SERVICE_FIELD_DECIMALS);
+    expect(binderAt(at4).lossFloorBinder?.measurement.decimals).toBe(4);
+    expect(binderAt(at3).lossFloorBinder?.span).toBeCloseTo(0.002004008, 9);
+    expect(binderAt(at4).lossFloorBinder?.span).toBeCloseTo(0.000200040008, 12);
+    // The floors are a factor of `10.018` apart rather than a clean decade, and that is the slack
+    // rather than a rounding accident: the denominator is `scale − quantum`, so a finer quantum
+    // changes the SLACK too. A test that asserted `× 10` would be asserting the wrong arithmetic.
+    expect(binderAt(at4).lossFloor).toBeCloseTo(1181.7075015, 6);
+    expect(binderAt(at4).lossFloor / binderAt(at3).lossFloor).toBeCloseTo(10.0180361, 6);
+    // And the box reaches the sentence, so a reader comparing two rows can see which is which.
+    expect(formatCvScreenReport(cvScreen([at4], WEIGHTS, 'flip'), WEIGHTS)).toContain(
+      'at 4 decimals',
+    );
+  });
+
+  it('keeps the RANK shape’s span as consecutive ranks inside the cell', () => {
+    // The engine re-RANKS, so a sub-quantum difference can move a service a whole RANK STEP rather
+    // than a quantum: the widest gap inside a group of `g` is `(g − 1)/(n − 1)`. Same two services,
+    // same lead — and the two laws disagree by a factor of 250 here, which is why a single formula
+    // cannot serve both.
+    const rank = frontierOf('rank');
+    expect(rank.lossFloorBinder?.measurement.law).toEqual({ kind: 'rank' });
+    expect(rank.lossFloorBinder?.span).toBeCloseTo(0.5, 12);
+    expect(rank.lossFloor).toBeCloseTo(0.4727776, 7);
+  });
+
+  it('reports the two laws with the terms each of them was derived from', () => {
+    // A sentence that printed the span's inputs with the OTHER law's words would describe a
+    // derivation nobody performed, so the clause is a property of the law rather than of the report.
+    const flip = formatCvScreenReport(cvScreen([tied()], WEIGHTS, 'flip'), WEIGHTS);
+    expect(flip).toContain('a render cell of 0.001000 on a scale of 0.500000, at 3 decimals');
+    expect(flip).not.toContain('a tie group of');
+    const rank = formatCvScreenReport(cvScreen([tied()], WEIGHTS, 'rank'), WEIGHTS);
+    expect(rank).toContain('a tie group of 2 among 3 weighed, at 3 decimals');
+    expect(rank).not.toContain('a render cell of');
+  });
+
+  it('flips the verdict the one-law version read backwards', () => {
+    // The finding, in one assertion: under the rank law the fixture's floor is `0.4728` against a
+    // `flip` cap of `0.7899`, so the screen reported that the engine could cost the case first. That
+    // was the RANK law's answer to the VALUE shape's question. Read at its own quantum the cell is
+    // 250× narrower — so the floor is 250× higher and the channel cannot bind anywhere near the cap.
+    const flip = formatCvScreenReport(cvScreen([tied()], WEIGHTS, 'flip'), WEIGHTS);
+    expect(flip).toContain('AT OR ABOVE the cap 0.789879');
+    expect(flip).not.toContain('so the engine can lose one first');
+    // And the rank shape, whose law really is the consecutive-ranks one, still reads BELOW: the
+    // branch is not dead, it is shape-specific.
+    const rank = formatCvScreenReport(cvScreen([tied()], WEIGHTS, 'rank'), WEIGHTS);
+    expect(rank).toContain('BELOW the cap');
+    expect(rank).toContain('so the engine can lose one first');
+  });
+
+  it('still reads BELOW on the value shape when the lead is genuinely under the cell', () => {
+    // The other half, so the value law is not a branch that can only ever say one thing: a lead
+    // smaller than `cap · quantum/scale` really does sit under the cap, and the sentence must say so.
+    // The lead comes from ONE quantum of `selfAnomaly` at the top of its range — the smallest
+    // difference a three-decimal render can carry at all — because a lever that is itself rounded
+    // away would produce two equal bases and hence no pair rather than a small one.
+    const under = cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.999, 0.998, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+    });
+    const flip = cvScreen([under], WEIGHTS, 'flip').solved.window;
+    expect(flip.capUnrepresentable.cases).toBe(1);
+    expect(flip.capUnrepresentable.lossFloor).toBeLessThan(flip.cap);
+    expect(formatCvScreenReport(cvScreen([under], WEIGHTS, 'flip'), WEIGHTS)).toContain(
+      'so the engine can lose one first',
+    );
+  });
+
+  it('counts the class in the box it was counted in', () => {
+    // The class is "a rival the render reads as EQUAL", which is a statement about a QUANTUM: the
+    // finer the render, the fewer pairs collide. Measured on run `35436069639` (the same 1422 cases
+    // as `35107871516`, four decimals instead of three) it holds 356 of 756 satisfied cases against
+    // 510 — so a count quoted without its box is a count of nothing in particular.
+    const coarse = cvCase({
+      cvs: [0.5, 0.5, 0.1],
+      anomalies: [0.9, 0.5, 0.01],
+      groundTruth: 'ts-svc-0',
+      prediction: 'ts-svc-0',
+      datapack: 'dp-coarse',
+    });
+    expect(dumpPrecisionOf([coarse])).toEqual({ decimals: SERVICE_FIELD_DECIMALS, stated: true });
+    const report = formatCvScreenReport(cvScreen([coarse], WEIGHTS, 'flip'), WEIGHTS);
+    // The box travels with the count: it is on the SAME line as the count, so a reader who greps the
+    // count has the quantum that decided it. Asserted by locating the line rather than by a regex over
+    // the whole report, because a match that could span lines would not be saying that.
+    const line = report.split('\n').find((one) => one.includes('cap UPPER bound'));
+    expect(line, 'the qualification must be printed').toBeDefined();
+    expect(line).toContain('hold a rival the term reads as EQUAL');
+    expect(line).toMatch(/at \d+ decimals/);
+    expect(line).toContain('on a scale of');
   });
 });
 
@@ -7919,6 +8088,30 @@ describe('one population, one box, and a reading that names it', () => {
     expect(rowOf('run-3dec')).toContain('3 dec');
     expect(rowOf('run-4dec')).toContain('4 dec');
     expect(text).not.toContain('dec*');
+  });
+
+  it('keeps the box column aligned however long the caller’s artifact names are', () => {
+    // The caller names an artifact by a PATH as readily as by a run id, and the archive's own
+    // directory names exceed any literal pad — which printed the box hard against the path so the two
+    // read as one string, on the one table whose box column is why its rows are comparable. The
+    // assertion is a COLUMN OFFSET rather than a substring, because a substring is what the defect
+    // satisfied.
+    const long =
+      '/Users/lambertyan/WorkBuddy/2026-08-08-10-23-08/.bench-cache/dump-35436069639.txt';
+    const readings = criterionReadings(cvShapeMenu([at(4)], WEIGHTS), long, 'gain');
+    const lines = formatCriterionReport(readings, [long, 're2']).split('\n');
+    const header = lines.find((line) => line.includes('permits a loss from'))!;
+    const boxColumn = header.indexOf('box');
+    expect(boxColumn).toBeGreaterThan('  artifact'.length);
+    for (const line of lines.filter((one) => one.includes(' dec'))) {
+      expect(line.slice(boxColumn, boxColumn + 3)).toBe('4 d');
+    }
+    // And the header still names its own column when every label is shorter than the word.
+    const short = formatCriterionReport(
+      criterionReadings(cvShapeMenu([at(3)], WEIGHTS), 'a', 'gain'),
+      ['a'],
+    );
+    expect(short).toContain('artifact');
   });
 
   it('marks an INFERRED box, so an inference cannot pass as the artifact’s statement', () => {

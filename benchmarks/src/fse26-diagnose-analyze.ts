@@ -1567,6 +1567,90 @@ export function formatMissReport(
 }
 
 /**
+ * How one shape's slope is spaced, and therefore what ONE render cell can hide.
+ *
+ * Two shapes whose slopes are built from the same rendered field are NOT equally exposed to the
+ * render's quantum, and the difference is a whole order of magnitude on a real case:
+ *
+ * - `rank` — the engine RE-RANKS. A sub-quantum difference in the field can move a service a whole
+ *   RANK STEP, so the widest gap inside a group of `g` is `(g − 1)/(n − 1)`.
+ * - `value` — the slope is LINEAR in the field, normalised by the case's own maximum. A sub-quantum
+ *   difference moves the slope by the quantum itself, so the widest gap is `quantum/(scale − quantum)`.
+ *
+ * There is no formula for both, which is why this is a property of the SHAPE rather than of the
+ * window: `flip` was measured a factor of 250 narrower than its `rank` reading on the same two
+ * services of `ts5-ts-order-other-service-partition-42lwf5` (`docs/closed-axes-register.md`).
+ */
+export type CellLaw =
+  /** Consecutive ranks inside one cell: the width depends on the cell's size. */
+  | { readonly kind: 'rank' }
+  /**
+   * Linear in the value: the width depends on the case's SCALE, not on the cell's size.
+   *
+   * `scale` is the case's own rendered maximum of the field — a LOWER bound on the maximum the
+   * engine normalises by, since a service the block never rendered is excluded on both sides.
+   */
+  | { readonly kind: 'value'; readonly scale: number };
+
+/**
+ * What a builder states when its term's coefficient is a MEASUREMENT rather than a constant.
+ *
+ * The three facts belong together and are therefore ONE field. `weighed` alone cannot answer the
+ * question the window's classes ask — *"is this pair EQUAL because the term read the same number
+ * twice, or because it read nothing at all?"* — and a span is meaningless without knowing which
+ * services it was measured over.
+ *
+ * ABSENT means the caller makes no claim about a rendered tie: the window then attributes an equal
+ * pair the way it did before this field existed, and the satisfied side's
+ * {@link UnrepresentableFrontier} stays empty rather than guessing. The `failedEdge` and `lat`
+ * producers omit it; the decisive-stability screen states it.
+ */
+export interface MeasurementProvenance {
+  /** The services the term actually weighed; a service it read nothing for is EXCLUDED. */
+  readonly weighed: ReadonlySet<string>;
+  /**
+   * The box: the decimals every per-service field of this case was rendered with.
+   *
+   * Carried because BOTH laws' answers are drawn in it — the `value` law divides by the quantum it
+   * names, and the `rank` law's cell SIZES are themselves a function of it (a finer render splits a
+   * cell, so the same two services fall in a smaller group). Measured on FSE'26: the satisfied
+   * side's class holds **510 of 756 cases at three decimals and 356 at four**.
+   */
+  readonly decimals: number;
+  readonly law: CellLaw;
+}
+
+/**
+ * The widest slope gap ONE render cell can hide, in this shape's own units.
+ *
+ * The bound is deliberately a FULL quantum rather than half of one. Round-to-nearest and truncation
+ * differ by exactly that much, and the number must be an UPPER bound while the renderer's convention
+ * is a premise this module has no way to check — so the slack is the larger of the two.
+ *
+ * A `value` law's slope is confined to `[0, 1]` by its own normalisation, which is what bounds the
+ * answer when the case's scale is itself within a quantum of zero: the widest gap any two slopes can
+ * have is 1, and that is a ceiling the SHAPE imposes rather than a fallback.
+ *
+ * @param measurement - The builder's provenance, for the law and the box.
+ * @param group - Services sharing one rendered value, i.e. `g`.
+ * @param weighed - The case's weighed services — the engine's `n`, which is the divisor.
+ * @returns The widest gap, in slope units.
+ */
+export function cellSpanWidth(
+  measurement: MeasurementProvenance,
+  group: number,
+  weighed: number,
+): number {
+  if (measurement.law.kind === 'rank') {
+    // `g ≤ n`, so this is at most 1 without needing the ceiling the value law needs.
+    return (group - 1) / (weighed - 1);
+  }
+  const quantum = 10 ** -measurement.decimals;
+  const { scale } = measurement.law;
+  return scale > quantum ? Math.min(1, quantum / (scale - quantum)) : 1;
+}
+
+/**
  * One case's requirement on a weight.
  *
  * Every candidate's score is affine in the weight — `base + w × slope` — which is
@@ -1592,8 +1676,7 @@ export interface WeightSeparationCase {
   /** Per-service affine score, `base` at `w = 0` and `slope` as the coefficient. */
   readonly scores: ReadonlyMap<string, { readonly base: number; readonly slope: number }>;
   /**
-   * The services whose `slope` is a MEASUREMENT, stated by a builder whose term can leave some of
-   * them unweighed.
+   * The services whose `slope` is a MEASUREMENT, with the box and the law the span is drawn from.
    *
    * `slope` alone cannot answer the question the window's own classes ask — "is this pair EQUAL
    * because the term read the same number twice, or because it read nothing at all?" — because both
@@ -1602,12 +1685,11 @@ export interface WeightSeparationCase {
    * either, because its own map has no entry and its consumer reads that as zero. Two different
    * findings, two different fixes, and only the builder can say which.
    *
-   * ABSENT means the caller makes no claim about a rendered tie: the window then attributes an equal
-   * pair the way it did before this field existed, and the satisfied side's {@link
-   * UnrepresentableFrontier} stays empty rather than guessing. The `failedEdge` and `lat` producers
-   * omit it; the decisive-stability screen states it.
+   * One field rather than three, because the span is not derivable without the law and the law is
+   * not applicable without the weighted set: a builder that stated one and omitted another would be
+   * describing a measurement nobody made. See {@link MeasurementProvenance}.
    */
-  readonly weighed?: ReadonlySet<string>;
+  readonly measured?: MeasurementProvenance;
 }
 
 /** The interval of weights, if any, at which EVERY case puts its target first. */
@@ -2219,30 +2301,40 @@ function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | 
  * @returns Whether the term weighed it, or the caller declared nothing.
  */
 function weighed(one: WeightSeparationCase, service: string): boolean {
-  return one.weighed === undefined || one.weighed.has(service);
+  return one.measured === undefined || one.measured.weighed.has(service);
 }
 
 /**
  * One pair an acceptable root LEADS, where the term reads both sides as EQUAL.
  *
  * `span` is the widest gap the ENGINE can have for the pair, and it is derivable rather than assumed:
- * two services whose rendered `cv` is equal have unrounded values inside one rounding cell, so their
- * ranks are CONSECUTIVE among the cell's `g` members and their slope gap cannot exceed
- * `(g − 1)/(n − 1)`. The engine's own bound from this pair is `lead / gap ≥ lead / span`, which is what
- * makes `lead / span` the earliest weight at which the pair can cost the case — an upper end of the
- * damage, and the reason a bare count of such cases cannot be turned into a claim about the cap.
+ * two services whose rendered field is equal have unrounded values inside one rounding cell, and the
+ * slope gap that cell can hide is a property of the SHAPE's spacing law — a whole rank step for a
+ * shape that re-ranks, one quantum for a shape that is linear in the value. See {@link CellLaw}. The
+ * engine's own bound from this pair is `lead / gap ≥ lead / span`, which is what makes `lead / span`
+ * the earliest weight at which the pair can cost the case — an upper end of the damage, and the
+ * reason a bare count of such cases cannot be turned into a claim about the cap.
  */
 export interface RenderedTiePair {
   readonly target: string;
   readonly rival: string;
   /** `target.base − rival.base`, always positive: only a pair the root LEADS is one it can lose. */
   readonly lead: number;
-  /** The widest slope gap the engine can have for the pair, `(g − 1) / (n − 1)`. */
+  /** The widest slope gap the engine can have for the pair, from the shape's own {@link CellLaw}. */
   readonly span: number;
   /** Services in the pair's rendered tie group — `g`. */
   readonly group: number;
   /** The case's weighed services — the engine's `n`, which is the divisor. */
   readonly weighed: number;
+  /**
+   * The provenance the span was drawn from — the law AND the box.
+   *
+   * Carried by REFERENCE rather than copied, so the pairs of one case cannot disagree with the case
+   * about how far a cell reaches. A report that printed a span without saying which law produced it
+   * would be describing a derivation nobody performed, and a reader comparing two shapes' rows needs
+   * exactly that: the two spans come from different laws, and the sentence must say so.
+   */
+  readonly measurement: MeasurementProvenance;
 }
 
 /** The pair that grants the engine the widest gap, and the weight that follows from it. */
@@ -2261,29 +2353,33 @@ export interface CapFloorBinder extends RenderedTiePair {
  * field, splits the pair and gets a real bound out of the same two services.
  *
  * Counts the group by equal SLOPE, which is exact rather than a shortcut: every shape builds a slope
- * as one arithmetic expression over `cv`, so equal `cv` gives bit-identical coefficients while two
- * different cells differ by at least `1/(n − 1)`. A service the term never weighed is EXCLUDED, and
- * that is not a detail — it carries `0` with nothing behind it, and the engine reads `0` for it too,
- * so a pair equal only because both sides are placeholders hides no ordering.
+ * as one arithmetic expression over the rendered field, so equal values give bit-identical
+ * coefficients while two different cells give coefficients a slope-step apart — for a shape that
+ * re-ranks, at least `1/(n − 1)`; for one that is linear in the value, at least one quantum over the
+ * scale. Which of the two applies is the shape's own business and is settled by {@link CellLaw}. A
+ * service the term never weighed is EXCLUDED, and that is not a detail — it carries `0` with nothing
+ * behind it, and the engine reads `0` for it too, so a pair equal only because both sides are
+ * placeholders hides no ordering.
  *
  * @param one - The case.
  * @returns The pairs, empty when the case declares no provenance or holds none.
  */
 function renderedTiePairs(one: WeightSeparationCase): readonly RenderedTiePair[] {
-  if (one.weighed === undefined) return [];
-  const n = one.weighed.size;
+  const measured = one.measured;
+  if (measured === undefined) return [];
+  const n = measured.weighed.size;
   if (n < 2) return [];
   const groups = new Map<number, number>();
   for (const [service, { slope }] of one.scores) {
-    if (!one.weighed.has(service)) continue;
+    if (!measured.weighed.has(service)) continue;
     groups.set(slope, (groups.get(slope) ?? 0) + 1);
   }
   const pairs: RenderedTiePair[] = [];
   for (const name of one.targets) {
     const target = one.scores.get(name);
-    if (target === undefined || !one.weighed.has(name)) continue;
+    if (target === undefined || !measured.weighed.has(name)) continue;
     for (const [rival, other] of one.scores) {
-      if (rival === name || !one.weighed.has(rival)) continue;
+      if (rival === name || !measured.weighed.has(rival)) continue;
       if (other.slope !== target.slope) continue;
       if (other.base >= target.base) continue;
       const group = groups.get(target.slope)!;
@@ -2291,9 +2387,10 @@ function renderedTiePairs(one: WeightSeparationCase): readonly RenderedTiePair[]
         target: name,
         rival,
         lead: target.base - other.base,
-        span: (group - 1) / (n - 1),
+        span: cellSpanWidth(measured, group, n),
         group,
         weighed: n,
+        measurement: measured,
       });
     }
   }
@@ -2399,7 +2496,7 @@ export function computeZeroRegressionWindow(
     // EQUAL carries no bound from that pair, and the engine's own ordering of it is a bound the
     // artifact cannot express — so it is counted here, beside the cap it qualifies, rather than
     // left for a reader to find by diffing a run against the screen.
-    if (one.weighed !== undefined) {
+    if (one.measured !== undefined) {
       declared++;
       const pairs = renderedTiePairs(one);
       if (pairs.length > 0) unrepresentable.push(one.datapack);
@@ -2440,7 +2537,7 @@ export function computeZeroRegressionWindow(
       // Asked of the FINAL binder rather than tracked in the loop, so the answer cannot disagree
       // with the case `capBinder` names: one predicate, one owner of "who sets the cap".
       setsCap:
-        capCase !== undefined && capCase.weighed !== undefined && leadsRenderTiedRival(capCase),
+        capCase !== undefined && capCase.measured !== undefined && leadsRenderTiedRival(capCase),
       lossFloor,
       ...(lossFloorBinder === undefined ? {} : { lossFloorBinder }),
     },
@@ -3950,8 +4047,15 @@ function stabilityCase(
   // the least stable service. The window's classes ask the difference, and only this builder knows
   // it.
   const weighed = new Set<string>();
+  // The rendered values the `value` law's span is measured against, collected in the SAME pass that
+  // builds the weighed set — so the scale and the set it normalises over cannot disagree.
+  const rendered: number[] = [];
   for (const service of kase.services) {
-    if (decisiveCv(service) !== undefined) weighed.add(service.serviceId);
+    const cv = decisiveCv(service);
+    if (cv !== undefined) {
+      weighed.add(service.serviceId);
+      rendered.push(cv);
+    }
     scores.set(service.serviceId, {
       // Total by construction — `shippedScores` assigns an entry to every service, and `cvSlopes`
       // to every service — so the lookups assert rather than defaulting to a base or a slope
@@ -3960,7 +4064,26 @@ function stabilityCase(
       slope: slopes.get(service.serviceId)!,
     });
   }
-  return { datapack: kase.datapack, targets, scores, weighed };
+  return {
+    datapack: kase.datapack,
+    targets,
+    scores,
+    measured: {
+      weighed,
+      // The case's OWN box, falling back to the historical one only for a block that predates the
+      // header field. The same single owner `dumpPrecisionOf` reads, so a span and an error bar
+      // drawn from one artifact cannot be drawn in two boxes.
+      decimals: kase.fieldDecimals ?? HISTORICAL_FIELD_DECIMALS,
+      // The shape's spacing, from the shape's OWN arithmetic: `rank` re-ranks, so a sub-quantum
+      // difference can move a service a whole rank step; `flip` is LINEAR in the value, so it can
+      // only move it by the quantum. Measured on one real case the two differ by a factor of 250,
+      // which is why the law is declared by the builder rather than assumed by the window.
+      law:
+        shape === 'rank'
+          ? { kind: 'rank' }
+          : { kind: 'value', scale: rendered.reduce((best, cv) => (cv > best ? cv : best), 0) },
+    },
+  };
 }
 
 /** One shape of the decisive-stability term, solved. */
@@ -4088,6 +4211,31 @@ function unreachableClause(
 }
 
 /**
+ * The law the floor was drawn under, in that law's own terms.
+ *
+ * A second copy of the shapes' arithmetic would be a second copy of a value a reader compares
+ * against the cap, so the clause is read off the {@link MeasurementProvenance} the span itself came
+ * from — and it names the law's inputs rather than restating its formula. The `rank` law's width
+ * depends on the cell's SIZE; the `value` law's does not, and printing a group size beside it would
+ * be describing a derivation that was not performed.
+ *
+ * @param binder - The pair that set the floor.
+ * @returns The clause, without leading or trailing punctuation.
+ */
+function spanDerivationClause(binder: CapFloorBinder): string {
+  const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
+  const law =
+    binder.measurement.law.kind === 'rank'
+      ? `a tie group of ${binder.group} among ${binder.weighed} weighed`
+      : `a render cell of ${at(10 ** -binder.measurement.decimals)} on a scale of ` +
+        `${at(binder.measurement.law.scale)}`;
+  // The BOX is part of both laws' answers — the value law divides by its quantum, and the rank law's
+  // group SIZES are a function of it — so the count in this sentence would otherwise be a count of
+  // nothing in particular. Measured on FSE'26 the two boxes differ by 154 cases of 756.
+  return `${law}, at ${binder.measurement.decimals} decimals`;
+}
+
+/**
  * The cap's qualification, as one sentence.
  *
  * One owner because TWO reports print it — a shape's detail, where the cap is named, and the menu's
@@ -4122,8 +4270,7 @@ function capUpperBoundClause(u: UnrepresentableFrontier, cap: number): string {
     `can be lost is ${at(u.lossFloor)}` +
     (binder === undefined
       ? ''
-      : ` (${binder.datapack}: ${binder.target} / ${binder.rival}, a tie group of ${binder.group} ` +
-        `among ${binder.weighed} weighed)`) +
+      : ` (${binder.datapack}: ${binder.target} / ${binder.rival}, ${spanDerivationClause(binder)})`) +
     ` — ${binds ? 'BELOW' : 'AT OR ABOVE'} ${comparison}`
   );
 }
@@ -4623,13 +4770,22 @@ export function formatCriterionReport(
     `Kill criterion over ${artifacts.length} artifacts — a weight that gains a case on the one named ` +
       'FIRST and costs every other none:',
   );
+  // The name column's width comes from the POPULATION rather than from a literal. A caller names an
+  // artifact by a path as readily as by a run id, and an archive's own directory names are longer
+  // than any fixed pad — which printed the box hard against the path and read as one string, on the
+  // very table whose box column is the reason the rows can be compared at all. `artifact` itself is
+  // in the maximum so a population of short labels still heads the column with its own name, and the
+  // separator is an explicit space rather than the pad's own slack — a label narrower than the word
+  // would otherwise run its row's box straight into the header's name.
+  const nameWidth = Math.max('artifact'.length, ...artifacts.map((one) => one.length));
   lines.push(
-    '  artifact                 box       shape          role     gains from      loses from      permits a loss from',
+    `  ${'artifact'.padEnd(nameWidth)} box       shape          role     gains from      loses from      permits a loss from`,
   );
   for (const artifact of artifacts) {
     for (const one of readings.filter((r) => r.artifact === artifact)) {
       lines.push(
-        `  ${artifact.padEnd(24)}${boxOf(one).padEnd(10)}${one.shape.padEnd(15)}${one.role.padEnd(9)}` +
+        `  ${artifact.padEnd(nameWidth)} ${boxOf(one).padEnd(10)}${one.shape.padEnd(15)}` +
+          `${one.role.padEnd(9)}` +
           `${at(one.gainsFrom ?? Number.POSITIVE_INFINITY).padStart(11)}  ` +
           `${at(one.losesFrom).padStart(14)}  ${at(one.permittedFrom).padStart(18)}`,
       );
