@@ -347,6 +347,11 @@ The eviction was safe to take while a benchmark was in flight only because that 
 jobs had already restored their copy (`restore=success` on all three, checked before deleting): a cache
 is not a lease, and a run that has read it cannot be disturbed by evicting it.
 
+And the run the wait produced measures the battery on a dataset **rebuilt while it was running** — the
+third independent re-conversion, and the only one whose consumer waited for it: **9 of 9 cells
+byte-identical** (`RE1 80 / 92.8 / 68`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80 / 45 / 51.1`), read from the
+three primary jobs' own logs of `36143913937`.
+
 ### The wait is an instrument, and the mutation pass found two defects in it
 
 1. **A broken checker was retried for the whole bound.** With a bare `except Exception`, a `TypeError`
