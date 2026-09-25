@@ -313,16 +313,39 @@ bounded wait:
 | the scope | `actions: read`, because a `permissions:` block replaces the defaults and the caches API answers 403 without it — a 403 that would look exactly like an artifact that is not there |
 | the failures | `URLError`/`OSError`/`ValueError` are retried; a `CacheListForbidden` fails at once naming the missing scope; **a defect in the checker PROPAGATES** |
 
-The fast path, in production, on the push that carried the change:
+### Both paths, measured in production
+
+**The fast path.** The push that carried the change started a benchmark run with no producer running
+(its `paths` do not include the benchmark workflow), and the `artifact` job read:
 
 ```
 ##[group]Run python3 scripts/rcaeval_provenance.py --root scripts --await
 the artifact for this bridge is published: key=RCAEvalJSON-80520ccbbc8ffb70 after 0s (1 check)
 ```
 
-**Four seconds, one check**, and the same key iteration 18's conversion published — content-addressing
-meaning a commit that touches neither the bridge nor its pin inherits the artifact. The consumers began
-seven seconds later, so the `needs` ordering holds too.
+**Four seconds, one check, `success`** — and the key is the same one iteration 18's conversion published,
+which is the content-addressing property doing its job: a commit that touches neither the bridge nor its
+pin inherits the artifact. The consumers started seven seconds later, so the `needs` ordering holds.
+
+**The wait path**, which needed a key that does not exist: the derived cache was **evicted through the
+API** (`DELETE …/actions/caches/8108414900`, so the next run has nothing to restore), and then the
+producer and the consumer were **dispatched together** — one experiment, two runs, the same commit:
+
+| | producer `Cache Benchmark Datasets` `36143910178` | consumer `Benchmark — RCAEval Full Dataset` `36143913937` |
+| --- | --- | --- |
+| started | 13:54:00 | 13:54:02 |
+| the gate job | `cache` 13:54:00 → **14:16:39** `success` | `artifact` 13:54:02 → **14:16:48** `success` |
+| its own line | `Cache saved with key: RCAEvalJSON-80520ccbbc8ffb70` | `the artifact for this bridge is published: key=RCAEvalJSON-80520ccbbc8ffb70 after **1361s (46 checks)**` |
+| then | — | the four consumers began at **14:16:51**, three seconds after the gate |
+
+**1361 seconds and 46 checks** is the poll (thirty seconds, seventy within the bound) doing its job for
+twenty-two minutes and forty-one seconds without a single `unreadable` line. And the same run before
+this iteration would have been **four red jobs inside two minutes** — that is the defect, and this is
+the fix, measured on both of its paths.
+
+The eviction was safe to take while a benchmark was in flight only because that run's three `ablation-*`
+jobs had already restored their copy (`restore=success` on all three, checked before deleting): a cache
+is not a lease, and a run that has read it cannot be disturbed by evicting it.
 
 ### The wait is an instrument, and the mutation pass found two defects in it
 
