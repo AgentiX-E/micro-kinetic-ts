@@ -41,6 +41,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from typing import Callable
 from unittest import mock
 
 import rcaeval_provenance as prov
@@ -51,6 +52,27 @@ WORKFLOWS = REPO_ROOT / '.github/workflows'
 ACTIONS = REPO_ROOT / '.github/actions'
 ACTION = ACTIONS / 'rcaeval-json/action.yml'
 CACHE_WORKFLOW = WORKFLOWS / 'cache-datasets.yml'
+BENCHMARK_WORKFLOW = WORKFLOWS / 'benchmark-rcaeval.yml'
+
+
+class _Clock:
+    """A monotonic clock whose sleeping advances it, so a bounded wait is testable in microseconds."""
+
+    def __init__(self) -> None:
+        self.time = 0.0
+        self.slept: list[float] = []
+
+    def now(self) -> float:
+        """@returns The current time."""
+        return self.time
+
+    def sleep(self, seconds: float) -> None:
+        """Advance the clock and record the interval.
+
+        @param seconds - The interval.
+        """
+        self.slept.append(seconds)
+        self.time += seconds
 
 #: The composite action's invocation, as a workflow writes it. The `./` prefix is what makes it
 #: local; matching it exactly is what stops a site from silently going back to `actions/cache`.
@@ -183,6 +205,73 @@ def action_step_ids() -> dict[str, str]:
                     ids[match.group(1)] = path.name
                     break
     return ids
+
+
+def job_graph(path: pathlib.Path) -> dict[str, list[str]]:
+    """A workflow's jobs and what each `needs`, read from the text.
+
+    THREE spellings, and the first version of this reader handled one of the two it claimed to,
+    which the rule below caught on its first run: `needs: a`, `needs: [a, b]` — a FLOW sequence, whose
+    comma-separated list is not `\\S+` — and the block form on following lines. A graph rather than a
+    flat scan because the property under test is TRANSITIVE: an ablation job does not name the job
+    that waits, it names the job that does.
+
+    @param path - The workflow file.
+    @returns Job name -> the jobs it needs, directly.
+    """
+    graph: dict[str, list[str]] = {}
+    job: str | None = None
+    collecting: str | None = None
+    for line in path.read_text('utf-8').split('\n'):
+        header = re.match(r'^  ([A-Za-z0-9_-]+):\s*$', line)
+        if header:
+            job = header.group(1)
+            graph.setdefault(job, [])
+            collecting = None
+            continue
+        if job is None:
+            continue
+        flow = re.match(r'^\s+needs:\s*\[([^\]]*)\]\s*$', line)
+        if flow:
+            graph[job] = [item.strip() for item in flow.group(1).split(',') if item.strip()]
+            collecting = None
+            continue
+        inline = re.match(r'^\s+needs:\s*(\S+)\s*$', line)
+        if inline:
+            graph[job] = [inline.group(1)]
+            collecting = None
+            continue
+        if re.match(r'^\s+needs:\s*$', line):
+            collecting = job
+            continue
+        if collecting is not None:
+            item = re.match(r'^\s+-\s*(\S+)\s*$', line)
+            if item:
+                graph[job].append(item.group(1))
+                continue
+            collecting = None
+    return graph
+
+
+def reaches(graph: dict[str, list[str]], start: str, target: str) -> bool:
+    """Whether `start` reaches `target` through `needs`, transitively.
+
+    @param graph - The job graph.
+    @param start - The job to walk from.
+    @param target - The job to reach.
+    @returns Whether a path exists.
+    """
+    seen: set[str] = set()
+    queue = [start]
+    while queue:
+        current = queue.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if current == target:
+            return True
+        queue.extend(graph.get(current, []))
+    return False
 
 
 def requirements_reachable(entry: str) -> set[str]:
@@ -696,7 +785,8 @@ class TheCommandLine(unittest.TestCase):
             self.assertIn('ERROR', errors.getvalue())
 
     def test_exactly_one_flag_is_required(self) -> None:
-        for argv in ([], ['--key', '--stamp'], ['--verify']):
+        for argv in ([], ['--key', '--stamp'], ['--verify'], ['--key', '--await'],
+                     ['--stamp', '--await', '--verify']):
             with self.assertRaises(SystemExit) as ctx:
                 with contextlib.redirect_stderr(io.StringIO()):
                     prov.main(argv)
@@ -719,6 +809,391 @@ class TheCommandLine(unittest.TestCase):
         finally:
             sys.argv = saved
         self.assertEqual(ctx.exception.code, 0)
+
+
+class TheWaitIsBoundedAndCheckable(unittest.TestCase):
+    """The third consequence: the artifact is produced by ANOTHER workflow started by the same push.
+
+    Measured 2026-09-25: a push that changed the bridge read four `failure` jobs on the benchmark's
+    push run, because `consume` refuses an artifact whose producer is this commit's bridge and which
+    does not exist YET. The refusal is correct — the alternative is reading another bridge's dataset
+    and reporting it as a measurement of this tree — so what was missing is a declared wait.
+    """
+
+    def setUp(self) -> None:
+        self.lines: list[str] = []
+        self.asked: list[str] = []
+        self.clock = _Clock()
+
+    def _waiter(self, answers: list[bool]) -> Callable[..., bool]:
+        """A checker that answers from `answers`, logging every key it was asked about.
+
+        @param answers - The answers, consumed in order; the last one repeats.
+        @returns The checker.
+        """
+        self.asked: list[str] = []
+
+        def check(key: str, *, repo: str, token: str) -> bool:
+            self.asked.append(key)
+            return answers[min(len(self.asked) - 1, len(answers) - 1)]
+
+        return check
+
+    def test_a_published_key_returns_at_once_and_NEVER_SLEEPS(self) -> None:
+        # The common case by far: a push that does not touch the bridge has the artifact already, so
+        # the wait must cost one API call and no sleeping. A wait that always sleeps once would add
+        # half a minute to every benchmark run.
+        status = prov.await_cache_key(
+            SCRIPTS,
+            repo='o/r',
+            token='t',
+            checker=self._waiter([True]),
+            clock=self.clock.now,
+            sleep=self.clock.sleep,
+            log=self.lines.append,
+        )
+        self.assertEqual(status, 0)
+        self.assertEqual(self.clock.slept, [], 'a first-check hit must not sleep')
+        self.assertEqual(len(self.asked), 1)
+        # And it asks about the DERIVED key, which is what makes "the artifact for THIS tree" a
+        # question with an answer rather than a guess about a run's state.
+        self.assertEqual(self.asked[0], prov.cache_key(SCRIPTS))
+
+    def test_a_key_that_appears_later_is_waited_for(self) -> None:
+        status = prov.await_cache_key(
+            SCRIPTS,
+            repo='o/r',
+            token='t',
+            checker=self._waiter([False, False, True]),
+            clock=self.clock.now,
+            sleep=self.clock.sleep,
+            log=self.lines.append,
+        )
+        self.assertEqual(status, 0)
+        self.assertEqual(self.clock.slept, [prov.AWAIT_INTERVAL_SECONDS] * 2)
+        self.assertIn('published', ' '.join(self.lines))
+
+    def test_the_bound_is_a_BOUND_and_the_message_names_the_PRODUCER(self) -> None:
+        # A wait with no bound cannot be told from a stuck one, which is the lesson the landing
+        # instrument was built for. And a bound that expires must say WHOSE fault it is: this artefact
+        # is produced by another workflow, so the reader has to be sent to that run.
+        status = prov.await_cache_key(
+            SCRIPTS,
+            repo='o/r',
+            token='t',
+            max_minutes=1,
+            interval_seconds=30,
+            checker=self._waiter([False]),
+            clock=self.clock.now,
+            sleep=self.clock.sleep,
+            log=self.lines.append,
+        )
+        self.assertEqual(status, 1)
+        self.assertEqual(len(self.clock.slept), 2, 'one minute at thirty seconds is two sleeps')
+        joined = ' '.join(self.lines)
+        self.assertIn(prov.PRODUCER_WORKFLOW, joined)
+        self.assertIn(prov.cache_key(SCRIPTS), joined)
+
+    def test_zero_minutes_checks_ONCE_and_gives_up(self) -> None:
+        # The degenerate bound must not loop: `elapsed + interval > deadline` at elapsed 0 is the
+        # condition that ends it, and a version testing `>=` would sleep before the first check.
+        status = prov.await_cache_key(
+            SCRIPTS,
+            repo='o/r',
+            token='t',
+            max_minutes=0,
+            checker=self._waiter([False]),
+            clock=self.clock.now,
+            sleep=self.clock.sleep,
+            log=self.lines.append,
+        )
+        self.assertEqual(status, 1)
+        self.assertEqual(self.clock.slept, [])
+        self.assertEqual(len(self.asked), 1)
+
+    def test_a_FORBIDDEN_token_fails_at_once_rather_than_at_the_bound(self) -> None:
+        # A 401/403 answers the same way seventy times. Retrying it would make a misconfigured
+        # permission look like a slow producer, and the message has to name the missing scope.
+        def forbidden(key: str, *, repo: str, token: str) -> bool:
+            raise prov.CacheListForbidden(
+                'the token cannot list caches for o/r (HTTP 403); the job needs `actions: read`'
+            )
+
+        status = prov.await_cache_key(
+            SCRIPTS,
+            repo='o/r',
+            token='t',
+            checker=forbidden,
+            clock=self.clock.now,
+            sleep=self.clock.sleep,
+            log=self.lines.append,
+        )
+        self.assertEqual(status, 1)
+        self.assertEqual(self.clock.slept, [])
+        self.assertIn('actions: read', ' '.join(self.lines))
+
+    def test_a_TRANSIENT_failure_is_retried_and_does_not_abort_the_wait(self) -> None:
+        # A 5xx or a socket timeout is not "the artifact is absent", and treating it as one would
+        # fail the job for a reason that has nothing to do with the producer. The fixture raises the
+        # shape the SUBJECT actually sees — a `URLError`, which is what `urlopen` raises for a 502 and
+        # what `HTTPError` subclasses — and not a bare `RuntimeError`, which is a shape no real
+        # failure arrives in: the first version of this fixture used `RuntimeError` and it kept
+        # passing only because the module then caught every exception.
+        attempts: list[int] = []
+
+        def flaky(key: str, *, repo: str, token: str) -> bool:
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise prov.urllib.error.URLError('HTTP 502')
+            return True
+
+        status = prov.await_cache_key(
+            SCRIPTS,
+            repo='o/r',
+            token='t',
+            checker=flaky,
+            clock=self.clock.now,
+            sleep=self.clock.sleep,
+            log=self.lines.append,
+        )
+        self.assertEqual(status, 0)
+        self.assertEqual(len(attempts), 3)
+        self.assertIn('retrying', ' '.join(self.lines))
+
+    def test_a_DEFECT_in_the_checker_propagates_instead_of_burning_the_bound(self) -> None:
+        # Found by the mutation pass, and it is the difference between a wrong diagnosis and a slow
+        # one: with a bare `except Exception`, a `TypeError` raised INSIDE the checker was treated as
+        # "the answer did not arrive", so the wait retried every thirty seconds for the full bound and
+        # then reported "no cache after 35 minutes" — sending the reader to the producer's run for a
+        # fault that is entirely local. The mutation that exposed it hung the harness for the whole
+        # bound, which is how a broken wait announces itself.
+        def broken(key: str, *, repo: str, token: str) -> bool:
+            raise TypeError("cache_exists() got an unexpected keyword argument 'repo'")
+
+        with self.assertRaises(TypeError):
+            prov.await_cache_key(
+                SCRIPTS,
+                repo='o/r',
+                token='t',
+                checker=broken,
+                clock=self.clock.now,
+                sleep=self.clock.sleep,
+                log=self.lines.append,
+            )
+        self.assertEqual(self.clock.slept, [], 'a local defect must not be retried')
+
+    def test_a_missing_environment_variable_fails_BEFORE_the_wait(self) -> None:
+        # A wait that cannot ask the API must say so in a second, not after its bound. The names are
+        # asserted LITERALLY rather than by iterating `AWAIT_ENV`, because the first version read its
+        # expectation from the constant under test — so dropping a member from the tuple also dropped
+        # it from the expectation, and the mutation SURVIVED. A check that reads its own subject
+        # cannot see the subject change.
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with contextlib.redirect_stderr(io.StringIO()) as errors:
+                status = prov.main(['--root', str(SCRIPTS), '--await'])
+        self.assertEqual(status, 2)
+        for name in ('GITHUB_REPOSITORY', 'GITHUB_TOKEN'):
+            self.assertIn(name, errors.getvalue())
+        self.assertEqual(set(prov.AWAIT_ENV), {'GITHUB_REPOSITORY', 'GITHUB_TOKEN'})
+
+    def test_the_CLI_delegates_to_the_wait_with_the_environment_it_read(self) -> None:
+        # The delegation is the line the coverage gate reported as the module's only uncovered
+        # statement: every wait test drove `await_cache_key` directly and every CLI test stopped at
+        # the missing-variable check, so nothing ran `main` -> `await_cache_key`. A mode whose entry
+        # point is never executed is a mode nobody has run.
+        with mock.patch.dict(
+            os.environ,
+            {'GITHUB_REPOSITORY': 'AgentiX-E/micro-kinetic-ts', 'GITHUB_TOKEN': 'secret'},
+            clear=False,
+        ):
+            with mock.patch.object(prov, 'cache_exists', lambda key, *, repo, token: True):
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(prov.main(['--root', str(SCRIPTS), '--await']), 0)
+            self.assertIn('published', out.getvalue())
+            with mock.patch.object(prov, 'cache_exists', lambda key, *, repo, token: False):
+                with contextlib.redirect_stdout(io.StringIO()) as failed:
+                    self.assertEqual(
+                        prov.main(['--root', str(SCRIPTS), '--await', '--max-minutes', '0']), 1
+                    )
+            self.assertIn(prov.PRODUCER_WORKFLOW, failed.getvalue())
+
+    def test_the_default_bound_is_licensed_by_the_PRODUCERS_own_job_bound(self) -> None:
+        # The number is not chosen for comfort, and both inequalities are asserted against an OWNER:
+        # longer than the producer's own measured conversion (or it would expire on a conversion that
+        # was going to finish), and shorter than the producer job's declared bound (so an expiry
+        # indicts the producer rather than the consumer). The job that waits then declares a bound
+        # longer than the wait, so it cannot be killed before its own check answers.
+        self.assertGreater(
+            prov.AWAIT_MAX_MINUTES * 60,
+            prov.PRODUCER_CONVERSION_SECONDS,
+            'the wait would expire before the producer has finished its slowest conversion',
+        )
+        produced = re.search(
+            r'^  cache:\n(?:.*\n)*?    timeout-minutes: (\d+)',
+            (REPO_ROOT / '.github/workflows/cache-datasets.yml').read_text('utf-8'),
+            re.M,
+        )
+        self.assertIsNotNone(produced, 'cache-datasets.yml no longer bounds its producer job')
+        self.assertLess(prov.AWAIT_MAX_MINUTES, int(produced.group(1)))
+        waited = re.search(
+            r'^  artifact:\n(?:.*\n)*?    timeout-minutes: (\d+)',
+            BENCHMARK_WORKFLOW.read_text('utf-8'),
+            re.M,
+        )
+        self.assertIsNotNone(waited, 'benchmark-rcaeval.yml no longer bounds the job that waits')
+        self.assertGreater(int(waited.group(1)), prov.AWAIT_MAX_MINUTES)
+
+
+class TheRealCheckerReadsGitHubsAnswer(unittest.TestCase):
+    """`cache_exists` is the only part of the wait the unit tests could not drive through a return
+    value, and the first version of them INJECTED a checker everywhere — so the function that actually
+    talks to GitHub was never executed, which the coverage gate reported as ten missed statements in
+    a module the fence claimed to cover. A stub is not a substitute for the subject."""
+
+    class _Response:
+        """A context manager over a JSON body, as `urlopen` returns one."""
+
+        def __init__(self, payload: bytes) -> None:
+            self.payload = payload
+
+        def read(self) -> bytes:
+            """@returns The body."""
+            return self.payload
+
+        def __enter__(self) -> TheRealCheckerReadsGitHubsAnswer._Response:
+            """@returns self."""
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            """@param exc - Ignored.
+            @returns False, so nothing is suppressed."""
+            return False
+
+    def _urlopen(self, payload: bytes, *, error: Exception | None = None) -> None:
+        """Patch `urlopen` so `cache_exists` runs its own code against a controlled answer.
+
+        @param payload - The JSON body to answer with.
+        @param error - An exception to raise instead.
+        """
+        captured: list[object] = []
+
+        def opener(request: object, timeout: int = 0) -> object:
+            captured.append(request)
+            if error is not None:
+                raise error
+            return self._Response(payload)
+
+        self.requests = captured
+        patcher = mock.patch.object(prov.urllib.request, 'urlopen', opener)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_listed_key_is_True_and_an_absent_one_is_False(self) -> None:
+        self._urlopen(b'{"total_count": 1, "actions_caches": [{"key": "RCAEvalJSON-x"}]}')
+        self.assertTrue(prov.cache_exists('RCAEvalJSON-x', repo='o/r', token='t'))
+        self._urlopen(b'{"total_count": 0, "actions_caches": []}')
+        self.assertFalse(prov.cache_exists('RCAEvalJSON-x', repo='o/r', token='t'))
+
+    def test_the_request_asks_the_REPOSITORY_and_quotes_the_KEY(self) -> None:
+        # The key is a URL parameter, so a key with a character that needs quoting must not change
+        # WHICH cache is asked about — an unquoted key would answer about a different one and the
+        # wait would return a false negative for the whole bound.
+        self._urlopen(b'{"total_count": 0}')
+        prov.cache_exists('RCAEvalJSON-a b+c', repo='AgentiX-E/micro-kinetic-ts', token='secret')
+        request = self.requests[0]
+        self.assertIn('/repos/AgentiX-E/micro-kinetic-ts/actions/caches?key=', request.full_url)
+        self.assertNotIn('a b+c', request.full_url)
+        self.assertIn('RCAEvalJSON-a%20b%2Bc', request.full_url)
+        self.assertEqual(request.get_header('Authorization'), 'Bearer secret')
+
+    def test_a_401_or_403_is_PERMANENT_and_a_500_is_not(self) -> None:
+        # The distinction the wait is built on: a token that cannot read the cache list answers the
+        # same way seventy times, while a 5xx may clear. Collapsing them either wastes the bound or
+        # fails a job for a reason that has nothing to do with the producer.
+        for code in (401, 403):
+            self._urlopen(
+                b'', error=prov.urllib.error.HTTPError('u', code, 'no', {}, None)  # type: ignore[arg-type]
+            )
+            with self.assertRaises(prov.CacheListForbidden) as caught:
+                prov.cache_exists('k', repo='o/r', token='t')
+            self.assertIn('actions: read', str(caught.exception))
+        self._urlopen(b'', error=prov.urllib.error.HTTPError('u', 502, 'bad', {}, None))  # type: ignore[arg-type]
+        with self.assertRaises(prov.urllib.error.HTTPError):
+            prov.cache_exists('k', repo='o/r', token='t')
+
+
+class EveryConsumerNeedsTheWait(unittest.TestCase):
+    """The wait is a JOB, so the declaration that uses it has to depend on it — transitively."""
+
+    def consumers(self) -> set[str]:
+        """The jobs that restore the artifact.
+
+        @returns The job names.
+        """
+        found: set[str] = set()
+        job = None
+        for line in BENCHMARK_WORKFLOW.read_text('utf-8').split('\n'):
+            header = re.match(r'^  ([A-Za-z0-9_-]+):\s*$', line)
+            if header:
+                job = header.group(1)
+            if ACTION_USES in line and job:
+                found.add(job)
+        return found
+
+    def test_the_workflow_HAS_a_job_that_waits(self) -> None:
+        graph = job_graph(BENCHMARK_WORKFLOW)
+        self.assertIn('artifact', graph)
+        self.assertEqual(graph['artifact'], [], 'the wait is the root of this dependency')
+        self.assertIn('--await', BENCHMARK_WORKFLOW.read_text('utf-8'))
+
+    def test_every_consumer_reaches_the_wait_TRANSITIVELY(self) -> None:
+        # Transitively, because the ablation jobs name the rcaeval jobs rather than the wait: a rule
+        # that demanded a direct `needs` would pass while the ablations started before the artifact
+        # existed, and they are the longest jobs in the file.
+        graph = job_graph(BENCHMARK_WORKFLOW)
+        consumers = self.consumers()
+        self.assertGreaterEqual(len(consumers), 7)
+        for job in sorted(consumers):
+            self.assertTrue(
+                reaches(graph, job, 'artifact'),
+                f'{job} restores the artifact without waiting for the producer to publish it',
+            )
+
+    def test_the_wait_job_declares_the_PERMISSION_its_check_needs(self) -> None:
+        # `cache_exists` queries the caches API, which needs `actions: read`. A `permissions:` block
+        # REPLACES the defaults, so without this line the wait would fail on a 403 — and the failure
+        # would look like a missing artifact.
+        text = BENCHMARK_WORKFLOW.read_text('utf-8')
+        block = re.search(r'^permissions:\n((?:  \S.*\n|    .*\n)+)', text, re.M)
+        self.assertIsNotNone(block, 'benchmark-rcaeval.yml declares no permissions block')
+        self.assertIn('actions: read', block.group(1))
+
+    def test_the_graph_reader_answers_BOTH_WAYS(self) -> None:
+        # `reaches` is what the rule above is built on, so a version that returned True for
+        # everything would satisfy it vacuously. And the READER is driven over all three `needs:`
+        # spellings, because the first version of it handled one of the two it claimed to and the
+        # rule above passed over a graph in which every `[a, b]` job had no dependencies at all.
+        graph = {'a': ['b'], 'b': ['c'], 'c': [], 'd': []}
+        self.assertTrue(reaches(graph, 'a', 'c'))
+        self.assertTrue(reaches(graph, 'b', 'b'))
+        self.assertFalse(reaches(graph, 'd', 'c'))
+        self.assertFalse(reaches(graph, 'missing', 'c'))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = pathlib.Path(tmp) / 'w.yml'
+            sample.write_text(
+                'jobs:\n'
+                '  one:\n    needs: a\n    runs-on: ubuntu-latest\n'
+                '  two:\n    needs: [a, b]\n    runs-on: ubuntu-latest\n'
+                '  three:\n    needs:\n      - a\n      - b\n    runs-on: ubuntu-latest\n'
+                '  four:\n    runs-on: ubuntu-latest\n',
+                'utf-8',
+            )
+            parsed = job_graph(sample)
+        self.assertEqual(parsed['one'], ['a'])
+        self.assertEqual(parsed['two'], ['a', 'b'])
+        self.assertEqual(parsed['three'], ['a', 'b'])
+        self.assertEqual(parsed['four'], [])
 
 
 if __name__ == '__main__':

@@ -68,6 +68,14 @@ that is merely written is a note; `verify_stamp` is what makes it a refusal.
    accepted, and named rather than changed for a 3.3 GB re-download whose effect could not be
    measured here.
 
+**A third consequence, added 2026-09-25: the artifact is produced by a DIFFERENT workflow started by
+the same push.** The benchmark's push run therefore refused four jobs — correctly, because the
+artifact whose producer is this commit's bridge did not exist *yet* — and the missing declaration was
+a bounded wait for a dependency still being produced. {@link await_cache_key} is that wait: it polls
+the cache storage for the DERIVED key, so "is the artifact for this tree published" is a yes/no
+question with a checkable answer, and it gives up at a bound derived from the producer's own job
+bound rather than at one chosen for comfort.
+
 Usage::
 
     # The cache key, in the form `$GITHUB_OUTPUT` wants (used by the composite action).
@@ -78,16 +86,24 @@ Usage::
 
     # Refuse a restored artifact whose producer is not this checkout.
     python3 scripts/rcaeval_provenance.py --root scripts --verify --out-dir "$HOME/RCAEval-json"
+
+    # Wait, bounded, for the producer started by this same push to publish it.
+    python3 scripts/rcaeval_provenance.py --root scripts --await
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fse26_provenance import (
     DIGEST_PREFIX,
@@ -150,6 +166,157 @@ UPSTREAM_CONSTANT_KEYS: dict[str, str] = {
 }
 
 DEFAULT_ROOT = Path(__file__).resolve().parent
+
+#: The workflow that produces the artifact. Named here so that a wait which EXPIRES can say who it
+#: was waiting for: "not produced within 35 minutes" is only actionable if it names the producer.
+PRODUCER_WORKFLOW = "cache-datasets.yml"
+
+#: The slowest conversion on record, in seconds — `Complete: 735/736 cases converted, 1 failed in
+#: 1244s` in run `31242187872` (the other reading is 1205 s, in `36114115026`). Recorded as a
+#: MEASUREMENT so the bound below is derived from it rather than chosen: a bound shorter than the
+#: producer's own observed work would expire on a conversion that was going to finish.
+PRODUCER_CONVERSION_SECONDS = 1244
+
+#: How long `--await` may wait, and why THIS number rather than a comfortable one. The bound has to
+#: clear {@link PRODUCER_CONVERSION_SECONDS} (20.7 min) plus the pinned install and the upload of a
+#: 4 GB cache, and has to stay under the producer job's own declared bound of 60 minutes, so that a
+#: wait which EXPIRES is a statement about the producer rather than about the consumer. 35 minutes is
+#: the conservative point between the two, and the fence asserts both inequalities.
+AWAIT_MAX_MINUTES = 35
+
+#: How often the caches API is asked. The producer saves in a POST step, so the key appears at the END
+#: of its job; a 30-second interval costs at most 70 requests over the default bound.
+AWAIT_INTERVAL_SECONDS = 30
+
+#: The endpoint that answers "does a cache with this key exist". GitHub's own API, so the answer is
+#: about the CACHE STORAGE rather than about a file on this runner.
+CACHES_URL = "https://api.github.com/repos/{repo}/actions/caches?key={key}"
+
+#: What the producer's existence check needs from the environment, named so a missing one fails in a
+#: second instead of after 35 minutes.
+AWAIT_ENV = ("GITHUB_REPOSITORY", "GITHUB_TOKEN")
+
+
+class CacheListForbidden(RuntimeError):
+    """The token cannot read the cache list, which is a permanent failure and not a slow producer.
+
+    Separated from the transient failures on purpose: a 500 or a socket timeout is a retry, while a
+    401/403 will answer the same way 70 times, and a wait that cannot succeed must say so immediately
+    rather than after the bound. The workflow declares `actions: read` for exactly this call.
+    """
+
+
+def cache_exists(key: str, *, repo: str, token: str, timeout: int = 30) -> bool:
+    """
+    Ask GitHub whether a cache with `key` exists.
+
+    @param key - The derived cache key.
+    @param repo - `owner/name`, as `GITHUB_REPOSITORY` spells it.
+    @param token - A token with `actions: read`.
+    @param timeout - Seconds to allow the request.
+    @returns Whether the cache storage holds that key.
+    @raises CacheListForbidden - When the token cannot read the cache list.
+    """
+    request = urllib.request.Request(
+        CACHES_URL.format(repo=repo, key=urllib.parse.quote(key)),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "rcaeval-provenance",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise CacheListForbidden(
+                f"the token cannot list caches for {repo} (HTTP {exc.code}); the job that runs "
+                f"`--await` needs `actions: read` in its workflow's `permissions`"
+            ) from exc
+        raise
+    return bool(payload.get("total_count", 0))
+
+
+def await_cache_key(
+    root: Path,
+    *,
+    repo: str,
+    token: str,
+    max_minutes: float = AWAIT_MAX_MINUTES,
+    interval_seconds: float = AWAIT_INTERVAL_SECONDS,
+    checker: Callable[..., bool] | None = None,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    log: Callable[[str], None] = print,
+) -> int:
+    """
+    Wait, bounded, for the artifact this checkout's bridge produces to be published.
+
+    **The defect this exists for, measured 2026-09-25.** A push that changes the bridge starts TWO
+    workflows — the producer, and the benchmark whose `paths` also match — and only the producer has
+    the artifact. The benchmark's push run then read four `failure` jobs, because `consume` refuses
+    an artifact whose producer is this commit's bridge and which does not exist yet. The refusal is
+    correct (the alternative is reading another bridge's dataset and reporting it as a measurement of
+    this tree); what was missing is a DECLARED wait for a dependency that is still being produced,
+    which is this function.
+
+    Waiting on the derived key rather than on the producer's job is what makes the wait checkable: the
+    key is a function of the bridge, so "the artifact for THIS tree" is a question with a
+    yes/no answer, and the answer is about cache storage rather than about a run's state.
+
+    @param root - The directory holding the bridge and its pin file.
+    @param repo - `owner/name` for the caches API.
+    @param token - A token with `actions: read`.
+    @param max_minutes - The bound; see {@link AWAIT_MAX_MINUTES} for where the number comes from.
+    @param interval_seconds - Seconds between checks.
+    @param checker - Defaults to {@link cache_exists}. Resolved at CALL time rather than bound as a
+        default, because a default is bound when the function is DEFINED: the first version of the CLI
+        test patched the module attribute and measured a real 401 instead of the patch, which is a
+        test that cannot fail for the reason it names.
+    @param clock - Injected for tests: a monotonic seconds source.
+    @param sleep - Injected for tests: the sleeper.
+    @param log - Injected for tests: the line-by-line reporter.
+    @returns 0 when the key is present, 1 when the bound expires or the token is refused.
+    """
+    if checker is None:
+        checker = cache_exists
+    key = cache_key(root)
+    deadline = max_minutes * 60.0
+    started = clock()
+    checks = 0
+    while True:
+        checks += 1
+        try:
+            if checker(key, repo=repo, token=token):
+                log(
+                    f"the artifact for this bridge is published: key={key} after "
+                    f"{clock() - started:.0f}s ({checks} check{'s' if checks != 1 else ''})"
+                )
+                return 0
+        except CacheListForbidden as exc:
+            log(f"ERROR: {exc}")
+            return 1
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            # NARROW on purpose, and the mutation pass is what found out why: with a bare
+            # `except Exception` a coding error INSIDE the checker (a `TypeError` from the wrong
+            # number of arguments, say) was retried every thirty seconds for the whole bound, and the
+            # job then reported "no cache after 35 minutes" — which sends the reader to the
+            # producer's run for a fault that is entirely local. Only the failures that mean "the
+            # answer did not arrive" are retried: `HTTPError` is an `URLError`, a timeout and a
+            # socket error are `OSError`s, and a malformed body is a `ValueError`.
+            log(f"the cache list is unreadable ({exc}); retrying in {interval_seconds:.0f}s")
+
+        elapsed = clock() - started
+        if elapsed + interval_seconds > deadline:
+            log(
+                f"ERROR: no cache with key={key} after {elapsed:.0f}s ({checks} checks), and the "
+                f"bound is {max_minutes:g} min. The artifact is produced by {PRODUCER_WORKFLOW}, so "
+                f"read that run rather than this one: either it failed, or its bound is shorter than "
+                f"this one's"
+            )
+            return 1
+        sleep(interval_seconds)
 
 
 def producer_digest(root: Path) -> str:
@@ -285,13 +452,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--stamp", action="store_true", help="Write the stamp for --out-dir.")
     parser.add_argument("--verify", action="store_true", help="Refuse --out-dir if its stamp differs.")
+    parser.add_argument(
+        "--await",
+        action="store_true",
+        dest="await_key",
+        help="Wait, bounded, for the cache holding this bridge's artifact to be published.",
+    )
+    parser.add_argument(
+        "--max-minutes",
+        type=float,
+        default=AWAIT_MAX_MINUTES,
+        help=f"Bound for --await (default {AWAIT_MAX_MINUTES}, derived from the producer's own bound).",
+    )
+    parser.add_argument(
+        "--interval-seconds",
+        type=float,
+        default=AWAIT_INTERVAL_SECONDS,
+        help=f"Seconds between --await checks (default {AWAIT_INTERVAL_SECONDS}).",
+    )
     parser.add_argument("--out-dir", type=Path, help="The artifact's root (required with --stamp/--verify).")
     args = parser.parse_args(argv)
 
-    chosen = [flag for flag, on in (("--key", args.key), ("--stamp", args.stamp), ("--verify", args.verify)) if on]
+    flags = (("--key", args.key), ("--stamp", args.stamp), ("--verify", args.verify),
+             ("--await", args.await_key))
+    chosen = [flag for flag, on in flags if on]
     if len(chosen) != 1:
-        parser.error(f"pass exactly one of --key / --stamp / --verify (got {chosen or 'none'})")
-    if chosen[0] != "--key" and args.out_dir is None:
+        parser.error(f"pass exactly one of --key / --stamp / --verify / --await (got {chosen or 'none'})")
+    if chosen[0] in ("--stamp", "--verify") and args.out_dir is None:
         parser.error(f"{chosen[0]} needs --out-dir")
     return args
 
@@ -312,6 +499,24 @@ def main(argv: list[str] | None = None) -> int:
             path = write_stamp(args.out_dir, args.root)
             print(f"stamped {path} with producer {producer_digest(args.root)}")
             return 0
+        if args.await_key:
+            # The two variables are checked BEFORE the wait: a wait that cannot ask the API must say
+            # so in a second rather than after its bound, and the bound is long on purpose.
+            missing = [name for name in AWAIT_ENV if not os.environ.get(name)]
+            if missing:
+                print(
+                    f"ERROR: --await needs {' and '.join(missing)}; the job that waits for the "
+                    f"artifact runs inside Actions, where both are set",
+                    file=sys.stderr,
+                )
+                return 2
+            return await_cache_key(
+                args.root,
+                repo=os.environ["GITHUB_REPOSITORY"],
+                token=os.environ["GITHUB_TOKEN"],
+                max_minutes=args.max_minutes,
+                interval_seconds=args.interval_seconds,
+            )
         problems = verify_stamp(args.out_dir, args.root)
     except (OSError, FileNotFoundError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

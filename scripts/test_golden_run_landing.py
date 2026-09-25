@@ -53,6 +53,10 @@ WORKFLOW_TEXT = WORKFLOW_PATH.read_text('utf-8')
 # literal so the parser is checked against an independent statement of the same fact, and complete
 # so that a job ADDED to the workflow — with or without a bound — fails here.
 DECLARED = {
+    # The job that waits for the dataset the producer is still building. It is FIRST because it is
+    # first in the file, and the order is asserted — this record is what makes the reader's map a
+    # claim about the workflow rather than a copy of it.
+    'artifact': 45,
     'synthetic': 15,
     'rcaeval-re1': 60,
     'rcaeval-re2': 60,
