@@ -33,6 +33,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import pathlib
 import re
 import runpy
@@ -40,6 +41,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import rcaeval_provenance as prov
 
@@ -592,7 +594,23 @@ class TheStampSaysWhoMadeTheArtifact(unittest.TestCase):
             self.assertEqual(block['pinned'], prov.PRODUCER_FILES[1])
             self.assertEqual(len(block['pinnedSha256']), 64)
             self.assertTrue(block['producerDigest'].startswith('sha256:'))
-            self.assertEqual(block['producerRevision'], 'unknown')
+
+    def test_the_revision_field_prefers_GITHUB_SHA_and_degrades_to_unknown(self) -> None:
+        # This test's FIRST version asserted `producerRevision == 'unknown'` against a temp root and
+        # PASSED locally while FAILING in CI: `converter_revision` reads `GITHUB_SHA` before it falls
+        # back to git, so on a runner the field held the commit and the assertion was a statement
+        # about the machine rather than about the module. Fourth instance of this repository's own
+        # rule that a number belongs to its environment, and the second time CI caught it in a gate's
+        # own reading. So BOTH branches are driven explicitly, and neither reads the ambient env.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _write_producer(pathlib.Path(tmp) / 'producer')
+            with mock.patch.dict(os.environ, {'GITHUB_SHA': 'a' * 40}):
+                self.assertEqual(prov.stamp_block(root)['producerRevision'], 'a' * 40)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('GITHUB_SHA', None)
+                # A root that is not a git checkout: the fallback has nothing to read and must
+                # degrade rather than raise, because a stamp that can fail is not a stamp.
+                self.assertEqual(prov.stamp_block(root)['producerRevision'], 'unknown')
 
     def test_a_STAMP_written_under_a_git_root_records_the_revision(self) -> None:
         # The other direction of the revision path: this repository IS a git checkout, so the field
