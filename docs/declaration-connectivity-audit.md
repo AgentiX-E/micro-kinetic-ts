@@ -113,6 +113,47 @@ the artifact's name is spelled once. The pinning that `coverage-gate-audit.md` �
 in the same move: `scripts/requirements-rcaeval.txt` owns `pandas`/`pyarrow`, the bridge installs from
 it, `PRODUCER_FILES` digests it, and `requirements-fse26-dev.txt` pulls it in instead of repeating it.
 
+### What the first push proved, live rather than by fixture
+
+The mechanism was verified by the push that carried it, not by a fixture:
+
+- `Cache Benchmark Datasets` (run `36114115026`) shows the derived key **MISSING** and `Convert Parquet
+  to JSON` **running** — the first conversion since 2026-08-08. The constant could not have produced
+  that line, and the trigger now has the effect it always declared.
+- `Benchmark — RCAEval Full Dataset` (run `36114115010`, the workflow's own push trigger) shows the
+  action doing all three of its jobs on the first attempt:
+
+```
+[start-action] Derive the key from the bridge that produces the artifact
+[start-action] Restore the converted artifact
+[start-action] Refuse an artifact this checkout's bridge did not produce
+ERROR: no stamp at /home/runner/RCAEval-json/.rcaeval-provenance: the artifact's producer is unknown,
+       which is what this check refuses
+```
+
+### The ordering this exposed, which is a property of the TRIGGERS
+
+That refusal made four jobs of the push-triggered benchmark **red**, and it is correct: the artifact
+whose producer is this commit's bridge did not exist yet, because the workflow that produces it was
+started by the SAME push. The alternative — reading another bridge's artifact and reporting it as a
+measurement of this tree — is the defect this iteration removes.
+
+What it exposes is that `benchmark-rcaeval.yml` is started by **two independent events on one push** —
+its own `paths` trigger, and later `workflow_run: Cache Benchmark Datasets` — and only the second has
+the artifact. Measured: the push run's four `rcaeval-*` jobs `failure`, its three `ablation-*` jobs
+`skipped`, `dashboard` `success`.
+
+`consume` cannot distinguish *the artifact does not exist YET* from *the artifact does not exist*, and
+that distinction is not the consumer's to make. Named rather than papered over: the remedies are a
+bounded wait in the consumer (the key is derivable, so the wait is checkable) or a sequenced trigger
+graph — **not** a loosening of the refusal.
+
+One consequence of content-addressing is worth recording because it removes a whole class of this
+problem: the artifact's identity is its PRODUCER, not its commit, so a later commit that does not touch
+the bridge or its pin inherits the artifact the earlier commit's run converted. That is why the
+conversion this push started remains valid for the commit that fixed the test CI caught.
+
+
 ## 3. Site 2 — the coverage request was a flag that travelled
 
 `package.json` asked for coverage by APPENDING it:
@@ -210,3 +251,40 @@ cases the output was correct for the work that was actually done — the wrong w
 What makes them findable is comparing the declaration against its subject: the trigger's `paths`
 against the key, and the flag against what the runner received. **A claim that nothing connects to its
 subject cannot be falsified from a log, only from the connection.**
+
+## 7. What the fix measured, on a re-converted artifact
+
+The derived key made the next `Cache Benchmark Datasets` run a MISS **by construction**, so it converted
+for the first time since 2026-08-08 — and every count that existed before is unchanged while the
+producer is now named:
+
+| | before — 2026-08-08, **pandas 3.0.5 / pyarrow 25.0.0**, installed unpinned | after — 2026-09-25, **pandas 3.0.6 / pyarrow 25.0.1**, from the file the key digests |
+|---|---|---|
+| `Complete:` | 735/736 converted, 1 failed | **735/736 converted, 1 failed** |
+| `Case dirs` · `JSON files` · `CSV files` · `Size` | 736 · 735 · 599 · 39G | **736 · 735 · 599 · 39G** |
+| `carried no columns` refusals | — | **zero** |
+| the key | `RCAEvalJSON` | `Cache saved with key: **RCAEvalJSON-80520ccbbc8ffb70**` |
+
+Two facts, measured rather than argued:
+
+- **The bridge's `dataframe_is_readable` guard removes nothing on the real dataset** — no case's
+  `traces.parquet` or `logs.parquet` is a directory, so it refuses only a case the data does not contain.
+  It is a guard, not an output change.
+- **The reader's patch bump does not move the artifact's shape.**
+
+And the benchmark read from that NEW artifact reproduces the shipped battery **9 of 9 cells
+byte-identical** (`RE1 80 / 92.8 / 68`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80 / 45 / 51.1`), with the
+consumer's own log showing the whole path rather than a claim about it:
+
+```
+[start-action] Derive the key from the bridge that produces the artifact
+Cache restored from key: RCAEvalJSON-80520ccbbc8ffb70
+stamp OK: /home/runner/RCAEval-json was produced by sha256:80520ccbbc8ffb70…
+```
+
+**So this is the strongest of the six golden readings.** The previous five were taken from one 39 GB
+artifact produced on 2026-08-08; this one was taken from a dataset converted twenty minutes earlier by
+the fixed bridge under the pinned reader, whose stamp states its producer. The claim that the fix and
+the pin bump leave the published benchmark alone is now a measurement of a new artifact, not a
+derivation from the shape of a change.
+

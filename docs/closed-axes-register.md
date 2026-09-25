@@ -500,7 +500,13 @@ Before reading any number, check that the input was counted:
   and fence the DERIVATION in both directions — because `expect(script).toContain('--coverage')` and a check
   that a constant appears nowhere are both satisfied by the broken form. **A gate's own number belongs to its
   population, its bar and its environment; whether the gate RAN belongs to neither, and only the connection
-  can say** (`docs/declaration-connectivity-audit.md`).
+  can say** (`docs/declaration-connectivity-audit.md`). **The reading that closes the loop is `9 of 9 cells
+  byte-identical` at `c787b6c` — on an artifact RE-CONVERTED 20 minutes earlier by the fixed bridge under the
+  pinned reader, so "the reader's patch bump (`pandas 3.0.5 / pyarrow 25.0.0` → `3.0.6 / 25.0.1`) and the
+  bridge's guard leave the published benchmark alone" is a measurement of a NEW artifact rather than a
+  derivation from a change's shape: its counts are identical (`736 · 735 · 599 · 39G`, 735/736 converted,
+  ZERO refusals), its stamp names its producer, and the consumer's own log shows the derived key restored and
+  verified (`docs/declaration-connectivity-audit.md` §7).**
 
 ## What is left
 
