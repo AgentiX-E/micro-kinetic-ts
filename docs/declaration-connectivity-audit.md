@@ -1,19 +1,22 @@
 # Declarations that are not connected to what they name
 
-Two defects, measured on **2026-09-25**, in two layers that share no code: an artifact's cache key,
-and a command's coverage flag. They are one defect. A declaration that reads like a claim — a name, a
-flag — while nothing connects it to the thing it names. **Both instruments reported success the whole
-time**, which is why neither was visible from a log.
+Three defects, measured on **2026-09-25**, in three layers that share no code: an artifact's cache key,
+a command's coverage flag, and a workflow's dependency on another workflow. They are one defect. A
+declaration that reads like a claim — a name, a flag, a trigger — while nothing connects it to the thing
+it names. **Every instrument involved reported success the whole time**, which is why none of them was
+visible from a log.
 
 | | the declaration | what it was meant to name | what it was actually connected to |
 | --- | --- | --- | --- |
 | the converted artifact | `key: RCAEvalJSON`, 26 times in 11 workflows | which bridge produced the dataset every RCAEval cell is read from | nothing: a constant, so a change to the bridge could not invalidate the bridge's own output |
 | the coverage request | `-- --coverage`, 1 root script and 2 CI steps | whether the suites are measured against their thresholds | the package manager's willingness to forward an argument |
+| the benchmark's trigger | `paths:` naming the bridge, and a `consume` step that refuses a foreign artifact | a run that measures THIS tree | nothing: the producer is a DIFFERENT workflow started by the SAME push, so the artifact was often still being built |
 
-The two halves are worth reading together because the remedies are the same shape, and because the
-fences that already existed for both were — in each case — **checks on the spelling**. A fence that
-reads a command's text cannot see a flag that was dropped; a fence that reads a cache key's name
-everywhere cannot see that the name is a constant. Both fences passed while neither subject worked.
+The three are worth reading together because the remedies have the same shape, and because the fences
+that already existed were — in each case — **checks on the spelling**. A fence that reads a command's
+text cannot see a flag that was dropped; a fence that reads a cache key's name everywhere cannot see
+that the name is a constant; and a refusal that reads the artifact cannot see that the artifact is
+younger than the run. All three fences passed while none of the three subjects worked.
 
 ## 1. The law
 
@@ -288,3 +291,53 @@ the fixed bridge under the pinned reader, whose stamp states its producer. The c
 the pin bump leave the published benchmark alone is now a measurement of a new artifact, not a
 derivation from the shape of a change.
 
+
+## 8. Site 3 — the benchmark declared it could run while the artifact was still being built
+
+The first two sites were fixed by deriving the artifact's name from its producer and by making the
+coverage request a target. That fix exposed a third: **the producer is a different workflow, started by
+the same push.** `benchmark-rcaeval.yml` was started by its own `paths` trigger — which names the
+bridge, so a push that changes the bridge starts both — and its `consume` step then refused four jobs,
+because the artifact whose producer is this commit's bridge did not exist *yet*.
+
+The refusal is correct and is not the thing to loosen: the alternative is reading another bridge's
+dataset and reporting it as a measurement of this tree. What was disconnected was the **trigger's
+claim** — this run can measure this tree — from the **dependency's state**. So the fix is a declared,
+bounded wait:
+
+| | |
+| --- | --- |
+| `--await` | polls the cache storage for the DERIVED key, so "is the artifact for this tree published" is a question with a checkable answer, about cache storage rather than about a run's state |
+| the bound | `PRODUCER_CONVERSION_SECONDS = 1244` is a measurement (run `31242187872`); `AWAIT_MAX_MINUTES = 35` must clear it **and** stay under the producer job's declared 60 minutes, so an expiry indicts the producer. Both inequalities are fenced |
+| the job | ONE `artifact` job runs the wait; every consumer reaches it transitively, because the ablation jobs name the rcaeval jobs rather than the wait — the fence walks the `needs:` graph, which is why it handles three spellings of `needs:` |
+| the scope | `actions: read`, because a `permissions:` block replaces the defaults and the caches API answers 403 without it — a 403 that would look exactly like an artifact that is not there |
+| the failures | `URLError`/`OSError`/`ValueError` are retried; a `CacheListForbidden` fails at once naming the missing scope; **a defect in the checker PROPAGATES** |
+
+The fast path, in production, on the push that carried the change:
+
+```
+##[group]Run python3 scripts/rcaeval_provenance.py --root scripts --await
+the artifact for this bridge is published: key=RCAEvalJSON-80520ccbbc8ffb70 after 0s (1 check)
+```
+
+**Four seconds, one check**, and the same key iteration 18's conversion published — content-addressing
+meaning a commit that touches neither the bridge nor its pin inherits the artifact. The consumers began
+seven seconds later, so the `needs` ordering holds too.
+
+### The wait is an instrument, and the mutation pass found two defects in it
+
+1. **A broken checker was retried for the whole bound.** With a bare `except Exception`, a `TypeError`
+   raised inside the checker was read as "the answer did not arrive": the wait retried every thirty
+   seconds for 35 minutes and then reported `no cache after 35 minutes`, **sending the reader to the
+   producer's run for a fault that is entirely local**. The catch is narrow now and a test asserts that
+   a local defect propagates. The mutation that found it did not fail a row — it **hung the harness**,
+   which is how a wait that cannot fail announces itself.
+2. **A test read its expectation from the constant under test**, so dropping a required environment
+   variable also dropped it from the expectation and the mutation survived. The names are literal now.
+
+And the harness itself: **a `finally` cannot run when the process is SIGKILLed, and three killed runs
+left the SUBJECT mutated.** The next run reported three `ANCHOR-MISS` rows, which reads like three bad
+rows and was its predecessor's residue — the anchors were missing because the mutations were still
+applied, and one of them was the mutation that hangs the wait. The harness now JOURNALs an open row
+before applying it, refuses to start while one is open, hashes every file it may touch before and after
+each row, and fails on a tree that differs from the one it started on.

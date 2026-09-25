@@ -141,7 +141,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | --- | --- |
 | `benchmarks-typecheck-audit.md` | the `benchmarks/` type-check and coverage audit |
 | `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid — §1 the six packages missing from the CI matrix, §7 that the ROOT command enforced nothing at all and printed a number that was the coverage of nothing in particular, §8 that the python gate's own number read 99.88% in CI against 100.00% locally, entirely from one skipped class reading artifacts by absolute path, §9 that the job claiming to gate the Parquet → JSON bridge EXCLUDED it, the omit list being exactly the three filenames containing a hyphen, §10 that the command §7 introduced asked for coverage with an argument the package manager can drop |
-| `declaration-connectivity-audit.md` | a declaration that is not connected to what it names, in two layers — §2 the artifact's cache key was the CONSTANT `RCAEvalJSON` at 26 sites in 11 workflows while the workflow's own trigger said *run when the bridge changes*, so ten runs after the bridge was fixed converted nothing and the 39 GB artifact the nine cells are read from was 48 days old, produced by `pandas 3.0.5 / pyarrow 25.0.0` and recorded nowhere; §3 the coverage request was a flag appended after the task runner's separator, which ran every suite, exited 0 and measured nothing wherever the package manager does not forward it |
+| `declaration-connectivity-audit.md` | a declaration that is not connected to what it names, in three layers — §2 the artifact's cache key was the CONSTANT `RCAEvalJSON` at 26 sites in 11 workflows while the workflow's own trigger said *run when the bridge changes*, so ten runs after the bridge was fixed converted nothing and the 39 GB artifact the nine cells are read from was 48 days old, produced by `pandas 3.0.5 / pyarrow 25.0.0` and recorded nowhere; §3 the coverage request was a flag appended after the task runner's separator, which ran every suite, exited 0 and measured nothing wherever the package manager does not forward it; §8 the producer is a DIFFERENT workflow started by the SAME push, so the benchmark's `consume` refused four jobs on a dataset that did not exist *yet*, and the missing declaration was a bounded wait (`--await`, one `artifact` job, `actions: read`) rather than a looser refusal |
 | `tests-typecheck-enrollment.md` | the test suites and tool configs that were the last TypeScript no compiler read |
 | `fse26-converter-integrity.md` | the converter-integrity verdict that gates the FSE'26 pipeline |
 | `fse26-result-attribution.md` | why the result artifact must carry the configuration that produced it |
@@ -506,7 +506,11 @@ Before reading any number, check that the input was counted:
   bridge's guard leave the published benchmark alone" is a measurement of a NEW artifact rather than a
   derivation from a change's shape: its counts are identical (`736 · 735 · 599 · 39G`, 735/736 converted,
   ZERO refusals), its stamp names its producer, and the consumer's own log shows the derived key restored and
-  verified (`docs/declaration-connectivity-audit.md` §7).**
+  verified (`docs/declaration-connectivity-audit.md` §7).** **The third site of the same law is the TRIGGER
+  GRAPH**: the artifact is produced by a different workflow started by the SAME push, so the benchmark's
+  `consume` refused four jobs on a dataset that did not exist *yet* — correctly, and the missing declaration
+  was a bounded wait, which is now one `artifact` job every consumer reaches transitively and which took
+  **4 seconds and one check** on its first production fast path (`docs/declaration-connectivity-audit.md` §8).
 
 ## What is left
 
