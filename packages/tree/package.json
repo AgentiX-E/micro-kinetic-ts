@@ -21,6 +21,7 @@
     "clean": "rm -rf dist coverage .tsup",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

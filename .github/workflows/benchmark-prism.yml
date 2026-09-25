@@ -29,12 +29,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge, so the head-to-head
+        # cannot be measured against another bridge's artifact.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run PRISM — additive pooling (paper default)
         env:
           NODE_OPTIONS: --max-old-space-size=12288

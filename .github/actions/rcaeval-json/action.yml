@@ -1,0 +1,66 @@
+name: RCAEval JSON artifact
+description: >-
+  Derive the key of the converted Parquet -> JSON artifact from the identity of the bridge that
+  produces it, restore it, and refuse it unless it states that producer. One owner for the four
+  things that used to be typed separately: the key, the path, the restore and the trust.
+
+
+  Before this action the key was the constant `RCAEvalJSON`, typed at eleven sites in two workflows,
+  and it named nothing: the commit that fixed the bridge hit the cache the bridge had produced and
+  converted nothing (`2b15f6e`, run `35505798520`, step 8 `skipped`). The same eleven sites also
+  carried `restore-keys: RCAEval-json-`, which could never match that key -- a prefixed restore key
+  matches by prefix and `RCAEvalJSON` does not begin with `RCAEval-json-`. Spelling the key once, in
+  a place derived from the bridge's own source, is what makes both faults unexpressible.
+
+inputs:
+  mode:
+    description: >-
+      `prepare` -- a miss is expected and the caller will convert (the producer's role).
+      `consume` -- a hit is required, and a miss fails (a benchmark's role).
+      `save`    -- publish the artifact the caller has just converted and stamped.
+    required: false
+    default: prepare
+outputs:
+  key:
+    description: The derived cache key, which names the producer and therefore the artifact.
+    value: ${{ steps.key.outputs.key }}
+  hit:
+    description: >-
+      Whether the restore found the key. Empty under `save`, where the step does not run; a caller
+      that asks for `save` has nothing to branch on and the producer's conditions are `!= 'true'`,
+      for which empty and false are the same answer.
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - name: Derive the key from the bridge that produces the artifact
+      id: key
+      shell: bash
+      run: |
+        python3 "$GITHUB_WORKSPACE/scripts/rcaeval_provenance.py" \
+          --root "$GITHUB_WORKSPACE/scripts" --key >> "$GITHUB_OUTPUT"
+
+    - name: Restore the converted artifact
+      id: restore
+      if: inputs.mode != 'save'
+      uses: actions/cache/restore@v4
+      with:
+        path: ~/RCAEval-json
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Refuse an artifact this checkout's bridge did not produce
+      # `prepare` verifies only what it restored: on a miss the artifact does not exist yet and the
+      # caller is about to convert it. `consume` verifies unconditionally, so a benchmark cannot
+      # proceed against nothing and report an empty battery as a result.
+      if: inputs.mode == 'consume' || (inputs.mode == 'prepare' && steps.restore.outputs.cache-hit == 'true')
+      shell: bash
+      run: |
+        python3 "$GITHUB_WORKSPACE/scripts/rcaeval_provenance.py" \
+          --root "$GITHUB_WORKSPACE/scripts" --verify --out-dir "$HOME/RCAEval-json"
+
+    - name: Publish the converted artifact
+      if: inputs.mode == 'save'
+      uses: actions/cache@v4
+      with:
+        path: ~/RCAEval-json
+        key: ${{ steps.key.outputs.key }}

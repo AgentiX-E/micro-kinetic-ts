@@ -34,12 +34,12 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge. A miss fails here
+        # instead of reading a directory that is absent, or one that another bridge produced, and
+        # reporting the result as evidence about THIS tree.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Dump RE3 exception semantics
         env:
           NODE_OPTIONS: --max-old-space-size=8192

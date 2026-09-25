@@ -33,12 +33,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge, so a ceiling
+        # measurement cannot be taken against another bridge's artifact.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run fusion ceiling — RE1
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -72,12 +71,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge, so a ceiling
+        # measurement cannot be taken against another bridge's artifact.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run fusion ceiling — RE2
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -111,12 +109,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge, so a ceiling
+        # measurement cannot be taken against another bridge's artifact.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run fusion ceiling — RE3
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings

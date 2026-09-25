@@ -488,3 +488,27 @@ reading the named test for the module's stem. That fence found its second instan
 `pandas pyarrow` **unpinned**, so production may run a different reader than the gate measures. Pinning it
 there would move the cached artifact every run reads, which is a change to make deliberately and not as a
 side effect of this one.
+
+## 10. The coverage request was an argument that could be dropped (2026-09-25)
+
+The divergence §9 left open is **closed**, and the command §7 introduced turned out to have the same
+shape as the defect it replaced — see `docs/declaration-connectivity-audit.md` §3 for the measurement
+and §2 for the sibling finding it shares a law with.
+
+In short: `-- --coverage`, appended after the task runner's separator, travels **nx → package manager →
+script**, so whether coverage happens is a property of the package manager. Measured here: `pnpm
+coverage` ran all 14 projects, ran every suite, exited 0, printed **no coverage table** and rewrote
+**no report file**. The same form *does* forward on CI (job log `test (core)` in run `35505798486`:
+`> vitest run "--coverage"`, `Coverage enabled with v8`, and a 100,684-byte artifact), so CI's gate was
+real and the repository's own command was a silent no-op that reported success.
+
+§7's fence could not see it, because it asserted the command's **spelling** (`--target=test --all`,
+`toContain('--coverage')`) and both assertions pass on the broken command. The fence now checks the
+effect: the request is a TARGET whose script body holds the flag, every project with a coverage bar
+declares one, a project without a bar may not, and no workflow may append `--coverage` after `--`.
+
+| | |
+| --- | --- |
+| the request | `nx run-many --target=test:coverage --all …`, and `pnpm nx run <name>:test:coverage` in CI |
+| the target | `test:coverage` = `vitest run --coverage`, declared in all 14 projects (seven had none) |
+| the reading, locally | **14 projects · 56 dimensions · 3,998 tests · 0 threshold violations · worst 95.00** |

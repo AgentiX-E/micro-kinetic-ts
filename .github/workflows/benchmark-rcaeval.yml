@@ -109,12 +109,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist AND must state this checkout's bridge. A miss fails here
+        # rather than letting the battery run against an absent directory and report an empty result
+        # as a measurement. The key, the path and the trust live in the action, which derives the key
+        # from the bridge itself -- the constant this replaced named nothing, at seven sites in this
+        # file alone, and its `restore-keys` prefix could never match it.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run RCAEval — RE1 only
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -234,12 +236,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist AND must state this checkout's bridge. A miss fails here
+        # rather than letting the battery run against an absent directory and report an empty result
+        # as a measurement. The key, the path and the trust live in the action, which derives the key
+        # from the bridge itself -- the constant this replaced named nothing, at seven sites in this
+        # file alone, and its `restore-keys` prefix could never match it.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run RCAEval — RE2 only
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -359,12 +363,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist AND must state this checkout's bridge. A miss fails here
+        # rather than letting the battery run against an absent directory and report an empty result
+        # as a measurement. The key, the path and the trust live in the action, which derives the key
+        # from the bridge itself -- the constant this replaced named nothing, at seven sites in this
+        # file alone, and its `restore-keys` prefix could never match it.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run RCAEval — RE3 only
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -539,12 +545,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist AND must state this checkout's bridge. A miss fails here
+        # rather than letting the battery run against an absent directory and report an empty result
+        # as a measurement. The key, the path and the trust live in the action, which derives the key
+        # from the bridge itself -- the constant this replaced named nothing, at seven sites in this
+        # file alone, and its `restore-keys` prefix could never match it.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run ablation — RE1 only
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -580,12 +588,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist AND must state this checkout's bridge. A miss fails here
+        # rather than letting the battery run against an absent directory and report an empty result
+        # as a measurement. The key, the path and the trust live in the action, which derives the key
+        # from the bridge itself -- the constant this replaced named nothing, at seven sites in this
+        # file alone, and its `restore-keys` prefix could never match it.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run ablation — RE2 only
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -621,12 +631,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist AND must state this checkout's bridge. A miss fails here
+        # rather than letting the battery run against an absent directory and report an empty result
+        # as a measurement. The key, the path and the trust live in the action, which derives the key
+        # from the bridge itself -- the constant this replaced named nothing, at seven sites in this
+        # file alone, and its `restore-keys` prefix could never match it.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run ablation — RE3 only
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -662,12 +674,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist AND must state this checkout's bridge. A miss fails here
+        # rather than letting the battery run against an absent directory and report an empty result
+        # as a measurement. The key, the path and the trust live in the action, which derives the key
+        # from the bridge itself -- the constant this replaced named nothing, at seven sites in this
+        # file alone, and its `restore-keys` prefix could never match it.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run ranking-weight search (coordinate descent, train/val/test)
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings

@@ -31,12 +31,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge, so a sweep cannot
+        # be measured against another bridge's artifact.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run PRISM sweep — RE1
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -70,12 +69,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge, so a sweep cannot
+        # be measured against another bridge's artifact.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run PRISM sweep — RE2
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -109,12 +107,11 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
       - name: Restore cached RCAEval JSON
-        uses: actions/cache/restore@v4
+        # `consume`: the artifact must exist and must state this checkout's bridge, so a sweep cannot
+        # be measured against another bridge's artifact.
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: consume
       - name: Run PRISM sweep — RE3
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings

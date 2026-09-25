@@ -80,22 +80,33 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def converter_digest(root: Path) -> str:
+def digest_over(root: Path, names: Iterable[str]) -> str:
     """
-    Return a ``sha256:...`` digest over the provenance files under `root`.
+    Return a ``sha256:...`` digest over the named files under `root`.
 
-    Each file contributes its *name* and its bytes to one hash, in the fixed
-    `PROVENANCE_FILES` order. Binding the name means swapping two files'
-    contents is detectable; the fixed order and the absence of any absolute path
-    make the digest independent of filesystem order and of where the checkout
-    lives — which matters because the cache build copies the files flat into
-    another repository.
+    Each file contributes its *name* and its bytes to one hash, in the order
+    `names` gives. Binding the name means swapping two files' contents is
+    detectable; the fixed order and the absence of any absolute path make the
+    digest independent of filesystem order and of where the checkout lives —
+    which matters because the cache build copies the files flat into another
+    repository.
 
     A missing file raises: a partially copied converter must not yield a digest
     that looks valid.
+
+    This is the **whole** law, in one place, and it has two callers with two
+    different file sets: `converter_digest` below, whose set is the FSE'26
+    sharder's, and `rcaeval_provenance.producer_digest`, whose set is the
+    Parquet → JSON bridge's. Only the SETS differ; the rule about what a
+    producer digest is may not, because a second copy of it is a second place
+    the rule can be wrong.
+
+    @param root - The directory holding the files.
+    @param names - The filenames, in the order they contribute to the hash.
+    @returns The digest, prefixed with the algorithm.
     """
     digest = hashlib.sha256()
-    for name in PROVENANCE_FILES:
+    for name in names:
         path = root / name
         if not path.is_file():
             raise FileNotFoundError(f"converter source not found: {path}")
@@ -104,6 +115,16 @@ def converter_digest(root: Path) -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")
     return f"{DIGEST_PREFIX}{digest.hexdigest()}"
+
+
+def converter_digest(root: Path) -> str:
+    """
+    Return the digest of the FSE'26 sharder's own provenance file set.
+
+    @param root - The directory holding `PROVENANCE_FILES`.
+    @returns The ``sha256:...`` digest.
+    """
+    return digest_over(root, PROVENANCE_FILES)
 
 
 def converter_revision(root: Path) -> str:

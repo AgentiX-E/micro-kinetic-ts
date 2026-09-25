@@ -78,7 +78,13 @@ jobs:
           else
             echo "name=@agentix-e/micro-kinetic-${{ matrix.package }}" >> $GITHUB_OUTPUT
           fi
-      - run: pnpm nx test ${{ steps.pkg.outputs.name }} -- --coverage
+      # The coverage request is a TARGET whose script body holds `--coverage`, not an argument
+      # appended after `--`. Measured 2026-09-25: the appended form travels nx -> package manager ->
+      # script, and whether it arrives is a property of the package manager. Where it does not
+      # arrive (this repository's development environment uses a package-manager shim whose last
+      # line is `exec sh -c "$cmd"`), the command runs every suite, exits 0 and measures NOTHING.
+      # A target has no layer to lose it in.
+      - run: pnpm nx run ${{ steps.pkg.outputs.name }}:test:coverage
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -154,7 +160,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm nx test @agentix-e/micro-kinetic-benchmarks -- --coverage
+      - run: pnpm nx run @agentix-e/micro-kinetic-benchmarks:test:coverage
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -186,6 +192,7 @@ jobs:
           cache-dependency-path: |
             scripts/requirements-fse26.txt
             scripts/requirements-fse26-dev.txt
+            scripts/requirements-rcaeval.txt
       - name: Install converter dependencies
         run: python -m pip install -r scripts/requirements-fse26-dev.txt
       - name: Run converter + sharder tests with branch coverage

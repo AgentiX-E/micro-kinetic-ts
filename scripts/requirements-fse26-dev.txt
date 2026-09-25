@@ -8,7 +8,8 @@
 -r requirements-fse26.txt
 coverage==7.16.0
 
-# The Parquet → JSON bridge's own reader, and the writer its tests need to build synthetic input.
+# The Parquet → JSON bridge's own reader (`pandas`), and the writer its tests need to build synthetic
+# input (`pyarrow`).
 #
 # Both were installed INLINE by cache-datasets.yml (`pip install pandas pyarrow`) and declared
 # nowhere, so the gate that measures the bridge had no way to run it and the bridge was excluded
@@ -17,9 +18,11 @@ coverage==7.16.0
 # `~/RCAEval-json`, which every RCAEval benchmark including the golden nine-cell is read from.
 #
 # Pinned, for the reason requirements-fse26.txt pins polars: pandas' dtype and null handling decide
-# the numbers the bridge writes, so a version change can move a published benchmark. NOTE the
-# divergence this leaves and does NOT close: cache-datasets.yml still installs pandas unpinned, so
-# production may run a different reader than the gate measures. Named as a follow-up rather than
-# silently reconciled, because changing that install moves the cached artifact every run reads.
-pandas==3.0.6
-pyarrow==25.0.1
+# the numbers the bridge writes, so a version change can move a published benchmark.
+#
+# CORRECTED 2026-09-25 — the divergence this file used to record is closed, and by REFERENCE rather
+# than by agreement. It repeated the two pins here and noted that cache-datasets.yml still installed
+# them unpinned; a pin written in two places is two pins. `requirements-rcaeval.txt` now owns them,
+# cache-datasets.yml installs from it, `rcaeval_provenance.PRODUCER_FILES` digests it so a pin change
+# invalidates the cached artifact, and this file pulls it in.
+-r requirements-rcaeval.txt

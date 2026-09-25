@@ -18,6 +18,16 @@
  * 2. `integration-tests/vitest.config.ts` carried a `coverage` block with neither an `include` nor a
  *    `thresholds`, which resolved to an EMPTY population: `All files | 0 | 0 | 0 | 0` over zero
  *    files, exit 0. A table that reads as a measurement over nothing.
+ * 3. The command that replaced it asked for coverage by APPENDING the flag — `nx run-many
+ *    --target=test --all … -- --coverage` — and an appended argument travels nx → package manager →
+ *    script. Whether it arrives is a property of the PACKAGE MANAGER, not of this repository.
+ *    Measured 2026-09-25 in the development environment: `pnpm coverage` ran all 14 projects, ran
+ *    3,164 tests, exited 0, printed no coverage table and rewrote no report file — because the
+ *    package manager's last line is `exec sh -c "$cmd"`, which drops everything after the script
+ *    name. The same form DOES forward on CI (the job log shows `> vitest run "--coverage"` and
+ *    `Coverage enabled with v8`, and a 100 kB artifact), so the gate itself was real and the local
+ *    command was a silent no-op that reported success. **A percentage nobody can reproduce is not a
+ *    measurement**, and a fence that reads a command's SPELLING cannot see a flag that was dropped.
  *
  * So the rules here are structural, and their population is DERIVED rather than listed — a hand
  * maintained list of configs would rot the same way the population did:
@@ -26,6 +36,8 @@
  *   all four dimensions at the repository's 95%);
  * - the root `coverage` script MUST run the per-project target rather than one merged run, so the
  *   numbers it prints are the numbers that gate;
+ * - the coverage request MUST be a TARGET whose script body holds the flag — every project with a
+ *   bar declares `test:coverage`, and no workflow appends `--coverage` after `--`;
  * - the projects that script EXCLUDES must be exactly the projects that carry no bar, checked in
  *   BOTH directions so neither side can drift alone.
  *
@@ -100,6 +112,14 @@ async function projects(): Promise<Project[]> {
   return found;
 }
 
+/** A project manifest's `scripts`, as data. */
+function manifestScripts(dir: string): Record<string, string> {
+  const manifest = JSON.parse(readFileSync(resolve(repoRoot, dir, 'package.json'), 'utf8')) as {
+    scripts?: Record<string, string>;
+  };
+  return manifest.scripts ?? {};
+}
+
 /** The root `package.json`'s scripts, as text and as data. */
 const rootScripts = (): { text: string; scripts: Record<string, string> } => {
   const text = readFileSync(resolve(repoRoot, 'package.json'), 'utf8');
@@ -160,15 +180,66 @@ describe('a coverage config states its population and its bar', () => {
 });
 
 describe('the coverage command runs the gates, not one merged report', () => {
-  it('delegates to the per-project test target', () => {
+  it('delegates to the per-project coverage target', () => {
     const { scripts } = rootScripts();
     const script = scripts['coverage'] ?? '';
-    // The property that matters: the numbers come from the SAME command CI gates each package with,
-    // so a local run and the gate cannot disagree. A `vitest run --coverage` here would take the
-    // repository as its population and drop every project's thresholds, which is what it did.
-    expect(script).toMatch(/nx\s+run-many\s+--target=test\s+--all/);
-    expect(script).toContain('--coverage');
+    // The property that matters: the numbers come from a command CI runs too, so a local run and
+    // the gate cannot disagree. `--target=test` would match a prefix of `--target=test:coverage`, so
+    // the assertion is anchored on the whole target name followed by whitespace.
+    expect(script).toMatch(/nx\s+run-many\s+--target=test:coverage\s+--all/);
     expect(script).not.toMatch(/^\s*vitest\b/);
+  });
+
+  it('does not append the flag after `--`, where the package manager can drop it', () => {
+    const { scripts } = rootScripts();
+    // The regression this rule exists for: the appended form ran every suite, exited 0 and measured
+    // nothing under a package manager that does not forward arguments. `-- --coverage` is exactly
+    // the shape that cannot be checked from inside the repository, so it may not come back.
+    expect(scripts['coverage'] ?? '').not.toMatch(/--\s+--coverage/);
+  });
+
+  it('has every project with a bar declare a coverage target that HOLDS the flag', async () => {
+    const found = await projects();
+    const withBar = found.filter((one) => one.coverage.thresholds !== undefined);
+    const withoutBar = found.filter((one) => one.coverage.thresholds === undefined);
+    expect(withBar.length).toBeGreaterThanOrEqual(2);
+
+    for (const one of withBar) {
+      const command = manifestScripts(one.dir)['test:coverage'] ?? '';
+      expect(command, `${one.dir} carries a bar but declares no test:coverage script`).not.toBe('');
+      expect(command, `${one.dir}'s test:coverage does not ask for coverage: ${command}`).toContain(
+        '--coverage',
+      );
+    }
+    // BOTH directions, so the pair cannot drift: a project with no bar may not carry a coverage
+    // target (it would be excluded from the root command and still claim to be the gate), and the
+    // one project that deliberately has no bar is `integration-tests`.
+    for (const one of withoutBar) {
+      expect(
+        manifestScripts(one.dir)['test:coverage'] ?? '',
+        `${one.dir} has no bar, so it may not declare a coverage target`,
+      ).toBe('');
+    }
+    expect(withoutBar.length).toBeGreaterThan(0);
+  });
+
+  it('has NO workflow append the flag either', () => {
+    // The same rule as the root script's, over the workflows — because CI is where a dropped flag is
+    // least visible: the job still runs the suites, still uploads whatever `coverage/` holds, and
+    // still concludes `success`.
+    const dir = resolve(repoRoot, '.github/workflows');
+    const files = readdirSync(dir).filter((file) => file.endsWith('.yml'));
+    expect(files.length).toBeGreaterThanOrEqual(10);
+    for (const file of files) {
+      const text = readFileSync(resolve(dir, file), 'utf8');
+      expect(text, `${file} appends --coverage after --`).not.toMatch(/--\s+--coverage/);
+    }
+    // The positive half: CI must actually ask for coverage, through the target.
+    const ci = readFileSync(resolve(dir, 'ci.yml'), 'utf8');
+    const calls = ci.match(/:test:coverage/g) ?? [];
+    expect(calls.length, 'CI no longer runs the coverage target anywhere').toBeGreaterThanOrEqual(
+      2,
+    );
   });
 
   it('skips the cache, because a cached verdict belongs to another tree', () => {

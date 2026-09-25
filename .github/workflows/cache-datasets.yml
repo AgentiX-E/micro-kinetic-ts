@@ -1,11 +1,20 @@
 name: Cache Benchmark Datasets
 
+# The `paths` trigger and the artifact's cache key are the SAME declaration, and that is the fix.
+# This workflow used to trigger on a change to the bridge and then key its cache on the constant
+# `RCAEvalJSON`, so the trigger could never act: `2b15f6e` (the commit that fixed the bridge) hit the
+# cache the bridge had produced and the `Convert Parquet to JSON` step read `skipped`. The entries
+# below that point at `scripts/` are DERIVED from `rcaeval_provenance.PRODUCER_FILES` and checked
+# against it in both directions by `scripts/test_rcaeval_provenance.py`, so a file added to the set
+# enters the trigger and the key together or fails the gate.
 on:
   workflow_dispatch:
   push:
     paths:
       - '.github/workflows/cache-datasets.yml'
+      - '.github/actions/rcaeval-json/action.yml'
       - 'scripts/convert-parquet-to-json.py'
+      - 'scripts/requirements-rcaeval.txt'
   schedule:
     - cron: '0 2 * * 0'  # Weekly refresh (Sunday 2am UTC)
 
@@ -26,6 +35,15 @@ jobs:
           python-version: '3.12'
 
       # ── Layer 1: Raw Parquet from Hugging Face ──
+      # This key IS a hand-bumped constant, and it is one for a stated reason rather than by
+      # oversight: the snapshot's identity is an upstream Hugging Face revision, which neither the
+      # bridge nor this repository computes and which cannot be resolved from the development
+      # environment. `RCAEval-datasets-v2-pq` is therefore recorded on
+      # `rcaeval_provenance.UPSTREAM_CONSTANT_KEYS` with its reason, and the fence requires every key
+      # in this file to be either derived from the producer or on that list, in both directions. The
+      # effect of replacing it is a 3.3 GB re-download whose consequence for the golden cannot be
+      # measured here, so it is a named follow-up rather than a second moving part in a commit that
+      # already moves the artifact twice.
       - name: Restore cached Parquet datasets
         id: cacheParquet
         uses: actions/cache@v4
@@ -98,21 +116,30 @@ jobs:
           echo "Dirs: $(find ~/RCAEval-data -maxdepth 2 -type d 2>/dev/null | wc -l)"
 
       # ── Layer 2: Converted JSON/CSV ──
+      # `prepare`: a miss is the expected state and the step below converts. The key is derived from
+      # the bridge's own source, so a change to the bridge is a miss BY CONSTRUCTION — there is no
+      # second place to remember to bump.
       - name: Restore cached JSON
         id: cacheJson
-        uses: actions/cache@v4
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
-          restore-keys: |
-            RCAEval-json-
+          mode: prepare
 
       - name: Convert Parquet to JSON
-        if: steps.cacheJson.outputs.cache-hit != 'true'
+        if: steps.cacheJson.outputs.hit != 'true'
         run: |
           echo "JSON cache miss — running conversion..."
-          pip install pandas pyarrow
+          # Pinned, from the file the key digests. The versions were installed inline and unpinned
+          # until 2026-09-25, which is why the artifact the golden nine-cell reads was produced by
+          # pandas 3.0.5 / pyarrow 25.0.0 and nothing recorded it.
+          pip install -r scripts/requirements-rcaeval.txt
           python3 scripts/convert-parquet-to-json.py
+
+      - name: Stamp the converted artifact with its producer
+        if: steps.cacheJson.outputs.hit != 'true'
+        run: |
+          python3 scripts/rcaeval_provenance.py \
+            --root scripts --stamp --out-dir "$HOME/RCAEval-json"
 
       - name: Verify JSON cache
         run: |
@@ -121,17 +148,21 @@ jobs:
             echo "Case dirs: $(find ~/RCAEval-json -maxdepth 3 -type d 2>/dev/null | wc -l)"
             echo "JSON files: $(find ~/RCAEval-json -name '*.json' 2>/dev/null | wc -l)"
             echo "CSV files: $(find ~/RCAEval-json -name '*.csv' 2>/dev/null | wc -l)"
+            echo "TXT files: $(find ~/RCAEval-json -name '*.txt' 2>/dev/null | wc -l)"
             echo "Size: $(du -sh ~/RCAEval-json 2>/dev/null | cut -f1)"
           else
             echo "JSON cache directory not created!"
           fi
+          # The authority. A restored artifact that cannot state this checkout's bridge is refused
+          # here rather than published, and a freshly converted one must stamp itself.
+          python3 scripts/rcaeval_provenance.py \
+            --root scripts --verify --out-dir "$HOME/RCAEval-json"
 
       - name: Cache converted JSON
-        if: steps.cacheJson.outputs.cache-hit != 'true'
-        uses: actions/cache@v4
+        if: steps.cacheJson.outputs.hit != 'true'
+        uses: ./.github/actions/rcaeval-json
         with:
-          path: ~/RCAEval-json
-          key: RCAEvalJSON
+          mode: save
 
   # ── Trigger benchmark after successful cache refresh ──
   trigger-benchmark:

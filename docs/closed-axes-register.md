@@ -140,7 +140,8 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | document | what it holds |
 | --- | --- |
 | `benchmarks-typecheck-audit.md` | the `benchmarks/` type-check and coverage audit |
-| `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid — §1 the six packages missing from the CI matrix, §7 that the ROOT command enforced nothing at all and printed a number that was the coverage of nothing in particular, §8 that the python gate's own number read 99.88% in CI against 100.00% locally, entirely from one skipped class reading artifacts by absolute path, §9 that the job claiming to gate the Parquet → JSON bridge EXCLUDED it, the omit list being exactly the three filenames containing a hyphen |
+| `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid — §1 the six packages missing from the CI matrix, §7 that the ROOT command enforced nothing at all and printed a number that was the coverage of nothing in particular, §8 that the python gate's own number read 99.88% in CI against 100.00% locally, entirely from one skipped class reading artifacts by absolute path, §9 that the job claiming to gate the Parquet → JSON bridge EXCLUDED it, the omit list being exactly the three filenames containing a hyphen, §10 that the command §7 introduced asked for coverage with an argument the package manager can drop |
+| `declaration-connectivity-audit.md` | a declaration that is not connected to what it names, in two layers — §2 the artifact's cache key was the CONSTANT `RCAEvalJSON` at 26 sites in 11 workflows while the workflow's own trigger said *run when the bridge changes*, so ten runs after the bridge was fixed converted nothing and the 39 GB artifact the nine cells are read from was 48 days old, produced by `pandas 3.0.5 / pyarrow 25.0.0` and recorded nowhere; §3 the coverage request was a flag appended after the task runner's separator, which ran every suite, exited 0 and measured nothing wherever the package manager does not forward it |
 | `tests-typecheck-enrollment.md` | the test suites and tool configs that were the last TypeScript no compiler read |
 | `fse26-converter-integrity.md` | the converter-integrity verdict that gates the FSE'26 pipeline |
 | `fse26-result-attribution.md` | why the result artifact must carry the configuration that produced it |
@@ -485,6 +486,21 @@ Before reading any number, check that the input was counted:
   check can tell the two bindings apart. And the report must SAY which of the two it used, because an
   inference is a claim by the reader while a stated precision is a property of the artifact
   (`docs/fse26-cv-screen.md`).
+- **A DECLARATION IS A CLAIM ONLY WHEN SOMETHING CONNECTS IT TO WHAT IT NAMES — and a fence that reads the
+  SPELLING cannot see the connection.** Two sites, measured on 2026-09-25, share no code and share this:
+  the converted artifact's cache key was the CONSTANT `RCAEvalJSON`, typed at 26 sites in 11 workflows, in
+  the very workflow whose trigger says *run when the bridge changes* — so the commit that FIXED the bridge
+  hit the cache the bridge had produced and `Convert Parquet to JSON` read `skipped`, ten times over, the
+  last real conversion being 48 days earlier and its reader (`pandas 3.0.5 / pyarrow 25.0.0`) recorded
+  nowhere. And the coverage request was `-- --coverage`, an argument appended after the task runner's
+  separator: it travels nx → package manager → script, so `pnpm coverage` ran all 14 projects, ran every
+  suite, **exited 0 and measured nothing**, while the SAME form on CI did forward. Both instruments reported
+  success. The remedies have one shape: DERIVE the declaration from its subject (the key from the bridge's
+  files, the flag from a target's script body), STATE it in the artifact and refuse a mismatch at use time,
+  and fence the DERIVATION in both directions — because `expect(script).toContain('--coverage')` and a check
+  that a constant appears nowhere are both satisfied by the broken form. **A gate's own number belongs to its
+  population, its bar and its environment; whether the gate RAN belongs to neither, and only the connection
+  can say** (`docs/declaration-connectivity-audit.md`).
 
 ## What is left
 
