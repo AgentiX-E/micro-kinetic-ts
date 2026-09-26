@@ -953,6 +953,89 @@ describe('the decisive composition — read from the metric that drove the score
     expect(read('decisiveBaseline', service)).toBeUndefined();
   });
 
+  it('reports no DECOMPOSITION as absent for the two maxima, and keeps the COUNT a measurement', () => {
+    // The same fixture as the test above and the same rule one level down. The block rendered an
+    // inventory and no decomposition for any of its kept metrics, so the two maxima are over an EMPTY
+    // set; `0` is a measurement — a decomposed metric whose deviation is zero — and reporting it here
+    // is not cosmetic. Measured: `artifacts/diag-34684319273` renders 2095 inventories and ZERO
+    // decompositions, 2094 of them on labelled rows, and with a zero sentinel the screen printed
+    // `bestDev inventory 319 0 0 319 0 0.500` — 319 pairs decided as TIES at 0.500 where the honest
+    // reading is `unmeasurable`.
+    const undecomposed = svc('ts-a', { metricOutcomes: [opaque('m', 1), opaque('n', 0.5)] });
+
+    expect(read('bestDev', undecomposed)).toBeUndefined();
+    expect(read('bestRise', undecomposed)).toBeUndefined();
+    // The COUNTS are a different kind of number and stay measurements: `kept` is what the block
+    // STATED (a `metricKept(2):` line), so an empty decomposition cannot make it absent.
+    expect(read('kept', undecomposed)).toBe(2);
+    expect(read('transientDrops', undecomposed)).toBe(0);
+
+    // The other direction, so a reader that answered `undefined` for both maxima always cannot pass.
+    const decomposed = svc('ts-a', {
+      metricOutcomes: [opaque('m', 1), composed('n', 0.5, { deviation: 0.7, riseRatio: 12 })],
+    });
+    expect(read('bestDev', decomposed)).toBe(0.7);
+    expect(read('bestRise', decomposed)).toBe(12);
+  });
+
+  it('takes the maxima over the DECOMPOSED metrics only, a lower bound rather than a total', () => {
+    // The block renders a decomposition for at most three of the kept metrics, so the maximum over
+    // them is a lower bound on the service's best deviation — and it must not be diluted by the
+    // entries the block did not decompose, which is the other direction a sentinel can break.
+    const partial = svc('ts-a', {
+      metricOutcomes: [
+        composed('a', 0.9, { deviation: 0.7, riseRatio: 12 }),
+        opaque('b', 0.5),
+        composed('c', 0.2, { deviation: 0.3, riseRatio: 40 }),
+      ],
+    });
+
+    expect(read('bestDev', partial)).toBe(0.7);
+    expect(read('bestRise', partial)).toBe(40);
+    expect(read('kept', partial)).toBe(3);
+  });
+
+  it('makes a pair with no bound at all on either side UNMEASURABLE rather than a tie', () => {
+    // The consequence, at the level the rate is computed on. `tie` is a MEASUREMENT — both sides were
+    // decomposed and came out equal — and `unmeasurable` is left out of the rate and counted. Folding
+    // the second into the first is what the zero sentinel did, and the register prefers to know which
+    // of the two it is holding.
+    const signal = fromScalar(scalar('bestDev'));
+    const pair = {
+      datapack: 'probe',
+      faultType: 'JVMMemoryStress',
+      source: svc('ts-src', { metricOutcomes: [opaque('m', 1)] }),
+      winner: svc('ts-rival', { metricOutcomes: [opaque('m', 1)] }),
+    };
+
+    expect(signal.prefers(pair, subject)).toBe('unmeasurable');
+
+    // One side decomposed is still `unmeasurable`: a difference against an absent value is not a
+    // preference in either direction.
+    expect(
+      signal.prefers(
+        {
+          ...pair,
+          source: svc('ts-src', { metricOutcomes: [composed('m', 1, { deviation: 0.5 })] }),
+        },
+        subject,
+      ),
+    ).toBe('unmeasurable');
+
+    // Both sides decomposed and equal is a TIE — the value a sentinel would have produced for the
+    // absent case, which is why the two must not be conflated.
+    const zeroOnBoth = {
+      ...pair,
+      source: svc('ts-src', {
+        metricOutcomes: [composed('m', 1, { deviation: 0, riseRatio: 0 })],
+      }),
+      winner: svc('ts-rival', {
+        metricOutcomes: [composed('m', 1, { deviation: 0, riseRatio: 0 })],
+      }),
+    };
+    expect(signal.prefers(zeroOnBoth, subject)).toBe('tie');
+  });
+
   it('prefers the composition the dump STATES over its own rendered list', () => {
     // `metricDecisive` is rendered for every service and names the metric the engine maximised over,
     // so it is a read rather than a re-derivation. The rendered list stays as the fallback for blocks

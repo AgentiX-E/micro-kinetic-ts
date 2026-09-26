@@ -145,9 +145,22 @@ type Outcome = NonNullable<DiagnosedService['metricOutcomes']>[number];
 interface RenderedInventory {
   readonly kept: number;
   readonly transient: number;
-  /** The strongest deviation among the KEPT metrics — a lower bound, as the block is brief. */
-  readonly bestDev: number;
-  readonly bestRise: number;
+  /**
+   * The strongest deviation among the DECOMPOSED kept metrics — a lower bound, as the block is brief.
+   *
+   * `undefined` when the block rendered an inventory and no decomposition for any of its kept metrics:
+   * the maximum is then over an EMPTY set, and `0` is a measurement — a metric whose deviation is
+   * zero — rather than the absence of one. The distinction is not cosmetic and it was measured:
+   * `artifacts/diag-34684319273` renders 2095 inventories and **zero** decompositions, 2094 of them on
+   * labelled rows that kept at least one metric, and with a zero sentinel the screen printed
+   * `bestDev inventory 319 0 0 319 0 0.500` — 319 pairs decided as TIES at 0.500 where the honest
+   * reading is `unmeasurable`, so the `n/a` discipline ("a pair one side cannot be measured on is out
+   * of the rate, and counted") never fired. The rule was already stated for the three `decisive*`
+   * signals by the test on exactly this fixture; it had been applied to the numbers' CONTAINER
+   * (`rendered` is `undefined` when no inventory was rendered) and not to the two numbers inside it.
+   */
+  readonly bestDev: number | undefined;
+  readonly bestRise: number | undefined;
 }
 
 /** A service's signal inventory, reduced to the numbers a signal can read. */
@@ -186,8 +199,14 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
 
   let kept = 0;
   let transient = 0;
-  let bestDev = 0;
-  let bestRise = 0;
+  // The two maxima start ABSENT rather than at zero, and the first decomposition INITIALISES them: a
+  // zero sentinel cannot tell "no kept metric was decomposed" from "a decomposed metric carries a zero
+  // deviation", and the block renders a decomposition for at most three of the kept metrics, so the
+  // empty case is ordinary rather than exotic. No finiteness guard is needed at the assignment —
+  // `parseTopEntry` refuses an entry whose seven numbers are not all finite, so a breakdown that
+  // reached this list is finite by construction, and a guard here would be unreachable code.
+  let bestDev: number | undefined;
+  let bestRise: number | undefined;
   // Which metric drove the score, when the block did not state it. Two candidates, because the dump
   // answers the question once by name and once by order: the engine NAMES the metric it maximised
   // over (`dominant`), and the block renders that metric first because the list is sorted by score —
@@ -207,8 +226,9 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
     kept++;
     const breakdown = outcome.breakdown;
     if (breakdown === undefined) continue;
-    if (breakdown.deviation > bestDev) bestDev = breakdown.deviation;
-    if (breakdown.riseRatio > bestRise) bestRise = breakdown.riseRatio;
+    bestDev = bestDev === undefined ? breakdown.deviation : Math.max(bestDev, breakdown.deviation);
+    bestRise =
+      bestRise === undefined ? breakdown.riseRatio : Math.max(bestRise, breakdown.riseRatio);
     if (outcome.label === service.dominantMetric) named = outcome;
     if (highest === undefined || outcome.score > highest.score) highest = outcome;
   }
@@ -493,7 +513,7 @@ export const SERVICE_FIELD_AUDIT: Readonly<Record<keyof DiagnosedService, string
   httpExceptionCount: 'read: `sigLines`',
   bothExceptionCount: 'read: `sigLines`',
   metricOutcomes:
-    'read: `kept`, `transientDrops`, `bestDev`, `bestRise` and the four composition scalars — but only for the four numbers and the decisive metric’s decomposition, not for the per-metric fate WORDS, which are a separate axis (the guard census)',
+    'read: `kept`, `transientDrops`, `bestDev`, `bestRise` and the four composition scalars — but only for the four numbers and the decisive metric’s decomposition, not for the per-metric fate WORDS, which are a separate axis (the guard census). The two KINDS of number carry different absent cases and the readers see both: `kept`/`transientDrops` are counts, so a rendered `metricKept(0):` is a MEASURED zero, while `bestDev`/`bestRise` are maxima over the DECOMPOSED metrics and are `undefined` when the block rendered an inventory and no decomposition — a pair with no bound at all is `unmeasurable` rather than a tie at 0',
   decisiveOutcome:
     'read: `decisiveTrend`, `decisiveCv`, `decisiveBurst` and `decisiveBaseline` — the composition the block states for EVERY service, which is what lets a term built on it be simulated over every candidate rather than only over the pairs the table compares. It wins over the `dominantMetric` + rendered-list rule when present, and `metricOutcomes` remains the fallback for blocks that predate it',
 };

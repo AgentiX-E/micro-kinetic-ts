@@ -268,6 +268,15 @@ rendered with an **empty body** and the decomposition is omitted. A candidate on
 be evaluated on that row; a candidate on `kept` reads a well-defined **zero** there. And since the label tag
 reaches the same 1888 rows, the gap is a property of the `metricTop` line rather than of the selection.
 
+**And the reach difference is not a curiosity — it named a live defect the next iteration found and fixed.**
+The row above is one of **2095** on an artifact the record also holds (`artifacts/diag-34684319273`: 2095
+inventories, **zero** decompositions, 2094 of them labelled and keeping ≥1 metric), and the reader that turns
+this line into a signal reported **zero** for `bestDev` and `bestRise` on every one of them — 319 pairs decided
+as ties at 0.500, with the `n/a` column at zero. `docs/fse26-separator-verdict.md` §2 records it as the third
+defect the separator's own instrument caught, with the before/after on six artifacts. **This section is what
+made it findable**: the census is the only place in the tree that answers "how many rows carry an inventory
+without a decomposition", and before this iteration both lines had no channel at all.
+
 ### And one reading was hidden by the report itself
 
 `metric-kept` reaches **1888** rows and carries a body on **1887**. Both verdicts read `some`, and `describe`

@@ -57,10 +57,10 @@ AUC >= 0.60 over >= 10 measurable pairs **and** never below 0.5 on any fault typ
 pairs. A global rate cannot see the type it is wrong on, and a fault type is the unit that can
 regress.
 
-## 2. Two defects the instrument caught in itself
+## 2. Three defects the instrument caught in itself
 
-Both were found by running it, and both are recorded because they are the same defect class the
-whole analyzer exists to find.
+All three were found by running it, and all three are recorded because they are the same defect class
+the whole analyzer exists to find.
 
 1. **A p-value is symmetric, so ranking on it promotes losses.** The first version selected each
    row's "best" non-term cell by the smallest p. On the real dump that immediately made
@@ -73,6 +73,55 @@ whole analyzer exists to find.
    whose five folds were all 0.00, the most uniform result in the table. It is now
    direction-consistent (every fold agrees with the whole-set direction), and there is a test on
    the mirror population as well as the candidate one.
+3. **Two of the four inventory numbers reported a FABRICATED ZERO.** `bestDev` and `bestRise` were
+   maxima initialised at `0` and raised only from a KEPT outcome that carries a breakdown, so a
+   service whose block rendered an inventory and **no decomposition** read `0` — the value a
+   decomposed metric with a zero deviation also takes. The rule was already in the module and
+   already tested: `SeparatorScalar.of` reserves `undefined` for "an inventory the block did not
+   render", the container `rendered` is `undefined` when no inventory was rendered, and a test on
+   **exactly this fixture** asserts it for the three `decisive*` signals — while `bestDev` and
+   `bestRise`, on the same fixture, returned `0`. **Measured in production, not argued:** on
+   `artifacts/diag-34684319273` (the middle producer generation — 2095 inventories, **zero**
+   decompositions, 2094 of them on labelled rows keeping ≥1 metric) the screen printed
+
+   ```
+     bestDev   inventory   319   0   0   319   0   0.500   n/a   189   0.500
+     bestRise  inventory   319   0   0   319   0   0.500   n/a   189   0.500
+   ```
+
+   — **319 pairs decided as ties at 0.500**, with the `n/a` column at zero, so the discipline this
+   document rests on ("a pair one side cannot be measured on is left out of the rate, and counted")
+   never fired. After the fix, on the same artifact:
+
+   ```
+     bestDev   inventory     0   0   0     0   319   n/a   n/a     0   n/a
+     bestRise  inventory     0   0   0     0   319   n/a   n/a     0   n/a
+   ```
+
+   The maxima now start ABSENT and the first decomposition INITIALISES them, which removes the
+   sentinel rather than adjusting it: a lower bound taken over an empty set is not a bound. The two
+   COUNTS are untouched and stay measurements — a rendered `metricKept(0):` is what the block
+   stated — and the field audit now says which of the four numbers has which absent case.
+
+   **What this changes elsewhere, by full-report diff rather than by argument:**
+
+   | artifact | before → after |
+   | --- | --- |
+   | `artifacts/diag-34684319273` | **319 tie / 0 `n/a` → 0 tie / 319 `n/a`**; AUC `0.500` → `n/a`; matched stratum `189` → `0` |
+   | `rcaeval-dumps/re1.txt` | `bestDev` **74 → 73 pairs**, `n/a` `0 → 1`, AUC `0.054 → 0.055`; `bestRise` `74 → 73`, `0.068` unchanged; one per-type sub-cell (`loss/bestDev 2-33 → 2-32`) |
+   | `rcaeval-dumps/re2.txt` | `bestDev`/`bestRise` **31 → 30 pairs**, `n/a` `0 → 1`, p `9.3e-10 → 1.9e-9` |
+   | `rcaeval-dumps/re3.txt` | **IDENTICAL** |
+   | `artifacts/r34919714864` (7831 inventories, 7831 decompositions) | **IDENTICAL** |
+   | `artifacts/r35107871516` (**the shipped dump this document's table is read from**) | **IDENTICAL** |
+
+   So every number quoted in §3 and §6 is unchanged, and the row this document prints for the
+   shipped configuration — `bestRise / bestDev | inventory | 0.270 | 180–486–0` — is bit-identical.
+   The reachability is the finding: the defect is invisible on the shipped dump, costs one pair on
+   each RCAEval dump, and costs an entire screen on an artifact whose producer rendered the
+   competition line and not the decomposition line. Which rows those are is now a number the
+   artifact census reports (`docs/artifact-capability-audit.md` Finding 7: `metric-kept` 1888 of
+   `re1`'s rows against `metric-top` 1887, and 2095 against `none` on `diag-34684319273`), which is
+   why it was findable at all.
 
 ## 3. The measurement
 
@@ -425,7 +474,7 @@ discipline as the `defaultPath` guard on the recorded-runs table.
 npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
   --dump artifacts/r35035314921/fse26-results.txt --separator-screen --lat-floor 10.3
 
-# the module's own tests, including both defects of section 2
+# the module's own tests, including all three defects of section 2
 cd benchmarks && npx vitest run __tests__/fse26-separator.test.ts
 ```
 
