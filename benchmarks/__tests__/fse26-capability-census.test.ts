@@ -174,10 +174,12 @@ function graphOf(callGraph: ServiceCallGraph): FaultPropagationGraph {
             },
           },
           // One DROPPED metric, so `metricDrop` is rendered: a channel the census declares cannot be reached
-          // by a fixture that only ever keeps.
+          // by a fixture that only ever keeps. The outcome is the closed union's own member rather than a cast
+          // — `as string` widened the whole array past `MetricDiagnostic` and only the workspace typecheck
+          // (which covers `__tests__`) said so.
           {
             label: 'mem_usage_bytes',
-            outcome: 'dropped:transient-return' as string,
+            outcome: 'transient-return' as const,
             score: 0,
             breakdown: {
               deviation: 0.1,
@@ -298,8 +300,10 @@ describe("the capability census's population — the artifact it describes", () 
     expect(byChannel.get('failed-edge-records')!.key).toBe('failedEdgeRecords');
     expect(byChannel.get('latency-edges')!.key).toBe('latEdges');
     expect(byChannel.get('latency-rise')!.key).toBe('latRise');
+    // `reads` is typed `keyof DiagnosedService`, which is the point — so the comparison widens it rather than
+    // the field narrowing, or the assertion would be about the compiler instead of about the declaration.
     const readBy = (field: string): string[] =>
-      SEPARATOR_SCALARS.filter((scalar) => scalar.reads.includes(field))
+      SEPARATOR_SCALARS.filter((scalar) => (scalar.reads as readonly string[]).includes(field))
         .map((scalar) => scalar.name)
         .sort();
     expect(readBy('failedEdgeScore')).toEqual(['failedEdge']);
