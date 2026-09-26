@@ -404,6 +404,180 @@ export function stripLogPrefix(text: string): string {
 }
 
 /**
+ * What the reader REFUSED, so a smaller population cannot read as the population.
+ *
+ * **Why this exists.** A block is dropped on a candidate-count mismatch, deliberately and for a
+ * documented reason — "a short list is not a smaller case, it is a different `n`". What was missing
+ * is not the refusal but its REPORTABILITY: `parseDiagnosticDump` returned the surviving cases and
+ * threw this away, so an artifact that lost blocks produced verdicts over a smaller population with
+ * nothing on screen to say so. `cases: 89` reads exactly like an artifact that has 89 cases.
+ *
+ * **It is not hypothetical.** `stripLogPrefix`'s own comment records the one time it was noticed: on
+ * run `35107871516`, 13 of 1422 blocks carried a BOM on a service row, each lost that row and was
+ * dropped whole — 0.9% of the population, ten of them cases the run got right. It was found by
+ * comparing a screen that read 746 against a number the run published as 756, i.e. by an external
+ * comparison, because the reader had no way to say it.
+ *
+ * The two reasons are a PARTITION of the reader's drops, and **neither is the census's
+ * `short_blocks`**: that one counts every block whose RENDERED rows differ from its own `services=`
+ * header, reached or not. So `shortBlocks` is a subset of it, its total is not, and the two numbers
+ * about one file are neither equal nor ordered — an unclosed block that rendered all its rows is a
+ * drop here and a 0 there, and a block that lost a row and then completed is a 1 there and not a
+ * drop at all. Which is the reason this is a report rather than a reading of the census.
+ */
+export interface DiagnosticParseReport {
+  /** Blocks the reader KEPT. */
+  readonly cases: number;
+  /** Blocks that reached `prediction=` with a candidate count disagreeing with their header. */
+  readonly shortBlocks: number;
+  /**
+   * Blocks that never reached their `prediction=` line — the file ended, or a further `DIAG` header
+   * began while one was open.
+   *
+   * ONE count for ONE reason. Where the block ended is a detail of the same fact (its candidate list
+   * has no footer), and splitting it would invite reading half of it as the whole.
+   */
+  readonly unclosedBlocks: number;
+  /**
+   * Candidates those blocks DECLARED and did not render, summed over both reasons.
+   *
+   * The SIZE of the loss, which the block counts alone do not give: one block short by a row and one
+   * short by forty are the same `1` block and very different populations. A block whose header was
+   * itself lost contributes nothing here, because it declared nothing that can be counted; and a
+   * block that rendered MORE rows than it declared contributes nothing either, since what is being
+   * counted is the shortfall rather than the difference.
+   */
+  readonly missingServices: number;
+}
+
+/** Whether the reader refused any part of the artifact. */
+export function hasParseLoss(report: DiagnosticParseReport): boolean {
+  return report.shortBlocks > 0 || report.unclosedBlocks > 0;
+}
+
+/**
+ * How many candidates a dropped block declared and did not render.
+ *
+ * The SHORTFALL rather than the difference, and the distinction is not pedantic: a block that
+ * rendered MORE rows than it declared has no declared-but-missing candidate, and adding a negative
+ * there would subtract from another block's loss — a total that understates the damage in the one
+ * direction where it matters. A header that did not parse declared nothing countable.
+ *
+ * @param declared - The count the block's own `services=` field stated, or `NaN` when absent.
+ * @param parsed - The candidate rows the reader found in that block.
+ * @returns The shortfall, or `0` when there is none.
+ */
+function declaredShortfall(declared: number, parsed: number): number {
+  if (!Number.isFinite(declared)) return 0;
+  return Math.max(0, declared - parsed);
+}
+
+/** What a block has to have done to be kept, as the reader's own precondition. */
+const INTACT_BLOCK =
+  'every block reached its own `prediction=` line with the candidate count its header declared';
+
+/** `1 candidate` / `2 candidates`, so a count of one does not read as a template. */
+function counted(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * The loss as one line, in the two numbers a reader needs: what was kept and what was dropped.
+ *
+ * Both are printed even when nothing was lost, because `0 dropped` and "the field is absent" are
+ * different statements and only the first is a measurement.
+ *
+ * @param report - {@link DiagnosticParseReport}.
+ * @param label - What was read, so a report over several artifacts names the one it is about.
+ * @returns A newline-terminated line.
+ */
+export function formatParseReport(report: DiagnosticParseReport, label: string): string {
+  const dropped = report.shortBlocks + report.unclosedBlocks;
+  const detail =
+    dropped === 0
+      ? INTACT_BLOCK
+      : `${report.shortBlocks} short of their own \`services=\` header, ` +
+        `${report.unclosedBlocks} that never reached a \`prediction=\` line, ` +
+        `${counted(report.missingServices, 'candidate')} declared and not rendered`;
+  return `population — ${label}: ${report.cases} blocks kept, ${dropped} dropped (${detail})\n`;
+}
+
+/** {@link DiagnosticParseReport} with the surviving cases, so one parse answers both questions. */
+export interface DiagnosticParseResult {
+  readonly cases: readonly DiagnosedCase[];
+  readonly report: DiagnosticParseReport;
+}
+
+/**
+ * One artifact as a caller read it: what it kept, and what the reader refused.
+ *
+ * The pair travels together because they are one fact about one file. A signature that took the cases
+ * alone would make the loss unreadable at the call site, which is exactly how a smaller population
+ * came to read as the population.
+ */
+export interface AnalyzeInput {
+  readonly label: string;
+  readonly cases: readonly DiagnosedCase[];
+  readonly report: DiagnosticParseReport;
+}
+
+/**
+ * The artifacts of an invocation that lost blocks, in the order they were read.
+ *
+ * The POLICY behind the command line's refusal, kept here rather than in the CLI because
+ * `analyze-fse26-diagnose.ts` runs `main()` at import and cannot be loaded by a test — the same
+ * reason the flag surface lives in this module. A policy that cannot be tested is a policy that
+ * drifts from what the record says it is.
+ *
+ * @param inputs - Every artifact one invocation reads, primary and siblings alike.
+ * @returns The ones that lost something; empty when the population is the artifact's own.
+ */
+export function parseLosses(inputs: readonly AnalyzeInput[]): readonly AnalyzeInput[] {
+  return inputs.filter((one) => hasParseLoss(one.report));
+}
+
+/**
+ * The loss as the lines a report carries, one per artifact that lost something, or the zero line.
+ *
+ * **The zero case is stated rather than omitted**, because `0 dropped` is a measurement and an absent
+ * line is the different claim "nobody asked". The same rule the artifact census applies to a channel
+ * that reaches every row: a reader must be able to tell "nothing was lost" from "nothing was said".
+ *
+ * It names the artifacts it read rather than counting zero blocks kept, which is why the healthy
+ * branch is its own sentence instead of a `formatParseReport` call with an empty report: "0 blocks
+ * kept" is a true statement about empty input and a false one about a healthy file.
+ *
+ * @param losses - {@link parseLosses}' result; empty is the healthy case.
+ * @param read - How to name what was read when nothing was lost.
+ * @returns Newline-terminated text, always non-empty.
+ */
+export function formatLossStatement(losses: readonly AnalyzeInput[], read: string): string {
+  if (losses.length === 0) {
+    return `population — ${read}: nothing dropped (${INTACT_BLOCK})\n`;
+  }
+  return losses.map((one) => formatParseReport(one.report, one.label)).join('');
+}
+
+/**
+ * Whether a caller must refuse to report at all.
+ *
+ * **A predicate rather than a condition at the call site**, for the reason the flag surface lives in
+ * this module at all: `analyze-fse26-diagnose.ts` runs `main()` at import and cannot be loaded by a
+ * test, so a policy written there is a policy nothing can contradict. The default is to refuse; the
+ * flag is the deliberate way past it, and it is `false` unless a caller asked for it by name.
+ *
+ * @param losses - {@link parseLosses}' result.
+ * @param allowDroppedBlocks - The parsed `--allow-dropped-blocks`.
+ * @returns `true` when the caller must refuse.
+ */
+export function shouldRefuseToReport(
+  losses: readonly AnalyzeInput[],
+  allowDroppedBlocks: boolean,
+): boolean {
+  return losses.length > 0 && !allowDroppedBlocks;
+}
+
+/**
  * Parse every `DIAG` block in a dump, ignoring everything around them.
  *
  * The dumps are printed into the benchmark's stdout together with the run
@@ -413,11 +587,14 @@ export function stripLogPrefix(text: string): string {
  * absent one, because its `services` list would read as complete.
  *
  * @param text - The log text (or any text containing `DIAG` blocks), tagged or clean.
- * @returns One entry per complete block, in file order.
+ * @returns The surviving blocks in file order, and what was refused.
  */
-export function parseDiagnosticDump(text: string): DiagnosedCase[] {
+export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResult {
   const lines = stripLogPrefix(text).split('\n');
   const cases: DiagnosedCase[] = [];
+  let shortBlocks = 0;
+  let unclosedBlocks = 0;
+  let missingServices = 0;
   let current:
     | {
         datapack: string;
@@ -461,7 +638,13 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
   for (const line of lines) {
     const header = HEADER_RE.exec(line);
     if (header) {
-      // A new header without a footer means the previous block was truncated.
+      // A new header without a footer means the previous block was truncated. Counted, because a
+      // block the READER abandons is a block the ARTIFACT lost, and before this the overwrite was
+      // the only trace of it.
+      if (current !== undefined) {
+        unclosedBlocks++;
+        missingServices += declaredShortfall(current.declaredServices, current.services.length);
+      }
       finalizeOutcomes();
       current = {
         datapack: header[1]!,
@@ -639,6 +822,11 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
           services: current.services,
           prediction: parseList(prediction[1]),
         });
+      } else {
+        // Counted rather than merely skipped: the block REACHED its prediction line, so its own
+        // header is the evidence for how many candidates are missing.
+        shortBlocks++;
+        missingServices += declaredShortfall(current.declaredServices, current.services.length);
       }
       current = undefined;
       lastService = undefined;
@@ -647,7 +835,31 @@ export function parseDiagnosticDump(text: string): DiagnosedCase[] {
     }
   }
 
-  return cases;
+  // A block still open at the end of the input: the file was cut mid-case. It never reached its
+  // `prediction=` line, so it is a different reason from a count mismatch and is counted as one.
+  if (current !== undefined) {
+    unclosedBlocks++;
+    missingServices += declaredShortfall(current.declaredServices, current.services.length);
+  }
+
+  return {
+    cases,
+    report: { cases: cases.length, shortBlocks, unclosedBlocks, missingServices },
+  };
+}
+
+/**
+ * {@link parseDiagnosticDumpWithReport}'s cases, for every caller that only wants them.
+ *
+ * Deliberately a delegation rather than a second scan: two passes over the same text is how two
+ * readers of one artifact start disagreeing, and the report is only worth as much as the certainty
+ * that it describes the SAME parse that produced the cases.
+ *
+ * @param text - The log text (or any text containing `DIAG` blocks), tagged or clean.
+ * @returns One entry per complete block, in file order.
+ */
+export function parseDiagnosticDump(text: string): DiagnosedCase[] {
+  return [...parseDiagnosticDumpWithReport(text).cases];
 }
 
 /** Whether the engine's top-1 prediction is an accepted ground-truth service. */
@@ -6694,7 +6906,25 @@ export function formatDiagnoseComparison(
 /** Where the two modes of the command line are declared. */
 export type AnalyzeOptions = AnalyzeComparisonOptions | AnalyzeDumpOptions;
 
-export interface AnalyzeComparisonOptions {
+/**
+ * The one option both modes carry, because both read artifacts.
+ *
+ * A dropped block is a block the ARTIFACT lost, so every verdict in both modes rests on a population
+ * smaller than the artifact's. The default is therefore to refuse — see {@link hasParseLoss} — and
+ * this flag is the deliberate, named way to proceed anyway, which then prints what was lost.
+ */
+export interface AnalyzeLossOptions {
+  /**
+   * Proceed over a population the reader had to shrink, instead of refusing.
+   *
+   * Named rather than defaulted, because the two situations are not the same claim: "every block
+   * parsed" and "I know some did not and I am reading the rest" are different statements about the
+   * numbers below them, and only the first one is the one a reader assumes.
+   */
+  readonly allowDroppedBlocks: boolean;
+}
+
+export interface AnalyzeComparisonOptions extends AnalyzeLossOptions {
   readonly kind: 'comparison';
   readonly before: string;
   readonly after: string;
@@ -6799,7 +7029,7 @@ export interface AnalyzeSection {
   readonly atWeight?: number;
 }
 
-export interface AnalyzeDumpOptions {
+export interface AnalyzeDumpOptions extends AnalyzeLossOptions {
   readonly kind: 'dump';
   readonly dump: string;
   /**
@@ -6857,7 +7087,7 @@ const ANALYZE_USAGE =
   '[--misses] [--weight-sweep] [--window] [--term-oracle] [--family-screen] ' +
   '[--onset-screen] [--discriminator] [--cv-screen] [--separator-screen] ' +
   '[--guard-census] ' +
-  '[--at-weight <w>] [--family <regex>] ' +
+  '[--at-weight <w>] [--family <regex>] [--allow-dropped-blocks] ' +
   '[--family-label <name>] [--slope failedEdge|lat] [--output <file>]';
 
 /**
@@ -6897,6 +7127,9 @@ const SWITCH_FLAGS = new Set([
   'cv-screen',
   'separator-screen',
   'guard-census',
+  // A switch rather than a section: it changes WHETHER a report is produced, not what it
+  // contains, so it has to be in this set or a value after it would be read as its argument.
+  'allow-dropped-blocks',
 ]);
 
 /**
@@ -6934,8 +7167,10 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
   const output = values.get('output');
   const before = values.get('before');
   const after = values.get('after');
+  // One flag for both modes, read here so the two return statements cannot disagree about it.
+  const allowDroppedBlocks = switches.has('allow-dropped-blocks');
   if (before !== undefined && after !== undefined) {
-    return { kind: 'comparison', before, after, output };
+    return { kind: 'comparison', before, after, output, allowDroppedBlocks };
   }
 
   const dump = dumps[0];
@@ -7041,6 +7276,7 @@ export function parseAnalyzeArgs(argv: readonly string[]): AnalyzeOptions {
   return {
     kind: 'dump',
     dump,
+    allowDroppedBlocks,
     // Carried on the options as well as handed to the reader, so a consumer that never sees the
     // loaded cases can still tell that a comparison was asked for.
     extraDumps,

@@ -853,6 +853,70 @@ class RequireChannelTest(unittest.TestCase):
         dc.require_channel(capability, 'declared-precision', name='x', reader='a resolution model')
 
 
+class ShortBlockTest(unittest.TestCase):
+    """
+    `short_blocks`: the census's OTHER answer, and the one the READER does not give.
+
+    A block is dropped by the reader when its rendered candidate count disagrees with its own
+    `services=` header, and the count was thrown away — so an artifact that lost blocks produced
+    verdicts over a smaller population with nothing on screen to say so. The census was the only
+    instrument that counted the loss, and the two counts are NOT the same number about the same file.
+    Three differences, each asserted below:
+
+    1. the census counts a STRICT shortfall (`parsed < declared`); the reader drops on ANY inequality,
+       so a block that rendered MORE rows than it declared is a 0 here and a drop there;
+    2. a block that lost its footer but rendered every row it declared is a 0 here and a drop there;
+    3. a block that lost rows AND reached its footer is a 1 on both.
+
+    Which is why the reader's report is a PARTITION of its own drops and this is neither a superset nor
+    a subset of it — and why the reader needed a report of its own rather than a reading of the census.
+    """
+
+    def _fixture(self, rows: int, declared: int, footer: bool = True) -> str:
+        head = f'DIAG datapack=a_cpu_1 faultType=cpu GT=[a] services={declared} logMode=logicHttp\n'
+        body = ''.join(FULL_ROW for _ in range(rows))
+        return head + body + ('  prediction=[a]\n' if footer else '')
+
+    def test_an_INTACT_block_is_not_counted(self) -> None:
+        capability = dc.capability_of(self._fixture(2, 2))
+        self.assertEqual(capability.cases, 1)
+        self.assertEqual(capability.rows, 2)
+        self.assertEqual(capability.short_blocks, 0)
+
+    def test_a_block_that_rendered_FEWER_rows_than_declared_is_counted(self) -> None:
+        capability = dc.capability_of(self._fixture(1, 2))
+        self.assertEqual(capability.cases, 1)
+        self.assertEqual(capability.short_blocks, 1)
+
+    def test_a_block_that_rendered_MORE_rows_than_declared_is_NOT_counted_here(self) -> None:
+        # The first difference, and it is the direction that makes this number unusable as a stand-in
+        # for the reader's: the reader DROPS this block (2 != 1) while the census reads zero loss.
+        capability = dc.capability_of(self._fixture(2, 1))
+        self.assertEqual(capability.short_blocks, 0)
+        self.assertEqual(capability.rows, 2)
+
+    def test_a_block_that_lost_its_FOOTER_is_counted_when_its_rows_are_short(self) -> None:
+        short = dc.capability_of(self._fixture(1, 2, footer=False))
+        self.assertEqual(short.short_blocks, 1)
+        # …and NOT counted when it rendered every row it declared: the second difference, which is the
+        # shape a file cut between two blocks produces.
+        whole = dc.capability_of(self._fixture(2, 2, footer=False))
+        self.assertEqual(whole.short_blocks, 0)
+        self.assertEqual(whole.rows, 2)
+
+    def test_the_CASE_count_includes_a_block_that_was_short(self) -> None:
+        # The derivation that relates the two instruments rather than equating them: the census counts a
+        # case for every HEADER, so `cases - short_blocks` is the blocks that rendered their declared
+        # rows — which is what the reader keeps, LESS every block it dropped for a reason this cannot
+        # see (an over-render, or a lost footer with no row loss).
+        capability = dc.capability_of(self._fixture(1, 2) + self._fixture(2, 2).replace(
+            'datapack=a_cpu_1', 'datapack=a_cpu_2'
+        ))
+        self.assertEqual(capability.cases, 2)
+        self.assertEqual(capability.short_blocks, 1)
+        self.assertEqual(capability.cases - capability.short_blocks, 1)
+
+
 class RealArtifactsTest(unittest.TestCase):
     """Measured against the artifacts the census was built for, when they are still on disk."""
 

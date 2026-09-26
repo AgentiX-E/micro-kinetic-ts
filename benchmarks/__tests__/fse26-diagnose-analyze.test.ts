@@ -78,6 +78,7 @@ import {
   formatDiagnoseComparison,
   formatFamilyScreenReport,
   formatGuardCensus,
+  formatLossStatement,
   formatMetricCompetitionReport,
   formatMissReport,
   formatOnsetMenuReport,
@@ -91,6 +92,7 @@ import {
   gainsAtWeight,
   guardCensus,
   halfQuantumFor,
+  hasParseLoss,
   HISTORICAL_FIELD_DECIMALS,
   isTop1Correct,
   jitterFieldsFor,
@@ -106,10 +108,13 @@ import {
   onsetSlopes,
   parseAnalyzeArgs,
   parseDiagnosticDump,
+  parseDiagnosticDumpWithReport,
+  parseLosses,
   reconcileConfigurations,
   regressionMechanism,
   RESOLUTION_FRONTIER_MAX_DIGITS,
   resolutionBoxFor,
+  shouldRefuseToReport,
   solveZeroRegressionWindow,
   tallyDeltas,
   zeroRegressionSamples,
@@ -4112,6 +4117,7 @@ describe('--family-screen wiring', () => {
       {
         kind: 'dump',
         dump: 'dump.txt',
+        allowDroppedBlocks: false,
         family: undefined,
         sections: [
           {
@@ -4160,6 +4166,7 @@ describe('--discriminator wiring', () => {
       {
         kind: 'dump',
         dump: 'dump.txt',
+        allowDroppedBlocks: false,
         family: undefined,
         sections: [
           {
@@ -4339,6 +4346,9 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
       before: 'a.txt',
       after: 'b.txt',
       output: undefined,
+      // Carried by both modes because both read artifacts, and the refusal is about the READ rather
+      // than about which report is printed.
+      allowDroppedBlocks: false,
     });
   });
 
@@ -8761,5 +8771,244 @@ describe('a tie no realisation separates is not a frontier', () => {
     expect(one.capUnrepresentable.lossFloor).toBeCloseTo(1, 12);
     expect(one.capUnrepresentable.lossFloorBinder?.group).toBe(2);
     expect(one.capUnrepresentable.lossFloorBinder?.span).toBeCloseTo(1, 12);
+  });
+});
+
+describe('the reader REPORTS what it refused, so a smaller population cannot read as the population', () => {
+  // The defect this closes: a block is dropped on a candidate-count mismatch, deliberately and for a
+  // documented reason — "a short list is not a smaller case, it is a different `n`" — and the count was
+  // thrown away, so an artifact that lost blocks produced verdicts over a smaller population with
+  // nothing on screen to say so. `cases: 89` reads exactly like an artifact that has 89 cases.
+  //
+  // It is not hypothetical: `stripLogPrefix`'s own comment records the one time it was noticed, on run
+  // 35107871516, where 13 of 1422 blocks carried a BOM on a service row and were dropped whole — found
+  // by comparing a screen that read 746 against a number the run published as 756, i.e. by an external
+  // comparison, because the reader had no way to say it.
+
+  it('reports NOTHING DROPPED for an artifact whose every block is intact', () => {
+    const text = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] });
+    const { cases, report } = parseDiagnosticDumpWithReport(text);
+    expect(cases).toHaveLength(1);
+    expect(report).toEqual({
+      cases: 1,
+      shortBlocks: 0,
+      unclosedBlocks: 0,
+      missingServices: 0,
+    });
+    expect(hasParseLoss(report)).toBe(false);
+  });
+
+  it('counts a block that REACHED its prediction line with a count mismatch, and how many it lost', () => {
+    // The same fixture the drop test uses, read for the report instead of for the cases.
+    const text = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] }).replace(
+      'services=1',
+      'services=2',
+    );
+    const { cases, report } = parseDiagnosticDumpWithReport(text);
+    expect(cases).toEqual([]);
+    // `shortBlocks` rather than `unclosedBlocks`: the block DID reach its footer, so its own header is
+    // the evidence for the one candidate that is missing.
+    expect(report).toEqual({
+      cases: 0,
+      shortBlocks: 1,
+      unclosedBlocks: 0,
+      missingServices: 1,
+    });
+    expect(hasParseLoss(report)).toBe(true);
+  });
+
+  it('says WHICH REASON it refused, because the two are different facts about an artifact', () => {
+    // A block cut before its footer, having rendered every row it declared. That is the shape on which
+    // the census reads ZERO — its `short_blocks` counts a ROW-count disagreement, and there is none
+    // here — while this reader dropped a whole block. The two numbers about one file are therefore
+    // neither equal nor ordered, which is why this is a report and not a reading of the census.
+    const full = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] });
+    const cut = full.slice(0, full.indexOf('  prediction='));
+    const { cases, report } = parseDiagnosticDumpWithReport(cut);
+    expect(cases).toEqual([]);
+    expect(report).toEqual({
+      cases: 0,
+      shortBlocks: 0,
+      unclosedBlocks: 1,
+      missingServices: 0,
+    });
+    // The PREDICATE too, not just the fields: it is what `parseLosses` and the refusal are built on, and
+    // a version keyed on `shortBlocks` alone would let this whole shape through — which is the mutation
+    // this assertion was added for, after the pass reported it as a survivor.
+    expect(hasParseLoss(report)).toBe(true);
+  });
+
+  it('counts a block ABANDONED by a further header, which is the third drop path', () => {
+    // A new `DIAG` line while a block is open overwrites it. That overwrite used to be the only trace
+    // of the loss, and it is not a trace at all: the discarded block leaves no evidence in the output.
+    const first = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] });
+    const abandoned = first.slice(0, first.indexOf('  prediction='));
+    const second = dump({ datapack: 'dp-2', services: [serviceLine({ serviceId: 'ts-cart' })] });
+    const { cases, report } = parseDiagnosticDumpWithReport(abandoned + second);
+    expect(cases.map((one) => one.datapack)).toEqual(['dp-2']);
+    expect(report).toEqual({
+      cases: 1,
+      shortBlocks: 0,
+      unclosedBlocks: 1,
+      missingServices: 0,
+    });
+    expect(hasParseLoss(report)).toBe(true);
+  });
+
+  it('counts a SHORTFALL and not a difference, because an over-render is not a loss', () => {
+    // A block that rendered MORE rows than its header declared is dropped, and it declared nothing that
+    // went missing. Counting the difference would SUBTRACT from another block's loss — a total that
+    // understates the damage in the one direction where it matters.
+    const over = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] }).replace(
+      'services=1',
+      'services=0',
+    );
+    const { report } = parseDiagnosticDumpWithReport(over);
+    expect(report.shortBlocks).toBe(1);
+    expect(report.missingServices).toBe(0);
+    // And the same file beside a genuine loss, so the total is the loss rather than the difference.
+    const short = dump({
+      datapack: 'dp-2',
+      services: [serviceLine({ serviceId: 'ts-cart' })],
+    }).replace('services=1', 'services=3');
+    expect(parseDiagnosticDumpWithReport(short).report.missingServices).toBe(2);
+    expect(parseDiagnosticDumpWithReport(over + short).report.missingServices).toBe(2);
+  });
+
+  it('counts the declared-but-unrendered candidates over BOTH reasons', () => {
+    // Two reasons in one artifact, so the total cannot be satisfied by counting either alone. The
+    // second block declares two candidates and renders one, the first declares two and renders two
+    // before being abandoned — so the loss is 1 + 0, not 1 + 2.
+    const intact = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] });
+    const abandoned = intact
+      .slice(0, intact.indexOf('  prediction='))
+      .replace('services=1', 'services=2');
+    const short = dump({
+      datapack: 'dp-2',
+      services: [serviceLine({ serviceId: 'ts-cart' })],
+    }).replace('services=1', 'services=2');
+    const { report } = parseDiagnosticDumpWithReport(abandoned + short);
+    expect(report.unclosedBlocks).toBe(1);
+    expect(report.shortBlocks).toBe(1);
+    // The abandoned block declared two and rendered one, and the short block declared two and
+    // rendered one: 1 + 1, over both reasons rather than over one.
+    expect(report.missingServices).toBe(2);
+  });
+
+  it('keeps the cases-only API DELEGATING, so the report describes the parse that produced them', () => {
+    // Two passes over one text is how two readers of one artifact start disagreeing, and a report is
+    // worth only as much as the certainty that it describes the SAME parse. Asserted in both
+    // directions, because `[]` satisfies an equality between two empty lists.
+    const text =
+      dump({ services: [serviceLine({ serviceId: 'ts-ui' })] }) +
+      dump({ datapack: 'dp-2', services: [serviceLine({ serviceId: 'ts-cart' })] }).replace(
+        'services=1',
+        'services=3',
+      );
+    const viaWithReport = parseDiagnosticDumpWithReport(text);
+    expect(parseDiagnosticDump(text).map((one) => one.datapack)).toEqual(
+      viaWithReport.cases.map((one) => one.datapack),
+    );
+    expect(viaWithReport.cases.map((one) => one.datapack)).toEqual(['dp-1']);
+    expect(viaWithReport.report.shortBlocks).toBe(1);
+  });
+
+  it('states NOTHING DROPPED rather than omitting the line, because zero is a measurement', () => {
+    const line = formatLossStatement([], 'the dump');
+    expect(line).toContain('nothing dropped');
+    expect(line).toContain('the dump');
+    expect(line.endsWith('\n')).toBe(true);
+    // And the phrase is the reader's own precondition, so a reader can tell what "nothing" means.
+    expect(line).toContain('prediction=');
+  });
+
+  it('NAMES the artifact that lost blocks, and reports each of them separately', () => {
+    const healthy = {
+      label: 'a.txt',
+      cases: [],
+      report: { cases: 5, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 },
+    };
+    const lost = {
+      label: 'b.txt',
+      cases: [],
+      report: { cases: 4, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+    };
+    expect(parseLosses([healthy, lost]).map((one) => one.label)).toEqual(['b.txt']);
+    expect(parseLosses([healthy])).toEqual([]);
+    const text = formatLossStatement(parseLosses([healthy, lost]), 'the pair');
+    expect(text).toContain('b.txt');
+    expect(text).not.toContain('a.txt');
+    expect(text).toContain('2 candidates declared and not rendered');
+  });
+
+  it('pluralises a count of one, because a single loss must not read as a template', () => {
+    const one = {
+      label: 'x',
+      cases: [],
+      report: { cases: 1, shortBlocks: 1, unclosedBlocks: 0, missingServices: 1 },
+    };
+    expect(formatLossStatement([one], 'x')).toContain('1 candidate declared');
+    const two = {
+      label: 'x',
+      cases: [],
+      report: { cases: 1, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+    };
+    expect(formatLossStatement([two], 'x')).toContain('2 candidates declared');
+  });
+});
+
+describe('the refusal is a predicate, so the policy has one owner and a test can contradict it', () => {
+  const lost = {
+    label: 'x.txt',
+    cases: [],
+    report: { cases: 4, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+  };
+
+  it('refuses when something was lost and the flag was not asked for', () => {
+    expect(shouldRefuseToReport([lost], false)).toBe(true);
+  });
+
+  it('does NOT refuse when the flag was asked for by name, and says the loss instead', () => {
+    // The whole point of the flag: the read happens and the loss is printed above the report. A flag
+    // that also refused would be a second way to say no.
+    expect(shouldRefuseToReport([lost], true)).toBe(false);
+  });
+
+  it('does NOT refuse a healthy artifact, whichever way the flag was set', () => {
+    // Both directions, because a predicate that refused unconditionally would satisfy the first
+    // assertion above and make every invocation fail.
+    expect(shouldRefuseToReport([], false)).toBe(false);
+    expect(shouldRefuseToReport([], true)).toBe(false);
+  });
+});
+
+describe('the allow-dropped-blocks flag is the deliberate way past the refusal, and it is named', () => {
+  it('defaults to REFUSING, so an unasked-for read over a shrunken population cannot happen', () => {
+    expect(parseAnalyzeArgs(['--dump', 'x.txt']).allowDroppedBlocks).toBe(false);
+    expect(parseAnalyzeArgs(['--before', 'a.txt', '--after', 'b.txt']).allowDroppedBlocks).toBe(
+      false,
+    );
+  });
+
+  it('is read in BOTH modes, so the two return paths cannot disagree about it', () => {
+    expect(parseAnalyzeArgs(['--dump', 'x.txt', '--allow-dropped-blocks']).allowDroppedBlocks).toBe(
+      true,
+    );
+    expect(
+      parseAnalyzeArgs(['--before', 'a.txt', '--after', 'b.txt', '--allow-dropped-blocks'])
+        .allowDroppedBlocks,
+    ).toBe(true);
+  });
+
+  it('is a SWITCH, so a number after it fails loudly instead of being swallowed', () => {
+    // The file's own doctrine: a switch that silently took a value would read `--allow-dropped-blocks
+    // 0.5` as an instruction rather than as the mistake it is.
+    expect(() => parseAnalyzeArgs(['--dump', 'x.txt', '--allow-dropped-blocks', '0.5'])).toThrow(
+      /takes no value/,
+    );
+  });
+
+  it('is named in the usage, so a reader who hits the refusal can find the way past it', () => {
+    expect(() => parseAnalyzeArgs(['--dump'])).toThrow(/--allow-dropped-blocks/);
   });
 });

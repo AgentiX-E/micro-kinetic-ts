@@ -143,6 +143,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | `coverage-gate-audit.md` | which coverage thresholds are enforced, and what the unenforced ones hid — §1 the six packages missing from the CI matrix, §7 that the ROOT command enforced nothing at all and printed a number that was the coverage of nothing in particular, §8 that the python gate's own number read 99.88% in CI against 100.00% locally, entirely from one skipped class reading artifacts by absolute path, §9 that the job claiming to gate the Parquet → JSON bridge EXCLUDED it, the omit list being exactly the three filenames containing a hyphen, §10 that the command §7 introduced asked for coverage with an argument the package manager can drop |
 | `declaration-connectivity-audit.md` | a declaration that is not connected to what it names, in three layers — §2 the artifact's cache key was the CONSTANT `RCAEvalJSON` at 26 sites in 11 workflows while the workflow's own trigger said *run when the bridge changes*, so ten runs after the bridge was fixed converted nothing and the 39 GB artifact the nine cells are read from was 48 days old, produced by `pandas 3.0.5 / pyarrow 25.0.0` and recorded nowhere; §3 the coverage request was a flag appended after the task runner's separator, which ran every suite, exited 0 and measured nothing wherever the package manager does not forward it; §8 the producer is a DIFFERENT workflow started by the SAME push, so the benchmark's `consume` refused four jobs on a dataset that did not exist *yet*, and the missing declaration was a bounded wait (`--await`, one `artifact` job, `actions: read`) rather than a looser refusal |
 | `tests-typecheck-enrollment.md` | the test suites and tool configs that were the last TypeScript no compiler read |
+| `dump-population-audit.md` | the population a report is computed OVER, and a reader that refused in silence — the reader DROPS a block whose rendered candidate count disagrees with the block's own `services=` header (right, and for a stated reason) and reported the drop nowhere, so a truncated artifact produced `cases: 89` and exit 0 with no statement anywhere while the census read `short_blocks=1` on the same bytes; §1 the loss is not hypothetical (run `35107871516`, 13 of 1422 blocks dropped, noticed only by comparing 746 against a published 756); §4 the census's count is **neither a superset nor a subset** of the reader's, with the three differences measured on four shapes (a strict shortfall vs any inequality; a lost footer with every row rendered) and a derivation (`cases − short_blocks`) instead of an equality |
 | `fse26-converter-integrity.md` | the converter-integrity verdict that gates the FSE'26 pipeline |
 | `fse26-result-attribution.md` | why the result artifact must carry the configuration that produced it |
 | `fse26-logicHttp-ablation.md` | the `logicHttp` mode ablation readback |
@@ -514,11 +515,17 @@ Before reading any number, check that the input was counted:
 
 - **AND A GATE'S POPULATION IS DECIDED BY ITS CONFIG, WHICH IS NOT THE SAME AS ITS NAME** — the coverage gate's
   population is the `include`/`thresholds` in each project's config, and the TYPECHECK's is the `tsconfig` it is
-  pointed at. `nx run @agentix-e/micro-kinetic-benchmarks:typecheck` does NOT cover `benchmarks/__tests__`;
-  `pnpm typecheck` is `nx run-many --target=typecheck --all && tsc -p tsconfig.workspace.json`, and the
-  workspace config does. So a new test file that passes every check run here was red on CI in two places, and
-  the number that mattered was the one the GATE printed rather than the one the local command did
-  (`docs/artifact-capability-audit.md` Gates, the fix commit `e40639f`).
+  pointed at. **The two `pnpm typecheck` legs cover DIFFERENT trees, and the first statement of this rule had
+  them the wrong way round** — it said the project leg misses `benchmarks/__tests__` and the workspace leg
+  covers it. Measured 2026-09-26 from the two `include` lists and from a run of each: the project leg
+  (`benchmarks/tsconfig.json` → `["*.ts", "src/**/*.ts", "__tests__/**/*.ts"]`) **does** cover
+  `benchmarks/__tests__` and `benchmarks/src`, and `tsconfig.workspace.json` →
+  `["packages/*/*.ts", "packages/*/__tests__/**/*.ts", "integration-tests/*.ts"]` **does not** touch either.
+  The evidence is a run rather than a reading: an edit to the options interface produced **three errors inside
+  `benchmarks/__tests__` that the project leg reported and the workspace leg was clean on**. The rule survives
+  and the reason is better than the one it was stated with — **the two legs cover a UNION and neither covers
+  both**, so both are run; a claim about which leg sees which tree is a claim about two `include` lists, and it
+  is now asserted against them.
 
 - **AND A RULE APPLIED TO A VALUE'S CONTAINER IS NOT APPLIED TO THE VALUE** — the absent case has to be stated
   for every number, not for the object that holds them. `RenderedInventory` is `undefined` when the block
@@ -556,6 +563,24 @@ Before reading any number, check that the input was counted:
   spelling of the grammar, and a fence whose two halves disagree about what a line means passes on its own bug
   while both halves stay self-consistent** — which is also why the cross-parser comparison, and not the
   producer-side equality, is the edge that found this one.
+
+- **A READER THAT REFUSES IN SILENCE REPORTS A SMALLER POPULATION AS THE POPULATION.** The reader drops a whole
+  block whose rendered candidate count disagrees with the block's own `services=` header — deliberately, and for
+  a stated reason (*"a short list is not a smaller case, it is a different `n`"*) — and the count was thrown
+  away, so `cases: 89` read exactly like an artifact that has 89 cases. Measured on `re3.txt` with one row
+  deleted: the analysis printed `cases: 89`, the separator `41 wrong cases paired`, **exit 0, and no statement
+  anywhere**, while the census read `short_blocks=1` on the same bytes (`docs/dump-population-audit.md`). It is
+  not hypothetical: run `35107871516` dropped 13 of 1422 blocks and it was noticed only by comparing a screen's
+  746 against the run's published 756. **The refusal is right; the silence was the defect, and the repair is a
+  report rather than a looser refusal** — `parseDiagnosticDumpWithReport`, one parse answering both questions,
+  with the cases-only API delegating so the report cannot describe a different parse than the one that produced
+  the cases. **The default is to REFUSE and the way past it is a NAMED flag**, because *"every block parsed"*
+  and *"I know some did not and I am reading the rest"* are different statements about the numbers below them.
+  **AND A COUNT ABOUT ONE FILE IS NOT AUTOMATICALLY THE OTHER INSTRUMENT'S**: the census's `short_blocks` is a
+  **strict** row shortfall and the reader drops on **any** inequality, so the two are neither equal nor
+  ordered — measured on four shapes, three of them disagreeing, and the relation that holds
+  (`census.cases − census.short_blocks` = the blocks the reader keeps **less** every drop that count cannot
+  see) is a derivation rather than an equality.
 
 ## What is left
 

@@ -1615,6 +1615,7 @@ describe('--term-oracle wiring', () => {
     const text = formatAnalyzeSections(cases, 'dump.txt', {
       kind: 'dump',
       dump: 'dump.txt',
+      allowDroppedBlocks: false,
       family: undefined,
       sections: [
         {

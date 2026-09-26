@@ -477,11 +477,23 @@ The first was `outcome: 'dropped:transient-return' as string` — a cast that wi
 `scalar.reads.includes(field)`, whose `reads` is `readonly (keyof DiagnosedService)[]`.
 
 **Why it reached CI is the lesson, and it is the same one the coverage gate taught from the other side:**
-`nx run @agentix-e/micro-kinetic-benchmarks:typecheck` does **not** cover `benchmarks/__tests__`, while
-`pnpm typecheck` is `nx run-many --target=typecheck --all && tsc -p tsconfig.workspace.json`, and the
-workspace config does. **A number belongs to its population, and the population of a typecheck is decided by
-its tsconfig.** Both commands are run together now, and the fix commit (`e40639f`) records the two errors
-verbatim.
+**a number belongs to its population, and the population of a typecheck is decided by its `tsconfig`.** Both
+commands are run together, and the fix commit (`e40639f`) records the two errors verbatim.
+
+**And this paragraph had the two populations the wrong way round.** It said the project leg misses
+`benchmarks/__tests__` while the workspace config covers it; measured 2026-09-26 from the two `include` lists
+and from a run of each, it is the reverse:
+
+| leg | its config says | covers |
+| --- | --- | --- |
+| `nx run-many --target=typecheck --all` | `benchmarks/tsconfig.json` → `["*.ts", "src/**/*.ts", "__tests__/**/*.ts"]` | **`benchmarks/src` and `benchmarks/__tests__`** |
+| `tsc -p tsconfig.workspace.json` | `["packages/*/*.ts", "packages/*/__tests__/**/*.ts", "integration-tests/*.ts"]` | **neither** — it does not reach into `benchmarks/` at all |
+
+The evidence is a run rather than a reading: adding a field to `AnalyzeDumpOptions` produced **three errors
+inside `benchmarks/__tests__` that the project leg reported and the workspace leg was clean on**. So the rule
+survives and its reason is better than the one it was stated with — **the two legs cover a UNION and neither
+covers both**, which is why both are run — and the claim about which leg sees which tree is now asserted
+against the two `include` lists rather than restated from memory.
 
 `benchmarks` **724** at 99.81 / **97.40** / 100 / 99.81 · `kinetic` **926** at 100 / 99.44 / 100 / 100 · both
 typechecks · lint 0/0 · format clean · register guard 14/14 · the census module at **100.00% branch coverage**
