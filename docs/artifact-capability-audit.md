@@ -503,15 +503,25 @@ altered a verdict, and no ranking term reads it.
 
 ## Gates of the count-placement fix (Finding 8)
 
+**CI green on `d4ca223`: 19 of 19 jobs**, `Release` green on the same commit — and the push started **only**
+those two workflows, which is the paths rule confirming no golden was owed.
+
 | | |
 | --- | --- |
-| python gate | **468 tests · 1628 statements · 584 branches · 100.00%**, every module 100% |
+| python gate (`converter-tests`) | **468 tests · 1628 statements · 584 branches · 100.00%**, every module 100% — identical to the local run, and 1.680 s in CI against 260 s here |
 | `dump_capability.py` | **100.00% branch** — 267 statements, 112 branches, 68 tests in the module's own suite |
-| `benchmarks` project | **804 tests / 23 files** (was 799: the two new edge tests and the zero-row test) |
+| `benchmarks` project | **804 tests / 23 files** (was 802: the two new edge tests) |
+| 14 jobs × 4 dimensions, **read from CI's own logs** | **56 dimensions, worst `95.00`** (`wave` branches), **4,010** tests |
+| every percentage | **UNCHANGED** from the reading before the change; only `benchmark-tests`' **count** moved, 802 → 804 |
 | `nx run-many --target=typecheck --all` | 15 projects clean |
 | `tsc -p tsconfig.workspace.json` | clean — **CI's population, which the per-project command does not cover** |
 | lint / format | 0 warnings, 0 errors on 339 files; the touched test formatted |
 | the 31 channels over 22 artifacts | **21 readings moved, all VALUE counts on the two count channels, all upward**; no reach, case count or row count moved anywhere |
 | the reader cross-check | **9 disagreements before, 0 after**, over 7 artifacts × 19 field-carrying channels |
 | the fence bites | regressing the projection to the body-placed form fails **exactly the two new tests** while the **seven pre-existing tests still pass** |
-| golden | **not owed** — `scripts/*.py`, `__tests__/**` and `docs/**` are outside every trigger path; the selector returns `(False, ())` |
+| mutations | **18 rows, every one as declared**; both controls (`py`, `ts`) SURVIVED; tree hash-verified byte-identical |
+| golden | **not owed** — `scripts/*.py`, `__tests__/**` and `docs/**` are outside every trigger path; the selector returns `(False, ())` and its control fires on `packages/*/src/**` |
+
+**A branch was added and no dimension moved**, which is what says the new placement path is exercised by the
+tests that assert it — a branch added without a test would have shown up here as a drop. That is why the
+numbers are quoted per project rather than as a workspace total.
