@@ -604,11 +604,45 @@ class CommittedProjectionTest(unittest.TestCase):
         # the file is generated, and a generated file that no longer matches its generator is a stale copy.
         self.assertEqual(dc.DECLARATIONS_PATH.read_text('utf-8'), dc.format_declarations_json())
 
-    def test_the_projection_carries_the_THREE_mechanical_columns_and_no_prose(self) -> None:
+    def test_the_projection_carries_the_MECHANICAL_columns_and_no_prose(self) -> None:
         # A reason is for a reader and a fence needs a column: shipping the prose into the file would make the
         # projection's shape depend on wording, and a rewording would show as a regenerate.
         for entry in dc.declarations_as_data():
-            self.assertEqual(sorted(entry), ['channel', 'fields', 'key', 'scope'])
+            self.assertEqual(
+                sorted(entry),
+                ['absent', 'channel', 'fields', 'key', 'pattern', 'scope', 'valueIn'],
+            )
+
+    def test_every_mechanical_column_is_DERIVED_rather_than_retyped(self) -> None:
+        # The file is a projection of the table, so each column has to be the table's own value: a
+        # retyped `pattern` would be a second spelling of the grammar, and the TypeScript edge of the
+        # fence applies THIS string — the two halves would then disagree about what a line means while
+        # both were self-consistent, which is the shape of the defect this iteration fixes.
+        by_channel = {one.channel: one for one in dc.DECLARATIONS}
+        for entry in dc.declarations_as_data():
+            declaration = by_channel[entry['channel']]
+            self.assertEqual(entry['pattern'], declaration.marker.pattern)
+            self.assertEqual(entry['valueIn'], declaration.value_in)
+            self.assertEqual(entry['key'], declaration.key)
+            self.assertEqual(entry['scope'], declaration.scope)
+            self.assertEqual(entry['fields'], list(declaration.fields))
+
+    def test_the_ABSENT_markers_travel_with_the_projection_and_match_isValued(self) -> None:
+        # "Rendered and undetermined" is a RULE, not a predicate the other language can guess: the
+        # TypeScript edge has to apply exactly this tuple, so it is data. Held equal to `isValued` in
+        # both directions here, because a projection carrying one rule while the census applied another
+        # would make the two halves of the fence measure different things.
+        for entry in dc.declarations_as_data():
+            self.assertEqual(entry['absent'], list(dc.ABSENT_VALUES))
+        for probe in ('', '-', '0', 'x', '  '):
+            self.assertEqual(dc.isValued(probe), probe not in dc.ABSENT_VALUES, repr(probe))
+
+    def test_the_placement_vocabulary_is_CLOSED(self) -> None:
+        # A placement outside the vocabulary would fall through the marker builder to whichever branch
+        # the scope implies, which is how a channel could claim a value where it has none.
+        for declaration in dc.DECLARATIONS:
+            self.assertIn(declaration.value_in, dc.VALUE_PLACEMENTS, declaration.channel)
+        self.assertEqual(set(dc.VALUE_PLACEMENTS), {dc.FIELD, dc.PAREN, dc.BODY})
 
     def test_the_regeneration_command_prints_EXACTLY_the_committed_bytes(self) -> None:
         # The failure message names a command, so the command has to be the one that works.
@@ -681,24 +715,66 @@ class DescribeTest(unittest.TestCase):
         self.assertIn('declared-precision some (1/2 cases)', dc.describe(capability))
 
     def test_the_VALUE_count_is_printed_whenever_it_differs_even_if_both_verdicts_agree(self) -> None:
-        # Measured on the re1 artifact: `metricKept(0):` — a rendered inventory with NOTHING in it, because
-        # every metric of that service was dropped as a transient return. Both verdicts read `some` and the two
-        # counts differ by one row, so a rule keyed on the VERDICT would report 1888 and hide the row a
-        # candidate on that channel cannot be evaluated on.
-        text = (
-            'DIAG datapack=a_cpu_1 faultType=cpu GT=[a] services=3 logMode=logicHttp inject=7 decimals=3\n'
-            + FULL_ROW
-            + '    metricKept(1): cpu=0.9\n'
-            + UNLABELLED_ROW
-            + '    metricKept(0):\n'
-            + UNLABELLED_ROW
+        # Both verdicts read `every`/`some` alike while the two COUNTS differ, so a rule keyed on the VERDICT
+        # would hide the rows a candidate cannot be evaluated on. The difference has to come from a channel
+        # whose value can be undetermined while the channel renders — `onset=-` is the block's explicit
+        # marker for that, and the `onset` scalar reads it.
+        #
+        # It must NOT come from the inventory counts: `metricKept(0):` states a zero in its parentheses and
+        # is a measurement, which the test below pins in that direction. The FIRST version of this test used
+        # `metricKept(0):` as its source of difference, so correcting the count channels made it fail — and
+        # that failure was the defect being asserted, not a regression.
+        undetermined = FULL_ROW.replace('onset=34000', 'onset=-')
+        self.assertNotEqual(undetermined, FULL_ROW, 'the fixture must actually move the onset')
+        capability = dc.capability_of(case('a_cpu_1', FULL_ROW, undetermined))
+        coverage = capability.channel('onset')
+        self.assertEqual((coverage.rows_reached, coverage.rows_valued), (2, 1))
+        self.assertEqual(coverage.reach, dc.EVERY)
+        self.assertEqual(coverage.value_reach, dc.SOME)
+        # `every` on both verdicts, so the reach count is not printed — and yet the VALUE count must be,
+        # because 1 of the 2 rows carries `onset=-` and a candidate reading the delay cannot use it.
+        self.assertIn('onset every, valued 1/2 rows', dc.describe(capability))
+
+    def test_a_ZERO_written_in_the_PARENTHESES_is_a_VALUE_not_a_gap(self) -> None:
+        # The defect this iteration fixes, pinned where it was wrong. `metricDrop(0):` is rendered with no
+        # body because the producer writes the list only while the count is non-zero — and the field the
+        # channel declares (`metricOutcomes`) carries the COUNT, so the `0` in the parentheses is the
+        # measurement. Read as the body instead, a block that dropped nothing came back as "rendered and
+        # undetermined", which is the one reading that makes a measurement indistinguishable from a gap.
+        text = case(
+            'a_cpu_1',
+            FULL_ROW + '    metrics(2): cpu, mem\n' + '    metricKept(0):\n' + '    metricDrop(0):\n',
+            decisive=False,
         )
         capability = dc.capability_of(text)
-        coverage = capability.channel('metric-kept')
-        self.assertEqual((coverage.rows_reached, coverage.rows_valued), (2, 1))
-        self.assertEqual(coverage.reach, dc.SOME)
-        self.assertEqual(coverage.value_reach, dc.SOME)
-        self.assertIn('metric-kept some (2/3 rows), valued 1/3 rows', dc.describe(capability))
+        self.assertEqual(capability.rows, 1)
+        for name in ('metric-kept', 'metric-drop'):
+            coverage = capability.channel(name)
+            self.assertEqual(coverage.reach, dc.EVERY, name)
+            self.assertEqual(coverage.value_reach, dc.EVERY, name)
+            self.assertEqual((coverage.rows_reached, coverage.rows_valued), (1, 1), name)
+        # The sibling that is genuinely BODY-placed keeps its own reading: the decomposition is the value,
+        # so a `metricTop` marked `-` is reached and not valued. Without this the fixture would pass on a
+        # census that had simply stopped distinguishing the two placements.
+        body = dc.capability_of(case('a_cpu_1', FULL_ROW + '    metricTop(0/0): -\n', decisive=False))
+        self.assertEqual(body.channel('metric-top').reach, dc.EVERY)
+        self.assertEqual(body.channel('metric-top').value_reach, dc.NONE)
+
+    def test_the_PAREN_marker_reads_the_COUNT_and_refuses_a_LINE_without_one(self) -> None:
+        # A PAREN channel's value is the number in the parentheses, so the derivation has to be exactly
+        # that: `metricTop(1/3)` is a count the pattern must not capture for a channel that expects a
+        # single integer, and a `metricKept` line with no parentheses at all is not this channel.
+        declaration = {one.channel: one for one in dc.DECLARATIONS}['metric-kept']
+        self.assertEqual(declaration.value_in, dc.PAREN)
+        self.assertEqual(declaration.value, r'\d+')
+        found = declaration.marker.match('    metricKept(38): a=0.5 b=0.4')
+        self.assertIsNotNone(found)
+        self.assertEqual(found.group(1), '38')
+        self.assertIsNone(declaration.marker.match('    metricKept: a=0.5'))
+        self.assertIsNone(declaration.marker.match('    metricKept(1/3): a=0.5'))
+        # And the count is read as a number rather than compared as text.
+        self.assertTrue(dc.isValued('0'))
+        self.assertFalse(dc.isValued('-'))
 
     def test_a_channel_whose_two_counts_AGREE_prints_one_number(self) -> None:
         # The other direction: printing the second number unconditionally would put `valued 72527/72527` on
@@ -868,20 +944,67 @@ class RealArtifactsTest(unittest.TestCase):
         # the two maxima (`bestDev`, `bestRise`) are read from. Before this iteration NEITHER line had a
         # channel, so the four signals were one undifferentiated "inventory" whose reach nobody could state.
         #
-        # On `re1` the difference is exactly ONE row: `re1ob_adservice_loss_4`'s `adservice [GT]`, whose
-        # `metricKept(0):` is rendered with an EMPTY body because every one of its metrics was dropped as a
-        # transient return — the case's own ground truth, invisible in its own inventory, and the one row a
-        # `bestDev`/`bestRise` candidate cannot be evaluated on while `kept` reads a well-defined zero.
+        # On `re1` the difference is exactly ONE row, and it is a difference in REACH rather than in VALUE:
+        # `re1ob_adservice_loss_4`'s `adservice [GT]` renders `metricKept(0):` — the case's own ground truth,
+        # every one of whose metrics was dropped as a transient return — and renders no `metricTop` at all. So
+        # the competition pair reaches 1888 rows and the decomposition 1887, and the ONE row the two maxima
+        # cannot be evaluated on is a row on which `kept` reads a well-defined ZERO. Both halves of that
+        # sentence are asserted here, because they are different claims: a reach the producer did not write,
+        # and a value it did.
         capability = self._capability(LOCAL_DUMPS / 're1.txt')
         self.assertEqual(capability.rows, 11557)
-        kept = capability.channel('metric-kept')
-        self.assertEqual((kept.rows_reached, kept.rows_valued), (1888, 1887))
-        self.assertEqual(capability.channel('metric-drop').rows_reached, 1888)
-        self.assertEqual(capability.channel('metric-top').rows_reached, 1887)
+        for name in ('metric-kept', 'metric-drop'):
+            coverage = capability.channel(name)
+            self.assertEqual((coverage.rows_reached, coverage.rows_valued), (1888, 1888), name)
+        top = capability.channel('metric-top')
+        self.assertEqual((top.rows_reached, top.rows_valued), (1887, 1887))
         # The label tag and the inventory are written for the same rows on THIS producer, so the one-row gap is
         # a property of `metricTop` rather than of the selection — which is what makes the attribution above a
         # measurement instead of a guess.
         self.assertEqual(capability.channel('row-labels').rows_reached, 1888)
+
+    def test_a_rendered_COUNT_states_one_on_EVERY_local_artifact(self) -> None:
+        # The invariant that makes the two count channels checkable WITHOUT the reader, and the one the
+        # placement defect violated: the producer writes the number in the parentheses unconditionally, so a
+        # count line that is rendered ALWAYS carries a value. Read as the body beside it, this held on 9
+        # readings over 7 artifacts — every one of them a row where the count was zero and the list therefore
+        # absent, i.e. exactly the rows on which the channel carries its most definite measurement.
+        #
+        # The artifacts are named rather than globbed, so a machine with a different set of dumps reports the
+        # same population; a missing one skips through `_capability`.
+        for path in (
+            LOCAL_DUMPS / 're1.txt',
+            LOCAL_DUMPS / 're2.txt',
+            LOCAL_DUMPS / 're3.txt',
+            FSE26_DUMP,
+            Path(__file__).resolve().parent.parent / 'artifacts/diag-34684319273/fse26-results.txt',
+        ):
+            capability = self._capability(path)
+            for name in ('metric-kept', 'metric-drop'):
+                coverage = capability.channel(name)
+                if coverage.reach == dc.NONE:
+                    continue
+                self.assertEqual(
+                    coverage.value_reach, coverage.reach, f'{path.name}: {name} on {coverage.rows_reached} rows'
+                )
+                self.assertEqual(coverage.rows_valued, coverage.rows_reached, f'{path.name}: {name}')
+
+    def test_the_re1_artifact_is_the_one_that_disagreed_with_the_reader(self) -> None:
+        # The measured defect in the one artifact that showed it twice, kept as a reading rather than as a
+        # comment: `metric-drop` is rendered on 1888 of re1's rows and every one of them states a count, of
+        # which 104 state ZERO. Before the placement was stated, those 104 rows were reported as "rendered and
+        # undetermined" — the reading that makes "the guards dropped nothing" indistinguishable from "this
+        # block did not say".
+        capability = self._capability(LOCAL_DUMPS / 're1.txt')
+        drop = capability.channel('metric-drop')
+        self.assertEqual(drop.rows_reached, 1888)
+        self.assertEqual(drop.rows_valued, 1888)
+        self.assertEqual(drop.reach, dc.SOME)
+        self.assertEqual(drop.value_reach, dc.SOME)
+        # `some` on both counts, so a rule keyed on the VERDICT would have been satisfied either way: the 104
+        # rows are visible only in the count, which is why the count is reported at all.
+        self.assertIn('metric-drop some (1888/11557 rows)', dc.describe(capability))
+        self.assertNotIn('metric-drop some (1888/11557 rows), valued', dc.describe(capability))
 
     def test_an_artifact_can_carry_ONE_inventory_family_and_not_the_other(self) -> None:
         # The same two lines, one producer generation earlier: `metricKept`/`metricDrop` are rendered for 2095

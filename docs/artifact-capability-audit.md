@@ -220,7 +220,7 @@ this one over all **15** local artifacts and diffing all seven pre-existing chan
 | sub | `decisive-composition` | `some` (71161/72527) | `some` |
 | sub | `*` `error-messages` | **`some` (9313/72527)** | — |
 | sub | `*` `exceptions` | **`some` (3945/72527)** | — |
-| sub | `*` `metric-kept`, `*` `metric-drop`, `*` `metric-top` | **`some` (7781/72527)** | `metric-kept` **1888→1887 on `re1`**, below |
+| sub | `*` `metric-kept`, `*` `metric-drop`, `*` `metric-top` | **`some` (7781/72527)** | `metric-kept`/`metric-drop` **7781**, `metric-top` **7781**; the `re1` row below is where they separate |
 
 Two of the new rows are findings on their own, and both are about what the record has been calling one thing:
 
@@ -241,7 +241,7 @@ them separately:
 
 | artifact | rows | `metric-kept` | `metric-drop` | `metric-top` |
 | --- | --- | --- | --- | --- |
-| `re1.txt` | 11557 | **1888** (valued **1887**) | 1888 | **1887** |
+| `re1.txt` | 11557 | **1888** (valued **1888**) | 1888 | **1887** |
 | `re2.txt` | 4806 | 763 | 763 | **762** |
 | `re3.txt` | 2900 | 472 | 472 | 472 |
 | `artifacts/r35107871516` (FSE'26) | 72527 | 7781 | 7781 | 7781 |
@@ -265,8 +265,11 @@ renders
 
 — the case's own ground truth, whose every metric was dropped as a **transient return**, so the kept line is
 rendered with an **empty body** and the decomposition is omitted. A candidate on `bestDev`/`bestRise` cannot
-be evaluated on that row; a candidate on `kept` reads a well-defined **zero** there. And since the label tag
-reaches the same 1888 rows, the gap is a property of the `metricTop` line rather than of the selection.
+be evaluated on that row; a candidate on `kept` reads a well-defined **zero** there — and the `1888` in the
+`metric-kept` column above is exactly that claim: the row **reaches** the channel and the channel **carries a
+value** on it, because the value is the `0` in the parentheses and not the body beside it (Finding 8). Since
+the label tag reaches the same 1888 rows, the gap is a property of the `metricTop` line rather than of the
+selection.
 
 **And the reach difference is not a curiosity — it named a live defect the next iteration found and fixed.**
 The row above is one of **2095** on an artifact the record also holds (`artifacts/diag-34684319273`: 2095
@@ -279,9 +282,10 @@ without a decomposition", and before this iteration both lines had no channel at
 
 ### And one reading was hidden by the report itself
 
-`metric-kept` reaches **1888** rows and carries a body on **1887**. Both verdicts read `some`, and `describe`
-printed the value count only when the two **verdicts** differed — so the report showed `some (1888/11557 rows)`
-and said nothing about the row a candidate on that channel cannot be evaluated on. The rule is now the two
+`latency-rise` reaches **every** row and carries a value on **37714 of 72527**; `onset` reaches every row and
+carries one on **63489**. Both verdicts read `every`, and `describe` printed the value count only when the two
+**verdicts** differed — so the report showed `latency-rise every` and said nothing about the half of the
+artifact on which a candidate reading a rise or a delay cannot be evaluated at all. The rule is now the two
 **counts**, which is the module's own doctrine one level up: *"some" without a denominator is the reading this
 module exists to stop.* A channel whose counts agree still prints one number, so the ones that differ are not
 buried.
@@ -298,12 +302,117 @@ for every other row marker. Repaired there; the property keeps its documented se
 pinned by hand-built coverage objects, including `total_rows == 0` → `none`, because `0 == 0` satisfies
 `reached == total` and an artifact with no rows would otherwise answer `every` about nothing.
 
+## Finding 8 — a count channel read its value from the list beside it, so a rendered ZERO was reported as a gap
+
+**Measured 2026-09-26, and it is the only defect in this document that was found by comparing the census
+against a SECOND parser rather than against the producer.**
+
+`metric-kept` and `metric-drop` declared their value as the text after the colon — the list of metric names —
+while the field they declare, `metricOutcomes`, carries the **count**. The producer writes that count in the
+parentheses and writes it **unconditionally**:
+
+```js
+`    metricKept(${kept.length}):${kept.length > 0 ? ` ${kept.join(' ')}` : ''}`
+```
+
+so a block that kept nothing renders `metricKept(0):` with **no body at all**. Read as the body, that zero
+came back as *"the channel is rendered and carries no value"* — the one reading that makes a measurement
+indistinguishable from a gap, and precisely the distinction iteration 21 had just repaired **inside** the
+separator for `bestDev`/`bestRise`.
+
+**The evidence is a disagreement between two independent parsers over the same bytes.** The reader reads the
+parenthesised number as the authority — `declaredOutcomeCount += Number(dropped[1])` — and the producer's own
+doc states the principle for the analogous field: `both=0` *"is NEVER omitted because it is zero … `both=0` is a
+measurement (the sets are disjoint) and an absent field is the different claim 'not measured'"*. Compared per
+channel and per row over **7 artifacts**, on the **19** row- or sub-line-scoped channels that declare a
+`DiagnosedService` field:
+
+| artifact | rows | channel | census valued | reader | delta |
+| --- | --- | --- | --- | --- | --- |
+| `artifacts/r35107871516` (FSE'26) | 72527 | `metric-drop` | 7777 | 7781 | **+4** |
+| `artifacts/r34919714864` | 72527 | `metric-drop` | 7827 | 7831 | **+4** |
+| `artifacts/diag-34742498321` | 53350 | `metric-drop` | 5709 | 5712 | **+3** |
+| `artifacts/diag-34684319273` | 18820 | `metric-drop` | 2094 | 2095 | **+1** |
+| `re1.txt` | 11557 | `metric-kept` | 1887 | 1888 | **+1** |
+| `re1.txt` | 11557 | `metric-drop` | 1784 | 1888 | **+104** |
+| `re2.txt` | 4806 | `metric-kept` | 762 | 763 | **+1** |
+| `re2.txt` | 4806 | `metric-drop` | 746 | 763 | **+17** |
+| `re3.txt` | 2900 | `metric-drop` | 452 | 472 | **+20** |
+
+**Nine disagreements, on exactly those two channels, while all seventeen other field-carrying channels agreed
+on all seven artifacts.** The asymmetry is the finding: `metric-top` — the third sibling, on the same lines,
+read by the same four `decisive*` scalars — agreed everywhere, because for it the value genuinely IS the
+decomposition. Only the two channels whose declared field is a COUNT were wrong.
+
+### And the record had already quoted the wrong number, in the sentence that made the point
+
+Finding 7's own summary of this contrast reads *"`metric-kept` 1888 of `re1`'s rows against `metric-top`
+1887"* — a REACH against a REACH, which is right — while the value column the census printed said
+`metric-kept` was **valued** on 1887, i.e. equal to `metric-top`'s 1887. **The paragraph's evidence and the
+instrument's own value column contradicted each other, and only the paragraph was read.** After the fix both
+numbers are 1888 against 1887, and the difference is what it always was: a **reach** difference, one row on
+which the `metricTop` line is not written.
+
+### The fix states WHERE a channel's value is, because one grammar carries two quantities
+
+A value pattern cannot say which half of a line it belongs to. `ChannelDeclaration` gains
+`value_in ∈ {field, paren, body}`, the marker is still **derived** from the key, and the builder now
+**asserts** it: a sub-line must be `paren` or `body` (a `field` placement would silently build a `key=value`
+pattern for a line with no `=` and read as a channel nothing renders), and a non-sub-line must be `field`. The
+two count channels take `paren` with `value=r'\d+'`; `metric-top`, `metric-list`, `error-messages`,
+`exceptions` and `decisive-composition` state `body` explicitly; the other twenty-four are `field`.
+
+**The regression is exactly the fix's own scope.** The previous module and this one, diffed over the **31**
+channels of **22** local artifacts: **21 readings moved, every one of them a VALUE count on one of the two
+channels, every one of them upward, and not one reach, case count or row count changed anywhere.**
+
+### The third edge, which is what found it
+
+The fence had two edges and both are satisfied by the wrong form: the table was **self-consistent** (the
+census's own eight tests passed on the broken table) and the reader was **correct**. What was missing is the
+edge between them, so it now exists, and it is the same edge shape as the other two — the projection carries
+what the other side needs and both sides are held to it:
+
+| edge | subject | how it is held |
+| --- | --- | --- |
+| 1 | the table ↔ the keys the PRODUCER emits | the producer builds a block; every declared key is emitted and every emitted key is declared, per scope |
+| 2 | the table ↔ the READER's typed field map | `O(1)` in both directions against `Object.keys(SERVICE_FIELD_AUDIT)` |
+| **3** | **the census's valuation ↔ the READER's own parse** | **the projection carries the census's own `pattern`, `valueIn` and `absent`; the TypeScript side applies that regex to a producer-built block and compares PER ROW with the reader's fields** |
+
+The projection carrying the derived pattern is the point rather than a convenience: a regex re-derived on the
+other side would be a second spelling of the grammar, and **a fence whose two halves disagreed about what a
+line means would pass on its own bug while both halves stayed self-consistent** — the shape of the two
+preceding iterations. `absent` travels for the same reason: *"rendered and undetermined"* is a rule, not a
+predicate a second language can guess.
+
+Its population is stated in both directions, because a one-sided equality passes on an empty set: **19**
+declared channels qualify (row- or sub-line-scoped, with a field), **4** are excluded **by name with a reason**
+— `service-id` (an absent id is spelled `''`), `row-labels` (two fields, and the tag is their disjunction),
+`dominant-metric` (`dominant=-` becomes `''`), `metric-top` (the value is the decomposition, a nested
+condition) — and the test asserts the excluded set is exactly those four, so a channel cannot join it by
+silence.
+
+**And the fence was shown to bite.** Regressing the projection to the body-placed form fails **exactly the two
+new tests**, with `metric-kept valued true (reader) vs false (census)` — while the **seven pre-existing tests
+still pass**, which is the whole reason this defect survived three iterations: the old edges cannot see it.
+
+### Two defects in this iteration's own work
+
+1. **The row-boundary pattern in the new fence is the `self-anomaly` channel's own pattern**, and the first
+   version `continue`d past a row line after opening a row with it — so `self-anomaly` reported zero rows,
+   which reads as a broken table rather than as a broken harness. A row line opens a row **and** is read.
+2. **A probe typed for one channel does not exercise the other.** The new test built its probe line as
+   `metricKept(0):` for both count channels, so the `metric-drop` half matched nothing; it now builds the
+   probe from the declaration's own `key`.
+
 ## What a candidate must now say
 
 1. **Which channels it reads**, and the **reach** it needs of each — `every` if it sums or simulates over
    every candidate, `some` if it only asks whether the artifact has the channel.
 2. **Whether it needs the channel or the VALUE**, because a channel can reach every row and carry nothing on
-   a third of them (`onset`, `latRise`).
+   a third of them (`onset`, `latRise`, and `decisive-composition` on a block whose named metric has no
+   breakdown). **A rendered zero is a value**: `both=0`, `err=0`, `metricKept(0):` and `metricDrop(0):` are
+   measurements, and the placement that says so is now part of the declaration (Finding 8).
 3. **Which artifact** it reads them from, by run, with that artifact's coverage — because the two FSE'26
    artifacts differ in exactly the channel the composition family depends on.
 4. If the reach it needs is not `every`, the **producer change** that would make it so, stated before the
@@ -391,3 +500,18 @@ line), so the paths rule owed one, and run **`35357010476`** reproduces **9 of 9
 (`RE1 80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1`), with `CI` (run `35357010442`)
 and `Release` (run `35357010444`) green on the same commit. A cell could only move if the rendered marker had
 altered a verdict, and no ranking term reads it.
+
+## Gates of the count-placement fix (Finding 8)
+
+| | |
+| --- | --- |
+| python gate | **468 tests · 1628 statements · 584 branches · 100.00%**, every module 100% |
+| `dump_capability.py` | **100.00% branch** — 267 statements, 112 branches, 68 tests in the module's own suite |
+| `benchmarks` project | **804 tests / 23 files** (was 799: the two new edge tests and the zero-row test) |
+| `nx run-many --target=typecheck --all` | 15 projects clean |
+| `tsc -p tsconfig.workspace.json` | clean — **CI's population, which the per-project command does not cover** |
+| lint / format | 0 warnings, 0 errors on 339 files; the touched test formatted |
+| the 31 channels over 22 artifacts | **21 readings moved, all VALUE counts on the two count channels, all upward**; no reach, case count or row count moved anywhere |
+| the reader cross-check | **9 disagreements before, 0 after**, over 7 artifacts × 19 field-carrying channels |
+| the fence bites | regressing the projection to the body-placed form fails **exactly the two new tests** while the **seven pre-existing tests still pass** |
+| golden | **not owed** — `scripts/*.py`, `__tests__/**` and `docs/**` are outside every trigger path; the selector returns `(False, ())` |

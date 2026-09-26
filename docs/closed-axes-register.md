@@ -153,7 +153,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | `prism-head-to-head.md` | the PRISM reimplementation and the 9-cell head-to-head that opened the fusion direction |
 | `sota-comparison.md` | the corrected SOTA calibration on RCAEval |
 | `sota-roadmap-2026.md` | the roadmap and validation method toward a defensible SOTA claim |
-| `artifact-capability-audit.md` | what an artifact CARRIES — the `every` / `some` / `none` census, its refusal, and (Finding 7) the census's own POPULATION: seven hand-written channels against the artifact's thirty-one fields, so **both two-part families were covered in the half the other covers** — `failed-edge` read the SCORE and left `edgeRecords`' COUNT with no channel (AUC 0.908 where the score reads 0.457), `latency-edges` read the COUNT and left the `lat` term's RISE with none, its reach the other half's (**100%** against the rise's **52.0%**) — and six quantities the declared signals read had no channel at all. The population is now a table whose key column is the producer's own literal with each marker DERIVED from it, held by two fences on a two-edge chain: the python test keeps the committed projection equal to the table, and the TypeScript test builds a dump with the PRODUCER and holds the emitted keys, the table's `fields` and `Object.keys(SERVICE_FIELD_AUDIT)` equal in both directions |
+| `artifact-capability-audit.md` | what an artifact CARRIES — the `every` / `some` / `none` census, its refusal, and (Finding 7) the census's own POPULATION: seven hand-written channels against the artifact's thirty-one fields, so **both two-part families were covered in the half the other covers** — `failed-edge` read the SCORE and left `edgeRecords`' COUNT with no channel (AUC 0.908 where the score reads 0.457), `latency-edges` read the COUNT and left the `lat` term's RISE with none, its reach the other half's (**100%** against the rise's **52.0%**) — and six quantities the declared signals read had no channel at all. The population is now a table whose key column is the producer's own literal with each marker DERIVED from it, held by three fences on a three-edge chain: the python test keeps the committed projection equal to the table, the TypeScript test builds a dump with the PRODUCER and holds the emitted keys, the table's `fields` and `Object.keys(SERVICE_FIELD_AUDIT)` equal in both directions, **and (Finding 8) the census's valuation is held per row against the READER's own parse of the same artifact** — which is the edge that found a count channel reading its value from the list beside it, so a rendered `metricKept(0):` came back as a gap on 9 readings over 7 artifacts while all seventeen other field-carrying channels agreed |
 | `register-fence-audit.md` | why this register's own fence was keyed on a filename, and the nine closures that were invisible to it |
 
 ## The shared kill criterion
@@ -532,7 +532,30 @@ Before reading any number, check that the input was counted:
   the defect is a question about the ARTIFACT and only the census answers it
   (`docs/artifact-capability-audit.md` Finding 7): `metric-kept` 1888 of `re1`'s rows against `metric-top`
   1887, and 2095 against `none` on `diag-34684319273` — invisible on the shipped dump, an entire screen on
-  that one.
+  that one. **And the corollary about the COUNTS was the second half of a defect one iteration later: the
+  census read those two counts from the list BESIDE them** — `metricKept(0):` has no body, so a rendered zero
+  came back as "rendered and undetermined" on 9 readings over 7 artifacts, while the READER reads the
+  parenthesised number and the producer's own doc says `both=0` is a measurement
+  (`docs/artifact-capability-audit.md` Finding 8).
+
+- **A CHANNEL'S VALUE IS THE QUANTITY ITS DECLARED FIELD CARRIES, AND WHERE ON THE LINE THAT VALUE SITS IS
+  PART OF THE DECLARATION.** One grammar carries two quantities — `metricKept(N): <list>` — so a value
+  PATTERN cannot say which half a channel's declared field belongs to, and the two are not interchangeable:
+  the producer writes the list only while `N > 0`, so **a rendered zero is a value whose list is absent**, which
+  is precisely the reading that makes "the guards dropped nothing" indistinguishable from "this block did not
+  say". Measured as **9 disagreements with a second parser over 7 artifacts** on the two channels that
+  declared a count and read the list, with all **17** other field-carrying channels agreeing on all 7
+  (`docs/artifact-capability-audit.md` Finding 8). The placement is now a column (`field` / `paren` / `body`)
+  and the marker is still derived from the key; the **fix's regression is its own scope** — 21 readings moved
+  over 22 artifacts, every one a VALUE count on those two channels, **not one reach or population**.
+  **And the fence that finds this class is a CHAIN, not an edge.** Two edges — the table against the producer's
+  emitted keys, and the table against the reader's typed field map — were both fully satisfied while the
+  valuation was wrong: the table was self-consistent and the reader was correct. What is needed is the edge
+  BETWEEN them, so the projection carries the census's own `pattern`, `valueIn` and `absent`, and the other
+  side applies the SAME regex rather than re-deriving it. **A regex re-derived in a second language is a second
+  spelling of the grammar, and a fence whose two halves disagree about what a line means passes on its own bug
+  while both halves stay self-consistent** — which is also why the cross-parser comparison, and not the
+  producer-side equality, is the edge that found this one.
 
 ## What is left
 
@@ -653,6 +676,20 @@ read, or `latency-edges` for a rise read, is naming the other half of the pair a
 half's reach.** For the inventory the halves are not even the same LINE: `metric-kept`/`metric-drop` reach 1888
 of `re1`'s rows, `metric-top` 1887, and `artifacts/diag-34684319273` carries the first pair for 2095 rows and
 the second not at all.
+
+**And a channel's reach is not its VALUE, because one grammar carries two quantities.** A declaration that
+names a channel without naming WHERE on the line its value sits is the same defect as one that names the wrong
+channel: the producer writes `metricKept(N): <list>` and writes the list only while `N > 0`, so a rendered
+**zero** is a measurement whose list is absent — read from the list instead, it came back as "rendered and
+undetermined" on **9 readings over 7 artifacts** while the READER reads the parenthesised number and the
+producer's own doc says `both=0` "is NEVER omitted because it is zero"
+(`docs/artifact-capability-audit.md` Finding 8). The placement is therefore a **stated** column
+(`field` / `paren` / `body`), the marker is still derived, and the **third edge** of the fence closes it —
+**the census's valuation against the READER's own parse of the same artifact** — because the two edges that
+existed were both satisfied by the wrong form: the table was self-consistent and the reader was correct. The
+projection carries the census's own `pattern`, `valueIn` and `absent` so the other side applies the SAME regex
+rather than re-deriving it, and a re-derived one is how a fence whose halves disagree about what a line means
+passes on its own bug.
 
 **And the criterion itself is now an intersection rather than a comparison in prose.** Its two halves live on
 two benchmarks — a candidate must GAIN on one and cost another nothing — so the object it asks for is the

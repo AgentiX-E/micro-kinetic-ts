@@ -107,6 +107,26 @@ SCOPES: tuple[str, ...] = (ROW, ROW_IDENTITY, CASE_LINE, HEADER, SUB_LINE)
 #: The scopes whose population is a CASE's, not a row's.
 CASE_SCOPES: frozenset[str] = frozenset({HEADER, CASE_LINE})
 
+#: After the `=` of a `key=value` field: the default, and the only placement the row, header and case-line
+#: scopes have.
+FIELD = 'field'
+#: The parenthesised NUMBER of a `key(N): body` line. This is the placement that must be STATED rather than
+#: inferred, and the reason this vocabulary exists at all: one grammar carries two quantities — a count in the
+#: parentheses and a list in the body — so a channel that declares a field has to say which of the two that
+#: field carries. `metricKept(0):` is a `metricKept` line with NO body, because the producer renders the list
+#: only while it is non-empty, so the `0` in the parentheses is the only place the count can be read — and it
+#: is a MEASUREMENT, exactly as the producer's own doc says of `both=0`. Read as {@link BODY} instead, a
+#: rendered zero came back as "rendered but undetermined": measured 2026-09-26 as 9 disagreements with the
+#: READER over 7 artifacts, on the two channels that use this placement and no others, while all seventeen
+#: other field-carrying channels agreed.
+PAREN = 'paren'
+#: The text after the `:` of a `key(N): body` line — the right placement when the value IS the list: the
+#: metric names, the messages, the class labels, or the decomposition the four `decisive*` scalars read.
+BODY = 'body'
+
+#: Where a channel's VALUE sits, as a closed vocabulary so a declaration cannot invent one.
+VALUE_PLACEMENTS: tuple[str, ...] = (FIELD, PAREN, BODY)
+
 
 @dataclass(frozen=True)
 class ChannelDeclaration:
@@ -132,6 +152,10 @@ class ChannelDeclaration:
         table, which is what the TypeScript fence asserts.
     @field value - The value's own pattern, so a field the reader requires to be a NUMBER cannot be counted as
         carried when it prints something else (`decimals=abc` fails the reader's `HEADER_RE` outright).
+    @field value_in - WHERE on the line the value sits: {@link FIELD}, {@link PAREN} or {@link BODY}. Stated
+        rather than implied by the pattern, because one grammar carries two quantities — a count in the
+        parentheses and a list in the body — and a channel that declares a field has to say which of the two
+        that field carries.
     @field why - Which half of which family it is, and who reads it. The reason is the deliverable: "nobody
         screens this" and "this was screened and closed" are different statements.
     """
@@ -142,12 +166,14 @@ class ChannelDeclaration:
     fields: tuple[str, ...]
     why: str
     value: str = r'\S*'
+    value_in: str = FIELD
 
     @property
     def marker(self) -> re.Pattern[str]:
         """The pattern that finds this field, DERIVED from {@link key} so the two cannot disagree."""
         if self.scope == ROW_IDENTITY:
             assert self.key is None, 'a row-identity channel has no key literal'
+            assert self.value_in == FIELD, f'{self.channel} is an identity, not a valued marker'
             return re.compile(ROW_IDENTITY_PATTERNS[self.channel])
         assert self.key is not None, f'{self.channel} needs a key literal'
         escaped = re.escape(self.key)
@@ -155,7 +181,18 @@ class ChannelDeclaration:
             # `metricKept(38): …` and `metricDecisive: …` are one grammar: an optional parenthesised count,
             # then a colon. Anchored at exactly four spaces because that IS the producer's indentation —
             # measured over 1,162,386 sub-lines in the local artifacts, every one of them at four.
+            #
+            # A sub-line's placement must be stated, and the two placements are not interchangeable: a PAREN
+            # marker captures the count and requires the colon after it, a BODY marker skips the count
+            # non-capturing and captures the rest. The default `FIELD` would silently build a `key=value`
+            # pattern for a line that has no `=`, which reads as a channel nothing renders.
+            assert self.value_in in (PAREN, BODY), (
+                f'{self.channel} is a sub-line and must place its value in {PAREN} or {BODY}'
+            )
+            if self.value_in == PAREN:
+                return re.compile(rf'^ {{4}}{escaped}\(({self.value})\):')
             return re.compile(rf'^ {{4}}{escaped}(?:\([^)]*\))?: ?({self.value})$')
+        assert self.value_in == FIELD, f'{self.channel} is not a sub-line and can only be {FIELD}'
         if self.scope == CASE_LINE:
             return re.compile(rf'^ {{2}}{escaped}=({self.value})$')
         return re.compile(rf'\b{escaped}=({self.value})')
@@ -369,8 +406,10 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         (),
         'the metric NAME list and its declared size. RENDERED ON EVERY ROW AND PARSED BY NO READER — the '
         'reader\'s inventory comes from the three lines below — so a truncation check built on it would be '
-        'the first thing to read it',
+        'the first thing to read it. BODY-placed: the value here is the names, and the size is the '
+        'complement a truncation check compares them against',
         value=r'.*',
+        value_in=BODY,
     ),
     ChannelDeclaration(
         'decisive-composition',
@@ -379,6 +418,7 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         ('decisiveOutcome',),
         'the composition of the metric that drove the score, read by the four `decisive*` scalars; rendered '
         'with a `-` where the named metric carries none, so its channel reach and its VALUE reach differ',
+        value_in=BODY,
     ),
     ChannelDeclaration(
         'error-messages',
@@ -388,6 +428,7 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'the ERROR/FATAL message lines. RENDERED AND PARSED BY NOBODY — the counts on the row are what the '
         '`errLines` scalar reads — so this is the channel a message-level candidate would have to start from',
         value=r'.*',
+        value_in=BODY,
     ),
     ChannelDeclaration(
         'exceptions',
@@ -397,23 +438,30 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'the exception CLASS labels for the row. RENDERED AND PARSED BY NOBODY: the signatures the log term '
         'gates on are counted on the row, and the label vocabulary is a different axis',
         value=r'.*',
+        value_in=BODY,
     ),
     ChannelDeclaration(
         'metric-kept',
         SUB_LINE,
         'metricKept',
         ('metricOutcomes',),
-        'the metrics the guards KEPT — the inventory `kept` reads, and the matched stratum the register\'s '
-        '`kept<=` confound check is drawn on',
-        value=r'.*',
+        'the COUNT of metrics the guards KEPT — the inventory `kept` reads, and the matched stratum the '
+        'register\'s `kept<=` confound check is drawn on. Read from the parentheses, because that is where '
+        'this quantity is: the producer omits the list when the count is zero, and a rendered zero is a '
+        'measurement. The list beside it is a second half, carrying the labels',
+        value=r'\d+',
+        value_in=PAREN,
     ),
     ChannelDeclaration(
         'metric-drop',
         SUB_LINE,
         'metricDrop',
         ('metricOutcomes',),
-        'the metrics the guards dropped, with their reason — the inventory `transientDrops` reads',
-        value=r'.*',
+        'the COUNT of metrics the guards dropped — the inventory `transientDrops` reads, and the larger of '
+        'the two gaps this channel used to report: its body is absent on 104 of `re1`\'s 1888 inventory rows '
+        'because every dropped metric is listed only while the count is non-zero',
+        value=r'\d+',
+        value_in=PAREN,
     ),
     ChannelDeclaration(
         'metric-top',
@@ -421,12 +469,17 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'metricTop',
         ('metricOutcomes',),
         'the score DECOMPOSITION of the top metrics — the inventory `bestDev` and `bestRise` read, and the '
-        'only place the breakdown\'s eight numbers are rendered',
+        'only place the breakdown\'s eight numbers are rendered. BODY-placed, not {@link PAREN}: the count '
+        'here is `kept/total` and the quantity the field carries IS the decomposition, which is why this '
+        'channel agreed with the reader on all seven artifacts while its two siblings above did not',
         value=r'.*',
+        value_in=BODY,
     ),
 )
 
-#: Every channel, in the order the report prints them.
+#: Every channel, in the order the report prints them. The four `decisive*` scalars read the composition, so
+#: the placement and the reader agree by construction; the count channels are the ones where a pattern alone
+#: could not say which half of the line the declared field carries.
 CHANNELS: tuple[str, ...] = tuple(declaration.channel for declaration in DECLARATIONS)
 
 #: The channels that are a property of a CASE rather than of a row — a header field has no rows to be absent
@@ -478,17 +531,31 @@ class CapabilityError(RuntimeError):
     """An artifact was asked for a channel it does not carry far enough."""
 
 
+#: The strings the block uses to mean "rendered and undetermined". Data rather than a literal inside
+#: {@link isValued} because the TypeScript edge of the fence has to apply the SAME rule, and a predicate
+#: re-implemented in another language is the drift this whole module exists to prevent: the projection
+#: carries this tuple, and `isValued` is held equal to it in both directions.
+ABSENT_VALUES: tuple[str, ...] = ('', '-')
+
+
 def isValued(value: str) -> bool:
     """
     Whether a marker's captured value is a VALUE rather than one of the block's two undetermined markers.
 
-    Both `-` (`onset=-`, and now `metricDecisive: -`) and an EMPTY value (`dominant= err=0`) mean "rendered
-    and undetermined", so neither counts towards a channel's valued reach.
+    `-` is the block's explicit undetermined marker (`onset=-`, `latRise=-`, `metricDecisive: -`), and an
+    empty capture is the `key=` form with nothing after the separator (`dominant=`). Neither counts towards a
+    channel's valued reach.
+
+    **A rendered ZERO is a value**, and that is not a pedantic distinction here: the producer's own doc for
+    `bothExceptionCount` says `both=0` "is NEVER omitted because it is zero — `both=0` is a measurement (the
+    sets are disjoint) and an absent field is the different claim 'not measured'". The same rule governs the
+    two inventory counts, whose `0` sits in the parentheses rather than after an `=`; see
+    {@link PAREN}.
 
     @param value - The captured text after the marker.
     @returns: `True` when the marker carries a value.
     """
-    return value not in ('', '-')
+    return value not in ABSENT_VALUES
 
 
 def strip_transport(line: str) -> str:
@@ -770,13 +837,20 @@ def declarations_as_data() -> list[dict[str, Any]]:
     **Why a projection at all.** The fence that finds this class of defect can only be written where the
     producer is, and the producer is TypeScript: it builds the artifact and holds the typed field map
     (`SERVICE_FIELD_AUDIT`, a `Record<keyof DiagnosedService, string>`). For the two sides to be compared, this
-    table's three mechanical columns have to be readable there. Parsing the module's source text would make the
+    table's mechanical columns have to be readable there. Parsing the module's source text would make the
     fence depend on its FORMATTING — a fence that can be disarmed by reindenting the thing it guards — so the
     projection is written to a file that both sides read, and a test asserts it equals this table in both
     directions. The `why` prose stays here: a reason is for a reader, and a fence needs a column.
 
+    **`pattern` is the DERIVED marker's own source, not a second spelling of it.** The other side has to
+    classify the same lines this module classifies, and a regex re-derived in another language is exactly the
+    drift this table exists to prevent: a fence whose two halves disagree about what a line means would pass
+    on its own bug. It comes from {@link ChannelDeclaration.marker}, so the pattern the fence applies IS the
+    pattern the census uses — and `absent` carries {@link ABSENT_VALUES} for the same reason, because
+    "rendered and undetermined" is a rule rather than a predicate the other language can guess.
+
     @returns: One entry per declaration, in table order: `channel`, `scope`, `key` (`None` for the row's
-        identity) and `fields`.
+        identity), `fields`, `valueIn`, the derived `pattern`, and the `absent` markers.
     """
     return [
         {
@@ -784,6 +858,9 @@ def declarations_as_data() -> list[dict[str, Any]]:
             'scope': declaration.scope,
             'key': declaration.key,
             'fields': list(declaration.fields),
+            'valueIn': declaration.value_in,
+            'pattern': declaration.marker.pattern,
+            'absent': list(ABSENT_VALUES),
         }
         for declaration in DECLARATIONS
     ]
