@@ -123,6 +123,20 @@ the whole analyzer exists to find.
    `re1`'s rows against `metric-top` 1887, and 2095 against `none` on `diag-34684319273`), which is
    why it was findable at all.
 
+   **Gates for the change, all read from the run rather than from a local command where the two
+   differ.** CI **19 of 19 jobs green** on `c9d3ca5`; the 14 `test (<pkg>)` jobs plus `benchmark-tests`
+   give **56 dimensions whose worst is `95.00`** (`wave` branches) with every percentage **identical**
+   to the reading before the change and only `benchmark-tests`' count moving (799 → 802, the three new
+   tests); the module's own suite **61** (3 new, on the same fixture as the rule they extend); both
+   typechecks clean, the workspace one being CI's population; lint 0/0. `benchmarks/src/**` is a golden
+   trigger, so the push owed one and `36229166610` paid it: **9 of 9 cells byte-identical** (`RE1
+   80.0 / 92.8 / 68.0`, `RE2 82.4 / 88.9 / 68.1`, `RE3 80.0 / 45.0 / 51.1`), which is the claim that
+   matters here — an offline analyzer cannot reach the ranking, and this is the measurement of that
+   rather than an argument from the module's import graph. A ten-row mutation pass closed the loop: every
+   row matched its declared verdict with both controls SURVIVED, including the **over-reach** row (an
+   absent bound turned back into a tie) and the **counts** row (the field audit un-classified), so the
+   fix is pinned in both directions and the neighbouring numbers are pinned as measurements.
+
 ## 3. The measurement
 
 `666` pairs, `250` non-term cells scanned, so the per-test bar is
