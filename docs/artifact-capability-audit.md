@@ -15,8 +15,15 @@ is now an instrument, and it is the first thing a candidate has to read.
 
 ## The instrument
 
-`scripts/dump_capability.py`, in the same CI python gate as `dump_coverage.py` (100% branch, 132 statements,
-56 branches, 26 tests, 8 mutations all killed on the first pass).
+`scripts/dump_capability.py`, in the same CI python gate as `dump_coverage.py` (**100.00% branch**, 256
+statements, 110 branches, 61 tests).
+
+Its population is **thirty-one** channels — every field the producer renders, declared once in `DECLARATIONS`
+with the producer's own key literal, with each marker DERIVED from that literal. `keyof DiagnosedService` is
+covered exactly: the TypeScript fence asserts the declared fields equal `SERVICE_FIELD_AUDIT`'s keys in both
+directions, and the artifact's emitted keys equal the declared key column in both directions. Finding 7 is why:
+the list used to be seven names written by hand, paired with seven regexes written by hand, and neither half
+was connected to the dump.
 
 A channel's reach has **three** values, not two, and that is the whole point:
 
@@ -31,9 +38,10 @@ and the code that has to change.
 
 **And a channel is two quantities, not one: RENDERED and VALUED.** The producer has two ways of writing
 "rendered and undetermined" — `-` (`onset=-`, `latRise=-`, and now `metricDecisive: -`) and an EMPTY value
-(`dominant= err=0`) — and folding them into one number made `onset every` read as "every row carries an
-onset" while **12.5%** of the FSE'26 artifact prints `onset=-`. The census reports both, and prints the second
-only when it differs:
+(`dominant= err=0`, and `metricKept(0):` with nothing after the colon) — and folding them into one number made
+`onset every` read as "every row carries an onset" while **12.5%** of the FSE'26 artifact prints `onset=-`. The
+census reports both, and prints the second whenever the two **counts** differ (Finding 7: keying it on the
+verdicts hid a one-row difference where both read `some`).
 
 | artifact | `onset` | `dominant-metric` |
 | --- | --- | --- |
@@ -142,18 +150,167 @@ indentation follows it, and consuming the run of spaces turns a two-space servic
 row nowhere). After: the same file reads `1422 cases, 72527 rows; … decisive-composition some
 (71161/72527 rows)`.
 
+## Finding 7 — the census's own POPULATION was the defect it exists to catch
+
+`docs/artifact-capability-audit.md`'s instrument claims to report **every channel**. It reported **seven**,
+from a hand-written list, and nothing connected either the list or its hand-written regexes to the artifact.
+The artifact renders **thirty-one** fields, and they are declared exhaustively and *type-enforced* one module
+away — `SERVICE_FIELD_AUDIT` is a `Record<keyof DiagnosedService, string>`, so a new parsed field breaks the
+build until it is classified there — while the signals that read them carry a `reads:` list naming the field of
+each. Three declarations over one subject, and no edge between any two of them.
+
+The list was wrong in the two directions that matter, and both were measured:
+
+**Both two-part families were covered in the half the OTHER one covers.**
+
+| family | the channel that existed | key it read | the quantity left with no channel | who reads that quantity |
+| --- | --- | --- | --- | --- |
+| failed edge | `failed-edge` | `failedEdge=` — the **SCORE** | `failedEdgeRecords=` — the **COUNT** | `edgeRecords`, the one signal `fse26-separator-verdict.md` reports as HOLDING (**AUC 0.908**, 60–2, stable in all five folds) where the score reads 0.457 |
+| latency | `latency-edges` | `latEdges=` — the **COUNT** | `latRise=` — the **VALUE** | `lat`, the engine's own term |
+
+So a candidate reading either half of either family had to name the **other half's** channel, and the reach it
+was told was that half's. The reach is not a formality: on the shipped FSE'26 artifact `latEdges` is valued on
+**100%** of rows while `latRise` is valued on **37714 of 72527 — 52.0%**. The two halves of that pair differ by
+half the artifact, and the register's own sentence — per-edge counts *"do not separate source from victim at
+any weight"* — is true of the score and **false of the count**, which is the distance the missing channel hid.
+
+**And six quantities the record's declared signals read had no channel at all** — so the gate "name the
+channels you read and the reach you need of each" could not be satisfied by the candidates the record says are
+live: `failedEdgeRecords`, `latRise`, `metricKept` (`kept`), `metrics`, `err`/`fatal` (`errLines`),
+`logic`/`http` (`sigLines`).
+
+### The fix is a table whose key column IS the producer's literal
+
+`DECLARATIONS` declares every field once, with the producer's own key literal, and each marker is **DERIVED**
+from that literal — so the name and the matcher cannot drift apart again, which is exactly how `latEdges` came
+to be the pattern for a `latRise` read. Two fences hold the population, and they close a **two-edge chain**
+because neither alone would have found the defect (the table was self-consistent — eight tests passed on it —
+and the producer was correct; the missing edge was between them):
+
+1. `scripts/test_dump_capability.py` holds `scripts/dump_capability.channels.json` equal to the table, by
+   bytes and as data, and holds the regeneration command's output equal to the file.
+2. `benchmarks/__tests__/fse26-capability-census.test.ts` builds a dump with the PRODUCER and holds three
+   things equal in both directions: the artifact's emitted keys to the table's `key` column, per scope; the
+   table's `fields` column to `Object.keys(SERVICE_FIELD_AUDIT)` — the typed map; and every `reads` name across
+   `SEPARATOR_SCALARS` to a declared field.
+
+The file is read rather than the python parsed: a fence that depends on another language's formatting can be
+disarmed by reindenting the thing it guards. The TS half was validated by three mutations that each failed the
+intended assertion — a channel deleted from the projection (5 of 7 assertions red), an undeclared key added to
+the producer (the per-scope equality, naming `extraCensusProbe`), and a signal given an undeclared `reads`
+field (the signal-coverage assertion, naming the field).
+
+### What the complete population reads, on the shipped artifact
+
+`artifacts/r35107871516/fse26-results.txt`, **1422 cases / 72527 rows** (``*` marks the channels this iteration
+added). The verdicts that were already reported are **unchanged** — verified by running the previous module and
+this one over all **15** local artifacts and diffing all seven pre-existing channels: **identical**.
+
+| scope | channel | reach | valued |
+| --- | --- | --- | --- |
+| identity | `*` `service-id` | **`some` (71105/72527)** | — |
+| identity | `*` `row-labels` | **`some` (7781/72527)** | — |
+| header | `*` `datapack`, `*` `fault-type`, `*` `ground-truth`, `*` `services-declared`, `*` `log-mode`, `*` `inject-time` | `every` (1422/1422) | — |
+| header | `declared-precision` | **`none`** | — |
+| case | `*` `failed-edge-graph`, `*` `prediction` | `every` (1422/1422) | — |
+| row | `*` `self-anomaly`, `*` `log-score`, `failed-edge`, `*` `failed-edge-records`, `latency-edges`, `*` `error-count`, `*` `fatal-count`, `*` `logic-count`, `*` `http-count`, `signature-overlap`, `*` `metric-list` | `every` (72527/72527) | — |
+| row | `latency-rise` | `every` | **`some` 37714/72527** |
+| row | `dominant-metric` | `every` | **`some` 71161/72527** |
+| row | `onset` | `every` | **`some` 63489/72527** |
+| sub | `decisive-composition` | `some` (71161/72527) | `some` |
+| sub | `*` `error-messages` | **`some` (9313/72527)** | — |
+| sub | `*` `exceptions` | **`some` (3945/72527)** | — |
+| sub | `*` `metric-kept`, `*` `metric-drop`, `*` `metric-top` | **`some` (7781/72527)** | `metric-kept` **1888→1887 on `re1`**, below |
+
+Two of the new rows are findings on their own, and both are about what the record has been calling one thing:
+
+- **`error-messages` and `exceptions` are rendered and parsed by NOBODY.** 9313 of 72527 rows carry an `ERR:`
+  message and 3945 carry an `exc(…)` class list; no reader in the tree parses either, and `metric-list` (the
+  metric-name list, `every` row) is not parsed either. `SEPARATOR_SCALARS`'s own docstring says a field nobody
+  screens is a measurement nobody ran: there are **three** of them, and they now have names.
+- **`service-id` is `some`, at 98.0%** — 1422 rows carry no id at all, which is exactly one per case: the
+  unlabelled `k8s.*` series the engine ranks. The register records that dropping those rows from the engine
+  measures 750 → 749 and that `n` is the divisor of every metric term; the row count and the case count are
+  now the same number, and a test asserts that equality on the artifact rather than quoting it.
+
+### The four inventory signals read TWO lines, and the lines are not written under the same condition
+
+The `kept`/`transientDrops` pair reads the competition line; `bestDev`/`bestRise` reads the `metricTop`
+**decomposition**. Both are "the inventory" in every document in this repository, and the census now reports
+them separately:
+
+| artifact | rows | `metric-kept` | `metric-drop` | `metric-top` |
+| --- | --- | --- | --- | --- |
+| `re1.txt` | 11557 | **1888** (valued **1887**) | 1888 | **1887** |
+| `re2.txt` | 4806 | 763 | 763 | **762** |
+| `re3.txt` | 2900 | 472 | 472 | 472 |
+| `artifacts/r35107871516` (FSE'26) | 72527 | 7781 | 7781 | 7781 |
+| `artifacts/diag-34684319273` | 18820 | 2095 | 2095 | **`none`** |
+| `artifacts/diag-34678188226` | 41721 | **`none`** | `none` | `none` |
+
+Three distinct producers are on record and the reach moves across all three: the oldest renders **no**
+inventory; the next renders the competition and **no** decomposition; the newest renders both. So a `kept`
+reach and a `bestRise` reach are **different claims about the same artifact**, and on `diag-34684319273` one is
+measurable while the other is UNEVALUABLE.
+
+The one-row gap on `re1` is attributed rather than asserted: **`re1ob_adservice_loss_4`'s `adservice [GT]`**
+renders
+
+```
+  adservice [GT] selfAnomaly=0.000 logScore=0.000 … dominant= err=0 fatal=0 …
+    metrics(5): cpu,latency-50,latency-90,mem,workload
+    metricKept(0):
+    metricDrop(5): cpu:transient-return latency-50:transient-return latency-90:transient-return …
+```
+
+— the case's own ground truth, whose every metric was dropped as a **transient return**, so the kept line is
+rendered with an **empty body** and the decomposition is omitted. A candidate on `bestDev`/`bestRise` cannot
+be evaluated on that row; a candidate on `kept` reads a well-defined **zero** there. And since the label tag
+reaches the same 1888 rows, the gap is a property of the `metricTop` line rather than of the selection.
+
+### And one reading was hidden by the report itself
+
+`metric-kept` reaches **1888** rows and carries a body on **1887**. Both verdicts read `some`, and `describe`
+printed the value count only when the two **verdicts** differed — so the report showed `some (1888/11557 rows)`
+and said nothing about the row a candidate on that channel cannot be evaluated on. The rule is now the two
+**counts**, which is the module's own doctrine one level up: *"some" without a denominator is the reading this
+module exists to stop.* A channel whose counts agree still prints one number, so the ones that differ are not
+buried.
+
+### One defect in this iteration's own work, found by a pre-existing test
+
+Fixing the two identity channels, the first version of `reach` made their verdict a statement about the CASE
+count for a ROW channel — and they read **`none`** while **71105 of 72527 rows** carried them. That is the
+same class as everything above, one level down: a count standing in for a population. It was caught by
+`test_a_sub_line_that_names_no_row_still_reaches_its_CASE_and_no_row`, a test written three iterations earlier
+for the opposite question — `reach`'s first clause is deliberate (*"a block may print one outside any row"*),
+and the defect was in the **scanner**, which did not credit the case for the identity markers the way it does
+for every other row marker. Repaired there; the property keeps its documented semantics with **two** clauses
+pinned by hand-built coverage objects, including `total_rows == 0` → `none`, because `0 == 0` satisfies
+`reached == total` and an artifact with no rows would otherwise answer `every` about nothing.
+
 ## What a candidate must now say
 
 1. **Which channels it reads**, and the **reach** it needs of each — `every` if it sums or simulates over
    every candidate, `some` if it only asks whether the artifact has the channel.
 2. **Whether it needs the channel or the VALUE**, because a channel can reach every row and carry nothing on
-   a third of them (`onset`).
+   a third of them (`onset`, `latRise`).
 3. **Which artifact** it reads them from, by run, with that artifact's coverage — because the two FSE'26
    artifacts differ in exactly the channel the composition family depends on.
 4. If the reach it needs is not `every`, the **producer change** that would make it so, stated before the
    measurement rather than after.
+5. **Which half of the family**, when the quantity is one of a pair that the census names twice. `failed-edge`
+   is the SCORE and `failed-edge-records` the COUNT; `latency-edges` is the edge count and `latency-rise` the
+   rise. They are read by different signals, and on the shipped artifact one half of one pair is valued on half
+   the rows. And for the inventory, `metric-kept`/`metric-drop` and `metric-top` are **not** interchangeable:
+   they are different lines with different reaches, and an artifact exists in this repository that carries one
+   and not the other.
 
 ## Gates
+
+`benchmarks` **799** tests / 23 files · the python gate **461 tests · 1617 statements · 582 branches ·
+100.00%**, every module at 100% · `dump_capability.py` at **100.00% branch** · the TypeScript fence 7 tests ·
+`typecheck` clean on the project that carries it · lint 0/0 · format clean.
 
 `benchmarks` **724** at 99.81 / **97.40** / 100 / 99.81 · `kinetic` **926** at 100 / 99.44 / 100 / 100 · both
 typechecks · lint 0/0 · format clean · register guard 14/14 · the census module at **100.00% branch coverage**

@@ -153,7 +153,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | `prism-head-to-head.md` | the PRISM reimplementation and the 9-cell head-to-head that opened the fusion direction |
 | `sota-comparison.md` | the corrected SOTA calibration on RCAEval |
 | `sota-roadmap-2026.md` | the roadmap and validation method toward a defensible SOTA claim |
-| `artifact-capability-audit.md` | what an artifact CARRIES — the `every` / `some` / `none` census and the refusal it supports |
+| `artifact-capability-audit.md` | what an artifact CARRIES — the `every` / `some` / `none` census, its refusal, and (Finding 7) the census's own POPULATION: seven hand-written channels against the artifact's thirty-one fields, so **both two-part families were covered in the half the other covers** — `failed-edge` read the SCORE and left `edgeRecords`' COUNT with no channel (AUC 0.908 where the score reads 0.457), `latency-edges` read the COUNT and left the `lat` term's RISE with none, its reach the other half's (**100%** against the rise's **52.0%**) — and six quantities the declared signals read had no channel at all. The population is now a table whose key column is the producer's own literal with each marker DERIVED from it, held by two fences on a two-edge chain: the python test keeps the committed projection equal to the table, and the TypeScript test builds a dump with the PRODUCER and holds the emitted keys, the table's `fields` and `Object.keys(SERVICE_FIELD_AUDIT)` equal in both directions |
 | `register-fence-audit.md` | why this register's own fence was keyed on a filename, and the nine closures that were invisible to it |
 
 ## The shared kill criterion
@@ -614,6 +614,23 @@ itself reaches **98.13%** of the shipped artifact's rows (`71161/72527`) — and
 carry no line at all were exactly the rows whose inventory is not rendered either, so their absence was
 unattributable. A candidate must therefore say whether it needs the channel or the VALUE: `onset` is the
 warning, reaching every row and carrying a number on **87.5%** of them.
+
+**And it must now say WHICH HALF OF A FAMILY, because the census's own population was seven hand-written
+channels against the artifact's thirty-one fields** (`docs/artifact-capability-audit.md` Finding 7). Both
+two-part families were covered in the half the OTHER one covers: `failed-edge` read the SCORE, leaving
+`edgeRecords`' COUNT — the one signal the separator verdict reports as HOLDING, **0.908** where the score reads
+**0.457** — with no channel, and `latency-edges` read the COUNT, leaving the `lat` term's RISE with none and
+reporting the other half's reach (**100%** against the rise's **52.0%**). Six quantities the declared signals
+read had no channel at all, so the gate above could not be satisfied by the candidates this record calls live.
+The population is a table whose key column is the producer's own literal with each marker DERIVED from it
+(which is how the drift happened: one pattern was written for `latEdges` and used for a `latRise` read), held
+by two fences on a two-edge chain — the python test keeps the committed projection equal to the table, and the
+TypeScript test builds a dump with the PRODUCER and holds the emitted keys, the table's `fields` and
+`Object.keys(SERVICE_FIELD_AUDIT)` equal in both directions. **A candidate that names `failed-edge` for a count
+read, or `latency-edges` for a rise read, is naming the other half of the pair and will be told the other
+half's reach.** For the inventory the halves are not even the same LINE: `metric-kept`/`metric-drop` reach 1888
+of `re1`'s rows, `metric-top` 1887, and `artifacts/diag-34684319273` carries the first pair for 2095 rows and
+the second not at all.
 
 **And the criterion itself is now an intersection rather than a comparison in prose.** Its two halves live on
 two benchmarks — a candidate must GAIN on one and cost another nothing — so the object it asks for is the

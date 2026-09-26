@@ -10,30 +10,70 @@ subset and its superset, and a stability table was read from a report that holds
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+import runpy
+import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import dump_capability as dc
 
 LOCAL_DUMPS = Path('/Users/lambertyan/WorkBuddy/2026-08-08-10-23-08/.bench-cache/rcaeval-dumps')
 FSE26_DUMP = Path('/Users/lambertyan/WorkBuddy/2026-08-08-10-23-08/.bench-cache/dump-35035314921.txt')
+#: The three-decimal FSE'26 artifact the stability screen and the separator verdict are read from. Under
+#: `artifacts/`, which is git-ignored, so every test that reads it skips rather than fails on a machine that
+#: has never fetched it — and the numbers are recorded in `docs/artifact-capability-audit.md` for the same
+#: reason the artifact is not the record.
+SHIPPED_FSE26 = Path(__file__).resolve().parent.parent / 'artifacts/r35107871516/fse26-results.txt'
 
-#: A row carrying every row-level channel, in the shape the producer writes it.
+#: A row carrying every row-level channel, in the shape the producer writes it. The row-level keys are the
+#: producer's own literals, in its own order (`packages/kinetic/src/benchmarks/fse26-diagnose.ts`), so a
+#: fixture that drifts from the producer is caught by the TypeScript fence rather than read as a legal shape.
 FULL_ROW = (
-    '  adservice [#1] selfAnomaly=0.255 logScore=0.000 failedEdge=1.000 latRise=- latEdges=0 '
-    'dominant=latency-50 err=0 fatal=0 logic=0 http=0 both=0 onset=34000\n'
+    '  adservice [#1] selfAnomaly=0.255 logScore=0.000 failedEdge=1.000 failedEdgeRecords=9 '
+    'latRise=- latEdges=0 dominant=latency-50 err=0 fatal=0 logic=0 http=0 both=0 onset=34000\n'
+)
+
+#: A row with neither an id nor a label — the unlabelled series the block still ranks. Its own channel now
+#: reports the absence, because `n` is the divisor of every metric term and a reader that drops these rows
+#: computes a different term for every service in the case.
+UNLABELLED_ROW = (
+    '   selfAnomaly=0.100 logScore=0.000 failedEdge=0.000 failedEdgeRecords=0 latRise=- latEdges=0 '
+    'dominant=- err=0 fatal=0 logic=0 http=0 both=0 onset=-\n'
+)
+
+#: Every sub-line the producer can write for a row, so a fixture cannot reach `every` by rendering a subset.
+FULL_SUB_LINES = (
+    '    metrics(2): cpu, mem\n'
+    '    metricKept(1): cpu=0.9\n'
+    '    metricDrop(1): mem:transient-return\n'
+    '    metricTop(1/1): cpu=0.9{dev=0.4,trend=0.1,cv=0.2,burst=0,rise=12,drop=0,base=0.02}\n'
+    '    metricDecisive: cpu=0.9{dev=0.4,trend=0.1}\n'
+    '    ERR: Connection refused\n'
+    '    exc(1): IOException\n'
 )
 
 
 def case(datapack: str, *rows: str, decimals: int | None = 3, decisive: bool = True) -> str:
     """
-    One case's block, in the block's own structure: header, rows, and the sub-lines that belong to a row.
+    One case's block, in the block's own structure: header, case lines, rows, and the sub-lines of a row.
 
     The indentation is load-bearing — `metricDecisive` is a 4-space sub-line, which is what makes it a
     channel of the ROW that precedes it rather than a line the census could count on its own.
+
+    The header and the two case lines carry every field the producer can write, so a channel that is only
+    reachable through one of them cannot pass by being absent from the fixture.
     """
     tail = '' if decimals is None else f' decimals={decimals}'
-    head = f'DIAG datapack={datapack} faultType=cpu services={len(rows)}{tail}\n'
+    head = (
+        f'DIAG datapack={datapack} faultType=cpu GT=[adservice] services={len(rows)}'
+        f' logMode=logicHttp inject=1000{tail}\n'
+        '  edges=a>b,b>c\n'
+        '  prediction=[adservice]\n'
+    )
     body = ''
     for row in rows:
         body += row
@@ -42,15 +82,29 @@ def case(datapack: str, *rows: str, decimals: int | None = 3, decisive: bool = T
     return head + body
 
 
+#: One case with EVERY channel rendered, so a channel added to the table without a producer that writes it
+#: fails the equality above rather than passing on a fixture that never mentions it.
+FULL_CASE = (
+    'DIAG datapack=a_cpu_1 faultType=cpu GT=[adservice] services=1 logMode=logicHttp inject=1000 decimals=3\n'
+    '  edges=a>b\n'
+    '  prediction=[adservice]\n' + FULL_ROW + FULL_SUB_LINES
+)
+
+
 class CapabilityOfTest(unittest.TestCase):
     """What an artifact can be ASKED, read from its own text."""
 
     def test_a_fully_rendered_artifact_reaches_every_case_and_every_row(self) -> None:
-        capability = dc.capability_of(case('a_cpu_1', FULL_ROW, FULL_ROW))
+        capability = dc.capability_of(FULL_CASE)
         self.assertEqual(capability.cases, 1)
-        self.assertEqual(capability.rows, 2)
+        self.assertEqual(capability.rows, 1)
         for name in dc.CHANNELS:
-            self.assertEqual(capability.channel(name).reach, dc.EVERY, name)
+            coverage = capability.channel(name)
+            self.assertEqual(coverage.reach, dc.EVERY, name)
+            # BOTH counts, for every channel: the case count is a separate claim from the row count and the
+            # census reports both. Asserting only the verdict left it possible to stop crediting the case for a
+            # whole scope — the row count keeps the verdict right, so nothing would have failed.
+            self.assertEqual(coverage.cases_reached, 1, name)
 
     def test_a_channel_on_ONLY_SOME_ROWS_is_reported_as_some_and_never_as_every(self) -> None:
         # The measured defect in miniature: the decisive composition is on the ground truth and the engine's
@@ -298,6 +352,303 @@ class CapabilityOfTest(unittest.TestCase):
             capability.channel('onset-delay')
 
 
+class DeclarationTableTest(unittest.TestCase):
+    """
+    The population itself: one table, one key literal per channel, and no room for a name and a matcher to
+    drift apart — which is what happened for `latEdges`/`latRise` and `failedEdge`/`failedEdgeRecords`.
+
+    The TypeScript fence (`benchmarks/__tests__/fse26-capability-census.test.ts`) is the other half: it builds
+    a dump with the producer and asserts this table's `key`s equal the artifact's fields, both directions, and
+    that the declared `fields` equal `SERVICE_FIELD_AUDIT`'s keys — the typed `Record<keyof DiagnosedService>`.
+    """
+
+    def test_the_report_is_DERIVED_from_the_table_rather_than_listed_beside_it(self) -> None:
+        self.assertEqual(dc.CHANNELS, tuple(d.channel for d in dc.DECLARATIONS))
+        self.assertEqual(len(set(dc.CHANNELS)), len(dc.CHANNELS))
+        # The `services=` reader is derived too, so the key literal has exactly one owner.
+        self.assertIn('services-declared', dc.CHANNELS)
+        self.assertEqual(
+            dc.SERVICES_DECLARED.pattern,
+            r'\b' + next(d.key for d in dc.DECLARATIONS if d.channel == 'services-declared') + r'=(\d+)',
+        )
+
+    def test_the_population_is_BIG_enough_for_an_equality_to_mean_anything(self) -> None:
+        # A one-sided check passes on an empty table. The counts are the producer's grammar: the identity's two
+        # channels, the case's nine fields, the row's thirteen, the sub-line's seven.
+        self.assertGreaterEqual(len(dc.DECLARATIONS), 31)
+        self.assertEqual(set(d.scope for d in dc.DECLARATIONS), set(dc.SCOPES))
+        per_scope = {scope: sum(1 for d in dc.DECLARATIONS if d.scope == scope) for scope in dc.SCOPES}
+        self.assertEqual(per_scope[dc.ROW], 13)
+        self.assertEqual(per_scope[dc.SUB_LINE], 7)
+        self.assertEqual(per_scope[dc.HEADER], 7)
+        self.assertEqual(per_scope[dc.CASE_LINE], 2)
+        self.assertEqual(per_scope[dc.ROW_IDENTITY], 2)
+
+    def test_every_channel_declares_the_field_it_carries_and_why(self) -> None:
+        # `why` is the deliverable: "nobody screens this" and "this was screened and closed" are different
+        # statements, and a blank reason would let the second read as the first.
+        for declaration in dc.DECLARATIONS:
+            self.assertTrue(declaration.why.strip(), declaration.channel)
+            self.assertTrue(
+                declaration.fields or declaration.channel in dc.NO_FIELD_CHANNELS,
+                f'{declaration.channel} declares no field and is not a declared no-field channel',
+            )
+
+    def test_a_channel_that_carries_NO_parsed_field_says_so_by_name(self) -> None:
+        # Three lines the producer renders and no reader parses. They are channels — the census reports what
+        # the artifact CARRIES — and they are excluded from the field equality by an explicit set rather than
+        # by being forgotten, because an exclusion nobody decided is not an exclusion.
+        self.assertEqual(
+            dc.NO_FIELD_CHANNELS,
+            frozenset({'metric-list', 'error-messages', 'exceptions'}),
+        )
+        for name in dc.NO_FIELD_CHANNELS:
+            self.assertEqual(dc.DECLARATIONS[dc.CHANNELS.index(name)].fields, ())
+
+    def test_a_key_is_DERIVED_into_a_marker_that_cannot_match_its_neighbour(self) -> None:
+        # The measured drift, in both directions: `failedEdge` is a PREFIX of `failedEdgeRecords`, so a
+        # marker written as a bare substring search finds the count where the score was meant — and the two
+        # belong to opposite halves of one family, so the reach a candidate is told is the other half's.
+        score = dc.DECLARATIONS[dc.CHANNELS.index('failed-edge')].marker
+        count = dc.DECLARATIONS[dc.CHANNELS.index('failed-edge-records')].marker
+        row = '  a [#1] failedEdge=1.000 failedEdgeRecords=9\n'
+        self.assertEqual(score.search(row).group(1), '1.000')
+        self.assertEqual(count.search(row).group(1), '9')
+        self.assertIsNone(score.search('  a [#1] failedEdgeRecords=9\n'))
+        self.assertIsNone(count.search('  a [#1] failedEdge=1.000\n'))
+        # And the same for the other family, whose two halves are `latEdges` and `latRise`.
+        edges = dc.DECLARATIONS[dc.CHANNELS.index('latency-edges')].marker
+        rise = dc.DECLARATIONS[dc.CHANNELS.index('latency-rise')].marker
+        self.assertEqual(edges.search('  a [#1] latRise=3.5 latEdges=2\n').group(1), '2')
+        self.assertEqual(rise.search('  a [#1] latRise=3.5 latEdges=2\n').group(1), '3.5')
+
+    def test_the_two_families_both_carry_BOTH_halves(self) -> None:
+        # The defect this table exists for: the list held the failed-edge SCORE but not the COUNT, and the
+        # latency COUNT but not the RISE, so either half of either family had to name the other half's
+        # channel and was told the other half's reach.
+        for pair in (('failed-edge', 'failed-edge-records'), ('latency-edges', 'latency-rise')):
+            for name in pair:
+                self.assertIn(name, dc.CHANNELS, name)
+            fields = {
+                dc.DECLARATIONS[dc.CHANNELS.index(name)].fields[0] for name in pair
+            }
+            self.assertEqual(len(fields), 2, f'{pair} declare one field twice')
+
+    def test_a_NUMBER_valued_field_cannot_be_counted_as_carried_on_a_non_number(self) -> None:
+        # The reader's own `HEADER_RE` fails outright on `decimals=abc`, so a census that counted it as
+        # carried would report a precision the reader will not see.
+        declarations = {d.channel: d for d in dc.DECLARATIONS}
+        header = 'DIAG datapack=x faultType=y GT=[a] services=2 logMode=m inject=7 decimals=3\n'
+        for name in ('declared-precision', 'services-declared', 'inject-time'):
+            self.assertIsNotNone(declarations[name].marker.search(header), name)
+        self.assertIsNone(
+            declarations['declared-precision'].marker.search('DIAG datapack=x services=2 decimals=abc\n'),
+            'a non-numeric precision is not a declared precision',
+        )
+
+
+class ReachIsJudgedOnItsOWNScopeTest(unittest.TestCase):
+    """
+    The two clauses of `reach` that a measurement added, each pinned on a coverage object built by hand.
+
+    Built by hand rather than from a fixture on purpose: the clause is a statement about TWO counts, and a
+    fixture can only produce the pairs the producer happens to write. The pairs below are the ones the
+    scanner's own two shapes produce — a row channel with no case flag and rows that carry it, and a
+    population of no rows at all — and neither is reachable from the concrete syntax alone.
+    """
+
+    def _coverage(self, **overrides: object) -> dc.ChannelCoverage:
+        base: dict[str, object] = {
+            'channel': 'onset',
+            'cases_reached': 0,
+            'total_cases': 1,
+            'rows_reached': 1,
+            'total_rows': 2,
+            'cases_valued': 0,
+            'rows_valued': 1,
+        }
+        base.update(overrides)
+        return dc.ChannelCoverage(**base)  # type: ignore[arg-type]
+
+    def test_a_ROW_channel_with_no_case_flag_is_SOME_and_never_NONE(self) -> None:
+        # The measured defect: the first version asked the CASE count first, and answered `none` for the two
+        # row-identity channels — a channel 71105 of the shipped artifact's 72527 rows carry.
+        self.assertEqual(self._coverage().reach, dc.SOME)
+        self.assertEqual(self._coverage().value_reach, dc.SOME)
+        self.assertEqual(self._coverage(rows_reached=0).reach, dc.NONE)
+
+    def test_an_EMPTY_population_is_never_EVERY_however_far_a_case_reached(self) -> None:
+        # `0 == 0` satisfies `reached == total`, so without this clause a block with no rows reports every row
+        # channel as `every` — a universal claim about nothing. Reachable through the one shape that sets a case
+        # flag without a row: a sub-line the parser cannot attribute to any row.
+        empty = self._coverage(rows_reached=0, total_rows=0, cases_reached=1)
+        self.assertEqual(empty.reach, dc.NONE)
+        self.assertEqual(empty.value_reach, dc.NONE)
+        self.assertEqual(self._coverage(rows_valued=0, total_rows=0, cases_valued=1).value_reach, dc.NONE)
+
+    def test_every_row_carrying_it_is_EVERY_and_part_of_them_is_SOME(self) -> None:
+        # Both directions, so neither the union clause nor the empty clause can be satisfied by a property
+        # that answers one value for everything.
+        self.assertEqual(self._coverage(rows_reached=2, cases_reached=1).reach, dc.EVERY)
+        self.assertEqual(self._coverage(rows_reached=1, cases_reached=1).reach, dc.SOME)
+
+    def test_a_CASE_scoped_channel_is_answered_over_CASES_and_ignores_the_row_counts(self) -> None:
+        coverage = self._coverage(
+            channel='declared-precision', cases_reached=1, rows_reached=None, rows_valued=None
+        )
+        self.assertEqual(coverage.reach, dc.EVERY)
+        self.assertEqual(coverage.value_reach, dc.NONE)
+        self.assertEqual(self._coverage(channel='declared-precision', cases_reached=0).reach, dc.NONE)
+
+    def test_the_UNLABELLED_series_is_counted_and_its_absent_id_is_a_NUMBER_not_a_caveat(self) -> None:
+        # One row per case with no id at all — the ten unlabelled `k8s.*` series. `n` is the divisor of every
+        # metric term, so a reader that drops the row computes a different term for every service.
+        capability = dc.capability_of(case('a_cpu_1', FULL_ROW, UNLABELLED_ROW, UNLABELLED_ROW))
+        self.assertEqual(capability.rows, 3)
+        self.assertEqual(capability.channel('service-id').rows_reached, 1)
+        self.assertEqual(capability.channel('service-id').reach, dc.SOME)
+        self.assertEqual(capability.channel('row-labels').rows_reached, 1)
+        # The CASE count is a different claim and it is recorded too: "some case renders an id" is true here,
+        # and it is the count a `reach` that read only cases would have turned into a verdict about rows.
+        self.assertEqual(capability.channel('service-id').cases_reached, 1)
+
+    def test_a_channel_nothing_reaches_is_NONE_in_BOTH_scopes(self) -> None:
+        capability = dc.capability_of(case('a_cpu_1', FULL_ROW, decimals=None))
+        for name in ('declared-precision', 'metric-kept', 'error-messages'):
+            coverage = capability.channel(name)
+            self.assertEqual(coverage.reach, dc.NONE, name)
+            self.assertEqual(coverage.value_reach, dc.NONE, name)
+
+    def test_a_CASE_scoped_field_rendered_WITHOUT_a_value_is_reached_but_not_valued(self) -> None:
+        # Which header fields CAN carry the undetermined marker is itself a fact about the two kinds of
+        # header field, and it is not symmetric. The three NUMERIC ones (`services`, `inject`, `decimals`)
+        # declare a digits-only value because the reader's own `HEADER_RE` requires one — so an unvalued
+        # `inject` is ABSENT from the header rather than printed as `-`, and their two numbers cannot differ.
+        # The token-valued ones can: `logMode=-` is rendered and undetermined.
+        capability = dc.capability_of(
+            'DIAG datapack=a_cpu_1 faultType=cpu GT=[a] services=1 logMode=- inject=7 decimals=3\n'
+            + FULL_ROW
+        )
+        self.assertEqual(capability.channel('log-mode').reach, dc.EVERY)
+        self.assertEqual(capability.channel('log-mode').value_reach, dc.NONE)
+        # And the numeric half, stated as the thing it is: absent, not marked.
+        absent = dc.capability_of(
+            'DIAG datapack=a_cpu_1 faultType=cpu GT=[a] services=1 logMode=logicHttp decimals=3\n'
+            + FULL_ROW
+        )
+        self.assertEqual(absent.channel('inject-time').reach, dc.NONE)
+        unmarked = dc.capability_of(
+            'DIAG datapack=a_cpu_1 faultType=cpu GT=[a] services=1 logMode=logicHttp inject=- decimals=3\n'
+            + FULL_ROW
+        )
+        self.assertEqual(unmarked.channel('inject-time').reach, dc.NONE)
+
+    def test_a_CASE_line_rendered_WITHOUT_a_value_is_reached_but_not_valued(self) -> None:
+        capability = dc.capability_of(
+            'DIAG datapack=a_cpu_1 faultType=cpu GT=[a] services=1 logMode=logicHttp inject=7 decimals=3\n'
+            '  edges=-\n'
+            '  prediction=[]\n' + FULL_ROW
+        )
+        self.assertEqual(capability.channel('failed-edge-graph').reach, dc.EVERY)
+        self.assertEqual(capability.channel('failed-edge-graph').value_reach, dc.NONE)
+
+    def test_the_IDENTITY_is_two_channels_each_with_its_OWN_two_numbers(self) -> None:
+        # The row's identity is not a `key=value` field, so it needs its own pair of patterns, and both must
+        # tell "rendered" from "carrying something": the id is what the unlabelled series lacks, and the tag
+        # is what a service the engine never predicted and the case never labelled lacks.
+        odd = FULL_ROW.replace('adservice [#1]', '- []', 1)
+        capability = dc.capability_of(case('a_cpu_1', FULL_ROW, odd))
+        self.assertEqual(capability.rows, 2)
+        for name in ('service-id', 'row-labels'):
+            coverage = capability.channel(name)
+            self.assertEqual(coverage.rows_reached, 2, name)
+            self.assertEqual(coverage.rows_valued, 1, name)
+            self.assertEqual(coverage.reach, dc.EVERY, name)
+            self.assertEqual(coverage.value_reach, dc.SOME, name)
+
+    def test_a_block_with_NO_rows_answers_NONE_for_every_ROW_channel(self) -> None:
+        # Zero of zero is 1.0, so a population of nothing satisfies `reached == total` and would report every
+        # channel as `every` — the vacuous reading, and the one a truncated fetch produces. The block below
+        # also renders a sub-line with no row above it, so the CASE count reaches that channel while no row
+        # does: the two counts are different claims and the verdict follows the row.
+        capability = dc.capability_of(
+            'DIAG datapack=a_cpu_1 faultType=cpu GT=[] services=0 logMode=logicHttp inject=7 decimals=3\n'
+            '    metricDecisive: cpu=0.1{dev=0.1}\n'
+        )
+        self.assertEqual(capability.cases, 1)
+        self.assertEqual(capability.rows, 0)
+        self.assertEqual(capability.channel('decisive-composition').cases_reached, 1)
+        self.assertEqual(capability.channel('decisive-composition').rows_reached, 0)
+        for name in dc.CHANNELS:
+            if name in dc.CASE_SCOPED:
+                continue
+            self.assertEqual(capability.channel(name).reach, dc.NONE, name)
+            self.assertEqual(capability.channel(name).value_reach, dc.NONE, name)
+
+
+class CommittedProjectionTest(unittest.TestCase):
+    """
+    The file the TypeScript fence reads, kept equal to the table IN BOTH DIRECTIONS.
+
+    The connection runs two edges: this test holds `scripts/dump_capability.channels.json` equal to
+    {@link dc.declarations_as_data}, and `benchmarks/__tests__/fse26-capability-census.test.ts` holds that file
+    equal to what the PRODUCER emits and to `SERVICE_FIELD_AUDIT`'s keys. Neither edge alone would have found
+    the defect — the table was self-consistent (eight tests passed on it) and the producer was correct; what
+    was missing was the edge between them.
+    """
+
+    def test_the_committed_projection_EQUALS_the_table_and_is_not_a_second_list(self) -> None:
+        committed = json.loads(dc.DECLARATIONS_PATH.read_text('utf-8'))
+        self.assertEqual(committed, dc.declarations_as_data())
+        # Byte equality too, so a reformat that changes nothing semantically still shows up as the diff it is:
+        # the file is generated, and a generated file that no longer matches its generator is a stale copy.
+        self.assertEqual(dc.DECLARATIONS_PATH.read_text('utf-8'), dc.format_declarations_json())
+
+    def test_the_projection_carries_the_THREE_mechanical_columns_and_no_prose(self) -> None:
+        # A reason is for a reader and a fence needs a column: shipping the prose into the file would make the
+        # projection's shape depend on wording, and a rewording would show as a regenerate.
+        for entry in dc.declarations_as_data():
+            self.assertEqual(sorted(entry), ['channel', 'fields', 'key', 'scope'])
+
+    def test_the_regeneration_command_prints_EXACTLY_the_committed_bytes(self) -> None:
+        # The failure message names a command, so the command has to be the one that works.
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            self.assertEqual(dc.main(['--channels']), 0)
+        self.assertEqual(captured.getvalue(), dc.DECLARATIONS_PATH.read_text('utf-8'))
+
+    def test_the_command_REFUSES_an_empty_request_rather_than_printing_nothing(self) -> None:
+        # Silence would read as an empty table, which is the one reading that makes the equality vacuous.
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as caught:
+                dc.main([])
+        self.assertEqual(caught.exception.code, 2)
+
+    def test_the_module_is_reachable_as_a_COMMAND(self) -> None:
+        # Through `runpy` with `__main__` as the name, because that is what a shell does: calling `main()`
+        # from a test leaves the guard at the foot of the file unexecuted, and the guard is the only thing
+        # that makes the regeneration command in a failure message a command rather than a function.
+        saved = sys.argv
+        sys.argv = ['dump_capability.py', '--channels']
+        captured = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(captured):
+                with self.assertRaises(SystemExit) as caught:
+                    runpy.run_path(str(Path(dc.__file__)), run_name='__main__')
+        finally:
+            sys.argv = saved
+        self.assertEqual(caught.exception.code, 0)
+        self.assertEqual(captured.getvalue(), dc.DECLARATIONS_PATH.read_text('utf-8'))
+
+    def test_an_EMPTY_table_projects_to_an_empty_array_rather_than_a_blank_file(self) -> None:
+        # A table emptied by an edit must still render JSON. The branch exists because the array's framing
+        # is hand-assembled around `json.dumps`, and `'[\n' + '' + '\n]\n'` is a file a reader would have to
+        # guess at rather than parse.
+        with mock.patch.object(dc, 'DECLARATIONS', ()):
+            self.assertEqual(dc.declarations_as_data(), [])
+            self.assertEqual(dc.format_declarations_json(), '[]\n')
+
+
 class DescribeTest(unittest.TestCase):
     """The line that lets an artifact's reach travel with a number read from it."""
 
@@ -328,6 +679,36 @@ class DescribeTest(unittest.TestCase):
         self.assertEqual(capability.cases, 2)
         self.assertEqual(capability.channel('declared-precision').reach, dc.SOME)
         self.assertIn('declared-precision some (1/2 cases)', dc.describe(capability))
+
+    def test_the_VALUE_count_is_printed_whenever_it_differs_even_if_both_verdicts_agree(self) -> None:
+        # Measured on the re1 artifact: `metricKept(0):` — a rendered inventory with NOTHING in it, because
+        # every metric of that service was dropped as a transient return. Both verdicts read `some` and the two
+        # counts differ by one row, so a rule keyed on the VERDICT would report 1888 and hide the row a
+        # candidate on that channel cannot be evaluated on.
+        text = (
+            'DIAG datapack=a_cpu_1 faultType=cpu GT=[a] services=3 logMode=logicHttp inject=7 decimals=3\n'
+            + FULL_ROW
+            + '    metricKept(1): cpu=0.9\n'
+            + UNLABELLED_ROW
+            + '    metricKept(0):\n'
+            + UNLABELLED_ROW
+        )
+        capability = dc.capability_of(text)
+        coverage = capability.channel('metric-kept')
+        self.assertEqual((coverage.rows_reached, coverage.rows_valued), (2, 1))
+        self.assertEqual(coverage.reach, dc.SOME)
+        self.assertEqual(coverage.value_reach, dc.SOME)
+        self.assertIn('metric-kept some (2/3 rows), valued 1/3 rows', dc.describe(capability))
+
+    def test_a_channel_whose_two_counts_AGREE_prints_one_number(self) -> None:
+        # The other direction: printing the second number unconditionally would put `valued 72527/72527` on
+        # every universal channel and bury the ones where the two actually differ.
+        capability = dc.capability_of(case('a_cpu_1', FULL_ROW))
+        line = dc.describe(capability)
+        self.assertIn('onset every', line)
+        self.assertNotIn('onset every, valued', line)
+        # `latRise=-` is the producer's undetermined marker, so this one DOES print both.
+        self.assertIn('latency-rise every, valued 0/1 rows', line)
 
 
 class RequireChannelTest(unittest.TestCase):
@@ -445,6 +826,73 @@ class RealArtifactsTest(unittest.TestCase):
         # truncated artifact.
         for name in ('onset', 'latency-edges', 'failed-edge', 'dominant-metric'):
             self.assertEqual(capability.channel(name).reach, dc.EVERY, name)
+
+    def test_the_two_families_read_as_the_record_says_and_NEVER_as_each_other(self) -> None:
+        # The defect this iteration found, as numbers. The list held the failed-edge SCORE while the COUNT
+        # (`edgeRecords`, the one signal the separator verdict reports as holding at AUC 0.908 where the score
+        # reads 0.457) had no channel, and the latency COUNT while the RISE — the `lat` term's own input — had
+        # none. Both halves could only be named by naming the other half, and the reach returned was that
+        # half's: `latEdges` is valued on every row while `latRise` is valued on 52.0% of them.
+        capability = self._capability(SHIPPED_FSE26)
+        rows = capability.rows
+        self.assertEqual(capability.channel('failed-edge-records').reach, dc.EVERY)
+        self.assertEqual(capability.channel('failed-edge-records').value_reach, dc.EVERY)
+        self.assertEqual(capability.channel('latency-edges').value_reach, dc.EVERY)
+        rise = capability.channel('latency-rise')
+        self.assertEqual(rise.reach, dc.EVERY)
+        self.assertEqual(rise.value_reach, dc.SOME)
+        self.assertEqual(rise.rows_valued, 37714)
+        self.assertLess(rise.rows_valued * 2, rows * 1.05)
+
+    def test_the_UNLABELLED_series_is_ONE_ROW_PER_CASE_on_the_shipped_artifact(self) -> None:
+        # Measured, not asserted from a comment: the id is absent exactly as many times as there are cases, so
+        # the row the engine ranks and the parsed count used to drop is a NUMBER here — and `n` is the divisor
+        # of every metric term in the case.
+        capability = self._capability(SHIPPED_FSE26)
+        self.assertEqual(capability.rows - capability.channel('service-id').rows_reached, capability.cases)
+
+    def test_the_inventory_and_the_messages_have_their_own_reaches(self) -> None:
+        # The channels the record's own declared signals read, with the reach each was missing: `kept` is drawn
+        # on the inventory (10.7% of rows) and the register's matched stratum is 487 of 666 pairs.
+        capability = self._capability(SHIPPED_FSE26)
+        for name, reached in (('metric-kept', 7781), ('metric-drop', 7781), ('metric-top', 7781)):
+            coverage = capability.channel(name)
+            self.assertEqual((coverage.reach, coverage.rows_reached), (dc.SOME, reached), name)
+        self.assertEqual(capability.channel('metric-list').reach, dc.EVERY)
+        self.assertEqual(capability.channel('error-messages').rows_reached, 9313)
+        self.assertEqual(capability.channel('exceptions').rows_reached, 3945)
+
+    def test_the_TWO_inventory_families_have_DIFFERENT_reaches_and_the_artifact_says_by_how_much(self) -> None:
+        # The four inventory signals read TWO lines, and the lines are not written under the same condition:
+        # `metricKept`/`metricDrop` carry the line-level fates, and `metricTop` carries the score decomposition
+        # the two maxima (`bestDev`, `bestRise`) are read from. Before this iteration NEITHER line had a
+        # channel, so the four signals were one undifferentiated "inventory" whose reach nobody could state.
+        #
+        # On `re1` the difference is exactly ONE row: `re1ob_adservice_loss_4`'s `adservice [GT]`, whose
+        # `metricKept(0):` is rendered with an EMPTY body because every one of its metrics was dropped as a
+        # transient return — the case's own ground truth, invisible in its own inventory, and the one row a
+        # `bestDev`/`bestRise` candidate cannot be evaluated on while `kept` reads a well-defined zero.
+        capability = self._capability(LOCAL_DUMPS / 're1.txt')
+        self.assertEqual(capability.rows, 11557)
+        kept = capability.channel('metric-kept')
+        self.assertEqual((kept.rows_reached, kept.rows_valued), (1888, 1887))
+        self.assertEqual(capability.channel('metric-drop').rows_reached, 1888)
+        self.assertEqual(capability.channel('metric-top').rows_reached, 1887)
+        # The label tag and the inventory are written for the same rows on THIS producer, so the one-row gap is
+        # a property of `metricTop` rather than of the selection — which is what makes the attribution above a
+        # measurement instead of a guess.
+        self.assertEqual(capability.channel('row-labels').rows_reached, 1888)
+
+    def test_an_artifact_can_carry_ONE_inventory_family_and_not_the_other(self) -> None:
+        # The same two lines, one producer generation earlier: `metricKept`/`metricDrop` are rendered for 2095
+        # rows and `metricTop` for none of them, so `bestDev`/`bestRise` are UNEVALUABLE on that artifact while
+        # `kept`/`transientDrops` are measurable. An inventory reach quoted from the competition line would
+        # have been a claim about a decomposition the artifact does not hold.
+        older = Path(__file__).resolve().parent.parent / 'artifacts/diag-34684319273/fse26-results.txt'
+        capability = self._capability(older)
+        self.assertEqual(capability.channel('metric-kept').rows_reached, 2095)
+        self.assertEqual(capability.channel('metric-top').reach, dc.NONE)
+        self.assertIn('metric-top none', dc.describe(capability))
 
 
 if __name__ == '__main__':
