@@ -19,7 +19,7 @@ import type { AnalyzeInput } from './fse26-diagnose-analyze.js';
 import {
   formatAnalyzeSections,
   formatDiagnoseComparison,
-  formatLossStatement,
+  formatPopulationLines,
   parseAnalyzeArgs,
   parseDiagnosticDumpWithReport,
   parseLosses,
@@ -41,8 +41,6 @@ function read(path: string): AnalyzeInput {
 const opts = parseAnalyzeArgs(process.argv.slice(2));
 const inputs =
   opts.kind === 'comparison' ? [read(opts.before), read(opts.after)] : [read(opts.dump)];
-/** How the invocation's population is named, in the statement and in the refusal alike. */
-const readLabel = opts.kind === 'comparison' ? `${opts.before} -> ${opts.after}` : opts.dump;
 // Each sibling is parsed from its OWN file, because the sections that compare artifacts solve each
 // on its own population and in its own rounding box: one concatenated case list would draw one
 // benchmark's digits in another's quantum. Read through the same path, so a sibling that lost blocks
@@ -53,7 +51,7 @@ const siblings =
 const losses = parseLosses([...inputs, ...siblings]);
 if (shouldRefuseToReport(losses, opts.allowDroppedBlocks)) {
   process.stderr.write(
-    formatLossStatement(losses, readLabel) +
+    formatPopulationLines(losses) +
       '\nRefusing to report over a population this reader had to shrink: a verdict computed over a\n' +
       'smaller case set is a verdict about a different artifact. Re-run with --allow-dropped-blocks\n' +
       'to read the surviving blocks instead, which prints the loss above the report.\n',
@@ -61,7 +59,9 @@ if (shouldRefuseToReport(losses, opts.allowDroppedBlocks)) {
   process.exit(1);
 }
 
-const population = formatLossStatement(losses, readLabel);
+// Every artifact read, not only the ones that lost something: the healthy line is what carries
+// the number of blocks the report below is computed over.
+const population = formatPopulationLines([...inputs, ...siblings]);
 const report =
   opts.kind === 'comparison'
     ? formatDiagnoseComparison(

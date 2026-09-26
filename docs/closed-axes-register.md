@@ -580,7 +580,12 @@ Before reading any number, check that the input was counted:
   **strict** row shortfall and the reader drops on **any** inequality, so the two are neither equal nor
   ordered — measured on four shapes, three of them disagreeing, and the relation that holds
   (`census.cases − census.short_blocks` = the blocks the reader keeps **less** every drop that count cannot
-  see) is a derivation rather than an equality.
+  see) is a derivation rather than an equality. **And a branch that cannot be TAKEN is what the coverage gate
+  is for**: the first formatter had a separate sentence for the healthy case, which left its own zero arm
+  unreachable because the only caller passed artifacts that had lost something — CI's coverage reported it as
+  the `benchmarks` project's branch dimension falling from `97.46` to `97.40`, and the repair was a caller that
+  makes the arm reachable (every artifact gets a population line) rather than a test written for dead code.
+  After it the same project reads **`97.48`**, above the number the iteration started from.
 
 ## What is left
 

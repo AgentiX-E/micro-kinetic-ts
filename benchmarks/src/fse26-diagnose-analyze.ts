@@ -461,14 +461,21 @@ export function hasParseLoss(report: DiagnosticParseReport): boolean {
  * The SHORTFALL rather than the difference, and the distinction is not pedantic: a block that
  * rendered MORE rows than it declared has no declared-but-missing candidate, and adding a negative
  * there would subtract from another block's loss — a total that understates the damage in the one
- * direction where it matters. A header that did not parse declared nothing countable.
+ * direction where it matters.
  *
- * @param declared - The count the block's own `services=` field stated, or `NaN` when absent.
+ * **No finiteness guard, and that is a derivation rather than an omission.** `declaredServices` comes
+ * from `HEADER_RE`'s `services=(\d+)`, so it is always a finite non-negative integer: a header whose
+ * count is not digits does not match the pattern at all, and no block is opened for it. The first
+ * version of this helper guarded `Number.isFinite(declared)` anyway, which was **dead code — and CI's
+ * coverage said so**, dropping the project's branch dimension by 0.06pp. `HEADER_RE` is asserted
+ * against a non-numeric count in the fence, so relaxing it fails loudly here rather than silently
+ * reintroducing a `NaN` into a population count.
+ *
+ * @param declared - The count the block's own `services=` field stated.
  * @param parsed - The candidate rows the reader found in that block.
  * @returns The shortfall, or `0` when there is none.
  */
 function declaredShortfall(declared: number, parsed: number): number {
-  if (!Number.isFinite(declared)) return 0;
   return Math.max(0, declared - parsed);
 }
 
@@ -482,10 +489,18 @@ function counted(n: number, noun: string): string {
 }
 
 /**
- * The loss as one line, in the two numbers a reader needs: what was kept and what was dropped.
+ * The loss as one line, in the numbers a reader needs: what was kept and what was dropped.
  *
- * Both are printed even when nothing was lost, because `0 dropped` and "the field is absent" are
- * different statements and only the first is a measurement.
+ * **One formatter for healthy and lossy alike**, and the first version of this was not: a separate
+ * healthy sentence left the `dropped === 0` arm of the ternary below unreachable, because the only
+ * caller passed artifacts that had LOST something. CI's coverage found it — a branch that cannot be
+ * taken is exactly what that gate is for — and the repair is not a test for the unreachable arm but a
+ * caller that makes it reachable: the population is stated for EVERY artifact read, which is both the
+ * honest reading and the one that carries a number the healthy sentence omitted (how many blocks).
+ *
+ * Zero is printed rather than omitted, because `0 dropped` is a measurement and an absent line is the
+ * different claim "nobody asked" — the same rule the artifact census applies to a channel that reaches
+ * every row.
  *
  * @param report - {@link DiagnosticParseReport}.
  * @param label - What was read, so a report over several artifacts names the one it is about.
@@ -537,25 +552,18 @@ export function parseLosses(inputs: readonly AnalyzeInput[]): readonly AnalyzeIn
 }
 
 /**
- * The loss as the lines a report carries, one per artifact that lost something, or the zero line.
+ * The population of everything one invocation read, one line per artifact, in the order read.
  *
- * **The zero case is stated rather than omitted**, because `0 dropped` is a measurement and an absent
- * line is the different claim "nobody asked". The same rule the artifact census applies to a channel
- * that reaches every row: a reader must be able to tell "nothing was lost" from "nothing was said".
+ * **Every artifact, not only the ones that lost something.** Stating the population for a healthy file
+ * too is what gives the healthy case a number — how many blocks were kept — and it is what makes
+ * {@link formatParseReport}'s zero arm reachable rather than dead. A line per artifact also leaves no
+ * ambiguity about WHICH file a count belongs to when a comparison reads two.
  *
- * It names the artifacts it read rather than counting zero blocks kept, which is why the healthy
- * branch is its own sentence instead of a `formatParseReport` call with an empty report: "0 blocks
- * kept" is a true statement about empty input and a false one about a healthy file.
- *
- * @param losses - {@link parseLosses}' result; empty is the healthy case.
- * @param read - How to name what was read when nothing was lost.
- * @returns Newline-terminated text, always non-empty.
+ * @param inputs - Every artifact read, primary and siblings alike.
+ * @returns Newline-terminated text, one line per input.
  */
-export function formatLossStatement(losses: readonly AnalyzeInput[], read: string): string {
-  if (losses.length === 0) {
-    return `population — ${read}: nothing dropped (${INTACT_BLOCK})\n`;
-  }
-  return losses.map((one) => formatParseReport(one.report, one.label)).join('');
+export function formatPopulationLines(inputs: readonly AnalyzeInput[]): string {
+  return inputs.map((one) => formatParseReport(one.report, one.label)).join('');
 }
 
 /**

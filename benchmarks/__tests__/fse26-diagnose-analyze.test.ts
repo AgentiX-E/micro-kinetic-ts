@@ -78,11 +78,11 @@ import {
   formatDiagnoseComparison,
   formatFamilyScreenReport,
   formatGuardCensus,
-  formatLossStatement,
   formatMetricCompetitionReport,
   formatMissReport,
   formatOnsetMenuReport,
   formatOnsetScreenReport,
+  formatPopulationLines,
   formatRefinementFrontierLine,
   formatResolutionLine,
   formatWeightSeparationReport,
@@ -8895,6 +8895,21 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
     expect(report.missingServices).toBe(2);
   });
 
+  it('opens NO block for a header whose count is not digits, which is why the shortfall needs no guard', () => {
+    // The derivation behind `declaredShortfall`'s missing finiteness guard: `services=(\d+)` cannot
+    // capture anything but digits, so the declared count is always a finite integer and a guard would be
+    // dead code. Relaxing the pattern has to fail HERE rather than put a `NaN` into a population count.
+    const notDigits = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] }).replace(
+      'services=1',
+      'services=many',
+    );
+    const { cases, report } = parseDiagnosticDumpWithReport(notDigits);
+    expect(cases).toEqual([]);
+    // Not counted as a drop either: the reader never opened a block, so there is nothing to have lost.
+    expect(report).toEqual({ cases: 0, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 });
+    expect(hasParseLoss(report)).toBe(false);
+  });
+
   it('keeps the cases-only API DELEGATING, so the report describes the parse that produced them', () => {
     // Two passes over one text is how two readers of one artifact start disagreeing, and a report is
     // worth only as much as the certainty that it describes the SAME parse. Asserted in both
@@ -8913,13 +8928,42 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
     expect(viaWithReport.report.shortBlocks).toBe(1);
   });
 
-  it('states NOTHING DROPPED rather than omitting the line, because zero is a measurement', () => {
-    const line = formatLossStatement([], 'the dump');
-    expect(line).toContain('nothing dropped');
-    expect(line).toContain('the dump');
+  it('states ZERO DROPPED rather than omitting the line, and carries the count it kept', () => {
+    // Every artifact gets a line, healthy or not — which is what makes the zero arm of
+    // `formatParseReport` reachable rather than dead, AND what puts the block count on the healthy
+    // line. The first version had a separate healthy sentence that omitted the count, and the arm it
+    // left unreachable was what CI's coverage caught.
+    const line = formatPopulationLines([
+      {
+        label: 'a.txt',
+        cases: [],
+        report: { cases: 90, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 },
+      },
+    ]);
+    expect(line).toContain('a.txt: 90 blocks kept, 0 dropped');
     expect(line.endsWith('\n')).toBe(true);
     // And the phrase is the reader's own precondition, so a reader can tell what "nothing" means.
     expect(line).toContain('prediction=');
+  });
+
+  it('states ONE line per artifact, so a comparison says which file each count belongs to', () => {
+    const text = formatPopulationLines([
+      {
+        label: 'a.txt',
+        cases: [],
+        report: { cases: 5, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 },
+      },
+      {
+        label: 'b.txt',
+        cases: [],
+        report: { cases: 4, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+      },
+    ]);
+    const lines = text.trimEnd().split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('a.txt');
+    expect(lines[1]).toContain('b.txt');
+    expect(lines[1]).toContain('1 dropped');
   });
 
   it('NAMES the artifact that lost blocks, and reports each of them separately', () => {
@@ -8935,7 +8979,7 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
     };
     expect(parseLosses([healthy, lost]).map((one) => one.label)).toEqual(['b.txt']);
     expect(parseLosses([healthy])).toEqual([]);
-    const text = formatLossStatement(parseLosses([healthy, lost]), 'the pair');
+    const text = formatPopulationLines(parseLosses([healthy, lost]));
     expect(text).toContain('b.txt');
     expect(text).not.toContain('a.txt');
     expect(text).toContain('2 candidates declared and not rendered');
@@ -8947,13 +8991,13 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
       cases: [],
       report: { cases: 1, shortBlocks: 1, unclosedBlocks: 0, missingServices: 1 },
     };
-    expect(formatLossStatement([one], 'x')).toContain('1 candidate declared');
+    expect(formatPopulationLines([one])).toContain('1 candidate declared');
     const two = {
       label: 'x',
       cases: [],
       report: { cases: 1, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
     };
-    expect(formatLossStatement([two], 'x')).toContain('2 candidates declared');
+    expect(formatPopulationLines([two])).toContain('2 candidates declared');
   });
 });
 

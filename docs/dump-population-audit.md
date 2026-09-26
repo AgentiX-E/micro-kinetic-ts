@@ -73,7 +73,8 @@ damage in the one direction where it matters.
 
 **The policy is in the testable module, not the CLI.** The CLI (`analyze-fse26-diagnose.ts`) runs `main()` at
 import and cannot be loaded by a test — the module's own docstring records why that matters — so the refusal is
-a pure predicate (`parseLosses`) and a pure formatter (`formatLossStatement`) in `fse26-diagnose-analyze.ts`,
+a pure predicate (`parseLosses` / `shouldRefuseToReport`) and a pure formatter (`formatPopulationLines`) in
+`fse26-diagnose-analyze.ts`,
 and the CLI is file I/O and `process.exit`:
 
 ```
@@ -96,10 +97,20 @@ The refusal covers **siblings** as well as the primary artifact: a comparison is
 half, so a healthy `--dump` beside a truncated one is refused, and the statement names the artifact that lost
 blocks rather than the invocation.
 
-**The healthy case is stated rather than omitted** — `nothing dropped (every block reached its own
-`prediction=` line with the candidate count its header declared)` — for the same reason the artifact census
-reports `every` rather than saying nothing: a reader must be able to tell *"nothing was lost"* from *"nothing
-was said"*.
+**Every artifact gets a line, healthy or not** — `<path>: 90 blocks kept, 0 dropped (every block reached its
+own `prediction=` line with the candidate count its header declared)` — because `0 dropped` is a measurement
+and an absent line is the different claim *"nobody asked"*, the same rule the artifact census applies to a
+channel that reaches every row. A line per artifact also puts the **kept** count on the healthy one, which a
+bare *"nothing was lost"* sentence did not, and it says which file each count belongs to when a comparison
+reads two.
+
+**And that shape is a repair rather than the first design.** The first version had a separate healthy sentence
+in the formatter's caller, which left the `dropped === 0` arm of `formatParseReport` **unreachable** — the only
+caller passed artifacts that had lost something. **CI's coverage found it**, dropping the `benchmarks` project's
+branch dimension from `97.46` to `97.40`, and the repair is not a test for an unreachable arm but a caller that
+makes it reachable: the population is stated for every artifact read. Locally the project now reads
+`99.84 / 97.48` — statements back to the baseline and **branches above it**. A hand-written test of the dead
+arm would have restored the number and left the dead code in place.
 
 ## 4. The census's count is NOT the reader's, and the three differences are measured
 
@@ -151,7 +162,7 @@ fence that would have to guess.
 | --- | --- |
 | python gate | **473 tests · 1628 statements · 584 branches · 100.00%**, every module 100% |
 | `dump_capability.py` | **100.00% branch** — 267 statements, 112 branches, **73** tests in its suite |
-| `benchmarks` project | **821 tests / 23 files** (817 before: the report's 13 new tests less the two the reader's own suite already had) |
+| `benchmarks` project | **823 tests / 23 files**, and its coverage **99.84 / 97.48 / 100 / 99.84** locally — statements back to the `97.46` baseline and branches **above** it once the dead arm was removed |
 | `packages/kinetic` | **959 tests / 36 files** (954 before: the new typecheck-population fence) |
 | `nx run-many --target=typecheck --all` | 15 projects clean — **and this is the leg that reported the three errors the change produced in `benchmarks/__tests__`** |
 | `tsc -p tsconfig.workspace.json` | clean, and by design it never saw them |
