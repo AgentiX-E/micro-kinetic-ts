@@ -308,9 +308,62 @@ pinned by hand-built coverage objects, including `total_rows == 0` → `none`, b
 
 ## Gates
 
-`benchmarks` **799** tests / 23 files · the python gate **461 tests · 1617 statements · 582 branches ·
-100.00%**, every module at 100% · `dump_capability.py` at **100.00% branch** · the TypeScript fence 7 tests ·
-`typecheck` clean on the project that carries it · lint 0/0 · format clean.
+**CI green on `e40639f`: 19 of 19 jobs**, `Release` green on the same commit — and the first commit of this
+iteration (`863c58f`) is the one CI caught a real defect in, recorded below rather than smoothed over.
+
+| | |
+| --- | --- |
+| python gate (CI's `converter-tests`) | **461 tests · 1617 statements · 582 branches · 100.00%**, every module 100% |
+| `dump_capability.py` | **100.00% branch** — 256 statements, 110 branches, 61 tests |
+| 14 projects × 4 dimensions, **read from CI's own logs** | **56 dimensions, worst `95.00`** (`wave` branches); the project-by-project table is below |
+| the new TypeScript fence | 7 tests, in the `benchmarks` project now at **799 tests / 23 files** |
+| the seven pre-existing channels | **IDENTICAL** on all **15** local artifacts, by running the previous module and this one and diffing every reading |
+| mutations | **24 of 24** as declared, both controls (`py` and `ts`) SURVIVED, tree restored and hash-verified |
+| golden | **none owed** — `__tests__/`, `scripts/*.py` and `docs/` are outside every trigger path; the selector returns `(False, ())` and its control fires on `packages/*/src/**` |
+
+Every dimension is **unchanged** from the reading taken before this iteration — the new population moved no
+published number, which is what the seven-channel diff above says independently:
+
+| job | stmts | branch | funcs | lines | tests |
+| --- | --- | --- | --- | --- | --- |
+| `benchmark-tests` | 99.84 | 97.46 | 100.00 | 99.84 | 799 |
+| `test (kinetic)` | 100.00 | 99.44 | 100.00 | 100.00 | 954 |
+| `test (tree)` | 100.00 | 100.00 | 100.00 | 100.00 | 650 |
+| `test (core)` | 99.88 | 96.61 | 100.00 | 99.88 | 415 |
+| `test (optimize)` | 100.00 | 100.00 | 100.00 | 100.00 | 200 |
+| `test (causal)` | 100.00 | 100.00 | 100.00 | 100.00 | 176 |
+| `test (cutting)` | 98.43 | 95.17 | 100.00 | 98.43 | 170 |
+| `test (scaling)` | 100.00 | 95.49 | 100.00 | 100.00 | 161 |
+| `test (noise)` | 100.00 | 100.00 | 100.00 | 100.00 | 152 |
+| `test (wave)` | 99.61 | **95.00** | 100.00 | 99.61 | 144 |
+| `test (ai)` | 100.00 | 100.00 | 100.00 | 100.00 | 113 |
+| `test (storage-fs)` | 100.00 | 100.00 | 100.00 | 100.00 | 28 |
+| `test (storage-browser)` | 100.00 | 100.00 | 100.00 | 100.00 | 22 |
+| `test (storage-remote)` | 100.00 | 100.00 | 100.00 | 100.00 | 21 |
+| **56 dimensions** | | **worst 95.00** | | | **4,005** |
+
+### One defect in this iteration's own work, caught by CI
+
+The first commit's `typecheck` job failed in two places in the fence this iteration adds, and **neither was
+visible to the per-project check that passed here**:
+
+```
+__tests__/fse26-capability-census.test.ts(158,5): error TS2322: Type 'Map<string, { label: string;
+  outcome: string; … }[]>' is not assignable to type 'ReadonlyMap<string, readonly MetricDiagnostic[]>'
+__tests__/fse26-capability-census.test.ts(302,66): error TS2345: Argument of type 'string' is not
+  assignable to parameter of type 'keyof DiagnosedService'
+```
+
+The first was `outcome: 'dropped:transient-return' as string` — a cast that widened the whole array past
+`MetricDiagnostic`, where the union's own member is what the fixture needs. The second is
+`scalar.reads.includes(field)`, whose `reads` is `readonly (keyof DiagnosedService)[]`.
+
+**Why it reached CI is the lesson, and it is the same one the coverage gate taught from the other side:**
+`nx run @agentix-e/micro-kinetic-benchmarks:typecheck` does **not** cover `benchmarks/__tests__`, while
+`pnpm typecheck` is `nx run-many --target=typecheck --all && tsc -p tsconfig.workspace.json`, and the
+workspace config does. **A number belongs to its population, and the population of a typecheck is decided by
+its tsconfig.** Both commands are run together now, and the fix commit (`e40639f`) records the two errors
+verbatim.
 
 `benchmarks` **724** at 99.81 / **97.40** / 100 / 99.81 · `kinetic` **926** at 100 / 99.44 / 100 / 100 · both
 typechecks · lint 0/0 · format clean · register guard 14/14 · the census module at **100.00% branch coverage**

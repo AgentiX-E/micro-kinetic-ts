@@ -512,6 +512,14 @@ Before reading any number, check that the input was counted:
   was a bounded wait, which is now one `artifact` job every consumer reaches transitively and which took
   **4 seconds and one check** on its first production fast path (`docs/declaration-connectivity-audit.md` §8).
 
+- **AND A GATE'S POPULATION IS DECIDED BY ITS CONFIG, WHICH IS NOT THE SAME AS ITS NAME** — the coverage gate's
+  population is the `include`/`thresholds` in each project's config, and the TYPECHECK's is the `tsconfig` it is
+  pointed at. `nx run @agentix-e/micro-kinetic-benchmarks:typecheck` does NOT cover `benchmarks/__tests__`;
+  `pnpm typecheck` is `nx run-many --target=typecheck --all && tsc -p tsconfig.workspace.json`, and the
+  workspace config does. So a new test file that passes every check run here was red on CI in two places, and
+  the number that mattered was the one the GATE printed rather than the one the local command did
+  (`docs/artifact-capability-audit.md` Gates, the fix commit `e40639f`).
+
 ## What is left
 
 `docs/fse26-httpnet-miss-verdict.md` and `docs/fse26-stock-attribution.md` agree
