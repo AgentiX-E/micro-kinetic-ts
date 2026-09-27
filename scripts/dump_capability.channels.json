@@ -6,7 +6,7 @@
   {"channel": "ground-truth", "scope": "header", "key": "GT", "fields": ["groundTruth"], "valueIn": "field", "pattern": "\\bGT=(\\S*)", "absent": ["", "-"]},
   {"channel": "services-declared", "scope": "header", "key": "services", "fields": ["services"], "valueIn": "field", "pattern": "\\bservices=(\\d+)", "absent": ["", "-"]},
   {"channel": "log-mode", "scope": "header", "key": "logMode", "fields": ["logSignalMode"], "valueIn": "field", "pattern": "\\blogMode=(\\S*)", "absent": ["", "-"]},
-  {"channel": "inject-time", "scope": "header", "key": "inject", "fields": ["injectTimeMs"], "valueIn": "field", "pattern": "\\binject=(\\d+)", "absent": ["", "-"]},
+  {"channel": "inject-time", "scope": "header", "key": "inject", "fields": ["injectTimeMs"], "valueIn": "field", "pattern": "\\binject=(\\d+)", "absent": ["", "-", "0"]},
   {"channel": "declared-precision", "scope": "header", "key": "decimals", "fields": ["fieldDecimals"], "valueIn": "field", "pattern": "\\bdecimals=(\\d+)", "absent": ["", "-"]},
   {"channel": "failed-edge-graph", "scope": "case-line", "key": "edges", "fields": ["edges"], "valueIn": "field", "pattern": "^ {2}edges=(.*)$", "absent": ["", "-"]},
   {"channel": "prediction", "scope": "case-line", "key": "prediction", "fields": ["prediction"], "valueIn": "field", "pattern": "^ {2}prediction=(.*)$", "absent": ["", "-"]},

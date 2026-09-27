@@ -156,7 +156,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | `prism-head-to-head.md` | the PRISM reimplementation and the 9-cell head-to-head that opened the fusion direction |
 | `sota-comparison.md` | the corrected SOTA calibration on RCAEval |
 | `sota-roadmap-2026.md` | the roadmap and validation method toward a defensible SOTA claim |
-| `artifact-capability-audit.md` | what an artifact CARRIES — the `every` / `some` / `none` census, its refusal, and (Finding 7) the census's own POPULATION: seven hand-written channels against the artifact's thirty-one fields, so **both two-part families were covered in the half the other covers** — `failed-edge` read the SCORE and left `edgeRecords`' COUNT with no channel (AUC 0.908 where the score reads 0.457), `latency-edges` read the COUNT and left the `lat` term's RISE with none, its reach the other half's (**100%** against the rise's **52.0%**) — and six quantities the declared signals read had no channel at all. The population is now a table whose key column is the producer's own literal with each marker DERIVED from it, held by three fences on a three-edge chain: the python test keeps the committed projection equal to the table, the TypeScript test builds a dump with the PRODUCER and holds the emitted keys, the table's `fields` and `Object.keys(SERVICE_FIELD_AUDIT)` equal in both directions, **and (Finding 8) the census's valuation is held per row against the READER's own parse of the same artifact** — which is the edge that found a count channel reading its value from the list beside it, so a rendered `metricKept(0):` came back as a gap on 9 readings over 7 artifacts while all seventeen other field-carrying channels agreed |
+| `artifact-capability-audit.md` | what an artifact CARRIES — the `every` / `some` / `none` census, its refusal, and (Finding 7) the census's own POPULATION: seven hand-written channels against the artifact's thirty-one fields, so **both two-part families were covered in the half the other covers** — `failed-edge` read the SCORE and left `edgeRecords`' COUNT with no channel (AUC 0.908 where the score reads 0.457), `latency-edges` read the COUNT and left the `lat` term's RISE with none, its reach the other half's (**100%** against the rise's **52.0%**) — and six quantities the declared signals read had no channel at all. The population is now a table whose key column is the producer's own literal with each marker DERIVED from it, held by three fences on a three-edge chain: the python test keeps the committed projection equal to the table, the TypeScript test builds a dump with the PRODUCER and holds the emitted keys, the table's `fields` and `Object.keys(SERVICE_FIELD_AUDIT)` equal in both directions, **and (Finding 8) the census's valuation is held per row against the READER's own parse of the same artifact** — which is the edge that found a count channel reading its value from the list beside it, so a rendered `metricKept(0):` came back as a gap on 9 readings over 7 artifacts while all seventeen other field-carrying channels agreed, **and (Finding 9) the rule that decides a rendered ZERO is a value is a COLUMN OF THE CHANNEL rather than of the module** — it was generalised from ONE field's producer comment (`both=0` "is NEVER omitted because it is zero"), and on `inject-time` the same token is the engine's spelling of NO ANCHOR (`topology-fault-graph.ts`: "injectTimeMs: 0, // unknown"), so the census certified **`every/every` on four artifacts whose every anchor is 0** — the artifacts `.github/workflows/benchmark-rcaeval.yml` produces ON PURPOSE with `--no-inject-time` — and the refusal, which judged the RENDERING reach, passed on all of them while the screen re-derived the rule privately (`> 0`). `onset=0` is a MEASUREMENT (it occurs on 1021/570/679 rows and only beside a POSITIVE anchor), so the column has to be able to differ, and `require_channel` gained the third legal question (`value=True`) |
 | `register-fence-audit.md` | why this register's own fence was keyed on a filename, and the nine closures that were invisible to it |
 
 ## The shared kill criterion
@@ -571,6 +571,24 @@ Before reading any number, check that the input was counted:
   came back as "rendered and undetermined" on 9 readings over 7 artifacts, while the READER reads the
   parenthesised number and the producer's own doc says `both=0` is a measurement
   (`docs/artifact-capability-audit.md` Finding 8).
+
+- **A RULE THAT DECIDES WHETHER A VALUE IS PRESENT BELONGS TO THE CHANNEL, BECAUSE THE SAME TOKEN MEANS
+  DIFFERENT THINGS ON DIFFERENT ONES.** `isValued` read a module-level `ABSENT_VALUES = ('', '-')` for all 31
+  channels, and its doc justified that with evidence from **one** field — the producer's comment on
+  `bothExceptionCount`. Measured, the token `0` has **three** meanings: a measurement for `both` (the sets are
+  disjoint, per that comment), a measurement for `onset` (it occurs on **1021 / 570 / 679** rows of `re1` /
+  `re2` / `re3` and **only** beside a POSITIVE anchor), and **NO ANCHOR** for `inject-time`
+  (`topology-fault-graph.ts`: `injectTimeMs: 0, // unknown — temporal anchor disabled by default`;
+  `dist/index.d.ts`: `0 = unknown -> no time filter`, ×3). So the census read `every/every` for `inject-time` on
+  **four artifacts whose every anchor is 0** — the ones the benchmark workflow produces with `--no-inject-time`,
+  for all three suites — a certificate for an artifact that cannot serve the read, from the module whose stated
+  job is to refuse it; and **the refusal could not even express the requirement**, since `require_channel`
+  judged the RENDERING reach and passed on all seven. The set is now a declared column
+  (`ChannelDeclaration.absent`), projected so the other language applies the channel's own rather than
+  re-deriving it from the token's shape, and `require_channel` gained the third question a caller can ask
+  (`value=True`). **The rule was asserted in five places, two of them as a claim about every channel** —
+  `isValued('0') is True`, the projection held equal to the constant — and each is correct written with its
+  channel (`docs/artifact-capability-audit.md` Finding 9).
 
 - **A CHANNEL'S VALUE IS THE QUANTITY ITS DECLARED FIELD CARRIES, AND WHERE ON THE LINE THAT VALUE SITS IS
   PART OF THE DECLARATION.** One grammar carries two quantities — `metricKept(N): <list>` — so a value

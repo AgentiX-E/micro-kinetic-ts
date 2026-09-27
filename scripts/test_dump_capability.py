@@ -57,7 +57,9 @@ FULL_SUB_LINES = (
 )
 
 
-def case(datapack: str, *rows: str, decimals: int | None = 3, decisive: bool = True) -> str:
+def case(
+    datapack: str, *rows: str, decimals: int | None = 3, decisive: bool = True, inject: int | None = 1000
+) -> str:
     """
     One case's block, in the block's own structure: header, case lines, rows, and the sub-lines of a row.
 
@@ -68,9 +70,12 @@ def case(datapack: str, *rows: str, decimals: int | None = 3, decisive: bool = T
     reachable through one of them cannot pass by being absent from the fixture.
     """
     tail = '' if decimals is None else f' decimals={decimals}'
+    # `inject` is a parameter because it is the ONE header field whose zero is not a byte the reader can
+    # ignore: the engine spells "no anchor" as 0, so a fixture that cannot state it cannot test the refusal.
+    anchor = '' if inject is None else f' inject={inject}'
     head = (
         f'DIAG datapack={datapack} faultType=cpu GT=[adservice] services={len(rows)}'
-        f' logMode=logicHttp inject=1000{tail}\n'
+        f' logMode=logicHttp{anchor}{tail}\n'
         '  edges=a>b,b>c\n'
         '  prediction=[adservice]\n'
     )
@@ -308,10 +313,39 @@ class CapabilityOfTest(unittest.TestCase):
     def test_both_of_the_producers_undetermined_markers_are_not_values(self) -> None:
         # `-` (onset, latRise, and now metricDecisive) and an EMPTY value (`dominant= err=0`, how a row with
         # no named metric prints) both mean rendered-and-undetermined, and a third shape that is neither.
-        self.assertFalse(dc.isValued('-'))
-        self.assertFalse(dc.isValued(''))
-        self.assertTrue(dc.isValued('34000'))
-        self.assertTrue(dc.isValued('latency-50'))
+        # Asked of a channel, because the question is what a channel's own producer means by a token.
+        for name in ('onset', 'inject-time', 'metric-kept'):
+            self.assertFalse(dc.isValued(name, '-'), name)
+            self.assertFalse(dc.isValued(name, ''), name)
+        self.assertTrue(dc.isValued('onset', '34000'))
+        self.assertTrue(dc.isValued('dominant-metric', 'latency-50'))
+
+    def test_a_rendered_ZERO_is_a_value_on_the_channels_whose_producer_says_so_and_not_on_inject_time(
+        self,
+    ) -> None:
+        # **The rule "a rendered zero is a value" is true, and it was GENERALISED from one field to all 31.**
+        # This test is the range. `both=0` is a measurement (the producer's own comment: the sets are
+        # disjoint, so an absent field is the different claim "not measured") and `onset=0` is a measurement
+        # (measured over the local artifacts: it occurs ONLY beside a positive anchor — 1021 of re1's rows,
+        # 570 of re2's, 679 of re3's — and never on a row whose anchor is zero). For `inject-time` the same
+        # token is the ENGINE's spelling of NO ANCHOR, at four documented sites:
+        #
+        #   packages/tree/src/causal/topology-fault-graph.ts  "injectTimeMs: 0, // unknown — temporal anchor
+        #                                                     disabled by default"
+        #   packages/tree/dist/index.d.ts                     "0 = unknown -> no time filter"  (x3)
+        #                                                     "0 or absent means unknown"
+        #   benchmarks/__tests__/fse26-diagnose-analyze...ts   "`injectTimeMs: 0` is the engine's spelling of
+        #                                                     NO anchor"
+        #
+        # and `.github/workflows/benchmark-rcaeval.yml` RUNS `--no-inject-time` for all three suites, so the
+        # artifacts this question is about are produced on purpose. One token, three meanings, so the rule
+        # belongs to the CHANNEL.
+        self.assertTrue(dc.isValued('metric-kept', '0'))
+        self.assertTrue(dc.isValued('onset', '0'))
+        self.assertFalse(dc.isValued('inject-time', '0'))
+        # And a positive anchor is a value on the channel that has the sentinel, so this is not a blanket
+        # "inject-time has no values".
+        self.assertTrue(dc.isValued('inject-time', '1685202688000'))
         # The property is defined for a case-scoped channel too, so a reader can ask either question of any
         # channel rather than only of the ones that happen to be row-scoped.
         scoped = dc.ChannelCoverage('declared-precision', 3, 4, None, 10, cases_valued=3)
@@ -632,10 +666,23 @@ class CommittedProjectionTest(unittest.TestCase):
         # TypeScript edge has to apply exactly this tuple, so it is data. Held equal to `isValued` in
         # both directions here, because a projection carrying one rule while the census applied another
         # would make the two halves of the fence measure different things.
-        for entry in dc.declarations_as_data():
-            self.assertEqual(entry['absent'], list(dc.ABSENT_VALUES))
-        for probe in ('', '-', '0', 'x', '  '):
-            self.assertEqual(dc.isValued(probe), probe not in dc.ABSENT_VALUES, repr(probe))
+        # **`absent` is the channel's OWN set**, not a copy of the module default: `inject-time` adds the
+        # engine's sentinel, and every other channel keeps the two markers both of them share. A projection
+        # carrying one rule while the census applied another is the drift this whole module prevents, so the
+        # entry is held equal to the DECLARATION rather than to a constant.
+        for entry, declaration in zip(dc.declarations_as_data(), dc.DECLARATIONS):
+            self.assertEqual(entry['absent'], list(declaration.absent), declaration.channel)
+            for probe in ('', '-', '0', 'x', '  '):
+                self.assertEqual(
+                    dc.isValued(declaration.channel, probe),
+                    probe not in declaration.absent,
+                    f'{declaration.channel}: {probe!r}',
+                )
+        # The two directions the column exists for, named: the sentinel is declared where the producer means
+        # it and NOT declared where the same token is a measurement.
+        by_channel = {entry['channel']: entry for entry in dc.declarations_as_data()}
+        self.assertEqual(by_channel['inject-time']['absent'], ['', '-', '0'])
+        self.assertEqual(by_channel['onset']['absent'], ['', '-'])
 
     def test_the_placement_vocabulary_is_CLOSED(self) -> None:
         # A placement outside the vocabulary would fall through the marker builder to whichever branch
@@ -772,9 +819,10 @@ class DescribeTest(unittest.TestCase):
         self.assertEqual(found.group(1), '38')
         self.assertIsNone(declaration.marker.match('    metricKept: a=0.5'))
         self.assertIsNone(declaration.marker.match('    metricKept(1/3): a=0.5'))
-        # And the count is read as a number rather than compared as text.
-        self.assertTrue(dc.isValued('0'))
-        self.assertFalse(dc.isValued('-'))
+        # And the count is read as a number rather than compared as text: a count of ZERO is a measurement
+        # on this channel, which is the reading the sentinel column must not take away from it.
+        self.assertTrue(dc.isValued('metric-kept', '0'))
+        self.assertFalse(dc.isValued('metric-kept', '-'))
 
     def test_a_channel_whose_two_counts_AGREE_prints_one_number(self) -> None:
         # The other direction: printing the second number unconditionally would put `valued 72527/72527` on
@@ -840,6 +888,32 @@ class RequireChannelTest(unittest.TestCase):
         with self.assertRaises(dc.CapabilityError) as caught:
             dc.require_channel(capability, 'declared-precision', name='the dump', reader='a resolution model')
         self.assertIn('reaches none of its cases (0/1)', str(caught.exception))
+
+    def test_a_reader_that_needs_a_VALUE_is_refused_where_the_rendering_reach_is_EVERY(self) -> None:
+        # **The refusal judged the RENDERING reach, so it certified the one artifact it exists to refuse.**
+        # Every row of this fixture prints `inject=0` — the engine's spelling of NO ANCHOR — so the field is
+        # on all of them and not one of them carries an anchor. The two questions are different and the
+        # caller says which one it is, exactly as it already does for `some` against `every`.
+        no_anchor = dc.capability_of(case('a_cpu_1', FULL_ROW, inject=0))
+        self.assertEqual(no_anchor.channel('inject-time').reach, dc.EVERY)
+        self.assertEqual(no_anchor.channel('inject-time').value_reach, dc.NONE)
+        with self.assertRaises(dc.CapabilityError) as caught:
+            dc.require_channel(
+                no_anchor, 'inject-time', name='the dump', reader='the onset screen', value=True
+            )
+        message = str(caught.exception)
+        self.assertIn('the dump', message)
+        self.assertIn('the onset screen', message)
+        self.assertIn('carries a value on none', message)
+        # …and the SAME artifact passes a reader that only needs the field to be rendered, which is why the
+        # requirement is stated by the caller rather than inferred by the instrument.
+        dc.require_channel(no_anchor, 'inject-time', name='the dump', reader='a presence check')
+
+    def test_a_VALUE_requirement_passes_where_the_anchors_are_real(self) -> None:
+        # The control that keeps the new axis from passing by refusing everything.
+        anchored = dc.capability_of(case('a_cpu_1', FULL_ROW, inject=1000))
+        self.assertEqual(anchored.channel('inject-time').value_reach, dc.EVERY)
+        dc.require_channel(anchored, 'inject-time', name='the dump', reader='the onset screen', value=True)
 
     def test_a_reach_that_is_not_a_reach_is_refused_rather_than_defaulted(self) -> None:
         # A typo would otherwise silently mean "some" or "every", and the two ask different questions.
@@ -1084,3 +1158,70 @@ class RealArtifactsTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TheAnchorSentinelTest(unittest.TestCase):
+    """
+    `inject-time`'s zero is NO ANCHOR, and four of the local artifacts are made entirely of it.
+
+    `.github/workflows/benchmark-rcaeval.yml` runs `run-rcaeval.ts --no-inject-time` for all three suites, so
+    the `re*-noinject.txt` artifacts are not accidents of a render — they are the workflow's own
+    no-injection control runs, produced on purpose. Every one of their rows prints `inject=0`, and the engine
+    documents that token as "unknown" (`packages/tree/src/causal/topology-fault-graph.ts`: "injectTimeMs: 0,
+    // unknown — temporal anchor disabled by default"), so the census's `every/every` was a certificate for an
+    artifact that cannot serve the read at all.
+    """
+
+    def _capability(self, path: Path) -> dc.DumpCapability:
+        if not path.exists():
+            self.skipTest(f'{path.name} is not on this machine')
+        return dc.capability_of(path.read_text('utf-8', errors='replace'))
+
+    def test_a_no_inject_artifact_RENDERS_the_channel_and_carries_NO_anchor(self) -> None:
+        seen = 0
+        for name in ('re1-noinject.txt', 're2-noinject.txt', 're3-noinject.txt', 're3-novelty.txt'):
+            path = LOCAL_DUMPS / name
+            if not path.exists():
+                continue
+            # Read from the artifact ITSELF, because the claim is about the artifact: not one of its rows
+            # renders a positive anchor, which is what makes the census's answer about it checkable here
+            # rather than only in `capability_of`.
+            text = path.read_text('utf-8', errors='replace')
+            self.assertIn('inject=0', text, name)
+            self.assertNotIn('inject=1', text, name)
+            coverage = self._capability(path).channel('inject-time')
+            seen += 1
+            # The two claims the census now reports separately: the field is on every row...
+            self.assertEqual(coverage.reach, dc.EVERY, name)
+            self.assertEqual(coverage.cases_reached, coverage.total_cases, name)
+            # ...and not one of them is an anchor. The population is CASES, because the field is a header
+            # field: a row count here would be `None`, which is not the same as zero.
+            self.assertEqual(coverage.value_reach, dc.NONE, name)
+            self.assertEqual(coverage.cases_valued, 0, name)
+            self.assertIsNone(coverage.rows_valued, name)
+        self.assertGreater(seen, 0, 'no no-injection artifact is on this machine')
+
+    def test_the_artifacts_WITH_anchors_are_unchanged_on_both_counts(self) -> None:
+        # The control inside the same population, so the new column cannot pass by turning the channel off.
+        for name in ('re1.txt', 're2.txt', 're3.txt'):
+            coverage = self._capability(LOCAL_DUMPS / name).channel('inject-time')
+            self.assertEqual(coverage.reach, dc.EVERY, name)
+            self.assertEqual(coverage.value_reach, dc.EVERY, name)
+            self.assertEqual(coverage.cases_valued, coverage.total_cases, name)
+
+    def test_onset_keeps_its_zeros_because_there_they_are_measurements(self) -> None:
+        # The channel that proves the column must be per-channel: `onset=0` occurs ONLY beside a positive
+        # anchor (measured: 1021 of re1's rows, 570 of re2's, 679 of re3's), so a rule keyed on the TOKEN
+        # would have closed a real reading on those rows.
+        for name in ('re1.txt', 're2.txt', 're3.txt'):
+            coverage = self._capability(LOCAL_DUMPS / name).channel('onset')
+            self.assertEqual(coverage.value_reach, dc.SOME, name)
+            self.assertGreater(coverage.rows_valued, 0, name)
+        # …and on the no-injection artifacts it reads `none` for the other reason: there the onset is `-`.
+        for name in ('re1-noinject.txt', 're3-novelty.txt'):
+            path = LOCAL_DUMPS / name
+            if not path.exists():
+                continue
+            coverage = self._capability(path).channel('onset')
+            self.assertGreater(coverage.rows_reached, 0, name)
+            self.assertEqual(coverage.value_reach, dc.NONE, name)

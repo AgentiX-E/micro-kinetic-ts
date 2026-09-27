@@ -34,7 +34,7 @@ import {
   SyntheticBenchmarkGenerator,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
-import { parseDiagnosticDump } from '../src/fse26-diagnose-analyze.js';
+import { onsetAvailability, parseDiagnosticDump } from '../src/fse26-diagnose-analyze.js';
 import { SEPARATOR_SCALARS, SERVICE_FIELD_AUDIT } from '../src/fse26-separator.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -189,7 +189,13 @@ function caseOf(): BenchmarkCase {
   };
 }
 
-function graphOf(callGraph: ServiceCallGraph, kept = 1, dropped = 1): FaultPropagationGraph {
+function graphOf(
+  callGraph: ServiceCallGraph,
+  kept = 1,
+  dropped = 1,
+  onsetBase = 100,
+  onsetStep = 50,
+): FaultPropagationGraph {
   const ids = [...callGraph.nodes.keys()];
   const breakdown = {
     deviation: 0.4,
@@ -233,7 +239,10 @@ function graphOf(callGraph: ServiceCallGraph, kept = 1, dropped = 1): FaultPropa
     ),
     logScores: new Map(ids.map((id, index) => [id, 0.5 - index * 0.1])),
     metricDiagnostics: new Map(ids.map((id) => [id, diagnostics])),
-    postInjectOnsetDelays: new Map(ids.map((id, index) => [id, 100 + index * 50])),
+    // The onset delays are parameters because `onset=0` is the token whose VALUATION is under test: the
+    // producer prints a zero delay as `0` (`fmtOnset` rounds and keeps it), so a graph with all-zero delays
+    // is a block where the same token that means NO ANCHOR on the header means a MEASUREMENT on the row.
+    postInjectOnsetDelays: new Map(ids.map((id, index) => [id, onsetBase + index * onsetStep])),
   };
 }
 
@@ -248,9 +257,23 @@ function fullBlock(): string {
  * Built rather than hand-written because the census's population is the ARTIFACT's: a block typed into this
  * file could carry a line the producer does not write, and the edge below would then be measuring this file.
  */
-function blockWith(kept: number, dropped: number): string {
+function blockWith(
+  kept: number,
+  dropped: number,
+  options: {
+    readonly injectTimeMs?: number;
+    readonly onsetBase?: number;
+    readonly onsetStep?: number;
+  } = {},
+): string {
   const benchCase = caseOf();
-  const graph = graphOf(benchCase.callGraph, kept, dropped);
+  const graph = graphOf(
+    benchCase.callGraph,
+    kept,
+    dropped,
+    options.onsetBase ?? 100,
+    options.onsetStep ?? 50,
+  );
   return buildFSE26Diagnostic({
     case: benchCase,
     graph,
@@ -260,9 +283,38 @@ function blockWith(kept: number, dropped: number): string {
     faultType: 'HTTPResponseReplaceCode',
     groundTruthServices: [benchCase.groundTruth.serviceId],
     logSignalMode: 'logicHttp',
-    injectTimeMs: benchCase.injectTime,
+    // Stated rather than inherited, because `0` is the engine's spelling of NO ANCHOR and the block that
+    // carries it has to be producible: `.github/workflows/benchmark-rcaeval.yml` runs `--no-inject-time` for
+    // all three suites, so the artifact below is one a real run makes.
+    injectTimeMs: options.injectTimeMs ?? benchCase.injectTime,
     fieldDecimals: SERVICE_FIELD_DECIMALS,
   });
+}
+
+/** The `DIAG` header line of a block — where the case-scoped channels live. */
+function headerOf(block: string): string {
+  const line = block.split('\n').find((one) => one.startsWith('DIAG '));
+  if (line === undefined) throw new Error('the producer wrote no DIAG header');
+  return line;
+}
+
+/**
+ * The census's own verdict on ONE line, for one channel — rendered, and valued or not.
+ *
+ * The pattern, the placement and the absent set are all the projection's values, so this function adds
+ * nothing but the line. That matters for the edge below: the claim is that the census's VALUATION agrees with
+ * what the producer meant by the token, and a version of this that classified by the token's shape would be
+ * asserting itself.
+ */
+function censusOnLine(
+  line: string,
+  channel: string,
+): { readonly reached: boolean; readonly valued: boolean } {
+  const declaration = declarations().find((one) => one.channel === channel);
+  if (declaration === undefined) throw new Error(`no declaration for ${channel}`);
+  const found = new RegExp(declaration.pattern).exec(line);
+  if (found === null) return { reached: false, valued: false };
+  return { reached: true, valued: !declaration.absent.includes(found[1] ?? '') };
 }
 
 describe("the capability census's population — the artifact it describes", () => {
@@ -498,6 +550,87 @@ describe("the capability census's population — the artifact it describes", () 
       const one = byChannel.get(channel)!;
       const literal = one.scope === SUB_LINE ? `\`${one.key}\`` : `\`${one.key}=\``;
       expect(source, `${channel} -> ${literal}`).toContain(literal);
+    }
+  });
+});
+
+describe("the census's VALUATION — a rendered zero is a value only where its producer says so", () => {
+  // **The rule "a rendered zero is a value" is true, and it was generalised from ONE field to all 31.** The
+  // sentence that justified the constant was the producer's own doc for `bothExceptionCount`: "`both=0` is
+  // NEVER omitted because it is zero — `both=0` is a measurement (the sets are disjoint)". Applied to
+  // `inject-time` it is wrong, and wrong in the direction that MANUFACTURES coverage: `injectTimeMs: 0` is the
+  // engine's spelling of "unknown" (`packages/tree/src/causal/topology-fault-graph.ts`: "injectTimeMs: 0, //
+  // unknown — temporal anchor disabled by default"; `dist/index.d.ts`: "0 = unknown -> no time filter", ×3),
+  // and `.github/workflows/benchmark-rcaeval.yml` runs `run-rcaeval.ts --no-inject-time` for all three
+  // suites. The census called those artifacts `every/every` — a certificate for an artifact that cannot serve
+  // the read at all — and the refusal, which judged the RENDERING reach, certified it too.
+  //
+  // This block is the edge the column needs, and it is asked of the PRODUCER's own bytes rather than of a line
+  // typed here: every token below came out of `buildFSE26Diagnostic`.
+
+  it("calls the engine's spelling of NO ANCHOR undetermined, and a real anchor a value", () => {
+    const noAnchor = headerOf(blockWith(1, 1, { injectTimeMs: 0 }));
+    const anchored = headerOf(blockWith(1, 1, { injectTimeMs: 1_685_202_688_000 }));
+
+    // The producer really wrote both tokens, so this is a measurement of the artifact and not of the fixture.
+    expect(noAnchor).toContain('inject=0');
+    expect(anchored).toContain('inject=1685202688000');
+
+    // …and the census's own valuation of them differs, from the projection's `absent` set: `0` is on the
+    // channel's list and a real timestamp is not.
+    expect(censusOnLine(noAnchor, 'inject-time')).toEqual({ reached: true, valued: false });
+    expect(censusOnLine(anchored, 'inject-time')).toEqual({ reached: true, valued: true });
+  });
+
+  it('keeps a ZERO a value on the channel whose producer means a measurement, on the SAME artifact', () => {
+    // The other direction, and the reason the column has to belong to the channel rather than to the token:
+    // `fmtOnset` prints a zero delay as `0`, and `onset=0` occurs ONLY beside a positive anchor in the local
+    // artifacts (1021 / 570 / 679 rows of re1 / re2 / re3, never on a row whose anchor is zero), so there a
+    // zero is a measurement. A rule keyed on the TOKEN would have closed a real reading.
+    const zeroOnsets = blockWith(1, 1, {
+      injectTimeMs: 1_685_202_688_000,
+      onsetBase: 0,
+      onsetStep: 0,
+    });
+    const row = zeroOnsets.split('\n').find((one) => one.includes('onset='));
+    expect(row).toBeDefined();
+    expect(row).toContain('onset=0');
+
+    expect(censusOnLine(row!, 'onset')).toEqual({ reached: true, valued: true });
+    // …while the SAME block's header holds the anchor, so the two channels' valuations differ inside one
+    // artifact rather than across two.
+    expect(censusOnLine(headerOf(zeroOnsets), 'inject-time').valued).toBe(true);
+  });
+
+  it("agrees with the SCREEN's own private count, which is the second reading of the same fact", () => {
+    // The screen counts anchors itself (`(kase.injectTimeMs ?? 0) > 0`) because it reads the PARSED NUMBER
+    // while the census reads the RENDERED TOKEN — different inputs, so the two cannot be the same code. What
+    // this edge can do is hold them EQUAL on the producer's bytes, which is the only place a disagreement
+    // shows: the screen's count and the census's valuation must move together, or one of them is wrong about
+    // an artifact that is right there.
+    const none = parseDiagnosticDump(blockWith(1, 1, { injectTimeMs: 0 }));
+    const real = parseDiagnosticDump(blockWith(1, 1, { injectTimeMs: 1_685_202_688_000 }));
+    expect(none.length).toBeGreaterThan(0);
+    expect(onsetAvailability(none).withAnchor).toBe(0);
+    expect(onsetAvailability(real).withAnchor).toBe(real.length);
+    // …and the census agrees on those same two artifacts, in the same direction.
+    expect(censusOnLine(headerOf(blockWith(1, 1, { injectTimeMs: 0 })), 'inject-time').valued).toBe(
+      false,
+    );
+    expect(
+      censusOnLine(headerOf(blockWith(1, 1, { injectTimeMs: 1_685_202_688_000 })), 'inject-time')
+        .valued,
+    ).toBe(true);
+  });
+
+  it('states the sentinel on the channel that has one and on no other, in the projection', () => {
+    // Both directions on the table itself, because a projection that listed `0` everywhere would satisfy
+    // both tests above and would have closed `onset`, `both` and every count channel with it.
+    const withZero = declarations().filter((one) => one.absent.includes('0'));
+    expect(withZero.map((one) => one.channel)).toEqual(['inject-time']);
+    for (const declaration of declarations()) {
+      // The two shared markers are on every channel; only the third one is per channel.
+      expect(declaration.absent, declaration.channel).toEqual(expect.arrayContaining(['', '-']));
     }
   });
 });

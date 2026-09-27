@@ -405,6 +405,136 @@ still pass**, which is the whole reason this defect survived three iterations: t
    `metricKept(0):` for both count channels, so the `metric-drop` half matched nothing; it now builds the
    probe from the declaration's own `key`.
 
+## Finding 9 — "a rendered zero is a value" was generalised from ONE field, so `inject-time`'s sentinel read as coverage
+
+`isValued` decided whether a marker carried a value by consulting a **module-level constant**:
+
+```python
+ABSENT_VALUES: tuple[str, ...] = ('', '-')
+
+def isValued(value: str) -> bool:
+    return value not in ABSENT_VALUES
+```
+
+and its own doc comment justified that with evidence from **one** field — the producer's comment on
+`bothExceptionCount`, *"`both=0` is NEVER omitted because it is zero — `both=0` is a measurement (the sets are
+disjoint) and an absent field is the different claim 'not measured'"*. The sentence is true, and it is a
+statement about `both`.
+
+### The measurement that splits it
+
+| channel | what its producer's `0` means | evidence |
+| --- | --- | --- |
+| `both` | a measurement — the two signature sets are disjoint | the producer's own comment, above |
+| `onset` | a measurement — a service that rose at the injection instant | `onset=0` occurs on **1021 / 570 / 679** rows of `re1` / `re2` / `re3` and **only** alongside a POSITIVE anchor; it appears on **0** rows whose anchor is zero |
+| `inject-time` | **NO ANCHOR** — the engine's spelling of "unknown" | `packages/tree/src/causal/topology-fault-graph.ts`: `injectTimeMs: 0, // unknown — temporal anchor disabled by default`; `packages/tree/dist/index.d.ts`: `0 = unknown -> no time filter` (×3) and `0 or absent means unknown`; `benchmarks/__tests__/fse26-diagnose-analyze.test.ts`: *"`injectTimeMs: 0` is the engine's spelling of NO anchor"* |
+
+**One token, three meanings, on channels of the same artifact.** And the artifact that carries the third one is
+produced **on purpose**: `.github/workflows/benchmark-rcaeval.yml` runs
+
+```
+pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time …
+```
+
+for all three suites, so `re1-noinject`, `re2-noinject` and `re3-noinject` are the workflow's own no-injection
+control runs. Their rows are **100%** `inject=0` / `onset=-`:
+
+| artifact | rows | joint distribution |
+| --- | --- | --- |
+| `re1-noinject.txt` | 11,557 | `inject=0 onset=-` × 11,557 |
+| `re2-noinject.txt` | 4,806 | `inject=0 onset=-` × 4,806 |
+| `re3-noinject.txt` | 2,900 | `inject=0 onset=-` × 2,900 |
+| `re3-novelty.txt` | 2,900 | `inject=0 onset=-` × 2,900 |
+
+### What the census said about them
+
+| artifact | `inject-time` reach | `inject-time` value (before) | value (after) | `require_channel(value=True)` |
+| --- | --- | --- | --- | --- |
+| `re1-noinject.txt` | `every` | **`every`** | **`none`** | passed → **REFUSES** |
+| `re2-noinject.txt` | `every` | **`every`** | **`none`** | passed → **REFUSES** |
+| `re3-noinject.txt` | `every` | **`every`** | **`none`** | passed → **REFUSES** |
+| `re3-novelty.txt` | `every` | **`every`** | **`none`** | passed → **REFUSES** |
+| `re1.txt` / `re2.txt` / `re3.txt` | `every` | `every` | `every` | passes → passes |
+
+**`every/every` on an artifact whose every anchor is zero** — a certificate for an artifact that cannot serve the
+read at all, issued by the module whose stated job is *"Refuse a read the artifact cannot serve, before any
+number is attributed to it"*. Two further consequences, both measured:
+
+- **The refusal could not express the requirement.** `require_channel` judged `measured.reach` — the
+  RENDERING reach — so it returned silently on all seven artifacts: the instrument written for exactly this read
+  certified it.
+- **The reader re-derived the rule privately.** `benchmarks/src/fse26-diagnose-analyze.ts` counts anchors with
+  `(kase.injectTimeMs ?? 0) > 0`, which is why iteration 24 could report, in prose, that `re3-novelty.txt`
+  "renders `inject=0` on every row — the census reads `inject-time every` — and the reader still finds no usable
+  anchor". **The prose was the defect, and it went three iterations without becoming a column.**
+
+And the rule was asserted in **five** places, two of them as a claim about everything: `isValued('0')` is
+`True`, the projection carried `ABSENT_VALUES` on every entry, and the TypeScript edge held
+`entry['absent'] == list(ABSENT_VALUES)`. Written as `isValued('metric-kept', '0')` each of those is correct.
+
+### The fix
+
+```
+ABSENT_VALUES = ('', '-')                       # the two markers EVERY channel shares — the DEFAULT
+ChannelDeclaration.absent: tuple[str, ...] = ABSENT_VALUES
+'inject-time'  →  absent=ABSENT_VALUES + ('0',) # the engine's sentinel, declared as a COLUMN
+'onset'        →  absent=ABSENT_VALUES          # `onset=0` is a measurement; the column must be able to differ
+
+isValued(channel, value) → value not in DECLARATION_BY_CHANNEL[channel].absent
+declarations_as_data()   → 'absent': list(declaration.absent)     # per channel, not per module
+```
+
+- **A new sentinel declares its COLUMN**, and the column is projected, so the TypeScript side applies this
+  channel's own set instead of re-deriving the rule from the token's shape. This is Finding 8's placement
+  column one level down: there the grammar carried two quantities, here the SAME TOKEN carries three meanings.
+- **Six scanner sites ask the channel** (`isValued(name, …)`), so the rule has one owner.
+- **`require_channel` gained the third legal question**: `value=True` judges `value_reach` and the message names
+  **both** numbers, because the interesting case is exactly the one where they differ. The module's own named
+  follow-up — *"a candidate must say whether it needs the channel or the VALUE"* — now has a vocabulary.
+- **The subject matter of the doc comment is now the range**, with the three-channel table above as its
+  evidence rather than one field's producer comment.
+
+### The fences
+
+| edge | what it holds | both directions |
+| --- | --- | --- |
+| python, the table | `isValued(channel, probe) == (probe not in declaration.absent)` for every channel × 5 probes | `inject-time`'s `absent` is `['', '-', '0']` **and** `onset`'s is `['', '-']` |
+| python, the projection | `entry['absent'] == list(declaration.absent)` per channel | a module constant on every entry now **fails** |
+| python, the artifact | the four no-injection dumps read `reach every` / `value_reach none` / `cases_valued 0`, **from their own text** (`inject=0` present, `inject=1` absent) | the three anchored artifacts read `every` on both |
+| python, the refusal | `require_channel(…, value=True)` refuses where `reach` is `every` | and the same artifact passes a presence-only reader |
+| TypeScript, the producer | the projection's `pattern` + `absent` applied to `buildFSE26Diagnostic` output: `injectTimeMs: 0` → undetermined, a real anchor → a value | and `onset=0` on the **same** block → a value |
+| TypeScript, the screen | `onsetAvailability(...).withAnchor` moves with the census's valuation on those same blocks | the screen's private count and the census's column are pinned to one artifact |
+
+**The four probes, each restored:**
+
+| probe | killed |
+| --- | --- |
+| the projection stops declaring the sentinel | **2 python + all 14 TypeScript** |
+| the table stops declaring it | **7 python** |
+| the module default gains the token (closing `onset`) | **11 python** |
+| the refusal stops consulting the value | **1 python** |
+
+**The third probe is the shape of the defect itself**: mutating the constant to include `'0'` kills 11 python
+tests and **zero** TypeScript tests, because the projection was untouched — that is the chain working, and it is
+why the projection is held equal to the table on the python side rather than trusted.
+
+### Gates of the sentinel fix (Finding 9)
+
+| | |
+| --- | --- |
+| python gate | **479 tests · 1636 statements · 588 branches · 100.00%**, every module 100% (was 473 / 1628 / 584) |
+| `benchmarks` project | **835 tests / 23 files** (831 before) |
+| the root suite | **153 files / 4,061 tests / 0 failures** (4,057 before) |
+| both typechecks | 15 projects clean + `tsconfig.workspace.json` clean |
+| lint / format | 0 warnings, 0 errors on 341 files; the touched test formatted |
+| mutations | **13 rows, every one as declared**; both controls (`py`, `ts`) SURVIVED; tree hash-verified byte-identical |
+| golden | **not owed** — `scripts/*.py`, `__tests__/**` and `docs/**` are outside every trigger path; the selector returns `(False, ())` and its control fires on `packages/*/src/**` |
+
+**And one row came back `NO-TESTS` on the first run**, which is neither a kill nor a survivor: my mutation put a
+keyword argument **before** the positional `why`, so the module would not import and zero tests ran. The row was
+**re-pointed at a legal placement** rather than relaxed — the harness's own distinction doing the work it was
+added for.
+
 ## What a candidate must now say
 
 1. **Which channels it reads**, and the **reach** it needs of each — `every` if it sums or simulates over

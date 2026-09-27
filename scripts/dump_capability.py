@@ -128,6 +128,14 @@ BODY = 'body'
 VALUE_PLACEMENTS: tuple[str, ...] = (FIELD, PAREN, BODY)
 
 
+#: The two tokens EVERY channel of this block shares: an empty capture (the `key=` form with nothing after
+#: the separator, `dominant=`) and an explicit `-` (`onset=-`, `latRise=-`, `metricDecisive: -`).
+#:
+#: This is the DEFAULT a channel inherits, not the rule — see {@link ChannelDeclaration.absent}. It was the
+#: whole rule while every channel's producer happened to use exactly these two markers, and that is what made
+#: `inject-time`'s third one invisible.
+ABSENT_VALUES: tuple[str, ...] = ('', '-')
+
 @dataclass(frozen=True)
 class ChannelDeclaration:
     """
@@ -167,6 +175,21 @@ class ChannelDeclaration:
     why: str
     value: str = r'\S*'
     value_in: str = FIELD
+    absent: tuple[str, ...] = ABSENT_VALUES
+    """
+    The tokens this channel's producer writes to mean "rendered and undetermined", ON TOP of the two every
+    channel shares ({@link ABSENT_VALUES}).
+
+    Stated per channel because the same token means different things on different channels and the difference
+    is not derivable from the grammar: `both=0` and `onset=0` are MEASUREMENTS while `inject-time`'s `0` is the
+    engine's spelling of NO ANCHOR — {@link isValued} carries the three-way table and its evidence. A
+    module-level set cannot say that, and defaulting to one made the census certify an artifact whose every
+    anchor was zero: the artifact `.github/workflows/benchmark-rcaeval.yml` produces ON PURPOSE, for all three
+    suites, with `--no-inject-time`.
+
+    The column is projected with the rest of the table, so the TypeScript side applies this channel's own set
+    instead of re-deriving the rule from the token's shape.
+    """
 
     @property
     def marker(self) -> re.Pattern[str]:
@@ -271,6 +294,12 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'the anchor every `onset` delay is measured from — the dump\'s only TIME, and OPTIONAL, so a block '
         'without it states delays that cannot be turned into a delay at all',
         value=r'\d+',
+        # `inject=0` is the engine's spelling of NO ANCHOR (`topology-fault-graph.ts`: "injectTimeMs: 0, //
+        # unknown — temporal anchor disabled by default"), so this is the one channel whose zero is not a
+        # value. It renders on every row of the no-injection runs the benchmark workflow produces, and without
+        # this the census called those artifacts `every/every` — a certificate for an artifact that cannot
+        # serve the read at all.
+        absent=ABSENT_VALUES + ('0',),
     ),
     ChannelDeclaration(
         'declared-precision',
@@ -482,6 +511,13 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
 #: could not say which half of the line the declared field carries.
 CHANNELS: tuple[str, ...] = tuple(declaration.channel for declaration in DECLARATIONS)
 
+#: The table's own index, so {@link isValued} asks the CHANNEL what its producer means by a token. Derived
+#: rather than assembled beside the table, so a channel cannot be missing from it — and a name that is not a
+#: channel raises `KeyError` instead of silently reading as "carries no value".
+DECLARATION_BY_CHANNEL: dict[str, ChannelDeclaration] = {
+    declaration.channel: declaration for declaration in DECLARATIONS
+}
+
 #: The channels that are a property of a CASE rather than of a row — a header field has no rows to be absent
 #: from, and reporting a row count for it would invent a frontier it does not have.
 CASE_SCOPED: frozenset[str] = frozenset(
@@ -531,31 +567,33 @@ class CapabilityError(RuntimeError):
     """An artifact was asked for a channel it does not carry far enough."""
 
 
-#: The strings the block uses to mean "rendered and undetermined". Data rather than a literal inside
-#: {@link isValued} because the TypeScript edge of the fence has to apply the SAME rule, and a predicate
-#: re-implemented in another language is the drift this whole module exists to prevent: the projection
-#: carries this tuple, and `isValued` is held equal to it in both directions.
-ABSENT_VALUES: tuple[str, ...] = ('', '-')
 
-
-def isValued(value: str) -> bool:
+def isValued(channel: str, value: str) -> bool:
     """
-    Whether a marker's captured value is a VALUE rather than one of the block's two undetermined markers.
+    Whether a marker's captured value is a VALUE *for that channel*, rather than a token its producer uses to
+    mean "rendered and undetermined".
 
-    `-` is the block's explicit undetermined marker (`onset=-`, `latRise=-`, `metricDecisive: -`), and an
-    empty capture is the `key=` form with nothing after the separator (`dominant=`). Neither counts towards a
-    channel's valued reach.
-
-    **A rendered ZERO is a value**, and that is not a pedantic distinction here: the producer's own doc for
+    **The rule belongs to the CHANNEL, and it was a module-level constant until a measurement split it.** The
+    sentence that justified the constant was true and about ONE field: the producer's own doc for
     `bothExceptionCount` says `both=0` "is NEVER omitted because it is zero — `both=0` is a measurement (the
-    sets are disjoint) and an absent field is the different claim 'not measured'". The same rule governs the
-    two inventory counts, whose `0` sits in the parentheses rather than after an `=`; see
-    {@link PAREN}.
+    sets are disjoint) and an absent field is the different claim 'not measured'". Generalised to all 31
+    channels it is wrong, and wrong in the direction that MANUFACTURES coverage:
 
+    | channel | what its producer's `0` means | evidence |
+    |---|---|---|
+    | `both` | a measurement — the two signature sets are disjoint | the producer's comment quoted above |
+    | `onset` | a measurement — a service that rose at the injection instant | measured: `onset=0` occurs on 1021 / 570 / 679 rows of `re1` / `re2` / `re3`, and ONLY beside a POSITIVE anchor |
+    | `inject-time` | **NO ANCHOR** — the engine's spelling of "unknown" | `packages/tree/src/causal/topology-fault-graph.ts`: `injectTimeMs: 0, // unknown — temporal anchor disabled by default`; `packages/tree/dist/index.d.ts`: `0 = unknown -> no time filter` (x3), `0 or absent means unknown`; the repo's own test: "`injectTimeMs: 0` is the engine's spelling of NO anchor" |
+
+    One token, three meanings, on channels of the SAME artifact — so the set is a declared column of the table
+    ({@link ChannelDeclaration.absent}) rather than a constant, and the projection carries each channel's own.
+
+    @param channel - The channel whose producer wrote the marker, from {@link CHANNELS}.
     @param value - The captured text after the marker.
-    @returns: `True` when the marker carries a value.
+    @returns: `True` when the marker carries a value for that channel.
+    @raises KeyError: If the name is not a channel, so that a typo cannot read as "not carried".
     """
-    return value not in ABSENT_VALUES
+    return value not in DECLARATION_BY_CHANNEL[channel].absent
 
 
 def strip_transport(line: str) -> str:
@@ -754,7 +792,7 @@ def capability_of(text: str) -> DumpCapability:
                 if found is None:
                     continue
                 case_open[name] = True
-                if isValued(found.group(1)):
+                if isValued(name, found.group(1)):
                     case_valued_open[name] = True
             continue
         if not in_case:
@@ -773,7 +811,7 @@ def capability_of(text: str) -> DumpCapability:
                     continue
                 row_open[name] = True
                 case_open[name] = True
-                if isValued(found.group(1)):
+                if isValued(name, found.group(1)):
                     row_valued_open[name] = True
                     case_valued_open[name] = True
             # The row's identity is not a `key=value` field, so it has its own two patterns. Both are
@@ -787,7 +825,7 @@ def capability_of(text: str) -> DumpCapability:
                     continue
                 row_open[name] = True
                 case_open[name] = True
-                if isValued(found.group(1)):
+                if isValued(name, found.group(1)):
                     row_valued_open[name] = True
                     case_valued_open[name] = True
             continue
@@ -797,7 +835,7 @@ def capability_of(text: str) -> DumpCapability:
             found = marker.search(line)
             if found is not None:
                 case_open[name] = True
-                if isValued(found.group(1)):
+                if isValued(name, found.group(1)):
                     case_valued_open[name] = True
                 break
         else:
@@ -805,11 +843,11 @@ def capability_of(text: str) -> DumpCapability:
                 found = marker.search(line)
                 if found is not None:
                     case_open[name] = True
-                    if isValued(found.group(1)):
+                    if isValued(name, found.group(1)):
                         case_valued_open[name] = True
                     if in_row:
                         row_open[name] = True
-                        if isValued(found.group(1)):
+                        if isValued(name, found.group(1)):
                             row_valued_open[name] = True
                     break
     close_case(rows_in_case, declared_rows)
@@ -846,8 +884,9 @@ def declarations_as_data() -> list[dict[str, Any]]:
     classify the same lines this module classifies, and a regex re-derived in another language is exactly the
     drift this table exists to prevent: a fence whose two halves disagree about what a line means would pass
     on its own bug. It comes from {@link ChannelDeclaration.marker}, so the pattern the fence applies IS the
-    pattern the census uses — and `absent` carries {@link ABSENT_VALUES} for the same reason, because
-    "rendered and undetermined" is a rule rather than a predicate the other language can guess.
+    pattern the census uses — and `absent` carries {@link ChannelDeclaration.absent} for the same reason,
+    because "rendered and undetermined" is a rule rather than a predicate the other language can guess, and it
+    is the CHANNEL's rule (`inject-time`'s differs).
 
     @returns: One entry per declaration, in table order: `channel`, `scope`, `key` (`None` for the row's
         identity), `fields`, `valueIn`, the derived `pattern`, and the `absent` markers.
@@ -860,7 +899,9 @@ def declarations_as_data() -> list[dict[str, Any]]:
             'fields': list(declaration.fields),
             'valueIn': declaration.value_in,
             'pattern': declaration.marker.pattern,
-            'absent': list(ABSENT_VALUES),
+            # The channel's OWN set rather than the module default: the other language applies exactly this
+            # tuple, and `inject-time`'s differs from every other channel's.
+            'absent': list(declaration.absent),
         }
         for declaration in DECLARATIONS
     ]
@@ -934,29 +975,51 @@ def require_channel(
     name: str,
     reader: str,
     reach: str = EVERY,
+    value: bool = False,
 ) -> None:
     """
     Refuse a read the artifact cannot serve, before any number is attributed to it.
 
-    The requirement is stated, not inferred: a reader that SUMS a channel over every candidate a case could
-    promote needs `every`, while a reader that only asks whether the artifact has the channel at all needs
-    `some`. Both are legal questions and they are different, so the caller says which one it is and the
-    refusal names it.
+    **Three legal questions, and they are different.** A reader that SUMS a channel over every candidate a
+    case could promote needs `every`; a reader that only asks whether the artifact has the channel at all
+    needs `some`; and a reader that needs the VALUE — not merely the rendered field — says `value=True`. The
+    caller states which one it is and the refusal names it, because the third question is the one an
+    artifact's rendering cannot answer: `inject=0` is on every row of the no-injection runs the benchmark
+    workflow produces, so `inject-time` reads `every` while carrying no anchor at all.
+
+    This is the module's own named follow-up finally given a caller's vocabulary — the sentence this refusal
+    was written from is *"a candidate must say whether it needs the channel or the VALUE"* — and the reason
+    the axis is a PARAMETER rather than the default is that a rendering requirement and a value requirement
+    are satisfied by different artifacts.
 
     @param capability - The artifact's coverage.
     @param channel - The channel the reader is about to read.
     @param name - How to name the artifact in the refusal.
     @param reader - What is doing the reading, so the message says which code has to change.
     @param reach - The reach required: {@link EVERY} or {@link SOME}.
+    @param value - Whether the reader needs the channel to carry a VALUE, not merely to be rendered.
     @raises CapabilityError: If the channel reaches less far than required.
     """
     if reach not in (EVERY, SOME):
         raise ValueError(f'reach must be {EVERY!r} or {SOME!r}, not {reach!r}')
     measured = capability.channel(channel)
     order = {NONE: 0, SOME: 1, EVERY: 2}
+    scope = 'cases' if channel in CASE_SCOPED else 'rows'
+    if value:
+        # The two claims are reported TOGETHER when the value is what was asked for, because the interesting
+        # case is exactly the one where they differ: naming only the value would hide that the field is on
+        # every row, which is the fact that made the gap invisible for three iterations.
+        if order[measured.value_reach] >= order[reach]:
+            return
+        valued = measured.cases_valued if channel in CASE_SCOPED else measured.rows_valued
+        raise CapabilityError(
+            f'{name} cannot answer {reader}: {channel} reaches {measured.reach} of its {scope} but carries a '
+            f'value on {measured.value_reach} ({valued}/{getattr(measured, "total_" + scope)}), and the reader '
+            f'requires a value on {reach} — a rendered field is not a measurement, so read the channel that '
+            f'carries one, or measure it on an artifact that does'
+        )
     if order[measured.reach] >= order[reach]:
         return
-    scope = 'cases' if channel in CASE_SCOPED else 'rows'
     reached = measured.cases_reached if channel in CASE_SCOPED else measured.rows_reached
     total = measured.total_cases if channel in CASE_SCOPED else measured.total_rows
     raise CapabilityError(
