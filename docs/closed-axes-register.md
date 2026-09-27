@@ -144,6 +144,7 @@ they carry no closing number, and the rows above remain the place an axis is loo
 | `declaration-connectivity-audit.md` | a declaration that is not connected to what it names, in three layers — §2 the artifact's cache key was the CONSTANT `RCAEvalJSON` at 26 sites in 11 workflows while the workflow's own trigger said *run when the bridge changes*, so ten runs after the bridge was fixed converted nothing and the 39 GB artifact the nine cells are read from was 48 days old, produced by `pandas 3.0.5 / pyarrow 25.0.0` and recorded nowhere; §3 the coverage request was a flag appended after the task runner's separator, which ran every suite, exited 0 and measured nothing wherever the package manager does not forward it; §8 the producer is a DIFFERENT workflow started by the SAME push, so the benchmark's `consume` refused four jobs on a dataset that did not exist *yet*, and the missing declaration was a bounded wait (`--await`, one `artifact` job, `actions: read`) rather than a looser refusal |
 | `tests-typecheck-enrollment.md` | the test suites and tool configs that were the last TypeScript no compiler read |
 | `dump-population-audit.md` | the population a report is computed OVER, and a reader that refused in silence — the reader DROPS a block whose rendered candidate count disagrees with the block's own `services=` header (right, and for a stated reason) and reported the drop nowhere, so a truncated artifact produced `cases: 89` and exit 0 with no statement anywhere while the census read `short_blocks=1` on the same bytes; §1 the loss is not hypothetical (run `35107871516`, 13 of 1422 blocks dropped, noticed only by comparing 746 against a published 756); §4 the census's count is **neither a superset nor a subset** of the reader's, with the three differences measured on four shapes (a strict shortfall vs any inequality; a lost footer with every row rendered) and a derivation (`cases − short_blocks`) instead of an equality |
+| `screen-verdict-audit.md` | the WORD a screen prints when it cannot act, and the rule that decides it — the doc comment said `UNEVALUABLE` for a missing input and **two of four arms wrote `INERT`**, which the SIBLING screen's three arms already had right; **13 of the 19 local artifacts that carry a case emit a verdict, all 13 read `INERT`, and 12 of them carry no `inject=` and no `onset=` at all**, while the stability screen said `UNEVALUABLE` about those same artifacts — one artifact earning both words; a cause chain whose last arm was the CALLER's, so the function named `no-order` for six artifacts whose earliness map is non-empty; a clause attributing *"an artefact of the CONFIGURATION"* that neither `inject=0` nor an absent field establishes; and **five tests that asserted the wrong word, two of them in their names** |
 | `fse26-converter-integrity.md` | the converter-integrity verdict that gates the FSE'26 pipeline |
 | `fse26-result-attribution.md` | why the result artifact must carry the configuration that produced it |
 | `fse26-logicHttp-ablation.md` | the `logicHttp` mode ablation readback |
@@ -555,6 +556,20 @@ Before reading any number, check that the input was counted:
   (`docs/artifact-capability-audit.md` Finding 8). The placement is now a column (`field` / `paren` / `body`)
   and the marker is still derived from the key; the **fix's regression is its own scope** — 21 readings moved
   over 22 artifacts, every one a VALUE count on those two channels, **not one reach or population**.
+- **A VERDICT'S WORD NAMES WHAT ITS ABSENCE IS ABOUT, AND THAT IS A COLUMN RATHER THAN A CHOICE.** A screen that
+  cannot act prints one of two words, and they are two pieces of work: **`INERT`** = the term cannot reorder what
+  the artifact RECORDS (a different AXIS), **`UNEVALUABLE`** = the artifact does not carry the input (a different
+  ARTIFACT). Measured: `onsetInertSentence`'s doc comment stated that rule and **two of its four arms wrote
+  `INERT` over missing input**, while the sibling `cvInertSentence` applied it in all three of its arms — so on
+  **`diag-34684319273` and eleven other artifacts** the temporal screen said `INERT` and the stability screen
+  said `UNEVALUABLE` about the same absence, and **13 of the 19 local artifacts that carry any case emit a
+  verdict, all 13 reading `INERT`, 12 of them carrying no `inject=` at all**. The word is now **derived**
+  (`absence → verdict`, one table for both screens, the word written once per module and reaching the text
+  through it), a new cause must **declare its column**, and `…InertCause` returns **`undefined`** when the term
+  can act — because the last arm's precondition had lived in the CALLER while the name lived here, so the
+  function named `no-order` for **six** artifacts whose earliness map is non-empty. **And the defect survived
+  three iterations because five TESTS asserted it**, two of them in their names
+  (`docs/screen-verdict-audit.md`). **A suite that asserts a defect is a suite that certifies it.**
   **And the fence that finds this class is a CHAIN, not an edge.** Two edges — the table against the producer's
   emitted keys, and the table against the reader's typed field map — were both fully satisfied while the
   valuation was wrong: the table was self-consistent and the reader was correct. What is needed is the edge

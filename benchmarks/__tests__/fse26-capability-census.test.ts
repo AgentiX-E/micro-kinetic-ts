@@ -471,4 +471,33 @@ describe("the capability census's population — the artifact it describes", () 
     const top = declarations().find((one) => one.channel === 'metric-top')!;
     expect(top.valueIn).toBe('body');
   });
+
+  it("names, in a screen's ADVICE, the producer field the census reads that channel from", () => {
+    // A screen that cannot act now tells the reader which field to find in a dump that CAN — `inject=`,
+    // `onset=` and `metricDecisive`, in the producer's own spelling. That is a claim about the producer's
+    // grammar, so it is held against the census's key column rather than trusted, and the key column is
+    // itself held against the producer by the test above (the producer BUILDS the block every declared key
+    // has to appear in). The chain is therefore: advice → census key → emitted literal.
+    //
+    // Why it needs a fence at all: a renamed field would leave the advice pointing at a line nobody
+    // writes, which is the defect class Finding 8 records one level down — a declaration standing in for
+    // the thing it names.
+    const byChannel = new Map(declarations().map((one) => [one.channel, one]));
+    expect(byChannel.get('inject-time')?.key).toBe('inject');
+    expect(byChannel.get('onset')?.key).toBe('onset');
+    expect(byChannel.get('decisive-composition')?.key).toBe('metricDecisive');
+    // And the sentences must actually NAME them, in the producer's spelling, because the reader has to
+    // type them — and the SEPARATOR is part of that spelling: a header field is `key=value`, a row is
+    // `key=value`, and a sub-line is `key(N): body`, whose marker carries no `=` at all. Deriving it from
+    // the channel's own scope is what stops `metricDecisive=` from being asserted as if it were a field.
+    const source = readFileSync(
+      path.join(REPO_ROOT, 'benchmarks', 'src', 'fse26-diagnose-analyze.ts'),
+      'utf-8',
+    );
+    for (const channel of ['inject-time', 'onset', 'decisive-composition']) {
+      const one = byChannel.get(channel)!;
+      const literal = one.scope === SUB_LINE ? `\`${one.key}\`` : `\`${one.key}=\``;
+      expect(source, `${channel} -> ${literal}`).toContain(literal);
+    }
+  });
 });

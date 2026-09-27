@@ -36,10 +36,14 @@ import type {
   Admissibility,
   CellLaw,
   CriterionReading,
+  CvAvailability,
+  CvInertCause,
   CvShape,
   DiagnosedCase,
   DumpPrecision,
   MeasurementProvenance,
+  OnsetAvailability,
+  OnsetInertCause,
   RefinementFrontier,
   WeightSeparationCase,
 } from '../src/fse26-diagnose-analyze.js';
@@ -56,6 +60,7 @@ import {
   computeZeroRegressionWindow,
   criterionReadings,
   criterionVerdicts,
+  CV_ABSENCE,
   CV_SHAPES,
   cvAvailability,
   cvInertCause,
@@ -63,6 +68,7 @@ import {
   cvScreen,
   cvShapeMenu,
   cvSlopes,
+  cvVerdict,
   DEFAULT_CV_SHAPE,
   diffDiagnostics,
   drawOnsetDelay,
@@ -99,6 +105,7 @@ import {
   latencySlopes,
   MISS_DECIDED_BY,
   MISS_ORDER,
+  ONSET_ABSENCE,
   ONSET_SHAPES,
   onsetAvailability,
   onsetInertCause,
@@ -106,6 +113,7 @@ import {
   onsetScreen,
   onsetShapeMenu,
   onsetSlopes,
+  onsetVerdict,
   parseAnalyzeArgs,
   parseDiagnosticDump,
   parseDiagnosticDumpWithReport,
@@ -117,6 +125,7 @@ import {
   shouldRefuseToReport,
   solveZeroRegressionWindow,
   tallyDeltas,
+  VERDICT_OF_ABSENCE,
   zeroRegressionSamples,
 } from '../src/fse26-diagnose-analyze.js';
 
@@ -2355,7 +2364,7 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     expect(screen.solved.window.cap).toBeLessThan(1);
   });
 
-  it('screens a dump with no anchor as inert rather than as a zero gain', () => {
+  it('calls a dump whose blocks carry NO anchor UNEVALUABLE, and prints no window', () => {
     const noAnchor = parseDiagnosticDump(
       dump({
         groundTruthServices: ['ts-src'],
@@ -2369,11 +2378,22 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     const screen = onsetScreen(noAnchor, { logWeight: 1, latWeight: 0, poolWeight: 0 });
     const report = formatOnsetScreenReport(screen, { logWeight: 1, latWeight: 0, poolWeight: 0 });
 
+    // The fixture renders onsets but NO injection anchor, so the artifact is missing the input the
+    // term reads — `UNEVALUABLE`, not `INERT`: a gap in the ARTIFACT rather than a result about the
+    // axis. It read `INERT` here and in four other tests until iteration 24, which is how the wrong
+    // word survived three iterations of reading.
     expect(screen.availability.withEarliness).toBe(0);
-    expect(report).toContain('INERT');
+    expect(screen.availability.withAnchor).toBe(0);
+    expect(report).toContain('UNEVALUABLE');
+    expect(report).not.toContain('the term is INERT');
     // And it must NOT print a window: `0` next to a solved interval is read as
     // "measured, no effect", which is the opposite of "not measured".
     expect(report).not.toContain('window:');
+    // The clause names the producer field that would have to be there — and attributes NO cause: the
+    // artifact does not carry one, and `inject=0` is rendered on every row of a local artifact whose
+    // reader sees this same absence.
+    expect(report).toContain('`inject=`');
+    expect(report).not.toContain('CONFIGURATION');
   });
 
   it('names the pair that closes the window when the sign is wrong', () => {
@@ -2452,7 +2472,7 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     expect(report).toContain('cap 0.020203 = 0.020203 / 1.000000');
   });
 
-  it('reports the menu as INERT, once, when the dump carries no order', () => {
+  it('reports the menu as UNEVALUABLE, once, when the dump carries no anchor', () => {
     // Availability is a property of the DUMP, not of a shape, so it is printed once —
     // and when the term cannot act, four rows of `gain 0` would read as four negative
     // results rather than as one data gap.
@@ -2470,7 +2490,10 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
       logWeight: 1,
     });
 
-    expect(report.match(/INERT/g)).toHaveLength(1);
+    // Once, because availability is a property of the ARTIFACT rather than of a shape — and the word
+    // is the artifact's, which is why it is not `INERT`.
+    expect(report.match(/UNEVALUABLE/g)).toHaveLength(1);
+    expect(report).not.toContain('the term is INERT');
     expect(report).not.toContain('shape          gain');
   });
 
@@ -2486,12 +2509,14 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
     });
 
     expect(report).toContain('services carrying an onset: 0/0 (n/a)');
-    expect(report).toContain('INERT');
+    // `injectTimeMs` IS given and there are no service rows at all, so what stops the term is the
+    // ONSET's absence — also a gap in the artifact, and also `UNEVALUABLE`.
+    expect(report).toContain('UNEVALUABLE');
     // The MENU renderer carries the same line, once, before its rows — and it needs the
     // same guard: it is the renderer `--onset-screen` actually uses.
     const menu = formatOnsetMenuReport(onsetShapeMenu(empty, { logWeight: 1 }), { logWeight: 1 });
     expect(menu).toContain('services carrying an onset: 0/0 (n/a)');
-    expect(menu.match(/INERT/g)).toHaveLength(1);
+    expect(menu.match(/UNEVALUABLE/g)).toHaveLength(1);
   });
 
   it('calls a dump with no usable case UNEVALUABLE, on the temporal side too', () => {
@@ -7888,7 +7913,7 @@ describe('a named weight reaches every report that solves a window', () => {
     expect(report).not.toContain('    lost:');
   });
 
-  it('survives a dump where the term is INERT, which is the menu’s other early exit', () => {
+  it('survives a dump where the term cannot act, which is the menu’s other early exit', () => {
     // The second trap, found by probing rather than by reading: the menus return as soon as they
     // learn the term cannot act, BEFORE the loops that render a shape's detail — so on an inert dump
     // the flag was dropped a second time, and an inert dump is exactly where "the weight changes
@@ -7896,7 +7921,7 @@ describe('a named weight reaches every report that solves a window', () => {
     // the temporal screen inert.
     const menu = formatOnsetMenuReport(onsetShapeMenu([losing()], WEIGHTS, 1), WEIGHTS);
 
-    expect(menu).toContain('the term is INERT');
+    expect(menu).toContain('the term is UNEVALUABLE');
     expect(menu).toContain(' at 1.000000');
   });
 
@@ -8360,8 +8385,12 @@ describe('why a screen cannot act', () => {
         servicesTotal: 2900,
       }),
     );
-    expect(noAnchor).toContain('INERT');
-    expect(noAnchor).toContain('injection anchor');
+    // The gap in the DATA earns the OTHER word, and that is the point of having two: the reader needs
+    // a different artifact, not a different axis. This assertion read `INERT` until iteration 24 — the
+    // defect's fifth copy, and the reason three iterations of reading did not find it.
+    expect(noAnchor).toContain('UNEVALUABLE');
+    expect(noAnchor).not.toContain('the term is INERT');
+    expect(noAnchor).toContain('anchor');
   });
 
   it('reads a real block that records no composition as UNEVALUABLE, not as a result', () => {
@@ -8393,6 +8422,220 @@ describe('why a screen cannot act', () => {
     expect(source.match(/lines\.push\(\.\.\.(?:onset|cv)InertSentence\(a\)\)/g) ?? []).toHaveLength(
       4,
     );
+  });
+});
+
+describe('a screen’s word is DERIVED from what its absence is about', () => {
+  /** A sentence is wrapped to the report's width, so its content is read with the wrapping normalised. */
+  const textOf = (lines: readonly string[]): string => lines.join(' ').replace(/\s+/g, ' ');
+  it('gives every cause of both screens exactly one absence, and uses every column', () => {
+    // Both directions: a cause with no column would be a hole in the table, and a column no cause uses
+    // would be a branch that cannot be taken — the defect this module keeps finding, one level up.
+    expect(Object.keys(ONSET_ABSENCE).sort()).toEqual([
+      'no-anchor',
+      'no-cases',
+      'no-onset',
+      'no-order',
+    ]);
+    expect(Object.keys(CV_ABSENCE).sort()).toEqual(['no-cases', 'no-composition', 'no-spread']);
+    const used = new Set([...Object.values(ONSET_ABSENCE), ...Object.values(CV_ABSENCE)]);
+    expect([...used].sort()).toEqual(['input', 'order', 'population']);
+    expect(Object.keys(VERDICT_OF_ABSENCE).sort()).toEqual(['input', 'order', 'population']);
+  });
+
+  it('gives EACH cause the word its own column earns, written here rather than recomputed', () => {
+    // The expected words are literals in this test and NOT a second call to `onsetVerdict`. An assertion
+    // that recomputes the function it checks is a second spelling of it: it passes for ANY table whose
+    // entries are consistent with themselves, which is exactly the property the defect had — the four arms
+    // were consistent with a rule that contradicted the doc comment, and with each other.
+    expect(onsetVerdict('no-cases')).toBe('UNEVALUABLE');
+    expect(onsetVerdict('no-anchor')).toBe('UNEVALUABLE');
+    expect(onsetVerdict('no-onset')).toBe('UNEVALUABLE');
+    expect(onsetVerdict('no-order')).toBe('INERT');
+    expect(cvVerdict('no-cases')).toBe('UNEVALUABLE');
+    expect(cvVerdict('no-composition')).toBe('UNEVALUABLE');
+    expect(cvVerdict('no-spread')).toBe('INERT');
+    // And the rule those words come from, which is what a fifth cause has to be classified against: a gap in
+    // the ARTIFACT is UNEVALUABLE whether what is missing is the population or the input, and only the
+    // absence of an ORDER is a result. The first equality is the one the defect broke.
+    expect(VERDICT_OF_ABSENCE.input).toBe('UNEVALUABLE');
+    expect(VERDICT_OF_ABSENCE.population).toBe('UNEVALUABLE');
+    expect(VERDICT_OF_ABSENCE.order).toBe('INERT');
+    expect(VERDICT_OF_ABSENCE.population).toBe(VERDICT_OF_ABSENCE.input);
+  });
+
+  it('calls an absence of the INPUT the same word on BOTH screens, which it did not', () => {
+    // The defect in one assertion. Measured: `diag-34684319273` and eleven other local artifacts carry
+    // no `inject=`, no `onset=` and no `metricDecisive` (the census reads `inject-time none`,
+    // `onset none`, `decisive-composition none`), and the temporal screen called that absence `INERT`
+    // while the stability screen called it `UNEVALUABLE`.
+    // The WORD is asserted first and the agreement second, because agreement alone is satisfied by two
+    // screens that are both wrong — which is what a first version of this test asserted, and it passed on
+    // the regressed table.
+    expect(onsetVerdict('no-anchor')).toBe('UNEVALUABLE');
+    expect(cvVerdict('no-composition')).toBe('UNEVALUABLE');
+    expect(onsetVerdict('no-anchor')).toBe(cvVerdict('no-composition'));
+    expect(onsetVerdict('no-onset')).toBe(cvVerdict('no-composition'));
+    expect(onsetVerdict('no-cases')).toBe(cvVerdict('no-cases'));
+    // …and the two absences that ARE results keep the other word, so this is not a rename of everything.
+    expect(onsetVerdict('no-order')).toBe('INERT');
+    expect(cvVerdict('no-spread')).toBe('INERT');
+  });
+
+  it('answers UNDEFINED when the term can act, so no name can be claimed without its preconditions', () => {
+    // The six measured artifacts this arm exists for. Every one reports `withEarliness` equal to its case
+    // count — the earliness map is NON-empty for every case — and every one used to be NAMED `no-order`
+    // by this function, with only the caller's separate gate keeping the name off the screen.
+    const able = {
+      cases: 1422,
+      withAnchor: 1422,
+      withOnsets: 1422,
+      withEarliness: 1422,
+      servicesWithOnset: 63489,
+      servicesTotal: 72527,
+    };
+    expect(onsetInertCause(able)).toBeUndefined();
+    // And nothing to print, which is why the caller asks the function instead of testing a count.
+    expect(onsetInertSentence(able)).toEqual([]);
+    for (const cases of [375, 150, 90, 1422, 1422]) {
+      const one = { ...able, cases, withAnchor: cases, withOnsets: cases, withEarliness: cases };
+      expect(onsetInertCause(one)).toBeUndefined();
+    }
+    const cvAble = {
+      cases: 1422,
+      servicesTotal: 72527,
+      servicesMeasured: 71161,
+      casesComparable: 24,
+    };
+    expect(cvInertCause(cvAble)).toBeUndefined();
+    expect(cvInertSentence(cvAble)).toEqual([]);
+  });
+
+  it('keeps the CONDITION and the NAME on one owner, which is what the optional return is for', () => {
+    // Asserted on the source, because that split is invisible to every assertion above: the precondition
+    // lived in the CALLER and the name in this function, so the function answered `no-order` for six
+    // artifacts whose earliness map is non-empty. Two owners for one verdict is the defect.
+    const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
+    const source = readFileSync(resolve(root, 'benchmarks/src/fse26-diagnose-analyze.ts'), 'utf8');
+    expect(source).not.toContain('withEarliness === 0');
+    expect(source).not.toContain('casesComparable === 0');
+    expect(source.match(/if \(onsetInertCause\(a\) !== undefined\) \{/g) ?? []).toHaveLength(2);
+    expect(source.match(/if \(cvInertCause\(a\) !== undefined\) \{/g) ?? []).toHaveLength(2);
+    // And the WORD is written once per module — in the table — so a clause cannot spell it differently.
+    expect(source.match(/'the term is (?:INERT|UNEVALUABLE) on this dump/g) ?? []).toHaveLength(0);
+  });
+
+  it('lets the TABLE reach the TEXT, so no arm can spell the word for itself', () => {
+    // The rule is worth deriving only if the derived word is the one PRINTED, and this is the assertion the
+    // defect would have failed in exactly the two arms where the text said `INERT` over missing input.
+    // Every cause of both screens, in the state that produces it, checked as cause AND as sentence.
+    const onsetStates: readonly (readonly [OnsetInertCause, OnsetAvailability])[] = [
+      [
+        'no-cases',
+        {
+          cases: 0,
+          withAnchor: 0,
+          withOnsets: 0,
+          withEarliness: 0,
+          servicesWithOnset: 0,
+          servicesTotal: 0,
+        },
+      ],
+      [
+        'no-anchor',
+        {
+          cases: 369,
+          withAnchor: 0,
+          withOnsets: 0,
+          withEarliness: 0,
+          servicesWithOnset: 0,
+          servicesTotal: 18820,
+        },
+      ],
+      [
+        'no-onset',
+        {
+          cases: 90,
+          withAnchor: 90,
+          withOnsets: 0,
+          withEarliness: 0,
+          servicesWithOnset: 0,
+          servicesTotal: 2900,
+        },
+      ],
+      [
+        'no-order',
+        {
+          cases: 90,
+          withAnchor: 90,
+          withOnsets: 90,
+          withEarliness: 0,
+          servicesWithOnset: 120,
+          servicesTotal: 2900,
+        },
+      ],
+    ];
+    for (const [cause, state] of onsetStates) {
+      expect(onsetInertCause(state), cause).toBe(cause);
+      expect(textOf(onsetInertSentence(state)), cause).toContain(
+        `the term is ${onsetVerdict(cause)} on this dump`,
+      );
+    }
+    // And the ORDER arm still says INERT, so this is not a blanket relabelling: two of the four words are
+    // results about the axis and keep the other word, which is what makes the distinction worth having.
+    expect(textOf(onsetInertSentence(onsetStates[3]![1]))).toContain('the term is INERT');
+    const cvStates: readonly (readonly [CvInertCause, CvAvailability])[] = [
+      ['no-cases', { cases: 0, servicesTotal: 0, servicesMeasured: 0, casesComparable: 0 }],
+      [
+        'no-composition',
+        { cases: 1422, servicesTotal: 72527, servicesMeasured: 0, casesComparable: 0 },
+      ],
+      [
+        'no-spread',
+        { cases: 1422, servicesTotal: 72527, servicesMeasured: 71161, casesComparable: 0 },
+      ],
+    ];
+    for (const [cause, state] of cvStates) {
+      expect(cvInertCause(state), cause).toBe(cause);
+      expect(textOf(cvInertSentence(state)), cause).toContain(
+        `the term is ${cvVerdict(cause)} on this dump`,
+      );
+    }
+    expect(textOf(cvInertSentence(cvStates[2]![1]))).toContain('the term is INERT');
+  });
+
+  it('states the counts it drew the sentence from, rather than a cause the artifact does not carry', () => {
+    // `inject=0` is rendered on every row of one local artifact (`re3-novelty.txt`, where the census
+    // reads `inject-time every`) while the field is absent from twelve others. The arm that called both
+    // "an artefact of the CONFIGURATION" attributed a cause neither of them establishes.
+    const noAnchor = textOf(
+      onsetInertSentence({
+        cases: 369,
+        withAnchor: 0,
+        withOnsets: 0,
+        withEarliness: 0,
+        servicesWithOnset: 0,
+        servicesTotal: 18820,
+      }),
+    );
+    expect(noAnchor).toContain('369');
+    expect(noAnchor).not.toContain('CONFIGURATION');
+    // The field it tells a reader to find, in the producer's own spelling.
+    expect(noAnchor).toContain('`inject=`');
+    const noOnset = textOf(
+      onsetInertSentence({
+        cases: 90,
+        withAnchor: 90,
+        withOnsets: 0,
+        withEarliness: 0,
+        servicesWithOnset: 0,
+        servicesTotal: 2900,
+      }),
+    );
+    expect(noOnset).toContain('90');
+    expect(noOnset).toContain('2900');
+    expect(noOnset).toContain('`onset=`');
+    expect(noOnset).not.toContain('CONFIGURATION');
   });
 });
 

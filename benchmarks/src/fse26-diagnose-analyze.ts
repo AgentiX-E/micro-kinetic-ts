@@ -3462,11 +3462,64 @@ export function onsetAvailability(cases: readonly DiagnosedCase[]): OnsetAvailab
   };
 }
 
+/**
+ * The two words a screen's absence can earn.
+ *
+ * They are two pieces of work, which is why they are two words and why the rule is stated once, as data,
+ * below: **`UNEVALUABLE`** means the artifact does not carry what the term reads, so the reader needs a
+ * different ARTIFACT; **`INERT`** means the artifact DOES carry it and the term still cannot reorder
+ * anything, so the reader has a result about the AXIS.
+ */
+export type ScreenVerdict = 'INERT' | 'UNEVALUABLE';
+
+/**
+ * WHAT an absence is about, which is the only thing that decides the word above.
+ *
+ * A gap in the POPULATION and a gap in the INPUT are both absences of the artifact; only an absence of the
+ * ORDER is a result. A new cause therefore declares this column and cannot choose a word by eye.
+ */
+export type ScreenAbsence = 'population' | 'input' | 'order';
+
+/** The word an absence earns. {@link ScreenAbsence}'s own rule, in one place for every screen. */
+export const VERDICT_OF_ABSENCE: Record<ScreenAbsence, ScreenVerdict> = {
+  population: 'UNEVALUABLE',
+  input: 'UNEVALUABLE',
+  order: 'INERT',
+};
+
 /** WHICH absence stops the temporal screen — named, because they close different things. */
 export type OnsetInertCause = 'no-cases' | 'no-anchor' | 'no-onset' | 'no-order';
 
+/** What each of those absences is about. See {@link ScreenAbsence}. */
+export const ONSET_ABSENCE: Record<OnsetInertCause, ScreenAbsence> = {
+  'no-cases': 'population',
+  'no-anchor': 'input',
+  'no-onset': 'input',
+  'no-order': 'order',
+};
+
 /**
- * Why the temporal term cannot act on this artifact.
+ * The word a temporal verdict earns, DERIVED from its cause.
+ *
+ * The derivation is the fix for a measured defect rather than a tidying. The rule was written into this
+ * screen's doc comment — *"`INERT` when the term cannot reorder what the artifact RECORDS … and
+ * `UNEVALUABLE` when the artifact does not carry the input at all"* — and then two of its four arms wrote
+ * `INERT` while their own text described an artifact that lacks the input. **Thirteen of the nineteen local
+ * artifacts that carry any case emit a temporal verdict, all thirteen read `INERT`, and twelve of them carry
+ * NO `inject=` and no `onset=` at all** (the census reports `inject-time none`, `onset none`); on the same
+ * twelve the stability screen says `UNEVALUABLE` about the missing composition, so **one artifact earned
+ * both words from two screens that share this rule**. A rule written in prose can disagree with itself in
+ * two places, and this one did.
+ *
+ * @param cause - {@link onsetInertCause}'s answer.
+ * @returns The word.
+ */
+export function onsetVerdict(cause: OnsetInertCause): ScreenVerdict {
+  return VERDICT_OF_ABSENCE[ONSET_ABSENCE[cause]];
+}
+
+/**
+ * Why the temporal term cannot act on this artifact, or `undefined` when it CAN.
  *
  * The menu printed ONE sentence for all of these, and it asserted a fact about the ENGINE — *"the engine
  * leaves every service neutral"* — for causes that are facts about the DATA or about the CONFIGURATION.
@@ -3474,50 +3527,71 @@ export type OnsetInertCause = 'no-cases' | 'no-anchor' | 'no-onset' | 'no-order'
  * dump), where the anchor was given and the delays ARE recorded and what is missing is an ORDER. Recording
  * that as "every service neutral" points the reader at the engine when the finding is about the spread.
  *
+ * **The last two arms are ordered for a reason, and they used to be one arm split across two files.** An
+ * empty earliness map is the condition under which this function's answer IS a verdict, and it was tested by
+ * the CALLER while the name was chosen here — so the function answered `no-order` for six local artifacts
+ * whose earliness map is non-empty (measured: `re1`, `re2`, `re3`, `r35006947938`, `r35029055764` and
+ * `r35107871516`, every one reporting `withEarliness` equal to its case count), and only the caller's gate
+ * kept that name off the screen. **A name its own function does not establish is not a name.**
+ *
  * @param a - The counts the availability pass produced.
- * @returns The first absence that stops the term, in the order they nest.
+ * @returns The first absence that stops the term, in the order they nest; `undefined` when there is none.
  */
-export function onsetInertCause(a: OnsetAvailability): OnsetInertCause {
+export function onsetInertCause(a: OnsetAvailability): OnsetInertCause | undefined {
   if (a.cases === 0) return 'no-cases';
   if (a.withAnchor === 0) return 'no-anchor';
   if (a.withOnsets === 0) return 'no-onset';
+  if (a.withEarliness > 0) return undefined;
   return 'no-order';
 }
 
 /**
- * The sentence a temporal menu prints INSTEAD of a window, with the label its cause earns.
+ * What each absence says after the word, as a clause per cause rather than a sentence per cause.
  *
- * `INERT` when the term cannot reorder what the artifact RECORDS — a result about the axis — and
- * `UNEVALUABLE` when the artifact does not carry the input at all, which invites a different ARTIFACT
- * rather than a conclusion about the engine. Two pieces of work, so two words.
+ * The first element continues the label's own line and the rest are already indented. The clauses name the
+ * COUNTS they were drawn from and the producer field a reader would have to find, and they do NOT assert
+ * WHY the field is missing: `inject=0` is rendered on every row of one local artifact (`re3-novelty.txt`,
+ * where the census reads `inject-time every`) while the field is absent from twelve others, and the arm that
+ * used to call both *"an artefact of the CONFIGURATION"* attributed a cause the artifact does not carry.
+ */
+const ONSET_ABSENCE_CLAUSE: Record<OnsetInertCause, (a: OnsetAvailability) => readonly string[]> = {
+  'no-cases': () => [
+    'it names no case with an acceptable root, so there is',
+    '  nothing to screen — a gap in the ARTIFACT rather than a result about the data.',
+  ],
+  'no-anchor': (a) => [
+    `no case of its ${a.cases} carries a usable anchor, so the`,
+    '  engine was given no time to order — a gap in the ARTIFACT rather than a result about the axis,',
+    '  and a dump whose run emitted a POSITIVE `inject=` is needed to ask the question at all.',
+  ],
+  'no-onset': (a) => [
+    `all ${a.withAnchor} anchored cases hold no service`,
+    `  carrying an onset delay (0 of ${a.servicesTotal} in total), so the artifact records no time to`,
+    '  order — a gap in the ARTIFACT rather than a result about the axis, and a dump whose rows carry',
+    '  `onset=` is needed to ask the question at all.',
+  ],
+  'no-order': (a) => [
+    `onsets ARE recorded (${a.servicesWithOnset} of`,
+    `  ${a.servicesTotal} services) and the engine's own earliness map is empty for every case, so no`,
+    '  weight can reorder anything — a window here is an artefact.',
+  ],
+};
+
+/**
+ * The sentence a temporal menu prints INSTEAD of a window, labelled by {@link onsetVerdict}.
+ *
+ * `[]` when the term can act, because a screen with evidence to read prints its windows rather than a
+ * verdict — the caller asks this function rather than testing the precondition itself, so the condition and
+ * the name have ONE owner.
  *
  * @param a - The counts the availability pass produced.
- * @returns One or more indented lines.
+ * @returns One or more indented lines, or none when there is nothing to refuse.
  */
 export function onsetInertSentence(a: OnsetAvailability): string[] {
-  switch (onsetInertCause(a)) {
-    case 'no-cases':
-      return [
-        '  the term is UNEVALUABLE on this dump: it names no case with an acceptable root, so there is',
-        '  nothing to screen — a gap in the ARTIFACT rather than a result about the data.',
-      ];
-    case 'no-anchor':
-      return [
-        '  the term is INERT on this dump: no case carries an injection anchor, so the engine was given',
-        '  no time to order — an artefact of the CONFIGURATION, not a finding about the engine.',
-      ];
-    case 'no-onset':
-      return [
-        `  the term is INERT on this dump: all ${a.withAnchor} anchored cases hold no service carrying an`,
-        '  onset delay, so there is no time to order — a window here is an artefact.',
-      ];
-    default:
-      return [
-        `  the term is INERT on this dump: onsets ARE recorded (${a.servicesWithOnset} of`,
-        `  ${a.servicesTotal} services) and the engine's own earliness map is empty for every case, so no`,
-        '  weight can reorder anything — a window here is an artefact.',
-      ];
-  }
+  const cause = onsetInertCause(a);
+  if (cause === undefined) return [];
+  const [first, ...rest] = ONSET_ABSENCE_CLAUSE[cause](a);
+  return [`  the term is ${onsetVerdict(cause)} on this dump: ${first}`, ...rest];
 }
 
 /** The solved onset screen. */
@@ -4101,7 +4175,7 @@ export function formatOnsetMenuReport(
       `with an onset ${a.withOnsets}; with an ORDER the term can act on ${a.withEarliness}`,
   );
   lines.push(`  services carrying an onset: ${a.servicesWithOnset}/${a.servicesTotal} (${share})`);
-  if (a.withEarliness === 0) {
+  if (onsetInertCause(a) !== undefined) {
     lines.push(...onsetInertSentence(a));
     // BEFORE the return, because this is the menu's other early exit: a named weight has a verdict
     // on an inert dump too — "the term changes nothing" is a measurement — and an inert dump is
@@ -4179,7 +4253,7 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
   );
   lines.push(`  services carrying an onset: ${a.servicesWithOnset}/${a.servicesTotal} (${share})`);
   lines.push(...namedWeightLines(s.at));
-  if (a.withEarliness === 0) {
+  if (onsetInertCause(a) !== undefined) {
     // Not "no window": the term cannot act at all, so a gain of zero here would be
     // read as a negative result when it is a data gap. Saying which is the whole
     // point of printing availability before the window.
@@ -4404,39 +4478,75 @@ export type CvInertCause = 'no-cases' | 'no-composition' | 'no-spread';
  * @param a - The counts the availability pass produced.
  * @returns The first absence that stops the term, in the order they nest.
  */
-export function cvInertCause(a: CvAvailability): CvInertCause {
+export function cvInertCause(a: CvAvailability): CvInertCause | undefined {
   if (a.cases === 0) return 'no-cases';
   if (a.servicesMeasured === 0) return 'no-composition';
+  // The term CAN act: at least one case holds two distinct coefficients of variation, so there is nothing
+  // inert to report and the screen prints its windows. Optional for the same reason the temporal screen's
+  // is — the condition was the caller's and the name was this function's, which is two owners for one
+  // verdict. See {@link onsetInertCause} for the measurement that showed the split.
+  if (a.casesComparable > 0) return undefined;
   return 'no-spread';
 }
 
+/** What each of those absences is about. See {@link ScreenAbsence}. */
+export const CV_ABSENCE: Record<CvInertCause, ScreenAbsence> = {
+  'no-cases': 'population',
+  'no-composition': 'input',
+  'no-spread': 'order',
+};
+
 /**
- * The sentence a stability menu prints INSTEAD of a window, with the label its cause earns.
+ * The word a stability verdict earns, DERIVED from its cause.
+ *
+ * This screen applied the rule correctly in all three arms while the temporal screen broke it in two — one
+ * artifact (`diag-34684319273`, and eleven others) earned `UNEVALUABLE` here and `INERT` there for the same
+ * absence. The rule now has ONE owner for both, which is why this function is a table lookup rather than
+ * three literals repeated.
+ *
+ * @param cause - {@link cvInertCause}'s answer.
+ * @returns The word.
+ */
+export function cvVerdict(cause: CvInertCause): ScreenVerdict {
+  return VERDICT_OF_ABSENCE[CV_ABSENCE[cause]];
+}
+
+/**
+ * What each absence says after the word. The first element continues the label's own line.
+ *
+ * The `no-composition` clause is the one that was already right, and it is the template the temporal
+ * screen's two corrected clauses follow: it names the count, names the producer field a reader would have to
+ * find, and states that nothing follows in either direction — rather than attributing a cause.
+ */
+const CV_ABSENCE_CLAUSE: Record<CvInertCause, (a: CvAvailability) => readonly string[]> = {
+  'no-cases': () => [
+    'it names no case with an acceptable root, so there is',
+    '  nothing to screen — a gap in the ARTIFACT rather than a result about the data.',
+  ],
+  'no-composition': (a) => [
+    'its blocks record a decisive composition for NONE of',
+    `  their ${a.servicesTotal} services (0 of ${a.servicesTotal}), so no stability question can be`,
+    '  asked OF THIS ARTIFACT — a dump whose producer emitted `metricDecisive` is needed, and a',
+    '  spread conclusion is unavailable here in either direction.',
+  ],
+  'no-spread': (a) => [
+    `the composition IS recorded (${a.servicesMeasured} of`,
+    `  ${a.servicesTotal} services) and no case holds two distinct coefficients of variation, so no`,
+    '  weight can change a ranking — a window here is an artefact.',
+  ],
+};
+
+/**
+ * The sentence a stability menu prints INSTEAD of a window, labelled by {@link cvVerdict}.
  *
  * @param a - The counts the availability pass produced.
- * @returns One or more indented lines.
+ * @returns One or more indented lines, or none when there is nothing to refuse.
  */
 export function cvInertSentence(a: CvAvailability): string[] {
-  switch (cvInertCause(a)) {
-    case 'no-cases':
-      return [
-        '  the term is UNEVALUABLE on this dump: it names no case with an acceptable root, so there is',
-        '  nothing to screen — a gap in the ARTIFACT rather than a result about the data.',
-      ];
-    case 'no-composition':
-      return [
-        `  the term is UNEVALUABLE on this dump: its blocks record a decisive composition for NONE of`,
-        `  their ${a.servicesTotal} services (0 of ${a.servicesTotal}), so no stability question can be`,
-        '  asked OF THIS ARTIFACT — a dump whose producer emitted `metricDecisive` is needed, and a',
-        '  spread conclusion is unavailable here in either direction.',
-      ];
-    default:
-      return [
-        `  the term is INERT on this dump: the composition IS recorded (${a.servicesMeasured} of`,
-        `  ${a.servicesTotal} services) and no case holds two distinct coefficients of variation, so no`,
-        '  weight can change a ranking — a window here is an artefact.',
-      ];
-  }
+  const cause = cvInertCause(a);
+  if (cause === undefined) return [];
+  const [first, ...rest] = CV_ABSENCE_CLAUSE[cause](a);
+  return [`  the term is ${cvVerdict(cause)} on this dump: ${first}`, ...rest];
 }
 
 /**
@@ -4812,7 +4922,7 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
       `unreachable at every weight ${unreachableClause(s.window)}`,
   );
   lines.push(...namedWeightLines(s.at));
-  if (a.casesComparable === 0) {
+  if (cvInertCause(a) !== undefined) {
     lines.push(...cvInertSentence(a));
     return lines.join('\n');
   }
@@ -4919,7 +5029,7 @@ export function formatCvMenuReport(
         .map((screen) => `${screen.shape} ${unreachableClause(screen.solved.window)}`)
         .join(', '),
   );
-  if (a.casesComparable === 0) {
+  if (cvInertCause(a) !== undefined) {
     lines.push(...cvInertSentence(a));
     // Same reason as the onset menu's identical placement: the verdict precedes the exit, because
     // the menu returns before the loop that renders a shape's detail.
