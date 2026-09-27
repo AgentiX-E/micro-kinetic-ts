@@ -329,7 +329,15 @@ Before reading any number, check that the input was counted:
   every pending job against **its own** bound (`dashboard` declares ten minutes where the ablations declare
   sixty), licences the wait with the soonest boundary, and **has no cancel path at all**
   (`docs/golden-reader-audit.md` §6).
-- **A GATE'S NUMBER BELONGS TO ITS POPULATION, ITS BAR, ITS ENVIRONMENT — AND ITS DRAW.** `test (optimize)`'s
+- **A GATE'S NUMBER BELONGS TO ITS POPULATION, ITS BAR, ITS ENVIRONMENT — AND ITS DRAW *AND ITS
+  DENOMINATOR*.** `benchmark-tests`' branch dimension read **`97.49` and `97.48`** across one change, and the
+  two numbers come from the SAME reading: the aggregation on both trees gives `2376/2437 = 97.4969%` against
+  `2367/2428 = 97.4876%`, so numerator and denominator fell by the same **9** and the UNCOVERED count is
+  **identical at 61** (statements `5861/5870` → `5865/5874`, uncovered identical at 9; functions +1, fully
+  covered). The change replaced eight inline ternaries with one accessor, so nine branch ARCS disappeared —
+  **every one of them a covered arc** — and `61/2437 = 2.5031%` against `61/2428 = 2.5124%`. **A percentage is
+  a ratio, so removing covered work lowers it without a regression, and the COUNT is what a reader compares
+  across a change.** `test (optimize)`'s
   branch dimension read **`100.00` and `99.77` on the same commit and the same machine**, because the arm
   `experimentHistory[best.idx - 1]!.config` is reached only when a randomly sampled candidate is drawn far
   enough from the GP's soft prior to win a posterior-mean argmax: measured **1 of 15 calls in the whole suite**
