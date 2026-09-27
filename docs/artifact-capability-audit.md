@@ -576,6 +576,109 @@ record has found a defect in the thing doing the measuring rather than in the th
 suite says so by skipping rather than by asserting — which is the honest form: **a gate that only passes where
 the corpus lives is not a gate.**
 
+## Finding 10 — the block writes TWO undetermined tokens, and the reader named one of them
+
+`fmt`/`fmtRatio`/`fmtBase` (`packages/kinetic/src/benchmarks/fse26-diagnose.ts`) return the literal
+`nonfinite` for a non-finite value. The producer means it as a **tripwire**, in its own words:
+
+> *"A defensive branch here could never fire — and if one ever did, the formatter's `nonfinite` render is the
+> tripwire, which is louder than a silently skipped row."*
+
+and its suite asserts the render:
+
+```ts
+it('guards against non-finite self-anomaly values', () => {
+  const out = formatFSE26Diagnostic(input({ services: [service({ selfAnomaly: Number.NaN })] }));
+  expect(out).toContain('selfAnomaly=nonfinite');
+});
+```
+
+**The census named one undetermined token and counted the other as a measurement.** `ABSENT_VALUES` was
+`('', '-')`, so `nonfinite` was a value on every channel a formatter renders into — six of them:
+
+| channel | how the token can reach its value |
+| --- | --- |
+| `self-anomaly` | `fmt(service.selfAnomaly, decimals)` |
+| `log-score` | `fmt(service.logScore, decimals)` |
+| `failed-edge` | `fmt(service.failedEdgeScore, decimals)` |
+| `latency-rise` | `fmt(service.latRise, decimals)` |
+| `metric-top` | the body: `score` by `fmt`, `rise`/`drop` by `fmtRatio`, `base` by `fmtBase` |
+| `decisive-composition` | the same body shape, written by the same three formatters |
+
+and **the reader answered the same question eight different ways** — `-` spelled inline in two parses
+(`latRise`, `onsetDelayMs`) and six more with no guard at all. So a tripwire render became
+`Number('nonfinite')` = **`NaN`**, a `number`:
+
+```
+=== the producer rendered the token, and the reader parsed it to ===
+  selfAnomaly=nonfinite : true                      (from buildFSE26Diagnostic)
+  typeof selfAnomaly    : number
+  value                 : NaN
+  === undefined         : false
+  log1p(selfAnomaly)    : NaN
+```
+
+**Every "is it measured?" test downstream answers YES for a value the producer flagged as broken, and
+`Math.log1p` carries the NaN into a score.** And because the census agreed with the reader, no existing edge of
+the fence could see it: **both halves classified `nonfinite` the same way.** The tripwire the producer added to
+be loud was disarmed by its consumer, and the consumer is on the other side of the language boundary.
+
+**The range is what was missing, twice over.** Iteration 27 found a third *meaning* of one token (`0` on
+`inject-time`); this is one meaning with a *second token*, and the two travel together as the law below.
+
+### The fix
+
+- **`NONFINITE_RENDER` is named once** in the census and declared by **exactly those six channels**, so
+  `value_reach` reports a flagged block as carrying no measurement while `reach` still says the field is
+  rendered — the two claims stay separate, which is the same shape Finding 8 established for placement.
+- **It is NOT folded into `ABSENT_VALUES`**, and that is the point: `metric-kept`'s value is a `\d+` inside the
+  parentheses and `onset`'s is a `fmtOnset` render that maps its own non-finite cases onto `-`, so neither can
+  carry this token. A rule keyed on the token rather than on the channel would have taken both.
+- **The reader's rule acquires an OWNER**: one exported `UNDETERMINED_TOKENS` and one accessor `measured()`,
+  applied at the eight numeric parses that used to hold eight private opinions. `'-'` is no longer spelled
+  inline anywhere.
+- **The two fields whose type is a required number cannot hold the `undefined`.** `selfAnomaly: number` and
+  `logScore: number` — making them honest reports **34 errors across four files**, every one a site that today
+  receives the NaN, so the value the type admits is written out at the parse with the reason, and the census
+  reports the same block as `none`. **That is where the defect is legible**, and widening the types is a named
+  follow-up rather than a change smuggled into this one.
+
+### The fence is derived, not listed
+
+One block is built by the **producer** with every formattable field non-finite — and the two non-finite values
+are a real `5 / 0` and a real `Number.NaN` fed through the graph, because a fixture that typed the token would
+be measuring the test file. Then:
+
+| assertion | both directions |
+| --- | --- |
+| the channels whose captured value contains the token **equal** the channels that declare it | reported as two NAMED lists (`declaresButNeverSees`, `seesButDoesNotDeclare`), because an array equality truncates the answer |
+| the token is absent from the channels whose value is a `\d+` count or a `fmtOnset` render | `metric-kept`, `metric-drop`, `failed-edge-records`, `latency-edges`, `onset`, named |
+| the reader's `UNDETERMINED_TOKENS` contains every token the channels it parses declare | and invents no token no channel declares |
+| the flagged block parses to `undefined` on the fields the type can hold it on | with the two `number`-typed fields asserted as `NaN`, the type's own admission |
+
+**Two of my own fixture errors were found by running it**, and both are the class this record keeps recording:
+a NaN **score** breaks the builder's own decisive selection (so `decisive-composition` never saw the token —
+the fixture was measuring its own NaN), and the healthy fixture had no edge latency, so its `latRise` rendered
+`-` and the control had nothing to be true about.
+
+### Gates
+
+| | |
+| --- | --- |
+| python gate | **480 tests · 1637 statements · 588 branches · 100.00%**, every module 100% — and **100.00% under the CI condition** (corpus absent: 0 failures, 9 skips), which iteration 27 made a habit |
+| `benchmarks` project | **840 tests / 23 files** (835 before) |
+| the root suite | **153 files / 4,066 tests / 0 failures** (4,061 before) |
+| both typechecks | 15 projects clean + `tsconfig.workspace.json` clean |
+| lint / format | 0 warnings, 0 errors on 341 files; the touched files formatted |
+| mutations | **13 rows, every one as declared**; both controls (`py`, `ts`) SURVIVED; tree hash-verified byte-identical |
+| golden | **OWED** — `benchmarks/src/fse26-diagnose-analyze.ts` is under `benchmarks/src/**`. The corpus carries **0** occurrences of the token, so every cell should be byte-identical, and the run is the only thing that can say so |
+
+**One row is EXPECTED to survive, and it is recorded rather than relaxed.** Making one of the three body
+formatters write `-` instead of the token leaves the census's answer **correct** — `-` is already declared
+absent on those channels — so a fence that fired there would be asserting something the column does not need.
+What the row documents is the boundary of the claim: **it is about the TOKEN, not about each formatter that can
+write it.**
+
 ## What a candidate must now say
 
 1. **Which channels it reads**, and the **reach** it needs of each — `every` if it sums or simulates over
