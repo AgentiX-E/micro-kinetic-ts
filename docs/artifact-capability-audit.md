@@ -679,6 +679,57 @@ absent on those channels — so a fence that fired there would be asserting some
 What the row documents is the boundary of the claim: **it is about the TOKEN, not about each formatter that can
 write it.**
 
+### The same gates read from CI, and one dimension that moved for its own reason
+
+| | |
+| --- | --- |
+| CI `224da3b` | **19 of 19 jobs green**, `Release` green |
+| CI's own python gate | `dump_capability.py` **276 statements / 116 branches / 0 miss / 0 partial**, `TOTAL 1637 / 588 / 100.00%` |
+| 56 dimensions | 14 coverage jobs × 4 — **worst `95.00`** (`wave` branches) over **4,066 tests**; every percentage unchanged **except one** |
+| golden 9 cells | **byte-identical**, from each job's own table: RE1 `80.0 / 92.8 / 68.0`, RE2 `82.4 / 88.9 / 68.1`, RE3 `80.0 / 45.0 / 51.1` (OB / SS / TT) |
+| the push | started **`CI`, `Release` and `Benchmark — RCAEval Full Datas`** — three runs, which is what `benchmarks/src/**` being a trigger predicts |
+| FSE'26 half | **not dispatchable** (`fse26-benchmark.yml` declares no `push` trigger), **and the parse is byte-identical on the whole local corpus** — see below |
+
+### `benchmark-tests` branches moved 97.49 → 97.48, and the count of uncovered arcs did not move at all
+
+A moved percentage in a dimension belonging to the project I changed is read per file rather than waved
+through, and this one turned out to be arithmetic. The same aggregation, run on both trees:
+
+| | parent `fbb5336` | this commit | delta |
+| --- | --- | --- | --- |
+| branches | `2376/2437` = **97.4969%** | `2367/2428` = **97.4876%** | numerator −9, denominator −9, **uncovered 61 → 61** |
+| statements | `5861/5870` = 99.8467% | `5865/5874` = 99.8468% | +4 covered, +4 total, **uncovered 9 → 9** |
+| functions | `296/296` = 100% | `297/297` = 100% | **+1, fully covered** |
+
+**Nothing became uncovered.** The fix replaced eight inline `=== undefined ? undefined : Number(…)` ternaries
+with calls to one accessor, so **nine branch ARCS disappeared — every one of them a covered arc** — and the same
+61 arcs are now uncovered against a smaller denominator. `61/2437 = 2.5031%` against `61/2428 = 2.5124%`: the
+ratio moved, the reading did not. (The three local runs agree to four decimals, `97.4876%`, so this is not the
+instability iteration 26 found — it is the denominator.)
+
+**That is iteration 26's law one input further out: a gate's number has a population, a bar, an environment, a
+draw — and a DENOMINATOR.** A percentage is a ratio, so removing covered work lowers it without any regression,
+which is why the count and not the ratio is what a reader should compare across a change.
+
+### The FSE'26 half: not dispatchable, and the parse is byte-identical on the corpus
+
+The FSE'26 workflow declares no `push` trigger, so that half is **not dispatchable**. The argument that the
+change cannot move it is that no artifact renders an undetermined token on a field the parse changed — and an
+argument is not a reading, so it was measured: every parsed field of every case and every row, serialised
+canonically, under both trees.
+
+```
+TOTALS cases=1320 rows=41426      (7 local dumps, 42754 canonical lines)
+diff lines: 0                     → IDENTICAL on every parsed field, every case and every row
+```
+
+**And this measurement was vacuous on its first run.** The probe wrapped each file in a `catch` that pushed
+`### <name>: ABSENT`, and `DiagnosedCase` has no `cases`/`datapack` key — so every file took that arm and the
+two "readings" compared were **seven absences**. It reported `IDENTICAL` on two empty sets. The catch is gone,
+the probe now throws when a file parses to zero cases, and the totals above are what that version reads. **A
+comparison of two empty sets is not a comparison**, and a `catch` that turns a failure into a value is how one
+gets written by accident.
+
 ## What a candidate must now say
 
 1. **Which channels it reads**, and the **reach** it needs of each — `every` if it sums or simulates over
