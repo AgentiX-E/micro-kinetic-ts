@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdaptiveConfigOptimizer } from '../../src/optimizer.js';
 import type { RCAConfiguration } from '../../src/config-space.js';
@@ -83,6 +87,22 @@ function makeHistoricalRecord(overrides?: Partial<HistoricalRecord>): Historical
     ...overrides,
   };
 }
+
+const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../..');
+
+/**
+ * A small deterministic generator, so a test that needs a PARTICULAR draw can ask for one by name.
+ *
+ * The optimizer samples its candidates, and a candidate's POSITION decides which arm of the loop's own
+ * reporting runs: a candidate far enough from the prior makes its posterior mean exceed the prior's, and that
+ * is the only way `experimentHistory[best.idx - 1]` is reached. With `Math.random` no test reached that arm at
+ * all — the whole suite took it on 1 of 15 calls, and measured `test (optimize)`'s branch dimension as 449/449
+ * on one run and 447/448 on another with the same commit. A seed turns "which arm" from a draw into a choice.
+ */
+const seeded = (seed: number): (() => number) => {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0), s / 4294967296);
+};
 
 describe('AdaptiveConfigOptimizer', () => {
   it('should create with defaults', () => {
@@ -255,6 +275,118 @@ describe('AdaptiveConfigOptimizer prior fallback', () => {
 
     expect(result.config).toEqual(DEFAULT_CONFIG);
     expect(result.bestAccuracy).toBe(0);
+  });
+});
+
+describe('AdaptiveConfigOptimizer reports WHICH observation won, on both sides', () => {
+  // The two arms of `best.idx >= 1 ? experimentHistory[best.idx - 1]!.config : priorConfig`. Before this
+  // block the second arm had a test and the FIRST had none: with an unseeded draw the arm was taken on
+  // 1 of 15 calls in the whole suite, which is why its coverage came and went. Each test below reaches its
+  // arm deterministically by naming the seed.
+  const optimizeWith = async (
+    seed: number,
+    oracle: (cfg: RCAConfiguration) => Promise<number>,
+  ): Promise<{ config: RCAConfiguration; bestAccuracy: number }> => {
+    const graph = makeGraph([makeNode('A'), makeNode('B')], [makeEdge('A', 'B')]);
+    const metrics = makeMetrics([
+      ['A', [10, 20, 30]],
+      ['B', [5, 15, 25]],
+    ]);
+    const optimizer = new AdaptiveConfigOptimizer([], undefined, {
+      maxIterations: 3,
+      useLLM: false,
+      candidateCount: 20,
+      rng: seeded(seed),
+      convergence: { epsilonVariance: 0.0001, epsilonMean: 0.0001, patience: 100 },
+    });
+    const result = await optimizer.optimize(graph, metrics, oracle);
+    return { config: result.config, bestAccuracy: result.bestAccuracy };
+  };
+
+  it('returns the EXPERIMENT that beat the prior, not the prior', async () => {
+    // Seed 1 draws a candidate far enough from the prior for its posterior mean to win, and the oracle
+    // rewards exactly the property that candidate carries.
+    const { config, bestAccuracy } = await optimizeWith(1, async (cfg) =>
+      cfg.continuous.decayAlpha > 0.5 ? 0.9 : 0.1,
+    );
+    expect(bestAccuracy).toBe(0.9);
+    expect(config).not.toEqual(DEFAULT_CONFIG);
+    expect(config.continuous.decayAlpha).toBeGreaterThan(0.5);
+    // Naming the property rather than only the inequality: the returned configuration is the one the oracle
+    // scored, so `decayAlpha` above the threshold is the evidence that the right observation won.
+    expect(config.continuous.decayAlpha).toBeCloseTo(0.8914, 4);
+  });
+
+  it('returns the PRIOR when no experiment beat it, and does not merely happen to', async () => {
+    // Seed 3's candidates all stay close enough to the prior that the posterior mean at the prior's own
+    // location remains the maximum — the state the original test reached only when the draw obliged.
+    const { config, bestAccuracy } = await optimizeWith(3, async (cfg) =>
+      cfg.continuous.decayAlpha > 0.5 ? 0.9 : 0.1,
+    );
+    expect(config).toEqual(DEFAULT_CONFIG);
+    // The experiments DID run and DID score; what lost is the comparison, not the evaluation.
+    expect(bestAccuracy).toBe(0.9);
+  });
+
+  it('is REPRODUCIBLE: one seed, one result sequence, which is what makes the reading a measurement', async () => {
+    const oracle = async (cfg: RCAConfiguration) => (cfg.continuous.decayAlpha > 0.5 ? 0.9 : 0.1);
+    const first = await optimizeWith(1, oracle);
+    const second = await optimizeWith(1, oracle);
+    expect(second.config).toEqual(first.config);
+    expect(second.bestAccuracy).toBe(first.bestAccuracy);
+    // And a DIFFERENT seed is allowed to differ, so the equality above is not asserting that the seed is
+    // ignored — a generator that returned a constant would satisfy the first assertion and fail this one.
+    const other = await optimizeWith(3, oracle);
+    expect(other.config).toEqual(DEFAULT_CONFIG);
+    expect(other.config).not.toEqual(first.config);
+  });
+
+  it('passes a generator at EVERY sampling call site, so the option cannot be ignored again', () => {
+    // The seam was already declared — `sampleThompson(center, variance, n, rng?)` — and the optimizer did not
+    // use it, which is how an unseeded draw reached a gated number. Asserted on the source because a THIRD
+    // sampler added beside the two below would be invisible to every behavioural test above.
+    const source = readFileSync(resolve(repoRoot, 'packages/optimize/src/optimizer.ts'), 'utf-8');
+    const calls = source.match(/\.sample[A-Za-z]+\(/g) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    // Every sampling call must be followed by the injected generator within its own argument list.
+    for (const match of source.matchAll(/\.(sample[A-Za-z]+)\(([^;]*?)\);/gs)) {
+      expect(match[2], match[1]).toContain('this.rng');
+    }
+    // Non-vacuity: the loop is `this.rng`, so a version that dropped it fails the loop above rather than
+    // passing because the regex matched nothing.
+    expect(source).toContain('this.options.rng ?? Math.random');
+  });
+
+  it('DRAWS from `Math.random` when no generator is given, and from the one supplied when it is', async () => {
+    // Behavioural, not structural: the option is optional, and a caller that supplies a generator is not
+    // silently ignored. A version of this test that asserted `Math.random` was NOT called in the CONSTRUCTOR
+    // passed for a reason that has nothing to do with either claim.
+    const oracle = async (cfg: RCAConfiguration) => (cfg.continuous.decayAlpha > 0.5 ? 0.9 : 0.1);
+    const graph = makeGraph([makeNode('A')], []);
+    const metrics = makeMetrics([['A', [1, 2, 3]]]);
+    const run = async (rng?: () => number): Promise<void> => {
+      const optimizer = new AdaptiveConfigOptimizer([], undefined, {
+        maxIterations: 1,
+        useLLM: false,
+        ...(rng === undefined ? {} : { rng }),
+      });
+      await optimizer.optimize(graph, metrics, oracle);
+    };
+
+    const spy = vi.spyOn(Math, 'random');
+    try {
+      await run();
+      expect(spy.mock.calls.length).toBeGreaterThan(0);
+      const withDefault = spy.mock.calls.length;
+      spy.mockClear();
+      await run(seeded(1));
+      expect(spy.mock.calls.length).toBe(0);
+      // …and the default really was used the first time, rather than the count being an artefact of
+      // something else in the loop.
+      expect(withDefault).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

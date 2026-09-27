@@ -81,6 +81,24 @@ describe('DEFAULT_CONFIG_SPACE', () => {
     }
   });
 
+  it('draws from the PLATFORM generator when it is not told which one to use', () => {
+    // The default is production's: every caller that does not inject a generator gets `Math.random`. **Nothing
+    // tested it** — a mutation pass replaced the default with `() => 0.5` and killed no test, so a degenerate
+    // default would have shipped silently, in the one function whose whole job is to be unpredictable.
+    //
+    // Both samplers, because they share the same fallback: two draws must differ, and within one draw the
+    // points must not collapse onto one place. A constant generator makes every row identical, which is
+    // exactly what the assertions below refuse.
+    const center = new Float64Array(23).fill(0.5);
+    const variance = new Float64Array(23).fill(0.05);
+    const first = DEFAULT_CONFIG_SPACE.sampleThompson(center, variance, 8);
+    const second = DEFAULT_CONFIG_SPACE.sampleThompson(center, variance, 8);
+    expect(new Set(first.map((row) => row.join(','))).size).toBeGreaterThan(1);
+    expect(first.map((row) => row.join(','))).not.toEqual(second.map((row) => row.join(',')));
+    // The uniform sampler's default too.
+    expect(DEFAULT_CONFIG_SPACE.sampleUniform()).not.toEqual(DEFAULT_CONFIG_SPACE.sampleUniform());
+  });
+
   it('Thompson sampling guards against rng returning 0 (Box-Muller log(0))', () => {
     const samples = DEFAULT_CONFIG_SPACE.sampleThompson(
       new Float64Array(23).fill(0.5),

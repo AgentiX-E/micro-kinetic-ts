@@ -523,3 +523,92 @@ declares one, a project without a bar may not, and no workflow may append `--cov
 | the request | `nx run-many --target=test:coverage --all …`, and `pnpm nx run <name>:test:coverage` in CI |
 | the target | `test:coverage` = `vitest run --coverage`, declared in all 14 projects (seven had none) |
 | the reading, locally | **14 projects · 56 dimensions · 3,998 tests · 0 threshold violations · worst 95.00** |
+
+## 10. A gate's number belongs to its population, its bar, its environment — and its DRAW (2026-09-27)
+
+§8 established the first three inputs. This section is the fourth, and it was found by reading a CI table
+rather than by suspecting it: `test (optimize)`'s branch dimension read **`99.77`** on commit `0280fd3` where
+every reading before it had been `100.00`.
+
+### 10.1 The reading is a random variable, and the instrument to see that is the run itself
+
+| | |
+| --- | --- |
+| run locally, once | `100 / 100 / 100 / 100` |
+| run locally, **three times in a row** | **`100`, `99.77`, `100`** |
+| 20 runs with a JSON report | **19 × `449/449` = `100.00%`, 1 × `447/448` = `99.78%`** |
+| 24 runs after the fix | **24 × `450/450` = `100.00%`** |
+
+**The same commit, the same machine, the same command, two different numbers.** And the DENOMINATOR moved too
+(448 vs 449), which is what says the *arc set* changed rather than one counter: `packages/optimize/src/optimizer.ts:238`
+
+```ts
+const bestConfig = best.idx >= 1 ? experimentHistory[best.idx - 1]!.config : priorConfig;
+```
+
+has arc `238..81` (the experiment arm) with count **1** in a full run and **0** in the short one, and the other
+arm's arc is registered at all only when the experiment arm was taken — so a run that never takes it reports a
+smaller total.
+
+### 10.2 The arm was covered by LUCK, and no test owned it
+
+Run alone, **each of the four tests that drive `optimize()` reads `counts=[0]`** for that arm — including the
+one whose oracle is a constant `0.8` and the one written for the *other* arm. Across the whole suite the arm is
+reached **once in 15 calls**, and only sometimes. So the branch was green without being tested: **a covered
+branch and a tested branch are different claims, and a random draw had been standing in for the second.**
+
+The mechanism is geometric. The GP is seeded with a soft prior at accuracy `0.6`, and `bestObservation` takes
+the argmax of the **posterior mean** at each observation. `lengthScale: 0.3` over a unit cube with candidate
+`variance: 0.05` makes that posterior very smooth near the prior, so a candidate has to be drawn **far enough
+away** for its own mean to exceed the prior's. `priorConfig` was returned whenever the draw stayed close.
+
+`config-space.ts:221` is where the draw comes from:
+
+```ts
+const defaultRng = () => Math.random();
+```
+
+and `sampleThompson(center, variance, n, rng?)` **already declared the injection seam** — the optimizer simply
+never passed one. A declared parameter with no caller is this record's oldest law, and here its cost was a
+gated number that was not a measurement.
+
+### 10.3 The fix: the seam gets its caller, and both arms get a test
+
+`OptimizerOptions.rng?: () => number`, resolved once (`this.rng = this.options.rng ?? Math.random`) and passed
+at the sampling call site. Then the two arms are reached **by name** rather than by luck:
+
+| seed | result | arm |
+| --- | --- | --- |
+| 1 | `decayAlpha 0.8914`, not the prior | `experimentHistory[best.idx - 1]!.config` |
+| 3 | `DEFAULT_CONFIG` | `priorConfig` |
+
+and the draw itself is asserted: **the same seed gives the same configuration**, a *different* seed gives a
+different one (so the equality is not satisfied by a generator that is ignored), and `Math.random` is called
+when no generator is supplied and **not** called when one is. A fifth test fails if any future `.sample*(`
+call site omits the injected generator.
+
+**Both halves matter.** Injecting a seed alone would have made the reading deterministic at whatever the chosen
+seed happened to cover — a number that is stable and still not a measurement. The arm needed a test that
+asserts its behaviour, which is what the seed makes possible.
+
+### 10.4 What the mutation pass found that the reading did not
+
+A row mutating the **sampler's own default** — `const defaultRng = () => Math.random()` → `() => 0.5` —
+**SURVIVED**: the optimizer now always passes a generator, so the default is reached only by a caller that does
+not, and **nothing tested it**. A degenerate default in the one function whose whole job is to be
+unpredictable would have shipped silently. Closed by a test in the sampler's own file (two draws must differ,
+and one draw must not collapse onto a single point), which kills it — and the row was **re-pointed** at that
+file rather than relaxed.
+
+### 10.5 The reading, after
+
+| | before | after |
+| --- | --- | --- |
+| distinct readings in 20 runs | **2** (`449/449`, `447/448`) | **1** in 34 runs (`450/450`) |
+| arcs registered | 449 or 448, varying | **450, always** |
+| tests in the package | 200 | **205** |
+| the arm | taken on 1 of 15 calls, by chance | **asserted by a named seed** |
+
+**Gates**: `packages/optimize` **205 tests**, coverage **100 / 100 / 100 / 100**; both typechecks clean; lint
+`0 warnings, 0 errors` on 341 files; mutations **8 of 8 as declared** with both controls SURVIVED and the tree
+hash-verified; the full root suite **153 files / 4,057 tests, 0 failures**.

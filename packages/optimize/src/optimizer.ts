@@ -73,6 +73,18 @@ export interface OptimizerOptions {
   readonly convergence: Partial<ConvergenceOptions>;
   readonly onProgress?: (iteration: number, config: RCAConfiguration, accuracy: number) => void;
   readonly configSpace?: ConfigSpace;
+  /**
+   * The generator the samplers draw from. Defaults to `Math.random`.
+   *
+   * Injected because a candidate's POSITION decides which arm of the loop's own reporting runs, not just
+   * what the search finds: a candidate far enough from the prior makes its posterior mean exceed the
+   * prior's, which is the only way `best.idx >= 1` is reached. With `Math.random` that happened on **1 of
+   * 15 calls in the whole suite**, so the arm was covered by chance rather than by a test — measured as
+   * `test (optimize)` reading **449/449 branches and 447/448 on the same commit**, and the suite's own
+   * `experimentHistory[best.idx - 1]` line reading `counts=[0]` when each of its tests was run alone.
+   * Passing a generator makes a run reproducible, which is what lets a test assert either arm.
+   */
+  readonly rng?: () => number;
 }
 
 // ── Defaults ──
@@ -101,6 +113,8 @@ export class AdaptiveConfigOptimizer {
   private readonly metaLearner: MetaLearner | null;
   private readonly llmAdvisor: LLMAdvisor | null;
   private readonly space: ConfigSpace;
+  /** The generator every sampling call is given, so a seeded run is reproducible end to end. */
+  private readonly rng: () => number;
 
   constructor(
     historicalRecords?: readonly HistoricalRecord[],
@@ -109,6 +123,7 @@ export class AdaptiveConfigOptimizer {
   ) {
     this.options = { ...DEFAULTS, ...options };
     this.space = this.options.configSpace ?? DEFAULT_CONFIG_SPACE;
+    this.rng = this.options.rng ?? Math.random;
     this.metaLearner =
       historicalRecords && historicalRecords.length > 0 ? new MetaLearner(historicalRecords) : null;
 
@@ -158,7 +173,12 @@ export class AdaptiveConfigOptimizer {
       // 4a. Generate candidates via Thompson sampling
       const center = this.space.toVector(priorConfig);
       const variance = new Float64Array(center.length).fill(0.05);
-      const candidates = this.space.sampleThompson(center, variance, this.options.candidateCount);
+      const candidates = this.space.sampleThompson(
+        center,
+        variance,
+        this.options.candidateCount,
+        this.rng,
+      );
 
       // 4b. LLM advisor ranking (if enabled)
       let scores: number[] = Array.from({ length: candidates.length }, () => 1.0);
