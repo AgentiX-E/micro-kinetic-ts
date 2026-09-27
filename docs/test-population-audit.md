@@ -199,3 +199,49 @@ deleted.
 | mutations | **13 rows, every one as declared**; both controls (`py`, `ts`) SURVIVED with 73 and 9 tests executed; tree hash-verified byte-identical |
 | the harness repaired | `mutation_pass_21.py` derives the project root; **`mutation_pass_23.py` rows 15–17 and `mutation_pass_24.py` rows 1–2, 15 re-run and confirmed** |
 | golden | **NOT owed** — `benchmark_run_owed` returns `(False, ())` over all six changed paths, while its control fires on `packages/core/src/index.ts`. None of them is a trigger: the root config and `tsconfig.workspace.json` are outside `packages/*/src/**` and `benchmarks/src/**`, and the two fences are under `packages/kinetic/__tests__/**`, which is not one either. **And this change moves no score by construction**: the root config decides which suites a root-level `vitest` RUNS and touches nothing the engine reads |
+
+## 7. The same gates, read from CI — and one number that moved for a reason that is not this change
+
+| | |
+| --- | --- |
+| CI `0280fd3` | **19 of 19 jobs green** |
+| `Release` | **green**, and its own log is the end-to-end proof on CI: `> vitest run` → **`Test Files 153 passed (153)`, `Tests 4051 passed (4051)`**, then `> vitest run --config integration-tests/vitest.config.ts` → `1 file, 9 tests`. **The release gate now runs the benchmarks suite**, which it never did |
+| the push | started **only `CI` and `Release`** — no benchmark run, a third independent confirmation of §6's golden answer |
+| 56 dimensions | 14 coverage jobs × 4 — **worst `95.00`** (`wave` branches) over **4,051 tests**, `benchmark-tests` unchanged at `99.84 / 97.49 / 100 / 99.84` |
+| `test (kinetic)` | `100 / 99.44 / 100 / 100` with **968** tests (959 before: the two fences) — **unmoved** |
+| `test (optimize)` | branches **100 → 99.77** — see below. **Not caused by this change** |
+
+### The one movement, and why it is not a consequence of this iteration
+
+`test (optimize)`'s branch dimension fell from `100.00` to `99.77` — one arc, `packages/optimize/src/optimizer.ts:238`:
+
+```ts
+const bestConfig = best.idx >= 1 ? experimentHistory[best.idx - 1]!.config : priorConfig;
+```
+
+The uncovered arm is the one the comment above it describes — *"when no experiment improves on the prior, the
+best observation is the prior itself (idx 0)"*. Nothing this iteration changed is under `packages/optimize`,
+and the attribution is measured rather than argued:
+
+- **`183 tests of its own, unchanged**; every other file in the package at `100`; the project's own thresholds
+  applied and satisfied (the job succeeded).
+- run locally on the committed tree, `packages/optimize` reads **`100 / 100 / 100 / 100`**.
+- **run three times in a row on that same tree it reads `100`, `99.77`, `100`.**
+
+**So the gate's reading is not reproducible, and the branch is NOT dead** — some runs take it. The cause is one
+line:
+
+```ts
+// packages/optimize/src/config-space.ts:221
+const defaultRng = () => Math.random();
+```
+
+`sampleUniform(rng = defaultRng)` is the default, and the optimizer's tests never inject a seeded generator, so
+whether any sampled configuration beats the GP's soft prior (accuracy 0.6) differs run to run. That makes the
+`priorConfig` arm sometimes taken and sometimes not — which is why the same commit reads `100.00` and `99.77`,
+and why this is **a finding of its own rather than a regression from this one**: the number this record gates on
+is produced by a coin flip.
+
+It is left **named and measured rather than patched here**, because it is a different subject with a different
+repair (a seeded generator in the tests, or an injected RNG in the optimizer), and §5's discipline applies to
+it too: the fix should be the smallest change that makes the reading a measurement.
