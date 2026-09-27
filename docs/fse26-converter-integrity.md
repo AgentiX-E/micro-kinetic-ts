@@ -324,3 +324,13 @@ bundler resolution but not under `nodenext`). The two test files added in
 `b5e3186` type-check clean, and the 457 lines added to `benchmark-runner.test.ts`
 in `f8a9a884` contribute none of that file's 30 errors — that is the standard the
 other 67 files need to reach before a `typecheck-tests` job can be wired in.
+
+**CLOSED 2026-09-27 (`docs/test-population-audit.md`).** This paragraph was measured when it was written and had
+gone stale by the time anyone read it again: *"excluded from every `tsconfig.json`"* stopped being true when
+`tsconfig.workspace.json` enrolled each package's `__tests__` tree, and the **178 errors across 67 files** are
+what that enrollment had to clear. Measured now, with the compiler's own `parseJsonConfigFileContent` over
+every config `pnpm typecheck` runs: **375 `.ts` files in the tree, 369 covered, 6 in no config** — and those six
+were five `scripts/*.ts` that **five workflows run** plus the root `vitest.workspace.ts`, not any test file. The
+five are enrolled (0 errors) and the sixth is deleted, so the count is now **0**, and
+`packages/kinetic/__tests__/unit/typecheck-population.test.ts` requires it to stay 0. **A no-`typecheck-tests`-job
+recommendation is therefore obsolete**: the tests ARE type-checked, by the two legs this repository already runs.

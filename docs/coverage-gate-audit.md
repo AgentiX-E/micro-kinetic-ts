@@ -349,10 +349,21 @@ a mechanism (the merged script, the cache skip, the exclusion, a second gate, an
 the command the record tells a reader to run. The merged 58.08% headline no longer exists.
 
 **What deliberately did NOT change**: the CI matrix (already per package, §1), every package's own
-config, and `pnpm test` — the workspace run that executes the whole suite (127 files, 3198 tests) and
-carries no coverage claim. The workspace file also still exists, with vitest's own deprecation notice
-(`test.projects` in a root config is where it is heading); migrating it is a separate change with its
-own measurement, and it is not needed to make the coverage numbers honest.
+config, and `pnpm test` — the workspace run that carries no coverage claim. The workspace file also still
+exists, with vitest's own deprecation notice (`test.projects` in a root config is where it is heading);
+migrating it is a separate change with its own measurement, and it is not needed to make the coverage numbers
+honest.
+
+**CORRECTED 2026-09-27 (`docs/test-population-audit.md`).** That paragraph said this run *"executes the whole
+suite (127 files, 3198 tests)"*, and **the population claim was false while the deferral beside it was
+right**: `vitest.workspace.ts` declared one glob for `packages` and nothing else, so the run held **13 of the
+repository's 15 projects** and the `benchmarks` project — **25 files and 831 tests** — was not in it. Measured
+on the same command: **129 project-file pairs and 3,211 tests before, 153 and 4,051 after.** The deferral was
+correctly scoped (the coverage gate is per project, so the workspace file was not what made *these* numbers
+dishonest) and the migration has now been done, which is the measurement it asked for. **A file count and a
+test count are a claim about a population, and nothing connected this one to the config that decided it** —
+which is the same law as §7's own subject, one command over. `release.yml` runs `pnpm test:all`, so the release
+gate never ran those tests either.
 
 ## 8. A gate's number belongs to its POPULATION, its BAR — and its ENVIRONMENT (2026-09-20)
 

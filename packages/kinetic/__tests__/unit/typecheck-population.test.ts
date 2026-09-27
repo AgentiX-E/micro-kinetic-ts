@@ -25,7 +25,7 @@
  * @module packages/kinetic/__tests__/unit/typecheck-population
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -157,5 +157,123 @@ describe('the two typecheck legs cover different trees, and neither covers both'
     expect(compiledFiles(cliConfig('benchmarks'))).toContain(BENCHMARK_TEST);
     expect(compiledFiles(cliConfig('packages/core'))).not.toContain(PACKAGE_TEST);
     expect(compiledFiles(WORKSPACE_CONFIG)).toContain(PACKAGE_TEST);
+  });
+});
+
+/**
+ * `pnpm typecheck` is two legs over configs the tree decides, and the union of their file lists is the only
+ * thing that stands between a new file and being read by no compiler at all.
+ *
+ * **Why this fence exists.** Measured 2026-09-27: **six** `.ts` files were read by no config — five under
+ * `scripts/` that **five workflows run** (`dump-bothwrong-evidence`, `dump-loss-metrics`, `dump-re3-exceptions`,
+ * `dump-re3-metrics`, `run-prism`) and the root `vitest.workspace.ts`. Nothing could report it, because a file
+ * no config reaches is a file no compiler mentions: the absence of an error IS the defect. And the fifth of
+ * those scripts decides the PRISM numbers the register cites.
+ *
+ * The rule is therefore not a list of files but the property itself: **every `.ts` file in the tree is in the
+ * file list of at least one config `pnpm typecheck` runs.** A new file that no config reaches fails here,
+ * which is the only form of this that survives the next file.
+ *
+ * Enrolling the five found **0 errors**, so this is a pure widening of the population rather than a fix with
+ * work in it — which is its own reason to assert the property: the cost of the gap was never the errors it
+ * hid, it was that nobody could see how much was unhidden.
+ */
+describe('no TypeScript file in this repository is read by no compiler', () => {
+  /** Directories the walk must not descend into: build output, caches, corpora. */
+  const SKIP = new Set(['node_modules', '.git', 'dist', 'coverage', '.nx', 'artifacts']);
+
+  /** Every `.ts`/`.tsx` file in the tree, repository-relative with forward slashes. */
+  function everyTypeScriptFile(dir = REPO, found: string[] = []): string[] {
+    for (const entry of readdirSync(dir)) {
+      if (SKIP.has(entry)) continue;
+      const full = path.join(dir, entry);
+      if (statSync(full).isDirectory()) everyTypeScriptFile(full, found);
+      else if (entry.endsWith('.ts') || entry.endsWith('.tsx')) {
+        found.push(path.relative(REPO, full).split(path.sep).join('/'));
+      }
+    }
+    return found;
+  }
+
+  /** The directories nx gives a `typecheck` target to, read from the tree's manifests. */
+  function legDirectories(): string[] {
+    const packages = readdirSync(path.join(REPO, 'packages'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `packages/${entry.name}`);
+    return [...packages, 'benchmarks', 'integration-tests'].sort();
+  }
+
+  /**
+   * Every config `pnpm typecheck` compiles.
+   *
+   * Derived from the manifests rather than written out: a project enters this fence by declaring a
+   * `typecheck` script, and the existing assertions above hold that script to `tsc --noEmit`, so
+   * `<dir>/tsconfig.json` is what it compiles.
+   *
+   * @returns Repository-relative config paths.
+   */
+  function everyConfig(): string[] {
+    const configs = [WORKSPACE_CONFIG];
+    for (const dir of legDirectories()) {
+      const manifest = path.join(REPO, dir, 'package.json');
+      if (!existsSync(manifest)) continue;
+      const parsed = JSON.parse(readFileSync(manifest, 'utf-8')) as {
+        scripts?: Record<string, string>;
+      };
+      if (parsed.scripts?.['typecheck'] !== undefined) configs.push(`${dir}/tsconfig.json`);
+    }
+    return configs;
+  }
+
+  it('reads a config for every project leg plus the workspace leg', () => {
+    const configs = everyConfig();
+    // Non-vacuity: an empty config list would make the union below zero files and this file pass by silence.
+    expect(configs.length).toBeGreaterThanOrEqual(15);
+    expect(configs).toContain(WORKSPACE_CONFIG);
+    expect(configs).toContain(`${PROJECT}/tsconfig.json`);
+    expect(configs).toContain('packages/kinetic/tsconfig.json');
+    for (const config of configs) expect(existsSync(path.join(REPO, config)), config).toBe(true);
+  });
+
+  it('unions their file lists and finds every file in the tree inside it', () => {
+    const covered = new Set<string>();
+    for (const config of everyConfig()) for (const file of compiledFiles(config)) covered.add(file);
+    const all = everyTypeScriptFile();
+    const uncovered = all.filter((file) => !covered.has(file));
+    // The message is the deliverable: a bare `toEqual([])` on a 380-file population says nothing about which
+    // file appeared, and the whole point is that the offender is silent everywhere else.
+    expect(uncovered, `no compiler reads: ${uncovered.join(', ')}`).toEqual([]);
+    // …and the walk is not measuring a handful of files. The floor is a reading of the tree, not a bar.
+    expect(all.length).toBeGreaterThanOrEqual(370);
+    expect(covered.size).toBeGreaterThanOrEqual(370);
+  });
+
+  it('names the trees the walk reaches, so its population is not a claim about one directory', () => {
+    const all = everyTypeScriptFile();
+    // One file from each tree this repository's TypeScript lives in, by name — a walk that quietly skipped a
+    // directory would find fewer files and still satisfy the union assertion above.
+    for (const file of [
+      'vitest.config.ts',
+      'scripts/run-prism.ts',
+      'packages/kinetic/src/index.ts',
+      'packages/kinetic/__tests__/unit/typecheck-population.test.ts',
+      'benchmarks/src/run-fse26.ts',
+      'benchmarks/__tests__/fse26-capability-census.test.ts',
+      'integration-tests/src/pipeline.spec.ts',
+    ]) {
+      expect(all, file).toContain(file);
+    }
+  });
+
+  it('reads every workflow-run script, which is the gap this fence was written for', () => {
+    // Derived: every `.ts` under `scripts/`, held to the compilers rather than listed. Each of these is run by
+    // a workflow and by nothing else, so a type error in one surfaces as a failed job that has already
+    // downloaded a corpus — which is exactly why the workspace leg gained the globs rather than a new leg.
+    const scripts = everyTypeScriptFile().filter((file) => file.startsWith('scripts/'));
+    expect(scripts.length).toBeGreaterThanOrEqual(5);
+    const workspace = compiledFiles(WORKSPACE_CONFIG);
+    for (const script of scripts) expect(workspace, script).toContain(script);
+    // And the root config, which is what replaced the deprecated workspace file this fence found.
+    expect(workspace).toContain('vitest.config.ts');
   });
 });
