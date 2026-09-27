@@ -535,6 +535,47 @@ keyword argument **before** the positional `why`, so the module would not import
 **re-pointed at a legal placement** rather than relaxed — the harness's own distinction doing the work it was
 added for.
 
+
+### The same gates read from CI, and the one that was RED first
+
+| | |
+| --- | --- |
+| CI `d184e66` | **18 of 19 jobs green** — `converter-tests` **failed** |
+| the failure | `AssertionError: 0 not greater than 0 : no no-injection artifact is on this machine` |
+| CI `2eb47c8` | **19 of 19 green**, `Release` green |
+| CI's own python gate | `Ran 479 tests … OK (skipped=19)`, then **`dump_capability.py 275 stmts / 116 branches / 0 miss / 0 partial = 100.00%`**, `TOTAL 1636 / 588 / 100.00%` |
+| 56 dimensions | 14 coverage jobs × 4 — **worst `95.00`** (`wave` branches) over **4,061 tests**, and **every percentage unchanged**. `benchmark-tests` `99.84 / 97.49 / 100 / 99.84` (835 tests), `test (optimize)` **`100.00 / 100.00`** — the draw fixed in iteration 26 holds |
+| golden | **not owed** — the selector returns `(False, ())` with its control firing, and the push started **only `CI` + `Release`**: the third independent confirmation |
+
+**The red job was mine, and it is the defect this record keeps finding in its own instruments.** The corpus test ended with
+
+```python
+self.assertGreater(seen, 0, 'no no-injection artifact is on this machine')
+```
+
+which is a statement about the **MACHINE**: the four dumps live in `.bench-cache/rcaeval-dumps/`, this machine's
+local cache, and are not in the repository, so the assertion could hold only here. The suite's own convention —
+`RealArtifactsTest._capability` — is that a named artifact which is not present **SKIPS**, and every sibling does
+that; the new test contradicted the convention it was written inside.
+
+**The non-vacuity claim was misplaced rather than wrong.** The rule does not depend on the corpus: it is held on
+fixtures by `CapabilityOfTest.test_a_rendered_ZERO_is_a_value…` and
+`RequireChannelTest.test_a_reader_that_needs_a_VALUE…`, which run on every machine. The corpus test now reads its
+artifacts when present and skips them otherwise, verified in **both** conditions (with the corpus: 79 tests OK;
+with `LOCAL_DUMPS` pointed at a nonexistent path — the CI condition — 79 tests, 0 failures, 9 skips).
+
+**And finding it cost one more measurement of mine, which is worth recording because it is the shape above.**
+The first simulation of the CI condition imported the test module **before** `coverage.start()`, so
+`dump_capability`'s module-level `if __name__ == '__main__':` guard executed **outside the measured window** and
+the arc `1061->exit` came back uncovered — **99.96%**. Starting coverage first reads **100.00%**, and CI's own log
+above agrees. **The instrument reported its own blind spot as a gap in the code**, which is the fourth time this
+record has found a defect in the thing doing the measuring rather than in the thing being measured.
+
+**The population this finding is about is a corpus, and the corpus is not in the repository.** Every number in
+§"What the census said about them" above is a reading of `.bench-cache/rcaeval-dumps/` on this machine, and the
+suite says so by skipping rather than by asserting — which is the honest form: **a gate that only passes where
+the corpus lives is not a gate.**
+
 ## What a candidate must now say
 
 1. **Which channels it reads**, and the **reach** it needs of each — `every` if it sums or simulates over
