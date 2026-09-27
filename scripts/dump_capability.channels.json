@@ -10,11 +10,11 @@
   {"channel": "declared-precision", "scope": "header", "key": "decimals", "fields": ["fieldDecimals"], "valueIn": "field", "pattern": "\\bdecimals=(\\d+)", "absent": ["", "-"]},
   {"channel": "failed-edge-graph", "scope": "case-line", "key": "edges", "fields": ["edges"], "valueIn": "field", "pattern": "^ {2}edges=(.*)$", "absent": ["", "-"]},
   {"channel": "prediction", "scope": "case-line", "key": "prediction", "fields": ["prediction"], "valueIn": "field", "pattern": "^ {2}prediction=(.*)$", "absent": ["", "-"]},
-  {"channel": "self-anomaly", "scope": "row", "key": "selfAnomaly", "fields": ["selfAnomaly"], "valueIn": "field", "pattern": "\\bselfAnomaly=(\\S*)", "absent": ["", "-"]},
-  {"channel": "log-score", "scope": "row", "key": "logScore", "fields": ["logScore"], "valueIn": "field", "pattern": "\\blogScore=(\\S*)", "absent": ["", "-"]},
-  {"channel": "failed-edge", "scope": "row", "key": "failedEdge", "fields": ["failedEdgeScore"], "valueIn": "field", "pattern": "\\bfailedEdge=(\\S*)", "absent": ["", "-"]},
+  {"channel": "self-anomaly", "scope": "row", "key": "selfAnomaly", "fields": ["selfAnomaly"], "valueIn": "field", "pattern": "\\bselfAnomaly=(\\S*)", "absent": ["", "-", "nonfinite"]},
+  {"channel": "log-score", "scope": "row", "key": "logScore", "fields": ["logScore"], "valueIn": "field", "pattern": "\\blogScore=(\\S*)", "absent": ["", "-", "nonfinite"]},
+  {"channel": "failed-edge", "scope": "row", "key": "failedEdge", "fields": ["failedEdgeScore"], "valueIn": "field", "pattern": "\\bfailedEdge=(\\S*)", "absent": ["", "-", "nonfinite"]},
   {"channel": "failed-edge-records", "scope": "row", "key": "failedEdgeRecords", "fields": ["failedEdgeRecords"], "valueIn": "field", "pattern": "\\bfailedEdgeRecords=(\\S*)", "absent": ["", "-"]},
-  {"channel": "latency-rise", "scope": "row", "key": "latRise", "fields": ["latRise"], "valueIn": "field", "pattern": "\\blatRise=(\\S*)", "absent": ["", "-"]},
+  {"channel": "latency-rise", "scope": "row", "key": "latRise", "fields": ["latRise"], "valueIn": "field", "pattern": "\\blatRise=(\\S*)", "absent": ["", "-", "nonfinite"]},
   {"channel": "latency-edges", "scope": "row", "key": "latEdges", "fields": ["latEdges"], "valueIn": "field", "pattern": "\\blatEdges=(\\S*)", "absent": ["", "-"]},
   {"channel": "dominant-metric", "scope": "row", "key": "dominant", "fields": ["dominantMetric"], "valueIn": "field", "pattern": "\\bdominant=(\\S*)", "absent": ["", "-"]},
   {"channel": "error-count", "scope": "row", "key": "err", "fields": ["errorCount"], "valueIn": "field", "pattern": "\\berr=(\\S*)", "absent": ["", "-"]},
@@ -24,10 +24,10 @@
   {"channel": "signature-overlap", "scope": "row", "key": "both", "fields": ["bothExceptionCount"], "valueIn": "field", "pattern": "\\bboth=(\\S*)", "absent": ["", "-"]},
   {"channel": "onset", "scope": "row", "key": "onset", "fields": ["onsetDelayMs"], "valueIn": "field", "pattern": "\\bonset=(\\S*)", "absent": ["", "-"]},
   {"channel": "metric-list", "scope": "sub-line", "key": "metrics", "fields": [], "valueIn": "body", "pattern": "^ {4}metrics(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]},
-  {"channel": "decisive-composition", "scope": "sub-line", "key": "metricDecisive", "fields": ["decisiveOutcome"], "valueIn": "body", "pattern": "^ {4}metricDecisive(?:\\([^)]*\\))?: ?(\\S*)$", "absent": ["", "-"]},
+  {"channel": "decisive-composition", "scope": "sub-line", "key": "metricDecisive", "fields": ["decisiveOutcome"], "valueIn": "body", "pattern": "^ {4}metricDecisive(?:\\([^)]*\\))?: ?(\\S*)$", "absent": ["", "-", "nonfinite"]},
   {"channel": "error-messages", "scope": "sub-line", "key": "ERR", "fields": [], "valueIn": "body", "pattern": "^ {4}ERR(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]},
   {"channel": "exceptions", "scope": "sub-line", "key": "exc", "fields": [], "valueIn": "body", "pattern": "^ {4}exc(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]},
   {"channel": "metric-kept", "scope": "sub-line", "key": "metricKept", "fields": ["metricOutcomes"], "valueIn": "paren", "pattern": "^ {4}metricKept\\((\\d+)\\):", "absent": ["", "-"]},
   {"channel": "metric-drop", "scope": "sub-line", "key": "metricDrop", "fields": ["metricOutcomes"], "valueIn": "paren", "pattern": "^ {4}metricDrop\\((\\d+)\\):", "absent": ["", "-"]},
-  {"channel": "metric-top", "scope": "sub-line", "key": "metricTop", "fields": ["metricOutcomes"], "valueIn": "body", "pattern": "^ {4}metricTop(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]}
+  {"channel": "metric-top", "scope": "sub-line", "key": "metricTop", "fields": ["metricOutcomes"], "valueIn": "body", "pattern": "^ {4}metricTop(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-", "nonfinite"]}
 ]

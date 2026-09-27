@@ -115,6 +115,35 @@ export interface DiagnosedMetricOutcome {
 }
 
 /** One service's signal inventory, as the `DIAG` block reports it. */
+/**
+ * The tokens the block writes for "rendered and undetermined" — the READER's own copy of the census's
+ * `absent` column, and the one place this module decides what they are.
+ *
+ * **Before this, the rule had no owner at all**: `-` was spelled inline in two parses and four more had no
+ * guard, so the module's answer to "is this a measurement?" was eight private opinions. It is the same
+ * question `scripts/dump_capability.py` answers for the ARTIFACT, and the two sides are held equal by
+ * `fse26-capability-census.test.ts` in both directions.
+ *
+ * There are TWO tokens, not one, and the second is why this exists. `fmt`/`fmtRatio`/`fmtBase`
+ * (`packages/kinetic/src/benchmarks/fse26-diagnose.ts`) render a non-finite value as the literal
+ * `nonfinite`, which the producer documents as a TRIPWIRE — *"louder than a silently skipped row"* — and
+ * which its own suite asserts (`'guards against non-finite self-anomaly values'`). Read as a token rather
+ * than parsed, it used to become `Number('nonfinite')` = `NaN`: a `number`, so every "is it measured?" test
+ * downstream answered YES and `Math.log1p` carried the NaN into a score.
+ */
+export const UNDETERMINED_TOKENS: readonly string[] = ['', '-', 'nonfinite'];
+
+/**
+ * A rendered field as a number, or `undefined` when the block says it is undetermined.
+ *
+ * @param token - The marker's captured text, or `undefined` when the field is absent from the line.
+ * @returns The number, or `undefined` for an absent field and for every {@link UNDETERMINED_TOKENS} member.
+ */
+function measured(token: string | undefined): number | undefined {
+  if (token === undefined || UNDETERMINED_TOKENS.includes(token)) return undefined;
+  return Number(token);
+}
+
 export interface DiagnosedService {
   readonly serviceId: string;
   /** Whether the case's ground truth includes this service. */
@@ -696,18 +725,24 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
         serviceId: service[1]!,
         isGroundTruth: markers.includes('GT'),
         predictedRank: rankMarker === undefined ? undefined : Number(rankMarker.slice(1)),
-        selfAnomaly: Number(service[3]),
-        logScore: Number(service[4]),
+        // The two fields whose type is a REQUIRED number, so `measured`'s `undefined` cannot be stored:
+        // the value the type does admit is `NaN`, which is what this parse has always produced for a
+        // tripwire render. It is written out rather than left implicit, and the census reports the same
+        // block as carrying no measurement on this channel (`self-anomaly none`), which is where the defect
+        // is legible. **Making these types honest is a named follow-up**: it reports 34 errors across four
+        // files, and every one is a site that today receives the NaN.
+        selfAnomaly: measured(service[3]) ?? Number.NaN,
+        logScore: measured(service[4]) ?? Number.NaN,
         // `undefined`, never 0, when the field is absent: the optional group
         // leaves both captures undefined together, so a dump from before this
         // field reads as unknown rather than as a measurement of zero.
-        failedEdgeScore: service[5] === undefined ? undefined : Number(service[5]),
-        failedEdgeRecords: service[6] === undefined ? undefined : Number(service[6]),
+        failedEdgeScore: measured(service[5]),
+        failedEdgeRecords: measured(service[6]),
         // `-` is the producer's marker for "no caller measured a change", which is
         // not the same as a rise of 1, so it parses to `undefined` and not to a
-        // number.
-        latRise: service[7] === undefined || service[7] === '-' ? undefined : Number(service[7]),
-        latEdges: service[8] === undefined ? undefined : Number(service[8]),
+        // number — and so does the tripwire render, from the same set.
+        latRise: measured(service[7]),
+        latEdges: measured(service[8]),
         dominantMetric: service[9] === '-' ? '' : service[9]!,
         errorCount: Number(service[10]),
         fatalCount: Number(service[11]),
@@ -719,15 +754,14 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
         // flood, while an absent one means the flood cannot be reconstructed — and
         // defaulting it to 0 would reproduce the exact double-count this field was
         // added to remove. `logSlopesForMode` refuses such a dump instead.
-        bothExceptionCount: service[14] === undefined ? undefined : Number(service[14]),
+        bothExceptionCount: measured(service[14]),
         // The only TIME in the block: ms after injection, or `undefined` both
         // when the field is absent (a dump that predates it) and when it prints
         // `-` (measured and undetermined). Those are different provenances but
         // the same value to the temporal term, which omits both from its
         // earliness map; a section that needs the difference counts how many
         // services in the dump carry a NUMBER and reports that instead.
-        onsetDelayMs:
-          service[15] === undefined || service[15] === '-' ? undefined : Number(service[15]),
+        onsetDelayMs: measured(service[15]),
         metricOutcomes: undefined,
         decisiveOutcome: undefined,
       };

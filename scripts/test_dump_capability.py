@@ -346,6 +346,21 @@ class CapabilityOfTest(unittest.TestCase):
         # And a positive anchor is a value on the channel that has the sentinel, so this is not a blanket
         # "inject-time has no values".
         self.assertTrue(dc.isValued('inject-time', '1685202688000'))
+        # **The producer writes TWO undetermined tokens, not one.** `fmt`/`fmtRatio`/`fmtBase` return the
+        # literal `nonfinite` for a non-finite value — its own suite asserts the render
+        # (`'guards against non-finite self-anomaly values'` -> `selfAnomaly=nonfinite`) and the builder calls
+        # it a deliberate tripwire, "louder than a silently skipped row". The census counted it as a
+        # MEASUREMENT on every channel a formatter renders into, so a block the producer flagged as broken
+        # read as one carrying its values.
+        for channel in ('self-anomaly', 'log-score', 'failed-edge', 'latency-rise', 'metric-top',
+                        'decisive-composition'):
+            self.assertFalse(dc.isValued(channel, 'nonfinite'), channel)
+        # …and it is NOT a token of the channels whose value is a raw integer or a `fmtOnset` render: the
+        # count channels' value is a `\d+` in the parentheses, and `fmtOnset` maps its own non-finite cases
+        # onto `-`. Both directions, because a rule keyed on the TOKEN would have taken these too.
+        for channel in ('metric-kept', 'metric-drop', 'failed-edge-records', 'latency-edges', 'error-count',
+                        'signature-overlap', 'onset'):
+            self.assertTrue(dc.isValued(channel, 'nonfinite'), channel)
         # The property is defined for a case-scoped channel too, so a reader can ask either question of any
         # channel rather than only of the ones that happen to be row-scoped.
         scoped = dc.ChannelCoverage('declared-precision', 3, 4, None, 10, cases_valued=3)
@@ -683,6 +698,21 @@ class CommittedProjectionTest(unittest.TestCase):
         by_channel = {entry['channel']: entry for entry in dc.declarations_as_data()}
         self.assertEqual(by_channel['inject-time']['absent'], ['', '-', '0'])
         self.assertEqual(by_channel['onset']['absent'], ['', '-'])
+        # The second undetermined token, on exactly the channels a FORMATTER renders into.
+        declared = sorted(
+            name for name, entry in by_channel.items() if 'nonfinite' in entry['absent']
+        )
+        self.assertEqual(
+            declared,
+            [
+                'decisive-composition',
+                'failed-edge',
+                'latency-rise',
+                'log-score',
+                'metric-top',
+                'self-anomaly',
+            ],
+        )
 
     def test_the_placement_vocabulary_is_CLOSED(self) -> None:
         # A placement outside the vocabulary would fall through the marker builder to whichever branch
@@ -1211,6 +1241,30 @@ class TheAnchorSentinelTest(unittest.TestCase):
             self.assertEqual(coverage.reach, dc.EVERY, name)
             self.assertEqual(coverage.value_reach, dc.EVERY, name)
             self.assertEqual(coverage.cases_valued, coverage.total_cases, name)
+
+    def test_a_block_the_producer_flagged_NONFINITE_carries_no_measurement(self) -> None:
+        # The three tokens on one fixture, so the claim is about the column rather than about a pattern:
+        # `selfAnomaly=0.255` is a measurement, `selfAnomaly=-` is the producer's undetermined marker, and
+        # `selfAnomaly=nonfinite` is its TRIPWIRE — the render it emits when the engine produced a value it
+        # could not represent. All three are rendered on the same row shape, so what separates them is the
+        # column and nothing else.
+        measured = dc.capability_of(case('a_cpu_1', FULL_ROW))
+        trip = dc.capability_of(case('a_cpu_1', FULL_ROW.replace('selfAnomaly=0.255', 'selfAnomaly=nonfinite'))
+                                .replace('logScore=0.000', 'logScore=nonfinite'))
+        self.assertEqual(measured.channel('self-anomaly').reach, dc.EVERY)
+        self.assertEqual(measured.channel('self-anomaly').value_reach, dc.EVERY)
+        self.assertEqual(measured.channel('log-score').value_reach, dc.EVERY)
+        # The field is still RENDERED on every row — the two claims stay separate.
+        self.assertEqual(trip.channel('self-anomaly').reach, dc.EVERY)
+        self.assertEqual(trip.channel('log-score').reach, dc.EVERY)
+        # …and not one row carries a measurement.
+        self.assertEqual(trip.channel('self-anomaly').value_reach, dc.NONE)
+        self.assertEqual(trip.channel('log-score').value_reach, dc.NONE)
+        self.assertEqual(trip.channel('self-anomaly').rows_valued, 0)
+        # The control on the SAME row: the fields the producer writes as raw integers are untouched, so the
+        # column did not turn the row off.
+        self.assertEqual(trip.channel('failed-edge-records').value_reach, dc.EVERY)
+        self.assertEqual(trip.channel('signature-overlap').value_reach, dc.EVERY)
 
     def test_onset_keeps_its_zeros_because_there_they_are_measurements(self) -> None:
         # The channel that proves the column must be per-channel: `onset=0` occurs ONLY beside a positive

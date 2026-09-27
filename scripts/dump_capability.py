@@ -136,6 +136,22 @@ VALUE_PLACEMENTS: tuple[str, ...] = (FIELD, PAREN, BODY)
 #: `inject-time`'s third one invisible.
 ABSENT_VALUES: tuple[str, ...] = ('', '-')
 
+#: The producer's SECOND undetermined token, for the channels a FORMATTER renders into.
+#:
+#: `fmt`/`fmtRatio`/`fmtBase` (`packages/kinetic/src/benchmarks/fse26-diagnose.ts`) return the literal
+#: `nonfinite` for a non-finite value, and the producer means it as a TRIPWIRE — its builder comment says so
+#: in as many words: *"A defensive branch here could never fire — and if one ever did, the formatter's
+#: `nonfinite` render is the tripwire, which is louder than a silently skipped row."* Its own suite asserts the
+#: render (`'guards against non-finite self-anomaly values'` -> `selfAnomaly=nonfinite`).
+#:
+#: **A block carrying it is one the producer flagged as broken, and the census called it a measurement on every
+#: channel a formatter renders into.** So the token is declared per channel rather than folded into
+#: {@link ABSENT_VALUES}: `metric-kept`'s value is a `\\d+` inside the parentheses and `onset`'s is a
+#: `fmtOnset` render that maps its own non-finite cases onto `-`, so neither can carry this one. Named once so
+#: the six declarations cannot disagree about its spelling, and held to the producer's own literal by the
+#: TypeScript edge of the fence.
+NONFINITE_RENDER: str = 'nonfinite'
+
 @dataclass(frozen=True)
 class ChannelDeclaration:
     """
@@ -334,6 +350,8 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'selfAnomaly',
         ('selfAnomaly',),
         'the metric term\'s input, read by the `metric` scalar (a term, so never a candidate)',
+        # `fmt(service.selfAnomaly, decimals)`, so this channel can carry the tripwire render.
+        absent=ABSENT_VALUES + (NONFINITE_RENDER,),
     ),
     ChannelDeclaration(
         'log-score',
@@ -341,6 +359,8 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'logScore',
         ('logScore',),
         'the log term\'s input, read by the `log` scalar',
+        # `fmt(service.logScore, decimals)`.
+        absent=ABSENT_VALUES + (NONFINITE_RENDER,),
     ),
     ChannelDeclaration(
         'failed-edge',
@@ -350,6 +370,8 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'the failed-edge SCORE — the engine\'s term, read by `failedEdge`. The VOLUME behind it is a separate '
         'field ({@link DECLARATIONS} `failed-edge-records`), and the register\'s sentence about per-edge '
         'counts is true of this one and false of that one',
+        # `fmt(service.failedEdgeScore, decimals)`.
+        absent=ABSENT_VALUES + (NONFINITE_RENDER,),
     ),
     ChannelDeclaration(
         'failed-edge-records',
@@ -366,6 +388,9 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         ('latRise',),
         'the inbound latency RISE — the `lat` term\'s input, and the half of its family the census used to '
         'omit while carrying the other half\'s reach',
+        # `fmt(service.latRise, decimals)` — and NOT `fmtOnset`, which is the onset channel's formatter and maps
+        # its own non-finite cases onto `-`.
+        absent=ABSENT_VALUES + (NONFINITE_RENDER,),
     ),
     ChannelDeclaration(
         'latency-edges',
@@ -448,6 +473,9 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'the composition of the metric that drove the score, read by the four `decisive*` scalars; rendered '
         'with a `-` where the named metric carries none, so its channel reach and its VALUE reach differ',
         value_in=BODY,
+        # `label=fmt(decisive.score){dev=…,rise=fmtRatio(…),base=fmtBase(…)}` — the same body shape as
+        # `metric-top`, written by the same three formatters.
+        absent=ABSENT_VALUES + (NONFINITE_RENDER,),
     ),
     ChannelDeclaration(
         'error-messages',
@@ -503,6 +531,9 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'channel agreed with the reader on all seven artifacts while its two siblings above did not',
         value=r'.*',
         value_in=BODY,
+        # The body is `label=fmt(score){dev=…,rise=fmtRatio(…),base=fmtBase(…)}`, so three formatters can put
+        # the tripwire inside the value this channel declares.
+        absent=ABSENT_VALUES + (NONFINITE_RENDER,),
     ),
 )
 

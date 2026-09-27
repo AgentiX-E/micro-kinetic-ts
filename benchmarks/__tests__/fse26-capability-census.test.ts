@@ -34,7 +34,11 @@ import {
   SyntheticBenchmarkGenerator,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
-import { onsetAvailability, parseDiagnosticDump } from '../src/fse26-diagnose-analyze.js';
+import {
+  onsetAvailability,
+  parseDiagnosticDump,
+  UNDETERMINED_TOKENS,
+} from '../src/fse26-diagnose-analyze.js';
 import { SEPARATOR_SCALARS, SERVICE_FIELD_AUDIT } from '../src/fse26-separator.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -152,7 +156,7 @@ function emittedSubLineKeys(text: string): readonly string[] {
 
 const generator = new SyntheticBenchmarkGenerator();
 
-function caseOf(): BenchmarkCase {
+function caseOf(nonFinite = false): BenchmarkCase {
   const base = generator.generateRCAEvalCase('cpu', 3);
   const service = base.groundTruth.serviceId as string & { toString(): string };
   // Logs that carry BOTH signature flags on one line, so `both=` is rendered rather than defaulted to zero:
@@ -160,6 +164,20 @@ function caseOf(): BenchmarkCase {
   // unexercised while the equality above still passed.
   return {
     ...base,
+    // `latRise` is the one formatter-rendered row field the GRAPH cannot set: it comes from the case's own
+    // edge latencies, as `postMeanMs / preMeanMs`. A zero denominator makes that rise `Infinity`, which is
+    // exactly the non-finite value `fmt` renders as the tripwire — a real division, not a typed-in NaN.
+    // A zero denominator makes the rise `Infinity` — a real division rather than a typed-in NaN. The healthy
+    // case carries a finite one, so `latRise` is a NUMBER there and the control below has something to be
+    // true about.
+    edgeLatency: [
+      {
+        caller: 'caller-a',
+        callee: String(service),
+        preMeanMs: nonFinite ? 0 : 10,
+        postMeanMs: nonFinite ? 5 : 25,
+      },
+    ],
     logs: [
       {
         timestamp: base.injectTime + 10,
@@ -195,24 +213,52 @@ function graphOf(
   dropped = 1,
   onsetBase = 100,
   onsetStep = 50,
+  nonFinite = false,
 ): FaultPropagationGraph {
   const ids = [...callGraph.nodes.keys()];
-  const breakdown = {
-    deviation: 0.4,
-    trend: 0.1,
-    cv: 0.6,
-    burst: 0,
-    riseRatio: 12,
-    dropRatio: 0,
-    baselineMean: 0.02,
-  };
+  // Every number a formatter renders, in one object, so the non-finite case cannot miss one by being
+  // assembled a second time somewhere else. `riseRatio` is an Infinity from a real division and
+  // `baselineMean` a NaN, so both of the RATIO formatters are exercised by arithmetic rather than by a
+  // literal — a fixture that typed `'nonfinite'` would be measuring this file instead of the producer.
+  const breakdown = nonFinite
+    ? {
+        deviation: Number.NaN,
+        trend: Number.NaN,
+        cv: Number.NaN,
+        burst: Number.NaN,
+        riseRatio: 5 / 0,
+        dropRatio: 5 / 0,
+        baselineMean: Number.NaN,
+      }
+    : {
+        deviation: 0.4,
+        trend: 0.1,
+        cv: 0.6,
+        burst: 0,
+        riseRatio: 12,
+        dropRatio: 0,
+        baselineMean: 0.02,
+      };
   // The counts are parameters because the two count channels' zero case is the one that has to be
   // reproducible: `metricKept(0):` is rendered with NO BODY, so a value read from the body beside the count
   // is absent on exactly the row that states the most definite measurement there is.
+  // `formatDecisiveComposition` picks `metricOutcomes.find(o => o.outcome === 'kept' && o.label ===
+  // service.dominantMetric)`, so a diagnostic LABELLED with the dominant metric is the only thing that makes
+  // `metricDecisive:` carry a body at all — the existing fixtures have none, which is why the channel reads
+  // `every` / `none` in all of them. Emitted only when the block is meant to be non-finite, so the healthy
+  // block's `metricKept` counts and `metricTop` body are untouched.
+  const dominantLabel = 'cpu_usage_percent';
   const diagnostics = [
+    ...(nonFinite
+      ? [{ label: dominantLabel, outcome: 'kept' as const, score: 0.75, breakdown }]
+      : []),
     ...Array.from({ length: kept }, (_, index) => ({
       label: `kept_${index}`,
       outcome: 'kept' as const,
+      // FINITE even when everything around it is not: the builder picks the decisive metric with a comparison,
+      // and a NaN score makes that selection fail, so the channel would never see the token. The tripwire
+      // reaches it through the BREAKDOWN instead (`dev=`, `rise=`, `base=`), which is where the ratio
+      // formatters live.
       score: 0.75,
       breakdown,
     })),
@@ -226,7 +272,7 @@ function graphOf(
   return {
     callGraph,
     propagationWeights: new Float64Array(callGraph.edges.length),
-    anomalyScores: new Map(ids.map((id, index) => [id, 1 - index * 0.1])),
+    anomalyScores: new Map(ids.map((id, index) => [id, nonFinite ? Number.NaN : 1 - index * 0.1])),
     anomalyOnsetTimes: new Map(ids.map((id) => [id, 0])),
     detectedCycles: [],
     totalCycleContribution: 0,
@@ -234,10 +280,13 @@ function graphOf(
     dominantMetrics: new Map(
       ids.map((id) => [
         id,
-        { label: 'cpu_usage_percent', head: [0.1], tail: [0.9], transientSkipped: [] },
+        { label: dominantLabel, head: [0.1], tail: [0.9], transientSkipped: [] },
       ]),
     ),
-    logScores: new Map(ids.map((id, index) => [id, 0.5 - index * 0.1])),
+    logScores: new Map(ids.map((id, index) => [id, nonFinite ? Number.NaN : 0.5 - index * 0.1])),
+    // The failed-edge SCORE is the fourth `fmt` render, and it comes from the graph rather than from the
+    // case: `graph.failedEdgeScores?.get(serviceId) ?? 0`.
+    ...(nonFinite ? { failedEdgeScores: new Map(ids.map((id) => [id, Number.NaN])) } : {}),
     metricDiagnostics: new Map(ids.map((id) => [id, diagnostics])),
     // The onset delays are parameters because `onset=0` is the token whose VALUATION is under test: the
     // producer prints a zero delay as `0` (`fmtOnset` rounds and keeps it), so a graph with all-zero delays
@@ -264,15 +313,18 @@ function blockWith(
     readonly injectTimeMs?: number;
     readonly onsetBase?: number;
     readonly onsetStep?: number;
+    readonly nonFinite?: boolean;
   } = {},
 ): string {
-  const benchCase = caseOf();
+  const nonFinite = options.nonFinite ?? false;
+  const benchCase = caseOf(nonFinite);
   const graph = graphOf(
     benchCase.callGraph,
     kept,
     dropped,
     options.onsetBase ?? 100,
     options.onsetStep ?? 50,
+    nonFinite,
   );
   return buildFSE26Diagnostic({
     case: benchCase,
@@ -306,6 +358,18 @@ function headerOf(block: string): string {
  * what the producer meant by the token, and a version of this that classified by the token's shape would be
  * asserting itself.
  */
+/**
+ * The line a channel's marker is on, taken from the block rather than typed: the first line the census's own
+ * pattern matches.
+ */
+function headerOrRow(block: string, channel: string): string {
+  const declaration = declarations().find((one) => one.channel === channel);
+  if (declaration === undefined) throw new Error(`no declaration for ${channel}`);
+  const line = block.split('\n').find((one) => new RegExp(declaration.pattern).test(one));
+  if (line === undefined) throw new Error(`the block renders no ${channel}`);
+  return line;
+}
+
 function censusOnLine(
   line: string,
   channel: string,
@@ -631,6 +695,145 @@ describe("the census's VALUATION — a rendered zero is a value only where its p
     for (const declaration of declarations()) {
       // The two shared markers are on every channel; only the third one is per channel.
       expect(declaration.absent, declaration.channel).toEqual(expect.arrayContaining(['', '-']));
+    }
+  });
+});
+
+describe("the block's SECOND undetermined token, on both sides of the fence", () => {
+  // **The producer writes two tokens for "rendered and undetermined", and the census named one.**
+  // `fmt`/`fmtRatio`/`fmtBase` return the literal `nonfinite` for a non-finite value, which the producer
+  // documents as a TRIPWIRE — *"louder than a silently skipped row"* — and its own suite asserts the render
+  // (`'guards against non-finite self-anomaly values'`). The census counted it as a MEASUREMENT on every
+  // channel a formatter renders into, and the reader parsed it to `Number('nonfinite')` = `NaN`: a `number`,
+  // so every "is it measured?" test downstream answered YES and `Math.log1p` carried the NaN into a score.
+  //
+  // Nothing below types the token or a NaN into a line: the block comes out of `buildFSE26Diagnostic`, and
+  // the two non-finite values are a real `5 / 0` and a real `Number.NaN` fed through the graph.
+
+  /** The `nonfinite` block, and the census's own reading of it. */
+  const flagged = blockWith(1, 1, { nonFinite: true });
+  const healthy = blockWith(1, 1);
+
+  /** Every channel that SEES the token, by applying the census's own pattern to the producer's own bytes. */
+  function channelsSeeingTheToken(block: string): readonly string[] {
+    const seen: string[] = [];
+    for (const declaration of declarations()) {
+      if (declaration.scope === 'row-identity') continue;
+      for (const line of block.split('\n')) {
+        const found = new RegExp(declaration.pattern).exec(line);
+        if (found !== null && (found[1] ?? '').includes('nonfinite')) {
+          if (!seen.includes(declaration.channel)) seen.push(declaration.channel);
+          break;
+        }
+      }
+    }
+    return seen.sort();
+  }
+
+  function declaringTheToken(): readonly string[] {
+    return declarations()
+      .filter((one) => one.absent.includes('nonfinite'))
+      .map((one) => one.channel)
+      .sort();
+  }
+
+  it('declares the token on EXACTLY the channels whose value a formatter renders into', () => {
+    // The derived property, both directions: a channel that can see the token and does not declare it is the
+    // defect this iteration fixes, and a channel that declares it without being able to see it would have
+    // taken the token away from a channel where it means something.
+    const seen = channelsSeeingTheToken(flagged);
+    // Non-vacuity first: a block where nothing became non-finite would satisfy an equality of two empty sets.
+    expect(seen.length).toBeGreaterThanOrEqual(5);
+    expect(seen).toContain('self-anomaly');
+    expect(seen).toContain('latency-rise');
+    // Reported as two NAMED lists rather than an equality of arrays: the answer to a failure is which channel
+    // is on the wrong side, and `expected [...] to deeply equal [...]` truncates the very thing being asked.
+    const declared = declaringTheToken();
+    expect({
+      declaresButNeverSees: declared.filter((channel) => !seen.includes(channel)),
+      seesButDoesNotDeclare: seen.filter((channel) => !declared.includes(channel)),
+    }).toEqual({ declaresButNeverSees: [], seesButDoesNotDeclare: [] });
+    // …and the HEALTHY block sees it nowhere, so the token is a property of the values rather than of the
+    // fixture's shape.
+    expect(channelsSeeingTheToken(healthy)).toEqual([]);
+  });
+
+  it('keeps the token OFF the channels whose value is a count or a `fmtOnset` render', () => {
+    // The other direction, named: these channels are rendered in the same block and must not be dragged in. A
+    // rule keyed on the TOKEN rather than on the channel would have taken all of them.
+    const declared = declaringTheToken();
+    for (const channel of [
+      'metric-kept',
+      'metric-drop',
+      'failed-edge-records',
+      'latency-edges',
+      'onset',
+    ]) {
+      expect(declared, channel).not.toContain(channel);
+      expect(channelsSeeingTheToken(flagged), channel).not.toContain(channel);
+    }
+  });
+
+  it("names the token in the READER's one copy of the rule, and the census agrees", () => {
+    // The reader used to answer this question in eight private opinions — `-` spelled inline in two parses and
+    // six with no guard — so the two sides could disagree without either being wrong on its own terms. The set
+    // is now exported, and this holds it to the census's declared union.
+    expect(UNDETERMINED_TOKENS).toEqual(['', '-', 'nonfinite']);
+    const declared = new Set(declaringTheToken());
+    // Every channel the reader parses carries either no token, or one of the reader's own.
+    const readerChannels = [
+      'self-anomaly',
+      'log-score',
+      'failed-edge',
+      'latency-rise',
+      'failed-edge-records',
+      'latency-edges',
+      'signature-overlap',
+      'onset',
+    ];
+    for (const channel of readerChannels) {
+      const entry = declarations().find((one) => one.channel === channel)!;
+      for (const token of entry.absent) {
+        // `inject-time`'s `0` is the one token the reader handles NUMERICALLY (`(injectTimeMs ?? 0) > 0`),
+        // which is the reading the screen tie-in above pins; every other token must be in this set.
+        if (token === '0') continue;
+        expect(UNDETERMINED_TOKENS, `${channel} declares ${JSON.stringify(token)}`).toContain(
+          token,
+        );
+      }
+    }
+    // …and the reader's set does not invent a token no channel declares, which would make it a second
+    // spelling rather than a copy.
+    const union = new Set(declarations().flatMap((one) => [...one.absent]));
+    for (const token of UNDETERMINED_TOKENS) expect(union as Set<string>, token).toContain(token);
+    expect(declared.size).toBeGreaterThan(0);
+  });
+
+  it('parses the flagged block to `undefined` on every field the type can hold it on', () => {
+    // The consequence, on the producer's own bytes: the reader no longer invents a number for a value the
+    // producer flagged as broken. `failedEdgeScore` and `latRise` are the two the block actually flags.
+    const [parsed] = parseDiagnosticDump(flagged);
+    expect(parsed).toBeDefined();
+    const service = parsed!.services.find((one) => one.latRise !== undefined || true)!;
+    expect(Number.isFinite(service.failedEdgeScore ?? Number.NaN)).toBe(false);
+    expect(service.failedEdgeScore).toBeUndefined();
+    expect(service.latRise).toBeUndefined();
+    // …and the two fields whose TYPE is a required number cannot hold the `undefined`, which is why they are
+    // the named follow-up: the value the type admits is `NaN`, written out at the parse with the reason.
+    expect(Number.isNaN(service.selfAnomaly)).toBe(true);
+    expect(Number.isNaN(service.logScore)).toBe(true);
+  });
+
+  it('reports the same block as carrying NO measurement, which is where the defect is legible', () => {
+    // The reader's NaN is unavoidable while the type says `number`; the census has no such constraint, and it
+    // is the instrument whose job is to answer what the artifact carries. So the two sides of one fact are
+    // asserted together: the artifact says `none`, and the reader's number is the type's own admission.
+    for (const channel of ['self-anomaly', 'log-score', 'failed-edge', 'latency-rise']) {
+      expect(censusOnLine(headerOrRow(flagged, channel), channel).valued, channel).toBe(false);
+    }
+    // The control: the healthy block carries all four.
+    for (const channel of ['self-anomaly', 'log-score', 'failed-edge', 'latency-rise']) {
+      expect(censusOnLine(headerOrRow(healthy, channel), channel).valued, channel).toBe(true);
     }
   });
 });
