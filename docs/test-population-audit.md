@@ -223,7 +223,7 @@ The uncovered arm is the one the comment above it describes — *"when no experi
 best observation is the prior itself (idx 0)"*. Nothing this iteration changed is under `packages/optimize`,
 and the attribution is measured rather than argued:
 
-- **`183 tests of its own, unchanged**; every other file in the package at `100`; the project's own thresholds
+- **`200 tests`, unchanged** (the same count CI reports for `test (optimize)`); every other file in the package at `100`; the project's own thresholds
   applied and satisfied (the job succeeded).
 - run locally on the committed tree, `packages/optimize` reads **`100 / 100 / 100 / 100`**.
 - **run three times in a row on that same tree it reads `100`, `99.77`, `100`.**
