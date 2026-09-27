@@ -1178,7 +1178,12 @@ class TheAnchorSentinelTest(unittest.TestCase):
         return dc.capability_of(path.read_text('utf-8', errors='replace'))
 
     def test_a_no_inject_artifact_RENDERS_the_channel_and_carries_NO_anchor(self) -> None:
-        seen = 0
+        # A CORPUS reading, so it names its artifacts and SKIPS the ones this machine does not have — the same
+        # convention as `RealArtifactsTest` and `FSE26_DUMP`. A non-vacuity assertion here would be a statement
+        # about the MACHINE, and CI has no `.bench-cache`: the first version of this test carried one and turned
+        # `converter-tests` red with "no no-injection artifact is on this machine". **The rule itself does not
+        # depend on the corpus** — `CapabilityOfTest.test_a_rendered_ZERO_is_a_value…` and
+        # `RequireChannelTest.test_a_reader_that_needs_a_VALUE…` hold it on fixtures, on every machine.
         for name in ('re1-noinject.txt', 're2-noinject.txt', 're3-noinject.txt', 're3-novelty.txt'):
             path = LOCAL_DUMPS / name
             if not path.exists():
@@ -1190,7 +1195,6 @@ class TheAnchorSentinelTest(unittest.TestCase):
             self.assertIn('inject=0', text, name)
             self.assertNotIn('inject=1', text, name)
             coverage = self._capability(path).channel('inject-time')
-            seen += 1
             # The two claims the census now reports separately: the field is on every row...
             self.assertEqual(coverage.reach, dc.EVERY, name)
             self.assertEqual(coverage.cases_reached, coverage.total_cases, name)
@@ -1199,7 +1203,6 @@ class TheAnchorSentinelTest(unittest.TestCase):
             self.assertEqual(coverage.value_reach, dc.NONE, name)
             self.assertEqual(coverage.cases_valued, 0, name)
             self.assertIsNone(coverage.rows_valued, name)
-        self.assertGreater(seen, 0, 'no no-injection artifact is on this machine')
 
     def test_the_artifacts_WITH_anchors_are_unchanged_on_both_counts(self) -> None:
         # The control inside the same population, so the new column cannot pass by turning the channel off.
