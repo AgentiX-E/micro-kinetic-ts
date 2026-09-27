@@ -233,3 +233,17 @@ $ grep -n 'require_channel' docs/artifact-capability-audit.md
 for that audit advertises the refusal as a property of the census. Three iterations of this record said a reader
 must *"name the channels it reads and the reach it needs"* — and the one function that would enforce it is dead
 code with a test.
+
+## 8b. The same gates, read from CI and from the benchmark run's own cells
+
+| | |
+| --- | --- |
+| CI `12d92f4` | **19 of 19 jobs green**, `Release` green |
+| 56 dimensions | 14 coverage jobs × 4 — **worst `95.00`** (`wave` branches) over **4,042 tests**, and **every percentage unchanged** from the reading before the iteration. `benchmark-tests` reads `99.84 / 97.49 / 100 / 99.84` with **831** tests |
+| golden 9 cells | **byte-identical**, from each job's own table: RE1 `80.0 / 92.8 / 68.0`, RE2 `82.4 / 88.9 / 68.1`, RE3 `80.0 / 45.0 / 51.1` (OB / SS / TT) |
+| FSE'26 half | **not dispatchable** — `fse26-benchmark.yml` declares no `push` trigger, and nothing this iteration changed is read by the FSE'26 measurement (its producer is `packages/kinetic/src/benchmarks/**` and the five knobs are untouched) |
+
+**A verdict is not a cell, so the golden is the right half to demand here**: the change moves no score, and the
+nine cells being byte-identical is what says so rather than the change's own reasoning. The coverage table is
+the other reading worth taking: **a branch was added and no dimension moved**, and `benchmark-tests`' COUNT moved
+by exactly the eight tests this iteration added.
