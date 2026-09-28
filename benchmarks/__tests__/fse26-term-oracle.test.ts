@@ -40,7 +40,7 @@ import {
   parseDiagnosticDump,
   reconcileConfigurations,
 } from '../src/fse26-diagnose-analyze.js';
-import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
+import type { ModeScreen, TermOracleOptions } from '../src/fse26-term-oracle.js';
 import {
   blendScores,
   byAnomalyDescending,
@@ -1805,6 +1805,76 @@ describe('the `logicHttpJoint` gate — the fresh ablation the engine’s own do
     expect(modeScreen(withGraph, OPTS).rows.map((row) => row.source)).toContain('logicHttpJoint');
   });
 
+  it('reads an edge whose caller is the EMPTY-named service, which the split used to drop', () => {
+    // The empty service id is a real candidate and not a parse artefact — this module's own header says so,
+    // and 1421 of the 1422 shipped cases carry such a row. The producer renders `${from}>${to}`, so the
+    // empty-named service's own calls render with nothing in front of the separator, and `separator <= 0`
+    // read that entry as MALFORMED and skipped it.
+    //
+    // The defect is one symbol: `indexOf` answers `-1` for "there is no separator" and `0` for "the
+    // separator is the first character". The first is a SENTINEL and the second is a POSITION, and `<= 0`
+    // is a test that cannot tell them apart — so the graph the gate compared was missing every edge the
+    // empty-named service emits, and the emitter was withdrawn nothing on a graph nobody had read.
+    const withEmptyCaller = [svc('', 0.2, { http: 4 }), svc('ts-root', 0.9, { logic: 2 })] as never;
+    const graph = ['>ts-root'];
+    // The unjointed mode keeps the half, which is what makes the difference a GATE's and not a fixture's.
+    expect(logSlopesForMode(withEmptyCaller, 'logicHttp', 0.5, graph).get('')).toBeCloseTo(1, 12);
+    // Its only callee is more anomalous, so the gate withdraws the whole framework-HTTP half and the
+    // emitter leaves the term — the withdrawal the dropped entry made unreachable.
+    expect(logSlopesForMode(withEmptyCaller, 'logicHttpJoint', 0.5, graph).has('')).toBe(false);
+  });
+
+  it('reads an edge whose CALLEE is the empty-named service, the mirror of the case above', () => {
+    // The other half of the same grammar, and it needs its own test because the two halves are read
+    // independently: `a>` names the empty-named service as the CALLEE, which is a real candidate for
+    // exactly the reason a missing caller is. A split that answered an empty half with the whole entry
+    // would compare the wrong service — and here the wrong service flips the gate's decision outright.
+    const emptyCallee = [svc('ts-http', 0.2, { http: 4 }), svc('', 0.9, { logic: 2 })] as never;
+    // `ts-http` calls the empty-named service, which is MORE anomalous, so its half is withdrawn.
+    expect(logSlopesForMode(emptyCallee, 'logicHttpJoint', 0.5, ['ts-http>']).has('ts-http')).toBe(
+      false,
+    );
+    // And the unjointed mode is the control: the half is there to be withdrawn.
+    expect(
+      logSlopesForMode(emptyCallee, 'logicHttp', 0.5, ['ts-http>']).get('ts-http'),
+    ).toBeCloseTo(1, 12);
+  });
+
+  it('refuses an entry that names NEITHER half rather than reading a graph it only partly holds', () => {
+    // The other side of the same split, and a different absence: an entry with no separator at all names
+    // neither service, so the graph the reader built is missing an edge it cannot even describe. Skipping
+    // it silently made the reach a FULL reach — the printed share carried no floor, and the case stayed in
+    // the row's population — which are both claims about a graph this reader had not read.
+    expect(() =>
+      logSlopesForMode(services, 'logicHttpJoint', 0.5, ['ts-http', 'ts-http>ts-root']),
+    ).toThrow(/caller>callee/);
+    // And the case leaves the row's population, so the short row is named by the gate's own refusal.
+    const refuse = casesOf(
+      block(
+        [
+          { serviceId: 'ts-http', logic: 0, http: 6, selfAnomaly: 0.2 },
+          { serviceId: 'ts-root', logic: 1, selfAnomaly: 0.9 },
+        ],
+        { groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+      ),
+    ).map((kase) => ({ ...kase, edges: ['ts-http', 'ts-http>ts-root'] }));
+    const decidable = casesOf(
+      block(
+        [
+          { serviceId: 'ts-http', logic: 0, http: 6, selfAnomaly: 0.2 },
+          { serviceId: 'ts-root', logic: 1, selfAnomaly: 0.9 },
+        ],
+        { groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+      ),
+    ).map((kase) => ({ ...kase, edges: ['ts-http>ts-root'] }));
+    // A joint row is drawn — the second case can be decided — and the row says how many cases it dropped.
+    const row = modeScreen([...decidable, ...refuse], OPTS).rows.find(
+      (one) => one.source === 'logicHttpJoint',
+    );
+    expect(row?.cases).toBe(1);
+    expect(row?.gateRefusedCases).toBe(1);
+  });
+
   it('self-checks a dump RECORDED in the joint mode, which it could not before', () => {
     // The mapping was removed while the gate was not rebuilt, because a "check" against the
     // unjointed half would have reported a disagreement on every case. Now it is rebuilt, so the
@@ -1863,9 +1933,11 @@ describe('the joint gate’s footprint — the row’s net is not its mechanism'
       ownerCases: 1,
       ownerSuppressed: 1,
       // Both endpoints of the graph are rows the block SCORES, so the reach above is exact rather
-      // than a floor. The field is asserted at zero rather than omitted, because "no edge was
-      // refused" and "nobody counted" are different statements and only the first is true here.
+      // than a floor. BOTH refusal counters are asserted at zero rather than omitted, because "no
+      // edge was refused" and "nobody counted" are different statements and only the first is true
+      // here — and they are two counters because they are two different absent things.
       undecidedEdges: 0,
+      unreadableEdges: 0,
     });
     expect(formatModeScreen(screen)).toContain('OWNER is itself withdrawn in 1/1');
   });
@@ -1927,6 +1999,53 @@ describe('the joint gate’s footprint — the row’s net is not its mechanism'
     expect(screen.rows.find((row) => row.source === 'logicHttpJoint')!.cases).toBe(1);
     // The gate REFUSED nothing here, so the footprint's share is exact and the clause stays off.
     expect(formatModeScreen(screen)).not.toContain('edge(s) undecided');
+  });
+
+  it('counts an entry it cannot split as its OWN refusal, and names that cause in the print', () => {
+    // The footprint has two ways to understate itself, and they are two different absences: an endpoint
+    // whose anomaly the block flagged (a value the artifact declines to state) and an entry that is not
+    // `caller>callee` at all (a line this reader cannot split). One counter for both would make the printed
+    // sentence name a cause that did not fire, which is the defect this file has already corrected twice.
+    const good = cases(['ts-http>ts-root']);
+    const unsplittable = cases(['ts-http']);
+    const screen = modeScreen([...good, ...unsplittable], OPTS);
+    expect(screen.jointFootprint).toMatchObject({
+      unreadableEdges: 1,
+      // The flagged-endpoint counter is asserted at ZERO rather than omitted: "nothing was refused" and
+      // "nobody counted the other kind" are different statements and only the first is true here.
+      undecidedEdges: 0,
+      // A REAL share over a real population. The axis used to answer an empty population with `?? 0`,
+      // which is its MINIMUM, so a footprint over no case would have printed as "the gate withdraws
+      // nothing" — a claim no artifact made.
+      medianCaseDensity: 1 / 3,
+    });
+    const printed = formatModeScreen(screen);
+    expect(printed).toContain('1 call-graph entry(ies) are not `caller>callee`');
+    // And the cause that did NOT fire is not named, in either direction.
+    expect(printed).not.toContain('edge(s) undecided');
+  });
+
+  it('prints the table for a screen that measured nothing, rather than a denominator of zero', () => {
+    // The table's denominator is the BASELINE row's population, and `rows[0]` is the baseline by the
+    // screen's own contract. A screen with no row has no `N` for a row to be a fraction of, and `?? 0`
+    // answered that with a number: `row.cases < 0` is false for EVERY row, so the `[n/N cases]` marker's
+    // absence read as "this row measured the whole population" where the truth was "this screen states no
+    // population at all". The formatter is exported, so an empty screen is a real input and this is where
+    // the absence is stated.
+    const screen: ModeScreen = {
+      rows: [],
+      selfCheck: undefined,
+      dumpMode: 'novelty',
+      jointFootprint: undefined,
+    };
+    expect(formatModeScreen(screen)).toBe(
+      [
+        'Log-term mode pre-screen (every row against the recorded log term, per fault type):',
+        "  self-check: none — this reader does not rebuild the dump's mode (`novelty`), so no row above " +
+          'is verified against the printed term',
+        '  configuration           correct   +/-cases   regressed types',
+      ].join('\n'),
+    );
   });
 });
 

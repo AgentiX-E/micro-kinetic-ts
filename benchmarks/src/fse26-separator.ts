@@ -37,7 +37,7 @@ import type { DiagnosedCase, DiagnosedService } from './fse26-diagnose-analyze.j
 // The FOLD ASSIGNMENT is imported rather than re-derived: two modules that split the same dump
 // differently would each hold out a different fifth of it while both calling it "held out".
 import { foldOf } from './fse26-discriminator.js';
-import { latencySlopes, onsetSlopes } from './fse26-term-oracle.js';
+import { latencySlopes, onsetSlopes, splitEdge } from './fse26-term-oracle.js';
 
 /**
  * Which class of evidence a signal belongs to.
@@ -293,41 +293,67 @@ export function sourceOf(kase: DiagnosedCase): DiagnosedService | undefined {
   return best;
 }
 
-/** The call graph as caller → callees; `undefined` when the dump recorded no graph. */
-function adjacencyOf(edges: readonly string[] | undefined): Map<string, string[]> | undefined {
-  if (edges === undefined) return undefined;
-  const adjacency = new Map<string, string[]>();
-  for (const edge of edges) {
-    const separator = edge.indexOf('>');
-    if (separator <= 0) continue;
-    const caller = edge.slice(0, separator);
-    const callee = edge.slice(separator + 1);
-    const list = adjacency.get(caller);
-    if (list === undefined) adjacency.set(caller, [callee]);
-    else list.push(callee);
-  }
-  return adjacency;
+/**
+ * A case's call graph as caller → callees, plus how many `edges=` entries it could not read.
+ *
+ * `undefined` is reserved for the dump that recorded NO graph. An entry that cannot be split is a
+ * different absence and it is kept as a COUNT here rather than folded into the `undefined`, so a reader
+ * of this map can still say which one it is holding — even though both leave the topology signals
+ * `unmeasurable` below, because the word is about the READ and not about the input.
+ */
+interface Adjacency {
+  readonly byCaller: ReadonlyMap<string, readonly string[]>;
+  /** Entries `splitEdge` could not split, so neither of their two services is named. */
+  readonly unreadable: number;
 }
 
 /**
- * Whether `from` reaches `to` by following call edges; `undefined` without a graph.
+ * The call graph as caller → callees; `undefined` when the dump recorded no graph.
+ *
+ * The split is IMPORTED rather than repeated. This function used to carry its own copy of the grammar
+ * with its own guard, and the copy was wrong in the same way the oracle's was: `indexOf` answers `-1`
+ * for "no separator" and `0` for "the separator is the first character", and `<= 0` read the sentinel
+ * and the position as one thing — so every edge emitted by the EMPTY-NAMED service, which this project
+ * reads as a real candidate, was silently deleted from the graph. Two readers of one line that spell
+ * their grammar separately can come to disagree about it, and only one of the two copies had a test.
+ */
+function adjacencyOf(edges: readonly string[] | undefined): Adjacency | undefined {
+  if (edges === undefined) return undefined;
+  const byCaller = new Map<string, string[]>();
+  let unreadable = 0;
+  for (const entry of edges) {
+    const edge = splitEdge(entry);
+    if (!edge.read) {
+      unreadable++;
+      continue;
+    }
+    const list = byCaller.get(edge.from);
+    if (list === undefined) byCaller.set(edge.from, [edge.to]);
+    else list.push(edge.to);
+  }
+  return { byCaller, unreadable };
+}
+
+/**
+ * Whether `from` reaches `to` by following call edges; `undefined` when the graph cannot answer.
  *
  * `from` and `to` are the two sides of a miss, which are always different services: the pair is
  * built only when the engine's rank-1 is NOT an acceptable root, so a service can never be asked
  * about itself. There is deliberately no `from === to` arm — it would be code no caller could
  * reach, and the caller's invariant is stated here rather than defended twice.
+ *
+ * TWO ways the graph cannot answer, and they are one return because they are one WORD at the call
+ * site: no graph was recorded, or one of its entries could not be split. The path a pair needs may
+ * have run through the entry this reader lost, so `false` would be a claim about the GRAPH — "they
+ * are not connected" — where the truth is a claim about the READER.
  */
-function reaches(
-  from: string,
-  to: string,
-  adjacency: Map<string, string[]> | undefined,
-): boolean | undefined {
-  if (adjacency === undefined) return undefined;
+function reaches(from: string, to: string, adjacency: Adjacency | undefined): boolean | undefined {
+  if (adjacency === undefined || adjacency.unreadable > 0) return undefined;
   const seen = new Set<string>([from]);
   const queue = [from];
   while (queue.length > 0) {
     const current = queue.shift()!;
-    for (const next of adjacency.get(current) ?? []) {
+    for (const next of adjacency.byCaller.get(current) ?? []) {
       if (next === to) return true;
       if (seen.has(next)) continue;
       seen.add(next);
@@ -337,14 +363,17 @@ function reaches(
   return false;
 }
 
-/** A service's inbound call edges, or `undefined` when the dump recorded no graph. */
-function inDegreeOf(
-  serviceId: string,
-  adjacency: Map<string, string[]> | undefined,
-): number | undefined {
-  if (adjacency === undefined) return undefined;
+/**
+ * A service's inbound call edges; `undefined` when the graph cannot be counted.
+ *
+ * `undefined` for BOTH absences — no graph recorded, and a graph with an entry this reader could not
+ * split — because the word is about the READ: an arrival may hide behind the entry that could not be
+ * read, so counting only the entries that WERE read would report a lower bound as a count.
+ */
+function inDegreeOf(serviceId: string, adjacency: Adjacency | undefined): number | undefined {
+  if (adjacency === undefined || adjacency.unreadable > 0) return undefined;
   let degree = 0;
-  for (const callees of adjacency.values()) {
+  for (const callees of adjacency.byCaller.values()) {
     for (const callee of callees) if (callee === serviceId) degree++;
   }
   return degree;

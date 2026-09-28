@@ -361,21 +361,25 @@ const MODE_NEEDS_GRAPH: ReadonlySet<LogTermSource> = new Set<LogTermSource>(['lo
 /**
  * Whether one case carries everything the `logicHttpJoint` gate READS.
  *
- * TWO requirements, and they are the two ways the gate can be undecidable. The call graph is the
+ * THREE requirements, and they are the three ways the gate can be undecidable. The call graph is the
  * obvious one. The second is the gate's own input: its predicate is a COMPARISON of two services'
  * anomalies, so a case whose graph names a service the block declines to score cannot be rebuilt
  * in this mode at all — and that condition is read through the gate's own decision function rather
  * than by scanning the rows for a flagged value, so the population's rule and the rebuild's rule
- * are one rule. `MODE_NEEDS_GRAPH` stays the set the row filter consults, because it is a
- * declaration about the MODE; this is the per-case half of the same predicate.
+ * are one rule. The third is the LINE: an entry this reader cannot split names neither service, so
+ * the graph it built is one it only partly holds and every reach taken from it is a floor. Both the
+ * second and the third are read from the decision itself, so a population and a rebuild cannot
+ * disagree about which cases the gate can read — which is the only reason to ask the gate rather
+ * than to re-scan its inputs here. `MODE_NEEDS_GRAPH` stays the set the row filter consults, because
+ * it is a declaration about the MODE; this is the per-case half of the same predicate.
  *
  * @param kase - One parsed case.
  * @returns `true` when the gate can be decided for every edge of the case.
  */
 function jointGateDecidable(kase: DiagnosedCase): boolean {
-  return (
-    kase.edges !== undefined && jointGateDecision(kase.services, kase.edges).undecidedEdges === 0
-  );
+  if (kase.edges === undefined) return false;
+  const decision = jointGateDecision(kase.services, kase.edges);
+  return decision.undecidedEdges === 0 && decision.unreadableEdges === 0;
 }
 
 /**
@@ -397,6 +401,55 @@ export interface JointGateDecision {
    * fabrication, so it is counted here and refused by the caller.
    */
   readonly undecidedEdges: number;
+  /**
+   * Entries the gate could not split, so it cannot name either service the edge relates.
+   *
+   * A SECOND refusal, and it is not the one above: there the line is well-formed and a VALUE is missing
+   * (the block flagged an endpoint's anomaly), while here the LINE is the missing thing — this reader
+   * cannot say which two services the producer meant. One counter for both would make the printed
+   * sentence name a cause that did not fire, and the two are counted separately for the same reason
+   * `unprovedRows` and `gateRefusedCases` are.
+   *
+   * Counted rather than skipped, which is the whole point: skipping it made the gate's reach a FULL
+   * reach over a graph the reader had only partly read, and the printed withdrawal share carried no
+   * floor while it was one.
+   */
+  readonly unreadableEdges: number;
+}
+
+/**
+ * One `edges=` entry, split into the two services the producer's own grammar names.
+ *
+ * The grammar is the producer's: `renderDiagnostic` writes `${from}>${to}` and joins the entries with
+ * commas, so an entry carries exactly one separator. Two details make the split a FUNCTION rather than
+ * two lines of `indexOf` repeated at every reader:
+ *
+ * 1. **`indexOf` answers `-1`, which is a sentinel and not a position.** `entry.indexOf('>') <= 0` reads
+ *    the sentinel and the position `0` as the same thing, and they are the opposite: `-1` means this entry
+ *    has no separator at all, while `0` means the separator IS the first character — i.e. an edge emitted
+ *    by the EMPTY-NAMED service. That service is a real candidate and not a parse artefact (the module
+ *    header says so: 1421 of the shipped dump's 1422 cases print a row with no name), so `<= 0` silently
+ *    deleted every edge the empty-named service emits from a graph the gate then compared.
+ * 2. **A grammar spelled twice is a grammar that can be spelled differently.** This split had two copies —
+ *    one here and one in `fse26-separator.ts` — each with its own guard, and only one of them had a test.
+ *    A reader that reads the SAME line twice must not be able to disagree with itself about what it says,
+ *    so both readers now take their split from here.
+ */
+export type SplitEdge =
+  { readonly read: true; readonly from: string; readonly to: string } | { readonly read: false };
+
+/**
+ * Split one `edges=` entry at its separator.
+ *
+ * @param entry - One comma-separated element of the `edges=` line.
+ * @returns Both service names, or `read: false` when this entry names neither half. An entry that DOES
+ *   name both — including either half being the empty-named service — is `read: true`, because the
+ *   emptiness of a name is a fact about the candidate and not about the line.
+ */
+export function splitEdge(entry: string): SplitEdge {
+  const separator = entry.indexOf('>');
+  if (separator < 0) return { read: false };
+  return { read: true, from: entry.slice(0, separator), to: entry.slice(separator + 1) };
 }
 
 /**
@@ -415,8 +468,11 @@ export interface JointGateDecision {
  *
  * @param services - One case's services.
  * @param edges - The case's call graph (`caller>callee`), or `undefined` for a dump without one.
- * @returns The victims the gate decided, and the edges it refused; an empty set and no refusal
- *   when the dump recorded no graph, which the mode refuses outright elsewhere.
+ * @returns The victims the gate decided, and the edges it refused — counted in TWO units, because an
+ *   edge whose endpoint the block declines to score and an entry this reader cannot split are two
+ *   different absences and a sentence that names one is false of a row shortened by the other. An
+ *   empty set and no refusal when the dump recorded no graph, which the mode refuses outright
+ *   elsewhere.
  */
 function jointGateDecision(
   services: DiagnosedCase['services'],
@@ -424,7 +480,8 @@ function jointGateDecision(
 ): JointGateDecision {
   const victims = new Set<string>();
   let undecidedEdges = 0;
-  if (edges === undefined) return { victims, undecidedEdges };
+  let unreadableEdges = 0;
+  if (edges === undefined) return { victims, undecidedEdges, unreadableEdges };
   const anomaly = new Map(services.map((service) => [service.serviceId, service.selfAnomaly]));
   /**
    * The comparison's own read of one endpoint.
@@ -436,11 +493,18 @@ function jointGateDecision(
    * differ exactly where the gate's decision is made.
    */
   const scoreOf = (id: string): number | undefined => (anomaly.has(id) ? anomaly.get(id) : 0);
-  for (const edge of edges) {
-    const separator = edge.indexOf('>');
-    if (separator <= 0) continue;
-    const from = edge.slice(0, separator);
-    const to = edge.slice(separator + 1);
+  for (const entry of edges) {
+    const edge = splitEdge(entry);
+    if (!edge.read) {
+      // Counted, not skipped. An entry this reader cannot split is an edge it cannot decide, so the
+      // withdrawal it goes on to report is a FLOOR — and a floor quoted as a reach is the reading this
+      // register already had to correct once. The empty-named service is NOT this case: `splitEdge`
+      // reads `>callee` as an edge from it, because an empty NAME is a fact about the candidate.
+      unreadableEdges++;
+      continue;
+    }
+    const from = edge.from;
+    const to = edge.to;
     const emitter = scoreOf(from);
     const callee = scoreOf(to);
     if (emitter === undefined || callee === undefined) {
@@ -449,7 +513,7 @@ function jointGateDecision(
     }
     if (callee > emitter) victims.add(from);
   }
-  return { victims, undecidedEdges };
+  return { victims, undecidedEdges, unreadableEdges };
 }
 
 /**
@@ -595,6 +659,10 @@ export function recordedLogReadable(kase: DiagnosedCase): boolean {
  *   endpoint's anomaly. Not a default and not a skip: a withdrawal the artifact cannot state is
  *   not a withdrawal withheld, and rebuilding the UNJOINTED half for that emitter while labelling
  *   the term `logicHttpJoint` is the same shape of defect as defaulting an unpinned flood.
+ * @throws When one of the case's `edges=` entries cannot be SPLIT, which is a different missing
+ *   thing again — there a value is absent, here the line does not name the two services at all.
+ *   Refused for the same reason and with its own message, because a case refused by one cause must
+ *   not be reported as refused by the other.
  */
 export function logSlopesForMode(
   services: DiagnosedCase['services'],
@@ -617,6 +685,16 @@ export function logSlopesForMode(
   const denominator = new Map<string, number>();
   const concentrated = mode === 'dominant' && httpDominance(services) >= dominance;
   const jointGate = mode === 'logicHttpJoint' ? jointGateDecision(services, edges) : undefined;
+  if (jointGate !== undefined && jointGate.unreadableEdges > 0) {
+    throw new Error(
+      `cannot rebuild the \`logicHttpJoint\` gate for this case: ${jointGate.unreadableEdges} of its ` +
+        '`edges=` entr(ies) are not `caller>callee`, so this reader cannot name the two services the ' +
+        'gate would compare. The entry is not treated as an absent edge: the producer writes ' +
+        '`${from}>${to}` for every edge it records, so an entry without a separator is a LINE this ' +
+        'reader has lost, and reading the graph without it would report a withdrawal that is a floor ' +
+        'as if it were a reach. Guard with `jointGateDecision` when reading an unknown dump.',
+    );
+  }
   if (jointGate !== undefined && jointGate.undecidedEdges > 0) {
     throw new Error(
       `cannot rebuild the \`logicHttpJoint\` gate for this case: ${jointGate.undecidedEdges} of its ` +
@@ -1655,6 +1733,16 @@ export interface JointFootprint {
    * the reading this register already had to correct once, for `bestDev`.
    */
   readonly undecidedEdges: number;
+  /**
+   * Entries the gate could not SPLIT, across the same cases.
+   *
+   * The second way the reach above understates itself, and it is a different absence from the one
+   * above: there the line names its two services and a VALUE is missing, while here the line is what
+   * is missing. Counted separately because the printed sentence names the cause that FIRED — one
+   * counter would make it name the other one, which is the defect this file has already had to
+   * correct twice.
+   */
+  readonly unreadableEdges: number;
 }
 
 /**
@@ -1929,6 +2017,7 @@ function jointFootprint(
   let services = 0;
   let victims = 0;
   let undecidedEdges = 0;
+  let unreadableEdges = 0;
   let ownerCases = 0;
   let ownerSuppressed = 0;
   const densities: number[] = [];
@@ -1936,6 +2025,7 @@ function jointFootprint(
     const decision = jointGateDecision(kase.services, kase.edges);
     victims += decision.victims.size;
     undecidedEdges += decision.undecidedEdges;
+    unreadableEdges += decision.unreadableEdges;
     services += kase.services.length;
     densities.push(decision.victims.size / Math.max(1, kase.services.length));
     let owner: DiagnosedCase['services'][number] | undefined;
@@ -1953,10 +2043,17 @@ function jointFootprint(
   return {
     services,
     victims,
-    medianCaseDensity: sorted[sorted.length >> 1] ?? 0,
+    // The median is read off a list that is KNOWN non-empty: a joint row is drawn only from cases the
+    // gate can decide, so the guard above refused a footprint over no case — and `densities` holds one
+    // entry per case. The read is therefore asserted rather than defaulted, because the fallback this
+    // replaces (`?? 0`) was a branch no input could reach AND answered with the MINIMUM of this axis: a
+    // footprint over no case would have printed as "the gate withdraws nothing", a claim no artifact
+    // made. A fallback that cannot fire is not a defence; it is a wrong reading kept in reserve.
+    medianCaseDensity: sorted[sorted.length >> 1]!,
     ownerCases,
     ownerSuppressed,
     undecidedEdges,
+    unreadableEdges,
   };
 }
 
@@ -2284,30 +2381,47 @@ export function formatModeScreen(
   // the withdrawal reaching most of the graph — including the emitter that owns the flood.
   const footprint = screen.jointFootprint;
   if (footprint !== undefined) {
+    // The reach above is a LOWER BOUND wherever a clause below fires, and each clause names the cause that
+    // DID fire: the two are different absences — a flagged endpoint is a VALUE the block declines to state,
+    // an unsplittable entry is a LINE this reader lost — and a sentence that names one is false of a
+    // footprint shortened by the other. Printed only when non-zero, so a dump that states every anomaly
+    // over a graph this reader can read completely prints exactly what it printed before.
+    const floors = [
+      footprint.undecidedEdges > 0
+        ? `${footprint.undecidedEdges} edge(s) undecided: an endpoint's anomaly is one the ` +
+          'block flagged'
+        : '',
+      footprint.unreadableEdges > 0
+        ? `${footprint.unreadableEdges} call-graph entry(ies) are not \`caller>callee\`, so this ` +
+          'reader cannot name the two services they relate'
+        : '',
+    ].filter((clause) => clause !== '');
     lines.push(
       `  joint gate footprint: withdraws ${pct(footprint.victims, footprint.services)} of all ` +
         `services (median case ${footprint.medianCaseDensity.toFixed(2)}); the framework-HTTP flood ` +
         `OWNER is itself withdrawn in ${footprint.ownerSuppressed}/${footprint.ownerCases} cases ` +
         `(${pct(footprint.ownerSuppressed, footprint.ownerCases)})` +
-        // The reach above is a LOWER BOUND wherever this fires, and the two facts are printed
-        // together because either alone is misleading: a withdrawal share with a refusal beside it
-        // is a floor, while the refusal alone reads as a detail. Printed only when non-zero, so a
-        // dump that states every anomaly the gate reads prints exactly what it printed before.
-        (footprint.undecidedEdges > 0
-          ? `; ${footprint.undecidedEdges} edge(s) undecided: an endpoint's anomaly is one the ` +
-            'block flagged, so the comparison above is a LOWER bound'
-          : ''),
+        (floors.length === 0
+          ? ''
+          : `; ${floors.join('; ')}, so the comparison above is a LOWER bound`),
     );
   }
   lines.push('  configuration           correct   +/-cases   regressed types');
-  const full = baseline?.cases ?? 0;
+  // The table's DENOMINATOR is the BASELINE row's population, and `rows[0]` IS the baseline by the
+  // screen's own contract. A screen with no row has no `N` for a row to be a fraction of, so the table
+  // is not printed at all — which is also what the loop below would have produced, so the output is
+  // byte-identical. What is NOT identical is the reason: `baseline?.cases ?? 0` answered the missing
+  // denominator with a NUMBER, and `row.cases < 0` is false for EVERY row, so the `[n/N cases]` marker's
+  // absence read as "this row measured the whole population" where the truth was "this screen states no
+  // population at all". An empty table is the honest statement of an empty population.
+  if (baseline === undefined) return lines.join('\n');
   for (const row of screen.rows) {
     const name = label(row.source, row.dominance).padEnd(22);
     // A row measured on fewer cases than the baseline is a PARTIAL measurement, and the
     // count that says so prints next to the number it qualifies: the +/- values are
     // differences of outcomes, and a reader who cannot see the population cannot tell a
     // mode's effect from the subset it was allowed to see.
-    const partial = row.cases < full ? ` [${row.cases}/${full} cases]` : '';
+    const partial = row.cases < baseline.cases ? ` [${row.cases}/${baseline.cases} cases]` : '';
     // The refusals print beside the population, because a short row without them sends a reader looking
     // for a defect in the mode rather than for the primitive the artifact does not carry. `both=` absent
     // is one CAUSE of a refusal (a printed overlap is returned directly) and a flagged endpoint is the

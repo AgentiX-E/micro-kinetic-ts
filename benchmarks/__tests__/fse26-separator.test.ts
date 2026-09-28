@@ -714,19 +714,49 @@ describe('the degenerate inputs a dump can carry', () => {
     expect(census.unpaired).toBe(0);
   });
 
-  it('ignores a malformed edge, and counts a second edge from the same caller', () => {
+  it('reads an edge whose caller is the EMPTY-named service, and appends a second edge from one caller', () => {
+    // `>callee` is NOT a malformed edge. The empty service id is a real candidate — the oracle's header
+    // records one such row in 1421 of the shipped dump's 1422 cases — so an entry with nothing in front of
+    // the separator is an edge FROM that candidate. The split used `indexOf(...) <= 0`, which reads `-1`
+    // ("no separator") and `0` ("the separator is the first character") as the same answer: a SENTINEL and a
+    // POSITION. Every edge the empty-named service emits was therefore deleted from a graph both of this
+    // module's graph signals then read. The two readers of one line now take their split from one function.
     const census = separatorCensus([
-      wrongCase('edges', { edges: ['ts-src', '>broken', 'ts-src>ts-a', 'ts-src>ts-rival'] }, [
+      wrongCase('edges', { edges: ['>ts-rival', 'ts-src>ts-a', 'ts-src>ts-rival'] }, [
         svc('ts-src', { isGroundTruth: true }),
         svc('ts-a'),
         svc('ts-rival', { selfAnomaly: 1 }),
       ]),
     ]);
-    // Two entries under one caller: the second must APPEND, not replace the first.
-    const degree = census.total.cells.find((cell) => cell.name === 'inDegree')!;
-    const reachesCell = census.total.cells.find((cell) => cell.name === 'reaches')!;
+    // The graph was read COMPLETELY — the empty-caller entry is an edge, not an entry the reader lost.
+    const cell = (name: string) => census.total.cells.find((one) => one.name === name)!;
+    expect(cell('inDegree')).toMatchObject({ unmeasurable: 0 });
+    expect(cell('reaches')).toMatchObject({ unmeasurable: 0, source: 1 });
+    // And two entries under one caller APPEND: the second must not replace the first.
+    const degree = cell('inDegree');
     expect(degree.source + degree.winner + degree.tie).toBe(1);
-    expect(reachesCell.source).toBe(1);
+  });
+
+  it('makes a topology signal unmeasurable when an entry names NEITHER half', () => {
+    // The other side of the same split, and it is a different absence: an entry with no separator names
+    // neither service, so an arrival — or the path between the pair — may be hidden behind it. `tie` would
+    // be a claim about the GRAPH ("it does not order them") where the truth is a claim about the READER, so
+    // both graph signals report the third outcome this module already has for a signal that cannot measure
+    // a side, and the pair leaves the rate instead of counting against the signal.
+    const census = separatorCensus([
+      wrongCase('edges', { edges: ['ts-src', 'ts-src>ts-rival'] }, [
+        svc('ts-src', { isGroundTruth: true }),
+        svc('ts-rival', { selfAnomaly: 1 }),
+      ]),
+    ]);
+    expect(census.total.cells.find((one) => one.name === 'inDegree')).toMatchObject({
+      unmeasurable: 1,
+      tie: 0,
+    });
+    expect(census.total.cells.find((one) => one.name === 'reaches')).toMatchObject({
+      unmeasurable: 1,
+      tie: 0,
+    });
   });
 
   it('follows a diamond without walking the second arrival twice', () => {
