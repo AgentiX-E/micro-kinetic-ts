@@ -28,7 +28,7 @@ import { DEFAULT_LOG_WEIGHT, POOL_METRIC_PREFIX } from '../../packages/tree/src/
 
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 import type { TermOracleOptions } from './fse26-term-oracle.js';
-import { latencySlopes, rankCase } from './fse26-term-oracle.js';
+import { byAnomalyDescending, latencySlopes, rankCase } from './fse26-term-oracle.js';
 
 /**
  * What a feature may look at: the dump's own description of the case, and the model's OWN
@@ -57,10 +57,19 @@ export function discriminatorConfigs(opts: TermOracleOptions): readonly Discrimi
   ];
 }
 
-/** A feature a rule may threshold, with the reason it is available at inference time. */
+/**
+ * A feature a rule may threshold, with the reason it is available at inference time.
+ */
 export interface DiscriminatorFeature {
   readonly name: string;
-  readonly of: (subject: CaseSubject) => number;
+  /**
+   * The feature's value for one case, or `undefined` when the case cannot answer.
+   *
+   * `undefined` rather than a `NaN`, which is the whole point: `NaN` IS a `number`, so every "is it measured?"
+   * test downstream answered YES, and both comparisons a threshold is made of (`>=` and `<=`) are false for it
+   * in either direction — a rule fitted to a `NaN` threshold fires on nothing while reading like a rule.
+   */
+  readonly of: (subject: CaseSubject) => number | undefined;
 }
 
 /** The country of the case, as much as the dump states it without the label. */
@@ -71,6 +80,21 @@ function poolCount(services: readonly { readonly dominantMetric: string }[]): nu
 /**
  * The declared feature set — every one computable from the dump's own description plus the
  * model's ranking. Stated as data so a rule's report can name the feature it chose.
+ *
+ * The sort order is the ORACLE's {@link byAnomalyDescending}, not a comparator written here: "which of two
+ * services has the larger anomaly" has one owner, and a second spelling of it had stopped being a total order
+ * (`(a, b) => b.selfAnomaly - a.selfAnomaly` answers `NaN` for a `NaN` operand, which is falsy, i.e. "equal",
+ * so a stable sort leaves the entries where the INPUT put them). Measured on the producer's own all-non-finite
+ * block before the fix: reversing the rows moved `predictedIsTop` from `1` to `0`.
+ *
+ * TWO kinds of feature need TWO kinds of rule about `undefined`, and the difference is what the feature READS:
+ *
+ * - an **aggregate over a population** (`metricSpread`, `logCoverage`) needs every member, so one undetermined
+ *   member makes the aggregate undetermined. Reporting it over the measured subset would be a LOWER BOUND
+ *   wearing the aggregate's name — the reading this register already had to correct once for `bestDev`.
+ * - an **order statistic** (`metricTopGap`, `predictedAnomaly`) needs the members it reads, and no others.
+ *   `metricTopGap` reads the two highest, which `byAnomalyDescending` puts at the front whatever the rest
+ *   hold, so the gap IS measured when those two are.
  */
 export const DISCRIMINATOR_FEATURES: readonly DiscriminatorFeature[] = [
   {
@@ -82,26 +106,44 @@ export const DISCRIMINATOR_FEATURES: readonly DiscriminatorFeature[] = [
     name: 'metricTopGap',
     // The lead the top anomaly has over the second. Available: both are printed.
     of: (subject) => {
-      const sorted = [...subject.services].sort((a, b) => b.selfAnomaly - a.selfAnomaly);
+      const sorted = [...subject.services].sort(byAnomalyDescending);
       const [top, second] = sorted;
-      return top === undefined || second === undefined ? 0 : top.selfAnomaly - second.selfAnomaly;
+      // TWO absences, and they are not the same one. A case with fewer than two candidates HAS no lead to
+      // measure — there is nothing for the top to lead — so the answer is 0, which is what this feature has
+      // always said. A case whose second candidate EXISTS and whose value the block flagged has a lead the
+      // artifact declines to state, so the answer is `undefined`. Collapsing them was the first version of
+      // this line and it turned a deliberate 0 into an undetermined value for every one-candidate case.
+      if (second === undefined) return 0;
+      if (top?.selfAnomaly === undefined || second.selfAnomaly === undefined) return undefined;
+      return top.selfAnomaly - second.selfAnomaly;
     },
   },
   {
     name: 'metricSpread',
     of: (subject) => {
       const values = subject.services.map((service) => service.selfAnomaly);
-      return values.length === 0 ? 0 : Math.max(...values) - Math.min(...values);
+      // Every member, or nothing: `Math.max` over a set containing an undetermined member is the maximum of
+      // the others, which is a lower bound of the spread rather than the spread.
+      if (values.some((value) => value === undefined)) return undefined;
+      const measured = values as readonly number[];
+      return measured.length === 0 ? 0 : Math.max(...measured) - Math.min(...measured);
     },
   },
   {
     name: 'logCoverage',
     // The share of candidates the log term credits at all: the term's own reach.
-    of: (subject) =>
-      subject.services.length === 0
+    of: (subject) => {
+      // An aggregate needs EVERY member, so one unmeasured log score makes the reach an interval rather than a
+      // share — reported as `undefined` rather than over the rest.
+      if (subject.services.some((service) => service.logScore === undefined)) return undefined;
+      // The guard above is the proof that every log score is a value, so this is the house's `!` rather than a
+      // `?? 0`: a fallback here would be a branch no input can take, and `0` would say "the term credited it
+      // nothing" where the guard's whole subject is that the two readings must not be merged.
+      return subject.services.length === 0
         ? 0
-        : subject.services.filter((service) => service.logScore > 0).length /
-          subject.services.length,
+        : subject.services.filter((service) => service.logScore! > 0).length /
+            subject.services.length;
+    },
   },
   {
     name: 'latCoverage',
@@ -123,7 +165,7 @@ export const DISCRIMINATOR_FEATURES: readonly DiscriminatorFeature[] = [
     of: (subject) => {
       const winner = subject.prediction[0];
       if (winner === undefined) return 0;
-      const top = [...subject.services].sort((a, b) => b.selfAnomaly - a.selfAnomaly)[0];
+      const top = [...subject.services].sort(byAnomalyDescending)[0];
       return top !== undefined && top.serviceId === winner ? 1 : 0;
     },
   },
@@ -132,8 +174,10 @@ export const DISCRIMINATOR_FEATURES: readonly DiscriminatorFeature[] = [
     of: (subject) => {
       const winner = subject.prediction[0];
       const row = subject.services.find((service) => service.serviceId === winner);
-      // Absent means the model predicted a service its own dump does not describe, which is
-      // a fact about the case rather than a measurement, so it reads as 0 and not as NaN.
+      // Two provenances, one reading, and both are facts about the CASE rather than measurements: the model
+      // predicted a service its own dump does not describe, or the block flagged that service's anomaly as
+      // non-finite. Reading as `0` is the operator's job here, and `??` — which fires on `undefined` and NOT on
+      // a `NaN` — is what makes that comment true rather than merely intended.
       return row?.selfAnomaly ?? 0;
     },
   },
@@ -145,7 +189,13 @@ export interface CaseOutcome {
   readonly faultType: string;
   /** Which configurations rank an acceptable root first. */
   readonly covered: readonly string[];
-  readonly features: Readonly<Record<string, number>>;
+  /**
+   * The feature vector. A feature is `undefined` where the case cannot answer it, and the rule-fitting below
+   * is required to READ that rather than to default it: `?? 0` would say "this case's spread is zero" where
+   * the truth is "this case's spread is not measurable", which is a fabricated measurement of the same kind
+   * the `0` sentinel produced for `bestDev`.
+   */
+  readonly features: Readonly<Record<string, number | undefined>>;
 }
 
 /**
@@ -254,11 +304,26 @@ export interface RuleEffect {
   readonly broken: number;
   /** `fixed − broken`: what the headline moves by, which is what a run would measure. */
   readonly net: number;
+  /**
+   * Cases the rule could not CLASSIFY, because the feature it thresholds is undetermined on them.
+   *
+   * Reported rather than folded into the two counters. A rule that cannot classify a case has not left it with
+   * the baseline — it has not decided — and the difference matters most exactly where it is silent: a feature
+   * that is undetermined on the cases a rule would have BROKEN reads as a clean rule.
+   */
+  readonly unmeasured: number;
 }
 
-/** Whether a rule fires on one case. */
-function fires(choice: StumpChoice, one: CaseOutcome): boolean {
-  const value = one.features[choice.feature] ?? 0;
+/**
+ * Whether a rule fires on one case, or could not be evaluated at all.
+ *
+ * Three answers, not two. An undetermined feature is not "below the threshold" and not "above" it: both
+ * comparisons are false for `NaN` in either direction, which is how a fitted threshold of `NaN` — a rule that
+ * fires on nothing — used to be reachable and to read as a rule that fires on nothing by chance.
+ */
+function fires(choice: StumpChoice, one: CaseOutcome): boolean | undefined {
+  const value = one.features[choice.feature];
+  if (value === undefined) return undefined;
   return choice.direction === 1 ? value >= choice.threshold : value <= choice.threshold;
 }
 
@@ -266,7 +331,8 @@ function fires(choice: StumpChoice, one: CaseOutcome): boolean {
  * Evaluate a rule on a case set.
  *
  * A case the rule does not fire on stays with the baseline, so `broken` can only come from
- * cases where the rule fired on a case the baseline got right.
+ * cases where the rule fired on a case the baseline got right. A case the rule cannot
+ * evaluate is counted in `unmeasured` and in neither of the other two.
  */
 export function evaluateRule(
   outcomes: readonly CaseOutcome[],
@@ -275,14 +341,20 @@ export function evaluateRule(
 ): RuleEffect {
   let fixed = 0;
   let broken = 0;
+  let unmeasured = 0;
   for (const one of outcomes) {
-    if (!fires(choice, one)) continue;
+    const fired = fires(choice, one);
+    if (fired === undefined) {
+      unmeasured++;
+      continue;
+    }
+    if (!fired) continue;
     const baseOk = one.covered.includes(baseline);
     const hereOk = one.covered.includes(choice.config);
     if (hereOk && !baseOk) fixed++;
     else if (!hereOk && baseOk) broken++;
   }
-  return { fixed, broken, net: fixed - broken };
+  return { fixed, broken, net: fixed - broken, unmeasured };
 }
 
 /**
@@ -308,9 +380,16 @@ export function fitStump(
   let best: StumpChoice | undefined;
   let bestNet = 0;
   for (const feature of features) {
-    const values = [...new Set(outcomes.map((one) => one.features[feature] ?? 0))].sort(
-      (a, b) => a - b,
-    );
+    // The observed values the rule may choose from — the MEASURED ones, which is what keeps a threshold of
+    // `NaN` out of the answer. Sorted numerically, so the comparator is a total order on numbers.
+    const values = [
+      ...new Set(
+        outcomes
+          .map((one) => one.features[feature])
+          .filter((value): value is number => value !== undefined),
+      ),
+    ].sort((a, b) => a - b);
+    if (values.length === 0) continue;
     for (const direction of [1, -1] as const) {
       for (const threshold of values) {
         const choice: StumpChoice = { config, feature, threshold, direction };

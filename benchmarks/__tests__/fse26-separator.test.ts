@@ -122,6 +122,48 @@ describe('separatorCensus — pairing', () => {
     expect(sourceOf('multi')).toBe('ts-b');
     expect(sourceOf('tied')).toBe('ts-a');
   });
+
+  it('does not ELECT a service whose anomaly the block flagged', () => {
+    // `sourceOf` reads the same widened field, and its election is a comparison on it. A service
+    // whose value the artifact declines to state cannot win that comparison — and the difference is
+    // not cosmetic, because the election ranges over the case's GROUND TRUTH: reading a flagged row
+    // as `0` does not merely choose the wrong source here, it INVENTS one for a case whose only
+    // candidate the artifact does not describe, and the pair it forms is then about a service that
+    // is absent from the artifact's own terms. So the fixture is the case where the two readings
+    // part company: ONE ground-truth candidate, and it is flagged.
+    const onlyFlagged = wrongCase('flag', { groundTruth: ['ts-flag'], prediction: ['ts-rival'] }, [
+      svc('ts-flag', { isGroundTruth: true, selfAnomaly: undefined }),
+      svc('ts-rival', { selfAnomaly: 1 }),
+    ]);
+    const census = separatorCensus([onlyFlagged]);
+    // No pair, and the case is COUNTED as unpaired rather than dropped in silence — the same
+    // disposition as a ground truth naming a service the dump does not describe at all.
+    expect(census.pairs).toEqual([]);
+    expect(census.unpaired).toBe(1);
+    // The control: the same shape with the anomaly STATED pairs normally, so the assertion above is
+    // about the refusal rather than about a fixture that cannot pair anything.
+    const stated = wrongCase('stated', { groundTruth: ['ts-flag'], prediction: ['ts-rival'] }, [
+      svc('ts-flag', { isGroundTruth: true, selfAnomaly: 0.6 }),
+      svc('ts-rival', { selfAnomaly: 1 }),
+    ]);
+    const paired = separatorCensus([stated]);
+    expect(paired.pairs.map((pair) => pair.datapack)).toEqual(['stated']);
+    expect(paired.unpaired).toBe(0);
+    // …and among SEVERAL ground-truth candidates the flagged one is SKIPPED rather than elected, so
+    // the answer is the most anomalous row the artifact does state.
+    const two = wrongCase(
+      'two',
+      { groundTruth: ['ts-flag', 'ts-real'], prediction: ['ts-rival'] },
+      [
+        svc('ts-flag', { isGroundTruth: true, selfAnomaly: undefined }),
+        svc('ts-real', { isGroundTruth: true, selfAnomaly: 0.6 }),
+        svc('ts-rival', { selfAnomaly: 1 }),
+      ],
+    );
+    expect(
+      separatorCensus([two]).pairs.find((pair) => pair.datapack === 'two')!.source.serviceId,
+    ).toBe('ts-real');
+  });
 });
 
 describe('fromScalar — one preference rule for both sides', () => {

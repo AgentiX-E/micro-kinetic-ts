@@ -265,15 +265,29 @@ function inventoryOf(service: DiagnosedService): Inventory | undefined {
  */
 export function sourceOf(kase: DiagnosedCase): DiagnosedService | undefined {
   let best: DiagnosedService | undefined;
+  // The elected service's anomaly, carried beside it rather than re-read off `best`.
+  //
+  // NOT `best.selfAnomaly === undefined ||` in the condition below, which is what the first version of this
+  // guard said: `best` is only ever ASSIGNED a service that passed the `continue`, so that disjunct could never
+  // be taken — a branch no input can reach, which is a claim about the code that reads like a claim about the
+  // data. Carrying the value makes the comparison total without inventing a case for it.
+  let bestAnomaly = Number.NEGATIVE_INFINITY;
   for (const service of kase.services) {
     if (service.serviceId === '') continue;
     if (!kase.groundTruth.includes(service.serviceId)) continue;
+    // A service whose anomaly the block flagged cannot be ELECTED by a comparison on it. Skipped rather than
+    // treated as 0: the two readings agree wherever a best already exists (`0 > best` is false for a positive
+    // best), and they differ exactly where it matters — on the FIRST candidate, where a `0` would elect the
+    // unmeasured service and make the whole pair screen about a service the artifact does not describe.
+    const anomaly = service.selfAnomaly;
+    if (anomaly === undefined) continue;
     if (
       best === undefined ||
-      service.selfAnomaly > best.selfAnomaly ||
-      (service.selfAnomaly === best.selfAnomaly && service.serviceId < best.serviceId)
+      anomaly > bestAnomaly ||
+      (anomaly === bestAnomaly && service.serviceId < best.serviceId)
     ) {
       best = service;
+      bestAnomaly = anomaly;
     }
   }
   return best;

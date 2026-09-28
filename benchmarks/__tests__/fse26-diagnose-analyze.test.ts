@@ -71,6 +71,7 @@ import {
   cvVerdict,
   DEFAULT_CV_SHAPE,
   diffDiagnostics,
+  drawBaseField,
   drawOnsetDelay,
   dumpPrecisionOf,
   familyCompetition,
@@ -1699,7 +1700,10 @@ describe('classifyMiss', () => {
     const [miss] = classifyMiss(kase, { logWeight: 1 });
     expect(miss!.decidedBy).toBe('absent');
     expect(miss!.source).toBe('');
-    expect(Number.isNaN(miss!.sourceAnomaly)).toBe(true);
+    // `undefined`, and the field is NOT typed `number`: `NaN` was the old spelling and it is a `number`, so a
+    // consumer asking "is this a measurement?" with a type test answered YES and one asking with a comparison
+    // answered `false` in both directions. The absence is named by `decidedBy`, so the field only carries it.
+    expect(miss!.sourceAnomaly).toBeUndefined();
   });
 
   it('reports ABSENT for a dump with no prediction at all', () => {
@@ -1716,7 +1720,7 @@ describe('classifyMiss', () => {
     const [miss] = classifyMiss(kase, { logWeight: 1 });
     expect(miss!.decidedBy).toBe('absent');
     expect(miss!.winner).toBeUndefined();
-    expect(Number.isNaN(miss!.winnerAnomaly)).toBe(true);
+    expect(miss!.winnerAnomaly).toBeUndefined();
     expect(miss!.sourceAnomaly).toBe(0.4);
   });
 
@@ -1748,13 +1752,17 @@ describe('classifyMiss', () => {
     )[0]!;
     const [miss] = classifyMiss(kase, { logWeight: 1 });
     expect(miss!.decidedBy).toBe('absent');
-    expect(Number.isNaN(miss!.sourceAnomaly)).toBe(true);
+    expect(miss!.sourceAnomaly).toBeUndefined();
   });
 
-  it('reports ABSENT, with NaN rather than zero, when the WINNER is not described', () => {
+  it('reports ABSENT, with `undefined` rather than zero, when the WINNER is not described', () => {
     // A hand-edited or truncated dump can name a winner it does not describe.
     // Reporting 0 for that winner's terms would read as "scored and credited
     // nothing" and would silently attribute the loss to the other term.
+    //
+    // This test's NAME used to say "with NaN rather than zero", and that is how the defect survived: the NaN was
+    // asserted in FIVE places and named in two of them, so the suite certified it. The word in the name is the
+    // half that mattered — `undefined` is the same answer with a spelling that cannot be mistaken for one.
     const tampered = dump({
       groundTruthServices: ['ts-src'],
       services: [serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 })],
@@ -1764,9 +1772,109 @@ describe('classifyMiss', () => {
 
     expect(miss!.decidedBy).toBe('absent');
     expect(miss!.winner).toBe('ts-win');
-    expect(Number.isNaN(miss!.winnerAnomaly)).toBe(true);
-    expect(Number.isNaN(miss!.winnerLog)).toBe(true);
+    expect(miss!.winnerAnomaly).toBeUndefined();
+    expect(miss!.winnerLog).toBeUndefined();
     // The source IS described, so its own terms are still reported.
+    expect(miss!.sourceAnomaly).toBe(0.4);
+  });
+
+  it('reports UNDETERMINED — not ABSENT — when the dump describes both services and flags a value', () => {
+    // FOUR causes now, and the fourth is why this exists: `absent` is a service the dump does not DESCRIBE, and
+    // `undetermined` is a service it describes and whose value it refused to render. A word names what its
+    // absence is about, so the two cannot share one — a reader who saw `absent` for a case whose row is right
+    // there in the block would go looking for a parser bug.
+    //
+    // `0` is not the answer and neither is skipping the term: the margin is a SUM, and a decomposition missing a
+    // live term reads as though that term never voted, which is the failure this function's own history records.
+    const tampered = dump({
+      groundTruthServices: ['ts-src'],
+      services: [
+        serviceLine({ serviceId: 'ts-src', selfAnomaly: Number.NaN }),
+        serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+      ],
+      topPredictions: ['ts-win'],
+    });
+    const [miss] = classifyMiss(parseDiagnosticDump(tampered)[0]!, { logWeight: 1 });
+    expect(miss!.decidedBy).toBe('undetermined');
+    expect(miss!.sourceAnomaly).toBeUndefined();
+    // The other side of the same case is still reported: the cause names what could not be read, not a blanket
+    // refusal to describe the case.
+    expect(miss!.winner).toBe('ts-win');
+    expect(miss!.winnerAnomaly).toBe(0.9);
+  });
+
+  it('names UNDETERMINED from EACH of the four fields that can raise it', () => {
+    // The guard is a four-way disjunction, and coverage alone would accept one side of it: a reader has to know
+    // that the cause is raised by the WINNER's terms as well as the source's, and by the LOG term as well as the
+    // metric one. Each row flags exactly one field and leaves the other three measured.
+    const rows: readonly {
+      readonly what: string;
+      readonly src: Record<string, number>;
+      readonly win: Record<string, number>;
+    }[] = [
+      { what: 'source anomaly', src: { selfAnomaly: Number.NaN }, win: {} },
+      { what: 'winner anomaly', src: {}, win: { selfAnomaly: Number.NaN } },
+      { what: 'source log', src: { logScore: Number.NaN, logic: 2 }, win: { logic: 1 } },
+      { what: 'winner log', src: { logic: 1 }, win: { logScore: Number.NaN, logic: 2 } },
+    ];
+    for (const row of rows) {
+      const text = dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4, logScore: 0.1, ...row.src }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9, logScore: 0.2, ...row.win }),
+        ],
+        topPredictions: ['ts-win'],
+      });
+      const [miss] = classifyMiss(parseDiagnosticDump(text)[0]!, { logWeight: 1 });
+      expect(miss!.decidedBy, row.what).toBe('undetermined');
+      // And the three fields that were NOT flagged are still reported, so the cause names what it could not read
+      // rather than refusing to describe the case.
+      const reported = [miss!.sourceAnomaly, miss!.winnerAnomaly, miss!.sourceLog, miss!.winnerLog];
+      expect(reported.filter((value) => value !== undefined).length, row.what).toBe(3);
+    }
+  });
+
+  it('names UNDETERMINED from EACH of the four fields that can raise it', () => {
+    // The guard is a four-way disjunction, and coverage alone would accept one side of it: a reader has to know
+    // that the cause is raised by the WINNER's terms as well as the source's, and by the LOG term as well as the
+    // metric one. Each row flags exactly one field and leaves the other three measured.
+    const rows: readonly {
+      readonly what: string;
+      readonly src: Record<string, number>;
+      readonly win: Record<string, number>;
+    }[] = [
+      { what: 'source anomaly', src: { selfAnomaly: Number.NaN }, win: {} },
+      { what: 'winner anomaly', src: {}, win: { selfAnomaly: Number.NaN } },
+      { what: 'source log', src: { logScore: Number.NaN, logic: 2 }, win: { logic: 1 } },
+      { what: 'winner log', src: { logic: 1 }, win: { logScore: Number.NaN, logic: 2 } },
+    ];
+    for (const row of rows) {
+      const text = dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4, logScore: 0.1, ...row.src }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9, logScore: 0.2, ...row.win }),
+        ],
+        topPredictions: ['ts-win'],
+      });
+      const [miss] = classifyMiss(parseDiagnosticDump(text)[0]!, { logWeight: 1 });
+      expect(miss!.decidedBy, row.what).toBe('undetermined');
+      // And the three fields that were NOT flagged are still reported, so the cause names what it could not read
+      // rather than refusing to describe the case.
+      const reported = [miss!.sourceAnomaly, miss!.winnerAnomaly, miss!.sourceLog, miss!.winnerLog];
+      expect(reported.filter((value) => value !== undefined).length, row.what).toBe(3);
+    }
+  });
+
+  it('does NOT report UNDETERMINED for a case whose every value is measured', () => {
+    // The control, on the same shape with the flag removed: the new cause has to be reachable only where a
+    // value is actually missing, or it would swallow every miss.
+    const [miss] = classifyMiss(
+      wrongCase({ selfAnomaly: 0.4, logScore: 0 }, { selfAnomaly: 0.9, logScore: 0.2 }),
+      { logWeight: 1 },
+    );
+    expect(miss!.decidedBy).not.toBe('undetermined');
     expect(miss!.sourceAnomaly).toBe(0.4);
   });
 
@@ -1818,7 +1926,12 @@ describe('the attribution vocabulary is a census, not a sample', () => {
     expect(MISS_ORDER.slice(0, MISS_DECIDED_BY.length)).toEqual([...MISS_DECIDED_BY]);
     expect(new Set(MISS_ORDER).size).toBe(MISS_ORDER.length);
     // The three that are not a set of terms come last, so the terms read as a block.
-    expect(MISS_ORDER.slice(MISS_DECIDED_BY.length)).toEqual(['tie', 'unexplained', 'absent']);
+    expect(MISS_ORDER.slice(MISS_DECIDED_BY.length)).toEqual([
+      'tie',
+      'unexplained',
+      'absent',
+      'undetermined',
+    ]);
   });
 });
 
@@ -9297,5 +9410,139 @@ describe('the allow-dropped-blocks flag is the deliberate way past the refusal, 
 
   it('is named in the usage, so a reader who hits the refusal can find the way past it', () => {
     expect(() => parseAnalyzeArgs(['--dump'])).toThrow(/--allow-dropped-blocks/);
+  });
+});
+
+describe('drawBaseField — a field with no value is not drawn', () => {
+  // The type widening put `undefined` into `selfAnomaly` and `logScore`, and the resampler had to decide what to
+  // do with it. The rule is the resampler's own, one step further out: a field the artifact never stated is not
+  // approximated to a quantum, so it is left alone AND the draw is not spent — the ensemble walks one `next`
+  // stream for every field of every service, so a draw spent here would shift every later field by one.
+
+  it('leaves an absent value absent, and does not advance the stream', () => {
+    let draws = 0;
+    const next = () => {
+      draws++;
+      return 0.5;
+    };
+    expect(drawBaseField(undefined, 0.0005, next)).toBeUndefined();
+    expect(draws).toBe(0);
+  });
+
+  it('draws a measured value by the box quantum, and consumes exactly one draw', () => {
+    let draws = 0;
+    const next = () => {
+      draws++;
+      return 0.5;
+    };
+    // `unit * 2 - 1` puts a `0.5` draw at the centre, so the value is returned unchanged and the assertion is
+    // about the DRAW rather than about the arithmetic.
+    expect(drawBaseField(0.75, 0.0005, next)).toBe(0.75);
+    expect(draws).toBe(1);
+  });
+});
+
+describe('drawBaseField — a field with no value is not drawn', () => {
+  // The type widening put `undefined` into `selfAnomaly` and `logScore`, and the resampler had to decide what to
+  // do with it. The rule is the resampler's own, one step further out: a field the artifact never stated is not
+  // approximated to a quantum, so it is left alone AND the draw is not spent — the ensemble walks one `next`
+  // stream for every field of every service, so a draw spent here would shift every later field by one.
+
+  it('leaves an absent value absent, and does not advance the stream', () => {
+    let draws = 0;
+    const next = () => {
+      draws++;
+      return 0.5;
+    };
+    expect(drawBaseField(undefined, 0.0005, next)).toBeUndefined();
+    expect(draws).toBe(0);
+  });
+
+  it('draws a measured value by the box quantum, and consumes exactly one draw', () => {
+    let draws = 0;
+    const next = () => {
+      draws++;
+      return 0.5;
+    };
+    // `unit * 2 - 1` puts a `0.5` draw at the centre, so the value is returned unchanged and the assertion is
+    // about the DRAW rather than about the arithmetic.
+    expect(drawBaseField(0.75, 0.0005, next)).toBe(0.75);
+    expect(draws).toBe(1);
+  });
+});
+
+describe('buildWeightSeparationCases — the solver is given only the cases it can solve', () => {
+  // The affine comparison reads `target.base − rival.base` for every rival a rule could promote, so one
+  // unformable base makes the case's answers undefined rather than conservative. The case is therefore skipped,
+  // and the number of skipped cases is the census's own `self-anomaly` / `log-score` value reach on the same
+  // artifact — reported by the instrument whose job that count is, not invented here.
+
+  const WEIGHTS = { logWeight: 1 } as const;
+
+  it('gives the solver a case whose every base it can form', () => {
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4, logScore: 0.1 }),
+          serviceLine({ serviceId: 'ts-rival', selfAnomaly: 0.9, logScore: 0.2 }),
+        ],
+        topPredictions: ['ts-rival'],
+      }),
+    );
+    expect(buildWeightSeparationCases(cases, WEIGHTS)).toHaveLength(1);
+  });
+
+  it('skips a case with ONE flagged base, and the population shrinks rather than the base being fabricated', () => {
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4, logScore: 0.1 }),
+          serviceLine({ serviceId: 'ts-rival', selfAnomaly: 0.9, logScore: Number.NaN }),
+        ],
+        topPredictions: ['ts-rival'],
+      }),
+    );
+    expect(cases[0]!.services.some((service) => service.logScore === undefined)).toBe(true);
+    expect(buildWeightSeparationCases(cases, WEIGHTS)).toEqual([]);
+  });
+});
+
+describe('buildWeightSeparationCases — the solver is given only the cases it can solve', () => {
+  // The affine comparison reads `target.base − rival.base` for every rival a rule could promote, so one
+  // unformable base makes the case's answers undefined rather than conservative. The case is therefore skipped,
+  // and the number of skipped cases is the census's own `self-anomaly` / `log-score` value reach on the same
+  // artifact — reported by the instrument whose job that count is, not invented here.
+
+  const WEIGHTS = { logWeight: 1 } as const;
+
+  it('gives the solver a case whose every base it can form', () => {
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4, logScore: 0.1 }),
+          serviceLine({ serviceId: 'ts-rival', selfAnomaly: 0.9, logScore: 0.2 }),
+        ],
+        topPredictions: ['ts-rival'],
+      }),
+    );
+    expect(buildWeightSeparationCases(cases, WEIGHTS)).toHaveLength(1);
+  });
+
+  it('skips a case with ONE flagged base, and the population shrinks rather than the base being fabricated', () => {
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4, logScore: 0.1 }),
+          serviceLine({ serviceId: 'ts-rival', selfAnomaly: 0.9, logScore: Number.NaN }),
+        ],
+        topPredictions: ['ts-rival'],
+      }),
+    );
+    expect(cases[0]!.services.some((service) => service.logScore === undefined)).toBe(true);
+    expect(buildWeightSeparationCases(cases, WEIGHTS)).toEqual([]);
   });
 });

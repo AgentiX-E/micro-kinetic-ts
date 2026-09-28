@@ -43,6 +43,8 @@ import {
 import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 import {
   blendScores,
+  byAnomalyDescending,
+  byScoreDescending,
   canReconstructLogFlood,
   dominantFamily,
   dominantFamilyCensus,
@@ -1065,6 +1067,7 @@ describe('modeScreen', () => {
       dumpMode: 'logicHttp',
       source: 'logicHttp',
       cases: 1,
+      unreadableCases: 0,
       violations: 0,
       gained: 0,
       regressed: 0,
@@ -1312,7 +1315,9 @@ describe('formatters', () => {
     const fidelity = oracleFidelity(coherent, OPTS);
     expect(fidelity.recordedLogViolations).toBe(0);
     expect(fidelity.recordedLogFlips).toBe(0);
-    expect(fidelity.unreconstructableCases).toBe(0);
+    expect(fidelity.unpinnedFloodCases).toBe(0);
+    expect(fidelity.unreadableLogCases).toBe(0);
+    expect(fidelity.reconstructableCases).toBe(1);
     const text = formatFidelity(fidelity, OPTS);
     expect(text).toContain('EXACT');
     expect(text).toContain('no error bar');
@@ -1339,8 +1344,12 @@ describe('formatters', () => {
     // Both facts always print: the counters are about the reconstructable subset, so a
     // line that showed only them would read as a clean whole-dump reconstruction.
     expect(text).toContain('services above 6e-4: 0');
-    expect(text).toContain('1/1 cases predate the overlap count');
+    expect(text).toContain('1/1 cases are unreconstructable');
+    expect(text).toContain('1 predate the overlap count');
     expect(text).toContain('bracketed but not pinned');
+    // And it names the provenance that FIRED. The sentence used to assert the one it was written for, so a case
+    // excluded for the other reason printed an explanation that was false of it.
+    expect(text).not.toContain('no recorded term to reproduce');
     expect(text).not.toContain('EXACT');
     // And no mode row is drawn from a flood it cannot recover. `count` never consults
     // the HTTP half, so its row IS drawn — the filter is per row, not per dump.
@@ -1708,6 +1717,7 @@ describe('the `all` mode — the flood the engine computes when it admits every 
       dumpMode: 'all',
       source: 'all',
       cases: 1,
+      unreadableCases: 0,
       violations: 0,
       gained: 0,
       regressed: 0,
@@ -1818,6 +1828,7 @@ describe('the `logicHttpJoint` gate — the fresh ablation the engine’s own do
       dumpMode: 'logicHttpJoint',
       source: 'logicHttpJoint',
       cases: 1,
+      unreadableCases: 0,
       violations: 0,
       gained: 0,
       regressed: 0,
@@ -1851,6 +1862,10 @@ describe('the joint gate’s footprint — the row’s net is not its mechanism'
       medianCaseDensity: 1 / 3,
       ownerCases: 1,
       ownerSuppressed: 1,
+      // Both endpoints of the graph are rows the block SCORES, so the reach above is exact rather
+      // than a floor. The field is asserted at zero rather than omitted, because "no edge was
+      // refused" and "nobody counted" are different statements and only the first is true here.
+      undecidedEdges: 0,
     });
     expect(formatModeScreen(screen)).toContain('OWNER is itself withdrawn in 1/1');
   });
@@ -1872,5 +1887,593 @@ describe('the joint gate’s footprint — the row’s net is not its mechanism'
     const screen = modeScreen(noGraph, OPTS);
     expect(screen.jointFootprint).toBeUndefined();
     expect(formatModeScreen(screen)).not.toContain('joint gate footprint');
+  });
+});
+
+describe('the joint gate REFUSES an edge it cannot order, rather than reading a flagged anomaly as 0', () => {
+  // A block's `selfAnomaly` is the only input this gate reads, and the reader now stores a flagged
+  // one as `undefined`. The gate's lookup used one `?? 0` for TWO different absences: a service the
+  // block does not describe — for which the engine's own tree holds no score either, so 0 is the
+  // engine's reading and stays — and a service the block DESCRIBES and declines to score, for which
+  // 0 is a claim the artifact does not make. The second is not cosmetic. `0` is the least anomalous
+  // value there is, so reading it there names the flagged service the most quiescent one in its own
+  // graph and withdraws the framework-HTTP half from every caller of it.
+  //
+  // The three-way fixture below is what makes the difference legible: the SAME graph with the
+  // callee's anomaly stated at 0 and stated at 0.9 gives opposite withdrawals, and a callee whose
+  // anomaly the block flagged gives neither.
+
+  /** One case's services, parsed through the producer so a non-finite value renders as its token. */
+  function servicesOf(specs: readonly ServiceSpec[]): DiagnosedCase['services'] {
+    const parsed = casesOf(block(specs));
+    expect(parsed).toHaveLength(1);
+    return parsed[0]!.services;
+  }
+
+  it('withdraws from the caller of a callee the block states as 0, because 0 IS a measurement', () => {
+    // The control in the direction that matters: the refusal below is about the ABSENCE of a value,
+    // not about the value zero. `ts-emitter` owns the framework-HTTP flood and calls a callee stated
+    // at 0, so the callee is the quiescent one, the predicate `0 > 0.2` is false, and the emitter
+    // KEEPS its half — a slope of 1, since it also owns the case's flood.
+    const quiet = servicesOf([
+      { serviceId: 'ts-emitter', selfAnomaly: 0.2, http: 4 },
+      { serviceId: 'ts-root', selfAnomaly: 0, logic: 2 },
+    ]);
+    expect(
+      logSlopesForMode(quiet, 'logicHttpJoint', 0.5, ['ts-emitter>ts-root']).get('ts-emitter'),
+    ).toBeCloseTo(1, 12);
+    // …and the SAME graph with the callee stated at 0.9 fires the gate, so the emitter's own
+    // downstream call is what broke: withdrawn, its numerator is 0, and the term omits a zero rather
+    // than carrying it. The two assertions differ by the callee's VALUE and by nothing else.
+    const loud = servicesOf([
+      { serviceId: 'ts-emitter', selfAnomaly: 0.2, http: 4 },
+      { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 2 },
+    ]);
+    expect(
+      logSlopesForMode(loud, 'logicHttpJoint', 0.5, ['ts-emitter>ts-root']).has('ts-emitter'),
+    ).toBe(false);
+  });
+
+  it('refuses the case when the callee’s anomaly is the token, instead of keeping the half on a 0', () => {
+    // The reading this replaces: `anomaly.get('ts-root') ?? 0` made the flagged callee the quietest
+    // service in the graph, so `0 > 0.2` was false — no withdrawal — and the term came back with the
+    // SAME number as the `quiet` case above while resting on a value the block declined to state. The
+    // two readings are indistinguishable in the output and opposite in what they claim, which is why
+    // the answer is a refusal rather than a default.
+    const flagged = servicesOf([
+      { serviceId: 'ts-emitter', selfAnomaly: 0.2, http: 4 },
+      { serviceId: 'ts-root', selfAnomaly: Number.NaN, logic: 2 },
+    ]);
+    expect(flagged.find((one) => one.serviceId === 'ts-root')!.selfAnomaly).toBeUndefined();
+    expect(() => logSlopesForMode(flagged, 'logicHttpJoint', 0.5, ['ts-emitter>ts-root'])).toThrow(
+      /flagged as non-finite/,
+    );
+    expect(() =>
+      logSlopesForMode(flagged, 'logicHttpJoint', 0.5, ['ts-emitter>ts-root']),
+    ).not.toThrow(/call graph/);
+    // The refusal is the GATE's: the same case in the unjointed mode is readable, so the counts are
+    // all there and what is missing is the comparison.
+    expect(
+      logSlopesForMode(flagged, 'logicHttp', 0.5, ['ts-emitter>ts-root']).get('ts-emitter'),
+    ).toBeCloseTo(1, 12);
+  });
+
+  it('refuses on the EMITTER side too, where the old 0 would have withdrawn its own half', () => {
+    // The other side of the same predicate, and the one where the defect is loudest: a flagged
+    // EMITTER read as 0 is by construction less anomalous than a callee stated at 0.9, so the gate
+    // withdrew the framework-HTTP half from the very service that OWNS the flood — the gate deleting
+    // the evidence it was built to keep, on the strength of a number the artifact does not state.
+    // Both sides of the inequality are asserted, because a rule about one of them is not a rule
+    // about the edge.
+    const flagged = servicesOf([
+      { serviceId: 'ts-emitter', selfAnomaly: Number.NaN, http: 4 },
+      { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 2 },
+    ]);
+    expect(() => logSlopesForMode(flagged, 'logicHttpJoint', 0.5, ['ts-emitter>ts-root'])).toThrow(
+      /flagged as non-finite/,
+    );
+  });
+
+  it('still reads a service the block does NOT describe as 0, which is the engine’s own reading', () => {
+    // The half of the `?? 0` that was right, kept and now asserted: the engine's victim set is built
+    // over ITS OWN tree, where a node it holds no score for contributes nothing — so an edge into a
+    // service the dump never lists is decided, not refused. Losing this half would turn every dump
+    // whose graph names a pruned node into an unreadable one.
+    const services = servicesOf([
+      { serviceId: 'ts-emitter', selfAnomaly: 0.2, http: 4 },
+      { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 2 },
+    ]);
+    const slopes = logSlopesForMode(services, 'logicHttpJoint', 0.5, ['ts-emitter>ts-absent']);
+    expect(slopes.get('ts-emitter')).toBeCloseTo(1, 12);
+  });
+
+  it('drops the case from the joint ROW, counts it, and says which cause shortened the row', () => {
+    // The row's population and the rebuild are one rule — a row kept over a case the rebuild throws
+    // on is a report that takes the whole screen down. Two cases, one decidable, so the row survives
+    // to carry the count; the count is over the SCORABLE population, like the flood refusals, because
+    // the refusals ARE the cases the row cannot show.
+    const decidable = block(
+      [
+        { serviceId: 'ts-emitter', selfAnomaly: 0.2, http: 4 },
+        { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 2 },
+      ],
+      { groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+    );
+    const undecidable = block(
+      [
+        { serviceId: 'ts-emitter', selfAnomaly: 0.2, http: 4 },
+        { serviceId: 'ts-root', selfAnomaly: Number.NaN, logic: 2 },
+      ],
+      { datapack: 'dp-flag', groundTruth: ['ts-root'], topPredictions: ['ts-root'] },
+    );
+    const cases = casesOf(decidable, undecidable).map((kase) => ({
+      ...kase,
+      edges: ['ts-emitter>ts-root'],
+    }));
+    const screen = modeScreen(cases, OPTS);
+    const jointRow = screen.rows.find((row) => row.source === 'logicHttpJoint')!;
+    expect(jointRow.cases).toBe(1);
+    expect(jointRow.gateRefusedCases).toBe(1);
+    // The flood is perfectly recoverable on both cases, so the OTHER cause's counter stays at zero:
+    // the two mechanisms are counted independently and neither reads as the other.
+    expect(jointRow.unprovedRows).toBe(0);
+    // The baseline reconstructs nothing and refuses nothing, so the field is absent rather than 0.
+    expect(screen.rows[0]!.gateRefusedCases).toBeUndefined();
+    // A mode that needs no graph refuses nothing here, so a `0` there would be a claim about a gate
+    // that was never consulted.
+    expect(screen.rows.find((row) => row.source === 'logicHttp')!.gateRefusedCases).toBeUndefined();
+    const text = formatModeScreen(screen);
+    expect(text).toContain('1 case(s) dropped: the joint gate cannot order an edge');
+    // …and NOT the other cause, which is the whole reason the clause is chosen from the counts
+    // rather than written once.
+    expect(text).not.toContain('no `both=` in this dump');
+    expect(text).toContain('[1/2 cases]');
+  });
+
+  it('reports the refused edges on the footprint, so its withdrawal share is read as a floor', () => {
+    // The footprint's `victims` counts only the edges the gate DECIDED, so with a refusal beside it
+    // the share is a lower bound. Printed beside the share and only when non-zero, which is the
+    // difference between "the artifact states every anomaly the gate reads" and "somebody forgot".
+    //
+    // TWO cases, and the first is what makes the footprint exist at all: it is drawn only when the
+    // joint row is, and a row with no case to measure is omitted. The second case is the refusal —
+    // both of its edges end at the flagged row, so it contributes a refusal and no victim.
+    const decidable = block(
+      [
+        { serviceId: 'ts-callee', selfAnomaly: 0.9 },
+        { serviceId: 'ts-emitter', selfAnomaly: 0.1, http: 4 },
+      ],
+      { groundTruth: ['ts-callee'], topPredictions: ['ts-callee'] },
+    );
+    const refused = block(
+      [
+        { serviceId: 'ts-flag', selfAnomaly: Number.NaN, logic: 2 },
+        { serviceId: 'ts-caller', selfAnomaly: 0.3, http: 2 },
+      ],
+      { datapack: 'dp-flag', groundTruth: ['ts-caller'], topPredictions: ['ts-flag'] },
+    );
+    const cases = casesOf(decidable, refused).map((kase) =>
+      kase.datapack === 'dp-1'
+        ? { ...kase, edges: ['ts-emitter>ts-callee'] }
+        : { ...kase, edges: ['ts-caller>ts-flag', 'ts-flag>ts-caller'] },
+    );
+    const screen = modeScreen(cases, OPTS);
+    // One victim, from the case the gate could read; two refused edges, from the case it could not.
+    expect(screen.jointFootprint).toMatchObject({ victims: 1, undecidedEdges: 2 });
+    const jointRow = screen.rows.find((row) => row.source === 'logicHttpJoint')!;
+    expect(jointRow.cases).toBe(1);
+    expect(jointRow.gateRefusedCases).toBe(1);
+    const text = formatModeScreen(screen);
+    expect(text).toContain('2 edge(s) undecided');
+    expect(text).toContain('LOWER bound');
+    // The control: a dump whose every edge is decided prints no such clause, so the assertion above
+    // is about the refusal rather than about the sentence being unconditional.
+    const clean = casesOf(
+      block(
+        [
+          { serviceId: 'ts-callee', selfAnomaly: 0.9 },
+          { serviceId: 'ts-emitter', selfAnomaly: 0.1, http: 4 },
+        ],
+        { groundTruth: ['ts-callee'], topPredictions: ['ts-callee'] },
+      ),
+    ).map((kase) => ({ ...kase, edges: ['ts-emitter>ts-callee'] }));
+    const cleanText = formatModeScreen(modeScreen(clean, OPTS));
+    expect(cleanText).not.toContain('edge(s) undecided');
+    expect(cleanText).not.toContain('LOWER bound');
+  });
+
+  it('omits the joint row entirely when NO case is decidable, rather than drawing an empty one', () => {
+    // The row's own rule: a reconstruction with no case to measure is omitted, because an empty row
+    // would print as a mode that scored nothing. The disposition is the same as for a dump with no
+    // graph — and the self-check, which throws on a case it cannot rebuild, must not take the report
+    // down on the way there.
+    const onlyFlagged = casesOf(
+      block(
+        [
+          { serviceId: 'ts-emitter', selfAnomaly: 0.2, http: 4 },
+          { serviceId: 'ts-root', selfAnomaly: Number.NaN, logic: 2 },
+        ],
+        { groundTruth: ['ts-root'], topPredictions: ['ts-root'], logMode: 'logicHttpJoint' },
+      ),
+    ).map((kase) => ({ ...kase, edges: ['ts-emitter>ts-root'] }));
+    const screen = modeScreen(onlyFlagged, OPTS);
+    expect(() => formatModeScreen(screen)).not.toThrow();
+    expect(screen.rows.map((row) => row.source)).not.toContain('logicHttpJoint');
+    expect(screen.jointFootprint).toBeUndefined();
+    // The self-check's own population: the case is excluded by a condition with its own explanation
+    // (the mode's graph half), not counted as unreadable — that counter is about a flagged LOG, and
+    // this case's log is a value.
+    expect(screen.selfCheck).toMatchObject({ cases: 0, unreadableCases: 0 });
+  });
+});
+
+describe('an undetermined value is not a score, and not a zero either', () => {
+  // The producer renders a non-finite value as the literal `nonfinite` — a deliberate TRIPWIRE its own suite
+  // asserts. The parser used to store `Number('nonfinite')` = `NaN` in `selfAnomaly`/`logScore`, and `NaN` IS a
+  // `number`: every consumer's "is this measured?" test answered YES, `log1p(NaN)` carried it into a score, and
+  // `rankScored`'s comparator — `if (b.score !== a.score) return b.score - a.score` — returned `NaN` (falsy =
+  // "equal") so the entry kept the position the ROW ORDER gave it.
+  //
+  // The fixtures below produce the token the way the producer does: a real `Number.NaN` fed through
+  // `formatFSE26Diagnostic`, not a typed-in string. A fixture that wrote `selfAnomaly=nonfinite` itself would be
+  // measuring this file.
+
+  /** A case whose first service's anomaly the block flagged, and whose second is a clean measurement. */
+  function flaggedAnomaly(): DiagnosedCase {
+    const text = block([
+      { serviceId: 'ts-a', selfAnomaly: Number.NaN },
+      { serviceId: 'ts-b', selfAnomaly: 0.5 },
+    ]);
+    return casesOf(text)[0]!;
+  }
+
+  it('carries `undefined` for the flagged field, on the parser as well as on the census', () => {
+    const kase = flaggedAnomaly();
+    const flagged = kase.services.find((one) => one.serviceId === 'ts-a')!;
+    expect(flagged.selfAnomaly).toBeUndefined();
+    // The control: on the same block, the other service is a number — so the assertion above is about the
+    // VALUE rather than about the fixture having failed to render.
+    expect(kase.services.find((one) => one.serviceId === 'ts-b')!.selfAnomaly).toBe(0.5);
+  });
+
+  it('gives that service NO score, at the weight where the term votes', () => {
+    const kase = flaggedAnomaly();
+    const lat = latencySlopes(kase.services, OPTS.latFloor);
+    const scores = blendScores(kase, OPTS, 'recorded', lat);
+    // The metric term is `log1p(selfAnomaly)` and it is always on, so a flagged anomaly leaves the sum
+    // without an input. `0` would be the reading "measured and worth nothing", which is a different statement.
+    expect(scores.get('ts-a')).toBeUndefined();
+    expect(Number.isFinite(scores.get('ts-b')!)).toBe(true);
+  });
+
+  it('gives it a score at a weight where the flagged term does NOT vote, which is the exact rule', () => {
+    // The rule is per configured COEFFICIENT, not "any term in the formula". A configuration with the log
+    // weight at 0 does not read `logScore` at all, so `0 * undefined` must not be allowed to poison a score
+    // whose every input is present — and that is measurable in both directions.
+    const text = block([
+      { serviceId: 'ts-a', logScore: Number.NaN },
+      { serviceId: 'ts-b', logScore: 0.6 },
+    ]);
+    const kase = casesOf(text)[0]!;
+    expect(kase.services.find((one) => one.serviceId === 'ts-a')!.logScore).toBeUndefined();
+    const lat = latencySlopes(kase.services, OPTS.latFloor);
+    expect(blendScores(kase, { ...OPTS, logWeight: 0 }, 'recorded', lat).get('ts-a')).toBeDefined();
+    expect(
+      blendScores(kase, { ...OPTS, logWeight: 1 }, 'recorded', lat).get('ts-a'),
+    ).toBeUndefined();
+  });
+
+  it('ranks an unmeasured score LAST, and reaches the id tiebreak it never used to reach', () => {
+    const kase = flaggedAnomaly();
+    const lat = latencySlopes(kase.services, OPTS.latFloor);
+    const ranked = rankCase(kase, OPTS, 'recorded', lat);
+    // `ts-b` is measured, `ts-a` is not: an unmeasured score is not a low one, it is off the axis, so it comes
+    // after every measured service including the ones it used to tie with at `NaN`.
+    expect(ranked.order).toEqual(['ts-b', 'ts-a']);
+    // And the SAME answer with the rows reversed, which is what makes it an order rather than a row order: the
+    // comparator this replaced returned `NaN` for a `NaN` operand, i.e. "equal", so a stable sort preserved the
+    // input order and this assertion would have read `['ts-a', 'ts-b']`.
+    const reversed = casesOf(
+      block([
+        { serviceId: 'ts-b', selfAnomaly: 0.5 },
+        { serviceId: 'ts-a', selfAnomaly: Number.NaN },
+      ]),
+    )[0]!;
+    expect(rankCase(reversed, OPTS, 'recorded', lat).order).toEqual(['ts-b', 'ts-a']);
+  });
+
+  it('counts a flagged recorded log as UNRECONSTRUCTABLE rather than as zero violations', () => {
+    // The counter's own contract: "Non-zero makes `recordedLogViolations` and the mode pre-screen meaningless
+    // rather than zero: those counters are reported as UNAVAILABLE, not as clean." A service whose recorded log
+    // the block flagged has no value to compare a derived one against, so the case is the second provenance of
+    // exactly that fact.
+    const clean = casesOf(
+      block([
+        { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 3 },
+        { serviceId: 'ts-other', selfAnomaly: 0.4, logic: 1 },
+      ]),
+    );
+    const flagged = casesOf(
+      block([
+        { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 3 },
+        { serviceId: 'ts-other', selfAnomaly: 0.4, logScore: Number.NaN },
+      ]),
+    );
+    const readable = oracleFidelity(clean, OPTS);
+    const refused = oracleFidelity(flagged, OPTS);
+    expect(readable.reconstructableCases).toBe(1);
+    expect(readable.unreadableLogCases).toBe(0);
+    expect(refused.reconstructableCases).toBe(0);
+    expect(refused.unreadableLogCases).toBe(1);
+    // The two provenances are INDEPENDENT facts, so neither is the other's complement: the flood is perfectly
+    // pinned on the flagged fixture (`err` = the flood), and the counter that answers "does this dump predate
+    // the overlap count" must not move because a value was refused.
+    expect(refused.unpinnedFloodCases).toBe(0);
+  });
+
+  it('renders the provenance that fired, rather than the one the sentence was written for', () => {
+    // The rendered sentence says WHY a case is unreconstructable, and before this fence it said one reason
+    // only: "predate the overlap count (`both=`)". That is false of a case whose flood is pinned and whose
+    // producer refused to render a value — the reader would go looking for an old dump that is not there.
+    const flagged = casesOf(
+      block([
+        { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 3, err: 3 },
+        { serviceId: 'ts-other', selfAnomaly: 0.4, logic: 1, logScore: Number.NaN, err: 1 },
+      ]),
+    );
+    const text = formatFidelity(oracleFidelity(flagged, OPTS), OPTS);
+    expect(text).toContain('1/1 cases are unreconstructable');
+    expect(text).toContain('no recorded term to reproduce');
+    // The control, in the other direction: the sentence must NOT name the provenance that did not fire.
+    expect(text).not.toContain('predate the overlap count');
+    // And a coherent dump prints no such line at all, so the assertion above is about the reason rather than
+    // about the line existing for every input.
+    const coherent = casesOf(
+      block([
+        { serviceId: 'ts-root', selfAnomaly: 0.9, logic: 3, err: 3 },
+        { serviceId: 'ts-other', selfAnomaly: 0.4, logic: 1, err: 1 },
+      ]),
+    );
+    expect(formatFidelity(oracleFidelity(coherent, OPTS), OPTS)).not.toContain('unreconstructable');
+  });
+
+  it('counts the two provenances INDEPENDENTLY, so a case that fails both is in both', () => {
+    // A partition would have to hide one of the two facts, and the one it hid is the one nobody could look up:
+    // the renderer prints the total from the population the counters were measured over, so it subtracts
+    // nothing and adds nothing, and each counter is free to be about every case that carries its own fact.
+    // Here the flood is unpinned AND a log is flagged — one case, both reasons, and both counters read 1.
+    const both = casesOf(
+      block([{ serviceId: 'ts-root', logic: 2, http: 3, logScore: Number.NaN }], {
+        omitOverlap: true,
+      }),
+    );
+    const fidelity = oracleFidelity(both, OPTS);
+    expect(fidelity.reconstructableCases).toBe(0);
+    expect(fidelity.unpinnedFloodCases).toBe(1);
+    expect(fidelity.unreadableLogCases).toBe(1);
+    const text = formatFidelity(fidelity, OPTS);
+    expect(text).toContain('1/1 cases are unreconstructable');
+    expect(text).toContain('1 predate the overlap count');
+    expect(text).toContain('1 carry a log the block flagged');
+  });
+
+  it('drops a case whose recorded log the block flagged from EVERY row, the baseline included', () => {
+    // A row is a MODE against the BASELINE, and the baseline IS the recorded log term: on a case whose recorded
+    // log the block flagged, `blendScores` gives every service an undetermined score, so the ranking falls back
+    // to `rankScored`'s id order rather than to the engine's. A row kept over such a case would book that
+    // degeneracy as the mode's effect — a measurement of this reader wearing the mode's name.
+    //
+    // The condition therefore does not live in the mode's branch: it is the baseline's own requirement, and the
+    // baseline is every row's.
+    const clean = casesOf(
+      block([
+        { serviceId: 'ts-root', logic: 5, http: 4 },
+        { serviceId: 'ts-victim', logic: 1, http: 1 },
+      ]),
+    );
+    const flagged = casesOf(
+      block([
+        { serviceId: 'ts-root', logic: 5, http: 4 },
+        { serviceId: 'ts-victim', logScore: Number.NaN, logic: 1, http: 1 },
+      ]),
+    );
+    expect(flagged[0]!.services.some((service) => service.logScore === undefined)).toBe(true);
+    // The control first, so the assertion after it is about the exclusion rather than about a table that never
+    // had a case to begin with.
+    const cleanRows = modeScreen(clean, OPTS).rows;
+    expect(cleanRows.length).toBeGreaterThan(1);
+    for (const row of cleanRows) expect([row.source, row.cases]).toEqual([row.source, 1]);
+    // Every surviving row reads 0, and the only survivor is the baseline — a reconstruction with no case to
+    // measure is omitted, so the mode rows are GONE rather than printed as modes that scored nothing.
+    const flaggedRows = modeScreen(flagged, OPTS).rows;
+    expect(flaggedRows.map((row) => row.source)).toEqual(['recorded']);
+    for (const row of flaggedRows) expect([row.source, row.cases]).toEqual([row.source, 0]);
+  });
+
+  it('measures the self-check over ITS OWN population, not over the row it verifies', () => {
+    // The check used to report the ROW's size as its own denominator. The two coincide on a single-mode dump,
+    // which is every dump measured so far, and they separate exactly where the check has a condition the row
+    // does not: the check exists to ask whether the mode the run USED is the mode the reader rebuilds, so a case
+    // recorded in another mode is not in its population at all. Here the `logicHttp` row is measured on both
+    // cases and the check on the first one only, and the printed number is the check's.
+    const first = block([
+      { serviceId: 'ts-root', logic: 5, http: 4 },
+      { serviceId: 'ts-victim', logic: 1, http: 1 },
+    ]);
+    const second = block(
+      [
+        { serviceId: 'ts-root', logic: 5, http: 4 },
+        { serviceId: 'ts-victim', logic: 1, http: 1 },
+      ],
+      { datapack: 'dp-2', logMode: 'count', mode: 'count' },
+    );
+    const screen = modeScreen(casesOf(first, second), OPTS);
+    const row = screen.rows.find((one) => one.source === 'logicHttp')!;
+    expect(row.cases).toBe(2);
+    expect(screen.selfCheck).toMatchObject({ dumpMode: 'logicHttp', cases: 1, unreadableCases: 0 });
+    // The sentence and the number agree, which is the whole point of computing both in one loop.
+    expect(formatModeScreen(screen)).toContain('over 1 cases');
+  });
+
+  it('names the exclusion rather than printing a vacuous clean check', () => {
+    // "0 service(s) differ over 0 cases" is vacuously true. Rendered as `reproduces the printed term` it is a
+    // claim about measurements taken, made where none were — the reading this register refuses wherever it is
+    // reachable. A dump whose only case the block flagged reaches it.
+    const flagged = casesOf(
+      block([
+        { serviceId: 'ts-root', logic: 5, http: 4 },
+        { serviceId: 'ts-victim', logScore: Number.NaN, logic: 1, http: 1 },
+      ]),
+    );
+    const screen = modeScreen(flagged, OPTS);
+    expect(screen.selfCheck).toMatchObject({ cases: 0, unreadableCases: 1, violations: 0 });
+    const text = formatModeScreen(screen);
+    expect(text).toContain('NO case is comparable');
+    expect(text).toContain('1 case(s) carry a recorded log the block flagged');
+    expect(text).not.toContain('reproduces the printed term');
+    // The control, in the other direction: the same dump with a readable log DOES print the verdict, so the
+    // assertion above is about the state rather than about the sentence being unreachable.
+    const clean = casesOf(
+      block([
+        { serviceId: 'ts-root', logic: 5, http: 4 },
+        { serviceId: 'ts-victim', logic: 1, http: 1 },
+      ]),
+    );
+    const cleanText = formatModeScreen(modeScreen(clean, OPTS));
+    expect(cleanText).toContain('reproduces the printed term');
+    expect(cleanText).not.toContain('not compared');
+  });
+
+  it('distinguishes the two reasons a check can have no case at all', () => {
+    // The same state — nothing compared — reached for the OTHER reason: this dump cannot pin the union, so the
+    // reader refuses the reconstruction. The two absences are different (one is a population the block
+    // declined to describe, the other a flood the artifact never printed) and the line has to say which.
+    const unpinned = casesOf(
+      block([{ serviceId: 'ts-root', logic: 2, http: 3 }], { omitOverlap: true }),
+    );
+    const screen = modeScreen(unpinned, OPTS);
+    expect(screen.selfCheck).toMatchObject({ cases: 0, unreadableCases: 0 });
+    const text = formatModeScreen(screen);
+    expect(text).toContain('NO case is comparable');
+    expect(text).toContain('no case in this dump is scorable and reconstructable in that mode');
+    expect(text).not.toContain('flagged a recorded log');
+  });
+
+  it('counts the excluded cases beside a population that still has one', () => {
+    // The PARTIAL reading, which is where the denominator law bites hardest: one case compared, one excluded.
+    // The check used to borrow its denominator from the row, so it would have printed the row's 2 beside a
+    // comparison over 1 — and a silent exclusion is the reading this register refuses.
+    const clean = block([
+      { serviceId: 'ts-root', logic: 5, http: 4 },
+      { serviceId: 'ts-victim', logic: 1, http: 1 },
+    ]);
+    const flagged = block(
+      [
+        { serviceId: 'ts-root', logic: 5, http: 4 },
+        { serviceId: 'ts-victim', logScore: Number.NaN, logic: 1, http: 1 },
+      ],
+      { datapack: 'dp-2' },
+    );
+    const screen = modeScreen(casesOf(clean, flagged), OPTS);
+    expect(screen.selfCheck).toMatchObject({ cases: 1, unreadableCases: 1, violations: 0 });
+    const text = formatModeScreen(screen);
+    expect(text).toContain('over 1 cases');
+    expect(text).toContain('1 case(s) not compared: the block flagged a recorded log');
+    // …and NOT the branch for a population with no case at all, so the two states cannot be confused.
+    expect(text).not.toContain('NO case is comparable');
+  });
+
+  it('answers for the two degenerate populations instead of throwing on them', () => {
+    // An empty dump: there is no case to read a mode off, so the check declines — the `not rebuildable`
+    // reading, which is not the same as a clean one.
+    expect(modeScreen([], OPTS).selfCheck).toBeUndefined();
+    // A JOINT dump WITHOUT a graph. `logSlopesForMode` THROWS for that mode without edges — it refuses to
+    // rebuild the unjointed term and label it joint — so the guard is what keeps a dump produced without the
+    // graph from taking the whole report down. This state is also the one that made the row lookup wrong: the
+    // joint row is omitted for want of a graph, and a check that consulted the rows would have reported
+    // "this reader does not rebuild the dump's mode", which is false of it.
+    const joint = casesOf(
+      block(
+        [
+          { serviceId: 'ts-http', logic: 0, http: 4, selfAnomaly: 0.2 },
+          { serviceId: 'ts-root', logic: 2, selfAnomaly: 0.9 },
+        ],
+        { groundTruth: ['ts-root'], logMode: 'logicHttpJoint' },
+      ),
+    );
+    const screen = modeScreen(joint, OPTS);
+    expect(screen.selfCheck).toMatchObject({ dumpMode: 'logicHttpJoint', cases: 0 });
+    expect(formatModeScreen(screen)).toContain('NO case is comparable');
+    expect(formatModeScreen(screen)).not.toContain('does not rebuild the dump’s mode');
+  });
+
+  it('makes NO claim about a sub-unit maximum where nothing was measured', () => {
+    // `max` starts at `Number.NEGATIVE_INFINITY`, so `max < 1` is true for a case with no measured anomaly at
+    // all — a counter that would report a sub-unit maximum because there was no maximum. The population is the
+    // rescale threshold, so the case needs at least that many candidates to reach the branch.
+    const specs = Array.from({ length: ANOMALY_NORMALIZE_NODE_THRESHOLD }, (_, index) => ({
+      serviceId: `ts-${index}`,
+      selfAnomaly: Number.NaN,
+    }));
+    const kase = casesOf(block(specs))[0]!;
+    expect(kase.services.length).toBeGreaterThanOrEqual(ANOMALY_NORMALIZE_NODE_THRESHOLD);
+    const fidelity = oracleFidelity([kase], OPTS);
+    expect(fidelity.rescaledCases).toBe(1);
+    expect(fidelity.subUnitMaximumCases).toBe(0);
+  });
+});
+
+describe('byScoreDescending — one total order for both axes the oracle sorts on', () => {
+  // A comparator is a property of PAIRS, so it is asserted on pairs. Sorting a three-element array leaves the
+  // answer to TimSort's comparison sequence — which is how the comparator this replaced stayed wrong: the
+  // branches a sort happens to need are not the branches the ORDER promises.
+
+  const anomaly = (serviceId: string, selfAnomaly: number | undefined) => ({
+    serviceId,
+    selfAnomaly,
+  });
+
+  it('orders a measured pair by value, descending, and the anomaly axis is the same function', () => {
+    expect(byAnomalyDescending(anomaly('a', 0.9), anomaly('b', 0.2))).toBeLessThan(0);
+    expect(byAnomalyDescending(anomaly('a', 0.2), anomaly('b', 0.9))).toBeGreaterThan(0);
+  });
+
+  it('puts an undetermined score LAST in both directions', () => {
+    // The two directions, named, because a comparator that is not antisymmetric is not an order — and this is
+    // exactly the pair the old `b.score - a.score` answered with `NaN`, i.e. "equal".
+    expect(byAnomalyDescending(anomaly('a', undefined), anomaly('b', 0.2))).toBeGreaterThan(0);
+    expect(byAnomalyDescending(anomaly('a', 0.2), anomaly('b', undefined))).toBeLessThan(0);
+  });
+
+  it('breaks a tie by service id, in both the measured and the undetermined case', () => {
+    // The engine's own tiebreak. It used to be UNREACHABLE for an undetermined entry, because `NaN !== NaN` sent
+    // the comparator into the value branch, which returned `NaN`.
+    expect(byAnomalyDescending(anomaly('a', 0.5), anomaly('b', 0.5))).toBeLessThan(0);
+    expect(byAnomalyDescending(anomaly('b', 0.5), anomaly('a', 0.5))).toBeGreaterThan(0);
+    expect(byAnomalyDescending(anomaly('a', undefined), anomaly('b', undefined))).toBeLessThan(0);
+    expect(byAnomalyDescending(anomaly('b', undefined), anomaly('a', undefined))).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it('answers 0 for one entry against itself, which is what makes it TOTAL', () => {
+    // A total order needs a ⊑ a. `NaN` made this false for every NaN entry, which is the whole defect: a sort
+    // given a comparator that says "not equal" for an element compared with itself cannot be relied on at all.
+    const one = anomaly('a', undefined);
+    expect(byAnomalyDescending(one, one)).toBe(0);
+    expect(byAnomalyDescending(anomaly('a', 0.5), anomaly('a', 0.5))).toBe(0);
+  });
+
+  it('reads the score through the accessor it is given, so the score axis reuses it', () => {
+    // The generic entry point: the same order over `{serviceId, score}` without a second implementation.
+    const byScore = byScoreDescending<{ serviceId: string; score: number | undefined }>(
+      (entry) => entry.score,
+    );
+    const entries = [
+      { serviceId: 'z', score: undefined },
+      { serviceId: 'a', score: 0.1 },
+      { serviceId: 'm', score: 0.9 },
+    ];
+    expect([...entries].sort(byScore).map((entry) => entry.serviceId)).toEqual(['m', 'a', 'z']);
   });
 });

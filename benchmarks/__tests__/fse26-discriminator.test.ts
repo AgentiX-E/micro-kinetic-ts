@@ -94,7 +94,7 @@ function block(
 function outcome(
   datapack: string,
   covered: readonly string[],
-  features: Readonly<Record<string, number>> = {},
+  features: Readonly<Record<string, number | undefined>> = {},
   faultType = 'JVMMemoryStress',
 ): CaseOutcome {
   return { datapack, faultType, covered, features };
@@ -248,7 +248,15 @@ describe('evaluateRule', () => {
     const outcomes = [outcome('a', ['shipped'], { n: 0 }), outcome('b', ['log only'], { n: 9 })];
     const choice = { config: 'log only', feature: 'n', threshold: 5, direction: 1 } as const;
 
-    expect(evaluateRule(outcomes, choice)).toEqual({ fixed: 1, broken: 0, net: 1 });
+    // `unmeasured` is part of the report rather than absorbed into the two counters: a case the rule cannot
+    // CLASSIFY has not been left with the baseline, it has not been decided, and a feature that is undetermined
+    // exactly on the cases a rule would have broken would otherwise read as a clean rule.
+    expect(evaluateRule(outcomes, choice)).toEqual({
+      fixed: 1,
+      broken: 0,
+      net: 1,
+      unmeasured: 0,
+    });
   });
 });
 
@@ -321,8 +329,10 @@ describe('the degenerate shapes a real dump contains', () => {
     const one = shape({ datapack: 'empty', groundTruth: ['ts-root'], topPredictions: ['ts-root'] });
 
     expect(one).toBeDefined();
+    // Every feature answers a NUMBER here, and that is the point of the case: a dump with no service rows has
+    // no undetermined VALUE, only absent ones, so `undefined` would be the wrong answer for all of them — the
+    // two absences are different and only one of them is undetermined.
     for (const feature of DISCRIMINATOR_FEATURES) {
-      expect(Number.isFinite(one!.features[feature.name]!)).toBe(true);
       expect(one!.features[feature.name]).toBe(0);
     }
   });
@@ -454,5 +464,76 @@ describe('formatDiscriminatorReport', () => {
     const text = formatDiscriminatorReport(discriminatorScreen(outcomes, 5));
 
     expect(text).toContain('log only: fixes 10 and breaks 5');
+  });
+});
+
+describe('a feature the case cannot answer is not a zero', () => {
+  // `one.features[choice.feature] ?? 0` was the reading in both the firing test and the threshold search, and
+  // `??` does not fire on a `NaN` — so a `NaN` feature stayed `NaN`, `NaN >= t` and `NaN <= t` are each false,
+  // and the case was classified as "the rule did not fire". The search also collected the observed values into
+  // `new Set(...)` and sorted them with `(a, b) => a - b`, which returns `NaN` for a `NaN` operand, i.e.
+  // "equal" — so a threshold of `NaN`, a rule that fires on nothing, was a legal answer to `fitStump`.
+
+  const choice = { config: 'log only', feature: 'n', threshold: 5, direction: 1 } as const;
+
+  it('counts a case it cannot classify in `unmeasured`, and in neither of the other two', () => {
+    const outcomes = [
+      outcome('a', ['log only'], { n: 9 }),
+      outcome('b', ['shipped'], { n: undefined }),
+    ];
+    // Both directions in one assertion: the case the rule FIRES on is fixed, and the case it cannot read is
+    // neither fixed nor broken — the reading that matters, because a feature undetermined exactly on the cases
+    // a rule would have broken must not read as a clean rule.
+    expect(evaluateRule(outcomes, choice)).toEqual({
+      fixed: 1,
+      broken: 0,
+      net: 1,
+      unmeasured: 1,
+    });
+  });
+
+  it('never lets the threshold search choose a threshold no value can satisfy', () => {
+    const outcomes = [
+      outcome('a', ['log only'], { n: undefined }),
+      outcome('b', ['shipped'], { n: 3 }),
+      outcome('c', ['log only'], { n: 9 }),
+    ];
+    const fitted = fitStump(outcomes, 'log only', ['n']);
+    expect(fitted).toBeDefined();
+    expect(Number.isFinite(fitted!.threshold)).toBe(true);
+    // And the thresholds it may choose from are the OBSERVED ones, with the undetermined case contributing none.
+    expect([3, 9]).toContain(fitted!.threshold);
+  });
+
+  it('reports NO feature as a non-number on a block whose every formattable field is non-finite', () => {
+    // The whole-case version of the fence the census file owns: this file's fixture goes through the producer,
+    // so the token is the producer's render rather than a string typed here.
+    const specs = [
+      { serviceId: 'ts-a', selfAnomaly: Number.NaN, logScore: Number.NaN },
+      { serviceId: 'ts-b', selfAnomaly: Number.NaN, logScore: Number.NaN },
+      { serviceId: 'ts-c', selfAnomaly: 0.25, logScore: 0.5 },
+      { serviceId: 'ts-d', selfAnomaly: 0.1, logScore: 0.5 },
+    ];
+    const one = caseOutcomes(parseDiagnosticDump(block(specs, { datapack: 'flag' })), OPTS)[0];
+    expect(one).toBeDefined();
+    const illegal: Record<string, string> = {};
+    for (const feature of DISCRIMINATOR_FEATURES) {
+      const value = one!.features[feature.name];
+      if (value !== undefined && !Number.isFinite(value)) {
+        illegal[feature.name] = String(value);
+      }
+    }
+    expect(illegal).toEqual({});
+    // Named, so the answer to a failure is which feature broke rather than "something was NaN": the two
+    // AGGREGATES are unmeasurable on this case and the ORDER STATISTICS still answer, which is the distinction
+    // the feature set's own comment draws.
+    expect(one!.features.metricSpread).toBeUndefined();
+    expect(one!.features.logCoverage).toBeUndefined();
+    expect(one!.features.n).toBe(4);
+    // The ORDER STATISTIC still answers, and the difference is not a detail: the two highest MEASURED anomalies
+    // are `byAnomalyDescending`'s first two whatever the rest hold, so the gap between them is a measurement —
+    // while the spread needs every member, and one undetermined member makes it a lower bound wearing the
+    // spread's name. That is the whole rule, visible in one fixture.
+    expect(one!.features.metricTopGap).toBeCloseTo(0.15, 10);
   });
 });

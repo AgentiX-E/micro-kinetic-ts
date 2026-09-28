@@ -100,9 +100,18 @@ export type LogTermSource =
   'recorded' | 'count' | 'logicHttp' | 'logicHttpJoint' | 'dominant' | 'all';
 
 /** A service and the score a given configuration gives it. */
+/** One service with a score the order is taken over, or the absence of one. */
 interface ScoredService {
   readonly serviceId: string;
-  readonly score: number;
+  /**
+   * The service's score under the term or blend being ranked, or `undefined` when the dump cannot give one.
+   *
+   * `undefined` and not `NaN`: `NaN` satisfies `number`, and a comparator built from it fails in BOTH directions
+   * (`NaN >= t` and `NaN <= t` are each false) while `NaN !== NaN` keeps the id tiebreak from ever being
+   * reached — so a NaN entry stays wherever the ROW ORDER put it and the ranking stops being a function of the
+   * values. See {@link rankScored} for the order that replaces it.
+   */
+  readonly score: number | undefined;
 }
 
 /**
@@ -207,17 +216,59 @@ export function latencySlopes(
 }
 
 /**
+ * Order two entries by a score that may be UNDETERMINED, descending, ties by service id.
+ *
+ * One implementation for both axes the oracle orders on — the anomaly (`selfAnomaly`) and the score
+ * (`blendScores`) — because the two orders are the same question asked of a different quantity, and two
+ * spellings of one comparator is the defect this register keeps recording.
+ *
+ * The order is TOTAL, and that is not a flourish. The comparator this replaced read
+ * `if (b.score !== a.score) return b.score - a.score;` — and `!==` is TRUE when either side is `NaN`, so it
+ * returned `NaN`, which a sort reads as "equal". Two consequences, both measured on the producer's all-non-finite
+ * block before this change: an undetermined entry kept the position the ROW ORDER gave it, and the id tiebreak —
+ * the engine's own — was never reached for it.
+ *
+ * An undetermined score sorts LAST and is not treated as a small one: it is not on this axis at all. That is
+ * deliberately NOT a claim about the engine, which has no such value; it is what makes the order a function of
+ * the SET rather than of the row order.
+ *
+ * @param scoreOf - Reads the score off an entry, `undefined` when the dump cannot give one.
+ * @returns A comparator for `Array.prototype.sort`.
+ */
+export function byScoreDescending<T extends { readonly serviceId: string }>(
+  scoreOf: (entry: T) => number | undefined,
+): (a: T, b: T) => number {
+  const tie = (a: T, b: T): number =>
+    a.serviceId < b.serviceId ? -1 : a.serviceId > b.serviceId ? 1 : 0;
+  return (a, b) => {
+    const left = scoreOf(a);
+    const right = scoreOf(b);
+    // Both undetermined: the id decides, which is the engine's own tiebreak and the reason this is total.
+    if (left === undefined && right === undefined) return tie(a, b);
+    if (left === undefined) return 1;
+    if (right === undefined) return -1;
+    if (left !== right) return right - left;
+    return tie(a, b);
+  };
+}
+
+/**
  * The printer's comparator: self-anomaly descending, service id ascending.
  *
  * Reproduced rather than assumed, which is what makes the fidelity check below
  * independent of the array order the parser happened to produce. `''` sorts first among
  * equals, which is also what the ENGINE's comparator does with an empty id.
+ *
+ * EXPORTED, because it is the one owner of "which of two services has the larger anomaly" and the
+ * discriminator's feature set sorts by this same order.
  */
+export const byAnomalyDescending = byScoreDescending<{
+  readonly serviceId: string;
+  readonly selfAnomaly: number | undefined;
+}>((entry) => entry.selfAnomaly);
+
 function printedOrder(services: DiagnosedCase['services']): DiagnosedCase['services'][number][] {
-  return [...services].sort((a, b) => {
-    if (b.selfAnomaly !== a.selfAnomaly) return b.selfAnomaly - a.selfAnomaly;
-    return a.serviceId < b.serviceId ? -1 : 1;
-  });
+  return [...services].sort(byAnomalyDescending);
 }
 
 /**
@@ -297,12 +348,56 @@ function levelOneFlood(
 }
 
 /**
- * The modes whose gate needs the case's call graph.
+ * The modes whose gate reads the case's call graph.
  *
  * `logicHttpJoint` withdraws the framework-HTTP half for an emitter with a more anomalous callee,
- * which is a statement about an EDGE. A dump that recorded no graph cannot be rebuilt in it.
+ * which is a statement about an EDGE. A dump that recorded no graph cannot be rebuilt in it — and
+ * neither can a case whose graph names a service the block declines to score, which is why the
+ * per-case half of this condition lives in {@link jointGateDecidable} and every row-population
+ * filter that consults this set consults that function beside it.
  */
 const MODE_NEEDS_GRAPH: ReadonlySet<LogTermSource> = new Set<LogTermSource>(['logicHttpJoint']);
+
+/**
+ * Whether one case carries everything the `logicHttpJoint` gate READS.
+ *
+ * TWO requirements, and they are the two ways the gate can be undecidable. The call graph is the
+ * obvious one. The second is the gate's own input: its predicate is a COMPARISON of two services'
+ * anomalies, so a case whose graph names a service the block declines to score cannot be rebuilt
+ * in this mode at all — and that condition is read through the gate's own decision function rather
+ * than by scanning the rows for a flagged value, so the population's rule and the rebuild's rule
+ * are one rule. `MODE_NEEDS_GRAPH` stays the set the row filter consults, because it is a
+ * declaration about the MODE; this is the per-case half of the same predicate.
+ *
+ * @param kase - One parsed case.
+ * @returns `true` when the gate can be decided for every edge of the case.
+ */
+function jointGateDecidable(kase: DiagnosedCase): boolean {
+  return (
+    kase.edges !== undefined && jointGateDecision(kase.services, kase.edges).undecidedEdges === 0
+  );
+}
+
+/**
+ * The `logicHttpJoint` gate's decision for one case: the emitters it withdraws the
+ * framework-HTTP half from, and the edges it cannot ORDER.
+ */
+export interface JointGateDecision {
+  /** The emitter ids the gate withdraws the framework-HTTP half from. */
+  readonly victims: ReadonlySet<string>;
+  /**
+   * Edges the gate cannot order, because the block flagged an endpoint's anomaly.
+   *
+   * A refusal, and it is NOT the same absence as an undescribed node. The two used to be one
+   * `?? 0`: the lookup missed for a service the block does not describe AND for a service it
+   * describes but declines to score, and a `0` for the second says "this service is the least
+   * anomalous" — which withdraws the half from every one of its callers, on the strength of a
+   * number the artifact does not state. The first reading is the ENGINE's own (a node its tree
+   * holds no score for contributes no credit), so it stays; the second is this reader's
+   * fabrication, so it is counted here and refused by the caller.
+   */
+  readonly undecidedEdges: number;
+}
 
 /**
  * The services the `logicHttpJoint` gate withdraws the framework-HTTP half from.
@@ -320,25 +415,41 @@ const MODE_NEEDS_GRAPH: ReadonlySet<LogTermSource> = new Set<LogTermSource>(['lo
  *
  * @param services - One case's services.
  * @param edges - The case's call graph (`caller>callee`), or `undefined` for a dump without one.
- * @returns The victim services; empty when the dump recorded no graph.
+ * @returns The victims the gate decided, and the edges it refused; an empty set and no refusal
+ *   when the dump recorded no graph, which the mode refuses outright elsewhere.
  */
-function httpVictims(
+function jointGateDecision(
   services: DiagnosedCase['services'],
   edges: readonly string[] | undefined,
-): Set<string> {
+): JointGateDecision {
   const victims = new Set<string>();
-  if (edges === undefined) return victims;
+  let undecidedEdges = 0;
+  if (edges === undefined) return { victims, undecidedEdges };
   const anomaly = new Map(services.map((service) => [service.serviceId, service.selfAnomaly]));
+  /**
+   * The comparison's own read of one endpoint.
+   *
+   * THREE answers, not two, and `Map.has` is what separates them: `0` for a service the block
+   * does not describe (the engine's own reading — it holds no score for that node either),
+   * the value when the block states one, and `undefined` when the block DESCRIBES the service
+   * and flags its anomaly. `anomaly.get(id) ?? 0` collapsed the first and the third, and they
+   * differ exactly where the gate's decision is made.
+   */
+  const scoreOf = (id: string): number | undefined => (anomaly.has(id) ? anomaly.get(id) : 0);
   for (const edge of edges) {
     const separator = edge.indexOf('>');
     if (separator <= 0) continue;
     const from = edge.slice(0, separator);
     const to = edge.slice(separator + 1);
-    // A service the block does not describe reads as 0, which is what the engine's own `?? 0`
-    // does for a node it has no score for.
-    if ((anomaly.get(to) ?? 0) > (anomaly.get(from) ?? 0)) victims.add(from);
+    const emitter = scoreOf(from);
+    const callee = scoreOf(to);
+    if (emitter === undefined || callee === undefined) {
+      undecidedEdges++;
+      continue;
+    }
+    if (callee > emitter) victims.add(from);
   }
-  return victims;
+  return { victims, undecidedEdges };
 }
 
 /**
@@ -439,6 +550,30 @@ export function canReconstructLogFlood(
 }
 
 /**
+ * Whether every service's RECORDED log score is a value, so a derived one has something to reproduce.
+ *
+ * THREE loops ask this question and they must agree, which is why it has one owner here rather than a
+ * condition spelled out in each:
+ *
+ * - `oracleFidelity`'s `recordedLogViolations` / `recordedLogFlips`, whose whole claim is that a DERIVED term
+ *   reproduces the RECORDED one;
+ * - the mode pre-screen's ROW population, because a row's baseline IS the recorded term — see the comment at
+ *   its `rowCases`;
+ * - the self-check, which is the same comparison as the first one at case granularity.
+ *
+ * The test is for `undefined`, and that is the content rather than a style: the producer renders a non-finite
+ * score as the literal `nonfinite` (a deliberate tripwire) and the reader once stored `Number('nonfinite')`,
+ * which is `NaN` — a `number`, so this predicate written as `Number.isFinite(...)` would have answered YES and
+ * every loop below would have compared a derived value against NaN, silently, in both directions.
+ *
+ * @param kase - One parsed case.
+ * @returns `true` when every service carries a recorded log score.
+ */
+export function recordedLogReadable(kase: DiagnosedCase): boolean {
+  return kase.services.every((service) => service.logScore !== undefined);
+}
+
+/**
  * Rebuild the log term for one of the engine's countable modes.
  *
  * The engine's numerator is the level-1 flood minus the lines its direction gate
@@ -456,6 +591,10 @@ export function canReconstructLogFlood(
  *   own map assigns 0 to every node, so the density is not lost.
  * @throws When a service's flood is unrecoverable (see {@link levelOneFlood});
  *   guard with {@link canReconstructLogFlood} when reading an unknown dump.
+ * @throws When the joint gate cannot ORDER one of the case's edges, because the block flagged an
+ *   endpoint's anomaly. Not a default and not a skip: a withdrawal the artifact cannot state is
+ *   not a withdrawal withheld, and rebuilding the UNJOINTED half for that emitter while labelling
+ *   the term `logicHttpJoint` is the same shape of defect as defaulting an unpinned flood.
  */
 export function logSlopesForMode(
   services: DiagnosedCase['services'],
@@ -477,7 +616,18 @@ export function logSlopesForMode(
   const numerator = new Map<string, number>();
   const denominator = new Map<string, number>();
   const concentrated = mode === 'dominant' && httpDominance(services) >= dominance;
-  const victims = mode === 'logicHttpJoint' ? httpVictims(services, edges) : undefined;
+  const jointGate = mode === 'logicHttpJoint' ? jointGateDecision(services, edges) : undefined;
+  if (jointGate !== undefined && jointGate.undecidedEdges > 0) {
+    throw new Error(
+      `cannot rebuild the \`logicHttpJoint\` gate for this case: ${jointGate.undecidedEdges} of its ` +
+        'call-graph edge(s) end at a service whose anomaly the block flagged as non-finite, so the ' +
+        'gate cannot decide whether the callee is the more anomalous of the two. Reading a flagged ' +
+        'value as 0 would withdraw the framework-HTTP half from an emitter on the strength of a ' +
+        'number the artifact does not state, and withholding the withdrawal would rebuild the ' +
+        'UNJOINTED half under the joint name. Guard with `jointGateDecision` when reading an ' +
+        'unknown dump.',
+    );
+  }
   for (const service of services) {
     // The denominator is the mode's own level-1 flood, whatever the gate decides.
     const flood = levelOneFlood(service, mode);
@@ -502,7 +652,7 @@ export function logSlopesForMode(
       const httpOnly = service.httpExceptionCount - overlap;
       numerator.set(
         service.serviceId,
-        service.logicExceptionCount + (victims!.has(service.serviceId) ? 0 : httpOnly),
+        service.logicExceptionCount + (jointGate!.victims.has(service.serviceId) ? 0 : httpOnly),
       );
     } else {
       // `dominant` withdraws exactly the framework-HTTP lines that are NOT logic
@@ -642,25 +792,47 @@ export function blendScores(
   opts: TermOracleOptions,
   logSource: LogTermSource,
   latSlopes: ReadonlyMap<string, number>,
-): Map<string, number> {
+): Map<string, number | undefined> {
   const log =
     logSource === 'recorded'
-      ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
+      ? new Map(
+          kase.services
+            .filter((s) => s.logScore !== undefined && s.logScore > 0)
+            .map((s) => [s.serviceId, s.logScore!]),
+        )
       : logSlopesForMode(kase.services, logSource, opts.dominance, kase.edges);
   // TOTAL over the case's services, like the latency term below and for the same reason:
   // the map is built from `kase.services`, so a lookup cannot miss and an `?? 0` on it
   // could never fire — and if it ever did it would fabricate a slope of zero, i.e. a term
   // that silently stopped voting.
   const onset = onsetSlopes(kase, opts.onsetShape);
-  const scores = new Map<string, number>();
+  const scores = new Map<string, number | undefined>();
   for (const service of kase.services) {
-    // The metric term needs no map at all any more: it is a field of the row it scores,
-    // which is the whole point — the map that used to sit here existed only to hold a
-    // value the reconstruction had substituted for this one.
+    // A score exists only where the dump measured every term the CONFIGURATION READS.
+    //
+    // Not "every term in the formula": the temporal term is multiplied by `temporalWeight`, so at weight 0 it
+    // adds nothing and cannot make a score undetermined, and the same holds for the log weight below. The
+    // test is therefore per-configured-coefficient, and it is what makes this call answerable at all under a
+    // configuration that switches a term off.
+    //
+    // `0` is not the answer for an unmeasured term. `logWeight * (log.get(id) ?? 0)` would read "the log term
+    // credited this service nothing" where the truth is "the dump never measured it", and the metric term's
+    // `log1p` of an undetermined value is not a large number or a small one — it is not a number.
+    const metric = service.selfAnomaly === undefined ? undefined : Math.log1p(service.selfAnomaly);
+    const logTerm =
+      opts.logWeight === 0
+        ? 0
+        : service.logScore === undefined
+          ? undefined
+          : opts.logWeight * (log.get(service.serviceId) ?? 0);
+    if (metric === undefined || logTerm === undefined) {
+      scores.set(service.serviceId, undefined);
+      continue;
+    }
     scores.set(
       service.serviceId,
-      Math.log1p(service.selfAnomaly) +
-        opts.logWeight * (log.get(service.serviceId) ?? 0) +
+      metric +
+        logTerm +
         opts.latWeight * (latSlopes.get(service.serviceId) ?? 0) +
         opts.temporalWeight * onset.get(service.serviceId)! -
         (isPoolDominantLabel(service.dominantMetric) ? opts.poolWeight : 0),
@@ -703,7 +875,7 @@ export interface ShippedScoreWeights {
 export function shippedScores(
   kase: DiagnosedCase,
   weights: ShippedScoreWeights,
-): Map<string, number> {
+): Map<string, number | undefined> {
   return blendScores(
     kase,
     {
@@ -750,12 +922,14 @@ export function shippedRank1(
   )[0];
 }
 
+/**
+ * Order scored services: measured scores descending, unmeasured last, ties by service id.
+ *
+ * The order is the score axis's use of {@link byScoreDescending}, so the two axes cannot drift apart.
+ */
 function rankScored(scored: readonly ScoredService[]): string[] {
   return [...scored]
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.serviceId < b.serviceId ? -1 : 1;
-    })
+    .sort(byScoreDescending((entry) => entry.score))
     .map((entry) => entry.serviceId);
 }
 
@@ -790,14 +964,18 @@ export function rankCase(
 ): CaseRankings {
   const log =
     logSource === 'recorded'
-      ? new Map(kase.services.filter((s) => s.logScore > 0).map((s) => [s.serviceId, s.logScore]))
+      ? new Map(
+          kase.services
+            .filter((s) => s.logScore !== undefined && s.logScore > 0)
+            .map((s) => [s.serviceId, s.logScore!]),
+        )
       : logSlopesForMode(kase.services, logSource, opts.dominance, kase.edges);
   // The blend comes from `blendScores`, so the score this ranks by IS the score the
   // solver measures — one implementation, not two.
   const scores = blendScores(kase, opts, logSource, latSlopes);
   const blended: ScoredService[] = kase.services.map((service) => ({
     serviceId: service.serviceId,
-    score: scores.get(service.serviceId)!,
+    score: scores.get(service.serviceId),
   }));
   return {
     order: rankScored(blended),
@@ -806,13 +984,22 @@ export function rankCase(
       // it — not by the row's raw value, so that a term order and the blend agree about
       // which of two services the term prefers even when their anomalies are close.
       metric: rankScored(
-        kase.services.map((s) => ({ serviceId: s.serviceId, score: Math.log1p(s.selfAnomaly) })),
+        kase.services.map((s) => ({
+          serviceId: s.serviceId,
+          score: s.selfAnomaly === undefined ? undefined : Math.log1p(s.selfAnomaly),
+        })),
       ),
       log: rankScored(
         // The log term's own order is over the log term ALONE, so a service with no
         // log evidence scores 0 and is ranked by id — the same degenerate order the
-        // engine would produce with only this term switched on.
-        kase.services.map((s) => ({ serviceId: s.serviceId, score: log.get(s.serviceId) ?? 0 })),
+        // engine would produce with only this term switched on. A service whose log the
+        // block flagged has no score on this axis at all, which is `undefined` and not 0:
+        // "the term credited it nothing" and "the term cannot be read for it" are the two
+        // readings a single 0 would merge.
+        kase.services.map((s) => ({
+          serviceId: s.serviceId,
+          score: s.logScore === undefined ? undefined : (log.get(s.serviceId) ?? 0),
+        })),
       ),
       lat: rankScored(
         kase.services.map((s) => ({
@@ -899,14 +1086,35 @@ export interface OracleFidelity {
    */
   readonly recordedLogFlips: number;
   /**
-   * Cases whose level-1 flood could not be reconstructed because the dump predates
-   * the overlap count (`both=`).
+   * The population {@link recordedLogViolations} and {@link recordedLogFlips} were measured over.
    *
-   * Non-zero makes {@link recordedLogViolations} and the mode pre-screen meaningless
-   * rather than zero: the union `|logic ∪ http|` is then knowable only as an
-   * interval, so those counters are reported as UNAVAILABLE, not as clean.
+   * Reported rather than left to be derived, because the two counters are a claim about a SUBSET and a report
+   * that prints them without their denominator reads as a clean reconstruction of the whole dump. It is also
+   * what the renderer subtracts nothing from: the two provenance counters below are independent facts, so their
+   * sum is not the complement of this number when a case fails both.
    */
-  readonly unreconstructableCases: number;
+  readonly reconstructableCases: number;
+  /**
+   * Cases whose level-1 flood could not be reconstructed because the dump predates the overlap count (`both=`).
+   *
+   * Non-zero makes {@link recordedLogViolations} and the mode pre-screen meaningless rather than zero: the union
+   * `|logic ∪ http|` is then knowable only as an interval, so those counters are reported as UNAVAILABLE, not as
+   * clean.
+   */
+  readonly unpinnedFloodCases: number;
+  /**
+   * Cases carrying a recorded log the block flagged as non-finite on at least one service.
+   *
+   * The SECOND provenance of the same word, and it is named separately because the sentence that reports the
+   * total says WHY a case is unreconstructable: "predates the overlap count" is false of a case whose flood is
+   * perfectly pinned and whose producer simply refused to render a value. Independence is the point — this is
+   * counted whatever the flood did, so the two counters can overlap and neither is a partition of the other.
+   *
+   * Measured 0 on the shipped FSE'26 dump, where no token is refused anywhere (the census's own reach columns
+   * say the same thing on the producer's side); the distinction is therefore unreachable there, which is exactly
+   * why it is stated rather than left to an accident of the data.
+   */
+  readonly unreadableLogCases: number;
   /**
    * Cases whose rank-1 the POOL penalty moves, measured against the same terms with the
    * penalty off. The term has no order of its own (see {@link TermName}), so this is how
@@ -949,7 +1157,9 @@ export function oracleFidelity(
   let top1Correct = 0;
   let recordedLogViolations = 0;
   let recordedLogFlips = 0;
-  let unreconstructableCases = 0;
+  let reconstructableCases = 0;
+  let unpinnedFloodCases = 0;
+  let unreadableLogCases = 0;
   let poolFlips = 0;
   let temporalFlips = 0;
   for (const kase of cases) {
@@ -967,8 +1177,15 @@ export function oracleFidelity(
     const n = kase.services.length;
     let max = Number.NEGATIVE_INFINITY;
     let over = 0;
+    let measured = 0;
     for (const service of kase.services) {
       services++;
+      // Only MEASURED anomalies make a claim. An undetermined one is not a large number or a small one: it is
+      // not on this axis, so it contributes to no maximum and to no count of values above 1. On this dump the
+      // distinction is unreachable (no token is refused anywhere in it — see the census), which is exactly why
+      // it has to be stated rather than left to an accident of the data.
+      if (service.selfAnomaly === undefined) continue;
+      measured++;
       if (service.selfAnomaly > max) max = service.selfAnomaly;
       if (service.selfAnomaly > 1) over++;
     }
@@ -978,7 +1195,11 @@ export function oracleFidelity(
       // Not a claim, a measurement: a tied maximum reads as the tie group's MEAN rank over
       // `n - 1`, which is below 1 for every group of two or more. Measured on the FSE'26
       // dump, 34 of 1422 cases — one of them a six-way tie at the top reading `47.5/50`.
-      if (max < 1) subUnitMaximumCases++;
+      //
+      // Guarded on `measured`: with nothing measured there is no maximum to make the claim about, and
+      // `Number.NEGATIVE_INFINITY < 1` would otherwise report a case as having a sub-unit maximum because it
+      // had no maximum at all.
+      if (measured > 0 && max < 1) subUnitMaximumCases++;
     } else {
       rawCases++;
     }
@@ -987,8 +1208,22 @@ export function oracleFidelity(
     // A case whose flood cannot be recovered is COUNTED, not skipped silently: the
     // counters below are then about a subset of the dump, and reporting that subset
     // as though it were all of it is how an error bar reads as exactness.
-    const reconstructable = canReconstructLogFlood(kase.services, 'logicHttp');
-    if (!reconstructable) unreconstructableCases++;
+    //
+    // The second provenance is the same fact one level down: a service whose recorded log score the block
+    // flagged as non-finite has no recorded value to compare a derived one AGAINST, so the case's log counters
+    // are unanswerable rather than clean. `reconstructable` is the one flag for both, and its name is the claim
+    // — the case's log term cannot be reconstructed from this artifact.
+    //
+    // The two provenances are counted INDEPENDENTLY rather than under an else-if. A case can fail both, and a
+    // partition would then have to choose one of the two facts to hide — and the one it hid would be the one
+    // nobody could look up. What the reader needs instead is the population the counters were measured over,
+    // which is `reconstructableCases` below, so the renderer subtracts nothing and adds nothing.
+    const floodPinned = canReconstructLogFlood(kase.services, 'logicHttp');
+    const logReadable = recordedLogReadable(kase);
+    const reconstructable = floodPinned && logReadable;
+    if (reconstructable) reconstructableCases++;
+    if (!floodPinned) unpinnedFloodCases++;
+    if (!logReadable) unreadableLogCases++;
     const derived = reconstructable ? rankCase(kase, opts, 'logicHttp', lat) : undefined;
     const root = new Set(kase.groundTruth.filter((name) => name !== ''));
     const winner = recorded.order[0];
@@ -1004,7 +1239,11 @@ export function oracleFidelity(
     if (reconstructable) {
       const derivedLog = logSlopesForMode(kase.services, 'logicHttp', opts.dominance);
       for (const service of kase.services) {
-        if (Math.abs((derivedLog.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) {
+        // `reconstructable` IS the proof that every recorded log is a value, so this is the house's `!` rather
+        // than a guard: a per-service `if (logScore === undefined) continue` here would be a branch no input can
+        // take, because the flag above already sends such a case away. A guard that cannot fire reads as
+        // caution and is a claim about the data that nothing checks.
+        if (Math.abs((derivedLog.get(service.serviceId) ?? 0) - service.logScore!) > 6e-4) {
           recordedLogViolations++;
         }
       }
@@ -1022,7 +1261,9 @@ export function oracleFidelity(
     top1Correct,
     recordedLogViolations,
     recordedLogFlips,
-    unreconstructableCases,
+    reconstructableCases,
+    unpinnedFloodCases,
+    unreadableLogCases,
     poolFlips,
     temporalFlips,
   };
@@ -1334,6 +1575,18 @@ export interface ModeScreenRow {
    * cannot carry at all. Printed with the count so the number cannot be read as either without the other.
    */
   readonly widestRefusal: number | undefined;
+  /**
+   * Cases this row had to drop because the joint gate could not order one of their edges.
+   *
+   * A SECOND mechanism behind a short row, and it needs its own counter because a sentence that
+   * names one cause is false of a row shortened by the other: `unprovedRows` is about a service
+   * row whose flood the artifact brackets, while this is about a case whose graph carries an
+   * endpoint the block declines to score. Measured over the whole scorable population, like the
+   * flood refusals above and for the same reason — the refusals ARE the cases the row cannot show.
+   *
+   * `undefined` for the baseline, which reconstructs nothing and therefore refuses nothing.
+   */
+  readonly gateRefusedCases: number | undefined;
   readonly correct: number;
   readonly gainedCases: number;
   readonly regressedCases: number;
@@ -1393,6 +1646,15 @@ export interface JointFootprint {
   readonly ownerCases: number;
   /** Of those, the ones where that owner is a victim — i.e. its own flood is withdrawn. */
   readonly ownerSuppressed: number;
+  /**
+   * Edges the gate refused to order, because the block flagged an endpoint's anomaly.
+   *
+   * Reported beside `victims` because it is what makes that count a LOWER BOUND rather than a
+   * reach: an edge the artifact cannot state is neither withdrawn nor kept here, so it is absent
+   * from the set above rather than counted in it. A reach quoted without a refusal beside it is
+   * the reading this register already had to correct once, for `bestDev`.
+   */
+  readonly undecidedEdges: number;
 }
 
 /**
@@ -1413,7 +1675,30 @@ export interface ModeScreenSelfCheck {
   /** What the block declares as its mode. */
   readonly dumpMode: string;
   readonly source: LogTermSource;
+  /**
+   * The cases THIS check compared — its own population, and the denominator `violations`, `gained` and
+   * `regressed` all belong to.
+   *
+   * It used to be the ROW's size, which is a number belonging to a different question ("on how many cases can
+   * this mode be measured at all", over the scorable cases and with no filter on the dump's DECLARED mode). The
+   * two coincided on every dump measured until a case could fail a condition the row does not test, and then the
+   * sentence below would have claimed a denominator the check never measured over — a gate's number belongs to
+   * its population and its denominator, which is a law this register had to write down once already.
+   *
+   * Every number in the sentence is now computed in the same loop, so an exclusion cannot move one of them
+   * without moving the population beside it.
+   */
   readonly cases: number;
+  /**
+   * Cases the check could otherwise have compared and could not, because the block flagged a recorded log.
+   *
+   * Named rather than folded into `cases`: an excluded case is not a clean one, and the difference is most
+   * legible exactly where the count is silent — silence is not cleanliness. Counted AFTER the conditions that
+   * have an explanation of their own (the mode, the flood, the graph — which includes whether the joint gate
+   * can read every edge of it — and the root), so this is about cases the check would have compared rather
+   * than about every case in the dump.
+   */
+  readonly unreadableCases: number;
   /**
    * Services whose RE-DERIVED score differs from the printed one by more than 6e-4.
    *
@@ -1482,17 +1767,25 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
     // same list — comparing against a baseline computed on a different population would
     // book the population difference as the mode's effect. The row therefore carries its
     // own size, so a partial row is labelled rather than passed off as the whole dump.
-    const rowCases =
-      entry.source === 'recorded'
-        ? scorable
-        : scorable.filter(
-            (kase) =>
-              canReconstructLogFlood(kase.services, entry.source) &&
-              // The joint gate is the one mode that needs a SECOND piece of data: a dump with no
-              // graph cannot decide which framework-HTTP counts to withdraw, so its row is dropped
-              // rather than drawn from an unjointed reconstruction.
-              (!MODE_NEEDS_GRAPH.has(entry.source) || kase.edges !== undefined),
-          );
+    // `recordedLogReadable` applies to EVERY row, the baseline included, and it is not the mode's own
+    // condition: a row is a MODE against the BASELINE, and the baseline IS the recorded log term. On a case
+    // whose recorded log the block flagged, `blendScores` gives every service an undetermined score, so the
+    // baseline's ranking is not the engine's at all — it is the id order that `rankScored` falls back to. A row
+    // kept over such a case would book that degeneracy as the mode's effect, which is a measurement of this
+    // reader rather than of the mode.
+    const rowCases = scorable.filter(
+      (kase) =>
+        recordedLogReadable(kase) &&
+        (entry.source === 'recorded' ||
+          (canReconstructLogFlood(kase.services, entry.source) &&
+            // The joint gate is the one mode that needs a SECOND piece of data: a dump with no
+            // graph cannot decide which framework-HTTP counts to withdraw, so its row is dropped
+            // rather than drawn from an unjointed reconstruction. And a graph is not enough — the
+            // gate is a COMPARISON, so a case whose graph names a service the block declines to
+            // score is dropped by the same rule. Both are read from {@link jointGateDecidable}, so
+            // the population and the rebuild cannot disagree about which cases the gate can read.
+            (!MODE_NEEDS_GRAPH.has(entry.source) || jointGateDecidable(kase)))),
+    );
     // A reconstruction with no case to measure is OMITTED, because an empty row would
     // print as a mode that scored nothing rather than as one that could not be
     // measured. The baseline is kept even when it is empty: it is the table's own
@@ -1518,6 +1811,13 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
           );
     const unprovedRows = refusals?.rows;
     const widestRefusal = refusals?.widest;
+    // The SECOND mechanism behind a short row, and it is counted separately because a sentence that
+    // names one cause is false of a row shortened by the other. A mode that needs no graph refuses
+    // nothing here, and neither does the baseline — a `0` on either would be a claim about a gate
+    // that was never consulted.
+    const gateRefusedCases = MODE_NEEDS_GRAPH.has(entry.source)
+      ? scorable.filter((kase) => !jointGateDecidable(kase)).length
+      : undefined;
     // The ROW's threshold, not the options': reading `opts.dominance` here rendered a
     // sweep whose every point was computed at the same threshold — a grid that printed
     // seven identical rows and read as a plateau the mode does not have. The threshold
@@ -1563,6 +1863,7 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
       cases: rowCases.length,
       unprovedRows,
       widestRefusal,
+      gateRefusedCases,
       correct,
       gainedCases,
       regressedCases,
@@ -1575,7 +1876,7 @@ export function modeScreen(cases: readonly DiagnosedCase[], opts: TermOracleOpti
   }
   return {
     rows,
-    selfCheck: selfCheck(cases, rows),
+    selfCheck: selfCheck(cases, opts, latSlopes),
     dumpMode: cases[0]?.logSignalMode ?? '',
     jointFootprint: jointFootprint(scorable, rows),
   };
@@ -1627,14 +1928,16 @@ function jointFootprint(
   if (!rows.some((row) => row.source === 'logicHttpJoint')) return undefined;
   let services = 0;
   let victims = 0;
+  let undecidedEdges = 0;
   let ownerCases = 0;
   let ownerSuppressed = 0;
   const densities: number[] = [];
   for (const kase of cases) {
-    const victimSet = httpVictims(kase.services, kase.edges);
-    victims += victimSet.size;
+    const decision = jointGateDecision(kase.services, kase.edges);
+    victims += decision.victims.size;
+    undecidedEdges += decision.undecidedEdges;
     services += kase.services.length;
-    densities.push(victimSet.size / Math.max(1, kase.services.length));
+    densities.push(decision.victims.size / Math.max(1, kase.services.length));
     let owner: DiagnosedCase['services'][number] | undefined;
     for (const service of kase.services) {
       if (service.httpExceptionCount === 0) continue;
@@ -1644,7 +1947,7 @@ function jointFootprint(
     }
     if (owner === undefined) continue;
     ownerCases++;
-    if (victimSet.has(owner.serviceId)) ownerSuppressed++;
+    if (decision.victims.has(owner.serviceId)) ownerSuppressed++;
   }
   const sorted = [...densities].sort((a, b) => a - b);
   return {
@@ -1653,19 +1956,28 @@ function jointFootprint(
     medianCaseDensity: sorted[sorted.length >> 1] ?? 0,
     ownerCases,
     ownerSuppressed,
+    undecidedEdges,
   };
 }
 
 /**
  * Compare the re-derived row for the dump's own mode against the printed one.
  *
+ * Every number it returns is computed here, over the population defined here — including whether there IS a
+ * population. The screen's rows are NOT consulted: they were, and that made the check's existence a function of
+ * the TABLE's shape rather than of the dump (`modeScreen` omits a reconstruction row with no case to measure, so
+ * a dump whose only case is unreadable reported "this reader does not rebuild the dump's mode", which is false).
+ * A claim about a measurement must not be gated on whether a table wanted to print it.
+ *
  * @param cases - The parsed dump, for the declared mode.
- * @param rows - The rows the screen built.
- * @returns The check, or `undefined` when the mode is not rebuildable or has no row.
+ * @param opts - The configuration the rows were measured at.
+ * @param latSlopes - The per-case latency slopes the rows were ranked with, keyed by case.
+ * @returns The check, or `undefined` when the mode is not one this reader rebuilds.
  */
 function selfCheck(
   cases: readonly DiagnosedCase[],
-  rows: readonly ModeScreenRow[],
+  opts: TermOracleOptions,
+  latSlopes: ReadonlyMap<DiagnosedCase, ReadonlyMap<string, number>>,
 ): ModeScreenSelfCheck | undefined {
   const dumpMode = cases[0]?.logSignalMode ?? '';
   const source = SELF_CHECK_MODE[dumpMode];
@@ -1674,29 +1986,66 @@ function selfCheck(
   // the threshold the run used is not identifiable from the dump — the block records
   // the mode, not the threshold. The check is therefore exact for the countable modes
   // and informative for `dominant`; saying which is being checked is the caller's job.
-  const row = rows.find((entry) => entry.source === source && entry.dominance === undefined);
-  if (row === undefined) return undefined;
+  let casesCompared = 0;
+  let unreadableCases = 0;
   let violations = 0;
+  let gained = 0;
+  let regressed = 0;
   for (const kase of cases) {
-    if (!canReconstructLogFlood(kase.services, source)) continue;
+    // The dump's DECLARED mode is the check's own condition and the row does not test it: the row measures what
+    // a mode scores, while this measures whether the mode the run USED is the mode the reader rebuilds — a claim
+    // that only exists for the cases the run recorded in that mode.
     if (kase.logSignalMode !== dumpMode) continue;
-    const derived = logSlopesForMode(
+    if (!canReconstructLogFlood(kase.services, source)) continue;
+    // `MODE_NEEDS_GRAPH` is the mode's own condition and it has two halves: the case must carry a
+    // graph AND the gate must be able to read every edge of it. The rebuild THROWS on either, so a
+    // guard that checked only the first would take the whole report down on a dump whose block
+    // flagged an endpoint — the same reason the graph half is checked here rather than caught.
+    if (MODE_NEEDS_GRAPH.has(source) && !jointGateDecidable(kase)) continue;
+    // A scorable case, and not for symmetry with the row: the claim below includes a rank-1 comparison, which is
+    // undefined without a root, and the latency slopes are keyed by the scorable list — a case outside it has no
+    // entry to read.
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    // A case whose recorded log the block flagged is EXCLUDED, last, so the counter below is about a case the
+    // check would otherwise have compared. The claim is that a DERIVED log reproduces the RECORDED one, and
+    // there is no recorded one to reproduce; and the comparison would not merely be empty but WRONG, because
+    // the printed ranking it is measured against is then the all-undetermined one (`rankScored`'s id order)
+    // rather than the engine's. Excluded at the case rather than per service because the claim is case-shaped:
+    // it pairs one ranking against another.
+    if (!recordedLogReadable(kase)) {
+      unreadableCases++;
+      continue;
+    }
+    const lat = latSlopes.get(kase)!;
+    const printed = rankCase(kase, opts, 'recorded', lat);
+    const derived = rankCase(kase, opts, source, lat);
+    const derivedFirst = root.has(derived.order[0] ?? '');
+    const printedFirst = root.has(printed.order[0] ?? '');
+    if (derivedFirst && !printedFirst) gained++;
+    else if (!derivedFirst && printedFirst) regressed++;
+    const derivedLog = logSlopesForMode(
       kase.services,
       source,
       DEFAULT_HTTP_DOMINANCE_THRESHOLD,
       kase.edges,
     );
     for (const service of kase.services) {
-      if (Math.abs((derived.get(service.serviceId) ?? 0) - service.logScore) > 6e-4) violations++;
+      // Same `!`: the case-level guard above is the proof that this is a value, and a per-service guard here
+      // would be a branch no input can take.
+      if (Math.abs((derivedLog.get(service.serviceId) ?? 0) - service.logScore!) > 6e-4)
+        violations++;
     }
+    casesCompared++;
   }
   return {
     dumpMode,
     source,
-    cases: row.cases,
+    cases: casesCompared,
+    unreadableCases,
     violations,
-    gained: row.gainedCases,
-    regressed: row.regressedCases,
+    gained,
+    regressed,
   };
 }
 
@@ -1781,7 +2130,7 @@ export function formatFidelity(fidelity: OracleFidelity, opts: TermOracleOptions
   // CAN agree with the engine. Reporting the first alone hides a defect in the rest
   // (a non-zero violation count would never be shown), and reporting the second alone
   // claims a clean reconstruction of a partial dump. Both, on one line, always.
-  const reconstructable = fidelity.cases - fidelity.unreconstructableCases;
+  const reconstructable = fidelity.reconstructableCases;
   const verdict =
     reconstructable === 0
       ? // No case to be exact about. "0 violations over 0 cases" is vacuously true and
@@ -1798,13 +2147,34 @@ export function formatFidelity(fidelity: OracleFidelity, opts: TermOracleOptions
     `  log term: services above 6e-4: ${fidelity.recordedLogViolations}; ` +
       `cases whose rank-1 moves: ${fidelity.recordedLogFlips} (${verdict})`,
   );
-  if (fidelity.unreconstructableCases > 0) {
+  const unreconstructable = fidelity.cases - reconstructable;
+  if (unreconstructable > 0) {
     // Not a caveat but a status: the counters above are about the OTHER cases only, so
     // printing them without this line would read as a reconstruction of the whole dump.
+    //
+    // The total comes from `cases - reconstructableCases` and NOT from the sum of the two provenance counters:
+    // they are independent facts, so a case whose flood is unpinned AND whose block flagged a log is in both and
+    // the sum would overstate the total. The two are listed by NAME because they call for different reading — a
+    // bracketed union is an instrument limit on an old dump, while a refused value is a producer tripwire — and
+    // each is printed ONLY when it is non-zero, so a line that names one provenance cannot be read as though the
+    // other had been ruled out.
+    const causes: string[] = [];
+    if (fidelity.unpinnedFloodCases > 0) {
+      causes.push(
+        `${fidelity.unpinnedFloodCases} predate the overlap count so |logic ∪ http| is bracketed but ` +
+          'not pinned there',
+      );
+    }
+    if (fidelity.unreadableLogCases > 0) {
+      causes.push(
+        `${fidelity.unreadableLogCases} carry a log the block flagged as non-finite, so there is no recorded ` +
+          'term to reproduce',
+      );
+    }
     lines.push(
-      `  log term: ${fidelity.unreconstructableCases}/${fidelity.cases} cases predate the overlap count ` +
-        `(\`both=\`), so |logic ∪ http| is bracketed but not pinned there; the counters above are over the ` +
-        `other ${reconstructable}, and no mode row is drawn from an unpinned case`,
+      `  log term: ${unreconstructable}/${fidelity.cases} cases are unreconstructable — ` +
+        `${causes.join('; ')}; the counters above are over the other ${reconstructable}, and no mode row is ` +
+        'drawn from an unreadable case',
     );
   }
   return lines.join('\n');
@@ -1872,14 +2242,35 @@ export function formatModeScreen(
   // reproduces the run's own mode has no reason to read the rest.
   const check = screen.selfCheck;
   if (check !== undefined) {
-    const exact = check.violations === 0;
-    lines.push(
-      `  self-check: the dump's own mode (\`${check.dumpMode}\`) re-derived as \`${check.source}\` ` +
-        `${exact ? 'reproduces the printed term' : 'DISAGREES with the printed term'}: ` +
-        `${check.violations} service(s) differ, rank-1 moves +${check.gained}/-${check.regressed} ` +
-        `over ${check.cases} cases` +
-        (exact ? '' : ' — a reconstruction defect: do not read the rows below'),
-    );
+    if (check.cases === 0) {
+      // THREE states, not two, and the third is the one a two-branch renderer gets wrong: "0 service(s) differ
+      // over 0 cases" is vacuously true and would print as `reproduces the printed term` — a claim about
+      // measurements taken, made where none were. The readings before it were "the mode is not rebuildable"
+      // (the branch below, for a mode the reader has no reconstruction for) and "nothing to compare", and they
+      // are different absences: one names a capability, the other a population.
+      lines.push(
+        `  self-check: the dump's own mode (\`${check.dumpMode}\`) re-derived as \`${check.source}\`: ` +
+          'NO case is comparable' +
+          (check.unreadableCases > 0
+            ? ` — ${check.unreadableCases} case(s) carry a recorded log the block flagged`
+            : ' — no case in this dump is scorable and reconstructable in that mode'),
+      );
+    } else {
+      const exact = check.violations === 0;
+      lines.push(
+        `  self-check: the dump's own mode (\`${check.dumpMode}\`) re-derived as \`${check.source}\` ` +
+          `${exact ? 'reproduces the printed term' : 'DISAGREES with the printed term'}: ` +
+          `${check.violations} service(s) differ, rank-1 moves +${check.gained}/-${check.regressed} ` +
+          `over ${check.cases} cases` +
+          // Printed only when non-zero, and printed at all because the three numbers before it are a claim
+          // about a POPULATION: an excluded case is not a clean one, and a silent exclusion is the reading
+          // this whole register exists to refuse.
+          (check.unreadableCases > 0
+            ? `, ${check.unreadableCases} case(s) not compared: the block flagged a recorded log`
+            : '') +
+          (exact ? '' : ' — a reconstruction defect: do not read the rows below'),
+      );
+    }
   } else {
     // Printed rather than omitted: a missing check and a check that found nothing look exactly
     // alike in a report that only prints the second.
@@ -1897,7 +2288,15 @@ export function formatModeScreen(
       `  joint gate footprint: withdraws ${pct(footprint.victims, footprint.services)} of all ` +
         `services (median case ${footprint.medianCaseDensity.toFixed(2)}); the framework-HTTP flood ` +
         `OWNER is itself withdrawn in ${footprint.ownerSuppressed}/${footprint.ownerCases} cases ` +
-        `(${pct(footprint.ownerSuppressed, footprint.ownerCases)})`,
+        `(${pct(footprint.ownerSuppressed, footprint.ownerCases)})` +
+        // The reach above is a LOWER BOUND wherever this fires, and the two facts are printed
+        // together because either alone is misleading: a withdrawal share with a refusal beside it
+        // is a floor, while the refusal alone reads as a detail. Printed only when non-zero, so a
+        // dump that states every anomaly the gate reads prints exactly what it printed before.
+        (footprint.undecidedEdges > 0
+          ? `; ${footprint.undecidedEdges} edge(s) undecided: an endpoint's anomaly is one the ` +
+            'block flagged, so the comparison above is a LOWER bound'
+          : ''),
     );
   }
   lines.push('  configuration           correct   +/-cases   regressed types');
@@ -1911,13 +2310,22 @@ export function formatModeScreen(
     const partial = row.cases < full ? ` [${row.cases}/${full} cases]` : '';
     // The refusals print beside the population, because a short row without them sends a reader looking
     // for a defect in the mode rather than for the primitive the artifact does not carry. `both=` absent
-    // is the ONLY way to be refused (a printed overlap is returned directly), so the cause is derivable
-    // from the count and is named rather than guessed.
-    const refused =
+    // is one CAUSE of a refusal (a printed overlap is returned directly) and a flagged endpoint is the
+    // other, so each is named only when it is the one that fired: the sentence used to assert the flood,
+    // which is false of a row the joint gate shortened.
+    const refused = [
       row.unprovedRows === undefined || row.unprovedRows === 0
         ? ''
-        : ` [${row.unprovedRows} service row(s) unproved over ≤ ${row.widestRefusal} line(s): ` +
-          'no `both=` in this dump, so the union is bracketed]';
+        : `[${row.unprovedRows} service row(s) unproved over ≤ ${row.widestRefusal} line(s): ` +
+          'no `both=` in this dump, so the union is bracketed]',
+      row.gateRefusedCases === undefined || row.gateRefusedCases === 0
+        ? ''
+        : `[${row.gateRefusedCases} case(s) dropped: the joint gate cannot order an edge whose ` +
+          "endpoint's anomaly the block flagged]",
+    ]
+      .filter((clause) => clause !== '')
+      .map((clause) => ` ${clause}`)
+      .join('');
     const regressed =
       row.regressedTypes.length === 0
         ? '0  (PASSES the second half)'

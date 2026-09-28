@@ -34,11 +34,14 @@ import {
   SyntheticBenchmarkGenerator,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import type { DiagnosedService } from '../src/fse26-diagnose-analyze.js';
 import {
   onsetAvailability,
   parseDiagnosticDump,
+  SERVICE_FIELD_KIND,
   UNDETERMINED_TOKENS,
 } from '../src/fse26-diagnose-analyze.js';
+import { DISCRIMINATOR_FEATURES } from '../src/fse26-discriminator.js';
 import { SEPARATOR_SCALARS, SERVICE_FIELD_AUDIT } from '../src/fse26-separator.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -818,10 +821,12 @@ describe("the block's SECOND undetermined token, on both sides of the fence", ()
     expect(Number.isFinite(service.failedEdgeScore ?? Number.NaN)).toBe(false);
     expect(service.failedEdgeScore).toBeUndefined();
     expect(service.latRise).toBeUndefined();
-    // …and the two fields whose TYPE is a required number cannot hold the `undefined`, which is why they are
-    // the named follow-up: the value the type admits is `NaN`, written out at the parse with the reason.
-    expect(Number.isNaN(service.selfAnomaly)).toBe(true);
-    expect(Number.isNaN(service.logScore)).toBe(true);
+    // …and the two fields whose TYPE used to be a required number carry the same `undefined` now. Iteration 28
+    // asserted the opposite here — `Number.isNaN(...)` — because the NaN was the type's own admission rather
+    // than a defect the reader could fix alone. The type is widened, so the assertion is inverted rather than
+    // deleted: a record of what the defect looked like is what made the fix legible.
+    expect(service.selfAnomaly).toBeUndefined();
+    expect(service.logScore).toBeUndefined();
   });
 
   it('reports the same block as carrying NO measurement, which is where the defect is legible', () => {
@@ -835,5 +840,120 @@ describe("the block's SECOND undetermined token, on both sides of the fence", ()
     for (const channel of ['self-anomaly', 'log-score', 'failed-edge', 'latency-rise']) {
       expect(censusOnLine(headerOrRow(healthy, channel), channel).valued, channel).toBe(true);
     }
+  });
+});
+
+describe("the reader's TYPES — the half the value fence could not reach", () => {
+  // Iteration 28 gave the reader ONE owner for "is this token a measurement?" and then threw the answer away
+  // for the two fields whose TYPE was a required `number`: `measured()` returned `undefined` and the parse
+  // wrote `Number.NaN` back. `NaN` IS a `number`, so the write type-checked, every downstream "is it
+  // measured?" test answered YES, and the two comparisons a ranking is made of fail in BOTH directions
+  // (`NaN >= t` and `NaN <= t` are each false) while `NaN !== NaN` keeps the id tiebreak from ever being
+  // reached. The type was the lie — and nothing connected it to the census, which had ALREADY declared these
+  // two channels able to carry a token meaning "undetermined".
+  //
+  // This fence is derived on both sides. The fields are the CENSUS's own (`ChannelDeclaration.fields`), and
+  // the type is asked of the reader's own interface through `SERVICE_FIELD_KIND`, whose honesty is checked by
+  // the compiler in the module that declares the interface. A new channel that declares the token, or a field
+  // re-typed, moves one side and fails here.
+
+  /** The channels whose declared `absent` set carries the producer's tripwire render. */
+  function tripwireChannels(): readonly string[] {
+    return declarations()
+      .filter((one) => one.absent.includes('nonfinite'))
+      .map((one) => one.channel)
+      .sort();
+  }
+
+  /** The reader fields those channels render into — the census's own field map, not a list held here. */
+  function tripwireFields(): readonly string[] {
+    const fields = new Set<string>();
+    for (const channel of tripwireChannels()) {
+      const entry = declarations().find((one) => one.channel === channel);
+      if (entry === undefined) throw new Error(`no declaration for ${channel}`);
+      for (const field of entry.fields) fields.add(field);
+    }
+    return [...fields].sort();
+  }
+
+  it('classifies exactly the fields the census says can carry an undetermined token as able to hold one', () => {
+    const fromCensus = tripwireFields();
+    // Non-vacuity first: an equality between two empty sets is satisfied by a census that declares nothing.
+    expect(fromCensus.length).toBeGreaterThanOrEqual(6);
+    expect(fromCensus).toEqual([
+      'decisiveOutcome',
+      'failedEdgeScore',
+      'latRise',
+      'logScore',
+      'metricOutcomes',
+      'selfAnomaly',
+    ]);
+    const fromReader = (Object.keys(SERVICE_FIELD_KIND) as (keyof DiagnosedService)[])
+      .filter((key) => SERVICE_FIELD_KIND[key] === 'undetermined-capable')
+      .sort();
+    // Reported as two NAMED lists, because the answer to a failure is which field is on the wrong side and a
+    // deep-equality message truncates the very thing being asked.
+    expect({
+      censusNamesItButTheReaderCallsItAMeasurement: fromCensus.filter(
+        (field) => !fromReader.includes(field as keyof DiagnosedService),
+      ),
+      theReaderCallsItUndeterminedButNoChannelRendersTheToken: fromReader.filter(
+        (field) => !fromCensus.includes(field),
+      ),
+    }).toEqual({
+      censusNamesItButTheReaderCallsItAMeasurement: [],
+      theReaderCallsItUndeterminedButNoChannelRendersTheToken: [],
+    });
+  });
+
+  it('parses the flagged block to `undefined` on `selfAnomaly` and `logScore` too', () => {
+    // The consequence, on the producer's own bytes: the two fields whose type used to force a NaN.
+    const [parsed] = parseDiagnosticDump(blockWith(1, 1, { nonFinite: true }));
+    expect(parsed).toBeDefined();
+    expect(parsed!.services.length).toBeGreaterThan(0);
+    for (const service of parsed!.services) {
+      expect(service.selfAnomaly, service.serviceId).toBeUndefined();
+      expect(service.logScore, service.serviceId).toBeUndefined();
+    }
+    // The control, so the assertion above is about the VALUES rather than about the fixture being empty.
+    const [healthyCase] = parseDiagnosticDump(blockWith(1, 1));
+    expect(healthyCase).toBeDefined();
+    for (const service of healthyCase!.services) {
+      expect(Number.isFinite(service.selfAnomaly), service.serviceId).toBe(true);
+      expect(Number.isFinite(service.logScore), service.serviceId).toBe(true);
+    }
+  });
+
+  it('answers every declared feature with a number or with `undefined`, never with a NaN', () => {
+    // `NaN` is the answer that reads as a measurement and behaves as neither: it satisfies no threshold in
+    // either direction, so a rule "fitted" to it fires on nothing while looking like a rule.
+    const [parsed] = parseDiagnosticDump(blockWith(1, 1, { nonFinite: true }));
+    expect(parsed).toBeDefined();
+    for (const feature of DISCRIMINATOR_FEATURES) {
+      const value = feature.of(parsed!);
+      const legal = value === undefined || Number.isFinite(value);
+      expect({ feature: feature.name, value: String(value), legal }).toEqual({
+        feature: feature.name,
+        value: String(value),
+        legal: true,
+      });
+    }
+  });
+
+  it('makes every declared feature a function of the SET rather than of the row order', () => {
+    // The other half of the same defect. `[...services].sort((a, b) => b.selfAnomaly - a.selfAnomaly)` returns
+    // `NaN` for a `NaN` operand, which is falsy, i.e. "equal" — so a stable sort leaves the entries where the
+    // INPUT put them and the feature becomes a function of the dump's row order.
+    const [parsed] = parseDiagnosticDump(blockWith(1, 1, { nonFinite: true }));
+    expect(parsed).toBeDefined();
+    expect(parsed!.services.length).toBeGreaterThanOrEqual(2);
+    const reversed = { ...parsed!, services: [...parsed!.services].reverse() };
+    const moved: Record<string, readonly [string, string]> = {};
+    for (const feature of DISCRIMINATOR_FEATURES) {
+      const forwardValue = String(feature.of(parsed!));
+      const reversedValue = String(feature.of(reversed));
+      if (forwardValue !== reversedValue) moved[feature.name] = [forwardValue, reversedValue];
+    }
+    expect(moved).toEqual({});
   });
 });

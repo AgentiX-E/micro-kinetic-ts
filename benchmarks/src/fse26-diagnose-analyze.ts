@@ -150,8 +150,20 @@ export interface DiagnosedService {
   readonly isGroundTruth: boolean;
   /** The engine's rank for this service, when it predicted it. */
   readonly predictedRank: number | undefined;
-  readonly selfAnomaly: number;
-  readonly logScore: number;
+  /**
+   * The service's metric term — its own anomaly score, as the row renders it.
+   *
+   * `undefined` when the producer flagged the value as non-finite, which it renders as the literal
+   * `nonfinite` (see {@link UNDETERMINED_TOKENS}). It was a required `number` until the type was recognised as
+   * the DEFECT rather than a constraint: the parse knew the value was undetermined and wrote `Number.NaN` back
+   * to satisfy the type, and `NaN` IS a `number` — so every consumer's "is this measured?" test answered YES,
+   * both of the comparisons a ranking is made of (`>=` and `<=`) were false in either direction, and the id
+   * tiebreak could never be reached. {@link SERVICE_FIELD_KIND} records which fields can hold an undetermined
+   * value, and the compiler checks that record against these types.
+   */
+  readonly selfAnomaly: number | undefined;
+  /** The log term, with the same `undefined` and for the same reason as {@link selfAnomaly}. */
+  readonly logScore: number | undefined;
   /**
    * The failed-edge-direction score (the log score's INVERSE), or `undefined`
    * for a dump written before the engine reported it.
@@ -237,6 +249,103 @@ export interface DiagnosedService {
    */
   readonly decisiveOutcome: DiagnosedMetricOutcome | undefined;
 }
+
+/**
+ * The three ways a rendered field can fail to carry a measurement.
+ *
+ * They are NOT the same absence, and the difference is the whole reason this table exists:
+ *
+ * - `measurement` — the producer always renders a value, so the type is a required number (or a string or a
+ *   boolean) and a consumer may add it up without asking. A field classified this way that ever admits
+ *   `undefined` is a field one consumer will default and another will not.
+ * - `absent-or-value` — the field's MARKER or LINE may be missing: a dump written before the field existed, or
+ *   a service the block chose not to render. `undefined` therefore means exactly one thing — this artifact
+ *   cannot answer — and no formatter writes a token into it.
+ * - `undetermined-capable` — a formatter renders into it, and `fmt`/`fmtRatio`/`fmtBase`
+ *   (`packages/kinetic/src/benchmarks/fse26-diagnose.ts`) return the literal `nonfinite` for a non-finite
+ *   value. `scripts/dump_capability.channels.json` declares that token in these channels' `absent` sets, so the
+ *   two sides of this fence are the same fact read by two languages.
+ */
+export type ServiceFieldKind = 'measurement' | 'absent-or-value' | 'undetermined-capable';
+
+/**
+ * What the producer can render into each field, per field — and the ONE place a field's TYPE is checked
+ * against the artifact rather than assumed.
+ *
+ * `Record<keyof DiagnosedService, …>` is exhaustive by construction, so a new parsed field breaks the build
+ * until it is classified here — the same property `SERVICE_FIELD_AUDIT` in `fse26-separator.ts` uses to make a
+ * new field a decision rather than a default.
+ *
+ * BEFORE this table the classification lived in the types alone, and the types were wrong in exactly the two
+ * places that matter: `selfAnomaly` and `logScore` were required `number`s while their channels declare
+ * `nonfinite` in `absent`. The census had measured the fact; nothing connected it to the interface, so the
+ * reader spelled "undetermined" as `NaN` and every consumer read it as a measurement.
+ *
+ * Declared `as const satisfies` rather than annotated: an ANNOTATED `Record` widens every literal to
+ * `ServiceFieldKind`, and the check below then compares a union against each kind and reports a disagreement on
+ * every field — a fence that fails on a correct table is worse than no fence, because the next reader deletes
+ * it. `satisfies` keeps the literals AND the exhaustiveness.
+ */
+export const SERVICE_FIELD_KIND = {
+  serviceId: 'measurement',
+  isGroundTruth: 'measurement',
+  // The `[#N]` marker is written only for a service the engine predicted.
+  predictedRank: 'absent-or-value',
+  selfAnomaly: 'undetermined-capable',
+  logScore: 'undetermined-capable',
+  failedEdgeScore: 'undetermined-capable',
+  // The COUNT beside the score is a `\d+` render, so the tripwire cannot reach it; it is absent on an older
+  // dump, which is why the census's `failed-edge-records` channel declares no `nonfinite`.
+  failedEdgeRecords: 'absent-or-value',
+  latRise: 'undetermined-capable',
+  latEdges: 'absent-or-value',
+  onsetDelayMs: 'absent-or-value',
+  dominantMetric: 'measurement',
+  errorCount: 'measurement',
+  fatalCount: 'measurement',
+  logicExceptionCount: 'measurement',
+  httpExceptionCount: 'measurement',
+  bothExceptionCount: 'absent-or-value',
+  metricOutcomes: 'undetermined-capable',
+  decisiveOutcome: 'undetermined-capable',
+} as const satisfies Readonly<Record<keyof DiagnosedService, ServiceFieldKind>>;
+
+/** Whether the interface's own type for a field admits `undefined`. */
+type AdmitsUndefined<K extends keyof DiagnosedService> = undefined extends DiagnosedService[K]
+  ? true
+  : false;
+
+/**
+ * The fields whose classification disagrees with their declared type, in BOTH directions.
+ *
+ * `measurement` must NOT admit `undefined`, and the other two kinds MUST. The result is `never` when the table
+ * and the types agree, and the offending field's name when they do not — a name rather than a boolean, because
+ * the answer to a build failure has to be which field moved.
+ *
+ * `-?` is load-bearing and was found by running it: `bothExceptionCount` is an OPTIONAL property, and indexing
+ * a mapped type by a union containing an optional key adds `undefined` to the result — which then reads as a
+ * disagreement on a table that is entirely correct. A fence that fails on a correct table gets deleted.
+ */
+type FieldKindDisagreement = {
+  [K in keyof DiagnosedService]-?: (typeof SERVICE_FIELD_KIND)[K] extends 'measurement'
+    ? AdmitsUndefined<K> extends true
+      ? K
+      : never
+    : AdmitsUndefined<K> extends true
+      ? never
+      : K;
+}[keyof DiagnosedService];
+
+/**
+ * Compile-time: the classification is a claim ABOUT A TYPE, so the type is asked.
+ *
+ * A field classified `undetermined-capable` whose type is a required number — the defect this iteration fixes —
+ * fails to build here, and so does a field classified `measurement` that admits `undefined`. The type is
+ * exported rather than the value because there is nothing to read at runtime: the assertion IS the check, and a
+ * reader looking for the fence has to find it in the compiler rather than in a test that could be skipped.
+ */
+type AssertNever<T extends never> = T;
+export type FieldKindIsHonest = AssertNever<FieldKindDisagreement>;
 
 /** One case's diagnostic block, as data. */
 export interface DiagnosedCase {
@@ -725,14 +834,13 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
         serviceId: service[1]!,
         isGroundTruth: markers.includes('GT'),
         predictedRank: rankMarker === undefined ? undefined : Number(rankMarker.slice(1)),
-        // The two fields whose type is a REQUIRED number, so `measured`'s `undefined` cannot be stored:
-        // the value the type does admit is `NaN`, which is what this parse has always produced for a
-        // tripwire render. It is written out rather than left implicit, and the census reports the same
-        // block as carrying no measurement on this channel (`self-anomaly none`), which is where the defect
-        // is legible. **Making these types honest is a named follow-up**: it reports 34 errors across four
-        // files, and every one is a site that today receives the NaN.
-        selfAnomaly: measured(service[3]) ?? Number.NaN,
-        logScore: measured(service[4]) ?? Number.NaN,
+        // The `undetermined-capable` pair, stored as the reader's own answer rather than as a `NaN`. These two
+        // were required `number`s, so `measured`'s `undefined` could not be stored and the parse wrote
+        // `Number.NaN` back to satisfy the type — see {@link SERVICE_FIELD_KIND} for why that was the defect
+        // rather than a constraint. The census reports the same block as carrying no measurement on these
+        // channels (`self-anomaly none`), and now so does the reader.
+        selfAnomaly: measured(service[3]),
+        logScore: measured(service[4]),
         // `undefined`, never 0, when the field is absent: the optional group
         // leaves both captures undefined together, so a dump from before this
         // field reads as unknown rather than as a measurement of zero.
@@ -1410,7 +1518,8 @@ export const MISS_DECIDED_BY = [
   'metric+log+lat+pool+temporal',
 ] as const;
 
-export type MissDecidedBy = (typeof MISS_DECIDED_BY)[number] | 'tie' | 'unexplained' | 'absent';
+export type MissDecidedBy =
+  (typeof MISS_DECIDED_BY)[number] | 'tie' | 'unexplained' | 'absent' | 'undetermined';
 
 /** How one wrong case was decided. */
 export interface MissClassification {
@@ -1419,10 +1528,18 @@ export interface MissClassification {
   readonly source: string;
   readonly winner: string | undefined;
   readonly decidedBy: MissDecidedBy;
-  readonly sourceAnomaly: number;
-  readonly winnerAnomaly: number;
-  readonly sourceLog: number;
-  readonly winnerLog: number;
+  /**
+   * The two services' metric and log terms, or `undefined` where this artifact does not carry one.
+   *
+   * `undefined`, not `NaN` and not 0. `NaN` was the spelling this record used, and it was spelled as a NUMBER —
+   * so a consumer asking "is this a measurement?" with a type test, a `Number.isFinite`, or a `??` answered YES,
+   * and one asking it with a comparison got `false` in both directions. The absence is already NAMED by
+   * {@link decidedBy}, so the fields only have to carry it.
+   */
+  readonly sourceAnomaly: number | undefined;
+  readonly winnerAnomaly: number | undefined;
+  readonly sourceLog: number | undefined;
+  readonly winnerLog: number | undefined;
   /**
    * Whether the service emitted any post-injection ERROR/FATAL line. The
    * distinction that matters for the silent-source block: a miss where NEITHER
@@ -1481,13 +1598,19 @@ function emits(service: DiagnosedService): boolean {
 
 /**
  * The order the miss kinds are reported and tallied in: the combinations first, in the
- * order `MISS_DECIDED_BY` fixes, then the three that are not a set of terms.
+ * order `MISS_DECIDED_BY` fixes, then the causes that are not a set of terms.
+ *
+ * FOUR of those, and `undetermined` is the fourth: `absent` is a service the dump does not DESCRIBE, and
+ * `undetermined` is a service it describes and whose value it refused to render. A word names what its absence
+ * is about, so the two cannot share one — a reader who saw `absent` for a case whose row is right there in the
+ * block would go looking for a parser bug.
  */
 export const MISS_ORDER: readonly MissDecidedBy[] = [
   ...MISS_DECIDED_BY,
   'tie',
   'unexplained',
   'absent',
+  'undetermined',
 ];
 
 /** The terms a classification can name, in the order they are spelled out. */
@@ -1527,7 +1650,8 @@ export function classifyMiss(
 
   // Attribution needs BOTH services. If either is missing the case cannot be
   // attributed from this dump, and every field it would have contributed is
-  // reported as `NaN` — never as 0, which would read as a measurement.
+  // reported as `undefined` — never as 0, which would read as a measurement, and no
+  // longer as `NaN`, which read as one too because it IS a `number`.
   if (src === undefined || win === undefined) {
     return [
       {
@@ -1536,12 +1660,43 @@ export function classifyMiss(
         source,
         winner,
         decidedBy: 'absent',
-        sourceAnomaly: src?.selfAnomaly ?? Number.NaN,
-        winnerAnomaly: win?.selfAnomaly ?? Number.NaN,
-        sourceLog: src?.logScore ?? Number.NaN,
-        winnerLog: win?.logScore ?? Number.NaN,
+        sourceAnomaly: src?.selfAnomaly,
+        winnerAnomaly: win?.selfAnomaly,
+        sourceLog: src?.logScore,
+        winnerLog: win?.logScore,
         sourceEmits: src === undefined ? false : emits(src),
         winnerEmits: win === undefined ? false : emits(win),
+      },
+    ];
+  }
+
+  // Both services are known from here on — but a term can still be unreadable, and the margin is a sum of
+  // terms. One unreadable term makes the DECOMPOSITION unanswerable, which is a different cause from either
+  // service being missing: the services are right here and the dump declined to render a value.
+  //
+  // `0` is not the answer, and neither is skipping the term. Both would attribute the miss to the remaining
+  // terms — a decomposition missing a live term reads as though that term never voted, which is the exact
+  // failure this function's own history records (the latency term was once absent from it, and 12 of 672
+  // misses were reported `unexplained` for that reason).
+  if (
+    src.selfAnomaly === undefined ||
+    win.selfAnomaly === undefined ||
+    src.logScore === undefined ||
+    win.logScore === undefined
+  ) {
+    return [
+      {
+        datapack: kase.datapack,
+        faultType: kase.faultType,
+        source,
+        winner,
+        decidedBy: 'undetermined',
+        sourceAnomaly: src.selfAnomaly,
+        winnerAnomaly: win.selfAnomaly,
+        sourceLog: src.logScore,
+        winnerLog: win.logScore,
+        sourceEmits: emits(src),
+        winnerEmits: emits(win),
       },
     ];
   }
@@ -2234,11 +2389,26 @@ export function buildWeightSeparationCases(
     // the engine is correct when it ranks any of them first.
     const targets = kase.groundTruth.filter((name) => name !== '');
     if (targets.length === 0) continue;
+    // A case whose base cannot be formed for EVERY service is not given to the solver, and the reason is the
+    // solver's own shape: the affine comparison reads `target.base − rival.base` for every rival a rule could
+    // promote, so one unformable base is enough to make the case's answers undefined rather than conservative.
+    // Skipping the case is the honest form of "the dump cannot answer this question for it"; the NUMBER of
+    // such cases is not invented here, it is the census's `self-anomaly` / `log-score` value reach on the same
+    // artifact — `scripts/dump_capability.py --channels` reports it per channel, which is the instrument whose
+    // job that count is.
+    //
+    // The filter is a TYPE PREDICATE rather than a guard inside the loop: a `continue` there would be a branch
+    // no input can take, and this repository measures branches.
+    const readable = kase.services.filter(
+      (service): service is DiagnosedService & { selfAnomaly: number; logScore: number } =>
+        service.selfAnomaly !== undefined && service.logScore !== undefined,
+    );
+    if (readable.length !== kase.services.length) continue;
     // Computed once per case, not per service: the latency term is max-normalised
     // ACROSS the case, so a per-service call would divide by a per-service maximum.
     const lat = slope === 'lat' ? latencySlopes(kase.services, latFloor) : undefined;
     const scores = new Map<string, { base: number; slope: number }>();
-    for (const service of kase.services) {
+    for (const service of readable) {
       scores.set(service.serviceId, {
         base: Math.log1p(service.selfAnomaly) + weights.logWeight * service.logScore,
         slope:
@@ -5950,6 +6120,36 @@ export function drawOnsetDelay(
 }
 
 /**
+ * Draw one base field — the anomaly or the log term — for a service the artifact DID measure.
+ *
+ * Its own function for the reason {@link drawOnsetDelay} has one, and the reason is the same shape: this is
+ * not a formula but a RULE about when a draw happens at all. `selfAnomaly` and `logScore` are
+ * `undetermined-capable`, so a service whose value the producer flagged carries `undefined`, and a draw there
+ * would move a value the artifact never stated: the field is not approximated to a quantum, it is absent — a
+ * field with no value has no resolution either. Returning `undefined` unchanged is what keeps the resampler's
+ * own rule true one step further out ("draw the fields its subject reads, at each field's own resolution").
+ *
+ * Factored out rather than written twice inline: two copies of this ternary is two chances for one of the two
+ * base fields to start drawing an absent value, and `jitterCase` carries both.
+ *
+ * @param value - The field as the dump records it, or `undefined` when it was flagged.
+ * @param halfQuantum - Half the step the field's own column is printed at.
+ * @param next - The next draw in `[0, 1)`.
+ * @returns The drawn value, or `undefined` when there was nothing to draw.
+ */
+export function drawBaseField(
+  value: number | undefined,
+  halfQuantum: number,
+  next: () => number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  // Advancing the stream here rather than before the guard is DELIBERATE: `jitterCase` walks the same `next`
+  // for every field of every service, so a draw spent on an absent value would shift every later field by one
+  // and change an ensemble's answer for a reason the artifact does not state.
+  return value + quantumDraw(next, halfQuantum);
+}
+
+/**
  * The half-quanta one screen's ensembles draw, off the artifact its cases came from.
  *
  * ONE owner for the box, because a box is two numbers that must agree with a set of flags AND a declared
@@ -6037,8 +6237,10 @@ function jitterCase(kase: DiagnosedCase, next: () => number, box: ResolutionBox)
       const breakdown = service.decisiveOutcome?.breakdown;
       return {
         ...service,
-        selfAnomaly: service.selfAnomaly + quantumDraw(next, box.service),
-        logScore: service.logScore + quantumDraw(next, box.service),
+        // A field the block flagged is NOT drawn, because there is nothing to perturb: see {@link drawBaseField}
+        // for the rule and for why the draw is not spent.
+        selfAnomaly: drawBaseField(service.selfAnomaly, box.service, next),
+        logScore: drawBaseField(service.logScore, box.service, next),
         latRise:
           service.latRise === undefined
             ? undefined
