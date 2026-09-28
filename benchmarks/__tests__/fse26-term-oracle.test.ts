@@ -1888,6 +1888,46 @@ describe('the joint gate’s footprint — the row’s net is not its mechanism'
     expect(screen.jointFootprint).toBeUndefined();
     expect(formatModeScreen(screen)).not.toContain('joint gate footprint');
   });
+
+  it('answers the gate for a GRAPHLESS case instead of throwing on it', () => {
+    // The arm the coverage report found unexercised, and the repair is a caller rather than a test written
+    // for dead code: a dump that carries a joint ROW — which needs one case with a graph — beside a case
+    // without one. The graphless case is excluded from the row's population and still belongs to the
+    // footprint's, so the gate has to ANSWER for it: no victims, no refusal, and its services counted.
+    //
+    // Both halves are asserted, because the guard is the else-branch of the one that draws the row: a
+    // `return` that answered with the dump's own zero would report a case it never looked at.
+    const withGraph = block(
+      [
+        { serviceId: 'ts-callee', selfAnomaly: 0.9, logic: 2 },
+        { serviceId: 'ts-emitter', selfAnomaly: 0.1, http: 4 },
+      ],
+      { groundTruth: ['ts-callee'], topPredictions: ['ts-callee'] },
+    );
+    const noGraph = block([{ serviceId: 'ts-quiet', selfAnomaly: 0.5, logic: 1 }], {
+      datapack: 'dp-nograph',
+      groundTruth: ['ts-quiet'],
+      topPredictions: ['ts-quiet'],
+    });
+    const cases = casesOf(withGraph, noGraph).map((kase) =>
+      kase.datapack === 'dp-1' ? { ...kase, edges: ['ts-emitter>ts-callee'] } : kase,
+    );
+    const screen = modeScreen(cases, OPTS);
+    // One victim, from the case that HAS a graph; nothing refused; and all three services counted, which is
+    // what says the graphless case was answered for rather than skipped.
+    expect(screen.jointFootprint).toMatchObject({
+      services: 3,
+      victims: 1,
+      undecidedEdges: 0,
+      ownerCases: 1,
+      ownerSuppressed: 1,
+    });
+    // …and the row itself is drawn from the one case it could be measured on, so the footprint's population
+    // and the row's are the two different populations this whole section is about.
+    expect(screen.rows.find((row) => row.source === 'logicHttpJoint')!.cases).toBe(1);
+    // The gate REFUSED nothing here, so the footprint's share is exact and the clause stays off.
+    expect(formatModeScreen(screen)).not.toContain('edge(s) undecided');
+  });
 });
 
 describe('the joint gate REFUSES an edge it cannot order, rather than reading a flagged anomaly as 0', () => {
