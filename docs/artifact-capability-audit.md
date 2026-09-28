@@ -862,3 +862,54 @@ those two workflows, which is the paths rule confirming no golden was owed.
 **A branch was added and no dimension moved**, which is what says the new placement path is exercised by the
 tests that assert it — a branch added without a test would have shown up here as a drop. That is why the
 numbers are quoted per project rather than as a workspace total.
+
+## Finding 11 — the reader's own TYPE was the defect, and the compiler is the only fence that can hold the claim
+
+Finding 10 gave the reader ONE owner for "is this token a measurement?" — an exported `UNDETERMINED_TOKENS`
+beside one accessor `measured()` — and then threw the answer away for the two fields whose declared type was a
+required `number`. `measured()` returned `undefined`, the parse wrote `Number.NaN` back, and `NaN` **is** a
+`number`, so the write type-checked.
+
+From there the defect ran four ways, and every one of them is a rule this document already states:
+
+| | |
+| --- | --- |
+| every downstream "is it measured?" test | answered **yes** — the same global assertion of a per-field fact that Finding 9 found on `inject-time` |
+| the score | `Math.log1p(NaN)` carried it into the sum |
+| a threshold fitted on it | `NaN >= t` and `NaN <= t` are false in EITHER direction, so a rule that fires on nothing reads like a rule |
+| the ORDER | `NaN !== NaN` kept the engine's own id tiebreak from ever being reached, so `b.score - a.score` returned `NaN`, which a sort reads as "equal" — and an unmeasured entry kept the position the ROW ORDER gave it |
+
+**The type was the lie**, and the census had already measured the fact on the other side of a language
+boundary: those channels declare `nonfinite` in their `absent` sets while nothing connected that declaration to
+the interface. It survived three iterations because **five tests asserted it** — a suite that asserts a defect
+certifies it.
+
+### The fix, and why the fence has to be the compiler
+
+`selfAnomaly` and `logScore` are `number | undefined`; `SERVICE_FIELD_KIND` classifies every parsed field
+`measurement` / `absent-or-value` / `undetermined-capable` as a `Record<keyof DiagnosedService, …>`, so a new
+field breaks the build until it is classified; and `FieldKindDisagreement` reduces to `never` when the table
+and the interface agree and to the offending field's **NAME** when they do not. A field classified
+`undetermined-capable` whose type is a required `number` — the defect itself — fails to compile.
+
+The fence's reach is stated rather than implied, and a mutation was re-declared to state it: the two
+non-`measurement` kinds BOTH admit `undefined`, so the compiler **cannot** separate them, and flipping a field
+between them SURVIVES the typecheck. What separates them is the TOKEN, which is the artifact's own declaration
+in `scripts/dump_capability.channels.json` — and that is killed by the census test, not by the compiler.
+
+### The audit the widening forced, and the one `?? 0` it found
+
+Widening a type compiles every consumer and forces each one to CHOOSE. The choices are enumerable, because
+they are exactly the sites that spell `?? 0`, `!` or an explicit `=== undefined` guard. One was wrong:
+`httpVictims` built a `Map` from the parsed rows and read it with `anomaly.get(id) ?? 0`, and the lookup misses
+for **two** different reasons — a service the block does not describe (the engine holds no score for that node
+either, so `0` is the ENGINE's reading) and a service it describes and declines to score (`0` is a claim the
+artifact does not make). `0` is not neutral there: it is the *minimum* of the axis, and the joint gate is
+`anomaly(callee) > anomaly(emitter)`, so a flagged row read as `0` withdraws the framework-HTTP half from
+**every caller of it** — and on the emitter side, from the very service that owns the flood.
+
+`docs/artifact-capability-audit.md` already drew this line one finding earlier, in `metricTopGap`'s comment:
+*"TWO absences, and they are not the same one."* The gate now refuses such an edge and counts it in the two
+units a reader compares: the row's population (`gateRefusedCases`) and the mechanism's reach
+(`JointFootprint.undecidedEdges`), the second of which is what makes the printed withdrawal share a **lower
+bound**.

@@ -77,12 +77,22 @@ Its row is below, and a test now keeps the retired slice's own symbols out of th
 prose while this closure was code — and that test failed on its own name list the
 first time it ran, which is why it excludes itself.
 
-The **shipped FSE'26 headline is Top@1 53.16% (756/1422)**, Top@3 66.46%, Top@5
-70.25% — the per-edge latency term at `latWeight=0.561495` with `latMinRise=10.3`
-measured together (`34921980498`), plus the pool-dominance penalty at
-`poolMetricPenaltyWeight=0.0679` measured against its own ablation on one commit
-(`34949812666` / `34949854236`). The previous headline, 52.74% (750/1422) with Top@3
-65.75% and Top@5 70.11%, is the same configuration with the penalty off — reachable as
+The **shipped FSE'26 headline is Top@1 53.23% (757/1422)**, Top@3 66.5%, Top@5
+70.4% — three measured changes, each on its own runs: the per-edge latency term at
+`latWeight=0.561495` with `latMinRise=10.3` measured together (`34921980498`), the
+pool-dominance penalty at `poolMetricPenaltyWeight=0.0679` measured against its own
+ablation on one commit (`34949812666` / `34949854236`), and the stability term at
+`DEFAULT_STABILITY_WEIGHT=0.007352` (`35416576350`, the DEFAULT path with no input
+passed, against the same-commit control `35416580279` at 756 — one case,
+`HTTPResponseReplaceCode 160 → 161`, nothing moving the other way). **The headline this
+paragraph carried until iteration 29 — 53.16% (756/1422), Top@3 66.46%, Top@5 70.25% —
+is the SAME configuration one enrolment earlier**, reachable as `stability_weight=0`;
+its row is 750 lines below, where the enrolment was recorded while this one kept the
+number a reader meets FIRST. That is the register's own named failure mode — **a
+summary outlives its own correction** — committed in the register's own opening, which
+is why the three changes are now listed with their runs rather than summarised by the
+latest of them. The 52.74% (750/1422) with Top@3 65.75% and Top@5 70.11% is the same
+configuration with the pool penalty off as well — reachable as
 `--pool-penalty 0`. Verdicts written earlier quote a **47.33%** or
 **48.80%** control: those rows are historical records of what their ablation was
 measured against, not the current number. Both are still reachable as ablations — the
@@ -256,6 +266,28 @@ Before reading any number, check that the input was counted:
   description naming `0.036552` — so the moment a value reverted to zero the check stopped
   checking, silently. Descriptions are now compared by NUMERIC TOKEN, which is also what
   makes `1.0` acceptable for a shipped `1`.
+- **an ABSENCE has a NAME, and one spelling for two of them is a fabricated measurement.** The
+  producer's tripwire renders a non-finite value as the literal `nonfinite`, and the reader
+  stored `Number('nonfinite')` — which is `NaN`. `NaN` IS a `number`, so it satisfied the two
+  fields' declared type, and from there one defect ran four ways: every "is it measured?" test
+  downstream answered **yes**; `Math.log1p(NaN)` carried it into a score; both comparisons a
+  ranking is made of (`>=` and `<=`) are false in EITHER direction, so a rule fitted to it fires
+  on nothing while reading like a rule; and `NaN !== NaN` kept the engine's own id tiebreak from
+  ever being reached, so an unmeasured entry kept the position the ROW ORDER gave it and the
+  order stopped being a function of the values. **The type was the lie**, and the census had
+  already measured the fact on the other side of a language boundary: those channels declare
+  `nonfinite` in their `absent` sets while nothing connected that declaration to the interface
+  (`docs/artifact-capability-audit.md` F9/F10). The fields are `number | undefined` now, ONE
+  owner answers "is this token a measurement?", the classification is a table the COMPILER
+  checks against the interface in both directions, and every consumer is forced to choose — with
+  the choice named at the site, because `?? 0` is a default the compiler accepts and a `0` there
+  says "measured and worth nothing" about a value the artifact declines to state. **AND AN
+  ABSENCE IS NOT ANOTHER ABSENCE**: the joint gate's lookup missed both for a service the block
+  does not describe (the engine holds no score for it either, so `0` is the ENGINE's reading) and
+  for a service it describes and declines to score (a claim the artifact does not make), and the
+  second made a flagged service the LEAST anomalous in its own graph — which withdraws the
+  framework-HTTP half from every one of its callers. The gate now REFUSES such an edge and
+  counts it, because a withdrawal the artifact cannot state is not a withdrawal withheld.
 - **a reconstruction must model every term that is LIVE in the dump**, and the opposite
   failure is as expensive as the one above: a term missing from `blendScores` is invisible
   while its weight is 0 and turns the shipped configuration's own decisions into
