@@ -411,6 +411,228 @@ describe('formatSeparatorCensus', () => {
   });
 });
 
+/**
+ * Two wrong cases whose call graph ORDERS them, so `reaches` prefers the source on both pairs while
+ * `sigLines` prefers the winner on both — the shape the row's `best` is chosen from.
+ *
+ * The winner carries five exception lines and the source none, and both sides carry zero error and
+ * fatal lines: `sigLines` therefore measures 0/2 in the winner's favour and `errLines` ties on both
+ * pairs. That tie is the point — a tie is not a flip, so `errLines` has a RATE (exactly 0.5) and NO
+ * test, which is the state a reader must not conflate with its mirror.
+ */
+const ORDERED_BY_GRAPH = [
+  wrongCase('graph-a', { edges: ['ts-src>ts-rival'] }, [
+    svc('ts-src', { isGroundTruth: true, selfAnomaly: 0.9 }),
+    svc('ts-rival', { selfAnomaly: 1, logicExceptionCount: 5 }),
+  ]),
+  wrongCase('graph-b', { edges: ['ts-src>ts-rival'] }, [
+    svc('ts-src', { isGroundTruth: true, selfAnomaly: 0.9 }),
+    svc('ts-rival', { selfAnomaly: 1, logicExceptionCount: 5 }),
+  ]),
+];
+
+describe('the two readings of ONE tally — a test is not a rate', () => {
+  it('counts the two absences apart: a rate without a test is reachable, a test without a rate is not', () => {
+    // `toCell` makes `auc` and `p` from the same tally and their absences are NOT independent: `p`
+    // is `undefined` exactly when the non-tie pairs are zero, while the rate's denominator is those
+    // pairs PLUS the ties. So `p !== undefined` implies `measurable > 0` implies a defined rate —
+    // and the CONVERSE is a different state: every measurable pair a tie leaves a rate of exactly
+    // 0.5, which is no support, with no test behind it.
+    const row = separatorCensus(ORDERED_BY_GRAPH).total;
+    const tie = row.cells.find((cell) => cell.name === 'errLines')!;
+    expect(tie).toMatchObject({ source: 0, winner: 0, tie: 2, auc: 0.5, p: undefined });
+    // The converse is reachable HERE, and that is what makes the empty list below a measurement of
+    // the construction rather than a corpus that never exercises either arm.
+    expect(
+      row.cells.filter((cell) => cell.auc !== undefined && cell.p === undefined).length,
+    ).toBeGreaterThan(0);
+    expect(row.cells.filter((cell) => cell.p !== undefined && cell.auc === undefined)).toEqual([]);
+  });
+
+  it('names a LATER tested cell as the row’s best when it beats the first, and the sentence follows', () => {
+    // The reduce's own consequent: `sigLines` is the first non-term cell that ran a test (rate 0.0,
+    // both pairs to the winner) and `reaches` is the LAST (rate 1.0), so the accumulator is
+    // REPLACED. Without a caller for this the arm is unexercised, and the sentence that names the
+    // row's best would be asserted only in its "nothing to name" form.
+    const census = separatorCensus(ORDERED_BY_GRAPH);
+    const row = census.total;
+    expect(row.cells.find((cell) => cell.name === 'sigLines')).toMatchObject({ auc: 0 });
+    expect(row.cells.find((cell) => cell.name === 'reaches')).toMatchObject({ auc: 1 });
+    // `minCases` is 10 and the row has 2 pairs, so nothing clears the bar and the fallback sentence
+    // is the one that NAMES the best.
+    expect(census.candidates).toEqual([]);
+    expect(formatSeparatorCensus(census)).toContain('the best is `reaches` at 1.000.');
+  });
+
+  it('never names a rated cell that ran no test, so a row of ties states an ABSENCE', () => {
+    // The mirror of the test above, and the reason the population is filtered on the TEST rather
+    // than on the RATE. With no graph and default counts every measurable non-term cell ties, so
+    // each carries a rate of exactly 0.5 and no test: a reader that selected by rate would name one
+    // of them as the row's best at 0.500, which reads like a candidate and is the exact opposite.
+    const census = separatorCensus([wrongCase('plain-a'), wrongCase('plain-b')]);
+    const rated = census.total.cells.filter(
+      (cell) => cell.role !== 'term' && cell.auc !== undefined,
+    );
+    expect(rated.length).toBeGreaterThan(0);
+    expect(rated.every((cell) => cell.p === undefined)).toBe(true);
+    expect(formatSeparatorCensus(census)).toContain('no non-term signal passes.');
+    expect(formatSeparatorCensus(census)).not.toContain('the best is');
+  });
+
+  it('never lets a signal whose rate is ABSENT become a candidate, under either polarity', () => {
+    // A cell with no measurable pair has no rate at all, and both candidate tests used to read that
+    // absence as `0` — the MINIMUM of the axis — once on the total and once per fault type. Two
+    // floors make the fallback dead, and they are two DIFFERENT reasons, so both are asserted: a
+    // floor of one or more refuses the cell before either comparison, while a floor of ZERO lets it
+    // reach the first one, where a fabricated `0.00` clears a bar at or below zero and only the
+    // per-type test's own `>= 0.5` refuses the signal — a mask that exists because THIS fixture has a
+    // row. On a census with NO rows `rows.every(...)` is vacuously true and nothing masks it, which is
+    // the state the test below this one adds. The negative bar is here so the answer cannot be an
+    // accident of the polarity.
+    const cases = [wrongCase('no-inventory-a'), wrongCase('no-inventory-b')];
+    for (const criterion of [
+      { minCases: 10, minAuc: 0.6 },
+      { minCases: 0, minAuc: -1 },
+    ]) {
+      const census = separatorCensus(cases, criterion);
+      const kept = census.total.cells.find((cell) => cell.name === 'kept')!;
+      // The fixture really does present the state, so the assertions below are not vacuous.
+      expect(kept.auc).toBeUndefined();
+      expect(census.candidates).not.toContain('kept');
+    }
+  });
+
+  it('orders candidates by rate DESCENDING, and two equal rates by name in BOTH directions', () => {
+    // A rate is a fraction of a small pair count, so two signals measuring 1.0 on the same pairs is
+    // ordinary — and the menu's own order is alphabetical for one such pair and the REVERSE for
+    // another, so both answers are asserted. Asserting only the reordering half would leave the
+    // "already in order" half to a report's silence, which is the half that no diff can show.
+    const casesWith = (source: Partial<DiagnosedService>, winner: Partial<DiagnosedService>) =>
+      ['a', 'b'].map((id) =>
+        wrongCase(id, undefined, [
+          svc('ts-src', { isGroundTruth: true, selfAnomaly: 0.9, ...source }),
+          svc('ts-rival', { selfAnomaly: 1, ...winner }),
+        ]),
+      );
+    const candidatesOf = (cases: readonly DiagnosedCase[]) =>
+      separatorCensus(cases, { minCases: 1, minAuc: 0.6 }).candidates;
+
+    // The menu lists `inLatEdges` BEFORE `edgeRecords`; alphabetically it is the other way round, so
+    // this row's answer can only come from the tie-break reordering the list.
+    expect(
+      candidatesOf(
+        casesWith({ latEdges: 5, failedEdgeRecords: 7 }, { latEdges: 2, failedEdgeRecords: 1 }),
+      ),
+    ).toEqual(['edgeRecords', 'inLatEdges']);
+    // The menu lists `errLines` before `inLatEdges` AND it is the smaller name, so here the tie-break
+    // must leave the order alone — the other arm of the same ternary.
+    expect(candidatesOf(casesWith({ errorCount: 4, latEdges: 5 }, { latEdges: 2 }))).toEqual([
+      'errLines',
+      'inLatEdges',
+    ]);
+    // And the primary key, which no equal-rate fixture can pin: the row prints its BEST first. TWO of
+    // these signals measure 1.00 and two measure 0.50, so an ascending sort would print the row's two
+    // WORST cells first — and the two 1.00s are a TIE, so this one list pins the primary key and the
+    // name tie-break together.
+    //
+    // `edgeRecords` is 1.00 on ONE pair rather than on two: the second case's source carries no
+    // `failedEdgeRecords`, so that pair is UNMEASURABLE and leaves the cell's denominator instead of
+    // its rate — a per-case absence shrinks `measurable` without making the rate absent, which is the
+    // distinction this iteration exists for. (An expectation of `0.5` here was written by hand and
+    // never measured, which is how the reading below is `1`: corrected against the probe's counts of
+    // `src=1 win=0 tie=0 unm=1`, not against what the sentence was meant to illustrate.)
+    const descending = separatorCensus(
+      [
+        wrongCase('r-a', undefined, [
+          svc('ts-src', {
+            isGroundTruth: true,
+            selfAnomaly: 0.9,
+            latEdges: 5,
+            failedEdgeRecords: 7,
+          }),
+          svc('ts-rival', { selfAnomaly: 1, latEdges: 2, failedEdgeRecords: 1 }),
+        ]),
+        wrongCase('r-b', undefined, [
+          svc('ts-src', { isGroundTruth: true, selfAnomaly: 0.9, latEdges: 5 }),
+          svc('ts-rival', { selfAnomaly: 1, latEdges: 2, failedEdgeRecords: 1 }),
+        ]),
+      ],
+      { minCases: 1, minAuc: 0.5 },
+    );
+    expect(descending.candidates).toEqual(['edgeRecords', 'inLatEdges', 'errLines', 'sigLines']);
+    const rate = (name: string) => descending.total.cells.find((cell) => cell.name === name)!.auc;
+    // Two rates at 1.00 and two at 0.50, so the list pins the primary key AND the tie-break: an
+    // ascending sort would put the 0.50 pair first, and a tie-break that gave up on the name would
+    // let the menu order the two 1.00s.
+    expect(rate('inLatEdges')).toBe(1);
+    expect(rate('edgeRecords')).toBe(1);
+    expect(rate('errLines')).toBe(0.5);
+    expect(rate('sigLines')).toBe(0.5);
+  });
+
+  it('breaks a tie between two tested cells by NAME, in the direction the tie-break claims', () => {
+    // The reduce's other arm, and the only shape that reaches it: two tested non-`term` cells with
+    // the SAME rate. `errLines` and `inLatEdges` both measure 1.0 here, and the menu lists `errLines`
+    // FIRST — so the alphabetically-first is also the earlier cell, which means a comparator that
+    // lost its `>` or gained an `=` would silently answer with the other one. Asserted through the
+    // sentence that NAMES the row's best, because the ordering rule is what a reader sees.
+    const cases = ['a', 'b'].map((id) =>
+      wrongCase(id, undefined, [
+        svc('ts-src', {
+          isGroundTruth: true,
+          selfAnomaly: 0.9,
+          errorCount: 4,
+          latEdges: 5,
+        }),
+        svc('ts-rival', { selfAnomaly: 1, latEdges: 2 }),
+      ]),
+    );
+    const census = separatorCensus(cases);
+    const rate = (name: string) => census.total.cells.find((cell) => cell.name === name)!.auc;
+    // Both really do carry the same rate, so the answer below is the tie-break and not a difference.
+    expect(rate('errLines')).toBe(1);
+    expect(rate('inLatEdges')).toBe(1);
+    // Nothing clears the criterion's floor of ten pairs, so the fallback sentence is the one that
+    // names the best — and it names the alphabetically-first of the two.
+    expect(census.candidates).toEqual([]);
+    expect(formatSeparatorCensus(census)).toContain('the best is `errLines` at 1.000.');
+  });
+
+  it('admits NOTHING as a candidate when the census has no pairs, at any floor', () => {
+    // The one shape the per-type test cannot mask, and the shape that makes the fabrication a BEHAVIOUR
+    // rather than a dead branch: with no wrong cases there are no per-type ROWS, so `rows.every(...)`
+    // is vacuously TRUE and a criterion whose floor is zero lets a rate-less cell reach the bar
+    // comparison. A fabricated `0.00` clears a bar at or below zero, and a signal is then admitted as
+    // a candidate measured on NOTHING — a candidate whose rate was never measured, which is the shape
+    // this register exists for. An empty dump is a legal artifact (a small or entirely-correct dump
+    // produces exactly this), which is why it is asserted rather than assumed impossible.
+    const empty = separatorCensus([]);
+    expect(empty.total.pairs).toBe(0);
+    expect(empty.candidates).toEqual([]);
+    const degenerate = separatorCensus([], { minCases: 0, minAuc: -1 });
+    // Nothing in this census has a rate at all, so nothing can have cleared a bar.
+    expect(degenerate.total.cells.every((cell) => cell.auc === undefined)).toBe(true);
+    expect(degenerate.candidates).toEqual([]);
+  });
+
+  it('declares a survivor’s rate as a NUMBER, because a survivor ran a test', () => {
+    // A declaration nothing demands is a declaration nothing holds: `aucText` accepts an absent rate,
+    // so widening this field back to `number | undefined` would compile. The assignment below IS the
+    // demand — which is why the row that widens it belongs to the COMPILER and not to this suite: a
+    // test runner strips types before executing and cannot see this line at all.
+    const strong = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((id) =>
+      wrongCase(id, { faultType: 'T1' }, [
+        svc('ts-src', { isGroundTruth: true, logicExceptionCount: 5 }),
+        svc('ts-rival', { selfAnomaly: 1 }),
+      ]),
+    );
+    const census = separatorCensus(strong, { minAuc: 0.6, minCases: 3 });
+    const survivor = census.survivors.find((one) => one.signal === 'sigLines')!;
+    const rate: number = survivor.auc;
+    expect(rate).toBe(1);
+  });
+});
+
 describe('the multiplicity bar, and the exact test behind it', () => {
   it('is the exact two-sided permutation p-value over the non-tie pairs', () => {
     // Five clean wins: 2 x 2^-5. Ten clean wins: 2 x 2^-10. Nothing measurable: no test.

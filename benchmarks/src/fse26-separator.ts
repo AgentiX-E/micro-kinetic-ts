@@ -707,14 +707,43 @@ export interface SeparatorCell {
   readonly near: SeparatorNearCell;
 }
 
+/**
+ * A cell that RAN A TEST, and therefore carries the rate that test's direction is read with.
+ *
+ * `auc` and `p` are two readings of ONE tally and their absences are NOT independent, which is the
+ * fact this type exists to stop every reader from having to re-argue:
+ *
+ * - `p` is `undefined` exactly when the non-tie pairs are zero — {@link separationPValue} answers for
+ *   the flips, and no flips is no test;
+ * - the rate's denominator is those non-tie pairs PLUS the ties.
+ *
+ * So a tested cell always has a denominator: `p !== undefined` implies `measurable > 0` implies
+ * `auc !== undefined`. **The converse is a different state and it is REACHABLE** — a cell whose every
+ * measurable pair is a tie has a rate of exactly `0.5`, which is no support at all, and no p-value.
+ * That asymmetry is why {@link bestNonTerm} filters on the TEST and compares on the RATE, and why the
+ * two are not interchangeable in either direction: filtering on the rate would admit the all-tie
+ * cells at `0.5`, and ranking on the test would order by significance, which is backwards — the test
+ * is symmetric, so it would make a cell at rate `0.00` the row's best.
+ *
+ * Measured over the local corpus, every cell of every census of 7 dumps: **0 cells of the first
+ * shape among 615 non-term cells, and 133 of the second.** The implication is therefore a property
+ * of the CONSTRUCTION rather than an accident of the corpus, and a `(cell.auc ?? 0)` inside this
+ * population is a fallback for a state `toCell` cannot produce — a fabricated `0.00`, which is the
+ * MINIMUM of the axis, kept in reserve.
+ */
+export type TestedCell = SeparatorCell & { readonly p: number; readonly auc: number };
+
 /** One cell that survives the multiplicity bar: a per-type claim that is worth a run. */
 export interface SeparatorSurvivor {
   readonly faultType: string;
   readonly signal: string;
   readonly source: number;
   readonly loss: number;
-  /** `(source + tie/2) / (source + winner + tie)`, or `undefined` when nothing was measurable. */
-  readonly auc: number | undefined;
+  /**
+   * `(source + tie/2) / (source + winner + tie)` — never absent, because a survivor RAN A TEST and a
+   * test implies a denominator ({@link TestedCell}).
+   */
+  readonly auc: number;
   readonly p: number;
   /**
    * The same rate per FOLD, in fold order, or `undefined` for a fold this signal could not
@@ -905,6 +934,66 @@ function measurableOf(cell: SeparatorCell): number {
 }
 
 /**
+ * The cells of a row that ran a test — the population the survivor scan and {@link bestNonTerm} read.
+ *
+ * ONE narrowing, so the test a filter applies and the rate a comparison reads cannot drift apart,
+ * and so no caller has to write an assertion beside a fallback for the same value: the table's `mark`
+ * used to read `best.p!` and then test `best.p !== undefined` on the same line, which is a non-null
+ * assertion and a default for one number, of which one has to be wrong.
+ *
+ * The `auc` half of the predicate is the implication {@link TestedCell} documents, written out
+ * because only a check can narrow a type. A cell carrying a test and no rate is therefore DROPPED
+ * rather than refused, so the claim that none exists is held by the suite on a producer-built row in
+ * both directions — the implication on the roster, and the reachability of its converse, so the
+ * first is not read off a corpus that exercises neither.
+ *
+ * @param row - One row of the census.
+ * @returns The cells that ran a test, in cell order.
+ */
+function testedCells(row: SeparatorRow): readonly TestedCell[] {
+  return row.cells.filter(
+    (cell): cell is TestedCell =>
+      cell.role !== 'term' && cell.p !== undefined && cell.auc !== undefined,
+  );
+}
+
+/**
+ * The rate a cell clears `bar` with, or `undefined` when it does not clear it.
+ *
+ * Both candidate tests read the rate as `(cell.auc ?? 0)`, so a cell with no measurable pair carried
+ * a FABRICATED `0.00` — the MINIMUM of the axis — into a comparison with a bar. The fallbacks are
+ * dead, and the two reasons are worth keeping apart because only one of them is a property of the
+ * comparison:
+ *
+ * - with a floor of one or more (`{@link DEFAULT_SEPARATOR_CRITERION}`'s is 10), a rate-less cell is
+ *   rejected by `measurableOf(...) < criterion.minCases` BEFORE either test, so the fallback is never
+ *   evaluated at all: the coverage report counts exactly those arms and reads **zero** for each;
+ * - with a floor of zero or less, a rate-less cell REACHES the first test, and there the two trees
+ *   DIFFER — which is the whole reason this function refuses instead of defaulting. The old code read
+ *   `(cell.auc ?? 0) < criterion.minAuc`, so a fabricated `0.00` cleared any bar at or below zero, and
+ *   whether that became a candidate depended on a MASK one test later: `(cell.auc ?? 0) >= 0.5`
+ *   refuses the same signal whenever the census has a ROW, and a rate-less total implies a rate-less
+ *   every row (the total's counts are the rows' counts summed). Every census with rows therefore
+ *   agrees between the two trees — while `rows.every(...)` over NO rows is **vacuously true**, and an
+ *   empty dump is a legal artifact. There the old code admitted **all fifteen** non-term signals as
+ *   candidates from a census that measured nothing. **Measured, and the population is the whole of
+ *   it**: over five fixtures × sixteen `minCases`/`minAuc` settings the two trees differ on exactly
+ *   **2 of 80** rows, both `no-pairs-at-all` at `minCases: 0` with `minAuc` `-1` and `0`.
+ *
+ * Returning the RATE rather than a boolean is the part that matters, and it is what makes the
+ * absence impossible to lose: the caller that admits a cell receives the number it must then order
+ * by, so there is no second read of `auc` anywhere to default, and the caller that refuses it
+ * receives `undefined` — a value no bar can be compared against by accident.
+ *
+ * @param cell - One cell, whose rate may be absent.
+ * @param bar - The rate the cell must reach.
+ * @returns The rate, when there is one and it reaches `bar`; `undefined` otherwise.
+ */
+function rateClearing(cell: SeparatorCell, bar: number): number | undefined {
+  return cell.auc !== undefined && cell.auc >= bar ? cell.auc : undefined;
+}
+
+/**
  * The per-fold tally for one signal over one set of pairs — the same fold split the
  * discriminator fits on, for the same reason: a claim selected from a scan has to be re-read on
  * a fifth of the dump it was not selected from.
@@ -1044,21 +1133,28 @@ export function separatorCensus(
     );
   }).length;
 
-  const candidates = SEPARATOR_SIGNALS.filter((signal) => {
+  // The candidate space, built in ONE pass so that the rate a signal is admitted on is the rate it is
+  // then ORDERED by: the filter used to return a name that the sort re-read from the cell with a
+  // fallback, which is two readings of a number one of them had already proved present.
+  const candidates = SEPARATOR_SIGNALS.flatMap((signal) => {
     // A term is not a candidate at any AUC: it cannot reopen an axis the register closed.
-    if (signal.role === 'term') return false;
+    if (signal.role === 'term') return [];
     const overall = cellOf(total, signal.name);
-    if (measurableOf(overall) < criterion.minCases) return false;
-    if ((overall.auc ?? 0) < criterion.minAuc) return false;
+    if (measurableOf(overall) < criterion.minCases) return [];
+    // The floor above is what makes the rate readable wherever it is positive, and this is the ONE
+    // place the absent case is answered — including for the sort below, which reads `rate`.
+    const rate = rateClearing(overall, criterion.minAuc);
+    if (rate === undefined) return [];
     // And never the wrong way on a type large enough to be counted: that is the half of the
     // kill criterion a global rate cannot see.
-    return rows.every((row) => {
+    const directional = rows.every((row) => {
       const cell = cellOf(row, signal.name);
-      return measurableOf(cell) < criterion.minCases || (cell.auc ?? 0) >= 0.5;
+      return measurableOf(cell) < criterion.minCases || rateClearing(cell, 0.5) !== undefined;
     });
+    return directional ? [{ name: signal.name, rate }] : [];
   })
-    .map((signal) => signal.name)
-    .sort((a, b) => (cellOf(total, b).auc ?? 0) - (cellOf(total, a).auc ?? 0) || (a < b ? -1 : 1));
+    .sort((a, b) => b.rate - a.rate || (a.name < b.name ? -1 : 1))
+    .map((one) => one.name);
 
   // The multiplicity bar covers every non-term cell a reader scans: the term signals are
   // printed beside them but can never be promoted, so charging the candidate space for them
@@ -1074,8 +1170,9 @@ export function separatorCensus(
   const survivors: SeparatorSurvivor[] = [];
   const dominated: SeparatorSurvivor[] = [];
   for (const { row, subset } of built) {
-    for (const cell of row.cells) {
-      if (cell.role === 'term' || cell.p === undefined) continue;
+    // The tested population, so this scan and `bestNonTerm` cannot disagree about which cells ran a
+    // test — and so the rate below is a number rather than a fallback.
+    for (const cell of testedCells(row)) {
       if (cell.p >= adjustedAlpha) continue;
       // The DIRECTION is what separates the two lists, and it is not cosmetic: a cell whose AUC
       // is 0.00 is as significant as one whose AUC is 1.00, and calling the first a `survivor`
@@ -1085,7 +1182,7 @@ export function separatorCensus(
         const measurable = tally.source + tally.winner + tally.tie;
         return measurable === 0 ? undefined : (tally.source + tally.tie / 2) / measurable;
       });
-      (cell.auc !== undefined && cell.auc > 0.5 ? survivors : dominated).push({
+      (cell.auc > 0.5 ? survivors : dominated).push({
         faultType: row.faultType,
         signal: cell.name,
         source: cell.source,
@@ -1093,9 +1190,7 @@ export function separatorCensus(
         auc: cell.auc,
         p: cell.p,
         foldAuc,
-        stable: foldAuc.every(
-          (auc) => auc === undefined || auc > 0.5 === (cell.auc !== undefined && cell.auc > 0.5),
-        ),
+        stable: foldAuc.every((auc) => auc === undefined || auc > 0.5 === cell.auc > 0.5),
       });
     }
   }
@@ -1136,15 +1231,23 @@ function pText(p: number | undefined): string {
  * By AUC and not by p-value: the p-value is symmetric, so ranking on it makes a cell at AUC 0.00
  * the row's `best` — which reads as a candidate and is the exact opposite of one. The p-value is
  * printed BESIDE the AUC so a large sample and a strong rate can both be seen.
+ *
+ * The population is {@link testedCells} and each half of it is load-bearing: the `role` half keeps the
+ * engine's own terms out, because a term cannot reopen an axis the register closed, and the TEST half
+ * keeps out a cell whose every measurable pair is a tie — a rate of exactly `0.5`, which is the
+ * ABSENCE of support and would otherwise be named as the row's best.
+ *
+ * @param row - One row of the census.
+ * @returns The tested non-`term` cell with the highest rate, ties broken by name, or `undefined` when
+ *   the row carries no tested non-`term` cell at all.
  */
-function bestNonTerm(row: SeparatorRow): SeparatorCell | undefined {
-  const eligible = row.cells.filter((cell) => cell.role !== 'term' && cell.p !== undefined);
+function bestNonTerm(row: SeparatorRow): TestedCell | undefined {
+  const eligible = testedCells(row);
   if (eligible.length === 0) return undefined;
+  // Both rates are numbers here, so there is nothing to default: the `?? 0` this replaces was a
+  // fallback for a state `toCell` cannot produce, and it read an absent rate as the axis's MINIMUM.
   return eligible.reduce((best, cell) =>
-    (cell.auc ?? 0) > (best.auc ?? 0) ||
-    ((cell.auc ?? 0) === (best.auc ?? 0) && cell.name < best.name)
-      ? cell
-      : best,
+    cell.auc > best.auc || (cell.auc === best.auc && cell.name < best.name) ? cell : best,
   );
 }
 
@@ -1214,8 +1317,10 @@ export function formatSeparatorCensus(census: SeparatorCensus): string {
       .map((name) => aucText(row.cells.find((cell) => cell.name === name)?.auc).padStart(9))
       .join('');
     const best = bestNonTerm(row);
-    const mark =
-      best !== undefined && best.p! < census.adjustedAlpha && best.p !== undefined ? ' *' : '  ';
+    // The mark says the row's best cell also cleared the multiplicity bar. `best` is a `TestedCell`,
+    // so its p-value is a number: what this replaces read `best.p!` and then tested
+    // `best.p !== undefined` on the same line — one value asserted and defaulted in one breath.
+    const mark = best !== undefined && best.p < census.adjustedAlpha ? ' *' : '  ';
     lines.push(
       `  ${label.padEnd(labelWidth - 2)}${String(row.pairs).padStart(5)}` +
         `${String(row.sameInventoryPairs).padStart(7)}` +
