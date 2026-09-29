@@ -428,6 +428,12 @@ export interface ConfigRule {
    * The kill criterion demands zero regressed fault types, so a rule that fixes 119 cases
    * while breaking 106 has a positive net and still cannot ship: `broken` is the number the
    * criterion asks about, and a report that printed only the net would recommend it.
+   *
+   * This is also the number that makes {@link formatDiscriminatorReport}'s TRADES clause reachable, and the
+   * shipped measurement IS an instance of it: `docs/fse26-discriminator-verdict.md` §4 records `lat only` at
+   * held-out net `+13` with **25 fixed / 11 broken**, and that document's own verdict is the clause's text.
+   * A fixture has to be built for it — every configuration on the real corpus breaks 88 to 590 cases in
+   * sample, and the fixtures' rules broke nothing out of sample — which is why the arm stood unexercised.
    */
   readonly heldOutFixed: number;
   readonly heldOutBroken: number;
@@ -541,8 +547,13 @@ export function formatDiscriminatorReport(screen: DiscriminatorScreen): string {
     );
     return lines.join('\n');
   }
+  // The sign is not a branch. The guard above RETURNS unless `best.heldOutNet > 0`, so a conditional sign
+  // here would carry an arm no input can take — and it did: the coverage report counted
+  // `heldOutNet >= 0 ? '+' : ''` as an uncovered branch for as long as it stood, which is the same defect
+  // iteration 31 removed from the separator's rate: a fallback written for a state the guard has already
+  // excluded. What the guard PROVES, the headline states.
   lines.push(
-    `  best held-out: ${best.config} net ${best.heldOutNet >= 0 ? '+' : ''}${best.heldOutNet} ` +
+    `  best held-out: ${best.config} net +${best.heldOutNet} ` +
       `(fixed ${best.heldOutFixed}, broken ${best.heldOutBroken}) → ` +
       `${screen.baselineCorrect + best.heldOutNet}/${screen.cases}`,
   );

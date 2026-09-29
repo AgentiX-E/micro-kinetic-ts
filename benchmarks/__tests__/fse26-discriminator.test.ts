@@ -465,6 +465,68 @@ describe('formatDiscriminatorReport', () => {
 
     expect(text).toContain('log only: fixes 10 and breaks 5');
   });
+
+  it('states the TRADES verdict when the best rule is net-positive and still breaks cases out of sample', () => {
+    // The report's most consequential sentence, and the SHIPPED measurement is an instance of it:
+    // `docs/fse26-discriminator-verdict.md` §4 records `lat only` at held-out net **+13** with
+    // **25 fixed / 11 broken**, and that document's §5 is this clause's own text ("the second half of the
+    // criterion fails outright"). No fixture had ever reached it, because every fixture's best rule broke
+    // nothing out of sample — so the branch that states the verdict the experiment actually produced was the
+    // one branch the suite never ran.
+    //
+    // The fixture separates NOTHING: the fixed and the broken cases carry the same feature value, which is
+    // what makes the trade structural rather than a fitting failure. No threshold between them exists, so
+    // every rule that fires on the fixes fires on the breaks as well.
+    const outcomes = [
+      ...Array.from({ length: 16 }, (_, index) =>
+        outcome(`fix-${index}`, ['log only'], { metricTopGap: 0.9 }),
+      ),
+      ...Array.from({ length: 8 }, (_, index) =>
+        outcome(`break-${index}`, ['shipped'], { metricTopGap: 0.9 }),
+      ),
+    ];
+    const screen = discriminatorScreen(outcomes, 5);
+    const best = screen.rules[0]!;
+    // The clause's precondition, asserted BEFORE the sentence it explains. Without this the text
+    // assertions below would pass on a fixture that never reached the arm, which is the whole failure this
+    // spec exists to close.
+    expect(best.config).toBe('log only');
+    expect(best.heldOutNet).toBeGreaterThan(0);
+    expect(best.heldOutBroken).toBeGreaterThan(0);
+
+    const text = formatDiscriminatorReport(screen);
+    expect(text).toContain('best held-out: log only net +8 (fixed 16, broken 8)');
+    expect(text).toContain('this rule TRADES cases');
+    expect(text).toContain('cannot pass the kill criterion');
+    expect(text).toContain('log only: fixes 16 and breaks 8 if applied to every case');
+  });
+
+  it('names no rule when a configuration breaks nothing at all, rather than naming it as breaking zero', () => {
+    // The loop's skip. A configuration that fixes cases and breaks NONE is not a population a reader has to
+    // weigh, and the sentence it would otherwise print ("breaks 0") is the report claiming a measurement it
+    // does not have. The state is reachable whenever a configuration dominates the baseline on the case set;
+    // the real corpus does not reach it — every configuration there breaks 88 to 590 cases in sample — which
+    // is exactly why it is a fixture rather than a reading.
+    const outcomes = [
+      ...Array.from({ length: 5 }, (_, index) =>
+        outcome(`fix-${index + 3}`, ['log only'], { metricTopGap: 0.9 }),
+      ),
+      ...Array.from({ length: 5 }, (_, index) =>
+        outcome(`neutral-${index}`, ['shipped', 'log only'], { metricTopGap: 0.9 }),
+      ),
+    ];
+    const screen = discriminatorScreen(outcomes, 5);
+    // The skip's precondition is the IN-SAMPLE delta, and it is a different number from the held-out split:
+    // this rule breaks nothing on any case and is still the one the report names as best.
+    expect(screen.rules[0]!.delta.broken).toEqual([]);
+    expect(screen.rules[0]!.heldOutNet).toBeGreaterThan(0);
+    expect(screen.rules[0]!.heldOutBroken).toBe(0);
+
+    const text = formatDiscriminatorReport(screen);
+    expect(text).toContain('best held-out: log only net +5 (fixed 5, broken 0)');
+    expect(text).not.toContain('if applied to every case');
+    expect(text).not.toContain('TRADES cases');
+  });
 });
 
 describe('a feature the case cannot answer is not a zero', () => {
