@@ -3332,7 +3332,21 @@ interface SolvedWindow {
   /** The right end of that range. */
   readonly bestEnd: number;
   readonly ship: number;
-  /** Losses at {@link ship} — measured, not inferred from the cap. */
+  /**
+   * Losses at {@link ship} — measured, not inferred from the cap.
+   *
+   * It reads **zero** for every window this solver produces, and that is a property of the geometry rather
+   * than of a corpus: {@link ship} is a midpoint of a gain plateau whose sample weights are all at or below
+   * the window's own `cap`, and `cap` is the smallest component-end among the cases satisfied at zero, so a
+   * case that was correct at `w = 0` is still correct at `ship`. Measured over seven dumps, both shapes of both
+   * screens and five named weights: 199 windows, none with a non-zero loss.
+   *
+   * The reading is kept because it is what the two reports PRINT — a reader is owed the number rather than the
+   * argument — and the weight at which a loss CAN happen is a weight the caller named, which the cap does not
+   * bound: that is {@link NamedWeightVerdict.lost}, and it is where the verdict reads the half of the criterion
+   * this field cannot see. Do not confuse it with {@link CapResolution.lostAtShip}, the same name on a
+   * different type and a real reading: how often the cap itself is lost under the digits the dump discarded.
+   */
   readonly lostAtShip: number;
   /** The datapacks gained at {@link ship}, sorted. */
   readonly gained: readonly string[];
@@ -3561,6 +3575,27 @@ function namedWeightLines(at: NamedWeightVerdict | undefined): readonly string[]
   if (at.lost > 0) lines.push(`    lost: ${at.lostDatapacks.join(', ')}`);
   if (at.gained > 0) lines.push(`    gained: ${at.gainedDatapacks.join(', ')}`);
   return lines;
+}
+
+/**
+ * The weight a screen advises, and the loss it costs there.
+ *
+ * ONE owner for a sentence that stood in TWO reports — the temporal screen's and the decisive-stability
+ * screen's — byte for byte.
+ *
+ * It used to carry a clause, `lostAtShip > 0 ? ' — the criterion’s second half FAILS' : ''`, and the clause is
+ * REMOVED rather than shared because it can never print. {@link SolvedWindow.ship} is the midpoint of a gain
+ * plateau whose sample weights are all at or below the window's own `cap`, and `cap` is the smallest
+ * component-end among the cases satisfied at zero — so a case that was correct at zero is still correct at
+ * `ship`, and the loss there is zero for every window this solver produces. The coverage report counted the
+ * clause's empty arm for as long as it stood, and the sentence it would have printed is the one the owner
+ * below states from a quantity that CAN move.
+ *
+ * @param s - The solved window.
+ * @returns The line, indented by two spaces.
+ */
+function shipLine(s: SolvedWindow): string {
+  return `  ship ${s.ship.toFixed(6)}; lost at ship ${s.lostAtShip}`;
 }
 
 /**
@@ -4310,9 +4345,6 @@ export function onsetScreen(
     if (one !== undefined) built.push(one);
   }
   const solved = solveZeroRegressionWindow(built, at);
-  const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
-  const gainTypes = new Map<string, number>();
-  for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
   // Built ONCE and shared with the frontier, so the sweep's `k = 0` is literally the same ensembles the
   // report prints rather than a second draw of the same box that agrees only because the seed is fixed.
   const screen: GainResolutionScreen = { kind: 'onset', weights, shape };
@@ -4324,7 +4356,7 @@ export function onsetScreen(
     shape,
     solved,
     capNoise,
-    gainTypes: tallyCounter(gainTypes),
+    gainTypes: faultTypeTally(cases, solved.gained),
     resolution,
     frontier: refinementFrontier({ gain, solved, shape, atArtifact: { resolution, capNoise } }),
   };
@@ -4471,10 +4503,7 @@ export function formatOnsetScreenReport(screen: OnsetScreen, weights: FamilyScre
     `  window: gain ${s.gain} in [${at(s.gainFloor)}, ${at(s.bestEnd)}] ` +
       `(cap ${at(s.window.cap)}; width ${width.toFixed(6)})`,
   );
-  lines.push(
-    `  ship ${s.ship.toFixed(6)}; lost at ship ${s.lostAtShip}` +
-      (s.lostAtShip > 0 ? ' — the criterion’s second half FAILS' : ''),
-  );
+  lines.push(shipLine(s));
   const profile = s.steps.filter((step, index) =>
     index === 0 ? step.gained > 0 : step.gained !== s.steps[index - 1]!.gained,
   );
@@ -4914,9 +4943,6 @@ export function cvScreen(
     if (one !== undefined) built.push(one);
   }
   const solved = solveZeroRegressionWindow(built, at);
-  const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
-  const gainTypes = new Map<string, number>();
-  for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
   // Built ONCE and shared with the frontier; see `onsetScreen` for why `k = 0` must be these ensembles.
   const screen: GainResolutionScreen = { kind: 'stability', weights, shape };
   const gain: GainResolutionInput = { cases, gained: solved.gained, ship: solved.ship, screen };
@@ -4926,7 +4952,7 @@ export function cvScreen(
     availability: cvAvailability(cases),
     shape,
     solved,
-    gainTypes: tallyCounter(gainTypes),
+    gainTypes: faultTypeTally(cases, solved.gained),
     resolution,
     capNoise,
     frontier: refinementFrontier({ gain, solved, shape, atArtifact: { resolution, capNoise } }),
@@ -5137,10 +5163,7 @@ export function formatCvScreenReport(screen: CvScreen, weights: FamilyScreenWeig
     `  window: gain ${s.gain} in [${at(s.gainFloor)}, ${at(s.bestEnd)}] ` +
       `(cap ${at(s.window.cap)}; width ${width.toFixed(6)})`,
   );
-  lines.push(
-    `  ship ${s.ship.toFixed(6)}; lost at ship ${s.lostAtShip}` +
-      (s.lostAtShip > 0 ? ' — the criterion’s second half FAILS' : ''),
-  );
+  lines.push(shipLine(s));
   const profile = s.steps.filter((step, index) =>
     index === 0 ? step.gained > 0 : step.gained !== s.steps[index - 1]!.gained,
   );
@@ -5679,7 +5702,6 @@ export function familyScreen(
   // answered with a zero row rather than with no row, so a caller cannot read "skipped"
   // as "screened and empty".
   const requested = families ?? [...labelsByFamily.keys()];
-  const faultTypeOf = new Map(cases.map((kase) => [kase.datapack, kase.faultType]));
   const rows: FamilyScreenRow[] = [];
   for (const family of requested) {
     const built = buildFamilyCases(cases, weights, family);
@@ -5687,8 +5709,6 @@ export function familyScreen(
     // come from ONE solver, shared with the onset screen: two axes chosen by two
     // rules is how a repo ends up unable to compare them.
     const solved = solveZeroRegressionWindow(built);
-    const gainTypes = new Map<string, number>();
-    for (const datapack of solved.gained) bump(gainTypes, faultTypeOf.get(datapack) ?? '');
     const labels = [...(labelsByFamily.get(family) ?? new Set<string>())].sort();
     rows.push({
       family,
@@ -5696,7 +5716,7 @@ export function familyScreen(
       services: servicesByFamily.get(family) ?? 0,
       cases: casesByFamily.get(family) ?? 0,
       gain: solved.gain,
-      gainTypes: tallyCounter(gainTypes),
+      gainTypes: faultTypeTally(cases, solved.gained),
       gained: solved.gained,
       margins: solved.margins,
       unreachable: solved.window.unreachable,
@@ -5745,6 +5765,37 @@ function tallyCounter(counter: ReadonlyMap<string, number>): readonly {
   return [...counter.entries()]
     .map(([key, cases]) => ({ key, cases }))
     .sort((a, b) => b.cases - a.cases || (a.key < b.key ? -1 : 1));
+}
+
+/**
+ * How the gained cases of a solved window distribute over the FAULT TYPES of the cases it was solved from.
+ *
+ * ONE owner for a tally that stood in THREE screens — the temporal screen, the decisive-stability screen and
+ * the family screen — byte for byte, each with its own map, its own `bump` loop and its own copy of the same
+ * fallback.
+ *
+ * **The lookup is GONE rather than fixed.** All three copies read `faultTypeOf.get(datapack) ?? ''`, and that
+ * `?? ''` could only fire for a gained datapack the map does not hold: the map is built from the same `cases`
+ * array whose datapacks both builders copy verbatim (`datapack: kase.datapack`), and `gained` comes from a
+ * window solved over cases built from it. This reads the cases instead and asks which of them was gained, so
+ * the lookup — and with it the fallback — cannot be written at all, and the empty key it would have
+ * contributed is a key no fault type can have.
+ *
+ * `gained` is read as a SET, which is what makes the count a partition of the CASES rather than of a list:
+ * a datapack named twice is one case.
+ *
+ * @param cases - The cases the window was solved from.
+ * @param gained - The datapacks the window gained at its ship weight.
+ * @returns The tally, heaviest first and by key.
+ */
+function faultTypeTally(
+  cases: readonly DiagnosedCase[],
+  gained: readonly string[],
+): readonly { readonly key: string; readonly cases: number }[] {
+  const wanted = new Set(gained);
+  const counts = new Map<string, number>();
+  for (const kase of cases) if (wanted.has(kase.datapack)) bump(counts, kase.faultType);
+  return tallyCounter(counts);
 }
 
 /**

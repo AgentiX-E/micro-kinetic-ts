@@ -5436,6 +5436,140 @@ describe('cvScreen — the cv penalty, solved rather than swept', () => {
   });
 });
 
+describe('the two invariants the report’s removed arms rested on', () => {
+  const ANCHOR = 1_700_000_000_000;
+
+  /**
+   * A POPULATION rather than a fixture: four cases over TWO fault types, two of them wrong at `w = 0` (so a
+   * weight can fix them) and two already correct (so a weight can cost them) — the two sides a window is a
+   * window BETWEEN. One case would make "no loss at the ship weight" a claim about four numbers.
+   */
+  function population(): readonly DiagnosedCase[] {
+    const one = (options: {
+      readonly datapack: string;
+      readonly faultType: string;
+      readonly leader: 'root' | 'rival';
+      readonly rivalOnset: number;
+    }): DiagnosedCase =>
+      parseDiagnosticDump(
+        dump({
+          datapack: options.datapack,
+          faultType: options.faultType,
+          groundTruthServices: ['ts-src'],
+          services: [
+            serviceLine({
+              serviceId: options.leader === 'root' ? 'ts-src' : 'ts-win',
+              selfAnomaly: 1,
+              onset: options.leader === 'root' ? 0 : options.rivalOnset,
+            }),
+            serviceLine({
+              serviceId: options.leader === 'root' ? 'ts-win' : 'ts-src',
+              selfAnomaly: 0.96,
+              onset: options.leader === 'root' ? options.rivalOnset : 0,
+            }),
+          ],
+          topPredictions: ['ts-win'],
+          injectTimeMs: ANCHOR,
+        }),
+      )[0]!;
+    return [
+      one({ datapack: 'a', faultType: 'JVMMemoryStress', leader: 'rival', rivalOnset: 60000 }),
+      one({ datapack: 'b', faultType: 'JVMMemoryStress', leader: 'rival', rivalOnset: 120000 }),
+      one({
+        datapack: 'c',
+        faultType: 'HTTPResponseReplaceCode',
+        leader: 'root',
+        rivalOnset: 60000,
+      }),
+      one({
+        datapack: 'd',
+        faultType: 'HTTPResponseReplaceCode',
+        leader: 'root',
+        rivalOnset: 120000,
+      }),
+    ];
+  }
+
+  /** The weights a caller may NAME — the flag the solver's cap does not bound. */
+  const NAMED = [0, 0.003873, 0.007352, 0.03017];
+
+  it('reads a loss at the ship weight as ZERO, because the ship weight is inside the cap', () => {
+    // The two clauses this iteration removed — `lostAtShip > 0 ? ' — the criterion’s second half FAILS' : ''`,
+    // in the temporal screen's report and in the decisive-stability screen's — could only print if this
+    // number could be positive. It cannot: `ship` is a midpoint of a gain plateau whose sample weights are all
+    // at or below the window's own `cap`, and `cap` is the smallest component-end among the cases satisfied at
+    // zero, so a case correct at zero is still correct at `ship`.
+    //
+    // Asserted over a population AND over named weights, because the named weight is the one thing a caller
+    // can move here — and the flag does NOT move this reading, which is why the verdict that the second half
+    // fails is read from `at.lost` instead.
+    const cases = population();
+    let solved = 0;
+    let withGain = 0;
+    for (const at of NAMED) {
+      for (const shape of ['earliest-only', 'earliness'] as const) {
+        const screen = onsetScreen(cases, { logWeight: 1 }, shape, at);
+        solved++;
+        if (screen.solved.gain > 0) withGain++;
+        expect(screen.solved.lostAtShip).toBe(0);
+      }
+      for (const shape of ['rank', 'flip'] as const) {
+        const screen = cvScreen(cases, { logWeight: 1 }, shape, at);
+        solved++;
+        if (screen.solved.gain > 0) withGain++;
+        expect(screen.solved.lostAtShip).toBe(0);
+      }
+    }
+    // Non-vacuity: the claim is about windows that MEASURE something, so at least one of them has to.
+    expect(solved).toBeGreaterThan(0);
+    expect(withGain).toBeGreaterThan(0);
+  });
+
+  it('counts a gained case by the fault type its CASE declares, and never by an empty key', () => {
+    // The three `faultTypeOf.get(datapack) ?? ''` copies this iteration collapsed into one owner. The `?? ''`
+    // could only fire for a gained datapack the map does not hold, and the map was built from the same `cases`
+    // array whose datapacks both builders copy verbatim — so the tally's keys are the cases' own fault types
+    // and nothing else.
+    const cases = population();
+    const faultTypes = new Set(cases.map((kase) => kase.faultType));
+    const tallies: (readonly { readonly key: string; readonly cases: number }[])[] = [];
+    for (const shape of ['earliest-only', 'earliness'] as const) {
+      tallies.push(onsetScreen(cases, { logWeight: 1 }, shape).gainTypes);
+    }
+    for (const shape of ['rank', 'flip'] as const) {
+      tallies.push(cvScreen(cases, { logWeight: 1 }, shape).gainTypes);
+    }
+    for (const row of familyScreen(cases, { logWeight: 1 })) tallies.push(row.gainTypes);
+
+    let counted = 0;
+    for (const tally of tallies) {
+      for (const one of tally) {
+        counted += one.cases;
+        expect(faultTypes.has(one.key)).toBe(true);
+        expect(one.key).not.toBe('');
+      }
+    }
+    // Non-vacuity: a population whose every tally is empty would satisfy every assertion above by silence.
+    expect(tallies.length).toBeGreaterThan(0);
+    expect(counted).toBeGreaterThan(0);
+  });
+
+  it('sums each tally to the number of cases the window actually gained', () => {
+    // The tally is a PARTITION of the gained cases, and it is a partition of the CASES rather than of a list:
+    // reading `gained` as a set is what makes a datapack named twice one case. This is the assertion that
+    // fails if a gained case is dropped, counted twice, or attributed to a type no case declares.
+    const cases = population();
+    for (const at of NAMED) {
+      const onset = onsetScreen(cases, { logWeight: 1 }, 'earliest-only', at);
+      expect(onset.gainTypes.reduce((sum, one) => sum + one.cases, 0)).toBe(
+        onset.solved.gained.length,
+      );
+      const cv = cvScreen(cases, { logWeight: 1 }, 'rank', at);
+      expect(cv.gainTypes.reduce((sum, one) => sum + one.cases, 0)).toBe(cv.solved.gained.length);
+    }
+  });
+});
+
 describe('formatCvMenuReport — availability first, then one row per shape', () => {
   const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
 
