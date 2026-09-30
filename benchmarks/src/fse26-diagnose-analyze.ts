@@ -5081,7 +5081,16 @@ function lawName(law: CellLaw): string {
  * @returns The sentence, without a leading space.
  */
 function capUpperBoundClause(u: UnrepresentableFrontier, cap: number): string {
-  const binder = u.lossFloorBinder;
+  // The binder is present WHENEVER this is called, so this is the house's `!` rather than a fallback, and
+  // the reason is a property of the CONSTRUCTION: `cases` counts the members pushed under
+  // `pairs.length > 0`, and the loop that pushes them is the same loop that assigns the binder — `lead` is
+  // `target.base − other.base` with a pair the root does not lead SKIPPED, and `span` is dropped when the
+  // cell is zero-width, so `lead / span` is finite and strictly below the `+Infinity` the floor starts at.
+  // The other half of the implication is at the CALL SITES, and a reader checking this line has to go
+  // there: all three require `cases > 0`, and `docs/analyze-dead-branches-audit.md` §9 claimed the third
+  // did not. What stood here was `binder === undefined ? '' : …` — an arm no input could take, which the
+  // coverage report named until this iteration removed it.
+  const binder = u.lossFloorBinder!;
   const at = (value: number): string => (Number.isFinite(value) ? value.toFixed(6) : 'unbounded');
   // The COMPARISON is the finding, and it is the floor against the cap — NOT "is there a binder",
   // which is a different question: a binder exists whenever the class does, and it is present on both
@@ -5093,7 +5102,7 @@ function capUpperBoundClause(u: UnrepresentableFrontier, cap: number): string {
   // it. `AT OR ABOVE` is the wording for the other side because the dumps produce equality — `re1`'s
   // `flip` shape has a floor of `0.008032` against a cap of `0.008032`, two different cases whose
   // leads are the same double — and calling that `ABOVE` would be a claim the numbers do not support.
-  const binds = binder !== undefined && u.lossFloor < cap;
+  const binds = u.lossFloor < cap;
   const comparison = binds
     ? `the cap ${at(cap)}, so the engine can lose one first`
     : `the cap ${at(cap)}, so this channel cannot bind below it`;
@@ -5101,10 +5110,8 @@ function capUpperBoundClause(u: UnrepresentableFrontier, cap: number): string {
     `${u.cases} of ${u.declared} satisfied cases hold a rival the term reads as EQUAL, and the ` +
     `cap’s own case is ${u.setsCap ? '' : 'not '}one of them; the lowest weight at which one of them ` +
     `can be lost is ${at(u.lossFloor)}` +
-    (binder === undefined
-      ? ''
-      : ` (${binder.datapack}: ${binder.target} / ${binder.rival}, ` +
-        `${lawDerivationClause(binder.measurement.law, binder.measurement, binder.group)})`) +
+    ` (${binder.datapack}: ${binder.target} / ${binder.rival}, ` +
+    `${lawDerivationClause(binder.measurement.law, binder.measurement, binder.group)})` +
     ` — ${binds ? 'BELOW' : 'AT OR ABOVE'} ${comparison}`
   );
 }

@@ -2677,6 +2677,38 @@ describe('onsetScreen — the temporal prior, solved rather than swept', () => {
 });
 
 describe('formatMissReport', () => {
+  it('draws the sign of a NEGATIVE net, which is a screen costing more than it fixes', () => {
+    // The other direction of the same line, and the one no fixture reached: every reconciliation in this
+    // suite runs at a weight the dump's own ranking agrees with, so `net` is never negative and the sign
+    // before it is never drawn -- while the whole point of the reconciliation is to be read at a SCREENED
+    // configuration, where a modelled penalty can cost more than it buys. One case whose recorded rank-1 is
+    // its own pool-dominant root does it: the penalty demotes that root, so the case is `broken` and
+    // nothing is `fixed`.
+    const pool = `${POOL_METRIC_PREFIX}use_time.max`;
+    // The field the reconciliation specs use: 26 candidates, the leader one rank step above the runner-up,
+    // so the gap the shipped penalty has to work with is `log1p(1) − log1p(25/26) = 0.0198` — below the
+    // penalty, which is why the demotion happens at all. A two-candidate field would have to have its
+    // anomalies written by hand to have any gap, and would be testing a spacing the engine cannot produce.
+    const cases = parseDiagnosticDump(
+      rankedField({
+        leader: { serviceId: 'ts-src', dominant: pool },
+        runnerUp: { serviceId: 'ts-win', dominant: 'cpu' },
+        groundTruth: 'ts-src',
+        prediction: 'ts-src',
+      }),
+    );
+    const weights = { logWeight: 1, poolWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT };
+    const reconciled = reconcileConfigurations(cases, weights);
+    // The precondition, before the sentence it produces: the net is negative BECAUSE the split is
+    // one-sided, so the assertion below is about the sign rather than about a fixture that happens to.
+    expect(reconciled.fixed).toBe(0);
+    expect(reconciled.broken).toBe(1);
+    expect(reconciled.net).toBeLessThan(0);
+
+    const report = formatMissReport(cases, weights);
+    expect(report).toContain('broken 1');
+    expect(report).toContain('net -1');
+  });
   it('tallies every kind, the silent block, and each fault type', () => {
     const text = dump({
       faultType: 'JVMMemoryStress',
@@ -6612,6 +6644,60 @@ describe('--dump repeats, because the criterion is a comparison between benchmar
  * floor instead of the first gain, averaging away an artifact that PERMITS a loss before the model
  * predicts one, or mixing two shapes into one interval.
  */
+describe('the frontier’s binder, where the clause that prints it is total', () => {
+  const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
+
+  /**
+   * The pair the frontier specs use: two services the render cannot tell apart, one of them the root and
+   * ahead on the base. Built here rather than imported from another block, because a spec that shares a
+   * fixture with the block it explains can be made to pass by changing that block.
+   */
+  const tied = (): DiagnosedCase =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-svc-0'],
+        services: [0.5, 0.5, 0.1].map((cv, index) =>
+          serviceLine({
+            serviceId: `ts-svc-${index}`,
+            selfAnomaly: [0.9, 0.5, 0.01][index] ?? 0,
+            metricOutcomes: [
+              { label: 'cpu', outcome: 'kept', score: 1, breakdown: breakdownOf(cv) },
+            ],
+          }),
+        ),
+        topPredictions: ['ts-svc-0'],
+      }),
+    )[0]!;
+
+  it('holds a binder whenever its class is NON-EMPTY, over every shape the menu can solve', () => {
+    // `capUpperBoundClause` reads `u.lossFloorBinder` with no fallback, and all THREE of its call sites
+    // require `cases > 0`. That is safe because the implication is a property of the CONSTRUCTION rather
+    // than of a corpus, and the construction is where a reader has to go to check it: the class's members
+    // and the binder are written in the SAME loop under the same `pairs.length > 0`, and `lead / span` is
+    // finite and strictly below the `+Infinity` the floor starts at, because `renderedTiePairs` skips a
+    // pair the root does not LEAD (`lead > 0`) and a pair whose cell is zero-width (`span > 0`).
+    //
+    // Asserted over a POPULATION of shapes, and with a non-vacuity assertion, so it cannot pass on a
+    // population whose classes are all empty -- which is exactly how a dead fallback hides.
+    const frontiers = CV_SHAPES.map(
+      (shape) => cvScreen([tied()], WEIGHTS, shape).solved.window.capUnrepresentable,
+    );
+    const nonEmpty = frontiers.filter((one) => one.cases > 0);
+    expect(nonEmpty.length).toBeGreaterThan(0);
+    for (const one of nonEmpty) {
+      const binder = one.lossFloorBinder;
+      // The implication, per member of the population.
+      expect(binder).toBeDefined();
+      if (binder === undefined) continue; // the compiler cannot read the assertion above
+      // And the binder belongs to the CLASS it qualifies: a binder from another case would fail here
+      // rather than silently qualify this one's sentence.
+      expect(one.datapacks).toContain(binder.datapack);
+      // The floor the sentence prints is the binder's own, which is what makes the two agree.
+      expect(one.lossFloor).toBe(binder.floor);
+    }
+  });
+});
+
 describe('the kill criterion — an intersection, not a comparison in prose', () => {
   const WEIGHTS = { logWeight: 0, latWeight: 0, poolWeight: 0, temporalWeight: 0 } as const;
   /**
@@ -6731,6 +6817,76 @@ describe('the kill criterion — an intersection, not a comparison in prose', ()
     const text = formatCriterionReport(readings, ['a', 'b']);
     expect(text).toContain('NO ADMISSIBLE WEIGHT');
     expect(text).toContain('b PERMITS a protected case to be cost from 0.006000');
+  });
+
+  it('picks the smallest bound over THREE protected artifacts, and the two reducers disagree', () => {
+    // The comparison that has to be READ TWICE. With ONE protected artifact the reducer's accumulator is
+    // still `undefined` on its only call, so neither the comparison nor the ternary around it is ever
+    // evaluated -- and every reading this suite builds has exactly one. Three put BOTH SIDES of each
+    // reducer's comparison on the path, and the fixture makes the two reducers disagree about which
+    // artifact wins, so each answer is a choice rather than agreement with whichever came first.
+    const readings: readonly CriterionReading[] = [
+      {
+        artifact: 'g',
+        box: BOX,
+        role: 'gain',
+        shape: 'flip',
+        gainsFrom: 0.007,
+        losesFrom: 0.001,
+        permittedFrom: 0.001,
+        gains: [[{ min: 0.007, max: 1 }]],
+      },
+      {
+        artifact: 'b',
+        box: BOX,
+        role: 'protect',
+        shape: 'flip',
+        gainsFrom: undefined,
+        losesFrom: 0.02,
+        permittedFrom: 0.006,
+        gains: [],
+      },
+      {
+        artifact: 'c',
+        box: BOX,
+        role: 'protect',
+        shape: 'flip',
+        gainsFrom: undefined,
+        losesFrom: 0.03,
+        permittedFrom: 0.004,
+        gains: [],
+      },
+      {
+        artifact: 'd',
+        box: BOX,
+        role: 'protect',
+        shape: 'flip',
+        gainsFrom: undefined,
+        losesFrom: 0.01,
+        permittedFrom: 0.008,
+        gains: [],
+      },
+    ];
+    // The precondition, before the answers: three protected artifacts on ONE shape, so both reducers
+    // compare more than once, and each of them meets both a smaller and a larger value.
+    expect(readings.filter((one) => one.role === 'protect' && one.shape === 'flip')).toHaveLength(
+      3,
+    );
+
+    const verdict = criterionVerdicts(readings)[0]!;
+    // The LOSS side ends on the LAST artifact, `d`, because its predicted loss is the EARLIEST — the
+    // pessimistic end of a region is the loss a screen predicts first, so the comparison has to replace
+    // the accumulator it already holds.
+    expect(verdict.losesFrom).toBe(0.01);
+    expect(verdict.lossArtifact).toBe('d');
+    // The PERMISSION side ends on the MIDDLE one, `c`, because `d` permits LATER than `c` does despite
+    // coming after it — the other side of the same comparison, and the reason one fixture covers both
+    // reducers rather than one of them twice.
+    expect(verdict.permittedFrom).toBe(0.004);
+    expect(verdict.permittedArtifact).toBe('c');
+    // And the ceiling is the pessimistic of the two, so the permission governs and names its artifact.
+    expect(verdict.ceiling).toBe(0.004);
+    expect(verdict.closedBy).toBe('c');
   });
 
   it('admits the region, and names which artifact bought each end of it', () => {
