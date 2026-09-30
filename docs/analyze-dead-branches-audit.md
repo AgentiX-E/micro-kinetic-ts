@@ -187,21 +187,33 @@ uncovered statements [2790, 2791, 2792, 5105]
     5533  (best, one) => (best === undefined || one.losesFrom < best.losesFrom ? one : best)        x2
     5537  (best, one) => (best === undefined || one.permittedFrom < best.permittedFrom ? one : best) x2
   report-only qualifications
+    1882  `… net ${reconciled.net >= 0 ? '+' : ''}${reconciled.net}`   ← the entry this list omitted
     5044  law.range === 1 ? '' : `, each position worth ${at(law.range)}`
     5860  row.gained.length > 4 ? ', …' : ''
     6679  box.extraDigits === 0 ? body : `${body} (at ${box.extraDigits} digits beyond that)`
     5104  (binder === undefined …)
 ```
 
+**This block listed 35 arms under a heading that said 36, and the difference was `1882`** — the sign
+`reconciled.net >= 0 ? '+' : ''`, which the third bullet below discusses but which the list itself omitted. An
+inventory is read as the set of arms to decide one at a time, so a list that is one short is a claim about the
+list. The entry is added below, and the sign is closed by iteration 34's negative-net fixture
+(`docs/analyze-caller-reach-audit.md` §4).
+
 Three of those clusters have a reading attached, and the next iteration should start from them rather than from
 a grep:
 
-- **`(binder === undefined …)` at 5104 is a GAP, not a dead arm, and the reason is a caller.** The clause's own
-  doc says *"a binder exists whenever the class does"* — and `capUpperBoundClause` has **three** callers, of
-  which two guard with `if (u.cases > 0)` and the third (`formatCriterionReport`, 5280 in the parent's
-  numbering) does not. So the `''` arm is reachable exactly at the unguarded site, with an EMPTY class, and the
-  sentence it would render is `0 of 0 satisfied cases …`. Whether the fix is the guard, the wording, or a
-  fixture is a decision, and it is the one this inventory puts first.
+- **`(binder === undefined …)` at 5104 is DEAD — this audit called it a GAP, and the third caller's guard is
+  on the line ABOVE its call.** `capUpperBoundClause` has three callers: two guard inside the call expression
+  (`if (u.cases > 0) lines.push(…)`, at 4548 and 5217) and the third guards in the ENCLOSING BLOCK
+  (`if (s.gain === 0 && s.at === undefined && s.window.capUnrepresentable.cases > 0)`, the line above the call
+  at 5310). So the arm is unreachable at all three, and the proof is a property of the construction rather
+  than of a corpus: `cases` counts the members pushed under `pairs.length > 0`, and the binder is assigned in
+  the same loop under the same predicate — `renderedTiePairs` skips a pair the root does not lead
+  (`lead > 0`) and a zero-width cell (`span > 0`), so the first `floor = lead / span` is finite and below the
+  `Number.POSITIVE_INFINITY` the floor starts at. **A guard written beside a call instead of inside its
+  argument list is still a guard**, which is what this bullet read past; iteration 34 removes the two
+  fallbacks and records the proof (`docs/analyze-caller-reach-audit.md` §3).
 - **The four reducer arms at 5533/5537 are also a GAP**, and a fixture rather than a proof can close them: a
   criterion reading with a `protect`-role artifact whose side is empty, which the surrounding comment already
   describes ("An empty side is NOT a permissive one").
