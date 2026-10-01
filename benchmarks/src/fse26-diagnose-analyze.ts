@@ -2748,18 +2748,34 @@ function componentEndingAtZero(intervals: readonly WeightInterval[]): number {
  * acceptable roots, where the binding root is exactly what it discards. One scan of
  * one case is cheaper than making every caller carry a root it does not need.
  *
- * @param one - The binding case.
- * @param cap - The cap it set.
- * @returns The overtaking pair, or `undefined` when none reproduces the cap: an
- *   unbounded cap, or a cap inside the epsilon band below zero, where float noise
- *   in `(−lead)/(−slopeGap)` can leave the ratio negative while the case still
- *   counts as covered at zero. The search is a search rather than a value threaded
- *   out of {@link componentEndingAtZero} because that helper works on the union
- *   over a case's acceptable roots — which is exactly where the binding root is
- *   discarded.
+ * The pair ALWAYS exists, and the reason is the caller's own arithmetic rather than a hope, so this
+ * function has no "no pair reproduces the cap" state to report:
+ *
+ * - `cap` is FINITE. The only caller reaches this with `capCase !== undefined`, and a case becomes
+ *   `capCase` only inside `if (baseline < cap)` — where `cap` started at `+Infinity` (so an `+Infinity`
+ *   baseline fails that comparison) and a `-Infinity` baseline never arrives at all, because the caller
+ *   `continue`s on it one branch above. What remains is finite.
+ * - `cap` IS one of this case's own pair ratios. It is `componentEndingAtZero` over the case's KEPT
+ *   intervals, so it is the `max` of some interval of some target of this case — and `targetInterval`
+ *   writes that `max` only from a competitor with `slopeGap < -WEIGHT_EPSILON` (`max = min(max, baseGap /
+ *   slopeGap)`). Read from this function's side that same pair has `slopeGap > WEIGHT_EPSILON`, and the
+ *   interval was kept only if `min <= max` with `min >= 0` — so `baseGap <= 0`, which is `lead >= 0`.
+ *   Both clauses of the skip below therefore pass, and the ratio is the SAME double: `(-a) / (-b)` is
+ *   exactly `a / b` in IEEE 754, so the tolerance comparison cannot fail.
+ *
+ * A fall-through would mean a cap with no reproducing pair, which the construction excludes — so it
+ * fails loudly instead of reporting `-` about a cap that necessarily has one. What was here was a
+ * `return undefined` plus a `!Number.isFinite(cap)` guard above it, and BOTH arms were unreachable: the
+ * guard re-checked what the caller had already established, and the doc claimed the second state —
+ * "a cap inside the epsilon band below zero" — that {@link caseWeightInterval} cannot produce, because
+ * an interval whose `max` fell below its own `min` (which starts at zero) is DROPPED there, before this
+ * cap is computed.
+ *
+ * The search is a search rather than a value threaded out of {@link componentEndingAtZero} because that
+ * helper works on the union over a case's acceptable roots — which is exactly where the binding root is
+ * discarded.
  */
-function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | undefined {
-  if (!Number.isFinite(cap)) return undefined;
+function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder {
   for (const target of one.targets) {
     const t = one.scores.get(target);
     if (t === undefined) continue;
@@ -2788,7 +2804,7 @@ function capBinderOf(one: WeightSeparationCase, cap: number): WindowCapBinder | 
       }
     }
   }
-  return undefined;
+  throw new Error(`no pair reproduces the cap ${cap} on ${one.datapack}`);
 }
 
 /**
@@ -2875,10 +2891,20 @@ export interface CapFloorBinder extends RenderedTiePair {
  * @returns The pairs, empty when the case declares no provenance or holds none.
  */
 function renderedTiePairs(one: WeightSeparationCase): readonly RenderedTiePair[] {
-  const measured = one.measured;
-  if (measured === undefined) return [];
+  // The provenance is present at BOTH call sites, which is what makes this the house's `!` rather than a
+  // guard: `computeZeroRegressionWindow` calls this inside `if (one.measured !== undefined)`, and
+  // `leadsRenderTiedRival`'s only caller reads it through `… && capCase.measured !== undefined &&`, so the
+  // short-circuit excludes the absent case before this line is reached. Stated here because a reader of
+  // this line has to look at the callers to check it.
+  const measured = one.measured!;
   const n = measured.weighed.size;
-  if (n < 2) return [];
+  // A `n < 2` early return stood here, and it is REDUNDANT rather than defensive: every pair below needs BOTH
+  // sides in the weighed set — `!measured.weighed.has(name)` skips the target and `!measured.weighed.has(rival)`
+  // skips the competitor — so with fewer than two weighed services no pair can be formed whatever this returns.
+  // Measured rather than argued: the mutation that loosens the threshold to `n < 1` leaves the whole suite green
+  // and the class count unchanged, which is what a redundant guard looks like from the outside. What the
+  // threshold meant is still stated where it belongs: both BUILDERS attach `measured` only under
+  // `weighed.size >= 2`, because `shapeStep` would divide by `n − 1 = 0`.
   const groups = new Map<number, number>();
   for (const [service, { slope }] of one.scores) {
     if (!measured.weighed.has(service)) continue;

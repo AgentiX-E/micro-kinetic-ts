@@ -9836,3 +9836,132 @@ describe('buildWeightSeparationCases — the solver is given only the cases it c
     expect(buildWeightSeparationCases(cases, WEIGHTS)).toEqual([]);
   });
 });
+
+/**
+ * The missing-input guards on the tie machinery, drawn through the EXPORTED seam.
+ *
+ * `computeZeroRegressionWindow` takes `WeightSeparationCase[]`, and that type is exported: a caller may hand
+ * it a case neither in-tree builder produces. Each spec below is such a case, because the alternative reading
+ * — "the builders cannot produce it, so the guard is dead" — is a claim about the BUILDERS while the guard's
+ * subject is the API. The builders state no provenance below two weighed services and never name a root they
+ * print no row for; the API does not have to agree with either, and a guard is only a gap or a contract once
+ * its reachability has been read from the seam rather than from the corpus.
+ */
+describe('a case the builders cannot produce, through the exported seam', () => {
+  const LAW: CellLaw = { kind: 'indicator', range: 1 };
+  const provenance = (names: readonly string[]): MeasurementProvenance => ({
+    weighed: new Set(names),
+    decimals: 3,
+    law: LAW,
+  });
+
+  it('names the pair that sets the cap even when a LISTED root has no row', () => {
+    // `targets` is the ground truth as written — `buildWeightSeparationCases` does not intersect it with the
+    // services — so a block that names a root it prints no row for reaches the cap's binder with a target
+    // absent from `scores`. The ghost is placed FIRST on purpose: the search returns on the first matching
+    // pair, so a ghost listed after the binding root would never be read at all.
+    const window = computeZeroRegressionWindow([
+      {
+        datapack: 'dp-ghost-root',
+        targets: ['ghost', 'a'],
+        scores: new Map([
+          ['a', { base: 1, slope: 0 }],
+          ['b', { base: 0, slope: 1 }],
+        ]),
+        // The ghost is WEIGHED and unrowed, which is the only shape that makes the absent-row clause
+        // load-bearing: with the ghost outside the weighed set, the `!weighed.has(...)` clause beside it
+        // returns first and the mutation that deletes this clause SURVIVES — measured, not assumed.
+        measured: provenance(['a', 'b', 'ghost']),
+      },
+    ]);
+    // The preconditions, before the answer: the case is satisfied at zero, the first root has no row, and the
+    // second one LEADS a steeper rival — which is what puts a finite cap on the window for a binder to name.
+    expect(window.satisfied).toBe(1);
+    expect(window.cap).toBeCloseTo(1, 12);
+    expect(window.capBinder?.datapack).toBe('dp-ghost-root');
+    expect(window.capBinder?.target).toBe('a');
+    expect(window.capBinder?.rival).toBe('b');
+    expect(window.capBinder?.lead).toBeCloseTo(1, 12);
+  });
+
+  it('counts only the pairs a root LEADS, so no negative floor enters the class', () => {
+    // Two roots the render cannot tell apart, one of them BEHIND the other at w = 0. The trailing root's pair
+    // is skipped — otherwise its `lead` is negative and the class's floor becomes a negative weight, which is
+    // the number the report compares against the cap.
+    const ties = (bases: readonly [number, number]) =>
+      computeZeroRegressionWindow([
+        {
+          datapack: 'dp-trailing-root',
+          targets: ['a', 'b'],
+          scores: new Map([
+            ['a', { base: bases[0], slope: 0.5 }],
+            ['b', { base: bases[1], slope: 0.5 }],
+          ]),
+          measured: provenance(['a', 'b']),
+        },
+      ]);
+    const window = ties([2, 1]);
+    // The precondition: the two roots ARE tied, and the second is behind the first.
+    expect(window.satisfied).toBe(1);
+    expect(window.capUnrepresentable.datapacks).toEqual(['dp-trailing-root']);
+    // The floor is the LEADING root's `lead / span` — 1 / the indicator shape's range — and never the
+    // trailing one's negative ratio.
+    expect(window.capUnrepresentable.lossFloor).toBeCloseTo(1, 12);
+    expect(window.capUnrepresentable.lossFloor).toBeGreaterThan(0);
+    // The other direction, on the same geometry: swap the bases and the SAME pair is skipped, so the count is
+    // unchanged while the floor moves to the other root's own lead. One arm of the guard is not the guard.
+    const mirrored = ties([1, 2]);
+    expect(mirrored.capUnrepresentable.datapacks).toEqual(['dp-trailing-root']);
+    expect(mirrored.capUnrepresentable.lossFloor).toBeCloseTo(1, 12);
+    // And the boundary of that guard, which is a `>=` rather than a `>`: two roots at the SAME base are tied
+    // for the engine as well, so neither leads the other and the class is EMPTY — a pair with `lead = 0` would
+    // otherwise enter it with a floor of zero, which reads as "any weight spends it".
+    const level = ties([1, 1]);
+    expect(level.satisfied).toBe(1);
+    expect(level.capUnrepresentable.cases).toBe(0);
+    expect(level.capUnrepresentable.datapacks).toEqual([]);
+    expect(level.capUnrepresentable.lossFloor).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('states no law for a case below TWO weighed services, and does state one at two', () => {
+    // The provenance is present, so the count is asked for — and the answer is that one weighed service cannot
+    // order anything (`shapeStep` would divide by `n − 1 = 0`). The builders enforce this predicate themselves,
+    // which is why the corpus never draws it; the API is where a caller learns it. Both directions are asserted
+    // on ONE geometry, because the claim is about the population rather than about the numbers.
+    const one = (weighed: readonly string[]) =>
+      computeZeroRegressionWindow([
+        {
+          datapack: 'dp-one-weighed',
+          targets: ['a'],
+          scores: new Map([
+            ['a', { base: 1, slope: 0.5 }],
+            ['b', { base: 0, slope: 0.5 }],
+          ]),
+          measured: provenance(weighed),
+        },
+      ]);
+    const thin = one(['a']);
+    // The precondition: exactly one weighed service, and the pair IS a rendered tie.
+    expect(thin.satisfied).toBe(1);
+    expect(thin.capUnrepresentable.declared).toBe(1);
+    expect(thin.capUnrepresentable.cases).toBe(0);
+    expect(thin.capUnrepresentable.datapacks).toEqual([]);
+    expect(thin.capUnrepresentable.lossFloor).toBe(Number.POSITIVE_INFINITY);
+    // And at two, the same scores DO state one — so the spec is about the weighed set and not about the tie.
+    const two = one(['a', 'b']);
+    expect(two.capUnrepresentable.cases).toBe(1);
+    expect(two.capUnrepresentable.datapacks).toEqual(['dp-one-weighed']);
+    expect(two.capUnrepresentable.lossFloor).toBeCloseTo(1, 12);
+  });
+
+  it('reads the historical box for a population with NO cases at all', () => {
+    // The empty population — the one input no report path produces, and the one this function's own history
+    // makes interesting: it used to take the box from `cases[0]`, which an empty list does not have, so the
+    // assertion is BOTH the fallback and the fact that no element is dereferenced. `stated: false` is what
+    // keeps the assumed box from reading as a declaration the artifact made. The other arm of this function —
+    // one case that DOES state its box — is asserted in the mixed-population spec beside this one, because a
+    // control belongs on the same instrument and not on a copy of it.
+    expect(dumpPrecisionOf([])).toEqual({ decimals: HISTORICAL_FIELD_DECIMALS, stated: false });
+    expect(HISTORICAL_FIELD_DECIMALS).toBeGreaterThan(0);
+  });
+});
