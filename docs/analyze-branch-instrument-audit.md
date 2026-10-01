@@ -277,6 +277,11 @@ fired on the corpus either.
   measurements are reproduced here and its inference is retracted.
 - **`cov_lines.py`'s vocabulary** is the reason six iterations of readings were read as "arms". The entry is a
   block range with a span; this document calls it that from here on.
+- **A mutation driver's own reading can lie too.** This iteration's suite sheet printed `tests=1` for every
+  killed row until its parser was fixed: the `Tests` line is `Tests  1 failed | 444 passed (445)` when something
+  fails and `Tests  445 passed (445)` when nothing does, so taking the **first** integer reports the FAILED
+  count on exactly the rows a mutation sheet cares about. The corrected column reads `ran=445 failed=1..4` on
+  every row, which is what makes a kill count evidence rather than arithmetic.
 
 ---
 
@@ -284,6 +289,19 @@ fired on the corpus either.
 
 `prettier` and `oxlint` clean, both `tsc` legs clean, the register fence green, and the whole-corpus coverage
 reading **17 entries → 3**, with the project's branches moving `99.80 → 99.84`.
+
+CI on the tip commit: **19 jobs, 18 succeeded and 1 skipped** — `benchmark-diff` carries
+`if: github.event_name == 'pull_request'`, so it is skipped by its own gate on every push, and describing this
+as "19 of 19" would count a job that never ran. **56 dimensions, every one at or above 95**, worst 95.00
+(`wave` branches); `benchmark-tests` at **99.95 / 99.84 / 100 / 99.95** with this file reading
+**99.9 / 99.76 / 100 / 99.9 | 2816-2818**, identical to the local reading down to the three statement lines.
+
+The golden run dispatched by the source commit is identical to iteration 37's **line for line** — not only the
+nine cells (RE1 80.0 / 92.8 / 68.0 · RE2 82.4 / 88.9 / 68.1 · RE3 80.0 / 45.0 / 51.1) but every line of every
+panel, which are the per-fault-type tables F1–F5 per system. The criterion's **second half is not measured by
+this push**: `fse26-benchmark.yml` is `workflow_dispatch:`-only, so no commit dispatches it, and what holds
+that half is the A/B's byte-identical analyzer output. It is recorded as dispatchable but not dispatched
+rather than inherited from the previous iteration's number.
 
 **One reading in this iteration's logs is a statement about the harness rather than about the code**, and it is
 recorded because it would otherwise be read as a failure: the local coverage run exits **1** on this machine.
