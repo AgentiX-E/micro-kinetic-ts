@@ -41,6 +41,7 @@ import type {
   CvShape,
   DiagnosedCase,
   DumpPrecision,
+  FamilyScreenWeights,
   MeasurementProvenance,
   OnsetAvailability,
   OnsetInertCause,
@@ -9963,5 +9964,125 @@ describe('a case the builders cannot produce, through the exported seam', () => 
     // control belongs on the same instrument and not on a copy of it.
     expect(dumpPrecisionOf([])).toEqual({ decimals: HISTORICAL_FIELD_DECIMALS, stated: false });
     expect(HISTORICAL_FIELD_DECIMALS).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The LAST five guards on a missing input, each reached through the seam that admits the input.
+ *
+ * Iteration 35 decided eight of the thirteen by three instruments — a proof about the caller's own arithmetic,
+ * the guard BESIDE it, and a fixture through an exported function — and left five, all of them reachable only
+ * through an EXPORTED API: four exported functions whose subject is an argument a hand-written caller supplies,
+ * and one case shape a parsed dump can carry. Each spec asserts its own precondition and both directions,
+ * because a guard whose other side is never asserted is asserted by nothing.
+ */
+describe('the last five missing-input guards, through the seams that admit the input', () => {
+  const WEIGHTS: FamilyScreenWeights = { logWeight: 1 };
+
+  /** One kept metric, so a service is readable by the census. */
+  const kept = (cv: number) => [
+    { label: 'cpu', outcome: 'kept' as const, score: 1, breakdown: breakdownOf(cv) },
+  ];
+
+  /** One dump: the acceptable roots, the prediction, and two services whose failure scores differ. */
+  const fixture = (roots: readonly string[], prediction: readonly string[]) =>
+    parseDiagnosticDump(
+      dump({
+        groundTruthServices: roots,
+        topPredictions: prediction,
+        services: [
+          serviceLine({
+            serviceId: 'ts-src',
+            selfAnomaly: 0.9,
+            failedEdge: 1,
+            dominant: 'cpu',
+            metricOutcomes: kept(0.5),
+          }),
+          serviceLine({
+            serviceId: 'ts-rival',
+            selfAnomaly: 0.5,
+            failedEdge: 0,
+            dominant: 'cpu',
+            metricOutcomes: kept(0.4),
+          }),
+        ],
+      }),
+    );
+
+  it('answers an EMPTY menu with the sentence that says so, and a populated one with a menu', () => {
+    // `screens[0]` is an argument of an exported function, so a caller with nothing to screen is a caller the
+    // API has to answer — with the sentence rather than with a crash. The other direction is the SAME call one
+    // menu wide: an early return that fired on every input would print the sentence about a screen that ran.
+    expect(formatOnsetMenuReport([], WEIGHTS)).toBe(
+      'Temporal (onset) screen: no shape was screened',
+    );
+    expect(formatCvMenuReport([], WEIGHTS)).toBe(
+      'Decisive-stability screen: no shape was screened',
+    );
+    const cases = fixture(['ts-src'], ['ts-src']);
+    expect(formatOnsetMenuReport(onsetShapeMenu(cases, WEIGHTS), WEIGHTS)).toContain(
+      'Temporal (onset) screen (',
+    );
+    expect(formatCvMenuReport(cvShapeMenu(cases, WEIGHTS), WEIGHTS)).toContain(
+      'Decisive-stability screen (',
+    );
+  });
+
+  it('counts no row for a case whose roots the dump does not list, and one when it does', () => {
+    // `sourceOf` elects the highest-anomaly service AMONG THE GROUND TRUTH, so a case whose roots are not in the
+    // dump's inventory elects nothing — and a census that counted it anyway would divide by a case it cannot
+    // describe a side of. The control is the same case with its root listed.
+    expect(guardCensus(fixture([], ['ts-src']))).toEqual([]);
+    const named = guardCensus(fixture(['ts-src'], ['ts-src']));
+    expect(named).toHaveLength(1);
+    expect(named[0]!.cases).toBe(1);
+    expect(named[0]!.sourceKept).toBe(1);
+  });
+
+  it('attributes a case with an UNLISTED root without dereferencing it', () => {
+    // The third scan in `unreachableCause` walks the roots, and the first of these has no row. The case has to
+    // reach that scan at all, which needs TWO conditions the fixture states: a SPREAD of slopes (or the second
+    // step answers `noSpread` first) and a root that loses to a steeper rival at every weight (so the interval
+    // is empty and the cause is asked for). The ghost is listed FIRST, because the scan returns as soon as a
+    // pair decides it.
+    const window = computeZeroRegressionWindow([
+      {
+        datapack: 'dp-ghost-unsatisfiable',
+        targets: ['ghost', 'a'],
+        scores: new Map([
+          ['a', { base: 0, slope: 0.5 }],
+          ['b', { base: 1, slope: 1 }],
+        ]),
+        measured: {
+          weighed: new Set(['a', 'b']),
+          decimals: 3,
+          law: { kind: 'indicator', range: 1 },
+        },
+      },
+    ]);
+    // The preconditions, before the answer: nothing is satisfied, nothing is gained, and the slope spread that
+    // lets the scan be reached is real.
+    expect(window.satisfied).toBe(0);
+    expect(window.capUnrepresentable.cases).toBe(0);
+    expect(window.unreachable).toBe(1);
+    // And the attribution is the term's reach rather than the data gap the ghost could be mistaken for: a case
+    // whose OTHER root is described is not a `rootWithoutRow`.
+    expect(window.unreachableByCause.outOfReach).toBe(1);
+    expect(window.unreachableByCause.rootWithoutRow).toBe(0);
+  });
+
+  it('leaves a case that names NO root out of the population, not filed as unreachable', () => {
+    // A dump whose ground truth is empty names no acceptable root, so it is not a case the weight failed to
+    // satisfy — it is not a case. Without the guard it would be BUILT with `targets: []`, and `every(...)` over
+    // no targets is VACUOUSLY true, so it would be filed as `rootWithoutRow`: a data gap this dump does not
+    // have, and a denominator a reader cannot audit. The other direction is the same dump with its root listed.
+    const [orphan] = familyScreen(fixture([], ['ts-src']), WEIGHTS);
+    expect(orphan?.cases).toBe(1);
+    expect(orphan?.satisfied).toBe(0);
+    expect(orphan?.unreachable).toBe(0);
+    expect(orphan?.unreachableByCause.rootWithoutRow).toBe(0);
+    const [named] = familyScreen(fixture(['ts-src'], ['ts-src']), WEIGHTS);
+    expect(named?.satisfied).toBe(1);
+    expect(named?.unreachable).toBe(0);
   });
 });
