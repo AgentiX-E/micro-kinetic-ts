@@ -2751,6 +2751,30 @@ describe('formatMissReport', () => {
     expect(report).not.toContain('absent');
   });
 
+  it('names the onset shape the temporal term was measured on, but only when that term is ON', () => {
+    // The banner's shape clause is one arm of two, and the SHIPPED default makes the other one permanent:
+    // `DEFAULT_TEMPORAL_WEIGHT` is 0, so every other call in this file takes the "NOT modelled" arm and the
+    // clause below it — with its own `onsetShape ?? SHIPPED_ONSET_SHAPE` — had never been reached. The suite
+    // does pass a shape elsewhere, which is what leaves the fallback as the only undrawn half.
+    const cases = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.9 }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+      }),
+    );
+    const on = formatMissReport(cases, { logWeight: 1, temporalWeight: 0.5 });
+    expect(on).toContain(`temporalWeight=0.5; onsetShape=${DEFAULT_ONSET_SHAPE}`);
+    // The control, on the SAME cases: with the shipped zero the report says the term is not modelled, and
+    // naming a shape there would be a claim about a term the same sentence has just declared off.
+    const off = formatMissReport(cases, { logWeight: 1 });
+    expect(off).toContain('temporal prior NOT modelled');
+    expect(off).not.toContain('onsetShape=');
+  });
+
   it('prints the recorded miss count and the modelled one, and says which is which', () => {
     // The defect this fixes, stated as an assertion: the report used to print one
     // `wrong cases` number that was the dump's recorded ranking while its own mode
@@ -3784,6 +3808,46 @@ describe('classifyMiss — the pool penalty is a modelled term', () => {
     expect(classifyMiss(kase, { logWeight: 1 })[0]!.decidedBy).toBe('metric+log+lat+pool');
   });
 
+  it('credits a service the onset column omits with 0, because the map is TOTAL over the case', () => {
+    // `onsetSlopes` writes an entry for every service (`fse26-term-oracle.ts`), giving 0 to one the engine left
+    // out of its earliness map — the same value it gives the LATEST service. Two `?? 0` fallbacks stood on the
+    // temporal line of `classifyMiss` anyway, three lines under a comment claiming "no fallback exists that
+    // coverage could never reach"; they were removed rather than fixtured, because on this population they and
+    // the total read agree and no spec could tell them apart. What a spec CAN pin is the value they agree on:
+    // the ROOT is the service the onset column omits, so its slope is the 0 the total map hands it, and the
+    // winner is the earliest mover — which is what lets the term vote for it at all.
+    // The anchor is not decoration: the shape arithmetic measures a delay FROM it, and a case with no anchor
+    // gives every service a slope of 0 — measured, which is why this fixture states one.
+    const ANCHOR = 1_700_000_000_000;
+    const kase = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.4 }),
+          serviceLine({ serviceId: 'ts-decoy', selfAnomaly: 0.1, onset: 60_000 }),
+          serviceLine({ serviceId: 'ts-win', selfAnomaly: 0.6, onset: 5_000 }),
+        ],
+        topPredictions: ['ts-win', 'ts-src'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+    const off = {
+      logWeight: 1,
+      latWeight: 0,
+      temporalWeight: 0,
+      onsetShape: 'earliest-only',
+    } as const;
+    const on = { ...off, temporalWeight: 5 } as const;
+    // The precondition, before the answer: the winner leads on the metric term alone, so the case is
+    // `metric`-decided with the term off.
+    expect(classifyMiss(kase, off)[0]!.decidedBy).toBe('metric');
+    // With the term on it can only ADD to the winner's margin — the winner is the first mover and the ROOT is
+    // the service the onset column omits, so the root's slope is the 0 `onsetSlopes` hands every service it has
+    // no delay for. The term is therefore named, which is the observable a TOTAL map has and a skipped lookup
+    // would not.
+    expect(classifyMiss(kase, on)[0]!.decidedBy).toContain('temporal');
+  });
+
   it('does NOT name the penalty when it worked FOR the root', () => {
     // The winner is pool-dominant, so the penalty subtracted from IT. Naming it here
     // would send a reader to strengthen a term that is already on the root's side.
@@ -4091,6 +4155,21 @@ describe('familyScreen — a family penalty, SOLVED instead of swept', () => {
     const report = formatFamilyScreenReport(rows, { logWeight: 1 });
     expect(report).toContain('no step stated');
     expect(report).not.toContain('one rank step');
+    expect(report).toContain('no step stated');
+    expect(report).not.toContain('one rank step');
+    // The list of gained datapacks is printed in full up to FOUR and elided above that, so the boundary is
+    // asserted from both sides — `> 4` and `>= 4` differ by exactly one row. The row is CLONED from the real
+    // one the lines above solved rather than invented, so every field beside the list is the screen's own; what
+    // this spec is about is the formatter's own count, which is the only place the number is read.
+    const [real] = rows;
+    expect(real!.gained.length).toBe(1);
+    const four = { ...real!, gained: ['g1', 'g2', 'g3', 'g4'] };
+    const five = { ...real!, gained: ['g1', 'g2', 'g3', 'g4', 'g5'] };
+    const short = formatFamilyScreenReport([four], { logWeight: 1 });
+    expect(short).toContain('gains g1, g2, g3, g4\n');
+    expect(short).not.toContain('…');
+    const long = formatFamilyScreenReport([five], { logWeight: 1 });
+    expect(long).toContain('gains g1, g2, g3, g4, …');
     expect(report).toMatch(/gains inside one step \(\d+ without a law\)/);
     for (const row of rows) {
       for (const one of row.margins ?? []) expect(one.step).toBeUndefined();
@@ -4452,6 +4531,33 @@ describe('parseAnalyzeArgs — one owner for the log weight', () => {
     expect(() => parseAnalyzeArgs([...dumpArg, '--window', 'oops'])).toThrow(
       /unrecognised argument 'oops'/,
     );
+  });
+
+  it('reads --onset-shape strictly, and falls back to the SHIPPED shape rather than inventing one', () => {
+    // The flag is documented, accepted by the workflow, and was passed by NOTHING in this suite — which is why
+    // both arms of this parse were unexercised: the `isOnsetShape` test that makes a named shape load-bearing,
+    // and the fallback that keeps a shape the ENGINE does not implement out of a run whose report would then
+    // name a term nobody measured. A typo must reproduce a known configuration, not a term invented at the
+    // command line — the same rule the `--slope` switch states one screen over.
+    const shapesOf = (argv: string[]) => {
+      const options = parseAnalyzeArgs(argv);
+      return options.kind === 'dump' ? options.sections.map((one) => one.onsetShape) : [];
+    };
+    const named = shapesOf([...dumpArg, '--misses', '--log-weight', '1', '--onset-shape', 'order']);
+    expect(named).toEqual(['order']);
+    const typo = shapesOf([
+      ...dumpArg,
+      '--misses',
+      '--log-weight',
+      '1',
+      '--onset-shape',
+      'earliest',
+    ]);
+    expect(typo).toEqual([DEFAULT_ONSET_SHAPE]);
+    // Non-vacuity: the two runs differ, so the assertion above is about the parse rather than about a shape
+    // that two names happen to share.
+    expect(typo).not.toEqual(named);
+    expect(DEFAULT_ONSET_SHAPE).not.toBe('order');
   });
 
   it('rejects a log weight that is not a usable number', () => {
@@ -5037,6 +5143,40 @@ describe('guardCensus — a guard’s footprint against a within-type control', 
     const rows = guardCensus([caseOf('bad-1', false, sourceLoses, rival)]);
     expect(rows[0]!.sourceBestDevCorrect).toBeUndefined();
     expect(formatGuardCensus(rows)).toContain('n/a');
+  });
+
+  it('takes an artifact that ranked NOTHING as having no winner, and a composition that was not rendered as a zero', () => {
+    // Three entries, and each is a shape nothing in this file had drawn:
+    //   * `kase.prediction[0] ?? ''` — an artifact that ranks nothing at all. The parser admits it (the
+    //     prediction is a LIST), and reading it as a winner named `''` would put a service that does not exist
+    //     into the census's wrong-winner columns;
+    //   * the `winnerId === '' ? undefined : …` beside it, which is the arm that turns that case into the
+    //     `undefined` those columns already know how to print;
+    //   * `outcome.breakdown?.deviation ?? 0` — a KEPT outcome whose composition the dump did not render.
+    // The source KEEPS its composition, which is what makes the `?? ''` load-bearing: with any other
+    // sentinel the census would look the name up, find a real service, and count the source into its own
+    // wrong-winner column — so this fixture is the one that tells the two spellings apart.
+    const unranked = { ...caseOf('no-prediction', true, sourceKeeps, rival), prediction: [] };
+    const row = guardCensus([unranked])[0]!;
+    expect(row.cases).toBe(1);
+    expect(row.wrongWinnerKept).toBe(0);
+    expect(row.wrongWinnerTransient).toBe(0);
+    // No excursion rather than an excursion of zero: the rival never won, so there is nothing to measure, and
+    // the two would read alike in the report if this were a 0.
+    expect(row.wrongWinnerBestDev).toBeUndefined();
+
+    // A kept outcome with no composition keeps the accumulator at 0 — the fallback is a NUMBER, so a case whose
+    // composition was never rendered still ENTERS the population the median is taken over. Asserted beside a
+    // case that did render one, because "the column is 0" and "the column was never computed" are the two
+    // readings this fixture exists to tell apart.
+    const bare = guardCensus([
+      caseOf('bare-kept', false, [metric('container.cpu.time', 'kept')], rival),
+    ])[0]!;
+    expect(bare.sourceBestDevWrong).toBe(0);
+    const composed = guardCensus([
+      caseOf('composed-kept', false, [metric('container.cpu.time', 'kept', 0.7)], rival),
+    ])[0]!;
+    expect(composed.sourceBestDevWrong).toBe(0.7);
   });
 
   it('needs no weight, because it reconstructs no score', () => {
@@ -7745,6 +7885,33 @@ describe('the ensemble draws each screen’s OWN fields, at each field’s own r
       }),
     )[0]!;
 
+  it('states the range of a RANK law, which only the order shape declares', () => {
+    // `lawDerivationClause` prints the law the BUILDER declared, and `order` is the one shape whose law is a
+    // rank with a range of 2 — a position worth two delays — while every other shape's law is a value or an
+    // indicator. The clause that names the range therefore hangs off ONE shape, and it is printed inside the
+    // cap's upper-bound sentence, whose own guard needs a satisfied case holding a rival the term reads as
+    // EQUAL. This is that case and it is the exact mirror of {@link tiedPair} above: there the root is BEHIND
+    // the equal-onset rival, so the term is inert and there is no tie to qualify; here it LEADS, so the pair
+    // is one the artifact cannot order and the sentence has to say so — with the rank law in it.
+    const kase = parseDiagnosticDump(
+      dump({
+        groundTruthServices: ['ts-src'],
+        services: [
+          serviceLine({ serviceId: 'ts-src', selfAnomaly: 0.9, onset: 5_000 }),
+          serviceLine({ serviceId: 'ts-decoy', selfAnomaly: 0.5, onset: 5_000 }),
+        ],
+        topPredictions: ['ts-src'],
+        injectTimeMs: ANCHOR,
+      }),
+    )[0]!;
+    const report = formatOnsetScreenReport(onsetScreen([kase], WEIGHTS, 'order'), WEIGHTS);
+    expect(report).toContain('cap UPPER bound');
+    expect(report).toContain('each position worth 2.000000');
+    // The control: one shape declares a rank, so the clause appears once, and the value laws the SAME report
+    // prints are not being credited with a range they do not have.
+    expect(report.match(/each position worth/g)).toHaveLength(1);
+  });
+
   it('names the fields a screen reads, and only those', () => {
     // The single owner linking a screen to the box its ensemble draws. The set is not "the fields a
     // dump prints": it is the fields THIS screen's arithmetic reads, and the screens that take a slope
@@ -8062,6 +8229,28 @@ describe('gainResolution — the lead the formatter discards', () => {
     expect(formatResolutionLine(resolution)).toContain(
       `every one of the 1 gains holds in all ${GAIN_RESOLUTION_TRIALS} resamplings`,
     );
+  });
+
+  it('says how far beyond the artifact a REFINED box was drawn', () => {
+    // A refined box is a HYPOTHETICAL rather than a measurement of the dump, and the clause that says so is one
+    // arm of two: `extraDigits` is 0 for the artifact's own precision — which every other call in this file
+    // takes — while the frontier's intermediate ensembles pass a non-zero refinement through the same sentence.
+    const cases = [fixture({ latRises: [1.5, 2.5] })];
+    const plain = solve(0.003, cases);
+    expect(plain.box.extraDigits).toBe(0);
+    expect(formatResolutionLine(plain)).not.toContain('digits beyond that');
+    const refined = gainResolution({
+      cases,
+      gained: ['dp-1'],
+      ship: 0.003,
+      screen: { kind: 'stability', weights: WEIGHTS, shape: 'rank' },
+      extraDigits: 2,
+    });
+    expect(refined.box.extraDigits).toBe(2);
+    // The same ensemble, still decided — a finer box makes the comparison finer, not coarser — and now labelled
+    // with the refinement, which is what keeps a swept box from being read as the artifact's own.
+    expect(refined.resolved).toEqual(['dp-1']);
+    expect(formatResolutionLine(refined)).toContain('(at 2 digits beyond that)');
   });
 
   it('reports the same ensemble for the same dump, because the draw is seeded', () => {
@@ -10143,6 +10332,33 @@ describe('a comparator is asked only what the caller has not already settled', (
     expect(margin.margin).toBeCloseTo(1 + solved.ship * 0.5 - 3, 12);
   });
 
+  it('elects the same root when the caller hands the tie over the other way', () => {
+    // The spec above draws the `-1` arm: descending insertion makes the sort ask `(later, earlier)`, i.e.
+    // `(ts-a, ts-b)`, and `ts-a < ts-b` answers `-1`. This is the SAME case with the two roots the other way
+    // round, which is the only way to reach the comparator's other arm — and the assertion is that the answer
+    // does not move, because a tie-break that disagreed with itself would make two runs of one dump elect two
+    // different roots. `docs/analyze-branch-instrument-audit.md` §3 records what made this arm look untaken.
+    const solved = solveZeroRegressionWindow([
+      {
+        datapack: 'dp-tied-roots-ascending',
+        targets: ['ts-a', 'ts-b'],
+        // ASCENDING, so the pair is asked `(ts-b, ts-a)` and `ts-b < ts-a` is false: the `1` arm.
+        scores: new Map([
+          ['ts-a', { base: 1, slope: 0.5 }],
+          ['ts-b', { base: 1, slope: 0.5 }],
+          ['rival', { base: 3, slope: 0 }],
+        ]),
+        measured: provenance,
+      },
+    ]);
+    // The same preconditions as the spec above, so the two differ in the ORDER and in nothing else.
+    expect(solved.gain).toBe(1);
+    expect(solved.ship).toBeGreaterThanOrEqual(4);
+    const margin = solved.margins[0]!;
+    expect(margin.target).toBe('ts-a');
+    expect(margin.margin).toBeCloseTo(1 + solved.ship * 0.5 - 3, 12);
+  });
+
   it('orders two families that agree on BOTH keys by name, from either insertion order', () => {
     // `familyScreen` sorts gain descending, then the window's WIDTH, then the name — so the name is reached only
     // when two families agree on the first two, which is what makes this a tie-break rather than a sort key. The
@@ -10170,6 +10386,34 @@ describe('a comparator is asked only what the caller has not already settled', (
     expect(rows.map((row) => row.family)).toEqual(['cpu', 'memory']);
     expect(rows.every((row) => row.gain === 0)).toBe(true);
     expect(rows.every((row) => !Number.isFinite(row.cap))).toBe(true);
+    expect(rows.every((row) => row.cap - row.gainFloor === Number.POSITIVE_INFINITY)).toBe(true);
+  });
+
+  it('orders the same two families by name when the cases arrive the other way round', () => {
+    // The spec above inserts the WIDER name first, which is what its `-1` arm needs. This is the same pair of
+    // cases in the other order, which is the only way to reach the comparator's other arm — and the answer is
+    // asserted to be the same one, because a tie-break whose result depended on the caller's insertion order
+    // would make the report depend on the order the dump happened to list its blocks in.
+    const cases = [
+      cvCase({
+        cvs: [0.4],
+        anomalies: [0.7],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        dominants: ['cpu'],
+      }),
+      cvCase({
+        cvs: [0.4],
+        anomalies: [0.7],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        dominants: ['memory'],
+      }),
+    ];
+    const rows = familyScreen(cases, WEIGHTS);
+    expect(rows.map((row) => row.family)).toEqual(['cpu', 'memory']);
+    // The same preconditions, so the only difference between the two specs is the order.
+    expect(rows.every((row) => row.gain === 0)).toBe(true);
     expect(rows.every((row) => row.cap - row.gainFloor === Number.POSITIVE_INFINITY)).toBe(true);
   });
 

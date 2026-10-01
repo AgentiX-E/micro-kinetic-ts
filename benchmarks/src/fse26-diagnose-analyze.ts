@@ -1729,7 +1729,17 @@ export function classifyMiss(
     // is a barrier in a case already lost, NOT a loss, and the distinction matters because
     // the count is large (35 of 662 on the shipped dump) while the term's realized cost is
     // zero. Negative means it argued for the root and the other terms outweighed it.
-    temporal: temporalWeight * ((onset.get(winner!) ?? 0) - (onset.get(source) ?? 0)),
+    //
+    // Read with `!` and NOT with a `?? 0`, which is what stood here. `onset` is TOTAL over the case's
+    // services — `onsetSlopes` writes an entry for every one of them — and both services are known here, which
+    // is what the paragraph above claims; this file already states the rule where it builds a map of the same
+    // shape ("Total by construction ... so the lookups assert rather than defaulting", the score map below).
+    // The two fallbacks contradicted that claim and could not fire: the coverage reading gave both of their
+    // regions a count of ZERO over the whole suite, while `latOf`'s own `?? 0` three lines up fires on every
+    // case it sees, because `latencySlopes` is NOT total. A fallback that cannot fire is the shape of a term
+    // that silently stopped voting, which is the failure this function exists to attribute — and the `0` would
+    // have been a value no artifact measured, in the one place the report says it has none.
+    temporal: temporalWeight * (onset.get(winner!)! - onset.get(source)!),
   };
   const gap = MISS_TERMS.reduce((sum, term) => sum + parts[term], 0);
 
@@ -5690,8 +5700,15 @@ export function formatCriterionReport(
         ? ` — and that weight is AT OR ABOVE ${verdict.gainArtifact}'s own cap, so it costs a case ` +
           'where it was to gain one (a run settles it; the screen cannot count types)'
         : '';
+    // The witness is read with the house's `!` and NOT with the `?? 0` that stood here, because the fallback
+    // was REDUNDANT: `criterionVerdicts` builds `admissible` and `gainsFrom` in the SAME object, and it defines
+    // the first as `gainsFrom !== undefined && …` — so this branch is entered only when the witness exists. A
+    // `0` would also be the wrong number to have printed: it reads as "gains from zero", the most permissive
+    // answer available for an artifact that gains nothing, and the line ABOVE already spells that state out
+    // (`no GAIN artifact gains …`). `docs/analyze-branch-instrument-audit.md` §5 records the mutation that
+    // showed the fallback could not change an answer — the third answer beside dead and gap.
     const region = verdict.admissible
-      ? `ADMISSIBLE [${at(verdict.gainsFrom ?? 0)}, ${at(verdict.ceiling)}) width ` +
+      ? `ADMISSIBLE [${at(verdict.gainsFrom!)}, ${at(verdict.ceiling)}) width ` +
         `${verdict.width.toFixed(6)}`
       : 'NO ADMISSIBLE WEIGHT';
     lines.push('');
