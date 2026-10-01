@@ -192,9 +192,8 @@ the name is a tie it cannot express. On the default path `requested` is a `Map`'
 by construction. On the explicit path it is the CALLER's array, and `['k8s', 'k8s']` puts two rows of one
 family in front of that comparator.
 
-That is not a hypothetical shape: it is one call away, in an exported function, and the repository has nine
-other sites where a caller supplied the list — the audit's own class of finding. It is also the cheapest kind
-to remove, because the fix is an expression with no arm in it:
+That is not a hypothetical shape: it is one call away, in an exported function, and removing it costs an
+expression with no arm in it:
 
 ```ts
 const requested = [...new Set(families ?? labelsByFamily.keys())];
@@ -244,15 +243,16 @@ spec alone.
 suite; this one is the statement about the instrument. It runs the same mutation with `Array.prototype.sort`
 patched and asks whether the site the mutation corrupts is the site the census reports.
 
-| row | tree | site reached | `unordered` at the site | suite |
+| row | tree | `calls` at the site | `unordered` at the site | suite |
 | --- | --- | --- | --- | --- |
-| P1 | as shipped | yes | 0 | green |
-| P2 | the dedupe removed | yes | **at least 1** | one failure |
-| P3 | the dedupe removed AND the new spec deleted | yes | 0 | green |
+| P1 | as shipped | 58 | 0 | green |
+| P2 | the dedupe removed | 59 | **1**, operands named | one failure |
+| P3 | the dedupe removed AND the new spec deleted | 58 | 0 | green |
 
-P3 is P2's control. Without it, P2 would read as "the ENGINE presents the duplicate" rather than "the SPEC
-does" — and a repository whose only duplicate request is written by a test is exactly the state this iteration
-had to distinguish from a repository that has none.
+P2's witness reads `{family=k8s,services=2,cases=2,gain=1} vs {family=k8s,services=2,cases=2,gain=1}` — the two
+rows the run order puts in front of the comparator. P3 is P2's control. Without it, P2 would read as "the ENGINE
+presents the duplicate" rather than "the SPEC does" — and a repository whose only duplicate request is written
+by a test is exactly the state this iteration had to distinguish from a repository that has none.
 
 ---
 
@@ -311,9 +311,9 @@ number in §4 and §5 re-taken from a single tree.
 
 - **A zero over a site with `calls = 0` is an absence.** Two of the twenty are in that state on one population
   each and one on both; the table prints it rather than averaging it away.
-- **`ordered` is a property of the populations measured, not of the code.** The argument for the seventeen
-  `Map`-backed sites is a construction and holds for every input; the argument for the corpus and the suite is
-  an observation and holds for those bytes. Both are stated, and neither is offered for the other.
+- **`unordered = 0` is a property of the populations measured, not of the code.** The argument for the
+  seventeen is a construction and holds for every input; the argument for the corpus and the suite is an
+  observation and holds for those bytes. Both are stated, and neither is offered for the other.
 - **The census is not a proof that no comparator is ever inconsistent.** For **seventeen** of the twenty the
   key is unique by construction and that is a proof about every input; for the other **three** it is a
   measurement over 89 calls and about nothing else. The instrument's own control is what makes either worth
@@ -321,3 +321,47 @@ number in §4 and §5 re-taken from a single tree.
 - **`Array.prototype.sort` being stable is not used anywhere.** The one site whose key could repeat has a key
   that no longer can; the instrument's own report is what says so, and no argument here rests on what the
   engine does with a pair it is told is unequal.
+
+---
+
+## 11. The push, and the two halves of the criterion
+
+Two commits: `32bac0a` (the source and the spec) and `d630da9` (this document and the register). The source
+commit changed `benchmarks/src/**`, so it owed a golden; the docs commit's push started only `CI` + `Release`,
+which this repository's own rule reads as **no golden owed**.
+
+**CI, run `36869017671` on the last commit.** The source commit's own CI reads `cancelled`, which is `ci.yml`
+cancelling itself, so the last commit's run is the one that counts: **19 jobs, 18 succeeded and `benchmark-diff`
+skipped** — that job is `if: pull_request` and is skipped on every push by design, so the reading is 18 of 18
+runnable and never 19 of 19. `benchmark-tests` read **23 files / 931 tests** at **99.95 / 99.88 / 100 / 99.95**,
+with the same two per-file rows the local run produced: `fse26-diagnose-analyze.ts` 99.9 / 99.76 / 100 / 99.9
+(2816-2818) and `fse26-separator.ts` 100 on all four. The Python gate read `Ran 480 tests` and
+`TOTAL 1637 0 588 0 100.00%` — its sixth consecutive hundred, on a commit that touches no Python.
+
+**Golden, run `36868994008`** (dispatched by the source commit; `ablation-re2` was still running when these
+cells were read, and no cell depends on it):
+
+| | OB | SS | TT |
+| --- | --- | --- | --- |
+| RE1 | 80.0 | 92.8 | 68.0 |
+| RE2 | 82.4 | 88.9 | 68.1 |
+| RE3 | 80.0 | 45.0 | 51.1 |
+
+Nine cells, every one identical to the invariant — **the criterion's first half**. The second half is not
+measured by a push and cannot be, because `fse26-benchmark.yml` is `workflow_dispatch:`-only: what holds it
+here is §8's A/B, one hash over the whole corpus with `diff 0`, labelled dispatchable-but-not-dispatched.
+
+The panels are checked too, and against the PREVIOUS iteration's run rather than against a tolerance — the
+per-fault-type tables are the nine cells' own composition, so a cell can hold while a row below it moves. Both
+runs' `AC@1`/`Avg@5`/`LA`/`TA` rows, whitespace-normalised and compared as sets:
+
+```
+re1: old=24 lines  new=24 lines  identical=True
+re2: old=24 lines  new=24 lines  identical=True
+re3: old=36 lines  new=36 lines  identical=True
+TOTAL panel lines: old=84 new=84
+```
+
+84 lines, zero on either side of the diff. The change this iteration ships cannot move any of them — a `Set`
+over a `Map`'s keys cannot reorder a list — and that argument and this measurement are the two halves of the
+same claim.
