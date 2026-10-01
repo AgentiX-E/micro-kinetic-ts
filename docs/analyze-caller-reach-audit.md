@@ -191,9 +191,11 @@ own work:
   two families this iteration met**: a fold that needs a second element, and a comparator whose arms are
   decided by the ORDER a sort asks its questions in. `byP`'s `? -1` in the separator (100 / 99.65) is the
   register's standing example of the second.
-- **The guards on a missing input (13 arms) are the largest remaining cluster**, and §9's own warning applies
-  to them twice over: for each one the question is not "can the input be absent" but "does every CALLER
-  already exclude it" — which is exactly the question §9 got wrong once.
+- **The guards on a missing input are the largest remaining cluster**, and iteration 33's mistake applies to them
+  twice over: for each one the question is not "can the input be absent" but "does every CALLER already exclude it" —
+  and that question is answered by the enclosing block, not by the call. **Iteration 35 answered it for eight of the
+  thirteen and found a THIRD answer beside "the caller excludes it" and "nobody does": the guard beside it may
+  exclude the same population** (`docs/analyze-guard-reach-audit.md` §3). Six remain.
 
 ## 8. Gates
 
