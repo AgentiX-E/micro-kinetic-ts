@@ -182,8 +182,13 @@ corpus does not have.
 
 ## 7. What is left
 
-**24 arms**, all named by `.git/cov_lines.py`. The missing-input cluster is now **six guards** rather
-than thirteen, and each is a question about its caller rather than about its own line:
+**24 arms**, all named by `.git/cov_lines.py`. The missing-input cluster had **five** guards left, and this
+paragraph called it six — **the same count/list mismatch iteration 33's inventory made**, since the sixth entry in
+the list below was not a guard at all but `capBinderOf`'s loop-exit brace, which this iteration's own restructure
+had already taken as far as it could. **Iteration 36 closed all five of them and with them the whole cluster**
+(`docs/analyze-seam-guards-audit.md`), so the list below is a record of what was left HERE rather than a plan; the
+live inventory is that audit's §5. The corrected count is the arithmetic: 13 in the cluster, 2 excused by their
+callers, 1 removed as redundant, 5 fixtures here, 5 fixtures there.
 
 ```
     1153  guardCensus              if (sourceService === undefined) continue;
