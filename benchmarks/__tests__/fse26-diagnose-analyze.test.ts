@@ -4259,6 +4259,20 @@ describe('familyScreen — a family penalty, SOLVED instead of swept', () => {
     expect(rows[0]!.cases).toBe(0);
   });
 
+  it('screens a family named twice in the request ONCE, because the row order cannot say equal', () => {
+    // The row order ends on the family NAME, and that comparator is a two-armed `? -1 : 1`: for two equal
+    // names it answers "greater" in both directions, so two rows of ONE family would come back in whatever
+    // order the engine's sort happens to leave them — a fact about the runtime, not about the request. The
+    // default path reads a Map's keys and could never present the duplicate; the explicit path reads the
+    // CALLER's list, so this is where the request is made a set.
+    const once = familyScreen([gainCase(), protectCase()], { logWeight: 1 }, ['k8s']);
+    const twice = familyScreen([gainCase(), protectCase()], { logWeight: 1 }, ['k8s', 'k8s']);
+
+    expect(twice.map((row) => row.family)).toEqual(['k8s']);
+    // Not just the count: the whole screen, so a dedup that reordered or re-solved the row behind it fails.
+    expect(twice).toEqual(once);
+  });
+
   it('ranks by gain, then by the width of the window, then by name', () => {
     const both = [gainCase(), protectCase()];
     const rows = familyScreen(both, { logWeight: 1 });

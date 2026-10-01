@@ -5756,8 +5756,13 @@ export function familyScreen(
 
   // Every family the dump carries, or exactly the ones asked for: an explicit request is
   // answered with a zero row rather than with no row, so a caller cannot read "skipped"
-  // as "screened and empty".
-  const requested = families ?? [...labelsByFamily.keys()];
+  // as "screened and empty". DEDUPLICATED, because the row order below ends on the family
+  // name and that tie-break cannot answer "equal": two rows of one family would then be
+  // ordered by whatever the engine's sort happens to do, which is a fact about the runtime
+  // rather than about the request. The default path is a Map's keys and is already unique,
+  // so this leaves it byte-identical; the explicit path is the CALLER's list, and a family
+  // named twice is one family.
+  const requested = [...new Set(families ?? labelsByFamily.keys())];
   const rows: FamilyScreenRow[] = [];
   for (const family of requested) {
     const built = buildFamilyCases(cases, weights, family);
