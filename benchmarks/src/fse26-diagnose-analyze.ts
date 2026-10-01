@@ -3563,9 +3563,15 @@ export function solveZeroRegressionWindow(
           .filter((one) => intervalsCover(one.intervals, ship))
           .map((one) => one.datapack)
           .sort();
+  // Thinnest first, and NOT tie-broken here. A `|| (a.datapack < b.datapack ? -1 : 1)` stood on this sort, and
+  // its `-1` arm was UNREACHABLE — a fact about the CALLER rather than about the comparator: `gained` is sorted
+  // by datapack one statement above, `Array.prototype.sort` has been REQUIRED to be stable since ES2019, and a
+  // stable sort never asks a comparator for two elements the input already has in order the other way. The
+  // tie-break was therefore a second answer to a question the `.sort()` above had already answered, and the
+  // order it meant to guarantee is guaranteed by that sort plus stability.
   const margins = gained
     .map((datapack) => marginOf(byPack.get(datapack)!, ship))
-    .sort((a, b) => a.margin - b.margin || (a.datapack < b.datapack ? -1 : 1));
+    .sort((a, b) => a.margin - b.margin);
   return {
     window,
     steps,

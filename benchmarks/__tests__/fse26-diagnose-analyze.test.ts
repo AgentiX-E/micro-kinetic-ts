@@ -10086,3 +10086,122 @@ describe('the last five missing-input guards, through the seams that admit the i
     expect(named?.unreachable).toBe(0);
   });
 });
+
+/**
+ * The comparator family: an arm decided by the ORDER the sort asks its questions in.
+ *
+ * A tie-break is only exercised when the PRIMARY key collides, and its `-1` arm only when the caller hands the
+ * array over in the order the comparator would reverse. Two of the three specs below manufacture exactly that
+ * collision; the third draws the marker that stands beside a rendered row. The fourth arm of this family was
+ * not a gap at all — it was unreachable because its caller had already normalized the array — and it was
+ * REMOVED rather than fixtured, which `docs/analyze-comparator-audit.md` records.
+ */
+describe('a comparator is asked only what the caller has not already settled', () => {
+  const WEIGHTS: FamilyScreenWeights = { logWeight: 1 };
+  const LAW: CellLaw = { kind: 'indicator', range: 1 };
+  const provenance: MeasurementProvenance = {
+    weighed: new Set(['ts-a', 'ts-b', 'rival']),
+    decimals: 3,
+    law: LAW,
+  };
+
+  it('elects the SMALLER root when two acceptable roots score the same', () => {
+    // Two roots that are equal at every weight, against a rival that leads at zero and loses to any weight above
+    // four. The tie-break is the only thing that can decide which root the margin names, and it is asserted on
+    // the NAME rather than on the count of something, because the name is what two runs of the dump must agree
+    // on. The other root is a real candidate: it is listed as acceptable and it scores the same.
+    const solved = solveZeroRegressionWindow([
+      {
+        datapack: 'dp-tied-roots',
+        targets: ['ts-a', 'ts-b'],
+        // The TWO ROOTS are listed in DESCENDING id order, and that is not cosmetic: a comparator is asked for
+        // two elements in the order the SORT chooses, which for a pair is `(later, earlier)` — measured, see
+        // `docs/analyze-comparator-audit.md` §1 — so a `-1` arm is reached only when the caller hands the array
+        // over the other way round. My first version listed them ascending and the tie was asked as
+        // `(ts-b, ts-a)`, which takes the OTHER arm: the spec passed while exercising nothing.
+        scores: new Map([
+          ['ts-b', { base: 1, slope: 0.5 }],
+          ['ts-a', { base: 1, slope: 0.5 }],
+          ['rival', { base: 3, slope: 0 }],
+        ]),
+        measured: provenance,
+      },
+    ]);
+    // The preconditions, before the answer: the case is GAINED (it is wrong at zero and reachable above four)
+    // and the two roots really do tie at the weight the margin is measured at.
+    expect(solved.gain).toBe(1);
+    // The admissible set is `[4, unbounded)` — one root overtakes the rival AT four and nothing caps it — so the
+    // widest maximal-gain plateau is the single point `4` and that is the weight it recommends. Asserted as `>=`
+    // because "the gain is reached" is the claim; where inside a plateau the midpoint falls is the profile's
+    // business and is asserted where the profile lives.
+    expect(solved.ship).toBeGreaterThanOrEqual(4);
+    const at = (slope: number) => 1 + solved.ship * slope;
+    expect(at(0.5)).toEqual(at(0.5));
+    const margin = solved.margins[0]!;
+    expect(margin.target).toBe('ts-a');
+    expect(margin.rival).toBe('rival');
+    expect(margin.margin).toBeCloseTo(1 + solved.ship * 0.5 - 3, 12);
+  });
+
+  it('orders two families that agree on BOTH keys by name, from either insertion order', () => {
+    // `familyScreen` sorts gain descending, then the window's WIDTH, then the name — so the name is reached only
+    // when two families agree on the first two, which is what makes this a tie-break rather than a sort key. The
+    // fixture inserts the WIDER name first, which is what a `-1` arm needs: a stable sort never asks a comparator
+    // for two elements the input already has in the order it wants.
+    const cases = [
+      cvCase({
+        cvs: [0.4],
+        anomalies: [0.7],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        dominants: ['memory'],
+      }),
+      cvCase({
+        cvs: [0.4],
+        anomalies: [0.7],
+        groundTruth: 'ts-svc-0',
+        prediction: 'ts-svc-0',
+        dominants: ['cpu'],
+      }),
+    ];
+    const rows = familyScreen(cases, WEIGHTS);
+    // The preconditions: two rows, both with no gain and an UNBOUNDED window, so both tie-break keys are equal
+    // and the name is the only thing left.
+    expect(rows.map((row) => row.family)).toEqual(['cpu', 'memory']);
+    expect(rows.every((row) => row.gain === 0)).toBe(true);
+    expect(rows.every((row) => !Number.isFinite(row.cap))).toBe(true);
+    expect(rows.every((row) => row.cap - row.gainFloor === Number.POSITIVE_INFINITY)).toBe(true);
+  });
+
+  it('marks the row whose family the engine itself penalises, and only that one', () => {
+    // The marker is a claim about the ENGINE: the family prefix is imported rather than spelled, so a row cannot
+    // be marked by a name the engine does not penalise. Asserted as a substring of the rendered line, because the
+    // marker exists to be seen in the report and nowhere else.
+    const rows = familyScreen(
+      [
+        cvCase({
+          cvs: [0.4],
+          anomalies: [0.7],
+          groundTruth: 'ts-svc-0',
+          prediction: 'ts-svc-0',
+          dominants: [`${POOL_METRIC_PREFIX}use_time.max`],
+        }),
+        cvCase({
+          cvs: [0.4],
+          anomalies: [0.7],
+          groundTruth: 'ts-svc-0',
+          prediction: 'ts-svc-0',
+          dominants: ['cpu'],
+        }),
+      ],
+      WEIGHTS,
+    );
+    const pool = rows.find((row) => row.enginePoolFamily);
+    const other = rows.find((row) => !row.enginePoolFamily);
+    expect(pool).toBeDefined();
+    expect(other).toBeDefined();
+    const report = formatFamilyScreenReport(rows, WEIGHTS);
+    expect(report).toContain(`${pool!.family} *`);
+    expect(report).not.toContain(`${other!.family} *`);
+  });
+});
