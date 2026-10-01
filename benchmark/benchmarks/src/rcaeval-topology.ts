@@ -1,0 +1,628 @@
+/**
+ * RCAEval topology adapter — bridges the YAML-driven topology system
+ * into the benchmark pipeline.
+ *
+ * Replaces the hardcoded TypeScript edge arrays (ONLINEBOUTIQUE_EDGES,
+ * SOCKSHOP_EDGES, TRAINTICKET_EDGES) with YAML config files loaded
+ * through StaticTopologyProvider.
+ *
+ * Architecture:
+ *   1. initRCAEvalTopology() — loads all YAML configs once (async)
+ *   2. buildRCAEvalCallGraph() — sync lookup into pre-loaded registry
+ *   3. Semantic enhancement — embedding/LLM alignment for unmatched services
+ *   4. Fallback: ring-connect for services unresolved after semantics
+ *
+ * The topology registry is globally cached after initialization so each
+ * benchmark call is a fast O(1) map lookup — no file I/O on the hot path.
+ *
+ * @module benchmarks/rcaeval-topology
+ */
+
+import { StaticTopologyProvider } from '@agentix-e/micro-kinetic-causal';
+import type {
+  CallEdge,
+  ServiceCallGraph,
+  ServiceId,
+  ServiceNode,
+} from '@agentix-e/micro-kinetic-core';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type {
+  EdgeProvenance,
+  ProvenancedCallEdge,
+  SemanticEnhancerConfig,
+} from './rcaeval-semantic.js';
+import { edgeProvenance, RCAEvalSemanticEnhancer, RING_CONNECT } from './rcaeval-semantic.js';
+
+// ── Graph shapes this module owns ─────────────────────────
+
+/**
+ * A node whose `labels` this module writes.
+ *
+ * `ServiceNode.labels` is readonly because a node is immutable once it reaches
+ * the engine. The builder owns these nodes before that hand-over and staples
+ * `_diag_*` diagnostic labels onto them in place, so it needs the field to be
+ * writable. The mutable form is assignable to the readonly one, so the graph is
+ * still a `ServiceCallGraph` everywhere downstream.
+ */
+type AnnotatableNode = Omit<ServiceNode, 'labels'> & { labels: Record<string, string> };
+
+/** The graph shape this module builds: owned nodes, provenance-tagged edges. */
+type BenchmarkCallGraph = Omit<ServiceCallGraph, 'nodes' | 'edges'> & {
+  nodes: Map<ServiceId, AnnotatableNode>;
+  edges: ProvenancedCallEdge[];
+};
+
+// ── Topology Registry ─────────────────────────────────────
+
+/**
+ * System name → pre-loaded topology graph.
+ *
+ * Each entry is the full static topology for a benchmark system
+ * (OnlineBoutique, SockShop, TrainTicket). At query time, we
+ * filter edges to only include services present in the current case.
+ */
+interface TopologyRegistry {
+  /** Pre-loaded topology edges per system (full set, unfiltered by case). */
+  readonly edgesBySystem: Readonly<Record<SystemName, readonly CallEdge[]>>;
+  /** All service IDs in each system's topology. */
+  readonly serviceIdsBySystem: Readonly<Record<SystemName, readonly string[]>>;
+  /** Semantic enhancer (null if no embedding provider configured). */
+  readonly semanticEnhancer: RCAEvalSemanticEnhancer | null;
+  readonly initialized: boolean;
+}
+
+let _registry: TopologyRegistry = {
+  edgesBySystem: perSystem<readonly CallEdge[]>(() => []),
+  serviceIdsBySystem: perSystem<readonly string[]>(() => []),
+  semanticEnhancer: null,
+  initialized: false,
+};
+
+/**
+ * Path to topology config directory relative to the project root.
+ */
+const TOPOLOGY_CONFIG_DIR = 'configs/topology';
+
+// ── System Name Mapping ──────────────────────────────────
+
+/**
+ * Map RCAEval case system codes to benchmark system names.
+ *
+ * The system code is extracted from case IDs (e.g., "re1ob_..." → "ob");
+ * case IDs use ob/ss/tt.
+ *
+ * The key type is the regex capture set itself, not `string`, so the lookup in
+ * `identifyBenchmarkSystem` is total and needs no `?? null` fallback that can
+ * never be taken.
+ */
+const SYSTEM_CODE_TO_NAME: Readonly<
+  Record<'ob' | 'ss' | 'tt', 'OnlineBoutique' | 'SockShop' | 'TrainTicket'>
+> = {
+  ob: 'OnlineBoutique',
+  ss: 'SockShop',
+  tt: 'TrainTicket',
+};
+
+/** The benchmark systems the RCAEval suites cover. */
+const SYSTEMS = ['OnlineBoutique', 'SockShop', 'TrainTicket'] as const;
+
+/** A benchmark system name. */
+type SystemName = (typeof SYSTEMS)[number];
+
+/**
+ * A record carrying one entry per system.
+ *
+ * The registry is keyed this way rather than by `Map<string, …>` so that a
+ * lookup cannot miss: every reader of the registry is handed a `SystemName`,
+ * and a `Record` over that union is total. That is what removes the `?? []`
+ * fallbacks that used to sit on every read -- they were unreachable, and an
+ * empty topology is the wrong thing to hide a lookup bug behind.
+ */
+function perSystem<V>(make: () => V): Record<SystemName, V> {
+  return { OnlineBoutique: make(), SockShop: make(), TrainTicket: make() };
+}
+
+// ── System Identification ─────────────────────────────────
+
+/**
+ * Map case ID to benchmark system name.
+ *
+ * The system code (ob/ss/tt) is independent of the suite number (RE1/RE2/RE3).
+ * Each suite has cases from all three benchmark systems. The naming convention is:
+ *   re{suite_number}{system_code}_{service}_{fault}_{instance}
+ *
+ * We extract the system code from position: re{N}{SYS}...
+ */
+export function identifyBenchmarkSystem(
+  caseId: string,
+): 'OnlineBoutique' | 'SockShop' | 'TrainTicket' | null {
+  const lower = caseId.toLowerCase();
+  const sysMatch = lower.match(/^re\d(ob|ss|tt)/);
+  if (sysMatch) {
+    // The alternation captures exactly the union the map is keyed on, so this
+    // cast is a restatement of the regex, and the lookup cannot miss.
+    const sysCode = sysMatch[1] as 'ob' | 'ss' | 'tt';
+    return SYSTEM_CODE_TO_NAME[sysCode];
+  }
+
+  // Fallback heuristic for non-standard naming
+  if (lower.includes('_ob_')) return 'OnlineBoutique';
+  if (lower.includes('_ss_')) return 'SockShop';
+  if (lower.includes('_tt_')) return 'TrainTicket';
+  return null;
+}
+
+// ── Initialization ───────────────────────────────────────
+
+/**
+ * Initialize the RCAEval topology registry from YAML config files.
+ *
+ * Must be called once before `buildRCAEvalCallGraph()`. Loads all three
+ * system configs in parallel and caches the parsed graphs.
+ *
+ * Uses StaticTopologyProvider (built-in minimal YAML parser) — no external
+ * YAML dependencies.
+ *
+ * @param configDir - Path to topology config directory (default: "configs/topology").
+ *                    Resolved relative to the project root (via source file location).
+ */
+export async function initRCAEvalTopology(
+  configDir: string = TOPOLOGY_CONFIG_DIR,
+  semanticConfig?: SemanticEnhancerConfig,
+): Promise<void> {
+  if (_registry.initialized) return;
+
+  // Resolve relative to project root (this file lives in benchmarks/src/)
+  const __sourceDir = dirname(fileURLToPath(import.meta.url));
+  const configPath = resolve(__sourceDir, '..', '..', configDir);
+  const provider = new StaticTopologyProvider(configPath);
+
+  const edgesBySystem = perSystem<readonly CallEdge[]>(() => []);
+  const serviceIdsBySystem = perSystem<readonly string[]>(() => []);
+
+  // No try/catch: neither call can throw. `collectServiceIds` wraps its own
+  // body in a try/catch and returns `[]`, and `StaticTopologyProvider.discover`
+  // routes every I/O and parse error through `loadAll`, which catches them all
+  // (which is why the same-shaped catch inside that provider was already
+  // removed). The `catch` that used to sit here could therefore never run.
+  for (const system of SYSTEMS) {
+    const allServiceIds = collectServiceIds(configPath, system);
+    const context = { knownServiceIds: allServiceIds, namespace: system };
+    const graph = await provider.discover(context);
+    edgesBySystem[system] = graph.edges;
+    serviceIdsBySystem[system] = allServiceIds;
+  }
+
+  // Initialize semantic enhancer if embedding provider is available
+  const enhancer = semanticConfig?.embeddingProvider
+    ? new RCAEvalSemanticEnhancer(semanticConfig)
+    : null;
+
+  _registry = {
+    edgesBySystem,
+    serviceIdsBySystem,
+    semanticEnhancer: enhancer,
+    initialized: true,
+  };
+}
+
+/**
+ * Read service IDs from a YAML topology config file for a given system.
+ *
+ * We need the full list to pass to provider.discover() so it returns
+ * all topology edges (not filtered by an empty knownServiceIds).
+ */
+function collectServiceIds(configDir: string, system: string): string[] {
+  try {
+    if (!existsSync(configDir)) return [];
+
+    const files = readdirSync(configDir).filter(
+      (f: string) => f.endsWith('.yaml') || f.endsWith('.yml'),
+    );
+
+    for (const file of files) {
+      const content = readFileSync(join(configDir, file), 'utf-8');
+      // Quick extraction: find all `- id: XXX` lines under `services:`
+      if (
+        !content.toLowerCase().includes(`system: ${system.toLowerCase()}`) &&
+        !content.toLowerCase().includes(`system: ${system.replace(/ /g, '-').toLowerCase()}`)
+      ) {
+        // Check if file name matches system
+        const fileNameBase = file.replace(/\.ya?ml$/, '').toLowerCase();
+        const sysLower = system.toLowerCase();
+        if (!fileNameBase.includes(sysLower.replace(/ /g, '-'))) continue;
+      }
+
+      // Extract service IDs from YAML
+      const ids: string[] = [];
+      let inServices = false;
+      for (const line of content.split('\n')) {
+        if (line.trim() === 'services:') {
+          inServices = true;
+          continue;
+        }
+        if (inServices && line.match(/^  - id:\s*/)) {
+          const id = line
+            .replace(/^  - id:\s*'?/, '')
+            .replace(/'?\s*$/, '')
+            .trim();
+          ids.push(id);
+        } else if (inServices && line.trim() === 'edges:') {
+          break;
+        }
+      }
+      if (ids.length > 0) return ids;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Check whether the topology registry has been initialized.
+ */
+export function isRCAEvalTopologyInitialized(): boolean {
+  return _registry.initialized;
+}
+
+// ── Call Graph Builder ────────────────────────────────────
+
+/**
+ * Build the correct call graph for a benchmark case.
+ *
+ * Uses the pre-loaded topology registry (via initRCAEvalTopology()).
+ * Falls back to ring-connect for services not in the known topology,
+ * ensuring the collision tree engine always has at least one edge per service.
+ *
+ * This is the synchronous (exact match + ring-connect) path.
+ * For semantic enhancement of unmatched services, use `enhanceRCAEvalCallGraph()`
+ * which resolves services via embedding/LLM before falling back to ring-connect.
+ *
+ * @param caseId - RCAEval case identifier (e.g., re1ob_adservice_cpu_1)
+ * @param serviceIds - Service IDs found in the case metrics
+ * @returns ServiceCallGraph with real topology edges where known
+ */
+export function buildRCAEvalCallGraph(
+  caseId: string,
+  serviceIds: readonly string[],
+): ServiceCallGraph {
+  const system = identifyBenchmarkSystem(caseId);
+
+  // Try YAML-driven topology if registry is initialized
+  if (_registry.initialized && system) {
+    return buildFromRegistry(system, caseId, serviceIds);
+  }
+
+  // Fallback: pure ring-connect (registry not initialized)
+  return buildRingConnectOnly(system ?? 'rca-eval', caseId, serviceIds);
+}
+
+/**
+ * Build and semantically enhance a call graph for a benchmark case.
+ *
+ * Extends `buildRCAEvalCallGraph()` with SemanticAlignmentProvider resolution
+ * for services that didn't match any YAML topology entry by exact name.
+ *
+ * Workflow:
+ *   1. Exact match (sync) — same as buildRCAEvalCallGraph()
+ *   2. Semantic match (async) — embedding cosine similarity + LLM fallback
+ *   3. Ring-connect only remaining unmatched services
+ *
+ * If no semantic enhancer is configured (no embedding provider passed to
+ * initRCAEvalTopology()), this is a no-op wrapper around buildRCAEvalCallGraph().
+ *
+ * @param caseId - RCAEval case identifier
+ * @param serviceIds - Service IDs found in the case metrics
+ * @returns ServiceCallGraph with semantic enhancement applied where available
+ */
+export async function enhanceRCAEvalCallGraph(
+  caseId: string,
+  serviceIds: readonly string[],
+): Promise<ServiceCallGraph> {
+  const system = identifyBenchmarkSystem(caseId);
+
+  // No semantic enhancer configured → delegate to sync path
+  if (!_registry.semanticEnhancer || !_registry.initialized || !system) {
+    return buildRCAEvalCallGraph(caseId, serviceIds);
+  }
+
+  // Step 1: Exact match (sync)
+  const baseGraph = buildFromRegistry(system, caseId, serviceIds);
+
+  // Step 2: Find which services were NOT matched by exact YAML lookups
+  // (i.e., they were ring-connected)
+  const yamlServiceIds = _registry.serviceIdsBySystem[system];
+  const yamlServiceSet = new Set(yamlServiceIds);
+  const unmatchedServiceIds = serviceIds.filter((s) => !yamlServiceSet.has(s));
+
+  if (unmatchedServiceIds.length === 0) {
+    // All matched — annotation already handled by buildFromRegistry
+    return baseGraph;
+  }
+
+  const yamlEdges = _registry.edgesBySystem[system];
+
+  // Step 3: Semantic enhancement
+  const result = await _registry.semanticEnhancer.enhance({
+    unmatchedCaseServiceIds: unmatchedServiceIds,
+    yamlTopologyEdges: yamlEdges,
+    yamlServiceIds,
+    system,
+  });
+
+  if (result.edges.length === 0) {
+    // No semantic matches found — base graph already has ring-connect
+    return annotateWithSemanticStats(baseGraph, caseId, system, result, serviceIds.length);
+  }
+
+  // Step 4: Replace ring-connect edges for resolved services with semantic edges
+  const resolvedSet = new Set(result.resolvedServiceIds);
+  const enhancedEdges: ProvenancedCallEdge[] = baseGraph.edges.filter((edge) => {
+    // Keep non-ring-connect edges (exact YAML matches)
+    if (!isRingConnectEdge(edge)) return true;
+    // Keep ring-connect edges only for still-unmatched services
+    if (resolvedSet.has(edge.from) || resolvedSet.has(edge.to)) {
+      return false;
+    }
+    return true;
+  });
+
+  // Add semantic edges — but only those whose BOTH endpoints exist in this
+  // case's service set. The semantic enhancer maps a case service to a YAML
+  // alias and reuses that alias' neighbours verbatim; a neighbour alias may
+  // reference a service that is absent from this specific case's metric set,
+  // producing a dangling edge whose endpoint has no node. Dangling edges make
+  // the graph inconsistent and crash the RCA pruning/topological-sort step.
+  const caseSvcSet = new Set(serviceIds);
+  for (const semEdge of result.edges) {
+    if (caseSvcSet.has(semEdge.from) && caseSvcSet.has(semEdge.to)) {
+      enhancedEdges.push(semEdge);
+    }
+  }
+
+  const enhancedGraph: BenchmarkCallGraph = {
+    ...baseGraph,
+    edges: enhancedEdges,
+  };
+
+  return annotateWithSemanticStats(enhancedGraph, caseId, system, result, serviceIds.length);
+}
+
+// ── Internal Builders ─────────────────────────────────────
+
+/**
+ * Build graph from the pre-loaded YAML topology registry.
+ */
+function buildFromRegistry(
+  system: 'OnlineBoutique' | 'SockShop' | 'TrainTicket',
+  caseId: string,
+  serviceIds: readonly string[],
+): BenchmarkCallGraph {
+  const topologyEdges = _registry.edgesBySystem[system];
+  const topologySvcNames = new Set<string>();
+
+  // Collect known topology service names from edges
+  for (const edge of topologyEdges) {
+    topologySvcNames.add(edge.from);
+    topologySvcNames.add(edge.to);
+  }
+
+  const nodes = buildNodes(serviceIds, system);
+  const svcSet = new Set(serviceIds);
+  const connectedSvcs = new Set<string>();
+  const edges: ProvenancedCallEdge[] = [];
+  let matchedEdgeCount = 0;
+
+  // Match topology edges against this case's service set
+  for (const edge of topologyEdges) {
+    if (svcSet.has(edge.from) && svcSet.has(edge.to)) {
+      edges.push({
+        from: edge.from,
+        to: edge.to,
+        type: edge.type,
+        callRate: edge.callRate,
+        p99Latency: edge.p99Latency,
+        errorRate: edge.errorRate,
+      });
+      connectedSvcs.add(edge.from);
+      connectedSvcs.add(edge.to);
+      topologySvcNames.add(edge.from);
+      topologySvcNames.add(edge.to);
+      matchedEdgeCount++;
+    }
+  }
+
+  // Ring-connect unmatched services
+  const unconnected = serviceIds.filter((s) => !connectedSvcs.has(s));
+  ringConnect(unconnected, connectedSvcs, edges);
+
+  // Inject diagnostic labels
+  annotateNodes(
+    nodes,
+    caseId,
+    system,
+    matchedEdgeCount,
+    topologyEdges.length,
+    serviceIds.length,
+    unconnected.length,
+  );
+
+  return { nodes, edges, systemLoad: 0.5 };
+}
+
+/**
+ * Build a pure ring-connect graph (fallback when registry isn't initialized).
+ */
+function buildRingConnectOnly(
+  namespace: string,
+  caseId: string,
+  serviceIds: readonly string[],
+): BenchmarkCallGraph {
+  const nodes = buildNodes(serviceIds, namespace);
+  const edges: ProvenancedCallEdge[] = [];
+  const unconnected = [...serviceIds];
+
+  if (unconnected.length > 1) {
+    for (let i = 0; i < unconnected.length; i++) {
+      const next = (i + 1) % unconnected.length;
+      edges.push({
+        from: unconnected[i]!,
+        to: unconnected[next]!,
+        type: 'REST',
+        source: RING_CONNECT,
+        callRate: 1,
+        p99Latency: 1,
+        errorRate: 0,
+      });
+    }
+  } else if (unconnected.length === 1) {
+    edges.push({
+      from: unconnected[0]!,
+      to: unconnected[0]!,
+      type: 'REST',
+      source: RING_CONNECT,
+      callRate: 1,
+      p99Latency: 1,
+      errorRate: 0,
+    });
+  }
+
+  annotateNodes(nodes, caseId, namespace, 0, 0, serviceIds.length, unconnected.length);
+
+  return { nodes, edges, systemLoad: 0.5 };
+}
+
+// ── Helpers ───────────────────────────────────────────────
+
+function buildNodes(
+  serviceIds: readonly string[],
+  namespace: string,
+): Map<ServiceId, AnnotatableNode> {
+  const nodes = new Map<ServiceId, AnnotatableNode>();
+  for (const id of serviceIds) {
+    nodes.set(id, { id, name: id, namespace, labels: {} });
+  }
+  return nodes;
+}
+
+function ringConnect(
+  unconnected: readonly string[],
+  connectedSvcs: ReadonlySet<string>,
+  edges: ProvenancedCallEdge[],
+): void {
+  if (unconnected.length === 0) return;
+
+  if (unconnected.length === 1 && connectedSvcs.size > 0) {
+    // Single unconnected: attach to first connected service
+    const firstConnected = [...connectedSvcs][0]!;
+    edges.push({
+      from: firstConnected,
+      to: unconnected[0]!,
+      type: 'REST',
+      source: RING_CONNECT,
+      callRate: 1,
+      p99Latency: 1,
+      errorRate: 0,
+    });
+  } else if (unconnected.length > 1) {
+    // Ring-connect unmatched services
+    for (let i = 0; i < unconnected.length; i++) {
+      const next = (i + 1) % unconnected.length;
+      edges.push({
+        from: unconnected[i]!,
+        to: unconnected[next]!,
+        type: 'REST',
+        source: RING_CONNECT,
+        callRate: 1,
+        p99Latency: 1,
+        errorRate: 0,
+      });
+    }
+  }
+}
+
+function annotateNodes(
+  nodes: Map<ServiceId, AnnotatableNode>,
+  caseId: string,
+  system: string,
+  matchedEdgeCount: number,
+  topologyEdgeCount: number,
+  serviceCount: number,
+  unconnectedCount: number,
+  semanticResolved = 0,
+  embeddingResolved = 0,
+  llmResolved = 0,
+): void {
+  for (const node of nodes.values()) {
+    node.labels = {
+      ...node.labels,
+      _diag_case: caseId,
+      _diag_system: system,
+      _diag_matched: `${matchedEdgeCount}/${topologyEdgeCount}`,
+      _diag_svc_total: String(serviceCount),
+      _diag_unconnected: String(unconnectedCount),
+      _diag_source: _registry.initialized ? 'yaml-v2' : 'ring-connect-legacy',
+      _diag_semantic: String(semanticResolved),
+      _diag_embedding: String(embeddingResolved),
+      _diag_llm: String(llmResolved),
+    };
+  }
+}
+
+/**
+ * Annotate an enhanced graph with semantic alignment statistics.
+ */
+function annotateWithSemanticStats(
+  graph: BenchmarkCallGraph,
+  caseId: string,
+  system: string,
+  result: import('./rcaeval-semantic.js').SemanticEnhancementOutput,
+  serviceCount: number,
+): BenchmarkCallGraph {
+  const exactMatchEdgeCount = graph.edges.filter(
+    (e) =>
+      !isRingConnectEdge(e) &&
+      !isEdgeFromSource(e, 'semantic-embedding') &&
+      !isEdgeFromSource(e, 'semantic-llm'),
+  ).length;
+
+  for (const node of graph.nodes.values()) {
+    node.labels = {
+      ...node.labels,
+      _diag_case: caseId,
+      _diag_system: system,
+      _diag_matched: `${exactMatchEdgeCount} exact + ${result.embeddingResolvedCount} emb + ${result.llmResolvedCount} llm`,
+      _diag_svc_total: String(serviceCount),
+      _diag_unconnected: String(result.stillUnmatchedCount),
+      _diag_source: 'yaml-v2+semantic',
+      _diag_semantic: `${result.resolvedServiceIds.length}`,
+      _diag_embedding: `${result.embeddingResolvedCount}`,
+      _diag_llm: `${result.llmResolvedCount}`,
+    };
+  }
+
+  return graph;
+}
+
+/**
+ * Check if an edge is a ring-connect fallback, i.e. one this builder invented.
+ *
+ * The test is provenance, not `type`: a synthetic edge is a real `REST` call
+ * the topology file simply does not list, so keying on the transport type would
+ * misfire the moment the edge is normalised -- and would silently reclassify
+ * every synthetic edge as an exact YAML match, corrupting the `_diag_matched`
+ * ratio that the RCAEval diagnostics are read from.
+ */
+function isRingConnectEdge(edge: CallEdge): boolean {
+  return edgeProvenance(edge) === RING_CONNECT;
+}
+
+/**
+ * Check if an edge comes from a specific matcher.
+ */
+function isEdgeFromSource(edge: CallEdge, source: EdgeProvenance): boolean {
+  return edgeProvenance(edge) === source;
+}
