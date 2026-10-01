@@ -1194,8 +1194,15 @@ export function separatorCensus(
       });
     }
   }
+  // The tie-break is THREE-valued, and the `0` is not decoration: two cells of ONE row share a fault type,
+  // so equal keys reach this comparator whenever two of that row's signals land on the same `p` — and a
+  // comparator that answers `1` for equal keys claims an order it cannot honour, leaving the two cells to
+  // be placed by whatever the engine's sort happens to do. A stable sort can only preserve the order of
+  // elements its comparator calls EQUAL, so the arm is what makes the report's row order a property of the
+  // DATA. (Iteration 39's probe measured that this runtime does not currently punish the two-valued form:
+  // five tie shapes, no differing output. The arm is written for the contract, and the record says so.)
   const byP = (a: SeparatorSurvivor, b: SeparatorSurvivor) =>
-    a.p - b.p || (a.faultType < b.faultType ? -1 : 1);
+    a.p - b.p || (a.faultType < b.faultType ? -1 : a.faultType > b.faultType ? 1 : 0);
   survivors.sort(byP);
   dominated.sort(byP);
 

@@ -904,6 +904,37 @@ describe('the inventory and topology signals, on a rendered inventory and a real
       ['T2', sigLines[0]!.p],
     ]);
   });
+
+  it('keeps the cell order when TWO SIGNALS of one row tie, which is what the `0` arm is for', () => {
+    // The spec above ties two ROWS; this ties two CELLS of ONE row, and the difference is the whole reason
+    // the tie-break is three-valued: those two cells share a fault type, so the comparator is asked about two
+    // EQUAL keys and a form that answers `-1`/`1` cannot say so. A stable sort preserves the order of the
+    // elements its comparator calls equal — and of no others — so the `0` arm is what makes this row's cell
+    // order a property of the DATA. `kept` and `bestDev` are tied here BY CONSTRUCTION: both read the same
+    // rendered inventory, so both see twelve wins and no losses.
+    const cases = Array.from({ length: 12 }, (_, index) => `p-${index}`).map((id) =>
+      wrongCase(id, { faultType: 'TIED' }, [
+        svc('ts-src', {
+          isGroundTruth: true,
+          metricOutcomes: [fate('a', 'kept', 5), fate('b', 'kept', 1)],
+        }),
+        svc('ts-rival', { selfAnomaly: 1, metricOutcomes: [fate('a', 'kept', 0.5)] }),
+      ]),
+    );
+    const census = separatorCensus(cases, { minAuc: 0.6, minCases: 3 });
+    const kept = census.survivors.find((cell) => cell.signal === 'kept')!;
+    const bestDev = census.survivors.find((cell) => cell.signal === 'bestDev')!;
+    // The preconditions, before the answer: one row, two cells, the SAME `p` — so the comparator is asked
+    // with equal keys rather than merely with equal `p`.
+    expect(kept.faultType).toBe('TIED');
+    expect(bestDev.faultType).toBe('TIED');
+    expect(kept.p).toBe(bestDev.p);
+    expect(kept.p).toBeLessThan(0.05);
+    // And the answer: the order the signals are DECLARED in, which is `kept` before `bestDev`. Asserted on
+    // the two cells' own indices rather than on the whole list, because a list-wide comparison against a
+    // filter of itself is a statement that could not fail.
+    expect(census.survivors.indexOf(kept)).toBeLessThan(census.survivors.indexOf(bestDev));
+  });
 });
 
 describe('the degenerate inputs a dump can carry', () => {
@@ -1101,6 +1132,44 @@ describe('the survivor list under a scan wide enough to need the ellipsis', () =
     expect(twelve.stable).toBe(true);
     expect(new Set(inDegree.map((cell) => cell.p)).size).toBe(2);
     expect(formatSeparatorCensus(census)).toContain('-');
+  });
+
+  it('reaches the tie-break arm a caller order decides, when the LARGER type holds more pairs', () => {
+    // `byP`'s tie-break is reached whenever two cells share a `p`, and WHICH of its two arms runs is decided
+    // by the caller: for a pair, `Array.prototype.sort` asks the comparator `(later, earlier)`. Rows are
+    // built by pair count descending and then by name ascending, so a tie between two rows of EQUAL size is
+    // always asked with the larger name as `a` — which is why eight ties in this file have taken one arm and
+    // never the other. Give the LARGER-named type ONE MORE pair and the order flips.
+    //
+    // The extra pair is graph-less, which is the whole trick: `inDegree` cannot read it, so the row grows
+    // while the cell's own `(source, winner)` does not — and `p` is a function of those two counts alone.
+    const graphful = Array.from({ length: 40 }, (_, index) => `g-${index}`).filter(
+      (id) => foldOf(id, 5) !== 0,
+    );
+    const graphless = Array.from({ length: 40 }, (_, index) => `n-${index}`).filter(
+      (id) => foldOf(id, 5) === 0,
+    );
+    const census = separatorCensus(
+      [
+        ...typeBlock('T1', graphful.slice(0, 12), true),
+        ...typeBlock('T2', graphful.slice(12, 24), true),
+        ...typeBlock('T2', graphless.slice(0, 1), false),
+      ],
+      { minAuc: 0.6, minCases: 3 },
+    );
+    const inDegree = census.survivors.filter((cell) => cell.signal === 'inDegree');
+    // The preconditions, before the answer: two cells tied on `p`, in two rows of DIFFERENT size with the
+    // larger-named row LARGER — which is what puts the larger name first in the list the sort receives, and
+    // therefore what makes the comparator be asked `(T1, T2)` instead of `(T2, T1)`.
+    expect(inDegree[0]!.p).toBe(inDegree[1]!.p);
+    expect(census.rows.map((row) => [row.faultType, row.pairs])).toEqual([
+      ['T2', 13],
+      ['T1', 12],
+    ]);
+    // The answer is the tie-break's OWN order — ascending by name — and it is reached from the other side
+    // than every other tie in this file. That is the finding: the arm the register cited as unreachable is
+    // a GAP, and what kept it out was the caller's row order, not the comparator.
+    expect(inDegree.map((cell) => cell.faultType)).toEqual(['T1', 'T2']);
   });
 
   it('orders rows by size and then by name, so a dump with two equal types is stable', () => {
