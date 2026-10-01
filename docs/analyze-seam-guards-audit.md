@@ -97,6 +97,14 @@ prints for all of them, and the distribution is the finding: the cluster was not
 The tie-break family is the one the register already has a standing example for (`byP`'s unreached `? -1` in the
 separator), and the report-only family is where a fixture is cheapest.
 
+**Iteration 37 took this family and found the reason in the INSTRUMENT** — `docs/analyze-comparator-audit.md`
+measures, in one pass, a comparator arm taken 26 times and counted 0 — so the two rows above that remain
+(`marginOf`'s and `familyScreen`'s) are **FALSE ZEROS rather than open questions**, each held by a spec and a
+mutation row. And the sentence about `byP` needed re-reading for the same reason: it was **probed**, eight ties
+came back and every one was the `1` arm, so the register's example stands — on a probe now, rather than on a
+reading this iteration has shown to be unreliable for comparators. The four `??` lookups and the four report-only
+qualifications are unaffected: neither operator sits inside a comparator.
+
 ## 6. Gates
 
 | | |
