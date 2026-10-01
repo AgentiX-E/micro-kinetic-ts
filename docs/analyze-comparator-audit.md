@@ -1,9 +1,19 @@
 # What a comparator is asked, and the arm the reading cannot see
 
+> **CORRECTED BY ITERATION 38** (`analyze-branch-instrument-audit.md`). The second half of this title is
+> wrong, and §2 below is where it came from. The two numbers that section measured were right — the `-1` arm
+> ran 26 times while `coverage-final.json` reported `0` — and the INFERENCE from them was not: an entry is
+> ONE V8 block range carrying that range's own count, so a `0` states that the region never ran, and the
+> region here is the **`1` arm's**, which this iteration's own probe logged as taken zero times. The reading
+> sees comparators exactly as well as it sees anything else, and the two arms §7 parks as "false zeros" are
+> ordinary unexercised arms, both closed by fixtures in iteration 38. Read §2 as the measurement it is and
+> §3/§7 with this correction in hand.
+
 Iteration 37. `docs/analyze-seam-guards-audit.md` §5 left **19 arms** and named the comparator-and-marker family
 as the one the register already had a standing example for. This iteration decides all four of its members — and
 the first thing it found is that **the instrument that has decided every arm for six iterations cannot see inside
-a function handed to `Array.prototype.sort`**.
+a function handed to `Array.prototype.sort`** — ~~a claim iteration 38 RETRACTED~~: the instrument sees it, and the `0` this file went on to measure
+is the OTHER arm's region (see the correction at the top).
 
 ```
 before  19 arms over 19 entries, 3 statements
@@ -34,6 +44,10 @@ the same. My first version of §4's root fixture did precisely that: it asserted
 nothing. The corrected fixture's comment says so, and `.git/sort_probe.mjs` is the reading behind it.
 
 ## 2. The arm the reading cannot see — measured in ONE run, by two instruments
+
+**The heading is the conclusion iteration 37 drew, and iteration 38 retracted it** (see the note at the top
+of this file). What follows is the measurement, which stands: two instruments disagreed about a comparator,
+and the resolution is that they were measuring two different regions of one expression.
 
 `familyScreen` ends with a three-key sort whose third key is the family name:
 
