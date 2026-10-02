@@ -481,14 +481,19 @@ describe("the capability census's population — the artifact it describes", () 
   });
 
   it('declares a channel for the channels NO reader parses, rather than omitting them', () => {
-    // Three lines the producer renders and no parsed field holds. They are channels — the census reports what
+    // Two lines the producer renders and no parsed field holds. They are channels — the census reports what
     // the artifact CARRIES — and the projection's empty `fields` array is how they are excluded from the field
     // equality by decision rather than by omission.
+    //
+    // `metric-list` was the third until iteration 41 BUILT the reader the declaration named: its own `why`
+    // said the channel was "rendered on every row and parsed by no reader ... so a truncation check built on
+    // it would be the first thing to read it", the check exists now, and the channel carries `metricNames`.
+    // This assertion is what made the departure a reviewed decision rather than a line that disappeared.
     const noField = declarations()
       .filter((one) => one.fields.length === 0)
       .map((one) => one.channel)
       .sort();
-    expect(noField).toEqual(['error-messages', 'exceptions', 'metric-list']);
+    expect(noField).toEqual(['error-messages', 'exceptions']);
   });
 
   /**
@@ -506,6 +511,13 @@ describe("the capability census's population — the artifact it describes", () 
       "the block's `dominant=-` becomes '', so the field is present while its value is not",
     'metric-top':
       'the value is the DECOMPOSITION, a nested condition on the parsed outcomes rather than the field',
+    // Added with the field itself, and the divergence is REAL rather than a gap in either side: this channel's
+    // `absent` set makes an EMPTY body unvalued, because the census is asking which names a row CARRIES and
+    // `metrics(0): ` carries none — while the reader is asking what the service's inventory IS, and answers
+    // `[]`, a measured zero. Both are right about the same line and they are not the same claim, which is
+    // exactly the state this map exists to name instead of letting an equality report it as a defect.
+    'metric-list':
+      'the census reads the BODY (names carried), the reader reads the inventory (`[]` is a measured zero)',
   };
 
   it('reads every field-carrying channel the way the READER reads it, on the same artifact', () => {
@@ -527,8 +539,13 @@ describe("the capability census's population — the artifact it describes", () 
           (one.scope === ROW || one.scope === ROW_IDENTITY || one.scope === SUB_LINE),
       );
       // Non-vacuity in both directions: the population is stated, and so is what is NOT in it.
-      expect(declared).toHaveLength(19);
-      expect(declared.filter((one) => one.channel in NOT_FIELD_PRESENCE)).toHaveLength(4);
+      //
+      // Both counts moved by one when `metric-list` gained its field, and the SECOND did not move with the
+      // first: the channel entered the population of 19 -> 20 and left it again into `NOT_FIELD_PRESENCE`, so
+      // `comparable` is still 15. A pair of literals that both changed by one would have been the easier edit
+      // and the wrong one — the line between the two sets is what the numbers are about.
+      expect(declared).toHaveLength(20);
+      expect(declared.filter((one) => one.channel in NOT_FIELD_PRESENCE)).toHaveLength(5);
       expect(
         declared
           .filter((one) => one.channel in NOT_FIELD_PRESENCE)

@@ -23,7 +23,7 @@
   {"channel": "http-count", "scope": "row", "key": "http", "fields": ["httpExceptionCount"], "valueIn": "field", "pattern": "\\bhttp=(\\S*)", "absent": ["", "-"]},
   {"channel": "signature-overlap", "scope": "row", "key": "both", "fields": ["bothExceptionCount"], "valueIn": "field", "pattern": "\\bboth=(\\S*)", "absent": ["", "-"]},
   {"channel": "onset", "scope": "row", "key": "onset", "fields": ["onsetDelayMs"], "valueIn": "field", "pattern": "\\bonset=(\\S*)", "absent": ["", "-"]},
-  {"channel": "metric-list", "scope": "sub-line", "key": "metrics", "fields": [], "valueIn": "body", "pattern": "^ {4}metrics(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]},
+  {"channel": "metric-list", "scope": "sub-line", "key": "metrics", "fields": ["metricNames"], "valueIn": "body", "pattern": "^ {4}metrics(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]},
   {"channel": "decisive-composition", "scope": "sub-line", "key": "metricDecisive", "fields": ["decisiveOutcome"], "valueIn": "body", "pattern": "^ {4}metricDecisive(?:\\([^)]*\\))?: ?(\\S*)$", "absent": ["", "-", "nonfinite"]},
   {"channel": "error-messages", "scope": "sub-line", "key": "ERR", "fields": [], "valueIn": "body", "pattern": "^ {4}ERR(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]},
   {"channel": "exceptions", "scope": "sub-line", "key": "exc", "fields": [], "valueIn": "body", "pattern": "^ {4}exc(?:\\([^)]*\\))?: ?(.*)$", "absent": ["", "-"]},

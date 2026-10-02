@@ -90,6 +90,7 @@ import {
   formatMissReport,
   formatOnsetMenuReport,
   formatOnsetScreenReport,
+  formatParseReport,
   formatPopulationLines,
   formatRefinementFrontierLine,
   formatResolutionLine,
@@ -158,7 +159,15 @@ interface ServiceSpec {
 function serviceLine(spec: ServiceSpec) {
   return {
     serviceId: spec.serviceId,
-    metricNames: [`cpu`, `memory`],
+    // The DISTINCT labels of the inventory when one is given — the same derivation the real builder makes
+    // from ONE series list (`[...new Set(series.map(s => s.label))].sort()`), so this fixture is a service
+    // the producer can actually write. Hardcoding two names beside an inventory of some other size would
+    // make every such fixture an instance of the reader's new truncation check by accident, and a fixture
+    // that trips the check it is not testing reports the check's arm as covered when a different one is.
+    metricNames:
+      spec.metricOutcomes === undefined
+        ? [`cpu`, `memory`]
+        : [...new Set(spec.metricOutcomes.map((one) => one.label))].sort(),
     dominantMetric: 'dominant' in spec ? spec.dominant : 'cpu',
     selfAnomaly: spec.selfAnomaly ?? 0.5,
     logScore: spec.logScore ?? 0,
@@ -686,6 +695,7 @@ describe('regressionMechanism', () => {
     fatalCount: 0,
     logicExceptionCount: logic,
     httpExceptionCount: http,
+    metricNames: undefined,
     metricOutcomes: undefined,
     decisiveOutcome: undefined,
   });
@@ -5052,6 +5062,10 @@ describe('guardCensus — a guard’s footprint against a within-type control', 
     fatalCount: 0,
     logicExceptionCount: 0,
     httpExceptionCount: 0,
+    // The DISTINCT labels of the inventory beside it, spelled the way the producer spells it
+    // (`[...new Set(series.map(s => s.label))].sort()`), so this fixture is a service a reader would have
+    // produced rather than one whose two inventory channels disagree.
+    metricNames: [...new Set(outcomes.map((one) => one.label))].sort(),
     metricOutcomes: outcomes,
     // The guard census reads the inventory, not the decisive composition, so this fixture leaves the
     // line absent — which is also what a block from a producer that predates it looks like.
@@ -9644,8 +9658,102 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
       shortBlocks: 0,
       unclosedBlocks: 0,
       missingServices: 0,
+      truncatedInventories: 0,
+      missingMetrics: 0,
     });
     expect(hasParseLoss(report)).toBe(false);
+  });
+
+  it('REFUSES an inventory whose body is shorter than the size it declares, and counts the loss', () => {
+    // The producer cannot write this line: it renders `metrics(${names.length})` over the names it holds, so
+    // the fixture is a real dump with the DECLARED size tampered — which is what a line cut mid-write leaves
+    // behind, and the one shape `metricKept`/`metricDrop` cannot witness because their own counts are intact.
+    //
+    // This is the check the artifact's channel census named as the reason the `metrics(n)` line should stop
+    // being a no-field channel: "a truncation check built on it would be the first thing to read it".
+    //
+    // **The fixture has to isolate THIS half, and the first version did not.** It used one outcome against a
+    // declared size of three, which the cross-channel check refuses just as well — so the mutation that
+    // switches this half off left the spec green, and the sheet said so. Here the outcome channels ADD UP to
+    // the declared size (one kept, one dropped, declared two) while the BODY is one name short: the
+    // cross-channel half is satisfied, the size half is the only thing that can refuse it, and a mutation to
+    // either half is visible.
+    const text = dump({
+      services: [
+        serviceLine({
+          serviceId: 'ts-order-service',
+          metricOutcomes: [
+            { label: 'cpu', outcome: 'kept', score: 1 },
+            { label: 'mem', outcome: 'transient-return', score: 0 },
+          ],
+        }),
+      ],
+    }).replace('metrics(2): cpu,mem', 'metrics(2): cpu');
+    const { cases, report } = parseDiagnosticDumpWithReport(text);
+    // The CASE survives, and that is a decision: the candidate rows are intact and the ranking is intact,
+    // so dropping the block would lose a real case to a display-channel defect. The FIELD is what is refused.
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.services[0]!.metricNames).toBeUndefined();
+    expect(report.truncatedInventories).toBe(1);
+    // Declared two, one rendered: the shortfall is one.
+    expect(report.missingMetrics).toBe(1);
+    expect(report.shortBlocks).toBe(0);
+    expect(hasParseLoss(report)).toBe(true);
+  });
+
+  it('REFUSES an inventory whose size disagrees with the OUTCOME channels, which nothing else can see', () => {
+    // Isolated from the arm above: this body AGREES with its own declared size, so only the cross-channel
+    // identity is broken. That identity is what a duplicated metric name produces — two entries of one
+    // service carrying one label — and it is also what a lost `metricKept`/`metricDrop` line produces.
+    //
+    // The service is the GROUND TRUTH one, and that is load-bearing rather than decorative: the producer
+    // renders the outcome channels only for the ground truth and the engine's predictions, so a fixture
+    // built on any other service would have no outcome channels to disagree WITH and the cross-check would
+    // be skipped — it would assert nothing while looking like it asserted this arm.
+    const text = dump({
+      services: [
+        serviceLine({
+          serviceId: 'ts-order-service',
+          metricOutcomes: [{ label: 'cpu', outcome: 'kept', score: 1 }],
+        }),
+      ],
+    }).replace('metrics(1): cpu', 'metrics(2): cpu,mem');
+    const { cases, report } = parseDiagnosticDumpWithReport(text);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.services[0]!.metricNames).toBeUndefined();
+    // The OTHER channel is not punished for its neighbour's defect: its own rule judges it, and it passed.
+    expect(cases[0]!.services[0]!.metricOutcomes).toHaveLength(1);
+    expect(report.truncatedInventories).toBe(1);
+    expect(report.missingMetrics).toBe(1);
+  });
+
+  it('reads an EMPTY inventory as a measured zero rather than as a line nobody wrote', () => {
+    // `metrics(0): ` — the producer joins an empty name list to a line with a TRAILING SPACE, so the body is
+    // the empty string rather than absent. The pattern's optional group is what keeps this apart from a lost
+    // line; the emptiness has to be tested before the split, because `''.split(',')` is one empty NAME and
+    // would read a measured zero as a body one token short of its size.
+    const text = dump({
+      services: [serviceLine({ serviceId: 'ts-ui', metricOutcomes: [] })],
+    });
+    const { cases, report } = parseDiagnosticDumpWithReport(text);
+    expect(cases[0]!.services[0]!.metricNames).toEqual([]);
+    expect(report.truncatedInventories).toBe(0);
+    expect(report.missingMetrics).toBe(0);
+    expect(hasParseLoss(report)).toBe(false);
+  });
+
+  it('says the inventory refusal on the population line, where a reader takes intact for intact', () => {
+    const text = dump({ services: [serviceLine({ serviceId: 'ts-ui' })] }).replace(
+      'metrics(2): cpu,memory',
+      'metrics(3): cpu,memory',
+    );
+    const { report } = parseDiagnosticDumpWithReport(text);
+    const line = formatParseReport(report, 'a.txt');
+    expect(line).toContain('1 service with a truncated metric inventory');
+    expect(line).toContain('1 name declared and not accounted for');
+    // The pair is the point: the BLOCK half still reads `0 dropped`, so before this clause the same line
+    // certified an artifact whose inventory the reader had refused.
+    expect(line).toContain('0 dropped');
   });
 
   it('counts a block that REACHED its prediction line with a count mismatch, and how many it lost', () => {
@@ -9663,6 +9771,8 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
       shortBlocks: 1,
       unclosedBlocks: 0,
       missingServices: 1,
+      truncatedInventories: 0,
+      missingMetrics: 0,
     });
     expect(hasParseLoss(report)).toBe(true);
   });
@@ -9681,6 +9791,8 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
       shortBlocks: 0,
       unclosedBlocks: 1,
       missingServices: 0,
+      truncatedInventories: 0,
+      missingMetrics: 0,
     });
     // The PREDICATE too, not just the fields: it is what `parseLosses` and the refusal are built on, and
     // a version keyed on `shortBlocks` alone would let this whole shape through — which is the mutation
@@ -9701,6 +9813,8 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
       shortBlocks: 0,
       unclosedBlocks: 1,
       missingServices: 0,
+      truncatedInventories: 0,
+      missingMetrics: 0,
     });
     expect(hasParseLoss(report)).toBe(true);
   });
@@ -9756,7 +9870,14 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
     const { cases, report } = parseDiagnosticDumpWithReport(notDigits);
     expect(cases).toEqual([]);
     // Not counted as a drop either: the reader never opened a block, so there is nothing to have lost.
-    expect(report).toEqual({ cases: 0, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 });
+    expect(report).toEqual({
+      cases: 0,
+      shortBlocks: 0,
+      unclosedBlocks: 0,
+      missingServices: 0,
+      truncatedInventories: 0,
+      missingMetrics: 0,
+    });
     expect(hasParseLoss(report)).toBe(false);
   });
 
@@ -9787,7 +9908,14 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
       {
         label: 'a.txt',
         cases: [],
-        report: { cases: 90, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 },
+        report: {
+          cases: 90,
+          shortBlocks: 0,
+          unclosedBlocks: 0,
+          missingServices: 0,
+          truncatedInventories: 0,
+          missingMetrics: 0,
+        },
       },
     ]);
     expect(line).toContain('a.txt: 90 blocks kept, 0 dropped');
@@ -9801,12 +9929,26 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
       {
         label: 'a.txt',
         cases: [],
-        report: { cases: 5, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 },
+        report: {
+          cases: 5,
+          shortBlocks: 0,
+          unclosedBlocks: 0,
+          missingServices: 0,
+          truncatedInventories: 0,
+          missingMetrics: 0,
+        },
       },
       {
         label: 'b.txt',
         cases: [],
-        report: { cases: 4, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+        report: {
+          cases: 4,
+          shortBlocks: 1,
+          unclosedBlocks: 0,
+          missingServices: 2,
+          truncatedInventories: 0,
+          missingMetrics: 0,
+        },
       },
     ]);
     const lines = text.trimEnd().split('\n');
@@ -9820,12 +9962,26 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
     const healthy = {
       label: 'a.txt',
       cases: [],
-      report: { cases: 5, shortBlocks: 0, unclosedBlocks: 0, missingServices: 0 },
+      report: {
+        cases: 5,
+        shortBlocks: 0,
+        unclosedBlocks: 0,
+        missingServices: 0,
+        truncatedInventories: 0,
+        missingMetrics: 0,
+      },
     };
     const lost = {
       label: 'b.txt',
       cases: [],
-      report: { cases: 4, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+      report: {
+        cases: 4,
+        shortBlocks: 1,
+        unclosedBlocks: 0,
+        missingServices: 2,
+        truncatedInventories: 0,
+        missingMetrics: 0,
+      },
     };
     expect(parseLosses([healthy, lost]).map((one) => one.label)).toEqual(['b.txt']);
     expect(parseLosses([healthy])).toEqual([]);
@@ -9839,13 +9995,27 @@ describe('the reader REPORTS what it refused, so a smaller population cannot rea
     const one = {
       label: 'x',
       cases: [],
-      report: { cases: 1, shortBlocks: 1, unclosedBlocks: 0, missingServices: 1 },
+      report: {
+        cases: 1,
+        shortBlocks: 1,
+        unclosedBlocks: 0,
+        missingServices: 1,
+        truncatedInventories: 0,
+        missingMetrics: 0,
+      },
     };
     expect(formatPopulationLines([one])).toContain('1 candidate declared');
     const two = {
       label: 'x',
       cases: [],
-      report: { cases: 1, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+      report: {
+        cases: 1,
+        shortBlocks: 1,
+        unclosedBlocks: 0,
+        missingServices: 2,
+        truncatedInventories: 0,
+        missingMetrics: 0,
+      },
     };
     expect(formatPopulationLines([two])).toContain('2 candidates declared');
   });
@@ -9855,7 +10025,14 @@ describe('the refusal is a predicate, so the policy has one owner and a test can
   const lost = {
     label: 'x.txt',
     cases: [],
-    report: { cases: 4, shortBlocks: 1, unclosedBlocks: 0, missingServices: 2 },
+    report: {
+      cases: 4,
+      shortBlocks: 1,
+      unclosedBlocks: 0,
+      missingServices: 2,
+      truncatedInventories: 0,
+      missingMetrics: 0,
+    },
   };
 
   it('refuses when something was lost and the flag was not asked for', () => {

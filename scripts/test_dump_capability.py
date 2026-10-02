@@ -444,15 +444,26 @@ class DeclarationTableTest(unittest.TestCase):
             )
 
     def test_a_channel_that_carries_NO_parsed_field_says_so_by_name(self) -> None:
-        # Three lines the producer renders and no reader parses. They are channels — the census reports what
-        # the artifact CARRIES — and they are excluded from the field equality by an explicit set rather than
-        # by being forgotten, because an exclusion nobody decided is not an exclusion.
+        # The lines the producer renders and no reader parses. They are channels — the census reports what
+        # the artifact CARRIES — and they are excluded from the field equality by an explicit set rather
+        # than by being forgotten, because an exclusion nobody decided is not an exclusion.
+        #
+        # `metric-list` was the third until iteration 41, when the truncation check THIS FILE'S OWN
+        # declaration named as its way out was built: the channel gained `metricNames` and left the set. The
+        # set is derived from the declarations, so it shrank by itself — this assertion is what made the
+        # departure a decision rather than a disappearance.
         self.assertEqual(
             dc.NO_FIELD_CHANNELS,
-            frozenset({'metric-list', 'error-messages', 'exceptions'}),
+            frozenset({'error-messages', 'exceptions'}),
         )
         for name in dc.NO_FIELD_CHANNELS:
             self.assertEqual(dc.DECLARATIONS[dc.CHANNELS.index(name)].fields, ())
+        # And the field it gained is the one the TypeScript reader now parses, named here so a rename on
+        # either side shows up as the diff it is rather than as two self-consistent halves.
+        self.assertEqual(
+            dc.DECLARATIONS[dc.CHANNELS.index('metric-list')].fields,
+            ('metricNames',),
+        )
 
     def test_a_key_is_DERIVED_into_a_marker_that_cannot_match_its_neighbour(self) -> None:
         # The measured drift, in both directions: `failedEdge` is a PREFIX of `failedEdgeRecords`, so a

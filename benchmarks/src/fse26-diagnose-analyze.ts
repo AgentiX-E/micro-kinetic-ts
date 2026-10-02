@@ -216,6 +216,25 @@ export interface DiagnosedService {
    */
   readonly bothExceptionCount?: number | undefined;
   /**
+   * The metric NAMES the block rendered for this service — the `metrics(n)` line, whose declared size is
+   * the complement this reader checks the rendered names against.
+   *
+   * `undefined` for two different provenances that a consumer cannot tell apart and should not have to:
+   * a block older than the line, and a line this reader REFUSED. The difference is not lost — it is in
+   * {@link DiagnosticParseReport.truncatedInventories}, which counts the refusals — and that is the only
+   * place it can be, because a refused inventory and an absent one are the same value here by design: a
+   * truncated list reads exactly like a complete one, which is the rule {@link metricOutcomes} already
+   * follows one field down.
+   *
+   * **This field exists because the artifact's own channel census asked for it.** `metric-list` was
+   * declared with an EMPTY field list and the reason spelled out — "RENDERED ON EVERY ROW AND PARSED BY
+   * NO READER ... so a truncation check built on it would be the first thing to read it" — and the
+   * truncation check is what reads it now. `SERVICE_FIELD_AUDIT` is `Record<keyof DiagnosedService,
+   * string>`, so adding this field makes that audit fail to compile until it is classified, and the
+   * census' own both-directions equality then requires the channel to declare it.
+   */
+  readonly metricNames: readonly string[] | undefined;
+  /**
    * The service's metric competition, or `undefined` when the block did not
    * report it (an older dump, or a service the formatter chose not to render).
    *
@@ -306,6 +325,11 @@ export const SERVICE_FIELD_KIND = {
   logicExceptionCount: 'measurement',
   httpExceptionCount: 'measurement',
   bothExceptionCount: 'absent-or-value',
+  // The name list is a `,`-joined render of strings with no tripwire token, so the census's `metric-list`
+  // channel declares no `nonfinite` — and the field admits `undefined` for TWO provenances that this one
+  // classification covers: a block older than the line, and a line the reader REFUSED. They are one kind
+  // because they are one value; the report is what keeps them apart.
+  metricNames: 'absent-or-value',
   metricOutcomes: 'undetermined-capable',
   decisiveOutcome: 'undetermined-capable',
 } as const satisfies Readonly<Record<keyof DiagnosedService, ServiceFieldKind>>;
@@ -415,6 +439,25 @@ const EDGES_RE = /^ {2}edges=(.*)$/;
 const METRIC_KEPT_RE = /^ {4}metricKept\((\d+)\):(?: (.*))?$/;
 const METRIC_DROP_RE = /^ {4}metricDrop\((\d+)\):(?: (.*))?$/;
 /**
+ * The metric NAME inventory and the size it declares.
+ *
+ * The producer renders this for EVERY service, one line above the outcome channels, and until this
+ * iteration the reader parsed none of it. That was a DECISION and not an oversight — the repository's
+ * channel census declared `metric-list` as one of three lines "the producer renders and no reader
+ * parses", excluded from its field equality "by an explicit set rather than by being forgotten" — and
+ * the same declaration named the way out: "a truncation check built on it would be the first thing to
+ * read it".
+ *
+ * The declared size is the complement such a check compares the rendered names against, which is the
+ * only thing this line can be wrong about that the other channels cannot see: `metricKept` and
+ * `metricDrop` declare their own counts, and a line cut mid-write leaves them intact.
+ *
+ * `(?: (.*))?` and not `(.+)` because an empty inventory is a real state — the producer joins an empty
+ * name list to `metrics(0): ` with a trailing space — and requiring a body would read a measured zero
+ * as a lost line, which is the distinction `metricKept`'s pattern already draws.
+ */
+const METRIC_LIST_RE = /^ {4}metrics\((\d+)\):(?: (.*))?$/;
+/**
  * The shape line always carries at least one entry: the producer omits the line
  * entirely when it has no decomposition to print. Requiring the body here rather
  * than defaulting an absent one keeps a `?? ''` fallback out of the reader — a
@@ -508,9 +551,19 @@ function parseTopEntry(entry: string): DiagnosedMetricOutcome | undefined {
  * thing that needs the mutable shape is the parser, and exposing it would let a
  * consumer mutate a parsed dump.
  */
-interface MutableService extends Omit<DiagnosedService, 'metricOutcomes' | 'decisiveOutcome'> {
+interface MutableService extends Omit<
+  DiagnosedService,
+  'metricOutcomes' | 'decisiveOutcome' | 'metricNames'
+> {
   metricOutcomes: DiagnosedMetricOutcome[] | undefined;
   decisiveOutcome: DiagnosedMetricOutcome | undefined;
+  /**
+   * The parsed inventory, mutable for the same reason as the two above: the reader assigns it when the
+   * `metrics(n)` line is read and REFUSES it in {@link parseDiagnosticDumpWithReport}'s `finalizeOutcomes`
+   * once the outcome channels have been seen, so a `readonly` declaration on the public type would make the
+   * refusal unwritable.
+   */
+  metricNames: readonly string[] | undefined;
 }
 
 /**
@@ -586,11 +639,39 @@ export interface DiagnosticParseReport {
    * counted is the shortfall rather than the difference.
    */
   readonly missingServices: number;
+  /**
+   * Services whose metric inventory is not the inventory their block DECLARES.
+   *
+   * **ONE count for ONE reason, and the reason is the fact rather than the mechanism**: a service's
+   * `metrics(n)` line, the names rendered beside it, and the `metricKept`/`metricDrop` channels below it
+   * must agree about how many metrics the service carries. Two ways of disagreeing — a body shorter than
+   * its own declared size, and a declared size that does not equal the outcome channels' — are details of
+   * that one fact, which is the argument this interface already makes for `unclosedBlocks` counting "the
+   * file ended" and "a further `DIAG` header began" as one.
+   *
+   * **Why it exists.** The reader has always dropped an unfaithful `metricOutcomes` and, until now, said
+   * nothing about it: the report counted BLOCKS and not one per-service field. `cases: 89` reads exactly
+   * like an artifact that has 89 cases, and "every service carries the inventory its block declares" reads
+   * exactly like an artifact where none of them do — which is the same defect `shortBlocks` was built for,
+   * one scope down.
+   *
+   * Measured before it was written: over the eight dumps the corpus holds — **41,426 service rows, every
+   * `metrics(n)` line against its own body and against the outcome channels — the count is 0**, so the
+   * check is inert on every artifact that exists and this number is a reading rather than a repair.
+   */
+  readonly truncatedInventories: number;
+  /**
+   * The metric names those services declared and did not account for, summed.
+   *
+   * The SIZE of the loss, by {@link declaredShortfall}'s rule and for its reason: a service one name short
+   * and a service seven short are the same `1` service and different artifacts.
+   */
+  readonly missingMetrics: number;
 }
 
 /** Whether the reader refused any part of the artifact. */
 export function hasParseLoss(report: DiagnosticParseReport): boolean {
-  return report.shortBlocks > 0 || report.unclosedBlocks > 0;
+  return report.shortBlocks > 0 || report.unclosedBlocks > 0 || report.truncatedInventories > 0;
 }
 
 /**
@@ -652,7 +733,14 @@ export function formatParseReport(report: DiagnosticParseReport, label: string):
       : `${report.shortBlocks} short of their own \`services=\` header, ` +
         `${report.unclosedBlocks} that never reached a \`prediction=\` line, ` +
         `${counted(report.missingServices, 'candidate')} declared and not rendered`;
-  return `population — ${label}: ${report.cases} blocks kept, ${dropped} dropped (${detail})\n`;
+  // The per-SERVICE half of the same line, and it is printed at zero for the reason the block counts are:
+  // `0 services with a truncated metric inventory` is a measurement, while an omitted clause is the
+  // different claim that nobody checked. The two halves are different scopes, which is the point: a reader
+  // can no longer take "the blocks were intact" for "the artifact was".
+  const refused =
+    `${counted(report.truncatedInventories, 'service')} with a truncated metric inventory, ` +
+    `${counted(report.missingMetrics, 'name')} declared and not accounted for`;
+  return `population — ${label}: ${report.cases} blocks kept, ${dropped} dropped (${detail}); ${refused}\n`;
 }
 
 /** {@link DiagnosticParseReport} with the surviving cases, so one parse answers both questions. */
@@ -741,6 +829,8 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
   let shortBlocks = 0;
   let unclosedBlocks = 0;
   let missingServices = 0;
+  let truncatedInventories = 0;
+  let missingMetrics = 0;
   let current:
     | {
         datapack: string;
@@ -770,6 +860,11 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
   // that disagrees with it is discarded rather than shortened — a short
   // inventory reads exactly like a complete one.
   let declaredOutcomeCount = 0;
+  // The size the service's `metrics(n)` line declared, held until the outcome channels have been read so
+  // the two can be compared. `undefined` means the line was absent OR refused, and the two are deliberately
+  // the same here: one is a dump older than the line and the other is counted in the report, so a consumer
+  // of the VALUE never has to tell them apart and the report is what does.
+  let declaredMetricCount: number | undefined;
 
   const finalizeOutcomes = (): void => {
     if (lastService === undefined) return;
@@ -779,6 +874,20 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
       outcomes.length === declaredOutcomeCount &&
       outcomes.every((outcome) => Number.isFinite(outcome.score));
     lastService.metricOutcomes = faithful ? outcomes : undefined;
+    // The inventory's own size against the outcome channels', which is the truncation check the artifact's
+    // channel census asked for. INSIDE the `openOutcomes` guard, and that placement is load-bearing rather
+    // than incidental: the producer renders `metricKept`/`metricDrop` only for the ground truth and the
+    // engine's predictions, so a service that renders no `metricKept` line has `declaredOutcomeCount === 0`
+    // by reset rather than by declaration — and comparing a declared size against that zero would count
+    // 34,686 of the corpus's 41,426 services as truncated. Measured, not assumed: `metricKept` and
+    // `metricDrop` are present on 6,740 services of 41,426 and the two are always present together.
+    if (lastService.metricNames === undefined) return;
+    if (declaredMetricCount === declaredOutcomeCount) return;
+    truncatedInventories++;
+    missingMetrics += declaredShortfall(declaredMetricCount!, declaredOutcomeCount);
+    // The inventory is refused; `metricOutcomes` is NOT, because its own rule above has already judged it
+    // and a second refusal here would punish a faithful channel for its neighbour's defect.
+    lastService.metricNames = undefined;
   };
 
   for (const line of lines) {
@@ -811,6 +920,7 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
       };
       lastService = undefined;
       declaredOutcomeCount = 0;
+      declaredMetricCount = undefined;
       openOutcomes = undefined;
       continue;
     }
@@ -870,13 +980,48 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
         // earliness map; a section that needs the difference counts how many
         // services in the dump carry a NUMBER and reports that instead.
         onsetDelayMs: measured(service[15]),
+        metricNames: undefined,
         metricOutcomes: undefined,
         decisiveOutcome: undefined,
       };
       current.services.push(entries);
       lastService = entries;
       declaredOutcomeCount = 0;
+      declaredMetricCount = undefined;
       openOutcomes = undefined;
+      continue;
+    }
+
+    const list = METRIC_LIST_RE.exec(line);
+    if (list && lastService !== undefined) {
+      // The truncation check the artifact's own channel census asked for, and the FIRST reader this line
+      // has ever had. Its own declared size against the names it rendered is the one thing only this line
+      // can be wrong about: `metricKept` and `metricDrop` declare their counts separately, so a body cut
+      // mid-write leaves them intact and the two channels disagree — which is the second half of the check,
+      // taken in `finalizeOutcomes` once both are in hand.
+      //
+      // `split(',')` matches the producer's `join(',')` and nothing else has to agree: a metric name
+      // carrying a comma would make the two halves of the line disagree, and the check would refuse the
+      // inventory rather than split it wrongly. Measured on the corpus: 41,426 lines, none.
+      const declared = Number(list[1]);
+      // An EMPTY BODY is zero names, and the two spellings of it are both real: the producer joins an empty
+      // list to `metrics(0): ` leaving a trailing space, and a hand-written line may carry no separator at
+      // all. `''.split(',')` is `['']` — one empty NAME — which would read a measured zero as a line whose
+      // body is one token short, so the emptiness is tested on the body BEFORE the split rather than filtered
+      // out of the tokens AFTER it. Filtering after would be the wrong rule in the other direction: it would
+      // accept `metrics(2): cpu,,mem`, whose three tokens are a malformed line this check exists to refuse.
+      const body = list[2];
+      const names =
+        body === undefined || body.trim() === '' ? [] : body.split(',').map((one) => one.trim());
+      if (names.length === declared) {
+        lastService.metricNames = names;
+        declaredMetricCount = declared;
+      } else {
+        truncatedInventories++;
+        missingMetrics += declaredShortfall(declared, names.length);
+        lastService.metricNames = undefined;
+        declaredMetricCount = undefined;
+      }
       continue;
     }
 
@@ -994,7 +1139,14 @@ export function parseDiagnosticDumpWithReport(text: string): DiagnosticParseResu
 
   return {
     cases,
-    report: { cases: cases.length, shortBlocks, unclosedBlocks, missingServices },
+    report: {
+      cases: cases.length,
+      shortBlocks,
+      unclosedBlocks,
+      missingServices,
+      truncatedInventories,
+      missingMetrics,
+    },
   };
 }
 

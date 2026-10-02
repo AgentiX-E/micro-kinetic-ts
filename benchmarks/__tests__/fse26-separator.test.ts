@@ -39,6 +39,7 @@ const svc = (serviceId: string, over: Partial<DiagnosedService> = {}): Diagnosed
   fatalCount: 0,
   logicExceptionCount: 0,
   httpExceptionCount: 0,
+  metricNames: undefined,
   metricOutcomes: undefined,
   decisiveOutcome: undefined,
   ...over,
@@ -1207,13 +1208,25 @@ describe('the field audit — which fields no signal reads, and why that is a cl
     );
   });
 
-  it('names exactly the two fields nothing screens, and each carries its reason', () => {
+  it('names exactly the three fields no SCALAR screens, and each carries its reason', () => {
     // Pinned rather than computed: a field moving between these lists is a decision, and the test
-    // is what forces it to be reviewed. Both are the label — reading either would be reading the
+    // is what forces it to be reviewed. Two are the label — reading either would be reading the
     // answer. `dominantMetric` moved OFF this list when the four composition scalars started using
     // it as a selector, which is a use of the field and not a use of the label's family value.
-    expect([...unscreenedFields()].sort()).toEqual(['isGroundTruth', 'predictedRank']);
+    //
+    // `metricNames` is the third and it arrived by a different road, which is why the list's heading now
+    // says SCALAR: it IS read — by the reader's own truncation check on the `metrics(n)` line, the check
+    // the artifact's channel census named as that line's first reader — and by no separator scalar, because
+    // `metricOutcomes` carries the same names one channel over with each metric's fate beside it. This
+    // audit classifies scalars, so a field the READER reads is `NOT read:` here, and the entry says which
+    // of the two it is rather than only that no scalar wants it.
+    expect([...unscreenedFields()].sort()).toEqual([
+      'isGroundTruth',
+      'metricNames',
+      'predictedRank',
+    ]);
     expect(SERVICE_FIELD_AUDIT.isGroundTruth).toContain('label');
+    expect(SERVICE_FIELD_AUDIT.metricNames).toContain('truncation check');
     expect(SERVICE_FIELD_AUDIT.dominantMetric).toContain('fse26-family-screen-verdict.md');
   });
 

@@ -457,11 +457,14 @@ DECLARATIONS: tuple[ChannelDeclaration, ...] = (
         'metric-list',
         SUB_LINE,
         'metrics',
-        (),
-        'the metric NAME list and its declared size. RENDERED ON EVERY ROW AND PARSED BY NO READER — the '
-        'reader\'s inventory comes from the three lines below — so a truncation check built on it would be '
-        'the first thing to read it. BODY-placed: the value here is the names, and the size is the '
-        'complement a truncation check compares them against',
+        ('metricNames',),
+        'the metric NAME list and its declared size — the inventory the reader now READS, and the only '
+        'channel that can witness a line cut mid-write: `metricKept` and `metricDrop` declare their own '
+        'counts, so a truncated body leaves them intact and only the declared size disagrees with it. '
+        'Until iteration 41 this was declared with NO field and the reason said why ("RENDERED ON EVERY ROW '
+        'AND PARSED BY NO READER ... so a truncation check built on it would be the first thing to read it"); '
+        'the check exists, so the field does, and the line has left NO_FIELD_CHANNELS. BODY-placed: the value '
+        'here is the names, and the size is the complement the check compares them against',
         value=r'.*',
         value_in=BODY,
     ),

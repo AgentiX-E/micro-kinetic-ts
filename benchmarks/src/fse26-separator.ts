@@ -555,6 +555,8 @@ export const SERVICE_FIELD_AUDIT: Readonly<Record<keyof DiagnosedService, string
   logicExceptionCount: 'read: `sigLines`',
   httpExceptionCount: 'read: `sigLines`',
   bothExceptionCount: 'read: `sigLines`',
+  metricNames:
+    'NOT read: no scalar screens it, and the artifact’s own channel census is where that was decided — `metric-list` was declared as one of three lines "the producer renders and no reader parses", excluded from the census’ field equality by an explicit set. The field exists NOW because the same declaration named its way out ("a truncation check built on it would be the first thing to read it") and the reader has that check: `metricNames` is `undefined` exactly when the `metrics(n)` line disagrees with the names it rendered or with the `metricKept`+`metricDrop` channels, which is a per-service loss the report counts. It is therefore read by the READER and not by a scalar — the two are different questions, and `SeparatorScalar.reads` is the second',
   metricOutcomes:
     'read: `kept`, `transientDrops`, `bestDev`, `bestRise` and the four composition scalars — but only for the four numbers and the decisive metric’s decomposition, not for the per-metric fate WORDS, which are a separate axis (the guard census). The two KINDS of number carry different absent cases and the readers see both: `kept`/`transientDrops` are counts, so a rendered `metricKept(0):` is a MEASURED zero, while `bestDev`/`bestRise` are maxima over the DECOMPOSED metrics and are `undefined` when the block rendered an inventory and no decomposition — a pair with no bound at all is `unmeasurable` rather than a tie at 0',
   decisiveOutcome:
