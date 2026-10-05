@@ -106,6 +106,23 @@ records `AXIS_OF_OPTION` — an exact map asserted to name two rows that exist �
 **A join with no owner, one level up from the flag↔option join the census was written to close.** The alias
 is not invented here; `fse26-engine-options.test.ts` already records `{ logMode: 'logSignalMode' }`.
 
+**And the chain is read end to end, because a reachable-but-inert knob is the same defect from the other
+side.** A flag a workflow passes, a parser that accepts it and a value that stops one step short is a
+dispatch that reports a configuration it did not run — the failure `cli-argument-rejection-audit.md` records
+in the *absence* direction. Read, in order:
+
+| step | site | evidence |
+| --- | --- | --- |
+| input | `benchmark-rcaeval.yml` | `log_signal_mode` → `--log-signal-mode` (the census' own transform, asserted) |
+| flag | `rcaeval-cli.ts` | `hasValue` + the shared guard; a missing value is REFUSED, not defaulted |
+| option | `rcaeval-cli.ts` → `run-rcaeval.ts` | `opts.logSignalMode` is a field of the object `createContainer` receives |
+| pruner | `run-rcaeval.ts` | the first `TreePruner` argument IS that object, and the file says so: *"every field on it … reaches the pruner without a second restatement here"* |
+| engine | `pruner.ts` | `computeLogScores(options?.logs, …, this.options.logSignalMode, …)` |
+
+The two value-level failures this rules out are both real in this repository's history: a mode replaced by
+`count` in the parser (this iteration), and a weight that a runner pinned while a dispatch believed it had
+set it. **The change adds a mode the engine already implements; it does not add a second implementation.**
+
 ---
 
 ## 4. The fences that had to be told, in three languages
@@ -169,9 +186,10 @@ Walk-forward folds (five, assigned by a hash of the case id, so the assignment i
    without carrying the other cell's flood with it — unless a discriminator says which cell a case is in, and
    this census does not supply one.
 4. **The population is named by its datapack code, not by a fault class.** The corpus carries six named types
-   (`delay`, `disk`, `loss`, `cpu`, `mem`, `socket`) and five numbered ones (`f1`–`f5`), and **the repository
-   carries no map from those codes to a semantic class** — verified, not assumed. Naming `f3` after an FSE'26
-   fault type would be a claim this iteration did not measure.
+   (`delay`, `disk`, `loss`, `cpu`, `mem`, `socket`) and five numbered ones (`f1`–`f5`), and the repository
+   says of the numbered ones, in `run-rcaeval.ts`'s own parser comment: *"and RE3 generic labels: f1, f2, f3,
+   f4, f5"* — **`f3` and `f4` are generic labels with no semantic class recorded anywhere in this
+   repository**, so naming them after an FSE'26 fault type would be a claim this iteration did not measure.
 
 ---
 
