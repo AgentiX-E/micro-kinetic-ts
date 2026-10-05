@@ -46,6 +46,7 @@ import {
   computeFusionCeiling,
   computeFusionCeilingByCell,
   computePrismRanking,
+  countFailedTraceEdges,
   countTraceActivityByService,
   extractExceptionNames,
   RCAEvalLoader,
@@ -67,6 +68,7 @@ import type { LogSignalMode } from '../../packages/tree/src/pruning/ranking-sign
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
+import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
 import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
@@ -448,6 +450,24 @@ async function loadSingleCase(
     };
   }
 
+  // Failed-edge DIRECTION rows: the only case input that names the service an error was emitted
+  // ABOUT rather than the one that emitted it. `toFaultGraphOptions` has always forwarded the
+  // field; nothing on this path ever produced it, so `failedEdge` and `failedEdgeRecords` rendered
+  // as 0 for every service in every RCAEval artifact and the separator census' strongest cell had
+  // no counterpart on this half of the kill criterion at all.
+  //
+  // Unconditional, and deliberately so: gating it on `failedEdgeWeight > 0` would re-create the
+  // defect it repairs, because the shipped weight IS 0 — the artifact would go on reporting a
+  // starved channel as a measured zero. It costs one streaming pass over a file the case already
+  // owns, and it changes NO ranking while the weight is 0.
+  benchCase = {
+    ...benchCase,
+    failedTraceEdges: await countFailedTraceEdges(
+      join(meta.dirPath, 'traces.csv'),
+      benchCase.injectTime,
+    ),
+  };
+
   // Free trace data after augmentation — prevents OOM on RE2 (270+ cases
   // each with 100K+ trace spans).  The benchmark runner does not use
   // traces downstream; the topology is already augmented.
@@ -498,6 +518,10 @@ async function loadCases(
   let logSampleStackTraceMsg = '';
   let logStackTraceSampleCaptured = false;
   const exceptionNamesSeen = new Set<string>();
+  const failedEdgeCases: Array<{
+    failedTraceEdges?: BenchmarkCase['failedTraceEdges'];
+    metricKeys: ReadonlySet<string>;
+  }> = [];
 
   for (const meta of selected) {
     try {
@@ -568,6 +592,14 @@ async function loadCases(
       }
 
       loaded.push(benchCase);
+      // One compact projection per case for the failed-edge coverage counter: the
+      // metric KEYS only, because a case's series are large and are released after
+      // scoring. `toFaultGraphOptions` forwards `failedTraceEdges` for every caller,
+      // and this is what reports whether the field it forwards is ever populated.
+      failedEdgeCases.push({
+        failedTraceEdges: benchCase.failedTraceEdges,
+        metricKeys: new Set(benchCase.callGraph.nodes.keys()),
+      });
 
       // Yield + GC every 10 cases during loading.  Each RE2 case holds
       // a call graph with Zhipu embedding vectors (2048 dim × services).
@@ -583,6 +615,15 @@ async function loadCases(
       const shortMsg = errMsg.substring(0, 60);
       errorSamples.set(shortMsg, (errorSamples.get(shortMsg) ?? 0) + 1);
     }
+  }
+
+  // Printed UNCONDITIONALLY, like the FSE'26 run's own line and for the same reason: a run
+  // whose direction signal received nothing must be indistinguishable from one that
+  // received everything only in the NUMBERS, never in the log. Until this line existed the
+  // golden half had no way to say that the channel it was reporting as 0.000 had never
+  // been fed at all.
+  if (failedEdgeCases.length > 0) {
+    console.log(`  ${formatFailedEdgeCoverageLine(summariseFailedEdgeCoverage(failedEdgeCases))}`);
   }
 
   return {

@@ -22,6 +22,7 @@ import { createInterface } from 'node:readline';
 
 import type {
   CallEdge,
+  FaultFailedEdge,
   MetricMap,
   ServiceCallGraph,
   ServiceNode,
@@ -1136,6 +1137,164 @@ export async function countTraceActivityByService(
   }
 
   return counts;
+}
+
+/** Header aliases for the SPAN ID column. */
+const SPAN_ID_COLUMNS = new Set(['spanid', 'span_id', 'span']);
+
+/** Header aliases for the PARENT SPAN ID column, which is what makes a call an edge. */
+const PARENT_SPAN_ID_COLUMNS = new Set([
+  'parentspanid',
+  'parent_span_id',
+  'parentspan',
+  'parent_span',
+  'parentid',
+  'parent_id',
+]);
+
+/**
+ * Derive the failed-edge-DIRECTION rows from a case's `traces.csv`.
+ *
+ * ## Why this exists, and why it is not the log signal
+ *
+ * A fault's interface evidence is emitted by its VICTIMS: they are the ones whose calls fail, so
+ * "who emitted the errors" cannot say who is causal. What can is *whom* those failing calls were
+ * against — every outgoing span carries both the calling service and the HTTP response status of
+ * the call. `FaultFailedEdge` is therefore the only case input that carries the DIRECTION of a
+ * fault (see its docblock), and the engine charges each failed call to its CALLEE.
+ *
+ * ## The channel was DEAD on this path until this function existed
+ *
+ * `fse26-loader.ts` derives these rows for the FSE'26 benchmark (from `scripts/fse26_convert.py`)
+ * and `toFaultGraphOptions` forwards them for every caller — but nothing on the RCAEval path ever
+ * produced them, so **every RCAEval artifact rendered `failedEdge=0.000 failedEdgeRecords=0` for
+ * all 41,426 services**. That is the register's own first invariant inverted: a signal that
+ * received nothing reports the same headline as a signal with no effect. It is also why the
+ * separator census' STRONGEST surviving cell (`edgeRecords`, AUC 0.908 on FSE'26) had no
+ * counterpart on the criterion's other half — the evidence did not exist there, so no golden run
+ * could ever confirm or refute it.
+ *
+ * ## One read, and no ordering assumption
+ *
+ * The parent join needs a span that may appear LATER in the file than its child, so the rows are
+ * collected during the read and joined AFTER it. An implementation that resolved each child
+ * against the parents it had already seen would silently under-count on any file that is not
+ * parent-first — and a quiet under-count is indistinguishable from a quiet fault. Two passes were
+ * rejected for a measured reason: RCAEval TrainTicket traces exceed a million spans per case, and
+ * reading every case twice would cost more I/O than the whole golden run.
+ *
+ * Only FAILING spans are retained (3 columns each); a healthy call is not evidence.
+ *
+ * @param tracesPath - Absolute path to traces.csv.
+ * @param injectTimeMs - Fault injection time in Unix milliseconds.
+ * @returns `{caller, callee, failed, baseline}` rows, only for edges that failed AFTER injection,
+ *   sorted by `(caller, callee)`; empty when the file is absent, carries no status column, or
+ *   holds no failing call whose caller is in the file.
+ */
+export async function countFailedTraceEdges(
+  tracesPath: string,
+  injectTimeMs: number,
+): Promise<FaultFailedEdge[]> {
+  if (!fs.existsSync(tracesPath)) return [];
+
+  /** `spanId -> service`, for the whole file: the join is done after the read, not during it. */
+  const serviceOfSpan = new Map<string, string>();
+  const failing: Array<{
+    readonly parent: string;
+    readonly callee: string;
+    readonly atMs: number;
+  }> = [];
+
+  let svcIdx = -1;
+  let statusIdx = -1;
+  let spanIdx = -1;
+  let parentIdx = -1;
+  let startMillisIdx = -1;
+  let startIdx = -1;
+  let startSnakeIdx = -1;
+  let timestampIdx = -1;
+  let isHeader = true;
+
+  const lines = createInterface({
+    input: fs.createReadStream(tracesPath, { encoding: 'utf-8' }),
+    crlfDelay: Infinity,
+  });
+
+  try {
+    for await (const rawLine of lines) {
+      if (isHeader) {
+        const header = rawLine.split(',').map((h) => h.trim());
+        svcIdx = header.findIndex((h) => SERVICE_COLUMN_ALIASES.has(h.toLowerCase()));
+        statusIdx = header.findIndex((h) => STATUS_COLUMN_ALIASES.has(h.toLowerCase()));
+        spanIdx = header.findIndex((h) => SPAN_ID_COLUMNS.has(h.toLowerCase()));
+        parentIdx = header.findIndex((h) => PARENT_SPAN_ID_COLUMNS.has(h.toLowerCase()));
+        startMillisIdx = header.indexOf('startTimeMillis');
+        startIdx = header.indexOf('startTime');
+        startSnakeIdx = header.indexOf('start_time');
+        timestampIdx = header.indexOf('timestamp');
+        isHeader = false;
+        continue;
+      }
+
+      if (rawLine.trim() === '') continue;
+      const cells = rawLine.split(',');
+      const service = svcIdx >= 0 ? (cell(cells, svcIdx) ?? '').trim() || 'unknown' : 'unknown';
+      const spanId = (cell(cells, spanIdx) ?? '').trim();
+      const parent = (cell(cells, parentIdx) ?? '').trim();
+      if (spanId !== '') serviceOfSpan.set(spanId, service);
+      // A span with no parent is not an edge; a failing one is the evidence this function wants.
+      if (parent === '' || spanId === '') continue;
+      if (normalizeSpanStatus(statusIdx >= 0 ? cell(cells, statusIdx) : undefined) !== 'ERROR') {
+        continue;
+      }
+      failing.push({
+        parent,
+        callee: service,
+        atMs: normalizeTraceStartTime(
+          cell(cells, startMillisIdx),
+          cell(cells, startIdx),
+          cell(cells, startSnakeIdx),
+          cell(cells, timestampIdx),
+        ),
+      });
+    }
+  } catch {
+    // A mid-stream read error returns what was accumulated, like `countTraceActivityByService`.
+  }
+
+  // The join, after the read. An edge whose caller is not in the file is DROPPED rather than
+  // guessed: the caller is genuinely unknown on a truncated trace, and a guess would put a
+  // direction into the ranking that no datum states.
+  const byEdge = new Map<
+    string,
+    { caller: string; callee: string; failed: number; baseline: number }
+  >();
+  for (const { parent, callee, atMs } of failing) {
+    const caller = serviceOfSpan.get(parent);
+    if (caller === undefined) continue;
+    const key = `${caller}\u0000${callee}`;
+    const entry = byEdge.get(key) ?? { caller, callee, failed: 0, baseline: 0 };
+    // The baseline is counted, never dropped: `computeFailedEdgeScores` reads the DIFFERENCE, and
+    // an edge that was already failing before the injection is a property of the deployment rather
+    // than evidence about the fault — so it must not itself create a row.
+    if (atMs < injectTimeMs) entry.baseline += 1;
+    else entry.failed += 1;
+    byEdge.set(key, entry);
+  }
+
+  return [...byEdge.values()]
+    .filter((edge) => edge.failed > 0)
+    .sort((a, b) =>
+      a.caller !== b.caller
+        ? a.caller < b.caller
+          ? -1
+          : 1
+        : a.callee < b.callee
+          ? -1
+          : a.callee > b.callee
+            ? 1
+            : 0,
+    );
 }
 
 /** Read a trimmed cell by index, or undefined when the column is absent. */

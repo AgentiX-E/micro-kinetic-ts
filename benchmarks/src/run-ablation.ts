@@ -33,6 +33,7 @@ import {
 import {
   analyzePrismSweep,
   BenchmarkRunner,
+  countFailedTraceEdges,
   countTraceActivityByService,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
@@ -918,6 +919,17 @@ async function main(): Promise<void> {
             ),
           };
         }
+        // The failed-edge DIRECTION rows, on the same terms as the run itself: an ablation of the
+        // failed-edge weight against a starved channel reports "no change" for the wrong reason,
+        // which is precisely the reading this iteration had to repair. Unconditional (the shipped
+        // weight is 0, so it moves nothing) and one streaming pass over the case's own traces.
+        benchCase = {
+          ...benchCase,
+          failedTraceEdges: await countFailedTraceEdges(
+            join(meta.dirPath, 'traces.csv'),
+            benchCase.injectTime,
+          ),
+        };
         // Do NOT retain per-case traces here — RE2 traces.csv files are
         // large enough that holding all 50 cases' spans at once OOMs.
         // Record the directory path so the traceAugmentation config can

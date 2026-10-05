@@ -16,6 +16,7 @@ import {
   RCAEvalLoader,
   classifyExceptionKind,
   classifyLogLevel,
+  countFailedTraceEdges,
   countTraceActivityByService,
   extractDeepestExceptionClass,
   extractExceptionNames,
@@ -1952,5 +1953,138 @@ describe('rcaeval absent-column handling', () => {
     const counts = await countTraceActivityByService(tracesPath, 1000);
     expect(counts.get('svc-a')).toEqual({ pre: 0, post: 1 });
     expect(counts.get('unknown')).toEqual({ pre: 1, post: 0 });
+  });
+});
+
+describe('countFailedTraceEdges', () => {
+  // The failed-edge-DIRECTION signal exists because a fault's interface evidence is emitted by its
+  // VICTIMS: they are the ones whose calls fail, so "who emitted the errors" cannot say who is
+  // causal. What can is WHOM those failing calls were against — and the derivation is the whole of
+  // that argument, so each rule below is one arm of it.
+  //
+  // This path produced NO rows at all until this iteration: `rcaeval-loader.ts` built spans with
+  // the service, parent and status of every call and never joined them, so every RCAEval artifact
+  // rendered `failedEdge=0.000 failedEdgeRecords=0` for all 41,426 services — a dead channel that
+  // reports the same headline as a signal with no effect, which is the register's own first
+  // invariant. The FSE'26 benchmark derives the same rows from the same corpus (in
+  // `scripts/fse26_convert.py`) and the strongest cell its separator census ever found rests on
+  // them, so the two halves of the kill criterion disagreed about whether the evidence existed.
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /** Jaeger's own column names, which is what RCAEval writes. */
+  const HEADER = 'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status';
+
+  const write = (rows: readonly string[]): string => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(tracesPath, rows.join('\n'));
+    return tracesPath;
+  };
+
+  /** A client span (no parent) by `caller`, and a server span (child of it) by `callee`. */
+  const call = (
+    caller: string,
+    callee: string,
+    spanId: string,
+    atMs: number,
+    status: string,
+  ): string[] => [
+    `t1,${spanId}c,,${caller},${atMs},OK`,
+    `t1,${spanId}s,${spanId}c,${callee},${atMs + 1},${status}`,
+  ];
+
+  it('charges a failed call to its CALLEE, not to the service that reported the error', () => {
+    // The direction rule, and the only thing this signal is for. `svc-b`'s call failed at the
+    // interface `svc-a` was calling, so the row must name `svc-b` as the callee — a row keyed on
+    // the emitter would be the log signal again, which is the signal this one exists to invert.
+    const tracesPath = write([HEADER, ...call('svc-a', 'svc-b', 's1', 1100, '500')]);
+
+    return countFailedTraceEdges(tracesPath, 1000).then((edges) => {
+      expect(edges).toEqual([{ caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 }]);
+    });
+  });
+
+  it('emits only an edge that failed AFTER the injection', async () => {
+    // An edge that was already failing beforehand is a property of the DEPLOYMENT rather than
+    // evidence about the fault, and emitting it would implicate the same callee in every case —
+    // so the pre-injection failures are counted (`baseline`) but never create a row on their own.
+    const tracesPath = write([HEADER, ...call('svc-a', 'svc-b', 's1', 200, '500')]);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([]);
+  });
+
+  it('splits ONE edge into failed and baseline at the boundary', async () => {
+    // Both halves on the same pair: the rule above must not be implemented by dropping the
+    // pre-injection call entirely, because `computeFailedEdgeScores` reads the DIFFERENCE.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-b', 's1', 200, '500'),
+      ...call('svc-a', 'svc-b', 's2', 1200, '500'),
+    ]);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([
+      { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 1 },
+    ]);
+  });
+
+  it('resolves a parent that appears AFTER its child', async () => {
+    // The arm that makes this one streaming pass instead of an ordering assumption. A derivation
+    // that only recognised a parent already seen would silently under-count on any file whose rows
+    // are not parent-first — and a silent under-count is indistinguishable from a quiet fault.
+    const tracesPath = write([HEADER, 't1,s1s,s1c,svc-b,1201,500', 't1,s1c,,svc-a,1100,OK']);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([
+      { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+    ]);
+  });
+
+  it('invents nothing when the parent span is not in the file', async () => {
+    // A truncated or sampled trace has children without parents. The caller is genuinely unknown
+    // there, and a row guessing at it would put a direction into the ranking that no datum states.
+    const tracesPath = write([HEADER, 't1,s1s,absent,svc-b,1100,500']);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([]);
+  });
+
+  it('counts nothing when the artifact carries no status column', async () => {
+    // The same degradation the FSE'26 converter records for the same column: without a status
+    // every span is OK, so the file cannot say a call failed and the honest answer is no rows.
+    const tracesPath = write([
+      'traceId,spanId,parentSpanId,serviceName,startTimeMillis',
+      't1,c1,,svc-a,1100',
+      't1,s1,c1,svc-b,1101',
+    ]);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([]);
+  });
+
+  it('returns no rows for a missing file rather than throwing', async () => {
+    expect(await countFailedTraceEdges(path.join(tempDir, 'missing.csv'), 1000)).toEqual([]);
+  });
+
+  it('sorts by caller then callee, so identical traces produce identical rows', async () => {
+    // Determinism is a contract, not a convenience: the rows are rendered into an artifact that
+    // other tools diff, and a grouping whose order depends on file order would make two builds of
+    // one datapack differ in bytes.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-b', 'svc-c', 's1', 1100, '500'),
+      ...call('svc-a', 'svc-b', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-b', 'svc-b>svc-c']);
   });
 });
