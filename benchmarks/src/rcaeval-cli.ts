@@ -115,10 +115,11 @@ export interface CliOptions {
    * Read from {@link DEFAULT_STABILITY_WEIGHT} for the reason `temporalWeight` is: this runner IS
    * the golden 9-cell, so a private copy of the shipped value would let the gate stay blind to a
    * signal the engine ships. The engine's contract makes the field OPTIONAL on `RankingWeights`,
-   * which is exactly why the golden was bit-identical while the term was enrolled at weight 0 —
-   * and why measuring the term on THIS benchmark needs the flag rather than a change to the
-   * engine's default. Its weight is the same 0.03017 the FSE'26 screen solved for, so a dispatch
-   * of this input is what turns "admitted on one benchmark" into "measured on both".
+   * which is why the golden stayed byte-identical while the term was enrolled behind the engine's
+   * constant — and why a re-measurement of the term on THIS benchmark is reached by dispatching
+   * this input rather than by changing the engine's default. The value is the engine's criterion
+   * intersection, and deliberately NOT the `0.03017` the FSE'26-only screen solved for: that point
+   * was REJECTED for moving four of the nine golden cells, one of them by 15.8pp.
    */
   stabilityWeight: number;
   /** Strength of the collision-energy signal (penalise upstream-inherited energy). */

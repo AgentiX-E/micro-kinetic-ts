@@ -204,11 +204,11 @@ export interface Fse26CliOptions {
    */
   readonly poolMetricPenaltyWeight: number;
   /**
-   * Weight on the decisive-stability prior. **0 is the SHIPPED value**, not the ablation: the
-   * window is solved but the golden half of the kill criterion has not been run, so the candidate
-   * is reached by passing `--stability-weight` and the default path is what the golden was taken
-   * on. Read from the engine's constant rather than restated — a second copy of a shipped number
-   * is how this repo published one 24.2pp off the best-measured value.
+   * Weight on the decisive-stability prior, SHIPPED ON: both halves of the kill criterion were
+   * measured at the engine's value before the default moved, so the flag path and the default path
+   * agree and this input exists to ABLATE the term rather than to reach it. Read from
+   * {@link DEFAULT_STABILITY_WEIGHT} rather than restated — a second copy of a shipped number is how
+   * this repo published one 24.2pp off the best-measured value.
    */
   readonly stabilityWeight: number;
   /**

@@ -408,10 +408,14 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * fallback, because an `?? 0` on a field the constructor always fills is a branch no run can take
    * and one that would read as a measurement of the ablation if it ever did.
    *
-   * Ships at **0** — the window is solved and positive on FSE'26 but the golden half of the kill
-   * criterion cannot be measured offline (`docs/fse26-cv-screen.md` §4), so the term is evaluated by
-   * passing the flag and the default path stays bit-for-bit the configuration the golden was taken
-   * on.
+   * Ships at {@link DEFAULT_STABILITY_WEIGHT} — the midpoint of the CRITERION INTERSECTION, and
+   * measured on the DEFAULT path rather than on the flag: run `35416576350` passes no input at all
+   * and reads the constant's value, giving FSE'26 `757/1422` against the same-commit control
+   * `35416580279` at `756` — one case, `HTTPResponseReplaceCode 160 → 161`, nothing moving the
+   * other way — with the push's own golden (`35416556932`) 9 of 9 byte-identical. The FSE'26-only
+   * window this intersection EXCLUDES (`[0.029860, 0.030480]`, midpoint `0.030170`) is kept on the
+   * constant below as a REJECTED point rather than deleted, because a value can only be rejected
+   * against the run that rejected it.
    */
   readonly stabilityWeight: number;
 }

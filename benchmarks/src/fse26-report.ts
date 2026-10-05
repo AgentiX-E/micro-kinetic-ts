@@ -92,8 +92,9 @@ export interface FSE26RunConfig {
    */
   readonly poolMetricPenaltyWeight: number;
   /**
-   * Weight on the decisive-stability prior; `0` is the SHIPPED value and the candidate is reached
-   * by passing the flag, because the golden half of the criterion has not been run.
+   * Weight on the decisive-stability prior; the shipped value is the engine's own constant, and
+   * both halves of the kill criterion were measured at it before the default moved, so the flag
+   * path and the DEFAULT path agree on this line.
    */
   readonly stabilityWeight: number;
   /** Weight of the injection-anchored temporal prior; `0` = the shipped configuration. */

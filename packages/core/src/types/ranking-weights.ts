@@ -176,11 +176,15 @@ export interface RankingWeights {
    * Evidence: across the miss pairs of the shipped FSE'26 dump the true source's decisive `cv` bonus
    * is the LOWER one (AUC 0.718 on the inventory-matched stratum, `docs/fse26-separator-verdict.md`
    * §6.2), and the zero-regression window solved over all 1422 cases of run `35107871516` gains SIX
-   * cases with none lost — `[0.029860, 0.030480]`, `docs/fse26-cv-screen.md` §4.
+   * cases with none lost — `[0.029860, 0.030480]`, `docs/fse26-cv-screen.md` §4. That window is the
+   * FSE'26 half ALONE, and its midpoint `0.030170` was REJECTED for moving four of the nine golden
+   * cells, one by 15.8pp; what ships is the intersection's midpoint instead.
    *
-   * OPTIONAL: absent means 0 (disabled). The candidate is a WINDOW, not a shipped weight: the
-   * golden half of the kill criterion cannot be measured offline because this term did not exist
-   * when the last golden run was taken, so it ships inert and is evaluated by passing the flag.
+   * OPTIONAL: absent means 0 (disabled) here, because THIS structure is the optimizer's serializable
+   * search space, where a zero weight is how a signal is switched off. It is not the engine's
+   * default: the engine ships the term ON, at `DEFAULT_STABILITY_WEIGHT`, with BOTH halves of the
+   * kill criterion measured at that value (`35411806524` FSE'26 `757/1422`, `35411810992` golden
+   * 9 of 9 byte-identical) and the DEFAULT path re-measured afterwards (`35416576350`).
    */
   readonly stabilityWeight?: number;
 }
