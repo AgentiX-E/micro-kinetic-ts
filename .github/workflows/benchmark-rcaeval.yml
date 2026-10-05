@@ -572,13 +572,14 @@ jobs:
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
           fi
-          #   The MODE travels with the weight: a weight is a claim about which lines count, so
-          #   asking for one without being able to name the other measures half a term. Both are
-          #   passed only when the dispatch input is non-empty, so the runner's default stays the
-          #   single source of truth for the shipped configuration.
-          if [ -n "${{ inputs.log_signal_mode }}" ]; then
-            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
-          fi
+          #   The MODE is deliberately NOT appended by this step, alone among the seven ranking
+          #   sites, and the reason is the step's IDENTITY: it IS the `novelty` reference, and its
+          #   mode is pinned on the command line below. Appending the dispatch input as well put two
+          #   statements of one flag on ONE command line, and the parser takes the last — so a
+          #   dispatch asking for `all` ran `all` inside the step named for `novelty` and uploaded
+          #   the artifact under the reference's own name. Measured before the fix. The runner now
+          #   REFUSES that contradiction outright; this keeps the contradiction from existing,
+          #   because a reference that an unrelated input can relabel is not a reference.
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
           fi

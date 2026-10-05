@@ -256,6 +256,24 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     diagnoseDump: '',
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
   };
+  /**
+   * The first `--log-signal-mode` this command line stated, and what it resolved to.
+   *
+   * A SECOND statement of the flag is not a repetition to be collapsed, because the two can
+   * disagree — and one of them does, in the workflow this runner is driven by. The RE3 job runs
+   * its `novelty` reference as `run-rcaeval.ts … --log-signal-mode novelty "${RANKING_ARG[@]}"`,
+   * and `RANKING_ARG` carries `--log-signal-mode "${{ inputs.log_signal_mode }}"`. With the last
+   * occurrence winning, a dispatch asking for `all` ran `all` inside the step whose entire purpose
+   * is the `novelty` reference, and the artifact is still uploaded as
+   * `rcaeval-re3-novelty-results.txt` — the same failure as the `count` → `logicHttp` fallback this
+   * chain was closed for, with the roles of "request" and "default" exchanged.
+   *
+   * Both values are kept: the RAW token, because a value that is not a mode resolves to the
+   * default and the dispatcher needs to see what they typed, and the RESOLVED mode, because that
+   * is what two statements actually conflict about.
+   */
+  let statedLogSignalMode: { raw: string; mode: LogSignalMode } | undefined;
+
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--data-dir' && hasValue(args, i + 1)) opts.dataDir = args[++i]!;
     else if (args[i] === '--max-cases' && hasValue(args, i + 1))
@@ -287,11 +305,26 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     else if (args[i] === '--prism-weight' && hasValue(args, i + 1))
       opts.prismWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--log-signal-mode' && hasValue(args, i + 1)) {
-      const mode = args[++i]!;
+      const raw = args[++i]!;
       // The whole union, by the union's own guard. A hand-written pair lived here, and here is
       // where `all` was thrown away: it is the mode that admits every ERROR/FATAL line, which is
       // the only way a golden run can be asked for the `NetworkPartition`/`errLines` cell.
-      opts.logSignalMode = isLogSignalMode(mode) ? mode : DEFAULT_RCAEVAL_LOG_SIGNAL_MODE;
+      //
+      // An unusable VALUE still falls back to the published default, which is a different decision
+      // from a second statement of the flag and is tested as one. What is refused is the pair that
+      // CONTRADICTS: two statements whose modes differ cannot both be honoured, and honouring the
+      // later one silently is how a command line that pins its own mode ends up measured at another.
+      // Two statements of the SAME mode are one request written twice and stay accepted.
+      const mode = isLogSignalMode(raw) ? raw : DEFAULT_RCAEVAL_LOG_SIGNAL_MODE;
+      if (statedLogSignalMode !== undefined && statedLogSignalMode.mode !== mode) {
+        throw new Error(
+          `--log-signal-mode is stated twice with different values: '${statedLogSignalMode.raw}' ` +
+            `and '${raw}'. This runner cannot honour both, so it refuses rather than take the last ` +
+            'one — a command line that names a mode twice is a contradiction, not a precedence.',
+        );
+      }
+      statedLogSignalMode = { raw, mode };
+      opts.logSignalMode = mode;
     } else if (args[i] === '--collapse-discount' && hasValue(args, i + 1)) {
       const d = parseFloat(args[++i]!);
       opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;

@@ -16,11 +16,17 @@
  *
  * ## Why it is worse across the two runners
  *
- * The runners do not share a vocabulary, and the sharpest case is the log mode: FSE'26 calls it
- * `--log-mode` and accepts six values; RCAEval calls it `--log-signal-mode` and accepts two. So
- * `run-rcaeval.ts --log-mode novelty` is a request that cannot be honoured, and today it is
- * answered with `count` and no complaint — the run is indistinguishable from one that was asked
- * for `count`.
+ * The runners did not share a vocabulary, and the sharpest case is the log mode: FSE'26 calls it
+ * `--log-mode` and RCAEval calls it `--log-signal-mode`. When this file was written RCAEval accepted
+ * TWO values against FSE'26's six, so `run-rcaeval.ts --log-mode novelty` was a request that could
+ * not be honoured and was answered with `count` and no complaint — the run indistinguishable from
+ * one that had asked for `count`.
+ *
+ * BOTH halves of that are now closed, and the sentence above is kept because the number it carries
+ * is the kind that outlives its own correction: the flag is refused BY NAME (that is what this file
+ * asserts), and iteration 42 moved the vocabulary to ONE owner, so both runners accept the same six
+ * modes from `LOG_SIGNAL_MODES` in the tree package. Two runners spelling one vocabulary twice is
+ * how the `two` in the sentence above came to be wrong in the first place.
  *
  * ## What this file pins
  *
@@ -208,5 +214,58 @@ describe('an unrecognised argument fails loudly', () => {
     expect(message).toContain('--temporal-wieght');
     // And a typo is a typo: the message must not silently accept the near-miss.
     expect(message.length).toBeGreaterThan(20);
+  });
+});
+
+describe('a knob stated twice, with two different values, is refused', () => {
+  // WHY THIS IS NOT A HYPOTHETICAL, and why it is the same failure this file already exists for.
+  //
+  // `benchmark-rcaeval.yml`'s RE3 job runs the novelty REFERENCE as
+  //
+  //     run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty \
+  //       "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}"
+  //
+  // and `RANKING_ARG` carries `--log-signal-mode "${{ inputs.log_signal_mode }}"` when that input
+  // is non-empty — added in iteration 42, when the mode became dispatchable on this half at all.
+  // So ONE command line can carry two spellings of one knob, and this parser takes the LAST.
+  // Measured before the fix: `[… '--log-signal-mode', 'novelty', '--log-signal-mode', 'all']`
+  // returned `'all'`, while the step's artifact is still uploaded as
+  // `rcaeval-re3-novelty-results.txt`.
+  //
+  // That is the MIRROR of the defect this file was written for. There, a dispatch asked for a mode
+  // and was silently given the DEFAULT (`count` → `logicHttp` on the FSE'26 side; four of six modes
+  // → `count` here). Here, a job's own IDENTITY is silently replaced by the dispatch — the reference
+  // comparison runs a candidate's mode and is filed under the reference's name. Both are
+  // "a dispatch asking for one thing ran another and printed a confident number", and the remedy the
+  // repository already chose for the first is the same: refuse loudly and name the tokens.
+  it('refuses two DIFFERENT values, and names both of them', () => {
+    const message = ((): string => {
+      try {
+        parseRCAEvalArgs(['--log-signal-mode', 'novelty', '--log-signal-mode', 'all']);
+        return '';
+      } catch (error) {
+        return (error as Error).message;
+      }
+    })();
+    expect(message).not.toBe('');
+    expect(message).toContain('novelty');
+    expect(message).toContain('all');
+    expect(message).toContain('--log-signal-mode');
+  });
+
+  it('accepts the same value twice, which is ONE request stated twice', () => {
+    // The reference step's own case when a dispatch asks for the mode it already pins. Refusing it
+    // would make an honest dispatch fail, and the two occurrences are not in conflict about anything.
+    expect(
+      parseRCAEvalArgs(['--log-signal-mode', 'novelty', '--log-signal-mode', 'novelty'])
+        .logSignalMode,
+    ).toBe('novelty');
+  });
+
+  it('leaves a single occurrence, and an absent one, exactly as they were', () => {
+    // Non-vacuity for the two rules above: the refusal must be about the CONTRADICTION, not about
+    // repetition — and the shipped default must still be what a bare command line gets.
+    expect(parseRCAEvalArgs(['--log-signal-mode', 'all']).logSignalMode).toBe('all');
+    expect(parseRCAEvalArgs([]).logSignalMode).toBe('count');
   });
 });

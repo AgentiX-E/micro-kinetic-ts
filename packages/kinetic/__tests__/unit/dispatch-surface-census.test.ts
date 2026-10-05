@@ -473,6 +473,62 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
 const fse26Flags = flagToOption(readFileSync(FSE26_CLI, 'utf8'));
 const rcaevalFlags = flagToOption(readFileSync(RCAEVAL_CLI, 'utf8'));
 const fse26Inputs = inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'));
+/**
+ * Every step of a workflow whose RUN LINE can name a flag, with the flags it can name.
+ *
+ * A step's command line is not only the literal tokens written on it: it also expands shell arrays,
+ * and those arrays are built a few lines above, inside the same `run:` block. So the set of flags a
+ * step can name is the literals PLUS whatever the arrays it expands add — and a flag in BOTH is a
+ * step that states one knob twice, whose meaning then depends on the parser's tie-break.
+ *
+ * That is not hypothetical here: `benchmark-rcaeval.yml`'s RE3 job pins its mode with
+ * `--log-signal-mode novelty` and then expands `RANKING_ARG`, which carries the same flag from a
+ * `workflow_dispatch` input. Measured, the parser honours the LAST occurrence, so a dispatch asking
+ * for `all` ran `all` in the step whose entire purpose is the `novelty` reference — and the artifact
+ * is still uploaded as `rcaeval-re3-novelty-results.txt`.
+ *
+ * @param yml - A workflow's text.
+ * @returns One entry per step that invokes a runner.
+ */
+function runBlocks(yml: string): {
+  readonly label: string;
+  readonly literals: ReadonlySet<string>;
+  readonly arrays: ReadonlyMap<string, ReadonlySet<string>>;
+  readonly expanded: readonly string[];
+}[] {
+  const out: ReturnType<typeof runBlocks> = [];
+  const starts = [...yml.matchAll(/^ {6}- name: (.+)$/gm)];
+  for (let i = 0; i < starts.length; i++) {
+    const span = yml.slice(starts[i]!.index, starts[i + 1]?.index ?? yml.length);
+    // The body runs to the end of the STEP, which the slice already bounded, and the anchor is a
+    // NEWLINE rather than `^` for a reason this took two corrections to find: `^` without `/m`
+    // anchors at the start of the whole string, so it matched no step at all — and `$` WITH `/m`
+    // matches end-of-LINE, which would have captured a single line. Both failures were silent; the
+    // non-vacuity guard below is the only reason either was seen instead of the check passing over
+    // an empty population.
+    const run = /\n *run: \|\n([\s\S]*)$/.exec(span);
+    if (run === null) continue;
+    const body = run[1]!;
+    const command = body
+      .split('\n')
+      .filter((line) => /benchmarks\/src\/run-[a-z0-9-]+\.ts/.test(line))
+      .join('\n');
+    if (command === '') continue;
+    const literals = new Set(
+      [...command.matchAll(/(?<![A-Za-z0-9_-])(--[a-z][a-z0-9-]*)/g)].map((m) => m[1]!),
+    );
+    const arrays = new Map<string, Set<string>>();
+    for (const m of body.matchAll(/^\s+([A-Z_][A-Z0-9_]*)\+=\s*\((--[a-z][a-z0-9-]*)/gm)) {
+      const set = arrays.get(m[1]!) ?? new Set<string>();
+      set.add(m[2]!);
+      arrays.set(m[1]!, set);
+    }
+    const expanded = [...command.matchAll(/\$\{([A-Z_][A-Z0-9_]*)\[@\]\}/g)].map((m) => m[1]!);
+    out.push({ label: starts[i]![1]!.trim(), literals, arrays, expanded });
+  }
+  return out;
+}
+
 const rcaevalInputs = inputNames(readFileSync(RCAEVAL_WORKFLOW, 'utf8'));
 
 describe('the dispatch surface has one owner per knob', () => {
@@ -772,5 +828,53 @@ describe('the dispatch surface has one owner per knob', () => {
         expect(reaches(flag!, texts[which]), `${which} must reach ${flag}`).toBe(true);
       }
     }
+  });
+
+  it('never lets a step PIN a flag that an array it expands also sets', () => {
+    // The direction no other assertion here reads. Every check above asks whether a KNOB is
+    // reachable; none asked what a single command line means when it names the same knob twice, and
+    // the answer is not a property of the knob but of the parser's tie-break — which is exactly why
+    // it went unseen through the change that created it. Iteration 42 made the log mode dispatchable
+    // on the golden half and passed the new flag at all seven ranking sites, including the RE3 job's
+    // novelty reference, whose mode is pinned by hand on the same command line. Measured: the parser
+    // honours the LAST occurrence, so the reference silently ran a candidate's mode and filed it
+    // under the reference's name.
+    //
+    // The invariant is stated over POPULATIONS rather than over this one flag, because the flag will
+    // change and the shape will not: a step may pin a flag, or it may expand an array that sets one,
+    // never both.
+    // BOTH workflows, because the shape is not RCAEval-specific: FSE'26 has one runner step and
+    // could grow the same defect, and a fence over one workflow is half a fence. The counts below
+    // are what makes the difference between "clean" and "unread" visible.
+    const counts: Record<string, number> = {};
+    for (const [which, path] of [
+      ['rcaeval', RCAEVAL_WORKFLOW],
+      ['fse26', FSE26_WORKFLOW],
+    ] as const) {
+      const blocks = runBlocks(readFileSync(path, 'utf8'));
+      counts[which] = blocks.length;
+      const offenders: string[] = [];
+      for (const block of blocks) {
+        const viaArray = new Set<string>();
+        for (const name of block.expanded) {
+          for (const flag of block.arrays.get(name) ?? []) viaArray.add(flag);
+        }
+        const twice = [...block.literals].filter((flag) => viaArray.has(flag)).sort();
+        if (twice.length > 0)
+          offenders.push(`${which}: ${block.label} states ${twice.join(', ')} twice`);
+      }
+      expect(offenders, `${which} must not pin a flag its own arrays set`).toEqual([]);
+    }
+    // Non-vacuity: the population has to be real. Steps that expand an array which adds at least one
+    // flag are the only ones the invariant can be violated by, and there must be several, or the
+    // loop above would be asserting over an empty set of interesting shapes. The second count is the
+    // one that failed when the helper was broken, so it is kept as the guard on the guard.
+    expect(counts.rcaeval).toBeGreaterThan(5);
+    expect(counts.fse26).toBeGreaterThan(0);
+    const withArrayFlags = [
+      ...runBlocks(readFileSync(RCAEVAL_WORKFLOW, 'utf8')),
+      ...runBlocks(readFileSync(FSE26_WORKFLOW, 'utf8')),
+    ].filter((block) => block.expanded.some((n) => (block.arrays.get(n)?.size ?? 0) > 0));
+    expect(withArrayFlags.length).toBeGreaterThan(4);
   });
 });
