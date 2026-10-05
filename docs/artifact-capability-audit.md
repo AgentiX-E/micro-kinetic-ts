@@ -97,7 +97,7 @@ The first row grammar required a non-empty service id and so dropped the **unlab
 ranks (one row per case: `   [#4] selfAnomaly=…` and `   selfAnomaly=…`), 1422 rows on the FSE'26 artifact.
 That error can only run one way — an uncounted row can never make a channel look *less* universal — so every
 `every` it produced was optimistic. The engine's own parser was repaired for the same reason (`SERVICE_RE`
-required a non-empty id, and its parsed count disagreed with the header's `services=` in 1421 of 1422 cases,
+required a non-empty id, and its parsed count disagreed with the header's `services=` in 1422 of 1422 cases (corrected from `1421`; see `duplicate-flag-audit.md` §6),
 unchecked).
 
 The census now counts those rows and, more importantly, **checks itself against the artifact's declaration**:

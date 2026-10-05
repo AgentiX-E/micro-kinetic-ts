@@ -298,8 +298,13 @@ It is the ten unlabelled `k8s.*` series (`k8s.container.*`, `k8s.pod.phase`,
 `k8s.replicaset.*`, `k8s.namespace.phase`) — cluster-level metrics with no service label,
 which the converter emits as a candidate service. Measured consequences:
 
-- **1421 of 1422** cases carry it; its self-anomaly is `0.00–0.36`; it ranks **last** in
-  943 cases and never once appears in the engine's top-5. It has never decided a ranking.
+- **1422 of 1422** cases carry it (**CORRECTED**: this read `1421 of 1422` when written, and the
+  count is one per case in EVERY case — measured on both shipped dumps, by two independent routes;
+  see `duplicate-flag-audit.md` §6). Its self-anomaly is `0.00–0.36` and it ranks **last** in 943
+  cases. **Its top-5 claim is refuted as well**: the dump prints ranks 1–5 only, and the unnamed row
+  carries one in exactly ONE case (`ts0-ts-travel-plan-service-pod-failure-sxz5ll`, at **rank 4**),
+  where the ground truth is outside the printed top-5 — so "it has never decided a ranking" stands
+  while "never once appears in the engine's top-5" does not.
 - It IS one of the `n` candidates, and `n` is the divisor of every service's metric term:
   with it, `n = 51` and the step is exactly `1/50`; without it, `n = 50`. The shipped
   geometry therefore depends on an unlabelled row.
@@ -312,8 +317,8 @@ Two parser defects came out of the same investigation, and both are fixed in thi
 iteration because the instrument cannot be exact without them:
 
 1. `SERVICE_RE` required a non-empty id (`\S+`), so that row was **silently dropped** and
-   the parsed service list disagreed with its own header in 1421/1422 cases — nothing
-   checked. The pattern is now `\S*`.
+   the parsed service list disagreed with its own header in 1422/1422 cases — nothing
+   checked. (Read `1421/1422` when written; corrected with the row count above.) The pattern is now `\S*`.
 2. `parseDiagnosticDump` never compared the parsed count against the header's
    `services=`. A block whose list is short is a different `n` — which changes the metric
    term of EVERY service in the case — so such a block is now dropped, on the same rule

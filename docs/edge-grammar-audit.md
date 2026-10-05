@@ -23,7 +23,8 @@ here the position it swallowed is the one the producer really writes:
 
 `renderDiagnostic` renders `${from}>${to}`, and `from` may be the **empty service id** — a candidate
 this project reads as real rather than as a parse artefact: one printed row has no service name in
-**1421 of the shipped dump's 1422 cases**, it participates in the engine's own normalisation, and the
+**1422 of the shipped dump's 1422 cases** (read `1421` when written; CORRECTED, see
+`duplicate-flag-audit.md` §6), it participates in the engine's own normalisation, and the
 oracle's module header says so at length. So an entry with nothing in front of the separator is an edge
 **from that candidate**, and `<= 0` deleted every one of them from a graph the gate then compared.
 
