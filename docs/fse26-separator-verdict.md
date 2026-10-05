@@ -246,6 +246,37 @@ log-signal row as built and never measured — and the dump already carries the 
 (`err`, `fatal`). So this cell is a **precondition the register asked for, met**, and the mode's
 free pre-screen is the next iteration, not this one.
 
+---
+
+### Correction (iteration 42): that paragraph is REFUTED, and it is kept above as the CONTROL
+
+The words quoted from it — *"named in the register's log-signal row as built and never measured"*
+and *"the mode's free pre-screen is the next iteration, not this one"* — were **false when written**.
+`fse26-term-oracle-verdict.md` had already measured `all` at the shipped configuration:
+
+| configuration | correct | +/− cases | regressed types |
+| --- | --- | --- | --- |
+| `recorded` (shipped) | 756 | +0/−0 | 0 |
+| **`all`** | **569** | **+95/−282** | **17** |
+
+and the register's own row for this axis carries that number in its third cell — three columns from
+the title it is listed in. So the mode was **measured and rejected**, this census' Gate-side
+precondition **does not survive the case-level normalisation** (the register says so in the same
+row), and the paragraph above sent iteration 42 after a closed axis.
+
+It is left standing rather than rewritten because that is the only way the failure stays visible.
+**The corrected reading is**: the census' cells are the *mechanism* of that rejection, not a reason
+to re-open it. `all` is a per-population signal — it separates **24–3, AUC 0.914** in one cell of
+the RCAEval corpus where this engine's gate is blind **0–0**, and **reverses** (6–13, AUC 0.307) in
+another — so a GLOBAL `all` must regress exactly the populations whose flood belongs to the victim,
+which is what `+95/−282, 17 regressed types` counts. `log-signal-vocabulary-audit.md` holds the
+second corpus and the fold vectors.
+
+**The lesson is the register's own, and this is its fifth occurrence**: a summary outlives its own
+correction. A session that begins by reading an indexed document inherits its staleness, and the
+authority is the register, not the document. Nothing in this repository refused to proceed on a
+document whose claim the register had already refuted.
+
 ## 5. What a proposal must now do
 
 1. **State its cell** from this census — `type/signal`, with the pair counts and the fold vector.
