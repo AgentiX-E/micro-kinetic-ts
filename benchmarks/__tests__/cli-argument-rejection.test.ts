@@ -156,7 +156,24 @@ describe('an unrecognised argument fails loudly', () => {
     // above a decision rather than a blanket strictness.
     expect(parseRCAEvalArgs(['--log-signal-mode', 'novelty']).logSignalMode).toBe('novelty');
     expect(parseRCAEvalArgs(['--log-signal-mode', 'count']).logSignalMode).toBe('count');
-    // Anything else is not a mode at all, and `count` is the shipped one.
+    // Not "anything else is not a mode at all" — that is what this assertion said, and it was
+    // false. `LogSignalMode` has six members and the engine implements all six; this parser
+    // accepted two and mapped the other four onto `count`, which is the `--log-mode count`
+    // defect `fse26-cli.ts` records having closed on ITS side, left open here. The four are
+    // now honoured by their own spelling:
+    expect(parseRCAEvalArgs(['--log-signal-mode', 'logicHttp']).logSignalMode).toBe('logicHttp');
+    expect(parseRCAEvalArgs(['--log-signal-mode', 'logicHttpJoint']).logSignalMode).toBe(
+      'logicHttpJoint',
+    );
+    expect(parseRCAEvalArgs(['--log-signal-mode', 'logicHttpDominant']).logSignalMode).toBe(
+      'logicHttpDominant',
+    );
+    // `all` is the member this iteration exists for: admitting every ERROR/FATAL line is what the
+    // `NetworkPartition`/`errLines` cell needs, and until it was expressible here the candidate's
+    // golden half was UNEVALUABLE rather than merely undispatched.
+    expect(parseRCAEvalArgs(['--log-signal-mode', 'all']).logSignalMode).toBe('all');
+    // And a token that is genuinely not a mode still falls back to the published default. The
+    // guard is case-sensitive, so a miscased member is not a member:
     expect(parseRCAEvalArgs(['--log-signal-mode', 'LOGICHTTP']).logSignalMode).toBe('count');
     // A discount outside the domain is clamped, and a non-number is the shipped 0.
     expect(parseRCAEvalArgs(['--collapse-discount', '0.5']).collapseDiscount).toBe(0.5);

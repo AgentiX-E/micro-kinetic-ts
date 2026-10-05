@@ -93,6 +93,7 @@ export type { OnsetShape, TreePrunerOptions } from './pruning/pruner.js';
 export {
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
+  LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   computeDeepestExceptions,
   computeEdgeLatencyScores,
@@ -107,6 +108,7 @@ export {
   computeTopoSourceScores,
   computeTraceActivityScores,
   gatedRiseContribution,
+  isLogSignalMode,
 } from './pruning/ranking-signals.js';
 export type {
   FailedEdgeMode,

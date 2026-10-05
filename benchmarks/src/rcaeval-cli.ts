@@ -21,11 +21,22 @@
  * They do not share a vocabulary, and the log mode is where the divergence bites:
  *
  *     run-fse26.ts    --log-mode <count|novelty|logicHttp|logicHttpJoint|logicHttpDominant|all>
- *     run-rcaeval.ts  --log-signal-mode <count|novelty>
+ *     run-rcaeval.ts  --log-signal-mode <count|novelty|logicHttp|logicHttpJoint|logicHttpDominant|all>
  *
  * `run-rcaeval.ts --log-mode novelty` is a request this runner cannot honour, and the run it
  * produced was indistinguishable from one asked for `--log-signal-mode count`. It now throws and
  * names the token, which is the only part of the input the parser is certain about.
+ *
+ * ## The vocabulary is the UNION's, and it used to be narrower here
+ *
+ * The second line above read `<count|novelty>` until this iteration. The engine's
+ * `LogSignalMode` has six members and implements all six, the loader classifies every line it
+ * needs (`isLogicException`, `isHttpException`, `isStackTrace`), and the FSE'26 parser accepted
+ * all six — but this parser tested `mode === 'novelty'` and wrote `count` for everything else.
+ * So `--log-signal-mode all` ran `count` and printed a confident number, which is the defect
+ * `fse26-cli.ts` records closing on its own side and the reason `all` had never been measured:
+ * it was not merely undispatched on this half, it was UNEXPRESSIBLE. The parse now consults the
+ * shared guard beside the union (`packages/tree`, `isLogSignalMode`).
  *
  * @module benchmarks/rcaeval-cli
  */
@@ -43,8 +54,19 @@ import {
 } from '../../packages/tree/src/pruning/pruner.js';
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
+import type { LogSignalMode } from '../../packages/tree/src/index.js';
+import { isLogSignalMode } from '../../packages/tree/src/index.js';
 
 import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
+
+/**
+ * The log-signal mode this runner ships when no mode was asked for.
+ *
+ * `count` gates on self-caused logic exceptions only, which is the mode the RCAEval suites
+ * have been run with all along — so it is the published default, and the value a dispatch
+ * gets when it names something that is not a mode.
+ */
+export const DEFAULT_RCAEVAL_LOG_SIGNAL_MODE: LogSignalMode = 'count';
 
 /**
  * Every option the RCAEval runner reads off its command line.
@@ -105,8 +127,19 @@ export interface CliOptions {
   topoWeight: number;
   /** Strength of the log signal (reward post-injection ERROR/FATAL volume). */
   logWeight: number;
-  /** Log signal scoring mode: 'count' (default) or 'novelty' (IDF-weighted). */
-  logSignalMode: 'count' | 'novelty';
+  /**
+   * Log signal scoring mode.
+   *
+   * The ENGINE's union, not a subset of it. This option used to be typed
+   * `'count' | 'novelty'` and parsed with `mode === 'novelty' ? 'novelty' : 'count'`, so the
+   * other four members of {@link LogSignalMode} — `logicHttp`, `logicHttpJoint`,
+   * `logicHttpDominant` and `all` — were silently replaced by `count`. That is the same
+   * defect `fse26-cli.ts` records having closed on its own side ("a list of names cannot be
+   * checked against a union"), left open here; the parse now consults the shared
+   * `isLogSignalMode`, and an unrecognised token still falls back to
+   * {@link DEFAULT_RCAEVAL_LOG_SIGNAL_MODE} rather than inventing a configuration.
+   */
+  logSignalMode: LogSignalMode;
   /**
    * Strength of the trace span-activity rise signal in the ranking. Default 0
    * (disabled). When > 0, the loader computes per-service pre/post span counts
@@ -205,7 +238,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     collisionWeight: 0,
     topoWeight: 0,
     logWeight: DEFAULT_LOG_WEIGHT,
-    logSignalMode: 'count',
+    logSignalMode: DEFAULT_RCAEVAL_LOG_SIGNAL_MODE,
     collapseDiscount: 0,
     traceWeight: 0,
     prismWeight: 0,
@@ -255,7 +288,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.prismWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--log-signal-mode' && hasValue(args, i + 1)) {
       const mode = args[++i]!;
-      opts.logSignalMode = mode === 'novelty' ? 'novelty' : 'count';
+      // The whole union, by the union's own guard. A hand-written pair lived here, and here is
+      // where `all` was thrown away: it is the mode that admits every ERROR/FATAL line, which is
+      // the only way a golden run can be asked for the `NetworkPartition`/`errLines` cell.
+      opts.logSignalMode = isLogSignalMode(mode) ? mode : DEFAULT_RCAEVAL_LOG_SIGNAL_MODE;
     } else if (args[i] === '--collapse-discount' && hasValue(args, i + 1)) {
       const d = parseFloat(args[++i]!);
       opts.collapseDiscount = Number.isFinite(d) ? Math.min(1, Math.max(0, d)) : 0;

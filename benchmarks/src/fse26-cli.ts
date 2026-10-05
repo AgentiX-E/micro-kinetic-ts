@@ -15,10 +15,15 @@
  * printed a confident 47.3%. Two diagnostics dispatched to compare the two modes
  * came back byte-identical, which is what exposed it.
  *
- * A list of names cannot be checked against a union. `LOG_MODE_ACCEPTED` is a
+ * A list of names cannot be checked against a union. The vocabulary is a
  * `Record<LogSignalMode, true>` instead, so **adding a member to the union fails
- * to compile until it is added here**, and the fallback is reserved for values
+ * to compile until it is added there**, and the fallback is reserved for values
  * that are genuinely not modes.
+ *
+ * That table lives beside the union now (`packages/tree`, `LOG_SIGNAL_MODES`), because the
+ * RCAEval parser kept a second hand-written copy of it and the copy drifted — see the
+ * re-export below. The argument this docblock makes is the argument for there being ONE of
+ * them; making it twice is what let the other one rot.
  *
  * @module benchmarks/fse26-cli
  */
@@ -36,6 +41,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  isLogSignalMode,
   isOnsetShape,
   type OnsetShape,
 } from '../../packages/tree/src/index.js';
@@ -61,19 +67,16 @@ import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
 export const DEFAULT_FSE26_LOG_MODE: LogSignalMode = 'logicHttp';
 
 /**
- * Every log-signal mode, as a `Record` over the union.
+ * The vocabulary's owner moved: `isLogSignalMode` is re-exported from the union it guards.
  *
- * Exhaustive by construction: a new member of `LogSignalMode` is a compile error
- * here until it is listed. The value is unused; the keys are the point.
+ * It used to be defined here, against a local `LOG_MODE_ACCEPTED` table, and the RCAEval
+ * parser kept a second hand-written copy of the same vocabulary. The copies drifted — the
+ * RCAEval one accepted two members and replaced the other four with `count` in silence — so
+ * the table now lives beside `LogSignalMode` in `packages/tree` (`LOG_SIGNAL_MODES`) and
+ * both runners consult it. The re-export stays because this module's own suite imports the
+ * guard from here, and a moved owner should not move the fence's import too.
  */
-const LOG_MODE_ACCEPTED: Readonly<Record<LogSignalMode, true>> = {
-  count: true,
-  novelty: true,
-  logicHttp: true,
-  logicHttpJoint: true,
-  logicHttpDominant: true,
-  all: true,
-};
+export { isLogSignalMode };
 
 /** The aggregation modes the failed-edge signal has been measured with. */
 export const FAILED_EDGE_MODES = { sum: true, mean: true } as const;
@@ -89,11 +92,6 @@ export const DEFAULT_FAILED_EDGE_MODE: FailedEdgeMode = 'sum';
 /** Whether a raw argument names a failed-edge aggregation mode. */
 export function isFailedEdgeMode(value: string): value is FailedEdgeMode {
   return Object.prototype.hasOwnProperty.call(FAILED_EDGE_MODES, value);
-}
-
-/** Whether a raw argument names a log-signal mode. */
-export function isLogSignalMode(value: string): value is LogSignalMode {
-  return Object.prototype.hasOwnProperty.call(LOG_MODE_ACCEPTED, value);
 }
 
 /** Parsed command-line options for one benchmark run. */

@@ -63,6 +63,7 @@ import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/tr
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+import type { LogSignalMode } from '../../packages/tree/src/pruning/ranking-signals.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
@@ -114,7 +115,7 @@ function createContainer(weights: {
   collisionWeight: number;
   topoWeight: number;
   logWeight: number;
-  logSignalMode: 'count' | 'novelty';
+  logSignalMode: LogSignalMode;
   collapseDiscount: number;
   traceWeight: number;
   prismWeight: number;

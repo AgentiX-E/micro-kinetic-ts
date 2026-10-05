@@ -105,6 +105,41 @@ export type LogSignalMode =
   'count' | 'novelty' | 'logicHttp' | 'logicHttpJoint' | 'logicHttpDominant' | 'all';
 
 /**
+ * Every log-signal mode, as a `Record` over the union.
+ *
+ * Exhaustive by construction: a new member of {@link LogSignalMode} is a COMPILE error here
+ * until it is named. The value is unused; the keys are the vocabulary.
+ *
+ * It lives beside the union rather than in either runner because it was written twice by hand
+ * and the two copies disagreed. `fse26-cli.ts` argued for exactly this shape in its own
+ * docblock — "a list of names cannot be checked against a union" — and then closed it for ONE
+ * runner: the FSE'26 parser consulted it, while the RCAEval parser kept a hand-written PAIR
+ * (`mode === 'novelty' ? 'novelty' : 'count'`) and so replaced the other four members with
+ * `count` in silence. A dispatch asking for `all` therefore ran `count` and printed a
+ * confident number for a configuration nobody had asked for — the same defect the FSE'26 side
+ * records having closed, left open one module away. One union, one owner.
+ */
+export const LOG_SIGNAL_MODES: Readonly<Record<LogSignalMode, true>> = {
+  count: true,
+  novelty: true,
+  logicHttp: true,
+  logicHttpJoint: true,
+  logicHttpDominant: true,
+  all: true,
+};
+
+/**
+ * Whether a raw argument names a log-signal mode.
+ *
+ * `hasOwnProperty.call` rather than `in`: a `Record` is an object, so the prototype chain makes
+ * `toString`, `constructor` and `__proto__` reachable and `in` would accept all three — and
+ * `toString` is a token a dispatch can really send.
+ */
+export function isLogSignalMode(value: string): value is LogSignalMode {
+  return Object.prototype.hasOwnProperty.call(LOG_SIGNAL_MODES, value);
+}
+
+/**
  * The call-graph context the `logicHttpJoint` mode needs to disambiguate a
  * framework HTTP exception's DIRECTION: whether the emitter is the source
  * (its own downstream calls failed) or a victim (its callee is the broken

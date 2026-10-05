@@ -213,7 +213,7 @@ const KNOBS: Readonly<
     flag: '--log-signal-mode',
     owner: 'fse26-result-attribution.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'log_signal_mode',
   },
   rankNormalization: {
     flag: '--no-rank-normalization',
@@ -364,11 +364,22 @@ const NON_DERIVABLE_OPTIONS: readonly string[] = [
  * The ranking knobs BOTH benchmarks can dispatch.
  *
  * The kill criterion's two halves live on two benchmarks, so this set is the set of axes
- * whose criterion is decidable by dispatch at all. It is one element long, and that one is
- * the knob added for the stability candidate: everything measured before it was pre-screened
- * through FSE'26 alone or solved offline on dumps.
+ * whose criterion is decidable by dispatch at all. It was one element long when it was
+ * first written — the knob added for the stability candidate — and grew to five when the
+ * four knobs both runners accepted were exposed on the RCAEval side.
+ *
+ * `logSignalMode` is the sixth, and it arrived by a different route than a workflow input:
+ * the RCAEval RUNNER accepted `--log-signal-mode` all along but parsed it against a
+ * hand-written two-member list, so four of the six members of `LogSignalMode` — including
+ * `all` — were silently replaced by `count`. The input could not be added until the
+ * vocabulary was the engine's, which is why the two changes travel together: a dispatch
+ * that names a mode the runner would discard is worse than no dispatch at all.
+ *
+ * It is also the member that exposes a second join this table was missing, which
+ * {@link AXIS_OF_OPTION} records: the two runners spell one engine axis twice.
  */
 const DISPATCHABLE_ON_BOTH: readonly string[] = [
+  'logSignalMode',
   'logWeight',
   'onsetShape',
   'rankNormalization',
@@ -377,18 +388,49 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
 ];
 
 /**
+ * The CLI option names that are two spellings of ONE engine axis.
+ *
+ * Rows here are keyed by `opts.<name>` — the name a runner ASSIGNS, which is the only name its
+ * own parser can be read for. Two runners may therefore spell one axis twice, and nothing joined
+ * them: `fse26-cli.ts` assigns `opts.logMode` for its `--log-mode` while `rcaeval-cli.ts` assigns
+ * `opts.logSignalMode` for its `--log-signal-mode`, and BOTH become the engine's single
+ * `logSignalMode` field (`fse26-engine-options.ts`: `logSignalMode: opts.logMode`).
+ *
+ * The consequence was structural rather than cosmetic. The intersection "knobs BOTH benchmarks can
+ * dispatch" is computed over ROWS, so an axis spelled twice could never appear in it: adding the
+ * golden input for the log mode would have left the intersection at five while the axis had in
+ * fact become decidable. That is the same defect this whole file exists for — a JOIN with no
+ * owner — one level up from the flag↔option join it was written to close.
+ *
+ * The alias is not invented here: `benchmarks/__tests__/fse26-engine-options.test.ts` records
+ * `{ logMode: 'logSignalMode' }` to explain why `opts.logMode` is accounted for, and both places
+ * now name the same pair. Recorded as an exact map, so a THIRD spelling has to be deliberate.
+ */
+const AXIS_OF_OPTION: Readonly<Record<string, string>> = {
+  logMode: 'logSignalMode',
+};
+
+/** The engine axis an option belongs to — itself, unless it is a second spelling of one. */
+function axisOf(option: string): string {
+  return AXIS_OF_OPTION[option] ?? option;
+}
+
+/**
  * The accepted ranking flags RCAEval cannot dispatch, as an exact set.
  *
- * 16 of the runner's 17 ranking flags are unreachable through the workflow, so a candidate
+ * 11 of the runner's 17 ranking flags are unreachable through the workflow, so a candidate
  * on any of them has an undecidable golden half unless an input is added first. That is not
  * a hypothetical consequence either: the temporal rejection carries `golden: 'unmeasured'`
  * for exactly this reason.
+ *
+ * `--log-signal-mode` LEFT this set when its workflow input was added. It is recorded rather
+ * than silently dropped, because the members of the set are the register's inventory of open
+ * axes and a set that shrinks without a note is a set nobody can audit.
  */
 const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   '--collapse-discount',
   '--collision-weight',
   '--fusion-ceiling',
-  '--log-signal-mode',
   '--no-suppress-idle-transients',
   '--no-suppress-near-zero-baseline-rise',
   '--prism-weight',
@@ -544,17 +586,35 @@ describe('the dispatch surface has one owner per knob', () => {
   });
 
   it('records exactly which knobs BOTH benchmarks can dispatch', () => {
-    const both = Object.entries(KNOBS)
-      .filter(([, knob]) => knob.fse26 !== null && knob.rcaeval !== null)
-      .map(([option]) => option)
+    // Asked of AXES, not of rows. A row is a spelling a runner assigns; an axis is the engine
+    // option it reaches. The log mode is the case that proves the difference: `logMode` and
+    // `logSignalMode` are two rows and one axis, and a row-wise intersection reported the axis as
+    // undispatchable on the golden half even once its input existed.
+    const rowsOn = (side: 'fse26' | 'rcaeval'): string[] =>
+      Object.entries(KNOBS)
+        .filter(([, knob]) => knob[side] !== null)
+        .map(([option]) => axisOf(option));
+    const both = [...new Set(Object.keys(KNOBS).map(axisOf))]
+      .filter((axis) => rowsOn('fse26').includes(axis) && rowsOn('rcaeval').includes(axis))
       .sort();
     expect(both).toEqual([...DISPATCHABLE_ON_BOTH].sort());
-    // The criterion is an AND over two benchmarks, so a single-knob intersection is the
-    // statement that its two halves have been decidable together for one axis only.
-    const fse26Only = Object.values(KNOBS).filter((k) => k.fse26 !== null).length;
-    const rcaevalOnly = Object.values(KNOBS).filter((k) => k.rcaeval !== null).length;
-    expect(fse26Only).toBeGreaterThan(both.length);
-    expect(rcaevalOnly).toBe(both.length);
+    // The criterion is an AND over two benchmarks, so this set is the statement of which axes
+    // have both halves. FSE'26 still reaches more axes than the golden half does, and the golden
+    // half reaches exactly the intersection — a golden side that could dispatch an axis the
+    // FSE'26 side could not would be a knob added without an owner.
+    const fse26Axes = new Set(rowsOn('fse26'));
+    const rcaevalAxes = new Set(rowsOn('rcaeval'));
+    expect(fse26Axes.size).toBeGreaterThan(both.length);
+    expect([...rcaevalAxes].sort()).toEqual([...both].sort());
+    // Non-vacuity for the join itself: the map must name a pair that BOTH tables actually hold,
+    // or it would be a comment wearing a data structure's clothes. Without this, an alias that
+    // named nothing would leave the intersection computed over rows and still pass.
+    expect(Object.keys(AXIS_OF_OPTION).length).toBeGreaterThan(0);
+    for (const [option, axis] of Object.entries(AXIS_OF_OPTION)) {
+      expect(option in KNOBS, `${option} must be a row`).toBe(true);
+      expect(axis in KNOBS, `${axis} must be a row`).toBe(true);
+      expect(option).not.toBe(axis);
+    }
   });
 
   it('reads the shipped weight from its OWNER, so a moved constant cannot leave a copy behind', () => {

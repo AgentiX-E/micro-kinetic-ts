@@ -70,6 +70,18 @@ const RCAEVAL_WORKFLOW_PATH = resolve(repoRoot, '.github/workflows/benchmark-rca
 const RUNNER_PATH = resolve(repoRoot, 'benchmarks/src/fse26-cli.ts');
 
 /**
+ * Where the log-signal vocabulary lives, which is now the union's own module.
+ *
+ * It was `fse26-cli.ts` (a local `LOG_MODE_ACCEPTED`) until the RCAEval parser was found to keep
+ * a second hand-written copy that had drifted — two of six members accepted, four replaced by
+ * `count` in silence. A vocabulary a compile-time union already owns needs one home, so the
+ * table moved beside `LogSignalMode`. This guard reads it WHERE IT IS; the same discipline the
+ * `RUNNER_PATH` note above records, because a guard that reads a file by path must be told when
+ * the file moves or it reports nothing.
+ */
+const VOCABULARY_PATH = resolve(repoRoot, 'packages/tree/src/pruning/ranking-signals.ts');
+
+/**
  * Read the `default:` of one `workflow_dispatch` input out of the raw YAML.
  *
  * Only the input block is parsed (the lines indented deeper than the input
@@ -108,12 +120,24 @@ function readRunnerDefault(source: string): string | undefined {
  * through the workflow — and silently, because the fallback produced a valid run
  * with a plausible number. Two diagnostics dispatched to compare the two modes
  * came back byte-identical.
+ *
+ * ## Why the anchor names the TREE package and not the runner
+ *
+ * It named `const LOG_MODE_ACCEPTED` inside `fse26-cli.ts` until the RCAEval parser was found
+ * to keep a SECOND hand-written copy of the same vocabulary — one that accepted two of the six
+ * members and replaced the other four with `count` in silence, so `all` was unexpressible on
+ * the golden half and had never been measured. Two copies are one too many for a vocabulary a
+ * compile-time union already owns, so `LOG_SIGNAL_MODES` now lives beside `LogSignalMode` in
+ * `packages/tree` and both runners consult it. The anchor moved with the owner; it was NOT
+ * loosened, and `expect(accepted.length).toBeGreaterThan(0)` below is what makes the move
+ * itself observable — a moved anchor that silently found nothing would have made these two
+ * assertions vacuous rather than failing.
  */
 function readAcceptedModes(source: string): string[] {
   // Anchored on the declaration: a bare name match also hits the identifier's
   // mention in the module's doc comment, and `[^{]*` then ran on to the first
   // brace in the file -- an `import { … }` -- capturing the wrong block.
-  const body = /const LOG_MODE_ACCEPTED[^{]*\{([^}]*)\}/.exec(source)?.[1];
+  const body = /const LOG_SIGNAL_MODES[^{]*\{([^}]*)\}/.exec(source)?.[1];
   if (body === undefined) return [];
   return [...body.matchAll(/(\w+):\s*true/g)].map((m) => m[1]!);
 }
@@ -468,6 +492,8 @@ const MEASURED_STABILITY_WEIGHTS: Record<
 describe('FSE26 reported configuration', () => {
   const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
   const runner = readFileSync(RUNNER_PATH, 'utf8');
+  // The vocabulary's own module: the union and the guard beside it, which both runners consult.
+  const vocabulary = readFileSync(VOCABULARY_PATH, 'utf8');
 
   it('keeps the workflow free of a hardcoded log-mode default', () => {
     // An empty default is the whole point: the runner owns the choice, so the
@@ -491,7 +517,7 @@ describe('FSE26 reported configuration', () => {
     // A measured mode that the CLI refuses is not merely unused: it is
     // UNDISPATCHABLE, and the fallback hides that by reporting another mode's
     // number. This is the assertion that would have caught `count` disappearing.
-    const accepted = readAcceptedModes(runner);
+    const accepted = readAcceptedModes(vocabulary);
     expect(accepted.length).toBeGreaterThan(0);
     for (const mode of Object.keys(MEASURED_MODES)) {
       expect(accepted, `measured mode ${mode} must be accepted by --log-mode`).toContain(mode);
@@ -499,7 +525,7 @@ describe('FSE26 reported configuration', () => {
   });
 
   it('accepts the mode it ships as the default', () => {
-    expect(readAcceptedModes(runner)).toContain(readRunnerDefault(runner));
+    expect(readAcceptedModes(vocabulary)).toContain(readRunnerDefault(runner));
   });
 });
 

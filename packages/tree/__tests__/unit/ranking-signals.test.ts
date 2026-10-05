@@ -20,6 +20,8 @@ import {
   computeTraceActivityScores,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   gatedRiseContribution,
+  isLogSignalMode,
+  LOG_SIGNAL_MODES,
   POOL_METRIC_PREFIX,
   rankNormalizeScores,
 } from '@agentix-e/micro-kinetic-tree';
@@ -1864,5 +1866,55 @@ describe('computeStabilityScores', () => {
     expect(computeStabilityScores(undefined, ids).size).toBe(0);
     expect(computeStabilityScores(new Map(), ids).size).toBe(0);
     expect(computeStabilityScores(dominant({ silent: undefined }), ids).size).toBe(0);
+  });
+});
+
+describe('the log-signal vocabulary has one owner, and it is the union', () => {
+  // A mode is a claim about WHICH lines are evidence, and the union is where the claim is
+  // stated. Before this guard lived beside it, the vocabulary was written twice by hand —
+  // once per runner — and the two copies disagreed: the FSE'26 parser accepted all six
+  // members while the RCAEval one accepted two and silently mapped the other four onto
+  // `count`. `run-rcaeval.ts` then wrote the two-member subset a THIRD time, in its own
+  // DI signature, so a widening in one place would not have compiled in the others.
+  //
+  // The guard is therefore asserted here against the union it guards, not against a copy
+  // of the list: `LOG_SIGNAL_MODES` is typed `Record<LogSignalMode, true>`, so adding a
+  // member to the union is a COMPILE error until the record names it, and the count below
+  // makes the same addition a TEST failure until the list is extended deliberately.
+  it('accepts every member of the union, and the record is exhaustive over it', () => {
+    const members = Object.keys(LOG_SIGNAL_MODES).sort();
+    expect(members).toEqual([
+      'all',
+      'count',
+      'logicHttp',
+      'logicHttpDominant',
+      'logicHttpJoint',
+      'novelty',
+    ]);
+    // One member, one spelling: the guard is case-sensitive, so `LOGICHTTP` is NOT a mode
+    // and a caller that passes it gets the published default rather than a silent match.
+    for (const mode of members) {
+      expect(isLogSignalMode(mode), mode).toBe(true);
+      expect(isLogSignalMode(mode.toUpperCase()), mode).toBe(false);
+    }
+  });
+
+  it('refuses everything that is not a member, including the shape of one', () => {
+    // Non-vacuity: the guard must reject far more than it accepts, and the near-misses are
+    // the ones a hand-written `||` chain gets wrong — a prefix, a suffix, and the empty
+    // string that a missing value leaves behind.
+    for (const value of ['', 'logi', 'logicHttpJointt', 'all ', 'COUNT', 'counts']) {
+      expect(isLogSignalMode(value), JSON.stringify(value)).toBe(false);
+    }
+  });
+
+  it('does not inherit from Object.prototype', () => {
+    // `hasOwnProperty.call` rather than `in`: a `Record` is an object, so `'constructor'`
+    // and `'toString'` are reachable through the prototype chain and `in` would accept
+    // them. This is the one arm where the guard's implementation, not its vocabulary, is
+    // the thing under test — and `toString` is a token a dispatch could really send.
+    expect(isLogSignalMode('toString')).toBe(false);
+    expect(isLogSignalMode('constructor')).toBe(false);
+    expect(isLogSignalMode('__proto__')).toBe(false);
   });
 });

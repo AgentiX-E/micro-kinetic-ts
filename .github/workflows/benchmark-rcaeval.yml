@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
         type: string
+      log_signal_mode:
+        description: "Log-signal scoring mode (empty = the runner default, which is the SHIPPED count, the mode every golden run so far was taken with). The vocabulary is the ENGINE's union: count = self-caused logic exceptions only, novelty = IDF-weighted, logicHttp = logic + framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP, logicHttpDominant = logic + concentration-gated framework HTTP, all = every ERROR/FATAL line. Added because the runner accepted --log-signal-mode all along but parsed it against a hand-written two-member pair, so four of the six members — `all` among them — were silently replaced by count: a dispatch asking for `all` ran `count` and printed a confident number, and the `NetworkPartition`/`errLines` cell could not be measured on this half at all"
+        required: false
+        default: ''
+        type: string
       temporal_weight:
         description: "Weight of the injection-anchored temporal prior (empty = the runner default, which is 0). The runner has accepted this flag all along and no dispatch could reach it — a pin whose replacement is unreachable is still a pin"
         required: false
@@ -167,6 +172,13 @@ jobs:
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
           fi
+          #   The MODE travels with the weight: a weight is a claim about which lines count, so
+          #   asking for one without being able to name the other measures half a term. Both are
+          #   passed only when the dispatch input is non-empty, so the runner's default stays the
+          #   single source of truth for the shipped configuration.
+          if [ -n "${{ inputs.log_signal_mode }}" ]; then
+            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
+          fi
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
           fi
@@ -217,6 +229,13 @@ jobs:
           # set out of each parser.
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          #   The MODE travels with the weight: a weight is a claim about which lines count, so
+          #   asking for one without being able to name the other measures half a term. Both are
+          #   passed only when the dispatch input is non-empty, so the runner's default stays the
+          #   single source of truth for the shipped configuration.
+          if [ -n "${{ inputs.log_signal_mode }}" ]; then
+            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
           fi
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
@@ -294,6 +313,13 @@ jobs:
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
           fi
+          #   The MODE travels with the weight: a weight is a claim about which lines count, so
+          #   asking for one without being able to name the other measures half a term. Both are
+          #   passed only when the dispatch input is non-empty, so the runner's default stays the
+          #   single source of truth for the shipped configuration.
+          if [ -n "${{ inputs.log_signal_mode }}" ]; then
+            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
+          fi
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
           fi
@@ -344,6 +370,13 @@ jobs:
           # set out of each parser.
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          #   The MODE travels with the weight: a weight is a claim about which lines count, so
+          #   asking for one without being able to name the other measures half a term. Both are
+          #   passed only when the dispatch input is non-empty, so the runner's default stays the
+          #   single source of truth for the shipped configuration.
+          if [ -n "${{ inputs.log_signal_mode }}" ]; then
+            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
           fi
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
@@ -421,6 +454,13 @@ jobs:
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
           fi
+          #   The MODE travels with the weight: a weight is a claim about which lines count, so
+          #   asking for one without being able to name the other measures half a term. Both are
+          #   passed only when the dispatch input is non-empty, so the runner's default stays the
+          #   single source of truth for the shipped configuration.
+          if [ -n "${{ inputs.log_signal_mode }}" ]; then
+            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
+          fi
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
           fi
@@ -473,6 +513,13 @@ jobs:
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
           fi
+          #   The MODE travels with the weight: a weight is a claim about which lines count, so
+          #   asking for one without being able to name the other measures half a term. Both are
+          #   passed only when the dispatch input is non-empty, so the runner's default stays the
+          #   single source of truth for the shipped configuration.
+          if [ -n "${{ inputs.log_signal_mode }}" ]; then
+            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
+          fi
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
           fi
@@ -524,6 +571,13 @@ jobs:
           # set out of each parser.
           if [ -n "${{ inputs.log_weight }}" ]; then
             RANKING_ARG+=(--log-weight "${{ inputs.log_weight }}")
+          fi
+          #   The MODE travels with the weight: a weight is a claim about which lines count, so
+          #   asking for one without being able to name the other measures half a term. Both are
+          #   passed only when the dispatch input is non-empty, so the runner's default stays the
+          #   single source of truth for the shipped configuration.
+          if [ -n "${{ inputs.log_signal_mode }}" ]; then
+            RANKING_ARG+=(--log-signal-mode "${{ inputs.log_signal_mode }}")
           fi
           if [ -n "${{ inputs.temporal_weight }}" ]; then
             RANKING_ARG+=(--temporal-weight "${{ inputs.temporal_weight }}")
