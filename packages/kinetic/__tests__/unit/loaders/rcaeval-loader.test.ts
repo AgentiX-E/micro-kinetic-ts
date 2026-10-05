@@ -2087,4 +2087,66 @@ describe('countFailedTraceEdges', () => {
       (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
     ).toEqual(['svc-a>svc-b', 'svc-b>svc-c']);
   });
+
+  // The four arms below were written for COVERAGE and are not decoration: iteration 43 added this
+  // derivation, its eight arms passed, and the KINETIC project's own coverage gate read
+  // `rcaeval-loader.ts` at **98.89 / 95** (uncovered `1263,1291-1296`) against **100 / 97.92** before
+  // it — while the acceptance recorded 100 / 99.44, which is the number the PREVIOUS commit's job
+  // printed. So the arms the fixtures did not reach are the reason a regression was invisible, and
+  // each test below names the arm it exists for.
+  it('orders the larger caller LAST, which is the arm the ascending fixture cannot reach', async () => {
+    // `sort` asks the comparator `(later, earlier)`, so a two-row array asks it ONCE, as
+    // `(row[1], row[0])`. The determinism test above inserts `svc-b` first and therefore fires only
+    // the `-1` arm. Inserting the smaller caller first fires `a.caller > b.caller`, and `1` is a
+    // different branch from `-1` — one that no amount of ascending input can exercise.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-z', 's1', 1100, '500'),
+      ...call('svc-b', 'svc-a', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-z', 'svc-b>svc-a']);
+  });
+
+  it('orders two callees of ONE caller in both directions', async () => {
+    // The `a.caller !== b.caller` test is false here, so the comparator falls through to the CALLEE
+    // arms — reachable only when one caller emitted two failing edges, which no single-call fixture
+    // can produce. Both directions are asserted because the two are separate branches.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-z', 's1', 1100, '500'),
+      ...call('svc-a', 'svc-m', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-m', 'svc-a>svc-z']);
+  });
+
+  it('orders the same two callees when the file lists them the OTHER way round', async () => {
+    // The third arm of the same fall-through, and it is a separate branch: inserting `svc-m` first
+    // makes `sort` ask `('svc-z' row, 'svc-m' row)`, so `a.callee > b.callee` answers instead of
+    // `a.callee < b.callee`. The OUTPUT is identical either way — that is the contract this arm
+    // proves, because a comparator whose two directions disagree would sort differently here.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-m', 's1', 1100, '500'),
+      ...call('svc-a', 'svc-z', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-m', 'svc-a>svc-z']);
+  });
+
+  it('returns what it accumulated when the READ fails, rather than throwing', async () => {
+    // A real input, not a mock: `existsSync` is true for a DIRECTORY, so the guard passes and the
+    // read stream then fails (EISDIR) inside the `try`. A caller that passes a directory is a
+    // plausible mistake, and the contract — stated where the `catch {}` is — is that the function
+    // returns what it accumulated. `[]` is what it accumulated here, and the point of the arm is
+    // that the failure is SWALLOWED rather than propagated out of a benchmark case's load.
+    await expect(countFailedTraceEdges(tempDir, 1000)).resolves.toEqual([]);
+  });
 });
