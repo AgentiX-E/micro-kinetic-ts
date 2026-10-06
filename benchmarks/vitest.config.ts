@@ -82,6 +82,14 @@ export default defineConfig({
         // requires. `__tests__/coverage-scope.test.ts` diffs this list against the modules the
         // tests import, in both directions.
         'src/rcaeval-engine-options.ts',
+        // Added with the modules: the ablation runner's engine arguments and the configuration line its
+        // artifact carries, extracted for the reason the two above were — the runner executes at import
+        // time, so the mapping from the study's FLAGS to the run's WEIGHTS was reachable by nothing, and
+        // the artifact it produced named twelve booleans and no weight at all. `reported-config.ts` holds
+        // the fields both engine artifacts are permitted to omit, so the two cannot drift apart in what
+        // they are allowed to leave out.
+        'src/ablation-engine-options.ts',
+        'src/reported-config.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

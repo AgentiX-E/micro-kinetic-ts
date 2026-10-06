@@ -56,11 +56,19 @@ import {
 import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
 import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 import {
-  NON_ENGINE_OPTION_KEYS,
-  UNREPORTED_BY_RCAEVAL,
   buildRCAEvalEngineOptions,
   formatSignalLine,
+  NON_ENGINE_OPTION_KEYS,
 } from '../src/rcaeval-engine-options.js';
+import { UNREPORTED_BY_ENGINE_RUNNERS } from '../src/reported-config.js';
+// The engine's interfaces are read by a SHARED helper: the ablation artifact is held to the same two
+// constructor arguments, and two readers of one interface would be two answers to the same question.
+import {
+  namedOn,
+  PRUNER_OPTION_MEMBERS,
+  PRUNER_PATH,
+  TOPOLOGY_MEMBERS,
+} from './helpers/engine-interfaces.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '../..');
@@ -75,47 +83,6 @@ const RUNNER_PATH = resolve(REPO_ROOT, 'benchmarks/src/run-rcaeval.ts');
  * and a swap to either alone would stop checking half of that.
  */
 const CLI_PATH = resolve(REPO_ROOT, 'benchmarks/src/rcaeval-cli.ts');
-const PRUNER_PATH = resolve(REPO_ROOT, 'packages/tree/src/pruning/pruner.ts');
-/** Where the engine declares the SECOND constructor argument's fields. */
-const TOPOLOGY_PATH = resolve(REPO_ROOT, 'packages/tree/src/causal/topology-fault-graph.ts');
-/** Where the engine declares the fields `TreePrunerOptions` INHERITS. */
-const CORE_FAULTS_PATH = resolve(REPO_ROOT, 'packages/core/src/types/faults.ts');
-
-/**
- * The members of an interface, read from the source that declares it.
- *
- * `extends` is followed by the caller rather than ignored: `TreePrunerOptions extends
- * RCAEngineOptions`, and four of the fields the pruner fills come from the base — a reader that stopped
- * at the derived interface would report those four as foreign.
- *
- * @param path - The file that declares the interface.
- * @param name - The interface's name.
- * @param base - The base interface's members, when it has one.
- * @returns The members' names, own and inherited.
- */
-function interfaceMembers(path: string, name: string, base: readonly string[] = []): string[] {
-  const text = readFileSync(path, 'utf8');
-  const m = new RegExp(
-    `export interface ${name}\\s*(?:extends\\s+([A-Za-z]+))?\\s*\\{([\\s\\S]*?)\\n\\}`,
-  ).exec(text);
-  expect(m, `${name} is declared in ${path}`).not.toBeNull();
-  const own = [
-    ...m![2]!.matchAll(/^\s{2}(?:readonly\s+)?([A-Za-z][A-Za-z0-9]*)\??:\s*[^;]+;/gm),
-  ].map((mm) => mm[1]!);
-  expect(own.length, `${name} has members`).toBeGreaterThan(0);
-  if (m![1] !== undefined) {
-    // The base is named by the declaration, so the caller cannot get it wrong by memory.
-    return [...own, ...(m![1] === 'RCAEngineOptions' ? base : [])];
-  }
-  return own;
-}
-
-const PRUNER_OPTION_MEMBERS = interfaceMembers(
-  PRUNER_PATH,
-  'TreePrunerOptions',
-  interfaceMembers(CORE_FAULTS_PATH, 'RCAEngineOptions'),
-);
-const TOPOLOGY_MEMBERS = interfaceMembers(TOPOLOGY_PATH, 'TopologyFaultGraphConfig');
 
 /**
  * Drop comments before matching.
@@ -130,10 +97,13 @@ function code(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 }
 
-/** The `name=` tokens a line carries, which is what the artifact actually states. */
-function namedOn(line: string): string[] {
-  return [...new Set([...line.matchAll(/(?:^|\s)([A-Za-z][A-Za-z0-9]*)=/g)].map((m) => m[1]!))];
-}
+/**
+ * The members of an interface, read from the source that declares it.
+ *
+ * MOVED to `./helpers/engine-interfaces.js`. The ablation artifact is held to the same two constructor
+ * arguments, and a reader per file would be two answers to one question — which is the defect the shared
+ * helper exists to avoid.
+ */
 
 const shipped = parseRCAEvalArgs([]);
 const shippedEngine = buildRCAEvalEngineOptions(shipped);
@@ -342,7 +312,7 @@ describe('the RCAEval configuration line carries the configuration that produced
     // omitted only while its shipped value is neutral AND the omission is named with a reason —
     // otherwise two different shipped configurations can render the same line.
     const named = new Set(namedOn(formatSignalLine(shipped)));
-    const exempt = new Set(Object.keys(UNREPORTED_BY_RCAEVAL));
+    const exempt = new Set(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS));
     // The partition, restricted to the REPORTED set: the line names options the report has never
     // heard of (it is the engine's whole option surface), so the comparison is over the fields the
     // report requires rather than over everything the line prints.
@@ -359,10 +329,10 @@ describe('the RCAEval configuration line carries the configuration that produced
     }
     // Every exemption is stated rather than implied, and the key set is exact so a NEW exemption has
     // to be added deliberately.
-    for (const [field, reason] of Object.entries(UNREPORTED_BY_RCAEVAL)) {
+    for (const [field, reason] of Object.entries(UNREPORTED_BY_ENGINE_RUNNERS)) {
       expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
     }
-    expect(Object.keys(UNREPORTED_BY_RCAEVAL).sort()).toEqual([
+    expect(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS).sort()).toEqual([
       'dropMetrics',
       'failedEdgeMinRecords',
       'failedEdgeMode',

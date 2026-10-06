@@ -676,6 +676,20 @@ export const DEFAULT_TEMPORAL_WEIGHT = 0.0;
  */
 export const DEFAULT_LOG_WEIGHT = 1.0;
 
+/**
+ * The log-signal mode the engine ships when the caller names none.
+ *
+ * The same shape of second owner {@link DEFAULT_LOG_WEIGHT} was extracted for, one option over: this
+ * value was the bare literal `'count'` here, and a runner that reads the option (the RCAEval half needs a
+ * fallback for a malformed mode, so it must state the shipped value somewhere) held its own `'count'`
+ * beside it with nothing to compare the two against. Naming it once means a caller cannot describe a
+ * configuration the engine does not ship — which is the same guarantee every other shipped default has.
+ *
+ * The two callers that need it are `DEFAULT_RCAEVAL_LOG_SIGNAL_MODE` (the golden half's fallback) and the
+ * ablation runner's configuration line, whose artifact names the mode this run used.
+ */
+export const DEFAULT_LOG_SIGNAL_MODE: LogSignalMode = 'count';
+
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
   decayAlpha: 0.8,
@@ -689,7 +703,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   collisionWeight: 0.0,
   topoWeight: 0.0,
   logWeight: DEFAULT_LOG_WEIGHT,
-  logSignalMode: 'count',
+  logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: 0.0,
   traceWeight: 0.0,
   prismWeight: 0.0,

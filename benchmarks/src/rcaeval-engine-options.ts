@@ -105,33 +105,12 @@ export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
 ];
 
 /**
- * The fields `REPORTED_CONFIG_FIELDS` requires that an RCAEval artifact may omit, each with its
- * reason.
- *
- * The FSE'26 half prints `failedEdge*` only when the weight is non-zero and never prints the three
- * load-time/ablation switches, because those are properties of a pipeline this runner does not
- * have: `dropMetrics` filters the case corpus at LOAD time, and the rise ceiling and fleet baseline
- * are TOPOLOGY-config options the RCAEval construction site never passes. Each of the six therefore
- * holds its neutral value for every RCAEval run, which is what makes the omission safe rather than
- * convenient.
- */
-export const UNREPORTED_BY_RCAEVAL: Readonly<Record<string, string>> = {
-  dropMetrics: 'a load-time input ablation; this runner has no loader that can apply it',
-  metricRiseCeiling: 'a topology-config option; the RCAEval construction site never passes it',
-  metricFleetBaseline: 'a topology-config option; the RCAEval construction site never passes it',
-  failedEdgeWeight:
-    'ships at 0 and is never forwarded by this runner, so the term is off for every RCAEval run',
-  failedEdgeMode: 'meaningless without a weight to aggregate; ships at `sum` and is not forwarded',
-  failedEdgeMinRecords:
-    'meaningless without a weight to threshold; ships at 1 and is not forwarded',
-};
-
-/**
  * Build BOTH of the engine's constructor arguments from the parsed options.
  *
  * The two are returned together rather than assembled where the engine is built, because that is what
  * makes them one list: the runner spreads nothing by hand, so a value cannot be present in one argument
- * and absent from the other.
+ * and absent from the other. The fields this artifact is permitted to omit are not listed here — they are
+ * shared with the ablation runner's artifact and live in `reported-config.ts`.
  *
  * @param opts - The parsed command-line options.
  * @returns `signals` (the first constructor argument) and `topology` (the second).

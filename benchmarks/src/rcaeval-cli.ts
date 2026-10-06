@@ -48,6 +48,7 @@ import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -68,8 +69,14 @@ import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
  * `count` gates on self-caused logic exceptions only, which is the mode the RCAEval suites
  * have been run with all along — so it is the published default, and the value a dispatch
  * gets when it names something that is not a mode.
+ *
+ * Read from {@link DEFAULT_LOG_SIGNAL_MODE} rather than restated: this runner needs the value in
+ * two places (the default for a bare dispatch, and the fallback for a mode the guard rejects), so
+ * a local literal here would be a second owner of a value the ENGINE already ships — and the two
+ * would agree until the day they did not, which is the failure mode that once published a headline
+ * 24.2pp below the best-measured one.
  */
-export const DEFAULT_RCAEVAL_LOG_SIGNAL_MODE: LogSignalMode = 'count';
+export const DEFAULT_RCAEVAL_LOG_SIGNAL_MODE: LogSignalMode = DEFAULT_LOG_SIGNAL_MODE;
 
 /**
  * Every option the RCAEval runner reads off its command line.

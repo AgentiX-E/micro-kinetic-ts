@@ -45,6 +45,11 @@ import { WeightCalibrator } from '../../packages/kinetic/src/signals/weight-cali
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+import {
+  buildAblationEngineOptions,
+  formatAblationConfigLine,
+  type AblationFeatureFlags,
+} from './ablation-engine-options.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
@@ -57,32 +62,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Feature Configuration ─────────────────────────────────
 
-interface FeatureFlags {
-  /** Collision tree aggregator with Boltzmann Q(f,f). */
-  collisionAggregation: boolean;
-  /** Trace topology augmentation. */
-  traceAugmentation: boolean;
-  /** Online weight calibration (self-evolving). */
-  selfLearning: boolean;
-  /** Log signal: reward post-injection ERROR/FATAL volume (logWeight). */
-  logSignal: boolean;
-  /** Topological-source signal: reward no-anomalous-parent nodes (topoWeight). */
-  topoSignal: boolean;
-  /** Collision-energy signal: penalise upstream-inherited energy (collisionWeight). */
-  collisionSignal: boolean;
-  /** Direction-aware deviation: discount the DROP component (collapseDiscount). */
-  collapseDiscount: boolean;
-  /** Metric-direction signal: reward source RISE, penalise symptom COLLAPSE (riseWeight). */
-  riseSignal: boolean;
-  /** Trace span-activity rise signal: reward the service whose spans rise post-injection. */
-  traceSignal: boolean;
-  /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
-  rankNormalization: boolean;
-  /** Extend the transient guard to idle-start transients (near-zero-baseline latency spike). */
-  suppressIdleTransients: boolean;
-  /** PRISM graph-free signal: reward the node anomalous in BOTH internal and external channels. */
-  prismSignal: boolean;
-}
+/**
+ * The study's feature flags.
+ *
+ * Moved to `ablation-engine-options.ts` with the mapping they drive, because the mapping is what the
+ * artifact has to state and it lived only here — in a file that calls `main()` at import time and is
+ * therefore importable by nothing.
+ */
+type FeatureFlags = AblationFeatureFlags;
 
 interface AblationRun {
   flags: FeatureFlags;
@@ -127,7 +114,11 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
       suppressIdleTransients: false,
       prismSignal: false,
     },
-    label: 'BASELINE (all OFF)',
+    // Was `BASELINE (all OFF)`, which asserted a configuration this run does not have: the four terms
+    // that dominate the shipped ranking (`latWeight`, `latMinRise`, `poolMetricPenaltyWeight`,
+    // `stabilityWeight`) are ON in it, inherited from the engine's defaults. The label now claims what it
+    // can support — the FLAGS are off — and the configuration line below states the rest.
+    label: 'BASELINE (flags OFF)',
   },
   // Individual features
   {
@@ -834,24 +825,11 @@ async function main(): Promise<void> {
   function buildContainer(flags: FeatureFlags, prismWeightOverride?: number): Container {
     const c = new Container();
     c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
-    c.register(DI_TOKENS.RCA_ENGINE, () => {
-      return new TreePruner(
-        {
-          enableCollisionAggregation: flags.collisionAggregation,
-          collisionWeight: flags.collisionSignal ? 1.0 : 0.0,
-          topoWeight: flags.topoSignal ? 1.0 : 0.0,
-          logWeight: flags.logSignal ? 1.0 : 0.0,
-          riseWeight: flags.riseSignal ? 1.0 : 0.0,
-          traceWeight: flags.traceSignal ? 1.0 : 0.0,
-          prismWeight: prismWeightOverride ?? (flags.prismSignal ? 1.0 : 0.0),
-        },
-        {
-          collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
-          rankNormalization: flags.rankNormalization,
-          suppressIdleTransients: flags.suppressIdleTransients,
-        },
-      );
-    });
+    // Both arguments come from the module that also renders the line the artifact carries, so the study's
+    // configuration and its record cannot disagree. The hand-written literals that stood here named only
+    // the seven fields the flags drive, which is why six shipped terms ran unstated.
+    const engine = buildAblationEngineOptions(flags, prismWeightOverride);
+    c.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner(engine.signals, engine.topology));
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
     return c;
   }
@@ -958,6 +936,9 @@ async function main(): Promise<void> {
     console.log(`\n${'═'.repeat(80)}`);
     console.log('PRISM Weight Sweep — zero-regression frontier');
     console.log(`Weights: ${PRISM_SWEEP_WEIGHTS.join(', ')}`);
+    // Everything EXCEPT the swept value, so the sweep's cells are as attributable as the ablation's rows:
+    // `Weights:` above names the values this one is swept over, and the line names the rest.
+    console.log(`Base config (prismWeight swept): ${formatAblationConfigLine(PRISM_SWEEP_FLAGS)}`);
     console.log('═'.repeat(80));
 
     // Per-cell accumulator: key → { key, cases, accuracy[weight index] }.
@@ -1109,6 +1090,10 @@ async function main(): Promise<void> {
       console.log(`\n${'─'.repeat(60)}`);
       console.log(`Running: ${config.label}`);
       console.log(`Flags: ${JSON.stringify(config.flags)}`);
+      // The flags are the study's inputs; this is the configuration they produce, in the same shape the
+      // golden half's artifact carries. Without it the row cannot be attributed: the artifact named twelve
+      // booleans and no weight at all.
+      console.log(formatAblationConfigLine(config.flags));
       console.log(`${'─'.repeat(60)}`);
 
       console.log(`  ${systemName}: ${bundle.cases.length} cases`);
