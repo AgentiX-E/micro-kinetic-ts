@@ -171,6 +171,108 @@ export function summarizeSplitCapability(
 }
 
 /**
+ * The stratum key a case directory implies, in the SAME format the loader builds (`<stem>:<RE n>:<fault>`).
+ *
+ * ## Why a path is enough, and why the format must match
+ *
+ * The question this answers — does the DATASET contain a stratum with fewer cases than a held-out split needs
+ * — is about 735 case directories, and loading them to count is what the corpus cap exists to avoid. The
+ * directory name carries all three parts (`re1ob_cartservice_cpu_1`), so the walk is a `readdir` and no file
+ * is opened.
+ *
+ * Matching the loader's format is not tidiness: the loader builds `` `${benchmark}:${RE n}:${fault}` `` from
+ * the case's own JSON, and a path-derived key in a SECOND format would make the dataset's numbers and the
+ * corpus's numbers incomparable while looking like they belong to the same table. Because the two derivations
+ * can disagree, the runner cross-checks them on the cases it does load — a hypothesis about a naming scheme
+ * that the run tests against the population it can see.
+ *
+ * The fault is the token BEFORE the trailing index, not a fixed position: a service name containing
+ * underscores (`re1ob_frontend_service_cpu_1`) would otherwise contribute to the fault and invent a stratum
+ * the dataset does not have.
+ *
+ * @param dirPath - A case directory path.
+ * @returns `<stem>:<RE n>:<fault>`, or `unknown:unknown:unknown` when no segment matches the scheme.
+ */
+export function deriveStratumFromCaseDir(dirPath: string): string {
+  const segments = dirPath.replace(/\\/g, '/').split('/');
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const segment = segments[i]!.toLowerCase();
+    const m = /^(re([123])(?:ob|ss|tt))_(.+)$/.exec(segment);
+    if (!m) continue;
+    const stem = m[1]!;
+    const suite = `RE${m[2]}`;
+    const parts = m[3]!.split('_');
+    const index = parts[parts.length - 1]!;
+    // A trailing numeric index is part of the scheme; without one the fault cannot be located, and a guessed
+    // fault would be a stratum that does not exist.
+    const fault = /^\d+$/.test(index) && parts.length >= 2 ? parts[parts.length - 2]! : 'unknown';
+    return `${stem}:${suite}:${fault}`;
+  }
+  return 'unknown:unknown:unknown';
+}
+
+/**
+ * The DATASET's strata, counted from its case directories.
+ *
+ * The corpus's own count (see {@link summarizeSplitCapability}) says how many of the SAMPLED strata are too
+ * small; this says how many the dataset has, which is the number that decides whether a bigger cap could
+ * help. A stratum holding fewer than the boundary's cases in the whole dataset can never reach both held-out
+ * splits at any cap — so a reader who only had the corpus's count could spend an iteration raising a cap that
+ * cannot fix anything.
+ *
+ * @param dirs - The dataset's case directories.
+ * @param ratios - The split ratios the boundary is computed for.
+ * @returns The total, the stratum count, the boundary, and the strata below it in ascending size order.
+ */
+export function summarizeDatasetStrata(
+  dirs: readonly string[],
+  ratios: SplitRatios,
+): {
+  readonly total: number;
+  readonly strata: number;
+  readonly minimum: number;
+  readonly belowMinimum: ReadonlyArray<{ readonly stratum: string; readonly size: number }>;
+} {
+  const sizes = new Map<string, number>();
+  for (const dir of dirs) {
+    const key = deriveStratumFromCaseDir(dir);
+    sizes.set(key, (sizes.get(key) ?? 0) + 1);
+  }
+  const minimum = minimumStratumSizeForHeldOutCoverage(ratios);
+  const belowMinimum = [...sizes.entries()]
+    .filter(([, size]) => minimum === -1 || size < minimum)
+    .map(([stratum, size]) => ({ stratum, size }))
+    .sort((a, b) => a.size - b.size || a.stratum.localeCompare(b.stratum));
+  return { total: dirs.length, strata: sizes.size, minimum, belowMinimum };
+}
+
+/**
+ * Render the dataset summary as the line an artifact carries.
+ *
+ * @param summary - The summary from {@link summarizeDatasetStrata}.
+ * @param ratios - The ratios it was computed for.
+ * @param exampleLimit - How many of the smallest strata to name.
+ * @returns One line, without a trailing newline.
+ */
+export function formatDatasetStrata(
+  summary: ReturnType<typeof summarizeDatasetStrata>,
+  ratios: SplitRatios,
+  exampleLimit = 6,
+): string {
+  const head =
+    `dataset: ${summary.total} cases in ${summary.strata} ` +
+    `${summary.strata === 1 ? 'stratum' : 'strata'} | ${summary.belowMinimum.length} below the size both ` +
+    `held-out splits need (${summary.minimum}) | full coverage would cost ` +
+    `${requiredCasesForHeldOutCoverage(summary.strata, ratios)} cases`;
+  if (summary.belowMinimum.length === 0) return head;
+  const named = summary.belowMinimum
+    .slice(0, exampleLimit)
+    .map((s) => `${s.stratum}(${s.size})`)
+    .join(' ');
+  return `${head} | smallest: ${named}` + (summary.belowMinimum.length > exampleLimit ? ' …' : '');
+}
+
+/**
  * How the corpus is drawn when the dataset is larger than the cap, named so the artifact can state it.
  *
  * Today's objective preserves the dataset's `system:suite` shares, which is why RE3 is 12.1% of the corpus.

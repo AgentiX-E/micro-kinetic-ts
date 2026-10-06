@@ -52,10 +52,13 @@ import {
 } from '../../packages/optimize/src/index.js';
 import {
   CORPUS_SAMPLING_OBJECTIVE,
+  deriveStratumFromCaseDir,
+  formatDatasetStrata,
   formatPopulation,
   formatSplitCapability,
   formatSplitCapacity,
   strataCovered,
+  summarizeDatasetStrata,
   summarizePopulation,
   summarizeSplitCapability,
   type PopulationCase,
@@ -168,8 +171,16 @@ const SUITE_IDS = { RE1: 'rcaeval-re1', RE2: 'rcaeval-re2', RE3: 'rcaeval-re3' }
 
 interface LoadedCase {
   benchCase: BenchmarkCase;
-  /** Stratum key = system + suite + fault type. */
+  /** Stratum key = `<stem>:<RE n>:<fault>`, built from the case's own JSON. */
   stratum: string;
+  /**
+   * The directory this case was read from.
+   *
+   * Kept so the dataset-side stratum — derived from PATHS, before anything is loaded — can be cross-checked
+   * against the loader-side key for every case that IS loaded. The path derivation is a hypothesis about a
+   * naming scheme; this is how the run tests it instead of trusting it.
+   */
+  dir: string;
 }
 
 async function loadAllCases(
@@ -225,6 +236,7 @@ async function loadAllCases(
       const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteId);
       out.push({
         benchCase,
+        dir,
         stratum: `${rawCase.benchmark}:${suite}:${rawCase.fault}`,
       });
       // `rawCase` goes out of scope here; its (large) trace array is eligible
@@ -304,8 +316,38 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
+  // THE DATASET, read from case DIRECTORY NAMES before anything is loaded. This is the population the cap
+  // samples from, and its stratum sizes are what decide whether a larger cap could give the held-out splits
+  // full coverage — a stratum with fewer than the boundary's cases in the whole dataset cannot be covered at
+  // any cap, so the cap is not always the lever. `discoverCaseDirs` opens no file.
+  const allCaseDirs = discoverCaseDirs(opts.dataDir);
+  const SPLIT_RATIOS_FOR_DATASET = { train: 0.7, val: 0.15, test: 0.15 } as const;
+  console.log(
+    formatDatasetStrata(
+      summarizeDatasetStrata(allCaseDirs, SPLIT_RATIOS_FOR_DATASET),
+      SPLIT_RATIOS_FOR_DATASET,
+    ),
+  );
+
   const loaded = await loadAllCases(opts.dataDir, opts.maxCases, opts.seed);
   console.log(`loaded ${loaded.length} cases`);
+
+  // Does the path derivation agree with what the loader read? Reported as a COUNT rather than assumed, and
+  // loud when it is not zero: the line above describes the dataset by paths alone, and a naming scheme it
+  // cannot parse would make that line wrong while looking authoritative.
+  const disagreements = loaded.filter((l) => deriveStratumFromCaseDir(l.dir) !== l.stratum);
+  if (disagreements.length > 0) {
+    console.log(
+      `WARNING: the path-derived stratum disagrees with the loaded key on ${disagreements.length} of ` +
+        `${loaded.length} cases (e.g. ${disagreements[0]!.dir} -> ` +
+        `${deriveStratumFromCaseDir(disagreements[0]!.dir)} vs ${disagreements[0]!.stratum}) — the ` +
+        `dataset line above is measured with the same derivation and is therefore unreliable`,
+    );
+  } else {
+    console.log(
+      `path-derived stratum agrees with the loaded key on ${loaded.length}/${loaded.length} loaded cases`,
+    );
+  }
 
   if (loaded.length === 0) {
     console.error('No cases loaded — aborting.');
@@ -339,7 +381,7 @@ async function main(): Promise<void> {
   // The split's own capability, measured against the corpus: the coverage the held-out numbers are quoted
   // over depends on how many strata are large enough to appear in BOTH of them, and that is a quantity the
   // corpus and the ratios decide together.
-  const SPLIT_RATIOS = { train: 0.7, val: 0.15, test: 0.15 } as const;
+  const SPLIT_RATIOS = SPLIT_RATIOS_FOR_DATASET;
   const capability = summarizeSplitCapability(corpus, SPLIT_RATIOS);
   console.log(formatSplitCapability(capability, SPLIT_RATIOS));
   // WHETHER ANY SAMPLING OBJECTIVE COULD FIX THE COVERAGE UNDER THIS RUN'S CAP, and which objective this run

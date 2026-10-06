@@ -27,11 +27,14 @@ import { describe, expect, it } from 'vitest';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 import {
   CORPUS_SAMPLING_OBJECTIVE,
+  deriveStratumFromCaseDir,
+  formatDatasetStrata,
   formatPopulation,
   formatSplitCapability,
   formatSplitCapacity,
   parseStratum,
   strataCovered,
+  summarizeDatasetStrata,
   summarizePopulation,
   summarizeSplitCapability,
   type PopulationCase,
@@ -314,5 +317,80 @@ describe('whether a SAMPLING OBJECTIVE could fix the coverage at all', () => {
     // (equal-per-stratum) is named as NOT implemented rather than implied to be available.
     expect(CORPUS_SAMPLING_OBJECTIVE).toContain('proportional');
     expect(CORPUS_SAMPLING_OBJECTIVE).toContain('system:suite');
+  });
+});
+
+describe('the DATASET the corpus is sampled from', () => {
+  const RATIOS = { train: 0.7, val: 0.15, test: 0.15 } as const;
+
+  it('derives the loaded stratum format from a case directory name', () => {
+    // The key must be the SAME format the loader builds (`<stem>:<RE n>:<fault>`), because the whole point of
+    // deriving it from a path is to describe the dataset WITHOUT loading it — and a second format would make
+    // the dataset's numbers and the corpus's numbers incomparable. The names below are the real shape, taken
+    // from a case directory: `re1ob_cartservice_cpu_1`.
+    expect(deriveStratumFromCaseDir('/data/RCAEval-json/re1ob_cartservice_cpu_1')).toBe(
+      're1ob:RE1:cpu',
+    );
+    expect(deriveStratumFromCaseDir('/data/RCAEval-json/re2ss_orders_mem_3')).toBe('re2ss:RE2:mem');
+    expect(deriveStratumFromCaseDir('/data/RCAEval-json/re3tt_ticket_disk_2')).toBe(
+      're3tt:RE3:disk',
+    );
+  });
+
+  it('takes the fault from the token before the index, not from a fixed position', () => {
+    // A service name containing underscores must not leak into the fault: the token before the trailing
+    // numeric index is the fault, and the last token is the index. Slicing at a fixed position gives
+    // `service_cpu` here, which would invent a stratum the dataset does not have.
+    expect(deriveStratumFromCaseDir('/x/re1ob_frontend_service_cpu_1')).toBe('re1ob:RE1:cpu');
+    // And a name that does not fit the scheme is NAMED rather than guessed.
+    expect(deriveStratumFromCaseDir('/x/some_random_dir')).toBe('unknown:unknown:unknown');
+    expect(deriveStratumFromCaseDir('/x/re1ob_cartservice_cpu_last')).toBe('re1ob:RE1:unknown');
+  });
+
+  it('reads the dataset by WALKING paths, and counts what it cannot fit', () => {
+    // The decisive number: how many strata the DATASET itself has below the boundary. A stratum with fewer
+    // than 6 cases in the whole dataset can never reach both held-out splits at ANY cap, which is what makes
+    // this different from — and stronger than — the corpus's own count.
+    const dirs = [
+      ...Array.from({ length: 9 }, (_, i) => `/d/re1ob_svc_cpu_${i}`),
+      ...Array.from({ length: 6 }, (_, i) => `/d/re1ss_orders_mem_${i}`),
+      `/d/re3tt_ticket_disk_1`,
+      `/d/not_a_case`,
+    ];
+    const s = summarizeDatasetStrata(dirs, RATIOS);
+    expect(s.total).toBe(17);
+    expect(s.strata).toBe(4);
+    expect(s.minimum).toBe(6);
+    // `re1ob:RE1:cpu` (9) and `re1ss:RE2:mem` (6) meet the boundary; `re3tt:RE3:disk` (1) and
+    // `unknown:unknown:unknown` (1) do not.
+    expect(s.belowMinimum.map((x) => x.stratum)).toEqual([
+      're3tt:RE3:disk',
+      'unknown:unknown:unknown',
+    ]);
+    expect(s.belowMinimum.map((x) => x.size)).toEqual([1, 1]);
+  });
+
+  it('reports the dataset line so the cap-or-key decision can be read rather than guessed', () => {
+    // The three numbers the decision needs: the dataset's stratum count, how many of THOSE are below the
+    // boundary, and the case count full coverage would cost across them.
+    const dirs = [
+      ...Array.from({ length: 40 }, (_, i) => `/d/re1ob_svc_cpu_${i}`),
+      `/d/re3tt_ticket_f2_1`,
+    ];
+    const line = formatDatasetStrata(summarizeDatasetStrata(dirs, RATIOS), RATIOS);
+    expect(line).toContain('dataset: 41 cases in 2 strata');
+    expect(line).toContain('1 below the size both held-out splits need (6)');
+    expect(line).toContain('full coverage would cost 12 cases');
+    expect(line).toContain('re3tt:RE3:f2(1)');
+    // And when nothing is below, it says that instead of listing nothing.
+    const allBig = formatDatasetStrata(
+      summarizeDatasetStrata(
+        Array.from({ length: 12 }, (_, i) => `/d/re1ob_svc_cpu_${i}`),
+        RATIOS,
+      ),
+      RATIOS,
+    );
+    expect(allBig).toContain('0 below the size');
+    expect(allBig).not.toContain('smallest:');
   });
 });
