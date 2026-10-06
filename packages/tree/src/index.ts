@@ -57,6 +57,11 @@ export { rankNormalizeScores } from './causal/topology-fault-graph.js';
 // below-threshold vector reads as a rescaled one and the reader inherits the engine's ORDER while
 // silently inventing its gaps — the defect `docs/fse26-cv-screen.md` §"The cause, and the fix" records.
 export { ANOMALY_NORMALIZE_NODE_THRESHOLD } from './causal/topology-fault-graph.js';
+// The SHIPPED value of the axis that decides WHICH rescale a large topology gets. Exported so a consumer
+// does not have to state it: until it existed, the golden and FSE'26 parsers each carried their own `true`
+// while the engine's default was `false`, so three owners of one shipped value could drift — and a caller
+// who passed no topology argument ran a configuration the published numbers were not measured under.
+export { DEFAULT_RANK_NORMALIZATION } from './causal/topology-fault-graph.js';
 // The topology config is part of the public surface: `TreePruner` takes a
 // `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a
 // consumer that wants to name the object it builds — rather than infer it — needs

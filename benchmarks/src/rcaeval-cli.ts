@@ -59,7 +59,7 @@ import {
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 import type { LogSignalMode } from '../../packages/tree/src/index.js';
-import { isLogSignalMode } from '../../packages/tree/src/index.js';
+import { DEFAULT_RANK_NORMALIZATION, isLogSignalMode } from '../../packages/tree/src/index.js';
 
 import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
 
@@ -296,7 +296,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // ~0. Monotonic, so it is a no-op on small graphs (<20 nodes) and whenever
     // traceWeight is 0; it only materialises when a downstream causal signal
     // (trace/topo) can exploit the compressed anomaly gap.
-    rankNormalization: true,
+    // Read from the engine's owner rather than restated: this parser and the FSE'26 one both carried a
+    // literal `true` while the engine's own default was `false`, which is three owners of one shipped value.
+    rankNormalization: DEFAULT_RANK_NORMALIZATION,
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
     fusionCeiling: '',

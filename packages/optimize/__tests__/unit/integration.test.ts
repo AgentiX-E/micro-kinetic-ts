@@ -238,11 +238,11 @@ describe('the optimizer mapping states what it does NOT set', () => {
     ]);
   });
 
-  it('records that the engine\u2019s second argument is never passed, and that it differs from the golden', () => {
-    // `TreePruner(options, topologyConfig)`: this mapping supplies ONE argument, so the fault graph uses its
-    // own defaults, where `rankNormalization` is `false` — while the golden sets it TRUE. The search and the
-    // published numbers are therefore different configurations in a term this repository measured and keeps
-    // ON, and nothing in either artifact said so until this line existed.
+  it('records that the engine\u2019s second argument is never passed, and that the base is the shipped one', () => {
+    // `TreePruner(options, topologyConfig)`: this mapping supplies ONE argument, so every topology option is
+    // the engine's default. That used to be a MISMATCH — the engine defaulted `rankNormalization` to `false`
+    // while the golden set `true` — and iteration 52 made the engine's default the shipped value, so the
+    // search now runs the configuration the published numbers were measured under.
     const text = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), '../../src/integration.ts'),
       'utf8',
@@ -250,13 +250,17 @@ describe('the optimizer mapping states what it does NOT set', () => {
     expect(UNPASSED_SECOND_ARGUMENT).toBe(true);
     expect(text, 'the engine is built with ONE argument').toMatch(/new TreePruner\(options\)/);
     expect(text, 'and not two').not.toMatch(/new TreePruner\(\s*options\s*,/);
-    // The consequence, asserted against the engine's own defaults rather than described: the topology
-    // default is `false` and the RCAEval parser's default is `true`.
+    // The single owner, asserted where the consequence lives: the engine's topology default READS the named
+    // constant rather than spelling the value, and that constant is the shipped one.
     const topology = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), '../../../tree/src/causal/topology-fault-graph.ts'),
       'utf8',
     );
-    expect(topology).toMatch(/rankNormalization:\s*false/);
+    expect(topology).toMatch(/rankNormalization:\s*DEFAULT_RANK_NORMALIZATION/);
+    expect(topology).toMatch(/export const DEFAULT_RANK_NORMALIZATION = true;/);
+    expect(topology, 'the false default and its "shipped" claim are gone').not.toMatch(
+      /rankNormalization:\s*false/,
+    );
   });
 });
 
@@ -273,8 +277,7 @@ describe('the engine configuration line the search artifact carries', () => {
     expect(line).toContain('poolMetricPenaltyWeight=0.0679');
     expect(line).toContain('stabilityWeight=0.007352');
     expect(line).toContain('second constructor argument NOT PASSED');
-    expect(line).toContain('topology default (false)');
-    expect(line).toContain('the golden sets it true');
+    expect(line).toContain('IS the shipped configuration');
     // The held part is a RECORD, and the line says so rather than claiming to be exhaustive: a reader who
     // needs the rest has a place to look, and the count beside it is derived so it cannot go stale.
     expect(line).toContain('see HELD_AT_ENGINE_DEFAULT');

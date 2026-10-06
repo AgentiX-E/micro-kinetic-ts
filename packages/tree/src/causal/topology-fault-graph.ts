@@ -182,8 +182,16 @@ export interface TopologyFaultGraphConfig {
    * the log-domain anomaly term by a ~1.7 margin. Rank normalization is
    * metric-semantics-agnostic — it maps the outlier and the second-ranked
    * source to ≈1.0 vs ≈0.98, so the deterministic causal signals (trace/topo)
-   * that already point at the silent source can tip the ranking. Default:
-   * `false` (bit-identical to shipped min-max behaviour).
+   * that already point at the silent source can tip the ranking.
+   *
+   * It is inert below {@link ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes, so small calibrated topologies
+   * (OnlineBoutique 12–14, SockShop 12–14) keep their existing scoring either way.
+   *
+   * Default: {@link DEFAULT_RANK_NORMALIZATION}, which is **`true`** — the SHIPPED value. This doc used to
+   * say `false` was "shipped behaviour", and the default agreed with it, while every published number was
+   * measured with the flag ON, carried as an independent literal default in two runner parsers. A caller who
+   * built the engine with no topology argument therefore got a configuration the README's numbers were not
+   * measured under — see `docs/rank-normalization-default-audit.md`.
    */
   readonly rankNormalization: boolean;
   /**
@@ -277,6 +285,26 @@ export interface TopologyFaultGraphConfig {
   readonly metricFleetBaseline: boolean;
 }
 
+/**
+ * Whether the engine rank-normalizes anomaly scores above the node threshold, when the caller says nothing.
+ *
+ * **This is the SHIPPED value, and it is the value every published number was measured with.** It was a
+ * literal `false` in {@link DEFAULT_CONFIG} until this constant existed, described in the field's own doc as
+ * "shipped behaviour" — while the golden and FSE'26 runners each declared `true` as an independent literal
+ * default of their own, and the register keeps the axis ON ("rankNormalizeScores ON — never revert"). Two
+ * consequences followed, and both are recorded in `docs/rank-normalization-default-audit.md`:
+ *
+ * - a caller who built the engine with no topology argument — the DI container, the tree factory, two
+ *   runners, and the L2 weight SEARCH — ran a configuration the published numbers were not measured under;
+ * - the three owners could drift, which is the failure mode that once published a headline 24.2pp below the
+ *   best-measured one: a value with more than one owner is a value with more than one answer.
+ *
+ * The flag is inert below {@link ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes, so the change moves nothing for
+ * small calibrated topologies (OnlineBoutique 12–14, SockShop 12–14) and acts only where it was measured to
+ * (Train Ticket's larger graph).
+ */
+export const DEFAULT_RANK_NORMALIZATION = true;
+
 const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   minDataPoints: 3,
   temporalBonus: 0.15,
@@ -292,7 +320,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   },
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
   collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
-  rankNormalization: false, // min-max rescale (shipped behaviour)
+  rankNormalization: DEFAULT_RANK_NORMALIZATION, // the shipped value, named once
   suppressIdleTransients: false, // non-zero-baseline transient guard only (shipped)
   suppressNearZeroBaselineRise: false, // near-zero-baseline rise suppression (opt-in)
   metricRiseCeiling: 0, // unbounded relative rise (shipped behaviour)

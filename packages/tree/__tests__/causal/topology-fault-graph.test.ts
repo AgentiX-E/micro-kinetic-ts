@@ -1108,7 +1108,12 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     }
     const metrics = makeMetrics(metricsArr);
 
-    const result = buildTopologyFaultGraph(graph, metrics);
+    // MIN-MAX, named explicitly because this test is ABOUT min-max: every comment below describes the
+    // min-max rescale, and the call used to select it only by saying nothing. The engine's no-argument
+    // default is now the SHIPPED rescale (rank normalization), so the two must not be confused — a healthy
+    // node's score under min-max is "its deviation over the range", and under rank normalization it is
+    // "its rank", which is a different quantity that is not near zero at all.
+    const result = buildTopologyFaultGraph(graph, metrics, { rankNormalization: false });
 
     // After min-max normalization, the fault-injected node (svc-10) must
     // be at or very near 1.0 — it has the extreme spike that pulls the max.
@@ -1126,6 +1131,15 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     // Fault score should be the maximum across all nodes.
     const allScores = Array.from(result.anomalyScores.values());
     expect(Math.max(...allScores)).toBe(faultScore);
+
+    // The property that must hold under BOTH rescales, asserted on the shipped one: the fault node is still
+    // the maximum. That is what a root-cause rank needs from this term, and it is the assertion a future
+    // change to the rescale has to keep — "a healthy node is near zero" does not transfer, "the fault wins"
+    // does.
+    const ranked = buildTopologyFaultGraph(graph, metrics, { rankNormalization: true });
+    const rankedFault = ranked.anomalyScores.get('svc-10')!;
+    expect(Math.max(...ranked.anomalyScores.values())).toBe(rankedFault);
+    expect(rankedFault).toBeGreaterThan(ranked.anomalyScores.get('svc-0')!);
   });
 
   it('preserves original anomaly scores when all nodes have zero anomaly (range ≈ 0)', () => {
@@ -1599,12 +1613,19 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     expect(breakdown!.baselineMean).toBeGreaterThan(4.9);
   });
 
-  it('detects a subtle (< 4.7%) fault on a large graph via normalization', () => {
+  it('detects a subtle (< 4.7%) fault on a large graph, under BOTH rescales', () => {
     // Regression: a previous hard noise-floor threshold discarded any
     // metric with < 4.7% relative deviation, zeroing the entire anomaly
     // vector on systems whose fault injection is subtle (TrainTicket).
     // Build a 68-node chain with one fault node carrying a ~1% deviation
     // and healthy nodes carrying flat data.
+    //
+    // BOTH rescales are named explicitly, and that is a correction rather than a convenience: this test
+    // used to call with no topology argument and assert that the 67 healthy nodes score EXACTLY zero —
+    // which is a property of MIN-MAX, not of the engine. When the engine's default became the shipped
+    // value (rank normalization, `DEFAULT_RANK_NORMALIZATION`), the no-config call stopped being min-max
+    // and the zero assertion failed. What the test is NAMED for is detection, and detection is asserted
+    // below on the rescale the engine actually ships.
     const n = 68;
     const nodeIds = Array.from({ length: n }, (_, i) => `svc-${i}`);
     const edges = [];
@@ -1627,19 +1648,36 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
     });
     const metrics = makeMetrics(metricsArr);
 
-    const result = buildTopologyFaultGraph(graph, metrics);
-
-    // The fault node must carry a strictly positive score while every
-    // healthy node stays at zero — the subtle deviation is preserved and
-    // the fault stands out after min-max normalization.
-    const faultScore = result.anomalyScores.get(`svc-${faultIdx}`);
+    // MIN-MAX names the property the old assertion encoded, and it is exact: a node whose deviation is
+    // zero rescales to zero.
+    const minmax = buildTopologyFaultGraph(graph, metrics, { rankNormalization: false });
+    const faultScore = minmax.anomalyScores.get(`svc-${faultIdx}`);
     expect(faultScore).toBeDefined();
     expect(faultScore!).toBeGreaterThan(0);
     for (let i = 0; i < n; i++) {
       if (i !== faultIdx) {
-        expect(result.anomalyScores.get(`svc-${i}`)).toBe(0);
+        expect(minmax.anomalyScores.get(`svc-${i}`)).toBe(0);
       }
     }
+
+    // RANK NORMALIZATION cannot make that promise, and the reason is worth stating where it breaks: it maps
+    // by ORDER, so the 67 tied-at-the-bottom healthy nodes share the average of ranks 0…66 over 67 and land
+    // at ~0.49 rather than 0 — a healthy service is no longer "no anomaly" but "last by rank". What the
+    // shipped rescale buys instead is the ordering this test is named for: the subtle fault still OUTRANKS
+    // every healthy node, which is what a root-cause rank needs and what the < 4.7% regression destroyed.
+    const ranked = buildTopologyFaultGraph(graph, metrics, { rankNormalization: true });
+    const rankedFault = ranked.anomalyScores.get(`svc-${faultIdx}`)!;
+    expect(rankedFault).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      if (i !== faultIdx) {
+        expect(rankedFault).toBeGreaterThan(ranked.anomalyScores.get(`svc-${i}`)!);
+      }
+    }
+    // And the engine's no-argument call IS the ranked one, because that is the shipped configuration —
+    // asserted so the two cannot silently swap places again.
+    expect(buildTopologyFaultGraph(graph, metrics).anomalyScores.get(`svc-${faultIdx}`)).toBe(
+      rankedFault,
+    );
   });
 });
 
@@ -2267,7 +2305,7 @@ describe('buildTopologyFaultGraph — rank normalization', () => {
     const graph = makeCallGraph(ids, []);
     const metrics = makeMetrics(entries);
 
-    const minmax = buildTopologyFaultGraph(graph, metrics);
+    const minmax = buildTopologyFaultGraph(graph, metrics, { rankNormalization: false });
     const ranked = buildTopologyFaultGraph(graph, metrics, { rankNormalization: true });
 
     const minmaxOutlier = minmax.anomalyScores.get(ids[19]!)!;

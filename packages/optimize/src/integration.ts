@@ -62,14 +62,19 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
  * The engine's SECOND constructor argument, which {@link createEngineWithConfig} does not pass at all.
  *
  * `TreePruner(options, topologyConfig)` takes two, and this mapping supplies one, so the fault graph is
- * built with ITS OWN defaults — where `rankNormalization` is `false` (see
- * `topology-fault-graph.ts`'s `DEFAULT_CONFIG`). The shipped golden configuration sets it **true** from the
- * RCAEval parser's default, which makes the search and the published numbers different configurations in a
- * term this repository measured and keeps ON.
+ * built with ITS OWN defaults.
  *
- * That is recorded here rather than repaired here on purpose: changing it would MOVE the search's numbers,
- * and the register reads them. Aligning the base is a candidate change with its own acceptance; until then
- * the honest thing is that the artifact says so — see `run-optimize.ts`'s configuration line.
+ * **That used to be a mismatch and is no longer one.** When this constant was added, the engine's default for
+ * `rankNormalization` was `false` while the golden set `true` from its parser's default — so the search and
+ * the published numbers were different configurations in an axis this repository keeps ON, and nothing in
+ * either artifact said so. Iteration 52 made the ENGINE's default the shipped value
+ * (`DEFAULT_RANK_NORMALIZATION`), which is what it should always have been: a caller who passes nothing now
+ * gets the configuration the published numbers were measured under. The flag is inert below
+ * `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes, so the correction moves small topologies not at all.
+ *
+ * The constant stays, with the field it names, because the FACT is still true and still worth stating: this
+ * path supplies one argument, so every topology option it does not name is the engine's default, and a
+ * reader of the search's artifact should be able to see that rather than infer it.
  */
 export const UNPASSED_SECOND_ARGUMENT = true;
 
@@ -150,8 +155,8 @@ export function formatEngineConfigLine(config: RCAConfiguration): string {
     // DERIVED, so a held field added below needs no edit here.
     `(plus ${Object.keys(HELD_AT_ENGINE_DEFAULT).length - HELD_PRINTED.length} more, ` +
     `see HELD_AT_ENGINE_DEFAULT) | ` +
-    `second constructor argument NOT PASSED: rankNormalization is the engine's topology default (false), ` +
-    `and the golden sets it true`
+    `second constructor argument NOT PASSED: every topology option is the engine's default, which since ` +
+    `iteration 52 IS the shipped configuration`
   );
 }
 

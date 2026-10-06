@@ -103,8 +103,11 @@ to delete.
 ## 4. Reach, and what it does not cover
 
 - `run-all.ts` and `run-local-bench.ts` build the engine with no arguments, which is the strongest form of
-  "configured by the engine" and needs no line: the engine's own declaration IS the configuration. The census
-  holds them to passing nothing, so a partial configuration cannot appear there without being classified.
+  "configured by the engine" and needs no line — **only if the engine's defaults ARE the shipped
+  configuration**, a claim this census made and iteration 52 disproved for `rankNormalization` (the engine
+  default was `false`; every published number was measured with it `true`). It is now true for that axis and
+  unaudited for the rest; see `rank-normalization-default-audit.md`. The census holds these sites to passing
+  nothing, so a partial configuration cannot appear there without being classified.
 - `packages/tree/src/di/factories.ts`'s literal sets five PRUNING fields and no ranking weights. It is a
   documented starting point rather than a measured artifact, so it is classified and left alone; the residue
   is that a reader of that factory cannot tell from its name which terms it leaves at the engine's value.

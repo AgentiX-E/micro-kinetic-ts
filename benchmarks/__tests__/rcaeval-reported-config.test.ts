@@ -49,6 +49,7 @@ import {
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -221,6 +222,25 @@ describe('RCAEval runner configuration ownership', () => {
     // the runner's own default is 1.0, so that path ran the log-OFF ablation under a
     // dispatch that supplied no value at all.
     expect(source).not.toMatch(/parseFloat\([^)]*\)\s*\|\|\s*0/);
+  });
+
+  it('takes rankNormalization from the engine, so the library default and the published one agree', () => {
+    // The defect: this parser and the FSE'26 one each declared a literal `true` as their default while the
+    // ENGINE's own topology default was `false` — three owners of one shipped value, one of which described
+    // the OTHER value as "shipped behaviour". The cost was not cosmetic: a caller who passed no topology
+    // argument (the DI container, the tree factory, two runners, and the L2 weight search) ran a
+    // configuration the published numbers were not measured under.
+    expect(shipped.rankNormalization).toBe(DEFAULT_RANK_NORMALIZATION);
+    expect(DEFAULT_RANK_NORMALIZATION).toBe(true);
+    const cli = code(readFileSync(CLI_PATH, 'utf8'));
+    expect(cli, 'the parser reads the owner').toMatch(
+      /rankNormalization:\s*DEFAULT_RANK_NORMALIZATION/,
+    );
+    // And states no default of its own. The `--rank-normalization` handlers assign `opts.rankNormalization`
+    // and are not this pattern: an assignment has no comma after the value.
+    expect(cli, 'the parser declares no default of its own').not.toMatch(
+      /rankNormalization:\s*(?:true|false),/,
+    );
   });
 
   it('builds the engine arguments in exactly one place, and it is not the runner', () => {
