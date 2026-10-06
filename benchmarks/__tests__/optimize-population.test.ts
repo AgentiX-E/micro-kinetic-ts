@@ -392,5 +392,23 @@ describe('the DATASET the corpus is sampled from', () => {
     );
     expect(allBig).toContain('0 below the size');
     expect(allBig).not.toContain('smallest:');
+    // And the list is TRUNCATED when there are more below-minimum strata than the limit, so a 40-stratum
+    // deficit cannot flood the artifact with one line. The limit is a parameter precisely so this branch is
+    // reachable in a test.
+    const many = formatDatasetStrata(
+      summarizeDatasetStrata(
+        [
+          ...Array.from({ length: 2 }, () => `/d/re1ob_svc_cpu_1`),
+          ...Array.from({ length: 2 }, (_, i) => `/d/re1ss_svc_mem_${i}`),
+          ...Array.from({ length: 2 }, (_, i) => `/d/re1tt_svc_disk_${i}`),
+        ],
+        RATIOS,
+      ),
+      RATIOS,
+      1,
+    );
+    expect(many).toContain('smallest:');
+    expect(many).toContain('…');
+    expect(many.split('smallest:')[1]!.split(' ').filter(Boolean).length).toBeLessThanOrEqual(2);
   });
 });
