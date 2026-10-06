@@ -56,6 +56,16 @@ function shuffle<T>(items: T[], rng: () => number): void {
  * largest-remainder method so the counts sum to exactly `n` and honour
  * `ratios` as closely as possible. Test receives the remainder, guaranteeing
  * the split is exhaustive regardless of rounding.
+ *
+ * ## The guarantee is weaker than "proportional", and the difference is a boundary
+ *
+ * `Math.round` is what decides a SMALL stratum, and rounding up is what makes the promise fail: at 70/15/15,
+ * a stratum of one case gives `Math.round(0.7 × 1) = 1` to train and NOTHING to either held-out split, and a
+ * stratum of five gives `Math.round(5 × 0.15) = 1` to validation and leaves test at zero. So a stratum is
+ * represented in both held-out splits only from
+ * {@link minimumStratumSizeForHeldOutCoverage} cases upward, and this function's callers — including the L2
+ * weight search, whose corpus has 44 strata of which most are smaller than that — are the ones who have to
+ * decide what to do about it.
  */
 function allocateCounts(n: number, ratios: SplitRatios): [number, number, number] {
   const total = ratios.train + ratios.val + ratios.test;
@@ -76,8 +86,12 @@ function allocateCounts(n: number, ratios: SplitRatios): [number, number, number
  *
  * Each stratum (unique key) is independently shuffled with the seeded PRNG and
  * assigned to the three buckets so that every stratum is proportionally
- * represented in each split (subject to integer rounding). The split is
- * exhaustive and disjoint: every item lands in exactly one bucket.
+ * represented in each split **to the extent its SIZE allows** — see
+ * {@link minimumStratumSizeForHeldOutCoverage}: below that size a stratum lands
+ * entirely (or almost entirely) in training, which is arithmetic rather than a
+ * defect, and a caller that reports a held-out number is the one who must say
+ * which strata that number is missing. The split is exhaustive and disjoint:
+ * every item lands in exactly one bucket.
  *
  * @param items - Items to split (not mutated).
  * @param keyOf - Maps an item to its stratum key (items with the same key stay
@@ -130,4 +144,30 @@ export function stratifiedSplit<T>(
   }
 
   return { train, val, test };
+}
+
+/**
+ * The smallest stratum size at which BOTH held-out splits get at least one case, for `ratios`.
+ *
+ * Derived by RUNNING {@link stratifiedSplit} upwards, not by solving the rounding on paper: a closed form
+ * here would be a second implementation of `allocateCounts`, free to disagree with it, and this value's whole
+ * purpose is to describe what the splitter actually does. The experiment is cheap (a few hundred calls on
+ * one-element corpora) and it is what a caller needs before claiming a held-out number means what it says.
+ *
+ * At 70/15/15 the answer is 6, and the boundary below it is where a corpus's held-out coverage quietly goes
+ * missing: a 1-case stratum lands entirely in training, and a 5-case stratum reaches validation and leaves
+ * test at zero.
+ *
+ * @param ratios - The split ratios to describe.
+ * @param limit - The largest stratum size worth searching; beyond it the answer is not a boundary anyone acts on.
+ * @returns The minimum size, or `-1` when no size qualifies — which is what `val: 0` produces, since no
+ *          stratum size can populate a split that was not asked for.
+ */
+export function minimumStratumSizeForHeldOutCoverage(ratios: SplitRatios, limit = 512): number {
+  for (let n = 1; n <= limit; n++) {
+    const items = Array.from({ length: n }, (_, i) => i);
+    const split = stratifiedSplit(items, () => 'stratum', ratios, 0);
+    if (split.val.length > 0 && split.test.length > 0) return n;
+  }
+  return -1;
 }

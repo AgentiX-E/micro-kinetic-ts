@@ -27,9 +27,11 @@ import { describe, expect, it } from 'vitest';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 import {
   formatPopulation,
+  formatSplitCapability,
   parseStratum,
   strataCovered,
   summarizePopulation,
+  summarizeSplitCapability,
   type PopulationCase,
 } from '../src/optimize-population.js';
 
@@ -141,5 +143,69 @@ describe('the stratum key survives a fault name that contains a colon', () => {
     expect(strataCovered(CORPUS)).toBe(5);
     expect(strataCovered(CORPUS.filter((c) => c.stratum.startsWith('TrainTicket')))).toBe(2);
     expect(strataCovered([])).toBe(0);
+  });
+});
+
+describe('the split capability the held-out numbers depend on', () => {
+  const RATIOS = { train: 0.7, val: 0.15, test: 0.15 } as const;
+
+  it('counts the strata too small to appear in BOTH held-out splits', () => {
+    // The previous iteration printed the SYMPTOM (`val=26`, `test=28` of 44). This is the cause, and it is a
+    // joint property of the corpus and the ratios rather than of either alone.
+    const cases: PopulationCase[] = [
+      ...Array.from({ length: 6 }, () => ({ stratum: 'big', nodes: 30 })),
+      ...Array.from({ length: 5 }, () => ({ stratum: 'five', nodes: 30 })),
+      { stratum: 'one', nodes: 30 },
+    ];
+    const cap = summarizeSplitCapability(cases, RATIOS);
+    expect(cap.minimum).toBe(6);
+    expect(cap.strata).toBe(3);
+    // `big` meets the boundary; `five` and `one` do not, and they are named with their sizes ascending.
+    expect(cap.belowMinimum).toEqual([
+      { stratum: 'one', size: 1 },
+      { stratum: 'five', size: 5 },
+    ]);
+  });
+
+  it('names the smallest strata rather than only counting them', () => {
+    // "30 of 44 are too small" invites the reader to assume they are uninteresting; the names are what let
+    // that be checked, so the line carries them.
+    const cases: PopulationCase[] = [
+      { stratum: 'ob:re3:cpu', nodes: 30 },
+      { stratum: 'ss:re3:f5', nodes: 30 },
+      { stratum: 'tt:re1:cpu', nodes: 30 },
+      { stratum: 'tt:re1:disk', nodes: 30 },
+      ...Array.from({ length: 6 }, () => ({ stratum: 'tt:re1:mem', nodes: 30 })),
+    ];
+    const line = formatSplitCapability(summarizeSplitCapability(cases, RATIOS), RATIOS, 2);
+    expect(line).toContain('a stratum needs 6+ cases for BOTH held-out splits at 70%/15%/15%');
+    // FIVE distinct strata in the fixture, of which the four singletons are below the boundary and the
+    // six-case one is not.
+    expect(line).toContain('4 of 5 strata are smaller');
+    expect(line).toContain('smallest:');
+    expect(line, 'truncated when there are more than the limit').toContain('…');
+    expect(line.split('smallest:')[1]!.split(' ').filter(Boolean).length).toBeLessThanOrEqual(3);
+  });
+
+  it('says there is no threshold to meet when the ratios ask for no held-out split', () => {
+    // `val: 0` is the DOWN-SAMPLE's shape, and a helper that reported a boundary there would be answering a
+    // question nobody asked — the line says so instead.
+    const line = formatSplitCapability(
+      summarizeSplitCapability([{ stratum: 'a', nodes: 30 }], { train: 0.7, val: 0, test: 0.3 }),
+      { train: 0.7, val: 0, test: 0.3 },
+    );
+    expect(line).toContain('no held-out threshold to meet');
+    expect(line).not.toContain('are smaller');
+  });
+
+  it('renders identically for the same corpus in a different order', () => {
+    const cases: PopulationCase[] = [
+      { stratum: 'b', nodes: 30 },
+      { stratum: 'a', nodes: 30 },
+      ...Array.from({ length: 6 }, () => ({ stratum: 'c', nodes: 30 })),
+    ];
+    expect(
+      formatSplitCapability(summarizeSplitCapability([...cases].reverse(), RATIOS), RATIOS),
+    ).toBe(formatSplitCapability(summarizeSplitCapability(cases, RATIOS), RATIOS));
   });
 });

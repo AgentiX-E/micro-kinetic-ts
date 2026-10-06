@@ -52,8 +52,10 @@ import {
 } from '../../packages/optimize/src/index.js';
 import {
   formatPopulation,
+  formatSplitCapability,
   strataCovered,
   summarizePopulation,
+  summarizeSplitCapability,
   type PopulationCase,
 } from './optimize-population.js';
 import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
@@ -332,6 +334,11 @@ async function main(): Promise<void> {
     console.log(line);
   }
   console.log(`strata: corpus=${strataCovered(corpus)} distinct (system:suite:fault)`);
+  // The split's own capability, measured against the corpus: the coverage the held-out numbers are quoted
+  // over depends on how many strata are large enough to appear in BOTH of them, and that is a quantity the
+  // corpus and the ratios decide together.
+  const SPLIT_RATIOS = { train: 0.7, val: 0.15, test: 0.15 } as const;
+  console.log(formatSplitCapability(summarizeSplitCapability(corpus, SPLIT_RATIOS), SPLIT_RATIOS));
   for (const [label, cases] of [
     ['train', train],
     ['val', val],

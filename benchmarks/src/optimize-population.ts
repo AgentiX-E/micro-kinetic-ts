@@ -27,6 +27,10 @@
  * @module benchmarks/optimize-population
  */
 
+import {
+  minimumStratumSizeForHeldOutCoverage,
+  type SplitRatios,
+} from '../../packages/optimize/src/index.js';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 
 /** The parts of a loaded case this report needs. Structural, so a test needs no loader. */
@@ -125,6 +129,75 @@ export function summarizePopulation(cases: readonly PopulationCase[]): Populatio
  */
 export function strataCovered(cases: readonly PopulationCase[]): number {
   return new Set(cases.map((c) => c.stratum)).size;
+}
+
+/**
+ * How many of a corpus's strata are too small to appear in BOTH held-out splits.
+ *
+ * A stratified split promises each stratum a share of each split, and `Math.round` is what decides a small
+ * one: at 70/15/15 a 1-case stratum goes entirely to training and a 5-case stratum reaches validation and
+ * leaves test at zero. So "val covers 26 of 44 strata" — the count the previous iteration printed — is a
+ * SYMPTOM, and the number a reader needs is how many strata are below the size at which the promise holds at
+ * all.
+ *
+ * @param cases - The cases, grouped by their stratum key.
+ * @param ratios - The split ratios to judge the corpus against.
+ * @returns The boundary, the stratum count, and the strata below it in ascending size order.
+ */
+export function summarizeSplitCapability(
+  cases: readonly PopulationCase[],
+  ratios: SplitRatios,
+): {
+  readonly minimum: number;
+  readonly strata: number;
+  readonly belowMinimum: ReadonlyArray<{ readonly stratum: string; readonly size: number }>;
+} {
+  const sizes = new Map<string, number>();
+  for (const c of cases) sizes.set(c.stratum, (sizes.get(c.stratum) ?? 0) + 1);
+  const minimum = minimumStratumSizeForHeldOutCoverage(ratios);
+  const below = [...sizes.entries()]
+    .filter(([, size]) => minimum === -1 || size < minimum)
+    .map(([stratum, size]) => ({ stratum, size }))
+    // Ascending size, then by name: a reader sees the scarcest strata first and two runs render identically.
+    .sort((a, b) => a.size - b.size || a.stratum.localeCompare(b.stratum));
+  return { minimum, strata: sizes.size, belowMinimum: below };
+}
+
+/**
+ * Render the split-capability summary as the line an artifact carries.
+ *
+ * Names the smallest strata rather than only counting them: "30 of 44 are too small" invites the reader to
+ * assume they are all uninteresting, and the names are what let that be checked.
+ *
+ * @param capability - The summary from {@link summarizeSplitCapability}.
+ * @param ratios - The ratios it was computed for, quoted in the line.
+ * @param exampleLimit - How many of the smallest strata to name.
+ * @returns One line, without a trailing newline.
+ */
+export function formatSplitCapability(
+  capability: ReturnType<typeof summarizeSplitCapability>,
+  ratios: SplitRatios,
+  exampleLimit = 6,
+): string {
+  const pct = (v: number): string => `${(v * 100).toFixed(0)}%`;
+  const split = `${pct(ratios.train)}/${pct(ratios.val)}/${pct(ratios.test)}`;
+  if (capability.minimum === -1) {
+    return (
+      `split capability: a ${split} split has no held-out threshold to meet — ` +
+      `every one of the ${capability.strata} strata is below it by definition`
+    );
+  }
+  const named = capability.belowMinimum
+    .slice(0, exampleLimit)
+    .map((s) => `${s.stratum}(${s.size})`)
+    .join(' ');
+  return (
+    `split capability: a stratum needs ${capability.minimum}+ cases for BOTH held-out splits at ${split}; ` +
+    `${capability.belowMinimum.length} of ${capability.strata} strata are smaller` +
+    (capability.belowMinimum.length > 0
+      ? ` — smallest: ${named}${capability.belowMinimum.length > exampleLimit ? ' …' : ''}`
+      : '')
+  );
 }
 
 /**
