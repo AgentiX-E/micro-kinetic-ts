@@ -89,6 +89,11 @@ export default defineConfig({
         // the fields both engine artifacts are permitted to omit, so the two cannot drift apart in what
         // they are allowed to leave out.
         'src/ablation-engine-options.ts',
+        // Added with the module: what the weight search's corpus contained, which its artifact reported only
+        // as three counts. The decisive field is the rank-normalization ACTING population — the cases at or
+        // above the engine's node threshold — because on a corpus of small graphs the shipped rescale is
+        // inert and the artifact's numbers are independent of it, which is a fact about the population.
+        'src/optimize-population.ts',
         'src/reported-config.ts',
       ],
       exclude: ['__tests__/integration/**'],

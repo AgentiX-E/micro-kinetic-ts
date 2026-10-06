@@ -50,6 +50,12 @@ import {
   stratifiedSplit,
   vectorToRanking,
 } from '../../packages/optimize/src/index.js';
+import {
+  formatPopulation,
+  strataCovered,
+  summarizePopulation,
+  type PopulationCase,
+} from './optimize-population.js';
 import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
 
 // ── CLI ───────────────────────────────────────────────────
@@ -313,6 +319,26 @@ async function main(): Promise<void> {
   const valCases = val.map((l) => l.benchCase);
   const testCases = test.map((l) => l.benchCase);
   console.log(`split: train=${trainCases.length} val=${valCases.length} test=${testCases.length}`);
+
+  // WHAT THIS CORPUS IS. The three counts above say how MANY cases each split holds and nothing about which:
+  // not the system or fault-type composition, not which fault types the held-out splits are missing, and not
+  // — the question that decided the previous iteration — how many cases are large enough for the shipped
+  // rank-normalization value to act on at all. Node counts come from the case's own call graph, which is the
+  // quantity the engine's guard compares.
+  const asPopulation = (cases: readonly LoadedCase[]): PopulationCase[] =>
+    cases.map((l) => ({ stratum: l.stratum, nodes: l.benchCase.callGraph.nodes.size }));
+  const corpus = asPopulation(loaded);
+  for (const line of formatPopulation(summarizePopulation(corpus), 'corpus')) {
+    console.log(line);
+  }
+  console.log(`strata: corpus=${strataCovered(corpus)} distinct (system:suite:fault)`);
+  for (const [label, cases] of [
+    ['train', train],
+    ['val', val],
+    ['test', test],
+  ] as const) {
+    console.log(`strata: ${label}=${strataCovered(asPopulation(cases))}`);
+  }
 
   const initial = rankingToVector(DEFAULT_CONFIG.ranking);
 
