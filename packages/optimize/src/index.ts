@@ -5,6 +5,7 @@ export type { ContextBenchmark, SystemContext } from './types.js';
 export {
   DEFAULT_CONFIG,
   DEFAULT_CONFIG_SPACE,
+  RANKING_AXES,
   rankingToVector,
   vectorToRanking,
 } from './config-space.js';
@@ -47,10 +48,13 @@ export { ConvergenceChecker } from './convergence-checker.js';
 export type { ConvergenceOptions, ConvergenceState } from './convergence-checker.js';
 
 export {
+  HELD_AT_ENGINE_DEFAULT,
+  UNPASSED_SECOND_ARGUMENT,
   configToPrunerOptions,
   configToTopologyConfig,
   createDefaultEngine,
   createEngineWithConfig,
+  formatEngineConfigLine,
 } from './integration.js';
 export type { TopologyFaultGraphConfig } from './integration.js';
 

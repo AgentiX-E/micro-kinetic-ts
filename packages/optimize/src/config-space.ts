@@ -274,6 +274,15 @@ function vectorToContinuous(u: Float64Array): RCAConfiguration['continuous'] {
 }
 
 /**
+ * The ranking axes this search varies, in vector order.
+ *
+ * Named so the search's artifact can state its own SPACE rather than leaving a reader to infer it from the
+ * weights it happens to report: seven axes are varied here, and the engine runs twenty-seven options, so
+ * "tuned weights" with no space beside it reads as a claim about the whole configuration.
+ */
+export const RANKING_AXES: readonly string[] = RANKING.map((p) => p.name);
+
+/**
  * Inverse of `rankingToVector`: map a unit-cube [0,1]⁷ vector back to typed
  * `RankingWeights`.
  */

@@ -44,6 +44,8 @@ import {
   coordinateDescent,
   createEngineWithConfig,
   DEFAULT_CONFIG,
+  formatEngineConfigLine,
+  RANKING_AXES,
   rankingToVector,
   stratifiedSplit,
   vectorToRanking,
@@ -280,6 +282,12 @@ async function main(): Promise<void> {
   console.log(
     `maxCases: ${opts.maxCases === 0 ? 'all' : opts.maxCases}, rounds: ${opts.rounds}, seed: ${opts.seed}`,
   );
+  // WHAT THIS SEARCH SEARCHES, and what it does not. The artifact used to report seven tuned weights and
+  // nothing else, which read as "the optimizer found nothing to improve" without saying that four terms
+  // that dominate the shipped ranking were ON, held, and absent from the search space — or that the base it
+  // searched differs from the golden in `rankNormalization`. Both are one line each now.
+  console.log(`search space (7 axes): ${RANKING_AXES.join(', ')}`);
+  console.log(formatEngineConfigLine(DEFAULT_CONFIG));
 
   if (!existsSync(opts.dataDir)) {
     console.error(`Data directory not found: ${opts.dataDir}`);
@@ -347,6 +355,10 @@ async function main(): Promise<void> {
   console.log(`train = ${formatPct(trainAcc)}`);
   console.log(`val   = ${formatPct(valAcc)}`);
   console.log(`test  = ${formatPct(testAcc)}`);
+  // The tuned configuration in full, through the same mapping the engine is built by — so the two numbers
+  // above can be read against the configuration that produced them rather than against seven of its fields.
+  // The search varies the RANKING vector only, so the rest of the configuration is the base it started from.
+  console.log(formatEngineConfigLine({ ...DEFAULT_CONFIG, ranking: vectorToRanking(result.best) }));
   console.log(
     `\nbaseline test = ${formatPct(testAcc0)} | tuned test = ${formatPct(testAcc)} | Δ = ${testAcc - testAcc0 >= 0 ? '+' : ''}${((testAcc - testAcc0) * 100).toFixed(1)}pp`,
   );

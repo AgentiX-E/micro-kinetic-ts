@@ -46,9 +46,17 @@ could restate and drift from.
 `run-ablation.ts` calls `main().catch(...)` at import. Nothing can import it, so nothing could call its
 option assembly or its line — the defect `fse26-engine-options.ts` and `rcaeval-engine-options.ts` each
 record having fixed on their own runner, found a third time on the one whose artifact is read as the
-measurement of every feature. The extract-per-runner repair has now been applied three times, which is
-itself the finding worth recording: **"a runner that runs itself on import" is a property of every runner in
-this repository, and each one needed the same extraction.**
+measurement of every feature.
+
+**The extract-per-runner repair has now been applied three times, and that sentence used to continue "and
+there are three construction sites". That was wrong** — it was the count of one CLASS, and the iteration that
+went looking for the number found EIGHT (`docs/construction-site-census.md`, whose census derives them and
+asserts each kind by path). Three are the artifact-producing runners and are now derived; three build the
+engine with no arguments at all, which needs no line; one is the tree package's own factory; and one is the
+weight search's mapping, whose artifact reported seven of the twenty-seven options its engine ran with.
+
+The generalisable statement is therefore narrower and checkable: **a runner that runs itself on import has an
+untestable option assembly**, and the census names every place one is built rather than a remembered count.
 
 ## 3. The repair, and what it must not move
 
