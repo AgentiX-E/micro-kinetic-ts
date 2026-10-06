@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { minimumStratumSizeForHeldOutCoverage, stratifiedSplit } from '../../src/split.js';
+import {
+  minimumStratumSizeForHeldOutCoverage,
+  requiredCasesForHeldOutCoverage,
+  stratifiedSplit,
+} from '../../src/split.js';
 
 interface Item {
   readonly id: number;
@@ -204,5 +208,38 @@ describe('held-out coverage, measured rather than claimed', () => {
       }
       expect(minimumStratumSizeForHeldOutCoverage(ratios)).toBe(measured);
     }
+  });
+});
+
+describe('what full held-out coverage would cost, and whether a cap can fund it', () => {
+  const RATIOS = { train: 0.7, val: 0.15, test: 0.15 };
+
+  it('multiplies the boundary by the stratum count, and multiplies by nothing else', () => {
+    // The point of a capacity is that it is an ARITHMETIC consequence of two numbers the artifact already
+    // prints, so a reader never has to do the multiplication by hand and cannot get it subtly wrong (for
+    // instance by using the boundary for `val` alone).
+    expect(requiredCasesForHeldOutCoverage(44, RATIOS)).toBe(44 * 6);
+    expect(requiredCasesForHeldOutCoverage(1, RATIOS)).toBe(6);
+    expect(requiredCasesForHeldOutCoverage(0, RATIOS)).toBe(0);
+  });
+
+  it('says a corpus with no strata costs nothing, and a ratio set with no held-out split costs nothing', () => {
+    // `-1` from the boundary means "no size qualifies", and a capacity would then be a claim about a split
+    // that does not exist: the honest answer is that nothing is required, not a negative number.
+    expect(requiredCasesForHeldOutCoverage(10, { train: 0.7, val: 0, test: 0.3 })).toBe(0);
+    expect(requiredCasesForHeldOutCoverage(0, { train: 1, val: 0, test: 0 })).toBe(0);
+  });
+
+  it('agrees with the corpus it will be applied to, which is how the incompatibility shows up', () => {
+    // THE MEASUREMENT THIS EXISTS FOR: the search's corpus has 44 strata and is capped at 200 cases, and
+    // `44 × 6 = 264` — so the cap is 64 cases short of what full held-out coverage would cost. Stating it here
+    // means the next reader meets the incompatibility as arithmetic rather than as a hunch, and the artifact
+    // reports the same three numbers.
+    const strata = 44;
+    const cap = 200;
+    const required = requiredCasesForHeldOutCoverage(strata, RATIOS);
+    expect(required).toBe(264);
+    expect(required).toBeGreaterThan(cap);
+    expect(required - cap).toBe(64);
   });
 });

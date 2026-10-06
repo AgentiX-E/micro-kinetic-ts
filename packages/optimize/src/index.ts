@@ -24,7 +24,11 @@ export type {
   CoordinateOracle,
 } from './coordinate-descent.js';
 
-export { minimumStratumSizeForHeldOutCoverage, stratifiedSplit } from './split.js';
+export {
+  minimumStratumSizeForHeldOutCoverage,
+  requiredCasesForHeldOutCoverage,
+  stratifiedSplit,
+} from './split.js';
 export type { SplitRatios, SplitResult } from './split.js';
 
 export { GaussianProcess } from './gaussian-process.js';

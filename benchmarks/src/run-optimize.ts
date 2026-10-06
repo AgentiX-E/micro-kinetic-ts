@@ -51,8 +51,10 @@ import {
   vectorToRanking,
 } from '../../packages/optimize/src/index.js';
 import {
+  CORPUS_SAMPLING_OBJECTIVE,
   formatPopulation,
   formatSplitCapability,
+  formatSplitCapacity,
   strataCovered,
   summarizePopulation,
   summarizeSplitCapability,
@@ -338,7 +340,13 @@ async function main(): Promise<void> {
   // over depends on how many strata are large enough to appear in BOTH of them, and that is a quantity the
   // corpus and the ratios decide together.
   const SPLIT_RATIOS = { train: 0.7, val: 0.15, test: 0.15 } as const;
-  console.log(formatSplitCapability(summarizeSplitCapability(corpus, SPLIT_RATIOS), SPLIT_RATIOS));
+  const capability = summarizeSplitCapability(corpus, SPLIT_RATIOS);
+  console.log(formatSplitCapability(capability, SPLIT_RATIOS));
+  // WHETHER ANY SAMPLING OBJECTIVE COULD FIX THE COVERAGE UNDER THIS RUN'S CAP, and which objective this run
+  // used. The first is arithmetic on three numbers the run already knows; the second is stated because a
+  // reader comparing two runs needs to know if the corpus was drawn the same way.
+  console.log(`sampling objective: ${CORPUS_SAMPLING_OBJECTIVE}`);
+  console.log(formatSplitCapacity(capability, SPLIT_RATIOS, opts.maxCases));
   for (const [label, cases] of [
     ['train', train],
     ['val', val],

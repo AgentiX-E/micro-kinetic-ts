@@ -26,8 +26,10 @@ import { describe, expect, it } from 'vitest';
 
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 import {
+  CORPUS_SAMPLING_OBJECTIVE,
   formatPopulation,
   formatSplitCapability,
+  formatSplitCapacity,
   parseStratum,
   strataCovered,
   summarizePopulation,
@@ -230,6 +232,20 @@ describe('the split capability the held-out numbers depend on', () => {
     expect(line).not.toContain('are smaller');
   });
 
+  it('names nothing when every stratum meets the boundary, which is the ideal corpus', () => {
+    // The complement of the case above, and the one a corpus that CAN fund its split looks like: nothing is
+    // below the boundary, so there is no "smallest" to name. Without this the branch that omits the list was
+    // never executed — the previous iteration's coverage drop, located at this line.
+    const cases: PopulationCase[] = [
+      ...Array.from({ length: 6 }, () => ({ stratum: 'a', nodes: 30 })),
+      ...Array.from({ length: 9 }, () => ({ stratum: 'b', nodes: 30 })),
+    ];
+    const line = formatSplitCapability(summarizeSplitCapability(cases, RATIOS), RATIOS);
+    expect(line).toContain('0 of 2 strata are smaller');
+    expect(line, 'no list to truncate').not.toContain('smallest:');
+    expect(line).not.toContain('…');
+  });
+
   it('renders identically for the same corpus in a different order', () => {
     const cases: PopulationCase[] = [
       { stratum: 'b', nodes: 30 },
@@ -239,5 +255,64 @@ describe('the split capability the held-out numbers depend on', () => {
     expect(
       formatSplitCapability(summarizeSplitCapability([...cases].reverse(), RATIOS), RATIOS),
     ).toBe(formatSplitCapability(summarizeSplitCapability(cases, RATIOS), RATIOS));
+  });
+});
+
+describe('whether a SAMPLING OBJECTIVE could fix the coverage at all', () => {
+  const RATIOS = { train: 0.7, val: 0.15, test: 0.15 } as const;
+
+  /** A corpus of `strata` strata, each of `size` cases, so the boundary and the count are both controlled. */
+  const corpus = (strata: number, size: number): PopulationCase[] =>
+    Array.from({ length: strata }, (_, i) =>
+      Array.from({ length: size }, () => ({ stratum: `s${i}:re1:cpu`, nodes: 30 })),
+    ).flat();
+
+  it('says the cap is SHORT, and that no objective changes that', () => {
+    // THE VERDICT THIS EXISTS FOR. The search's own numbers: 44 strata, a 6-case boundary, a 200-case cap.
+    // Without this line a reader sees "28 of 44 strata are smaller" and reasonably concludes the SAMPLER was
+    // poorly chosen — when the arithmetic says 264 cases are needed and 200 cannot be rearranged into it.
+    const cases = corpus(44, 1);
+    const cap = { train: 0.7, val: 0.15, test: 0.15 } as const;
+    const line = formatSplitCapacity(summarizeSplitCapability(cases, cap), RATIOS, 200);
+    expect(line).toContain('44 strata x 6 = 264 cases');
+    expect(line).toContain('the cap of 200 is 64 short');
+    expect(line).toContain('NO sampling objective changes that');
+    expect(line).toContain('only a larger cap, or fewer strata');
+  });
+
+  it('distinguishes a cap that FUNDS the coverage from one that does not', () => {
+    // The same corpus and the same boundary, three caps: the line has to say which side of 264 each is on,
+    // and `>=` is the boundary — a cap of exactly 264 funds it.
+    const cap = { train: 0.7, val: 0.15, test: 0.15 } as const;
+    const cases = corpus(44, 1);
+    const c = summarizeSplitCapability(cases, cap);
+    expect(formatSplitCapacity(c, RATIOS, 264)).toContain('the cap of 264 funds it');
+    expect(formatSplitCapacity(c, RATIOS, 265)).toContain('funds it');
+    expect(formatSplitCapacity(c, RATIOS, 263)).toContain('is 1 short');
+  });
+
+  it('says an UNCAPPED corpus is not limited by its cap', () => {
+    // `maxCases: 0` means "load everything", which is the other way a run can be unrestricted — and a line
+    // that reported "the cap of 0 is 264 short" would be nonsense a reader would have to decode.
+    const c = summarizeSplitCapability(corpus(10, 3), RATIOS);
+    expect(formatSplitCapacity(c, RATIOS, 0)).toContain('UNCAPPED');
+    expect(formatSplitCapacity(c, RATIOS, 0)).not.toContain('short');
+  });
+
+  it('calls a capacity vacuous when the ratios ask for no held-out split', () => {
+    // The down-sample's shape again: no held-out split, so no capacity is required and the arithmetic must
+    // not be presented as a requirement.
+    const downSample = { train: 0.7, val: 0, test: 0.3 } as const;
+    const c = summarizeSplitCapability(corpus(10, 3), downSample);
+    const line = formatSplitCapacity(c, downSample, 200);
+    expect(line).toContain('vacuous');
+    expect(line).not.toContain('short');
+  });
+
+  it('states the objective this run used, with the alternative named as absent', () => {
+    // A reader comparing two runs needs to know the corpus was drawn the same way; and the alternative
+    // (equal-per-stratum) is named as NOT implemented rather than implied to be available.
+    expect(CORPUS_SAMPLING_OBJECTIVE).toContain('proportional');
+    expect(CORPUS_SAMPLING_OBJECTIVE).toContain('system:suite');
   });
 });

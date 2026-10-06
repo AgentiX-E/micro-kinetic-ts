@@ -35,6 +35,7 @@
 // version of this file imported the barrel, passed locally — where resolution differs — and failed in CI.
 import {
   minimumStratumSizeForHeldOutCoverage,
+  requiredCasesForHeldOutCoverage,
   type SplitRatios,
 } from '../../packages/optimize/src/split.js';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
@@ -167,6 +168,55 @@ export function summarizeSplitCapability(
     // Ascending size, then by name: a reader sees the scarcest strata first and two runs render identically.
     .sort((a, b) => a.size - b.size || a.stratum.localeCompare(b.stratum));
   return { minimum, strata: sizes.size, belowMinimum: below };
+}
+
+/**
+ * How the corpus is drawn when the dataset is larger than the cap, named so the artifact can state it.
+ *
+ * Today's objective preserves the dataset's `system:suite` shares, which is why RE3 is 12.1% of the corpus.
+ * The alternative — an equal quota per `system:suite:fault` stratum — is NOT implemented, and the capacity
+ * line below says why implementing it would not be enough on its own: at 44 strata and a 6-case floor the
+ * corpus would need 264 cases, and 200 cannot be rearranged into that.
+ */
+export const CORPUS_SAMPLING_OBJECTIVE =
+  'proportional (each system:suite stratum keeps its share of the dataset)';
+
+/**
+ * The cap, the stratum count and the boundary as one verdict.
+ *
+ * {@link formatSplitCapability} says how many strata are too small; this says whether ANY sampling objective
+ * could fix it under the case cap the run was given. Those are different questions and the second one decides:
+ * a corpus that cannot fund full coverage cannot be rebalanced into it, so a reader who only saw the "N of 44
+ * are smaller" line might reasonably conclude the sampler was poorly chosen.
+ *
+ * @param capability - The summary from {@link summarizeSplitCapability}.
+ * @param ratios - The ratios the boundary was computed for.
+ * @param cap - The case cap the corpus was drawn under; `0` means uncapped.
+ * @returns One line, without a trailing newline.
+ */
+export function formatSplitCapacity(
+  capability: ReturnType<typeof summarizeSplitCapability>,
+  ratios: SplitRatios,
+  cap: number,
+): string {
+  const required = requiredCasesForHeldOutCoverage(capability.strata, ratios);
+  const head =
+    `split capacity: ${capability.strata} strata x ${capability.minimum} = ${required} cases would give ` +
+    `every stratum both held-out splits`;
+  if (required === 0) {
+    return `${head} — vacuous, since this ratio set asks for no held-out split`;
+  }
+  if (cap <= 0) {
+    return `${head}; the corpus is UNCAPPED, so nothing about the cap stands in the way`;
+  }
+  if (cap >= required) {
+    return `${head}; the cap of ${cap} funds it, so coverage is limited only by which strata exist`;
+  }
+  return (
+    `${head}; the cap of ${cap} is ${required - cap} short, so ${capability.belowMinimum.length} of ` +
+    `${capability.strata} strata cannot reach both splits and NO sampling objective changes that — only a ` +
+    `larger cap, or fewer strata`
+  );
 }
 
 /**

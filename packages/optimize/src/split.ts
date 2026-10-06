@@ -171,3 +171,24 @@ export function minimumStratumSizeForHeldOutCoverage(ratios: SplitRatios, limit 
   }
   return -1;
 }
+
+/**
+ * How many cases full held-out coverage would cost, given a stratum count.
+ *
+ * The arithmetic is {@link minimumStratumSizeForHeldOutCoverage} times the number of strata — and it exists
+ * because the two numbers are printed in different places while their PRODUCT is the thing that decides a
+ * sampling decision. A corpus of 44 strata capped at 200 cases cannot give every stratum a presence in both
+ * held-out splits, whatever the sampling objective: `44 × 6 = 264`, and no rearrangement of 200 cases reaches
+ * it. A reader who has both numbers still has to multiply them, and a reader who multiplies the wrong pair
+ * (the boundary for `val` alone, say) gets a plausible answer to a different question.
+ *
+ * @param strata - How many distinct strata the corpus has.
+ * @param ratios - The split ratios the coverage would be measured under.
+ * @returns The case count required, or `0` when nothing is required — no strata, or a ratio set that asks for
+ *          no held-out split, in which case a positive answer would be a claim about a split that cannot exist.
+ */
+export function requiredCasesForHeldOutCoverage(strata: number, ratios: SplitRatios): number {
+  const minimum = minimumStratumSizeForHeldOutCoverage(ratios);
+  if (minimum === -1 || strata <= 0) return 0;
+  return strata * minimum;
+}
