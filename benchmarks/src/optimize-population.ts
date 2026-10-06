@@ -27,10 +27,16 @@
  * @module benchmarks/optimize-population
  */
 
+// The SPECIFIC module, never the package barrel. The barrel re-exports `persistence.js`, which imports
+// `@agentix-e/micro-kinetic-storage-fs` — a workspace package the benchmarks test environment does not
+// resolve, so reaching the barrel from here fails at COLLECT time with "Failed to resolve entry for package".
+// Every other benchmarks module follows this convention (`config-space.js`, `integration.js`,
+// `optimizer.js`); `run-optimize.ts` uses the barrel only for a TYPE, which is erased at runtime. The first
+// version of this file imported the barrel, passed locally — where resolution differs — and failed in CI.
 import {
   minimumStratumSizeForHeldOutCoverage,
   type SplitRatios,
-} from '../../packages/optimize/src/index.js';
+} from '../../packages/optimize/src/split.js';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 
 /** The parts of a loaded case this report needs. Structural, so a test needs no loader. */

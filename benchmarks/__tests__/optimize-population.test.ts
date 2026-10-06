@@ -146,6 +146,38 @@ describe('the stratum key survives a fault name that contains a colon', () => {
   });
 });
 
+describe('the module reaches the package without its barrel', () => {
+  it('imports the specific module, never the package index', () => {
+    // THE DEFECT THIS PINKS, which passed locally and failed in CI: importing
+    // `packages/optimize/src/index.js` re-exports `persistence.js`, which imports
+    // `@agentix-e/micro-kinetic-storage-fs` — a workspace package the benchmarks test environment does not
+    // resolve, because the benchmarks job never builds it. The failure was at COLLECT time ("Failed to
+    // resolve entry for package"), so every test in the file died rather than one assertion.
+    //
+    // Locally it passed for a reason worth writing down: `packages/optimize/node_modules/@agentix-e/
+    // micro-kinetic-storage-fs/dist/index.cjs` existed from a build three weeks earlier. A package's entry
+    // that exists only because of a STALE BUILD is not a resolution this repository can rely on, and the
+    // guard therefore asserts the SOURCE shape rather than trusting a green local run — which is exactly the
+    // run that was misleading.
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../src/optimize-population.ts'),
+      'utf8',
+    );
+    expect(source).toMatch(/packages\/optimize\/src\/split\.js/);
+    expect(source).not.toMatch(/packages\/optimize\/src\/index\.js/);
+    // And the module it reaches is standalone, so the chain ends there: `split.ts` imports nothing, which is
+    // what makes this import safe in an environment that resolves nothing transitively.
+    const split = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../../packages/optimize/src/split.ts'),
+      'utf8',
+    );
+    expect(
+      split.split('\n').filter((l) => l.startsWith('import ')),
+      'split.ts is standalone',
+    ).toEqual([]);
+  });
+});
+
 describe('the split capability the held-out numbers depend on', () => {
   const RATIOS = { train: 0.7, val: 0.15, test: 0.15 } as const;
 
