@@ -76,6 +76,46 @@ const RUNNER_PATH = resolve(REPO_ROOT, 'benchmarks/src/run-rcaeval.ts');
  */
 const CLI_PATH = resolve(REPO_ROOT, 'benchmarks/src/rcaeval-cli.ts');
 const PRUNER_PATH = resolve(REPO_ROOT, 'packages/tree/src/pruning/pruner.ts');
+/** Where the engine declares the SECOND constructor argument's fields. */
+const TOPOLOGY_PATH = resolve(REPO_ROOT, 'packages/tree/src/causal/topology-fault-graph.ts');
+/** Where the engine declares the fields `TreePrunerOptions` INHERITS. */
+const CORE_FAULTS_PATH = resolve(REPO_ROOT, 'packages/core/src/types/faults.ts');
+
+/**
+ * The members of an interface, read from the source that declares it.
+ *
+ * `extends` is followed by the caller rather than ignored: `TreePrunerOptions extends
+ * RCAEngineOptions`, and four of the fields the pruner fills come from the base — a reader that stopped
+ * at the derived interface would report those four as foreign.
+ *
+ * @param path - The file that declares the interface.
+ * @param name - The interface's name.
+ * @param base - The base interface's members, when it has one.
+ * @returns The members' names, own and inherited.
+ */
+function interfaceMembers(path: string, name: string, base: readonly string[] = []): string[] {
+  const text = readFileSync(path, 'utf8');
+  const m = new RegExp(
+    `export interface ${name}\\s*(?:extends\\s+([A-Za-z]+))?\\s*\\{([\\s\\S]*?)\\n\\}`,
+  ).exec(text);
+  expect(m, `${name} is declared in ${path}`).not.toBeNull();
+  const own = [
+    ...m![2]!.matchAll(/^\s{2}(?:readonly\s+)?([A-Za-z][A-Za-z0-9]*)\??:\s*[^;]+;/gm),
+  ].map((mm) => mm[1]!);
+  expect(own.length, `${name} has members`).toBeGreaterThan(0);
+  if (m![1] !== undefined) {
+    // The base is named by the declaration, so the caller cannot get it wrong by memory.
+    return [...own, ...(m![1] === 'RCAEngineOptions' ? base : [])];
+  }
+  return own;
+}
+
+const PRUNER_OPTION_MEMBERS = interfaceMembers(
+  PRUNER_PATH,
+  'TreePrunerOptions',
+  interfaceMembers(CORE_FAULTS_PATH, 'RCAEngineOptions'),
+);
+const TOPOLOGY_MEMBERS = interfaceMembers(TOPOLOGY_PATH, 'TopologyFaultGraphConfig');
 
 /**
  * Drop comments before matching.
@@ -96,7 +136,13 @@ function namedOn(line: string): string[] {
 }
 
 const shipped = parseRCAEvalArgs([]);
-const shippedSignals = buildRCAEvalEngineOptions(shipped).signals;
+const shippedEngine = buildRCAEvalEngineOptions(shipped);
+const shippedSignals = shippedEngine.signals;
+/** Every field the run forwards, across BOTH of the engine's constructor arguments. */
+const shippedForwarded = [
+  ...Object.keys(shippedEngine.signals),
+  ...Object.keys(shippedEngine.topology),
+].sort();
 
 describe('RCAEval runner configuration ownership', () => {
   const source = code(readFileSync(RUNNER_PATH, 'utf8')) + code(readFileSync(CLI_PATH, 'utf8'));
@@ -210,23 +256,76 @@ describe('RCAEval runner configuration ownership', () => {
   it('builds the engine arguments in exactly one place, and it is not the runner', () => {
     // The property the old shape assertions stood for, stated as a property. A hand-written literal
     // at the construction site is a SECOND owner of the option list, and the field present in one
-    // and absent from the other is exactly how the line came to omit three of its own values.
-    expect(source).toMatch(/createContainer\(buildRCAEvalEngineOptions\(opts\)\.signals\)/);
-    expect(source).toMatch(/function createContainer\(weights: RCAEvalSignalOptions\)/);
+    // and absent from the other is exactly how the line came to omit three of its own values — and
+    // how the topology switches came to be restated by hand beside an argument that also carried them.
+    expect(source).toMatch(/createContainer\(buildRCAEvalEngineOptions\(opts\)\)/);
+    expect(source).toMatch(/function createContainer\(engine: RCAEvalEngineOptions\)/);
     expect(source).toContain("from './rcaeval-engine-options.js'");
-    // And no object literal at that call site at all: the only `createContainer(` followed by a brace
-    // would be the hand list coming back.
+    // And no object literal at either site: the only `createContainer(` followed by a brace would be
+    // the hand list coming back, and the only `new TreePruner(` followed by a second brace would be
+    // the hand-written topology config coming back.
     expect(source).not.toMatch(/createContainer\(\s*\{/);
+    expect(source).not.toMatch(/new TreePruner\([\s\S]{0,120}?,\s*\{/);
+  });
+});
+
+describe('the RCAEval engine arguments are the TWO objects the constructor takes', () => {
+  const built = buildRCAEvalEngineOptions(shipped);
+
+  it('sends only TreePrunerOptions members in the first argument', () => {
+    // The defect: four of the sixteen fields the runner forwarded were `TopologyFaultGraphConfig`
+    // fields, and `TreePrunerOptions` does not declare them — so the pruner spread them into its own
+    // options and NOTHING EVER READ THEM THERE. They reached the engine only through the second
+    // argument, which was a hand-written literal at the call site. The membership list is parsed from
+    // the engine's own source rather than listed, so this cannot rot into a remembered set.
+    const foreign = Object.keys(built.signals).filter(
+      (key) => !PRUNER_OPTION_MEMBERS.includes(key),
+    );
+    expect(
+      foreign,
+      'a field the engine option type does not declare is inert in the FIRST argument',
+    ).toEqual([]);
+    expect(Object.keys(built.signals).length).toBeGreaterThanOrEqual(12);
+  });
+
+  it('sends only TopologyFaultGraphConfig members in the second argument', () => {
+    const topology = Object.keys(built.topology);
+    const foreign = topology.filter((key) => !TOPOLOGY_MEMBERS.includes(key));
+    expect(foreign, 'the second argument takes topology fields only').toEqual([]);
+    // Neither side may be a rename of the other: the two member lists must be largely DISJOINT, or
+    // "splitting" them would have moved nothing. Measured against the engine's own declarations.
+    const overlap = PRUNER_OPTION_MEMBERS.filter((key) => TOPOLOGY_MEMBERS.includes(key));
+    expect(overlap, 'the two engine interfaces must not be the same list').toEqual([]);
+    expect(TOPOLOGY_MEMBERS.length).toBeGreaterThan(8);
+    expect(topology.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('keeps the two arguments disjoint, and each one populated', () => {
+    // The split's own invariant, distinct from the line join above (which owns "the artifact names what
+    // the run forwarded"): the two arguments must not overlap, because a field in both is a field whose
+    // OWNER is ambiguous — which is precisely the state this iteration repaired, where four values were
+    // in the first argument and restated in the second. The line join then ties the union to the
+    // artifact, so between them a field cannot hide in one object or be counted twice.
+    const signals = new Set(Object.keys(built.signals));
+    const topology = Object.keys(built.topology);
+    for (const key of topology) {
+      expect(signals.has(key), `${key} is in BOTH arguments`).toBe(false);
+    }
+    expect(signals.size).toBeGreaterThanOrEqual(12);
+    expect(topology.length).toBeGreaterThanOrEqual(4);
+    // Every topology field is one the engine declares there, so the second argument is not a dumping
+    // ground: the two membership assertions above already say that, and this states the union's size so
+    // a field silently MOVING between the two objects cannot shrink the run's configuration.
+    expect(signals.size + topology.length).toBeGreaterThanOrEqual(16);
   });
 });
 
 describe('the RCAEval configuration line carries the configuration that produced the run', () => {
   it('names exactly the options it forwards, in both directions', () => {
     const named = namedOn(formatSignalLine(shipped)).sort();
-    const forwarded = Object.keys(shippedSignals).sort();
     // Both directions in one equality: a forwarded option the line omits is an artifact that cannot
     // be attributed, and a name the line invents is a configuration nobody ran.
-    expect(named).toEqual(forwarded);
+    expect(named).toEqual(shippedForwarded);
     expect(named).toContain('latWeight');
     expect(named).toContain('latMinRise');
     expect(named).toContain('poolMetricPenaltyWeight');
@@ -279,7 +378,7 @@ describe('the RCAEval configuration line carries the configuration that produced
     // the suite, so "parsed but dropped" and "parsed and deliberately not an engine option" can
     // never be the same shape again.
     const parsed = Object.keys(shipped).sort();
-    const forwarded = Object.keys(shippedSignals);
+    const forwarded = shippedForwarded;
     const partition = [...forwarded, ...NON_ENGINE_OPTION_KEYS].sort();
     expect(partition).toEqual(parsed);
     for (const key of forwarded) {
@@ -303,5 +402,24 @@ describe('the RCAEval configuration line carries the configuration that produced
       'onsetShape=order',
     );
     expect(formatSignalLine(shipped)).toContain(`temporalWeight=${DEFAULT_TEMPORAL_WEIGHT}`);
+  });
+
+  it('renders the shipped line byte-identically to the line the golden artifact carries', () => {
+    // Verbatim from `rcaeval-re1-results` of run `37402660140` (and `re2`; `re3` differs only in
+    // `traceWeight=1`, which is the RE3 trace term). This is the control that makes the SPLIT
+    // checkable rather than argued: the two engine arguments became two objects in that iteration, and
+    // an artifact whose configuration line moved by one byte would be evidence that something other
+    // than the wiring changed.
+    //
+    // It is also the control that fails when a SHIPPED WEIGHT moves without the artifact being
+    // re-read — which is the intended behaviour, because the published numbers are read through this
+    // line and a weight that changes silently changes what they mean.
+    expect(formatSignalLine(shipped)).toBe(
+      'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 logWeight=1 ' +
+        'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
+        'collapseDiscount=0 traceWeight=0 prismWeight=0 rankNormalization=true ' +
+        'suppressIdleTransients=false suppressNearZeroBaselineRise=false temporalWeight=0 ' +
+        'onsetShape=earliness',
+    );
   });
 });

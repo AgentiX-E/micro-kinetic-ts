@@ -55,15 +55,34 @@ export interface RCAEvalSignalOptions {
   readonly logSignalMode: LogSignalMode;
   readonly traceWeight: number;
   readonly prismWeight: number;
+}
+
+/**
+ * The engine's SECOND constructor argument: `Partial<TopologyFaultGraphConfig>`.
+ *
+ * These four travelled in the object above until this split, and the cost was not theoretical:
+ * `TreePrunerOptions` does not declare any of them, so `new TreePruner(options)` spread them into the
+ * pruner's own options **where nothing read them** — the fault graph is built from
+ * `...this.topologyConfig` alone. They reached the engine through a hand-written SECOND literal at the
+ * call site instead, which is a second owner of the same four values and the place a silent omission
+ * would hide: drop one there and that term silently reverts to the engine's default with nothing
+ * failing.
+ *
+ * The FSE'26 half has separated the two from the start (`Fse26EngineOptions.signals` /
+ * `.topology`). This is that shape, and the membership of each list is asserted against the engine's
+ * own declarations rather than remembered.
+ */
+export interface RCAEvalTopologyOptions {
   readonly collapseDiscount: number;
   readonly rankNormalization: boolean;
   readonly suppressIdleTransients: boolean;
   readonly suppressNearZeroBaselineRise: boolean;
 }
 
-/** The engine's constructor arguments, named so a test can assert the whole object. */
+/** The engine's two constructor arguments, named so a test can assert both. */
 export interface RCAEvalEngineOptions {
   readonly signals: RCAEvalSignalOptions;
+  readonly topology: RCAEvalTopologyOptions;
 }
 
 /**
@@ -108,10 +127,14 @@ export const UNREPORTED_BY_RCAEVAL: Readonly<Record<string, string>> = {
 };
 
 /**
- * Build the engine's constructor arguments from the parsed options.
+ * Build BOTH of the engine's constructor arguments from the parsed options.
+ *
+ * The two are returned together rather than assembled where the engine is built, because that is what
+ * makes them one list: the runner spreads nothing by hand, so a value cannot be present in one argument
+ * and absent from the other.
  *
  * @param opts - The parsed command-line options.
- * @returns The signal options, which ARE the engine's first constructor argument.
+ * @returns `signals` (the first constructor argument) and `topology` (the second).
  */
 export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOptions {
   return {
@@ -128,6 +151,8 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       logSignalMode: opts.logSignalMode,
       traceWeight: opts.traceWeight,
       prismWeight: opts.prismWeight,
+    },
+    topology: {
       collapseDiscount: opts.collapseDiscount,
       rankNormalization: opts.rankNormalization,
       suppressIdleTransients: opts.suppressIdleTransients,
@@ -137,16 +162,21 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
 }
 
 /**
- * The signal configuration, as one line.
+ * The run's whole configuration, as one line.
  *
  * One owner for two renderings — the console banner and the diagnostic dump's header — for the
  * reason `fse26-report.ts` records about its own pair: a second copy is a second owner, and the day
  * the two drift the artifact describes a configuration nobody ran.
  *
- * Every forwarded option is named, in the order the fields are declared above, so the line and the
- * object are the same list written twice and a test holds them against each other. The three that
- * used to be missing are marked, because a reader meeting this function next should be able to see
- * which fields the artifact could not previously state.
+ * It names the configuration the RUN used rather than one of the two arguments it reached the engine
+ * through: the fields of `signals` and `topology` together, in a fixed order. That is deliberate, and
+ * the test holds the line to the union — an artifact that named only the first argument would omit the
+ * four topology switches, which is the same class of omission as naming neither.
+ *
+ * The order is the order this line has always printed, so splitting the arguments into two objects did
+ * not change a byte of the artifacts. The three fields the golden half could not name at all until the
+ * previous iteration are marked, because a reader meeting this function next should be able to see
+ * which ones the artifact used to lack.
  *
  * @param opts - The parsed options.
  * @returns The line the banner prints and the dump stores verbatim.

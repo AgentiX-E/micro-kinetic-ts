@@ -71,7 +71,7 @@ import { parseRCAEvalArgs } from './rcaeval-cli.js';
 import {
   buildRCAEvalEngineOptions,
   formatSignalLine,
-  type RCAEvalSignalOptions,
+  type RCAEvalEngineOptions,
 } from './rcaeval-engine-options.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
@@ -113,21 +113,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── DI Assembly ───────────────────────────────────────────
 
-function createContainer(weights: RCAEvalSignalOptions): Container {
+function createContainer(engine: RCAEvalEngineOptions): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
   container.register(
     DI_TOKENS.RCA_ENGINE,
     () =>
-      // The first argument IS the engine's option object, so every field on it —
-      // `temporalWeight` and `onsetShape` included — reaches the pruner without a
-      // second restatement here. The second argument is the topology config.
-      new TreePruner(weights, {
-        collapseDiscount: weights.collapseDiscount,
-        rankNormalization: weights.rankNormalization,
-        suppressIdleTransients: weights.suppressIdleTransients,
-        suppressNearZeroBaselineRise: weights.suppressNearZeroBaselineRise,
-      }),
+      // Both arguments come from ONE call, so neither can carry a field the other lacks. The
+      // hand-written topology literal that used to stand here restated four values — and the comment
+      // above it claimed the first argument already carried them, which was true and useless: the
+      // pruner's option type does NOT declare them, so it spread them into its own options and read
+      // none of them, and this literal was the only path they reached the engine by.
+      new TreePruner(engine.signals, engine.topology),
   );
   container.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
   return container;
@@ -1096,11 +1093,11 @@ async function main(): Promise<void> {
   console.log(`\nGroups to evaluate: ${groups.size}`);
   console.log('═'.repeat(65));
 
-  // The engine's arguments are built by the module that also renders the line the artifact carries,
-  // so the two cannot state different configurations: a hand-written literal here would be a second
-  // owner of the option list, and the field that is present in one and missing from the other is
-  // exactly how the golden half came to omit three of its load-bearing weights.
-  const container = createContainer(buildRCAEvalEngineOptions(opts).signals);
+  // The engine's TWO arguments are built by the module that also renders the line the artifact
+  // carries, so neither the two objects nor the line can disagree: a hand-written literal here would
+  // be a second owner of the option list, and the field that is present in one and missing from the
+  // other is exactly how the golden half came to omit three of its load-bearing weights.
+  const container = createContainer(buildRCAEvalEngineOptions(opts));
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(
     container,
