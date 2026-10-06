@@ -75,6 +75,13 @@ export default defineConfig({
         // diffs this list against the modules the tests import, in both directions.
         'src/cli-args.ts',
         'src/rcaeval-cli.ts',
+        // Added with the module: the RCAEval runner's engine-option assembly and the configuration
+        // line its artifact carries, extracted from `run-rcaeval.ts` — which calls `main()` at
+        // import time and therefore put both out of reach of every test. Their absence from a
+        // measured surface is what let the line omit three of the fields `REPORTED_CONFIG_FIELDS`
+        // requires. `__tests__/coverage-scope.test.ts` diffs this list against the modules the
+        // tests import, in both directions.
+        'src/rcaeval-engine-options.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

@@ -46,8 +46,11 @@ import { join } from 'node:path';
 
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   isOnsetShape,
@@ -122,6 +125,37 @@ export interface CliOptions {
    * was REJECTED for moving four of the nine golden cells, one of them by 15.8pp.
    */
   stabilityWeight: number;
+  /**
+   * Strength of the per-edge LATENCY-rise term, the largest of the shipped ranking weights.
+   *
+   * Read from {@link DEFAULT_LAT_WEIGHT} for the reason `stabilityWeight` is, and with a second one
+   * on top of it: this value is not merely a copy that could drift, it was previously **absent from
+   * this runner entirely**. The golden artifact therefore rendered its configuration without the
+   * weight that carries the largest part of the ranking — `latWeight=0.561495` with
+   * {@link DEFAULT_LAT_MIN_RISE} is a PAIR measured at +56 cases across 10 fault types with none
+   * regressed — and a reader reconstructing the golden's configuration from its own artifact could
+   * not state it. Naming the constant puts it on the line the artifact carries.
+   */
+  latWeight: number;
+  /**
+   * The rise a service must clear before the latency term credits it (see {@link DEFAULT_LAT_MIN_RISE}).
+   *
+   * Carried beside the weight rather than folded into it because the two are ONE measured
+   * configuration: the floor is not safe on its own (at the previous weight of 0.03 it costs 6 cases
+   * across 6 fault types) and the weight's zero-regression window ends far below the shipped value
+   * without it. An artifact that named one and not the other would describe a configuration nobody
+   * ran.
+   */
+  latMinRise: number;
+  /**
+   * Strength of the DB-connection-pool dominance penalty (see
+   * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}).
+   *
+   * Read from the constant for the same reason as the two above, and it is the third field this
+   * runner used to inherit in silence: the penalty is +6 cases with zero regressed fault types, so
+   * the artifact must be able to say whether a run applied it.
+   */
+  poolMetricPenaltyWeight: number;
   /** Strength of the collision-energy signal (penalise upstream-inherited energy). */
   collisionWeight: number;
   /** Strength of the topological-source signal (reward no-anomalous-parent nodes). */
@@ -236,6 +270,12 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+    // The three terms the golden half used to inherit without naming. They are read from the
+    // engine's own constants, so this runner cannot describe a configuration the engine does not
+    // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
+    latWeight: DEFAULT_LAT_WEIGHT,
+    latMinRise: DEFAULT_LAT_MIN_RISE,
+    poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     collisionWeight: 0,
     topoWeight: 0,
     logWeight: DEFAULT_LOG_WEIGHT,

@@ -1,10 +1,10 @@
 /**
- * Guards on the RCAEval runner's DEFAULT configuration.
+ * Guards on the RCAEval runner's DEFAULT configuration, and on the artifact's record of it.
  *
  * `run-rcaeval.ts` is a CLI script that calls `main()` at import time, so it cannot
  * be imported by a test — and the values that decide what a bare dispatch measures
- * are exactly the ones no engine-level assertion can see. They are therefore read
- * as TEXT, the same way `fse26-reported-config.test.ts` reads the FSE'26 runner's:
+ * are exactly the ones no engine-level assertion can see. The DEFAULTS are therefore
+ * read as TEXT, the same way `fse26-reported-config.test.ts` reads the FSE'26 runner's:
  * the defect being guarded against is a default that disagrees with the engine's,
  * which is invisible from both sides individually.
  *
@@ -16,6 +16,24 @@
  * harmless, i.e. the gate would have reported "no effect" while never running the
  * configuration it claims to gate.
  *
+ * ## The second defect, which is why this file now reads an OBJECT as well as text
+ *
+ * The same inaccessibility hid something the text assertions could not see from either side:
+ * **the artifact's own configuration line omitted three of the fifteen fields
+ * `REPORTED_CONFIG_FIELDS` requires** — `latWeight`, `latMinRise` and
+ * `poolMetricPenaltyWeight`, the three that dominate the shipped ranking. An artifact that omits
+ * one "cannot be compared with another artifact — the difference is unexplained", in that list's
+ * own words, and the golden 9-cell is read from exactly this artifact.
+ *
+ * It survived because the line lived in the runner, where nothing could call it. The repair is
+ * `fse26-engine-options.ts`'s precedent: `rcaeval-engine-options.ts` now owns the option assembly
+ * AND the line, so the two are held against each other instead of against a remembered list. That
+ * makes part of this file's own history worth recording: **the assertions below used to pin the
+ * runner's source SHAPE** (`createContainer({ … })` with a hand-written field inside it), and a
+ * shape is a coordinate — the refactor that fixed the omission moved it. They are assertions about
+ * the PROPERTY now: the container takes the module's type, the runner has exactly one construction
+ * site, and the line names every option that site forwards.
+ *
  * @module benchmarks/__tests__/rcaeval-reported-config.test
  */
 
@@ -24,6 +42,25 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_WEIGHT,
+  DEFAULT_ONSET_SHAPE,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_STABILITY_WEIGHT,
+  DEFAULT_TEMPORAL_WEIGHT,
+} from '../../packages/tree/src/index.js';
+
+import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
+import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
+import {
+  NON_ENGINE_OPTION_KEYS,
+  UNREPORTED_BY_RCAEVAL,
+  buildRCAEvalEngineOptions,
+  formatSignalLine,
+} from '../src/rcaeval-engine-options.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '../..');
@@ -53,6 +90,14 @@ function code(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 }
 
+/** The `name=` tokens a line carries, which is what the artifact actually states. */
+function namedOn(line: string): string[] {
+  return [...new Set([...line.matchAll(/(?:^|\s)([A-Za-z][A-Za-z0-9]*)=/g)].map((m) => m[1]!))];
+}
+
+const shipped = parseRCAEvalArgs([]);
+const shippedSignals = buildRCAEvalEngineOptions(shipped).signals;
+
 describe('RCAEval runner configuration ownership', () => {
   const source = code(readFileSync(RUNNER_PATH, 'utf8')) + code(readFileSync(CLI_PATH, 'utf8'));
   const pruner = code(readFileSync(PRUNER_PATH, 'utf8'));
@@ -67,15 +112,9 @@ describe('RCAEval runner configuration ownership', () => {
     // The flag falls back to the SHIPPED value on a malformed one, so a typo reproduces a published
     // configuration instead of measuring a term nobody asked for.
     expect(source).toMatch(/parseWeight\(args\[\+\+i\]!,\s*DEFAULT_STABILITY_WEIGHT\)/);
-    // Forwarded into the container, printed, and carried by the container's parameter type: three
-    // separate ways for the flag to be accepted and then ignored.
-    expect(source).toMatch(
-      /createContainer\(\{[\s\S]{0,240}?stabilityWeight:\s*opts\.stabilityWeight/,
-    );
-    expect(source).toMatch(
-      /function createContainer\(weights:\s*\{[\s\S]{0,240}?stabilityWeight:\s*number/,
-    );
-    expect(source).toMatch(/stabilityWeight=\$\{opts\.stabilityWeight\}/);
+    // Forwarded into the container by the module that also renders the line, which is the property
+    // the shape assertion here used to approximate.
+    expect(shippedSignals.stabilityWeight).toBe(DEFAULT_STABILITY_WEIGHT);
   });
 
   it('declares both temporal defaults as the engine constants, not as literals', () => {
@@ -86,6 +125,34 @@ describe('RCAEval runner configuration ownership', () => {
     // And no numeric literal, which is how the pin read before this guard existed.
     expect(source).not.toMatch(/temporalWeight:\s*[-\d]/);
     expect(source).not.toMatch(/onsetShape:\s*'/);
+    // The values the engine will receive, asserted rather than inferred from the two lines above.
+    expect(shippedSignals.temporalWeight).toBe(DEFAULT_TEMPORAL_WEIGHT);
+    expect(shippedSignals.onsetShape).toBe(DEFAULT_ONSET_SHAPE);
+  });
+
+  it('declares the three terms the artifact used to omit as the engine constants', () => {
+    // The omission's other half: the line could not name them, and the reason it could not is that
+    // the runner never HELD them — it inherited the engine's defaults in silence. Naming the
+    // constant is what makes the value on the artifact the value the engine used.
+    expect(source).toMatch(/latWeight:\s*DEFAULT_LAT_WEIGHT\b/);
+    expect(source).toMatch(/latMinRise:\s*DEFAULT_LAT_MIN_RISE\b/);
+    expect(source).toMatch(/poolMetricPenaltyWeight:\s*DEFAULT_POOL_METRIC_PENALTY_WEIGHT\b/);
+    expect(source).not.toMatch(/latWeight:\s*[-\d]/);
+    expect(source).not.toMatch(/poolMetricPenaltyWeight:\s*[-\d]/);
+    expect(shippedSignals.latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(shippedSignals.latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    expect(shippedSignals.poolMetricPenaltyWeight).toBe(DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    expect(shippedSignals.logWeight).toBe(DEFAULT_LOG_WEIGHT);
+    // The premise that makes naming them MANDATORY rather than tidy: each is non-zero, so an
+    // omitted-when-default rule would render the shipped run and its ablation byte-identically.
+    for (const [name, value] of [
+      ['latWeight', shippedSignals.latWeight],
+      ['latMinRise', shippedSignals.latMinRise],
+      ['poolMetricPenaltyWeight', shippedSignals.poolMetricPenaltyWeight],
+      ['stabilityWeight', shippedSignals.stabilityWeight],
+    ] as const) {
+      expect(value, `${name} ships non-zero`).toBeGreaterThan(0);
+    }
   });
 
   it('imports those constants from the engine rather than redeclaring them', () => {
@@ -105,13 +172,25 @@ describe('RCAEval runner configuration ownership', () => {
     expect(names).toContain('DEFAULT_TEMPORAL_WEIGHT');
     expect(names).toContain('DEFAULT_ONSET_SHAPE');
     expect(names).toContain('DEFAULT_STABILITY_WEIGHT');
-    // No redeclaration anywhere in either file.
-    expect(source).not.toMatch(/const\s+DEFAULT_TEMPORAL_WEIGHT\b/);
-    expect(source).not.toMatch(/const\s+DEFAULT_ONSET_SHAPE\b/);
-    expect(source).not.toMatch(/const\s+DEFAULT_STABILITY_WEIGHT\b/);
-    expect(pruner).toMatch(/export const DEFAULT_TEMPORAL_WEIGHT\b/);
-    expect(pruner).toMatch(/export const DEFAULT_ONSET_SHAPE\b/);
-    expect(pruner).toMatch(/export const DEFAULT_STABILITY_WEIGHT\b/);
+    expect(names).toContain('DEFAULT_LAT_WEIGHT');
+    expect(names).toContain('DEFAULT_LAT_MIN_RISE');
+    expect(names).toContain('DEFAULT_POOL_METRIC_PENALTY_WEIGHT');
+    // No redeclaration anywhere in either file, and each constant really is the engine's.
+    for (const constant of [
+      'DEFAULT_TEMPORAL_WEIGHT',
+      'DEFAULT_ONSET_SHAPE',
+      'DEFAULT_STABILITY_WEIGHT',
+      'DEFAULT_LAT_WEIGHT',
+      'DEFAULT_LAT_MIN_RISE',
+      'DEFAULT_POOL_METRIC_PENALTY_WEIGHT',
+    ]) {
+      expect(source, `${constant} is redeclared`).not.toMatch(
+        new RegExp(`const\\s+${constant}\\b`),
+      );
+      expect(pruner, `${constant} is not the engine's`).toMatch(
+        new RegExp(`export const ${constant}\\b`),
+      );
+    }
   });
 
   it('falls back to the SHIPPED pair on an unusable flag value', () => {
@@ -128,17 +207,101 @@ describe('RCAEval runner configuration ownership', () => {
     expect(source).not.toMatch(/parseFloat\([^)]*\)\s*\|\|\s*0/);
   });
 
-  it('forwards the shape into the pruner, and prints what it used', () => {
-    // Two halves of the same claim. Forwarding is what makes the flag real; printing
-    // is what makes the artifact evidence of which configuration produced the cells,
-    // and this runner's artifact is a published number's provenance.
-    expect(source).toMatch(/createContainer\(\{[\s\S]{0,200}?onsetShape:\s*opts\.onsetShape/);
-    // The container's parameter type has to carry it too: the object it builds is the
-    // engine's option object, so a field missing from the type is a field the caller
-    // cannot pass and TypeScript cannot miss.
-    expect(source).toMatch(
-      /function createContainer\(weights:\s*\{[\s\S]{0,200}?onsetShape:\s*OnsetShape/,
+  it('builds the engine arguments in exactly one place, and it is not the runner', () => {
+    // The property the old shape assertions stood for, stated as a property. A hand-written literal
+    // at the construction site is a SECOND owner of the option list, and the field present in one
+    // and absent from the other is exactly how the line came to omit three of its own values.
+    expect(source).toMatch(/createContainer\(buildRCAEvalEngineOptions\(opts\)\.signals\)/);
+    expect(source).toMatch(/function createContainer\(weights: RCAEvalSignalOptions\)/);
+    expect(source).toContain("from './rcaeval-engine-options.js'");
+    // And no object literal at that call site at all: the only `createContainer(` followed by a brace
+    // would be the hand list coming back.
+    expect(source).not.toMatch(/createContainer\(\s*\{/);
+  });
+});
+
+describe('the RCAEval configuration line carries the configuration that produced the run', () => {
+  it('names exactly the options it forwards, in both directions', () => {
+    const named = namedOn(formatSignalLine(shipped)).sort();
+    const forwarded = Object.keys(shippedSignals).sort();
+    // Both directions in one equality: a forwarded option the line omits is an artifact that cannot
+    // be attributed, and a name the line invents is a configuration nobody ran.
+    expect(named).toEqual(forwarded);
+    expect(named).toContain('latWeight');
+    expect(named).toContain('latMinRise');
+    expect(named).toContain('poolMetricPenaltyWeight');
+    // The temporal pair used to be printed twice-once-removed — on the injection line, and not on
+    // this one — which is how one of the two renderings could drift unnoticed.
+    expect(named).toContain('temporalWeight');
+    expect(named).toContain('onsetShape');
+    // Non-vacuity: the join must have a population, or two empty sets would satisfy it.
+    expect(named.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it('names every reported field whose shipped value is non-zero', () => {
+    // The repository's own standard, applied to the half that did not meet it. A field may be
+    // omitted only while its shipped value is neutral AND the omission is named with a reason —
+    // otherwise two different shipped configurations can render the same line.
+    const named = new Set(namedOn(formatSignalLine(shipped)));
+    const exempt = new Set(Object.keys(UNREPORTED_BY_RCAEVAL));
+    // The partition, restricted to the REPORTED set: the line names options the report has never
+    // heard of (it is the engine's whole option surface), so the comparison is over the fields the
+    // report requires rather than over everything the line prints.
+    const namedReported = REPORTED_CONFIG_FIELDS.filter((field) => named.has(field));
+    expect([...namedReported, ...exempt].sort()).toEqual([...REPORTED_CONFIG_FIELDS].sort());
+    // … and the two halves are disjoint, so an exemption cannot silently cover a printed field.
+    for (const field of namedReported) {
+      expect(exempt.has(field), `${field} is both printed and exempt`).toBe(false);
+    }
+    // The three that were missing, asserted individually so a regression names itself.
+    for (const field of ['latWeight', 'latMinRise', 'poolMetricPenaltyWeight']) {
+      expect(named.has(field), `${field} must be named on the line`).toBe(true);
+      expect(exempt.has(field), `${field} cannot be exempt`).toBe(false);
+    }
+    // Every exemption is stated rather than implied, and the key set is exact so a NEW exemption has
+    // to be added deliberately.
+    for (const [field, reason] of Object.entries(UNREPORTED_BY_RCAEVAL)) {
+      expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
+    }
+    expect(Object.keys(UNREPORTED_BY_RCAEVAL).sort()).toEqual([
+      'dropMetrics',
+      'failedEdgeMinRecords',
+      'failedEdgeMode',
+      'failedEdgeWeight',
+      'metricFleetBaseline',
+      'metricRiseCeiling',
+    ]);
+  });
+
+  it('classifies every parsed option as forwarded or non-engine, with no residue', () => {
+    // The guard that would have caught the omission at any point in the last several iterations: an
+    // option that reaches `CliOptions` and is neither forwarded to the engine nor classified stops
+    // the suite, so "parsed but dropped" and "parsed and deliberately not an engine option" can
+    // never be the same shape again.
+    const parsed = Object.keys(shipped).sort();
+    const forwarded = Object.keys(shippedSignals);
+    const partition = [...forwarded, ...NON_ENGINE_OPTION_KEYS].sort();
+    expect(partition).toEqual(parsed);
+    for (const key of forwarded) {
+      expect(NON_ENGINE_OPTION_KEYS.includes(key), `${key} is classified twice`).toBe(false);
+    }
+    // Non-vacuity on both sides of the split: a partition of one empty set against everything else
+    // would pass while classifying nothing.
+    expect(forwarded.length).toBeGreaterThanOrEqual(16);
+    expect(NON_ENGINE_OPTION_KEYS.length).toBeGreaterThanOrEqual(6);
+    expect(new Set(partition).size).toBe(partition.length);
+  });
+
+  it('renders the line from the options alone, so the artifact and the runner cannot diverge', () => {
+    // A line that read ambient state would describe a configuration nobody ran; a line that ignored
+    // its argument would describe the shipped one whatever was asked for. Both are controlled here.
+    expect(formatSignalLine(shipped)).toBe(formatSignalLine(parseRCAEvalArgs([])));
+    expect(formatSignalLine(parseRCAEvalArgs(['--stability-weight', '1']))).toContain(
+      'stabilityWeight=1',
     );
-    expect(source).toMatch(/onsetShape: \$\{opts\.onsetShape\}/);
+    expect(formatSignalLine(parseRCAEvalArgs(['--onset-shape', 'order']))).toContain(
+      'onsetShape=order',
+    );
+    expect(formatSignalLine(shipped)).toContain(`temporalWeight=${DEFAULT_TEMPORAL_WEIGHT}`);
   });
 });

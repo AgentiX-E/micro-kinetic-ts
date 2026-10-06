@@ -62,14 +62,17 @@ import type {
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
-import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
-import type { LogSignalMode } from '../../packages/tree/src/pruning/ranking-signals.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
-import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
+import { parseRCAEvalArgs } from './rcaeval-cli.js';
+import {
+  buildRCAEvalEngineOptions,
+  formatSignalLine,
+  type RCAEvalSignalOptions,
+} from './rcaeval-engine-options.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
@@ -110,21 +113,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── DI Assembly ───────────────────────────────────────────
 
-function createContainer(weights: {
-  temporalWeight: number;
-  onsetShape: OnsetShape;
-  stabilityWeight: number;
-  collisionWeight: number;
-  topoWeight: number;
-  logWeight: number;
-  logSignalMode: LogSignalMode;
-  collapseDiscount: number;
-  traceWeight: number;
-  prismWeight: number;
-  rankNormalization: boolean;
-  suppressIdleTransients: boolean;
-  suppressNearZeroBaselineRise: boolean;
-}): Container {
+function createContainer(weights: RCAEvalSignalOptions): Container {
   const container = new Container();
   container.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
   container.register(
@@ -1021,25 +1010,13 @@ function reportDeepestExceptionDiagnostics(
 /**
  * The signal configuration, as one line.
  *
- * One owner for two renderings: the console banner and the dump's header. A dump that restated the
- * weights would be a second source for the mode a run was made under, and the day the two drifted
- * the artifact would describe a configuration nobody ran — which is the defect the `re3` dump hid,
- * where a trace-augmented ranking reconstructs to one case against its own prediction of fifteen
- * and nothing in the file says the trace term was on.
- *
- * @param opts - The parsed options.
- * @returns The line the banner prints and the dump stores verbatim.
+ * MOVED to `rcaeval-engine-options.ts`. It lived here, in a file that calls `main()` at import time,
+ * so no test could call it — which is why its omission of `latWeight`, `latMinRise` and
+ * `poolMetricPenaltyWeight` survived: the line is rendered by the same module that builds the
+ * engine's arguments now, and a test holds the two against each other. See that module for the rule
+ * the line obeys. The dump's header consumes the same function, so the banner and the artifact
+ * cannot state different configurations.
  */
-function formatSignalLine(opts: CliOptions): string {
-  return (
-    `signals: stabilityWeight=${opts.stabilityWeight} collisionWeight=${opts.collisionWeight} ` +
-    `topoWeight=${opts.topoWeight} logWeight=${opts.logWeight} logSignalMode=${opts.logSignalMode} ` +
-    `collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} ` +
-    `prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} ` +
-    `suppressIdleTransients=${opts.suppressIdleTransients} ` +
-    `suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise}`
-  );
-}
 
 // ── Main ──────────────────────────────────────────────────
 
@@ -1056,9 +1033,10 @@ async function main(): Promise<void> {
   const injectMode = opts.noInjectTime
     ? 'OFF (dataset-decoupled)'
     : 'ON (RCAEval baseline protocol)';
-  console.log(
-    `injectTime: ${injectMode} | temporalWeight: ${opts.temporalWeight} | onsetShape: ${opts.onsetShape}`,
-  );
+  // `temporalWeight` and `onsetShape` used to be printed HERE as well, which made two renderings of
+  // the same two fields and left the signals line free to omit them. They are on the signals line
+  // now, once, beside every other forwarded option.
+  console.log(`injectTime: ${injectMode}`);
   console.log(formatSignalLine(opts));
 
   const allCases = discoverAllCases(opts.dataDir);
@@ -1118,21 +1096,11 @@ async function main(): Promise<void> {
   console.log(`\nGroups to evaluate: ${groups.size}`);
   console.log('═'.repeat(65));
 
-  const container = createContainer({
-    temporalWeight: opts.temporalWeight,
-    onsetShape: opts.onsetShape,
-    stabilityWeight: opts.stabilityWeight,
-    collisionWeight: opts.collisionWeight,
-    topoWeight: opts.topoWeight,
-    logWeight: opts.logWeight,
-    logSignalMode: opts.logSignalMode,
-    collapseDiscount: opts.collapseDiscount,
-    traceWeight: opts.traceWeight,
-    prismWeight: opts.prismWeight,
-    rankNormalization: opts.rankNormalization,
-    suppressIdleTransients: opts.suppressIdleTransients,
-    suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
-  });
+  // The engine's arguments are built by the module that also renders the line the artifact carries,
+  // so the two cannot state different configurations: a hand-written literal here would be a second
+  // owner of the option list, and the field that is present in one and missing from the other is
+  // exactly how the golden half came to omit three of its load-bearing weights.
+  const container = createContainer(buildRCAEvalEngineOptions(opts).signals);
   const classifier = new RegexFaultClassifier(DEFAULT_CLASSIFICATION_RULES);
   const runner = new BenchmarkRunner(
     container,
