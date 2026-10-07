@@ -773,10 +773,10 @@ jobs:
         run: |
           set -o pipefail
           # No `--max-cases`: the corpus size has ONE owner, `OPTIMIZE_MAX_CASES` in
-          # `benchmarks/src/optimize-population.ts` (276 — the dataset's 46 strata times the 6 cases a 70/15/15
-          # split needs for both held-out splits). This line used to pass `200`, a second owner that was 64
-          # cases short of that requirement, and the CLI's own default was a third (`0`, meaning "load
-          # everything", which the 735-case dataset does not fit in the heap).
+          # `benchmarks/src/optimize-population.ts` — `200`, the largest corpus this runner's heap holds. The
+          # SPLIT would like `46 strata x 6 = 276`, and setting the cap to that requirement killed this job
+          # with an OOM at 12 174 MB of a 12 288 MB heap; both numbers are printed by every run. This line
+          # used to pass `200` as its own literal, and the CLI defaulted to `0` ("load everything").
           pnpm exec tsx benchmarks/src/run-optimize.ts --data-dir ~/RCAEval-json 2>&1 | tee optimize-rcaeval-results.txt
       - name: Upload weight-search results
         if: always()

@@ -273,18 +273,32 @@ export function formatDatasetStrata(
 }
 
 /**
- * The corpus size the search uses when the caller does not say, measured rather than preferred.
+ * The corpus size the search uses when the caller does not say: a HEAP bound, not a preference.
  *
- * **276 is `strata x boundary` over the DATASET's own strata**: 46 strata, each needing 6 cases for both
- * held-out splits at 70/15/15. It is the smallest cap at which the split's promise is even reachable, and it
- * replaces two values that disagreed — the CLI's default of `0` ("load everything", which the full 735-case
- * dataset cannot fit) and the workflow's literal `200` (64 cases short of the dataset's requirement, and 76
- * short of what the corpus would need). A cap with two owners is a cap with two answers.
+ * ## What this number is, and what it is not
  *
- * It is deliberately NOT the whole dataset: the cap exists because 735 cases do not fit in the runner's heap,
- * and 276 is 37.5% of it.
+ * It is not the size the split would like. That number is the dataset's own arithmetic —
+ * **46 strata x 6 cases = 276** for a 70/15/15 split — and it is printed beside every run by
+ * `formatDatasetStrata` and `formatSplitCapacity`. What this constant is, is the largest corpus the runner
+ * can HOLD, and the gap between the two is a measured fact rather than an unexamined default:
+ *
+ * > **The attempt to raise it to 276 is on the record and it failed.** On 2026-10-07 the cap was set to the
+ * > dataset's requirement, the golden's `optimize-rcaeval` job was dispatched, and it died with
+ * > `FATAL ERROR: Ineffective mark-compacts near heap limit — JavaScript heap out of memory` after ~150 s at
+ * > **12 174 MB of a 12 288 MB heap**, i.e. during the LOAD, with 44.6 MB per case. 276 cases do not fit;
+ * > 200 do (they have run in every golden since this job existed).
+ *
+ * So the coverage gap is **not closeable by raising the cap** on this runner, and a reader who has only the
+ * requirement would spend an iteration doing what that attempt did. The remaining levers are the ones that do
+ * not add cases: a lower boundary (the split ratios — 60/20/20 needs 4 per stratum, so 46 x 4 = 184 fits), or
+ * accepting the 2 un-coverable strata and disclosing them. Both are recorded in
+ * `docs/held-out-coverage-audit.md`.
+ *
+ * Keeping the value in ONE place matters more than its being the best value: before this constant existed the
+ * CLI defaulted to `0` ("load everything", which does not fit either) and the workflow passed a literal
+ * `200` — two owners that disagreed, and neither was the module that reports the corpus.
  */
-export const OPTIMIZE_MAX_CASES = 276;
+export const OPTIMIZE_MAX_CASES = 200;
 
 /**
  * How the corpus is drawn when the dataset is larger than the cap, named so the artifact can state it.

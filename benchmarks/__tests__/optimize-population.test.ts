@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { requiredCasesForHeldOutCoverage } from '../../packages/optimize/src/split.js';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 import {
   CORPUS_SAMPLING_OBJECTIVE,
@@ -427,12 +428,16 @@ describe('the corpus size and the sampling key have one owner each', () => {
     'utf8',
   );
 
-  it('derives the constant from the dataset arithmetic it was chosen for', () => {
-    // 276 is not a preference: it is the dataset's stratum count times the boundary, and a reader can check it
-    // against the same two numbers the artifact prints. Asserted against the arithmetic so a change to either
-    // factor cannot leave the constant describing the old corpus.
-    expect(OPTIMIZE_MAX_CASES).toBe(46 * 6);
-    expect(OPTIMIZE_MAX_CASES).toBe(276);
+  it('keeps the cap BELOW the dataset requirement, because the requirement does not fit in the heap', () => {
+    // THE FENCE THAT WOULD HAVE CAUGHT THE OOM BEFORE IT WAS DISPATCHED. The dataset needs 46 x 6 = 276 cases
+    // for both held-out splits at 70/15/15 — and setting the cap to that requirement killed the golden's
+    // `optimize-rcaeval` job with `FATAL ERROR: Ineffective mark-compacts near heap limit` at 12 174 MB of a
+    // 12 288 MB heap, during the LOAD, at 44.6 MB per case. So the constant is a HEAP BOUND, not the
+    // requirement, and a change that raises it to the requirement must fail HERE instead of in a golden run.
+    const requirement = requiredCasesForHeldOutCoverage(46, { train: 0.7, val: 0.15, test: 0.15 });
+    expect(requirement, 'the dataset requirement the artifact prints').toBe(276);
+    expect(OPTIMIZE_MAX_CASES).toBeLessThan(requirement);
+    expect(OPTIMIZE_MAX_CASES).toBe(200);
   });
 
   it('makes the runner use it as the default rather than "load everything"', () => {
