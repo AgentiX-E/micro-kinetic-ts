@@ -348,3 +348,110 @@ describe('the evidence report states its availability before its rate', () => {
     expect(bare).toContain('bar NOT met');
   });
 });
+
+describe('the arms where a reading is NOT counted', () => {
+  const one = readDirectionalEvidence({
+    caseId: 'c1',
+    stratum: 're2ob:RE2:loss',
+    injectTimeMs: AT,
+    traces: spans([
+      { id: 'a', service: 'front' },
+      { id: 'b', service: 'orders', parent: 'a', status: 'ERROR' },
+    ]),
+  });
+  const other = readDirectionalEvidence({
+    caseId: 'c2',
+    stratum: 're1ob:RE1:cpu',
+    injectTimeMs: AT,
+    traces: spans([
+      { id: 'a', service: 'front' },
+      { id: 'b', service: 'api', parent: 'a', status: 'ERROR' },
+    ]),
+  });
+  const stratumOf = (id: string): string => (id === 'c1' ? one.stratum : other.stratum);
+
+  it('excludes a case the population filter rejects, rather than rating it inside', () => {
+    // The `loss` reading must not contain the `cpu` case: a filter that silently included it would make the
+    // two populations the same number wearing different names.
+    const loss = readEvidenceSeparation(
+      [one, other],
+      () => 'orders',
+      () => 'front',
+      stratumOf,
+      'loss',
+      'failedMass',
+    );
+    expect(loss.measurable).toBe(1);
+    const cpu = readEvidenceSeparation(
+      [one, other],
+      () => 'orders',
+      () => 'front',
+      stratumOf,
+      'cpu',
+      'failedMass',
+    );
+    expect(cpu.measurable).toBe(1);
+  });
+
+  it('excludes a case the engine got RIGHT, and one whose top-1 the runner could not supply', () => {
+    // Both are `continue`s on the same line and both matter: counting the first would make the channel look
+    // worse than it is (there was nothing to fix), and counting the second would let a missing reading from
+    // the ENGINE read as a miss the channel failed to fix.
+    const correct = readEvidenceSeparation(
+      [one],
+      () => 'orders',
+      () => 'orders',
+      stratumOf,
+      '',
+      'failedMass',
+    );
+    expect(correct.measurable).toBe(1);
+    expect(correct.engineMisses, 'the engine was right, so there is no miss to count').toBe(0);
+    expect(correct.auc, 'no misses gives no rate rather than a perfect one').toBeUndefined();
+    expect(correct.p).toBeUndefined();
+
+    const noTop1 = readEvidenceSeparation(
+      [one],
+      () => 'orders',
+      () => undefined,
+      stratumOf,
+      '',
+      'failedMass',
+    );
+    expect(noTop1.engineMisses).toBe(0);
+  });
+
+  it('reads an edge that exists only BEFORE the injection without inventing an after side', () => {
+    // The mirror of the no-baseline case: an edge whose failures and durations are all pre-injection has no
+    // AFTER entry at all. Both lookups must fall back to nothing rather than to zero-everything, because a
+    // fabricated after-side would read as a rise that never happened.
+    const beforeOnly = readDirectionalEvidence(
+      caseWith([
+        { id: 'a', service: 'front' },
+        { id: 'b', service: 'api', parent: 'a', before: true, ms: 10, status: 'ERROR' },
+      ]),
+    );
+    expect(beforeOnly.services.map((s) => s.service)).toEqual(['api']);
+    expect(beforeOnly.services[0]!.failedMass).toBe(0);
+    expect(beforeOnly.services[0]!.latencyRise).toBe(0);
+    expect(beforeOnly.failedTop1).toBeUndefined();
+    expect(beforeOnly.latencyTop1).toBeUndefined();
+  });
+
+  it('truncates a long list of untraced strata instead of printing 46 of them', () => {
+    // The availability line names what no channel can speak about; with 46 untraced strata it must truncate,
+    // and the ellipsis is the signal that the list is partial rather than complete.
+    const many = Array.from({ length: 10 }, (_, i) =>
+      readDirectionalEvidence({
+        caseId: `c${i}`,
+        stratum: `s${String(i).padStart(2, '0')}:RE1:cpu`,
+        injectTimeMs: AT,
+        traces: undefined,
+      }),
+    );
+    const lines = formatDirectionalEvidence(many);
+    expect(lines[1]).toContain('10 of 10 strata have NO traces at all');
+    expect(lines[1]).toContain('…');
+    expect(lines[1]!.split(' ').filter((w) => w.includes('(1)')).length).toBe(8);
+  });
+});
