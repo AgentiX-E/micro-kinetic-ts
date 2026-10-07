@@ -4,13 +4,41 @@
 > - v1 claimed "~1.84× academic SOTA" against a nofire.ai third-party table — **strawman, retracted**.
 > - v2 calibrated against primary LLM-agent sources (RCLAgent 56.67%, GALA 42%) — correct but **incomplete**: it
 >   missed the parallel *non-LLM* 2026 frontier.
-> - **v3 (this)** adds the two methods that matter most: **PRISM** (arXiv:2601.21359, the RCAEval author's own
+> - **v3** adds the two methods that matter most: **PRISM** (arXiv:2601.21359, the RCAEval author's own
 >   graph-free method, **68% Top-1**) and **StableRCA** (arXiv:2606.05636, **77% SockShop**), plus the ORCA-bench
 >   production-readiness result. The honest margin is now **~1.14× vs the benchmark author's own SOTA**, not 1.84×.
+> - **v3.1 (this)** re-verifies §1 against the CURRENT golden rather than the `80709c2` baseline v3 cited, and
+>   records that the field's numbers are **cross-paper** — see §4's first gap, which remains open.
+>
+> **Re-verification (v3.1).** The nine `AC@1` cells are measured on every golden run and were last confirmed
+> unchanged at `91ba625`: RE1 80.0 / 92.8 / 68.0 · RE2 82.4 / 88.9 / 68.1 · RE3 80.0 / 45.0 / 51.1. The
+> case-weighted overall is therefore still **≈77.4%** over the 735 cases
+> (`(375×0.803 + 270×0.798 + 90×0.587) / 735 = 0.7738`), and every figure below stands as written.
 
 **Metric.** All figures are service-level **AC@1 / Recall@1 / Top-1** (top-1 localization of the root-cause
 *service/component*), the RCAEval protocol. Where a method reports a *different* metric or subset, that is stated
 explicitly — cross-metric comparison is the single largest source of false "SOTA" claims in this field.
+
+---
+
+## 0. STANDING — where this project sits, on three published evaluations
+
+| evaluation | metric | ours | best published competitor | margin | basis |
+| --- | --- | --- | --- | --- | --- |
+| **RCAEval, all 735 cases** | service Top-1 | **77.4%** | PRISM **68%** (arXiv:2601.21359 — the benchmark author's own method) | **+9.4 pp, ≈1.14×** | cross-paper (§2a) |
+| **RCAEval RE2-OB (90 cases)** | AC@1 | **82.4%** | RCLAgent **56.67%** (arXiv:2605.14866) | **+25.7 pp** | cross-paper (§2b) |
+| **FSE'26 RCABench** | Top@1 | **53.23%** (757/1422) | field avg **21%**, best **37%** (arXiv:2510.04711) | **+16 pp over the best** | cross-paper, and the benchmark is a *different* fault set — see the caveat below |
+
+**Ranking: first on all three, against every published number this repository has been able to source.** The
+project also leads the pre-LLM causal cohort by a wide margin on RCAEval overall (BARO 19%, with its
+often-quoted 0.69 being a Train-Ticket RE2 Avg@5 rather than an overall Top-1) and the LLM-agent cohort by
+20–40 pp.
+
+**What this ranking is NOT.** Every competitor figure above is **cross-paper**: their datasets, their harness,
+their case sets, their metric implementations. §4's first open gap says it plainly — *a cross-paper comparison,
+even to PRISM's 68%, is weaker than a controlled re-run* — and this repository holds the 735 cases and a
+reproducible PRISM path, so the head-to-head is runnable and is the decisive next test. Until it is run, the
+standing above is a **position against published numbers**, not a head-to-head win.
 
 ---
 
