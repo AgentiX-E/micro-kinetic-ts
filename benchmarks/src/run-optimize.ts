@@ -36,7 +36,6 @@ import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
 import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { toFaultGraphOptions } from '../../packages/kinetic/src/benchmarks/runners/fault-graph-options.js';
-import { toEngineDirectionalInputs } from './directional-evidence.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 import type { RCAConfiguration } from '../../packages/optimize/src/index.js';
 import {
@@ -54,6 +53,7 @@ import {
   formatEvidenceSeparation,
   readDirectionalEvidence,
   readEvidenceSeparation,
+  toEngineDirectionalInputs,
 } from './directional-evidence.js';
 import {
   CORPUS_SAMPLING_OBJECTIVE,
