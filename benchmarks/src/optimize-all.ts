@@ -13,6 +13,7 @@
  *   pnpm exec tsx benchmarks/src/optimize-all.ts
  */
 
+import { toFaultGraphOptions } from '../../packages/kinetic/src/benchmarks/runners/fault-graph-options.js';
 import { SyntheticBenchmarkGenerator } from '../../packages/kinetic/src/benchmarks/synthetic/data-generator.js';
 
 import type { RCAConfiguration } from '../../packages/optimize/src/config-space.js';
@@ -37,7 +38,14 @@ function createOracle(): (config: RCAConfiguration) => Promise<number> {
 
     for (const c of suite.cases) {
       try {
-        const faultGraph = engine.buildFaultGraph(c.callGraph, c.metrics);
+        // The shared assembly, for the same reason as `run-optimize.ts` — and this site was passing no options
+        // at all, so it never even reached the log signal. The synthetic suite carries none of the optional
+        // fields, so nothing changes here today; the point is that nothing has to be remembered either.
+        const faultGraph = engine.buildFaultGraph(
+          c.callGraph,
+          c.metrics,
+          toFaultGraphOptions(c, 0),
+        );
         const results = await engine.analyze(faultGraph, TOP_K);
         if (results.length > 0 && results[0]!.serviceId === c.groundTruth.serviceId) {
           correct++;

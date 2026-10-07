@@ -34,10 +34,8 @@ import { join } from 'node:path';
 
 import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
 import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
-import type {
-  BenchmarkCase,
-  BenchmarkLogEntry,
-} from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import { toFaultGraphOptions } from '../../packages/kinetic/src/benchmarks/runners/fault-graph-options.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 import type { RCAConfiguration } from '../../packages/optimize/src/index.js';
 import {
@@ -293,10 +291,18 @@ async function diagnoseCase(
   c: BenchmarkCase,
 ): Promise<{ built: boolean; top1?: string }> {
   try {
-    const faultGraph = engine.buildFaultGraph(c.callGraph, c.metrics, {
-      injectTimeMs: 0,
-      logs: c.logs as readonly BenchmarkLogEntry[],
-    });
+    // THROUGH THE SHARED ASSEMBLY, not an inline literal. `toFaultGraphOptions` exists because two call sites
+    // drifted and `traceActivity` and then `failedTraceEdges` were each silently dead on the benchmark with the
+    // largest case count; this file was a THIRD site, forwarding `logs` and nothing else. On RCAEval all three
+    // forwarded fields are undefined today, so this is behaviour-preserving — and it is the precondition for
+    // any change that makes them non-empty, because an input that does not reach the engine reports "no change".
+    const faultGraph = engine.buildFaultGraph(
+      c.callGraph,
+      c.metrics,
+      // `0` is this caller's own policy (the injection anchor disabled), which the shared function takes as a
+      // parameter precisely because the caller owns it.
+      toFaultGraphOptions(c, 0),
+    );
     const results = await engine.analyze(faultGraph, 1);
     // `built` is separated from `top1` because the two absences mean different things: a case the engine could
     // not build is not evidence about a ranking, while a case it built and ranked nothing for IS — the engine
