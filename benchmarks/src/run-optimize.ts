@@ -57,6 +57,7 @@ import {
   formatPopulation,
   formatSplitCapability,
   formatSplitCapacity,
+  OPTIMIZE_MAX_CASES,
   strataCovered,
   summarizeDatasetStrata,
   summarizePopulation,
@@ -78,7 +79,7 @@ function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
   const opts: CliOptions = {
     dataDir: join(homedir(), 'RCAEval-json'),
-    maxCases: 0,
+    maxCases: OPTIMIZE_MAX_CASES,
     rounds: 4,
     seed: 42,
   };
@@ -137,34 +138,6 @@ function detectSuite(dirPath: string): 'RE1' | 'RE2' | 'RE3' {
   return 'RE1';
 }
 
-/**
- * Derive a lightweight `system:suite` stratum key from a directory PATH only,
- * without parsing any file. Used to deterministically down-sample the full
- * 735-case dataset before loading — loading every case at once exhausts the
- * 12 GB CI heap (the benchmark itself caps RE2 at 50 cases for the same
- * reason), so we sample proportionally per (system, suite) to stay bounded
- * while preserving the fault-type distribution.
- */
-function deriveStratumKey(dirPath: string): string {
-  let suite = '';
-  let system = '';
-  for (const seg of dirPath.replace(/\\/g, '/').split('/')) {
-    const lower = seg.toLowerCase();
-    if (!suite) {
-      const m = lower.match(/^re([123])/);
-      if (m) suite = `re${m[1]}`;
-    }
-    if (!system) {
-      if (/^re[123](ob|ss|tt)\b/.test(lower)) {
-        system = lower.slice(2, 4);
-      } else if (lower === 'ob' || lower === 'onlineboutique') system = 'ob';
-      else if (lower === 'ss' || lower === 'sockshop') system = 'ss';
-      else if (lower === 'tt' || lower === 'trainticket') system = 'tt';
-    }
-  }
-  return `${system || 'unknown'}:${suite || 'unknown'}`;
-}
-
 const SUITE_IDS = { RE1: 'rcaeval-re1', RE2: 'rcaeval-re2', RE3: 'rcaeval-re3' } as const;
 
 // ── Case loading ──────────────────────────────────────────
@@ -195,13 +168,20 @@ async function loadAllCases(
 
   // Deterministic, stratified down-sample before loading: the full dataset
   // (735 cases) does not fit in the CI heap when every case's logs+metrics are
-  // held at once, so cap the working set to `maxCases` while preserving each
-  // (system, suite) stratum's share.
+  // held at once, so cap the working set to `maxCases`.
+  //
+  // THE KEY IS THE FAULT-LEVEL ONE, and that is a repair rather than a detail. Stratifying on `system:suite`
+  // — nine strata — preserves each system-and-suite share and says nothing about fault types, so a rare fault
+  // type competes inside a nine-way partition and is drawn thinly or not at all. Measured: the dataset has 46
+  // `system:suite:fault` strata of which only **2** are below the size a held-out split needs, yet the corpus
+  // that nine-way key produced had **44** strata of which **28** were below it — the deficit was the
+  // SAMPLER's, not the dataset's. Sampling each fault stratum from its own share is what makes the corpus's
+  // coverage a statement about the split rather than about the draw.
   if (maxCases > 0 && dirs.length > maxCases) {
     const ratio = maxCases / dirs.length;
     const { train } = stratifiedSplit(
       dirs,
-      deriveStratumKey,
+      deriveStratumFromCaseDir,
       { train: ratio, val: 0, test: 1 - ratio },
       seed,
     );

@@ -772,7 +772,12 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-optimize.ts --data-dir ~/RCAEval-json --max-cases 200 2>&1 | tee optimize-rcaeval-results.txt
+          # No `--max-cases`: the corpus size has ONE owner, `OPTIMIZE_MAX_CASES` in
+          # `benchmarks/src/optimize-population.ts` (276 — the dataset's 46 strata times the 6 cases a 70/15/15
+          # split needs for both held-out splits). This line used to pass `200`, a second owner that was 64
+          # cases short of that requirement, and the CLI's own default was a third (`0`, meaning "load
+          # everything", which the 735-case dataset does not fit in the heap).
+          pnpm exec tsx benchmarks/src/run-optimize.ts --data-dir ~/RCAEval-json 2>&1 | tee optimize-rcaeval-results.txt
       - name: Upload weight-search results
         if: always()
         uses: actions/upload-artifact@v4

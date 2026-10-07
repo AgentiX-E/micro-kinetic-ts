@@ -273,6 +273,20 @@ export function formatDatasetStrata(
 }
 
 /**
+ * The corpus size the search uses when the caller does not say, measured rather than preferred.
+ *
+ * **276 is `strata x boundary` over the DATASET's own strata**: 46 strata, each needing 6 cases for both
+ * held-out splits at 70/15/15. It is the smallest cap at which the split's promise is even reachable, and it
+ * replaces two values that disagreed — the CLI's default of `0` ("load everything", which the full 735-case
+ * dataset cannot fit) and the workflow's literal `200` (64 cases short of the dataset's requirement, and 76
+ * short of what the corpus would need). A cap with two owners is a cap with two answers.
+ *
+ * It is deliberately NOT the whole dataset: the cap exists because 735 cases do not fit in the runner's heap,
+ * and 276 is 37.5% of it.
+ */
+export const OPTIMIZE_MAX_CASES = 276;
+
+/**
  * How the corpus is drawn when the dataset is larger than the cap, named so the artifact can state it.
  *
  * Today's objective preserves the dataset's `system:suite` shares, which is why RE3 is 12.1% of the corpus.

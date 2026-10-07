@@ -27,6 +27,7 @@ import { describe, expect, it } from 'vitest';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 import {
   CORPUS_SAMPLING_OBJECTIVE,
+  OPTIMIZE_MAX_CASES,
   deriveStratumFromCaseDir,
   formatDatasetStrata,
   formatPopulation,
@@ -410,5 +411,54 @@ describe('the DATASET the corpus is sampled from', () => {
     expect(many).toContain('smallest:');
     expect(many).toContain('…');
     expect(many.split('smallest:')[1]!.split(' ').filter(Boolean).length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('the corpus size and the sampling key have one owner each', () => {
+  const SOURCE = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../src/run-optimize.ts'),
+    'utf8',
+  );
+  const WORKFLOW = readFileSync(
+    resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '../../.github/workflows/benchmark-rcaeval.yml',
+    ),
+    'utf8',
+  );
+
+  it('derives the constant from the dataset arithmetic it was chosen for', () => {
+    // 276 is not a preference: it is the dataset's stratum count times the boundary, and a reader can check it
+    // against the same two numbers the artifact prints. Asserted against the arithmetic so a change to either
+    // factor cannot leave the constant describing the old corpus.
+    expect(OPTIMIZE_MAX_CASES).toBe(46 * 6);
+    expect(OPTIMIZE_MAX_CASES).toBe(276);
+  });
+
+  it('makes the runner use it as the default rather than "load everything"', () => {
+    // The CLI's default was `0` — "all 735 cases" — which the heap cannot hold, so the effective cap was
+    // whatever the workflow passed. Two owners, and neither was the module that reports the corpus.
+    expect(SOURCE).toContain('maxCases: OPTIMIZE_MAX_CASES');
+    expect(SOURCE, 'no second default').not.toMatch(/maxCases: 0,\n/);
+  });
+
+  it('leaves the optimize invocation no cap to pass', () => {
+    // Scoped to THAT invocation on purpose. A literal there is a second owner of a value the source already
+    // names, and this one was 64 cases short of the requirement the source records — but other runners pass
+    // their own caps for their own reasons (`run-rcaeval` holds RE2 at 50 for memory), and a fence that
+    // banned the flag file-wide would be asserting a policy the repository does not hold.
+    const optimizeInvocation = WORKFLOW.split('\n').find((l) => l.includes('run-optimize.ts'));
+    expect(optimizeInvocation, 'the runner is invoked').toBeDefined();
+    expect(optimizeInvocation, 'no cap on this invocation').not.toContain('--max-cases');
+    expect(WORKFLOW, 'and it points at the owner instead').toContain('OPTIMIZE_MAX_CASES');
+  });
+
+  it('samples on the FAULT-level key, which is the repair rather than a detail', () => {
+    // The nine-way `system:suite` key preserved system-and-suite shares and nothing about fault types, so a
+    // rare fault type competed inside a nine-way partition: the dataset has 2 strata below the boundary and
+    // the corpus that key produced had 28. Asserted on the call, because the wrong key is invisible in the
+    // output — it produces a corpus, just the wrong one.
+    expect(SOURCE).toMatch(/stratifiedSplit\(\s*dirs,\s*deriveStratumFromCaseDir,/);
+    expect(SOURCE, 'the nine-way key is gone, not merely unused').not.toContain('deriveStratumKey');
   });
 });
