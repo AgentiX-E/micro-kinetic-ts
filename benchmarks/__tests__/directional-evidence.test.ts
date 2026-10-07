@@ -14,18 +14,26 @@
  * @module benchmarks/__tests__/directional-evidence
  */
 
+import * as fs from 'node:fs';
 import { readFileSync } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import type { FaultFailedEdge } from '../../packages/core/src/interfaces/rca-engine.js';
+import { countDirectionalInputs } from '../../packages/kinetic/src/benchmarks/loaders/rcaeval-loader.js';
 import type { BenchmarkTraceSpan } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import { computeFailedEdgeScores } from '../../packages/tree/src/pruning/ranking-signals.js';
 import {
+  formatDirectionalCoverage,
   formatDirectionalEvidence,
   formatEvidenceSeparation,
   readDirectionalEvidence,
   readEvidenceSeparation,
+  summarizeDirectionalCoverage,
   toEngineDirectionalInputs,
   type DirectionalReading,
 } from '../src/directional-evidence.js';
@@ -511,5 +519,243 @@ describe('the bridge to the shapes the engine already accepts', () => {
       failedTraceEdges: [],
       edgeLatency: [],
     });
+  });
+});
+
+describe('the coverage of the direction channels, which is what makes a zero interpretable', () => {
+  // A weighted term whose input is ABSENT contributes exactly zero, and so does one whose input is present
+  // but uninformative. Every artifact here reports only the score, so the two are indistinguishable in the
+  // output — and `latWeight = 0.561495` multiplied an empty map on every RCAEval run for six iterations
+  // while the battery read its zero as a finding about the term.
+
+  const one = (
+    failed: number,
+    latency: number,
+  ): {
+    failedTraceEdges?: { caller: string; callee: string; failed: number; baseline: number }[];
+    edgeLatency?: { caller: string; callee: string; preMeanMs: number; postMeanMs: number }[];
+  } => ({
+    failedTraceEdges: Array.from({ length: failed }, (_, i) => ({
+      caller: 'a',
+      callee: `c${i}`,
+      failed: 1,
+      baseline: 0,
+    })),
+    edgeLatency: Array.from({ length: latency }, (_, i) => ({
+      caller: 'a',
+      callee: `c${i}`,
+      preMeanMs: 1,
+      postMeanMs: 2,
+    })),
+  });
+
+  it('counts cases and edges separately, because the two answer different questions', () => {
+    // "How many cases have anything to rank with" is a coverage question; "how many edges is that" is a
+    // density question. A corpus where one case carries 40 edges and 40 cases carry one each are very
+    // different inputs to a max-normalised score.
+    const c = summarizeDirectionalCoverage([one(2, 3), one(1, 0), {}]);
+    expect(c.cases).toBe(3);
+    expect(c.casesWithFailedEdges).toBe(2);
+    expect(c.failedEdges).toBe(3);
+    expect(c.casesWithLatency).toBe(1);
+    expect(c.latencyEdges).toBe(3);
+  });
+
+  it('treats an ABSENT field and an EMPTY array the same, since neither is measurable', () => {
+    // The loader attaches `[]` on a file with no such column and omits the field on a case it never reached.
+    // A count that separated them would report a difference in the data that is only a difference in wiring.
+    expect(summarizeDirectionalCoverage([{}])).toEqual(
+      summarizeDirectionalCoverage([{ failedTraceEdges: [], edgeLatency: [] }]),
+    );
+  });
+
+  it('names a STARVED channel instead of printing a zero the reader must interpret', () => {
+    // This is the whole point of the line. `edgeLatency 0/204` and `edgeLatency 204/204` with a flat score
+    // are opposite findings, and the bare count does not say which; the warning does.
+    const starved = formatDirectionalCoverage(
+      summarizeDirectionalCoverage([{ failedTraceEdges: one(1, 0).failedTraceEdges }]),
+      'rcaeval-re1',
+    );
+    expect(starved).toContain('direction-coverage[rcaeval-re1]');
+    expect(starved).toContain('failedTraceEdges 1/1 cases, 1 edges');
+    expect(starved).toContain('edgeLatency 0/1 cases, 0 edges');
+    expect(starved).toContain('STARVED: edgeLatency');
+    expect(starved, 'singular, not a list').not.toContain('these');
+  });
+
+  it('says nothing about starvation when both channels carry rows', () => {
+    const line = formatDirectionalCoverage(summarizeDirectionalCoverage([one(1, 1)]), 're3');
+    expect(line).not.toContain('STARVED');
+  });
+
+  it('names both channels when both are starved, which is the reading the golden half produced', () => {
+    // Until this iteration the optimizer artifact reported `with traces=0` for all 204 cases, which is this
+    // shape. The line has to be unmistakable rather than a pair of zeros in a longer sentence.
+    const line = formatDirectionalCoverage(summarizeDirectionalCoverage([{}, {}]), 're2');
+    expect(line).toContain('STARVED: failedTraceEdges, edgeLatency');
+    expect(line).toContain('these');
+  });
+});
+
+describe('the two derivations of the direction inputs agree, because they describe ONE relation', () => {
+  // There are two of them for a plumbing reason — one reads a file in a single streaming pass for the runners
+  // that drop their spans, the other reads spans a runner still holds — and they must not disagree about what
+  // an edge is, because their output is the same case INPUT. The fixtures below are one description rendered
+  // two ways, which is the only way to check that.
+
+  interface Planned {
+    readonly caller: string;
+    readonly callee: string;
+    readonly spanId: string;
+    readonly at: number;
+    readonly ms: number;
+    readonly status: 'OK' | 'ERROR';
+  }
+
+  /** Jaeger's columns plus `duration`, which is what the streaming half reads. */
+  const asCsv = (planned: readonly Planned[]): string[] => {
+    const rows = ['traceId,spanId,parentSpanId,serviceName,startTimeMillis,status,duration'];
+    for (const p of planned) {
+      rows.push(`t1,${p.spanId}c,,${p.caller},${p.at},OK,${p.ms * 100}`);
+      rows.push(`t1,${p.spanId}s,${p.spanId}c,${p.callee},${p.at},${p.status},${p.ms}`);
+    }
+    return rows;
+  };
+
+  /** The same calls as spans, the shape the in-memory half reads. */
+  const asSpans = (planned: readonly Planned[]): BenchmarkTraceSpan[] =>
+    planned.flatMap((p) => [
+      {
+        traceId: 't1',
+        spanId: `${p.spanId}c`,
+        parentSpanId: undefined,
+        service: p.caller,
+        operationName: 'call',
+        startTime: p.at,
+        duration: p.ms * 100,
+        status: 'OK' as const,
+      },
+      {
+        traceId: 't1',
+        spanId: `${p.spanId}s`,
+        parentSpanId: `${p.spanId}c`,
+        service: p.callee,
+        operationName: 'handle',
+        startTime: p.at,
+        duration: p.ms,
+        status: p.status,
+      },
+    ]);
+
+  const CASES: ReadonlyArray<{ readonly name: string; readonly planned: readonly Planned[] }> = [
+    {
+      name: 'a clean rise on one edge and a fall on another',
+      planned: [
+        { caller: 'a', callee: 'b', spanId: 's1', at: 100, ms: 10, status: 'OK' },
+        { caller: 'a', callee: 'b', spanId: 's2', at: 200, ms: 20, status: 'OK' },
+        { caller: 'a', callee: 'b', spanId: 's3', at: 1100, ms: 100, status: 'OK' },
+        { caller: 'a', callee: 'c', spanId: 's4', at: 300, ms: 90, status: 'OK' },
+        { caller: 'a', callee: 'c', spanId: 's5', at: 1200, ms: 30, status: 'OK' },
+      ],
+    },
+    {
+      name: 'a baseline-only edge beside a newly failing one',
+      planned: [
+        { caller: 'a', callee: 'b', spanId: 's1', at: 200, ms: 10, status: 'ERROR' },
+        { caller: 'a', callee: 'b', spanId: 's2', at: 1100, ms: 10, status: 'ERROR' },
+        { caller: 'a', callee: 'c', spanId: 's3', at: 150, ms: 10, status: 'ERROR' },
+        { caller: 'a', callee: 'c', spanId: 's4', at: 250, ms: 10, status: 'ERROR' },
+      ],
+    },
+    {
+      name: 'an edge that appears only after the injection',
+      planned: [
+        { caller: 'front', callee: 'orders', spanId: 's1', at: 2000, ms: 50, status: 'OK' },
+        { caller: 'front', callee: 'orders', spanId: 's2', at: 100, ms: 10, status: 'ERROR' },
+      ],
+    },
+  ];
+
+  for (const { name, planned } of CASES) {
+    it(`agrees with the streaming pass on: ${name}`, () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'directional-'));
+      const tracesPath = path.join(dir, 'traces.csv');
+      fs.writeFileSync(tracesPath, asCsv(planned).join('\n'));
+      const inMemory = toEngineDirectionalInputs(asSpans(planned), 1000);
+      return countDirectionalInputs(tracesPath, 1000)
+        .then((streamed) => {
+          // Field for field and in the same ORDER — both sort by `(caller, callee)` — so a reader diffing
+          // the two artifacts of the same corpus is comparing the same sequence.
+          expect(streamed.failedTraceEdges).toEqual(inMemory.failedTraceEdges);
+          expect(streamed.edgeLatency).toEqual(inMemory.edgeLatency);
+        })
+        .finally(() => fs.rmSync(dir, { recursive: true, force: true }));
+    });
+  }
+
+  it('omits a row whose only content is a PRE-EXISTING baseline, in both derivations', () => {
+    // This is the rule the in-memory half used to spell as `failed > 0 || baseline > 0`, and the divergence
+    // that would have made the two derivations disagree about a case INPUT.
+    const planned: readonly Planned[] = [
+      { caller: 'a', callee: 'b', spanId: 's1', at: 200, ms: 10, status: 'ERROR' },
+      { caller: 'a', callee: 'b', spanId: 's2', at: 250, ms: 10, status: 'ERROR' },
+    ];
+    expect(toEngineDirectionalInputs(asSpans(planned), 1000).failedTraceEdges).toEqual([]);
+  });
+
+  it('and the ENGINE would have discarded such a row anyway, which is why unifying is safe', () => {
+    // The safety argument, made executable rather than argued: the one consumer of these rows reads
+    // `max(0, failed - baseline)` and skips anything `<= 0`, so a baseline-only row can only ever score zero.
+    // Both derivations now omit it, so the arrays agree AND the scores are what they always were.
+    const nodes = new Set(['a', 'b']);
+    const baselineOnly: FaultFailedEdge[] = [{ caller: 'a', callee: 'b', failed: 0, baseline: 2 }];
+    const withBaseline: FaultFailedEdge[] = [{ caller: 'a', callee: 'b', failed: 3, baseline: 2 }];
+    expect(computeFailedEdgeScores(baselineOnly, nodes).size).toBe(0);
+    expect(computeFailedEdgeScores(withBaseline, nodes).get('b')).toBe(1);
+    // And a row where the failures do not exceed the baseline is dropped for the same reason.
+    const swamped: FaultFailedEdge[] = [{ caller: 'a', callee: 'b', failed: 2, baseline: 2 }];
+    expect(computeFailedEdgeScores(swamped, nodes).size).toBe(0);
+  });
+});
+
+describe('the separation reading covers both channels', () => {
+  // The `latencyRise` arm of the channel ternary: the two channels are selected from the SAME reading, and a
+  // guard that exercised only one would leave the other unread — which is how a channel stops being measured.
+  const readings: DirectionalReading[] = [
+    {
+      caseId: 'c1',
+      stratum: 're2ob:RE2:loss',
+      spans: 4,
+      edges: 2,
+      services: [],
+      failedTop1: 'orders',
+      latencyTop1: 'payments',
+    },
+  ];
+
+  it('reads the channel it was asked for, from one reading', () => {
+    const failed = readEvidenceSeparation(
+      readings,
+      () => 'orders',
+      () => 'front',
+      () => 'x',
+      '',
+      'failedMass',
+    );
+    expect(failed.channelFixable, 'the failed-mass channel names `orders`').toBe(1);
+    const latency = readEvidenceSeparation(
+      readings,
+      () => 'orders',
+      () => 'front',
+      () => 'x',
+      '',
+      'latencyRise',
+    );
+    expect(
+      latency.channelFixable,
+      'the latency channel names `payments`, which is not the truth',
+    ).toBe(0);
+    expect(latency.channel).toBe('latencyRise');
+    expect(latency.measurable).toBe(1);
   });
 });

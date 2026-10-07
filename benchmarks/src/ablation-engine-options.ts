@@ -118,15 +118,45 @@ export interface AblationEngineOptions {
 }
 
 /**
+ * The weights this study VARIES directly, rather than deriving from a boolean flag.
+ *
+ * ## Why the study needs this at all
+ *
+ * Every row of the battery was, until this, a point in a binary cube: twelve flags, each mapping to a
+ * weight of `1.0` or `0.0`. That design cannot express a question about a term whose SHIPPED weight is
+ * neither — and the three terms that dominate the shipped ranking are exactly those: `latWeight`
+ * **0.561495**, `poolMetricPenaltyWeight` **0.0679**, `stabilityWeight` **0.007352**. They ran in every
+ * configuration of the battery at full shipped strength, varying with none of it, so **their contribution
+ * was not a zero — it was unmeasured**. `ABLATION_FINDINGS.md` v2 records that as the first of its two
+ * gaps.
+ *
+ * ## `??`, not `||`, and that is the whole subtlety
+ *
+ * The value an override most needs to express is **zero** — "turn this term off" — and `||` cannot: `0` is
+ * falsy, so `override || default` silently returns the shipped weight and the row labelled OFF measures ON.
+ * An `undefined` field means "not overridden"; a `0` means "overridden to zero". Only `??` tells them apart.
+ *
+ * @see ABLATION_FINDINGS.md in the docs repository
+ */
+export interface AblationWeightOverrides {
+  /** Overrides `prismWeight` (the PRISM sweep's continuum). */
+  readonly prismWeight?: number;
+  /** Overrides `latWeight` — the per-edge-latency prior's strength. */
+  readonly latWeight?: number;
+  /** Overrides `latMinRise` — the floor below which a rise is masked out of that prior. */
+  readonly latMinRise?: number;
+}
+
+/**
  * Build BOTH of the engine's constructor arguments for one ablation configuration.
  *
  * @param flags - The configuration's feature flags.
- * @param prismWeightOverride - The PRISM sweep's weight, when this config is a sweep point.
+ * @param overrides - The weights the study varies directly, if this configuration varies any.
  * @returns `signals` and `topology`.
  */
 export function buildAblationEngineOptions(
   flags: AblationFeatureFlags,
-  prismWeightOverride?: number,
+  overrides: AblationWeightOverrides = {},
 ): AblationEngineOptions {
   return {
     signals: {
@@ -136,13 +166,15 @@ export function buildAblationEngineOptions(
       logWeight: flags.logSignal ? 1.0 : 0.0,
       riseWeight: flags.riseSignal ? 1.0 : 0.0,
       traceWeight: flags.traceSignal ? 1.0 : 0.0,
-      prismWeight: prismWeightOverride ?? (flags.prismSignal ? 1.0 : 0.0),
+      prismWeight: overrides.prismWeight ?? (flags.prismSignal ? 1.0 : 0.0),
       // The seven the study holds at the shipped value, named from their owners so the artifact can state
       // them. Passing them is value-identical to inheriting them, and that is the point: an inherited
-      // option is a configuration the artifact used to be unable to describe.
+      // option is a configuration the artifact used to be unable to describe. The two that a row may
+      // override read their override through `??`, so an explicit `0` is honoured (see
+      // {@link AblationWeightOverrides}).
       logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
-      latWeight: DEFAULT_LAT_WEIGHT,
-      latMinRise: DEFAULT_LAT_MIN_RISE,
+      latWeight: overrides.latWeight ?? DEFAULT_LAT_WEIGHT,
+      latMinRise: overrides.latMinRise ?? DEFAULT_LAT_MIN_RISE,
       poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
@@ -160,14 +192,14 @@ export function buildAblationEngineOptions(
  * The configuration, as one line, in the shape the golden half's artifact uses.
  *
  * @param flags - The configuration's feature flags.
- * @param prismWeightOverride - The PRISM sweep's weight, when this config is a sweep point.
+ * @param overrides - The weights the study varies directly, if this configuration varies any.
  * @returns One line naming every field of both constructor arguments.
  */
 export function formatAblationConfigLine(
   flags: AblationFeatureFlags,
-  prismWeightOverride?: number,
+  overrides: AblationWeightOverrides = {},
 ): string {
-  const { signals, topology } = buildAblationEngineOptions(flags, prismWeightOverride);
+  const { signals, topology } = buildAblationEngineOptions(flags, overrides);
   // Every name here is the ENGINE's option name, not the study's flag name: the artifact has to be
   // joinable against the source it describes, and the fence holds it to exactly that. `collisionAggregation`
   // is the flag; `enableCollisionAggregation` is the option it sets.

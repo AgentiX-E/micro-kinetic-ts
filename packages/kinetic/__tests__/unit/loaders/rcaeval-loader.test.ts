@@ -16,6 +16,7 @@ import {
   RCAEvalLoader,
   classifyExceptionKind,
   classifyLogLevel,
+  countDirectionalInputs,
   countFailedTraceEdges,
   countTraceActivityByService,
   extractDeepestExceptionClass,
@@ -2148,5 +2149,272 @@ describe('countFailedTraceEdges', () => {
     // returns what it accumulated. `[]` is what it accumulated here, and the point of the arm is
     // that the failure is SWALLOWED rather than propagated out of a benchmark case's load.
     await expect(countFailedTraceEdges(tempDir, 1000)).resolves.toEqual([]);
+  });
+});
+
+describe('countDirectionalInputs', () => {
+  // The one streaming pass that feeds BOTH direction-carrying inputs. The failing-call half is guarded
+  // above under `countFailedTraceEdges`, which is now a view of this; what is new is the LATENCY half, the
+  // input the shipped `latWeight = 0.561495` reads and which no RCAEval path had ever carried. Every rule
+  // below is an arm of that derivation, and the arms are where a signal quietly stops meaning anything.
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /** Jaeger's own columns PLUS `duration`, which is the column the latency half exists to read. */
+  const HEADER = 'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status,duration';
+
+  const write = (rows: readonly string[]): string => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(tracesPath, rows.join('\n'));
+    return tracesPath;
+  };
+
+  /**
+   * `caller`'s client span and `callee`'s server span, both at `atMs`, the server taking `ms`.
+   *
+   * The duration is put on BOTH rows deliberately: the derivation must read the CHILD's, and a fixture that
+   * gave the parent a different number is what makes that observable.
+   */
+  const call = (
+    caller: string,
+    callee: string,
+    spanId: string,
+    atMs: number,
+    ms: number,
+    status = 'OK',
+  ): string[] => [
+    `t1,${spanId}c,,${caller},${atMs},OK,${ms * 100}`,
+    `t1,${spanId}s,${spanId}c,${callee},${atMs},${status},${ms}`,
+  ];
+
+  it("credits the CALLEE, and averages the CHILD span's duration on each side of the injection", () => {
+    // Two calls before the injection at 10 and 20, one after at 100: the means are the arithmetic mean of
+    // the child's durations, not the parent's (which the fixture sets 100x larger on purpose). The callee is
+    // the edge's endpoint because that is the direction `computeEdgeLatencyScores` credits.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-b', 's1', 100, 10),
+      ...call('svc-a', 'svc-b', 's2', 200, 20),
+      ...call('svc-a', 'svc-b', 's3', 1100, 100),
+    ]);
+
+    return countDirectionalInputs(tracesPath, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', preMeanMs: 15, postMeanMs: 100 },
+      ]);
+      // No call failed, so the failed-edge half stays empty. That is the point of the latency half
+      // existing: it is defined exactly where the counts are zero.
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('omits an edge whose baseline is missing, rather than reporting a rise against zero', () => {
+    // An edge that first appears AFTER the injection has no pre-injection mean. Reporting `preMeanMs: 0`
+    // would invite the ranking to read an infinite rise, which is a far stronger claim than "not measured".
+    const inFlight = write([HEADER, ...call('front', 'orders', 's1', 2000, 50)]);
+    return countDirectionalInputs(inFlight, 1000).then(({ edgeLatency }) => {
+      expect(edgeLatency).toEqual([]);
+    });
+  });
+
+  it('omits an edge that exists only BEFORE the injection from both arrays', () => {
+    // The mirror case. It is also the edge whose pre-existing failures are the deployment's, so the
+    // failed-edge half must not create a row for it either.
+    const preOnly = write([HEADER, ...call('front', 'orders', 's1', 200, 50, 'ERROR')]);
+    return countDirectionalInputs(preOnly, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('reports the failed counts and the durations for the SAME edge in one result', () => {
+    // The two halves must describe one relation. A file where the only failing edge is also the only slow
+    // edge is the case that would expose a derivation that built them from different joins.
+    const tracesPath = write([HEADER, ...call('svc-a', 'svc-b', 's1', 1100, 500, 'ERROR')]);
+    return countDirectionalInputs(tracesPath, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(failedTraceEdges).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+      ]);
+      // A failing call is excluded from the latency halves here only because it IS its own side: the
+      // injection split applies to durations exactly as it does to counts, so there is no pre side.
+      expect(edgeLatency).toEqual([]);
+    });
+  });
+
+  it('reads the duration column by alias, and yields NO latency rows when it is absent', () => {
+    // The failure mode this guards is the reason the channel was dead for six iterations: a column the
+    // function cannot find is not an error it reports, it is a channel that silently reports nothing. The
+    // failed-edge half must survive the same file, so the two halves are shown to be independent.
+    const noDuration = write([
+      'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status',
+      't1,s1c,,svc-a,100,OK',
+      't1,s1s,s1c,svc-b,100,OK',
+      't1,s2c,,svc-a,1100,OK',
+      't1,s2s,s2c,svc-b,1100,ERROR',
+    ]);
+    return countDirectionalInputs(noDuration, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+      ]);
+    });
+  });
+
+  it('keeps a self-edge, and defers the decision to drop it to the consumer', () => {
+    // `computeEdgeLatencyScores` skips a self-edge; the failed-edge score does not. Dropping it here would
+    // hide a real span from one consumer to spare the other a filter, so it is kept and named.
+    const selfEdge = write([
+      HEADER,
+      ...call('svc-a', 'svc-a', 's1', 500, 10),
+      ...call('svc-a', 'svc-a', 's2', 1500, 90),
+    ]);
+    return countDirectionalInputs(selfEdge, 1000).then(({ edgeLatency }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'svc-a', preMeanMs: 10, postMeanMs: 90 },
+      ]);
+    });
+  });
+
+  it('is what `countFailedTraceEdges` returns, which is now a view rather than a second derivation', () => {
+    // The delegation, pinned on OUTPUT rather than on the source text: the 135 assertions above already
+    // state what the failed-edge rows must be, so equality here is what proves the shared pass reproduces
+    // them. It also pins the `failed > 0` selection, which is the rule the published artifact carries.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-b', 's1', 200, 10, 'ERROR'), // baseline only — must not create a row
+      ...call('svc-a', 'svc-b', 's2', 1100, 10, 'ERROR'),
+      ...call('svc-a', 'svc-c', 's3', 1200, 10),
+    ]);
+    return Promise.all([
+      countFailedTraceEdges(tracesPath, 1000),
+      countDirectionalInputs(tracesPath, 1000),
+    ]).then(([view, both]) => {
+      expect(view).toEqual(both.failedTraceEdges);
+      expect(view).toEqual([{ caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 1 }]);
+    });
+  });
+
+  it('survives the file shapes a real export produces: blank lines, an absent column, an empty cell', () => {
+    // Every one of these is an arm of the reader rather than of the derivation, and an arm nobody exercises
+    // is an arm nobody has seen work. The rows are otherwise identical to the first test's, so the assertions
+    // say that the SHAPE of the file changed the answer in exactly the ways stated and in no other way.
+    const messy = write([
+      HEADER,
+      '',
+      ...call('svc-a', 'svc-b', 's1', 100, 10),
+      '   ',
+      ...call('svc-a', 'svc-b', 's2', 1100, 100),
+      '',
+    ]);
+    return countDirectionalInputs(messy, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', preMeanMs: 10, postMeanMs: 100 },
+      ]);
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('reads a row whose SERVICE cell is empty as `unknown` rather than dropping it', () => {
+    // `toBenchmarkCase` has always attributed such a span to `unknown`, and the alternative — dropping the
+    // row — would lose a call the trace records, which is worse than recording it against an unnamed service.
+    const headerless = write([
+      'traceId,spanId,parentSpanId,startTimeMillis,status,duration',
+      't1,s1c,,100,OK,100',
+      't1,s1s,s1c,100,ERROR,10',
+      't1,s2c,,1100,OK,100',
+      't1,s2s,s2c,1100,OK,100',
+    ]);
+    return countDirectionalInputs(headerless, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      // The only failure in the file is BEFORE the injection, so it is a baseline and creates no row.
+      expect(failedTraceEdges).toEqual([]);
+      // And the duration half reads the same rows, so the two derivations cannot disagree about a file whose
+      // service column is missing.
+      expect(edgeLatency).toEqual([
+        { caller: 'unknown', callee: 'unknown', preMeanMs: 10, postMeanMs: 100 },
+      ]);
+    });
+  });
+
+  it('ignores a duration it cannot parse instead of letting NaN into a mean', () => {
+    // A real export writes an empty `duration` for a span it could not time. `parseFloat('')` is NaN, and one
+    // NaN in a sum would make every mean for that edge NaN — which propagates into `Math.max` and poisons the
+    // whole case's ranking. The span is skipped for the DURATION half only; its failure still counts.
+    const badDuration = write([
+      HEADER,
+      't1,s1c,,svc-a,100,OK,',
+      't1,s1s,s1c,svc-b,100,OK,',
+      ...call('svc-a', 'svc-b', 's2', 1100, 100, 'ERROR'),
+    ]);
+    return countDirectionalInputs(badDuration, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      // The unparseable span contributes nothing to either side, so there is no baseline and no latency row.
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+      ]);
+    });
+  });
+
+  it('falls back to no edges at all when the file has neither an id nor a parent column', () => {
+    // The TWO defensive arms of the reader, on the file shape that takes both: a CSV an export produced
+    // without the columns this derivation needs. The honest answer is an empty result — not a crash, and not
+    // an edge invented from the columns that happen to be present.
+    const noIds = write([
+      'traceId,serviceName,startTimeMillis,status,duration',
+      't1,svc-a,100,OK,10',
+      't1,svc-b,1100,OK,100',
+    ]);
+    return countDirectionalInputs(noIds, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('reads an empty SERVICE cell as `unknown`, and still forms the edge', () => {
+    // The other fallback: the column is there and the cell is blank. `toBenchmarkCase` has always named such
+    // a span `unknown`, and a derivation that instead dropped the row would lose a call the trace records.
+    const blankService = write([
+      'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status,duration',
+      't1,s1c,,svc-a,100,OK,100',
+      't1,s1s,s1c,,100,OK,10',
+      't1,s2c,,svc-a,1100,OK,100',
+      't1,s2s,s2c,,1100,OK,100',
+    ]);
+    return countDirectionalInputs(blankService, 1000).then(({ edgeLatency }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'unknown', preMeanMs: 10, postMeanMs: 100 },
+      ]);
+    });
+  });
+
+  it('reads the file ONCE, which is why the two inputs share a function', () => {
+    // Two derivations would read every file twice, and this module's own doc measures the price: RCAEval
+    // TrainTicket traces exceed a million spans per case, so a second read costs more I/O than the whole
+    // golden run. Asserted on the SOURCE, because a second read is invisible in the output.
+    const source = fs.readFileSync(
+      path.join(__dirname, '../../../src/benchmarks/loaders/rcaeval-loader.ts'),
+      'utf8',
+    );
+    const shared = source.slice(
+      source.indexOf('export async function countDirectionalInputs('),
+      source.indexOf('export interface DirectionalInputs'),
+    );
+    expect(shared.split('createInterface(').length - 1, 'one reader in the shared pass').toBe(1);
+    expect(shared.split('createReadStream(').length - 1, 'one stream').toBe(1);
+    const view = source.slice(
+      source.indexOf('export async function countFailedTraceEdges('),
+      source.indexOf('export async function countDirectionalInputs('),
+    );
+    expect(view, 'and the view opens no reader of its own').not.toContain('createInterface(');
   });
 });

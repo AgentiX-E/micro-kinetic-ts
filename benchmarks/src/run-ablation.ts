@@ -33,7 +33,7 @@ import {
 import {
   analyzePrismSweep,
   BenchmarkRunner,
-  countFailedTraceEdges,
+  countDirectionalInputs,
   countTraceActivityByService,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
@@ -49,7 +49,9 @@ import {
   buildAblationEngineOptions,
   formatAblationConfigLine,
   type AblationFeatureFlags,
+  type AblationWeightOverrides,
 } from './ablation-engine-options.js';
+import { formatDirectionalCoverage, summarizeDirectionalCoverage } from './directional-evidence.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
@@ -97,7 +99,29 @@ interface AblationResult {
 // PC Causal Discovery was removed — see ABLATION_FINDINGS.md in the
 // docs repo: it reduced Top-1 accuracy by up to 4.0% on RE2.
 
-const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
+/**
+ * Every flag OFF, which is the configuration the three propagation-channel rows vary.
+ *
+ * Named because three rows spread the same twelve booleans, and a row that differed from its siblings in a
+ * flag would attribute a difference to a weight that a flag caused. The channel rows are about the
+ * NUMBERS, so the flags are held identical by construction rather than by transcription.
+ */
+const ALL_OFF_FLAGS: FeatureFlags = {
+  collisionAggregation: false,
+  traceAugmentation: false,
+  selfLearning: false,
+  logSignal: false,
+  topoSignal: false,
+  collisionSignal: false,
+  collapseDiscount: false,
+  riseSignal: false,
+  traceSignal: false,
+  rankNormalization: false,
+  suppressIdleTransients: false,
+  prismSignal: false,
+};
+
+const CONFIGS: Array<{ flags: FeatureFlags; label: string; weights?: AblationWeightOverrides }> = [
   // Baseline: everything OFF
   {
     flags: {
@@ -556,6 +580,41 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string }> = [
     },
     label: '+Log +Trace Activity +Rank +PRISM',
   },
+
+  // ── The propagation-delay channel, as a 2x2 over its two knobs ──────────
+  //
+  // Every row above is a point in a binary cube, and the term this group varies is not: the SHIPPED
+  // `latWeight = 0.561495` is neither 0 nor 1, and `latMinRise = 10.3` is a floor that MASKS out any rise
+  // between 1 and 10.3 rather than compressing it. So the row that answers "what does the kinetic
+  // propagation model contribute" cannot be built out of flags, which is why `ABLATION_FINDINGS.md` v2
+  // listed the channel as UNMEASURED and why the loader had to be taught to carry its input first.
+  //
+  // The four cells of the 2x2 are: the shipped configuration (already the BASELINE row above), the channel
+  // switched OFF, the floor REMOVED, and both. The floor's removal is spelled `1`, not `0`: `1` is the
+  // value `computeEdgeLatencyScores` documents as identical to the pre-floor term ("a rise at or below 1 is
+  // never dropped"), so it is the channel's own reference point rather than a number chosen here.
+  {
+    // The channel OFF, floor untouched. Reads the whole of `latWeight`'s contribution — the term that has
+    // received nothing on every RCAEval run until this loader change.
+    flags: { ...ALL_OFF_FLAGS },
+    weights: { latWeight: 0 },
+    label: 'LAT OFF (latWeight=0)',
+  },
+  {
+    // The floor REMOVED, weight shipped. The mask drops every rise in (1, 10.3); if the channel's input
+    // turns out to be populated but inert, this row says whether the floor is what silences it.
+    flags: { ...ALL_OFF_FLAGS },
+    weights: { latMinRise: 1 },
+    label: 'LAT NO FLOOR (latMinRise=1)',
+  },
+  {
+    // Both, so the two knobs' effects can be separated from their interaction. A term that is inert with a
+    // floor AND inert without one is inert; a term whose effect appears only here is being read through the
+    // floor rather than through the weight.
+    flags: { ...ALL_OFF_FLAGS },
+    weights: { latWeight: 0, latMinRise: 1 },
+    label: 'LAT OFF + NO FLOOR',
+  },
 ];
 
 // Default to 3 repetitions for statistical significance
@@ -822,13 +881,13 @@ async function main(): Promise<void> {
    * enabled). Each config gets its own container so the flags are wired
    * directly into the engine registered under RCA_ENGINE.
    */
-  function buildContainer(flags: FeatureFlags, prismWeightOverride?: number): Container {
+  function buildContainer(flags: FeatureFlags, overrides?: AblationWeightOverrides): Container {
     const c = new Container();
     c.register(DI_TOKENS.MATRIX_OPS, () => new NumpyTsMatrixOps());
     // Both arguments come from the module that also renders the line the artifact carries, so the study's
     // configuration and its record cannot disagree. The hand-written literals that stood here named only
     // the seven fields the flags drive, which is why six shipped terms ran unstated.
-    const engine = buildAblationEngineOptions(flags, prismWeightOverride);
+    const engine = buildAblationEngineOptions(flags, overrides);
     c.register(DI_TOKENS.RCA_ENGINE, () => new TreePruner(engine.signals, engine.topology));
     c.register(DI_TOKENS.ROOT_CAUSE_RANKER, () => new TreeRCAEngine());
     return c;
@@ -897,16 +956,19 @@ async function main(): Promise<void> {
             ),
           };
         }
-        // The failed-edge DIRECTION rows, on the same terms as the run itself: an ablation of the
-        // failed-edge weight against a starved channel reports "no change" for the wrong reason,
-        // which is precisely the reading this iteration had to repair. Unconditional (the shipped
-        // weight is 0, so it moves nothing) and one streaming pass over the case's own traces.
+        // BOTH direction-carrying inputs, from ONE streaming pass over the case's own traces — on the
+        // same terms as the run itself. An ablation of a weight against a starved channel reports "no
+        // change" for the wrong reason, and this battery had exactly that defect on its most dominant
+        // term: every row ran with the shipped `latWeight = 0.561495` multiplying an EMPTY map, because
+        // this loader attached `failedTraceEdges` and never `edgeLatency`. Unconditional, and once.
+        const directional = await countDirectionalInputs(
+          join(meta.dirPath, 'traces.csv'),
+          benchCase.injectTime,
+        );
         benchCase = {
           ...benchCase,
-          failedTraceEdges: await countFailedTraceEdges(
-            join(meta.dirPath, 'traces.csv'),
-            benchCase.injectTime,
-          ),
+          failedTraceEdges: directional.failedTraceEdges,
+          edgeLatency: directional.edgeLatency,
         };
         // Do NOT retain per-case traces here — RE2 traces.csv files are
         // large enough that holding all 50 cases' spans at once OOMs.
@@ -958,7 +1020,7 @@ async function main(): Promise<void> {
 
       for (let wi = 0; wi < PRISM_SWEEP_WEIGHTS.length; wi++) {
         const weight = PRISM_SWEEP_WEIGHTS[wi]!;
-        const container = buildContainer(PRISM_SWEEP_FLAGS, weight);
+        const container = buildContainer(PRISM_SWEEP_FLAGS, { prismWeight: weight });
         for (const [ft, ftCases] of byFT) {
           if (ftCases.length === 0) continue;
           const key = `${suite}/${systemName}/${ft}`;
@@ -1076,6 +1138,12 @@ async function main(): Promise<void> {
     console.log(`  Pre-building ${systemName} …`);
     const bundle = await loadSystemBundle(systemName, metas);
     console.log(`  Pre-built: ${systemName} → ${bundle.cases.length} cases`);
+    // WHAT THE DIRECTION CHANNELS ACTUALLY HOLD, before anything is measured with them. A weight ablated
+    // against an empty map yields zero, and zero from an empty input is not evidence that the term does
+    // nothing — the distinction the artifact could not draw until this line existed.
+    console.log(
+      `  ${formatDirectionalCoverage(summarizeDirectionalCoverage(bundle.cases), systemName)}`,
+    );
 
     // Split cases by fault type (same across all configs for this system)
     const byFT = new Map<string, BenchmarkCase[]>();
@@ -1093,7 +1161,7 @@ async function main(): Promise<void> {
       // The flags are the study's inputs; this is the configuration they produce, in the same shape the
       // golden half's artifact carries. Without it the row cannot be attributed: the artifact named twelve
       // booleans and no weight at all.
-      console.log(formatAblationConfigLine(config.flags));
+      console.log(formatAblationConfigLine(config.flags, config.weights));
       console.log(`${'─'.repeat(60)}`);
 
       console.log(`  ${systemName}: ${bundle.cases.length} cases`);
@@ -1101,7 +1169,7 @@ async function main(): Promise<void> {
       // ── Wire feature flags into this config's engine ──
       // Collision aggregation: toggles TreePruner.enableCollisionAggregation.
       // The three ranking signals map to collisionWeight/topoWeight/logWeight.
-      const container = buildContainer(config.flags);
+      const container = buildContainer(config.flags, config.weights);
       // Self-learning: a SHARED calibrator across this config's reps/Fts so
       // weight updates from earlier cases feed back into later ones.
       const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;

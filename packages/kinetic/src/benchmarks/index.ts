@@ -26,6 +26,7 @@ export { RCA100Loader } from './loaders/rca100-loader.js';
 export {
   RCAEvalLoader,
   classifyLogLevel,
+  countDirectionalInputs,
   countFailedTraceEdges,
   countTraceActivityByService,
   extractDeepestExceptionClass,
@@ -35,6 +36,7 @@ export {
   isPropagatedExceptionMessage,
   isStackTraceMessage,
 } from './loaders/rcaeval-loader.js';
+export type { DirectionalInputs } from './loaders/rcaeval-loader.js';
 
 export type {
   AIOps2025Case,

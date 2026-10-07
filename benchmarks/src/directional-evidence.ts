@@ -396,25 +396,122 @@ export function toEngineDirectionalInputs(
     (after ? edge.post : edge.pre).push(s.duration);
   }
 
-  const mean = (xs: readonly number[]): number =>
-    xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length;
   const ordered = [...edges.values()].sort(
     (a, b) => a.caller.localeCompare(b.caller) || a.callee.localeCompare(b.callee),
   );
 
   return {
+    // `failed > 0`, which is the SAME rule the streaming derivation uses
+    // (`countDirectionalInputs` in `rcaeval-loader.ts`), and the rule this function used to state as
+    // `failed > 0 || baseline > 0`. The two derivations describe one relation, so a difference between them
+    // would be a difference in a case INPUT; the ENGINE's own consumer makes the divergence harmless —
+    // `computeFailedEdgeScores` reads `max(0, failed - baseline)` and skips anything `<= 0`, so a row whose
+    // only content is a baseline contributes nothing — but relying on that would be a guard whose
+    // reachability belongs to its caller. The row is not emitted instead.
     failedTraceEdges: ordered
-      .filter((e) => e.failed > 0 || e.baseline > 0)
+      .filter((e) => e.failed > 0)
       .map((e) => ({ caller: e.caller, callee: e.callee, failed: e.failed, baseline: e.baseline })),
     // A latency RISE needs both sides: with no pre-injection mean there is no baseline, and reporting `pre = 0`
-    // would invite the engine to read a rise of infinity where there is only an absent measurement.
-    edgeLatency: ordered
-      .filter((e) => e.pre.length > 0 && e.post.length > 0)
-      .map((e) => ({
-        caller: e.caller,
-        callee: e.callee,
-        preMeanMs: mean(e.pre),
-        postMeanMs: mean(e.post),
-      })),
+    // would invite the engine to read a rise of infinity where there is only an absent measurement. The guard
+    // is INSIDE the mapping rather than a filter before it, so both arrays are known non-empty at the point
+    // they are divided — which is why this needs no empty-array arm, and has none.
+    edgeLatency: ordered.flatMap((e) =>
+      e.pre.length > 0 && e.post.length > 0
+        ? [
+            {
+              caller: e.caller,
+              callee: e.callee,
+              preMeanMs: e.pre.reduce((a, b) => a + b, 0) / e.pre.length,
+              postMeanMs: e.post.reduce((a, b) => a + b, 0) / e.post.length,
+            },
+          ]
+        : [],
+    ),
   };
+}
+
+/**
+ * What the direction channels actually hold, counted from the cases themselves.
+ *
+ * ## Why this is not a nicety
+ *
+ * A weighted term whose input is ABSENT contributes exactly zero, and so does a weighted term whose input is
+ * present but uninformative. Every artifact in this repository reports the score the term produced and
+ * neither of those facts, so the two are indistinguishable in the output — and the ablation battery spent
+ * six iterations reading the second as if it were the first. `latWeight = 0.561495` is one of the three
+ * terms that dominate the shipped ranking, and on the RCAEval path it multiplied an empty map for as long as
+ * the loader attached only `failedTraceEdges`.
+ *
+ * ## What is counted
+ *
+ * Cases that carry at least one row, and the rows themselves. `casesWith* == 0` is the "starved" reading;
+ * `casesWith* == <all cases>` with a flat score is the "inert" reading. Both are results, and only one of
+ * them is about the term's usefulness.
+ */
+export interface DirectionalCoverage {
+  readonly cases: number;
+  readonly casesWithFailedEdges: number;
+  readonly failedEdges: number;
+  readonly casesWithLatency: number;
+  readonly latencyEdges: number;
+}
+
+/**
+ * Count the direction channels' coverage over a corpus.
+ *
+ * @param cases - The cases, read only through the two optional fields; anything else is ignored so a caller
+ *        can pass its own case type.
+ * @returns The counts. An absent field and an empty array count the same way — nothing to measure.
+ */
+export function summarizeDirectionalCoverage(
+  cases: ReadonlyArray<{
+    readonly failedTraceEdges?: ReadonlyArray<FaultFailedEdge> | undefined;
+    readonly edgeLatency?: ReadonlyArray<FaultEdgeLatency> | undefined;
+  }>,
+): DirectionalCoverage {
+  let casesWithFailedEdges = 0;
+  let failedEdges = 0;
+  let casesWithLatency = 0;
+  let latencyEdges = 0;
+  for (const c of cases) {
+    const failed = c.failedTraceEdges?.length ?? 0;
+    if (failed > 0) {
+      casesWithFailedEdges++;
+      failedEdges += failed;
+    }
+    const latency = c.edgeLatency?.length ?? 0;
+    if (latency > 0) {
+      casesWithLatency++;
+      latencyEdges += latency;
+    }
+  }
+  return {
+    cases: cases.length,
+    casesWithFailedEdges,
+    failedEdges,
+    casesWithLatency,
+    latencyEdges,
+  };
+}
+
+/**
+ * Render a coverage reading as one line, naming which channel is STARVED when one is.
+ *
+ * @param coverage - The counts.
+ * @param label - What the corpus was (a system name, a suite), for the artifact's reader.
+ * @returns One line, without a trailing newline. Ends with an explicit warning when a channel is empty,
+ *          because that is the case in which any weight on it measures nothing and a bare `0` does not say so.
+ */
+export function formatDirectionalCoverage(coverage: DirectionalCoverage, label: string): string {
+  const line =
+    `direction-coverage[${label}]: ${coverage.cases} cases | ` +
+    `failedTraceEdges ${coverage.casesWithFailedEdges}/${coverage.cases} cases, ` +
+    `${coverage.failedEdges} edges | ` +
+    `edgeLatency ${coverage.casesWithLatency}/${coverage.cases} cases, ${coverage.latencyEdges} edges`;
+  const starved = [
+    coverage.casesWithFailedEdges === 0 ? 'failedTraceEdges' : undefined,
+    coverage.casesWithLatency === 0 ? 'edgeLatency' : undefined,
+  ].filter((n): n is string => n !== undefined);
+  if (starved.length === 0) return line;
+  return `${line} | STARVED: ${starved.join(', ')} — any weight on ${starved.length > 1 ? 'these' : 'it'} measures nothing`;
 }

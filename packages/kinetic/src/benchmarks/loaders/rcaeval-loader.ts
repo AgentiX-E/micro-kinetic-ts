@@ -22,6 +22,7 @@ import { createInterface } from 'node:readline';
 
 import type {
   CallEdge,
+  FaultEdgeLatency,
   FaultFailedEdge,
   MetricMap,
   ServiceCallGraph,
@@ -1142,6 +1143,25 @@ export async function countTraceActivityByService(
 /** Header aliases for the SPAN ID column. */
 const SPAN_ID_COLUMNS = new Set(['spanid', 'span_id', 'span']);
 
+/**
+ * Header aliases for the DURATION column.
+ *
+ * `duration` is what RCAEval writes (Jaeger camelCase, alongside `spanId`/`parentSpanId`); the snake and
+ * suffix spellings are here because the same loader already tolerates them elsewhere, and a column this
+ * function cannot find is not an error it reports — it is a channel that silently reports nothing.
+ *
+ * The value's UNIT is deliberately not normalised. The only consumer reads the RATIO of a post-injection
+ * mean to a pre-injection mean on the same edge, so a uniform scale cancels — unlike `startTime`, whose
+ * unit is compared against `injectTimeMs` and therefore does have to be normalised above.
+ */
+const DURATION_COLUMNS = new Set([
+  'duration',
+  'duration_ms',
+  'durationms',
+  'elapsed_ms',
+  'latency_ms',
+]);
+
 /** Header aliases for the PARENT SPAN ID column, which is what makes a call an edge. */
 const PARENT_SPAN_ID_COLUMNS = new Set([
   'parentspanid',
@@ -1174,16 +1194,14 @@ const PARENT_SPAN_ID_COLUMNS = new Set([
  * counterpart on the criterion's other half — the evidence did not exist there, so no golden run
  * could ever confirm or refute it.
  *
- * ## One read, and no ordering assumption
+ * ## This is now a VIEW of the shared derivation
  *
- * The parent join needs a span that may appear LATER in the file than its child, so the rows are
- * collected during the read and joined AFTER it. An implementation that resolved each child
- * against the parents it had already seen would silently under-count on any file that is not
- * parent-first — and a quiet under-count is indistinguishable from a quiet fault. Two passes were
- * rejected for a measured reason: RCAEval TrainTicket traces exceed a million spans per case, and
- * reading every case twice would cost more I/O than the whole golden run.
- *
- * Only FAILING spans are retained (3 columns each); a healthy call is not evidence.
+ * The derivation itself — the single streaming pass, the parent join, the injection split, the both-sides
+ * rule for a latency rise — lives in {@link countDirectionalInputs}, because the OTHER direction-carrying
+ * input (`FaultEdgeLatency`, read by the shipped `latWeight` term) is a function of the same relation and
+ * reading every file twice would cost more I/O than the whole golden run. This function returns that
+ * derivation's `failedTraceEdges` array, unchanged: same rows, same `(caller, callee)` order, same
+ * `failed > 0` selection.
  *
  * @param tracesPath - Absolute path to traces.csv.
  * @param injectTimeMs - Fault injection time in Unix milliseconds.
@@ -1195,20 +1213,91 @@ export async function countFailedTraceEdges(
   tracesPath: string,
   injectTimeMs: number,
 ): Promise<FaultFailedEdge[]> {
-  if (!fs.existsSync(tracesPath)) return [];
+  return (await countDirectionalInputs(tracesPath, injectTimeMs)).failedTraceEdges;
+}
+
+/**
+ * The two DIRECTION-carrying inputs, derived from a case's `traces.csv` in ONE streaming pass.
+ *
+ * ## Why one function and not two
+ *
+ * Both observables are functions of the same relation — `caller ──call──▶ callee`, split at the injection —
+ * and differ only in what they measure on it: how many calls FAILED against the callee, and how much
+ * LONGER the callee's calls took. Deriving them separately would read every file twice, and this module's
+ * own doc records the price of that: RCAEval TrainTicket traces exceed a million spans per case, so a second
+ * read costs more I/O than the whole golden run. It would also put two copies of the edge relation in the
+ * file, free to drift — which is the defect class this repository keeps finding one layer down.
+ *
+ * ## Why the latency half had to exist at all
+ *
+ * `latWeight` is **0.561495** in the shipped configuration — one of the three terms that dominate the
+ * ranking — and it reads `FaultEdgeLatency`, which until now **only** `fse26-loader.ts` produced. So the
+ * term has been structurally absent on every RCAEval path: the published cells were measured with it
+ * receiving nothing, and no ablation could measure it because an ablated weight multiplies an empty map.
+ * `benchmarks/src/directional-evidence.ts` derives the same two arrays from in-memory spans for the runners
+ * that still hold them; this is the streaming counterpart for the ones that do not.
+ *
+ * ## The relation, and the one rule that matters
+ *
+ * An edge is a span WITH a parent, so its endpoints are the parent's service (the CALLER) and its own
+ * service (the CALLEE). The duration attributed to the edge is the CHILD span's, which is the callee's own
+ * work. The split is the injection: `failed`/`baseline` count failing calls after/before it, and the
+ * durations are averaged separately on each side.
+ *
+ * A latency rise needs **both** sides. An edge that exists only after the injection has no baseline, and
+ * reporting one as `preMeanMs: 0` would invite the ranking to read an infinite rise where there is only an
+ * absent measurement — so such an edge is OMITTED rather than reported with a zero. A failing call is
+ * likewise retained in the accumulation but does not by itself create a `failedTraceEdges` row when it
+ * failed only before the injection: that is a property of the deployment, not evidence about the fault.
+ *
+ * A SELF-EDGE (caller === callee) is kept here and filtered by the consumers that need to
+ * (`computeEdgeLatencyScores` skips them); dropping it at this layer would hide a real span.
+ *
+ * ## Memory
+ *
+ * The parent join cannot assume the parent precedes the child — an implementation that resolved each child
+ * against the parents already seen silently under-counts on any file that is not parent-first. So
+ * `spanId -> service` is already held for the whole file, and the per-edge accumulator below is keyed on
+ * the same order of magnitude. Sums and counts are kept rather than the durations themselves, so a callee
+ * with a million spans costs one accumulator, not a million numbers.
+ *
+ * @param tracesPath - Absolute path to traces.csv.
+ * @param injectTimeMs - Fault injection time in Unix milliseconds.
+ * @returns The two arrays, each sorted by `(caller, callee)`; both empty when the file is absent. The
+ *   latency array is empty when the file carries no duration column, and the failed-edge array when it
+ *   carries no status column.
+ */
+export async function countDirectionalInputs(
+  tracesPath: string,
+  injectTimeMs: number,
+): Promise<DirectionalInputs> {
+  if (!fs.existsSync(tracesPath)) return { failedTraceEdges: [], edgeLatency: [] };
 
   /** `spanId -> service`, for the whole file: the join is done after the read, not during it. */
   const serviceOfSpan = new Map<string, string>();
-  const failing: Array<{
-    readonly parent: string;
-    readonly callee: string;
-    readonly atMs: number;
-  }> = [];
+  /**
+   * Per `(parent span, callee)` accumulators, keyed before the caller is known.
+   *
+   * The parent's SERVICE is what an edge needs, and the parent's row may arrive after its child's, so the
+   * edge cannot be keyed on a service here. Keying on the parent's span id and joining afterwards is what
+   * makes the single pass correct for any row order.
+   */
+  const pending = new Map<
+    string,
+    {
+      readonly parent: string;
+      readonly callee: string;
+      readonly sums: { pre: number; nPre: number; post: number; nPost: number };
+      failed: number;
+      baseline: number;
+    }
+  >();
 
   let svcIdx = -1;
   let statusIdx = -1;
   let spanIdx = -1;
   let parentIdx = -1;
+  let durationIdx = -1;
   let startMillisIdx = -1;
   let startIdx = -1;
   let startSnakeIdx = -1;
@@ -1228,6 +1317,7 @@ export async function countFailedTraceEdges(
         statusIdx = header.findIndex((h) => STATUS_COLUMN_ALIASES.has(h.toLowerCase()));
         spanIdx = header.findIndex((h) => SPAN_ID_COLUMNS.has(h.toLowerCase()));
         parentIdx = header.findIndex((h) => PARENT_SPAN_ID_COLUMNS.has(h.toLowerCase()));
+        durationIdx = header.findIndex((h) => DURATION_COLUMNS.has(h.toLowerCase()));
         startMillisIdx = header.indexOf('startTimeMillis');
         startIdx = header.indexOf('startTime');
         startSnakeIdx = header.indexOf('start_time');
@@ -1242,59 +1332,133 @@ export async function countFailedTraceEdges(
       const spanId = (cell(cells, spanIdx) ?? '').trim();
       const parent = (cell(cells, parentIdx) ?? '').trim();
       if (spanId !== '') serviceOfSpan.set(spanId, service);
-      // A span with no parent is not an edge; a failing one is the evidence this function wants.
+      // A span with no parent is not an edge: it is a service's own entry point, so it establishes no
+      // direction and is only useful through `serviceOfSpan` above.
       if (parent === '' || spanId === '') continue;
-      if (normalizeSpanStatus(statusIdx >= 0 ? cell(cells, statusIdx) : undefined) !== 'ERROR') {
-        continue;
-      }
-      failing.push({
+
+      const atMs = normalizeTraceStartTime(
+        cell(cells, startMillisIdx),
+        cell(cells, startIdx),
+        cell(cells, startSnakeIdx),
+        cell(cells, timestampIdx),
+      );
+      const key = `${parent}\u0000${service}`;
+      const entry = pending.get(key) ?? {
         parent,
         callee: service,
-        atMs: normalizeTraceStartTime(
-          cell(cells, startMillisIdx),
-          cell(cells, startIdx),
-          cell(cells, startSnakeIdx),
-          cell(cells, timestampIdx),
-        ),
-      });
+        sums: { pre: 0, nPre: 0, post: 0, nPost: 0 },
+        failed: 0,
+        baseline: 0,
+      };
+      if (normalizeSpanStatus(statusIdx >= 0 ? cell(cells, statusIdx) : undefined) === 'ERROR') {
+        if (atMs < injectTimeMs) entry.baseline += 1;
+        else entry.failed += 1;
+      }
+      // The duration is read independently of the status: a SUCCESSFUL call that got slower is exactly the
+      // evidence the latency term exists for, and it is the one the failed-call counts cannot see.
+      const duration =
+        durationIdx >= 0 ? Number.parseFloat(cell(cells, durationIdx) ?? '') : Number.NaN;
+      if (Number.isFinite(duration) && duration >= 0) {
+        if (atMs < injectTimeMs) {
+          entry.sums.pre += duration;
+          entry.sums.nPre += 1;
+        } else {
+          entry.sums.post += duration;
+          entry.sums.nPost += 1;
+        }
+      }
+      pending.set(key, entry);
     }
   } catch {
     // A mid-stream read error returns what was accumulated, like `countTraceActivityByService`.
   }
 
-  // The join, after the read. An edge whose caller is not in the file is DROPPED rather than
-  // guessed: the caller is genuinely unknown on a truncated trace, and a guess would put a
-  // direction into the ranking that no datum states.
+  // The join, after the read. An edge whose caller is not in the file is DROPPED rather than guessed: the
+  // caller is genuinely unknown on a truncated trace, and a guess would put a direction into the ranking
+  // that no datum states.
   const byEdge = new Map<
     string,
-    { caller: string; callee: string; failed: number; baseline: number }
+    {
+      caller: string;
+      callee: string;
+      failed: number;
+      baseline: number;
+      sums: { pre: number; nPre: number; post: number; nPost: number };
+    }
   >();
-  for (const { parent, callee, atMs } of failing) {
-    const caller = serviceOfSpan.get(parent);
+  for (const entry of pending.values()) {
+    const caller = serviceOfSpan.get(entry.parent);
     if (caller === undefined) continue;
-    const key = `${caller}\u0000${callee}`;
-    const entry = byEdge.get(key) ?? { caller, callee, failed: 0, baseline: 0 };
-    // The baseline is counted, never dropped: `computeFailedEdgeScores` reads the DIFFERENCE, and
-    // an edge that was already failing before the injection is a property of the deployment rather
-    // than evidence about the fault — so it must not itself create a row.
-    if (atMs < injectTimeMs) entry.baseline += 1;
-    else entry.failed += 1;
-    byEdge.set(key, entry);
+    const key = `${caller}\u0000${entry.callee}`;
+    const merged = byEdge.get(key) ?? {
+      caller,
+      callee: entry.callee,
+      failed: 0,
+      baseline: 0,
+      sums: { pre: 0, nPre: 0, post: 0, nPost: 0 },
+    };
+    merged.failed += entry.failed;
+    merged.baseline += entry.baseline;
+    merged.sums.pre += entry.sums.pre;
+    merged.sums.nPre += entry.sums.nPre;
+    merged.sums.post += entry.sums.post;
+    merged.sums.nPost += entry.sums.nPost;
+    byEdge.set(key, merged);
   }
 
-  return [...byEdge.values()]
-    .filter((edge) => edge.failed > 0)
-    .sort((a, b) =>
-      a.caller !== b.caller
-        ? a.caller < b.caller
-          ? -1
-          : 1
-        : a.callee < b.callee
-          ? -1
-          : a.callee > b.callee
-            ? 1
-            : 0,
-    );
+  // One order for both arrays, so a reader diffing them is comparing the same edges in the same sequence.
+  //
+  // The hand-rolled three-arm comparator is KEPT, tie-break and all, after being measured against the
+  // alternative. Its `? -1 : 1` callee arm cannot answer `0`, which is a defect wherever two entries can be
+  // equal — and here they cannot: `byEdge` is keyed on `caller\u0000callee`, so no pair is ever equal and the
+  // arm is unreachable rather than merely untaken. That condition is the census's own argument, and this site
+  // is its exemplar: `__tests__/unit/comparator-population.test.ts` records this very signature as the one
+  // occurrence a per-line reading cannot see (the formatter wraps `? -1` and `: 1` onto different lines while
+  // the census's `\s` matches the newline), which is what its control asserts a reading can find. Replacing
+  // the comparator with `localeCompare` would silence an unreachable arm and blind that control, so it stays.
+  const ordered = [...byEdge.values()].sort((a, b) =>
+    a.caller !== b.caller
+      ? a.caller < b.caller
+        ? -1
+        : 1
+      : a.callee < b.callee
+        ? -1
+        : a.callee > b.callee
+          ? 1
+          : 0,
+  );
+
+  return {
+    // The baseline is counted, never dropped: `computeFailedEdgeScores` reads the DIFFERENCE, and an edge
+    // that was already failing before the injection is a property of the deployment rather than evidence
+    // about the fault — so it must not itself create a row.
+    failedTraceEdges: ordered
+      .filter((edge) => edge.failed > 0)
+      .map((edge) => ({
+        caller: edge.caller,
+        callee: edge.callee,
+        failed: edge.failed,
+        baseline: edge.baseline,
+      })),
+    // Both sides, or no row at all. `preMeanMs <= 0` cannot arise from a mean of non-negative durations,
+    // and `computeEdgeLatencyScores` rejects it anyway; it is filtered here so the array states only what a
+    // consumer can use.
+    edgeLatency: ordered
+      .filter((edge) => edge.sums.nPre > 0 && edge.sums.nPost > 0)
+      .map((edge) => ({
+        caller: edge.caller,
+        callee: edge.callee,
+        preMeanMs: edge.sums.pre / edge.sums.nPre,
+        postMeanMs: edge.sums.post / edge.sums.nPost,
+      }))
+      .filter((edge) => edge.preMeanMs > 0),
+  };
+}
+
+/** What {@link countDirectionalInputs} returns: the two arrays a case's direction is carried by. */
+export interface DirectionalInputs {
+  readonly failedTraceEdges: FaultFailedEdge[];
+  readonly edgeLatency: FaultEdgeLatency[];
 }
 
 /** Read a trimmed cell by index, or undefined when the column is absent. */
