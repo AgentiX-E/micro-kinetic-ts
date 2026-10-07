@@ -273,6 +273,111 @@ export function formatDatasetStrata(
 }
 
 /**
+ * What one case scored, in the vocabulary the overlay and the accuracy share.
+ *
+ * `skipped` is a third answer on purpose: a case whose fault graph the engine cannot build is not evidence
+ * about the ranking, and folding it into `miss` would let a build failure move a held-out number.
+ */
+export type CaseOutcome = 'hit' | 'miss' | 'skipped';
+
+/** One scored case: its identity, the stratum it belongs to, and what it scored. */
+export interface CaseVerdict {
+  readonly caseId: string;
+  readonly stratum: string;
+  readonly outcome: CaseOutcome;
+}
+
+/** A split's outcomes, counted. */
+export interface SplitOverlay {
+  readonly split: string;
+  readonly cases: number;
+  readonly hits: number;
+  readonly misses: number;
+  readonly skipped: number;
+}
+
+/**
+ * Count a split's verdicts.
+ *
+ * @param split - The split's name, for the rendered line.
+ * @param verdicts - The scored cases.
+ * @returns The counts. `hits + misses + skipped === cases` by construction, which is what makes the overlay
+ *          reconcilable with the accuracy beside it rather than a parallel account of the same run.
+ */
+export function summarizeOverlay(split: string, verdicts: readonly CaseVerdict[]): SplitOverlay {
+  let hits = 0;
+  let misses = 0;
+  let skipped = 0;
+  for (const v of verdicts) {
+    if (v.outcome === 'hit') hits++;
+    else if (v.outcome === 'miss') misses++;
+    else skipped++;
+  }
+  return { split, cases: verdicts.length, hits, misses, skipped };
+}
+
+/**
+ * Render a split's overlay as one line, with the accuracy it implies.
+ *
+ * The accuracy is DERIVED here from the same counts, so a reader can see that the two agree: if this line and
+ * the `train = / val = / test =` lines ever disagree, one of them is wrong, and printing both is what makes
+ * that checkable without re-running anything.
+ *
+ * @param overlay - The counts.
+ * @param config - Which configuration produced them (e.g. `default weights`).
+ * @returns One line, without a trailing newline.
+ */
+export function formatOverlayCounts(overlay: SplitOverlay, config: string): string {
+  const evaluated = overlay.hits + overlay.misses;
+  const accuracy = evaluated > 0 ? ((overlay.hits / evaluated) * 100).toFixed(1) : 'n/a';
+  return (
+    `overlay[${overlay.split}] (${config}): ${overlay.cases} cases | hit=${overlay.hits} ` +
+    `miss=${overlay.misses} skipped=${overlay.skipped} | implied accuracy ${accuracy}%`
+  );
+}
+
+/**
+ * One line per case, sorted, so two runs can be DIFFED.
+ *
+ * This is the artifact's answer to the question three iterations have asked and none could answer from the
+ * numbers: when a held-out figure moves between two runs, WHICH cases moved. A count cannot be diffed and a
+ * stratum rollup hides the individual swap; case ids can, and the outcome is the smallest thing that
+ * explains itself.
+ *
+ * @param split - The split's name.
+ * @param verdicts - The scored cases.
+ * @returns One line per case, sorted by case id, then by stratum for stability.
+ */
+export function formatCaseManifest(split: string, verdicts: readonly CaseVerdict[]): string[] {
+  return [...verdicts]
+    .sort((a, b) => a.caseId.localeCompare(b.caseId) || a.stratum.localeCompare(b.stratum))
+    .map((v) => `overlay-case ${split} ${v.caseId} ${v.stratum} ${v.outcome}`);
+}
+
+/**
+ * Hits per stratum, so an error count can be read against the strata it came from.
+ *
+ * The two questions the manifest cannot answer at a glance are "how is this spread across fault types" and
+ * "which strata are entirely wrong", and both are one line each here.
+ *
+ * @param split - The split's name.
+ * @param verdicts - The scored cases.
+ * @returns One line per stratum, ascending by stratum key.
+ */
+export function formatStratumRollup(split: string, verdicts: readonly CaseVerdict[]): string[] {
+  const byStratum = new Map<string, { hits: number; total: number }>();
+  for (const v of verdicts) {
+    const entry = byStratum.get(v.stratum) ?? { hits: 0, total: 0 };
+    entry.total++;
+    if (v.outcome === 'hit') entry.hits++;
+    byStratum.set(v.stratum, entry);
+  }
+  return [...byStratum.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([stratum, e]) => `overlay-stratum ${split} ${stratum} ${e.hits}/${e.total}`);
+}
+
+/**
  * The corpus size the search uses when the caller does not say: a HEAP bound, not a preference.
  *
  * ## What this number is, and what it is not

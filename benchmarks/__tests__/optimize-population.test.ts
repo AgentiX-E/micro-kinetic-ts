@@ -34,15 +34,20 @@ import {
   OPTIMIZE_MAX_CASES,
   OPTIMIZE_SPLIT_RATIOS,
   deriveStratumFromCaseDir,
+  formatCaseManifest,
   formatDatasetStrata,
+  formatOverlayCounts,
   formatPopulation,
   formatSplitCapability,
   formatSplitCapacity,
+  formatStratumRollup,
   parseStratum,
   strataCovered,
   summarizeDatasetStrata,
+  summarizeOverlay,
   summarizePopulation,
   summarizeSplitCapability,
+  type CaseVerdict,
   type PopulationCase,
 } from '../src/optimize-population.js';
 
@@ -520,5 +525,83 @@ describe('the split must be AFFORDABLE on this runner, which is an invariant rat
     // a question whose answer the artifact has to be able to justify.
     expect(SOURCE).toContain('OPTIMIZE_SPLIT_RATIOS');
     expect(SOURCE, 'no restated ratios').not.toMatch(/train: 0\.\d+,\s*val:/);
+  });
+});
+
+describe('the per-case overlay, which is what makes a movement attributable', () => {
+  const VERDICTS: CaseVerdict[] = [
+    { caseId: 're1ob_a_cpu_1', stratum: 're1ob:RE1:cpu', outcome: 'hit' },
+    { caseId: 're1ob_b_cpu_1', stratum: 're1ob:RE1:cpu', outcome: 'miss' },
+    { caseId: 're1ss_c_mem_1', stratum: 're1ss:RE1:mem', outcome: 'hit' },
+    { caseId: 're3tt_d_f2_1', stratum: 're3tt:RE3:f2', outcome: 'skipped' },
+  ];
+
+  it('partitions what it counts, so the overlay reconciles with the accuracy beside it', () => {
+    // The artifact prints both `test = 75.0%` and the overlay line. If the partition is wrong they disagree
+    // and a reader has no way to tell which is right — so the counts are asserted to be exhaustive, and the
+    // implied accuracy asserted to be the one those counts give.
+    const o = summarizeOverlay('test', VERDICTS);
+    expect(o.cases).toBe(4);
+    expect(o.hits + o.misses + o.skipped).toBe(o.cases);
+    const line = formatOverlayCounts(o, 'default weights');
+    expect(line).toContain('hit=2 miss=1 skipped=1');
+    // 2 hits of 3 EVALUATED — the skipped case is not in the denominator, which is the property that keeps a
+    // build failure from moving a held-out number.
+    expect(line).toContain('implied accuracy 66.7%');
+  });
+
+  it('keeps a skipped case out of the accuracy, which is the point of a third verdict', () => {
+    // Folding `skipped` into `miss` would let the engine's inability to BUILD a case read as a ranking
+    // failure; folding it into `hit` would flatter the number. It is named instead, and excluded.
+    const allSkipped = summarizeOverlay('test', [
+      { caseId: 'a', stratum: 's', outcome: 'skipped' },
+      { caseId: 'b', stratum: 's', outcome: 'skipped' },
+    ]);
+    expect(formatOverlayCounts(allSkipped, 'x')).toContain('implied accuracy n/a');
+    const oneHit = summarizeOverlay('test', [
+      { caseId: 'a', stratum: 's', outcome: 'hit' },
+      { caseId: 'b', stratum: 's', outcome: 'skipped' },
+    ]);
+    expect(formatOverlayCounts(oneHit, 'x'), 'one hit of one EVALUATED').toContain('100.0%');
+  });
+
+  it('emits one case per line, sorted, so two runs can be diffed', () => {
+    // A count cannot be diffed and a stratum rollup hides an individual swap. The manifest is the thing that
+    // answers "which cases moved", so it is asserted to be one line per case, sorted, and field-complete.
+    const lines = formatCaseManifest('test', VERDICTS);
+    expect(lines).toHaveLength(VERDICTS.length);
+    expect(lines).toEqual([...lines].sort());
+    expect(lines[0]).toBe('overlay-case test re1ob_a_cpu_1 re1ob:RE1:cpu hit');
+    // The split, the id, the stratum AND the outcome: an outcome without its stratum cannot be attributed to
+    // a fault type, and an id without its split cannot be compared across two artifacts.
+    for (const l of lines) expect(l).toMatch(/^overlay-case test \S+ \S+ (hit|miss|skipped)$/);
+    // Order is by id, so a case inserted in the middle of a corpus does not reshuffle the manifest.
+    expect(formatCaseManifest('test', [...VERDICTS].reverse())).toEqual(lines);
+  });
+
+  it('rolls up to the same totals as the overlay it accompanies', () => {
+    // The rollup is what a reader uses to see WHICH fault types carry the errors, so a rollup that does not
+    // sum to the split's counts would misattribute them.
+    const lines = formatStratumRollup('test', VERDICTS);
+    expect(lines).toEqual([
+      'overlay-stratum test re1ob:RE1:cpu 1/2',
+      'overlay-stratum test re1ss:RE1:mem 1/1',
+      // The skipped case still appears — it is a case in the split — with zero hits.
+      'overlay-stratum test re3tt:RE3:f2 0/1',
+    ]);
+    const totals = lines.map((l) => l.split(' ')[3]!.split('/').map(Number) as [number, number]);
+    expect(totals.reduce((a, [h]) => a + h, 0)).toBe(summarizeOverlay('test', VERDICTS).hits);
+    expect(totals.reduce((a, [, n]) => a + n, 0)).toBe(VERDICTS.length);
+  });
+
+  it('scores the overlay through the SAME hit definition the accuracy uses', () => {
+    // The two would otherwise be parallel accounts of one run, free to disagree. Asserted on the source: the
+    // oracle must call `scoreCase`, and no second comparison against the ground truth may exist in the file.
+    expect(SOURCE).toMatch(/const outcome = await scoreCase\(engine, c\)/);
+    expect(SOURCE).toMatch(/outcome: await scoreCase\(engine, l\.benchCase\)/);
+    // The comparison is `rank1 === c.groundTruth.serviceId`, so that is the shape to count: one occurrence
+    // means the verdict lives in `scoreCase` alone, and a second would be a rival definition of a hit.
+    const groundTruthComparisons = SOURCE.match(/=== c\.groundTruth\.serviceId/g) ?? [];
+    expect(groundTruthComparisons, 'exactly one place decides what a hit is').toHaveLength(1);
   });
 });

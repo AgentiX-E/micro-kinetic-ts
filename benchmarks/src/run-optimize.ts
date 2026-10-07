@@ -53,16 +53,22 @@ import {
 import {
   CORPUS_SAMPLING_OBJECTIVE,
   deriveStratumFromCaseDir,
+  formatCaseManifest,
   formatDatasetStrata,
+  formatOverlayCounts,
   formatPopulation,
   formatSplitCapability,
   formatSplitCapacity,
+  formatStratumRollup,
   OPTIMIZE_MAX_CASES,
   OPTIMIZE_SPLIT_RATIOS,
   strataCovered,
   summarizeDatasetStrata,
+  summarizeOverlay,
   summarizePopulation,
   summarizeSplitCapability,
+  type CaseOutcome,
+  type CaseVerdict,
   type PopulationCase,
 } from './optimize-population.js';
 import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
@@ -250,23 +256,47 @@ function makeOracle(cases: readonly BenchmarkCase[]): (u: Float64Array) => Promi
     let correct = 0;
     let evaluated = 0;
     for (const c of cases) {
-      try {
-        const faultGraph = engine.buildFaultGraph(c.callGraph, c.metrics, {
-          injectTimeMs: 0,
-          logs: c.logs as readonly BenchmarkLogEntry[],
-        });
-        const results = await engine.analyze(faultGraph, 1);
-        evaluated++;
-        if (results.length > 0 && results[0]!.serviceId === c.groundTruth.serviceId) {
-          correct++;
-        }
-      } catch {
-        // Skip cases the engine cannot build (defensive parity with the runner).
-      }
+      const outcome = await scoreCase(engine, c);
+      // A case the engine cannot build is SKIPPED rather than counted as a miss, which is what the
+      // denominator has always done — and the overlay reports it as its own count so the two can be
+      // reconciled instead of assumed.
+      if (outcome === 'skipped') continue;
+      evaluated++;
+      if (outcome === 'hit') correct++;
     }
 
     return evaluated > 0 ? correct / evaluated : 0;
   };
+}
+
+/**
+ * Score one case with an engine already built for a configuration.
+ *
+ * The verdict is the ONE definition of a hit in this runner, shared by {@link makeOracle} — which reduces
+ * these to an accuracy 33 times per search — and by the overlay that reports them per case. Duplicating the
+ * predicate would let the accuracy and the manifest disagree about the same run, which is the defect this
+ * sweep keeps finding one layer down, and `CaseOutcome` lives in `optimize-population.ts` for the same reason.
+ *
+ * @param engine - The engine to rank with.
+ * @param c - The case to score.
+ * @returns `hit` when rank-1 is the ground-truth service, `miss` when it is not, `skipped` when the engine
+ *          cannot build the case's fault graph at all.
+ */
+async function scoreCase(
+  engine: ReturnType<typeof createEngineWithConfig>,
+  c: BenchmarkCase,
+): Promise<CaseOutcome> {
+  try {
+    const faultGraph = engine.buildFaultGraph(c.callGraph, c.metrics, {
+      injectTimeMs: 0,
+      logs: c.logs as readonly BenchmarkLogEntry[],
+    });
+    const results = await engine.analyze(faultGraph, 1);
+    return results.length > 0 && results[0]!.serviceId === c.groundTruth.serviceId ? 'hit' : 'miss';
+  } catch {
+    // A case the engine cannot build is not evidence about the ranking, so it is named rather than counted.
+    return 'skipped';
+  }
 }
 
 // ── Reporting ─────────────────────────────────────────────
@@ -388,12 +418,61 @@ async function main(): Promise<void> {
   const evaluate = async (u: Float64Array, cases: readonly BenchmarkCase[]): Promise<number> =>
     makeOracle(cases)(u);
 
+  /**
+   * The same scoring, per case, for the overlay.
+   *
+   * `scoreCase` is called here too rather than a copy of the comparison, so the accuracy above and the
+   * manifest below cannot disagree about what a hit is — and the overlay line prints the accuracy its own
+   * counts imply, which is how a reader checks that without re-running anything.
+   */
+  const verdictsFor = async (
+    u: Float64Array,
+    cases: readonly LoadedCase[],
+  ): Promise<CaseVerdict[]> => {
+    const engine = createEngineWithConfig(withRankingWeights(vectorToRanking(u)));
+    const out: CaseVerdict[] = [];
+    for (const l of cases) {
+      out.push({
+        caseId: l.benchCase.id,
+        stratum: l.stratum,
+        outcome: await scoreCase(engine, l.benchCase),
+      });
+    }
+    return out;
+  };
+
+  /**
+   * Print a configuration's outcomes per split: counts, per-stratum rollup, and the TEST manifest.
+   *
+   * The manifest is emitted for the held-out split only. That is the set whose movement has to be attributed
+   * when a number changes between runs, and the one a diff between two artifacts should be read against;
+   * `train` is the set the search saw, so its per-case detail is not evidence about generalization.
+   */
+  const printOverlay = async (u: Float64Array, config: string): Promise<void> => {
+    console.log(`\n=== Per-case overlay (${config}) ===`);
+    for (const [label, cases] of [
+      ['train', train],
+      ['val', val],
+      ['test', test],
+    ] as const) {
+      const verdicts = await verdictsFor(u, cases);
+      console.log(formatOverlayCounts(summarizeOverlay(label, verdicts), config));
+      for (const line of formatStratumRollup(label, verdicts)) console.log(line);
+      if (label === 'test')
+        for (const line of formatCaseManifest(label, verdicts)) console.log(line);
+    }
+  };
+
   const trainAcc0 = await evaluate(initial, trainCases);
   const valAcc0 = await evaluate(initial, valCases);
   const testAcc0 = await evaluate(initial, testCases);
   console.log(
     `baseline (default weights): train=${formatPct(trainAcc0)} val=${formatPct(valAcc0)} test=${formatPct(testAcc0)}`,
   );
+  // WHICH CASES those three numbers are made of, for the configuration they were measured under. The counts
+  // reconcile with the line above by construction, and the test manifest is the set a diff between two runs
+  // is read against.
+  await printOverlay(initial, 'default weights');
 
   // Coordinate descent on the TRAIN split only.
   const oracle = makeOracle(trainCases);
@@ -424,6 +503,9 @@ async function main(): Promise<void> {
   console.log(`train = ${formatPct(trainAcc)}`);
   console.log(`val   = ${formatPct(valAcc)}`);
   console.log(`test  = ${formatPct(testAcc)}`);
+  // And the same overlay for the TUNED configuration, so a difference between the two blocks is the tuning's
+  // per-case effect rather than a number that has to be taken on trust.
+  await printOverlay(result.best, 'tuned weights');
   // The tuned configuration in full, through the same mapping the engine is built by — so the two numbers
   // above can be read against the configuration that produced them rather than against seven of its fields.
   // The search varies the RANKING vector only, so the rest of the configuration is the base it started from.
