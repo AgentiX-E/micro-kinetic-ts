@@ -26,6 +26,7 @@ import {
   formatEvidenceSeparation,
   readDirectionalEvidence,
   readEvidenceSeparation,
+  toEngineDirectionalInputs,
   type DirectionalReading,
 } from '../src/directional-evidence.js';
 
@@ -453,5 +454,62 @@ describe('the arms where a reading is NOT counted', () => {
     expect(lines[1]).toContain('10 of 10 strata have NO traces at all');
     expect(lines[1]).toContain('…');
     expect(lines[1]!.split(' ').filter((w) => w.includes('(1)')).length).toBe(8);
+  });
+});
+
+describe('the bridge to the shapes the engine already accepts', () => {
+  it("reports the same quantities per EDGE, in the engine's own field names", () => {
+    // `FaultFailedEdge` is `{caller, callee, failed, baseline}` and `FaultEdgeLatency` is
+    // `{caller, callee, preMeanMs, postMeanMs}` — the shapes the FSE'26 loader produces and the engine reads.
+    // Supplying them for RCAEval is the point of the bridge, so the names are asserted rather than assumed.
+    const { failedTraceEdges, edgeLatency } = toEngineDirectionalInputs(
+      spans([
+        { id: 'a', service: 'front' },
+        { id: 'b', service: 'orders', parent: 'a', before: true, ms: 10 },
+        { id: 'c', service: 'orders', parent: 'a', before: true, status: 'ERROR' },
+        { id: 'd', service: 'orders', parent: 'a', ms: 50, status: 'ERROR' },
+      ]),
+      AT,
+    );
+    expect(failedTraceEdges).toEqual([
+      { caller: 'front', callee: 'orders', failed: 1, baseline: 1 },
+    ]);
+    expect(edgeLatency).toEqual([
+      { caller: 'front', callee: 'orders', preMeanMs: 10, postMeanMs: 50 },
+    ]);
+  });
+
+  it('omits an edge with no failures and one with no baseline, rather than reporting zeros', () => {
+    // An edge whose only spans succeeded has nothing to say about failed calls; an edge that exists only after
+    // the injection has no duration baseline. Reporting `failed: 0` or `preMeanMs: 0` would invite the engine to
+    // read "measured, and clean" where the truth is "not measured".
+    const { failedTraceEdges, edgeLatency } = toEngineDirectionalInputs(
+      spans([
+        { id: 'a', service: 'front' },
+        { id: 'b', service: 'quiet', parent: 'a', ms: 100 },
+        { id: 'c', service: 'fresh', parent: 'a', ms: 100 },
+      ]),
+      AT,
+    );
+    expect(failedTraceEdges).toEqual([]);
+    expect(edgeLatency).toEqual([]);
+  });
+
+  it('reports NOTHING when there is no injection anchor, because direction needs one', () => {
+    // With `injectTimeMs <= 0` every span would count as "after": the failures would all be post-injection and
+    // the baseline would be empty, which reads as a large rise rather than as an absent anchor.
+    const noAnchor = toEngineDirectionalInputs(
+      spans([
+        { id: 'a', service: 'front' },
+        { id: 'b', service: 'orders', parent: 'a', status: 'ERROR' },
+      ]),
+      0,
+    );
+    expect(noAnchor).toEqual({ failedTraceEdges: [], edgeLatency: [] });
+    // And no traces is the same answer as no anchor: nothing to say.
+    expect(toEngineDirectionalInputs(undefined, AT)).toEqual({
+      failedTraceEdges: [],
+      edgeLatency: [],
+    });
   });
 });

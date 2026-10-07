@@ -58,6 +58,22 @@ describe('a runner that scores cases assembles the engine inputs in one place', 
     }
   });
 
+  it('attaches the directional inputs where the traces still exist', () => {
+    // The loader drops the spans after augmentation (a documented memory trade), so the ONLY place the
+    // aggregate can be derived is the augmentation itself. A runner that forgot would look exactly like a
+    // runner whose corpus has no traces — which is what RCAEval looked like for six iterations.
+    for (const runner of ['../src/run-optimize.ts', '../src/run-rcaeval.ts'] as const) {
+      const source = read(runner);
+      expect(source, `${runner} derives the aggregate`).toContain('toEngineDirectionalInputs(');
+      expect(source, `${runner} attaches it to the case`).toContain(
+        'edgeLatency: directional.edgeLatency',
+      );
+      expect(source, `${runner} attaches the failed edges too`).toContain(
+        'failedTraceEdges: directional.failedTraceEdges',
+      );
+    }
+  });
+
   it('keeps the injection anchor a CALLER policy, since the shared function takes it as one', () => {
     // `injectTimeMs` is a parameter rather than a field because the runners own that policy: the ablation
     // runner disables the anchor. A fence that required a field here would be asserting a policy the

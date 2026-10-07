@@ -36,6 +36,7 @@ import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
 import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { toFaultGraphOptions } from '../../packages/kinetic/src/benchmarks/runners/fault-graph-options.js';
+import { toEngineDirectionalInputs } from './directional-evidence.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 import type { RCAConfiguration } from '../../packages/optimize/src/index.js';
 import {
@@ -208,6 +209,14 @@ async function loadAllCases(
 
       const serviceIds = Object.keys(rawCase.metrics);
       let callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
+      // THE DIRECTION the RCAEval side never supplied, derived from the SAME spans the augmentation consumes.
+      // Carried as a compact per-EDGE aggregate while the spans themselves stay dropped (the loader's documented
+      // memory trade), so the two fields the engine reads for a fault's direction stop being structurally absent
+      // on every RCAEval run.
+      let directional: ReturnType<typeof toEngineDirectionalInputs> = {
+        failedTraceEdges: [],
+        edgeLatency: [],
+      };
 
       if (rawCase.traces && rawCase.traces.length > 0) {
         const spans: TraceSpan[] = rawCase.traces.map((t) => ({
@@ -222,9 +231,26 @@ async function loadAllCases(
           startTime: t.startTime * 1000,
         }));
         callGraph = augmentTopologyWithTraces(callGraph, spans, { minCallFrequency: 1 });
+        // `rawCase.injectTime` and the raw spans are in SECONDS; this adapter converts both to the milliseconds
+        // the derivation's before/after split is defined over.
+        directional = toEngineDirectionalInputs(
+          spans.map((s) => ({
+            spanId: s.spanId,
+            parentSpanId: s.parentSpanId === '' ? undefined : s.parentSpanId,
+            service: s.service,
+            startTime: s.startTime,
+            duration: s.duration,
+            status: s.isError === true ? ('ERROR' as const) : ('OK' as const),
+          })),
+          rawCase.injectTime * 1000,
+        );
       }
 
-      const benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteId);
+      const benchCase: BenchmarkCase = {
+        ...loader.toBenchmarkCase(rawCase, callGraph, suiteId),
+        failedTraceEdges: directional.failedTraceEdges,
+        edgeLatency: directional.edgeLatency,
+      };
       out.push({
         benchCase,
         dir,

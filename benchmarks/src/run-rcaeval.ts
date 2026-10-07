@@ -60,6 +60,7 @@ import type {
   RunResult,
 } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
+import { toEngineDirectionalInputs } from './directional-evidence.js';
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
@@ -388,6 +389,12 @@ async function loadSingleCase(
   let traceUsed = false;
   let pruned = false;
 
+  // THE DIRECTION the RCAEval side never supplied, derived from the raw traces at millisecond resolution.
+  let directional: ReturnType<typeof toEngineDirectionalInputs> = {
+    failedTraceEdges: [],
+    edgeLatency: [],
+  };
+
   // Trace-validated topology pruning for RE2/RE3
   if (rawCase.traces && rawCase.traces.length > 0) {
     traceUsed = true;
@@ -406,6 +413,21 @@ async function loadSingleCase(
       minCallFrequency: 1,
     });
     pruned = callGraph.edges.length < edgesBefore;
+    // Derived from the RAW traces with the seconds-to-milliseconds conversion done HERE, because this file's own
+    // `spans` mapping above passes `t.startTime` through unconverted while `rawCase.injectTime` is seconds —
+    // comparing the two directly would put every span before the injection and report no failures at all. The
+    // discrepancy in that mapping is recorded separately as its own finding.
+    directional = toEngineDirectionalInputs(
+      rawCase.traces.map((t) => ({
+        spanId: t.spanId,
+        parentSpanId: t.parentSpanId,
+        service: t.service,
+        startTime: t.startTime * 1000,
+        duration: t.duration,
+        status: t.status,
+      })),
+      rawCase.injectTime * 1000,
+    );
   }
   const edgesAfter = callGraph.edges.length;
 
@@ -416,7 +438,11 @@ async function loadSingleCase(
         ? ('rcaeval-re2' as const)
         : ('rcaeval-re3' as const);
 
-  let benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
+  let benchCase: BenchmarkCase = {
+    ...loader.toBenchmarkCase(rawCase, callGraph, suiteName),
+    failedTraceEdges: directional.failedTraceEdges,
+    edgeLatency: directional.edgeLatency,
+  };
 
   // Trace span-activity rise signal: compute per-service pre/post span counts
   // only when requested (traceWeight > 0) AND scoped to the RE3 suite — the

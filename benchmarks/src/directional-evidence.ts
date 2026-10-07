@@ -27,8 +27,29 @@
  * @module benchmarks/directional-evidence
  */
 
-import type { BenchmarkTraceSpan } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import type {
+  FaultEdgeLatency,
+  FaultFailedEdge,
+} from '../../packages/core/src/interfaces/rca-engine.js';
 import { DEFAULT_SEPARATOR_CRITERION, separationPValue } from './fse26-separator.js';
+
+/**
+ * The six fields this module reads from a span, and nothing else.
+ *
+ * Structural rather than the loader's `DirectionalSpan`: the runners map raw traces into their OWN span
+ * shape, and a derivation that demanded the loader's type would force a second mapping of the same data at
+ * every call site. What a direction needs is the parent relation, the service on both ends, the timing on both
+ * sides of the injection, the duration and whether the call failed — so that is what this asks for.
+ */
+export interface DirectionalSpan {
+  readonly spanId: string;
+  readonly parentSpanId?: string | undefined;
+  readonly service: string;
+  /** Unix milliseconds. */
+  readonly startTime: number;
+  readonly duration: number;
+  readonly status: 'OK' | 'ERROR';
+}
 
 /** The parts of a case this module reads. Structural, so a test needs no loader. */
 export interface DirectionalCaseInput {
@@ -37,7 +58,7 @@ export interface DirectionalCaseInput {
   readonly stratum: string;
   /** Fault-injection time as Unix milliseconds; the boundary between before and after. */
   readonly injectTimeMs: number;
-  readonly traces?: readonly BenchmarkTraceSpan[];
+  readonly traces?: readonly DirectionalSpan[];
 }
 
 /** One service's inbound evidence, as the two channels see it. */
@@ -66,9 +87,9 @@ export interface DirectionalReading {
 
 /** The caller→callee pairs the traces imply, as "caller>callee". */
 function edgesOf(
-  traces: readonly BenchmarkTraceSpan[],
+  traces: readonly DirectionalSpan[],
 ): Map<string, { caller: string; callee: string }> {
-  const byId = new Map<string, BenchmarkTraceSpan>();
+  const byId = new Map<string, DirectionalSpan>();
   for (const s of traces) byId.set(s.spanId, s);
   const edges = new Map<string, { caller: string; callee: string }>();
   for (const s of traces) {
@@ -110,7 +131,7 @@ export function readDirectionalEvidence(input: DirectionalCaseInput): Directiona
   // Durations, per inbound edge, on each side of the injection.
   const durAfter = new Map<string, number[]>();
   const durBefore = new Map<string, number[]>();
-  const byId = new Map<string, BenchmarkTraceSpan>();
+  const byId = new Map<string, DirectionalSpan>();
   for (const s of traces) byId.set(s.spanId, s);
 
   for (const s of traces) {
@@ -314,4 +335,86 @@ export function formatEvidenceSeparation(separation: EvidenceSeparation): string
     `(${rate}) | p=${p} | bar ${separation.meetsBar ? 'MET' : 'NOT met'} ` +
     `(needs ${DEFAULT_SEPARATOR_CRITERION.minAuc.toFixed(2)} on >=${DEFAULT_SEPARATOR_CRITERION.minCases} pairs)`
   );
+}
+
+/**
+ * The same two observables in the SHAPES THE ENGINE ALREADY ACCEPTS.
+ *
+ * This is the bridge the RCAEval side never had: `FaultFailedEdge` (`{caller, callee, failed, baseline}`) and
+ * `FaultEdgeLatency` (`{caller, callee, preMeanMs, postMeanMs}`) are populated by the FSE'26 loader alone, so
+ * the two fields the engine reads for a fault's DIRECTION have been structurally absent on every RCAEval run —
+ * including the nine published cells, whose configuration holds `latWeight` non-zero and shipped.
+ *
+ * The numbers are the SAME per-edge quantities {@link readDirectionalEvidence} reduces to a per-service
+ * reading (one pass over the spans, one definition of a failed call, one baseline rule); only the grouping
+ * differs, so the measured evidence and the engine's input cannot disagree about the same case.
+ *
+ * @param traces - The case's spans.
+ * @param injectTimeMs - The case's real injection time; `0` disables the before/after split and yields empty
+ *        arrays, because with no anchor there is no direction to report rather than a direction of zero.
+ * @returns The two arrays, deterministic (ascending by `caller`, then `callee`).
+ */
+export function toEngineDirectionalInputs(
+  traces: readonly DirectionalSpan[] | undefined,
+  injectTimeMs: number,
+): { failedTraceEdges: FaultFailedEdge[]; edgeLatency: FaultEdgeLatency[] } {
+  const spans = traces ?? [];
+  // With no anchor every span would count as "after", and a fault's direction is exactly the thing the anchor
+  // is needed to see. Reporting nothing is the honest answer; reporting a direction of zero is not.
+  if (injectTimeMs <= 0) return { failedTraceEdges: [], edgeLatency: [] };
+
+  const byId = new Map<string, DirectionalSpan>();
+  for (const s of spans) byId.set(s.spanId, s);
+
+  interface Edge {
+    caller: string;
+    callee: string;
+    failed: number;
+    baseline: number;
+    pre: number[];
+    post: number[];
+  }
+  const edges = new Map<string, Edge>();
+  for (const s of spans) {
+    const parent = s.parentSpanId === undefined ? undefined : byId.get(s.parentSpanId);
+    if (parent === undefined) continue;
+    const key = `${parent.service}>${s.service}`;
+    const edge = edges.get(key) ?? {
+      caller: parent.service,
+      callee: s.service,
+      failed: 0,
+      baseline: 0,
+      pre: [],
+      post: [],
+    };
+    edges.set(key, edge);
+    const after = s.startTime >= injectTimeMs;
+    if (s.status === 'ERROR') {
+      if (after) edge.failed++;
+      else edge.baseline++;
+    }
+    (after ? edge.post : edge.pre).push(s.duration);
+  }
+
+  const mean = (xs: readonly number[]): number =>
+    xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length;
+  const ordered = [...edges.values()].sort(
+    (a, b) => a.caller.localeCompare(b.caller) || a.callee.localeCompare(b.callee),
+  );
+
+  return {
+    failedTraceEdges: ordered
+      .filter((e) => e.failed > 0 || e.baseline > 0)
+      .map((e) => ({ caller: e.caller, callee: e.callee, failed: e.failed, baseline: e.baseline })),
+    // A latency RISE needs both sides: with no pre-injection mean there is no baseline, and reporting `pre = 0`
+    // would invite the engine to read a rise of infinity where there is only an absent measurement.
+    edgeLatency: ordered
+      .filter((e) => e.pre.length > 0 && e.post.length > 0)
+      .map((e) => ({
+        caller: e.caller,
+        callee: e.callee,
+        preMeanMs: mean(e.pre),
+        postMeanMs: mean(e.post),
+      })),
+  };
 }
