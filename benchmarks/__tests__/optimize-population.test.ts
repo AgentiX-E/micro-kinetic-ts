@@ -577,6 +577,20 @@ describe('the per-case overlay, which is what makes a movement attributable', ()
     for (const l of lines) expect(l).toMatch(/^overlay-case test \S+ \S+ (hit|miss|skipped)$/);
     // Order is by id, so a case inserted in the middle of a corpus does not reshuffle the manifest.
     expect(formatCaseManifest('test', [...VERDICTS].reverse())).toEqual(lines);
+    // The tie-break is exercised on purpose: two entries with the SAME id must still order deterministically,
+    // because a comparator that falls through to insertion order would make the manifest depend on how the
+    // corpus was walked — and a diff between two runs would then carry noise that is not a result.
+    const tied: CaseVerdict[] = [
+      { caseId: 'same', stratum: 'z:suite:f', outcome: 'hit' },
+      { caseId: 'same', stratum: 'a:suite:f', outcome: 'miss' },
+    ];
+    expect(formatCaseManifest('test', tied)).toEqual([
+      'overlay-case test same a:suite:f miss',
+      'overlay-case test same z:suite:f hit',
+    ]);
+    expect(formatCaseManifest('test', [...tied].reverse())).toEqual(
+      formatCaseManifest('test', tied),
+    );
   });
 
   it('rolls up to the same totals as the overlay it accompanies', () => {
