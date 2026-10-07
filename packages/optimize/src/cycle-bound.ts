@@ -146,3 +146,69 @@ export function formatCycleCertificate(
     `d*alpha=${certificate.geometricRatio.toFixed(4)} bound=${bound} -> ${verdict}`
   );
 }
+
+/**
+ * A per-hop transmission estimate, summarised.
+ *
+ * ## Why this exists
+ *
+ * The certificate above is a function of one parameter it does not itself determine: the per-hop attenuation
+ * `α`. Until `α` is measured the certificate can only be swept, and a sweep answers "how strong would the
+ * attenuation have to be?" rather than "is the reduction proved here?". This turns the sweep into a reading.
+ *
+ * The estimator is deliberately distribution-free: `median` is reported as the headline because a fault's
+ * transmission has a long right tail (a victim can look worse than its source), and `p90` is reported beside it
+ * because the certificate is a WORST-CASE bound — a reader needs to see how much of the distribution would fail
+ * it, not only where its centre is.
+ */
+export interface AttenuationEstimate {
+  readonly samples: number;
+  readonly median: number;
+  readonly mean: number;
+  readonly p90: number;
+  readonly min: number;
+  readonly max: number;
+}
+
+/**
+ * Summarise per-hop transmission samples.
+ *
+ * @param ratios - Each sample is `downstream / upstream` for one edge, in `[0, ∞)`. A ratio above 1 means the
+ *        downstream service looked WORSE than its upstream, which a fault's own downstream victims routinely do.
+ * @returns The summary, or `undefined` when there is nothing to summarise — an absent measurement is not a
+ *          measurement of zero.
+ */
+export function measureAttenuation(ratios: readonly number[]): AttenuationEstimate | undefined {
+  const finite = ratios.filter((r) => Number.isFinite(r) && r >= 0);
+  if (finite.length === 0) return undefined;
+  const sorted = [...finite].sort((a, b) => a - b);
+  const at = (q: number): number =>
+    // The `(n − 1)` basis, not `q · n`: with six samples the latter puts the "p90" at the maximum, so the tail
+    // statistic would report the single worst edge rather than the shape of the tail — and a reader comparing it
+    // with the median would be comparing two different conventions.
+    sorted[Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)))]!;
+  return {
+    samples: sorted.length,
+    median: at(0.5),
+    mean: sorted.reduce((a, b) => a + b, 0) / sorted.length,
+    p90: at(0.9),
+    min: sorted[0]!,
+    max: sorted[sorted.length - 1]!,
+  };
+}
+
+/**
+ * Render an attenuation estimate as the line a report carries.
+ *
+ * @param estimate - The summary.
+ * @param label - What the samples were (e.g. `anomaly-score ratio` vs `propagation weight`), because the two
+ *        estimators are different quantities and a reader must not compare them as one.
+ * @returns One line, without a trailing newline.
+ */
+export function formatAttenuation(estimate: AttenuationEstimate, label: string): string {
+  return (
+    `attenuation[${label}] n=${estimate.samples} median=${estimate.median.toFixed(4)} ` +
+    `mean=${estimate.mean.toFixed(4)} p90=${estimate.p90.toFixed(4)} ` +
+    `range=[${estimate.min.toFixed(4)}, ${estimate.max.toFixed(4)}]`
+  );
+}

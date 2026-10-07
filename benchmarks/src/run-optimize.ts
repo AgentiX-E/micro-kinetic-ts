@@ -37,7 +37,11 @@ import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { toFaultGraphOptions } from '../../packages/kinetic/src/benchmarks/runners/fault-graph-options.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
-import { cycleCertificate } from '../../packages/optimize/src/cycle-bound.js';
+import {
+  cycleCertificate,
+  formatAttenuation,
+  measureAttenuation,
+} from '../../packages/optimize/src/cycle-bound.js';
 import type { RCAConfiguration } from '../../packages/optimize/src/index.js';
 import {
   coordinateDescent,
@@ -600,6 +604,63 @@ async function main(): Promise<void> {
         console.log(
           `certificate: alpha=${alpha.toFixed(2)} -> bounded ${bounded}/${loaded.length} (${pct(bounded)}%), ` +
             `CERTIFIED ${certified}/${loaded.length} (${pct(certified)}%)`,
+        );
+      }
+    }
+
+    // MEASURING α — the one parameter the certificate cannot derive. §95 could only SWEEP it, which answers "how
+    // strong would the attenuation have to be?"; this answers "what is it?". Two estimators, both label-free and
+    // both read from the case's own telemetry: the ratio of a downstream service's anomaly score to its upstream's
+    // along each call edge, and the engine's own per-edge propagation weight. They are reported separately because
+    // they are different quantities, and the certificate is then run AT each measured median.
+    {
+      const EPS = 1e-3;
+      const engine = createEngineWithConfig(withRankingWeights(vectorToRanking(initial)));
+      const scoreRatios: number[] = [];
+      const propagation: number[] = [];
+      for (const l of loaded) {
+        const graph = engine.buildFaultGraph(
+          l.benchCase.callGraph,
+          l.benchCase.metrics,
+          toFaultGraphOptions(l.benchCase, 0),
+        );
+        for (const edge of l.benchCase.callGraph.edges) {
+          const upstream = graph.anomalyScores.get(edge.from);
+          const downstream = graph.anomalyScores.get(edge.to);
+          // A ratio needs an upstream to divide by: an edge whose caller shows nothing carries no transmission
+          // measurement, and counting it as zero would drag the estimate toward a certificate the data has not
+          // earned.
+          if (upstream !== undefined && downstream !== undefined && upstream > 1e-9) {
+            scoreRatios.push(downstream / upstream);
+          }
+        }
+        for (const w of graph.propagationWeights) if (Number.isFinite(w)) propagation.push(w);
+      }
+      const byScore = measureAttenuation(scoreRatios);
+      const byWeight = measureAttenuation(propagation);
+      console.log('\n=== Measured per-hop attenuation (the parameter the certificate needs) ===');
+      if (byScore)
+        console.log(formatAttenuation(byScore, 'anomaly-score ratio downstream/upstream'));
+      if (byWeight) console.log(formatAttenuation(byWeight, 'engine propagation weight'));
+      for (const [label, estimate] of [
+        ['anomaly-ratio median', byScore],
+        ['propagation-weight median', byWeight],
+      ] as const) {
+        if (estimate === undefined) continue;
+        let bounded = 0;
+        let certified = 0;
+        for (const l of loaded) {
+          const c = cycleCertificate(
+            l.benchCase.callGraph.edges,
+            l.benchCase.callGraph.nodes.size,
+            { alpha: estimate.median, epsilon: EPS },
+          );
+          if (c.bounded) bounded++;
+          if (c.certified) certified++;
+        }
+        console.log(
+          `certificate AT the measured alpha (${label}=${estimate.median.toFixed(4)}): ` +
+            `bounded ${bounded}/${loaded.length}, CERTIFIED ${certified}/${loaded.length}`,
         );
       }
     }

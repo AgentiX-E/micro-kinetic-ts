@@ -71,5 +71,15 @@ export type { GPState } from './gp-state-store.js';
 export { LLMCacheStore } from './llm-cache-store.js';
 export type { LlmCacheEntry } from './llm-cache-store.js';
 
-export { cycleCertificate, formatCycleCertificate } from './cycle-bound.js';
-export type { CycleCertificate, CycleCertificateOptions, DirectedEdge } from './cycle-bound.js';
+export {
+  cycleCertificate,
+  formatAttenuation,
+  formatCycleCertificate,
+  measureAttenuation,
+} from './cycle-bound.js';
+export type {
+  AttenuationEstimate,
+  CycleCertificate,
+  CycleCertificateOptions,
+  DirectedEdge,
+} from './cycle-bound.js';

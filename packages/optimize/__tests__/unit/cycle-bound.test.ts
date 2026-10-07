@@ -16,7 +16,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cycleCertificate,
+  formatAttenuation,
   formatCycleCertificate,
+  measureAttenuation,
   type DirectedEdge,
 } from '../../src/cycle-bound.js';
 
@@ -94,5 +96,43 @@ describe('the finite cycle certificate', () => {
     expect(line).toContain('alpha=0.05');
     expect(line).toContain('maxInDegree=2');
     expect(line).toContain('d*alpha=0.1000');
+  });
+});
+
+describe('measuring the attenuation the certificate needs', () => {
+  it('summarises without assuming a shape, and reports the tail', () => {
+    // A fault's per-hop transmission has a long right tail — a victim can look worse than its source — so the
+    // MEDIAN is the headline and the p90 is reported beside it: the certificate is a worst-case bound, and a
+    // reader needs to see how much of the distribution would fail it.
+    const e = measureAttenuation([0.1, 0.2, 0.3, 0.4, 0.5, 8]);
+    expect(e).toBeDefined();
+    expect(e!.samples).toBe(6);
+    expect(e!.median).toBe(0.3);
+    expect(e!.p90).toBe(0.5);
+    expect(e!.max).toBe(8);
+    expect(e!.mean).toBeCloseTo((0.1 + 0.2 + 0.3 + 0.4 + 0.5 + 8) / 6, 10);
+  });
+
+  it('returns NOTHING for no samples, because an absent measurement is not a zero', () => {
+    // Returning `median: 0` would certify every graph — the single most damaging way for this estimator to be
+    // wrong, since the certificate it feeds is a claim of proof.
+    expect(measureAttenuation([])).toBeUndefined();
+    expect(measureAttenuation([Number.NaN, Number.POSITIVE_INFINITY, -1])).toBeUndefined();
+  });
+
+  it('drops the samples no ratio can be formed from, rather than clamping them', () => {
+    // An infinite ratio is an upstream of zero, which carries no transmission measurement; a negative one is not
+    // a ratio. Clamping either into the distribution would move the estimate with arithmetic that did not happen.
+    const e = measureAttenuation([0.2, Number.POSITIVE_INFINITY, -1, Number.NaN, 0.4]);
+    expect(e!.samples).toBe(2);
+    expect(e!.median).toBe(0.2);
+    expect(e!.max).toBe(0.4);
+  });
+
+  it('names which estimator a line is about, since two of them are reported', () => {
+    const line = formatAttenuation(measureAttenuation([0.25])!, 'anomaly-score ratio');
+    expect(line).toContain('attenuation[anomaly-score ratio]');
+    expect(line).toContain('median=0.2500');
+    expect(line).toContain('range=[0.2500, 0.2500]');
   });
 });
