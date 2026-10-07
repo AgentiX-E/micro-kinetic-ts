@@ -301,15 +301,43 @@ export function formatDatasetStrata(
 export const OPTIMIZE_MAX_CASES = 200;
 
 /**
+ * The split ratios the search uses: chosen by the arithmetic, not by convention.
+ *
+ * The constraint is that the held-out coverage must be AFFORDABLE on this runner — the number of cases a
+ * stratum needs for both `val` and `test` (see {@link minimumStratumSizeForHeldOutCoverage}) times the
+ * dataset's stratum count must not exceed {@link OPTIMIZE_MAX_CASES}. Measured over the dataset's **46**
+ * strata and the **200**-case heap bound, every candidate reads:
+ *
+ * | ratios | boundary | required | fits the cap | held-out share |
+ * | --- | --- | --- | --- | --- |
+ * | 70/15/15 | 6 | 276 | **no** (this is the configuration that OOMed) | 30% |
+ * | 65/18/18 | 5 | 230 | no | 35% |
+ * | **60/20/20** | **4** | **184** | **yes** | 40% |
+ * | 55/23/23 | 4 | 184 | yes | 45% |
+ * | 50/25/25 | 4 | 184 | yes | 50% |
+ * | 40/30/30 | 3 | 138 | yes | 60% |
+ *
+ * **60/20/20 is the smallest move that satisfies the constraint**, and that is the whole argument for it:
+ * every fitting option gives the same or less training data, and training data is what tunes the weights. The
+ * boundary is a step function of the ratios — pushing `val`+`test` from 30% to 40% takes it from 6 to 4, and
+ * another 10 points changes nothing — so the interesting question was never "how much held-out data" but
+ * "which step clears the cap".
+ *
+ * The old value was 70/15/15, which needs 276 cases and therefore cannot be funded: the split was asking for
+ * coverage the runner could not pay for, and nothing said so until the requirement was printed beside the cap.
+ */
+export const OPTIMIZE_SPLIT_RATIOS = { train: 0.6, val: 0.2, test: 0.2 } as const;
+
+/**
  * How the corpus is drawn when the dataset is larger than the cap, named so the artifact can state it.
  *
- * Today's objective preserves the dataset's `system:suite` shares, which is why RE3 is 12.1% of the corpus.
- * The alternative — an equal quota per `system:suite:fault` stratum — is NOT implemented, and the capacity
- * line below says why implementing it would not be enough on its own: at 44 strata and a 6-case floor the
- * corpus would need 264 cases, and 200 cannot be rearranged into that.
+ * It preserves each `system:suite:fault` stratum's share of the dataset — the FAULT-level key, which replaced
+ * a nine-way `system:suite` key that thinned the rare fault types and lost two strata outright. An equal
+ * quota per stratum is NOT implemented: the capacity line says why it could not help anyway, since no
+ * assignment of a 200-case cap to 46 strata puts 4 in each.
  */
 export const CORPUS_SAMPLING_OBJECTIVE =
-  'proportional (each system:suite stratum keeps its share of the dataset)';
+  'proportional (each system:suite:fault stratum keeps its share of the dataset)';
 
 /**
  * The cap, the stratum count and the boundary as one verdict.

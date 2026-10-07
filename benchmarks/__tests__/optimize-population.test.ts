@@ -24,11 +24,15 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { requiredCasesForHeldOutCoverage } from '../../packages/optimize/src/split.js';
+import {
+  minimumStratumSizeForHeldOutCoverage,
+  requiredCasesForHeldOutCoverage,
+} from '../../packages/optimize/src/split.js';
 import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
 import {
   CORPUS_SAMPLING_OBJECTIVE,
   OPTIMIZE_MAX_CASES,
+  OPTIMIZE_SPLIT_RATIOS,
   deriveStratumFromCaseDir,
   formatDatasetStrata,
   formatPopulation,
@@ -43,6 +47,19 @@ import {
 } from '../src/optimize-population.js';
 
 const SIZE = ANOMALY_NORMALIZE_NODE_THRESHOLD;
+
+/**
+ * The two sources the owner-and-affordability fences read, at module scope because more than one describe
+ * inspects them. Read once, so a fence cannot disagree with itself about what the file says.
+ */
+const SOURCE = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../src/run-optimize.ts'),
+  'utf8',
+);
+const WORKFLOW = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../../.github/workflows/benchmark-rcaeval.yml'),
+  'utf8',
+);
 
 /** A corpus with every interesting property: three systems, three suites, both sides of the guard. */
 const CORPUS: PopulationCase[] = [
@@ -416,18 +433,6 @@ describe('the DATASET the corpus is sampled from', () => {
 });
 
 describe('the corpus size and the sampling key have one owner each', () => {
-  const SOURCE = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), '../src/run-optimize.ts'),
-    'utf8',
-  );
-  const WORKFLOW = readFileSync(
-    resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      '../../.github/workflows/benchmark-rcaeval.yml',
-    ),
-    'utf8',
-  );
-
   it('keeps the cap BELOW the dataset requirement, because the requirement does not fit in the heap', () => {
     // THE FENCE THAT WOULD HAVE CAUGHT THE OOM BEFORE IT WAS DISPATCHED. The dataset needs 46 x 6 = 276 cases
     // for both held-out splits at 70/15/15 — and setting the cap to that requirement killed the golden's
@@ -465,5 +470,55 @@ describe('the corpus size and the sampling key have one owner each', () => {
     // output — it produces a corpus, just the wrong one.
     expect(SOURCE).toMatch(/stratifiedSplit\(\s*dirs,\s*deriveStratumFromCaseDir,/);
     expect(SOURCE, 'the nine-way key is gone, not merely unused').not.toContain('deriveStratumKey');
+  });
+});
+
+describe('the split must be AFFORDABLE on this runner, which is an invariant rather than a hope', () => {
+  const DATASET_STRATA = 46;
+
+  it('states the constraint the ratios were chosen under, and that they satisfy it', () => {
+    // THE FENCE THAT CLOSES THE LINE OF ARGUMENT THE LAST TWO ITERATIONS OPENED. `strata x boundary` is what
+    // full coverage costs, and it has to fit inside the heap bound — `70/15/15` needed 276 cases against a
+    // 200-case heap and OOMed, so the constraint is not academic. Asserting it here means the next ratio
+    // change that cannot be funded fails LOCALLY rather than in a golden run, which is the whole difference
+    // between this check and the OOM it would have prevented.
+    const boundary = minimumStratumSizeForHeldOutCoverage(OPTIMIZE_SPLIT_RATIOS);
+    const required = requiredCasesForHeldOutCoverage(DATASET_STRATA, OPTIMIZE_SPLIT_RATIOS);
+    expect(boundary, 'the boundary 60/20/20 buys').toBe(4);
+    expect(required, '46 strata x 4').toBe(184);
+    expect(required).toBeLessThanOrEqual(OPTIMIZE_MAX_CASES);
+    // And the configuration this replaced cannot satisfy it, which is why it was replaced.
+    const old = requiredCasesForHeldOutCoverage(DATASET_STRATA, {
+      train: 0.7,
+      val: 0.15,
+      test: 0.15,
+    });
+    expect(old).toBe(276);
+    expect(old).toBeGreaterThan(OPTIMIZE_MAX_CASES);
+  });
+
+  it('is the smallest move that fits, so it keeps the most training data available', () => {
+    // The boundary is a step function, so several ratio sets satisfy the constraint at the SAME cost. Among
+    // them this keeps the largest training share, which is the tie-break and the reason for 60 rather than 50
+    // or 40: every fitting option gives the same or less training data.
+    const fits = [
+      { train: 0.6, val: 0.2, test: 0.2 },
+      { train: 0.55, val: 0.225, test: 0.225 },
+      { train: 0.5, val: 0.25, test: 0.25 },
+      { train: 0.4, val: 0.3, test: 0.3 },
+    ];
+    const fitting = fits.filter(
+      (r) => requiredCasesForHeldOutCoverage(DATASET_STRATA, r) <= OPTIMIZE_MAX_CASES,
+    );
+    expect(fitting.length, 'more than one option fits').toBeGreaterThan(1);
+    const best = Math.max(...fitting.map((r) => r.train));
+    expect(OPTIMIZE_SPLIT_RATIOS.train).toBe(best);
+  });
+
+  it('leaves the runner no ratio of its own to state', () => {
+    // One owner, like the cap: the runner reads the constant, and a literal here would be a second answer to
+    // a question whose answer the artifact has to be able to justify.
+    expect(SOURCE).toContain('OPTIMIZE_SPLIT_RATIOS');
+    expect(SOURCE, 'no restated ratios').not.toMatch(/train: 0\.\d+,\s*val:/);
   });
 });

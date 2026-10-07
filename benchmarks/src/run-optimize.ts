@@ -58,6 +58,7 @@ import {
   formatSplitCapability,
   formatSplitCapacity,
   OPTIMIZE_MAX_CASES,
+  OPTIMIZE_SPLIT_RATIOS,
   strataCovered,
   summarizeDatasetStrata,
   summarizePopulation,
@@ -301,7 +302,7 @@ async function main(): Promise<void> {
   // full coverage — a stratum with fewer than the boundary's cases in the whole dataset cannot be covered at
   // any cap, so the cap is not always the lever. `discoverCaseDirs` opens no file.
   const allCaseDirs = discoverCaseDirs(opts.dataDir);
-  const SPLIT_RATIOS_FOR_DATASET = { train: 0.7, val: 0.15, test: 0.15 } as const;
+  const SPLIT_RATIOS_FOR_DATASET = OPTIMIZE_SPLIT_RATIOS;
   console.log(
     formatDatasetStrata(
       summarizeDatasetStrata(allCaseDirs, SPLIT_RATIOS_FOR_DATASET),
@@ -335,10 +336,15 @@ async function main(): Promise<void> {
   }
 
   // Stratified split by system + suite + fault type.
+  //
+  // The RATIOS ARE THE NAMED CONSTANT, which is the site the affordability argument is about: `strata x
+  // boundary` is what this split's coverage costs, and at the old 70/15/15 it cost 276 cases against a
+  // 200-case heap. A literal here would be a second answer to the question the artifact has to justify, and
+  // the second site is exactly the one a reader checks least.
   const { train, val, test } = stratifiedSplit(
     loaded,
     (l) => l.stratum,
-    { train: 0.7, val: 0.15, test: 0.15 },
+    OPTIMIZE_SPLIT_RATIOS,
     opts.seed,
   );
   const trainCases = train.map((l) => l.benchCase);
