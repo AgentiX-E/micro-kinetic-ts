@@ -37,6 +37,7 @@ import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { toFaultGraphOptions } from '../../packages/kinetic/src/benchmarks/runners/fault-graph-options.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
+import { cycleCertificate } from '../../packages/optimize/src/cycle-bound.js';
 import type { RCAConfiguration } from '../../packages/optimize/src/index.js';
 import {
   coordinateDescent,
@@ -559,6 +560,50 @@ async function main(): Promise<void> {
       const d = await diagnoseCase(engine, l.benchCase);
       if (d.top1 !== undefined) top1ByCase.set(l.benchCase.id, d.top1);
     }
+    // THE FINITE CYCLE CERTIFICATE, over the whole corpus. `KINETIC_MAPPING_AUDIT.md` §1 records that the
+    // "cycles contribute nothing" claim is a Boltzmann-Grad LIMIT statement whose hypotheses these graphs do not
+    // satisfy by construction, and §3.1 proposes replacing it with a finite bound. This is that bound, measured:
+    // for each case, at which per-hop attenuation is the tree reduction PROVED (bound < eps), merely convergent,
+    // or refuted outright (d*alpha >= 1)? The answer is a curve over alpha rather than a claim, because alpha is
+    // the one parameter the certificate does not determine on its own.
+    {
+      const ALPHAS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5] as const;
+      const EPSILON = 1e-3;
+      console.log('\n=== Finite cycle certificate (the tree reduction, with no limit theorem) ===');
+      const degrees = loaded.map((l) =>
+        cycleCertificate(l.benchCase.callGraph.edges, l.benchCase.callGraph.nodes.size, {
+          alpha: 0.05,
+          epsilon: EPSILON,
+        }),
+      );
+      const histogram = new Map<number, number>();
+      for (const c of degrees)
+        histogram.set(c.maxInDegree, (histogram.get(c.maxInDegree) ?? 0) + 1);
+      const shape = [...histogram.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([d, n]) => `d${d}=${n}`)
+        .join(' ');
+      console.log(`certificate: max in-degree across the corpus: ${shape}`);
+      for (const alpha of ALPHAS) {
+        let bounded = 0;
+        let certified = 0;
+        for (const l of loaded) {
+          const c = cycleCertificate(
+            l.benchCase.callGraph.edges,
+            l.benchCase.callGraph.nodes.size,
+            { alpha, epsilon: EPSILON },
+          );
+          if (c.bounded) bounded++;
+          if (c.certified) certified++;
+        }
+        const pct = (n: number): string => ((n / loaded.length) * 100).toFixed(1);
+        console.log(
+          `certificate: alpha=${alpha.toFixed(2)} -> bounded ${bounded}/${loaded.length} (${pct(bounded)}%), ` +
+            `CERTIFIED ${certified}/${loaded.length} (${pct(certified)}%)`,
+        );
+      }
+    }
+
     console.log('\n=== Directional evidence (derived from traces, label-free) ===');
     for (const line of formatDirectionalEvidence(readings)) console.log(line);
     for (const channel of ['failedMass', 'latencyRise'] as const) {
