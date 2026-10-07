@@ -51,6 +51,12 @@ import {
   vectorToRanking,
 } from '../../packages/optimize/src/index.js';
 import {
+  formatDirectionalEvidence,
+  formatEvidenceSeparation,
+  readDirectionalEvidence,
+  readEvidenceSeparation,
+} from './directional-evidence.js';
+import {
   CORPUS_SAMPLING_OBJECTIVE,
   deriveStratumFromCaseDir,
   formatCaseManifest,
@@ -282,21 +288,42 @@ function makeOracle(cases: readonly BenchmarkCase[]): (u: Float64Array) => Promi
  * @returns `hit` when rank-1 is the ground-truth service, `miss` when it is not, `skipped` when the engine
  *          cannot build the case's fault graph at all.
  */
-async function scoreCase(
+async function diagnoseCase(
   engine: ReturnType<typeof createEngineWithConfig>,
   c: BenchmarkCase,
-): Promise<CaseOutcome> {
+): Promise<{ built: boolean; top1?: string }> {
   try {
     const faultGraph = engine.buildFaultGraph(c.callGraph, c.metrics, {
       injectTimeMs: 0,
       logs: c.logs as readonly BenchmarkLogEntry[],
     });
     const results = await engine.analyze(faultGraph, 1);
-    return results.length > 0 && results[0]!.serviceId === c.groundTruth.serviceId ? 'hit' : 'miss';
+    // `built` is separated from `top1` because the two absences mean different things: a case the engine could
+    // not build is not evidence about a ranking, while a case it built and ranked nothing for IS — the engine
+    // named nothing where a source existed. Collapsing them would let a build failure read as a wrong answer.
+    return results.length > 0 && results[0] !== undefined
+      ? { built: true, top1: results[0].serviceId }
+      : { built: true };
   } catch {
-    // A case the engine cannot build is not evidence about the ranking, so it is named rather than counted.
-    return 'skipped';
+    return { built: false };
   }
+}
+
+/**
+ * Score one case: the engine's rank-1 against the ground truth.
+ *
+ * @param engine - The engine to rank with.
+ * @param c - The case to score.
+ * @returns `hit` when rank-1 is the ground-truth service, `miss` when it is not or nothing was named,
+ *          `skipped` when the engine cannot build the case's fault graph at all.
+ */
+async function scoreCase(
+  engine: ReturnType<typeof createEngineWithConfig>,
+  c: BenchmarkCase,
+): Promise<CaseOutcome> {
+  const d = await diagnoseCase(engine, c);
+  if (!d.built) return 'skipped';
+  return d.top1 === c.groundTruth.serviceId ? 'hit' : 'miss';
 }
 
 // ── Reporting ─────────────────────────────────────────────
@@ -473,6 +500,52 @@ async function main(): Promise<void> {
   // reconcile with the line above by construction, and the test manifest is the set a diff between two runs
   // is read against.
   await printOverlay(initial, 'default weights');
+
+  // THE DIRECTIONAL EVIDENCE, and whether it separates the cases the engine misses. The observables are
+  // derived from each case's OWN traces (never from its ground truth), so a reading about them is deployable;
+  // the truth is used only to evaluate the reading. This is the measurement §85's falsifier asks for, and it
+  // has never been taken on the RCAEval side because `failedTraceEdges`/`edgeLatencies` are FSE'26-only.
+  {
+    const engine = createEngineWithConfig(withRankingWeights(vectorToRanking(initial)));
+    const truthByCase = new Map<string, string>();
+    const top1ByCase = new Map<string, string>();
+    const stratumByCase = new Map<string, string>();
+    const readings = [];
+    for (const l of loaded) {
+      readings.push(
+        readDirectionalEvidence({
+          caseId: l.benchCase.id,
+          stratum: l.stratum,
+          // The case's REAL injection time, not the `0` the engine is built with above: the evidence is about
+          // what the traces do across the injection, so the boundary has to be the actual one.
+          injectTimeMs: l.benchCase.injectTime,
+          traces: l.benchCase.traces,
+        }),
+      );
+      truthByCase.set(l.benchCase.id, l.benchCase.groundTruth.serviceId);
+      stratumByCase.set(l.benchCase.id, l.stratum);
+      const d = await diagnoseCase(engine, l.benchCase);
+      if (d.top1 !== undefined) top1ByCase.set(l.benchCase.id, d.top1);
+    }
+    console.log('\n=== Directional evidence (derived from traces, label-free) ===');
+    for (const line of formatDirectionalEvidence(readings)) console.log(line);
+    for (const channel of ['failedMass', 'latencyRise'] as const) {
+      for (const want of ['', 'loss']) {
+        for (const line of formatEvidenceSeparation(
+          readEvidenceSeparation(
+            readings,
+            (id) => truthByCase.get(id),
+            (id) => top1ByCase.get(id),
+            (id) => stratumByCase.get(id) ?? '',
+            want,
+            channel,
+          ),
+        )) {
+          console.log(line);
+        }
+      }
+    }
+  }
 
   // Coordinate descent on the TRAIN split only.
   const oracle = makeOracle(trainCases);

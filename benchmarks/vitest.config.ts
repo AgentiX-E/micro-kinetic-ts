@@ -94,6 +94,10 @@ export default defineConfig({
         // above the engine's node threshold — because on a corpus of small graphs the shipped rescale is
         // inert and the artifact's numbers are independent of it, which is a fact about the population.
         'src/optimize-population.ts',
+        // Added with the module: the DIRECTIONAL evidence the RCAEval loader never built, derived from the
+        // traces it does load. Every observable is a function of the case's inputs alone, which is what makes
+        // a reading about it deployable rather than a description of the population it was measured inside.
+        'src/directional-evidence.ts',
         'src/reported-config.ts',
       ],
       exclude: ['__tests__/integration/**'],

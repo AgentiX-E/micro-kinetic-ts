@@ -1,0 +1,317 @@
+/**
+ * The DIRECTIONAL evidence the RCAEval loader never built, derived from the traces it does load.
+ *
+ * ## Why this module exists
+ *
+ * The corpus's held-out misses are attributed (iteration 59) to `loss` — network packet loss — and to RE3
+ * TrainTicket/SockShop, and the standing hypothesis is that a network-class fault needs a signal that carries
+ * the DIRECTION of an error: which service the failed calls were made ABOUT. Two fields exist for that —
+ * `FaultFailedEdge` (counts) and `FaultEdgeLatency` (durations) — and both are populated by the **FSE'26
+ * loader only**. On the RCAEval side the channel is not merely inert (`failedEdgeWeight` defaults to `0.0`
+ * even where it is populated); it was never supplied, so no measurement about it could be taken there.
+ *
+ * This module derives the same two observables from what the RCAEval cases DO carry: per-span `service`,
+ * `parentSpanId`, `startTime`, `duration` and `status` (`OK`/`ERROR`). An edge is caller→callee, read off the
+ * parent relation; the failures are the `ERROR` spans; the latency rise is the duration shift across the
+ * injection. Every observable is a function of the case's INPUTS alone — no ground truth enters the
+ * derivation, which is the property that makes a reading about it deployable rather than a description of the
+ * population it was measured inside.
+ *
+ * ## What it is for
+ *
+ * To answer, on the RCAEval side and for the first time, the falsifier §85 states: if a label-free directional
+ * observable cannot pick out the `loss` cases the engine gets wrong, the network-class hypothesis is wrong.
+ * The rankings below are that observable, and the separation machinery is the repository's own
+ * (`DEFAULT_SEPARATOR_CRITERION`, `separationPValue`) rather than a second apparatus free to disagree with it.
+ *
+ * @module benchmarks/directional-evidence
+ */
+
+import type { BenchmarkTraceSpan } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
+import { DEFAULT_SEPARATOR_CRITERION, separationPValue } from './fse26-separator.js';
+
+/** The parts of a case this module reads. Structural, so a test needs no loader. */
+export interface DirectionalCaseInput {
+  readonly caseId: string;
+  /** `system:suite:fault` — carried for the report, never read by the derivation. */
+  readonly stratum: string;
+  /** Fault-injection time as Unix milliseconds; the boundary between before and after. */
+  readonly injectTimeMs: number;
+  readonly traces?: readonly BenchmarkTraceSpan[];
+}
+
+/** One service's inbound evidence, as the two channels see it. */
+export interface ServiceEvidence {
+  readonly service: string;
+  /** Failed calls made ABOUT this service: `Σ max(0, after − before)` over its inbound edges. */
+  readonly failedMass: number;
+  /** The largest inbound latency rise (after/before mean duration), or `0` when no edge is comparable. */
+  readonly latencyRise: number;
+}
+
+/** What the two channels say about one case. */
+export interface DirectionalReading {
+  readonly caseId: string;
+  readonly stratum: string;
+  readonly spans: number;
+  /** Distinct caller→callee edges the traces imply. */
+  readonly edges: number;
+  /** Service ranked first by inbound failed mass, or `undefined` when nothing was measurable. */
+  readonly failedTop1?: string;
+  /** Service ranked first by inbound latency rise, or `undefined` when nothing was comparable. */
+  readonly latencyTop1?: string;
+  /** Every service's two values, so a caller can re-rank or inspect rather than take the top-1 on trust. */
+  readonly services: readonly ServiceEvidence[];
+}
+
+/** The caller→callee pairs the traces imply, as "caller>callee". */
+function edgesOf(
+  traces: readonly BenchmarkTraceSpan[],
+): Map<string, { caller: string; callee: string }> {
+  const byId = new Map<string, BenchmarkTraceSpan>();
+  for (const s of traces) byId.set(s.spanId, s);
+  const edges = new Map<string, { caller: string; callee: string }>();
+  for (const s of traces) {
+    const parent = s.parentSpanId === undefined ? undefined : byId.get(s.parentSpanId);
+    // A span without a parent in the same traces is a ROOT: it has no caller, so it establishes no edge. A
+    // self-edge (a service calling itself) is kept — it is a real call and its direction is unambiguous.
+    if (parent === undefined) continue;
+    const caller = parent.service;
+    const callee = s.service;
+    edges.set(`${caller}>${callee}`, { caller, callee });
+  }
+  return edges;
+}
+
+/**
+ * Read one case's directional evidence out of its traces.
+ *
+ * Both channels are computed per INBOUND edge and credited to the CALLEE, which is the service the calls were
+ * made about — the direction the log and metric signals lack. Failures are `status === 'ERROR'` spans, and the
+ * pre-injection count on the same edge is their baseline, so a service that is merely noisy is not credited
+ * for being noisy.
+ *
+ * @param input - The case's id, stratum, injection time and traces.
+ * @returns The reading. Both tops are `undefined` when nothing was measurable, which is reported rather than
+ *          counted as a miss: an absent input is not evidence about a ranking.
+ */
+export function readDirectionalEvidence(input: DirectionalCaseInput): DirectionalReading {
+  const traces = input.traces ?? [];
+  const perService = new Map<string, { failedMass: number; latencyRise: number }>();
+  const bump = (service: string): { failedMass: number; latencyRise: number } => {
+    const entry = perService.get(service) ?? { failedMass: 0, latencyRise: 0 };
+    perService.set(service, entry);
+    return entry;
+  };
+
+  // Failures, per inbound edge, after minus before.
+  const failedAfter = new Map<string, number>();
+  const failedBefore = new Map<string, number>();
+  // Durations, per inbound edge, on each side of the injection.
+  const durAfter = new Map<string, number[]>();
+  const durBefore = new Map<string, number[]>();
+  const byId = new Map<string, BenchmarkTraceSpan>();
+  for (const s of traces) byId.set(s.spanId, s);
+
+  for (const s of traces) {
+    const parent = s.parentSpanId === undefined ? undefined : byId.get(s.parentSpanId);
+    if (parent === undefined) continue;
+    const key = `${parent.service}>${s.service}`;
+    const after = s.startTime >= input.injectTimeMs;
+    if (s.status === 'ERROR') {
+      const target = after ? failedAfter : failedBefore;
+      target.set(key, (target.get(key) ?? 0) + 1);
+    }
+    const target = after ? durAfter : durBefore;
+    const list = target.get(key) ?? [];
+    list.push(s.duration);
+    target.set(key, list);
+  }
+
+  for (const key of new Set([...failedAfter.keys(), ...failedBefore.keys()])) {
+    const callee = key.split('>')[1]!;
+    const delta = Math.max(0, (failedAfter.get(key) ?? 0) - (failedBefore.get(key) ?? 0));
+    if (delta > 0) bump(callee).failedMass += delta;
+    else bump(callee);
+  }
+
+  const mean = (xs: readonly number[]): number =>
+    xs.length === 0 ? 0 : xs.reduce((a, b) => a + b, 0) / xs.length;
+  for (const key of new Set([...durAfter.keys(), ...durBefore.keys()])) {
+    const callee = key.split('>')[1]!;
+    const afterMean = mean(durAfter.get(key) ?? []);
+    const beforeMean = mean(durBefore.get(key) ?? []);
+    const entry = bump(callee);
+    // A rise needs BOTH sides: with no pre-injection mean there is no baseline to rise from, and treating an
+    // absent baseline as 1.0 would invent a rise for every edge that only exists after the injection.
+    if (beforeMean <= 0 || afterMean <= 0) continue;
+    entry.latencyRise = Math.max(entry.latencyRise, afterMean / beforeMean);
+  }
+
+  const services: ServiceEvidence[] = [...perService.entries()]
+    .map(([service, e]) => ({ service, failedMass: e.failedMass, latencyRise: e.latencyRise }))
+    .sort((a, b) => a.service.localeCompare(b.service));
+
+  // Deterministic tops: by value, then by name, so two runs of one corpus agree and a diff is about a change.
+  const topBy = (pick: (s: ServiceEvidence) => number): string | undefined => {
+    const ranked = [...services]
+      .filter((s) => pick(s) > 0)
+      .sort((a, b) => pick(b) - pick(a) || a.service.localeCompare(b.service));
+    return ranked[0]?.service;
+  };
+
+  return {
+    caseId: input.caseId,
+    stratum: input.stratum,
+    spans: traces.length,
+    edges: edgesOf(traces).size,
+    ...(topBy((s) => s.failedMass) === undefined ? {} : { failedTop1: topBy((s) => s.failedMass) }),
+    ...(topBy((s) => s.latencyRise) === undefined
+      ? {}
+      : { latencyTop1: topBy((s) => s.latencyRise) }),
+    services,
+  };
+}
+
+/** Which of the two channels a reading is about. */
+export type EvidenceChannel = 'failedMass' | 'latencyRise';
+
+/**
+ * How one channel does on the cases the ENGINE gets wrong, with the repository's own significance reading.
+ *
+ * The population is the one the question is about: cases the engine misses. Inside it, the channel either
+ * prefers the true source — which is what a deployable signal would have to do to fix them — or it does not,
+ * and the two counts go through {@link separationPValue}. An AUC is reported beside the p-value for
+ * comparability with the FSE'26 battery, but a reader should take the counts: two cases can give an AUC of 1.0.
+ */
+export interface EvidenceSeparation {
+  readonly channel: EvidenceChannel;
+  /** What the population was restricted to, e.g. `loss` or `all`. */
+  readonly population: string;
+  /** Cases where the channel produced a ranking at all. Outside the rate, never a loss. */
+  readonly measurable: number;
+  /** Of those, how many the engine got wrong. */
+  readonly engineMisses: number;
+  /** Of those, how many the channel's top-1 names the true source (= would have fixed the case). */
+  readonly channelFixable: number;
+  /** `channelFixable / engineMisses`, or `undefined` when the engine missed nothing here. */
+  readonly auc: number | undefined;
+  /** The exact two-sided permutation p-value over the pairs, or `undefined` when nothing was ordered. */
+  readonly p: number | undefined;
+  /** Whether the pre-registered bar is met: `minAuc` on enough pairs to test. */
+  readonly meetsBar: boolean;
+}
+
+/**
+ * Read one channel's separation over a population, given each case's truth and the engine's rank-1.
+ *
+ * @param readings - The per-case evidence.
+ * @param truthOf - The case's ground-truth source service.
+ * @param engineTop1Of - The engine's rank-1 service for the case.
+ * @param populationOf - The stratum key a case belongs to, for the filter.
+ * @param want - A stratum substring to restrict to (`''` for all), so `loss` and `all` are one call apart.
+ * @param criterion - The pre-registered bar; defaults to the repository's.
+ * @returns The counts, the rate over them, the p-value and whether the bar is met.
+ */
+export function readEvidenceSeparation(
+  readings: readonly DirectionalReading[],
+  truthOf: (caseId: string) => string | undefined,
+  engineTop1Of: (caseId: string) => string | undefined,
+  populationOf: (caseId: string) => string,
+  want: string,
+  channel: EvidenceChannel,
+  criterion: { minAuc: number; minCases: number } = DEFAULT_SEPARATOR_CRITERION,
+): EvidenceSeparation {
+  let measurable = 0;
+  let engineMisses = 0;
+  let channelFixable = 0;
+  for (const r of readings) {
+    if (want !== '' && !populationOf(r.caseId).includes(want)) continue;
+    const top1 = channel === 'failedMass' ? r.failedTop1 : r.latencyTop1;
+    const truth = truthOf(r.caseId);
+    const engine = engineTop1Of(r.caseId);
+    // A case with no measurable evidence is not a loss for the channel — it is unmeasured, which is why it is
+    // counted separately and kept out of the rate.
+    if (top1 === undefined || truth === undefined) continue;
+    measurable++;
+    // An engine top-1 the runner could not supply is not a miss either: the comparison needs both sides.
+    if (engine === undefined || engine === truth) continue;
+    engineMisses++;
+    if (top1 === truth) channelFixable++;
+  }
+  const auc = engineMisses > 0 ? channelFixable / engineMisses : undefined;
+  const p = separationPValue(channelFixable, engineMisses - channelFixable);
+  return {
+    channel,
+    population: want === '' ? 'all' : want,
+    measurable,
+    engineMisses,
+    channelFixable,
+    auc,
+    p,
+    meetsBar: auc !== undefined && auc >= criterion.minAuc && engineMisses >= criterion.minCases,
+  };
+}
+
+/**
+ * Render the evidence's availability, which is the first thing a reading about it needs.
+ *
+ * `failedTraceEdges` is FSE'26-only, so on the RCAEval side the honest first question is whether the raw
+ * material is even there: how many cases carry traces, how many traces imply an edge, and how many cases each
+ * channel could rank at all. A separation rate quoted without this would be a rate over an unstated
+ * denominator.
+ *
+ * @param readings - The per-case evidence.
+ * @returns The availability lines, plus one per stratum that has any traces.
+ */
+export function formatDirectionalEvidence(readings: readonly DirectionalReading[]): string[] {
+  const withTraces = readings.filter((r) => r.spans > 0).length;
+  const withEdges = readings.filter((r) => r.edges > 0).length;
+  const failedMeasurable = readings.filter((r) => r.failedTop1 !== undefined).length;
+  const latencyMeasurable = readings.filter((r) => r.latencyTop1 !== undefined).length;
+  const lines = [
+    `evidence: ${readings.length} cases | with traces=${withTraces} | implying an edge=${withEdges} | ` +
+      `failedMass rankable=${failedMeasurable} | latencyRise rankable=${latencyMeasurable}`,
+  ];
+  const byStratum = new Map<string, { total: number; traced: number }>();
+  for (const r of readings) {
+    const entry = byStratum.get(r.stratum) ?? { total: 0, traced: 0 };
+    entry.total++;
+    if (r.spans > 0) entry.traced++;
+    byStratum.set(r.stratum, entry);
+  }
+  const untraced = [...byStratum.entries()]
+    .filter(([, e]) => e.traced === 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (untraced.length > 0) {
+    lines.push(
+      `evidence: ${untraced.length} of ${byStratum.size} strata have NO traces at all — ` +
+        `no directional channel can speak about them: ${untraced
+          .slice(0, 8)
+          .map(([k, e]) => `${k}(${e.total})`)
+          .join(' ')}${untraced.length > 8 ? ' …' : ''}`,
+    );
+  }
+  return lines;
+}
+
+/**
+ * Render a separation reading as the line a report carries.
+ *
+ * The bar and its requirement are named on the line rather than left to the reader, because the repository's
+ * standard is a PRE-REGISTERED bar: `meetsBar` false at a high ratio on three pairs is the correct outcome,
+ * and a line that printed only the ratio would invite the opposite reading.
+ *
+ * @param separation - The reading.
+ * @returns One line, without a trailing newline.
+ */
+export function formatEvidenceSeparation(separation: EvidenceSeparation): string {
+  const rate = separation.auc === undefined ? 'n/a' : `${(separation.auc * 100).toFixed(1)}%`;
+  const p = separation.p === undefined ? 'n/a' : separation.p.toFixed(3);
+  return (
+    `separation[${separation.channel}|${separation.population}]: measurable=${separation.measurable} | ` +
+    `engine misses=${separation.engineMisses} | channel names the truth=${separation.channelFixable} ` +
+    `(${rate}) | p=${p} | bar ${separation.meetsBar ? 'MET' : 'NOT met'} ` +
+    `(needs ${DEFAULT_SEPARATOR_CRITERION.minAuc.toFixed(2)} on >=${DEFAULT_SEPARATOR_CRITERION.minCases} pairs)`
+  );
+}
