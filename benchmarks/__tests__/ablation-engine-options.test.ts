@@ -331,7 +331,10 @@ describe('the battery really carries the propagation-channel rows', () => {
     // A line that states an override the engine never received is worse than no line: it is a false record.
     expect(RUNNER).toContain('buildContainer(config.flags, config.overrides)');
     expect(RUNNER).toContain('buildAblationEngineOptions(flags, overrides)');
-    expect(RUNNER).toContain('buildContainer(PRISM_SWEEP_FLAGS, { prismWeight: weight })');
+    // The sweep's own construction site names BOTH dimensions of its axis, so a column cannot be
+    // measured at a configuration its label does not describe.
+    expect(RUNNER).toContain('prismWeight: point.weight');
+    expect(RUNNER).toContain('prismPooling: point.pooling');
   });
 
   it('attaches BOTH direction inputs, so a weight on either is measurable', () => {
@@ -380,5 +383,61 @@ describe('the battery really carries the propagation-channel rows', () => {
         prismSignal: true,
       }),
     ).toContain('logWeight=1');
+  });
+});
+
+describe('the sweep axis is two-dimensional, and its first column is the shipped configuration', () => {
+  // Source-shape, because the runner calls `main()` at import time. What these fences hold is the
+  // property the frontier depends on: the axis's FIRST column IS the baseline — the shipped weight with
+  // the shipped pooling — because the whole output of the sweep is "no cell fell below the baseline",
+  // and a frontier measured against any other configuration describes a run nobody ships. The pure
+  // analyzer refuses a misordered axis at run time; these make the mistake unreachable at the source.
+  //
+  // The reader is per-describe rather than shared, matching the sibling block below: a hoisted constant
+  // would have to be read at module scope, before the suite's own setup runs.
+  const RUNNER = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../src/run-ablation.ts'),
+    'utf8',
+  );
+
+  it('leads the pooling list with the SHIPPED pooling, so the first column is the baseline', () => {
+    // `PRISM_SWEEP_WEIGHTS` starts at 0 and the weights are mapped in order, so the axis's first point
+    // is (0, <first pooling>). The shipped pooling must therefore LEAD this list.
+    expect(RUNNER).toMatch(
+      /const PRISM_SWEEP_POOLINGS: readonly PrismPooling\[\] = \[DEFAULT_PRISM_POOLING, 'conjunctive'\]/,
+    );
+    // …and the ladder must still start at zero, which is what makes the shipped column the FIRST one.
+    expect(RUNNER).toMatch(/const PRISM_SWEEP_WEIGHTS = \[0,/);
+  });
+
+  it('builds the axis as the cross product, so every pooling is measured at every weight', () => {
+    // A pooling measured at only some weights would make the frontier's "best point" a comparison
+    // between two different ladders rather than between two configurations at one weight.
+    expect(RUNNER).toMatch(
+      /const PRISM_SWEEP_AXIS: readonly AxisPoint\[\] = PRISM_SWEEP_POOLINGS\.flatMap\(\(pooling\) =>\s*PRISM_SWEEP_WEIGHTS\.map\(\(weight\) => axisPoint\(weight, pooling\)\),\s*\);/,
+    );
+    // Both dimensions reach the engine at the CONSTRUCTION site, not only the weight.
+    expect(RUNNER).toContain('prismWeight: point.weight');
+    expect(RUNNER).toContain('prismPooling: point.pooling');
+    // The old 1-D construction — a container built from a bare weight — must be gone, or the axis
+    // would still be one column per weight with the pooling inherited by omission. That omission is
+    // exactly the defect the enrolment repaired, so its return is worth a fence.
+    expect(RUNNER).not.toMatch(/buildContainer\(PRISM_SWEEP_FLAGS, \{ prismWeight: weight \}\)/);
+    expect(RUNNER).not.toMatch(/analyzePrismSweep\(PRISM_SWEEP_WEIGHTS/);
+  });
+
+  it('asserts the no-op control from the DATA, not from the construction', () => {
+    // `prismWeight = 0` multiplies the signal away whatever the pooling, so the two weight-0 columns
+    // must agree. The sweep prints that comparison rather than trusting it: if the pooling ever
+    // reached the ranking at weight zero, a column would be a configuration other than its label.
+    expect(RUNNER).toContain('no-op control');
+    expect(RUNNER).toMatch(/r\.point\.weight === 0/);
+  });
+
+  it('names the pooling in the best-point report, because the weight alone is now ambiguous', () => {
+    // Two configurations share every weight on this axis; a report that printed only the weight would
+    // be ambiguous between one that can regress and one that does not.
+    expect(RUNNER).toContain('prismPooling=${b.point.pooling}');
+    expect(RUNNER).toContain('${b.point.label}');
   });
 });

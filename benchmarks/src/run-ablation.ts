@@ -30,11 +30,14 @@ import {
   DI_TOKENS,
   RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
+import type { AxisPoint, PrismPooling } from '../../packages/kinetic/src/benchmarks/index.js';
 import {
   analyzePrismSweep,
+  axisPoint,
   BenchmarkRunner,
   countDirectionalInputs,
   countTraceActivityByService,
+  DEFAULT_PRISM_POOLING,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
@@ -662,6 +665,26 @@ const REPETITIONS = 3;
 // gaps that separate the true source from a large symptom.
 const PRISM_SWEEP_WEIGHTS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0];
 
+// The POOLINGS the sweep measures, and the shipped one leads.
+//
+// It leads because the frontier is measured against the axis's FIRST column, and the
+// analyzer refuses an axis that does not start at the shipped configuration (weight 0 with
+// DEFAULT_PRISM_POOLING) — a frontier measured against anything else describes a run nobody
+// ships. So the shipped block comes first by construction, not by comment.
+//
+// Until the pooling was enrolled, this list could not exist: the engine's single call site
+// omitted the pooling argument, so EVERY point of the weight ladder above was measured with
+// `conjunctive` unreachable and the frontier it produced — `{0} only` — was a statement
+// about one slice of the space the fusion decision is made in.
+const PRISM_SWEEP_POOLINGS: readonly PrismPooling[] = [DEFAULT_PRISM_POOLING, 'conjunctive'];
+
+// The swept axis: the cross product of the weight ladder and the poolings, shipped block
+// first. Every column names its own configuration, so no reading can be reported without
+// saying which pooling produced it.
+const PRISM_SWEEP_AXIS: readonly AxisPoint[] = PRISM_SWEEP_POOLINGS.flatMap((pooling) =>
+  PRISM_SWEEP_WEIGHTS.map((weight) => axisPoint(weight, pooling)),
+);
+
 // The production configuration (logWeight=1 + traceWeight=1 + rankNorm=true),
 // whose prismWeight the sweep varies. Mirrors the '+Log +Trace Activity +Rank'
 // ablation slice.
@@ -1025,21 +1048,25 @@ async function main(): Promise<void> {
    */
   async function runPrismSweep(): Promise<void> {
     console.log(`\n${'═'.repeat(80)}`);
-    console.log('PRISM Weight Sweep — zero-regression frontier');
-    console.log(`Weights: ${PRISM_SWEEP_WEIGHTS.join(', ')}`);
+    console.log('PRISM Sweep — zero-regression frontier over (weight × pooling)');
+    console.log(`Poolings: ${PRISM_SWEEP_POOLINGS.join(', ')}`);
+    console.log(`Weights:  ${PRISM_SWEEP_WEIGHTS.join(', ')}`);
+    console.log(
+      `Columns:  ${PRISM_SWEEP_AXIS.length} (${PRISM_SWEEP_AXIS.map((p) => p.label).join(', ')})`,
+    );
     // Everything EXCEPT the swept value, so the sweep's cells are as attributable as the ablation's rows:
-    // `Weights:` above names the values this one is swept over, and the line names the rest.
-    console.log(`Base config (prismWeight swept): ${formatAblationConfigLine(PRISM_SWEEP_FLAGS)}`);
+    // the two lines above name what is swept, and the line below names the rest.
+    console.log(`Base config (swept over): ${formatAblationConfigLine(PRISM_SWEEP_FLAGS)}`);
     console.log('═'.repeat(80));
 
-    // Per-cell accumulator: key → { key, cases, accuracy[weight index] }.
+    // Per-cell accumulator: key → { key, cases, accuracy[axis index] }.
     const cells = new Map<string, { key: string; cases: number; accuracy: number[] }>();
 
     for (const [systemName, metas] of systemGroups) {
       const bundle = await loadSystemBundle(systemName, metas);
       const suite = (metas[0]?.suite ?? 'unknown').toLowerCase();
 
-      // Group by fault type (stable across weights).
+      // Group by fault type (stable across axis points).
       const byFT = new Map<string, BenchmarkCase[]>();
       for (const c of bundle.cases) {
         const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
@@ -1047,9 +1074,12 @@ async function main(): Promise<void> {
         byFT.get(ft)!.push(c);
       }
 
-      for (let wi = 0; wi < PRISM_SWEEP_WEIGHTS.length; wi++) {
-        const weight = PRISM_SWEEP_WEIGHTS[wi]!;
-        const container = buildContainer(PRISM_SWEEP_FLAGS, { prismWeight: weight });
+      for (let pi = 0; pi < PRISM_SWEEP_AXIS.length; pi++) {
+        const point = PRISM_SWEEP_AXIS[pi]!;
+        const container = buildContainer(PRISM_SWEEP_FLAGS, {
+          prismWeight: point.weight,
+          prismPooling: point.pooling,
+        });
         for (const [ft, ftCases] of byFT) {
           if (ftCases.length === 0) continue;
           const key = `${suite}/${systemName}/${ft}`;
@@ -1061,9 +1091,9 @@ async function main(): Promise<void> {
           };
           const result = await runner.runSuite(suiteBundle);
           const existing = cells.get(key) ?? { key, cases: ftCases.length, accuracy: [] };
-          existing.accuracy[wi] = result.avgTop1;
+          existing.accuracy[pi] = result.avgTop1;
           cells.set(key, existing);
-          console.log(`  [w=${weight.toFixed(2)}] ${key}: ${(result.avgTop1 * 100).toFixed(1)}%`);
+          console.log(`  [${point.label}] ${key}: ${(result.avgTop1 * 100).toFixed(1)}%`);
         }
       }
 
@@ -1077,19 +1107,19 @@ async function main(): Promise<void> {
     }
 
     const cellList = [...cells.values()].sort((a, b) => a.key.localeCompare(b.key));
-    const analysis = analyzePrismSweep(PRISM_SWEEP_WEIGHTS, cellList);
+    const analysis = analyzePrismSweep(PRISM_SWEEP_AXIS, cellList);
 
     // ── Per-cell AC@1 table ──
     console.log(`\n${'═'.repeat(80)}`);
     console.log('PRISM SWEEP — Per-Cell AC@1');
     console.log('═'.repeat(80));
-    let header = 'Cell'.padEnd(34);
-    for (const w of PRISM_SWEEP_WEIGHTS) header += ` w=${w}`.padEnd(9);
+    let header = 'Cell'.padEnd(30);
+    for (const p of PRISM_SWEEP_AXIS) header += ` ${p.label}`.padEnd(16);
     console.log(header);
     console.log('─'.repeat(header.length));
     for (const c of cellList) {
-      let row = c.key.padEnd(34);
-      for (const a of c.accuracy) row += ` ${`${(a * 100).toFixed(0)}%`.padStart(4)}`.padEnd(9);
+      let row = c.key.padEnd(30);
+      for (const a of c.accuracy) row += ` ${`${(a * 100).toFixed(0)}%`.padStart(4)}`.padEnd(16);
       console.log(row);
     }
 
@@ -1097,32 +1127,51 @@ async function main(): Promise<void> {
     console.log(`\n${'═'.repeat(80)}`);
     console.log('PRISM SWEEP — Weighted Overall + Zero-Regression Frontier');
     console.log('═'.repeat(80));
-    for (const p of analysis.points) {
+    for (const r of analysis.readings) {
       const tag =
-        p.regressingCells.length === 0
+        r.regressingCells.length === 0
           ? 'ZERO-REGRESSION'
-          : `regress: ${p.regressingCells.join(', ')}`;
+          : `regress: ${r.regressingCells.join(', ')}`;
       console.log(
-        `  w=${`${p.weight.toFixed(2)}`.padStart(4)}  overall=${`${(p.overall * 100).toFixed(2)}%`.padStart(7)}  ${tag}`,
+        `  ${r.point.label.padEnd(17)}  overall=${`${(r.overall * 100).toFixed(2)}%`.padStart(7)}  ${tag}`,
+      );
+    }
+    // The no-op control, asserted rather than trusted: `prismWeight = 0` multiplies the signal
+    // away whatever the pooling, so the shipped-pooling and other-pooling weight-0 columns MUST
+    // read the same in every cell. If they ever differ, the pooling is reaching the ranking at
+    // weight zero and no column above is the configuration its label claims.
+    const zeroColumns = analysis.readings.filter((r) => r.point.weight === 0);
+    if (zeroColumns.length > 1) {
+      const reference = zeroColumns[0]!;
+      const drift = zeroColumns.slice(1).filter((r) => r.overall !== reference.overall);
+      console.log(
+        drift.length === 0
+          ? `\n  no-op control OK: ${zeroColumns.length} weight-0 columns agree to the float` +
+              ` (${reference.point.label} = ${(reference.overall * 100).toFixed(2)}%)`
+          : `\n  no-op control FAILED: ${drift.map((r) => `${r.point.label}=${(r.overall * 100).toFixed(2)}%`).join(', ')}` +
+              ` differ from ${reference.point.label}=${(reference.overall * 100).toFixed(2)}% — the pooling moves the ranking at weight 0`,
       );
     }
     if (analysis.bestZeroRegression) {
       const b = analysis.bestZeroRegression;
       console.log(
-        `\n  BEST zero-regression weight: prismWeight=${b.weight}  overall=${(b.overall * 100).toFixed(2)}%  gain=${`${(b.gain * 100).toFixed(2)}pp`}`,
+        `\n  BEST zero-regression point: ${b.point.label}  prismWeight=${b.point.weight} prismPooling=${b.point.pooling}` +
+          `  overall=${(b.overall * 100).toFixed(2)}%  gain=${`${(b.gain * 100).toFixed(2)}pp`}`,
       );
     } else {
-      console.log('\n  No zero-regression weight (empty input).');
+      console.log('\n  No zero-regression point (empty input).');
     }
 
     // ── JSON for artifact upload + local merge ──
     const output = {
       suite: suiteFilter,
+      poolings: PRISM_SWEEP_POOLINGS,
       weights: PRISM_SWEEP_WEIGHTS,
+      axis: PRISM_SWEEP_AXIS,
       cells: cellList,
       analysis: {
         overall: analysis.overall,
-        zeroRegressionWeights: analysis.zeroRegressionWeights,
+        zeroRegressionPoints: analysis.zeroRegressionPoints,
         bestZeroRegression: analysis.bestZeroRegression,
       },
     };

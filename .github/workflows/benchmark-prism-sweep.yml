@@ -1,13 +1,18 @@
-name: Benchmark — PRISM Weight Sweep
+name: Benchmark — PRISM Sweep (weight × pooling)
 
-# Readback workflow for the prismWeight zero-regression frontier. Runs the
-# production configuration (logWeight=1 + traceWeight=1 + rankNormalization)
-# at a continuum of prismWeight values on the SAME 615 RCAEval cases the
-# ablation evaluates, and reports the set of weights where NO (system,
-# fault-type) cell's AC@1 falls below its weight-0 baseline — the gating
-# experiment for flipping prismWeight's default vs moving to per-context
-# routing. Each suite is a separate parallel job; the three JSON payloads are
-# merged locally after readback.
+# Readback workflow for the zero-regression frontier of the PRISM fusion. Runs the
+# production configuration (logWeight=1 + traceWeight=1 + rankNormalization) over the
+# CROSS PRODUCT of the weight ladder and BOTH poolings — 16 columns — on the SAME
+# RCAEval cases the ablation evaluates, and reports the set of columns where NO
+# (system, fault-type) cell's AC@1 falls below its baseline.
+#
+# The axis has TWO dimensions and the earlier frontier knew one of them: the engine's
+# single PRISM call site omitted the pooling argument, so every point of the weight ladder
+# was measured with `conjunctive` unreachable, and the reading it produced (`{0} only`)
+# described one slice of the space the fusion decision is made in. The first column is the
+# shipped configuration by construction, and the weight-0 column of the other pooling is an
+# inert control the runner asserts against the baseline FROM THE DATA. Each suite is a
+# separate parallel job; the three JSON payloads are merged locally after readback.
 
 on:
   workflow_dispatch:

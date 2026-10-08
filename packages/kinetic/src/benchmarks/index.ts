@@ -99,9 +99,14 @@ export { computeFusionCeiling, computeFusionCeilingByCell } from './leaderboard/
 
 export type { FusionCasePrediction, FusionCeiling } from './leaderboard/fusion-ceiling.js';
 
-export { analyzePrismSweep } from './leaderboard/prism-sweep.js';
+export { DEFAULT_PRISM_POOLING, analyzePrismSweep, axisPoint } from './leaderboard/prism-sweep.js';
 
-export type { PrismSweepAnalysis, SweepCell, SweepPoint } from './leaderboard/prism-sweep.js';
+export type {
+  AxisPoint,
+  PrismSweepAnalysis,
+  SweepCell,
+  SweepReading,
+} from './leaderboard/prism-sweep.js';
 
 export {
   RESOURCE_FAULT_TYPES,

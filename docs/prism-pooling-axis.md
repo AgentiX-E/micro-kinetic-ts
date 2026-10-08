@@ -104,7 +104,18 @@ reference for the first time.
 **And it is not yet decidable on both halves of the criterion.** `--prism-pooling` is accepted by the RCAEval
 runner and reachable from no workflow, which is why it is recorded in `UNDISPATCHABLE_ON_RCAEVAL`: a candidate
 that ships a per-context pooling rule would need a `prism_pooling` dispatch input before its golden half could
-be measured. That closure is the next step, not a claim of this one.
+be measured.
+
+**The frontier it belongs to has now been re-taken.** The weight sweep that closed the fusion direction
+(`docs/fusion-routing-verdict.md`) swept `prismWeight` alone, which was the only dimension it could sweep —
+the pooling was unreachable — so its `zero-regression frontier = {0}` describes the additive slice.
+`packages/kinetic/src/benchmarks/leaderboard/prism-sweep.ts` now takes the axis as a list of POINTS, each
+naming its own weight and pooling, and refuses an axis that does not start at the shipped configuration, a
+duplicated point, or a label that disagrees with the point it labels. The readback is
+`docs/prism-pooling-frontier.md`; the swept columns are
+`w ∈ {0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0} × {additive, conjunctive}`, with the other pooling's weight-0
+column serving as an inert control the runner asserts against the baseline **from the data**, and the best
+point required to name its pooling because the weight alone is now ambiguous.
 
 ## 6. Files
 

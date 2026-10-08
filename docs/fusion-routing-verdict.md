@@ -14,6 +14,19 @@ fixed weight → weight sweep → routing probe — and the definitive conclusio
 | Weight sweep (`[0, 0.1, …, 1.0]`) | best non-zero 81.3% | zero-regression frontier = **{0} only** |
 | Routing probe (this iteration) | best zero-regression 77.07% (+0.98pp) | 0 cells |
 
+**A scope correction, recorded here rather than left to a reader's inference.** The weight sweep above was
+run while the engine's single PRISM call site hard-coded the pooling — `conjunctive` was implemented in
+`combinePrismScore` and reachable only from the standalone evaluator — so every point of that ladder, and
+therefore the `zero-regression frontier = {0}` it reports, is a statement about the **`additive` slice** of a
+two-dimensional axis. The pooling is now an engine option (`docs/prism-pooling-axis.md`) and the frontier has
+been re-taken over the whole space (`docs/prism-pooling-frontier.md`). The row above is that
+measurement's additive slice.
+
+**The conclusion of this document does not rest on that row alone** — the routing probe below is measured
+independently of the pooling, and it is what closed the deterministic-routing direction. But the sentence the
+row supports ("no single GLOBAL weight can ship") was a claim about a space made from a slice of it, and the
+difference is exactly where the candidate would have lived.
+
 The union of the two engines' correct sets — the perfect-case-oracle ceiling —
 is **87.5%** (538/615). Neither the weight-sweep nor the routing probe reaches it.
 
