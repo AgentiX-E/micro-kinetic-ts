@@ -5,6 +5,16 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # `workflow_dispatch` is here because a PUSH-triggered run can become unrunnable through no fault of the
+  # repository. On 2026-10-07T15:13:37Z three push runs — this one, Release and the golden — were accepted by
+  # the webhook and created as run objects, but never entered the scheduler's queue: they reported `queued`
+  # for 17 hours with ZERO jobs expanded, `cancel` answered `409 Cannot cancel a workflow run that has not
+  # been queued yet`, and a `rerun` was refused with `403 This workflow is already running`. The same workflow
+  # at the same commit, dispatched by hand, started within seconds. So an unrunnable push run could not be
+  # retried, cancelled, or replaced, and the CI half of the kill criterion had no route to a measurement at
+  # all. With this line the route is `POST /actions/workflows/{id}/dispatches`, which does not depend on a
+  # webhook at all.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
