@@ -96,10 +96,36 @@ Two things the register stated before this, both now corrected:
    claimed as resolved: the two paths do not build one corpus, and the ablation's rows are measured on the
    unpruned graph.
 
-## 5. Gates
+## 5. Acceptance — measured, on run `37785902886`
 
-`packages/kinetic` (own tests) · `benchmarks/__tests__/accuracy-aggregation.test.ts` (the census fence,
-which found the runner's nine further copies by asserting their ABSENCE) · `packages/kinetic`'s
-`prism-sweep.test.ts`, whose one failing assertion **was** the defect restated as an expectation
-(`overall[0] === 0.75` for a 75/25 split — the case mean) and now asserts both conventions · both
-typechecks · lint · format.
+The nine cells are **byte-identical** (`80.0 / 92.8 / 68.0` · `82.4 / 88.9 / 68.1` · `80.0 / 45.0 / 51.1`), each
+per-fault-type column is identical to the frozen reference, and the configuration line matches the pinned
+literal including `prismPooling=additive` (and `traceWeight=1` on RE3 alone). CI `37785903455` and Release
+`37785902970` are success.
+
+**And the study's production rows now reproduce the published cells.** This is the measurement the repair was
+for, and it is a prediction that could have failed:
+
+| suite | study's production row (`+Log +Trace Activity [+Rank]`), published convention | golden cells | difference |
+| --- | --- | --- | --- |
+| RE1 | 80.0 / 92.8 / 68.0 | 80.0 / 92.8 / 68.0 | **0.0 — exact** |
+| RE2 | 82.4 / 88.9 / **69.9** | 82.4 / 88.9 / **68.1** | **+1.8, RE2 TT only** |
+| RE3 | 80.0 / 45.0 / 51.1 | 80.0 / 45.0 / 51.1 | **0.0 — exact** |
+
+Two of three suites now agree **exactly**, and the third differs on **exactly the one cell §4 named as the
+residual** — RE2 TT, the trace-bearing cell whose corpus the study does not prune. So the residual is no longer
+a suspicion: **the study's unpruned corpus is worth +1.8pp on RE2 TT**, in that direction, measured.
+
+The `CW` column is the control that the change is a fold and nothing else. Every v4 row reproduces exactly:
+`+PRISM Signal` RE1 82.9 / RE2 88.0 / RE3 54.4; `+Log +Trace Activity +Rank +PRISM` RE1 80.5 / RE2 87.3 /
+RE3 65.6; `PRISM Signal (conjunctive)` RE1 76.8 / RE2 84.0 / RE3 66.7; `+Log +Trace +Rank +PRISM (conj)`
+RE1 75.5 / RE2 84.0 / RE3 67.8. **No measurement moved; the headline did.**
+
+## 6. Gates
+
+`packages/kinetic` · `benchmarks/__tests__/accuracy-aggregation.test.ts` (the census fence, which found the
+runner's nine further copies by asserting their ABSENCE) · `packages/kinetic`'s `prism-sweep.test.ts`, whose one
+failing assertion **was** the defect restated as an expectation (`overall[0] === 0.75` for a 75/25 split — the
+case mean) and now asserts both conventions · twelve packages plus `benchmarks` swept (a fence in package X
+reads package Y's source) · both typechecks · lint · format · **four mutations, four killed**.
+
