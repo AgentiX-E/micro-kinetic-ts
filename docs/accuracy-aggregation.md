@@ -87,8 +87,9 @@ Two things the register stated before this, both now corrected:
    input was never the problem; the fold was.**
 2. **A real, separate asymmetry survives, and it costs exactly one cell.** `run-rcaeval.ts` calls
    `augmentTopologyWithTraces(callGraph, spans, { minCallFrequency: 1 })` for every case that has traces, and
-   `run-ablation.ts` never calls it — its only route is the runner's `traceOpts`, gated on the `traceAugmentation`
-   feature flag, which is `false` in every row of the battery. The golden's own artifact states the size of
+   `run-ablation.ts` never called it — its only route was the runner's `traceOpts`, gated on a feature flag
+   that (iteration 72, `corpus-assembly.md`) was named for the shipped step while being a different one. Both
+   paths now assemble the corpus through `benchmarks/src/rcaeval-corpus.ts`. The golden's own artifact states the size of
    what the study therefore does without: `[trace] 50/50 cases with traces, 50 pruned, avg edges: 20 → 9
    (55% reduction)` (RE2 OB), `218 → 39` (RE2 TT), `23 → 9` (RE3 OB), `218 → 41` (RE3 TT); RE1 carries no
    traces and records none. **The one cell this shows up in is RE2 TT, one fault type, 2 cases of 9** — every

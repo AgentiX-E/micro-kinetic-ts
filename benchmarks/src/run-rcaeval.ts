@@ -3,7 +3,8 @@
  *
  * I8: Topology-preserving fault graph with Pearson cross-service correlation
  * now integrated into TreePruner.buildFaultGraph() via buildTopologyFaultGraph().
- * RE2+RE3 cases with trace data benefit from augmentTopologyWithTraces().
+ * RE2+RE3 cases with trace data benefit from the trace-topology augmentation, which
+ * `rcaeval-corpus.ts` owns for every path that builds this corpus.
  *
  * Follows the RCAEval paper (arXiv:2412.17015) methodology:
  * - Cases grouped by benchmark system (OnlineBoutique/SockShop/TrainTicket)
@@ -29,7 +30,6 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
 import {
   Container,
   DEFAULT_CLASSIFICATION_RULES,
@@ -46,8 +46,6 @@ import {
   computeFusionCeiling,
   computeFusionCeilingByCell,
   computePrismRanking,
-  countFailedTraceEdges,
-  countTraceActivityByService,
   extractExceptionNames,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
@@ -63,8 +61,10 @@ import type {
 // the study's, because the two of them had implemented it with DIFFERENT conventions and the difference
 // was recorded as an input defect for three runs (see the module's own header).
 import { meanOverFaultTypes } from '../../packages/kinetic/src/benchmarks/runners/suite-accuracy.js';
-import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
-import { toEngineDirectionalInputs } from './directional-evidence.js';
+// The corpus assembly — the augmentation, the two direction-carrying inputs and the span activity — now
+// lives in one owner, because this path and the study's had assembled it differently (this one pruned the
+// graph from traces and the study never did).
+import { assembleRCAEvalCase } from './rcaeval-corpus.js';
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
@@ -389,52 +389,6 @@ async function loadSingleCase(
     callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
   }
 
-  const edgesBefore = callGraph.edges.length;
-  let traceUsed = false;
-  let pruned = false;
-
-  // THE DIRECTION the RCAEval side never supplied, derived from the raw traces at millisecond resolution.
-  let directional: ReturnType<typeof toEngineDirectionalInputs> = {
-    failedTraceEdges: [],
-    edgeLatency: [],
-  };
-
-  // Trace-validated topology pruning for RE2/RE3
-  if (rawCase.traces && rawCase.traces.length > 0) {
-    traceUsed = true;
-    const spans: TraceSpan[] = rawCase.traces.map((t) => ({
-      traceId: t.traceId,
-      spanId: t.spanId,
-      parentSpanId: t.parentSpanId ?? '',
-      service: t.service,
-      operation: t.operationName,
-      duration: t.duration,
-      statusCode: t.status === 'ERROR' ? 500 : 200,
-      isError: t.status === 'ERROR',
-      startTime: t.startTime,
-    }));
-    callGraph = augmentTopologyWithTraces(callGraph, spans, {
-      minCallFrequency: 1,
-    });
-    pruned = callGraph.edges.length < edgesBefore;
-    // Derived from the RAW traces with the seconds-to-milliseconds conversion done HERE, because this file's own
-    // `spans` mapping above passes `t.startTime` through unconverted while `rawCase.injectTime` is seconds —
-    // comparing the two directly would put every span before the injection and report no failures at all. The
-    // discrepancy in that mapping is recorded separately as its own finding.
-    directional = toEngineDirectionalInputs(
-      rawCase.traces.map((t) => ({
-        spanId: t.spanId,
-        parentSpanId: t.parentSpanId,
-        service: t.service,
-        startTime: t.startTime * 1000,
-        duration: t.duration,
-        status: t.status,
-      })),
-      rawCase.injectTime * 1000,
-    );
-  }
-  const edgesAfter = callGraph.edges.length;
-
   const suiteName =
     meta.suite === 'RE1'
       ? ('rcaeval-re1' as const)
@@ -442,54 +396,26 @@ async function loadSingleCase(
         ? ('rcaeval-re2' as const)
         : ('rcaeval-re3' as const);
 
-  let benchCase: BenchmarkCase = {
-    ...loader.toBenchmarkCase(rawCase, callGraph, suiteName),
-    failedTraceEdges: directional.failedTraceEdges,
-    edgeLatency: directional.edgeLatency,
-  };
+  // The corpus, assembled by the ONE owner both this path and the study's call. `augmentFromTraces` is the
+  // shipped value, stated rather than implied, because this path IS the published corpus and the option is
+  // what makes that a decision instead of an omission.
+  const assembled = await assembleRCAEvalCase(loader, rawCase, meta, callGraph, suiteName, {
+    augmentFromTraces: true,
+    traceActivity: computeTraceActivity,
+  });
 
-  // Trace span-activity rise signal: compute per-service pre/post span counts
-  // only when requested (traceWeight > 0) AND scoped to the RE3 suite — the
-  // "more spans ⇒ source" mechanism holds only for RE3 code-level faults,
-  // where the SOURCE service does MORE work (its dominant metric RISES). On
-  // RE1/RE2 (route / latency / memory / resource faults) a span rise is NOT a
-  // source signature, so running the expensive full streaming scan of
-  // traces.csv there would both waste a pass and risk a trace misfire (see the
-  // RE2 memory regression when trace fired un-scoped).
-  if (computeTraceActivity && meta.suite === 'RE3') {
-    benchCase = {
-      ...benchCase,
-      traceActivity: await countTraceActivityByService(
-        join(meta.dirPath, 'traces.csv'),
-        benchCase.injectTime,
-      ),
-    };
-  }
-
-  // Failed-edge DIRECTION rows: the only case input that names the service an error was emitted
-  // ABOUT rather than the one that emitted it. `toFaultGraphOptions` has always forwarded the
-  // field; nothing on this path ever produced it, so `failedEdge` and `failedEdgeRecords` rendered
-  // as 0 for every service in every RCAEval artifact and the separator census' strongest cell had
-  // no counterpart on this half of the kill criterion at all.
-  //
-  // Unconditional, and deliberately so: gating it on `failedEdgeWeight > 0` would re-create the
-  // defect it repairs, because the shipped weight IS 0 — the artifact would go on reporting a
-  // starved channel as a measured zero. It costs one streaming pass over a file the case already
-  // owns, and it changes NO ranking while the weight is 0.
-  benchCase = {
-    ...benchCase,
-    failedTraceEdges: await countFailedTraceEdges(
-      join(meta.dirPath, 'traces.csv'),
-      benchCase.injectTime,
-    ),
-  };
-
-  // Free trace data after augmentation — prevents OOM on RE2 (270+ cases
-  // each with 100K+ trace spans).  The benchmark runner does not use
-  // traces downstream; the topology is already augmented.
+  // Free trace data after augmentation — prevents OOM on RE2 (270+ cases each with 100K+ trace spans). The
+  // benchmark runner does not use `traces` downstream: the topology is already augmented and both
+  // direction-carrying inputs are already derived.
   rawCase.traces = undefined;
 
-  return { benchCase, traceUsed, pruned, edgesBefore, edgesAfter };
+  return {
+    benchCase: assembled.benchCase,
+    traceUsed: assembled.traceUsed,
+    pruned: assembled.pruned,
+    edgesBefore: assembled.edgesBefore,
+    edgesAfter: assembled.edgesAfter,
+  };
 }
 
 /**

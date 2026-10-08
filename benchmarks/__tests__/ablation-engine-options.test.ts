@@ -60,7 +60,7 @@ import { PRUNER_OPTION_MEMBERS, TOPOLOGY_MEMBERS, namedOn } from './helpers/engi
 /** Every flag off — the configuration the artifact used to label `BASELINE (all OFF)`. */
 const ALL_OFF: AblationFeatureFlags = {
   collisionAggregation: false,
-  traceAugmentation: false,
+  extraTraceValidation: false,
   selfLearning: false,
   logSignal: false,
   topoSignal: false,
@@ -338,13 +338,21 @@ describe('the battery really carries the propagation-channel rows', () => {
   });
 
   it('attaches BOTH direction inputs, so a weight on either is measurable', () => {
-    // The defect this iteration repaired: the loader attached `failedTraceEdges` and never `edgeLatency`,
+    // The defect this test was written for: the loader attached `failedTraceEdges` and never `edgeLatency`,
     // so the shipped `latWeight` multiplied an empty map in every row — and a weight times an empty map is
     // zero whether the term is useful or not.
-    expect(RUNNER).toContain('countDirectionalInputs(');
-    expect(RUNNER).toContain('edgeLatency: directional.edgeLatency');
-    expect(RUNNER).toContain('failedTraceEdges: directional.failedTraceEdges');
-    expect(RUNNER, 'one read, not two').not.toContain('countFailedTraceEdges(');
+    //
+    // It used to assert the runner's own INLINE attachment, including that it derived both fields from one
+    // streaming pass. That attachment is now in the one corpus owner this runner shares with the golden path,
+    // which is a stronger guarantee than the inline one: the two cannot drift, because there is one of them.
+    // The owner's composition — in-memory `edgeLatency`, streaming `failedTraceEdges`, deliberately not
+    // unified because `latWeight` multiplies the capped one — is pinned in `corpus-assembly.test.ts`.
+    expect(RUNNER).toContain('assembleRCAEvalCase(');
+    expect(RUNNER).toContain('augmentFromTraces: true');
+    expect(RUNNER, 'the runner no longer assembles the corpus itself').not.toContain(
+      'countDirectionalInputs(',
+    );
+    expect(RUNNER).not.toContain('countFailedTraceEdges(');
   });
 
   it('reports the coverage of those inputs, so a zero can be read as starved or inert', () => {

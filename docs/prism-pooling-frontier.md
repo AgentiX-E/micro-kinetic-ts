@@ -163,7 +163,7 @@ configuration sets `traceWeight=1`.
 
 **Hypothesis, stated as one because it is not verified:** the golden's RE3 path attaches per-case trace spans
 while the study's does not. `traceWeight` is a *weight*; the spans are the *input*, and in `run-ablation.ts`
-they are attached only when the `traceAugmentation` flag is set — a different flag from `traceSignal`. If that
+they are attached only when the `extraTraceValidation` flag is set — a different flag from `traceSignal`, and renamed in iteration 72 because it never was the shipped augmentation (see `corpus-assembly.md`). If that
 is the cause, then the study's RE3 rows and the golden's RE3 rows are **two different configurations**, and
 every RE3 Δ in `ABLATION_FINDINGS.md` v4 is a Δ within the study rather than against the golden. The cheap
 first read is to print whether a case carried spans on each path. This is registered rather than resolved: it

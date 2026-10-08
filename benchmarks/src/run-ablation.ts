@@ -35,8 +35,6 @@ import {
   analyzePrismSweep,
   axisPoint,
   BenchmarkRunner,
-  countDirectionalInputs,
-  countTraceActivityByService,
   DEFAULT_PRISM_POOLING,
   // The one owner of the per-fault-type → suite fold. This study had its own convention for it, and
   // the convention was the whole of a disagreement that was investigated for three runs as an input
@@ -58,7 +56,10 @@ import {
   type AblationEngineOverrides,
   type AblationFeatureFlags,
 } from './ablation-engine-options.js';
+// The corpus assembly, SHARED with the golden path — this study used to rank on the unpruned graph while
+// the published cells ranked on the pruned one.
 import { formatDirectionalCoverage, summarizeDirectionalCoverage } from './directional-evidence.js';
+import { assembleRCAEvalCase } from './rcaeval-corpus.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
@@ -125,7 +126,7 @@ interface AblationResult {
  */
 const ALL_OFF_FLAGS: FeatureFlags = {
   collisionAggregation: false,
-  traceAugmentation: false,
+  extraTraceValidation: false,
   selfLearning: false,
   logSignal: false,
   topoSignal: false,
@@ -168,7 +169,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -190,7 +191,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: true,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -207,7 +208,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: true,
+        extraTraceValidation: true,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -224,7 +225,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: true,
         logSignal: false,
         topoSignal: false,
@@ -242,7 +243,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: true,
-        traceAugmentation: true,
+        extraTraceValidation: true,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -259,7 +260,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: true,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: true,
         logSignal: false,
         topoSignal: false,
@@ -276,7 +277,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: true,
+        extraTraceValidation: true,
         selfLearning: true,
         logSignal: false,
         topoSignal: false,
@@ -294,7 +295,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: true,
-        traceAugmentation: true,
+        extraTraceValidation: true,
         selfLearning: true,
         logSignal: false,
         topoSignal: false,
@@ -316,7 +317,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: true,
         topoSignal: false,
@@ -333,7 +334,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: true,
@@ -354,7 +355,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       // collisionWeight penalty from the aggregation itself.
       flags: {
         collisionAggregation: true,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -371,7 +372,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -388,7 +389,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -405,7 +406,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
     {
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -432,7 +433,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       // slice can answer — it must be measured directly.
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: true,
         topoSignal: false,
@@ -460,7 +461,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       // measures whether rank + trace beats trace alone (TT f3 is the target).
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -482,7 +483,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       // TT RE3 (currently f3 = 10%) without regressing OB/SS/RE1/RE2.
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: true,
         topoSignal: false,
@@ -510,7 +511,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       // slices above are where its effect is actually measured.
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -535,7 +536,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       // NON-zero-tail requirement keeps a zero→burst→zero event fault (#199).
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: false,
         topoSignal: false,
@@ -557,7 +558,7 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       // OB/SS/RE1/RE2.
       flags: {
         collisionAggregation: false,
-        traceAugmentation: false,
+        extraTraceValidation: false,
         selfLearning: false,
         logSignal: true,
         topoSignal: false,
@@ -704,7 +705,7 @@ const PRISM_SWEEP_AXIS: readonly AxisPoint[] = PRISM_SWEEP_POOLINGS.flatMap((poo
 // ablation slice.
 const PRISM_SWEEP_FLAGS: FeatureFlags = {
   collisionAggregation: false,
-  traceAugmentation: false,
+  extraTraceValidation: false,
   selfLearning: false,
   logSignal: true,
   topoSignal: false,
@@ -1009,36 +1010,26 @@ async function main(): Promise<void> {
               ? ('rcaeval-re2' as const)
               : ('rcaeval-re3' as const);
 
-        let benchCase = loader.toBenchmarkCase(rawCase, callGraph, suiteName);
-        // Trace-activity is scoped to RE3: the "more spans ⇒ source" mechanism
-        // holds only for RE3 code-level faults, so RE1/RE2 skip the expensive
-        // traces.csv scan (and cannot misfire on those suites).
-        if (needsTraceActivity && meta.suite === 'RE3') {
-          benchCase = {
-            ...benchCase,
-            traceActivity: await countTraceActivityByService(
-              join(meta.dirPath, 'traces.csv'),
-              benchCase.injectTime,
-            ),
-          };
-        }
-        // BOTH direction-carrying inputs, from ONE streaming pass over the case's own traces — on the
-        // same terms as the run itself. An ablation of a weight against a starved channel reports "no
-        // change" for the wrong reason, and this battery had exactly that defect on its most dominant
-        // term: every row ran with the shipped `latWeight = 0.561495` multiplying an EMPTY map, because
-        // this loader attached `failedTraceEdges` and never `edgeLatency`. Unconditional, and once.
-        const directional = await countDirectionalInputs(
-          join(meta.dirPath, 'traces.csv'),
-          benchCase.injectTime,
+        // The corpus, assembled by the SAME owner the golden uses and with the SAME augmentation. This study
+        // used to rank on the UNPRUNED graph while the published cells ranked on the pruned one: the golden
+        // prunes 55-82% of the edges of every trace-bearing case (`20 -> 9`, `218 -> 39`, `23 -> 9`,
+        // `218 -> 41`) and this loader did nothing to the graph at all. The measured cost was one cell in
+        // fourteen (RE2 TrainTicket, +1.8pp in the unpruned direction) — small, and beside the point, which
+        // is that which graph a run ranks on was a property of which runner was invoked.
+        const { benchCase } = await assembleRCAEvalCase(
+          loader,
+          rawCase,
+          meta,
+          callGraph,
+          suiteName,
+          {
+            augmentFromTraces: true,
+            traceActivity: needsTraceActivity,
+          },
         );
-        benchCase = {
-          ...benchCase,
-          failedTraceEdges: directional.failedTraceEdges,
-          edgeLatency: directional.edgeLatency,
-        };
         // Do NOT retain per-case traces here — RE2 traces.csv files are
         // large enough that holding all 50 cases' spans at once OOMs.
-        // Record the directory path so the traceAugmentation config can
+        // Record the directory path so the extraTraceValidation config can
         // load traces lazily, one fault-type group at a time.
         cases.push(benchCase);
         caseDirMap.set(benchCase.id, meta.dirPath);
@@ -1308,7 +1299,7 @@ async function main(): Promise<void> {
           // loaded lazily per fault-type group (NOT pre-loaded) so peak
           // memory stays bounded — RE2 traces.csv files are large enough
           // that holding every case's spans at once OOMs.
-          const traceOpts = config.flags.traceAugmentation
+          const traceOpts = config.flags.extraTraceValidation
             ? {
                 enabled: true,
                 pruneUnobserved: true,
@@ -1320,7 +1311,7 @@ async function main(): Promise<void> {
 
           // Attach per-case traces only when this config needs them; other
           // configs reuse the plain (trace-free) cases.
-          const suiteCases = config.flags.traceAugmentation
+          const suiteCases = config.flags.extraTraceValidation
             ? ftCases.map((c) => {
                 const dirPath = bundle.caseDirMap.get(c.id);
                 return { ...c, traces: dirPath ? loader.loadTraces(dirPath) : undefined };

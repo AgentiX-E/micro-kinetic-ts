@@ -80,32 +80,34 @@ describe('a runner that scores cases assembles the engine inputs in one place', 
     // ABLATION battery looked like on its most dominant term: `latWeight` multiplied an empty map in every
     // row of every previous battery, because its loader attached `failedTraceEdges` and not `edgeLatency`.
     //
-    // WHICH DERIVATION a runner uses is decided by whether it still holds the spans: the two RCAEval-family
-    // runners keep them in memory during the augmentation, so they call the in-memory derivation; the
-    // ablation runner drops them per case and re-reads `traces.csv` in one streaming pass, so it calls the
-    // streaming one. Both are the same relation derived twice, which is why each has its own guards.
-    const ATTACHES: ReadonlyArray<readonly [string, string]> = [
-      ['../src/run-optimize.ts', 'toEngineDirectionalInputs('],
-      ['../src/run-rcaeval.ts', 'toEngineDirectionalInputs('],
-      ['../src/run-ablation.ts', 'countDirectionalInputs('],
+    // THIS TEST USED TO SPECIFY THE DEFECT. It listed which DERIVATION each runner called — the two
+    // RCAEval-family runners the in-memory one and the ablation runner the streaming one — and read as a
+    // division of labour. It was not: it was three corpora assembled three ways, and the ablation's had no
+    // trace-topology augmentation at all while the published cells pruned 55-82% of every trace-bearing
+    // case's edges. Both derivations now live in one owner, and every RCAEval runner REACHES it, so what is
+    // asserted is the route rather than the spelling of the call inside each runner.
+    const owner = read('../src/rcaeval-corpus.ts');
+    expect(owner, 'the owner derives the aggregate in memory').toContain(
+      'toEngineDirectionalInputs(',
+    );
+    expect(owner, 'the owner re-derives the failed edges from the raw file').toContain(
+      'countDirectionalInputs(',
+    );
+    expect(owner).toContain('failedTraceEdges: directional.failedTraceEdges');
+    expect(owner).toContain('edgeLatency: directional.edgeLatency');
+    const ATTACHES: readonly string[] = [
+      '../src/run-optimize.ts',
+      '../src/run-rcaeval.ts',
+      '../src/run-ablation.ts',
     ];
-    for (const [runner, derivation] of ATTACHES) {
-      const source = read(runner);
-      expect(source, `${runner} derives the aggregate`).toContain(derivation);
-      expect(source, `${runner} attaches the latency input`).toContain(
-        'edgeLatency: directional.edgeLatency',
-      );
-      expect(source, `${runner} attaches the failed-edge input too`).toContain(
-        'failedTraceEdges: directional.failedTraceEdges',
-      );
+    for (const runner of ATTACHES) {
+      expect(read(runner), `${runner} reaches the one owner`).toContain('assembleRCAEvalCase(');
     }
     // And the runners that do NOT attach are named, so a new runner joining the list above forces a decision
     // rather than defaulting: `run-fse26` takes its rows from `fse26-loader.ts`, and `optimize-all`'s corpus
     // is generated and carries none of the optional fields at all. Both are asserted elsewhere; what this
     // pins is that the set is closed — an omission cannot arrive by accident.
-    const withoutAttachment = CASE_EVALUATING_RUNNERS.filter(
-      (r) => !ATTACHES.some(([a]) => a === r),
-    );
+    const withoutAttachment = CASE_EVALUATING_RUNNERS.filter((r) => !ATTACHES.includes(r));
     expect(withoutAttachment).toEqual(['../src/run-fse26.ts', '../src/optimize-all.ts']);
   });
 

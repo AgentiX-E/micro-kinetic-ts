@@ -57,8 +57,19 @@ import {
 export interface AblationFeatureFlags {
   /** Collision tree aggregator with Boltzmann Q(f,f). */
   collisionAggregation: boolean;
-  /** Trace topology augmentation. */
-  traceAugmentation: boolean;
+  /**
+   * A SECOND, stricter trace-topology validation pass, applied by the runner on top of the corpus.
+   *
+   * This is **not** the shipped augmentation. The shipped corpus augments every trace-bearing case from its
+   * own spans (`rcaeval-corpus.ts`, `{ minCallFrequency: 1 }`, always on), and its arm here was a DIFFERENT
+   * option set (`{ minCallFrequency: 0, discoverNewEdges: false, pruneUnobserved: true }`). It was named
+   * `traceAugmentation` until iteration 72, and that name is why the corpus difference went unnoticed: the
+   * flag advertised the shipped step while being a separate one, so a run that "had trace augmentation ON"
+   * and a run that "had it OFF" could both be missing the shipped step entirely. It measures `+0.0` on RE2
+   * and RE3 — the only two suites that have traces — which is the signature of a mechanism that never
+   * reaches the ranking.
+   */
+  extraTraceValidation: boolean;
   /** Online weight calibration (self-evolving). */
   selfLearning: boolean;
   /** Log signal: reward post-injection ERROR/FATAL volume (logWeight). */

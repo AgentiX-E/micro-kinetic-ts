@@ -5,7 +5,8 @@
 
 ```
 Running: BASELINE (all OFF)
-Flags: {"collisionAggregation":false,"traceAugmentation":false,"selfLearning":false,"logSignal":false,…}
+Flags: {"collisionAggregation":false,"extraTraceValidation":false,"selfLearning":false,"logSignal":false,…}
+  (the key was `traceAugmentation` when this line was captured; it was renamed in iteration 72 — see below)
 ```
 
 Measured over the whole 681-line artifact: **133 lines identify a configuration, and ZERO lines name a
@@ -111,7 +112,15 @@ artifact unjoinable against the source it describes. The line was fixed; the ass
   boundary rather than an oversight — extending the line to every non-neutral engine default is a larger
   change with its own decisions about what belongs on an artifact, and it is recorded here as the residue
   rather than done quietly.
-- The three pipeline flags (`traceAugmentation`, `selfLearning`, `collisionAggregation`) were verified to be
-  READ by the runner — measured, because an ablation flag that nothing reads is a row that measures nothing:
-  `traceAugmentation` at two sites, `selfLearning` at one, `collisionAggregation` reaching
+- The three pipeline flags (`extraTraceValidation`, `selfLearning`, `collisionAggregation`) were verified to
+  be READ by the runner — measured, because an ablation flag that nothing reads is a row that measures
+  nothing: `extraTraceValidation` at two sites, `selfLearning` at one, `collisionAggregation` reaching
   `enableCollisionAggregation`.
+- **AND BEING READ IS NOT THE SAME AS REACHING THE RANKING — the criterion's own boundary, found by measuring
+  it.** `extraTraceValidation` (named `traceAugmentation` until iteration 72) is read at two sites and its rows
+  measure **`+0.0` on RE2 and RE3 — the only two suites that have traces at all**, while the shipped corpus
+  prunes 55–82% of every trace-bearing case's edges. The flag was named for the SHIPPED step and its arm was a
+  DIFFERENT option set, so a run with it ON and a run with it OFF could both be missing the shipped step. A
+  read-site count is therefore necessary and not sufficient: the site must also be on the path the ranking
+  takes, and the shipped corpus is now owned by `benchmarks/src/rcaeval-corpus.ts`, where no feature flag
+  reaches it.

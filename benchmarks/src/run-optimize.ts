@@ -32,11 +32,9 @@ import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import type { TraceSpan } from '@agentix-e/micro-kinetic-core';
 import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { BenchmarkCase } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { toFaultGraphOptions } from '../../packages/kinetic/src/benchmarks/runners/fault-graph-options.js';
-import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 import {
   cycleCertificate,
   formatAttenuation,
@@ -58,8 +56,8 @@ import {
   formatEvidenceSeparation,
   readDirectionalEvidence,
   readEvidenceSeparation,
-  toEngineDirectionalInputs,
 } from './directional-evidence.js';
+// The corpus assembly, shared with the golden and the ablation paths.
 import {
   CORPUS_SAMPLING_OBJECTIVE,
   deriveStratumFromCaseDir,
@@ -81,6 +79,7 @@ import {
   type CaseVerdict,
   type PopulationCase,
 } from './optimize-population.js';
+import { assembleRCAEvalCase } from './rcaeval-corpus.js';
 import { buildRCAEvalCallGraph, initRCAEvalTopology } from './rcaeval-topology.js';
 
 // ── CLI ───────────────────────────────────────────────────
@@ -213,49 +212,24 @@ async function loadAllCases(
       const suiteId = SUITE_IDS[suite];
 
       const serviceIds = Object.keys(rawCase.metrics);
-      let callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
-      // THE DIRECTION the RCAEval side never supplied, derived from the SAME spans the augmentation consumes.
-      // Carried as a compact per-EDGE aggregate while the spans themselves stay dropped (the loader's documented
-      // memory trade), so the two fields the engine reads for a fault's direction stop being structurally absent
-      // on every RCAEval run.
-      let directional: ReturnType<typeof toEngineDirectionalInputs> = {
-        failedTraceEdges: [],
-        edgeLatency: [],
-      };
+      const callGraph = buildRCAEvalCallGraph(rawCase.benchmark, serviceIds);
 
-      if (rawCase.traces && rawCase.traces.length > 0) {
-        const spans: TraceSpan[] = rawCase.traces.map((t) => ({
-          traceId: t.traceId,
-          spanId: t.spanId,
-          parentSpanId: t.parentSpanId ?? '',
-          service: t.service,
-          operation: t.operationName,
-          duration: t.duration,
-          statusCode: t.status === 'ERROR' ? 500 : 200,
-          isError: t.status === 'ERROR',
-          startTime: t.startTime * 1000,
-        }));
-        callGraph = augmentTopologyWithTraces(callGraph, spans, { minCallFrequency: 1 });
-        // `rawCase.injectTime` and the raw spans are in SECONDS; this adapter converts both to the milliseconds
-        // the derivation's before/after split is defined over.
-        directional = toEngineDirectionalInputs(
-          spans.map((s) => ({
-            spanId: s.spanId,
-            parentSpanId: s.parentSpanId === '' ? undefined : s.parentSpanId,
-            service: s.service,
-            startTime: s.startTime,
-            duration: s.duration,
-            status: s.isError === true ? ('ERROR' as const) : ('OK' as const),
-          })),
-          rawCase.injectTime * 1000,
-        );
-      }
+      // The corpus, assembled by the SAME owner the golden and the ablation use. A weight search is only
+      // meaningful on the corpus the weights will ship against, and this path used to assemble a THIRD,
+      // different one: it augmented the graph like the golden, but derived `failedTraceEdges` from the capped
+      // span list instead of from the streaming pass over `traces.csv`, so its failed-edge input was a
+      // truncation of the shipped one. The census that found this found four RCAEval compositions in four
+      // files, which is the register's "a quantity with N implementations is a quantity with no convention"
+      // in its fourth appearance.
+      const { benchCase } = await assembleRCAEvalCase(
+        loader,
+        rawCase,
+        { suite, dirPath: dir },
+        callGraph,
+        suiteId,
+        { augmentFromTraces: true, traceActivity: false },
+      );
 
-      const benchCase: BenchmarkCase = {
-        ...loader.toBenchmarkCase(rawCase, callGraph, suiteId),
-        failedTraceEdges: directional.failedTraceEdges,
-        edgeLatency: directional.edgeLatency,
-      };
       out.push({
         benchCase,
         dir,
