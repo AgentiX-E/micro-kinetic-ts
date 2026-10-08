@@ -77,3 +77,41 @@ names the unmeasurable terms **and stays silent when no channel is empty**; `TER
 term and its channel set is exactly the union `channelCases` is total over; the three rows exist as label
 literals; the overrides read through `??`; and `configDiff` returns the varied terms in the baseline line's
 order. **Four mutations, four killed** — one of them only after the fence was strengthened by its own survivor.
+
+## 6. The measurement — run `37832140805`, and the two defects the census found in ITSELF
+
+The three new rows landed, and on **RE1 — the suite where nothing else can be measured — the verdict is
+`INERT` on all three systems**:
+
+```
+POOL PENALTY OFF (poolMetricPenaltyWeight=0)   varies=poolMetricPenaltyWeight
+  OnlineBoutique:INERT  SockShop:INERT  TrainTicket:INERT
+STABILITY OFF (stabilityWeight=0)              varies=stabilityWeight
+  OnlineBoutique:INERT  SockShop:INERT  TrainTicket:INERT
+POOL PENALTY + STABILITY OFF                   varies=poolMetricPenaltyWeight,stabilityWeight
+  OnlineBoutique:INERT  SockShop:INERT  TrainTicket:INERT
+```
+
+**Not `STARVED`.** Their channel is metrics, and RE1 carries 125 of 125 cases with metrics. So this is the first
+measurement of either prior in this repository's history, and it is a verdict rather than an excuse: the two
+priors the register named as the candidates for its unattributed RE1 contributor are worth **exactly 0.0**
+there. RE3's census is richer still and reads the same way — logs 30/30 on every system (2.16 M / 2.59 M /
+1.94 M entries), span activity 30/30 on two of three, `topoWeight` and `latWeight` the only starved terms — and
+its three rows are `INERT` there too.
+
+**And reading the first output found two defects in the census itself**, which is what a census is for:
+
+1. **A switch row had no verdict at all.** The block rendered `UNKNOWN-CHANNEL` for a varied field absent from
+   `TERM_CHANNELS` — and the fields that are absent are SWITCHES, FLOORS and FORM SELECTORS. `+Rank
+   Normalization` and `+Idle Transient Suppression` both read `Δ+0.0%` on RE1, and both got a token that
+   explained nothing. **A switch multiplies no input, so it cannot be starved of one, and its zero is always
+   the statement that the ordering did not move**: the block now falls back to the population for such a term,
+   and `UNKNOWN-CHANNEL` no longer exists. The non-signal set is pinned by name in the fence, so it is a
+   declaration rather than an omission. (`riseWeight` and `prismWeight` were moved INTO the map in the same
+   pass: both are metric-derived, so both act on the channel every case has.)
+2. **`spans` counted what a case RETAINS, not what it HAD.** The census read `case.traces`, which the assembly
+   frees after deriving everything from it — so it reported **`spans 0/30` on RE3**, a corpus whose graph *was*
+   augmented from traces, and declared `topoWeight` **UNMEASURABLE** there. The loader now takes the count from
+   the assembly's own `traceUsed`. *This is the defect the census exists to prevent, committed by the census*,
+   and it was visible only because the census printed a line that could be checked against the golden's own
+   `[trace] … pruned` line for the same suite.
