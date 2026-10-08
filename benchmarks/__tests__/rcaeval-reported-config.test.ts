@@ -423,8 +423,11 @@ describe('the RCAEval configuration line carries the configuration that produced
   it('renders the shipped line byte-identically to the line the golden artifact carries', () => {
     // Verbatim from `rcaeval-re1-results` of run `37402660140` (and `re2`; `re3` differs only in
     // `traceWeight=1`, which is the RE3 trace term), plus the ONE field this iteration enrolled —
-    // `prismPooling`, whose shipped value is the pooling the call site already passed by OMISSION,
-    // so the artifact's own numbers are the control for the claim that nothing but the record moved.
+    // `prismPooling`, whose shipped value is the pooling the call site already passed by OMISSION.
+    // Read back from run `37736529560`, the enrolment's own golden: all three suites print this line
+    // byte-for-byte and the NINE CELLS are unchanged (RE1 80 / 92.8 / 68, RE2 82.4 / 88.9 / 68.1,
+    // RE3 80 / 45 / 51.1), which is the whole claim — the record moved by one field and no number moved.
+    //
     // This is the control that makes the SPLIT checkable rather than argued: the two engine arguments
     // became two objects in an earlier iteration, and an artifact whose configuration line moved
     // without the record being read back would be evidence that something else changed too.

@@ -270,9 +270,12 @@ source assertion in the new guard fails instead); and the census gains the direc
 
 ## Gates
 
-Register guard 14/14 · census **13 tests** · `kinetic` (full, 946 tests) at 100 / 99.44 / 100 / 100 ·
-benchmarks **762 tests** at 99.84 / 97.37 / 100 / 99.84 · tree 650 at 100/100/100/100 · both typechecks
-(0 `error TS`) · lint 0/0 (337 files) · format clean · root `pnpm coverage` green (127 files, 3198 tests).
+Register guard 14/14 · census **14 tests** (the count said 13 until the `prismPooling` row was added, i.e. it
+had been stale by one) · `kinetic` (full, 1007 tests) at 99.97 / 99.28 / 100 / 99.97 ·
+benchmarks **1037 tests** at 99.95 / 99.89 / 100 / 99.95 · tree at 100/100/100/100 · core 420 tests at
+99.88 / 96.62 / 100 / 99.88 · both typechecks (0 `error TS`) · lint 0/0 (356 files) · format clean. (The
+`pnpm coverage` reading this line carried before — 127 files, 3198 tests — is the last whole-repo run and is
+kept as that; `pnpm` is absent locally, so the per-project numbers above are the current reading.)
 **Eleven mutations killed on the first pass** — every one a change to
 the DATA or a MECHANISM, not to an assertion: a knob marked unowned, an owner naming a document that does not
 exist, a knob deleted (the population shrinking to fit the table), a row naming a flag that binds a different
@@ -308,3 +311,12 @@ All three are now closed and re-killed. The complete set:
 
 **A golden IS owed**: `packages/kinetic/src/**`, `benchmarks/src/**` and `.github/workflows/**` all changed.
 The default path passes no flag, so the nine cells must stay byte-identical.
+
+**And one of the numbered checks above had a hole that only a non-numeric owned value could find.** The
+"reads the shipped weight from its OWNER" loop asserted `not.toMatch(<knob>: (?!DEFAULT_)\d)` — a pattern that
+requires a **digit**. Every owned option in that loop was a NUMBER until `prismPooling` was added, so the
+pattern was an adequate proxy for "named the constant"; the first member outside the population — a string —
+walked straight through it. Measured, not argued: the mutation `prismPooling: 'additive'` instead of
+`DEFAULT_PRISM_POOLING` **SURVIVED** the unmodified loop and is killed by the corrected one
+(`<knob>:\s*DEFAULT_[A-Z0-9_]+`), which subsumes the numeric arm because a numeric literal cannot be
+`DEFAULT_<NAME>`. *A proxy that was true of every member of a population is not a rule about the population.*
