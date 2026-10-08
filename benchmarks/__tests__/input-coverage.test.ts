@@ -137,6 +137,46 @@ describe('the input census', () => {
     const channels: SignalChannel[] = ['metrics', 'logs', 'spans', 'spanActivity', 'latency'];
     expect([...new Set(Object.values(TERM_CHANNELS))].sort()).toEqual([...channels].sort());
   });
+
+  it('declares the terms that are NOT signal terms, so the verdict can say so', () => {
+    // The verdict block renders `UNKNOWN-CHANNEL` for a varied field with no entry in the map, and the run of
+    // 37832140805 produced it for exactly these — a SWITCH, a FLOOR, a FORM selector, and the metric-derived
+    // terms whose input is the population itself. Naming them here turns "unknown" into "declared": the map is
+    // not missing them, they are not signal terms, and a NEW one appearing is a failing test rather than a
+    // token nobody reads.
+    const NOT_SIGNAL_TERMS = [
+      'enableCollisionAggregation', // a switch, not a weight
+      'collapseDiscount', // a topology switch
+      'rankNormalization', // a switch on the final ordering
+      'suppressIdleTransients', // a suppression switch
+      'latMinRise', // the latency prior's FLOOR, not a signal
+      'prismPooling', // a form selector, not a term at all
+    ];
+    for (const term of NOT_SIGNAL_TERMS) {
+      expect(TERM_CHANNELS[term], `${term} is not a signal term`).toBeUndefined();
+    }
+    // And a term with no channel CANNOT be starved: the verdict block falls back to the population, because a
+    // switch multiplies no input. Without this the rows the block exists for — `+Rank Normalization`,
+    // `+Idle Transient Suppression`, both `Δ+0.0%` on RE1 — would carry no verdict at all.
+    const runner = read('src/run-ablation.ts');
+    expect(runner).toContain('channel ? channelCases(cov, channel) : cov.cases');
+    expect(runner, 'the unreadable token is gone').not.toContain('UNKNOWN-CHANNEL');
+  });
+
+  it('counts spans from the ASSEMBLY, not from what the case retains', () => {
+    // The census's own worst defect, found by reading its first output: it reported `spans 0/30` on RE3 — a
+    // corpus whose graph WAS augmented from traces — and declared `topoWeight` unmeasurable there, because the
+    // assembly derives everything it needs and the runner drops the spans. It was counting what a case
+    // RETAINS rather than what it HAD. The loader now takes the count from the assembly's own `traceUsed`.
+    const runner = read('src/run-ablation.ts');
+    expect(runner, 'the loader reads the assembly result').toContain(
+      'const { benchCase, traceUsed } = await assembleRCAEvalCase(',
+    );
+    expect(runner, 'and counts it').toContain('if (traceUsed) casesWithSpans++;');
+    expect(runner, 'and overrides the retained-array count with it').toContain(
+      'coverage: { ...summarizeInputCoverage(cases), casesWithSpans }',
+    );
+  });
 });
 
 describe('the rows the battery had never varied', () => {

@@ -544,6 +544,12 @@ export const TERM_CHANNELS: Readonly<Record<string, SignalChannel>> = {
   latWeight: 'latency',
   poolMetricPenaltyWeight: 'metrics',
   stabilityWeight: 'metrics',
+  // Metric-derived too, and mapped rather than left unmapped: the rise signal is a property of the case's own
+  // series and the PRISM score is a deviation z-score over them, so both act on the channel every RCAEval case
+  // has. A term left out of this map renders `UNKNOWN-CHANNEL` in the verdict block, and that token now means
+  // exactly one thing — a SWITCH, a FLOOR or a FORM SELECTOR, none of which multiplies an input.
+  riseWeight: 'metrics',
+  prismWeight: 'metrics',
 };
 
 /** Per-population counts of the cases that carry each channel's input. */

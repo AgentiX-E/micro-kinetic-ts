@@ -1035,6 +1035,16 @@ async function main(): Promise<void> {
 
   async function loadSystemBundle(systemName: string, metas: CaseMeta[]): Promise<SystemBundle> {
     const cases: BenchmarkCase[] = [];
+    /**
+     * Cases that carried spans INTO the assembly.
+     *
+     * Counted here rather than read off the assembled cases, because the assembly derives everything it needs
+     * and the runner drops the spans — so `case.traces` is empty on every case of every system, and a census
+     * that read it reported `spans 0/30` on RE3 (a corpus whose graph WAS augmented from traces) and declared
+     * `topoWeight` UNMEASURABLE there. **The count was reading what the case RETAINS, not what it HAD**, which
+     * is the defect this census exists to prevent, committed by the census itself.
+     */
+    let casesWithSpans = 0;
     const caseDirMap = new Map<string, string>();
     const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
     // Trace-activity rise signal: compute per-service pre/post span counts
@@ -1069,7 +1079,7 @@ async function main(): Promise<void> {
         // `218 -> 41`) and this loader did nothing to the graph at all. The measured cost was one cell in
         // fourteen (RE2 TrainTicket, +1.8pp in the unpruned direction) — small, and beside the point, which
         // is that which graph a run ranks on was a property of which runner was invoked.
-        const { benchCase } = await assembleRCAEvalCase(
+        const { benchCase, traceUsed } = await assembleRCAEvalCase(
           loader,
           rawCase,
           meta,
@@ -1080,6 +1090,7 @@ async function main(): Promise<void> {
             traceActivity: needsTraceActivity,
           },
         );
+        if (traceUsed) casesWithSpans++;
         // Do NOT retain per-case traces here — RE2 traces.csv files are
         // large enough that holding all 50 cases' spans at once OOMs.
         // Record the directory path so the extraTraceValidation config can
@@ -1095,7 +1106,12 @@ async function main(): Promise<void> {
     // Computed here, while the cases still exist: the caller releases them after each system, and a census
     // taken from an empty array would report every channel starved — the very mistake this instrument exists
     // to prevent.
-    return { systemName, cases, caseDirMap, coverage: summarizeInputCoverage(cases) };
+    return {
+      systemName,
+      cases,
+      caseDirMap,
+      coverage: { ...summarizeInputCoverage(cases), casesWithSpans },
+    };
   }
 
   /**
@@ -1559,7 +1575,11 @@ async function main(): Promise<void> {
       // because collapsing two channels into one word would be a summary of a fact nobody measured.
       const verdicts = changed.map((term) => {
         const channel = TERM_CHANNELS[term];
-        return channel ? readZero(delta, channelCases(cov, channel)) : 'UNKNOWN-CHANNEL';
+        // A term with no channel is a SWITCH, a FLOOR or a FORM SELECTOR. It multiplies no input, so it cannot
+        // be starved of one, and its zero is a statement that the ordering did not move — INERT. Reporting it as
+        // an unknown channel left exactly the rows this block exists for unreadable: `+Rank Normalization` and
+        // `+Idle Transient Suppression` both read `Δ+0.0%` on RE1 with nothing beside them.
+        return readZero(delta, channel ? channelCases(cov, channel) : cov.cases);
       });
       return `${ds}:${[...new Set(verdicts)].join('+')}`;
     });
