@@ -49,9 +49,11 @@ import {
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  isPrismPooling,
 } from '../../packages/tree/src/index.js';
 
 import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
@@ -243,6 +245,30 @@ describe('RCAEval runner configuration ownership', () => {
     );
   });
 
+  it('declares the PRISM pooling from its owner, and makes the second one reachable', () => {
+    // The defect: the engine's single PRISM call site omitted the pooling, so `conjunctive` — the
+    // only pooling that resolves the code-level block in the controlled head-to-head (RE3
+    // TrainTicket 76.7% against `additive`'s 33.3%) — was unreachable from every runner built on the
+    // engine. Enrolling it means the runner states the vocabulary AND the value, from the union's own
+    // owner rather than from a hand-written pair: `--log-signal-mode` once parsed against a
+    // two-member subset of a six-member union, and a subset is exactly what this flag would have got.
+    expect(source).toMatch(/prismPooling:\s*DEFAULT_PRISM_POOLING/);
+    expect(source).not.toMatch(/prismPooling:\s*'/);
+    // The flag accepts the WHOLE union by the union's own guard, and falls back to the SHIPPED
+    // pooling on an unusable value — the same decision as every other mode flag here, and the reason
+    // a typo reproduces a published configuration rather than inventing one.
+    expect(source).toMatch(/isPrismPooling\(pooling\)\s*\?\s*pooling\s*:\s*DEFAULT_PRISM_POOLING/);
+    expect(isPrismPooling(DEFAULT_PRISM_POOLING)).toBe(true);
+    // Forwarded into the container by the module that also renders the line, which is what makes the
+    // pooling the run records the pooling the engine receives.
+    expect(shippedSignals.prismPooling).toBe(DEFAULT_PRISM_POOLING);
+    // And a named member is taken rather than discarded, so the reach is two-way.
+    expect(parseRCAEvalArgs(['--prism-pooling', 'conjunctive']).prismPooling).toBe('conjunctive');
+    expect(parseRCAEvalArgs(['--prism-pooling', 'additive']).prismPooling).toBe('additive');
+    // Inert at the shipped weight, which is why enrolling the axis moves no published number.
+    expect(shippedSignals.prismWeight).toBe(0);
+  });
+
   it('builds the engine arguments in exactly one place, and it is not the runner', () => {
     // The property the old shape assertions stood for, stated as a property. A hand-written literal
     // at the construction site is a SECOND owner of the option list, and the field present in one
@@ -396,10 +422,12 @@ describe('the RCAEval configuration line carries the configuration that produced
 
   it('renders the shipped line byte-identically to the line the golden artifact carries', () => {
     // Verbatim from `rcaeval-re1-results` of run `37402660140` (and `re2`; `re3` differs only in
-    // `traceWeight=1`, which is the RE3 trace term). This is the control that makes the SPLIT
-    // checkable rather than argued: the two engine arguments became two objects in that iteration, and
-    // an artifact whose configuration line moved by one byte would be evidence that something other
-    // than the wiring changed.
+    // `traceWeight=1`, which is the RE3 trace term), plus the ONE field this iteration enrolled —
+    // `prismPooling`, whose shipped value is the pooling the call site already passed by OMISSION,
+    // so the artifact's own numbers are the control for the claim that nothing but the record moved.
+    // This is the control that makes the SPLIT checkable rather than argued: the two engine arguments
+    // became two objects in an earlier iteration, and an artifact whose configuration line moved
+    // without the record being read back would be evidence that something else changed too.
     //
     // It is also the control that fails when a SHIPPED WEIGHT moves without the artifact being
     // re-read — which is the intended behaviour, because the published numbers are read through this
@@ -407,9 +435,9 @@ describe('the RCAEval configuration line carries the configuration that produced
     expect(formatSignalLine(shipped)).toBe(
       'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
-        'collapseDiscount=0 traceWeight=0 prismWeight=0 rankNormalization=true ' +
-        'suppressIdleTransients=false suppressNearZeroBaselineRise=false temporalWeight=0 ' +
-        'onsetShape=earliness',
+        'collapseDiscount=0 traceWeight=0 prismWeight=0 prismPooling=additive ' +
+        'rankNormalization=true suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
+        'temporalWeight=0 onsetShape=earliness',
     );
   });
 });

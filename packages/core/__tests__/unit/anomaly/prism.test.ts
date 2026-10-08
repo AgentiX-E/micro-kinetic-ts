@@ -18,7 +18,10 @@ import type { TimeSeries } from '@agentix-e/micro-kinetic-core';
 import {
   classifyMetricChannel,
   combinePrismScore,
+  DEFAULT_PRISM_POOLING,
   deviationZScore,
+  isPrismPooling,
+  PRISM_POOLINGS,
 } from '@agentix-e/micro-kinetic-core';
 import { describe, expect, it } from 'vitest';
 
@@ -134,6 +137,79 @@ describe('deviationZScore', () => {
   it('returns 0 when the fault mean equals the baseline mean', () => {
     const s = deviationZScore(makeSeries('cpu', [1, 2, 3], [1, 2, 3]), INJECT_MS);
     expect(s).toBeCloseTo(0, 9);
+  });
+});
+
+// ── The pooling vocabulary ────────────────────────────────
+
+describe('the pooling vocabulary', () => {
+  // The union, the census over it and the guard are what make the second pooling
+  // REACHABLE by name: the engine's one call site omitted the argument for several
+  // iterations, so `conjunctive` was implemented, measured by the standalone
+  // evaluator, and unselectable from every runner built on the engine. A vocabulary
+  // that is not the union is the defect; these assertions are the census.
+
+  it('is EXHAUSTIVE over the union, so a new member is a compile error', () => {
+    // `Record<PrismPooling, true>` is the mechanism: adding a member to the union
+    // without naming it here does not compile. The keys are asserted so the
+    // vocabulary is also checkable at runtime rather than only under `tsc`.
+    expect(Object.keys(PRISM_POOLINGS).sort()).toEqual(['additive', 'conjunctive']);
+    expect(Object.values(PRISM_POOLINGS).every((v) => v === true)).toBe(true);
+  });
+
+  it('defaults to a member of the union, and the primitive honours that default', () => {
+    // The default is a CONSTANT rather than a literal at the call site: it is
+    // quoted by the option surface, by the reported configuration line and by the
+    // primitive's own parameter, and three copies of one shipped value is the
+    // shape that has already published a number 24.2pp below the best-measured one.
+    expect(isPrismPooling(DEFAULT_PRISM_POOLING)).toBe(true);
+    // Read behaviourally, so the constant cannot describe a default the function
+    // does not apply: passing it and omitting it must be the same call.
+    for (const [i, e] of [
+      [2, 2],
+      [0, 4],
+      [4, 0],
+      [0, 0],
+      [3.5, 1.25],
+    ] as const) {
+      expect(combinePrismScore(i, e, DEFAULT_PRISM_POOLING)).toBe(combinePrismScore(i, e));
+    }
+  });
+
+  it('accepts every member and rejects everything else', () => {
+    for (const member of Object.keys(PRISM_POOLINGS)) {
+      expect(isPrismPooling(member), `${member} is a member`).toBe(true);
+    }
+    for (const token of ['', ' additive', 'additive ', 'Additive', 'ADDITIVE', 'conj', 'both']) {
+      expect(isPrismPooling(token), `${JSON.stringify(token)} is not a member`).toBe(false);
+    }
+  });
+
+  it('rejects the prototype chain, which `in` would have accepted', () => {
+    // THE REASON THE GUARD IS NOT `value in PRISM_POOLINGS`. A `Record` is an
+    // object literal, so `toString`, `constructor` and `__proto__` are reachable
+    // through its prototype — and `toString` is a token a dispatch can really send.
+    // A guard that accepted it would hand `combinePrismScore` a value it treats as
+    // `additive`, so a dispatch asking for a typo would silently reproduce the
+    // shipped run and print a confident number.
+    for (const token of ['toString', 'constructor', '__proto__', 'valueOf', 'hasOwnProperty']) {
+      expect(isPrismPooling(token), `${token} is on the prototype, not in the census`).toBe(false);
+    }
+    // Positive control for the arm: the same tokens ARE reachable by `in`, so the
+    // assertion above is measuring `hasOwnProperty.call` and not an absent object.
+    expect('toString' in PRISM_POOLINGS).toBe(true);
+  });
+
+  it('is the vocabulary the combination function dispatches on, member by member', () => {
+    // A vocabulary that named a member the function did not implement would be a
+    // list, not a dispatch: every member must select its OWN formula. Asserted as
+    // a partition over the population so a new member has to be decided here.
+    const formula = (p: string): number =>
+      combinePrismScore(2, 4, p as typeof DEFAULT_PRISM_POOLING);
+    expect(formula('additive')).toBeCloseTo(6 - Math.log1p(6), 12);
+    expect(formula('conjunctive')).toBe(2);
+    // And the two really do differ on this input, so the partition is not vacuous.
+    expect(formula('additive')).not.toBeCloseTo(formula('conjunctive'), 6);
   });
 });
 

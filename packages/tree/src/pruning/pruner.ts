@@ -31,6 +31,7 @@
  */
 
 import {
+  DEFAULT_PRISM_POOLING,
   DEFAULT_RCA_OPTIONS,
   invariant,
   invariantPositiveInt,
@@ -40,6 +41,7 @@ import {
   type FaultEdgeLatency,
   type FaultPropagationGraph,
   type MetricMap,
+  type PrismPooling,
   type PrunedEdgeRecord,
   type PrunedTree,
   type RCAEngineOptions,
@@ -298,6 +300,40 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * default is flipped.
    */
   readonly prismWeight: number;
+  /**
+   * Which of PRISM's two combination functions `prismScore` is built with.
+   *
+   * `additive` (the paper's default) is `M = S^I + S^E − log1p(S^I + S^E)`: a sub-linear dampener that
+   * keeps the reward for being anomalous in BOTH channels while softening a single very large score, so a
+   * massive external-only symptom cannot swamp a genuine source. `conjunctive` is `M = min(S^I, S^E)`: the
+   * score is GATED by the weaker channel, so a component anomalous in external properties only scores 0 —
+   * the asymmetry stated as a hard prior rather than as a trade-off.
+   *
+   * ## Why this is an option rather than a constant
+   *
+   * The two poolings are not close variants of one another, and the difference is not spread evenly. The
+   * controlled head-to-head (`docs/prism-head-to-head.md`, run `34246577708`, the identical 735 cases our
+   * own nine cells are measured on) reads the two side by side per cell: `additive` wins overall (78.9%
+   * against 69.8%) **and on every resource-fault cell**, while `conjunctive` is the ONLY pooling that
+   * resolves the code-level block — **RE3 TrainTicket 76.7% against `additive`'s 33.3%**, the largest
+   * single-cell margin anywhere in this repository's record, on the weakest cell of the published nine
+   * (51.1%). A global choice is therefore unsupportable in either direction, which is exactly the state
+   * the parameter exposes.
+   *
+   * ## The defect this field repairs
+   *
+   * `conjunctive` was ALREADY implemented — `combinePrismScore` takes it, and the standalone evaluator
+   * dispatches it (`scripts/run-prism.ts --pooling conjunctive`) — but the engine's single call site
+   * omitted the argument, so **every engine run, every ablation row and every workflow dispatch combined
+   * additively whatever it asked for**. The table above could be published while being unreproducible from
+   * the engine, and the ablation battery could not pose the question at all. An unreachable knob is an open
+   * axis; this is where it becomes reachable, named on the configuration line, and measurable.
+   *
+   * Default {@link DEFAULT_PRISM_POOLING}, which is the value the call site already passed by OMISSION —
+   * so enrolling this option moves no published number, and the nine cells are the acceptance criterion
+   * for exactly that claim. The field is inert while `prismWeight` is 0, the shipped value.
+   */
+  readonly prismPooling: PrismPooling;
   /**
    * Weight of the failed-edge-DIRECTION signal: reward a service that its
    * callers' FAILED calls were made AGAINST (the callee of a failed edge).
@@ -707,6 +743,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   riseWeight: 0.0,
   traceWeight: 0.0,
   prismWeight: 0.0,
+  prismPooling: DEFAULT_PRISM_POOLING,
   failedEdgeWeight: 0.0,
   failedEdgeMode: 'sum',
   failedEdgeMinRecords: 1,
@@ -979,13 +1016,25 @@ export class TreePruner {
 
     // The PRISM graph-free signal: for each graph member, compute PRISM's
     // root-cause score (max-pooled internal/external deviation z-scores,
-    // combined additively) and max-normalise to [0, 1]. It is topology-free
+    // combined with `prismPooling`) and max-normalise to [0, 1]. It is topology-free
     // and uses a DIFFERENT anomaly scorer than the engine's own feature
     // pipeline, so it is genuinely complementary to the collision/topo/log/
     // trace priors — the fusion ceiling showed the two engines agree on only
     // 402/615 cases, with 70 cases PRISM alone gets right. Empty (neutral)
     // when the injection time is unknown or no service is anomalous.
-    const prismScores = computePrismScores(metrics, new Set(callGraph.nodes.keys()), injectTimeMs);
+    //
+    // The pooling is FORWARDED rather than left to the primitive's default. It used to be left out, which
+    // made `conjunctive` — the only pooling that resolves the code-level block (RE3 TrainTicket 76.7%
+    // against `additive`'s 33.3% in the controlled head-to-head) — unreachable from the engine and from
+    // every runner built on it: the option existed, `combinePrismScore` implemented it, and no engine
+    // configuration could select it. `prismPooling` defaults to `DEFAULT_PRISM_POOLING`, the value this
+    // call already passed by omission, so forwarding it changes no run that does not name the other one.
+    const prismScores = computePrismScores(
+      metrics,
+      new Set(callGraph.nodes.keys()),
+      injectTimeMs,
+      this.options.prismPooling,
+    );
 
     // The failed-edge-DIRECTION signal: each failed call is charged to its
     // CALLEE — the service whose interface was failing — which is the inverse

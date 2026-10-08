@@ -42,8 +42,10 @@ import {
   DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  isPrismPooling,
 } from '../../packages/tree/src/index.js';
 
 import {
@@ -239,6 +241,65 @@ describe('the weights the study VARIES, as opposed to the flags it switches', ()
   });
 });
 
+describe('the second PRISM knob, which is not a weight', () => {
+  // The record was called `AblationWeightOverrides` and every member was a number. The pooling is the
+  // member that made the name untrue, and keeping it out is what the engine did: `combinePrismScore`
+  // takes both poolings and the standalone evaluator dispatches them (`run-prism.ts --pooling
+  // conjunctive`), while no engine run, battery row or dispatch could select the second one — the call
+  // site omitted the argument. A record whose name promised numbers would have had to leave the axis
+  // outside the study, which is the state being repaired.
+
+  it('takes the overridden pooling, and only when the row names one', () => {
+    expect(
+      buildAblationEngineOptions(ALL_OFF, { prismPooling: 'conjunctive' }).signals.prismPooling,
+    ).toBe('conjunctive');
+    // `??` rather than `||`, for the same reason the weights use it: one reading of the record for
+    // every field beats two, and a `||` reintroduces a falsy-discards-the-override path the moment a
+    // pooling is ever spelled `''`.
+    expect(buildAblationEngineOptions(ALL_OFF).signals.prismPooling).toBe(DEFAULT_PRISM_POOLING);
+    expect(isPrismPooling(DEFAULT_PRISM_POOLING)).toBe(true);
+  });
+
+  it('changes the named field and NOTHING else, so a pooling row moves for one reason', () => {
+    // The property that makes the delta attributable to the pooling: the flags are identical and the
+    // only differing field is the one the row is about. A row that retyped twelve booleans would
+    // attribute a flag's effect to the pooling.
+    const base = buildAblationEngineOptions(ALL_OFF);
+    const conjunctive = buildAblationEngineOptions(ALL_OFF, { prismPooling: 'conjunctive' });
+    const differing = Object.keys(base.signals).filter(
+      (k) =>
+        base.signals[k as keyof typeof base.signals] !==
+        conjunctive.signals[k as keyof typeof conjunctive.signals],
+    );
+    expect(differing).toEqual(['prismPooling']);
+    expect(conjunctive.topology).toEqual(base.topology);
+  });
+
+  it('states the overridden pooling on the line, so the artifact cannot describe the wrong run', () => {
+    // The configuration line is the only thing a reader has; `REPORTED_CONFIG_FIELDS`' own consequence.
+    const line = formatAblationConfigLine(ALL_OFF, { prismPooling: 'conjunctive' });
+    expect(line).toContain('prismPooling=conjunctive');
+    expect(formatAblationConfigLine(ALL_OFF)).toContain(`prismPooling=${DEFAULT_PRISM_POOLING}`);
+    // And the two lines really differ, so the assertion above is not comparing a line to itself.
+    expect(formatAblationConfigLine(ALL_OFF, { prismPooling: 'conjunctive' })).not.toBe(
+      formatAblationConfigLine(ALL_OFF),
+    );
+  });
+
+  it('is inert while the signal is off, which is why the rows must also carry the flag', () => {
+    // The one override here whose effect the weight gates. A row that varied the pooling with
+    // `prismSignal: false` would move nothing and read as a measurement that the pooling does not
+    // matter — which is why the two rows in the battery are the ADDITIVE rows' siblings, flags and all.
+    expect(
+      buildAblationEngineOptions(ALL_OFF, { prismPooling: 'conjunctive' }).signals.prismWeight,
+    ).toBe(0);
+    expect(
+      buildAblationEngineOptions({ ...ALL_OFF, prismSignal: true }, { prismPooling: 'conjunctive' })
+        .signals.prismWeight,
+    ).toBe(1);
+  });
+});
+
 describe('the battery really carries the propagation-channel rows', () => {
   // Source-shape, because `run-ablation.ts` calls `main()` at import time and is importable by nothing. A
   // row that was written and then lost in a refactor is exactly the failure this guards: the term would be
@@ -268,7 +329,7 @@ describe('the battery really carries the propagation-channel rows', () => {
 
   it('threads the override through the container factory, not only through the printed line', () => {
     // A line that states an override the engine never received is worse than no line: it is a false record.
-    expect(RUNNER).toContain('buildContainer(config.flags, config.weights)');
+    expect(RUNNER).toContain('buildContainer(config.flags, config.overrides)');
     expect(RUNNER).toContain('buildAblationEngineOptions(flags, overrides)');
     expect(RUNNER).toContain('buildContainer(PRISM_SWEEP_FLAGS, { prismWeight: weight })');
   });
@@ -286,5 +347,38 @@ describe('the battery really carries the propagation-channel rows', () => {
   it('reports the coverage of those inputs, so a zero can be read as starved or inert', () => {
     expect(RUNNER).toContain('summarizeDirectionalCoverage(bundle.cases)');
     expect(RUNNER).toContain('formatDirectionalCoverage(');
+  });
+
+  it('carries the pooling rows as the additive rows’ SIBLINGS, flags and all', () => {
+    // Source-shape, because the runner calls `main()` at import time. The rows exist because the
+    // pooling axis was unmeasured, and they must differ from their additive siblings in the POOLING
+    // and in nothing else: a row that retyped twelve booleans would attribute a flag's effect to the
+    // pooling, which is the one thing a single-knob ablation must not do.
+    expect(RUNNER).toContain('const PRISM_ONLY_FLAGS: FeatureFlags = {');
+    expect(RUNNER).toContain('const PRODUCTION_PRISM_FLAGS: FeatureFlags = {');
+    const spills = RUNNER.split('flags: { ...PRISM_ONLY_FLAGS }').length - 1;
+    const production = RUNNER.split('flags: { ...PRODUCTION_PRISM_FLAGS }').length - 1;
+    expect(spills, 'the isolated-signal row and its pooling sibling').toBe(2);
+    expect(production, 'the production-configuration row and its pooling sibling').toBe(2);
+    expect(RUNNER.split("overrides: { prismPooling: 'conjunctive' }").length - 1).toBe(2);
+    // And the two named constants really are the rows they claim to be — read from the SOURCE rather
+    // than transcribed, so the siblings are the runner's own flags and not a second copy of them.
+    expect(RUNNER).toMatch(
+      /const PRISM_ONLY_FLAGS: FeatureFlags = \{\s*\.\.\.ALL_OFF_FLAGS,\s*prismSignal: true,\s*\}/,
+    );
+    expect(RUNNER).toMatch(
+      /const PRODUCTION_PRISM_FLAGS: FeatureFlags = \{\s*\.\.\.ALL_OFF_FLAGS,\s*logSignal: true,\s*traceSignal: true,\s*rankNormalization: true,\s*prismSignal: true,\s*\}/,
+    );
+    // The production flags are the shipped configuration's, so the row's label is a claim the source
+    // supports: `logWeight = 1`, `traceWeight = 1` and rank normalisation are what the nine cells run.
+    expect(
+      formatAblationConfigLine({
+        ...ALL_OFF,
+        logSignal: true,
+        traceSignal: true,
+        rankNormalization: true,
+        prismSignal: true,
+      }),
+    ).toContain('logWeight=1');
   });
 });

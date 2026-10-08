@@ -12,7 +12,12 @@
  */
 
 import type { ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
-import { computePrismScores } from '@agentix-e/micro-kinetic-tree';
+import {
+  computePrismScores,
+  DEFAULT_PRISM_POOLING,
+  isPrismPooling,
+  PRISM_POOLINGS,
+} from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
 // ── Helpers ───────────────────────────────────────────────
@@ -127,5 +132,50 @@ describe('computePrismScores', () => {
     const scores = computePrismScores(metrics, nodesOf('svc'), INJECT_MS);
     // Additive M = 2 + 2 − log1p(4); max-normalised to 1.
     expect(scores.get('svc')).toBe(1);
+  });
+
+  it('takes its default from the OWNER constant, so a moved default moves the signal', () => {
+    // The default used to be a literal here. The value is quoted by the engine's
+    // option surface and by the reported configuration line, and a literal is a
+    // second owner of a shipped value that can only drift from the first silently —
+    // the failure this repository has already paid for once.
+    expect(isPrismPooling(DEFAULT_PRISM_POOLING)).toBe(true);
+    const metrics = metricsOf({
+      both: [makeSeries('cpu', [10, 10], [30, 30]), makeSeries('latency', [1, 1], [3, 3])],
+      extOnly: [makeSeries('cpu', [10, 10], [10, 10]), makeSeries('latency', [1, 1], [5, 5])],
+    });
+    const omitted = computePrismScores(metrics, nodesOf('both', 'extOnly'), INJECT_MS);
+    const explicit = computePrismScores(
+      metrics,
+      nodesOf('both', 'extOnly'),
+      INJECT_MS,
+      DEFAULT_PRISM_POOLING,
+    );
+    expect([...omitted.entries()]).toEqual([...explicit.entries()]);
+    // And the default really is the ADDITIVE one rather than whichever happens to
+    // be first: under conjunctive the external-only symptom is gated to 0 while the
+    // both-channel service keeps the maximum, which is a different map.
+    const conjunctive = computePrismScores(
+      metrics,
+      nodesOf('both', 'extOnly'),
+      INJECT_MS,
+      'conjunctive',
+    );
+    expect(conjunctive.get('both')).toBe(1);
+    expect(conjunctive.get('extOnly')).toBe(0);
+    expect(omitted.get('both')).toBe(1);
+    expect(omitted.get('extOnly')).toBeGreaterThan(0);
+  });
+
+  it('re-exports the pooling vocabulary beside the signal that consumes it', () => {
+    // A runner reads its own pooling vocabulary from the module it reads
+    // `computePrismScores` from — the way `--onset-shape` and `--log-signal-mode`
+    // are parsed, through the guard that owns the union rather than through a cast.
+    // The re-export and the core census must be the SAME object, not a copy.
+    expect(Object.keys(PRISM_POOLINGS).sort()).toEqual(['additive', 'conjunctive']);
+    for (const member of Object.keys(PRISM_POOLINGS)) {
+      expect(isPrismPooling(member)).toBe(true);
+    }
+    expect(isPrismPooling('nope')).toBe(false);
   });
 });

@@ -35,13 +35,14 @@
  * @module benchmarks/ablation-engine-options
  */
 
-import type { LogSignalMode, OnsetShape } from '../../packages/tree/src/index.js';
+import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 import {
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -102,6 +103,7 @@ export interface AblationSignalOptions {
   readonly stabilityWeight: number;
   readonly temporalWeight: number;
   readonly onsetShape: OnsetShape;
+  readonly prismPooling: PrismPooling;
 }
 
 /** The second constructor argument: `Partial<TopologyFaultGraphConfig>`. */
@@ -118,7 +120,7 @@ export interface AblationEngineOptions {
 }
 
 /**
- * The weights this study VARIES directly, rather than deriving from a boolean flag.
+ * The engine arguments this study OVERRIDES directly, rather than deriving from a boolean flag.
  *
  * ## Why the study needs this at all
  *
@@ -136,27 +138,50 @@ export interface AblationEngineOptions {
  * falsy, so `override || default` silently returns the shipped weight and the row labelled OFF measures ON.
  * An `undefined` field means "not overridden"; a `0` means "overridden to zero". Only `??` tells them apart.
  *
+ * ## Why the name is not `...WeightOverrides`, and why that is not a rename for its own sake
+ *
+ * It was, and the battery's SECOND gap closes with a field that is not a weight. `prismPooling` selects
+ * WHICH OF PRISM'S TWO COMBINATION FUNCTIONS the fused signal is built with, and the two are not close
+ * variants: the controlled head-to-head (`docs/prism-head-to-head.md`, the identical 735 cases) reads
+ * `additive` at **78.9% overall** while `conjunctive` resolves the code-level block at **RE3 TrainTicket
+ * 76.7% against `additive`'s 33.3%** — the largest single-cell margin in the record, on the weakest cell of
+ * the published nine. A record whose name promised numbers would have to lie about its member or keep the
+ * axis out of the study, and keeping it out is precisely what the engine did: `combinePrismScore` takes the
+ * pooling, the standalone evaluator dispatches it (`run-prism.ts --pooling conjunctive`), and **no engine
+ * run, battery row or dispatch could select it** — the call site omitted the argument, so every one of them
+ * combined additively whatever it asked for. The name now states what the record holds: an override of an
+ * engine argument, keyed by that argument's own name — the vocabulary both artifacts are read in.
+ *
  * @see ABLATION_FINDINGS.md in the docs repository
  */
-export interface AblationWeightOverrides {
+export interface AblationEngineOverrides {
   /** Overrides `prismWeight` (the PRISM sweep's continuum). */
   readonly prismWeight?: number;
   /** Overrides `latWeight` — the per-edge-latency prior's strength. */
   readonly latWeight?: number;
   /** Overrides `latMinRise` — the floor below which a rise is masked out of that prior. */
   readonly latMinRise?: number;
+  /**
+   * Overrides `prismPooling` — which of PRISM's two combination functions the signal is built with.
+   *
+   * The one override here that is not a number, and the reason the record is not called
+   * `...WeightOverrides`. Its effect is inert while `prismWeight` is 0, which is the shipped value, so the
+   * rows that vary it also carry the flag that turns the signal on — otherwise the row would move nothing
+   * and read as a measurement that the pooling does not matter.
+   */
+  readonly prismPooling?: PrismPooling;
 }
 
 /**
  * Build BOTH of the engine's constructor arguments for one ablation configuration.
  *
  * @param flags - The configuration's feature flags.
- * @param overrides - The weights the study varies directly, if this configuration varies any.
+ * @param overrides - The engine arguments the study varies directly, if this configuration varies any.
  * @returns `signals` and `topology`.
  */
 export function buildAblationEngineOptions(
   flags: AblationFeatureFlags,
-  overrides: AblationWeightOverrides = {},
+  overrides: AblationEngineOverrides = {},
 ): AblationEngineOptions {
   return {
     signals: {
@@ -179,6 +204,11 @@ export function buildAblationEngineOptions(
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
+      // The one override that is not a number. Read through `??` for the same reason the weights are: the
+      // shipped pooling is a non-empty STRING, so `||` would silently discard an override the moment a
+      // future pooling were spelled `''` — and, more to the point, one reading of the record for every
+      // field beats two.
+      prismPooling: overrides.prismPooling ?? DEFAULT_PRISM_POOLING,
     },
     topology: {
       collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
@@ -192,12 +222,12 @@ export function buildAblationEngineOptions(
  * The configuration, as one line, in the shape the golden half's artifact uses.
  *
  * @param flags - The configuration's feature flags.
- * @param overrides - The weights the study varies directly, if this configuration varies any.
+ * @param overrides - The engine arguments the study varies directly, if this configuration varies any.
  * @returns One line naming every field of both constructor arguments.
  */
 export function formatAblationConfigLine(
   flags: AblationFeatureFlags,
-  overrides: AblationWeightOverrides = {},
+  overrides: AblationEngineOverrides = {},
 ): string {
   const { signals, topology } = buildAblationEngineOptions(flags, overrides);
   // Every name here is the ENGINE's option name, not the study's flag name: the artifact has to be
@@ -208,7 +238,7 @@ export function formatAblationConfigLine(
     `collisionWeight=${signals.collisionWeight} topoWeight=${signals.topoWeight} ` +
     `logWeight=${signals.logWeight} logSignalMode=${signals.logSignalMode} ` +
     `riseWeight=${signals.riseWeight} traceWeight=${signals.traceWeight} ` +
-    `prismWeight=${signals.prismWeight} latWeight=${signals.latWeight} ` +
+    `prismWeight=${signals.prismWeight} prismPooling=${signals.prismPooling} latWeight=${signals.latWeight} ` +
     `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
     `stabilityWeight=${signals.stabilityWeight} collapseDiscount=${topology.collapseDiscount} ` +
     `rankNormalization=${topology.rankNormalization} ` +

@@ -11,12 +11,15 @@ import {
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  isPrismPooling,
   ONSET_SHAPES,
   POOL_METRIC_PREFIX,
-  TreePruner,
+  PRISM_POOLINGS,
   toRankingWeights,
+  TreePruner,
 } from '@agentix-e/micro-kinetic-tree';
 import { describe, expect, it } from 'vitest';
 
@@ -2059,5 +2062,133 @@ describe('TreePruner — decisive-stability prior', () => {
 
     expect(after.get(STABLE)! - before.get(STABLE)!).toBeCloseTo(weight, 10);
     expect(after.get(NOISY)!).toBeCloseTo(before.get(NOISY)!, 12);
+  });
+});
+
+describe('TreePruner — the PRISM pooling axis', () => {
+  // The option exists to make PRISM's SECOND combination function reachable from the engine.
+  // `combinePrismScore` implemented both poolings and the standalone evaluator dispatched them
+  // (`run-prism.ts --pooling conjunctive`), but the engine's single call site omitted the argument
+  // — so `conjunctive`, the only pooling that resolves the code-level block in the controlled
+  // head-to-head, could not be selected by any engine configuration, any ablation row or any
+  // dispatch. These assertions are the reach, and they are exact rather than directional.
+  const BOTH = 'ts-order-service';
+  const EXT_ONLY = 'ts-ui-dashboard';
+
+  // Eight points at one-minute spacing, injected halfway: the first four are the clean baseline and
+  // the last four the post-fault window, which is the split `deviationZScore` needs.
+  const INJECT_MS = 4 * 60000;
+
+  /**
+   * One candidate anomalous in BOTH channels and one in the EXTERNAL channel alone.
+   *
+   * The asymmetry PRISM is built on, and the fixture is chosen so the two poolings cannot agree:
+   * with a constant baseline the z-score falls back to the relative change, so `BOTH` reads
+   * S^I = S^E = 3 and `EXT_ONLY` reads S^I = 0, S^E = 4. Additive gives 6 − log1p(6) against
+   * 4 − log1p(4) — the external-only symptom is still a candidate. Conjunctive gates it to
+   * min(0, 4) = 0, so it is not.
+   */
+  const makeCase = (): [ServiceCallGraph, MetricMap] => {
+    const metrics = new Map<string, readonly TimeSeries[]>([
+      [
+        BOTH,
+        [
+          makeTimeSeries('cpu_usage', [1, 1, 1, 1, 4, 4, 4, 4]),
+          makeTimeSeries('latency', [1, 1, 1, 1, 4, 4, 4, 4]),
+        ],
+      ],
+      [
+        EXT_ONLY,
+        [
+          makeTimeSeries('cpu_usage', [1, 1, 1, 1, 1, 1, 1, 1]),
+          makeTimeSeries('latency', [1, 1, 1, 1, 5, 5, 5, 5]),
+        ],
+      ],
+    ]);
+    return [makeCallGraph([BOTH, EXT_ONLY], [[EXT_ONLY, BOTH]]), metrics];
+  };
+
+  const build = (pruner: TreePruner) => {
+    const [callGraph, metrics] = makeCase();
+    return pruner.buildFaultGraph(callGraph, metrics, { injectTimeMs: INJECT_MS });
+  };
+
+  const scores = (pruner: TreePruner): Map<string, number> => {
+    const graph = build(pruner);
+    return new Map(pruner.analyze(graph).map((r) => [r.serviceId, r.finalScore!]));
+  };
+
+  it('ships the additive pooling, and the option default IS that value', () => {
+    // Read from the owner constant rather than restated: the value is quoted by the engine's option
+    // surface and by the reported configuration line, and a literal here would be a second copy.
+    expect(isPrismPooling(DEFAULT_PRISM_POOLING)).toBe(true);
+    expect(DEFAULT_PRISM_POOLING).toBe('additive');
+    // And the map the engine builds without naming a pooling is the map the constant names.
+    expect([...build(new TreePruner()).prismScores!]).toEqual([
+      ...build(new TreePruner({ prismPooling: DEFAULT_PRISM_POOLING })).prismScores!,
+    ]);
+  });
+
+  it('FORWARDS the option to the primitive, which is the defect this axis repairs', () => {
+    // The reach assertion, and the one that fails on the pre-repair engine: the call site omitted
+    // the argument, so `prismWeight` carried a score built ADDITIVELY whatever the pruner was
+    // configured with, and both maps below were identical.
+    const additive = build(new TreePruner({ prismPooling: 'additive' })).prismScores!;
+    const conjunctive = build(new TreePruner({ prismPooling: 'conjunctive' })).prismScores!;
+
+    // The both-channel service is the maximum under either pooling, so it pins the normalisation.
+    expect(additive.get(BOTH)).toBe(1);
+    expect(conjunctive.get(BOTH)).toBe(1);
+    // The external-only symptom: a candidate additively, and gated to zero conjunctively. The exact
+    // zero is the asymmetry stated as a hard prior, and it is why the two maps cannot be equal.
+    expect(additive.get(EXT_ONLY)).toBeGreaterThan(0);
+    expect(conjunctive.get(EXT_ONLY)).toBe(0);
+    expect(conjunctive.get(EXT_ONLY)).not.toBe(additive.get(EXT_ONLY));
+  });
+
+  it('moves the cited candidate by exactly the weight when the pooling flips', () => {
+    // A behavioural reading of the same reach, base-independent: `finalScore` carries an
+    // unweighted `log1p(selfAnomaly)` term, so the delta is measured rather than the absolute
+    // value. Weight 1 makes the delta the difference of the two normalised PRISM scores.
+    const weight = 1;
+    const before = scores(new TreePruner({ prismWeight: weight, prismPooling: 'additive' }));
+    const after = scores(new TreePruner({ prismWeight: weight, prismPooling: 'conjunctive' }));
+    const prismAdditive = build(new TreePruner({ prismPooling: 'additive' })).prismScores!;
+    const prismConjunctive = build(new TreePruner({ prismPooling: 'conjunctive' })).prismScores!;
+
+    expect(after.get(EXT_ONLY)! - before.get(EXT_ONLY)!).toBeCloseTo(
+      weight * (prismConjunctive.get(EXT_ONLY)! - prismAdditive.get(EXT_ONLY)!),
+      10,
+    );
+    expect(after.get(BOTH)! - before.get(BOTH)!).toBeCloseTo(0, 10);
+    // And the moved one really moved down by the whole of its score, so the assertion is not a
+    // tautology over two equal numbers.
+    expect(Math.abs(after.get(EXT_ONLY)! - before.get(EXT_ONLY)!)).toBeGreaterThan(0.1);
+  });
+
+  it('is inert while the signal is off, which is why it cannot move a published number', () => {
+    // `prismWeight` ships at 0, so the pooling is inert at the shipped configuration — the property
+    // that makes enrolling this axis a change to the option surface rather than to any measurement.
+    // The shipped side is read from the DEFAULT map the engine builds without naming a pooling.
+    expect([...build(new TreePruner()).prismScores!].length).toBeGreaterThan(0);
+    const additive = scores(new TreePruner({ prismPooling: 'additive' }));
+    const conjunctive = scores(new TreePruner({ prismPooling: 'conjunctive' }));
+    const shipped = scores(new TreePruner());
+    expect([...conjunctive.entries()]).toEqual([...additive.entries()]);
+    expect([...shipped.entries()]).toEqual([...additive.entries()]);
+  });
+
+  it('states the pooling on the vocabulary the union owns, not a second spelling', () => {
+    // The option's own type is the union, and the vocabulary it is read against is the core census
+    // — so a runner cannot describe a pooling the primitive does not implement. The reach is
+    // exercised above; this asserts the NAME, because `--onset-shape` and `--log-signal-mode` both
+    // once parsed against hand-written pairs that were subsets of the engine's union.
+    expect(Object.keys(PRISM_POOLINGS).sort()).toEqual(['additive', 'conjunctive']);
+    for (const member of Object.keys(PRISM_POOLINGS) as (keyof typeof PRISM_POOLINGS)[]) {
+      expect(isPrismPooling(member)).toBe(true);
+      // Building with each member is accepted rather than falling back, which is what "the union
+      // is the accepted set" means for an option with no runtime guard of its own.
+      expect(() => build(new TreePruner({ prismPooling: member }))).not.toThrow();
+    }
   });
 });

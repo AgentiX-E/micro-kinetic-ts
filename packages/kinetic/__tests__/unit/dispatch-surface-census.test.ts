@@ -311,6 +311,12 @@ const KNOBS: Readonly<
     fse26: null,
     rcaeval: null,
   },
+  prismPooling: {
+    flag: '--prism-pooling',
+    owner: 'prism-pooling-axis.md',
+    fse26: null,
+    rcaeval: null,
+  },
   collapseDiscount: {
     flag: '--collapse-discount',
     owner: COMMENT_ONLY,
@@ -418,7 +424,7 @@ function axisOf(option: string): string {
 /**
  * The accepted ranking flags RCAEval cannot dispatch, as an exact set.
  *
- * 11 of the runner's 17 ranking flags are unreachable through the workflow, so a candidate
+ * 12 of the runner's 18 ranking flags are unreachable through the workflow, so a candidate
  * on any of them has an undecidable golden half unless an input is added first. That is not
  * a hypothetical consequence either: the temporal rejection carries `golden: 'unmeasured'`
  * for exactly this reason.
@@ -426,6 +432,12 @@ function axisOf(option: string): string {
  * `--log-signal-mode` LEFT this set when its workflow input was added. It is recorded rather
  * than silently dropped, because the members of the set are the register's inventory of open
  * axes and a set that shrinks without a note is a set nobody can audit.
+ *
+ * `--prism-pooling` is the newest member and the reason the set is not merely an inheritance:
+ * the pooling it names was implemented in the primitive and selectable by the standalone
+ * evaluator, while **no engine configuration could select it at all** — the call site omitted
+ * the argument. An option the runner accepts and the engine could not act on is the same
+ * shape as an option the workflow cannot reach, and both are open axes.
  */
 const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   '--collapse-discount',
@@ -433,6 +445,7 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   '--fusion-ceiling',
   '--no-suppress-idle-transients',
   '--no-suppress-near-zero-baseline-rise',
+  '--prism-pooling',
   '--prism-weight',
   '--rank-normalization',
   '--suppress-idle-transients',
@@ -679,10 +692,15 @@ describe('the dispatch surface has one owner per knob', () => {
     // one. It cannot be caught behaviourally, because the two agree NOW, so it is caught in the
     // SOURCE: a term with an exported default must name it, and only `0` — the unambiguous "off"
     // value of an opt-in term that has no constant of its own — may be a literal fallback.
+    //
+    // `prismPooling` is the first entry here that is not a NUMBER. It belongs for the same reason: the
+    // shipped pooling is an exported constant, and a parser spelling the string `'additive'` by hand
+    // would agree with the engine today and be a copy of it tomorrow.
     const owned = [
       'logWeight',
       'latWeight',
       'poolMetricPenaltyWeight',
+      'prismPooling',
       'stabilityWeight',
       'temporalWeight',
     ];
@@ -703,6 +721,15 @@ describe('the dispatch surface has one owner per knob', () => {
           new RegExp(`${knob}: (?!DEFAULT_)\\d`),
         );
         expect(text, `${name} names ${knob}`).toContain(knob);
+        // … AND BY NAME, which the digit pattern cannot do for a value that has no digit in it. The
+        // pattern above is `(?!DEFAULT_)\d`, so a literal spelled `prismPooling: 'additive'` satisfies
+        // it — measured, not hypothesised: that exact mutation SURVIVED the first version of this
+        // loop, because every other owned value here is a NUMBER and the pooling is the first that is
+        // not. `DEFAULT_` by name is the uniform rule the numeric arm was approximating, and it
+        // subsumes it: a numeric literal cannot be `DEFAULT_<NAME>`.
+        expect(text, `${name}: ${knob} must name DEFAULT_<CONSTANT>`).toMatch(
+          new RegExp(`${knob}:\\s*DEFAULT_[A-Z0-9_]+`),
+        );
       }
       expect(text, `${name}: no non-zero literal fallback`).not.toMatch(
         /parseWeight\([^)]*!, (?!0\b)(?!DEFAULT_)\d/,

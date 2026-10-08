@@ -3,7 +3,7 @@
 **Status:** instrument shipped and gated (`packages/kinetic/__tests__/unit/dispatch-surface-census.test.ts`,
 10 tests, 13 mutations all killed), and the structural gap it found is **closed**: the four knobs both runners
 accept were dispatchable on the FSE'26 half alone, so the kill criterion was decidable for exactly ONE knob;
-`benchmark-rcaeval.yml` now exposes all five, and every input is threaded into all seven invocations
+`benchmark-rcaeval.yml` now exposes all six, and every input is threaded into all seven invocations
 (`benchmarks/__tests__/benchmark-rcaeval-trigger.test.ts`).
 
 It found four things, one of which was produced **while writing it**: a careful hand search of the register and
@@ -61,17 +61,26 @@ it at all**, which is a fact about the kill criterion rather than bookkeeping.
 | `topoWeight` | `--topo-weight` | — | — | `fse26-metric-competition-verdict.md` |
 | `traceWeight` | `--trace-weight` | — | — | `rank-collapse-falsified.md` |
 | `prismWeight` | `--prism-weight` | — | — | `fusion-routing-verdict.md` |
+| `prismPooling` | `--prism-pooling` | — | — | `prism-pooling-axis.md` |
 | `suppressIdleTransients` | `--suppress-idle-transients` | — | — | `near-zero-rise-suppression-falsified.md` |
 | `suppressNearZeroBaselineRise` | `--suppress-near-zero-baseline-rise` | — | — | `near-zero-rise-suppression-falsified.md` |
 | `collapseDiscount` | `--collapse-discount` | — | — | **a code comment only** |
 | `fusionCeiling` | `--fusion-ceiling` | — | — | **not a ranking knob** |
 
-23 knobs, 26 flags (three switches have two poles, and the RCAEval runner exposes both while the FSE'26 parser
-exposes one). 14 ranking flags are accepted by the FSE'26 CLI (`benchmarks/src/fse26-cli.ts`) and 17 by the RCAEval
+24 knobs, 27 flags (three switches have two poles, and the RCAEval runner exposes both while the FSE'26 parser
+exposes one). 14 ranking flags are accepted by the FSE'26 CLI (`benchmarks/src/fse26-cli.ts`) and 18 by the RCAEval
 parser (`benchmarks/src/rcaeval-cli.ts`, extracted from `run-rcaeval.ts` so a test can drive it — see
-`docs/cli-argument-rejection-audit.md`). **Five knobs are dispatchable on BOTH benchmarks**, which is the set on
-which the kill criterion is decidable at all: `logWeight`, `rankNormalization`, `onsetShape`, `stabilityWeight`,
-`temporalWeight`.
+`docs/cli-argument-rejection-audit.md`). **Six knobs are dispatchable on BOTH benchmarks**, which is the set on
+which the kill criterion is decidable at all: `logWeight`, `logSignalMode`, `onsetShape`, `rankNormalization`,
+`stabilityWeight`, `temporalWeight`. (The sixth is counted as an AXIS rather than as a row: the FSE'26 parser
+spells it `--log-mode` and the RCAEval one `--log-signal-mode`, and both reach the engine's single
+`logSignalMode` field — a row-wise intersection reported the axis as undispatchable for two iterations.)
+
+`prismPooling` is the newest row and the reason the population is not merely inherited: the knob it names was
+implemented in `combinePrismScore` and selectable by the standalone evaluator, while **no engine configuration
+could select it at all** — the engine's single call site omitted the argument. An option the runner accepts and
+the engine cannot act on is the same shape as an option the workflow cannot reach, and `--prism-pooling` is
+recorded in the undispatchable set for the same reason. See `docs/prism-pooling-axis.md`.
 
 ## Finding 1 — no ranking knob is merely unmeasured, and that claim needed the right key
 
@@ -104,15 +113,16 @@ one-element intersection `{stabilityWeight}` — and that element existed only b
 needed it.
 
 **Closed, and the boundary is principled rather than convenient.** `benchmark-rcaeval.yml` now exposes those
-four inputs, so the intersection is `{logWeight, rankNormalization, onsetShape, stabilityWeight,
-temporalWeight}` — five knobs, 12 ranking flags still unreachable. The four added are exactly the knobs BOTH
-runners accept: adding an RCAEval-only knob (`--collision-weight`, `--trace-weight`, …) would grow the surface
-without growing the set of answerable questions, because the FSE'26 half would still be unreachable.
+four inputs, so the intersection is `{logWeight, logSignalMode, rankNormalization, onsetShape, stabilityWeight,
+temporalWeight}` — six knobs, 12 ranking flags still unreachable. The four added are exactly the knobs BOTH
+runners accept: adding an RCAEval-only knob (`--collision-weight`, `--trace-weight`, `--prism-weight`, …) would
+grow the surface without growing the set of answerable questions, because the FSE'26 half would still be
+unreachable.
 
 | benchmark | accepted | dispatchable | undispatchable |
 | --- | --- | --- | --- |
 | FSE'26 | 14 | **14** | 0 |
-| RCAEval | 17 | **5** | 12 |
+| RCAEval | 18 | **6** | 12 |
 
 **Two instances in the record acquire a structural cause, and one of them is a closed loop:**
 
@@ -231,9 +241,11 @@ source assertion in the new guard fails instead); and the census gains the direc
    in the table. The second direction was missing, in the expensive way: four inputs were added to the RCAEval
    workflow and the guard stayed green, because the intersection it checked was computed from the table rather
    than from the workflows.
-4. The four non-derivable option names, the one-element dispatchable intersection, and the sixteen
+4. The four non-derivable option names, the six-knob dispatchable intersection, and the twelve
    RCAEval-undispatchable flags are recorded as **exact sets** — so a new non-derivable name, a newly
-   dispatchable knob, or a newly unreachable one is a failing test rather than a discovery.
+   dispatchable knob, or a newly unreachable one is a failing test rather than a discovery. (This is what
+   caught `--prism-pooling` on the way in: the flag had to be classified, and classifying it is what forced
+   its owner document to exist.)
 5. **Every artifact-shaping flag a runner ACCEPTS is reachable from the workflow that drives it**, or is
    named in an exception table WITH its reason — the direction the ranking tables cannot cover. Reachability
    is read in CODE, not in prose: these workflows document their flags in `#` blocks directly above the code

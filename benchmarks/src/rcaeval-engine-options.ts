@@ -28,7 +28,7 @@
  * @module benchmarks/rcaeval-engine-options
  */
 
-import type { LogSignalMode, OnsetShape } from '../../packages/tree/src/index.js';
+import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 
 import type { CliOptions } from './rcaeval-cli.js';
 
@@ -55,6 +55,7 @@ export interface RCAEvalSignalOptions {
   readonly logSignalMode: LogSignalMode;
   readonly traceWeight: number;
   readonly prismWeight: number;
+  readonly prismPooling: PrismPooling;
 }
 
 /**
@@ -130,6 +131,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       logSignalMode: opts.logSignalMode,
       traceWeight: opts.traceWeight,
       prismWeight: opts.prismWeight,
+      prismPooling: opts.prismPooling,
     },
     topology: {
       collapseDiscount: opts.collapseDiscount,
@@ -168,7 +170,8 @@ export function formatSignalLine(opts: CliOptions): string {
     `latWeight=${opts.latWeight} latMinRise=${opts.latMinRise} ` +
     `poolMetricPenaltyWeight=${opts.poolMetricPenaltyWeight} ` +
     `collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} ` +
-    `prismWeight=${opts.prismWeight} rankNormalization=${opts.rankNormalization} ` +
+    `prismWeight=${opts.prismWeight} prismPooling=${opts.prismPooling} ` +
+    `rankNormalization=${opts.rankNormalization} ` +
     `suppressIdleTransients=${opts.suppressIdleTransients} ` +
     `suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`

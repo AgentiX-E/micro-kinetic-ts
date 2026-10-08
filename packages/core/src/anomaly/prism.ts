@@ -43,6 +43,49 @@ export type MetricChannel = 'internal' | 'external';
 export type PrismPooling = 'additive' | 'conjunctive';
 
 /**
+ * Every pooling, as a `Record` over the union.
+ *
+ * Exhaustive by construction: a new member of {@link PrismPooling} is a COMPILE error here until it is
+ * named. The value is unused; the keys are the vocabulary.
+ *
+ * It lives BESIDE THE UNION, and that is the point rather than tidiness. `combinePrismScore` is the
+ * paper's single combination step, shared by the standalone head-to-head evaluator and the ranking
+ * signal fused into the collision-tree engine — and the two reached the combination DIFFERENTLY: the
+ * evaluator took a `pooling` option (`scripts/run-prism.ts --pooling conjunctive`, which is how the
+ * alternative was ever measured), while the engine's one call site
+ * (`tree/pruning/pruner.ts`: `computePrismScores(metrics, nodeIds, injectTimeMs)`) omitted the argument
+ * and therefore received `additive` **whatever the engine was configured with**. The second pooling was
+ * unreachable from the engine and from every runner built on it, which is why `docs/prism-head-to-head.md`
+ * can report a per-cell table for `conjunctive` that no engine configuration can reproduce. One union, one
+ * owner, one census.
+ */
+export const PRISM_POOLINGS: Readonly<Record<PrismPooling, true>> = {
+  additive: true,
+  conjunctive: true,
+};
+
+/**
+ * The pooling `combinePrismScore` applies when its caller names none.
+ *
+ * The paper's default, and it is a CONSTANT rather than a literal at the call site for the reason the
+ * engine's other shipped values are: the value is quoted by the option surface, by the reported
+ * configuration line, and by this module's own default parameter, and three literal copies of one shipped
+ * value is the shape that has already published a number 24.2pp below the best-measured one.
+ */
+export const DEFAULT_PRISM_POOLING: PrismPooling = 'additive';
+
+/**
+ * Whether a raw argument names a pooling.
+ *
+ * `hasOwnProperty.call` rather than `in`: a `Record` is an object, so the prototype chain makes
+ * `toString`, `constructor` and `__proto__` reachable and `in` would accept all three — and `toString`
+ * is a token a dispatch can really send.
+ */
+export function isPrismPooling(value: string): value is PrismPooling {
+  return Object.prototype.hasOwnProperty.call(PRISM_POOLINGS, value);
+}
+
+/**
  * Classify a metric name as an internal or external property.
  *
  * Internal properties are local resource states not directly observable by
@@ -158,15 +201,19 @@ export function deviationZScore(ts: TimeSeries, injectTimeMs: number): number {
  *   it is anomalous in BOTH channels, so the score is gated by the weaker
  *   channel — an external-only symptom scores 0.
  *
+ * Both poolings are REACHABLE from the engine: the pooling travels as
+ * `TreePrunerOptions.prismPooling` (see {@link PRISM_POOLINGS}), so a run can
+ * state which one it used instead of inheriting this default in silence.
+ *
  * @param internalScore - Pooled internal anomaly score S^I (≥ 0).
  * @param externalScore - Pooled external anomaly score S^E (≥ 0).
- * @param pooling - Combination function (`additive` default).
+ * @param pooling - Combination function; defaults to {@link DEFAULT_PRISM_POOLING}, the paper's own.
  * @returns The component's PRISM score M(C) (≥ 0).
  */
 export function combinePrismScore(
   internalScore: number,
   externalScore: number,
-  pooling: PrismPooling = 'additive',
+  pooling: PrismPooling = DEFAULT_PRISM_POOLING,
 ): number {
   if (pooling === 'conjunctive') return Math.min(internalScore, externalScore);
   const sum = internalScore + externalScore;

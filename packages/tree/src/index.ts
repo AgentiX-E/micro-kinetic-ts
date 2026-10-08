@@ -124,7 +124,13 @@ export type {
   TraceActivityOptions,
 } from './pruning/ranking-signals.js';
 
-export { computePrismScores } from './pruning/prism-signal.js';
+export {
+  DEFAULT_PRISM_POOLING,
+  PRISM_POOLINGS,
+  computePrismScores,
+  isPrismPooling,
+} from './pruning/prism-signal.js';
+export type { PrismPooling } from './pruning/prism-signal.js';
 
 // RCA
 export { TreeRCAEngine } from './rca/tree-rca.js';

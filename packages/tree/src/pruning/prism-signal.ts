@@ -37,9 +37,26 @@ import type { ServiceId, TimeSeries } from '@agentix-e/micro-kinetic-core';
 import {
   classifyMetricChannel,
   combinePrismScore,
+  DEFAULT_PRISM_POOLING,
   deviationZScore,
   type PrismPooling,
 } from '@agentix-e/micro-kinetic-core';
+
+/**
+ * The pooling vocabulary, re-exported beside the signal that consumes it.
+ *
+ * The census and its guard live in `core` because `combinePrismScore` is shared with the standalone
+ * evaluator (one union, one owner — see {@link PRISM_POOLINGS}). They are surfaced here so a runner
+ * reads its own pooling vocabulary from the same module it reads `computePrismScores` from, which is
+ * how `--onset-shape` and `--log-signal-mode` are parsed: through the guard that owns the union rather
+ * than through a cast or a hand-written pair.
+ */
+export {
+  DEFAULT_PRISM_POOLING,
+  isPrismPooling,
+  PRISM_POOLINGS,
+} from '@agentix-e/micro-kinetic-core';
+export type { PrismPooling } from '@agentix-e/micro-kinetic-core';
 
 /**
  * Compute the PRISM root-cause score for each graph member, max-normalised to
@@ -54,15 +71,15 @@ import {
  * @param metrics - Per-service time series, keyed by service id.
  * @param nodeIds - Services present in the call graph.
  * @param injectTimeMs - Fault injection time (Unix ms; 0 = unknown → empty).
- * @param pooling - Combination function (`additive` default; `conjunctive`
- *   gates an external-only symptom to 0).
+ * @param pooling - Combination function; defaults to {@link DEFAULT_PRISM_POOLING}
+ *   (the paper's additive form). `conjunctive` gates an external-only symptom to 0.
  * @returns Per-service PRISM score in [0, 1]; empty when no signal.
  */
 export function computePrismScores(
   metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
   nodeIds: ReadonlySet<ServiceId>,
   injectTimeMs: number,
-  pooling: PrismPooling = 'additive',
+  pooling: PrismPooling = DEFAULT_PRISM_POOLING,
 ): Map<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   // PRISM needs the injection instant to split the clean pre-fault baseline

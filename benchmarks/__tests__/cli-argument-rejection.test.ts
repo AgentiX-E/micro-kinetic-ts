@@ -188,6 +188,13 @@ describe('an unrecognised argument fails loudly', () => {
     expect(parseRCAEvalArgs(['--onset-shape', 'not-a-shape']).onsetShape).toBe('earliness');
     // And a shape that IS one is taken, which is the arm a typo test does not reach.
     expect(parseRCAEvalArgs(['--onset-shape', 'earliness']).onsetShape).toBe('earliness');
+    // The PRISM pooling is a two-member vocabulary, and BOTH directions are asserted: the whole union
+    // is taken by the union's own guard, and a token that is genuinely not a member falls back to the
+    // SHIPPED pooling. The guard is case-sensitive, so a miscased member is not a member.
+    expect(parseRCAEvalArgs(['--prism-pooling', 'conjunctive']).prismPooling).toBe('conjunctive');
+    expect(parseRCAEvalArgs(['--prism-pooling', 'additive']).prismPooling).toBe('additive');
+    expect(parseRCAEvalArgs(['--prism-pooling', 'Additive']).prismPooling).toBe('additive');
+    expect(parseRCAEvalArgs(['--prism-pooling', 'nope']).prismPooling).toBe('additive');
     // A count that is not a number falls back to "no cap", not to a truncated one.
     expect(parseRCAEvalArgs(['--max-cases', 'abc']).maxCases).toBe(0);
     expect(parseRCAEvalArgs(['--max-cases', '50']).maxCases).toBe(50);

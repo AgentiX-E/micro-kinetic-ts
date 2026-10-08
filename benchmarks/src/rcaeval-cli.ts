@@ -58,8 +58,13 @@ import {
 } from '../../packages/tree/src/pruning/pruner.js';
 
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
-import type { LogSignalMode } from '../../packages/tree/src/index.js';
-import { DEFAULT_RANK_NORMALIZATION, isLogSignalMode } from '../../packages/tree/src/index.js';
+import type { LogSignalMode, PrismPooling } from '../../packages/tree/src/index.js';
+import {
+  DEFAULT_PRISM_POOLING,
+  DEFAULT_RANK_NORMALIZATION,
+  isLogSignalMode,
+  isPrismPooling,
+} from '../../packages/tree/src/index.js';
 
 import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
 
@@ -202,6 +207,19 @@ export interface CliOptions {
    */
   prismWeight: number;
   /**
+   * Which of PRISM's two combination functions the PRISM signal is built with.
+   *
+   * `additive` (the paper's default, and the shipped one) and `conjunctive` are not close variants:
+   * the controlled head-to-head (`docs/prism-head-to-head.md`) reads `additive` at 78.9% overall while
+   * `conjunctive` resolves the code-level block — **RE3 TrainTicket 76.7% against `additive`'s 33.3%**,
+   * on the weakest cell of the published nine (51.1%). The engine accepted no pooling at all until this
+   * iteration, so the second column of that table was reproducible only by the standalone evaluator.
+   *
+   * Inert while {@link prismWeight} is 0, which is the shipped value and the reason this flag cannot
+   * move a published number on its own. Read from {@link DEFAULT_PRISM_POOLING} rather than restated.
+   */
+  prismPooling: PrismPooling;
+  /**
    * Direction-aware deviation: discount the DROP component of a metric's
    * deviation by this factor (0 = symmetric, 1 = ignore drops entirely). A
    * traffic-loss collapse (symptom) is discounted so it cannot out-rank an
@@ -290,6 +308,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     collapseDiscount: 0,
     traceWeight: 0,
     prismWeight: 0,
+    // From the owner, not a literal: the engine's own constructor default is the same constant, so this
+    // runner cannot describe a pooling the engine does not ship. Inert at `prismWeight = 0`.
+    prismPooling: DEFAULT_PRISM_POOLING,
     // Rank/quantile normalization of per-service anomaly scores is the default:
     // it is robust to a single near-zero-baseline symptom spike that would
     // otherwise set the min-max range max and crush the genuine source toward
@@ -354,7 +375,18 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.traceWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--prism-weight' && hasValue(args, i + 1))
       opts.prismWeight = parseWeight(args[++i]!, 0);
-    else if (args[i] === '--log-signal-mode' && hasValue(args, i + 1)) {
+    else if (args[i] === '--prism-pooling' && hasValue(args, i + 1)) {
+      // The whole vocabulary, by the union's own guard — the `--log-signal-mode` repair applied to the
+      // other two-member vocabulary on this surface rather than a second hand-written pair. A test asserts
+      // the accepted set is the union rather than a subset of it, because a subset is exactly what this
+      // flag would have been given: only one of the two poolings was ever reachable from the engine.
+      //
+      // An unusable VALUE falls back to the SHIPPED pooling, like every other mode flag here: a typo must
+      // reproduce a published configuration rather than invent one. The value is inert while
+      // `prismWeight` is 0.
+      const pooling = args[++i]!;
+      opts.prismPooling = isPrismPooling(pooling) ? pooling : DEFAULT_PRISM_POOLING;
+    } else if (args[i] === '--log-signal-mode' && hasValue(args, i + 1)) {
       const raw = args[++i]!;
       // The whole union, by the union's own guard. A hand-written pair lived here, and here is
       // where `all` was thrown away: it is the mode that admits every ERROR/FATAL line, which is
