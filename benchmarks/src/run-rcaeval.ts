@@ -59,6 +59,10 @@ import type {
   CasePrediction,
   RunResult,
 } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+// The suite-number fold. This file used to own it inline; it is now owned once, for both this path and
+// the study's, because the two of them had implemented it with DIFFERENT conventions and the difference
+// was recorded as an input defect for three runs (see the module's own header).
+import { meanOverFaultTypes } from '../../packages/kinetic/src/benchmarks/runners/suite-accuracy.js';
 import { augmentTopologyWithTraces } from '../../packages/kinetic/src/signals/trace-topology.js';
 import { toEngineDirectionalInputs } from './directional-evidence.js';
 
@@ -723,7 +727,9 @@ function printResultsTable(
         row += `   N/A |`;
       }
     }
-    const avg = averages.length > 0 ? averages.reduce((s, v) => s + v, 0) / averages.length : 0;
+    // The published convention, over the cells this table just printed — NOT over the cases. The two
+    // coincide only when every fault type holds the same number of cases, which is RE1 and is not RE2/RE3.
+    const avg = meanOverFaultTypes(averages);
     row += ` ${avg.toFixed(1).padStart(5)}% ║`;
     console.log(row);
   }

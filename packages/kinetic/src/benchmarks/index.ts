@@ -109,6 +109,14 @@ export type {
 } from './leaderboard/prism-sweep.js';
 
 export {
+  caseWeightedMean,
+  meanOverFaultTypes,
+  rollupSuiteAccuracy,
+} from './runners/suite-accuracy.js';
+
+export type { AccuracyCell, AccuracyRollup } from './runners/suite-accuracy.js';
+
+export {
   RESOURCE_FAULT_TYPES,
   analyzeRoutingProbe,
   engineMargin,

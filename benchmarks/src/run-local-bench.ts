@@ -23,6 +23,7 @@ import type {
   BenchmarkSuite,
 } from '../../packages/kinetic/src/benchmarks/loaders/types.js';
 import { BenchmarkRunner } from '../../packages/kinetic/src/benchmarks/runners/benchmark-runner.js';
+import { meanOverFaultTypes } from '../../packages/kinetic/src/benchmarks/runners/suite-accuracy.js';
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
@@ -240,7 +241,7 @@ async function main(): Promise<void> {
     // Print AC@1 row
     let row = '║ Micro-Kinetic       | AC@1   |';
     for (const v of avgs) row += ` ${(v * 100).toFixed(1).padStart(5)}% |`;
-    const avg = avgs.reduce((s, v) => s + v, 0) / avgs.length;
+    const avg = meanOverFaultTypes(avgs);
     row += ` ${(avg * 100).toFixed(1).padStart(5)}% ║`;
     console.log(row);
     console.log(`╚${'═'.repeat(80)}╝`);

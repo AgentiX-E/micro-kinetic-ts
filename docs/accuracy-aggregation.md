@@ -1,0 +1,105 @@
+# Accuracy aggregation — one quantity, five owners, two conventions
+
+**Status:** defect found, repaired and fenced. **No published number moves**: the golden half's fold is
+reproduced bit-for-bit by the owner's function, and the study half now reports the published convention as
+its headline with its own convention printed beside it.
+
+## 1. The defect
+
+RCAEval's published table reports, per system, an `AVERAGE` column beside one column per fault type. That
+column is the **unweighted mean of the fault-type accuracies**, and the nine published cells are its values.
+It existed as an inline expression in `benchmarks/src/run-rcaeval.ts`:
+
+```ts
+const avg = averages.reduce((s, v) => s + v, 0) / averages.length;   // mean over FAULT TYPES
+```
+
+**The same quantity was then implemented fourteen more times across five more sites, and eleven of those in
+the other convention** — the mean over CASES:
+
+| site | folded | convention |
+| --- | --- | --- |
+| `run-rcaeval.ts`, the table's `AVERAGE` | fault-type accuracies → a system's AC@1 | **published** |
+| `run-local-bench.ts` | the same | **published, written out a second time** |
+| `run-ablation.ts`, per system | the same | case-weighted (`allA1 += avgTop1 × cases`) |
+| `prism-sweep.ts`, `analyzePrismSweep`'s `overall` | the same, over cells | case-weighted |
+| `benchmark-runner.ts`, `runAll` | the same, over suites | case-weighted ×4 (**the method has no callers at all**) |
+| `benchmark-runner.ts`, the three report formatters | the same, for a summary line | case-weighted ×6 (labelled `weightedAvg`, so honest) |
+
+The two conventions are **not** interchangeable and they are **not** close: they coincide **iff every cell
+holds the same number of cases**, which is RE1 (all cells 25 cases) and is not RE2 or RE3. Nothing on any
+artifact named which one a number was in.
+
+## 2. The evidence — the frozen artifacts of run `37764638225`
+
+This is not a theoretical concern. The register carried a standing, unexplained disagreement: the study's
+instruments read RE3 at **53.33%** where the golden read **58.70%**, and it had been investigated for three
+runs as an *input* defect. The golden's own artifact prints the per-fault-type columns, so the two can be
+compared cell by cell:
+
+| cell | golden (per fault type) | study (per fault type) | agreement |
+| --- | --- | --- | --- |
+| RE1 OB | 92.0 / 88.0 / 84.0 / 44.0 / 92.0 | 92 / 88 / 84 / 44 / 92 | **identical** |
+| RE1 SS | 100 / 100 / 100 / 68 / 96 | 100 / 100 / 100 / 68 / 96 | **identical** |
+| RE1 TT | 80.0 / 72.0 / 48.0 / 48.0 / 92.0 | 80 / 72 / 48 / 48 / 92 | **identical** |
+| RE2 OB | 88.9 / 66.7 / 100.0 / 55.6 / 100.0 / 83.3 | 88.9 / 66.7 / 100 / 55.6 / 100 / 83.3 | **identical** |
+| RE2 SS | 100.0 / 66.7 / 100.0 / 100.0 / 100.0 / 66.7 | 100 / 66.7 / 100 / 100 / 100 / 66.7 | **identical** |
+| RE2 TT | 77.8 / **55.6** / 66.7 / 33.3 / 75.0 / 100.0 | 77.8 / **77.8** / 66.7 / 33.3 / 75.0 / 100 | one cell, 2 cases |
+| RE3 OB | 83.3 / 83.3 / 100.0 / 33.3 / 100.0 | {83.3, 83.3, 100, 33.3, 100} | **identical (multiset)** |
+| RE3 SS | 60.0 / 20.0 / 0.0 / 100.0 | {60, 20, 0, 100} | **identical (multiset)** |
+| RE3 TT | 57.1 / 57.1 / 40.0 / 50.0 | {57.1, 57.1, 40, 50} | **identical (multiset)** |
+
+**Thirteen of the fourteen comparable cells are identical per fault type.** The nine published cells are the
+mean over the printed columns; the study's were the mean over the cases:
+
+| system | golden `AVERAGE` (type mean) | study (case mean) |
+| --- | ---: | ---: |
+| RE3 OB | (83.3+83.3+100+33.3+100)/5 = **80.0** | (9·33.3+3·100+6·83.3+6·83.3+6·100)/30 = **73.3** |
+| RE3 SS | (60+20+0+100)/4 = **45.0** | (10·60+3·100+10·20+7·0)/30 = **36.7** |
+| RE3 TT | (57.1+57.1+40+50)/4 = **51.1** | (7·57.1+7·57.1+10·40+6·50)/30 = **50.0** |
+
+So the recorded 5.37pp RE3 gap is **entirely a fold**, and RE1 agreed only because 25 = 25 = 25.
+
+## 3. The repair
+
+`packages/kinetic/src/benchmarks/runners/suite-accuracy.ts` owns both conventions:
+
+- `meanOverFaultTypes(values)` — the **published** fold, unit-agnostic and accumulating in input order, so it
+  reproduces the golden's inline expression bit-for-bit (the byte-pinned golden fence is the evidence);
+- `caseWeightedMean(cells)` — the study's fold, kept because it reports a weight's effect in the unit the
+  weight acts on;
+- `rollupSuiteAccuracy(cells)` — **both at once**, which is the refusal: a caller cannot obtain the published
+  statistic without the case-weighted one appearing in the same object.
+
+Every site now calls it, and each site's **choice** is a call rather than a re-derivation. The study's
+instruments report the published convention as the **headline** (`AVG`) and their own as a named second
+column (`CW`), and name both on the artifact itself; `analyzePrismSweep` picks its best zero-regression column
+in the published convention and ships both curves (`overall`, `caseWeightedOverall`).
+
+## 4. What the record carried, and what the artifacts say
+
+Two things the register stated before this, both now corrected:
+
+1. **§100's hypothesis was wrong, and this is the correction.** It recorded the RE3 gap as probably caused by
+   `run-ablation.ts` not attaching per-case trace spans where `run-rcaeval.ts` does, with the "cheap first
+   read" being to print whether a case carried spans. The per-fault-type columns above are that read, done
+   against frozen artifacts, and they refute the hypothesis: the accuracies are the same numbers. **The
+   input was never the problem; the fold was.**
+2. **A real, separate asymmetry survives, and it costs exactly one cell.** `run-rcaeval.ts` calls
+   `augmentTopologyWithTraces(callGraph, spans, { minCallFrequency: 1 })` for every case that has traces, and
+   `run-ablation.ts` never calls it — its only route is the runner's `traceOpts`, gated on the `traceAugmentation`
+   feature flag, which is `false` in every row of the battery. The golden's own artifact states the size of
+   what the study therefore does without: `[trace] 50/50 cases with traces, 50 pruned, avg edges: 20 → 9
+   (55% reduction)` (RE2 OB), `218 → 39` (RE2 TT), `23 → 9` (RE3 OB), `218 → 41` (RE3 TT); RE1 carries no
+   traces and records none. **The one cell this shows up in is RE2 TT, one fault type, 2 cases of 9** — every
+   other trace-bearing cell agrees per fault type. So it is named and measured as a residual rather than
+   claimed as resolved: the two paths do not build one corpus, and the ablation's rows are measured on the
+   unpruned graph.
+
+## 5. Gates
+
+`packages/kinetic` (own tests) · `benchmarks/__tests__/accuracy-aggregation.test.ts` (the census fence,
+which found the runner's nine further copies by asserting their ABSENCE) · `packages/kinetic`'s
+`prism-sweep.test.ts`, whose one failing assertion **was** the defect restated as an expectation
+(`overall[0] === 0.75` for a 75/25 split — the case mean) and now asserts both conventions · both
+typechecks · lint · format.

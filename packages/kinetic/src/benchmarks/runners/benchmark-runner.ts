@@ -29,6 +29,7 @@ import type { BenchmarkCase, BenchmarkSuite } from '../loaders/types.js';
 
 import { toFaultGraphOptions } from './fault-graph-options.js';
 import { computeAvgAtK, computeTA } from './metrics.js';
+import { caseWeightedMean } from './suite-accuracy.js';
 
 import type { TrainingExample } from '../../signals/weight-calibrator.js';
 import { WeightCalibrator } from '../../signals/weight-calibrator.js';
@@ -769,6 +770,23 @@ export class BenchmarkRunner {
    * @param suites - Array of benchmark suites to run.
    * @returns CompleteBenchmarkReport with aggregated metrics.
    */
+  /**
+   * Fold these results' metric into one number, in the CASE-WEIGHTED convention.
+   *
+   * This class used to derive it in nine places: four in {@link runAll}, two in each of the three report
+   * formatters. They all agreed, which is why they looked harmless — but they were nine copies of a fold
+   * that the published table does NOT use (RCAEval's `AVERAGE` column is the unweighted mean over fault
+   * types), and a copy that agrees today is a copy that can stop agreeing without anything failing. The
+   * convention is now a CALL, so this file's choice is stated once and the arithmetic lives in one place.
+   *
+   * @param results - The per-suite results to fold.
+   * @param pick - Which metric of a result to fold.
+   * @returns The case-weighted mean, or `0` when no result carries a case.
+   */
+  private caseWeighted(results: readonly RunResult[], pick: (r: RunResult) => number): number {
+    return caseWeightedMean(results.map((r) => ({ accuracy: pick(r), cases: r.totalCases })));
+  }
+
   async runAll(suites: readonly BenchmarkSuite[]): Promise<CompleteBenchmarkReport> {
     const startTime = Date.now();
     const suiteResults: RunResult[] = [];
@@ -781,23 +799,14 @@ export class BenchmarkRunner {
     const totalCases = suiteResults.reduce((sum, r) => sum + r.totalCases, 0);
     const totalFailures = suiteResults.reduce((sum, r) => sum + r.failures.length, 0);
 
-    // Weighted aggregate metrics
-    const aggregateAvgTop1 =
-      totalCases > 0
-        ? suiteResults.reduce((sum, r) => sum + r.avgTop1 * r.totalCases, 0) / totalCases
-        : 0;
-    const aggregateAvgTop5 =
-      totalCases > 0
-        ? suiteResults.reduce((sum, r) => sum + r.avgTop5 * r.totalCases, 0) / totalCases
-        : 0;
-    const aggregateLA =
-      totalCases > 0
-        ? suiteResults.reduce((sum, r) => sum + r.locationAccuracy * r.totalCases, 0) / totalCases
-        : 0;
-    const aggregateTA =
-      totalCases > 0
-        ? suiteResults.reduce((sum, r) => sum + r.typeAccuracy * r.totalCases, 0) / totalCases
-        : 0;
+    // Case-weighted aggregates, and now NAMED as such by calling the owner's function for that
+    // convention rather than re-deriving it here. This method's own summary reports it as weighted, so
+    // the convention is not a defect — but it was a fourth hand-rolled implementation of the same
+    // quantity, and a site that does not go through the owner is a site that can drift from it.
+    const aggregateAvgTop1 = this.caseWeighted(suiteResults, (r) => r.avgTop1);
+    const aggregateAvgTop5 = this.caseWeighted(suiteResults, (r) => r.avgTop5);
+    const aggregateLA = this.caseWeighted(suiteResults, (r) => r.locationAccuracy);
+    const aggregateTA = this.caseWeighted(suiteResults, (r) => r.typeAccuracy);
 
     const totalDuration = Date.now() - startTime;
 
@@ -903,8 +912,8 @@ export class BenchmarkRunner {
     lines.push(`    Total Failures:   ${totalFailures}`);
 
     if (totalCases > 0) {
-      const weightedAvg1 = results.reduce((s, r) => s + r.avgTop1 * r.totalCases, 0) / totalCases;
-      const weightedAvg5 = results.reduce((s, r) => s + r.avgTop5 * r.totalCases, 0) / totalCases;
+      const weightedAvg1 = this.caseWeighted(results, (r) => r.avgTop1);
+      const weightedAvg5 = this.caseWeighted(results, (r) => r.avgTop5);
       lines.push(`    Weighted Avg@1:   ${(weightedAvg1 * 100).toFixed(1)}%`);
       lines.push(`    Weighted Avg@5:   ${(weightedAvg5 * 100).toFixed(1)}%`);
     }
@@ -919,10 +928,8 @@ export class BenchmarkRunner {
     const totalCases = results.reduce((s, r) => s + r.totalCases, 0);
     const totalFailures = results.reduce((s, r) => s + r.failures.length, 0);
 
-    const weightedAvg1 =
-      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop1 * r.totalCases, 0) / totalCases : 0;
-    const weightedAvg5 =
-      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop5 * r.totalCases, 0) / totalCases : 0;
+    const weightedAvg1 = this.caseWeighted(results, (r) => r.avgTop1);
+    const weightedAvg5 = this.caseWeighted(results, (r) => r.avgTop5);
 
     const report = {
       timestamp: new Date().toISOString(),
@@ -959,10 +966,8 @@ export class BenchmarkRunner {
   private generateHtmlReport(results: readonly RunResult[]): string {
     const totalCases = results.reduce((s, r) => s + r.totalCases, 0);
     const totalFailures = results.reduce((s, r) => s + r.failures.length, 0);
-    const weightedAvg1 =
-      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop1 * r.totalCases, 0) / totalCases : 0;
-    const weightedAvg5 =
-      totalCases > 0 ? results.reduce((s, r) => s + r.avgTop5 * r.totalCases, 0) / totalCases : 0;
+    const weightedAvg1 = this.caseWeighted(results, (r) => r.avgTop1);
+    const weightedAvg5 = this.caseWeighted(results, (r) => r.avgTop5);
 
     const suiteRows = results
       .map((r) => {

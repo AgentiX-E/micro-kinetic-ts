@@ -38,6 +38,10 @@ import {
   countDirectionalInputs,
   countTraceActivityByService,
   DEFAULT_PRISM_POOLING,
+  // The one owner of the per-fault-type → suite fold. This study had its own convention for it, and
+  // the convention was the whole of a disagreement that was investigated for three runs as an input
+  // defect (see the module's header). The published statistic is now the headline on BOTH paths.
+  meanOverFaultTypes,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
 import type {
@@ -83,6 +87,16 @@ interface AblationRun {
 }
 
 interface AblationResult {
+  /**
+   * The PUBLISHED convention — the unweighted mean of this system's per-fault-type accuracies, which is
+   * what RCAEval's `AVERAGE` column and therefore the nine published cells report. This is the headline.
+   */
+  publishedA1: number;
+  /**
+   * The study's own convention — the mean over cases. Kept because it reports a weight's effect in the
+   * unit the weight acts on, reported BESIDE `publishedA1` and never instead of it. The two differ only
+   * when the fault types hold unequal numbers of cases, which is every suite but RE1.
+   */
   aTop1: number;
   aTop5: number;
   la: number;
@@ -1123,9 +1137,14 @@ async function main(): Promise<void> {
       console.log(row);
     }
 
-    // ── Weighted overall + zero-regression frontier ──
+    // ── Overall + zero-regression frontier ──
     console.log(`\n${'═'.repeat(80)}`);
-    console.log('PRISM SWEEP — Weighted Overall + Zero-Regression Frontier');
+    console.log('PRISM SWEEP — Overall + Zero-Regression Frontier');
+    console.log(
+      '  overall = mean over CELLS (fault types) — the published convention, and what BEST is chosen by.' +
+        "\n  cw      = mean over CASES — the study's original convention. They differ unless every cell" +
+        '\n            holds the same case count, which is RE1 alone.',
+    );
     console.log('═'.repeat(80));
     for (const r of analysis.readings) {
       const tag =
@@ -1133,21 +1152,28 @@ async function main(): Promise<void> {
           ? 'ZERO-REGRESSION'
           : `regress: ${r.regressingCells.join(', ')}`;
       console.log(
-        `  ${r.point.label.padEnd(17)}  overall=${`${(r.overall * 100).toFixed(2)}%`.padStart(7)}  ${tag}`,
+        `  ${r.point.label.padEnd(17)}  overall=${`${(r.overall * 100).toFixed(2)}%`.padStart(7)}` +
+          `  cw=${`${(r.caseWeighted * 100).toFixed(2)}%`.padStart(7)}  ${tag}`,
       );
     }
     // The no-op control, asserted rather than trusted: `prismWeight = 0` multiplies the signal
     // away whatever the pooling, so the shipped-pooling and other-pooling weight-0 columns MUST
     // read the same in every cell. If they ever differ, the pooling is reaching the ranking at
-    // weight zero and no column above is the configuration its label claims.
+    // weight zero and no column above is the configuration its label claims. BOTH curves are
+    // checked, because a control that holds in one convention and not the other is not a control.
     const zeroColumns = analysis.readings.filter((r) => r.point.weight === 0);
     if (zeroColumns.length > 1) {
       const reference = zeroColumns[0]!;
-      const drift = zeroColumns.slice(1).filter((r) => r.overall !== reference.overall);
+      const drift = zeroColumns
+        .slice(1)
+        .filter(
+          (r) => r.overall !== reference.overall || r.caseWeighted !== reference.caseWeighted,
+        );
       console.log(
         drift.length === 0
           ? `\n  no-op control OK: ${zeroColumns.length} weight-0 columns agree to the float` +
-              ` (${reference.point.label} = ${(reference.overall * 100).toFixed(2)}%)`
+              ` in both conventions (${reference.point.label} = ${(reference.overall * 100).toFixed(2)}%` +
+              ` overall, ${(reference.caseWeighted * 100).toFixed(2)}% cw)`
           : `\n  no-op control FAILED: ${drift.map((r) => `${r.point.label}=${(r.overall * 100).toFixed(2)}%`).join(', ')}` +
               ` differ from ${reference.point.label}=${(reference.overall * 100).toFixed(2)}% — the pooling moves the ranking at weight 0`,
       );
@@ -1171,6 +1197,7 @@ async function main(): Promise<void> {
       cells: cellList,
       analysis: {
         overall: analysis.overall,
+        caseWeightedOverall: analysis.caseWeightedOverall,
         zeroRegressionPoints: analysis.zeroRegressionPoints,
         bestZeroRegression: analysis.bestZeroRegression,
       },
@@ -1259,6 +1286,10 @@ async function main(): Promise<void> {
       let totalCases = 0,
         totalFailures = 0,
         totalDuration = 0;
+      // One sample per (fault type, repetition) cell: the population the PUBLISHED convention folds.
+      // Collected rather than folded as we go precisely because the fold must not be the case-weighted
+      // one — the whole point of the pair is that the same cells give two different, nameable numbers.
+      const ftSamples: number[] = [];
       const perFaultType = new Map<string, { cases: number; accuracy: number }>();
       const reps: number[] = [];
 
@@ -1313,6 +1344,9 @@ async function main(): Promise<void> {
           allTA += result.typeAccuracy * suite.cases.length;
           totalFailures += result.failures.length;
           totalDuration += result.duration;
+          // The suite is one fault type by construction, so this IS that cell's accuracy — the same
+          // number the case-weighted accumulation above consumes, folded the other way.
+          ftSamples.push(result.avgTop1);
 
           // Per-fault-type
           const existing = perFaultType.get(ft) ?? { cases: 0, accuracy: 0 };
@@ -1340,8 +1374,11 @@ async function main(): Promise<void> {
       const avgA5 = totalCases > 0 ? allA5 / totalCases : 0;
       const avgLA = totalCases > 0 ? allLA / totalCases : 0;
       const avgTA = totalCases > 0 ? allTA / totalCases : 0;
+      // The headline. `avgA1` above is the case-weighted one and is reported beside it, never instead.
+      const publishedA1 = meanOverFaultTypes(ftSamples);
 
       allRuns[ci]!.results.set(systemName, {
+        publishedA1,
         aTop1: avgA1,
         aTop5: avgA5,
         la: avgLA,
@@ -1354,9 +1391,10 @@ async function main(): Promise<void> {
       });
 
       console.log(
-        `  A@1=${(avgA1 * 100).toFixed(1)}% A@5=${(avgA5 * 100).toFixed(1)}% ` +
-          `LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}% ` +
-          `(${totalCases} cases, ${totalFailures} failures, ${totalDuration}ms)`,
+        `  ${systemName}: A@1=${(publishedA1 * 100).toFixed(1)}% (published, ${ftSamples.length} type-cells)` +
+          `  cw=${(avgA1 * 100).toFixed(1)}% (case-weighted, ${totalCases} case-reps)` +
+          `  A@5=${(avgA5 * 100).toFixed(1)}% LA=${(avgLA * 100).toFixed(1)}% TA=${(avgTA * 100).toFixed(1)}%` +
+          `  (${totalFailures} failures, ${totalDuration}ms)`,
       );
 
       // Yield to event loop after each config so GC can collect temporary
@@ -1385,35 +1423,54 @@ async function main(): Promise<void> {
   const datasets = [...systemGroups.keys()];
   let header = `${'Configuration'.padEnd(30)}`;
   for (const ds of datasets) header += ` ${ds.padEnd(16)}`;
-  header += ' AVG';
+  header += ' AVG    CW';
+  console.log(header);
+  // The two folds, named on the artifact itself. A reader of the artifact is otherwise left to guess
+  // which convention a number is in — which is exactly the guess that cost three runs of investigation.
+  console.log(
+    '  AVG = per-system mean over FAULT TYPES (the published convention; the nine cells are in it).' +
+      '  CW = per-system mean over CASES.',
+  );
+  console.log(
+    '  They coincide only where every fault type holds the same case count, which is RE1 alone.',
+  );
   console.log(header);
   console.log('─'.repeat(80));
 
   const baseline = allRuns[0]!;
   const baselineAvgs = new Map<string, number>();
-  for (const [ds, r] of baseline.results) baselineAvgs.set(ds, r.aTop1);
+  for (const [ds, r] of baseline.results) baselineAvgs.set(ds, r.publishedA1);
 
   for (const run of allRuns) {
     let row = `${run.label.padEnd(30)}`;
     let totalA1 = 0;
+    let totalCw = 0;
     let count = 0;
     for (const ds of datasets) {
       const r = run.results.get(ds);
-      const val = r ? (r.aTop1 * 100).toFixed(1) + '%' : '     N/A';
+      // The PUBLISHED convention — the one the nine published cells are in. The case-weighted number
+      // this column used to carry is the `CW` column at the end of the row.
+      const val = r ? (r.publishedA1 * 100).toFixed(1) + '%' : '     N/A';
       row += ` ${val.padEnd(16)}`;
       if (r) {
-        totalA1 += r.aTop1;
+        totalA1 += r.publishedA1;
+        totalCw += r.aTop1;
         count++;
       }
     }
-    const avg = count > 0 ? ((totalA1 / count) * 100).toFixed(1) + '%' : 'N/A';
+    // The row average is the mean over the SYSTEMS in this row — a third population, neither the fault
+    // types nor the cases, and named here so it is not mistaken for either. It is computed once: the
+    // delta used to recompute the same quotient a second time under a different name.
+    const rowAvg = count > 0 ? totalA1 / count : 0;
+    const rowCwAvg = count > 0 ? totalCw / count : 0;
+    const avg = count > 0 ? (rowAvg * 100).toFixed(1) + '%' : 'N/A';
+    const cwAvg = count > 0 ? (rowCwAvg * 100).toFixed(1) + '%' : 'N/A';
 
-    // Δ vs baseline
-    const bAvg = count > 0 ? totalA1 / count : 0;
+    // Δ vs baseline, over the same population.
     const baseAvg = count > 0 ? [...baselineAvgs.values()].reduce((s, v) => s + v, 0) / count : 0;
-    const delta = bAvg - baseAvg;
+    const delta = rowAvg - baseAvg;
     const deltaStr = delta >= 0 ? `+${(delta * 100).toFixed(1)}%` : `${(delta * 100).toFixed(1)}%`;
-    row += ` ${avg.padEnd(6)} Δ${deltaStr}`;
+    row += ` ${avg.padEnd(6)} ${cwAvg.padEnd(6)} Δ${deltaStr}`;
     console.log(row);
   }
 
@@ -1474,6 +1531,7 @@ async function main(): Promise<void> {
         [...r.results.entries()].map(([ds, res]) => [
           ds,
           {
+            publishedA1: res.publishedA1,
             aTop1: res.aTop1,
             aTop5: res.aTop5,
             la: res.la,

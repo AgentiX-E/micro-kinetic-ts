@@ -49,6 +49,9 @@ export {
 } from '@agentix-e/micro-kinetic-core';
 export type { PrismPooling } from '@agentix-e/micro-kinetic-core';
 
+// The fold every instrument now shares, so "the overall" cannot mean two things on two paths.
+import { meanOverFaultTypes } from '../runners/suite-accuracy.js';
+
 /**
  * One point of the swept axis: the configuration a column was measured at.
  *
@@ -94,8 +97,16 @@ export interface SweepCell {
 export interface SweepReading {
   /** The axis point this column was measured at. */
   readonly point: AxisPoint;
-  /** Weighted overall AC@1 across all cells at this point. */
+  /**
+   * Overall AC@1 across all cells at this point, in the PUBLISHED convention — the unweighted mean over
+   * the cells, which is what RCAEval's `AVERAGE` column and the nine published cells report.
+   */
   readonly overall: number;
+  /**
+   * The same cells in the study's original convention — the mean over cases. Reported beside `overall`
+   * because the two are different statistics and only differ when the cells hold unequal case counts.
+   */
+  readonly caseWeighted: number;
   /** Cells whose AC@1 fell below their baseline (the axis's first point) here. */
   readonly regressingCells: readonly string[];
 }
@@ -104,8 +115,10 @@ export interface SweepReading {
 export interface PrismSweepAnalysis {
   /** The axis, in the order it was measured. */
   readonly axis: readonly AxisPoint[];
-  /** Weighted overall AC@1 per point (parallel to `axis`). */
+  /** Overall AC@1 per point (parallel to `axis`), in the published convention. */
   readonly overall: readonly number[];
+  /** The same curve in the case-weighted convention. */
+  readonly caseWeightedOverall: readonly number[];
   /** Per-point detail (parallel to `axis`). */
   readonly readings: readonly SweepReading[];
   /** Points where NO cell regresses (the zero-regression frontier). */
@@ -184,6 +197,7 @@ export function analyzePrismSweep(
   for (const c of cells) totalCases += c.cases;
 
   const overall: number[] = Array.from({ length: n }, () => 0);
+  const caseWeightedOverall: number[] = Array.from({ length: n }, () => 0);
   const regressingByPoint: string[][] = Array.from({ length: n }, () => []);
 
   for (let i = 0; i < n; i++) {
@@ -196,7 +210,11 @@ export function analyzePrismSweep(
         regressingByPoint[i]!.push(c.key);
       }
     }
-    overall[i] = totalCases > 0 ? correct / totalCases : 0;
+    // The headline is the PUBLISHED convention, because this curve is what the frontier's "best" is
+    // chosen by and a best chosen in a convention the published cells are not in names a configuration
+    // that cannot be compared to them. The case-weighted curve is reported beside it, never instead.
+    overall[i] = meanOverFaultTypes(cells.map((c) => c.accuracy[i]!));
+    caseWeightedOverall[i] = totalCases > 0 ? correct / totalCases : 0;
   }
 
   const zeroRegressionPoints: AxisPoint[] = [];
@@ -205,6 +223,7 @@ export function analyzePrismSweep(
     readings.push({
       point: axis[i]!,
       overall: overall[i]!,
+      caseWeighted: caseWeightedOverall[i]!,
       regressingCells: regressingByPoint[i]!,
     });
     if (regressingByPoint[i]!.length === 0) {
@@ -239,6 +258,7 @@ export function analyzePrismSweep(
   return {
     axis,
     overall,
+    caseWeightedOverall,
     readings,
     zeroRegressionPoints,
     bestZeroRegression: best,

@@ -63,14 +63,28 @@ describe('analyzePrismSweep', () => {
     expectBest(a, 1.0, 0.7, 0.2);
   });
 
-  it('computes the weighted overall from per-cell case counts', () => {
-    // 75 cases at 100% dominate 25 cases at 0% → (75*1 + 25*0) / 100 = 0.75.
+  it('folds the overall by FAULT TYPE, and reports the case-weighted one beside it', () => {
+    // This test used to assert `overall[0] === 0.75` for this fixture — the mean over CASES — and it
+    // was the assertion that carried the defect: RCAEval's `AVERAGE` column, and therefore the nine
+    // published cells, are the mean over the cells. On an unbalanced population the two differ, and
+    // 0.5 against 0.75 is the difference stated in the units this test already had.
+    //
+    // Both numbers are asserted, because the point is not that one is right — it is that the analyzer
+    // must not be able to return one while being read as the other.
     const a = analyzePrismSweep(additiveLadder([0, 0.5]), [
       cell('big', 75, [1.0, 1.0]),
       cell('small', 25, [0.0, 1.0]),
     ]);
-    expect(a.overall[0]).toBeCloseTo(0.75);
+    // Published: (100% + 0%) / 2 cells.
+    expect(a.overall[0]).toBeCloseTo(0.5);
+    // Study: (75 cases × 100% + 25 cases × 0%) / 100 cases.
+    expect(a.caseWeightedOverall[0]).toBeCloseTo(0.75);
+    expect(a.readings[0]!.overall).toBeCloseTo(0.5);
+    expect(a.readings[0]!.caseWeighted).toBeCloseTo(0.75);
+    // At the second point every cell is correct, so the conventions agree — the property that makes
+    // the disagreement a property of the population rather than of the analyzer.
     expect(a.overall[1]).toBeCloseTo(1.0);
+    expect(a.caseWeightedOverall[1]).toBeCloseTo(1.0);
   });
 
   it('detects a regressing cell at one point but not another', () => {
