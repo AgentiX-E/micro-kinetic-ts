@@ -61,9 +61,12 @@ DECLARED = {
     'rcaeval-re1': 60,
     'rcaeval-re2': 60,
     'rcaeval-re3': 60,
-    'ablation-re1': 60,
-    'ablation-re2': 60,
-    'ablation-re3': 60,
+    # The three ablation jobs moved to 90 when the battery grew from 30 to 33 configs: `ablation-re2`
+    # measured **53.6 min of 60** on run `37838593082`, so a bound of 60 would have classified a healthy
+    # run as STUCK. The rcaeval and optimize jobs did not move — their measured worst case is 18.5 min.
+    'ablation-re1': 90,
+    'ablation-re2': 90,
+    'ablation-re3': 90,
     'optimize-rcaeval': 60,
     'dashboard': 10,
 }
@@ -155,7 +158,7 @@ class JobBoundsTest(unittest.TestCase):
     def test_the_bound_carries_the_owner_that_supplied_it(self):
         declared = landing.job_bounds(WORKFLOW_TEXT)
         self.assertEqual(landing.resolve_bound('ablation-re2', declared).source, 'workflow')
-        self.assertEqual(landing.resolve_bound('ablation-re2', declared).minutes, 60)
+        self.assertEqual(landing.resolve_bound('ablation-re2', declared).minutes, 90)
         # A job the workflow does not bound falls back to the PLATFORM's default, and names it: the
         # number exists either way, and what varies is which owner supplied it. Substituting a
         # constant here would hide exactly the six-hour wait the fence above exists to prevent.
@@ -172,8 +175,9 @@ class ClassifyJobTest(unittest.TestCase):
 
     def test_a_job_inside_its_own_bound_is_WORKING(self):
         # THE case the record got wrong. `ablation-re3` on run 35482507910 had been running 27.5
-        # minutes of its own 60 when the cancel was issued — the record read that as the jobs not
-        # finishing, and the classifier must read it as licensed work with 32.5 minutes left.
+        # minutes of its own bound when the cancel was issued — the record read that as the jobs not
+        # finishing, and the classifier must read it as licensed work with the remainder left. The
+        # remainder is read from the workflow, so it moved when the bound did (60 -> 90).
         live = landing.classify_job(
             job('ablation-re3', started='2026-09-20T02:02:23Z'),
             self.declared,
@@ -181,7 +185,7 @@ class ClassifyJobTest(unittest.TestCase):
         )
         self.assertEqual(live.verdict, 'WORKING')
         self.assertAlmostEqual(live.elapsed_minutes, 27.483, places=3)
-        self.assertAlmostEqual(live.remaining_minutes, 32.517, places=3)
+        self.assertAlmostEqual(live.remaining_minutes, 62.517, places=3)
         self.assertEqual(live.bound.source, 'workflow')
 
     def test_a_job_past_its_own_bound_is_OVERDUE(self):
@@ -262,9 +266,11 @@ class LandingTest(unittest.TestCase):
 
     def test_the_run_the_record_called_hung_was_WORKING(self):
         # Run 35482507910 as it stood at the instant of the cancel. `re1` had already finished; the
-        # other two were 26.0 and 27.5 minutes into their own 60. The verdict is WORKING, and the
-        # LICENCE — the longest wait the subject's own bounds permit — is 32.5 minutes. The cancel
-        # was issued with 32.5 minutes of licensed wait left, which is the whole finding.
+        # other two were 26.0 and 27.5 minutes into their own bound. The verdict is WORKING, and the
+        # LICENCE — the longest wait the subject's own bounds permit — is the SMALLEST remaining
+        # bound, because that is when the next job could be killed. The cancel was issued with that
+        # much licensed wait left, which is the whole finding. Both numbers are read from the
+        # workflow, so they moved with it (60 -> 90).
         state = landing.landing(
             run(status='in_progress', created='2026-09-20T01:52:27Z',
                 updated='2026-09-20T02:29:52Z'),
@@ -284,7 +290,7 @@ class LandingTest(unittest.TestCase):
         )
         self.assertEqual(state.verdict, 'WORKING')
         self.assertNotEqual(state.verdict, 'OVERDUE')
-        self.assertAlmostEqual(state.licence_minutes, 32.517, places=3)
+        self.assertAlmostEqual(state.licence_minutes, 62.517, places=3)
         self.assertAlmostEqual(state.run_elapsed_minutes, 37.417, places=3)
         by_name = {one.name: one for one in state.jobs}
         self.assertEqual(by_name['ablation-re1'].verdict, 'COMPLETED')
@@ -412,9 +418,9 @@ class ReportTest(unittest.TestCase):
         # The licence is a NUMBER with its owner, not an adjective: the job's own bound, from the
         # workflow that declared it, and how much of it is left.
         self.assertIn('ablation-re3', text)
-        self.assertIn('60 min', text)
+        self.assertIn('90 min', text)
         self.assertIn('workflow', text)
-        self.assertIn('32.5 min left', text)
+        self.assertIn('62.5 min left', text)
         # And the one instruction the tool exists to give.
         self.assertIn('DO NOT CANCEL', text)
         self.assertIn('no cancel path', text)

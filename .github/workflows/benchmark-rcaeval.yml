@@ -614,7 +614,12 @@ jobs:
     needs: rcaeval-re1
     if: needs.rcaeval-re1.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # `timeout-minutes` is a WORKING-versus-STUCK bound, not a target, and the corpus work moved the real cost
+    # past it: `ablation-re2` measured **53.6 min** on run `37838593082` against a bound of 60 (it was ~14 min
+    # before the curves were augmented from traces), and the battery grew from 30 to 33 configs when the
+    # latency-channel rows were added — a projection of ~59. A bound a WORKING job can hit classifies a healthy
+    # run as STUCK, which costs more than a longer wait; `golden_run_landing.py` reads this number.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -657,7 +662,9 @@ jobs:
     needs: rcaeval-re2
     if: needs.rcaeval-re2.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The binding job: measured 53.6 min of 60 on run `37838593082`, ~59 projected with three more configs. See
+    # `ablation-re1` for why the bound moved rather than the battery shrinking.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -700,7 +707,8 @@ jobs:
     needs: rcaeval-re3
     if: needs.rcaeval-re3.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 32.4 min of 60 measured on run `37838593082`. See `ablation-re1` for why the bound moved.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

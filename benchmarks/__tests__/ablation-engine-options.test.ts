@@ -348,10 +348,12 @@ describe('the battery really carries the propagation-channel rows', () => {
         new RegExp(`flags: \\{ \\.\\.\\.ALL_OFF_FLAGS \\},\\s*overrides: \\{ ${escaped} \\}`),
       );
     }
-    // And the population is pinned WITH its composition named, so a seventh row forces a decision instead of
+    // And the population is pinned WITH its composition named, so a tenth row forces a decision instead of
     // silently joining a group whose flags nobody re-checked: three for the propagation channel's 2x2, three
-    // for the two priors.
-    expect(RUNNER.split('flags: { ...ALL_OFF_FLAGS }').length - 1, '6 numeric rows').toBe(6);
+    // for the two priors, and three for the corpus rows that rank on another view of `edgeLatency` — which
+    // change the INPUT rather than a weight, and must therefore hold the engine's flags identical for the same
+    // reason the six above do.
+    expect(RUNNER.split('flags: { ...ALL_OFF_FLAGS }').length - 1, '9 numeric rows').toBe(9);
     expect(RUNNER, 'and it is defined once').toContain('const ALL_OFF_FLAGS: FeatureFlags = {');
   });
 

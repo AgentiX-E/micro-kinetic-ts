@@ -688,3 +688,208 @@ export function formatInputCoverage(coverage: InputCoverage, label: string): str
   );
   return lines;
 }
+
+// ── The latency-route census: three derivations of ONE quantity, and where each of them dies ──
+//
+// `input-coverage` above can say that `latency` holds nothing, and that is all it can say: STARVED names the
+// term's verdict but not the mechanism, and `latWeight` is read by three DIFFERENT derivations of the same
+// array. Iteration 73 left the sharpest question in the register open on exactly that ambiguity — RE3
+// OnlineBoutique reads `failedEdges 15/30` while `latency 0/30`, from one file, in the same cases — and the
+// candidate mechanisms predict the SAME zero while differing in everything else:
+//
+// - a **missing anchor** (`tryLoadInjectTime` degrades to `0`, and every span is after zero) leaves the capped
+//   list with no pre-injection span;
+// - a **unit defect** (a value already in milliseconds scaled by 1000 again) leaves it with no pre-injection
+//   span either — the same signature, one layer up;
+// - a **truncating cap** (`tryLoadTraces` reads a byte prefix) leaves it with no POST-injection span, which is
+//   the opposite signature.
+//
+// The counts below separate them, because the anchor's presence and the cap's landing side are both observable
+// and so is each route's row count. What is NOT observable from a single number is the difference between "the
+// input is absent" and "the derivation cannot express it" — which is the whole point.
+
+/** One case's contribution to the latency-route census. Computed by the corpus owner, aggregated here. */
+export interface LatencyRouteEntry {
+  /**
+   * Whether the case carried a usable fault injection time.
+   *
+   * The THIRD way every span can end up on the "after" side, and it has to be counted separately or it
+   * silently impersonates the other two: `tryLoadInjectTime` degrades to `0` when `inject_time.txt` is absent
+   * or unparsable, and an anchor of zero puts every span after it — so the ALL-AFTER signature is produced by a
+   * missing anchor just as it is by a start time scaled twice. One boolean removes the confound.
+   */
+  readonly anchorPresent: boolean;
+  /** Spans in the case's CAPPED list, which is the input every view but `whole-file` reads. */
+  readonly capSpans: number;
+  /** Of those, how many start before the injection anchor. */
+  readonly capPre: number;
+  readonly capPost: number;
+  /** Rows each view produced, so a zero can be attributed to a view rather than to the channel. */
+  readonly shippedRows: number;
+  readonly cappedRows: number;
+  readonly wholeFileRows: number;
+}
+
+/** The latency channel's three routes over one population. */
+export interface LatencyRouteCensus {
+  readonly cases: number;
+  /** Cases with no usable injection anchor, whose split is therefore "everything is after". */
+  readonly casesWithoutAnchor: number;
+  /** Cases whose capped list held at least one span. */
+  readonly casesWithCapSpans: number;
+  readonly capSpans: number;
+  readonly capPre: number;
+  readonly capPost: number;
+  /** Cases whose capped list lies ENTIRELY at/after the anchor — the signature of the double scale. */
+  readonly casesCapAllAfter: number;
+  /** Cases whose capped list lies ENTIRELY before the anchor — the signature of a cap that truncates early. */
+  readonly casesCapAllBefore: number;
+  /** Cases whose capped list holds both sides, so a rise is expressible for at least one edge. */
+  readonly casesCapComparable: number;
+  readonly shippedCases: number;
+  readonly shippedRows: number;
+  readonly cappedCases: number;
+  readonly cappedRows: number;
+  readonly wholeFileCases: number;
+  readonly wholeFileRows: number;
+}
+
+/**
+ * Aggregate the per-case entries.
+ *
+ * @param entries - One entry per assembled trace-bearing case. A case with no traces contributes its zeros.
+ * @returns The counts, with `cases` = the population size.
+ */
+export function summarizeLatencyRoutes(entries: readonly LatencyRouteEntry[]): LatencyRouteCensus {
+  let casesWithoutAnchor = 0;
+  let casesWithCapSpans = 0;
+  let capSpans = 0;
+  let capPre = 0;
+  let capPost = 0;
+  let casesCapAllAfter = 0;
+  let casesCapAllBefore = 0;
+  let casesCapComparable = 0;
+  let shippedCases = 0;
+  let shippedRows = 0;
+  let cappedCases = 0;
+  let cappedRows = 0;
+  let wholeFileCases = 0;
+  let wholeFileRows = 0;
+  for (const e of entries) {
+    if (!e.anchorPresent) casesWithoutAnchor++;
+    if (e.capSpans > 0) {
+      casesWithCapSpans++;
+      capSpans += e.capSpans;
+      capPre += e.capPre;
+      capPost += e.capPost;
+      if (e.capPre === 0) casesCapAllAfter++;
+      else if (e.capPost === 0) casesCapAllBefore++;
+      else casesCapComparable++;
+    }
+    if (e.shippedRows > 0) {
+      shippedCases++;
+      shippedRows += e.shippedRows;
+    }
+    if (e.cappedRows > 0) {
+      cappedCases++;
+      cappedRows += e.cappedRows;
+    }
+    if (e.wholeFileRows > 0) {
+      wholeFileCases++;
+      wholeFileRows += e.wholeFileRows;
+    }
+  }
+  return {
+    cases: entries.length,
+    casesWithoutAnchor,
+    casesWithCapSpans,
+    capSpans,
+    capPre,
+    capPost,
+    casesCapAllAfter,
+    casesCapAllBefore,
+    casesCapComparable,
+    shippedCases,
+    shippedRows,
+    cappedCases,
+    cappedRows,
+    wholeFileCases,
+    wholeFileRows,
+  };
+}
+
+/**
+ * The verdict the three routes' counts earn — the mechanism, named, with its own discriminator.
+ *
+ * The arms are ordered so that the FIRST one that can be read decides, and the order is a claim about which
+ * reading is stronger: a view that produced a row is not explained away by a starvation, and a cap that landed
+ * on one side is a statement about the input that no row count can overrule. The `whole-file` clause is
+ * appended rather than made its own arm because it is not a competing explanation — it is the same population
+ * read through the one derivation that sees the whole file, and its presence is what distinguishes "the corpus
+ * cannot express this" from "the input never arrived".
+ *
+ * @param c - The census.
+ * @returns One line. The arms are exclusive and the last one is a residue rather than a catch-all — see its
+ *          own note — and the whole-file discriminator is appended whenever the capped routes are dead and the
+ *          streaming route is not.
+ */
+export function latencyChannelVerdict(c: LatencyRouteCensus): string {
+  const counter = `${c.casesCapAllAfter + c.casesCapAllBefore + c.casesCapComparable}`;
+  const live =
+    `the WHOLE-FILE route yields ${c.wholeFileRows} rows in ${c.wholeFileCases}/${counter} cases — ` +
+    `the channel is not starved; its input is discarded at the assembly`;
+  let verdict: string;
+  if (c.shippedCases > 0) {
+    verdict = `LIVE (shipped) — ${c.shippedRows} rows in ${c.shippedCases} cases`;
+  } else if (c.capSpans === 0) {
+    verdict = `STARVED — the capped list holds no spans at all`;
+  } else if (c.casesWithoutAnchor > 0) {
+    // FIRST among the mechanisms that empty the pre side, because it produces the same signature as the next
+    // arm and the next arm is the one a reader would otherwise conclude: with no anchor, `atMs < 0` is false
+    // for every span, so every span is "after" it and no edge can have a pre-side mean — without any start time
+    // being scaled wrongly. Reading ALL-AFTER here would name a defect the run may not have.
+    //
+    // Its rate is over the POPULATION, not over `counter`: a missing anchor is a property of the case, whereas
+    // `counter` counts the cases that had spans to split. Two denominators in one sentence would make the
+    // reader compare a count of cases against a count of cases-with-spans.
+    verdict =
+      `NO ANCHOR — ${c.casesWithoutAnchor}/${c.cases} cases carry no usable injection time ` +
+      `(inject_time.txt absent or unparsable), so every span is after it`;
+  } else if (c.casesCapAllAfter > 0) {
+    verdict =
+      `ALL-AFTER — ${c.casesCapAllAfter}/${counter} cases put EVERY capped span at or after the anchor, so no ` +
+      `edge can have a pre-side mean`;
+  } else if (c.casesCapAllBefore > 0) {
+    verdict =
+      `CAP TRUNCATES — ${c.casesCapAllBefore}/${counter} cases place every capped span BEFORE the anchor, so ` +
+      `the prefix ends before the window`;
+  } else if (c.cappedCases > 0) {
+    verdict = `LIVE (capped) — ${c.cappedRows} rows in ${c.cappedCases} cases`;
+  } else {
+    // The residual, and it is a RESIDUE rather than a possibility: every earlier arm has been excluded, so
+    // `capSpans > 0` while no case is all-after and none is all-before — which can only mean every case with
+    // spans holds both sides. So `casesCapComparable > 0` here BY CONSTRUCTION, and the reading is that the
+    // input is present, expressible, and still yields nothing.
+    verdict = `UNEXPLAINED — ${c.casesCapComparable} cases hold both sides and no route emitted a row`;
+  }
+  const dead = c.shippedCases === 0 && c.cappedCases === 0;
+  return dead && c.wholeFileRows > 0 ? `${verdict}; ${live}` : verdict;
+}
+
+/**
+ * Render the census as the lines the artifact carries.
+ *
+ * @param c - The census.
+ * @param label - What the population was (a system name).
+ * @returns Lines, without trailing newlines: the counts, then the verdict.
+ */
+export function formatLatencyRoutes(c: LatencyRouteCensus, label: string): string[] {
+  return [
+    `latency-routes[${label}]: ${c.cases} cases | no anchor ${c.casesWithoutAnchor} | ` +
+      `capped spans ${c.capSpans} (pre ${c.capPre} / post ${c.capPost}) | ` +
+      `cap all-after ${c.casesCapAllAfter} | cap all-before ${c.casesCapAllBefore} | ` +
+      `comparable ${c.casesCapComparable} | ` +
+      `rows: shipped ${c.shippedRows} | capped ${c.cappedRows} | whole-file ${c.wholeFileRows}`,
+    `  VERDICT: ${latencyChannelVerdict(c)}`,
+  ];
+}

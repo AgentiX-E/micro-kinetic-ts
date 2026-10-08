@@ -99,6 +99,12 @@ export default defineConfig({
         // a reading about it deployable rather than a description of the population it was measured inside.
         'src/directional-evidence.ts',
         'src/reported-config.ts',
+        // Added with the module's own tests: the ONE assembly point of an RCAEval case's inputs, and the three
+        // views of `edgeLatency` it owns. It was imported by `corpus-assembly.test.ts` as SOURCE TEXT and by
+        // nothing as code, so it sat outside the denominator while every number in the repository went through
+        // it — the allow-list's own hole, a fourth time, and now closed by `corpus-owner.test.ts`, which
+        // assembles a real case directory and reads the three views back.
+        'src/rcaeval-corpus.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

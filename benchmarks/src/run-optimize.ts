@@ -221,13 +221,18 @@ async function loadAllCases(
       // truncation of the shipped one. The census that found this found four RCAEval compositions in four
       // files, which is the register's "a quantity with N implementations is a quantity with no convention"
       // in its fourth appearance.
+      //
+      // The latency view is stated as `shipped` rather than left to a default: the search fits weights on the
+      // corpus they will be shipped against, and on that corpus `edgeLatency` is empty — so a fit that
+      // reported a `latWeight` would be fitting a term whose input it never saw. Naming it here is what makes
+      // that visible to whoever next reads a fitted weight.
       const { benchCase } = await assembleRCAEvalCase(
         loader,
         rawCase,
         { suite, dirPath: dir },
         callGraph,
         suiteId,
-        { augmentFromTraces: true, traceActivity: false },
+        { augmentFromTraces: true, traceActivity: false, latencyFrom: 'shipped' },
       );
 
       out.push({

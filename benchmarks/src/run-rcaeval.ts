@@ -398,10 +398,14 @@ async function loadSingleCase(
 
   // The corpus, assembled by the ONE owner both this path and the study's call. `augmentFromTraces` is the
   // shipped value, stated rather than implied, because this path IS the published corpus and the option is
-  // what makes that a decision instead of an omission.
+  // what makes that a decision instead of an omission. `latencyFrom` is stated for the same reason and with
+  // more at stake: `shipped` is the view whose `edgeLatency` is empty by the assembly's start-time unit
+  // defect, so the nine published cells ranked with `latWeight` multiplying nothing — a fact that has to be
+  // visible at the call site rather than inferred from a census, because it is what the cells ARE.
   const assembled = await assembleRCAEvalCase(loader, rawCase, meta, callGraph, suiteName, {
     augmentFromTraces: true,
     traceActivity: computeTraceActivity,
+    latencyFrom: 'shipped',
   });
 
   // Free trace data after augmentation — prevents OOM on RE2 (270+ cases each with 100K+ trace spans). The

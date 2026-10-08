@@ -63,13 +63,23 @@ import {
   channelCases,
   formatDirectionalCoverage,
   formatInputCoverage,
+  formatLatencyRoutes,
   readZero,
   summarizeDirectionalCoverage,
   summarizeInputCoverage,
+  summarizeLatencyRoutes,
   TERM_CHANNELS,
   type InputCoverage,
+  type LatencyRouteCensus,
+  type LatencyRouteEntry,
 } from './directional-evidence.js';
-import { assembleRCAEvalCase } from './rcaeval-corpus.js';
+import {
+  applyLatencyView,
+  assembleRCAEvalCase,
+  DEFAULT_LATENCY_SOURCE,
+  type LatencySource,
+  type LatencyViews,
+} from './rcaeval-corpus.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
@@ -101,6 +111,15 @@ interface AblationRun {
    * defect the artifact's line was added to repair, one level down.
    */
   overrides: AblationEngineOverrides;
+  /**
+   * Which view of `edgeLatency` this row ranked on.
+   *
+   * Part of the row's own record for the same reason `overrides` is: the 0.0-verdict block rebuilds a row's
+   * varied axes from its own configuration, and a row that varies the CORPUS states no engine term at all — so
+   * a block that read only the weights would skip it, which is exactly the shape of defect this record was
+   * added to repair one level down. `shipped` is the published view.
+   */
+  latencyView: LatencySource;
   label: string;
   results: Map<string, AblationResult>;
 }
@@ -181,539 +200,592 @@ const PRODUCTION_PRISM_FLAGS: FeatureFlags = {
   prismSignal: true,
 };
 
-const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationEngineOverrides }> =
-  [
-    // Baseline: everything OFF
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      // Was `BASELINE (all OFF)`, which asserted a configuration this run does not have: the four terms
-      // that dominate the shipped ranking (`latWeight`, `latMinRise`, `poolMetricPenaltyWeight`,
-      // `stabilityWeight`) are ON in it, inherited from the engine's defaults. The label now claims what it
-      // can support — the FLAGS are off — and the configuration line below states the rest.
-      label: 'BASELINE (flags OFF)',
+const CONFIGS: Array<{
+  flags: FeatureFlags;
+  label: string;
+  overrides?: AblationEngineOverrides;
+  /**
+   * Which view of `edgeLatency` this row ranks on — a CORPUS axis, never a flag.
+   *
+   * Omitted means the published composition (`shipped`). It is stated as its own field rather than as an
+   * `AblationEngineOverrides` member because it is not an engine knob at all: the value is selected on the
+   * assembled case by the corpus owner, and the row's own line prints which corpus it ran, so a reader never
+   * has to infer it. The flag that used to carry a corpus property (`traceAugmentation`) measured `+0.0` on
+   * the only two suites that had traces, which is what a corpus step looks like when it is expressed as a
+   * ranking flag.
+   */
+  latencyView?: LatencySource;
+}> = [
+  // Baseline: everything OFF
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    // Individual features
-    {
-      flags: {
-        collisionAggregation: true,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Collision Q(f,f)',
+    // Was `BASELINE (all OFF)`, which asserted a configuration this run does not have: the four terms
+    // that dominate the shipped ranking (`latWeight`, `latMinRise`, `poolMetricPenaltyWeight`,
+    // `stabilityWeight`) are ON in it, inherited from the engine's defaults. The label now claims what it
+    // can support — the FLAGS are off — and the configuration line below states the rest.
+    label: 'BASELINE (flags OFF)',
+  },
+  // Individual features
+  {
+    flags: {
+      collisionAggregation: true,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: true,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Trace Topo',
+    label: '+Collision Q(f,f)',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: true,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: true,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+SelfLearn',
+    label: '+Trace Topo',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    // Pairs
-    {
-      flags: {
-        collisionAggregation: true,
-        extraTraceValidation: true,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Collision+Trace',
+    label: '+SelfLearn',
+  },
+  // Pairs
+  {
+    flags: {
+      collisionAggregation: true,
+      extraTraceValidation: true,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: true,
-        extraTraceValidation: false,
-        selfLearning: true,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Collision+SelfLearn',
+    label: '+Collision+Trace',
+  },
+  {
+    flags: {
+      collisionAggregation: true,
+      extraTraceValidation: false,
+      selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: true,
-        selfLearning: true,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Trace+SelfLearn',
+    label: '+Collision+SelfLearn',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: true,
+      selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    // Full stack
-    {
-      flags: {
-        collisionAggregation: true,
-        extraTraceValidation: true,
-        selfLearning: true,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: 'FULL STACK (all ON)',
+    label: '+Trace+SelfLearn',
+  },
+  // Full stack
+  {
+    flags: {
+      collisionAggregation: true,
+      extraTraceValidation: true,
+      selfLearning: true,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    // ── New ranking signals (marginal over BASELINE, one at a time) ──
-    // Each measures the marginal contribution of a single ranking signal.
-    // They are NOT part of the full factorial above — 2^6 = 64 configs × 3 reps
-    // would exceed CI budget — so they are added as 1-D slices: baseline + one
-    // signal at full strength (weight 1.0).
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: true,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Log Signal',
+    label: 'FULL STACK (all ON)',
+  },
+  // ── New ranking signals (marginal over BASELINE, one at a time) ──
+  // Each measures the marginal contribution of a single ranking signal.
+  // They are NOT part of the full factorial above — 2^6 = 64 configs × 3 reps
+  // would exceed CI budget — so they are added as 1-D slices: baseline + one
+  // signal at full strength (weight 1.0).
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: true,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Topo Signal',
+    label: '+Log Signal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: true,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      // The collision signal consumes `ratioContrib`, which is only populated
-      // when Boltzmann aggregation is ON — so this config enables aggregation
-      // (unlike +Log/+Topo). Its marginal over "+Collision Q(f,f)" isolates the
-      // collisionWeight penalty from the aggregation itself.
-      flags: {
-        collisionAggregation: true,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: true,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Collision Signal',
+    label: '+Topo Signal',
+  },
+  {
+    // The collision signal consumes `ratioContrib`, which is only populated
+    // when Boltzmann aggregation is ON — so this config enables aggregation
+    // (unlike +Log/+Topo). Its marginal over "+Collision Q(f,f)" isolates the
+    // collisionWeight penalty from the aggregation itself.
+    flags: {
+      collisionAggregation: true,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: true,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: true,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Collapse Discount',
+    label: '+Collision Signal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: true,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: true,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Rise Signal',
+    label: '+Collapse Discount',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: true,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: true,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Trace Activity Signal',
+    label: '+Rise Signal',
+  },
+  {
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      // Combined slice: the production log signal + the trace-activity
-      // backstop. The 1-D slices above measure each signal's MARGINAL effect in
-      // isolation, but the real deployment question is whether the trace
-      // signal's silent-source gains SURVIVE on top of the log signal. The log
-      // signal alone names exception-type faults (OB f4 → 100%) but is blind to
-      // silent wrong-value faults (TT f2 → 0%); the trace signal alone names TT
-      // f2 (43%) but misfires onto OB f4 (67% → 50%) and RE2 TT mem (75% →
-      // 63%). Whether the log signal's correct answer survives the trace vote's
-      // interference (and vice versa) is a fusion-level question that no 1-D
-      // slice can answer — it must be measured directly.
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: true,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: true,
-        rankNormalization: false,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Log +Trace Activity',
+    label: '+Trace Activity Signal',
+  },
+  {
+    // Combined slice: the production log signal + the trace-activity
+    // backstop. The 1-D slices above measure each signal's MARGINAL effect in
+    // isolation, but the real deployment question is whether the trace
+    // signal's silent-source gains SURVIVE on top of the log signal. The log
+    // signal alone names exception-type faults (OB f4 → 100%) but is blind to
+    // silent wrong-value faults (TT f2 → 0%); the trace signal alone names TT
+    // f2 (43%) but misfires onto OB f4 (67% → 50%) and RE2 TT mem (75% →
+    // 63%). Whether the log signal's correct answer survives the trace vote's
+    // interference (and vice versa) is a fusion-level question that no 1-D
+    // slice can answer — it must be measured directly.
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: false,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      // Combination slice: rank normalization is a MONOTONIC transform, so in
-      // isolation it is a provable no-op (identical ordering, all weights 0) —
-      // the isolated +Rank Normalization slice above confirms it is bit-identical
-      // to BASELINE. Its value only materialises when a downstream causal signal
-      // (trace/topo) can exploit the COMPRESSED anomaly gap. Under min-max, a
-      // near-zero-baseline symptom spike (latency-90 rising 41–764×) sets the
-      // range max and crushes the silent source's modest deviation to ~0, so
-      // log(source) ≈ −1.77 and the trace vote (+1.0) cannot overcome it. Under
-      // rank, the outlier and the second-ranked source land at ≈1.0 vs ≈0.98, so
-      // log(source) ≈ −0.02 and the trace vote flips the ranking. This slice
-      // measures whether rank + trace beats trace alone (TT f3 is the target).
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: true,
-        rankNormalization: true,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Trace Activity +Rank',
+    label: '+Log +Trace Activity',
+  },
+  {
+    // Combination slice: rank normalization is a MONOTONIC transform, so in
+    // isolation it is a provable no-op (identical ordering, all weights 0) —
+    // the isolated +Rank Normalization slice above confirms it is bit-identical
+    // to BASELINE. Its value only materialises when a downstream causal signal
+    // (trace/topo) can exploit the COMPRESSED anomaly gap. Under min-max, a
+    // near-zero-baseline symptom spike (latency-90 rising 41–764×) sets the
+    // range max and crushes the silent source's modest deviation to ~0, so
+    // log(source) ≈ −1.77 and the trace vote (+1.0) cannot overcome it. Under
+    // rank, the outlier and the second-ranked source land at ≈1.0 vs ≈0.98, so
+    // log(source) ≈ −0.02 and the trace vote flips the ranking. This slice
+    // measures whether rank + trace beats trace alone (TT f3 is the target).
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: true,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      // Combination slice: the production log + trace backstop, plus rank
-      // normalization. The main benchmark ships logWeight=1 + traceWeight=1
-      // (production defaults); this slice mirrors that on top of rank
-      // normalization to answer whether rank lifts the production configuration's
-      // TT RE3 (currently f3 = 10%) without regressing OB/SS/RE1/RE2.
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: true,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: true,
-        rankNormalization: true,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Log +Trace Activity +Rank',
+    label: '+Trace Activity +Rank',
+  },
+  {
+    // Combination slice: the production log + trace backstop, plus rank
+    // normalization. The main benchmark ships logWeight=1 + traceWeight=1
+    // (production defaults); this slice mirrors that on top of rank
+    // normalization to answer whether rank lifts the production configuration's
+    // TT RE3 (currently f3 = 10%) without regressing OB/SS/RE1/RE2.
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: true,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      // Rank-based anomaly-score normalization (rankNormalization), the P1 fix
-      // for the near-zero-baseline spike pathology. A symptom metric (latency-90
-      // rising 41–764× over a ~0 baseline) sets the min-max range's max and
-      // crushes the genuine source's modest deviation to ~0, so the symptom wins
-      // the log-domain anomaly term by ~1.7. Rank normalization maps the outlier
-      // and the second-ranked source to ≈1.0 vs ≈0.98 — semantic-agnostic — so
-      // the deterministic trace/topo signals that already point at the silent
-      // source can tip the ranking. Affects only large topologies (≥ 20 nodes).
-      // NOTE: in isolation this slice is a no-op (monotonic transform, all
-      // weights 0); the +Trace Activity +Rank and +Log +Trace Activity +Rank
-      // slices above are where its effect is actually measured.
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: true,
-        suppressIdleTransients: false,
-        prismSignal: false,
-      },
-      label: '+Rank Normalization',
+    label: '+Log +Trace Activity +Rank',
+  },
+  {
+    // Rank-based anomaly-score normalization (rankNormalization), the P1 fix
+    // for the near-zero-baseline spike pathology. A symptom metric (latency-90
+    // rising 41–764× over a ~0 baseline) sets the min-max range's max and
+    // crushes the genuine source's modest deviation to ~0, so the symptom wins
+    // the log-domain anomaly term by ~1.7. Rank normalization maps the outlier
+    // and the second-ranked source to ≈1.0 vs ≈0.98 — semantic-agnostic — so
+    // the deterministic trace/topo signals that already point at the silent
+    // source can tip the ranking. Affects only large topologies (≥ 20 nodes).
+    // NOTE: in isolation this slice is a no-op (monotonic transform, all
+    // weights 0); the +Trace Activity +Rank and +Log +Trace Activity +Rank
+    // slices above are where its effect is actually measured.
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: true,
+      suppressIdleTransients: false,
+      prismSignal: false,
     },
-    {
-      // Idle-start transient suppression (suppressIdleTransients), the P2 fix for
-      // the ts-route-service socket-drop failures. Unlike rank normalization
-      // (monotonic, a no-op in isolation), this guard REMOVES metrics from
-      // scoring, so its isolated slice IS meaningful: it suppresses the victim's
-      // near-zero-baseline latency-90 spike (head ≈ 0 → pulse → non-zero tail),
-      // whose relative rise is a measurement artifact, so the genuine permanent
-      // socket drop (23 → 9) survives as the top anomaly. Semantic-agnostic: the
-      // NON-zero-tail requirement keeps a zero→burst→zero event fault (#199).
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: false,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: false,
-        rankNormalization: false,
-        suppressIdleTransients: true,
-        prismSignal: false,
-      },
-      label: '+Idle Transient Suppression',
+    label: '+Rank Normalization',
+  },
+  {
+    // Idle-start transient suppression (suppressIdleTransients), the P2 fix for
+    // the ts-route-service socket-drop failures. Unlike rank normalization
+    // (monotonic, a no-op in isolation), this guard REMOVES metrics from
+    // scoring, so its isolated slice IS meaningful: it suppresses the victim's
+    // near-zero-baseline latency-90 spike (head ≈ 0 → pulse → non-zero tail),
+    // whose relative rise is a measurement artifact, so the genuine permanent
+    // socket drop (23 → 9) survives as the top anomaly. Semantic-agnostic: the
+    // NON-zero-tail requirement keeps a zero→burst→zero event fault (#199).
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: false,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: false,
+      rankNormalization: false,
+      suppressIdleTransients: true,
+      prismSignal: false,
     },
-    {
-      // Production configuration + the idle-transient suppression. The main
-      // benchmark ships logWeight=1 + traceWeight=1 + rankNormalization=true;
-      // this slice adds suppressIdleTransients on top to answer whether the P2
-      // fix lifts the production TT RE3 (f3 target) without regressing
-      // OB/SS/RE1/RE2.
-      flags: {
-        collisionAggregation: false,
-        extraTraceValidation: false,
-        selfLearning: false,
-        logSignal: true,
-        topoSignal: false,
-        collisionSignal: false,
-        collapseDiscount: false,
-        riseSignal: false,
-        traceSignal: true,
-        rankNormalization: true,
-        suppressIdleTransients: true,
-        prismSignal: false,
-      },
-      label: '+Log +Trace Activity +Rank +Idle Transient',
+    label: '+Idle Transient Suppression',
+  },
+  {
+    // Production configuration + the idle-transient suppression. The main
+    // benchmark ships logWeight=1 + traceWeight=1 + rankNormalization=true;
+    // this slice adds suppressIdleTransients on top to answer whether the P2
+    // fix lifts the production TT RE3 (f3 target) without regressing
+    // OB/SS/RE1/RE2.
+    flags: {
+      collisionAggregation: false,
+      extraTraceValidation: false,
+      selfLearning: false,
+      logSignal: true,
+      topoSignal: false,
+      collisionSignal: false,
+      collapseDiscount: false,
+      riseSignal: false,
+      traceSignal: true,
+      rankNormalization: true,
+      suppressIdleTransients: true,
+      prismSignal: false,
     },
-    {
-      // 1-D slice: the PRISM graph-free internal/external asymmetry signal in
-      // isolation. PRISM scores a root cause as anomalous in BOTH internal
-      // (cpu/mem/disk/socket) and external (latency/error/throughput) channels,
-      // using a DIFFERENT anomaly scorer (a standardized mean shift over the
-      // pre/post-inject windows) than the engine's own feature pipeline. The
-      // fusion ceiling showed it is strongly complementary (union 87.5% vs
-      // 76.1% engine / 76.7% PRISM separately), with the strongest complement in
-      // RE2 resource faults and RE3. This slice measures PRISM's marginal effect
-      // alone; the +Log +Trace Activity +Rank +PRISM slice measures whether the
-      // gain survives on top of the production configuration.
-      //
-      // The flags are spread from a NAMED constant because the pooling rows below are its siblings: a
-      // difference between this row and `PRISM Signal (conjunctive)` must be the pooling and nothing else.
-      flags: { ...PRISM_ONLY_FLAGS },
-      label: '+PRISM Signal',
-    },
-    {
-      // Combination slice: the production configuration (logWeight=1 +
-      // traceWeight=1 + rankNormalization=true) plus the PRISM signal. This is
-      // the fusion answer the ceiling motivates: the engine and PRISM are
-      // complementary, so PRISM should add cases the engine misses (RE2 resource
-      // faults, some RE3) without regressing the cells the log/trace signals
-      // already own. This slice is the one that decides whether prismWeight
-      // ships enabled.
-      flags: { ...PRODUCTION_PRISM_FLAGS },
-      label: '+Log +Trace Activity +Rank +PRISM',
-    },
-    // ── PRISM's POOLING, as the second of its two knobs ─────────────────────
+    label: '+Log +Trace Activity +Rank +Idle Transient',
+  },
+  {
+    // 1-D slice: the PRISM graph-free internal/external asymmetry signal in
+    // isolation. PRISM scores a root cause as anomalous in BOTH internal
+    // (cpu/mem/disk/socket) and external (latency/error/throughput) channels,
+    // using a DIFFERENT anomaly scorer (a standardized mean shift over the
+    // pre/post-inject windows) than the engine's own feature pipeline. The
+    // fusion ceiling showed it is strongly complementary (union 87.5% vs
+    // 76.1% engine / 76.7% PRISM separately), with the strongest complement in
+    // RE2 resource faults and RE3. This slice measures PRISM's marginal effect
+    // alone; the +Log +Trace Activity +Rank +PRISM slice measures whether the
+    // gain survives on top of the production configuration.
     //
-    // `prismWeight` was the first PRISM knob this battery could pose a question about; the pooling is the
-    // second, and it is the one the ENGINE could not pose at all. `combinePrismScore` takes both poolings and
-    // the standalone evaluator dispatches them (`scripts/run-prism.ts --pooling conjunctive`), but the
-    // engine's single call site omitted the argument — so the alternative was implemented, measured, and
-    // unreachable from every ablation row and every dispatch. See `docs/prism-pooling-axis.md`.
-    //
-    // Why it is worth a row rather than an assumption: the controlled head-to-head (`docs/prism-head-to-head.md`,
-    // the identical 735 cases) reads the two poolings side by side per cell, and the difference is not a
-    // rounding on a corpus average — it is 78.9% against 69.8% overall in `additive`'s favour, and
-    // **RE3 TrainTicket 76.7% against 33.3%** in `conjunctive`'s, on the weakest cell of the published nine.
-    // Nothing above can see that, because nothing above varies the pooling.
-    //
-    // The two rows are the ADDITIVE rows' siblings with one override each, so each pair differs in the pooling
-    // and in nothing else — which is the only way the delta is attributable to the pooling rather than to a
-    // flag someone retyped.
-    {
-      flags: { ...PRISM_ONLY_FLAGS },
-      overrides: { prismPooling: 'conjunctive' },
-      label: 'PRISM Signal (conjunctive)',
-    },
-    {
-      flags: { ...PRODUCTION_PRISM_FLAGS },
-      overrides: { prismPooling: 'conjunctive' },
-      label: '+Log +Trace +Rank +PRISM (conj)',
-    },
+    // The flags are spread from a NAMED constant because the pooling rows below are its siblings: a
+    // difference between this row and `PRISM Signal (conjunctive)` must be the pooling and nothing else.
+    flags: { ...PRISM_ONLY_FLAGS },
+    label: '+PRISM Signal',
+  },
+  {
+    // Combination slice: the production configuration (logWeight=1 +
+    // traceWeight=1 + rankNormalization=true) plus the PRISM signal. This is
+    // the fusion answer the ceiling motivates: the engine and PRISM are
+    // complementary, so PRISM should add cases the engine misses (RE2 resource
+    // faults, some RE3) without regressing the cells the log/trace signals
+    // already own. This slice is the one that decides whether prismWeight
+    // ships enabled.
+    flags: { ...PRODUCTION_PRISM_FLAGS },
+    label: '+Log +Trace Activity +Rank +PRISM',
+  },
+  // ── PRISM's POOLING, as the second of its two knobs ─────────────────────
+  //
+  // `prismWeight` was the first PRISM knob this battery could pose a question about; the pooling is the
+  // second, and it is the one the ENGINE could not pose at all. `combinePrismScore` takes both poolings and
+  // the standalone evaluator dispatches them (`scripts/run-prism.ts --pooling conjunctive`), but the
+  // engine's single call site omitted the argument — so the alternative was implemented, measured, and
+  // unreachable from every ablation row and every dispatch. See `docs/prism-pooling-axis.md`.
+  //
+  // Why it is worth a row rather than an assumption: the controlled head-to-head (`docs/prism-head-to-head.md`,
+  // the identical 735 cases) reads the two poolings side by side per cell, and the difference is not a
+  // rounding on a corpus average — it is 78.9% against 69.8% overall in `additive`'s favour, and
+  // **RE3 TrainTicket 76.7% against 33.3%** in `conjunctive`'s, on the weakest cell of the published nine.
+  // Nothing above can see that, because nothing above varies the pooling.
+  //
+  // The two rows are the ADDITIVE rows' siblings with one override each, so each pair differs in the pooling
+  // and in nothing else — which is the only way the delta is attributable to the pooling rather than to a
+  // flag someone retyped.
+  {
+    flags: { ...PRISM_ONLY_FLAGS },
+    overrides: { prismPooling: 'conjunctive' },
+    label: 'PRISM Signal (conjunctive)',
+  },
+  {
+    flags: { ...PRODUCTION_PRISM_FLAGS },
+    overrides: { prismPooling: 'conjunctive' },
+    label: '+Log +Trace +Rank +PRISM (conj)',
+  },
 
-    // ── The propagation-delay channel, as a 2x2 over its two knobs ──────────
-    //
-    // Every row above is a point in a binary cube, and the term this group varies is not: the SHIPPED
-    // `latWeight = 0.561495` is neither 0 nor 1, and `latMinRise = 10.3` is a floor that MASKS out any rise
-    // between 1 and 10.3 rather than compressing it. So the row that answers "what does the kinetic
-    // propagation model contribute" cannot be built out of flags, which is why `ABLATION_FINDINGS.md` v2
-    // listed the channel as UNMEASURED and why the loader had to be taught to carry its input first.
-    //
-    // The four cells of the 2x2 are: the shipped configuration (already the BASELINE row above), the channel
-    // switched OFF, the floor REMOVED, and both. The floor's removal is spelled `1`, not `0`: `1` is the
-    // value `computeEdgeLatencyScores` documents as identical to the pre-floor term ("a rise at or below 1 is
-    // never dropped"), so it is the channel's own reference point rather than a number chosen here.
-    {
-      // The channel OFF, floor untouched. Reads the whole of `latWeight`'s contribution — the term that has
-      // received nothing on every RCAEval run until this loader change.
-      flags: { ...ALL_OFF_FLAGS },
-      overrides: { latWeight: 0 },
-      label: 'LAT OFF (latWeight=0)',
-    },
-    {
-      // The floor REMOVED, weight shipped. The mask drops every rise in (1, 10.3); if the channel's input
-      // turns out to be populated but inert, this row says whether the floor is what silences it.
-      flags: { ...ALL_OFF_FLAGS },
-      overrides: { latMinRise: 1 },
-      label: 'LAT NO FLOOR (latMinRise=1)',
-    },
-    {
-      // Both, so the two knobs' effects can be separated from their interaction. A term that is inert with a
-      // floor AND inert without one is inert; a term whose effect appears only here is being read through the
-      // floor rather than through the weight.
-      flags: { ...ALL_OFF_FLAGS },
-      overrides: { latWeight: 0, latMinRise: 1 },
-      label: 'LAT OFF + NO FLOOR',
-    },
-    // ── The two priors the battery had never varied ──
-    //
-    // `ABLATION_FINDINGS.md` v2 recorded its own residue as a candidate rather than a number: the ledger's
-    // rows did not sum to the golden's cells, and **the never-ablated numeric terms were what was left** —
-    // `poolMetricPenaltyWeight` (0.0679) and `stabilityWeight` (0.007352). Both ran at full shipped strength
-    // in every configuration of every battery, so their contribution was not a zero, it was UNMEASURED.
-    //
-    // They are also the only levers left on RE1, which is the suite that blocks every global PRISM weight:
-    // RE1 carries **no `logs.csv` and no `traces.csv` at all** (the golden's own artifact records
-    // `[log] No log data available for 125 cases` three times), so a boolean signal there has no input to act
-    // on and reads a zero that says nothing about the term. A numeric prior acts on the metric anomaly the
-    // suite does have, which is why these two rows are the only ones in the battery that can move it.
-    {
-      // The pool-dominance penalty OFF. The term exists to stop a service that pools many metrics from
-      // outranking the source on volume alone; if it is worth nothing, removing it removes a chance to be
-      // wrong, and it is dispatchable on both benchmarks.
-      flags: { ...ALL_OFF_FLAGS },
-      overrides: { poolMetricPenaltyWeight: 0 },
-      label: 'POOL PENALTY OFF (poolMetricPenaltyWeight=0)',
-    },
-    {
-      // The decisive-stability prior OFF. `0` is the value where the term is absent; the shipped 0.007352 is
-      // its owner constant, and the row's own config line states which of the two it ran.
-      flags: { ...ALL_OFF_FLAGS },
-      overrides: { stabilityWeight: 0 },
-      label: 'STABILITY OFF (stabilityWeight=0)',
-    },
-    {
-      // Both, so their interaction is separable from either alone.
-      flags: { ...ALL_OFF_FLAGS },
-      overrides: { poolMetricPenaltyWeight: 0, stabilityWeight: 0 },
-      label: 'POOL PENALTY + STABILITY OFF',
-    },
-  ];
+  // ── The propagation-delay channel, as a 2x2 over its two knobs ──────────
+  //
+  // Every row above is a point in a binary cube, and the term this group varies is not: the SHIPPED
+  // `latWeight = 0.561495` is neither 0 nor 1, and `latMinRise = 10.3` is a floor that MASKS out any rise
+  // between 1 and 10.3 rather than compressing it. So the row that answers "what does the kinetic
+  // propagation model contribute" cannot be built out of flags, which is why `ABLATION_FINDINGS.md` v2
+  // listed the channel as UNMEASURED and why the loader had to be taught to carry its input first.
+  //
+  // The four cells of the 2x2 are: the shipped configuration (already the BASELINE row above), the channel
+  // switched OFF, the floor REMOVED, and both. The floor's removal is spelled `1`, not `0`: `1` is the
+  // value `computeEdgeLatencyScores` documents as identical to the pre-floor term ("a rise at or below 1 is
+  // never dropped"), so it is the channel's own reference point rather than a number chosen here.
+  {
+    // The channel OFF, floor untouched. Reads the whole of `latWeight`'s contribution — the term that has
+    // received nothing on every RCAEval run until this loader change.
+    flags: { ...ALL_OFF_FLAGS },
+    overrides: { latWeight: 0 },
+    label: 'LAT OFF (latWeight=0)',
+  },
+  {
+    // The floor REMOVED, weight shipped. The mask drops every rise in (1, 10.3); if the channel's input
+    // turns out to be populated but inert, this row says whether the floor is what silences it.
+    flags: { ...ALL_OFF_FLAGS },
+    overrides: { latMinRise: 1 },
+    label: 'LAT NO FLOOR (latMinRise=1)',
+  },
+  {
+    // Both, so the two knobs' effects can be separated from their interaction. A term that is inert with a
+    // floor AND inert without one is inert; a term whose effect appears only here is being read through the
+    // floor rather than through the weight.
+    flags: { ...ALL_OFF_FLAGS },
+    overrides: { latWeight: 0, latMinRise: 1 },
+    label: 'LAT OFF + NO FLOOR',
+  },
+  // ── The channel's input, which no row above can change ──
+  //
+  // The three rows above vary the WEIGHT and the FLOOR. If the array they multiply is empty, all three read
+  // a zero and none of them says whether the term is worthless or unfed — which is the distinction
+  // `input-coverage` draws and cannot explain, because on RCAEval the array has been empty by an artefact of
+  // the derivation rather than by absence of evidence. These three rows move the INPUT instead:
+  //
+  // - `whole-file` is the derivation the one streaming pass already computes and the assembly used to drop;
+  // - `capped` is the same derivation the published cells use, with the start-time unit repaired — so it
+  //   isolates the CAP, which the loader's own docblock says truncates before the post-injection window;
+  // - the third row is the control: the same corpus as the first with `latWeight` switched off, which must
+  //   land back on the BASELINE row if the first row's movement belongs to `latWeight` and to nothing else.
+  //
+  // None of them changes what the engine IS — the same flags, the same weights, the same graph — so a
+  // difference between them is a statement about the corpus, which is why they are corpus rows and not
+  // ablation rows, and why the label names the corpus rather than the knob.
+  {
+    // The only view in which a pre/post pair exists at all. If this row is inert, the propagation channel
+    // has no effect on this benchmark and the corner of the Deng-Yu mathematics that enters the ranking is
+    // measured — for the first time on RCAEval.
+    flags: { ...ALL_OFF_FLAGS },
+    latencyView: 'whole-file',
+    label: 'LAT WHOLE FILE (corpus edgeLatency=whole-file)',
+  },
+  {
+    // The published input with only the unit repaired: the cap kept. Separates "the cap starves the
+    // channel" from "the unit defect emptied it" by holding everything else identical.
+    flags: { ...ALL_OFF_FLAGS },
+    latencyView: 'capped',
+    label: 'LAT CAPPED (corpus edgeLatency=capped)',
+  },
+  {
+    // The control. `latWeight = 0` on the whole-file corpus must return to the BASELINE row; if it does not,
+    // the first row's movement came from something other than the term the label credits it to.
+    flags: { ...ALL_OFF_FLAGS },
+    overrides: { latWeight: 0 },
+    latencyView: 'whole-file',
+    label: 'LAT WHOLE FILE + LAT OFF',
+  },
+  // ── The two priors the battery had never varied ──
+  //
+  // `ABLATION_FINDINGS.md` v2 recorded its own residue as a candidate rather than a number: the ledger's
+  // rows did not sum to the golden's cells, and **the never-ablated numeric terms were what was left** —
+  // `poolMetricPenaltyWeight` (0.0679) and `stabilityWeight` (0.007352). Both ran at full shipped strength
+  // in every configuration of every battery, so their contribution was not a zero, it was UNMEASURED.
+  //
+  // They are also the only levers left on RE1, which is the suite that blocks every global PRISM weight:
+  // RE1 carries **no `logs.csv` and no `traces.csv` at all** (the golden's own artifact records
+  // `[log] No log data available for 125 cases` three times), so a boolean signal there has no input to act
+  // on and reads a zero that says nothing about the term. A numeric prior acts on the metric anomaly the
+  // suite does have, which is why these two rows are the only ones in the battery that can move it.
+  {
+    // The pool-dominance penalty OFF. The term exists to stop a service that pools many metrics from
+    // outranking the source on volume alone; if it is worth nothing, removing it removes a chance to be
+    // wrong, and it is dispatchable on both benchmarks.
+    flags: { ...ALL_OFF_FLAGS },
+    overrides: { poolMetricPenaltyWeight: 0 },
+    label: 'POOL PENALTY OFF (poolMetricPenaltyWeight=0)',
+  },
+  {
+    // The decisive-stability prior OFF. `0` is the value where the term is absent; the shipped 0.007352 is
+    // its owner constant, and the row's own config line states which of the two it ran.
+    flags: { ...ALL_OFF_FLAGS },
+    overrides: { stabilityWeight: 0 },
+    label: 'STABILITY OFF (stabilityWeight=0)',
+  },
+  {
+    // Both, so their interaction is separable from either alone.
+    flags: { ...ALL_OFF_FLAGS },
+    overrides: { poolMetricPenaltyWeight: 0, stabilityWeight: 0 },
+    label: 'POOL PENALTY + STABILITY OFF',
+  },
+];
 
 // Default to 3 repetitions for statistical significance
 const REPETITIONS = 3;
@@ -1027,6 +1099,18 @@ async function main(): Promise<void> {
   type SystemBundle = {
     /** The per-channel census of this system's cases: what a `0.0` can be attributed to. */
     coverage: InputCoverage;
+    /**
+     * The latency channel's three routes, counted from the same assembly.
+     *
+     * Kept beside `coverage` because `coverage` can only say that `latency` holds nothing, and this study's
+     * sharpest open question is WHY: a truncating cap and a unit defect both read zero, in the same cases, from
+     * the same file. `latency-routes` is the line that separates them, and it cannot be derived from the
+     * assembled cases alone — the assembly derives its views and drops the spans, exactly as it drops the
+     * graph's pre-augmentation shape. So the census is taken from the OWNER's own record.
+     */
+    latencyRoutes: LatencyRouteCensus;
+    /** Case id → its three latency views, so a row can rank on a corpus without re-assembling one. */
+    latencyViews: Map<string, LatencyViews>;
     systemName: string;
     cases: BenchmarkCase[];
     /** Case id → directory path, for lazy per-case trace loading. */
@@ -1045,6 +1129,9 @@ async function main(): Promise<void> {
      * is the defect this census exists to prevent, committed by the census itself.
      */
     let casesWithSpans = 0;
+    /** One entry per assembled case, from the owner's own record — see `SystemBundle.latencyRoutes`. */
+    const latencyRouteEntries: LatencyRouteEntry[] = [];
+    const latencyViewsById = new Map<string, LatencyViews>();
     const caseDirMap = new Map<string, string>();
     const selected = maxCases > 0 ? metas.slice(0, maxCases) : metas;
     // Trace-activity rise signal: compute per-service pre/post span counts
@@ -1079,7 +1166,12 @@ async function main(): Promise<void> {
         // `218 -> 41`) and this loader did nothing to the graph at all. The measured cost was one cell in
         // fourteen (RE2 TrainTicket, +1.8pp in the unpruned direction) — small, and beside the point, which
         // is that which graph a run ranks on was a property of which runner was invoked.
-        const { benchCase, traceUsed } = await assembleRCAEvalCase(
+        //
+        // The latency view is the same class of property, and it is stated rather than defaulted: the corpus
+        // below is the PUBLISHED one (`shipped`), and the rows that rank on another view do so by
+        // `applyLatencyView`, which the owner owns. A run that omitted it would rank on a corpus no artifact
+        // names.
+        const { benchCase, traceUsed, latencyViews, latencyRoute } = await assembleRCAEvalCase(
           loader,
           rawCase,
           meta,
@@ -1088,9 +1180,12 @@ async function main(): Promise<void> {
           {
             augmentFromTraces: true,
             traceActivity: needsTraceActivity,
+            latencyFrom: DEFAULT_LATENCY_SOURCE,
           },
         );
         if (traceUsed) casesWithSpans++;
+        latencyRouteEntries.push(latencyRoute);
+        latencyViewsById.set(benchCase.id, latencyViews);
         // Do NOT retain per-case traces here — RE2 traces.csv files are
         // large enough that holding all 50 cases' spans at once OOMs.
         // Record the directory path so the extraTraceValidation config can
@@ -1111,6 +1206,8 @@ async function main(): Promise<void> {
       cases,
       caseDirMap,
       coverage: { ...summarizeInputCoverage(cases), casesWithSpans },
+      latencyRoutes: summarizeLatencyRoutes(latencyRouteEntries),
+      latencyViews: latencyViewsById,
     };
   }
 
@@ -1296,6 +1393,7 @@ async function main(): Promise<void> {
   const allRuns: AblationRun[] = CONFIGS.map((c) => ({
     flags: c.flags,
     overrides: c.overrides ?? {},
+    latencyView: c.latencyView ?? DEFAULT_LATENCY_SOURCE,
     label: c.label,
     results: new Map<string, AblationResult>(),
   }));
@@ -1307,6 +1405,15 @@ async function main(): Promise<void> {
    * outlive the population it counted, and the verdict block runs after every system is done.
    */
   const coverageBySystem = new Map<string, InputCoverage>();
+
+  /**
+   * Per-system latency-route census, for the same reason and read by the same block.
+   *
+   * A row that varies the CORPUS has to be vouched for against the coverage of the view it varied: the
+   * published view's array is empty, so a corpus row's zero judged against `input-coverage`'s `latency` count
+   * would be called STARVED whether or not the view it actually ran on had rows in every case.
+   */
+  const latencyRoutesBySystem = new Map<string, LatencyRouteCensus>();
 
   for (const [systemName, metas] of systemGroups) {
     console.log(`\n${'═'.repeat(60)}`);
@@ -1324,15 +1431,16 @@ async function main(): Promise<void> {
     // The census that makes every 0.0 below readable: a term whose channel is empty here cannot be measured
     // on this system, only reported, and the two cases look identical in the results table without this.
     for (const line of formatInputCoverage(bundle.coverage, systemName)) console.log(line);
+    // …and the census that says WHICH mechanism emptied the latency channel, which `input-coverage` cannot:
+    // the capped list's own pre/post split, and the row count each of the three derivations produced.
+    for (const line of formatLatencyRoutes(bundle.latencyRoutes, systemName)) console.log(line);
     coverageBySystem.set(systemName, bundle.coverage);
+    latencyRoutesBySystem.set(systemName, bundle.latencyRoutes);
 
-    // Split cases by fault type (same across all configs for this system)
-    const byFT = new Map<string, BenchmarkCase[]>();
-    for (const c of bundle.cases) {
-      const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
-      if (!byFT.has(ft)) byFT.set(ft, []);
-      byFT.get(ft)!.push(c);
-    }
+    // Split cases by fault type. The SPLIT is the same for every config on this system, but the CASES are not:
+    // the corpus rows vary which view of `edgeLatency` the engine receives, and the split is rebuilt per config
+    // from that config's own cases rather than shared, so a row cannot rank on a corpus its label does not name.
+    let byFT = new Map<string, BenchmarkCase[]>();
 
     for (let ci = 0; ci < CONFIGS.length; ci++) {
       const config = CONFIGS[ci]!;
@@ -1343,9 +1451,21 @@ async function main(): Promise<void> {
       // golden half's artifact carries. Without it the row cannot be attributed: the artifact named twelve
       // booleans and no weight at all.
       console.log(formatAblationConfigLine(config.flags, config.overrides));
+      // …and the CORPUS, for the same reason one level down: the flags and the weights can be identical while
+      // two rows rank on different arrays, and a row whose corpus is an inference is a row that cannot be
+      // attributed. Printed for every row, including the ones that take the published view.
+      const latencyView = config.latencyView ?? DEFAULT_LATENCY_SOURCE;
+      console.log(`Corpus: edgeLatency from ${latencyView}`);
       console.log(`${'─'.repeat(60)}`);
 
       console.log(`  ${systemName}: ${bundle.cases.length} cases`);
+
+      byFT = new Map<string, BenchmarkCase[]>();
+      for (const c of applyLatencyView(bundle.cases, bundle.latencyViews, latencyView)) {
+        const ft = (c.groundTruth?.faultType ?? 'unknown').toLowerCase();
+        if (!byFT.has(ft)) byFT.set(ft, []);
+        byFT.get(ft)!.push(c);
+      }
 
       // ── Wire feature flags into this config's engine ──
       // Collision aggregation: toggles TreePruner.enableCollisionAggregation.
@@ -1564,11 +1684,17 @@ async function main(): Promise<void> {
   const baselineLine = formatAblationConfigLine(baseline.flags, baseline.overrides);
   for (const run of allRuns) {
     const changed = configDiff(baselineLine, formatAblationConfigLine(run.flags, run.overrides));
-    if (changed.length === 0) continue;
+    // A row can vary the corpus and no engine term at all, and such a row is NOT uninformative: it is the only
+    // kind that can ask what a term is worth when its input exists. Naming the axis here — rather than letting
+    // the loop skip it — is what keeps the block total over the battery.
+    const variesCorpus = run.latencyView !== DEFAULT_LATENCY_SOURCE;
+    if (changed.length === 0 && !variesCorpus) continue;
+    const axes = variesCorpus ? [...changed, `corpus:edgeLatency(${run.latencyView})`] : changed;
     const per = datasets.map((ds) => {
       const row = run.results.get(ds);
       const base = baseline.results.get(ds);
       const cov = coverageBySystem.get(ds);
+      const routes = latencyRoutesBySystem.get(ds);
       if (!row || !base || !cov) return `${ds}:N/A`;
       const delta = row.publishedA1 - base.publishedA1;
       // A row may vary several terms; the verdicts are reported in the order the config line states them,
@@ -1581,9 +1707,21 @@ async function main(): Promise<void> {
         // `+Idle Transient Suppression` both read `Δ+0.0%` on RE1 with nothing beside them.
         return readZero(delta, channel ? channelCases(cov, channel) : cov.cases);
       });
+      // …and the corpus axis, vouched for against the coverage of the view this row actually ran on. Without
+      // this the row that changes the latency input would be judged against `latency`'s count under the
+      // PUBLISHED view — a count that is zero by the derivation defect, which is the very claim the row tests.
+      if (variesCorpus && routes) {
+        const casesOfView =
+          run.latencyView === 'whole-file'
+            ? routes.wholeFileCases
+            : run.latencyView === 'capped'
+              ? routes.cappedCases
+              : routes.shippedCases;
+        verdicts.push(readZero(delta, casesOfView));
+      }
       return `${ds}:${[...new Set(verdicts)].join('+')}`;
     });
-    console.log(`  ${run.label.padEnd(46)} varies=${changed.join(',') || 'nothing'}`);
+    console.log(`  ${run.label.padEnd(46)} varies=${axes.join(',')}`);
     console.log(`    ${per.join('  ')}`);
   }
 

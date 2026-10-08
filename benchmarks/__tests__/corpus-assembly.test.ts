@@ -31,6 +31,12 @@
  * augmenter directly) and an EXACT SET (the paths that legitimately do not use the owner, so it cannot grow
  * silently).
  *
+ * Iteration 74 added a third thing for the owner to own: **which view of `edgeLatency` each run ranks on.** The
+ * three views differ in their input and in the unit of a start time, so a runner that selected one itself would
+ * be the fifth composition — the defect this file exists to have closed. The fence therefore asserts the
+ * selection happens through the owner (`views[options.latencyFrom]`), that the published view is the composed
+ * one, and that each call site STATES its view rather than defaulting into one.
+ *
  * @module benchmarks/__tests__/corpus-assembly
  */
 
@@ -138,9 +144,23 @@ describe('the corpus has one owner, and four paths used to assemble it', () => {
   it('derives the two direction fields from different inputs, and says so', () => {
     // Not a tidiness defect to be fixed: `latWeight` multiplies the capped-span `edgeLatency`, so unifying the
     // two derivations would move a published number. The owner reproduces the composition and records why.
+    //
+    // Asserted as the VALUES, not as the sentence that explains them: the previous version of this fence pinned
+    // the phrase "deliberately NOT re-derived", which is a claim about a comment — it passes if a reader
+    // re-words it and passes if the code under it changes, so it guarded nothing. What has to hold is that the
+    // streaming pass supplies `failedTraceEdges` and that the latency input stays the composed view.
     const owner = read('rcaeval-corpus.ts');
     expect(owner).toContain('countDirectionalInputs(');
     expect(owner).toMatch(/failedTraceEdges: streaming\.failedTraceEdges/);
-    expect(owner).toContain('deliberately NOT re-derived');
+    expect(owner, 'the latency input is a VIEW, selected by the corpus owner').toMatch(
+      /edgeLatency: views\[options\.latencyFrom\]/,
+    );
+    expect(owner, 'and the published cells take the composed one').toMatch(
+      /DEFAULT_LATENCY_SOURCE: LatencySource = 'shipped'/,
+    );
+    // The first of the three views is the composition the nine published cells ranked with — a value that has
+    // to exist as code, because the `capped` view beside it is what repairs the unit and the two differ by a
+    // factor of 1000 on a start time.
+    expect(owner).toMatch(/startTime: s\.startTime \* 1000/);
   });
 });

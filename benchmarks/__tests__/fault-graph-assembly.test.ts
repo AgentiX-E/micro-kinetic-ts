@@ -77,8 +77,9 @@ describe('a runner that scores cases assembles the engine inputs in one place', 
     // The loader drops the spans after augmentation (a documented memory trade), so the ONLY place the
     // aggregate can be derived is the augmentation itself. A runner that forgot would look exactly like a
     // runner whose corpus has no traces — which is what RCAEval looked like for six iterations, and what the
-    // ABLATION battery looked like on its most dominant term: `latWeight` multiplied an empty map in every
-    // row of every previous battery, because its loader attached `failedTraceEdges` and not `edgeLatency`.
+    // ABLATION battery looked like on its most dominant term. That term's zero was attributed here, once, to
+    // the loader attaching `failedTraceEdges` and not `edgeLatency`; the loader attached BOTH, and the latency
+    // array was empty by a start time scaled twice. See `docs/latency-channel-views.md`.
     //
     // THIS TEST USED TO SPECIFY THE DEFECT. It listed which DERIVATION each runner called — the two
     // RCAEval-family runners the in-memory one and the ablation runner the streaming one — and read as a
@@ -93,8 +94,15 @@ describe('a runner that scores cases assembles the engine inputs in one place', 
     expect(owner, 'the owner re-derives the failed edges from the raw file').toContain(
       'countDirectionalInputs(',
     );
-    expect(owner).toContain('failedTraceEdges: directional.failedTraceEdges');
-    expect(owner).toContain('edgeLatency: directional.edgeLatency');
+    expect(owner, 'the failed-edge input IS the streaming pass, not the capped list').toContain(
+      'failedTraceEdges: streaming.failedTraceEdges',
+    );
+    // …and the latency input is the VIEW the corpus selected. Spelled as the indexed access rather than as one
+    // of the three names, because which view is installed is the caller's corpus option and pinning a name here
+    // would be asserting the default instead of the route.
+    expect(owner, 'and the latency input is the selected view').toMatch(
+      /edgeLatency: views\[options\.latencyFrom\]/,
+    );
     const ATTACHES: readonly string[] = [
       '../src/run-optimize.ts',
       '../src/run-rcaeval.ts',

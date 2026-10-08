@@ -169,8 +169,11 @@ describe('the input census', () => {
     // assembly derives everything it needs and the runner drops the spans. It was counting what a case
     // RETAINS rather than what it HAD. The loader now takes the count from the assembly's own `traceUsed`.
     const runner = read('src/run-ablation.ts');
-    expect(runner, 'the loader reads the assembly result').toContain(
-      'const { benchCase, traceUsed } = await assembleRCAEvalCase(',
+    // The WHOLE destructuring, not a prefix of it: `toContain` is satisfied by any superstring, so a bare
+    // `const { benchCase, traceUsed }` assertion would also pass a line that destructured something else and
+    // never read the flag it claims to read.
+    expect(runner, 'the loader reads the assembly result').toMatch(
+      /const \{ benchCase, traceUsed, latencyViews, latencyRoute \} = await assembleRCAEvalCase\(/,
     );
     expect(runner, 'and counts it').toContain('if (traceUsed) casesWithSpans++;');
     expect(runner, 'and overrides the retained-array count with it').toContain(
