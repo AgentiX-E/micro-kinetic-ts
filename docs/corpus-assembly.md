@@ -100,6 +100,24 @@ outside set, all three assemblers' `augmentFromTraces: true`, the single stateme
 that the owner reads **no feature flag**. Written as an absence, it is what found `run-optimize.ts`'s third
 composition — a path I did not know was a third one until the fence named it.
 
-**Acceptance:** the nine cells byte-identical (the golden path's corpus is unchanged, and its composition is
-reproduced step by step), and — the measurement this repair is *for* — the study's production rows reproduce
-the golden on **all fourteen** cells rather than thirteen, with RE2 TrainTicket moving 69.9 → 68.1.
+**Acceptance — measured, on run `37807177128` (10/10 jobs success).** The nine cells are **byte-identical**
+(`80.0 / 92.8 / 68.0` · `82.4 / 88.9 / 68.1` · `80.0 / 45.0 / 51.1`), and the artifact's own `[trace]` lines
+reproduce the pruning statistics step for step (`20 → 9`, `218 → 39`, `23 → 9`, `218 → 41`). And the
+measurement this repair was *for* held: the study's production rows now reproduce the golden on **all fourteen**
+cells rather than thirteen —
+
+| suite | study's production row | golden's cells | difference |
+| --- | --- | --- | --- |
+| RE1 | 80.0 / 92.8 / 68.0 | 80.0 / 92.8 / 68.0 | **0.0** |
+| RE2 | 82.4 / 88.9 / **68.1** | 82.4 / 88.9 / **68.1** | **0.0** |
+| RE3 | 80.0 / 45.0 / 51.1 | 80.0 / 45.0 / 51.1 | **0.0** |
+
+**The control is RE1, and it is exact**: it carries no traces, so the corpus change is a no-op there and every
+RE1 row is byte-identical to the previous ledger. The same commit, one suite untouched because it has nothing
+to prune — which is what makes the RE2/RE3 movement attributable to the corpus.
+
+Two ledger rows moved, and one of them matters beyond bookkeeping: the propagation channel
+(`latWeight`) now measures **exactly zero on RE2 and RE3** — at `latWeight = 0`, at `latMinRise = 1`, and with
+both — where the previous ledger read −0.6 and −2.5. Those non-zero readings were an artefact of the study's
+own `edgeLatency` derivation, and correcting the corpus removed them. See `ABLATION_FINDINGS.md` v5 in the docs
+repository.
