@@ -52,6 +52,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   latMinRise:
     'the latency term\u2019s rise floor; measured as a PAIR with latWeight, so never searched alone',
   poolMetricPenaltyWeight: 'the pool penalty, solved outside this search space',
+  prismPooling:
+    'which of PRISM\u2019s two combination functions its signal uses; the search tunes the PRISM WEIGHT only, and the pooling is a per-context CHOICE rather than a weight',
   stabilityWeight: 'the decisive-stability prior, solved outside this search space',
   failedEdgeWeight: 'ships at 0, so the direction term is off for every run this mapping builds',
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',

@@ -233,6 +233,7 @@ describe('the optimizer mapping states what it does NOT set', () => {
       'maxPropagationDepth',
       'onsetShape',
       'poolMetricPenaltyWeight',
+      'prismPooling',
       'stabilityWeight',
       'useTwoHopDecay',
     ]);
