@@ -322,8 +322,36 @@ describe('the battery really carries the propagation-channel rows', () => {
   it('holds the flags IDENTICAL across the three rows, so a difference is the weight', () => {
     // The rows spread the same twelve booleans from one named constant. A row that differed in a flag would
     // attribute that flag's effect to a weight, which is the one thing a numeric ablation must not do.
-    const rows = RUNNER.split('flags: { ...ALL_OFF_FLAGS }').length - 1;
-    expect(rows, 'three rows spread the shared constant').toBe(3);
+    //
+    // THIS TEST USED TO COUNT THE SPREAD GLOBALLY and expect three. Iteration 73 added a second numeric group
+    // — the two priors the battery had never varied — and made the global count six, which is a correct
+    // failure of an assertion whose encoding had stopped describing the group it names. The property is
+    // per-group, and the group is identified by its overrides:
+    for (const override of [
+      'latWeight: 0',
+      'latMinRise: 1',
+      'latWeight: 0, latMinRise: 1',
+      'poolMetricPenaltyWeight: 0',
+      'stabilityWeight: 0',
+      'poolMetricPenaltyWeight: 0, stabilityWeight: 0',
+    ]) {
+      // THE PAIR, adjacent and in order, so the assertion is about the row rather than about the file. A
+      // plain `toContain(override)` is satisfied by a row whose flags DIFFER — which is the one thing a
+      // numeric ablation must not do, because it would attribute that flag's effect to the weight. Two named
+      // constants (`PRISM_ONLY_FLAGS`, `PRODUCTION_PRISM_FLAGS`) legitimately spread `ALL_OFF_FLAGS` and set
+      // flags, so the assertion cannot be about the spread in general; it has to be about these six rows.
+      const escaped = override.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      expect(
+        RUNNER,
+        `the row overriding ${override} must spread the all-off flags immediately before it`,
+      ).toMatch(
+        new RegExp(`flags: \\{ \\.\\.\\.ALL_OFF_FLAGS \\},\\s*overrides: \\{ ${escaped} \\}`),
+      );
+    }
+    // And the population is pinned WITH its composition named, so a seventh row forces a decision instead of
+    // silently joining a group whose flags nobody re-checked: three for the propagation channel's 2x2, three
+    // for the two priors.
+    expect(RUNNER.split('flags: { ...ALL_OFF_FLAGS }').length - 1, '6 numeric rows').toBe(6);
     expect(RUNNER, 'and it is defined once').toContain('const ALL_OFF_FLAGS: FeatureFlags = {');
   });
 

@@ -173,6 +173,18 @@ export interface AblationEngineOverrides {
   /** Overrides `latMinRise` — the floor below which a rise is masked out of that prior. */
   readonly latMinRise?: number;
   /**
+   * Overrides `poolMetricPenaltyWeight` — the pool-dominance penalty.
+   *
+   * The two priors below were, until iteration 73, **the only shipped terms the battery had never varied**,
+   * which the register recorded as its own residue: *the ledger's rows do not sum to the golden's, and the
+   * never-ablated numeric terms are the candidates.* They are also the ONLY knobs that can move RE1, whose
+   * channels are both starved — that suite has no `logs.csv` and no `traces.csv` at all, so every boolean
+   * signal there has no input to act on and reads a zero that says nothing about the term's worth.
+   */
+  readonly poolMetricPenaltyWeight?: number;
+  /** Overrides `stabilityWeight` — the decisive-stability prior. See above. */
+  readonly stabilityWeight?: number;
+  /**
    * Overrides `prismPooling` — which of PRISM's two combination functions the signal is built with.
    *
    * The one override here that is not a number, and the reason the record is not called
@@ -203,16 +215,16 @@ export function buildAblationEngineOptions(
       riseWeight: flags.riseSignal ? 1.0 : 0.0,
       traceWeight: flags.traceSignal ? 1.0 : 0.0,
       prismWeight: overrides.prismWeight ?? (flags.prismSignal ? 1.0 : 0.0),
-      // The seven the study holds at the shipped value, named from their owners so the artifact can state
-      // them. Passing them is value-identical to inheriting them, and that is the point: an inherited
-      // option is a configuration the artifact used to be unable to describe. The two that a row may
-      // override read their override through `??`, so an explicit `0` is honoured (see
-      // {@link AblationWeightOverrides}).
+      // The terms the study holds at the shipped value unless a row overrides them, named from their owners
+      // so the artifact can state them. Passing them is value-identical to inheriting them, and that is the
+      // point: an inherited option is a configuration the artifact used to be unable to describe. Every
+      // overridable one reads its override through `??`, so an explicit `0` is honoured.
       logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
       latWeight: overrides.latWeight ?? DEFAULT_LAT_WEIGHT,
       latMinRise: overrides.latMinRise ?? DEFAULT_LAT_MIN_RISE,
-      poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
-      stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+      poolMetricPenaltyWeight:
+        overrides.poolMetricPenaltyWeight ?? DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+      stabilityWeight: overrides.stabilityWeight ?? DEFAULT_STABILITY_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
       // The one override that is not a number. Read through `??` for the same reason the weights are: the
@@ -256,4 +268,34 @@ export function formatAblationConfigLine(
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +
     `temporalWeight=${signals.temporalWeight} onsetShape=${signals.onsetShape}`
   );
+}
+
+/**
+ * Which fields a row's configuration differs from the baseline's in.
+ *
+ * A row's label names the flag it turns on, and a flag is not a term: `logSignal: true` is `logWeight = 1`, and
+ * `LAT OFF` is an override of a weight whose shipped value is neither 0 nor 1. Reading a `+0.0` therefore needs
+ * the TERM, not the label — and the terms are already on both lines, so the difference between them is the
+ * answer rather than a second copy of the mapping.
+ *
+ * @param baselineLine - `formatAblationConfigLine` of the baseline configuration.
+ * @param rowLine - The same for the row.
+ * @returns The field names whose values differ, in the order the baseline line states them.
+ */
+export function configDiff(baselineLine: string, rowLine: string): string[] {
+  const values = (line: string): Map<string, string> => {
+    const out = new Map<string, string>();
+    for (const token of line.split(/\s+/)) {
+      const eq = token.indexOf('=');
+      if (eq > 0) out.set(token.slice(0, eq), token.slice(eq + 1));
+    }
+    return out;
+  };
+  const base = values(baselineLine);
+  const row = values(rowLine);
+  const changed: string[] = [];
+  for (const [name, value] of base) {
+    if (row.has(name) && row.get(name) !== value) changed.push(name);
+  }
+  return changed;
 }

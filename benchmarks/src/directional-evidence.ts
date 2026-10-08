@@ -515,3 +515,170 @@ export function formatDirectionalCoverage(coverage: DirectionalCoverage, label: 
   if (starved.length === 0) return line;
   return `${line} | STARVED: ${starved.join(', ')} — any weight on ${starved.length > 1 ? 'these' : 'it'} measures nothing`;
 }
+
+// ── The input census: which channel each ablated term reads, and which are empty ──
+//
+// The register's requirement, in its own words: **a zero is only readable if the artifact says whether it is
+// STARVED or INERT.** `formatDirectionalCoverage` above names the two direction channels; this generalises it
+// to every channel an ablated term can read, and it exists because iteration 72 measured the difference and
+// iteration 73 had to state it: on RE1 **every** boolean signal reads `+0.0` because the suite carries no
+// `logs.csv` and no `traces.csv` at all, while on RE2 the same signals read `+0.0` **with 50 of 50 cases
+// carrying both**. The first zero says nothing about the term; the second is the term's verdict.
+
+/** The input a signal is built from. A term whose channel is empty cannot be measured, only reported. */
+export type SignalChannel = 'metrics' | 'logs' | 'spans' | 'spanActivity' | 'latency';
+
+/**
+ * Which channel each ablated term reads.
+ *
+ * Owned here rather than at the report site, because the verdict `readZero` computes is a function of this
+ * mapping and a mapping that lives beside the print statement is a mapping nobody can test. The entries are
+ * the engine OPTION names, so a knob enrolled later without a channel is a missing key rather than a silent
+ * `undefined` — see the fence, which requires every ablated weight to appear.
+ */
+export const TERM_CHANNELS: Readonly<Record<string, SignalChannel>> = {
+  logWeight: 'logs',
+  traceWeight: 'spanActivity',
+  topoWeight: 'spans',
+  collisionWeight: 'metrics',
+  latWeight: 'latency',
+  poolMetricPenaltyWeight: 'metrics',
+  stabilityWeight: 'metrics',
+};
+
+/** Per-population counts of the cases that carry each channel's input. */
+export interface InputCoverage {
+  /** How many cases the population holds. */
+  readonly cases: number;
+  /** Cases with at least one log entry, and the total entries. */
+  readonly casesWithLogs: number;
+  readonly logEntries: number;
+  /** Cases that carried spans into the assembly (the augmentation's input). */
+  readonly casesWithSpans: number;
+  /** Cases with per-service pre/post span counts (the trace-activity signal's input). */
+  readonly casesWithSpanActivity: number;
+  /** Cases with a failed edge / a latency edge, and the total latency edges. */
+  readonly casesWithFailedEdges: number;
+  readonly casesWithLatency: number;
+  readonly latencyEdges: number;
+}
+
+/**
+ * Count the cases that carry each channel's input.
+ *
+ * The metric channel is deliberately `cases` — every RCAEval case has metrics, which is why the two
+ * never-ablated priors act on it and are the only levers a suite with no logs and no traces has.
+ *
+ * @param cases - The assembled cases of one population (a system, or a suite).
+ * @returns The counts. A zero here is a STATEMENT about the corpus, not about a term.
+ */
+export function summarizeInputCoverage(
+  cases: ReadonlyArray<{
+    readonly logs?: ReadonlyArray<unknown> | undefined;
+    readonly traces?: ReadonlyArray<unknown> | undefined;
+    readonly traceActivity?: ReadonlyMap<string, unknown> | undefined;
+    readonly failedTraceEdges?: ReadonlyArray<unknown> | undefined;
+    readonly edgeLatency?: ReadonlyArray<unknown> | undefined;
+  }>,
+): InputCoverage {
+  let casesWithLogs = 0;
+  let logEntries = 0;
+  let casesWithSpans = 0;
+  let casesWithSpanActivity = 0;
+  let casesWithFailedEdges = 0;
+  let casesWithLatency = 0;
+  let latencyEdges = 0;
+  for (const c of cases) {
+    const logs = c.logs?.length ?? 0;
+    if (logs > 0) {
+      casesWithLogs++;
+      logEntries += logs;
+    }
+    if ((c.traces?.length ?? 0) > 0) casesWithSpans++;
+    if ((c.traceActivity?.size ?? 0) > 0) casesWithSpanActivity++;
+    if ((c.failedTraceEdges?.length ?? 0) > 0) casesWithFailedEdges++;
+    const latency = c.edgeLatency?.length ?? 0;
+    if (latency > 0) {
+      casesWithLatency++;
+      latencyEdges += latency;
+    }
+  }
+  return {
+    cases: cases.length,
+    casesWithLogs,
+    logEntries,
+    casesWithSpans,
+    casesWithSpanActivity,
+    casesWithFailedEdges,
+    casesWithLatency,
+    latencyEdges,
+  };
+}
+
+/**
+ * How many cases carry a channel's input.
+ *
+ * @param coverage - The counts.
+ * @param channel - Which channel.
+ * @returns The case count, or the population size for `metrics`, which every case has.
+ */
+export function channelCases(coverage: InputCoverage, channel: SignalChannel): number {
+  switch (channel) {
+    case 'metrics':
+      return coverage.cases;
+    case 'logs':
+      return coverage.casesWithLogs;
+    case 'spans':
+      return coverage.casesWithSpans;
+    case 'spanActivity':
+      return coverage.casesWithSpanActivity;
+    case 'latency':
+      return coverage.casesWithLatency;
+  }
+}
+
+/**
+ * The verdict a row's delta earns, given its channel's coverage — the STARVED/INERT distinction.
+ *
+ * @param delta - The row's measured delta against its baseline.
+ * @param coveredCases - Cases in the population that carry the term's input.
+ * @param epsilon - Tolerance below which a delta counts as no movement.
+ * @returns `moved`, or `STARVED` when the input was absent (the zero says nothing about the term), or
+ *          `INERT` when the input was present and the ranking did not move.
+ */
+export function readZero(
+  delta: number,
+  coveredCases: number,
+  epsilon = 1e-9,
+): 'moved' | 'INERT' | 'STARVED' {
+  if (Math.abs(delta) > epsilon) return 'moved';
+  return coveredCases === 0 ? 'STARVED' : 'INERT';
+}
+
+/**
+ * Render the census as lines that name every starved channel and the terms it makes unmeasurable.
+ *
+ * @param coverage - The counts.
+ * @param label - What the population was (a system name, a suite).
+ * @returns Lines, without trailing newlines.
+ */
+export function formatInputCoverage(coverage: InputCoverage, label: string): string[] {
+  const lines = [
+    `input-coverage[${label}]: ${coverage.cases} cases | ` +
+      `logs ${coverage.casesWithLogs}/${coverage.cases} (${coverage.logEntries} entries) | ` +
+      `spans ${coverage.casesWithSpans}/${coverage.cases} | ` +
+      `spanActivity ${coverage.casesWithSpanActivity}/${coverage.cases} | ` +
+      `failedEdges ${coverage.casesWithFailedEdges}/${coverage.cases} | ` +
+      `latency ${coverage.casesWithLatency}/${coverage.cases} (${coverage.latencyEdges} edges)`,
+  ];
+  const starved = (Object.keys(TERM_CHANNELS) as string[]).filter(
+    (term) => channelCases(coverage, TERM_CHANNELS[term]!) === 0,
+  );
+  lines.push(
+    starved.length === 0
+      ? `  every ablated term has its input here — a 0.0 below is INERT, not starved`
+      : `  STARVED channels ⇒ UNMEASURABLE terms: ${starved.join(', ')}` +
+          ` — a 0.0 on any of them says nothing about the term`,
+  );
+  return lines;
+}

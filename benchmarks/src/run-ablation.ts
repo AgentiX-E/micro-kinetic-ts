@@ -52,13 +52,23 @@ import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import {
   buildAblationEngineOptions,
+  configDiff,
   formatAblationConfigLine,
   type AblationEngineOverrides,
   type AblationFeatureFlags,
 } from './ablation-engine-options.js';
 // The corpus assembly, SHARED with the golden path — this study used to rank on the unpruned graph while
 // the published cells ranked on the pruned one.
-import { formatDirectionalCoverage, summarizeDirectionalCoverage } from './directional-evidence.js';
+import {
+  channelCases,
+  formatDirectionalCoverage,
+  formatInputCoverage,
+  readZero,
+  summarizeDirectionalCoverage,
+  summarizeInputCoverage,
+  TERM_CHANNELS,
+  type InputCoverage,
+} from './directional-evidence.js';
 import { assembleRCAEvalCase } from './rcaeval-corpus.js';
 import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
@@ -83,6 +93,14 @@ type FeatureFlags = AblationFeatureFlags;
 
 interface AblationRun {
   flags: FeatureFlags;
+  /**
+   * The weights this row OVERRODE, kept so the record can state its own configuration.
+   *
+   * It did not, until iteration 73, and the omission had a cost: the 0.0-verdict block needs a row's varied
+   * TERMS, and without this the row's configuration line could not be rebuilt from its own record — the same
+   * defect the artifact's line was added to repair, one level down.
+   */
+  overrides: AblationEngineOverrides;
   label: string;
   results: Map<string, AblationResult>;
 }
@@ -662,6 +680,39 @@ const CONFIGS: Array<{ flags: FeatureFlags; label: string; overrides?: AblationE
       overrides: { latWeight: 0, latMinRise: 1 },
       label: 'LAT OFF + NO FLOOR',
     },
+    // ── The two priors the battery had never varied ──
+    //
+    // `ABLATION_FINDINGS.md` v2 recorded its own residue as a candidate rather than a number: the ledger's
+    // rows did not sum to the golden's cells, and **the never-ablated numeric terms were what was left** —
+    // `poolMetricPenaltyWeight` (0.0679) and `stabilityWeight` (0.007352). Both ran at full shipped strength
+    // in every configuration of every battery, so their contribution was not a zero, it was UNMEASURED.
+    //
+    // They are also the only levers left on RE1, which is the suite that blocks every global PRISM weight:
+    // RE1 carries **no `logs.csv` and no `traces.csv` at all** (the golden's own artifact records
+    // `[log] No log data available for 125 cases` three times), so a boolean signal there has no input to act
+    // on and reads a zero that says nothing about the term. A numeric prior acts on the metric anomaly the
+    // suite does have, which is why these two rows are the only ones in the battery that can move it.
+    {
+      // The pool-dominance penalty OFF. The term exists to stop a service that pools many metrics from
+      // outranking the source on volume alone; if it is worth nothing, removing it removes a chance to be
+      // wrong, and it is dispatchable on both benchmarks.
+      flags: { ...ALL_OFF_FLAGS },
+      overrides: { poolMetricPenaltyWeight: 0 },
+      label: 'POOL PENALTY OFF (poolMetricPenaltyWeight=0)',
+    },
+    {
+      // The decisive-stability prior OFF. `0` is the value where the term is absent; the shipped 0.007352 is
+      // its owner constant, and the row's own config line states which of the two it ran.
+      flags: { ...ALL_OFF_FLAGS },
+      overrides: { stabilityWeight: 0 },
+      label: 'STABILITY OFF (stabilityWeight=0)',
+    },
+    {
+      // Both, so their interaction is separable from either alone.
+      flags: { ...ALL_OFF_FLAGS },
+      overrides: { poolMetricPenaltyWeight: 0, stabilityWeight: 0 },
+      label: 'POOL PENALTY + STABILITY OFF',
+    },
   ];
 
 // Default to 3 repetitions for statistical significance
@@ -974,6 +1025,8 @@ async function main(): Promise<void> {
   // coarse enough that ablations see the full dataset, but fine enough
   // that peak memory stays within the default 4 GiB heap.
   type SystemBundle = {
+    /** The per-channel census of this system's cases: what a `0.0` can be attributed to. */
+    coverage: InputCoverage;
     systemName: string;
     cases: BenchmarkCase[];
     /** Case id → directory path, for lazy per-case trace loading. */
@@ -1039,7 +1092,10 @@ async function main(): Promise<void> {
         );
       }
     }
-    return { systemName, cases, caseDirMap };
+    // Computed here, while the cases still exist: the caller releases them after each system, and a census
+    // taken from an empty array would report every channel starved — the very mistake this instrument exists
+    // to prevent.
+    return { systemName, cases, caseDirMap, coverage: summarizeInputCoverage(cases) };
   }
 
   /**
@@ -1223,9 +1279,18 @@ async function main(): Promise<void> {
   // → OOM on public runners (TrainTicket has 68-69 services/case).
   const allRuns: AblationRun[] = CONFIGS.map((c) => ({
     flags: c.flags,
+    overrides: c.overrides ?? {},
     label: c.label,
     results: new Map<string, AblationResult>(),
   }));
+
+  /**
+   * Per-system input census, read by the 0.0-verdict block after the table.
+   *
+   * Declared OUTSIDE the system loop on purpose: the loop releases each system's cases, so the census must
+   * outlive the population it counted, and the verdict block runs after every system is done.
+   */
+  const coverageBySystem = new Map<string, InputCoverage>();
 
   for (const [systemName, metas] of systemGroups) {
     console.log(`\n${'═'.repeat(60)}`);
@@ -1240,6 +1305,10 @@ async function main(): Promise<void> {
     console.log(
       `  ${formatDirectionalCoverage(summarizeDirectionalCoverage(bundle.cases), systemName)}`,
     );
+    // The census that makes every 0.0 below readable: a term whose channel is empty here cannot be measured
+    // on this system, only reported, and the two cases look identical in the results table without this.
+    for (const line of formatInputCoverage(bundle.coverage, systemName)) console.log(line);
+    coverageBySystem.set(systemName, bundle.coverage);
 
     // Split cases by fault type (same across all configs for this system)
     const byFT = new Map<string, BenchmarkCase[]>();
@@ -1467,6 +1536,37 @@ async function main(): Promise<void> {
 
   console.log(`${'═'.repeat(80)}`);
 
+  // ── Where every 0.0 came from: STARVED or INERT ──
+  // The register's requirement in its own words — *a zero is only readable if the artifact says whether it is
+  // starved or inert* — and the table above cannot say, because both render as `Δ+0.0%`. This block can,
+  // because it meets each row's varied TERMS (diffed from its own configuration line) with the system's
+  // channel census. `STARVED` means the input was absent, so the zero says nothing about the term; `INERT`
+  // means the input was present and the ranking did not move, which is the term's verdict.
+  console.log(`\n${'═'.repeat(80)}`);
+  console.log('0.0 VERDICTS — STARVED (no input) vs INERT (input present, ranking unmoved)');
+  console.log('═'.repeat(80));
+  const baselineLine = formatAblationConfigLine(baseline.flags, baseline.overrides);
+  for (const run of allRuns) {
+    const changed = configDiff(baselineLine, formatAblationConfigLine(run.flags, run.overrides));
+    if (changed.length === 0) continue;
+    const per = datasets.map((ds) => {
+      const row = run.results.get(ds);
+      const base = baseline.results.get(ds);
+      const cov = coverageBySystem.get(ds);
+      if (!row || !base || !cov) return `${ds}:N/A`;
+      const delta = row.publishedA1 - base.publishedA1;
+      // A row may vary several terms; the verdicts are reported in the order the config line states them,
+      // because collapsing two channels into one word would be a summary of a fact nobody measured.
+      const verdicts = changed.map((term) => {
+        const channel = TERM_CHANNELS[term];
+        return channel ? readZero(delta, channelCases(cov, channel)) : 'UNKNOWN-CHANNEL';
+      });
+      return `${ds}:${[...new Set(verdicts)].join('+')}`;
+    });
+    console.log(`  ${run.label.padEnd(46)} varies=${changed.join(',') || 'nothing'}`);
+    console.log(`    ${per.join('  ')}`);
+  }
+
   // ── Per-fault-type breakdown ──
   // Reconstruct fault-type sets from all runs' perFaultType results.
   for (const systemName of systemGroups.keys()) {
@@ -1518,6 +1618,7 @@ async function main(): Promise<void> {
     runs: allRuns.map((r) => ({
       label: r.label,
       flags: r.flags,
+      overrides: r.overrides,
       results: Object.fromEntries(
         [...r.results.entries()].map(([ds, res]) => [
           ds,
