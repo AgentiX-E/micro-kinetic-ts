@@ -158,6 +158,41 @@ jobs:
           python3 scripts/rcaeval_provenance.py \
             --root scripts --verify --out-dir "$HOME/RCAEval-json"
 
+      # ── The INPUT census, and the gate that makes it a check ──
+      #
+      # `arXiv:2609.27069` audits this benchmark and reports, as its second finding, "a non-uniform column
+      # schema that silently zeroes telemetry for 250 of 375 RE1 cases" — its Table 3 supplies the
+      # mechanism (51 raw columns on Online Boutique against 421-439 and 1180-1446 on the other two
+      # systems), and 250 is exactly 125 + 125. That is a claim about the INPUT, and every RE1 number in
+      # this repository inherits it, so it is checked HERE, against the corpus itself, rather than argued
+      # about downstream.
+      #
+      # The step is UNCONDITIONAL — it does not depend on the cache having been a miss — because the census
+      # reads the converted artifact, and a cache hit restores the same bytes. Gating it on a miss would
+      # make the check absent on exactly the runs that are cheapest to check.
+      #
+      # `--fail-on-degenerate` makes it a GATE: a case that carries telemetry in name and ZERO in value is
+      # the shape the allegation describes, and a degenerate input makes every downstream number a
+      # measurement of zeros. Failing here also skips `trigger-benchmark`, which is the point.
+      - name: Census the input corpus, and refuse a degenerate one
+        run: |
+          python3 scripts/audit_input_schema.py \
+            --root "$HOME/RCAEval-json" \
+            --config configs/topology \
+            --json "$RUNNER_TEMP/input-census.json" \
+            --examples 6 \
+            --fail-on-degenerate | tee "$RUNNER_TEMP/input-census.txt"
+
+      - name: Publish the input census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: input-census
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/input-census.json
+            ${{ runner.temp }}/input-census.txt
+
       - name: Cache converted JSON
         if: steps.cacheJson.outputs.hit != 'true'
         uses: ./.github/actions/rcaeval-json
