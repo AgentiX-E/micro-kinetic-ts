@@ -481,6 +481,31 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
     'writes a routing-feasibility probe; an output path the workflow does not read back',
   '--system':
     'narrows one suite to a single microservice system; the workflow dispatches whole suites',
+  '--max-cases':
+    'the RCAEval benchmark ranks its WHOLE corpus, so this workflow must not be able to cap it: a 50-case ' +
+    'RE2 cap made the nine cells a 615-of-735 measurement folded as 735 (see ' +
+    '`docs/benchmark-corpus-completeness.md`). The option stays accepted by the parser and reachable from ' +
+    "the FSE'26 dispatch, which caps a DIFFERENT benchmark whose sampling decision is its own — so this is " +
+    'a directed decision, not an unwired knob',
+};
+
+/**
+ * Operational options BOTH parsers accept, where only ONE workflow may reach them — with the reason.
+ *
+ * The rule above requires an option both runners accept to be reachable from both workflows, and that
+ * rule earned its place: it is what caught the FSE'26 dump precision. But a blanket requirement would
+ * also forbid a DIRECTED decision, and one now exists. `maxCases` caps the population a benchmark is
+ * scored on; for FSE'26 it is a sampling input over a benchmark whose size is its own decision, and for
+ * RCAEval it is the defect that made the nine cells a 615-of-735 measurement folded as 735
+ * (`docs/benchmark-corpus-completeness.md`). So the option is reachable from exactly one workflow and
+ * **required not to be reachable from the other** — which is a stronger statement than an exemption,
+ * because a future commit that re-adds a cap to the RCAEval side fails this table rather than passing it.
+ */
+const OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE: Readonly<Record<string, string>> = {
+  maxCases:
+    'caps the population a benchmark is scored on: required reachable from the FSE\'26 dispatch, whose ' +
+    'corpus size is its own sampling decision, and required UNREACHABLE from the RCAEval benchmark, ' +
+    'whose whole corpus is the population every one of its claims is weighted by',
 };
 
 const fse26Flags = flagToOption(readFileSync(FSE26_CLI, 'utf8'));
@@ -849,11 +874,30 @@ describe('the dispatch surface has one owner per knob', () => {
     };
     const accepted = { fse26: fse26Flags, rcaeval: rcaevalFlags };
     for (const option of both) {
+      if (option in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE) continue;
       for (const which of ['fse26', 'rcaeval'] as const) {
         const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
         expect(flag, `${which} accepts ${option}`).toBeDefined();
         expect(reaches(flag!, texts[which]), `${which} must reach ${flag}`).toBe(true);
       }
+    }
+    // …and the options that are NOT required on both are named WITH a direction: reachable from exactly
+    // one workflow, and required NOT to be reachable from the other. An exclusion without a direction
+    // would be indistinguishable from the hole this test exists to close.
+    const bothRequired = both.filter((o) => !(o in OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE));
+    expect(bothRequired).toEqual(['dataDir', 'diagnoseDecimals']);
+    for (const [option, reason] of Object.entries(OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE)) {
+      expect(both, `${option} must still be accepted by BOTH parsers`).toContain(option);
+      expect(reason.length, `${option} needs a reason`).toBeGreaterThan(60);
+      const flagOf = (which: 'fse26' | 'rcaeval'): string => {
+        const flag = [...accepted[which].entries()].find(([, o]) => o === option)?.[0];
+        expect(flag, `${which} accepts ${option}`).toBeDefined();
+        return flag!;
+      };
+      expect(reaches(flagOf('fse26'), texts.fse26), "reachable from the FSE'26 dispatch").toBe(true);
+      expect(reaches(flagOf('rcaeval'), texts.rcaeval), 'must NOT be reachable from RCAEval').toBe(
+        false,
+      );
     }
   });
 
