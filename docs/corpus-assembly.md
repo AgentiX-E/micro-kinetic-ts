@@ -51,11 +51,19 @@ the caller, because the paths configure it differently (the golden can use seman
 ablation cannot) — what is owned here is everything applied **to** the graph.
 
 **The composition is reproduced exactly, including one asymmetry that is deliberate rather than an oversight.**
-`edgeLatency` comes from the case's own loaded span list, which is capped (`loadTraces`'s 10 000 spans);
-`failedTraceEdges` comes from a separate streaming pass over `traces.csv` that reads the whole file. The
-shipped `latWeight = 0.561495` multiplies the *capped* one, so **a repair that unified the two derivations
-would move a published number.** The owner therefore re-derives only the second field, and says so in a
-comment, and the fence asserts that it does.
+`edgeLatency` comes from the case's own loaded span list, which is capped (`loadTraces`'s 10 000 spans and a byte
+prefix); `failedTraceEdges` comes from a separate streaming pass over `traces.csv` that reads the whole file. The
+shipped `latWeight = 0.561495` multiplies the *capped* one, so **a repair that unified the two derivations would
+move a published number.** The owner therefore re-derives only the second field, and says so in a comment, and the
+fence asserts that it does.
+
+**The latency half of that composition was empty, and iteration 74 found out why.** The capped view scaled a
+start time that the loader had already normalised to milliseconds, so every span landed after the injection
+anchor and no edge could have a pre-injection mean — while the whole-file route holds exactly the same quantity,
+computed in the same streaming pass, and was dropped one line later. The owner now derives **three named views**
+(`shipped`, `capped`, `whole-file`), keeps the census that says which mechanism emptied each of them, and states
+at every call site which view the run ranks on. See `docs/latency-channel-views.md`; the published view is
+unchanged.
 
 The shipped augmentation's options are a value rather than two omitted arguments:
 `SHIPPED_TRACE_AUGMENTATION = { minCallFrequency: 1 }`, which is also `TraceTopologyConfig`'s own default — so
@@ -118,6 +126,11 @@ to prune — which is what makes the RE2/RE3 movement attributable to the corpus
 
 Two ledger rows moved, and one of them matters beyond bookkeeping: the propagation channel
 (`latWeight`) now measures **exactly zero on RE2 and RE3** — at `latWeight = 0`, at `latMinRise = 1`, and with
-both — where the previous ledger read −0.6 and −2.5. Those non-zero readings were an artefact of the study's
-own `edgeLatency` derivation, and correcting the corpus removed them. See `ABLATION_FINDINGS.md` v5 in the docs
-repository.
+both — where the previous ledger read −0.6 and −2.5.
+
+**That attribution is corrected in `docs/latency-channel-views.md`.** It said the non-zero readings were "an
+artefact of the study's own `edgeLatency` derivation"; they were not. The whole-file derivation was the only
+route that could express the input, the composition this document reproduces is the one that cannot (a start time
+already in milliseconds, scaled by 1000 again), and the zero is therefore a property of the CORPUS rather than of
+the term. The nine cells are unaffected — `latWeight` multiplied an empty array before and after this repair —
+which is exactly why the repair was made measurable rather than made.

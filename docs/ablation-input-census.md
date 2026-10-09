@@ -115,3 +115,26 @@ its three rows are `INERT` there too.
    the assembly's own `traceUsed`. *This is the defect the census exists to prevent, committed by the census*,
    and it was visible only because the census printed a line that could be checked against the golden's own
    `[trace] … pruned` line for the same suite.
+
+## 7. The question it left open, and the answer — `docs/latency-channel-views.md`
+
+This census could say that the latency channel held nothing and could not say why, and the difference is the
+whole of iteration 74. On RE3 OnlineBoutique it read
+
+```
+failedTraceEdges 15/30 cases, 30 edges | edgeLatency 0/30 cases, 0 edges
+```
+
+— two outputs of ONE relation, one populated and one empty in the same cases. `STARVED` names the term's verdict;
+it does not name the mechanism, and three mechanisms predict that same zero while disagreeing about what to do
+next: a **missing injection anchor**, a **start time scaled twice**, and a **cap that truncates before the
+post-injection window**. `latency-routes[<system>]` now counts the anchor's presence, the capped list's pre/post
+split, and each of the three derivations' row counts, and prints a verdict computed from them.
+
+The answer, and the correction it forces on the record: **`latWeight` is starved by the DERIVATION, not by the
+corpus.** The published composition scales a start time the loader had already normalised to milliseconds, so
+every span lands after the anchor and no edge can have a pre-side mean — and the whole-file route, which holds
+exactly the same quantity and was computed in the same streaming pass, was dropped one line later. That makes the
+nine published cells a corpus whose dominant latency term multiplied an empty array; it also **withdraws the
+attribution** this repository had recorded for the earlier signed readings of this channel (see
+`docs/corpus-assembly.md` §6 and `docs/latency-channel-views.md` §6).
