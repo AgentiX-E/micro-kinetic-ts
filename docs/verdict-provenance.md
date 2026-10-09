@@ -105,20 +105,60 @@ forgot to say so.
 *This is the "unit-contract census over derived fields" the register has carried as a named next step since
 iteration 75. It found one on its first field.*
 
-## 5. What the re-measurement has to show
+## 5. The re-measurement — 615 cases to 735, and the conclusion does NOT survive it intact
 
-Three runs are dispatched from the repaired commit, and none of them is a formality:
+Runs `37918734605` (fusion ceiling) and `37918742831` (routing probe), both uncapped, 3/3 jobs each. The corpus is
+now the benchmark: **RE1 375 + RE2 270 + RE3 90 = 735** discovered cases per suite artifact.
 
-1. **The golden** (`benchmark-rcaeval.yml`) — the nine cells must be **byte-identical** to run `37900344770`. Holds
-   by construction: neither change touches `run-rcaeval.ts` or any ranking path. It is run to measure that rather
-   than assert it.
-2. **The fusion ceiling, uncapped** — the union and its four categories on **735** cases, replacing `538/615`. The
-   both-wrong floor is the number that matters most: it caps every fusion strategy at `1 − floor`, and the verdict
-   attributes it to RE3 "where both engines sit near chance".
-3. **The routing probe, uncapped** — the zero-regression frontier on 735, replacing the 615-case one. If the
-   conclusion holds, the three verdict documents get corrected numbers and the conclusion is *better* founded; if
-   it does not, the roadmap's fusion direction reopens. **Both outcomes are worth the run, and neither may be
-   assumed.**
+| metric | 615 (the verdict's corpus) | **735 (measured)** |
+| --- | ---: | ---: |
+| union ceiling (perfect-case oracle) | 87.5% (538/615) | **88.44% (650/735)** |
+| both-wrong floor | 12.5% (77) | **11.56% (85)** |
+| engine, case-weighted | 76.10% | **78.10% (574/735)** |
+| PRISM, case-weighted | 76.70% | **78.91% (580/735)** |
 
-Until those land, every figure in §1 is quoted from the 615-case measurement and **must be read as such** — which
-is the only honest state for a document whose own subject is unstated provenance.
+**The ceiling moved UP, so the headroom is larger than the verdict said**: a perfect per-case selector would reach
+**88.44%** against the engine's **78.10%** in the same convention — **+10.34 pp**, not the +8.75 pp the 615-case
+figure implied. And the floor is **85 cases, of which 24 are RE3**: RE3 is 12.2% of the corpus and **28.2% of the
+floor**, and its own both-wrong rate is **26.67%**. The verdict's third gap — *"attacking the 77-case bothWrong
+floor directly, dominated by RE3"* — is therefore not just confirmed but **quantified**, and it is the largest
+single untapped population we have.
+
+### 5.1 What the re-take changes, and it is the routing conclusion
+
+The per-suite zero-regression frontiers on the full corpus:
+
+| suite | engine alone | best zero-regression router | gain | the router |
+| --- | ---: | ---: | ---: | --- |
+| RE1 | 80.27% | 83.20% | +2.93 pp | `per-cell-oracle` — **not deployable** (reads the truth) |
+| RE2 | 83.33% | 89.26% | +5.93 pp | `per-cell-oracle` — **not deployable** (reads the truth) |
+| RE3 | **53.33%** | **66.67%** | **+13.33 pp** | `engine-margin < 0.5671 -> prism` — **DEPLOYABLE** |
+
+**The verdict closed the direction on a CORPUS-WIDE frontier and therefore could not see this.** Its §2 reports
+corpus-wide accuracies (`76.10%` baseline, `77.07%` best) and its conclusion — *"deterministic per-context routing
+is not viable"* — is a statement about the whole 615-case benchmark. A per-suite view finds a **deployable**
+single-signal router worth **+13.33 pp** on the suite where our engine is weakest, with **zero regressing cells**.
+**And RE3 was never capped**, so this was measurable in the 615-case run too: the number was the same quantity and
+the *view* was what hid it. *A corpus-wide frontier averages away the suite that needs the most help.*
+
+### 5.2 What this does NOT license
+
+- **A shared threshold is still not supported.** RE1 and RE2's zero-regression frontier is reached only by
+  truth-based oracles, so nothing here reopens per-context routing on those two suites.
+- **`engine-margin < 0.5671` is a single fitted threshold on 90 cases with no held-out validation**, exactly the
+  caution the 615-case verdict already recorded for its own +0.98 pp router. It is a **lead to test**, not a
+  shipped configuration — and the test it needs is a held-out split, which RE3's 90 cases can support only
+  coarsely.
+- **The ceiling is stated in the case-weighted convention.** The fusion artifact's counts are per case, and its
+  `perCell` grid is keyed by **system**, so the union cannot be expressed in the published per-fault-type
+  convention from this artifact. Our headline (78.75%) is type-mean. **The gap between the two conventions is
+  entirely RE3's type imbalance** (58.70% type-mean vs 53.33% case-weighted) — which is the third time in four
+  iterations that a convention, not a signal, has decided a conclusion.
+
+### 5.3 The golden is still in flight
+
+Run `37918529865` carries both repairs. Neither touches `run-rcaeval.ts` or any ranking path, so the nine cells
+hold **by construction** — and they are being measured rather than asserted. One earlier suite completed; the
+remaining jobs, including RE2 and the three ablations, had not landed when this section was written. **This
+paragraph is the honest state, not a placeholder**: a claim about a run that has not finished is exactly what
+§1 of this document is about.

@@ -1,6 +1,7 @@
 # Fusion verdict: deterministic routing cannot reach the union ceiling
 
-**Status: CONCLUDED, and its numbers are being re-taken.** This document closes the P1 per-context routing
+**Status: CORRECTED — the numbers below are the 615-case measurement, and the re-take on 735 changes the
+conclusion in §2. Read §2.1 before quoting any of them.** This document closes the P1 per-context routing
 investigation. It records the full fusion evidence chain — head-to-head → fixed weight → weight sweep → routing
 probe — and the definitive conclusion.
 
@@ -69,7 +70,38 @@ Signal separation on the 136 routable cases (unconstrained by zero-regression):
 | prism-score | 8 / 70 |
 | engine-margin | 5 / 70 |
 
+## 2.1 The re-take on the full corpus: the conclusion does not hold as written
+
+Both workflows were re-run uncapped (`37918734605`, `37918742831`; 3/3 jobs each) with the corpus at the
+benchmark's 735. Two things changed, and the second is the one this document got wrong.
+
+**The numbers moved in the direction that favours fusion.** The union ceiling is **88.44% (650/735)**, not 87.5%
+(538/615); the both-wrong floor is **85 cases (11.56%)**, not 77 (12.5%) — and **24 of those 85 are RE3**, which
+is 12.2% of the corpus and 28.2% of the floor, with a **26.67%** both-wrong rate of its own.
+
+**And the per-suite frontier is not the corpus-wide one.** §2 evaluated routers across the whole benchmark and
+reported one frontier, so its conclusion — *"deterministic per-context routing is not viable"* — is a statement
+about the corpus. Read per suite:
+
+| suite | engine alone | best zero-regression | gain | deployable? |
+| --- | ---: | ---: | ---: | --- |
+| RE1 | 80.27% | 83.20% | +2.93 pp | no — `per-cell-oracle` reads the truth |
+| RE2 | 83.33% | 89.26% | +5.93 pp | no — `per-cell-oracle` reads the truth |
+| RE3 | **53.33%** | **66.67%** | **+13.33 pp** | **YES — `engine-margin < 0.5671 -> prism`, zero regressing cells** |
+
+**RE3 was never capped.** Its 90 cases are the same quantity in both runs, so this router was measurable in the
+615-case run as well — the corpus-wide view is what hid it, not the corpus. **The correction is therefore about
+the SCOPE of the frontier, not about the sampling**, and the next iteration's re-take must report per suite.
+
+**What survives.** A single GLOBAL weight is still not shippable (RE1 admits no positive weight), and RE1/RE2's
+zero-regression frontier is still only reachable by truth-based oracles — so per-context routing is not reopened
+there. And the RE3 router is one fitted threshold on 90 cases with **no held-out validation**, which is the same
+caution this document applied to its own +0.98 pp router two iterations ago; it is a lead to test, not a
+configuration to ship.
+
 ## 3. Conclusion
+
+> **SUPERSEDED IN SCOPE by §2.1.** The statement below is about a CORPUS-WIDE frontier, and a per-suite frontier finds a deployable +13.33 pp router on RE3 with zero regressing cells. It is kept as written because the reasoning about signal separation is still the reason RE1 and RE2 have no deployable router — but it is not the whole answer, and quoting it alone is what this document got wrong.
 
 **Deterministic per-context routing is not viable.** The three available
 inference-time signals (engine `finalScore` margin, PRISM M-score/margin,
