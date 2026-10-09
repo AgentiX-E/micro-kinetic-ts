@@ -105,6 +105,15 @@ export default defineConfig({
         // it — the allow-list's own hole, a fourth time, and now closed by `corpus-owner.test.ts`, which
         // assembles a real case directory and reads the three views back.
         'src/rcaeval-corpus.ts',
+        // Added with the modules: the held-out validator for the routing frontier and the readback that prints it.
+        // Both were imported by `router-validation.test.ts` and absent from this list, so a module with 20 tests
+        // sat outside the denominator and its own coverage was never measured or required — the allow-list's own
+        // hole, a FIFTH time, and this one was not caught by reading it: `coverage-scope.test.ts` diffs the list
+        // against what the tests import and had been failing on `master`, while the iteration that added the
+        // modules reported coverage for them. A number measured over a denominator that excludes its own subject
+        // is a statement about the other files.
+        'src/router-validation.ts',
+        'src/validate-routing-frontier.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

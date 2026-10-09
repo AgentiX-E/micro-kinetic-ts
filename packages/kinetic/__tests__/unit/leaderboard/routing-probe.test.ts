@@ -31,7 +31,12 @@ function record(
 
 describe('regressionCellKey', () => {
   it('joins the system cell and fault type', () => {
+    // THIS STRING IS A CONTRACT WITH ANOTHER PROJECT. `benchmarks/src/router-validation.ts` computes the same key
+    // for the same purpose and cannot import this function — the benchmarks project does not depend on this
+    // package, and the vitest alias that resolves it for tests is absent from `benchmarks/tsconfig.json`. The
+    // separator is therefore pinned by literal on both sides, so re-keying either one alone fails its own test.
     expect(regressionCellKey('RE1:SockShop', 'cpu')).toBe('RE1:SockShop/cpu');
+    expect(regressionCellKey('RE3:TrainTicket', 'f1')).toBe('RE3:TrainTicket/f1');
   });
 });
 

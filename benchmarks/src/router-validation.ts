@@ -19,6 +19,15 @@
  * analogous quantity for OUR metric (service Top-1) on OUR corpus, **held out**, so the margin we report is the
  * margin over a ranker that reads nothing rather than the margin over a coin.
  *
+ * **3. Under WHICH criterion?** A number is only a measurement of a question, and question 1 as first written
+ * asked for accuracy — while the probe that found the lead had already decided it under a STRICTER rule: the
+ * zero-regression gate `analyzeRoutingProbe` applies to every candidate, because a router that lifts the mean by
+ * sinking one (system x fault-type) cell is not a router anyone can ship. Scoring a candidate under a weaker
+ * criterion than the one that admitted it reports a gain the decision was never allowed to take. So every fit and
+ * every cross-validation here takes a {@link FitConstraint} as a REQUIRED argument: the axis is named at each call
+ * site rather than defaulted, because an option the caller may omit is an open axis, and this repository has
+ * already paid for one of those.
+ *
  * Pure functions throughout: every arm here is a decision that can be tested without a run.
  *
  * @module benchmarks/router-validation
@@ -112,21 +121,151 @@ export function accuracy(cases: readonly RoutingCase[], router: ThresholdRouter)
 }
 
 /**
- * The best threshold on a set of cases, by exhaustive scan over candidate split points.
+ * The criteria a threshold may be chosen under.
+ *
+ * A `Record` rather than a union, for the reason `ROUTER_SIGNALS` and `PRISM_POOLINGS` are: a caller that forgets
+ * one is a type error at the one place they are read.
+ */
+export const FIT_CONSTRAINTS: Readonly<Record<'max-accuracy' | 'zero-regression', true>> = {
+  /** The unconstrained optimum. What a frontier table reports by default, and it is optimistic twice over. */
+  'max-accuracy': true,
+  /** The highest accuracy among routers that regress NO cell — the rule the probe's frontier applies. */
+  'zero-regression': true,
+};
+
+/** The criterion a threshold is chosen under. */
+export type FitConstraint = keyof typeof FIT_CONSTRAINTS;
+
+/** The always-engine arm: the baseline every router is read against, and the fallback when nothing is admissible. */
+export function alwaysEngine(signal: RouterSignal): ThresholdRouter {
+  return { signal, threshold: Number.NEGATIVE_INFINITY };
+}
+
+/**
+ * The unit of REGRESSION accounting: the (system x fault-type) pair.
+ *
+ * The probe's `regressionCellKey` builds the identical string, and the duplication is deliberate rather than
+ * tolerated — `benchmarks/package.json` does not depend on `@agentix-e/micro-kinetic`, and the vitest alias that
+ * resolves the package for tests is absent from `benchmarks/tsconfig.json`, so importing the owner across the
+ * boundary would be an undeclared dependency that fails the typecheck leg and would not resolve for the `tsx` CLI
+ * this module is read back through. Two implementations of one convention therefore need a fence, and it is a
+ * LITERAL on each side: `routing-probe.test.ts` pins the probe's function to `<cell>/<faultType>` and
+ * `router-validation.test.ts` pins this one to the same string, so re-keying either alone fails that side's test
+ * instead of silently splitting one unit into two.
+ */
+export function regressionKey(c: RoutingCase): string {
+  return `${c.cell}/${c.faultType}`;
+}
+
+/** Correct/total for one regression unit. */
+export interface CellTally {
+  readonly correct: number;
+  readonly total: number;
+}
+
+/** Per-unit tallies for one router over one case set. */
+export type CellTallies = ReadonlyMap<string, CellTally>;
+
+/**
+ * How a router scores on each regression unit, over exactly the cases it was given.
+ *
+ * The tallies are the ONLY place a cell's membership is decided, so `regressedCells` compares two maps built by
+ * this one function over the same case set — which is why every baseline key has a counterpart and the lookup can
+ * assert rather than defend.
+ */
+export function cellTallies(cases: readonly RoutingCase[], router: ThresholdRouter): CellTallies {
+  const tallies = new Map<string, { correct: number; total: number }>();
+  for (const c of cases) {
+    const key = regressionKey(c);
+    let tally = tallies.get(key);
+    if (!tally) {
+      tally = { correct: 0, total: 0 };
+      tallies.set(key, tally);
+    }
+    tally.total++;
+    if (routedCorrect(c, router)) tally.correct++;
+  }
+  return tallies;
+}
+
+/**
+ * The tolerance the regression test uses, matching the probe's accounting (1e-9).
+ *
+ * It is a tolerance and not a correction: both sides of the comparison are ratios of the same two integers, so
+ * equal correctness yields bit-identical floats. It exists so that the two instruments cannot disagree on the
+ * boundary over a floating-point artifact of how a ratio was formed.
+ */
+const REGRESSION_EPSILON = 1e-9;
+
+/**
+ * The units where `router` scores strictly below the always-engine baseline, on the SAME cases.
+ *
+ * The baseline is rebuilt here rather than taken from the caller, because a regression is a claim about a router
+ * relative to the engine on that population and a caller-supplied baseline is a second chance to pass the wrong
+ * one. Iterating the baseline's keys encodes that both maps cover the same set.
+ */
+export function regressedCells(
+  cases: readonly RoutingCase[],
+  router: ThresholdRouter,
+): readonly string[] {
+  const baseline = cellTallies(cases, alwaysEngine(router.signal));
+  const routed = cellTallies(cases, router);
+  const regressed: string[] = [];
+  for (const [key, base] of baseline) {
+    const got = routed.get(key)!;
+    if (got.correct / got.total + REGRESSION_EPSILON < base.correct / base.total)
+      regressed.push(key);
+  }
+  return regressed;
+}
+
+/**
+ * Whether a router may be chosen under `constraint`.
+ *
+ * The criterion is evaluated in ONE place: a scan that re-implemented "no regressing cell" inline would be the
+ * second copy of the rule the probe already owns, and the two would drift the first time either moved.
+ */
+function admissible(
+  cases: readonly RoutingCase[],
+  router: ThresholdRouter,
+  constraint: FitConstraint,
+): boolean {
+  return constraint === 'max-accuracy' || regressedCells(cases, router).length === 0;
+}
+
+/**
+ * The best threshold on a set of cases **under a named criterion**, by exhaustive scan over candidate split points.
  *
  * The candidate set is the observed signal values themselves (plus one below the minimum, which is the
  * "always engine" arm), because the optimum of a step function always sits at a breakpoint — so the scan is exact
  * and not a grid. Ties resolve to the SMALLER threshold, deterministically, so two runs on the same fold agree.
+ *
+ * Under `'zero-regression'` a candidate is skipped unless it regresses no unit ON THIS SET, which is the same
+ * admissibility rule — and the same unit — `analyzeRoutingProbe` applies when it reports its frontier. The
+ * always-engine arm is admissible by construction (it IS the baseline, so its regression set is empty), which is
+ * what makes the constrained scan total: it can only improve on doing nothing, and it returns doing nothing when
+ * nothing admissible does. On RE3's full-corpus probe records this scan reproduces the probe's own
+ * `bestZeroRegression` exactly — `engine-margin < 0.5671 -> prism`, 66.67%, zero regressing cells — which is the
+ * cross-check that the two implementations of the criterion agree.
+ *
+ * @param cases - The population to fit on.
+ * @param signal - Which inference-time signal the threshold splits.
+ * @param constraint - The criterion; REQUIRED, so no call site can silently take the weaker one.
+ * @returns The best admissible router, or the always-engine arm when none beats it.
  */
-export function fitThreshold(cases: readonly RoutingCase[], signal: RouterSignal): ThresholdRouter {
+export function fitThreshold(
+  cases: readonly RoutingCase[],
+  signal: RouterSignal,
+  constraint: FitConstraint,
+): ThresholdRouter {
   const values = cases.map((c) => signalValue(c, signal));
   const candidates = [Number.NEGATIVE_INFINITY, ...[...values].sort((a, b) => a - b)];
-  let best: ThresholdRouter = { signal, threshold: Number.NEGATIVE_INFINITY };
+  let best: ThresholdRouter = alwaysEngine(signal);
   let bestScore = accuracy(cases, best);
   for (const threshold of candidates) {
     const router: ThresholdRouter = { signal, threshold };
     const score = accuracy(cases, router);
-    if (score > bestScore) {
+    if (score > bestScore && admissible(cases, router, constraint)) {
       bestScore = score;
       best = router;
     }
@@ -150,8 +289,10 @@ export function folds(n: number, k: number): number[][] {
 /** What a cross-validation reports: the in-sample optimum and the held-out estimate, side by side. */
 export interface CrossValidation {
   readonly signal: RouterSignal;
+  /** The criterion the threshold was chosen under — carried so a report cannot print a number without its rule. */
+  readonly constraint: FitConstraint;
   readonly folds: number;
-  /** The best accuracy achievable on the FULL set — the number a probe reports, and it is optimistic. */
+  /** The best accuracy achievable on the FULL set **under `constraint`** — the number a probe reports, and optimistic. */
   readonly inSample: number;
   /** Accuracy of the baseline the router starts from, measured on the full set. */
   readonly baseline: number;
@@ -176,38 +317,64 @@ export interface CrossValidation {
    * the difference between a held-out estimate and a wish.
    */
   readonly fittingAllowance: number;
+  /**
+   * Regression units the deployed routers LOST, summed over the folds — `(fold, unit)` PAIRS, not distinct units.
+   *
+   * The unit is the (system x fault-type) pair and the comparison is against the always-engine baseline **on the
+   * fold's own cases**, because that is the population the decision is made on. A `'zero-regression'` fit
+   * admissible on a train fold is NOT guaranteed admissible on the fold it then scores: the constraint was checked
+   * where the threshold was chosen, and it is this count that says how far the guarantee travels. A count is the
+   * honest unit here — a percentage of units would read as accuracy, which it is not.
+   */
+  readonly regressedUnitsHeldOut: number;
+  /** Per-fold regression counts, so a single bad fold is visible rather than only the total. */
+  readonly perFoldRegressed: readonly number[];
 }
 
 /**
- * Cross-validate one signal's threshold router.
+ * Cross-validate one signal's threshold router **under a named criterion**.
  *
  * Each fold fits on the other `k-1` folds and scores on the held-out one, so no case is ever scored by a router
  * that saw it. The baseline is the engine alone, measured on the full set — the same quantity the in-sample arm
  * starts from, so the two gains are comparable.
+ *
+ * Both the in-sample arm and every fold use the SAME `constraint`, so the difference between the two arms is the
+ * amount of fitting and never the rule: an unconstrained optimum compared against constrained folds would make
+ * "how much did the fit buy" a question about the criterion instead.
+ *
+ * @param cases - The population.
+ * @param signal - Which inference-time signal the threshold splits.
+ * @param k - How many folds; each is fitted on the other `k-1` and scored on itself.
+ * @param constraint - The criterion; REQUIRED, so no call site can silently take the weaker one.
+ * @returns The in-sample optimum, the held-out estimate, and the held-out regression count.
  */
 export function crossValidateRouter(
   cases: readonly RoutingCase[],
   signal: RouterSignal,
   k: number,
+  constraint: FitConstraint,
 ): CrossValidation {
   const partition = folds(cases.length, k);
-  const alwaysEngine: ThresholdRouter = { signal, threshold: Number.NEGATIVE_INFINITY };
+  const baselineRouter = alwaysEngine(signal);
   const perFold: number[] = [];
   const thresholds: number[] = [];
+  const perFoldRegressed: number[] = [];
   for (const testIdx of partition) {
     const test = new Set(testIdx);
     const train = cases.filter((_, i) => !test.has(i));
     const testCases = testIdx.map((i) => cases[i]!);
     // An empty TRAIN fold cannot fit anything; the honest answer is the baseline, not a crash.
-    const router = train.length === 0 ? alwaysEngine : fitThreshold(train, signal);
+    const router = train.length === 0 ? baselineRouter : fitThreshold(train, signal, constraint);
     thresholds.push(router.threshold);
     perFold.push(accuracy(testCases, router));
+    perFoldRegressed.push(regressedCells(testCases, router).length);
   }
   const heldOut = perFold.reduce((s, x) => s + x, 0) / perFold.length;
-  const baseline = accuracy(cases, alwaysEngine);
-  const inSample = accuracy(cases, fitThreshold(cases, signal));
+  const baseline = accuracy(cases, baselineRouter);
+  const inSample = accuracy(cases, fitThreshold(cases, signal, constraint));
   return {
     signal,
+    constraint,
     folds: k,
     inSample,
     baseline,
@@ -216,6 +383,8 @@ export function crossValidateRouter(
     thresholds,
     heldOutGain: heldOut - baseline,
     fittingAllowance: inSample - heldOut,
+    regressedUnitsHeldOut: perFoldRegressed.reduce((s, x) => s + x, 0),
+    perFoldRegressed,
   };
 }
 
@@ -276,13 +445,21 @@ export function priorFloor(cases: readonly RoutingCase[], k: number): PriorFloor
   };
 }
 
-/** The most frequent truth, ties broken by name so the result is deterministic. */
+/**
+ * The most frequent truth, ties broken by name so the result is deterministic.
+ *
+ * Iterating the names in their DEFAULT sorted order makes "the first strict maximum wins" a name tie-break. The
+ * obvious spelling — sorting the entries with a comparator ending in `a > b ? 1 : 0` — carries an equality arm no
+ * input can reach, because a `Map`'s keys are unique by construction; that unreachable branch is why this reads the
+ * keys and sorts them without a comparator, and the order it produces is the same one the comparator produced.
+ */
 export function modalTruth(cases: readonly RoutingCase[]): string {
   const counts = new Map<string, number>();
   for (const c of cases) counts.set(c.truth, (counts.get(c.truth) ?? 0) + 1);
   let best = '';
   let bestN = -1;
-  for (const [name, n] of [...counts].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+  for (const name of [...counts.keys()].sort()) {
+    const n = counts.get(name)!;
     if (n > bestN) {
       best = name;
       bestN = n;
