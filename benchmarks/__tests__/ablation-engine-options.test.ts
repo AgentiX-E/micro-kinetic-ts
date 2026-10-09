@@ -57,6 +57,27 @@ import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
 import { UNREPORTED_BY_ENGINE_RUNNERS } from '../src/reported-config.js';
 import { PRUNER_OPTION_MEMBERS, TOPOLOGY_MEMBERS, namedOn } from './helpers/engine-interfaces.js';
 
+/**
+ * A source file with its comments removed — block comments and whole-line `//` comments.
+ *
+ * A fence that asserts on file TEXT is satisfied — or defeated — by the comments that explain the defect, and
+ * this repository has now paid for that twice: `benchmark-rcaeval-trigger`'s sampler check matched the comment
+ * explaining why `--max-cases` was removed, and the header fence below matched **two** comments quoting the
+ * phrase it exists to forbid. Both were assertions about a string, published as assertions about a statement.
+ *
+ * Block comments are removed whole (`/* … *\/`), and only comment-ONLY lines are dropped for the line form, so
+ * a trailing comment on a code line survives and a `//` inside a string literal cannot be mangled.
+ *
+ * @param src - The file's text.
+ * @returns The same text without comments.
+ */
+const stripComments = (src: string): string =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join('\n');
+
 /** Every flag off — the configuration the artifact used to label `BASELINE (all OFF)`. */
 const ALL_OFF: AblationFeatureFlags = {
   collisionAggregation: false,
@@ -477,5 +498,30 @@ describe('the sweep axis is two-dimensional, and its first column is the shipped
     // be ambiguous between one that can regress and one that does not.
     expect(RUNNER).toContain('prismPooling=${b.point.pooling}');
     expect(RUNNER).toContain('${b.point.label}');
+  });
+
+  it('states the AVG/CW rule AS A RULE, and never as a list of the suites that satisfy it', () => {
+    // The header line used to read "…which is RE1 alone". The run that corrected RE2's corpus falsified it:
+    // RE2's AVG and CW both read 83.7% with all six fault types at 45 case-reps, so the suite the
+    // parenthetical excluded turned out to be a second counter-example. A NAMED answer to a population
+    // question goes stale the next time the population moves; the rule does not.
+    //
+    // THE CHECK READS COMMENTS-STRIPPED SOURCE, and it has to. Its first version asserted on the raw text and
+    // FAILED twice over — on the comment directly above it, which quotes the phrase it exists to forbid, and
+    // then on the block JSDoc of the constant that replaced it, which quotes it too. The same thing is already
+    // in the register (the workflow sampler check matched the comment explaining why the flag was removed), so
+    // the repair is general: strip both comment forms first, and then a text assertion is an assertion about
+    // the STATEMENT rather than about the prose that describes it.
+    const code = stripComments(RUNNER);
+    expect(code).not.toContain('which is RE1 alone');
+    // And ONE owner, with both renderings reading it: a second hand-written copy of this fact is exactly the
+    // defect being repaired, so its return is a failure rather than an omission.
+    expect(code.match(/const FOLD_CONVENTIONS/g)?.length, 'one definition').toBe(1);
+    expect(
+      code.match(/for \(const line of FOLD_CONVENTIONS\)/g)?.length,
+      'two renderings read it',
+    ).toBe(2);
+    expect(code).toMatch(/coincide exactly when every fault type holds the same case count/);
+    expect(code, 'and it points at the evidence').toContain('print that count');
   });
 });

@@ -90,6 +90,26 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * The AVG/CW rule, stated ONCE and printed by **both** renderings of this artifact's results.
+ *
+ * It used to be written out twice — above the study's results table and above the PRISM sweep's — with
+ * different wording, and when RE2's corpus was corrected the two copies diverged in the worst way: the study's
+ * was fixed and the sweep's still read *"…which is RE1 alone"*, so the artifact went on printing a claim its
+ * own columns had already falsified, in one of its two tables. Two wordings of one fact is the register's
+ * **"a quantity with N implementations is a quantity with no convention"**, in prose.
+ *
+ * The rule deliberately names no suite. RE2's `AVG` and `CW` both read 83.7% with all six fault types at 45
+ * case-reps, so the suite the old parenthetical excluded is a second counter-example: *a named answer to a
+ * population question goes stale the next time the population moves; a rule does not.* The evidence is the
+ * per-fault-type cells, which print their counts.
+ */
+const FOLD_CONVENTIONS: readonly string[] = [
+  'AVG = per-system mean over FAULT TYPES (the published convention; the nine cells are in it).',
+  'CW = per-system mean over CASES. The PRISM sweep prints the same two numbers as `overall` and `cw`.',
+  'They coincide exactly when every fault type holds the same case count — the per-fault-type cells print that count, so this statement never has to name a suite.',
+];
+
 // ── Feature Configuration ─────────────────────────────────
 
 /**
@@ -1301,10 +1321,10 @@ async function main(): Promise<void> {
     console.log(`\n${'═'.repeat(80)}`);
     console.log('PRISM SWEEP — Overall + Zero-Regression Frontier');
     console.log(
-      '  overall = mean over CELLS (fault types) — the published convention, and what BEST is chosen by.' +
-        "\n  cw      = mean over CASES — the study's original convention. They differ unless every cell" +
-        '\n            holds the same case count, which is RE1 alone.',
+      '  overall = mean over CELLS (fault types) — the published convention, and what BEST is chosen by.',
     );
+    // The same statement the study's table prints, from the same owner — see `FOLD_CONVENTIONS`.
+    for (const line of FOLD_CONVENTIONS) console.log(`  ${line}`);
     console.log('═'.repeat(80));
     for (const r of analysis.readings) {
       const tag =
@@ -1621,15 +1641,10 @@ async function main(): Promise<void> {
   for (const ds of datasets) header += ` ${ds.padEnd(16)}`;
   header += ' AVG    CW';
   console.log(header);
-  // The two folds, named on the artifact itself. A reader of the artifact is otherwise left to guess
-  // which convention a number is in — which is exactly the guess that cost three runs of investigation.
-  console.log(
-    '  AVG = per-system mean over FAULT TYPES (the published convention; the nine cells are in it).' +
-      '  CW = per-system mean over CASES.',
-  );
-  console.log(
-    '  They coincide only where every fault type holds the same case count, which is RE1 alone.',
-  );
+  // The two folds, named on the artifact itself from ONE owner. A reader of the artifact is otherwise left to
+  // guess which convention a number is in — the guess that cost three runs of investigation — and the rule
+  // used to name the suites that satisfy it, which is a statement that goes stale when a corpus moves.
+  for (const line of FOLD_CONVENTIONS) console.log(`  ${line}`);
   console.log(header);
   console.log('─'.repeat(80));
 

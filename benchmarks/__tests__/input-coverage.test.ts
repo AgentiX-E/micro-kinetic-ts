@@ -74,7 +74,7 @@ describe('the input census', () => {
       withChannels({}),
     ]);
     expect(coverage.cases).toBe(3);
-    expect(coverage.casesWithLogs).toBe(1);
+    expect(coverage.casesWithReadableLogs).toBe(1);
     expect(coverage.logEntries).toBe(3);
     expect(coverage.casesWithSpans).toBe(2);
     expect(coverage.casesWithSpanActivity).toBe(1);
@@ -83,6 +83,24 @@ describe('the input census', () => {
     expect(coverage.latencyEdges).toBe(6);
     expect(channelCases(coverage, 'metrics')).toBe(3);
     expect(channelCases(coverage, 'logs')).toBe(1);
+  });
+
+  it('says WHICH log quantity the count is, because another instrument counts another one', () => {
+    // Two instruments print a log-case count over the same corpus and they are not the same quantity:
+    // `run-rcaeval.ts` counts cases whose file yielded ANY row (`logRowsRead`, pre-filter) and prints
+    // `cases with logs`; this census counts cases RETAINING a readable row (post-filter) and now prints
+    // `readable`. Measured on RE2-OnlineBoutique those read 90/90 and 21/90 — a factor of four, under one
+    // word. The label is the assertion, because the number alone cannot distinguish them.
+    const lines = formatInputCoverage(
+      summarizeInputCoverage([withChannels({ logs: 3 }), withChannels({})]),
+      'RE2',
+    );
+    expect(lines[0]).toContain('logs 1/2 readable');
+    // And the field is named for what it counts, so a consumer cannot read the other quantity by accident.
+    expect(summarizeInputCoverage([withChannels({ logs: 3 })])).toHaveProperty(
+      'casesWithReadableLogs',
+    );
+    expect(summarizeInputCoverage([withChannels({ logs: 3 })])).not.toHaveProperty('casesWithLogs');
   });
 
   it('distinguishes the two kinds of zero, which is the whole point', () => {

@@ -556,8 +556,17 @@ export const TERM_CHANNELS: Readonly<Record<string, SignalChannel>> = {
 export interface InputCoverage {
   /** How many cases the population holds. */
   readonly cases: number;
-  /** Cases with at least one log entry, and the total entries. */
-  readonly casesWithLogs: number;
+  /**
+   * Cases retaining at least one **readable** log row — one the severity derivation kept (ERROR/FATAL) — and the
+   * total readable entries.
+   *
+   * Named for what it counts, because `run-rcaeval.ts` prints a `cases with logs` line of its own that counts a
+   * DIFFERENT quantity: cases whose file yielded any row at all, taken from `logRowsRead` before the assembly's
+   * retention filter. On RE2-OnlineBoutique the two read `21/90` and `90/90` for the same corpus, and neither line
+   * said which it was. This is the one `logWeight`'s measurability must be decided on, because a case with no
+   * readable row contributes nothing to the signal.
+   */
+  readonly casesWithReadableLogs: number;
   readonly logEntries: number;
   /** Cases that carried spans into the assembly (the augmentation's input). */
   readonly casesWithSpans: number;
@@ -587,7 +596,7 @@ export function summarizeInputCoverage(
     readonly edgeLatency?: ReadonlyArray<unknown> | undefined;
   }>,
 ): InputCoverage {
-  let casesWithLogs = 0;
+  let casesWithReadableLogs = 0;
   let logEntries = 0;
   let casesWithSpans = 0;
   let casesWithSpanActivity = 0;
@@ -597,7 +606,7 @@ export function summarizeInputCoverage(
   for (const c of cases) {
     const logs = c.logs?.length ?? 0;
     if (logs > 0) {
-      casesWithLogs++;
+      casesWithReadableLogs++;
       logEntries += logs;
     }
     if ((c.traces?.length ?? 0) > 0) casesWithSpans++;
@@ -611,7 +620,7 @@ export function summarizeInputCoverage(
   }
   return {
     cases: cases.length,
-    casesWithLogs,
+    casesWithReadableLogs,
     logEntries,
     casesWithSpans,
     casesWithSpanActivity,
@@ -633,7 +642,7 @@ export function channelCases(coverage: InputCoverage, channel: SignalChannel): n
     case 'metrics':
       return coverage.cases;
     case 'logs':
-      return coverage.casesWithLogs;
+      return coverage.casesWithReadableLogs;
     case 'spans':
       return coverage.casesWithSpans;
     case 'spanActivity':
@@ -671,7 +680,8 @@ export function readZero(
 export function formatInputCoverage(coverage: InputCoverage, label: string): string[] {
   const lines = [
     `input-coverage[${label}]: ${coverage.cases} cases | ` +
-      `logs ${coverage.casesWithLogs}/${coverage.cases} (${coverage.logEntries} entries) | ` +
+      `logs ${coverage.casesWithReadableLogs}/${coverage.cases} readable ` +
+      `(${coverage.logEntries} entries) | ` +
       `spans ${coverage.casesWithSpans}/${coverage.cases} | ` +
       `spanActivity ${coverage.casesWithSpanActivity}/${coverage.cases} | ` +
       `failedEdges ${coverage.casesWithFailedEdges}/${coverage.cases} | ` +
