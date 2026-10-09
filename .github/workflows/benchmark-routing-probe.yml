@@ -87,7 +87,11 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --routing-probe routing-probe-re2.json 2>&1 | tee rcaeval-re2-results.txt
+          # NO `--max-cases`, for the reason `benchmark-fusion-ceiling.yml` states: the frontier this probe
+          # reports IS the conclusion of `docs/fusion-routing-verdict.md` (a register-tracked verdict), so it may
+          # not be measured on a sample. At `--max-cases 50` this invocation evaluated 150 of RE2's 270 cases,
+          # and RE2 is the suite whose cells moved most when the corpus was repaired (RE2-OB 82.4 -> 86.7).
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --routing-probe routing-probe-re2.json 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 routing-probe results
         if: always()
         uses: actions/upload-artifact@v4

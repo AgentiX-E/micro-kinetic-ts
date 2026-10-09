@@ -258,10 +258,13 @@ describe('the dump’s render precision is a dispatch input', () => {
  * ## What this holds
  *
  * An ABSENCE, because that is the shape of the defect: **no invocation in this workflow may cap the corpus**.
- * And an EXACT SET for the workflows that legitimately sample — a probe may sample, but the set of probes that
- * do cannot grow silently, and each entry names what it is so a reader can tell a probe from the benchmark.
+ * And a RULE over the other workflows: **a workflow that caps may not be named by any document.** This replaced
+ * an exact set of four filenames, and the replacement is the repair for this defect rather than a tidier spelling
+ * of it — the set said two verdict-cited probes may sample, and the verdicts cited their numbers. A rule that
+ * reads the repository's own citations cannot be maintained into staleness by the person citing the number.
  */
 const WORKFLOWS = resolve(repoRoot, '.github/workflows');
+const DOCS = resolve(repoRoot, 'docs');
 
 describe('the golden benchmark ranks the whole corpus it is scored on', () => {
   const invocations = [
@@ -288,35 +291,66 @@ describe('the golden benchmark ranks the whole corpus it is scored on', () => {
     expect(cli).toContain("'--max-cases'");
   });
 
-  it('names the workflows that may still sample, so the set cannot grow silently', () => {
-    // A probe or a sweep may sample — what it may not do is be read as the benchmark. Each entry is a file
-    // whose artifact states its own `max N cases` line, and the register's rows for the sweep already say
-    // "capped 50/system".
-    //
-    // `fse26-benchmark.yml` is deliberately NOT here: it is a different benchmark with a different loader, and
-    // its cap is a DISPATCH INPUT (`MAX_CASES_ARG`) rather than a literal on the command line — so it is not a
-    // member of the population this test is about, and its own gate is the one that must catch a change there.
-    const MAY_SAMPLE: readonly string[] = [
-      'benchmark-near-zero-rise.yml',
-      'benchmark-fusion-ceiling.yml',
-      'benchmark-routing-probe.yml',
-      'benchmark-prism-sweep.yml',
-    ];
+  it('holds the rule: a workflow a document CITES may not cap its corpus', () => {
     // Read as INVOCATIONS, not as file text. The first version scanned the whole file for the token, and the
-    // comment this change left in `benchmark-rcaeval.yml` — which names the flag to explain why it is gone —
-    // made that file a member of its own sampler list. A count of a syntactic form is not a statement about a
-    // group; the group here is "an invocation that caps its corpus".
+    // comment left in `benchmark-rcaeval.yml` — which names the flag to explain why it is gone — made that file
+    // a member of its own sampler list. A count of a syntactic form is not a statement about a group; the group
+    // here is "an invocation that caps its corpus".
     const sampling = readdirSync(WORKFLOWS)
       .filter((name) => name.endsWith('.yml'))
-      .filter((name) => {
-        const text = readFileSync(resolve(WORKFLOWS, name), 'utf8');
-        return [...text.matchAll(/pnpm exec tsx benchmarks\/src\/run-[\w-]+\.ts ([^\n]*)/g)].some(
-          (m) => m[1]!.includes('--max-cases'),
-        );
-      })
+      .filter((name) =>
+        [
+          ...readFileSync(resolve(WORKFLOWS, name), 'utf8').matchAll(
+            /pnpm exec tsx benchmarks\/src\/run-[\w-]+\.ts ([^\n]*)/g,
+          ),
+        ].some((m) => m[1]!.includes('--max-cases')),
+      )
       .sort();
-    expect(sampling).toEqual([...MAY_SAMPLE].sort());
-    // The benchmark's own workflow is not among them, which is the whole point of the list above.
-    expect(MAY_SAMPLE).not.toContain('benchmark-rcaeval.yml');
+
+    // THE RULE, and it replaced an enumeration of four filenames. That enumeration is why this defect survived
+    // iteration 75: the list said `benchmark-fusion-ceiling.yml` and `benchmark-routing-probe.yml` MAY sample,
+    // and their artifacts are exactly what three verdict documents consume — `fusion-routing-verdict.md` states
+    // the union ceiling "87.5% (538/615)" as the reason deterministic routing was closed, and
+    // `delay-exhausted-verdict.md` and `rank-collapse-falsified.md` cite the same number as an information
+    // ceiling. **A probe may sample; a CONCLUSION may not rest on one.** A named list cannot express that,
+    // because the list is maintained by the same person who is about to cite the number.
+    //
+    // The rule that can: a workflow may cap only while NO document names it. The claim is checkable from the
+    // repository's own text, so it cannot go stale silently — the day a document starts citing a sampler, the
+    // citation itself fails this assertion.
+    const cited = sampling.filter((name) =>
+      readdirSync(DOCS)
+        .filter((doc) => doc.endsWith('.md'))
+        .some((doc) => readFileSync(resolve(DOCS, doc), 'utf8').includes(name)),
+    );
+
+    // UNCONDITIONAL, and it needs no exemption list — which is the point of defining the population by
+    // INVOCATION. `fse26-benchmark.yml` caps via a DISPATCH INPUT (`MAX_CASES_ARG`) rather than a literal on a
+    // command line, so it is not a member of this population at all and cannot appear here; that is the same
+    // reason the set it replaced never listed it. A rule whose population is defined by the right predicate
+    // needs fewer exceptions than one whose population is a list.
+    expect(cited, 'no workflow that caps may be named by a document').toEqual([]);
+
+    // The check is not vacuous: some workflows DO cap, so an empty `cited` is a statement about them rather
+    // than about an empty `sampling`.
+    expect(sampling.length).toBeGreaterThan(0);
+
+    // And the two workflows whose artifacts the verdicts consume are not samplers any more — asserted as a
+    // PRESENCE beside the absence, because "must not cap" alone would also be satisfied by deleting the
+    // invocation, which would leave the verdicts with no measurable source at all.
+    for (const [file, probe] of [
+      ['benchmark-fusion-ceiling.yml', '--fusion-ceiling'],
+      ['benchmark-routing-probe.yml', '--routing-probe'],
+    ] as const) {
+      const text = readFileSync(resolve(WORKFLOWS, file), 'utf8');
+      expect(sampling, `${file} must not sample`).not.toContain(file);
+      // INVOCATION-scoped, and deliberately not `text.includes(probe)`: the comment above that invocation names
+      // the flag in order to explain the absence, so a text check would be satisfied by the explanation of the
+      // very change it exists to protect. Third occurrence of that shape in this repository — hence the regex
+      // starts at the subcommand and refuses a cap between it and the probe.
+      expect(text, `${file}'s RE2 invocation must still run its probe, uncapped`).toMatch(
+        new RegExp(`--suite re2 (?!--max-cases)\\S*${probe}`),
+      );
+    }
   });
 });

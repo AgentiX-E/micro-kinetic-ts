@@ -1520,6 +1520,14 @@ async function main(): Promise<void> {
       // Collected rather than folded as we go precisely because the fold must not be the case-weighted
       // one — the whole point of the pair is that the same cells give two different, nameable numbers.
       const ftSamples: number[] = [];
+      // ⚠️ Its `cases` is a **case-REP** count, not a case count, because this map is allocated OUTSIDE the
+      // repetition loop below and accumulated INSIDE it: after three repetitions every entry holds
+      // `3 x ftCases.length`. That is the right population for the percentage printed beside it (a mean over
+      // case-reps), and it is what makes the running weighted mean below correct — `existing.cases` is in
+      // case-reps and `ftMetric.cases` is in cases, and their 2:1 ratio after two reps is exactly the weight
+      // ratio a mean over three samples needs. What was missing is the UNIT: this count is printed as a bare
+      // `(N)` in a table whose sibling line prints `(N cases)`, so a reader reconciles them by dividing by
+      // `REPETITIONS` or concludes the corpus is three times its size. The header states it now.
       const perFaultType = new Map<string, { cases: number; accuracy: number }>();
       const reps: number[] = [];
 
@@ -1775,6 +1783,14 @@ async function main(): Promise<void> {
 
     console.log(`\n${'─'.repeat(80)}`);
     console.log(`${systemName} — Per-Fault-Type A@1 Breakdown`);
+    // The unit, stated where it is consumed. Without this line the counts below collide with the `N cases` the
+    // loader prints for the same system: this table's `(n)` is CASES x REPETITIONS, because the accumulator is
+    // allocated outside the repetition loop, and the two numbers differ by exactly `REPETITIONS`. A reader who
+    // does not know that cannot tell a balanced corpus from a mis-loaded one — and the register quotes these
+    // counts as the evidence that a sample is measurable.
+    console.log(
+      `  (n) = case-reps: cases x REPETITIONS (${REPETITIONS}) — the population each percentage is a mean over.`,
+    );
     console.log(`${'─'.repeat(80)}`);
 
     let ftHeader = `${'Configuration'.padEnd(30)}`;

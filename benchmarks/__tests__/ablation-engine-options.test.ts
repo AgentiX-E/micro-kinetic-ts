@@ -507,4 +507,28 @@ describe('the sweep axis is two-dimensional, and its first column is the shipped
     expect(code).toMatch(/coincide exactly when every fault type holds the same case count/);
     expect(code, 'and it points at the evidence').toContain('print that count');
   });
+
+  it('states the unit of the per-fault-type count, and keeps its cause in view', () => {
+    // The table's `(n)` is a CASE-REP count, because `perFaultType` is allocated outside the repetition loop
+    // and accumulated inside it — so after three repetitions every entry holds `3 x cases`. The loader prints
+    // `N cases` for the same system a few lines above, so two quantities differing by exactly REPETITIONS were
+    // printed under one word. This is the repository's own law ("two instruments may not share one word")
+    // arriving at the artifact the register quotes its sample sizes from: capped RE2 read `27/27/27/27/24/18`,
+    // which is 9/9/9/9/8/6 cases at three repetitions.
+    //
+    // The ORDER is asserted, not just the label: the label would stay true if someone moved the allocation
+    // inside the loop and forgot to say so, so the fence pins the cause as well as the statement.
+    const declaration = RUNNER.indexOf('const perFaultType = new Map<');
+    const repLoop = RUNNER.indexOf('for (let rep = 0; rep < REPETITIONS; rep++)');
+    expect(declaration, 'the accumulator is declared').toBeGreaterThan(-1);
+    expect(repLoop, 'the repetition loop is present').toBeGreaterThan(-1);
+    expect(
+      declaration,
+      'and it is declared OUTSIDE the repetition loop, which is why (n) is a case-rep count',
+    ).toBeLessThan(repLoop);
+    // So the unit MUST be stated where the table is printed — the one place a reader reconciles it with the
+    // `N cases` line — and it must name both the factor and its source rather than only the word.
+    expect(RUNNER).toContain('(n) = case-reps: cases x REPETITIONS');
+    expect(RUNNER).toMatch(/cases x REPETITIONS \(\$\{REPETITIONS\}\)/);
+  });
 });

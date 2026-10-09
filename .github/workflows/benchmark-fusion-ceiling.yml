@@ -84,7 +84,13 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --fusion-ceiling fusion-ceiling-re2.json 2>&1 | tee rcaeval-re2-results.txt
+          # NO `--max-cases`. This probe's output is not a probe-only curiosity: `docs/fusion-routing-verdict.md`
+          # cites its union ceiling as the reason deterministic routing was closed, and
+          # `docs/delay-exhausted-verdict.md` and `docs/rank-collapse-falsified.md` cite the same number as an
+          # information ceiling. A number a VERDICT rests on may not come from a SAMPLE — and at
+          # `--max-cases 50` this invocation ranked 150 of RE2's 270 cases, which is how `fusion-routing-verdict.md`
+          # came to state 87.5% as (538/615) over a corpus the published cells no longer use.
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --fusion-ceiling fusion-ceiling-re2.json 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 fusion-ceiling results
         if: always()
         uses: actions/upload-artifact@v4
