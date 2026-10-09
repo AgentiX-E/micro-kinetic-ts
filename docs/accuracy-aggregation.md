@@ -4,6 +4,11 @@
 reproduced bit-for-bit by the owner's function, and the study half now reports the published convention as
 its headline with its own convention printed beside it.
 
+**And §7 closes a residual this repair left in its own scope** — four hand-rolled case-weighted folds still in
+`run-ablation.ts`, the runner every ledger number comes from, found by an audit of the `@k` family rather than
+by a failing test. Read §7 before trusting §3's *"every site now calls it"*, which was true of the published
+fold only.
+
 ## 1. The defect
 
 RCAEval's published table reports, per system, an `AVERAGE` column beside one column per fault type. That
@@ -21,7 +26,7 @@ the other convention** — the mean over CASES:
 | --- | --- | --- |
 | `run-rcaeval.ts`, the table's `AVERAGE` | fault-type accuracies → a system's AC@1 | **published** |
 | `run-local-bench.ts` | the same | **published, written out a second time** |
-| `run-ablation.ts`, per system | the same | case-weighted (`allA1 += avgTop1 × cases`) |
+| `run-ablation.ts`, per system | the same | case-weighted (`allA1 += avgTop1 × cases`) — **the last site repaired, in §7** |
 | `prism-sweep.ts`, `analyzePrismSweep`'s `overall` | the same, over cells | case-weighted |
 | `benchmark-runner.ts`, `runAll` | the same, over suites | case-weighted ×4 (**the method has no callers at all**) |
 | `benchmark-runner.ts`, the three report formatters | the same, for a summary line | case-weighted ×6 (labelled `weightedAvg`, so honest) |
@@ -129,4 +134,63 @@ runner's nine further copies by asserting their ABSENCE) · `packages/kinetic`'s
 failing assertion **was** the defect restated as an expectation (`overall[0] === 0.75` for a 75/25 split — the
 case mean) and now asserts both conventions · twelve packages plus `benchmarks` swept (a fence in package X
 reads package Y's source) · both typechecks · lint · format · **four mutations, four killed**.
+
+## 7. The residual THIS census left, and it was its own
+
+**Status:** defect found by audit, repaired, fenced, **two mutations killed**. **No number moves** — the repair
+is a refactor by construction, and §7.4 states how that is checked.
+
+### 7.1 What was left behind
+
+§3 routed the **published** fold to the owner and said *"Every site now calls it, and each site's choice is a
+call rather than a re-derivation."* For `run-ablation.ts` that was half true. It called the owner for the
+headline and kept **four hand-rolled case-weighted accumulators**:
+
+```ts
+allA1 += result.avgTop1 * suite.cases.length;      // ×4, one per metric
+…
+const avgA1 = totalCases > 0 ? allA1 / totalCases : 0;   // ×4, one per metric
+```
+
+**Four sites of the convention this document exists for, in the runner every ledger number comes from.** The
+record already said so twice and neither reached the guard: §1's table lists `run-ablation.ts` as a
+case-weighted site (`allA1 += avgTop1 × cases` — the expression, verbatim), and the owner module's own docblock
+names *"an ablation row"* as the first re-implementation it was written to remove.
+
+### 7.2 How it was found — not by a failing test
+
+By an **audit of the `@k` family** during a verification pass on the benchmark's own metric definitions:
+`suite-accuracy.ts`'s consumers were enumerated and the ablation was not among them while `run-rcaeval.ts`,
+`run-local-bench.ts`, `benchmark-runner.ts` and `prism-sweep.ts` all were.
+
+The reason no test caught it is the finding: §6's fence covered the runner and the local bench under the title
+**"leaves no hand-rolled fold in the two remaining sites"** — a title that *enumerated a population*. The
+population §1 names is five sites. **An enumeration standing in for a rule goes stale the moment the population
+is larger than the enumeration**, and this one had been stale since it was written.
+
+### 7.3 The repair, and why it is a refactor rather than a re-measurement
+
+Four `AccuracyCell[]` arrays are pushed in the loop in exactly the order the accumulators added them, and folded
+once each by `caseWeightedMean`. The owner accumulates `accuracy × cases` and `cases` in cell order and divides
+at the end; the inline form accumulated the same two sums in the same order and divided at the end. **Same
+cells, same order, same operation** — bit-identical, including the empty-population arm, which returns `0` and
+is exactly the `totalCases > 0 ? … : 0` guard removed.
+
+`totalCases` survives as a separate counter, deliberately: the artifact **prints** it (`N case-reps`), which is
+a population and not a fold.
+
+### 7.4 The fence, and the two mutations that prove it is real
+
+The new fence is an **ABSENCE over the whole file** rather than a list of known sites — that is the repair for
+§7.2's cause, not for its symptom — plus four positive assertions that each fold is a call to the owner:
+
+| mutation | result |
+| --- | --- |
+| `avgA5` reverted to an inline `reduce((s,c) => s + c.accuracy × c.cases, 0) / totalCases` (a **different name**) | **killed** — the positive assertion `const avgA5 = caseWeightedMean(a5Cells)` fails |
+| a hand-rolled accumulator name (`allA1`) reintroduced | **killed** — the absence assertion fails |
+
+Both read **comments-stripped** source, because this repository has paid twice for a text assertion being
+defeated by the comment explaining the defect (`benchmark-rcaeval-trigger`'s sampler check; `ablation-engine-
+options`'s AVG/CW absence fence). The stripper now lives once in `benchmarks/__tests__/helpers/source-text.ts`:
+two fences needing it is two answers to "what does this file say", which is the shape both fences exist to catch.
 

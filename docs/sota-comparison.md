@@ -26,6 +26,16 @@
 *service/component*), the RCAEval protocol. Where a method reports a *different* metric or subset, that is stated
 explicitly — cross-metric comparison is the single largest source of false "SOTA" claims in this field.
 
+**And the benchmark's own published table is NOT in this metric.** Verified against the framework's repository
+(2026-10-09): its reproduction script prints **`Avg@5`** per fault type with an `AVERAGE` column — *"BARO
+achieves Avg@5 of 0.72, 0.99, 1, 0.83, 0.64, and 0.8 for CPU, MEM, DISK, SOCKET, DELAY, LOSS, and AVERAGE on the
+Train Ticket dataset"* — and **TraceRCA's often-quoted "0.77" is an `Average@5`**, not a Top-1. So the framework's
+**15 reproducible baselines have no published Top-1 number at all**, and any comparison of our AC@1 against a
+number from its tables would be cross-metric. Two instruments the framework has since added make that comparison
+honest and cheap, and neither is in our harness yet: **`--report-chance`** (prints `Chance@5` and `Lift@5` "so an
+absolute score can be read against the floor a random ranker would reach on the same candidate set") and
+**`--report-decomposition K`** (prints `Retrieval@K` and `Rerank@1` beneath each `Avg@5`).
+
 ---
 
 ## 0. STANDING — where this project sits, on three published evaluations
