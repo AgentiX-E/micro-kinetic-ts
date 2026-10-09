@@ -155,10 +155,21 @@ the *view* was what hid it. *A corpus-wide frontier averages away the suite that
   entirely RE3's type imbalance** (58.70% type-mean vs 53.33% case-weighted) — which is the third time in four
   iterations that a convention, not a signal, has decided a conclusion.
 
-### 5.3 The golden is still in flight
+### 5.3 The golden, measured (`37918529865`, 10/10 jobs)
 
-Run `37918529865` carries both repairs. Neither touches `run-rcaeval.ts` or any ranking path, so the nine cells
-hold **by construction** — and they are being measured rather than asserted. One earlier suite completed; the
-remaining jobs, including RE2 and the three ablations, had not landed when this section was written. **This
-paragraph is the honest state, not a placeholder**: a claim about a run that has not finished is exactly what
-§1 of this document is about.
+Neither repair touches `run-rcaeval.ts` or any ranking path, so the nine cells held **by construction** — and this
+is the run that measures it rather than asserting it.
+
+| artifact | vs run `37900344770` | after normalising timing | after removing the inserted header |
+| --- | ---: | ---: | ---: |
+| `rcaeval-re{1,2,3}-results` | 1 line each | **0** | — (nothing inserted) |
+| `ablation-re{1,2,3}-results` | 212 lines each | 212 | **0** — exactly **3 inserted lines**, one per system |
+
+**The nine `AC@1` rows are byte-identical**, and every ablation artifact is identical apart from the three header
+lines this iteration added — one per system, because the breakdown is printed once per system.
+
+**And the counts themselves did not move**: RE1's `BASELINE` row still reads `92% (75) 88% (75) 84% (75) 44% (75)
+92% (75)`. `75` is 75 **case-reps** per fault type = 25 cases × 3 repetitions, so the fix was a **label and not a
+computation** — which is what §4 asserted, and which the artifact now demonstrates rather than implying. *A repair
+that changes a unit has to be shown not to change a value, and the way to show it is to remove the lines it added
+and re-diff.*
