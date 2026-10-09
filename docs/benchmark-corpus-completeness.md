@@ -223,10 +223,10 @@ one to two orders of magnitude **while its census case count did not move at all
 And the bound: `ablation-re2` was raised 90 → 180 on a projection of 1.8× the case-runs, and measured **52.2 min** —
 *less* than the **54.3 min** it took on the capped 150-case corpus. **The projection was wrong, in the safe
 direction, and its error is informative: the heap was the cost, not the corpus.** Doubling the corpus while
-ceasing to retain 240 MB per case per suite is *cheaper* than the capped run was. 180 is now 3.4× the measured
-worst case, i.e. loose rather than binding, and it stays because a bound a working job exceeds misclassifies
-healthy work while a loose one only delays detecting a hang — and the number to tighten it against is now
-measured rather than projected.
+ceasing to retain 240 MB per case per suite is *cheaper* than the capped run was. 180 was then 3.4× the measured
+worst case — loose rather than binding, which stays the choice because a bound a working job exceeds misclassifies
+healthy work while a loose one only delays detecting a hang. **The multiplier is superseded below; the reasoning
+is not.**
 
 **And a third measurement changed the story again.** The next run on the same corpus (`37886983273`, commit
 `62bac15`) took **86.3 min** for the same job — with no change to any code path the job measures, since that
@@ -234,10 +234,32 @@ commit's edits are three console statements and a field rename. Its siblings mov
 (`rcaeval-re2` 27.3 → 27.5, `ablation-re3` 31.5 → 32.5, `ablation-re1` 16.9 → 14.3). So `ablation-re2` has been
 observed at **52.2 and 86.3 min — a 65% spread**, and the old 90-minute bound would have **killed the second
 run**. The 90 → 180 raise was therefore necessary, but for a reason the record did not have: **run-to-run variance
-on the heaviest job, not "1.8× the case-runs"**. 180 is 2.1× the observed worst case. *A bound set from one
+on the heaviest job, not "1.8× the case-runs"**. 180 was then 2.1× the observed worst case. *A bound set from one
 measurement is a bound with no margin, and a precedent is not a measurement* — this repository's own law, here
 with a number attached. A future iteration should set this from a distribution (several runs) rather than from the
 newest sample.
+
+**That distribution is now n=3, and it is the reason this section is not settled at 2.1×.** The run that
+confirmed iteration 76's refactor (`37900344770`, commit `070e9b4`) took **88.1 min** for the same job. The
+identical 270-case corpus has now measured `ablation-re2` at:
+
+| run | commit | `ablation-re2` | what changed in the job |
+| --- | --- | ---: | --- |
+| `37872246084` | `db57ffb` | **52.2 min** | the heap fix |
+| `37886983273` | `62bac15` | **86.3 min** | three console statements, one field rename |
+| `37900344770` | `070e9b4` | **88.1 min** | a fold refactor, provably value-preserving |
+
+**52.2 → 88.1 is a 69% spread on a job whose computation is deterministic**, and the two later runs agree with
+each other to 2% while both differ from the first by ~65%. So the variance is not a random walk around a mean;
+one of the three observations comes from a different regime — the most likely reading being machine class or
+runner-image state, which the artifact does not record and this repository therefore cannot attribute. 180 is
+**2.0× the observed worst case**. The honest statement is the one the numbers support: *the bound is set from the
+spread, the spread is unexplained, and a tighter bound would need a per-job wall-clock series the workflow does
+not currently emit.* Naming that is the follow-up; asserting a cause is not available.
+
+(The first draft of this paragraph said 84.8 min — written from expectation rather than read back from the run's
+own job list, and corrected before it was committed. *An unverified figure inside an acceptance record is the
+defect the record exists to prevent.*)
 
 ### 6.4 A third correction: two instruments now print the same word for different quantities
 

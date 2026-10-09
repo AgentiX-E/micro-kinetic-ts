@@ -194,3 +194,22 @@ defeated by the comment explaining the defect (`benchmark-rcaeval-trigger`'s sam
 options`'s AVG/CW absence fence). The stripper now lives once in `benchmarks/__tests__/helpers/source-text.ts`:
 two fences needing it is two answers to "what does this file say", which is the shape both fences exist to catch.
 
+### 7.5 Measured acceptance — the refactor, verified end to end
+
+**Run `37900344770` on `070e9b4`** (10/10 jobs, 116.5 min). The claim in §7's header is *"no number moves"*, and
+§7.3 argues it *by construction*; this is the run that measures it.
+
+| artifact | differing lines vs the previous run (`37886983273`) | of which are a measured value |
+| --- | ---: | ---: |
+| `rcaeval-re{1,2,3}-results` | 2 each | **0** — one `Total duration: …ms` per file |
+| `ablation-re{1,2,3}-results` | 99 each | **0** |
+
+The method matters, because a raw diff of the ablation artifacts reports **297 differing lines** and every one of
+them is a wall-clock token (`… 3834ms)` → `… 5743ms)`, `Total duration`). The check therefore **strips timing
+tokens and re-diffs**: after normalisation the three golden artifacts and the three ablation artifacts are
+**byte-identical**, i.e. all 1 235 lines of each ablation artifact including every `A@1`, every `cw`, every
+isolated `Δ`, every per-fault-type cell and every census line.
+
+*An artifact that carries a duration cannot be compared byte-for-byte; it has to be compared on the quantity
+anyone reads.* Stating that is the difference between "the run was green" and "the refactor was value-preserving",
+and only the second is a claim about the repair.
