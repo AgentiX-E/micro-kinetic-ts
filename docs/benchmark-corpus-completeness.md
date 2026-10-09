@@ -228,6 +228,17 @@ worst case, i.e. loose rather than binding, and it stays because a bound a worki
 healthy work while a loose one only delays detecting a hang — and the number to tighten it against is now
 measured rather than projected.
 
+**And a third measurement changed the story again.** The next run on the same corpus (`37886983273`, commit
+`62bac15`) took **86.3 min** for the same job — with no change to any code path the job measures, since that
+commit's edits are three console statements and a field rename. Its siblings moved by under a minute
+(`rcaeval-re2` 27.3 → 27.5, `ablation-re3` 31.5 → 32.5, `ablation-re1` 16.9 → 14.3). So `ablation-re2` has been
+observed at **52.2 and 86.3 min — a 65% spread**, and the old 90-minute bound would have **killed the second
+run**. The 90 → 180 raise was therefore necessary, but for a reason the record did not have: **run-to-run variance
+on the heaviest job, not "1.8× the case-runs"**. 180 is 2.1× the observed worst case. *A bound set from one
+measurement is a bound with no margin, and a precedent is not a measurement* — this repository's own law, here
+with a number attached. A future iteration should set this from a distribution (several runs) rather than from the
+newest sample.
+
 ### 6.4 A third correction: two instruments now print the same word for different quantities
 
 The heap repair changed one instrument's meaning while leaving an identically-worded line in another.
