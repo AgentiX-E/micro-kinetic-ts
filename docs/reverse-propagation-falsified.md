@@ -91,7 +91,8 @@ Direction 2 is falsified **before any code**: the fault does not propagate in a
 single topology direction, so no directional source signal can be correct. The
 `docs/re3-fault-ceiling.md` lever (b) "topology-direction-aware propagation" is
 now closed with evidence, alongside (a) domain knowledge and the multi-modal
-LLM levers. The metric-agnostic deterministic ceiling stands at **~77.4%
-Top-1**; the remaining ~11 points are off-path near-zero-baseline metric noise
+LLM levers. The metric-agnostic deterministic ceiling stands at **~78.8%
+Top-1** — re-measured in it. 75 on the full 735 (run `37872246084`); it read ~77.4% while RE2 was
+scored on 150 of its 270 cases. The remaining gap is off-path near-zero-baseline metric noise
 that only baseline/label-aware (domain) reasoning — or a multi-modal model —
 can separate from a genuine crash drop.

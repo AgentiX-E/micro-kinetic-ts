@@ -35,13 +35,19 @@ the engine:
 | RE1 OnlineBoutique | **84.0%** | 51.2% | 80.0% | −32.8 |
 | RE1 SockShop | **88.0%** | 80.8% | 92.8% | −7.2 |
 | RE1 TrainTicket | **64.8%** | 64.0% | 68.0% | −0.8 |
-| RE2 OnlineBoutique | **92.2%** | 82.2% | 82.4% | −10.0 |
-| RE2 SockShop | **87.8%** | 78.9% | 88.9% | −8.9 |
-| RE2 TrainTicket | **81.1%** | 74.4% | 68.1% | −6.7 |
+| RE2 OnlineBoutique | **92.2%** | 82.2% | **86.7%** | −10.0 |
+| RE2 SockShop | **87.8%** | 78.9% | **92.2%** | −8.9 |
+| RE2 TrainTicket | **81.1%** | 74.4% | **71.1%** | −6.7 |
 | RE3 OnlineBoutique | 80.0% | **83.3%** | 80.0% | +3.3 |
 | RE3 SockShop | **50.0%** | 26.7% | 45.0% | −23.3 |
 | RE3 TrainTicket | 33.3% | **76.7%** | 51.1% | **+43.4** |
-| **Overall** | **78.9%** | 69.8% | **77.4%** | −9.1 |
+| **Overall** | **78.9%** | 69.8% | **78.75%** | −9.1 |
+
+> **Correction (it. 75).** The `ours` column was measured on **615** of the 735 cases — RE2’s
+> invocation was capped at 50 of its 90 per system — and is now the full-corpus measurement
+> (`86.7 / 92.2 / 71.1` on RE2, overall **78.75%**; run `37872246084`). PRISM’s columns are unaffected,
+> because its runner never capped, so this table is now **735 against 735**. The last column is
+> `conjunctive − additive` and does not involve our column at all.
 
 Read as a population rather than as an average: **`additive` wins 7 of the 9 cells — every resource-fault cell
 of RE1 and RE2 — and `conjunctive` wins exactly 2, both of them RE3.** Its largest single-cell margin anywhere in

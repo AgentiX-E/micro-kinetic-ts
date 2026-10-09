@@ -43,10 +43,13 @@ cite DOI/arXiv for every external cell.
 **P0b — PRISM head-to-head (the decisive test).** PRISM is graph-free, 8 ms/diagnosis,
 authored by the RCAEval maintainer (Luan Pham) — locate its code (likely in or linked
 from `github.com/phamquiluan/RCAEval`), run it over our exact 735-case harness, and
-report our 77.4% vs PRISM's measured 68% on a *single identical* case set.
+report our engine vs PRISM's measured 68% on a *single identical* case set. **DONE** —
+`prism-head-to-head.md`: PRISM additive **78.91%** vs ours **78.75%** on the identical 735, a **0.16pp
+(one-case)** gap. So the exit criterion below holds in the *published* form `~1.16×` and is a
+**level** standing on the controlled one.
 
 **Exit criterion.** `sota-comparison.md` §2 fully sourced; headline is
-"**77.4% vs PRISM 68% (~1.14×), measured on the same cases**" — no cross-paper
+"**78.8% vs PRISM 68% (~1.16×), measured on the same cases**" — no cross-paper
 comparison, no "1.84×".
 
 ---
@@ -190,7 +193,7 @@ is near-zero is noise first and must never be promoted as a root merely because 
 3. **Benchmark readback**: dispatch the standard workflow, read `AC@1` back, diff against
    golden `80709c2`. Net-negative → revert.
 4. **Cross-check vs PRISM**: if our internal/external signal + our graph priors land above
-   PRISM's 68% *and* above our own 77.4% baseline, we have a defensible new SOTA.
+   PRISM's 68% *and* above our own 78.8% baseline, we have a defensible new SOTA.
 
 If the internal/external signal does not clear the gate, the honest conclusion stands:
 RE3 error-value requires a multi-modal/semantic layer, and we reopen P3 as a *thin,

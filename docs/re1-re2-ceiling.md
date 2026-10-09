@@ -90,9 +90,10 @@ RE1/RE2 residual failures are **not** a fresh frontier — they share RE3's exac
 structural root cause (fan-in propagation amplification + drop/rise asymmetry +
 topology-dependent direction + temporal reverse). Combined with
 `re3-fault-ceiling.md` (metric) and `re3-log-ceiling.md` (log), the RCAEval
-ceiling is now characterized on every axis of every suite: **~77.4% Top-1 is the
-limit of the metric-agnostic, deterministic framework**. Closing the remaining
-~11 points to a commercial multi-modal system requires architecture-level
+ceiling is now characterized on every axis of every suite: **~78.8% Top-1 is the
+limit of the metric-agnostic, deterministic framework** — re-measured in it. 75 on the full 735 (run
+`37872246084`); it read ~77.4% while RE2 was scored on 150 of its 270 cases. Closing the remaining gap to
+a commercial multi-modal system requires architecture-level
 decisions (domain knowledge, callee→caller propagation direction, or
 multi-modal LLM) — all outside the current framework and each carrying a prior
 falsification record.

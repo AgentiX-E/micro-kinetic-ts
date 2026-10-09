@@ -11,10 +11,11 @@ same statement**, and nothing on the artifact said which kind each was:
   `[log] No log data available for 125 cases` three times and `[trace] No trace data available for 125 cases`
   three times. Every boolean signal there multiplies an empty channel, so its zero is **STARVED** — it says
   nothing about the term's worth.
-- **RE2 carries 50 of 50 cases with logs and 50 of 50 with traces**, and *every* engine term still reads
-  `Δ+0.0%` (`+Log Signal`, `+Trace Activity Signal`, `+Rank Normalization`, `+Collapse Discount`,
+- **RE2 carries 90 of 90 cases with logs and 90 of 90 with traces on each system**, and *every* engine term still
+  reads `Δ+0.0%` (`+Log Signal`, `+Trace Activity Signal`, `+Rank Normalization`, `+Collapse Discount`,
   `+Idle Transient Suppression`, and the whole `+Log +Trace Activity +Rank` production row). That zero is
-  **INERT**: the input arrived and the ranking did not move.
+  **INERT**: the input arrived and the ranking did not move. (This bullet read `50 of 50` while RE2 was ranked at
+  its capped 150 cases; the corpus is now the full 270 — see `docs/benchmark-corpus-completeness.md`.)
 
 Reporting both as `+0.0%` is what made the ledger unreadable, and it is the register's own requirement that a
 zero be readable: *a zero can be read as starved or inert, and the artifact must say which.*
@@ -138,3 +139,42 @@ exactly the same quantity and was computed in the same streaming pass, was dropp
 nine published cells a corpus whose dominant latency term multiplied an empty array; it also **withdraws the
 attribution** this repository had recorded for the earlier signed readings of this channel (see
 `docs/corpus-assembly.md` §6 and `docs/latency-channel-views.md` §6).
+
+## 8. The census on the corrected corpus, and the word it was sharing
+
+Run `37872246084`, the full 735. The three suites' censuses:
+
+```
+input-coverage[OnlineBoutique]: 125 cases | logs 0/125 readable (0 entries) | spans 0/125 | spanActivity 0/125 | failedEdges 0/125 | latency 0/125 (0 edges)      [RE1]
+input-coverage[OnlineBoutique]:  90 cases | logs 21/90 readable (9228 entries) | spans 90/90 | spanActivity 0/90 | failedEdges 0/90 | latency 0/90 (0 edges)  [RE2]
+input-coverage[OnlineBoutique]:  30 cases | logs 30/30 readable (41401 entries) | spans 30/30 | spanActivity 30/30 | failedEdges 15/30 | latency 0/30 (0 edges) [RE3]
+```
+
+Three things changed for the better and one for the worse.
+
+**Better: the heap repair is visible here.** RE3's readable volume fell from 2,163,430 / 2,592,666 / 1,937,403
+entries to 41,401 / 43,102 / 12,313, **with the case count unchanged at 30/30** — which is the census confirming a
+targeted filter rather than a loss of input.
+
+**Better: RE2's `delay`/`loss` question now has a full population.** `+Log Signal` on RE2 reads `−0.4` on the
+corrected corpus (it was `+0.0` on the capped one) — a movement that is only visible once all six fault types are
+present in every system.
+
+**Better: RE3's `failedEdges 15/30` is now a number with a cause.** `latency-routes` (§7) resolves it to
+`CAP TRUNCATES` on every trace-bearing cell.
+
+**Worse, and it is this instrument's own naming.** When the assembly began retaining only readable rows, this
+census's `logs N/M` silently stopped counting the same quantity as the golden's identically-worded line:
+
+| instrument | line | counts | RE2-OB reads |
+| --- | --- | --- | --- |
+| `run-rcaeval.ts` | `90/90 cases with logs` | cases whose file yielded **any** row (`logRowsRead`, pre-filter) | **90/90** |
+| `directional-evidence.ts` | `logs N/M readable` | cases **retaining** a readable row (post-filter) | **21/90** |
+
+A factor of four, under one word, for one corpus. The intent on both sides is defensible — the golden reports
+what the LOADER saw, the census reports what the SIGNAL can read, and a case with no ERROR/FATAL row contributes
+nothing to `logWeight`, so the census's is the quantity `TERM_CHANNELS` must decide on. What was not defensible
+was that neither label said which it was. The field is renamed `casesWithReadableLogs` and the printed token is
+`readable`, so the two can no longer be read for one another — and a fence asserts the label, because a number
+alone cannot distinguish them. **Having two instruments is not the defect; having two instruments with one word
+is.**

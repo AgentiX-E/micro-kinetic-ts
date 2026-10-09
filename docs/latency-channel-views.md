@@ -118,10 +118,11 @@ RE2 −2.0 twice) were attributed at the time to "an artefact of the study's own
 attribution is **withdrawn here**. The whole-file derivation was not the artefact — it was the only route that
 could express the input, and the composition that replaced it is the one that cannot.
 
-**And it is worth something.** §7.2 measures the channel at **+1.9pp** on RE2 (OnlineBoutique +3.7,
-TrainTicket +1.8) when its input is supplied, with **`delay` +11pp and `loss` +11pp** and every other fault type
-unchanged — so the published nine cells are a corpus in which a dominant term is starved, not a corpus in which
-the term does nothing.
+**And whether it is worth something is now a measured question whose first answer did not survive.** §7.2 measured
+the channel at **+1.9 pp** on RE2 when its input was supplied — and then RE2's corpus was corrected from 150 to 270
+cases, on which the same row reads **Δ+0.0** (§7.4). So the published nine cells are a corpus in which a dominant
+term is starved rather than a corpus in which the term does nothing; **what feeding it would buy is not yet
+established**, and the one figure that claimed to establish it is withdrawn.
 
 ## 7. Measured acceptance
 
@@ -153,7 +154,10 @@ The unit defect of §2 is still **entailed by the code** — the published expre
 no measurement here isolates the scale. What the artifact states is the mechanism that emptied the channel, and it
 states it with the counts that decide it.
 
-### 7.2 The channel is not starved, and it is worth something
+### 7.2 The channel is not starved, and on the CAPPED corpus it read +1.9 — superseded by §7.4
+
+> **Read §7.4 with this.** Every number below is measured on RE2's **capped 150-case** corpus, because that was the
+> corpus the run of §7 carried. It is retained as the record of that run, not as a statement about RE2.
 
 | row | RE1 | RE2 | RE3 |
 | --- | --- | --- | --- |
@@ -181,6 +185,7 @@ Three things follow, and the third is the one that matters.
    every other fault type unchanged — and `loss` is precisely the class the held-out misses were attributed to,
    and `delay`/`loss` are the two fault types that block **every** global PRISM weight on RE1. The propagation
    channel — the one place the Deng-Yu mathematics enters the ranking — is not worthless; it has never been fed.
+   **On the corrected corpus this third point is the one that does not survive: see §7.4.**
 
 On RE3 the whole-file corpus **is** supplied (356 and 2 006 rows) and the ranking does **not** move: the verdict is
 `INERT`, which is a statement about the term there. Whether `latMinRise = 10.3` is what masks it is the next row
@@ -189,10 +194,51 @@ this instrument makes cheap (`LAT WHOLE FILE + NO FLOOR`), and it is named rathe
 ### 7.3 What this does NOT decide
 
 The nine published cells keep the composed view, because moving them is a **re-baseline** and not a repair: the
-shipped corpus starves its own dominant latency term, and supplying it moves RE2's OnlineBoutique and TrainTicket
-cells by +3.7 and +1.8. That is a decision to be taken on the numbers above, deliberately, with the published
-comparison re-stated — not taken silently inside a unit fix. The measure is now in the artifact; the decision is
-the next iteration's.
+shipped corpus starves its own dominant latency term, and supplying it moved RE2's OnlineBoutique and TrainTicket
+cells by +3.7 and +1.8 *on the capped corpus*. That is a decision to be taken on the numbers, deliberately, with
+the published comparison re-stated — not taken silently inside a unit fix. **And §7.4 lowers the stakes of that
+decision rather than raising them**: on the corrected corpus the mean movement is zero.
+
+### 7.4 The same rows on the corrected corpus — run `37872246084`
+
+RE2's benchmark invocations were capped at 50 of its 90 cases per system, so §7.2's RE2 cells are means over
+**150** of 270 cases. Commit `b5f0951` removed the cap (`docs/benchmark-corpus-completeness.md`) and run
+`37872246084` re-measured every row on the full corpus. RE1 and RE3 are byte-identical, as they must be for a
+change that grows RE2 alone.
+
+| row | RE1 | RE2 | RE3 |
+| --- | --- | --- | --- |
+| `LAT WHOLE FILE` (corpus `whole-file`) | Δ+0.0 | **Δ+0.0** (was Δ+1.9) | Δ+0.0 |
+| `LAT CAPPED` (corpus `capped`) | Δ+0.0 | Δ+0.0 | Δ+0.0 |
+| `LAT WHOLE FILE + LAT OFF` (control) | Δ+0.0 | **Δ+0.0** | Δ+0.0 |
+
+RE2 per system, corrected:
+
+| system | baseline | whole-file | Δ | was (capped) |
+| --- | ---: | ---: | ---: | ---: |
+| OnlineBoutique | 86.7 | **84.4** | **−2.3** | +3.7 |
+| SockShop | 93.3 | 93.3 | 0.0 | 0.0 |
+| TrainTicket | 71.1 | **73.3** | **+2.2** | +1.8 |
+| **mean over systems** | 83.7 | **83.7** | **+0.0** | +1.9 |
+
+Three things, and the first is why the other two matter.
+
+1. **The +1.9 does not survive, and it is not a contradiction of §7.2 — it is §7.2's own law applied to §7.2.** The
+   movement was real on the corpus it was measured on; that corpus was 56% of RE2. Two of the three systems move,
+   **in opposite directions**, and the published convention — a mean over fault types — absorbs both. So the honest
+   state of this channel is: *not starved, demonstrably able to move two cells, worth 0.0 in the published
+   convention on the corrected corpus.*
+2. **The control still returns to the baseline exactly** (`+0.0` on all three suites), so the zero belongs to
+   `latWeight` and not to the corpus row — the instrument's own check is unaffected by the correction.
+3. **The mechanism verdict is unaffected and is now stronger.** `latency-routes` on the full corpus reads
+   `CAP TRUNCATES` on **every** trace-bearing cell — RE2-OB (1080 whole-file rows over 90/90 cases), RE2-TT (6781
+   over 89/90), RE3-OB (356), RE3-TT (2006) — with `no anchor 0` everywhere and `cap all-before = cases/cases`. The
+   150-case run's RE2-TT count (3712 rows) scales to 6781 at 270, as it should.
+
+**What is therefore still owed is unchanged and now cheaper**: `latMinRise = 10.3` may mask the supplied channel on
+RE3 (`LAT WHOLE FILE + NO FLOOR`), and on RE2 the channel's worth is a per-system question rather than a mean —
+OnlineBoutique loses 2.3 pp when fed, TrainTicket gains 2.2. Whether that is a re-baseline worth taking is a
+decision on those two numbers, not on the 1.9 that is gone.
 
 ## 8. Fences
 
