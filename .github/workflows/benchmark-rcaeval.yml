@@ -339,7 +339,16 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
+          # NO `--max-cases`, and this is a CORPUS repair rather than a runtime one. RE2 ships **90 cases per
+          # system** (270 overall: 6 fault types x 5 services x 3 repetitions) and this invocation ranked the
+          # first **50**, leaving 120 cases — 44% of RE2 — unmeasured. The damage was not the missing cases but
+          # the claim they fed: `docs/sota-comparison.md` folds the suite means with the PUBLISHED suite sizes
+          # (`(375x0.803 + 270x0.798 + 90x0.587) / 735`), so a 150-case RE2 mean was weighted as if all 270 had
+          # been ranked, and `docs/prism-head-to-head.md` printed that mean in a column beside a competitor
+          # evaluated on all 735. **A benchmark claim cannot be weighted by a corpus it did not rank.** RE1
+          # (125/system) and RE3 (30/system) were never capped, which is why they are the control for this
+          # change: the corpus grows for RE2 alone and their cells must not move.
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -397,7 +406,9 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --max-cases 50 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
+          # The fidelity control for the line above, on the SAME corpus: without this the pair would compare a
+          # full corpus against a subset, which is the defect the cap removal repaired one level up.
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
       - name: Upload RE2 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
@@ -662,9 +673,11 @@ jobs:
     needs: rcaeval-re2
     if: needs.rcaeval-re2.result == 'success'
     runs-on: ubuntu-latest
-    # The binding job: measured 53.6 min of 60 on run `37838593082`, ~59 projected with three more configs. See
-    # `ablation-re1` for why the bound moved rather than the battery shrinking.
-    timeout-minutes: 90
+    # The binding job, and it moved again when the corpus did. Measured at **150 cases** (the capped corpus):
+    # 54.3 min on run `37858643162`. The corpus is now RE2's full 270, i.e. 1.8x the case-runs, which projects
+    # ~98 min — so a bound of 90 would have been exceeded by work that is not stuck. See `ablation-re1` for why
+    # the bound moves rather than the battery shrinking.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -693,7 +706,10 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=12288
         run: |
           set -o pipefail
-          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 --max-cases 50 2>&1 | tee ablation-re2-results.txt
+          # Same corpus as the published cells, for the reason above: the STUDY's baseline is a row of the
+          # ledger, and a ledger whose baseline ranks 150 of RE2's 270 cases cannot be compared with cells
+          # measured on the other corpus — the parity iteration 72 bought (14 of 14) is exactly this.
+          pnpm exec tsx benchmarks/src/run-ablation.ts --data-dir ~/RCAEval-json --suite re2 2>&1 | tee ablation-re2-results.txt
       - name: Upload ablation RE2 results
         if: always()
         uses: actions/upload-artifact@v4

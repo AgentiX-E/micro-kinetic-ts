@@ -11,10 +11,13 @@
  * Read as TEXT rather than parsed, because the failure mode is a MISSING ENTRY IN A LIST and nothing
  * but the list itself can see that.
  *
+ * The same file now also guards the corpus the trigger's run is scored on: which is only half a criterion if
+ * the nine cells are computed over a SUBSET of the benchmark the claim is about. See the corpus block below.
+ *
  * @module __tests__/benchmark-rcaeval-trigger
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -237,5 +240,83 @@ describe('the dump’s render precision is a dispatch input', () => {
     expect(runner).toMatch(/diagnoseDecimals: SERVICE_FIELD_DECIMALS/);
     expect(runner).not.toMatch(/diagnoseDecimals: 3\b/);
     expect(runner).toMatch(/parseFieldDecimals\(args\[\+\+i\]!, SERVICE_FIELD_DECIMALS\)/);
+  });
+});
+
+/**
+ * The corpus the nine cells are scored on, guarded where a partial one can be mistaken for the benchmark.
+ *
+ * ## The defect
+ *
+ * RE2 ships **90 cases per system** (270 overall: six fault types x five services x three repetitions).
+ * Three invocations in this workflow ranked the first **50**, leaving **120 cases — 44% of RE2 — unmeasured**,
+ * and the damage was not the missing cases but the claim they fed: `docs/sota-comparison.md` folds the suite
+ * means with the PUBLISHED sizes (`(375x0.803 + 270x0.798 + 90x0.587) / 735`), so a **150-case** RE2 mean was
+ * weighted as if all 270 had been ranked, and `docs/prism-head-to-head.md` printed that mean in a column beside
+ * a competitor evaluated on all **735**. RE1 (125/system) and RE3 (30/system) were never capped.
+ *
+ * ## What this holds
+ *
+ * An ABSENCE, because that is the shape of the defect: **no invocation in this workflow may cap the corpus**.
+ * And an EXACT SET for the workflows that legitimately sample — a probe may sample, but the set of probes that
+ * do cannot grow silently, and each entry names what it is so a reader can tell a probe from the benchmark.
+ */
+const WORKFLOWS = resolve(repoRoot, '.github/workflows');
+
+describe('the golden benchmark ranks the whole corpus it is scored on', () => {
+  const invocations = [
+    ...WORKFLOW.matchAll(/pnpm exec tsx benchmarks\/src\/run-(?:rcaeval|ablation)\.ts ([^\n]*)/g),
+  ].map((m) => m[1]!);
+
+  it('caps NOTHING, on any invocation, in any form', () => {
+    // The absence. Three of these lines carried `--max-cases 50` and the other four did not, which is the
+    // two-corpora defect one level up: the published cells and the fidelity control that measures against them
+    // would have ranked different populations.
+    expect(invocations.length).toBeGreaterThan(5);
+    const capped = invocations.filter((args) => args.includes('--max-cases'));
+    expect(capped, 'a capped corpus cannot be the benchmark the claim is about').toEqual([]);
+  });
+
+  it('invokes RE2 three times, and every one of them is the full suite', () => {
+    // Counted, so that removing the cap from the published run and leaving it on the control — the exact
+    // asymmetry the previous test would still catch but this one names — cannot pass as a fix.
+    const re2 = invocations.filter((args) => args.includes('--suite re2'));
+    expect(re2).toHaveLength(3);
+    for (const args of re2) expect(args).not.toContain('--max-cases');
+    // And the flag is still a flag the runner ACCEPTS, so this is a decision rather than a dead option.
+    const cli = readFileSync(resolve(repoRoot, 'benchmarks/src/rcaeval-cli.ts'), 'utf8');
+    expect(cli).toContain("'--max-cases'");
+  });
+
+  it('names the workflows that may still sample, so the set cannot grow silently', () => {
+    // A probe or a sweep may sample — what it may not do is be read as the benchmark. Each entry is a file
+    // whose artifact states its own `max N cases` line, and the register's rows for the sweep already say
+    // "capped 50/system".
+    //
+    // `fse26-benchmark.yml` is deliberately NOT here: it is a different benchmark with a different loader, and
+    // its cap is a DISPATCH INPUT (`MAX_CASES_ARG`) rather than a literal on the command line — so it is not a
+    // member of the population this test is about, and its own gate is the one that must catch a change there.
+    const MAY_SAMPLE: readonly string[] = [
+      'benchmark-near-zero-rise.yml',
+      'benchmark-fusion-ceiling.yml',
+      'benchmark-routing-probe.yml',
+      'benchmark-prism-sweep.yml',
+    ];
+    // Read as INVOCATIONS, not as file text. The first version scanned the whole file for the token, and the
+    // comment this change left in `benchmark-rcaeval.yml` — which names the flag to explain why it is gone —
+    // made that file a member of its own sampler list. A count of a syntactic form is not a statement about a
+    // group; the group here is "an invocation that caps its corpus".
+    const sampling = readdirSync(WORKFLOWS)
+      .filter((name) => name.endsWith('.yml'))
+      .filter((name) => {
+        const text = readFileSync(resolve(WORKFLOWS, name), 'utf8');
+        return [...text.matchAll(/pnpm exec tsx benchmarks\/src\/run-[\w-]+\.ts ([^\n]*)/g)].some(
+          (m) => m[1]!.includes('--max-cases'),
+        );
+      })
+      .sort();
+    expect(sampling).toEqual([...MAY_SAMPLE].sort());
+    // The benchmark's own workflow is not among them, which is the whole point of the list above.
+    expect(MAY_SAMPLE).not.toContain('benchmark-rcaeval.yml');
   });
 });

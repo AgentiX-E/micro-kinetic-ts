@@ -61,11 +61,12 @@ DECLARED = {
     'rcaeval-re1': 60,
     'rcaeval-re2': 60,
     'rcaeval-re3': 60,
-    # The three ablation jobs moved to 90 when the battery grew from 30 to 33 configs: `ablation-re2`
-    # measured **53.6 min of 60** on run `37838593082`, so a bound of 60 would have classified a healthy
-    # run as STUCK. The rcaeval and optimize jobs did not move — their measured worst case is 18.5 min.
+    # The three ablation jobs moved when the CORPUS did: `ablation-re2` measured **54.3 min** at RE2's capped
+    # 150 cases (run `37858643162`) and the corpus is now the full 270, i.e. 1.8x the case-runs, which
+    # projects ~98 min. 90 would have been exceeded by work that is not stuck. The rcaeval and optimize jobs
+    # did not move — their measured worst case is 18.5 min.
     'ablation-re1': 90,
-    'ablation-re2': 90,
+    'ablation-re2': 180,
     'ablation-re3': 90,
     'optimize-rcaeval': 60,
     'dashboard': 10,
@@ -158,7 +159,7 @@ class JobBoundsTest(unittest.TestCase):
     def test_the_bound_carries_the_owner_that_supplied_it(self):
         declared = landing.job_bounds(WORKFLOW_TEXT)
         self.assertEqual(landing.resolve_bound('ablation-re2', declared).source, 'workflow')
-        self.assertEqual(landing.resolve_bound('ablation-re2', declared).minutes, 90)
+        self.assertEqual(landing.resolve_bound('ablation-re2', declared).minutes, 180)
         # A job the workflow does not bound falls back to the PLATFORM's default, and names it: the
         # number exists either way, and what varies is which owner supplied it. Substituting a
         # constant here would hide exactly the six-hour wait the fence above exists to prevent.
