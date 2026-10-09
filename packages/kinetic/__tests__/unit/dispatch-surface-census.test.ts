@@ -503,7 +503,7 @@ const OPERATIONAL_FLAGS_UNREACHABLE: Readonly<Record<string, string>> = {
  */
 const OPERATIONAL_OPTIONS_REACHABLE_FROM_ONE: Readonly<Record<string, string>> = {
   maxCases:
-    'caps the population a benchmark is scored on: required reachable from the FSE\'26 dispatch, whose ' +
+    "caps the population a benchmark is scored on: required reachable from the FSE'26 dispatch, whose " +
     'corpus size is its own sampling decision, and required UNREACHABLE from the RCAEval benchmark, ' +
     'whose whole corpus is the population every one of its claims is weighted by',
 };
@@ -894,7 +894,9 @@ describe('the dispatch surface has one owner per knob', () => {
         expect(flag, `${which} accepts ${option}`).toBeDefined();
         return flag!;
       };
-      expect(reaches(flagOf('fse26'), texts.fse26), "reachable from the FSE'26 dispatch").toBe(true);
+      expect(reaches(flagOf('fse26'), texts.fse26), "reachable from the FSE'26 dispatch").toBe(
+        true,
+      );
       expect(reaches(flagOf('rcaeval'), texts.rcaeval), 'must NOT be reachable from RCAEval').toBe(
         false,
       );
