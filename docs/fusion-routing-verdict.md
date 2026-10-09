@@ -1,8 +1,18 @@
 # Fusion verdict: deterministic routing cannot reach the union ceiling
 
-**Status: CONCLUDED.** This document closes the P1 per-context routing
-investigation. It records the full fusion evidence chain — head-to-head →
-fixed weight → weight sweep → routing probe — and the definitive conclusion.
+**Status: CONCLUDED, and its numbers are being re-taken.** This document closes the P1 per-context routing
+investigation. It records the full fusion evidence chain — head-to-head → fixed weight → weight sweep → routing
+probe — and the definitive conclusion.
+
+> **PROVENANCE — read this before quoting any number below.** The union ceiling in §1 and the whole of §2 come from
+> runs produced by **`.github/workflows/benchmark-fusion-ceiling.yml`** (union) and
+> **`.github/workflows/benchmark-routing-probe.yml`** (frontier), and both invocations passed `--max-cases 50` on
+> RE2 — so every figure below is measured over **615 of the benchmark's 735 cases**, with RE2 sampled at 150 of
+> its 270. **RE2 is the suite where the two engines disagree most**, so that is the suite a union estimate most
+> needs. The caps are removed and both workflows are being re-run; §1 and §2 will be restated from the 735-case
+> artifacts. See `docs/verdict-provenance.md`, which owns the rule this document is now subject to:
+> **a workflow that caps its corpus may not be named by any `docs/*.md`** — so naming them here, as the producers
+> of these numbers, is what makes a future re-cap fail the fence rather than pass as an omission.
 
 ## 1. The evidence chain
 
