@@ -33,6 +33,18 @@
  * at import time: **every fold site goes through the owner**, and **each site's headline is the published
  * convention** while the study's is reported beside it.
  *
+ * ## The residual this census found LATER, and it was its own
+ *
+ * Routing the published fold to the owner left the ablation's **case-weighted** fold hand-rolled: four
+ * accumulators (`allA1` … `allTA`), each `sum(value × cases) / cases`, in the runner every ledger number comes
+ * from — while this file's own table names the ablation as a case-weighted site and the owner's docblock names
+ * "an ablation row" as the first re-implementation it removed. The guard below covered the runner and the
+ * local bench and its title said "the two remaining sites": **an enumeration standing in for a rule.**
+ *
+ * The repair is a call to `caseWeightedMean`, provably value-preserving to the last bit (same cells, same
+ * order, same accumulation), and the fence for it is an ABSENCE over the whole file rather than a count of
+ * known sites — because the count is what went stale.
+ *
  * @module benchmarks/__tests__/accuracy-aggregation
  */
 
@@ -41,6 +53,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+
+import { stripComments } from './helpers/source-text.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string): string => readFileSync(resolve(HERE, '..', rel), 'utf8');
@@ -102,7 +116,7 @@ describe('the fold has one owner, and 5 sites used to have their own', () => {
     expect(ABLATION).toContain('caseWeightedOverall: analysis.caseWeightedOverall');
   });
 
-  it('leaves no hand-rolled fold in the two remaining sites', () => {
+  it('leaves no hand-rolled fold in the runner or the local bench', () => {
     // `runAll` had NO callers and its four aggregates were case-weighted; it now calls the owner's
     // function for that convention, so its convention is a call rather than a re-derivation.
     expect(RUNNER).toContain("from './suite-accuracy.js'");
@@ -111,5 +125,34 @@ describe('the fold has one owner, and 5 sites used to have their own', () => {
     // `run-local-bench.ts` had the published convention written out a second time.
     expect(LOCAL_BENCH).toContain('meanOverFaultTypes');
     expect(LOCAL_BENCH).not.toContain('avgs.reduce(');
+  });
+
+  it('leaves no hand-rolled fold in the THIRD site this census names — the one the guard above missed', () => {
+    // That test's title used to read "the two remaining sites" and enumerated the runner and the local bench,
+    // while the table at the top of THIS file names three sites that folded in the case-weighted convention.
+    // The third is the ablation, and it held FOUR hand-rolled accumulators — `allA1` … `allTA`, each
+    // `sum(value x cases) / cases` written out by hand — in the one runner every ledger number comes from.
+    // The owner's own docblock already named "an ablation row" as the first re-implementation it removed, so
+    // the claim was on the record and the guard did not reach it.
+    //
+    // Found by an audit of the @k family rather than by a failing test, which is the point: **a fence that
+    // ENUMERATES its population goes stale the moment the population is larger than the enumeration.** The
+    // assertion below is therefore an ABSENCE over the whole file rather than a count of known sites, and it
+    // reads comments-stripped source so the comment explaining the removal cannot defeat it.
+    const code = stripComments(ABLATION);
+    expect(code, 'the owner is imported').toContain('caseWeightedMean');
+    for (const gone of ['allA1', 'allA5', 'allLA', 'allTA']) {
+      expect(code, `no hand-rolled accumulator named ${gone}`).not.toContain(gone);
+    }
+    expect(code, 'and no inline fold expression survived').not.toMatch(
+      /\?\s*allA\d\s*\/\s*totalCases/,
+    );
+    // Both conventions now arrive from the owner — the published headline from one function, the four
+    // numbers printed beside it from the other — so neither can be taken without the other.
+    expect(code).toContain('meanOverFaultTypes');
+    expect(code).toMatch(/const avgA1 = caseWeightedMean\(a1Cells\)/);
+    expect(code).toMatch(/const avgA5 = caseWeightedMean\(a5Cells\)/);
+    expect(code).toMatch(/const avgLA = caseWeightedMean\(laCells\)/);
+    expect(code).toMatch(/const avgTA = caseWeightedMean\(taCells\)/);
   });
 });

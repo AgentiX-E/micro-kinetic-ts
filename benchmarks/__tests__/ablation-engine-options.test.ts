@@ -56,27 +56,10 @@ import {
 import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
 import { UNREPORTED_BY_ENGINE_RUNNERS } from '../src/reported-config.js';
 import { PRUNER_OPTION_MEMBERS, TOPOLOGY_MEMBERS, namedOn } from './helpers/engine-interfaces.js';
-
-/**
- * A source file with its comments removed — block comments and whole-line `//` comments.
- *
- * A fence that asserts on file TEXT is satisfied — or defeated — by the comments that explain the defect, and
- * this repository has now paid for that twice: `benchmark-rcaeval-trigger`'s sampler check matched the comment
- * explaining why `--max-cases` was removed, and the header fence below matched **two** comments quoting the
- * phrase it exists to forbid. Both were assertions about a string, published as assertions about a statement.
- *
- * Block comments are removed whole (`/* … *\/`), and only comment-ONLY lines are dropped for the line form, so
- * a trailing comment on a code line survives and a `//` inside a string literal cannot be mangled.
- *
- * @param src - The file's text.
- * @returns The same text without comments.
- */
-const stripComments = (src: string): string =>
-  src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((line) => !/^\s*\/\//.test(line))
-    .join('\n');
+// The stripper lives in `helpers/` rather than here: this fence found the defect it guards against, and the
+// sibling fence in `accuracy-aggregation` needs the same reader. Two copies of a stripper are two answers to
+// "what does this file say" — the shape both fences exist to catch, one level up.
+import { stripComments } from './helpers/source-text.js';
 
 /** Every flag off — the configuration the artifact used to label `BASELINE (all OFF)`. */
 const ALL_OFF: AblationFeatureFlags = {

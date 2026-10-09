@@ -30,15 +30,23 @@ import {
   DI_TOKENS,
   RegexFaultClassifier,
 } from '../../packages/core/src/index.js';
-import type { AxisPoint, PrismPooling } from '../../packages/kinetic/src/benchmarks/index.js';
+import type {
+  AccuracyCell,
+  AxisPoint,
+  PrismPooling,
+} from '../../packages/kinetic/src/benchmarks/index.js';
 import {
   analyzePrismSweep,
   axisPoint,
   BenchmarkRunner,
+  caseWeightedMean,
   DEFAULT_PRISM_POOLING,
-  // The one owner of the per-fault-type → suite fold. This study had its own convention for it, and
-  // the convention was the whole of a disagreement that was investigated for three runs as an input
-  // defect (see the module's header). The published statistic is now the headline on BOTH paths.
+  // The one owner of the per-fault-type → suite fold, BOTH conventions of it. This study had its own
+  // convention for the published fold, and that convention was the whole of a disagreement investigated for
+  // three runs as an input defect (see the module's header). It then kept FOUR hand-rolled case-weighted
+  // accumulators — the very re-implementation that module was written to remove, in the file its docblock
+  // names as the first offender. Both folds now come from the owner: `meanOverFaultTypes` for the published
+  // headline and `caseWeightedMean` for the four numbers reported beside it.
   meanOverFaultTypes,
   RCAEvalLoader,
 } from '../../packages/kinetic/src/benchmarks/index.js';
@@ -1495,10 +1503,16 @@ async function main(): Promise<void> {
       // weight updates from earlier cases feed back into later ones.
       const calibrator = config.flags.selfLearning ? new WeightCalibrator() : undefined;
 
-      let allA1 = 0,
-        allA5 = 0,
-        allLA = 0,
-        allTA = 0;
+      // The four CASE-WEIGHTED folds, as cells rather than as four hand-rolled accumulators. They used to be
+      // `sum(value × cases) / cases` written out four times — the exact re-implementation
+      // `runners/suite-accuracy.ts` was written to remove, and this file is the first offender its docblock
+      // names. Cells are pushed in the order those accumulators added them, so folding them with the owner is
+      // value-preserving to the last bit. `totalCases` stays a separate count because the artifact PRINTS it
+      // (`N case-reps`), which is a population and not a fold.
+      const a1Cells: AccuracyCell[] = [];
+      const a5Cells: AccuracyCell[] = [];
+      const laCells: AccuracyCell[] = [];
+      const taCells: AccuracyCell[] = [];
       let totalCases = 0,
         totalFailures = 0,
         totalDuration = 0;
@@ -1553,11 +1567,12 @@ async function main(): Promise<void> {
           const result = await runner.runSuite(suite);
           repCases += suite.cases.length;
 
-          totalCases += suite.cases.length;
-          allA1 += result.avgTop1 * suite.cases.length;
-          allA5 += result.avgTop5 * suite.cases.length;
-          allLA += result.locationAccuracy * suite.cases.length;
-          allTA += result.typeAccuracy * suite.cases.length;
+          const cellCases = suite.cases.length;
+          totalCases += cellCases;
+          a1Cells.push({ accuracy: result.avgTop1, cases: cellCases });
+          a5Cells.push({ accuracy: result.avgTop5, cases: cellCases });
+          laCells.push({ accuracy: result.locationAccuracy, cases: cellCases });
+          taCells.push({ accuracy: result.typeAccuracy, cases: cellCases });
           totalFailures += result.failures.length;
           totalDuration += result.duration;
           // The suite is one fault type by construction, so this IS that cell's accuracy — the same
@@ -1586,10 +1601,13 @@ async function main(): Promise<void> {
         }
       }
 
-      const avgA1 = totalCases > 0 ? allA1 / totalCases : 0;
-      const avgA5 = totalCases > 0 ? allA5 / totalCases : 0;
-      const avgLA = totalCases > 0 ? allLA / totalCases : 0;
-      const avgTA = totalCases > 0 ? allTA / totalCases : 0;
+      // Both conventions, from the owner: `caseWeightedMean` for the four numbers reported beside the
+      // headline, `meanOverFaultTypes` for the headline itself. The empty-population arm returns `0` in both,
+      // which is exactly the `totalCases > 0 ? … : 0` guard these four replaced.
+      const avgA1 = caseWeightedMean(a1Cells);
+      const avgA5 = caseWeightedMean(a5Cells);
+      const avgLA = caseWeightedMean(laCells);
+      const avgTA = caseWeightedMean(taCells);
       // The headline. `avgA1` above is the case-weighted one and is reported beside it, never instead.
       const publishedA1 = meanOverFaultTypes(ftSamples);
 
