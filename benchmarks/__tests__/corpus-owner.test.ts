@@ -21,6 +21,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -28,6 +29,12 @@ import { RCAEvalLoader } from '../../packages/kinetic/src/benchmarks/loaders/rca
 import type { LatencySource } from '../src/rcaeval-corpus.js';
 import { assembleRCAEvalCase } from '../src/rcaeval-corpus.js';
 import { buildRCAEvalCallGraph } from '../src/rcaeval-topology.js';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+/** A file, read from the repository root — for the source-shape assertions below. */
+const readFromRoot = (rel: string): string =>
+  fs.readFileSync(path.resolve(HERE, '..', '..', rel), 'utf8');
 
 /** The anchor, in SECONDS — the unit `inject_time.txt` carries and `toBenchmarkCase` converts. */
 const ANCHOR_S = 1_700_000_000;
@@ -61,7 +68,7 @@ const TRACES = [
 function createCaseDir(
   baseDir: string,
   dirName: string,
-  files: { metrics?: unknown; injectTime?: number; traces?: string },
+  files: { metrics?: unknown; injectTime?: number; traces?: string; logs?: string },
 ): string {
   const casePath = path.join(baseDir, dirName);
   fs.mkdirSync(casePath, { recursive: true });
@@ -73,6 +80,9 @@ function createCaseDir(
   }
   if (files.traces !== undefined) {
     fs.writeFileSync(path.join(casePath, 'traces.csv'), files.traces);
+  }
+  if (files.logs !== undefined) {
+    fs.writeFileSync(path.join(casePath, 'logs.csv'), files.logs);
   }
   return casePath;
 }
@@ -233,6 +243,68 @@ describe('the corpus owner, on a real case directory', () => {
       cappedRows: 0,
       wholeFileRows: 0,
     });
+  });
+
+  it('retains only the log rows a consumer can read, and counts the rows it READ', async () => {
+    // The heap fix, and why it is safe rather than convenient. RCAEval's `logs.csv` files run to millions of
+    // lines per case and TrainTicket's are the largest, so retaining every row costs on the order of 240 MB
+    // per case — enough that RE2's 90 cases per system did not fit the runner's 12 GB, which is the resource
+    // pressure a silent `--max-cases 50` had turned into a claim about the benchmark.
+    //
+    // Safety is not an argument here: every consumer of `logs` in this repository discards a row whose level
+    // is not ERROR/FATAL before reading anything else from it, and the second test below asserts that of the
+    // ranking loops themselves. The fixture's severity is DERIVED from the message (RCAEval ships no level
+    // column), so this also shows the derivation still runs and only its error output survives.
+    const dir = createCaseDir(tempDir, 'rcaeval-re2_b_cpu_1', {
+      metrics: METRICS,
+      injectTime: ANCHOR_S,
+      logs: [
+        'timestamp,service,message',
+        `${ANCHOR_S - 2},a,request completed`,
+        `${ANCHOR_S - 1},b,NullPointerException at B.b(B.java:1)`,
+        `${ANCHOR_S + 1},b,Request failed with status 500`,
+        `${ANCHOR_S + 2},a,deprecation warning: use v2`,
+        `${ANCHOR_S + 3},a,serving traffic`,
+        '',
+      ].join('\n'),
+    });
+    const assembled = await assemble(dir, {
+      suite: 'RE2',
+      suiteName: 'rcaeval-re2',
+      augmentFromTraces: false,
+      traceActivity: false,
+      latencyFrom: 'shipped',
+    });
+    const logs = assembled.benchCase.logs ?? [];
+    // Two of five rows: the exception line and the failed-request line, in order.
+    expect(logs.map((l) => l.level)).toEqual(['ERROR', 'ERROR']);
+    expect(logs.map((l) => l.service)).toEqual(['b', 'b']);
+    expect(logs[0]!.isStackTrace).toBe(true);
+    expect(logs[0]!.deepestExceptionClass).toBe('NullPointerException');
+    // …and the pre-filter count survives, because a diagnostic that said "N cases with logs" from the
+    // retained array would be reporting a different fact about the corpus.
+    expect(assembled.logRowsRead).toBe(5);
+  });
+
+  it('is a SAFE filter, because every consumer rejects non-error rows before reading anything', () => {
+    // The invariant the retention filter rests on, asserted on the CONSUMERS rather than promised in a
+    // comment: each loop that walks a case's logs opens by rejecting rows whose level is not ERROR/FATAL. If a
+    // future signal reads an INFO row, the filter above stops being inert — and this is where that is
+    // discovered, rather than in a number that moved for no visible reason.
+    const signals = readFromRoot('packages/tree/src/pruning/ranking-signals.ts');
+    const loops = [...signals.matchAll(/for \(const log of logs\) \{\n(?:[^\n]*\n){1,3}/g)].map(
+      (m) => m[0],
+    );
+    expect(loops.length, 'the loops this invariant is about').toBeGreaterThanOrEqual(4);
+    for (const body of loops) {
+      const header = body.split('\n')[0]!;
+      expect(body, header).toContain("log.level !== 'ERROR'");
+      expect(body, header).toContain("log.level !== 'FATAL'");
+    }
+    // And the runner's own diagnostics are in the same population: the deepest-exception block and the
+    // source-message dump both guard on level before they read a row.
+    const runner = readFromRoot('benchmarks/src/run-rcaeval.ts');
+    expect(runner).toContain("if (l.level !== 'ERROR' && l.level !== 'FATAL') continue;");
   });
 
   it('is total over a case with no traces, no anchor and no augmentation', async () => {

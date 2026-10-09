@@ -377,6 +377,8 @@ async function loadSingleCase(
   pruned: boolean;
   edgesBefore: number;
   edgesAfter: number;
+  /** Log rows the loader read, before the owner's retention filter. See `assembleRCAEvalCase`. */
+  logRowsRead: number;
 }> {
   const rawCase = loader.loadCase(meta.dirPath);
   const serviceIds = Object.keys(rawCase.metrics);
@@ -398,10 +400,12 @@ async function loadSingleCase(
 
   // The corpus, assembled by the ONE owner both this path and the study's call. `augmentFromTraces` is the
   // shipped value, stated rather than implied, because this path IS the published corpus and the option is
-  // what makes that a decision instead of an omission. `latencyFrom` is stated for the same reason and with
-  // more at stake: `shipped` is the view whose `edgeLatency` is empty by the assembly's start-time unit
-  // defect, so the nine published cells ranked with `latWeight` multiplying nothing — a fact that has to be
-  // visible at the call site rather than inferred from a census, because it is what the cells ARE.
+  // what makes that a decision instead of an omission. `latencyFrom` is stated for the same reason: which
+  // view of `edgeLatency` a run ranks on is a CORPUS property, and an omitted option would leave the cells
+  // describable only by inference. `shipped` is the composed view the nine published cells were measured
+  // with — and iteration 74 measured WHY its array is empty: the capped span list is truncated before the
+  // injection window, so no edge has a post-side mean (the unit defect the same expression also carries is
+  // real and MASKED by that cap). See `docs/latency-channel-views.md`.
   const assembled = await assembleRCAEvalCase(loader, rawCase, meta, callGraph, suiteName, {
     augmentFromTraces: true,
     traceActivity: computeTraceActivity,
@@ -419,6 +423,7 @@ async function loadSingleCase(
     pruned: assembled.pruned,
     edgesBefore: assembled.edgesBefore,
     edgesAfter: assembled.edgesAfter,
+    logRowsRead: assembled.logRowsRead,
   };
 }
 
@@ -471,12 +476,8 @@ async function loadCases(
 
   for (const meta of selected) {
     try {
-      const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter } = await loadSingleCase(
-        meta,
-        loader,
-        semanticConfig,
-        computeTraceActivity,
-      );
+      const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter, logRowsRead } =
+        await loadSingleCase(meta, loader, semanticConfig, computeTraceActivity);
       if (benchCase.traceActivity) traceActivityCases++;
 
       // Collect semantic stats from diagnostic labels on the call graph
@@ -505,9 +506,14 @@ async function loadCases(
       // Count ERROR/FATAL entries and capture the first log line so the
       // benchmark output can reveal whether logs reach the engine and whether
       // severity derivation (message-based) is actually producing errors.
+      //
+      // `logCases` is counted from `logRowsRead`, the loader's own pre-filter count, and NOT from the array
+      // the case now holds: the owner retains only ERROR/FATAL rows, so counting the retained array would
+      // report "cases with ERROR/FATAL logs" under the label "cases with logs" — a false statement about the
+      // corpus for any case whose log file carries only INFO lines.
+      if (logRowsRead > 0) logCases++;
       const caseLogs = benchCase.logs;
       if (caseLogs && caseLogs.length > 0) {
-        logCases++;
         for (const l of caseLogs) {
           if (l.level === 'ERROR' || l.level === 'FATAL') {
             logErrorEntries++;

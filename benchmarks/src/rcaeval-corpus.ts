@@ -193,6 +193,14 @@ export interface AssembledRCAEvalCase {
   readonly edgesBefore: number;
   readonly edgesAfter: number;
   /**
+   * Log rows the loader READ, before the retention filter below.
+   *
+   * Kept because the filter changes what `benchCase.logs` holds and a diagnostic that said "N cases with
+   * logs" from the filtered array would be reporting "N cases with ERROR/FATAL logs" — a different, and
+   * less useful, fact about the corpus. The pre-filter count keeps that line's meaning.
+   */
+  readonly logRowsRead: number;
+  /**
    * All three views, kept so a study can measure the channel under each WITHOUT paying for a second
    * assembly: the whole-file view comes out of the streaming pass this function already runs, and the capped
    * views out of a pure in-memory reduction of a list it already holds.
@@ -367,13 +375,35 @@ export async function assembleRCAEvalCase(
     };
   }
 
+  // ── Retain only the log rows a consumer can read ──
+  //
+  // Every consumer of a case's logs discards a row whose level is not ERROR/FATAL before doing anything with
+  // it: the five ranking loops in `packages/tree/src/pruning/ranking-signals.ts` each open with that guard,
+  // and this repository's own log diagnostics do the same. So the rows dropped here cannot reach a score or
+  // a count — what they reached was the HEAP. RCAEval's `logs.csv` files run to millions of lines per case
+  // and TrainTicket's are the largest, so retaining every row costs on the order of 240 MB per case and
+  // ninety of them do not fit the runner's 12 GB. **That cost is why this benchmark was being ranked 50
+  // cases per system**, i.e. it is the resource pressure that a silent cap turned into a claim.
+  //
+  // The LOADER is untouched: parsing every row, deriving severity and normalising the timestamp units is its
+  // contract, asserted by its own suite, and it is what this filter READS. What changes is what a run holds
+  // for the life of a group. See `docs/benchmark-corpus-completeness.md`.
+  const logRowsRead = benchCase.logs?.length ?? 0;
+
   return {
-    benchCase,
+    benchCase:
+      benchCase.logs === undefined
+        ? benchCase
+        : {
+            ...benchCase,
+            logs: benchCase.logs.filter((l) => l.level === 'ERROR' || l.level === 'FATAL'),
+          },
     callGraph: graph,
     traceUsed,
     pruned,
     edgesBefore,
     edgesAfter,
+    logRowsRead,
     latencyViews: views,
     latencyRoute: {
       anchorPresent: injectTimeMs > 0,
