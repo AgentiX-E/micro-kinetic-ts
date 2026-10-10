@@ -46,6 +46,7 @@ absolute score can be read against the floor a random ranker would reach on the 
 | **RCAEval, all 735 cases** | service Top-1 | **78.75%** | PRISM **78.91%** — *our own reimplementation, identical harness* | **−0.16 pp = 1 case of 735** | controlled head-to-head (§3) |
 | **RCAEval RE2-OB (90 cases)** | AC@1 | **86.7%** | RCLAgent **56.67%** (arXiv:2605.14866) | **+30.0 pp** | cross-paper (§2b) |
 | **FSE'26 RCABench** | Top@1 | **53.23%** (757/1422) | field avg **21%**, best **37%** (arXiv:2510.04711) | **+16 pp over the best** | cross-paper, and the benchmark is a *different* fault set — see the caveat below |
+| **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **92.8% / 80.0%** | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771) | **+3.8 / +2.0 pp** | cross-paper, but **the same 125-case populations and the same metric** — the closest like-for-like that exists, and it is BELOW us (§0b) |
 
 **Ranking: first on all three published evaluations, and level with the best controlled competitor.** The
 project leads the pre-LLM causal cohort by a wide margin on RCAEval overall (BARO 19%, with its
@@ -86,7 +87,43 @@ is above us or beside us on some figure, and **none** is comparable to a service
    *none* of ours. **And it supplies an instrument we did not have**: `Retrieval@K` against `Rerank@1`, i.e. the
    decomposition of a top-1 miss into "the cause was never retrieved" and "it was retrieved and ranked too low".
    On RCAEval it reports microservice retrieval as *"nearly solved at 98–100%"*, which is a **testable claim
-   against our own diagnostics** and the next axis this roadmap takes.
+   against our own diagnostics** and the axis this repository enrolled as `--loss-census`
+   (`docs/loss-decomposition.md`).
+
+### 0b. BELOW US, AND COMPARABLE — the one reference that shares our metric AND our population
+
+**`Beyond Conditional Independence: Root Cause Analysis with Deep Causal Models`** — Md Musfiqur Rahman, Kenneth
+Lee, Ziwei Jiang, Padmaja Jonnalagedda, Ruocheng Guo, Murat Kocaoglu (Purdue); **arXiv:2609.36771**, submitted
+2026-09-29; method **RCA-DCM**, code and case-level results at `github.com/Musfiqshohan/RCA-DCM`.
+
+**Verified 2026-10-10, and this is the first reference for which the sentence "we are ahead" is a like-for-like
+statement rather than a cross-paper one.** Three things had to line up, and they do:
+
+1. **The metric.** It reports **top-1 accuracy** — not `Avg@5`, which is what every other above-us reference
+   reports and the reason none of them could be compared to a service Top-1.
+2. **The population.** Its README states *"Sock Shop and Online Boutique have the same five faults (CPU, memory,
+   disk, delay, packet loss), each injected five times into five services: **125 cases per dataset**."* That is
+   RCAEval's own RE1-OB and RE1-SS, verified against the benchmark's published table (`RE1-OB 125`, fault types
+   `cpu, mem, disk, delay, loss`). Same systems, same faults, same 125 cases each — not a similar corpus, the
+   same one.
+3. **Its numbers are below ours on both.** Sock Shop **0.89** (its strongest baseline 0.75), Online Boutique
+   **0.78** (strongest baseline 0.71). Against our **92.8%** and **80.0%** that is **+3.8 pp** and **+2.0 pp**,
+   and it is the strongest second-place method that exists on those two cells.
+
+**And its own README records an ablation that matters more than its number.** It states: *"A plain sink graph,
+with the shared latent removed, picks the same top-1 service on all 125 cases of each dataset."* The paper's
+central contribution is handling **unobserved confounders** through a deep causal model — and on the microservice
+data, removing the shared latent and collapsing the graph to a sink changes **nothing**. That is the same
+finding this repository's ledger records about its own terms (**a tool wired as a score measures negative; the
+credit sits in the structure**), reported by the competitor about its own headline mechanism, and it is the
+reason the entry is filed here rather than in §0a: the honest reading of both results is that on these two
+systems the top-1 is largely decided by the anomaly's **marginal position**, not by the causal machinery either
+side of us adds.
+
+**What it is not.** It is still cross-paper: their harness, their pre-processing, their graph construction and
+their per-case tables are theirs. But unlike §0a it is **checkable** — the code, the reproduction commands and the
+`examples/results/` case tables are public, so this is a comparison that can be turned into a measurement rather
+than left as a citation. Registered as the head of the reproducible-baseline item in `docs/closed-axes-register.md`.
 
 ---
 
