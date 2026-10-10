@@ -385,3 +385,17 @@ carry: a fault whose only signature is on `ts-order-mongo` has no node to be att
 data-tier service can only reach the ranking through the application services that talk to it. **That is a
 quantified bound on what any graph-carrying method can read on TrainTicket**, it applies to every competitor
 equally, and it belongs beside the RE1 refutation rather than inside it. It is now the head of the open list.
+
+### 8.4 Acceptance, and one correction to how the change was described
+
+The census is a gate in `cache-datasets.yml` and it ran in **`38013486500`**, which passed and fired
+`trigger-benchmark`; the downstream **`38013364469`** then **LANDED, 10 of 10 jobs green**. The nine cells were
+read from **that run's own artifacts** and are **byte-identical to the re-baselined golden** — RE1
+`80.0 / 92.8 / 68.0` · RE2 `86.7 / 92.2 / 71.1` · RE3 `80.0 / 45.0 / 51.1`.
+
+**Which is worth stating precisely, because the first report of this iteration described it as holding *by
+construction*.** It did hold by construction — nothing on the ranking path moved — but a construction argument is
+the WEAKER claim, and here it is now the secondary one: the run exists, it is green, and its artifacts reproduce
+the baseline exactly. **"It cannot have changed the number" and "the number did not change" are different
+sentences, and only the second one is a measurement.** The first is what a report falls back on when it has not
+run anything, so it must be labelled as such at the moment it is used, not upgraded afterwards.
