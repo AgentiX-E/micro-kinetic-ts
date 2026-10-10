@@ -1,0 +1,551 @@
+/**
+ * What the L2 weight search's corpus actually contained, as data a test can check.
+ *
+ * ## Why this exists
+ *
+ * `optimize-rcaeval-results` reported `loaded 199 cases`, `split: train=140 val=27 test=32` and three
+ * accuracies — and nothing about WHICH cases those were. Three questions a reader of that artifact cannot
+ * answer, all of which decide whether its numbers mean what they appear to mean:
+ *
+ * 1. **Did the search see all three systems?** The down-sample preserves each `system:suite` stratum's share
+ *    (`strata` are `ob:re1`, `ss:re2`, …), so it SHOULD — but an artifact that says "RCAEval" and reports one
+ *    number cannot show it, and the thing being tuned is a set of weights applied to all three.
+ * 2. **Is every fault type represented in the held-out splits?** The train/val/test split strata are
+ *    `system:suite:fault` — 54 possible — and `val=27` / `test=32` cannot hold one case of each. Which fault
+ *    types are MISSING from the set the "Generalization (held-out)" line is measured on is not a detail: a
+ *    fault type absent from test contributes nothing to that number and nothing says so.
+ * 3. **Was `rankNormalization` even acting on this corpus?** The engine's topology guard is
+ *    `nodes >= ANOMALY_NORMALIZE_NODE_THRESHOLD`, so on a corpus of small graphs the rescale this repository
+ *    keeps ON is INERT — and the previous iteration's prediction that the alignment would move this
+ *    artifact's numbers could not be checked because the artifact never said how many cases were large
+ *    enough for it to act.
+ *
+ * The third is the one that was actually load-bearing, and it is the reason this module takes the node count
+ * rather than a summary of it: whether a run's flag acted is a property of the POPULATION, and a population
+ * that is not stated cannot be reasoned about after the fact.
+ *
+ * @module benchmarks/optimize-population
+ */
+
+// The SPECIFIC module, never the package barrel. The barrel re-exports `persistence.js`, which imports
+// `@agentix-e/micro-kinetic-storage-fs` — a workspace package the benchmarks test environment does not
+// resolve, so reaching the barrel from here fails at COLLECT time with "Failed to resolve entry for package".
+// Every other benchmarks module follows this convention (`config-space.js`, `integration.js`,
+// `optimizer.js`); `run-optimize.ts` uses the barrel only for a TYPE, which is erased at runtime. The first
+// version of this file imported the barrel, passed locally — where resolution differs — and failed in CI.
+import {
+  minimumStratumSizeForHeldOutCoverage,
+  requiredCasesForHeldOutCoverage,
+  type SplitRatios,
+} from '../../packages/optimize/src/split.js';
+import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
+
+/** The parts of a loaded case this report needs. Structural, so a test needs no loader. */
+export interface PopulationCase {
+  /** `system:suite:fault` — the split's stratum key, as `run-optimize.ts` builds it. */
+  readonly stratum: string;
+  /** The case's service-graph node count; the guard compares it to the threshold. */
+  readonly nodes: number;
+}
+
+/** A stratified summary, with every partition summing to the total it came from. */
+export interface PopulationSummary {
+  readonly total: number;
+  readonly bySystem: Readonly<Record<string, number>>;
+  readonly bySuite: Readonly<Record<string, number>>;
+  readonly byFault: Readonly<Record<string, number>>;
+  /**
+   * The cases at or above {@link ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes — the only ones on which the
+   * rank-normalization flag can act. A run with `acting.count === 0` reports numbers that are entirely
+   * independent of that axis, whatever the flag says.
+   */
+  readonly acting: {
+    readonly count: number;
+    readonly bySystem: Readonly<Record<string, number>>;
+  };
+}
+
+/**
+ * The three parts of a stratum key, tolerant of a key that does not have three.
+ *
+ * `unknown` rather than a throw: this describes artifacts that already exist, and refusing to summarise one
+ * because a stratum is malformed would hide the corpus instead of naming the gap.
+ *
+ * @param stratum - A `system:suite:fault` key.
+ * @returns Its parts, with `unknown` where a part is absent.
+ */
+export function parseStratum(stratum: string): {
+  system: string;
+  suite: string;
+  fault: string;
+} {
+  const [system, suite, ...rest] = stratum.split(':');
+  return {
+    system: system !== undefined && system !== '' ? system : 'unknown',
+    suite: suite !== undefined && suite !== '' ? suite : 'unknown',
+    // A fault name may itself contain a colon; everything after the suite is the fault.
+    fault: rest.length > 0 ? rest.join(':') : 'unknown',
+  };
+}
+
+/**
+ * Count a corpus by system, suite and fault, and by whether the normalization guard would act on it.
+ *
+ * @param cases - The cases, with their node counts.
+ * @returns The summary. Every partition sums to `total`.
+ */
+export function summarizePopulation(cases: readonly PopulationCase[]): PopulationSummary {
+  const bump = (into: Record<string, number>, key: string): void => {
+    into[key] = (into[key] ?? 0) + 1;
+  };
+  const bySystem: Record<string, number> = {};
+  const bySuite: Record<string, number> = {};
+  const byFault: Record<string, number> = {};
+  const actingBySystem: Record<string, number> = {};
+  let acting = 0;
+
+  for (const c of cases) {
+    const { system, suite, fault } = parseStratum(c.stratum);
+    bump(bySystem, system);
+    bump(bySuite, suite);
+    bump(byFault, fault);
+    // `>=`, matching the engine's own guard: a graph exactly at the threshold IS normalized, and an
+    // off-by-one here would misreport the one case a reader is most likely to check.
+    if (c.nodes >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
+      acting += 1;
+      bump(actingBySystem, system);
+    }
+  }
+  return {
+    total: cases.length,
+    bySystem,
+    bySuite,
+    byFault,
+    acting: { count: acting, bySystem: actingBySystem },
+  };
+}
+
+/**
+ * The number of strata a split covers, against the number the whole corpus has.
+ *
+ * The held-out splits are small by construction, so "which fault types are absent from test" is a question
+ * with an answer rather than a caveat — this is that answer.
+ *
+ * @param cases - The cases in the split.
+ * @returns How many distinct strata the split holds.
+ */
+export function strataCovered(cases: readonly PopulationCase[]): number {
+  return new Set(cases.map((c) => c.stratum)).size;
+}
+
+/**
+ * How many of a corpus's strata are too small to appear in BOTH held-out splits.
+ *
+ * A stratified split promises each stratum a share of each split, and `Math.round` is what decides a small
+ * one: at 70/15/15 a 1-case stratum goes entirely to training and a 5-case stratum reaches validation and
+ * leaves test at zero. So "val covers 26 of 44 strata" — the count the previous iteration printed — is a
+ * SYMPTOM, and the number a reader needs is how many strata are below the size at which the promise holds at
+ * all.
+ *
+ * @param cases - The cases, grouped by their stratum key.
+ * @param ratios - The split ratios to judge the corpus against.
+ * @returns The boundary, the stratum count, and the strata below it in ascending size order.
+ */
+export function summarizeSplitCapability(
+  cases: readonly PopulationCase[],
+  ratios: SplitRatios,
+): {
+  readonly minimum: number;
+  readonly strata: number;
+  readonly belowMinimum: ReadonlyArray<{ readonly stratum: string; readonly size: number }>;
+} {
+  const sizes = new Map<string, number>();
+  for (const c of cases) sizes.set(c.stratum, (sizes.get(c.stratum) ?? 0) + 1);
+  const minimum = minimumStratumSizeForHeldOutCoverage(ratios);
+  const below = [...sizes.entries()]
+    .filter(([, size]) => minimum === -1 || size < minimum)
+    .map(([stratum, size]) => ({ stratum, size }))
+    // Ascending size, then by name: a reader sees the scarcest strata first and two runs render identically.
+    .sort((a, b) => a.size - b.size || a.stratum.localeCompare(b.stratum));
+  return { minimum, strata: sizes.size, belowMinimum: below };
+}
+
+/**
+ * The stratum key a case directory implies, in the SAME format the loader builds (`<stem>:<RE n>:<fault>`).
+ *
+ * ## Why a path is enough, and why the format must match
+ *
+ * The question this answers — does the DATASET contain a stratum with fewer cases than a held-out split needs
+ * — is about 735 case directories, and loading them to count is what the corpus cap exists to avoid. The
+ * directory name carries all three parts (`re1ob_cartservice_cpu_1`), so the walk is a `readdir` and no file
+ * is opened.
+ *
+ * Matching the loader's format is not tidiness: the loader builds `` `${benchmark}:${RE n}:${fault}` `` from
+ * the case's own JSON, and a path-derived key in a SECOND format would make the dataset's numbers and the
+ * corpus's numbers incomparable while looking like they belong to the same table. Because the two derivations
+ * can disagree, the runner cross-checks them on the cases it does load — a hypothesis about a naming scheme
+ * that the run tests against the population it can see.
+ *
+ * The fault is the token BEFORE the trailing index, not a fixed position: a service name containing
+ * underscores (`re1ob_frontend_service_cpu_1`) would otherwise contribute to the fault and invent a stratum
+ * the dataset does not have.
+ *
+ * @param dirPath - A case directory path.
+ * @returns `<stem>:<RE n>:<fault>`, or `unknown:unknown:unknown` when no segment matches the scheme.
+ */
+export function deriveStratumFromCaseDir(dirPath: string): string {
+  const segments = dirPath.replace(/\\/g, '/').split('/');
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const segment = segments[i]!.toLowerCase();
+    const m = /^(re([123])(?:ob|ss|tt))_(.+)$/.exec(segment);
+    if (!m) continue;
+    const stem = m[1]!;
+    const suite = `RE${m[2]}`;
+    const parts = m[3]!.split('_');
+    const index = parts[parts.length - 1]!;
+    // A trailing numeric index is part of the scheme; without one the fault cannot be located, and a guessed
+    // fault would be a stratum that does not exist.
+    const fault = /^\d+$/.test(index) && parts.length >= 2 ? parts[parts.length - 2]! : 'unknown';
+    return `${stem}:${suite}:${fault}`;
+  }
+  return 'unknown:unknown:unknown';
+}
+
+/**
+ * The DATASET's strata, counted from its case directories.
+ *
+ * The corpus's own count (see {@link summarizeSplitCapability}) says how many of the SAMPLED strata are too
+ * small; this says how many the dataset has, which is the number that decides whether a bigger cap could
+ * help. A stratum holding fewer than the boundary's cases in the whole dataset can never reach both held-out
+ * splits at any cap — so a reader who only had the corpus's count could spend an iteration raising a cap that
+ * cannot fix anything.
+ *
+ * @param dirs - The dataset's case directories.
+ * @param ratios - The split ratios the boundary is computed for.
+ * @returns The total, the stratum count, the boundary, and the strata below it in ascending size order.
+ */
+export function summarizeDatasetStrata(
+  dirs: readonly string[],
+  ratios: SplitRatios,
+): {
+  readonly total: number;
+  readonly strata: number;
+  readonly minimum: number;
+  readonly belowMinimum: ReadonlyArray<{ readonly stratum: string; readonly size: number }>;
+} {
+  const sizes = new Map<string, number>();
+  for (const dir of dirs) {
+    const key = deriveStratumFromCaseDir(dir);
+    sizes.set(key, (sizes.get(key) ?? 0) + 1);
+  }
+  const minimum = minimumStratumSizeForHeldOutCoverage(ratios);
+  const belowMinimum = [...sizes.entries()]
+    .filter(([, size]) => minimum === -1 || size < minimum)
+    .map(([stratum, size]) => ({ stratum, size }))
+    .sort((a, b) => a.size - b.size || a.stratum.localeCompare(b.stratum));
+  return { total: dirs.length, strata: sizes.size, minimum, belowMinimum };
+}
+
+/**
+ * Render the dataset summary as the line an artifact carries.
+ *
+ * @param summary - The summary from {@link summarizeDatasetStrata}.
+ * @param ratios - The ratios it was computed for.
+ * @param exampleLimit - How many of the smallest strata to name.
+ * @returns One line, without a trailing newline.
+ */
+export function formatDatasetStrata(
+  summary: ReturnType<typeof summarizeDatasetStrata>,
+  ratios: SplitRatios,
+  exampleLimit = 6,
+): string {
+  const head =
+    `dataset: ${summary.total} cases in ${summary.strata} ` +
+    `${summary.strata === 1 ? 'stratum' : 'strata'} | ${summary.belowMinimum.length} below the size both ` +
+    `held-out splits need (${summary.minimum}) | full coverage would cost ` +
+    `${requiredCasesForHeldOutCoverage(summary.strata, ratios)} cases`;
+  if (summary.belowMinimum.length === 0) return head;
+  const named = summary.belowMinimum
+    .slice(0, exampleLimit)
+    .map((s) => `${s.stratum}(${s.size})`)
+    .join(' ');
+  return `${head} | smallest: ${named}` + (summary.belowMinimum.length > exampleLimit ? ' …' : '');
+}
+
+/**
+ * What one case scored, in the vocabulary the overlay and the accuracy share.
+ *
+ * `skipped` is a third answer on purpose: a case whose fault graph the engine cannot build is not evidence
+ * about the ranking, and folding it into `miss` would let a build failure move a held-out number.
+ */
+export type CaseOutcome = 'hit' | 'miss' | 'skipped';
+
+/** One scored case: its identity, the stratum it belongs to, and what it scored. */
+export interface CaseVerdict {
+  readonly caseId: string;
+  readonly stratum: string;
+  readonly outcome: CaseOutcome;
+}
+
+/** A split's outcomes, counted. */
+export interface SplitOverlay {
+  readonly split: string;
+  readonly cases: number;
+  readonly hits: number;
+  readonly misses: number;
+  readonly skipped: number;
+}
+
+/**
+ * Count a split's verdicts.
+ *
+ * @param split - The split's name, for the rendered line.
+ * @param verdicts - The scored cases.
+ * @returns The counts. `hits + misses + skipped === cases` by construction, which is what makes the overlay
+ *          reconcilable with the accuracy beside it rather than a parallel account of the same run.
+ */
+export function summarizeOverlay(split: string, verdicts: readonly CaseVerdict[]): SplitOverlay {
+  let hits = 0;
+  let misses = 0;
+  let skipped = 0;
+  for (const v of verdicts) {
+    if (v.outcome === 'hit') hits++;
+    else if (v.outcome === 'miss') misses++;
+    else skipped++;
+  }
+  return { split, cases: verdicts.length, hits, misses, skipped };
+}
+
+/**
+ * Render a split's overlay as one line, with the accuracy it implies.
+ *
+ * The accuracy is DERIVED here from the same counts, so a reader can see that the two agree: if this line and
+ * the `train = / val = / test =` lines ever disagree, one of them is wrong, and printing both is what makes
+ * that checkable without re-running anything.
+ *
+ * @param overlay - The counts.
+ * @param config - Which configuration produced them (e.g. `default weights`).
+ * @returns One line, without a trailing newline.
+ */
+export function formatOverlayCounts(overlay: SplitOverlay, config: string): string {
+  const evaluated = overlay.hits + overlay.misses;
+  const accuracy = evaluated > 0 ? ((overlay.hits / evaluated) * 100).toFixed(1) : 'n/a';
+  return (
+    `overlay[${overlay.split}] (${config}): ${overlay.cases} cases | hit=${overlay.hits} ` +
+    `miss=${overlay.misses} skipped=${overlay.skipped} | implied accuracy ${accuracy}%`
+  );
+}
+
+/**
+ * One line per case, sorted, so two runs can be DIFFED.
+ *
+ * This is the artifact's answer to the question three iterations have asked and none could answer from the
+ * numbers: when a held-out figure moves between two runs, WHICH cases moved. A count cannot be diffed and a
+ * stratum rollup hides the individual swap; case ids can, and the outcome is the smallest thing that
+ * explains itself.
+ *
+ * @param split - The split's name.
+ * @param verdicts - The scored cases.
+ * @returns One line per case, sorted by case id, then by stratum for stability.
+ */
+export function formatCaseManifest(split: string, verdicts: readonly CaseVerdict[]): string[] {
+  return [...verdicts]
+    .sort((a, b) => a.caseId.localeCompare(b.caseId) || a.stratum.localeCompare(b.stratum))
+    .map((v) => `overlay-case ${split} ${v.caseId} ${v.stratum} ${v.outcome}`);
+}
+
+/**
+ * Hits per stratum, so an error count can be read against the strata it came from.
+ *
+ * The two questions the manifest cannot answer at a glance are "how is this spread across fault types" and
+ * "which strata are entirely wrong", and both are one line each here.
+ *
+ * @param split - The split's name.
+ * @param verdicts - The scored cases.
+ * @returns One line per stratum, ascending by stratum key.
+ */
+export function formatStratumRollup(split: string, verdicts: readonly CaseVerdict[]): string[] {
+  const byStratum = new Map<string, { hits: number; total: number }>();
+  for (const v of verdicts) {
+    const entry = byStratum.get(v.stratum) ?? { hits: 0, total: 0 };
+    entry.total++;
+    if (v.outcome === 'hit') entry.hits++;
+    byStratum.set(v.stratum, entry);
+  }
+  return [...byStratum.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([stratum, e]) => `overlay-stratum ${split} ${stratum} ${e.hits}/${e.total}`);
+}
+
+/**
+ * The corpus size the search uses when the caller does not say: a HEAP bound, not a preference.
+ *
+ * ## What this number is, and what it is not
+ *
+ * It is not the size the split would like. That number is the dataset's own arithmetic —
+ * **46 strata x 6 cases = 276** for a 70/15/15 split — and it is printed beside every run by
+ * `formatDatasetStrata` and `formatSplitCapacity`. What this constant is, is the largest corpus the runner
+ * can HOLD, and the gap between the two is a measured fact rather than an unexamined default:
+ *
+ * > **The attempt to raise it to 276 is on the record and it failed.** On 2026-10-07 the cap was set to the
+ * > dataset's requirement, the golden's `optimize-rcaeval` job was dispatched, and it died with
+ * > `FATAL ERROR: Ineffective mark-compacts near heap limit — JavaScript heap out of memory` after ~150 s at
+ * > **12 174 MB of a 12 288 MB heap**, i.e. during the LOAD, with 44.6 MB per case. 276 cases do not fit;
+ * > 200 do (they have run in every golden since this job existed).
+ *
+ * So the coverage gap is **not closeable by raising the cap** on this runner, and a reader who has only the
+ * requirement would spend an iteration doing what that attempt did. The remaining levers are the ones that do
+ * not add cases: a lower boundary (the split ratios — 60/20/20 needs 4 per stratum, so 46 x 4 = 184 fits), or
+ * accepting the 2 un-coverable strata and disclosing them. Both are recorded in
+ * `docs/held-out-coverage-audit.md`.
+ *
+ * Keeping the value in ONE place matters more than its being the best value: before this constant existed the
+ * CLI defaulted to `0` ("load everything", which does not fit either) and the workflow passed a literal
+ * `200` — two owners that disagreed, and neither was the module that reports the corpus.
+ */
+export const OPTIMIZE_MAX_CASES = 200;
+
+/**
+ * The split ratios the search uses: chosen by the arithmetic, not by convention.
+ *
+ * The constraint is that the held-out coverage must be AFFORDABLE on this runner — the number of cases a
+ * stratum needs for both `val` and `test` (see {@link minimumStratumSizeForHeldOutCoverage}) times the
+ * dataset's stratum count must not exceed {@link OPTIMIZE_MAX_CASES}. Measured over the dataset's **46**
+ * strata and the **200**-case heap bound, every candidate reads:
+ *
+ * | ratios | boundary | required | fits the cap | held-out share |
+ * | --- | --- | --- | --- | --- |
+ * | 70/15/15 | 6 | 276 | **no** (this is the configuration that OOMed) | 30% |
+ * | 65/18/18 | 5 | 230 | no | 35% |
+ * | **60/20/20** | **4** | **184** | **yes** | 40% |
+ * | 55/23/23 | 4 | 184 | yes | 45% |
+ * | 50/25/25 | 4 | 184 | yes | 50% |
+ * | 40/30/30 | 3 | 138 | yes | 60% |
+ *
+ * **60/20/20 is the smallest move that satisfies the constraint**, and that is the whole argument for it:
+ * every fitting option gives the same or less training data, and training data is what tunes the weights. The
+ * boundary is a step function of the ratios — pushing `val`+`test` from 30% to 40% takes it from 6 to 4, and
+ * another 10 points changes nothing — so the interesting question was never "how much held-out data" but
+ * "which step clears the cap".
+ *
+ * The old value was 70/15/15, which needs 276 cases and therefore cannot be funded: the split was asking for
+ * coverage the runner could not pay for, and nothing said so until the requirement was printed beside the cap.
+ */
+export const OPTIMIZE_SPLIT_RATIOS = { train: 0.6, val: 0.2, test: 0.2 } as const;
+
+/**
+ * How the corpus is drawn when the dataset is larger than the cap, named so the artifact can state it.
+ *
+ * It preserves each `system:suite:fault` stratum's share of the dataset — the FAULT-level key, which replaced
+ * a nine-way `system:suite` key that thinned the rare fault types and lost two strata outright. An equal
+ * quota per stratum is NOT implemented: the capacity line says why it could not help anyway, since no
+ * assignment of a 200-case cap to 46 strata puts 4 in each.
+ */
+export const CORPUS_SAMPLING_OBJECTIVE =
+  'proportional (each system:suite:fault stratum keeps its share of the dataset)';
+
+/**
+ * The cap, the stratum count and the boundary as one verdict.
+ *
+ * {@link formatSplitCapability} says how many strata are too small; this says whether ANY sampling objective
+ * could fix it under the case cap the run was given. Those are different questions and the second one decides:
+ * a corpus that cannot fund full coverage cannot be rebalanced into it, so a reader who only saw the "N of 44
+ * are smaller" line might reasonably conclude the sampler was poorly chosen.
+ *
+ * @param capability - The summary from {@link summarizeSplitCapability}.
+ * @param ratios - The ratios the boundary was computed for.
+ * @param cap - The case cap the corpus was drawn under; `0` means uncapped.
+ * @returns One line, without a trailing newline.
+ */
+export function formatSplitCapacity(
+  capability: ReturnType<typeof summarizeSplitCapability>,
+  ratios: SplitRatios,
+  cap: number,
+): string {
+  const required = requiredCasesForHeldOutCoverage(capability.strata, ratios);
+  const head =
+    `split capacity: ${capability.strata} strata x ${capability.minimum} = ${required} cases would give ` +
+    `every stratum both held-out splits`;
+  if (required === 0) {
+    return `${head} — vacuous, since this ratio set asks for no held-out split`;
+  }
+  if (cap <= 0) {
+    return `${head}; the corpus is UNCAPPED, so nothing about the cap stands in the way`;
+  }
+  if (cap >= required) {
+    return `${head}; the cap of ${cap} funds it, so coverage is limited only by which strata exist`;
+  }
+  return (
+    `${head}; the cap of ${cap} is ${required - cap} short, so ${capability.belowMinimum.length} of ` +
+    `${capability.strata} strata cannot reach both splits and NO sampling objective changes that — only a ` +
+    `larger cap, or fewer strata`
+  );
+}
+
+/**
+ * Render the split-capability summary as the line an artifact carries.
+ *
+ * Names the smallest strata rather than only counting them: "30 of 44 are too small" invites the reader to
+ * assume they are all uninteresting, and the names are what let that be checked.
+ *
+ * @param capability - The summary from {@link summarizeSplitCapability}.
+ * @param ratios - The ratios it was computed for, quoted in the line.
+ * @param exampleLimit - How many of the smallest strata to name.
+ * @returns One line, without a trailing newline.
+ */
+export function formatSplitCapability(
+  capability: ReturnType<typeof summarizeSplitCapability>,
+  ratios: SplitRatios,
+  exampleLimit = 6,
+): string {
+  const pct = (v: number): string => `${(v * 100).toFixed(0)}%`;
+  const split = `${pct(ratios.train)}/${pct(ratios.val)}/${pct(ratios.test)}`;
+  if (capability.minimum === -1) {
+    return (
+      `split capability: a ${split} split has no held-out threshold to meet — ` +
+      `every one of the ${capability.strata} strata is below it by definition`
+    );
+  }
+  const named = capability.belowMinimum
+    .slice(0, exampleLimit)
+    .map((s) => `${s.stratum}(${s.size})`)
+    .join(' ');
+  return (
+    `split capability: a stratum needs ${capability.minimum}+ cases for BOTH held-out splits at ${split}; ` +
+    `${capability.belowMinimum.length} of ${capability.strata} strata are smaller` +
+    (capability.belowMinimum.length > 0
+      ? ` — smallest: ${named}${capability.belowMinimum.length > exampleLimit ? ' …' : ''}`
+      : '')
+  );
+}
+
+/**
+ * Render a summary as the lines an artifact carries.
+ *
+ * Every count is printed ascending by key so two runs of the same corpus render identically — a summary that
+ * reorders itself between runs is a summary a diff cannot read.
+ *
+ * @param summary - The summary to render.
+ * @param label - What this population is (e.g. `corpus`, `train`, `test`).
+ * @returns One line per partition, plus the acting population.
+ */
+export function formatPopulation(summary: PopulationSummary, label: string): string[] {
+  const render = (counts: Readonly<Record<string, number>>, total: number): string =>
+    Object.entries(counts)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v} (${((v / total) * 100).toFixed(1)}%)`)
+      .join(' ');
+  return [
+    `population[${label}]: total=${summary.total} | system: ${render(summary.bySystem, summary.total)}`,
+    `population[${label}]: suite: ${render(summary.bySuite, summary.total)} | fault: ${render(
+      summary.byFault,
+      summary.total,
+    )}`,
+    // The decisive line: on how much of this corpus the shipped rank-normalization value can act at all.
+    `population[${label}]: rankNormalization acts on ${summary.acting.count}/${summary.total} cases ` +
+      `(nodes >= ${ANOMALY_NORMALIZE_NODE_THRESHOLD})` +
+      (summary.acting.count === 0
+        ? ' — this corpus cannot distinguish the flag from its opposite'
+        : ` | acting system: ${render(summary.acting.bySystem, summary.acting.count)}`),
+  ];
+}

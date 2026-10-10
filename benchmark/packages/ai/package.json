@@ -1,0 +1,46 @@
+{
+  "name": "@agentix-e/micro-kinetic-ai",
+  "version": "0.1.0",
+  "description": "AI interface contracts and providers for Micro-Kinetic — Embedding, LLM, and Semantic Alignment with zero-dependency TF-IDF fallback",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentix-e/micro-kinetic-core": "workspace:^"
+  },
+  "devDependencies": {
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.7",
+    "@vitest/coverage-v8": "^3.2.7"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AgentiX-E/micro-kinetic-ts.git",
+    "directory": "packages/ai"
+  }
+}

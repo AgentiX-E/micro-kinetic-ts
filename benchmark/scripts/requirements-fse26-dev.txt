@@ -1,0 +1,28 @@
+# Test-only tooling for the converter + sharder unit tests.
+#
+# Kept out of requirements-fse26.txt on purpose: that file is part of
+# `scripts/fse26_provenance.py`'s digest, so anything added to it invalidates
+# every cached shard. A test-runner bump must not force a 2-hour cache rebuild.
+#
+# Installed by the `converter-tests` job in .github/workflows/ci.yml.
+-r requirements-fse26.txt
+coverage==7.16.0
+
+# The Parquet → JSON bridge's own reader (`pandas`), and the writer its tests need to build synthetic
+# input (`pyarrow`).
+#
+# Both were installed INLINE by cache-datasets.yml (`pip install pandas pyarrow`) and declared
+# nowhere, so the gate that measures the bridge had no way to run it and the bridge was excluded
+# from that gate instead -- a test that cannot import its subject is easier to omit than to
+# provision. Measured 2026-09-20: the bridge is 158 statements and 64 branches, and it decides
+# `~/RCAEval-json`, which every RCAEval benchmark including the golden nine-cell is read from.
+#
+# Pinned, for the reason requirements-fse26.txt pins polars: pandas' dtype and null handling decide
+# the numbers the bridge writes, so a version change can move a published benchmark.
+#
+# CORRECTED 2026-09-25 — the divergence this file used to record is closed, and by REFERENCE rather
+# than by agreement. It repeated the two pins here and noted that cache-datasets.yml still installed
+# them unpinned; a pin written in two places is two pins. `requirements-rcaeval.txt` now owns them,
+# cache-datasets.yml installs from it, `rcaeval_provenance.PRODUCER_FILES` digests it so a pin change
+# invalidates the cached artifact, and this file pulls it in.
+-r requirements-rcaeval.txt
