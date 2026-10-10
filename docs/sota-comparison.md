@@ -73,22 +73,32 @@ is above us or beside us on some figure, and **none** is comparable to a service
 3. **PSC-GRCA** (`arXiv:2609.27069`, Buljić, University of Zenica) — **`Avg@5` 0.915** against 0.864 for a
    capacity-matched MLP and 0.862 for a no-neighbour control, with ablations locating the gain in the **prior**.
    A different metric (`Avg@5`), and its own benchmark audit is the source of the RE1 column-schema allegation
-   this repository refutes in `docs/benchmark-corpus-completeness.md` §8.
+   this repository refutes in `docs/benchmark-corpus-completeness.md` §8. **Two qualifiers its abstract does not
+   carry, verified 2026-10-10 from the paper's own tables: 0.915 is the six-fixed-fold IN-DISTRIBUTION mean and
+   the CROSS-SYSTEM number is 0.747** — and its prior-only arm, the term its ablations credit, scores **0.488
+   in-distribution against 0.079 across systems**. So the figure we have been naming is the in-distribution one.
+   **Its code, seed manifests, sixty-two-entry defect register and table-generating scripts are public**
+   (preprint artifact, Zenodo DOI `10.5281/zenodo.22832168`), which makes the comparison one that can become a
+   measurement rather than a citation.
 4. **`Where Root Cause Analysis Fails: A Retrieval-Reranking Decomposition`** (Hada Melino Muhammad, **Luan
-   Pham**, Laure Barrière, Sachin Shetty, Leonardo Pulga, Flora D. Salim; arXiv, posted 2026-09-30; **accepted to
-   the NeurIPS 2026 Evaluations & Datasets Track**; the arXiv identifier was **not captured at record time and is
-   not guessed here**). It is the **most dangerous of the four**, and the reason is not its number: it comes from
-   the **benchmark author's own group** — Luan Pham authored both RCAEval and PRISM — it is peer-reviewed, and it
-   audits **RCAEval itself**. It reports a two-stage pipeline (multi-signal retrieval, then an LLM reranker with
-   optional domain knowledge) matching or beating **the framework's 15 baselines** by up to **+12 pp top@1** with
-   no causal graph and no labelled data, and by **+7 to +18 pp** when the true cause is guaranteed in the pool and
-   a system-description document is supplied. **Its baseline cohort is the framework's 15, not this engine**, and
-   its figures are the authors' own, not independently replicated — so it is above us on *a* top-1 and comparable to
-   *none* of ours. **And it supplies an instrument we did not have**: `Retrieval@K` against `Rerank@1`, i.e. the
+   Pham**, Laure Barrière, Sachin Shetty, Leonardo Pulga, Flora D. Salim; **`arXiv:2609.36686`**, submitted
+   2026-09-29; **accepted to the NeurIPS 2026 Evaluations & Datasets Track**). It is the **most dangerous of the
+   four**, and the reason is not its number: it comes from the **benchmark author's own group** — Luan Pham
+   authored both RCAEval and PRISM — it is peer-reviewed, and it audits **RCAEval itself**. It reports a two-stage
+   pipeline (multi-signal retrieval, then an LLM reranker with optional domain knowledge) matching or beating
+   **the framework's 15 baselines** by up to **+12 pp top@1** with no causal graph and no labelled data, and by
+   **+7 to +18 pp** when the true cause is guaranteed in the pool and a system-description document is supplied.
+   **Its baseline cohort is the framework's 15, not this engine** — so it is above us on *a* top-1 and comparable
+   to *none* of ours. **Two things verified 2026-10-10 that sharpen it in opposite directions.** Its code is
+   public (`github.com/cruiseresearchgroup/DecompRCA`), so the comparison is available to run. And an
+   **independent review** of the paper records that the abstract's `+12`-point margins sit on **14 / 36 / 48
+   scenarios with error bars from `n=3` run-to-run spread rather than scenario-level intervals** — WADI's +12 pp
+   is about **1.7 scenarios** — so the headline margin is fragile where the *decomposition* is not.
+   **And it supplies the instrument this repository then built**: `Retrieval@K` against `Rerank@1`, i.e. the
    decomposition of a top-1 miss into "the cause was never retrieved" and "it was retrieved and ranked too low".
-   On RCAEval it reports microservice retrieval as *"nearly solved at 98–100%"*, which is a **testable claim
-   against our own diagnostics** and the axis this repository enrolled as `--loss-census`
-   (`docs/loss-decomposition.md`).
+   Its claim that microservice retrieval is *"nearly solved at 98–100%"* is now **reproduced on our corpus by our
+   own census**: the truth is in the ranked pool on **99.73% / 99.63% / 100.00%** of RE1 / RE2 / RE3, and our
+   loss is **98.8% reranking** (`docs/loss-decomposition.md` §4).
 
 ### 0b. BELOW US, AND COMPARABLE — the one reference that shares our metric AND our population
 

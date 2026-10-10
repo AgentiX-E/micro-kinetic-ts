@@ -299,7 +299,20 @@ export function formatLossReport(
     `  ${'TOTAL'.padEnd(6)} ${''.padEnd(15)} ${String(cases).padStart(6)} ${String(correct).padStart(8)} ` +
       `${String(retrieval).padStart(10)} ${String(shallow).padStart(8)} ${String(deep).padStart(6)} ` +
       `${String(notInGraph).padStart(5)} ${String(engineError).padStart(5)}`,
-    `  accuracy ${pct(correct, cases)} · of ${misses} misses: RETRIEVAL ${pct(retrieval, misses)} ` +
+    // The convention is named BEFORE the reading, because it is the context the reading is in — and the
+    // reading line stays LAST, which is where a caller that reads only the final line expects it.
+    //
+    // This line and the published cell `AVERAGE` are the same word for two different quantities, and they
+    // differ on one suite. Every case is weighted equally here; the published `AVERAGE` column is the
+    // UNWEIGHTED MEAN OF THE FAULT-TYPE ACCURACIES (`docs/accuracy-aggregation.md`), which agrees with this
+    // to the printed precision on RE1 and RE2 and separates on RE3, whose fault types do not carry equal case
+    // counts: **53.33% case-level against 58.69% per fault type**. Two conventions that disagree on one of
+    // three suites, under one noun, is the shape an instrument must not contribute to — so the reading states
+    // which one it is and where the other lives.
+    '  "case-level" weights every case equally. The published cell AVERAGE is the unweighted mean of the',
+    '  fault-type accuracies and differs from this on RE3 (53.33% case-level vs 58.69% per fault type);',
+    '  see `docs/accuracy-aggregation.md`, and read the SPLIT below against either.',
+    `  accuracy ${pct(correct, cases)} CASE-LEVEL · of ${misses} misses: RETRIEVAL ${pct(retrieval, misses)} ` +
       `(no ranking change can recover these; ${notInGraph} were never a graph node and ` +
       `${retrieval - notInGraph} a node the ranking does not surface), ` +
       `RERANKING ${pct(shallow + deep, misses)} (shallow ${pct(shallow, misses)}, deep ${pct(deep, misses)}), ` +

@@ -205,3 +205,69 @@ candidate pool, so any node-set claim about it would be a claim about a graph th
 
 The report prints the split of the misses rather than only the accuracy, and names **retrieval as the part no
 ranking change can recover** — because that is the sentence the number is for.
+
+---
+
+## 4. The measurement, over the whole 735
+
+Read from the census artifacts of run `38045797356` — **one JSON line per case, all 735** (RE1 375 / RE2 270 /
+RE3 90), through this module's own `summarizeLoss` / `formatLossReport` rather than through a re-implementation;
+the raw rows are kept so every figure below can be re-derived.
+
+```
+  suite  system           cases  correct  RETRIEVAL  shallow   deep  notG   ERR   pool
+  RE1    OnlineBoutique     125      100          1       19      5     0     0   10.0
+  RE1    SockShop           125      116          0        6      3     0     0   14.0
+  RE1    TrainTicket        125       85          0       26     14     0     0   64.0
+  RE2    OnlineBoutique      90       78          1       11      0     0     0   10.0
+  RE2    SockShop            90       83          0        7      0     0     0   13.0
+  RE2    TrainTicket         90       64          0       12     14     0     0   68.0
+  RE3    OnlineBoutique      30       22          0        2      6     0     0   10.0
+  RE3    SockShop            30       11          0       17      2     0     0   13.0
+  RE3    TrainTicket         30       15          0        1     14     0     0   68.0
+  TOTAL                     735      574          2      101     58     0     0
+```
+
+**161 misses. RETRIEVAL 2 (1.2%) · RERANK_SHALLOW 101 (62.7%) · RERANK_DEEP 58 (36.0%) · ENGINE_ERROR 0.**
+
+### 4.1 What the split says, and it is the opposite of the thing worth fixing
+
+**The loss is 98.8% reranking and 1.2% retrieval.** No ranking change recovers 2 cases out of 735; the other 159
+are failures of *ordering* a candidate the engine already had. Read against the two published claims:
+
+- **`arXiv:2609.27069`'s "a ranker reading no telemetry still reaches `Avg@5` 0.488"** is a statement that the
+  truth is in a short prefix cheaply, and this census is its Top-1 counterpart: the truth is in the ranked pool
+  on **99.73% / 99.63% / 100.00%** of RE1 / RE2 / RE3, and inside the top five on **93.87% / 94.44% / 75.56%**.
+  Their claim is **reproduced on our corpus, by our own instrument** — retrieval is not the problem here.
+- **The NeurIPS 2026 decomposition's `Retrieval@K` vs `Rerank@1`** is therefore already saturated on this
+  benchmark, and the headroom it points to is the reranking half. That is now a measured statement about *our*
+  engine rather than a borrowed one.
+
+### 4.2 The one suite where it is not shallow reranking
+
+RE3 is the outlier and the numbers are unambiguous: **top-5 in-pool 75.56%** against 93.87% and 94.44%, and of
+its 18 misses **14 are `RERANK_DEEP`**. RE3 TrainTicket alone is 14 deep of 15 misses; RE3 SockShop is the
+mirror image (17 shallow, 2 deep). So the two RE3 systems fail differently, and the RE3 router candidate
+(iteration 77–79, +11.11pp held out under the zero-regression rule) is a *shallow*-reranking fix on SockShop
+alone. **Nothing in the repository addresses `RERANK_DEEP`**, which is 58 cases and concentrated in TrainTicket
+(14 + 14 + 14 = 42 of the 58).
+
+### 4.3 The accuracy the census prints, and the convention it is in
+
+The census prints **78.10%**, which is not the published **78.75%** — and the difference is a convention, not a
+defect. `docs/accuracy-aggregation.md` owns the rule: the published cell `AVERAGE` is the **unweighted mean of
+the fault-type accuracies**, while the census weights **every case equally**. Re-derived from the same 735
+records, the two agree exactly on RE1 (`80.27%`) and RE2 (`83.33%`) and separate only on **RE3: 53.33% at the
+case level against 58.69% per fault type**, because RE3's fault types do not carry equal case counts.
+
+That separation had been recorded once, as a study-versus-golden discrepancy investigated for three runs. What
+this iteration adds is that it is **reproducible on demand from one artifact**, and that the report now **names
+its own convention** — the fix for a pair of numbers that differ under one noun is a label, and a percentage
+cannot assert its own unit. **Neither figure is wrong; quoting one as the other is.**
+
+### 4.4 What is NOT claimed
+
+`retrievalNotRanked` is **0** in every group and `retrievalNotInGraph` is **0** as well, so the 2 retrieval
+failures are the two RE1/RE2 OnlineBoutique cases where the truth is outside the pool while still being a graph
+node — which is exactly the shape §3 refuses to name a mechanism for. They are reported as a count, and the
+refusal stands.

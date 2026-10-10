@@ -56,6 +56,14 @@ const FSE26_CLI = resolve(repoRoot, 'benchmarks/src/fse26-cli.ts');
  * doing its job rather than a coincidence.
  */
 const RCAEVAL_CLI = resolve(repoRoot, 'benchmarks/src/rcaeval-cli.ts');
+/**
+ * The runner's own declaration of which parsed options never reach the engine.
+ *
+ * Read rather than imported, because the kinetic package cannot depend on `benchmarks/`: the two live in
+ * separate projects and the dependency runs the other way. It is read for the one thing this file cannot
+ * derive — the source's half of the NON-KNOB partition — and the test below holds the two halves together.
+ */
+const RCAEVAL_ENGINE_OPTIONS = resolve(repoRoot, 'benchmarks/src/rcaeval-engine-options.ts');
 const FSE26_WORKFLOW = resolve(repoRoot, '.github/workflows/fse26-benchmark.yml');
 const RCAEVAL_WORKFLOW = resolve(repoRoot, '.github/workflows/benchmark-rcaeval.yml');
 
@@ -182,6 +190,7 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
   diagnoseLimit: 'caps how many blocks are rendered',
   diagnoseDump: 'writes the diagnostic dump; an output path',
   diagnoseDecimals: 'sets the dump render precision; a property of the ARTIFACT',
+  lossCensus: 'writes the per-case loss census; an output path',
   dropMetrics: 'load-time ablation of the INPUT, applied before the engine runs',
 };
 
@@ -638,6 +647,50 @@ describe('the dispatch surface has one owner per knob', () => {
       expect(bound, `${knob.flag} must be accepted by a runner`).toBeDefined();
       expect(bound, `${knob.flag} -> ${option}`).toBe(option);
     }
+  });
+
+  it('agrees with the runner about which parsed options are NOT ranking knobs', () => {
+    // TWO OWNERS, ONE PARTITION, and until this test nothing held them together. The census declares an
+    // operational option HERE, with its reason; `NON_ENGINE_OPTION_KEYS` in
+    // `benchmarks/src/rcaeval-engine-options.ts` names the same set as bare keys, for the partition the
+    // benchmarks side asserts. Adding `--loss-census` updated the source and not this file, so the flag was
+    // read as a RANKING KNOB with no row -- caught, loudly, by the two assertions above, and repaired by
+    // adding the row. The row is the instance; THIS test is the class, because a census that exempts options
+    // through a list it owns cannot see that list drift from the one the runner actually applies.
+    //
+    // Both directions are asserted because each has its own failure. Source-only means an operational option
+    // is read as an unmeasured knob (what just happened). Census-only means this file exempts a key the
+    // runner DOES forward to the engine -- a ranking term removed from the census by being called operational.
+    const source = readFileSync(RCAEVAL_ENGINE_OPTIONS, 'utf8');
+    const declaration = /export const NON_ENGINE_OPTION_KEYS[^=]*=\s*\[([\s\S]*?)\]/.exec(source);
+    expect(declaration, 'NON_ENGINE_OPTION_KEYS must be a literal array').not.toBeNull();
+    const declaredByRunner = [...declaration![1]!.matchAll(/'([A-Za-z][A-Za-z0-9]*)'/g)].map(
+      (m) => m[1]!,
+    );
+    // No comment stripping, and the omission is deliberate rather than forgotten. Every other fence in this
+    // repository strips first because a comment containing the ASSERTED text satisfies it; here the assertion
+    // is an exact set equality, so a comment can only ADD a member and fail the test loudly. The direction
+    // that would need stripping is not available to a comment in this assertion's shape.
+    expect(declaredByRunner.length).toBeGreaterThan(5);
+
+    // The census's own declaration, restricted to the options the RCAEval parser accepts. `OPERATIONAL_OPTIONS`
+    // is shared with the FSE'26 parser -- which has output paths this runner does not -- so an unrestricted
+    // comparison would be an assertion about a different population wearing the name of this one.
+    const acceptedByRCAEval = new Set(rcaevalFlags.values());
+    const declaredHere = [...Object.keys(OPERATIONAL_OPTIONS), ...NOT_KNOBS].filter((k) =>
+      acceptedByRCAEval.has(k),
+    );
+    expect(declaredHere.length).toBeGreaterThan(5);
+
+    expect(new Set(declaredByRunner)).toEqual(new Set(declaredHere));
+
+    // And the source's list is a PARTITION of its parser rather than a subset of it: whatever it does not
+    // name must be a knob with a row, which is the shape `rcaeval-reported-config.test.ts` asserts on the
+    // other side. Asserted here as well so the two owners agree about the shape and not only the membership.
+    const unclassified = [...acceptedByRCAEval].filter(
+      (option) => !declaredByRunner.includes(option) && !(option in KNOBS),
+    );
+    expect(unclassified).toEqual([]);
   });
 
   it('names an owner for every knob, and the owner is a document that EXISTS', () => {

@@ -248,6 +248,23 @@ describe('formatLossReport — the reading is the split, not the accuracy', () =
     expect(text).toContain('deep 33.3%');
   });
 
+  it('names the aggregation convention, because the published percentage is a DIFFERENT quantity', () => {
+    // Two conventions, one noun, and they disagree on one of the three suites: this report weights every
+    // case equally, while the published cell `AVERAGE` is the unweighted mean of the fault-type accuracies
+    // (`docs/accuracy-aggregation.md`). Read side by side without a label, 78.10% here and 78.75% there look
+    // like a regression. The label is the fix, and the assertion is that the label is PRESENT rather than
+    // that the number is right — a number cannot assert its own unit.
+    const text = formatLossReport(rows, 5).join('\n');
+    expect(text).toContain('CASE-LEVEL');
+    expect(text).toContain('unweighted mean of the');
+    expect(text).toContain('docs/accuracy-aggregation.md');
+    // And the suite where they part company is named with BOTH of its values, so a reader can tell which
+    // one a quoted figure is rather than having to re-derive it.
+    expect(text).toContain('RE3');
+    expect(text).toContain('53.33%');
+    expect(text).toContain('58.69%');
+  });
+
   it('names the shallow depth it used, so the split is reproducible', () => {
     expect(formatLossReport(rows, 7)[0]).toContain('rank <= 7');
   });
