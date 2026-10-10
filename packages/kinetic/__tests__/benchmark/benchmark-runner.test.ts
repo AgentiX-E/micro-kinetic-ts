@@ -1190,6 +1190,168 @@ describe('RCA Engine Integration', () => {
     expect(diag!.topTopoSource).toBe(1);
   });
 
+  it('records where the ground truth ranked, and how large the pool it ranked in', async () => {
+    // The two numbers the loss census is built from, and the reason they are recorded HERE rather than
+    // derived downstream: the full ranked list is in hand only inside this loop. `truthRank` is the truth's
+    // 1-based position in it; `pool` is how many services were ranked. A truth absent from the ranking must
+    // come back `undefined` rather than a sentinel — the engine's ranks start at 1, so any number put in that
+    // position is a rank that does not exist.
+    const container = new Container();
+    const ranked: readonly RootCauseResult[] = (
+      [
+        ['frontend', 0.5, 9],
+        ['cartservice', 0.4, 5],
+        ['paymentservice', 0.3, 1],
+      ] as const
+    ).map(([serviceId, confidence, finalScore], i) => ({
+      serviceId,
+      faultType: { category: 'UNKNOWN' as FaultCategory, subType: '', severity: 'info' as const },
+      confidence,
+      finalScore,
+      rank: i + 1,
+      evidenceMetrics: [],
+      propagationDepth: i,
+      propagationErrorBound: 0,
+      viaTreeSearch: false,
+    }));
+    const spyEngine: IRCAEngine = {
+      buildFaultGraph: (callGraph) => ({
+        callGraph,
+        propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+        anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.1])),
+        anomalyOnsetTimes: new Map(),
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+      }),
+      analyze: async () => ranked,
+      getCycleContributionBound: () => 0,
+    };
+    container.register(DI_TOKENS.RCA_ENGINE, () => spyEngine);
+    const runner = new BenchmarkRunner(container);
+
+    // Two cases against ONE ranking: the truth at rank 2, and a truth the ranking does not mention at all.
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    const present = {
+      ...base,
+      id: 'truth-present',
+      groundTruth: { ...base.groundTruth, serviceId: 'cartservice' },
+    };
+    const absent = {
+      ...base,
+      id: 'truth-absent',
+      groundTruth: { ...base.groundTruth, serviceId: 'recommendationservice' },
+    };
+    const result = await runner.runSuite({
+      name: 'rank-census',
+      cases: [present, absent],
+      totalCases: 2,
+    });
+
+    const byId = new Map(result.casePredictions.map((p) => [p.caseId, p]));
+    expect(byId.size).toBe(2);
+    const hit = byId.get('truth-present')!;
+    expect(hit.truthRank).toBe(2);
+    expect(hit.pool).toBe(3);
+    expect(hit.top1).toBe('frontend');
+    expect(hit.correct).toBe(false);
+    expect(byId.get('truth-absent')!.truthRank).toBeUndefined();
+    expect(byId.get('truth-absent')!.pool).toBe(3);
+
+    // And the recorded ladder carries the sort key, so the rendered line can be checked against itself: the
+    // display `confidence` here is NOT monotone in rank (0.5, 0.4, 0.3 happens to be, so the assertion is on
+    // the key), which is the fact that made the old renderer print an unsorted-looking list.
+    const ladder = result.failures[0]!.diag!.topK;
+    expect(ladder.map((t) => t.serviceId)).toEqual(['frontend', 'cartservice', 'paymentservice']);
+    expect(ladder.map((t) => t.finalScore)).toEqual([9, 5, 1]);
+    expect(ladder.map((t) => t.depth)).toEqual([0, 1, 2]);
+  });
+
+  it('asks the engine for the WHOLE candidate set, and widening that call moves no metric', async () => {
+    // The census needs the truth's rank wherever it falls, which a five-element slice destroys. Widening the
+    // call is only safe if every consumer reads a prefix or the first element, so that is measured rather than
+    // argued: the same case is run through an engine asked for the whole graph and one clamped to five, and
+    // the metrics must be identical to the last digit.
+    const depths: number[] = [];
+    const build = (clamp: number | undefined): IRCAEngine => ({
+      buildFaultGraph: (callGraph) => ({
+        callGraph,
+        propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+        anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.9])),
+        anomalyOnsetTimes: new Map(),
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+      }),
+      // The engine's contract is "the top k, best first": both implementations sort every scored node and
+      // slice, so a larger k returns a PREFIX-EXTENDED list with the same head.
+      analyze: async (graph, k) => {
+        depths.push(k!);
+        const ids = [...graph.callGraph.nodes.keys()].sort();
+        const width = clamp === undefined ? k! : Math.min(clamp, k!);
+        return ids.slice(0, width).map((serviceId, i) => ({
+          serviceId,
+          faultType: {
+            category: 'UNKNOWN' as FaultCategory,
+            subType: '',
+            severity: 'info' as const,
+          },
+          confidence: 0.5,
+          finalScore: 100 - i,
+          rank: i + 1,
+          evidenceMetrics: [],
+          propagationDepth: 0,
+          propagationErrorBound: 0,
+          viaTreeSearch: false,
+        }));
+      },
+      getCycleContributionBound: () => 0,
+    });
+
+    const run = async (clamp: number | undefined): Promise<RunResult> => {
+      const container = new Container();
+      container.register(DI_TOKENS.RCA_ENGINE, () => build(clamp));
+      const runner = new BenchmarkRunner(container);
+      // Twelve services, so the candidate set is wider than the reporting width: with three the clamp could
+      // not be observed at all, and a fixture that cannot show the difference cannot test it.
+      const base = generator.generateRCAEvalCase('CPU', 12);
+      return runner.runSuite({ name: 'capture-depth', cases: [base], totalCases: 1 });
+    };
+
+    const wide = await run(undefined);
+    const clamped = await run(5);
+
+    // 1. The depth asked for is the size of the graph handed over, never a constant that could be too small.
+    // Read off the same generated case the runs used, so the expectation cannot drift from the fixture.
+    const fixture = generator.generateRCAEvalCase('CPU', 12);
+    const graphNodes = [
+      ...(
+        await build(undefined).buildFaultGraph(fixture.callGraph, fixture.metrics)
+      ).callGraph.nodes.keys(),
+    ].length;
+    expect(graphNodes).toBeGreaterThan(5);
+    // At least the graph (so nothing can be truncated) and at least the reporting width (so the top-5 the
+    // metrics read is always available even on a graph smaller than five nodes).
+    expect(depths[0]).toBe(Math.max(5, graphNodes));
+    expect(depths[0]).toBeGreaterThanOrEqual(graphNodes);
+    // ... and the clamped run still asked for it: the clamp lives in the engine, not in the caller.
+    expect(depths[1]).toBe(Math.max(5, graphNodes));
+
+    // 2. Every metric is identical, so the widening is value-neutral where the published numbers live.
+    for (const metric of ['avgTop1', 'avgTop3', 'avgTop5', 'locationAccuracy', 'typeAccuracy']) {
+      expect((wide as unknown as Record<string, number>)[metric], `${metric} must not move`).toBe(
+        (clamped as unknown as Record<string, number>)[metric],
+      );
+    }
+
+    // 3. And the census sees what the slice could not: the pool is the ranked set, and the rank is real.
+    // The clamped engine can rank five of the twelve, so its pool is five — which is exactly the information
+    // the census would have had without this change, and it is why the truth's rank had to come from here.
+    expect(wide.casePredictions[0]!.pool).toBe(graphNodes);
+    expect(clamped.casePredictions[0]!.pool).toBe(5);
+    expect(wide.casePredictions[0]!.truthRank).toBeDefined();
+  });
+
   it('exposes the trace-activity rise diagnostics in the failure output', async () => {
     // When a case carries per-service span-activity counts, the runner must
     // record the GT's pre/post counts and ratio, plus the service with the

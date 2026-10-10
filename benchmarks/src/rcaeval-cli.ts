@@ -283,6 +283,23 @@ export interface CliOptions {
    * so a reader never has to know which invocation produced the file.
    */
   diagnoseDecimals: number;
+  /**
+   * When set, write the per-case LOSS CENSUS to this path, one JSON object per line.
+   *
+   * One line per case of EVERY group the invocation covers, correct cases included — deliberately not a
+   * sample of the failures. The benchmark already prints failure diagnostics, but it prints the first few
+   * per fault type, so a decomposition computed from them would be a decomposition of a sample, and a
+   * conclusion may not rest on one. This artifact is the census instead: the same question asked of every
+   * case, so the split it reports is about the population that produced the accuracy.
+   *
+   * The fields are the split itself: the size of the candidate pool the ranker chose from, whether the
+   * ground truth is a member of it, and the truth's rank in the FULL ranking. A truth outside the pool is a
+   * RETRIEVAL failure no ranking can recover; a truth inside it and placed second is a RERANKING failure.
+   * The published accuracy cannot tell those apart, which is why the artifact exists.
+   *
+   * Empty means "do not write one": the flag allocates the file, not the runner.
+   */
+  lossCensus: string;
 }
 
 export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
@@ -326,6 +343,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     routingProbe: '',
     diagnoseDump: '',
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
+    lossCensus: '',
   };
   /**
    * The first `--log-signal-mode` this command line stated, and what it resolved to.
@@ -428,6 +446,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.routingProbe = args[++i]!;
     } else if (args[i] === '--diagnose-dump' && hasValue(args, i + 1)) {
       opts.diagnoseDump = args[++i]!;
+    } else if (args[i] === '--loss-census' && hasValue(args, i + 1)) {
+      opts.lossCensus = args[++i]!;
     } else if (args[i] === '--diagnose-decimals' && hasValue(args, i + 1)) {
       // Strict, falling back to the SHIPPED precision, for the same reason `--onset-shape` does: a
       // typo must reproduce a published artifact rather than invent one — and here it must also not

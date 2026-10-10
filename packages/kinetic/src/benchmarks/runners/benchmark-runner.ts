@@ -106,6 +106,14 @@ export interface FailedCase {
     readonly topK: readonly {
       readonly serviceId: string;
       readonly confidence: number;
+      /**
+       * The raw ranking score this entry was ordered by.
+       *
+       * Carried because the ladder renders a RANKED list, and a ranked list that does not print its sort key
+       * cannot be checked against itself: `confidence` folds in propagation-depth and error-bound penalties
+       * for display and therefore need not decrease with rank, so a line printed from it reads as unsorted.
+       */
+      readonly finalScore?: number | undefined;
       readonly depth: number;
     }[];
     readonly gtInGraph: boolean;
@@ -194,8 +202,36 @@ export interface CasePrediction {
   readonly top2?: string | undefined;
   /** The engine's top-1 ranking `finalScore` (the raw sort value). */
   readonly top1Score?: number;
-  /** The engine's top-2 ranking `finalScore`, when a top-2 exists. */
+  /**
+   * The engine's top-2 ranking `finalScore`, when a top-2 exists.
+   */
   readonly top2Score?: number;
+  /**
+   * The ground truth's 1-based rank in the engine's FULL ranking, or `undefined` when the truth does not
+   * appear in it at all.
+   *
+   * Full and not a top-K prefix, because a prefix cannot tell a truth at rank 6 from one at rank 40 — and
+   * the whole difference between a RETRIEVAL problem and a RERANKING one is whether the truth appears
+   * anywhere in the ranking at all. Recorded, not derived: the ranked list is the engine's own output and
+   * this is where it is still in hand.
+   */
+  readonly truthRank?: number | undefined;
+  /**
+   * How many services the engine actually ranked: the size of the set `truthRank` indexes into.
+   *
+   * Not the graph's node count — the engine scores the graph it was handed, and that is the set a ranking
+   * could have returned a member of. The denominator of the census, and the reason a retrieval count belongs
+   * beside it: a truth outside this set cannot be returned by any ranking of it, however good, so the count
+   * without the size would read as an engine miss.
+   */
+  readonly pool?: number;
+  /**
+   * Whether the engine threw before producing a ranking.
+   *
+   * Kept distinct from a miss, because a case whose analysis failed has no candidate pool to be inside or
+   * outside of: reporting it as a truth absent from the pool would attribute an engine failure to the data.
+   */
+  readonly errored?: boolean;
 }
 
 /**
@@ -384,6 +420,23 @@ export class BenchmarkRunner {
     const startTime = Date.now();
     const engine = this.container.resolve<IRCAEngine>(DI_TOKENS.RCA_ENGINE);
     const topK = 5;
+    /**
+     * How many candidates the engine is asked to rank — the WHOLE candidate set, not the top five.
+     *
+     * `topK` above is the REPORTING width and stays 5: the metrics read prefixes of the ranking and the first
+     * element, so widening the call cannot move them. But the loss census needs the truth's rank wherever it
+     * falls and the size of the set it fell in, and neither survives a five-element slice: a truth at rank 6
+     * is indistinguishable from one at rank 400, and the difference between those is most of a reranking
+     * fix's value.
+     *
+     * Bounded by the graph the engine was handed rather than by a constant, because a constant is a silent
+     * cap: the audit of this benchmark records telemetry exposing 12 to 70 services per system, and a hard
+     * number above that would be correct today and quietly wrong the moment a system grew past it. `pool` in
+     * each census record is what the engine actually ranked, so a shortfall is visible in the artifact rather
+     * than inferred from the call.
+     */
+    const rankingCaptureDepth = (graph: { readonly nodes: ReadonlyMap<string, unknown> }): number =>
+      Math.max(topK, graph.nodes.size);
 
     // Collect all predictions and ground truths
     const predictions: RootCauseResult[] = [];
@@ -430,7 +483,7 @@ export class BenchmarkRunner {
           benchCase.metrics,
           toFaultGraphOptions(benchCase, this.useInjectTime ? benchCase.injectTime : 0),
         );
-        const results = await engine.analyze(faultGraph, topK);
+        const results = await engine.analyze(faultGraph, rankingCaptureDepth(effectiveCallGraph));
 
         // The diagnostic hook, after the ranking exists and before anything else touches the case:
         // what it is handed is what the engine just produced, not a copy that later steps may
@@ -457,6 +510,11 @@ export class BenchmarkRunner {
           top2: results[1]?.serviceId,
           top1Score: results[0]?.finalScore,
           top2Score: results[1]?.finalScore,
+          // `findIndex` over the WHOLE ranked list, so a truth placed below the recorded top-K is still
+          // ranked rather than reported as absent — the two are different failures and the census is what
+          // tells them apart. `-1` becomes `undefined`, which the type distinguishes from rank 1.
+          truthRank: truthRankIn(results, caseTruth),
+          pool: results.length,
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────
@@ -465,6 +523,11 @@ export class BenchmarkRunner {
         topPredictions = results.slice(0, topK).map((r) => ({
           serviceId: r.serviceId,
           confidence: r.confidence,
+          // The value the ranking sorted by, carried so the rendered ladder can print the quantity its own
+          // order came from. Without it the line shows `confidence` — which folds in depth and error-bound
+          // penalties and therefore need not decrease with rank — so the printed numbers contradict the
+          // order and no reader can check the line against itself.
+          finalScore: r.finalScore,
           depth: r.propagationDepth,
         }));
 
@@ -665,6 +728,11 @@ export class BenchmarkRunner {
           truth: benchCase.groundTruth.serviceId,
           top1: undefined,
           correct: false,
+          // No ranking exists and no graph was necessarily built, so the census must be able to say
+          // "the engine failed" rather than filing this as a truth absent from a pool. The two are
+          // different failures and only one of them is about the data.
+          errored: true,
+          pool: 0,
         });
         failures.push({
           caseId: benchCase.id,
@@ -1099,6 +1167,27 @@ function formatFaultType(ft: FaultType): string {
     return `${ft.category}-${ft.subType}`;
   }
   return ft.category;
+}
+
+/**
+ * The ground truth's 1-based rank in a full ranking, or `undefined` when it is absent from it.
+ *
+ * `findIndex` rather than a search of the recorded top-K prefix: the difference between a truth at rank 6
+ * and one that never appears is the difference between a reranking failure and a retrieval one, and a
+ * prefix collapses the two. `undefined` rather than `0` or `-1` for absence, so a caller cannot treat
+ * "absent" as a rank — the engine's ranks start at 1 and a sentinel in that domain is a rank that does not
+ * exist.
+ *
+ * @param ranking - The engine's full ranked output.
+ * @param truth - The ground-truth service id.
+ * @returns The 1-based rank, or `undefined`.
+ */
+function truthRankIn(
+  ranking: readonly { readonly serviceId: string }[],
+  truth: string,
+): number | undefined {
+  const at = ranking.findIndex((r) => r.serviceId === truth);
+  return at < 0 ? undefined : at + 1;
 }
 
 /**

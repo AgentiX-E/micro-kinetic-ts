@@ -72,6 +72,12 @@ import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
+import {
+  formatLossReport,
+  formatRankingLadder,
+  summarizeLoss,
+  type LossRecord,
+} from './loss-census.js';
 import { parseRCAEvalArgs } from './rcaeval-cli.js';
 import {
   buildRCAEvalEngineOptions,
@@ -789,9 +795,11 @@ function printFailureDiagnostics(
         );
       }
       console.log(`    Reason: ${f.reason}`);
-      console.log(
-        `    Top-K: ${d.topK.map((t) => `${t.serviceId}(${t.confidence.toFixed(2)},d${t.depth})`).join(' | ')}`,
-      );
+      // Rendered by the module that owns the contract: the printed number is the value the ranking sorted
+      // by, so the line can be checked against itself. It used to print `confidence` — a display value that
+      // folds in depth and error-bound penalties and therefore need not decrease with rank — which put a
+      // number in the score's position that the order did not come from.
+      console.log(formatRankingLadder(d.topK));
     }
   }
 }
@@ -1101,6 +1109,10 @@ async function main(): Promise<void> {
   // Per-case routing-feasibility records (engine ranking scores + PRISM
   // M-scores), consumed by the routing-probe report emitted after the loop.
   const routingRecords: RoutingProbeRecord[] = [];
+  // One census row per case of EVERY group, accumulated across the loop and written once after it. Not the
+  // failures and not a sample of them: `printFailureDiagnostics` shows the first few per fault type, so a
+  // split computed from the console would be a split of a sample while reading as one of the population.
+  const lossRecords: LossRecord[] = [];
   // The dump is ONE file for the whole invocation, owned here rather than inside the group loop
   // below: `--suite re1` covers three systems, and the first version of this feature wrote the file
   // once per group, so each system truncated the last one's and the artifact held a third of the
@@ -1262,6 +1274,34 @@ async function main(): Promise<void> {
       }
     }
 
+    // ── Loss-census rows for this group ──
+    // The same join the fusion and routing blocks above perform, asking a different question of it: not
+    // "who was right" but "was the truth reachable at all, and if so how deep".
+    if (opts.lossCensus !== '') {
+      const engineByCaseId = new Map<string, CasePrediction>();
+      for (const r of results.values()) {
+        for (const p of r.casePredictions) engineByCaseId.set(p.caseId, p);
+      }
+      const cell = `${suiteName}:${systemName}`;
+      for (const c of stats.cases) {
+        const ep = engineByCaseId.get(c.id);
+        lossRecords.push({
+          caseId: c.id,
+          cell,
+          faultType: c.groundTruth?.faultType?.toLowerCase() ?? 'unknown',
+          truth: c.groundTruth.serviceId,
+          predicted: ep?.top1,
+          correct: ep?.correct ?? false,
+          // The candidate pool is the graph's node set, and the runner records its size on the case's own
+          // prediction record so the two cannot disagree about which set the ranking covered.
+          pool: ep?.pool ?? 0,
+          truthInGraph: c.callGraph.nodes.has(c.groundTruth.serviceId),
+          truthRank: ep?.truthRank,
+          errored: ep?.errored,
+        });
+      }
+    }
+
     printResultsTable(systemName, suiteName, results, Array.from(byFaultType.keys()));
     printFailureDiagnostics(systemName, suiteName, results);
 
@@ -1288,6 +1328,20 @@ async function main(): Promise<void> {
       `  diagnose dump: ${formatDiagnoseDumpLine(diagnoseDump.write())}` +
         ` at ${opts.diagnoseDecimals} decimals per service field`,
     );
+  }
+
+  // ── The loss census ──
+  // Written once, after the last group, for the same reason the dump above is: the artifact is a function of
+  // the whole invocation, and a file per group would keep only the last system's cases.
+  if (opts.lossCensus !== '') {
+    const rows = summarizeLoss(lossRecords);
+    writeFileSync(opts.lossCensus, lossRecords.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    console.log('\n════════════════════════════════════════════════════════════');
+    console.log(
+      `Loss census — retrieval vs reranking (${lossRecords.length} cases -> ${opts.lossCensus})`,
+    );
+    console.log('════════════════════════════════════════════════════════════');
+    for (const line of formatLossReport(rows)) console.log(line);
   }
 
   // ── Fusion-ceiling report ──

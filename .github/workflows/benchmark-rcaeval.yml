@@ -198,15 +198,33 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-results.txt
+          # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
+          # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          CENSUS_ARG=(--loss-census rcaeval-loss-census-re1.jsonl)
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re1-results.txt
       - name: Upload RE1 results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-re1-results
+          # Both files below are produced by EVERY run, so a missing one is a defect in the run and not a
+          # configuration the dispatch did not ask for. `error` is what makes that a red job: with the
+          # default `warn` the upload succeeds, the artifact looks complete, and the absence is only
+          # visible to a reader who tries to fetch the file.
+          if-no-files-found: error
           path: |
             rcaeval-re1-results.txt
-            rcaeval-diagnose-re1.txt
+            rcaeval-loss-census-re1.jsonl
+      # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
+      # condition that produces it. Listed beside unconditional files it made an artifact that named a
+      # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
+      - name: Upload RE1 diagnose dump
+        if: ${{ inputs.diagnose_dump != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re1-diagnose
+          if-no-files-found: error
+          path: rcaeval-diagnose-re1.txt
       - name: Run RCAEval — RE1 only (no inject_time)
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -256,15 +274,33 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re1-noinject-results.txt
+          # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
+          # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          CENSUS_ARG=(--loss-census rcaeval-loss-census-re1-noinject.jsonl)
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re1 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re1-noinject-results.txt
       - name: Upload RE1 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-re1-noinject-results
+          # Both files below are produced by EVERY run, so a missing one is a defect in the run and not a
+          # configuration the dispatch did not ask for. `error` is what makes that a red job: with the
+          # default `warn` the upload succeeds, the artifact looks complete, and the absence is only
+          # visible to a reader who tries to fetch the file.
+          if-no-files-found: error
           path: |
             rcaeval-re1-noinject-results.txt
-            rcaeval-diagnose-re1-noinject.txt
+            rcaeval-loss-census-re1-noinject.jsonl
+      # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
+      # condition that produces it. Listed beside unconditional files it made an artifact that named a
+      # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
+      - name: Upload RE1 no-inject diagnose dump
+        if: ${{ inputs.diagnose_dump != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re1-noinject-diagnose
+          if-no-files-found: error
+          path: rcaeval-diagnose-re1-noinject.txt
 
   rcaeval-re2:
     needs: [synthetic, artifact]
@@ -348,15 +384,33 @@ jobs:
           # evaluated on all 735. **A benchmark claim cannot be weighted by a corpus it did not rank.** RE1
           # (125/system) and RE3 (30/system) were never capped, which is why they are the control for this
           # change: the corpus grows for RE2 alone and their cells must not move.
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
+          # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
+          # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          CENSUS_ARG=(--loss-census rcaeval-loss-census-re2.jsonl)
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re2-results.txt
       - name: Upload RE2 results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-re2-results
+          # Both files below are produced by EVERY run, so a missing one is a defect in the run and not a
+          # configuration the dispatch did not ask for. `error` is what makes that a red job: with the
+          # default `warn` the upload succeeds, the artifact looks complete, and the absence is only
+          # visible to a reader who tries to fetch the file.
+          if-no-files-found: error
           path: |
             rcaeval-re2-results.txt
-            rcaeval-diagnose-re2.txt
+            rcaeval-loss-census-re2.jsonl
+      # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
+      # condition that produces it. Listed beside unconditional files it made an artifact that named a
+      # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
+      - name: Upload RE2 diagnose dump
+        if: ${{ inputs.diagnose_dump != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re2-diagnose
+          if-no-files-found: error
+          path: rcaeval-diagnose-re2.txt
       - name: Run RCAEval — RE2 only (no inject_time)
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -408,15 +462,33 @@ jobs:
           fi
           # The fidelity control for the line above, on the SAME corpus: without this the pair would compare a
           # full corpus against a subset, which is the defect the cap removal repaired one level up.
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
+          # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
+          # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          CENSUS_ARG=(--loss-census rcaeval-loss-census-re2-noinject.jsonl)
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re2 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re2-noinject-results.txt
       - name: Upload RE2 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-re2-noinject-results
+          # Both files below are produced by EVERY run, so a missing one is a defect in the run and not a
+          # configuration the dispatch did not ask for. `error` is what makes that a red job: with the
+          # default `warn` the upload succeeds, the artifact looks complete, and the absence is only
+          # visible to a reader who tries to fetch the file.
+          if-no-files-found: error
           path: |
             rcaeval-re2-noinject-results.txt
-            rcaeval-diagnose-re2-noinject.txt
+            rcaeval-loss-census-re2-noinject.jsonl
+      # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
+      # condition that produces it. Listed beside unconditional files it made an artifact that named a
+      # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
+      - name: Upload RE2 no-inject diagnose dump
+        if: ${{ inputs.diagnose_dump != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re2-noinject-diagnose
+          if-no-files-found: error
+          path: rcaeval-diagnose-re2-noinject.txt
 
   rcaeval-re3:
     needs: [synthetic, artifact]
@@ -491,15 +563,33 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
+          # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
+          # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          CENSUS_ARG=(--loss-census rcaeval-loss-census-re3.jsonl)
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-re3-results
+          # Both files below are produced by EVERY run, so a missing one is a defect in the run and not a
+          # configuration the dispatch did not ask for. `error` is what makes that a red job: with the
+          # default `warn` the upload succeeds, the artifact looks complete, and the absence is only
+          # visible to a reader who tries to fetch the file.
+          if-no-files-found: error
           path: |
             rcaeval-re3-results.txt
-            rcaeval-diagnose-re3.txt
+            rcaeval-loss-census-re3.jsonl
+      # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
+      # condition that produces it. Listed beside unconditional files it made an artifact that named a
+      # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
+      - name: Upload RE3 diagnose dump
+        if: ${{ inputs.diagnose_dump != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re3-diagnose
+          if-no-files-found: error
+          path: rcaeval-diagnose-re3.txt
       - name: Run RCAEval — RE3 only (no inject_time)
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -550,15 +640,33 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-noinject-results.txt
+          # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
+          # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          CENSUS_ARG=(--loss-census rcaeval-loss-census-re3-noinject.jsonl)
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-noinject-results.txt
       - name: Upload RE3 no-inject results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-re3-noinject-results
+          # Both files below are produced by EVERY run, so a missing one is a defect in the run and not a
+          # configuration the dispatch did not ask for. `error` is what makes that a red job: with the
+          # default `warn` the upload succeeds, the artifact looks complete, and the absence is only
+          # visible to a reader who tries to fetch the file.
+          if-no-files-found: error
           path: |
             rcaeval-re3-noinject-results.txt
-            rcaeval-diagnose-re3-noinject.txt
+            rcaeval-loss-census-re3-noinject.jsonl
+      # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
+      # condition that produces it. Listed beside unconditional files it made an artifact that named a
+      # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
+      - name: Upload RE3 no-inject diagnose dump
+        if: ${{ inputs.diagnose_dump != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re3-noinject-diagnose
+          if-no-files-found: error
+          path: rcaeval-diagnose-re3-noinject.txt
       - name: Run RCAEval — RE3 novelty log signal (no inject_time)
         env:
           ZHIPU_EMBEDDING_ENDPOINT: https://api.z.ai/api/paas/v4/embeddings
@@ -610,15 +718,33 @@ jobs:
               DIAGNOSE_ARG+=(--diagnose-decimals "${{ inputs.diagnose_decimals }}")
             fi
           fi
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" 2>&1 | tee rcaeval-re3-novelty-results.txt
+          # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
+          # reports is a claim about the run the accuracy came from, so it is produced by every run.
+          CENSUS_ARG=(--loss-census rcaeval-loss-census-re3-novelty.jsonl)
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --no-inject-time --log-signal-mode novelty "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-novelty-results.txt
       - name: Upload RE3 novelty results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rcaeval-re3-novelty-results
+          # Both files below are produced by EVERY run, so a missing one is a defect in the run and not a
+          # configuration the dispatch did not ask for. `error` is what makes that a red job: with the
+          # default `warn` the upload succeeds, the artifact looks complete, and the absence is only
+          # visible to a reader who tries to fetch the file.
+          if-no-files-found: error
           path: |
             rcaeval-re3-novelty-results.txt
-            rcaeval-diagnose-re3-novelty.txt
+            rcaeval-loss-census-re3-novelty.jsonl
+      # The diagnose dump is OPT-IN (`inputs.diagnose_dump`), so it is uploaded by its own step on the
+      # condition that produces it. Listed beside unconditional files it made an artifact that named a
+      # file no default run writes -- which is how a reader comes to believe the diagnostics are in it.
+      - name: Upload RE3 novelty diagnose dump
+        if: ${{ inputs.diagnose_dump != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rcaeval-re3-novelty-diagnose
+          if-no-files-found: error
+          path: rcaeval-diagnose-re3-novelty.txt
 
   # ── Ablation: 3 parallel runners (RE1 / RE2 / RE3) ──
   ablation-re1:

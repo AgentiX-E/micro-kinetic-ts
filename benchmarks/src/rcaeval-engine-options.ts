@@ -103,6 +103,7 @@ export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
   'routingProbe',
   'diagnoseDump',
   'diagnoseDecimals',
+  'lossCensus',
 ];
 
 /**

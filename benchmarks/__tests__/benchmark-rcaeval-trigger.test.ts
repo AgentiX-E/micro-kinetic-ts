@@ -31,6 +31,8 @@ const WORKFLOW = readFileSync(resolve(repoRoot, '.github/workflows/benchmark-rca
  */
 const FSE26_CLI = readFileSync(resolve(repoRoot, 'benchmarks/src/fse26-cli.ts'), 'utf8');
 const RCAEVAL_CLI = readFileSync(resolve(repoRoot, 'benchmarks/src/rcaeval-cli.ts'), 'utf8');
+/** The runner, read as text for the same reason: the guard that keeps the census opt-in lives here. */
+const RCAEVAL_RUNNER = readFileSync(resolve(repoRoot, 'benchmarks/src/run-rcaeval.ts'), 'utf8');
 
 /**
  * The `push.paths` entries, exactly as written.
@@ -38,6 +40,65 @@ const RCAEVAL_CLI = readFileSync(resolve(repoRoot, 'benchmarks/src/rcaeval-cli.t
  * Scoped to the `push:` block, so an entry under `workflow_run:` or inside a job's `paths` can never
  * satisfy a check that is about the TRIGGER.
  */
+/** One `upload-artifact` step, reduced to the two things a reader can act on. */
+interface UploadStep {
+  readonly name: string;
+  readonly condition: string;
+  readonly paths: readonly string[];
+}
+
+/**
+ * Every `upload-artifact` step, with the FILES it names and the CONDITION it runs on.
+ *
+ * Read by INDENTATION rather than parsed, because this file's business is an entry that is absent from a
+ * list, and both directions of that defect are invisible to a parser that only asks whether the YAML is
+ * valid: a `path:` naming a file no run writes, and a file listed UNCONDITIONALLY beside files that are
+ * always written while the file itself is opt-in. The second is what makes an artifact look complete, which
+ * is how a reader comes to believe a diagnostic is in it when it is not.
+ *
+ * @param workflow - The workflow's text.
+ * @returns One entry per upload step, in file order.
+ */
+function uploadSteps(workflow: string): UploadStep[] {
+  const lines = workflow.split('\n');
+  const steps: UploadStep[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const start = /^(\s*)- name: Upload (.*)$/.exec(lines[i]!);
+    if (start === null) continue;
+    const indent = start[1]!.length;
+    const block: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const line = lines[j]!;
+      if (line.trim() !== '' && /^\s*- /.test(line) && line.search(/\S/) <= indent) break;
+      block.push(line);
+    }
+    const paths: string[] = [];
+    for (let k = 0; k < block.length; k++) {
+      // The BLOCK form first: `path: |` would otherwise satisfy the inline pattern with `|` as its value,
+      // and the file list that follows it would then be read as prose. Which is the same mistake the two
+      // defects this helper exists for both make — a form that matches a pattern while meaning something else.
+      if (/^\s*path:\s*\|\s*$/.test(block[k]!)) {
+        const base = block[k]!.search(/\S/);
+        for (let m = k + 1; m < block.length; m++) {
+          const inner = block[m]!;
+          if (inner.trim() === '') continue;
+          if (inner.search(/\S/) <= base) break;
+          paths.push(inner.trim());
+        }
+        continue;
+      }
+      const inline = /^\s*path:\s*(\S+)\s*$/.exec(block[k]!);
+      if (inline !== null) paths.push(inline[1]!);
+    }
+    steps.push({
+      name: start[2]!,
+      condition: /^\s*if:\s*(.+)$/m.exec(block.join('\n'))?.[1]?.trim() ?? '',
+      paths,
+    });
+  }
+  return steps;
+}
+
 function pushPaths(): string[] {
   const start = WORKFLOW.indexOf('push:');
   expect(start).toBeGreaterThan(-1);
@@ -173,8 +234,14 @@ describe('the golden benchmark can emit the diagnostic dump', () => {
       (m) => m[1]!,
     );
     expect(new Set(dumps).size).toBe(dumps.length);
+    // The property is "an upload step names it", NOT "it appears with twelve spaces in front". The
+    // assertion used to be the indentation, which is a fact about how the path list is FORMATTED: moving the
+    // dump to its own conditional step — which is what makes the artifact honest, see below — ships the same
+    // file from the same run and would have failed a check that is about the file being shipped.
+    const shipped = uploadSteps(WORKFLOW);
     for (const dump of dumps) {
-      expect(WORKFLOW).toContain(`            ${dump}`);
+      const owner = shipped.filter((one) => one.paths.includes(dump));
+      expect(owner.length, `${dump} must be named by exactly one upload step`).toBe(1);
     }
   });
 
@@ -350,6 +417,127 @@ describe('the golden benchmark ranks the whole corpus it is scored on', () => {
       // starts at the subcommand and refuses a cap between it and the probe.
       expect(text, `${file}'s RE2 invocation must still run its probe, uncapped`).toMatch(
         new RegExp(`--suite re2 (?!--max-cases)\\S*${probe}`),
+      );
+    }
+  });
+});
+
+/**
+ * Guards the artifact that makes a MISS readable: the per-case loss census.
+ *
+ * The accuracy table cannot distinguish a case whose root cause was never a candidate from one whose root
+ * cause came second, and neither can the console diagnostics — those print the first few failures per fault
+ * type, so a split computed from them is a split of a SAMPLE while reading as one of the population. This
+ * suite holds the three things that make the census usable: it is requested by every invocation, every file
+ * is shipped, and the file is the one the invocation actually writes.
+ */
+describe('the golden benchmark ships the per-case loss census', () => {
+  const CENSUS_FILES = [...WORKFLOW.matchAll(/CENSUS_ARG=\(--loss-census ([^)]+)\)/g)].map(
+    (m) => m[1]!,
+  );
+
+  it('passes the flag on EVERY invocation, counted rather than sampled', () => {
+    const invocations = [
+      ...WORKFLOW.matchAll(/pnpm exec tsx benchmarks\/src\/run-rcaeval\.ts [^\n]*/g),
+    ];
+    expect(CENSUS_FILES.length).toBe(invocations.length);
+    for (const [one] of invocations) {
+      expect(one).toContain('"${CENSUS_ARG[@]}"');
+    }
+  });
+
+  it('gives every invocation its own file, so one suite cannot truncate another', () => {
+    expect(new Set(CENSUS_FILES).size).toBe(CENSUS_FILES.length);
+    expect(CENSUS_FILES.length).toBeGreaterThan(1);
+  });
+
+  it('ships every census file, on an upload step that runs regardless of the job outcome', () => {
+    const shipped = uploadSteps(WORKFLOW);
+    for (const file of CENSUS_FILES) {
+      const owner = shipped.filter((one) => one.paths.includes(file));
+      expect(owner.length, `${file} must be named by exactly one upload step`).toBe(1);
+      expect(owner[0]!.condition, `${file}'s upload must run even when the run failed`).toBe(
+        'always()',
+      );
+    }
+  });
+
+  it('fails the job when a file it names is missing, rather than warning and shipping the rest', () => {
+    // `upload-artifact` defaults to `warn`: the step succeeds, the artifact holds whatever WAS written, and
+    // the absence is only visible to a reader who tries to fetch the file. That is how an artifact comes to
+    // look complete while naming a file no run writes.
+    const owned = uploadSteps(WORKFLOW).filter((one) =>
+      one.paths.some((p) => CENSUS_FILES.includes(p)),
+    );
+    expect(owned.length).toBe(CENSUS_FILES.length);
+    for (const one of owned) {
+      // The census file's OWN step, found in its own path list — `paths[0]` is the results file, and reading
+      // the stem off the wrong entry is the sort of off-by-one that makes a fence assert nothing.
+      const stem = one.paths
+        .filter((p) => CENSUS_FILES.includes(p))
+        .map((p) => p.replace('rcaeval-loss-census-', '').replace('.jsonl', ''))[0]!;
+      expect(WORKFLOW, `${one.name} must declare if-no-files-found: error`).toContain(
+        `name: rcaeval-${stem}-results`,
+      );
+    }
+    // One declaration per artifact that carries a census or a diagnose dump — two per suite — and NO others,
+    // so a declaration added to an artifact whose file is genuinely optional fails here rather than shipping
+    // a red job for a configuration nobody asked for.
+    const mustFail = uploadSteps(WORKFLOW).filter((one) =>
+      one.paths.some((p) => CENSUS_FILES.includes(p) || p.includes('rcaeval-diagnose-')),
+    );
+    expect(mustFail.length).toBe(CENSUS_FILES.length * 2);
+    expect((WORKFLOW.match(/if-no-files-found: error/g) ?? []).length).toBe(mustFail.length);
+  });
+
+  it('is a flag the runner ACCEPTS, so a dispatch cannot pass a fixture of its own', () => {
+    // A workflow may only pass what its runner parses: an argument nothing accepts makes `run-rcaeval.ts`
+    // throw at startup, which is a red job rather than an artifact — unless the flag is unknown to the parser
+    // AND unread by the runner, in which case the census would silently be the empty string and no file
+    // would be written at all.
+    expect(RCAEVAL_CLI).toContain("'--loss-census'");
+    expect(RCAEVAL_CLI).toMatch(/lossCensus: string;/);
+  });
+
+  it('leaves the census OFF unless the dispatch asks for it', () => {
+    // The runner's default is the empty string, and the emitter is guarded on it: a `--loss-census` that
+    // defaulted to a path would make every existing invocation write one, which is a behaviour change in a
+    // benchmark whose whole kill criterion is that its numbers do not move.
+    expect(RCAEVAL_CLI).toMatch(/lossCensus: '',/);
+    // The emitter is guarded on it, in the two places that could write the file: the per-group join and the
+    // single write after the loop. Two guards and not one, because the join allocates the rows and the write
+    // is what creates the file — an unguarded write would create an empty census on every existing run.
+    expect(RCAEVAL_RUNNER.match(/if \(opts\.lossCensus !== ''\)/g)?.length).toBe(2);
+  });
+});
+
+describe('the opt-in diagnose dump is listed only where it is produced', () => {
+  it('is NOT uploaded beside the unconditional files of the same artifact', () => {
+    // The defect this closes: `path:` named `rcaeval-diagnose-re1.txt` on the same step as the results, so
+    // every default run shipped an artifact claiming a file the run never writes — the dump is opt-in. The
+    // fix is structural: the dump has its own step, gated on the very input that produces it, so the pair
+    // "file listed" and "file written" are the same condition.
+    const shipped = uploadSteps(WORKFLOW);
+    const unconditional = shipped.filter((one) => one.condition === 'always()');
+    for (const one of unconditional) {
+      for (const p of one.paths) {
+        expect(p, `${one.name} must not name an opt-in file unconditionally`).not.toContain(
+          'diagnose',
+        );
+      }
+    }
+  });
+
+  it('gives every dump an upload step gated on `inputs.diagnose_dump`', () => {
+    const dumps = [...WORKFLOW.matchAll(/DIAGNOSE_ARG=\(--diagnose-dump ([^)]+)\)/g)].map(
+      (m) => m[1]!,
+    );
+    const shipped = uploadSteps(WORKFLOW);
+    for (const dump of dumps) {
+      const owner = shipped.filter((one) => one.paths.includes(dump));
+      expect(owner.length, `${dump} must be named by exactly one upload step`).toBe(1);
+      expect(owner[0]!.condition, `${dump} must be uploaded only when it exists`).toBe(
+        "${{ inputs.diagnose_dump != '' }}",
       );
     }
   });

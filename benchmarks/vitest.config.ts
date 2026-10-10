@@ -114,6 +114,7 @@ export default defineConfig({
         // is a statement about the other files.
         'src/router-validation.ts',
         'src/validate-routing-frontier.ts',
+        'src/loss-census.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than
