@@ -154,3 +154,52 @@ invariant on the published baseline, not merely plausible.
    that decide the call graph, and the config says so.
 4. **`oxlint` still does not cover `benchmarks/src`**, and `pnpm lint:eslint`
    points at a binary that is not installed.
+
+---
+
+## Round 3 — a label bag is a namespace no type-checker sees
+
+**Added in iteration 81. Owner of the `_diag_*` label keys and their one renderer.**
+
+`AnnotatableNode.labels` is a `Record<string, string>`. That type is what makes the annotation cheap and it is
+also a hole with no bottom: **a reader may name a key no writer ever sets, and `tsc` cannot object.** It did.
+
+```ts
+// rcaeval-topology.ts, BOTH writers
+_diag_svc_total: String(serviceCount),
+
+// run-rcaeval.ts, the only reader — a name nothing has ever written
+`  [topo] system=${l._diag_system}, edges=${l._diag_matched}, svcs=${l._diag_svc_matched}, ...`
+```
+
+Every run of the RCAEval benchmark printed **`svcs=undefined`**, for every system, and the line read as *"the
+loader does not know the service count"* — a **fact about the corpus** rather than a typo. That is worse than
+silence: an unset field printed in a reading's position is indistinguishable from a measurement to anyone who
+does not already know the field is unset. It was found by reading a run's log while auditing something else, not
+by any gate, and no amount of care in either file could have caught it — **the two files never meet**.
+
+### The repair, in three parts
+
+1. **One declaration.** `TOPOLOGY_DIAG_KEYS` holds the nine names; both writers index it, so a rename cannot be
+   one-sided.
+2. **One renderer.** `formatTopologyDiagnostic(labels)` is a pure function, and its contract is **a complete line
+   or no line**: a partial bag returns `undefined` rather than printing `undefined`. The caller prints only what
+   it is given.
+3. **A census that closes the class.** `rcaeval-topology.test.ts` walks `benchmarks/src` and asserts that the set
+   of `_diag_*` literals appearing anywhere in it **equals** the set the one declaration holds — both directions,
+   no exemption list. An invented name fails; an orphaned entry fails.
+
+### Two things the fence itself taught, immediately
+
+- **The comment explaining the defect reproduced it.** The docstring on `TOPOLOGY_DIAG_KEYS` names the misspelled
+  key, and the census over raw text failed on the first run — the repository's **fourth medium** for the law that
+  a rule reading the repository's text must be written around the fact that explaining it reproduces its subject.
+  Comments are stripped first (`helpers/source-text.ts`), and the reason is written into the test.
+- **The mutation proves it bites.** Re-introducing the invented name as code fails the census (1 failed, 19
+  passed); removing it passes. A guard that cannot fail is a description, not a gate.
+
+### What is still true of this file
+
+The type-checker still cannot see inside a `Record<string, string>`. This repair removes the *consequence* for
+one bag by giving it an owner and a census; it does not make the bag typed, and the next annotation that reaches
+for a key outside `TOPOLOGY_DIAG_KEYS` will be caught by the census rather than by `tsc`.

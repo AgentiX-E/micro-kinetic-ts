@@ -82,6 +82,7 @@ import type { SemanticEnhancerConfig } from './rcaeval-semantic.js';
 import {
   buildRCAEvalCallGraph,
   enhanceRCAEvalCallGraph,
+  formatTopologyDiagnostic,
   initRCAEvalTopology,
   isRCAEvalTopologyInitialized,
 } from './rcaeval-topology.js';
@@ -1170,14 +1171,12 @@ async function main(): Promise<void> {
       byFaultType.get(ft)!.push(c);
     }
 
-    // Print topology diagnostics
+    // Print topology diagnostics. The line is built by the topology module's ONE renderer, so a field this
+    // file names and that module never writes is a compile-time impossibility rather than an `undefined` on
+    // every run.
     const diagNode = stats.cases[0]?.callGraph.nodes.values().next().value;
-    if (diagNode?.labels?._diag_system) {
-      const l = diagNode.labels;
-      console.log(
-        `  [topo] system=${l._diag_system}, edges=${l._diag_matched}, svcs=${l._diag_svc_matched}, unconnected=${l._diag_unconnected}`,
-      );
-    }
+    const diagLine = formatTopologyDiagnostic(diagNode?.labels);
+    if (diagLine !== undefined) console.log(diagLine);
 
     // Run each fault type separately
     const results = new Map<string, RunResult>();

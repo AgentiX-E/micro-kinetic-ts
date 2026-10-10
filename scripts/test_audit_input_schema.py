@@ -233,12 +233,12 @@ class TestSummarize(unittest.TestCase):
             [('re1', 'OnlineBoutique'), ('re1', 'TrainTicket'), ('re2', 'OnlineBoutique')],
         )
 
-    def test_separates_carrying_from_zeroed_and_unions_the_undeclared_ids(self) -> None:
+    def test_separates_carrying_from_zeroed_and_unions_the_foreign_ids(self) -> None:
         rows = summarize(
             [
                 self.entry('rcaeval-re1_re1ss_x_cpu_1', 1.0, ('frontend_http_requests',)),
-                # Zeroed on EVERY service, including the undeclared one, so the case is the silent
-                # shape: it has services and metric names and no value anywhere.
+                # Zeroed on EVERY service, including the foreign one, so the case is the silent shape: it has
+                # services and metric names and no value anywhere.
                 self.entry('rcaeval-re1_re1ss_y_cpu_2', 0.0, ('orders_net_tcp',), undeclared_value=0.0),
             ]
         )
@@ -246,7 +246,57 @@ class TestSummarize(unittest.TestCase):
         self.assertEqual(rows[0].cases, 2)
         self.assertEqual(rows[0].carrying, 1)
         self.assertEqual(rows[0].zeroed, 1)
-        self.assertEqual(rows[0].undeclared_services, ('frontend_http_requests', 'orders_net_tcp'))
+        self.assertEqual(rows[0].foreign_name_union, ('frontend_http_requests', 'orders_net_tcp'))
+
+    def test_a_UNION_and_a_PER_CASE_count_are_different_readings_of_one_group(self) -> None:
+        # The defect this version exists for. Two cases, each carrying ONE foreign name, and the names differ:
+        # the union is two while every case carries one. Read from the union alone the group looks twice as
+        # contaminated as it is — and a union of a hundred and twenty-five cases is how a handful of extra
+        # scraped services came to read as a mislabelled system.
+        rows = summarize(
+            [
+                self.entry('rcaeval-re1_re1ob_x_cpu_1', 1.0, ('carts',)),
+                self.entry('rcaeval-re1_re1ob_y_cpu_2', 1.0, ('catalogue',)),
+            ]
+        )
+        self.assertEqual(rows[0].foreign_name_union, ('carts', 'catalogue'))
+        self.assertEqual(rows[0].cases_with_foreign, 2)
+        self.assertEqual(rows[0].foreign_per_case_min, 1)
+        self.assertEqual(rows[0].foreign_per_case_median, 1)
+        self.assertEqual(rows[0].foreign_per_case_max, 1)
+
+    def test_the_foreign_POINT_mass_is_reported_beside_the_names(self) -> None:
+        # A name is not a quantity: one foreign service with one row and one with every row are the same entry
+        # in a name list, and only the mass separates them.
+        rows = summarize(
+            [
+                census_case(
+                    'rcaeval-re1_re1ob_x_cpu_1',
+                    {'frontend': [point(1, 1.0), point(2, 1.0)], 'carts': [point(1, 1.0)]},
+                    frozenset({'frontend'}),
+                )
+            ]
+        )
+        self.assertEqual(rows[0].points, 3)
+        self.assertEqual(rows[0].foreign_points, 1)
+        self.assertAlmostEqual(rows[0].foreign_point_share, 1 / 3)
+
+    def test_a_case_with_NO_rows_has_a_defined_share_and_is_degenerate(self) -> None:
+        # A service with an empty row list is a real artifact: the table exists and has nothing in it. It is
+        # the `points == 0` degenerate class, and the share must answer 0 rather than divide by zero — a guard
+        # nothing reached until this test, which is the only reason it is written down.
+        entry = census_case('rcaeval-re1_re1ob_x_cpu_1', {'frontend': []}, frozenset({'frontend'}))
+        self.assertEqual(entry.points, 0)
+        self.assertEqual(entry.foreign_point_share, 0.0)
+        self.assertTrue(entry.degenerate)
+
+    def test_a_group_with_NO_cases_has_a_defined_spread_rather_than_a_crash(self) -> None:
+        # `summarize` never sees an empty group — it is built FROM the members — but the median of an empty
+        # list raises, and a guard that cannot be reached is a guard nobody has tested. The zero arm is
+        # asserted through the one function that can produce it.
+        self.assertEqual(summarize([]), [])
+        entry = self.entry('rcaeval-re1_re1ob_x_cpu_1', 1.0)
+        self.assertEqual(summarize([entry])[0].foreign_per_case_median, 0)
 
     def test_an_empty_corpus_summarises_to_no_rows(self) -> None:
         self.assertEqual(summarize([]), [])
@@ -272,13 +322,49 @@ class TestReport(unittest.TestCase):
             format_census([], 4), ['no cases found: nothing to census, and saying so beats printing a zero.']
         )
 
-    def test_the_table_names_every_group_and_the_undeclared_examples(self) -> None:
+    def test_the_table_names_every_group_the_foreign_examples_AND_the_two_readings(self) -> None:
         text = '\n'.join(format_census(self.rows(), 4))
         self.assertIn('suite', text)
         self.assertIn('re1', text)
         self.assertIn('SockShop', text)
         self.assertIn('orders__x', text)
         self.assertIn('zeroed', text)
+        # Both readings ship with the table, and so does the sentence that says they are different: a reader
+        # who takes `names(U)` for a per-case count gets the reading that made a handful of extra scraped
+        # services look like a mislabelled system.
+        self.assertIn('names(U)', text)
+        self.assertIn('per-case', text)
+        self.assertIn('fpts', text)
+        self.assertIn('share', text)
+        self.assertIn('A name in ONE', text)
+        self.assertIn('A foreign name is not by', text)
+
+    def test_the_two_readings_differ_in_the_RENDERED_table_not_only_in_the_dataclass(self) -> None:
+        # The defect was a REPORTING one, so the fixture has to make the two numbers differ: two groups, one
+        # where every case carries a foreign name and one where a single case does. The old table printed the
+        # same union-size column for both.
+        rows = summarize(
+            [
+                self.entry_like('rcaeval-re1_re1ob_p_cpu_1', ('carts',)),
+                self.entry_like('rcaeval-re1_re1ob_q_cpu_2', ('carts',)),
+                self.entry_like('rcaeval-re1_re1ss_p_cpu_1', ('carts',)),
+                self.entry_like('rcaeval-re1_re1ss_q_cpu_2', ()),
+            ]
+        )
+        text = '\n'.join(format_census(rows, 0))
+        onlineboutique = [ln for ln in text.splitlines() if 'OnlineBoutique' in ln][0]
+        sockshop = [ln for ln in text.splitlines() if 'SockShop' in ln][0]
+        # Same union size (1) in both rows...
+        self.assertIn('        1 ', onlineboutique)
+        self.assertIn('        1 ', sockshop)
+        # ...and DIFFERENT per-case spreads, which is the whole reason both columns exist.
+        self.assertIn('1/1/1', onlineboutique)
+        self.assertIn('0/0.5/1', sockshop)
+
+    def entry_like(self, case_id: str, foreign: tuple[str, ...]) -> CaseCensus:
+        metrics = {'frontend': [point(1, 1.0)]}
+        metrics.update({name: [point(1, 1.0)] for name in foreign})
+        return census_case(case_id, metrics, frozenset({'frontend'}))
 
     def test_EXAMPLES_ZERO_keeps_the_COUNT_and_drops_the_names(self) -> None:
         # A summary that names its population's members goes stale with it; the count is the durable
@@ -378,7 +464,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn('FAIL', err)
 
-    def test_the_json_flag_writes_the_groups_and_the_degenerate_list(self) -> None:
+    def test_the_json_flag_writes_the_groups_the_PER_CASE_rows_and_the_degenerate_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config = self.corpus(root, 3.0)
@@ -391,6 +477,20 @@ class TestCli(unittest.TestCase):
             self.assertEqual(written['cases'], 1)
             self.assertEqual(written['degenerate'], [])
             self.assertEqual(written['groups'][0]['suite'], 're1')
+            # The per-case rows are in the artifact, so every group figure can be RE-DERIVED from it rather
+            # than trusted. Publishing the union alone is what made a name in one case of a hundred and
+            # twenty-five indistinguishable from a name in all of them.
+            self.assertEqual(len(written['per_case']), 1)
+            self.assertEqual(written['per_case'][0]['case_id'], 'rcaeval-re1_re1ob_frontend_cpu_1')
+            self.assertEqual(written['per_case'][0]['points'], 1)
+            self.assertEqual(written['per_case'][0]['foreign_points'], 0)
+            # And the group's numbers are exactly the per-case ones folded, which is the property the
+            # artifact exists to let a reader check.
+            group = written['groups'][0]
+            self.assertEqual(group['points'], sum(c['points'] for c in written['per_case']))
+            self.assertEqual(
+                group['foreign_points'], sum(c['foreign_points'] for c in written['per_case'])
+            )
 
     def test_examples_caps_how_many_degenerate_ids_are_named(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -10,12 +10,19 @@
  * @module benchmarks/__tests__/rcaeval-topology.test
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   buildRCAEvalCallGraph,
+  formatTopologyDiagnostic,
   identifyBenchmarkSystem,
   initRCAEvalTopology,
+  TOPOLOGY_DIAG_KEYS,
 } from '../src/rcaeval-topology.js';
+import { stripComments } from './helpers/source-text.js';
 
 // ── Initialize YAML topology registry once before all tests ──
 
@@ -147,5 +154,94 @@ describe('buildRCAEvalCallGraph — Edge Cases', () => {
       expect(node.labels._diag_system).toBe('OnlineBoutique');
       expect(node.labels._diag_matched).toBeDefined();
     }
+  });
+});
+
+// ── The `[topo]` diagnostic: one declaration, one renderer ──────────────
+
+describe('formatTopologyDiagnostic — a complete line, or no line', () => {
+  const SRC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../src');
+
+  it('renders every field it claims, and never the string "undefined"', () => {
+    // A graph built through the PUBLIC entry, so the labels are the ones a real run carries.
+    const g = buildRCAEvalCallGraph('re2ob_diag_render', ['frontend', 'cartservice']);
+    const labels = g.nodes.values().next().value?.labels;
+    const line = formatTopologyDiagnostic(labels);
+    expect(line).toBeDefined();
+    expect(line).not.toContain('undefined');
+    // The four readings, in the order the line prints them, and `svcs` is the one that was unset for the whole
+    // life of this diagnostic because the renderer named a key no writer wrote.
+    expect(line).toMatch(/^ {2}\[topo\] system=\S+, edges=\S+, svcs=\d+, unconnected=\S+$/);
+    expect(line).toContain('svcs=2');
+  });
+
+  it('refuses to render a partial bag, including the one that shipped', () => {
+    // The three shapes a reader actually meets, and the fourth is the defect itself: a bag that carries
+    // `_diag_svc_matched` — a name NO writer has ever set — must render nothing rather than `svcs=undefined`,
+    // because `undefined` in that position reads as a fact about the corpus.
+    expect(formatTopologyDiagnostic(undefined)).toBeUndefined();
+    expect(formatTopologyDiagnostic({})).toBeUndefined();
+    const complete = {
+      [TOPOLOGY_DIAG_KEYS.system]: 'OnlineBoutique',
+      [TOPOLOGY_DIAG_KEYS.matched]: '13 exact',
+      [TOPOLOGY_DIAG_KEYS.services]: '11',
+      [TOPOLOGY_DIAG_KEYS.unconnected]: '3',
+    };
+    expect(formatTopologyDiagnostic(complete)).toContain('svcs=11');
+    // Every field the LINE prints, removed one at a time. The first four keys of the declaration are NOT that
+    // set — `case` is annotated but never printed — so the loop names the rendered four explicitly rather than
+    // slicing a list whose order happens to start with them. The bag is rebuilt without the key rather than
+    // `delete`d, because a `Record<string, string>` has no optional properties to delete.
+    const without = (omit: string, from: Record<string, string>): Record<string, string> =>
+      Object.fromEntries(Object.entries(from).filter(([key]) => key !== omit));
+    for (const missing of [
+      TOPOLOGY_DIAG_KEYS.system,
+      TOPOLOGY_DIAG_KEYS.matched,
+      TOPOLOGY_DIAG_KEYS.services,
+      TOPOLOGY_DIAG_KEYS.unconnected,
+    ]) {
+      expect(
+        formatTopologyDiagnostic(without(missing, complete)),
+        `${missing} removed`,
+      ).toBeUndefined();
+    }
+    // The historical misspelling, spelled out: present, and still not enough.
+    const historical = {
+      ...without(TOPOLOGY_DIAG_KEYS.services, complete),
+      _diag_svc_matched: '11',
+    };
+    expect(formatTopologyDiagnostic(historical)).toBeUndefined();
+  });
+
+  it('declares every `_diag_` literal that appears anywhere under `benchmarks/src`', () => {
+    // The class-closing census. `labels` is a `Record<string, string>`, so a reader may name a key no writer
+    // sets and `tsc` will not object — which is exactly how the `svcs` reading was unset for a release. This
+    // walks the source instead: the set of literals in the tree must EQUAL the set the one declaration holds, in
+    // both directions, so an invented name fails here and an orphaned entry fails here too.
+    //
+    // ⚠️ COMMENTS ARE STRIPPED FIRST, and that is not tidiness. The docstring on `TOPOLOGY_DIAG_KEYS` explains
+    // the defect by NAMING the misspelled key, so a census over raw text is satisfied-or-broken by the prose
+    // explaining it — which is what the first run of this very test did. It is the repository's fourth medium
+    // for one law: a rule that reads the repository's text must be written around the fact that explaining it
+    // reproduces its subject.
+    const walk = (dir: string): string[] => {
+      const found: string[] = [];
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) found.push(...walk(full));
+        else if (entry.name.endsWith('.ts')) found.push(full);
+      }
+      return found;
+    };
+    const literals = new Set<string>();
+    for (const file of walk(SRC_DIR)) {
+      const code = stripComments(readFileSync(file, 'utf8'));
+      for (const match of code.matchAll(/_diag_[a-z_]+/g)) {
+        literals.add(match[0]);
+      }
+    }
+    expect([...literals].sort()).toEqual(Object.values(TOPOLOGY_DIAG_KEYS).sort());
+    // And the census is not vacuous: an empty walk would make two empty sets equal.
+    expect(literals.size).toBeGreaterThan(5);
   });
 });

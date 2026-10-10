@@ -60,6 +60,34 @@ additive pooling scores **78.91%** against our **78.75%**. So the standing is a 
 matters** and a lead of ≈1.16× on the published number, and the `+10.8 pp` row must never be quoted without the
 row beneath it.
 
+### 0a. ABOVE US, AND NOT COMPARABLE — the four references that must be named
+
+**A number we cannot beat must be named, or the standing reads as a claim about the whole field.** Each of these
+is above us or beside us on some figure, and **none** is comparable to a service Top-1 on the 735 (verified
+2026-10-09 / 2026-10-10; the detail is in the internal `SOTA_LANDSCAPE_VERIFICATION.md` §1.4):
+
+1. **A vendor's self-reported 89% top-1** on RCAEval — NOFire AI, on its own guide and its own benchmark, with
+   no per-case results, and the page itself says to rerun it on your own incidents.
+2. **A private 50-case hybrid ensemble at 88.5%** — 15× smaller, not public, self-reported.
+3. **PSC-GRCA** (`arXiv:2609.27069`, Buljić, University of Zenica) — **`Avg@5` 0.915** against 0.864 for a
+   capacity-matched MLP and 0.862 for a no-neighbour control, with ablations locating the gain in the **prior**.
+   A different metric (`Avg@5`), and its own benchmark audit is the source of the RE1 column-schema allegation
+   this repository refutes in `docs/benchmark-corpus-completeness.md` §8.
+4. **`Where Root Cause Analysis Fails: A Retrieval-Reranking Decomposition`** (Hada Melino Muhammad, **Luan
+   Pham**, Laure Barrière, Sachin Shetty, Leonardo Pulga, Flora D. Salim; arXiv, posted 2026-09-30; **accepted to
+   the NeurIPS 2026 Evaluations & Datasets Track**; the arXiv identifier was **not captured at record time and is
+   not guessed here**). It is the **most dangerous of the four**, and the reason is not its number: it comes from
+   the **benchmark author's own group** — Luan Pham authored both RCAEval and PRISM — it is peer-reviewed, and it
+   audits **RCAEval itself**. It reports a two-stage pipeline (multi-signal retrieval, then an LLM reranker with
+   optional domain knowledge) matching or beating **the framework's 15 baselines** by up to **+12 pp top@1** with
+   no causal graph and no labelled data, and by **+7 to +18 pp** when the true cause is guaranteed in the pool and
+   a system-description document is supplied. **Its baseline cohort is the framework's 15, not this engine**, and
+   its figures are the authors' own, not independently replicated — so it is above us on *a* top-1 and comparable to
+   *none* of ours. **And it supplies an instrument we did not have**: `Retrieval@K` against `Rerank@1`, i.e. the
+   decomposition of a top-1 miss into "the cause was never retrieved" and "it was retrieved and ranked too low".
+   On RCAEval it reports microservice retrieval as *"nearly solved at 98–100%"*, which is a **testable claim
+   against our own diagnostics** and the next axis this roadmap takes.
+
 ---
 
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)

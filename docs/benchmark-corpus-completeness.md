@@ -292,3 +292,57 @@ repository keeps re-learning in new clothes: a summary must be a function of the
 Here the population was written down in the *dataset* rather than the *run*, and nothing failed — no test, no
 gate, no artifact — because every artifact printed its own case count and only the prose that folded them read
 from somewhere else.
+
+---
+
+## 8. What every case CARRIES — the input census, and the union it used to publish
+
+**Added in iteration 80-81; owner of `scripts/audit_input_schema.py` and its artifact.**
+
+`arXiv:2609.27069`'s second finding is a claim about the INPUT rather than about any method: a *"non-uniform
+column schema that silently zeroes telemetry for 250 of 375 RE1 cases"*, with its Table 3 supplying the
+mechanism — a raw frame of **51 columns** on Online Boutique against **421–439** and **1180–1446** on Sock Shop
+and Train Ticket, so a reader assuming one schema reads nothing for two systems. 250 is exactly 125 + 125.
+**Every RE1 number in this repository inherits that claim**, so it was checked against the converted corpus.
+
+The bridge is **per-case**, and that is the mechanism: `convert-parquet-to-json.py` detects the LONG shape
+(service / timestamp / value / metric_name columns) and the WIDE shape (timestamp plus `service::metric` columns)
+**from each file's own columns**, so no case inherits another's schema. The census is what says so from the
+output side, and it is the artifact rather than the code that answers it: **735 of 735 cases carry non-zero
+telemetry, 0 degenerate**, RE1 included — **375 of 375**, over all three systems.
+
+### 8.1 The defect this instrument found in ITSELF
+
+Its first version published, per (suite, system), the **UNION** of the service ids a case carries that the
+system's topology does not declare — and nothing else. A union cannot distinguish a name present in one case from
+a name present in all of them. RE1 OnlineBoutique showed `carts`, `catalogue`, `front-end`, `orders`; RE3
+SockShop showed a full Online Boutique service name set. Read as a population that is a **system swap** — and it
+was read that way, in this repository, before anyone asked what the per-case distribution was.
+
+It is not a swap. The benchmark run's own artifact settles it: for RE1-OB the engine's top-K candidates are
+`cartservice`, `productcatalogservice`, `adservice`, `recommendationservice`, `frontend`, and it reports
+`[semantic] 130/1681 services resolved` over 125 cases — **about 13.4 services per case** against the 11 the
+topology declares. Each case carries roughly two extra scraped services, which is what a shared scrape leaves
+behind; a union of 125 such cases is 10 names whether every case has them or one does.
+
+**So the artifact now publishes both readings**, and the per-case rows themselves:
+
+- `cases_with_foreign` — how many cases carry at least one;
+- `foreign_per_case_min / median / max` — the distribution, which is what a union cannot show;
+- `foreign_points` and the share of ALL points on those names — because **a name is not a quantity**: a foreign
+  service with one row and one with every row are the same entry in a name list and are not the same fact;
+- `per_case` — every case's own row, so each group figure can be **re-derived** from the artifact rather than
+  trusted;
+- `foreign_name_union` — the old number, now **named as what it is**.
+
+**No threshold on the share is a gate.** A foreign name is not by itself a defect — a shared scrape leaves real
+telemetry on services a single system's topology does not declare — so there is no share that is a fact. The gate
+stays on degeneracy, which does have a definition: `nonzero_services == 0` on a case that HAS services and metric
+names is telemetry present in name and silently zero in value, and that is reported as its own class rather than
+folded into "empty", because the two have different causes and therefore different fixes.
+
+### 8.2 The law
+
+**A UNION IS NOT A POPULATION.** It is the same law as §7 in a new medium: a summary must be a function of the
+population that was measured, and a union of a population is a function of its *support* only. The pair that
+catches it is a count of members beside a distribution over members; either one alone will read as the other.

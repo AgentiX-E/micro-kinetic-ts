@@ -544,6 +544,58 @@ function ringConnect(
   }
 }
 
+/**
+ * The label keys the topology annotates every node with, declared ONCE.
+ *
+ * `labels` is a `Record<string, string>`, so a reader may name a key no writer ever set and the compiler cannot
+ * object. That is not hypothetical: the one line that printed this diagnostic read `_diag_svc_matched` while
+ * BOTH writers set `_diag_svc_total`, so every run of the benchmark printed `svcs=undefined` and the line read as
+ * "the loader does not know the service count" — a fact about the corpus instead of a typo. No amount of care in
+ * either file closes that class, because the two files never meet; the names therefore live in one declaration,
+ * the writers index it, and {@link formatTopologyDiagnostic} is its only reader. The census in
+ * `rcaeval-topology.test.ts` pins the class shut: no `_diag_*` literal may appear anywhere under `benchmarks/src`
+ * that this map does not declare.
+ */
+export const TOPOLOGY_DIAG_KEYS = {
+  case: '_diag_case',
+  system: '_diag_system',
+  matched: '_diag_matched',
+  services: '_diag_svc_total',
+  unconnected: '_diag_unconnected',
+  source: '_diag_source',
+  semantic: '_diag_semantic',
+  embedding: '_diag_embedding',
+  llm: '_diag_llm',
+} as const;
+
+/** A diagnostic label key, so a caller cannot index the bag with a name nobody declared. */
+export type TopologyDiagKey = keyof typeof TOPOLOGY_DIAG_KEYS;
+
+/**
+ * The `[topo]` diagnostic line, rendered from a node's labels — or `undefined` when they cannot fill it.
+ *
+ * **A partial bag returns `undefined` rather than a shorter line.** Printing `undefined` for a field no writer
+ * set is the exact failure this function replaces, and it is worse than printing nothing: `svcs=undefined` is
+ * indistinguishable from a real reading to anyone who does not already know the field is unset. So the contract
+ * is "a complete line, or no line", and the caller prints only what it is given.
+ *
+ * @param labels - A node's label bag, or `undefined` when the node carries none.
+ * @returns The line, or `undefined` when any field it would print is absent.
+ */
+export function formatTopologyDiagnostic(
+  labels: Readonly<Record<string, string>> | undefined,
+): string | undefined {
+  if (labels === undefined) return undefined;
+  const fields: readonly (readonly [string, string | undefined])[] = [
+    ['system', labels[TOPOLOGY_DIAG_KEYS.system]],
+    ['edges', labels[TOPOLOGY_DIAG_KEYS.matched]],
+    ['svcs', labels[TOPOLOGY_DIAG_KEYS.services]],
+    ['unconnected', labels[TOPOLOGY_DIAG_KEYS.unconnected]],
+  ];
+  if (fields.some(([, value]) => value === undefined)) return undefined;
+  return `  [topo] ${fields.map(([name, value]) => `${name}=${value}`).join(', ')}`;
+}
+
 function annotateNodes(
   nodes: Map<ServiceId, AnnotatableNode>,
   caseId: string,
@@ -559,15 +611,15 @@ function annotateNodes(
   for (const node of nodes.values()) {
     node.labels = {
       ...node.labels,
-      _diag_case: caseId,
-      _diag_system: system,
-      _diag_matched: `${matchedEdgeCount}/${topologyEdgeCount}`,
-      _diag_svc_total: String(serviceCount),
-      _diag_unconnected: String(unconnectedCount),
-      _diag_source: _registry.initialized ? 'yaml-v2' : 'ring-connect-legacy',
-      _diag_semantic: String(semanticResolved),
-      _diag_embedding: String(embeddingResolved),
-      _diag_llm: String(llmResolved),
+      [TOPOLOGY_DIAG_KEYS.case]: caseId,
+      [TOPOLOGY_DIAG_KEYS.system]: system,
+      [TOPOLOGY_DIAG_KEYS.matched]: `${matchedEdgeCount}/${topologyEdgeCount}`,
+      [TOPOLOGY_DIAG_KEYS.services]: String(serviceCount),
+      [TOPOLOGY_DIAG_KEYS.unconnected]: String(unconnectedCount),
+      [TOPOLOGY_DIAG_KEYS.source]: _registry.initialized ? 'yaml-v2' : 'ring-connect-legacy',
+      [TOPOLOGY_DIAG_KEYS.semantic]: String(semanticResolved),
+      [TOPOLOGY_DIAG_KEYS.embedding]: String(embeddingResolved),
+      [TOPOLOGY_DIAG_KEYS.llm]: String(llmResolved),
     };
   }
 }
@@ -592,15 +644,15 @@ function annotateWithSemanticStats(
   for (const node of graph.nodes.values()) {
     node.labels = {
       ...node.labels,
-      _diag_case: caseId,
-      _diag_system: system,
-      _diag_matched: `${exactMatchEdgeCount} exact + ${result.embeddingResolvedCount} emb + ${result.llmResolvedCount} llm`,
-      _diag_svc_total: String(serviceCount),
-      _diag_unconnected: String(result.stillUnmatchedCount),
-      _diag_source: 'yaml-v2+semantic',
-      _diag_semantic: `${result.resolvedServiceIds.length}`,
-      _diag_embedding: `${result.embeddingResolvedCount}`,
-      _diag_llm: `${result.llmResolvedCount}`,
+      [TOPOLOGY_DIAG_KEYS.case]: caseId,
+      [TOPOLOGY_DIAG_KEYS.system]: system,
+      [TOPOLOGY_DIAG_KEYS.matched]: `${exactMatchEdgeCount} exact + ${result.embeddingResolvedCount} emb + ${result.llmResolvedCount} llm`,
+      [TOPOLOGY_DIAG_KEYS.services]: String(serviceCount),
+      [TOPOLOGY_DIAG_KEYS.unconnected]: String(result.stillUnmatchedCount),
+      [TOPOLOGY_DIAG_KEYS.source]: 'yaml-v2+semantic',
+      [TOPOLOGY_DIAG_KEYS.semantic]: `${result.resolvedServiceIds.length}`,
+      [TOPOLOGY_DIAG_KEYS.embedding]: `${result.embeddingResolvedCount}`,
+      [TOPOLOGY_DIAG_KEYS.llm]: `${result.llmResolvedCount}`,
     };
   }
 

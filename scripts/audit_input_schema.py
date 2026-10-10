@@ -26,13 +26,30 @@ For every case directory under the converted corpus it counts:
   topology has never heard of, so this separates "a service the platform really runs" from "a string
   the splitter invented";
 - **metric_names** — distinct `metric_name` values;
-- **points** — total (timestamp, value) rows;
+- **points** — total (timestamp, value) rows, and **foreign_points** — the rows on services the topology
+  does not declare;
 - **nonzero_services** — services carrying at least one value that is not exactly zero.
 
 `nonzero_services == 0` on a case that HAS services and metric names is the exact shape the allegation
 describes: telemetry present in name and **silently zero in value**. It is reported as its own class
 rather than folded into "empty", because the two have different causes and therefore different fixes —
 which is the ledger's own STARVED/INERT rule applied to the input instead of to a term.
+
+## The union this instrument used to publish, and why it no longer does
+
+The first version printed, per group, the **union** of the foreign service ids its cases carry and nothing
+else. A union cannot distinguish a name present in one case from a name present in all of them: RE1
+OnlineBoutique showed `carts`, `catalogue`, `front-end`, `orders` and RE3 SockShop showed a full Online
+Boutique service set, and a union of 125 (or 30) cases reads as though each case carried all of them — a
+system swap rather than a handful of extra scraped services. It does not, and the artifact could not have
+said so. So each group now publishes the union **and** `cases_with_foreign` **and** the per-case
+min/median/max, and every per-case row is in the JSON, which is what makes the group figures re-derivable
+rather than trusted.
+
+A foreign name is **not** by itself a defect, and no threshold on the share is a fact — a shared scrape
+leaves real telemetry on services a single system's topology does not declare. The share is published so
+that the two readings can be told apart, and the gate stays where it was: on degeneracy, which does have a
+definition.
 
 ## The gate
 
@@ -54,6 +71,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from statistics import median
 from pathlib import Path
 
 #: The case id carries its own suite and its own system: `rcaeval-re1_re1ob_currencyservice_cpu_1`.
@@ -87,7 +105,18 @@ class CaseCensus:
     undeclared: tuple[str, ...]
     metric_names: int
     points: int
+    foreign_points: int
     nonzero_services: int
+
+    @property
+    def foreign_point_share(self) -> float:
+        """The fraction of this case's points that sit on services its topology does not declare.
+
+        The share and not the count, because a name is not a quantity: a foreign service with one row and a
+        foreign service with every row are the same entry in a name list and are not the same fact about the
+        case. Reporting both is what stops a name list from reading as contamination.
+        """
+        return self.foreign_points / self.points if self.points else 0.0
 
     @property
     def carries_telemetry(self) -> bool:
@@ -123,12 +152,23 @@ class SuiteCensus:
     cases: int
     carrying: int
     degenerate: int
-    undeclared_services: tuple[str, ...]
+    cases_with_foreign: int
+    foreign_name_union: tuple[str, ...]
+    foreign_per_case_min: int
+    foreign_per_case_median: float
+    foreign_per_case_max: int
+    points: int
+    foreign_points: int
 
     @property
     def zeroed(self) -> int:
         """Cases that ran but carry no non-zero telemetry: the allegation's own count."""
         return self.cases - self.carrying
+
+    @property
+    def foreign_point_share(self) -> float:
+        """The group's foreign points as a fraction of all its points. See `CaseCensus`."""
+        return self.foreign_points / self.points if self.points else 0.0
 
 
 def read_declared_services(config: Path, system: str) -> frozenset[str]:
@@ -169,14 +209,18 @@ def census_case(case_id: str, metrics: dict, declared: frozenset[str]) -> CaseCe
     suite, system = classify(case_id)
     metric_names: set[str] = set()
     points = 0
+    foreign_points = 0
     nonzero = 0
     undeclared: list[str] = []
     for service, rows in metrics.items():
-        if service not in declared:
+        foreign = service not in declared
+        if foreign:
             undeclared.append(service)
         has_value = False
         for row in rows:
             points += 1
+            if foreign:
+                foreign_points += 1
             metric_names.add(str(row.get('metric_name', 'unknown')))
             if row.get('value', 0) != 0:
                 has_value = True
@@ -191,6 +235,7 @@ def census_case(case_id: str, metrics: dict, declared: frozenset[str]) -> CaseCe
         undeclared=tuple(sorted(undeclared)),
         metric_names=len(metric_names),
         points=points,
+        foreign_points=foreign_points,
         nonzero_services=nonzero,
     )
 
@@ -240,9 +285,10 @@ def summarize(censuses: list[CaseCensus]) -> list[SuiteCensus]:
         groups.setdefault((entry.suite, entry.system), []).append(entry)
     rows: list[SuiteCensus] = []
     for (suite, system), members in groups.items():
-        undeclared: set[str] = set()
+        union: set[str] = set()
         for member in members:
-            undeclared.update(member.undeclared)
+            union.update(member.undeclared)
+        spread = sorted(len(member.undeclared) for member in members)
         rows.append(
             SuiteCensus(
                 suite=suite,
@@ -250,7 +296,13 @@ def summarize(censuses: list[CaseCensus]) -> list[SuiteCensus]:
                 cases=len(members),
                 carrying=sum(1 for m in members if m.carries_telemetry),
                 degenerate=sum(1 for m in members if m.degenerate),
-                undeclared_services=tuple(sorted(undeclared)),
+                cases_with_foreign=sum(1 for m in members if m.undeclared),
+                foreign_name_union=tuple(sorted(union)),
+                foreign_per_case_min=spread[0] if spread else 0,
+                foreign_per_case_median=median(spread) if spread else 0.0,
+                foreign_per_case_max=spread[-1] if spread else 0,
+                points=sum(m.points for m in members),
+                foreign_points=sum(m.foreign_points for m in members),
             )
         )
     rows.sort(key=lambda r: (r.suite, r.system))
@@ -260,22 +312,40 @@ def summarize(censuses: list[CaseCensus]) -> list[SuiteCensus]:
 def format_census(rows: list[SuiteCensus], examples: int) -> list[str]:
     """The report, as lines. Pure, so every arm of it is testable without a corpus.
 
+    The table prints the per-case distribution BESIDE the union, and that is the point of this version. A union
+    is what this instrument published first, and a union cannot tell "every case carries fourteen foreign
+    services" from "one case in a hundred and twenty-five does" — both print the same integer. Read as a
+    population it said the RE1 and RE3 systems were mislabelled; the distribution says each case carries about
+    two. The names are a set, the per-case column is a distribution, and the two are not interchangeable.
+
     @param rows - The per-group aggregates.
-    @param examples - How many undeclared service ids to name per row.
+    @param examples - How many foreign service ids to name per row.
     @returns The report lines.
     """
     if not rows:
         return ['no cases found: nothing to census, and saying so beats printing a zero.']
     lines = [
         f'{"suite":<6} {"system":<15} {"cases":>6} {"carrying":>9} {"zeroed":>7} {"degen":>6} '
-        f'{"undeclared":>11}  examples',
+        f'{"w/foreign":>10} {"names(U)":>9} {"per-case":>12} {"fpts":>9} {"share":>7}  examples',
     ]
     for row in rows:
-        named = ', '.join(row.undeclared_services[:examples]) if examples > 0 else ''
+        named = ', '.join(row.foreign_name_union[:examples]) if examples > 0 else ''
+        spread = f'{row.foreign_per_case_min}/{row.foreign_per_case_median:g}/{row.foreign_per_case_max}'
         lines.append(
             f'{row.suite:<6} {row.system:<15} {row.cases:>6} {row.carrying:>9} '
-            f'{row.zeroed:>7} {row.degenerate:>6} {len(row.undeclared_services):>11}  {named}'
+            f'{row.zeroed:>7} {row.degenerate:>6} {row.cases_with_foreign:>10} '
+            f'{len(row.foreign_name_union):>9} {spread:>12} {row.foreign_points:>9} '
+            f'{row.foreign_point_share * 100:>6.2f}%  {named}'
         )
+    lines.append(
+        'names(U) is a UNION over the group; per-case is min/median/max of the per-case count. A name in ONE '
+        'case and a name in ALL of them print the SAME union size, so the pair is what says which.'
+    )
+    lines.append(
+        'fpts / share are the POINTS on those names and their fraction of all points. A foreign name is not by '
+        'itself a defect — a shared scrape leaves real telemetry on services a topology for one system does not '
+        'declare — and the share is what separates that from contamination.'
+    )
     return lines
 
 
@@ -348,6 +418,11 @@ def main(argv: list[str]) -> int:
             json.dumps(
                 {
                     'groups': [r.__dict__ for r in rows],
+                    # The per-case rows are published, not folded away. A group figure that cannot be
+                    # re-derived from the artifact is a figure a reader has to trust, and this instrument's
+                    # first version published only the union — which is how a name present in one case of a
+                    # hundred and twenty-five was read as a property of all of them.
+                    'per_case': [c.__dict__ for c in censuses],
                     'degenerate': degenerate,
                     'cases': len(censuses),
                 },
