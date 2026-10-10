@@ -346,3 +346,42 @@ folded into "empty", because the two have different causes and therefore differe
 **A UNION IS NOT A POPULATION.** It is the same law as §7 in a new medium: a summary must be a function of the
 population that was measured, and a union of a population is a function of its *support* only. The pair that
 catches it is a count of members beside a distribution over members; either one alone will read as the other.
+
+### 8.3 The measurement, once the union stopped being read as a population
+
+Run `38013486500`, the census artifact's own numbers (the table is what the artifact prints; every group figure is
+re-derivable from its `per_case` rows):
+
+| suite | system | cases | w/ foreign | `names(U)` | **per-case min/med/max** | foreign pts | **share** |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| RE1 | OnlineBoutique | 125 | **125** | 10 | **3 / 3 / 9** | 1,954,369 | **14.87%** |
+| RE1 | SockShop | 125 | **125** | 4 | 3 / 3 / 4 | 540,343 | 10.19% |
+| RE1 | TrainTicket | 125 | **125** | 28 | **28 / 28 / 28** | 7,516,507 | **31.02%** |
+| RE2 | OnlineBoutique | 90 | **90** | 6 | 1 / 2 / 4 | 767,107 | 8.12% |
+| RE2 | SockShop | 90 | **90** | 4 | 3 / 3 / 4 | 1,432,354 | 14.42% |
+| RE2 | TrainTicket | 90 | **90** | 33 | 32 / 32 / 33 | 17,830,934 | **37.97%** |
+| RE3 | OnlineBoutique | 30 | **30** | 18 | **2 / 2 / 18** | 351,604 | 11.56% |
+| RE3 | SockShop | 30 | **30** | 14 | **3 / 3 / 14** | 511,555 | 14.25% |
+| RE3 | TrainTicket | 30 | **30** | 33 | 32 / 32 / 33 | 6,933,850 | **40.72%** |
+
+**Three readings, and the first two are what the union was hiding.**
+
+1. **The union overstates by 3× to 9×.** RE3 OnlineBoutique's union is **18** names while its **median case
+   carries 2** — and its **max is 18**, i.e. exactly one case carries the whole Online Boutique set. That single
+   case is what made a system swap out of an extra scraped service. **A union is a maximum over a population
+   printed as if it were a member.**
+2. **Every case carries at least one foreign name** (`w/ foreign == cases` in all nine groups), so the correct
+   statement was never "a handful of cases"; it is "**every case carries about three**", with RE1-OB at 3 of its
+   ~13.4 services per case against the 11 the topology declares.
+3. **And the share is where a real, much larger property sits, on TrainTicket.** **28–33** foreign services per
+   case and **31% / 38% / 41% of ALL points** on RE1 / RE2 / RE3 — and those names are the **data tier**
+   (`ts-assurance-mongo`, `ts-auth-mongo`, … `ts-voucher-mysql`), 28 of them in RE1 and 33 in RE2/RE3 against a
+   topology that declares **42** TrainTicket services. So on the largest system, **about a third of the telemetry
+   is on services the call graph does not contain.**
+
+**Reading 3 is not a defect and it is not nothing.** Those are real, non-zero, correctly-parsed rows — which is
+why the census's own rule refuses to call a foreign name contamination — but they are telemetry the graph cannot
+carry: a fault whose only signature is on `ts-order-mongo` has no node to be attributed to, and an anomaly on a
+data-tier service can only reach the ranking through the application services that talk to it. **That is a
+quantified bound on what any graph-carrying method can read on TrainTicket**, it applies to every competitor
+equally, and it belongs beside the RE1 refutation rather than inside it. It is now the head of the open list.
