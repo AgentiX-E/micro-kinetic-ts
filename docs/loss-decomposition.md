@@ -445,3 +445,66 @@ name `dominantLostTerm` says "the largest gap", not "the cause", and the doc is 
 sixteen `loss` cases and the six RE3-TT `f3` cases fail on the *same* term, that term is a weight to move; if
 they fail on *different* terms, then §5's "the weakness is the fault's" becomes a statement about two mechanisms
 rather than one, and the block splits further.
+
+### 6.4 The measurement — and the answer is a single term
+
+Run **`38119497656`** on the revision that carries the breakdown. All 735 rows; the nine cells unchanged; the
+attribution computed by `dominantLostTerm` over the truth's and the winner's terms.
+
+```
+  of the 58 DEEP misses: the winner's largest per-term advantage was
+      selfAnomalyLog1p 54 · trace 4
+```
+
+And over **all 159 reranking misses** (101 shallow + 58 deep), per term, with `truthMean|·|` and `winnerMean|·|`
+the mean absolute contributions:
+
+| term | truth mean | winner mean | mean gap | times the largest positive gap |
+| --- | ---: | ---: | ---: | ---: |
+| **`selfAnomalyLog1p`** | **0.5891** | **0.7438** | **+0.1548** | **149 of 159** |
+| `log` | 0.0000 | 0.0252 | +0.0252 | 4 |
+| `trace` | 0.0000 | 0.0377 | +0.0377 | 6 |
+| `source`, `temporal`, `collision`, `topo`, `rise`, `prism`, `failedEdge`, `lat`, `pool` | **0.0000** | **0.0000** | 0.0000 | **0** |
+| `stability` | 0.0025 | 0.0007 | −0.0019 | 0 |
+
+Of the total positive margin across those cases, **71.5% sits in the base term and 28.5% in all twelve weighted
+terms together** — and that 28.5% is carried by `log` and `trace` alone.
+
+**The reranking loss is decided by `log1p(selfAnomaly)`.**
+
+### 6.5 What that does NOT say, stated before what it does
+
+**Nine terms are exactly `0.0000` on both sides of every reranking miss, and this record does not say why.** Three
+different causes produce the same zero, and separating them is the next instrument's job:
+
+1. **The weight is zero in the shipped configuration.** `prismWeight=0` is a recorded never-revert fact, so the
+   `prism` term is zero *by configuration* and nothing about the corpus can be inferred from it.
+2. **The input map is absent from the graph.** `topo`, `lat`, `pool`, `collision` and `rise` read OPTIONAL graph
+   fields; a term whose map is empty contributes zero for every candidate, which is a fact about the GRAPH rather
+   than about the fault.
+3. **The value is genuinely zero for both candidates** — a real absence of evidence for that term on that case.
+
+**A difference cannot distinguish these, and naming one of them from this table would be the defect this
+repository keeps recording.** So the finding is stated at the level the data supports: *the margin is decided by
+the base term, and the weighted terms carry none of it on these cases.* **Which of the three reasons makes them
+zero is registered as the next instrument, not as a conclusion.**
+
+### 6.6 What it changes, and what it does not
+
+**It removes the only lever the previous roadmap had.** "Which weight do we move?" now has the answer: on these
+159 cases, **none of them** — twelve weighted terms carry 28.5% of the margin between them and nine carry
+nothing. A reweighting cannot move a case decided by a term with no weight.
+
+**And it names the one mechanism that CAN**, which the repository already has and has never A/B'd per fault type:
+`rankNormalizeScores` is ON, so `selfAnomaly` is **rank-normalized** before the base term reads it — meaning the
+base term is a monotone function of each service's anomaly RANK rather than of its magnitude. Whether that is the
+right ordering principle for the deep block is now a measurable question about a shipped fact rather than a
+guess. The anomaly detector feeding it (`detectMADOnset` and the directional deviation it consumes) is the other.
+
+**Two consequences already visible, and one caution.** Visible: the ablation ledger's pattern — every tool wired
+as a SCORE measures negative, every numeric prior 0.0 — is exactly what a base-term-decided ranking predicts, so
+that ledger is now *explained* rather than merely recorded. And PSC-GRCA locating its gain in the **prior** term
+while ours contributes nothing is a difference in what the two architectures let decide a case, not a difference
+in tuning. Caution: `topo` contributes `0.0000` to every miss here while the ledger measures it at
+**−42.4 / −37.8 / −3.1** when enabled, and those are consistent only if `topo` moves cases that are not these —
+which is a statement about which cases a term decides, and is why §6.5 refuses to call a zero an absence.
