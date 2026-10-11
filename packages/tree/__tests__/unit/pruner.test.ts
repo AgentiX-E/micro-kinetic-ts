@@ -18,6 +18,7 @@ import {
   ONSET_SHAPES,
   POOL_METRIC_PREFIX,
   PRISM_POOLINGS,
+  sumScoreTerms,
   toRankingWeights,
   TreePruner,
 } from '@agentix-e/micro-kinetic-tree';
@@ -2190,5 +2191,110 @@ describe('TreePruner — the PRISM pooling axis', () => {
       // is the accepted set" means for an option with no runtime guard of its own.
       expect(() => build(new TreePruner({ prismPooling: member }))).not.toThrow();
     }
+  });
+});
+
+describe('the score breakdown — the total IS its terms', () => {
+  /**
+   * A graph with several terms live at once, so the identity below is asserted on a breakdown that is really
+   * a sum rather than on a single-term array that any implementation would satisfy.
+   */
+  const ranked = () => {
+    const pruner = new TreePruner({
+      defaultTopK: 4,
+      temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
+      logWeight: 0.4,
+      topoWeight: 0.2,
+      collisionWeight: 0.3,
+      stabilityWeight: DEFAULT_STABILITY_WEIGHT,
+      latWeight: DEFAULT_LAT_WEIGHT,
+      latMinRise: DEFAULT_LAT_MIN_RISE,
+      poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+      prismPooling: DEFAULT_PRISM_POOLING,
+    });
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C', 'D'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+        ['A', 'D'],
+      ],
+    );
+    const metrics = makeMetrics({
+      A: [10, 11, 10, 100, 140],
+      B: [10, 11, 12, 60, 70],
+      C: [10, 10, 11, 40, 42],
+      D: [10, 10, 10, 10, 11],
+    });
+    return pruner.analyze(pruner.buildFaultGraph(callGraph, metrics), 4);
+  };
+
+  it('sums to `finalScore` EXACTLY, to the last bit, on every result', () => {
+    // `toBe` and not `toBeCloseTo`: the terms and the total come from one assembly, so any difference at all
+    // is the two drifting apart rather than a rounding artefact — and a breakdown that adds up approximately
+    // is a description of a different score. This is the invariant the field exists to carry.
+    const results = ranked();
+    expect(results.length).toBeGreaterThan(1);
+    for (const r of results) {
+      expect(r.finalScore, `${r.serviceId} must carry a score`).toBeDefined();
+      expect(r.terms, `${r.serviceId} must carry its terms`).toBeDefined();
+      expect(sumScoreTerms(r.terms!), `${r.serviceId}: terms must sum to finalScore`).toBe(
+        r.finalScore,
+      );
+    }
+  });
+
+  it('breaks the score into MORE than one live term, so the identity is not trivially satisfied', () => {
+    // Non-vacuity, and it is the failure mode a single-term array would hide: an implementation that emitted
+    // only the base term would pass the identity above on every graph, for the wrong reason.
+    const nonZero = new Set<string>();
+    for (const r of ranked()) {
+      for (const t of r.terms!) if (t.contribution !== 0) nonZero.add(t.name);
+    }
+    expect(nonZero.size).toBeGreaterThan(2);
+    expect([...nonZero]).toContain('selfAnomalyLog1p');
+  });
+
+  it('names every term, and carries NEGATIVE contributions where the formula subtracts', () => {
+    // The formula subtracts two terms (collision ratio share, pool-metric penalty). A breakdown that reported
+    // magnitudes would sum to something else, so a negative contribution is evidence the sign convention
+    // travelled with the term rather than being re-applied by a reader.
+    const results = ranked();
+    const names = results[0]!.terms!.map((t) => t.name);
+    for (const n of names) expect(typeof n).toBe('string');
+    expect(new Set(names).size).toBe(names.length);
+    const all = results.flatMap((r) => r.terms!);
+    expect(all.some((t) => t.contribution < 0)).toBe(true);
+  });
+
+  it('emits the breakdown on EVERY result, not only the winner', () => {
+    // The attribution a benchmark needs compares the truth's terms with the WINNER's, and the winner is by
+    // definition not the miss — so a breakdown carried only on the top-1 would make the comparison impossible
+    // on exactly the cases it exists for.
+    const results = ranked();
+    expect(results.every((r) => r.terms !== undefined && r.terms.length > 0)).toBe(true);
+  });
+
+  it('names the term set EXACTLY, so a term added to the formula cannot go missing from the breakdown', () => {
+    // The identity above is satisfied by any array whose sum is the total, including one that silently DROPPED
+    // a term from both sides — and that is the failure the identity alone cannot see. So the population is
+    // enumerated: these are the thirteen terms `finalScore(v)` is made of, in the formula's order, and a
+    // fourteenth added to the ranking weights without a line here fails this test rather than entering the
+    // total unaccounted for.
+    expect(ranked()[0]!.terms!.map((t) => t.name)).toEqual([
+      'selfAnomalyLog1p',
+      'source',
+      'temporal',
+      'collision',
+      'topo',
+      'log',
+      'rise',
+      'trace',
+      'prism',
+      'failedEdge',
+      'lat',
+      'pool',
+      'stability',
+    ]);
   });
 });

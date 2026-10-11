@@ -251,6 +251,18 @@ export interface CasePrediction {
    * change to the engine's own cut silently move a count that claims to be about it.
    */
   readonly truthEvidence?: TruthEvidence | undefined;
+  /**
+   * The WINNER's `finalScore` broken into its named terms.
+   *
+   * The other half of an attribution. "Which term did the truth lose on" is a question about a GAP, and a gap
+   * has two sides: the truth's own breakdown (inside {@link truthEvidence}) says where it gained, and this says
+   * where the candidate that beat it did. Recorded together because they are only meaningful together — a
+   * breakdown of one side is a list of contributions to an unknown difference.
+   *
+   * Not part of `truthEvidence` deliberately: the winner is not evidence about the truth, and folding it there
+   * would put a second candidate's scores under a name that promises they belong to the first.
+   */
+  readonly top1Terms?: readonly ScoreTerm[] | undefined;
 }
 
 /**
@@ -271,12 +283,36 @@ export interface TruthEvidence {
   readonly collisionGain?: number | undefined;
   /** The truth's `finalScore` — the value the ranking sorted by — when the pruner produced one. */
   readonly finalScore?: number | undefined;
+  /**
+   * The truth's `finalScore` broken into its named terms, as the pruner emitted them.
+   *
+   * The field that answers the question a rank cannot: WHICH term the truth lost on. `rcaScore` says the origin
+   * deviated; only the breakdown says whether the loss sits in the base term or somewhere a weight could move.
+   * Read from the result rather than recomputed — `sumScoreTerms(terms) === finalScore` is an invariant the
+   * producer's own fence asserts, so a second sum here would be a second implementation of a value the engine
+   * already publishes, and it would agree with the first until one of them was edited.
+   */
+  readonly terms?: readonly ScoreTerm[] | undefined;
   /** The truth's propagation depth, as the ranking reported it. */
   readonly depth: number;
   /** Whether the ranking found the truth by tree search rather than in the full graph. */
   readonly viaTreeSearch: boolean;
   /** How many evidence metrics the engine recorded for the truth. Zero is a fact, not a missing measurement. */
   readonly metricCount: number;
+}
+
+/**
+ * One named contribution to a ranking score, already multiplied by its weight.
+ *
+ * A literal mirror of the core package's `ScoreTerm`, for the reason {@link TruthEvidence} gives about the shape
+ * it is nested in: this project does not depend on the core package, so the shape is copied and the agreement of
+ * the two declarations is fenced by test rather than assumed.
+ */
+export interface ScoreTerm {
+  /** The term's name, as the ranking formula spells it. */
+  readonly name: string;
+  /** Its contribution to the total score, weight already applied. May be negative. */
+  readonly contribution: number;
 }
 
 /**
@@ -303,6 +339,9 @@ function truthEvidenceIn(ranking: readonly RootCauseResult[], at: number): Truth
     rcaThreshold: threshold,
     collisionGain: metric('collision_gain'),
     finalScore: hit.finalScore,
+    // Copied through untouched: the breakdown is the producer's, and this record's job is to carry it rather
+    // than to re-derive, re-name or re-sign any part of it.
+    terms: hit.terms,
     depth: hit.propagationDepth,
     viaTreeSearch: hit.viaTreeSearch,
     metricCount: hit.evidenceMetrics.length,
@@ -597,6 +636,9 @@ export class BenchmarkRunner {
           // from rank 26 of 68 chosen between comparably-moving candidates, and only the second is a
           // ranking failure. Absent when the truth is not ranked, because then it has no score of its own.
           truthEvidence: placement.evidence,
+          // And the winner's breakdown, so the two sides of the gap are recorded where both are still in
+          // hand. Without it the census can say a case was lost and not what it was lost to.
+          top1Terms: results[0]?.terms,
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────

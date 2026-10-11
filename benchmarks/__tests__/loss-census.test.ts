@@ -8,11 +8,13 @@ import {
   classifyDeepEvidence,
   classifyLoss,
   DEFAULT_SHALLOW_DEPTH,
+  dominantLostTerm,
   formatLossReport,
   formatRankingLadder,
   LADDER_SCORE_DECIMALS,
   type LossRecord,
   type RankedService,
+  type ScoreTerm,
   splitCell,
   summarizeLoss,
   type TruthEvidence,
@@ -427,18 +429,30 @@ describe('the TruthEvidence mirror — two declarations, one shape', () => {
     census: resolve(REPO, 'benchmarks/src/loss-census.ts'),
   };
 
-  /** The field names of an `interface TruthEvidence { ... }` block, in declaration order. */
-  const fieldsOf = (text: string): string[] => {
-    const block = /export interface TruthEvidence \{([\s\S]*?)\n\}/.exec(stripComments(text));
-    expect(block, 'TruthEvidence must be declared in both files').not.toBeNull();
+  /** The field names of an `interface <name> { ... }` block, in declaration order. */
+  const fieldsOf = (text: string, name: string): string[] => {
+    const block = new RegExp(`export interface ${name} \\{([\\s\\S]*?)\\n\\}`).exec(
+      stripComments(text),
+    );
+    expect(block, `${name} must be declared in both files`).not.toBeNull();
     return [...block![1]!.matchAll(/^ {2}readonly ([A-Za-z][A-Za-z0-9]*)\??:/gm)].map((m) => m[1]!);
   };
 
   it('declares the same fields, in the same order, on both sides', () => {
-    const runner = fieldsOf(readFileSync(SOURCES.runner, 'utf8'));
-    const census = fieldsOf(readFileSync(SOURCES.census, 'utf8'));
+    const runner = fieldsOf(readFileSync(SOURCES.runner, 'utf8'), 'TruthEvidence');
+    const census = fieldsOf(readFileSync(SOURCES.census, 'utf8'), 'TruthEvidence');
     // Non-vacuity before the comparison: an extraction that matched nothing would make this two empty lists.
     expect(runner.length).toBeGreaterThan(5);
+    expect(census).toEqual(runner);
+  });
+
+  it('mirrors the ScoreTerm shape too, because the census attributes a gap by its NAMES', () => {
+    // The attribution matches the two sides TERM BY TERM, so a renamed term on one side would not fail —
+    // it would silently drop out of the join, and the case would read as unattributable rather than as a
+    // mismatch. That is the quietest possible failure of this feature, so the names are held equal here.
+    const runner = fieldsOf(readFileSync(SOURCES.runner, 'utf8'), 'ScoreTerm');
+    const census = fieldsOf(readFileSync(SOURCES.census, 'utf8'), 'ScoreTerm');
+    expect(runner).toEqual(['name', 'contribution']);
     expect(census).toEqual(runner);
   });
 
@@ -448,5 +462,146 @@ describe('the TruthEvidence mirror — two declarations, one shape', () => {
     // everywhere and look like a finding rather than like a disconnection.
     expect(readFileSync(SOURCES.runner, 'utf8')).toContain('truthEvidence: placement.evidence,');
     expect(readFileSync(SOURCES.census, 'utf8')).toContain('classifyDeepEvidence(m.truthEvidence)');
+    // And the winner's side, which is what makes an attribution possible at all.
+    expect(readFileSync(SOURCES.runner, 'utf8')).toContain('top1Terms: results[0]?.terms,');
+    expect(readFileSync(SOURCES.census, 'utf8')).toContain(
+      'dominantLostTerm(m.truthEvidence?.terms, m.top1Terms)',
+    );
+  });
+});
+
+describe('dominantLostTerm — which term the winner won on, and what it refuses to claim', () => {
+  const t = (name: string, contribution: number): ScoreTerm => ({ name, contribution });
+
+  it('returns the term with the largest truth-to-winner gap', () => {
+    const truth = [t('selfAnomalyLog1p', 0.5), t('lat', 0.1), t('log', 0.9)];
+    const winner = [t('selfAnomalyLog1p', 0.6), t('lat', 0.8), t('log', 0.9)];
+    // Gaps: selfAnomalyLog1p +0.1, lat +0.7, log 0.0. The largest positive one decided it.
+    expect(dominantLostTerm(truth, winner)).toBe('lat');
+  });
+
+  it('is a difference and not a level: a term the truth LEADS on is never returned', () => {
+    // The truth can be ahead on a term and lose anyway. Returning that term because its magnitude is large
+    // would name the wrong side of the gap, so only positive differences are candidates.
+    const truth = [t('topo', 5.0), t('log', 0.1)];
+    const winner = [t('topo', 1.0), t('log', 0.9)];
+    // topo −4.0 (the truth leads, never a candidate), log +0.8.
+    expect(dominantLostTerm(truth, winner)).toBe('log');
+  });
+
+  it('resolves a tie to the FIRST term in the formula order, not to map iteration order', () => {
+    // A tie broken by whichever the map happened to yield last is a different answer on a different engine,
+    // and an artifact that changes when nothing changed cannot be diffed.
+    const truth = [t('source', 0), t('temporal', 0)];
+    const winner = [t('source', 0.5), t('temporal', 0.5)];
+    expect(dominantLostTerm(truth, winner)).toBe('source');
+  });
+
+  it('refuses when either side is missing, or when the two sides share no term', () => {
+    // Three distinct refusals, none of them a term name. A gap needs two sides; a gap between breakdowns of
+    // two DIFFERENT scores is not a quantity, and naming a term from one of them would be answering a
+    // question about a difference that does not exist.
+    expect(dominantLostTerm(undefined, [t('lat', 1)])).toBeUndefined();
+    expect(dominantLostTerm([t('lat', 1)], undefined)).toBeUndefined();
+    expect(dominantLostTerm([t('lat', 1)], [t('topo', 2)])).toBeUndefined();
+    // And when the truth leads on EVERY shared term there is no positive gap, which cannot happen for two
+    // breakdowns of the same score — so it is reported as unattributable rather than as a term.
+    expect(dominantLostTerm([t('lat', 5)], [t('lat', 1)])).toBeUndefined();
+  });
+});
+
+describe('the deep half attributed — the distribution, its order, and its refusals', () => {
+  const t = (name: string, contribution: number): ScoreTerm => ({ name, contribution });
+  const deep = (caseId: string, truthTerms?: ScoreTerm[], top1Terms?: ScoreTerm[]): LossRecord =>
+    record({
+      caseId,
+      truthRank: 20,
+      truthEvidence: {
+        rcaScore: 0.9,
+        rcaThreshold: 0.1,
+        depth: 3,
+        viaTreeSearch: false,
+        metricCount: 1,
+        ...(truthTerms === undefined ? {} : { terms: truthTerms }),
+      },
+      ...(top1Terms === undefined ? {} : { top1Terms }),
+    });
+
+  it('counts by term, sorted by count and then by NAME', () => {
+    const rows = summarizeLoss(
+      [
+        deep('a', [t('log', 0), t('lat', 0)], [t('log', 3), t('lat', 1)]),
+        deep('b', [t('log', 0), t('lat', 0)], [t('log', 2), t('lat', 1)]),
+        deep('c', [t('log', 0), t('lat', 0)], [t('log', 0), t('lat', 9)]),
+      ],
+      5,
+    );
+    expect(rows[0]!.deepLostOn).toEqual([
+      { term: 'log', count: 2 },
+      { term: 'lat', count: 1 },
+    ]);
+    // Exhaustive: every deep case lands in a term or in the unavailable count, never in neither.
+    const counted = rows[0]!.deepLostOn.reduce((a, e) => a + e.count, 0);
+    expect(counted + rows[0]!.deepAttributionUnavailable).toBe(rows[0]!.rerankDeep);
+  });
+
+  it('breaks a COUNT tie by term NAME, and the answer does not depend on the case order', () => {
+    // TWO inputs, one reverse-alphabetical and one ascending, asserting they produce the SAME table. That is
+    // the property — a distribution that moves when the cases are reordered cannot be diffed — and it is also
+    // what exercises both arms of the name comparison: a sort handed one ordering sees the pair in one
+    // orientation and never the other, so a single fixture can leave half the tie-break permanently untaken.
+    const reverse = summarizeLoss(
+      [
+        deep('a', [t('topo', 0)], [t('topo', 5)]),
+        deep('b', [t('mongo', 0)], [t('mongo', 5)]),
+        deep('c', [t('log', 0)], [t('log', 5)]),
+      ],
+      5,
+    );
+    const ascending = summarizeLoss(
+      [
+        deep('a', [t('log', 0)], [t('log', 5)]),
+        deep('b', [t('mongo', 0)], [t('mongo', 5)]),
+        deep('c', [t('topo', 0)], [t('topo', 5)]),
+      ],
+      5,
+    );
+    expect(reverse[0]!.deepLostOn).toEqual([
+      { term: 'log', count: 1 },
+      { term: 'mongo', count: 1 },
+      { term: 'topo', count: 1 },
+    ]);
+    expect(ascending[0]!.deepLostOn).toEqual(reverse[0]!.deepLostOn);
+  });
+
+  it('reports a deep case with no breakdown as UNAVAILABLE rather than folding it into a term', () => {
+    const rows = summarizeLoss(
+      [deep('a', [t('log', 0)], [t('log', 9)]), deep('b'), deep('c', [t('log', 0)], undefined)],
+      5,
+    );
+    expect(rows[0]!.deepLostOn).toEqual([{ term: 'log', count: 1 }]);
+    expect(rows[0]!.deepAttributionUnavailable).toBe(2);
+    expect(rows[0]!.deepAttributionUnavailable + 1).toBe(rows[0]!.rerankDeep);
+  });
+
+  it('counts nothing for a shallow miss, so the distribution is of the DEEP half alone', () => {
+    const rows = summarizeLoss(
+      [record({ caseId: 's', truthRank: 3, top1Terms: [t('log', 9)] })],
+      5,
+    );
+    expect(rows[0]!.rerankDeep).toBe(0);
+    expect(rows[0]!.deepLostOn).toEqual([]);
+    expect(rows[0]!.deepAttributionUnavailable).toBe(0);
+  });
+
+  it('prints the attribution beside the split, and says so when nothing is attributable', () => {
+    const withTerms = formatLossReport(
+      summarizeLoss([deep('a', [t('log', 0)], [t('log', 9)])], 5),
+      5,
+    ).join('\n');
+    expect(withTerms).toContain("the winner's largest per-term advantage was log 1");
+    const without = formatLossReport(summarizeLoss([deep('a')], 5), 5).join('\n');
+    expect(without).toContain('not attributable — no deep case carried both breakdowns');
+    expect(without).toContain('unattributable 1');
   });
 });

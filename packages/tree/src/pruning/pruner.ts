@@ -47,6 +47,7 @@ import {
   type RCAEngineOptions,
   type RankingWeights,
   type RootCauseResult,
+  type ScoreTerm,
   type ServiceCallGraph,
   type ServiceId,
   type ServiceNode,
@@ -72,6 +73,28 @@ import {
   computeTraceActivityScores,
   gatedRiseContribution,
 } from './ranking-signals.js';
+
+/**
+ * The total a term breakdown adds up to, in the order the terms are stated.
+ *
+ * This is the definition of the identity the ranking score's breakdown carries — `finalScore(v)` IS the sum of
+ * its terms — and it lives HERE, beside the only code that produces either, rather than in any consumer. A
+ * consumer that summed the terms itself would be a second implementation of the total, and the first thing
+ * that breaks when a second implementation exists is the agreement between the two: a term added to the
+ * formula would reach the total (computed one way) and not the breakdown (computed another), and the artifact
+ * would report a decomposition of a number it did not produce.
+ *
+ * Left-to-right, so the floating-point result is the one the formula's own expression produced: addition is
+ * not associative in IEEE-754, and a pairwise sum of the same terms is a different double.
+ *
+ * @param terms - The contributions, in formula order.
+ * @returns Their sum.
+ */
+export function sumScoreTerms(terms: readonly ScoreTerm[]): number {
+  let total = 0;
+  for (const term of terms) total += term.contribution;
+  return total;
+}
 
 /**
  * Options for TreePruner construction.
@@ -1667,24 +1690,42 @@ function performTreeRCA(
   // formula matches the `finalScore(v)` documented on the ranking weights; the
   // log term reads `selfScores` directly because `scoredNodes[i].score` is that
   // same value (each scored node was pushed with its `selfScores` entry).
+  // The sum and its BREAKDOWN are assembled in ONE array, and the total is that array's sum rather than a
+  // parallel expression. That is the point: a breakdown kept beside a total is a second description of the
+  // same score, and the two agree until one of them is edited — at which point the artifact reports a
+  // decomposition of a number it did not come from. Here the total cannot disagree with its terms, and the
+  // term order is the formula's own, so the floating-point sum is unchanged to the last bit.
+  const termCache = new Map<ServiceId, readonly ScoreTerm[]>();
+  const termsOf = (id: ServiceId): readonly ScoreTerm[] => {
+    let t = termCache.get(id);
+    if (t === undefined) {
+      t = [
+        // `log1p`, not `log`: rank-normalized self anomalies live in [0, 1], the top service maps to exactly
+        // 1.0, and `log(1.0) === 0` would collapse the base term to zero for the STRONGEST signal while
+        // `log(0) === -Infinity` would destroy a zero-anomaly service.
+        { name: 'selfAnomalyLog1p', contribution: Math.log1p(selfScores.get(id)!) },
+        { name: 'source', contribution: weights.sourceWeight * sourceScores.get(id)! },
+        { name: 'temporal', contribution: weights.temporalWeight * (onsetSlopes.get(id) ?? 0) },
+        { name: 'collision', contribution: -weights.collisionWeight * (ratioContrib.get(id) ?? 0) },
+        { name: 'topo', contribution: weights.topoWeight * (topoScores?.get(id) ?? 0) },
+        { name: 'log', contribution: weights.logWeight * (logScores?.get(id) ?? 0) },
+        { name: 'rise', contribution: riseTerm(id) },
+        { name: 'trace', contribution: traceTerm(id) },
+        { name: 'prism', contribution: prismTerm(id) },
+        { name: 'failedEdge', contribution: failedEdgeTerm(id) },
+        { name: 'lat', contribution: latTerm(id) },
+        { name: 'pool', contribution: poolTerm(id) },
+        { name: 'stability', contribution: stabilityTerm(id) },
+      ];
+      termCache.set(id, t);
+    }
+    return t;
+  };
   const finalScores = new Map<ServiceId, number>();
   const finalScoreOf = (id: ServiceId): number => {
     let s = finalScores.get(id);
     if (s === undefined) {
-      s =
-        Math.log1p(selfScores.get(id)!) +
-        weights.sourceWeight * sourceScores.get(id)! +
-        weights.temporalWeight * (onsetSlopes.get(id) ?? 0) -
-        weights.collisionWeight * (ratioContrib.get(id) ?? 0) +
-        weights.topoWeight * (topoScores?.get(id) ?? 0) +
-        weights.logWeight * (logScores?.get(id) ?? 0) +
-        riseTerm(id) +
-        traceTerm(id) +
-        prismTerm(id) +
-        failedEdgeTerm(id) +
-        latTerm(id) +
-        poolTerm(id) +
-        stabilityTerm(id);
+      s = sumScoreTerms(termsOf(id));
       finalScores.set(id, s);
     }
     return s;
@@ -1719,6 +1760,11 @@ function performTreeRCA(
       },
       confidence: computeConfidence(node.score, node.depth, errorBound),
       finalScore: finalScoreOf(node.serviceId),
+      // The breakdown of the value above, from the same assembly, so `finalScore` and its terms cannot
+      // disagree — see `sumScoreTerms`. It travels on EVERY result rather than only on a miss, because the
+      // attribution a benchmark needs compares the truth's terms with the WINNER's, and the winner is by
+      // definition not a miss.
+      terms: termsOf(node.serviceId),
       rank: i + 1,
       evidenceMetrics: [
         { metric: 'rca_score', value: node.score, threshold: 0.1 },

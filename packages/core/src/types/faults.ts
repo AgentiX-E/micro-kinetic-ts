@@ -72,6 +72,25 @@ export interface RootCauseResult {
    * (log/trace/fusion providers) leave it `undefined`.
    */
   readonly finalScore?: number;
+  /**
+   * The NAMED contributions that sum to {@link finalScore}, as the producer computed them.
+   *
+   * ## Why a score needs its own breakdown
+   *
+   * `finalScore` is a sum, so it can say that one candidate outranked another and never which of the thirteen
+   * terms did it. That is the difference between knowing a ranker lost and knowing what it lost on — and it is
+   * not recoverable downstream: a reader given `finalScore` and the graph would have to re-implement the sum
+   * to take it apart, which is the second implementation of a quantity this project treats as a defect.
+   *
+   * So the breakdown comes from the ONE place that knows it, and it carries an invariant that makes it
+   * checkable rather than merely informative: **the contributions sum exactly to `finalScore`**, term for term,
+   * in the order the formula states them. A breakdown that does not add up is a description of a different
+   * score, and the fence asserts the identity instead of trusting the two to stay in step.
+   *
+   * Populated by the tree pruner only; other producers leave it `undefined`, for the same reason they leave
+   * `finalScore` unset — they do not compute this sum.
+   */
+  readonly terms?: readonly ScoreTerm[];
   /** Time of root cause event (Unix ms) */
   readonly timestamp?: number;
   /** Supporting evidence metrics */
@@ -86,6 +105,20 @@ export interface RootCauseResult {
   readonly propagationErrorBound: number;
   /** Whether this result was found via tree search (vs full graph) */
   readonly viaTreeSearch: boolean;
+}
+
+/**
+ * One named contribution to a ranking score, already multiplied by its weight.
+ *
+ * The name is the formula's own word for the term, so a consumer can group, compare and report contributions
+ * without a mapping table — and so a term added to the formula without a name here is a term the breakdown
+ * cannot silently absorb into a total.
+ */
+export interface ScoreTerm {
+  /** The term's name, as the ranking formula spells it. */
+  readonly name: string;
+  /** Its contribution to the total score, weight already applied. May be negative. */
+  readonly contribution: number;
 }
 
 /** Options for RCA engine configuration. */

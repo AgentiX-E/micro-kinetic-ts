@@ -381,3 +381,67 @@ move.
   26, RE3-OB `f1` 6. **A truth with local evidence at rank 26 of 68 is a candidate the ranker scored and did not
   prefer**, so the question for these blocks is which term it lost on — a question the next instrument must carry,
   because `finalScore` alone sums the terms and cannot say which one dominated.
+
+---
+
+## 6. The attribution: *which* term the winner won on
+
+§5 ended with the question its own measurement created. 56 of the 58 `RERANK_DEEP` misses had local evidence
+above the engine's own threshold and were placed beyond rank 5 anyway — so none of them is excused by a missing
+signal, and all of them are "ordering". **Ordering along which term?** A rank cannot say, and neither can
+`finalScore`, because it is a sum:
+
+```
+winner − truth = Σ (winner_i − truth_i)
+```
+
+**A sum can say that one candidate outranked another and never which term did it.**
+
+### 6.1 What is now recorded, and where the numbers come from
+
+`ScoreTerm` — a name and a contribution, weight already applied — and **`terms` on every result the pruner
+emits**, not only on the top-1. That last part is the load-bearing one: the attribution is a question about a
+GAP, the gap has two sides, and the winning side is by definition not a miss — so a breakdown carried only on
+the winner would make the comparison impossible on exactly the cases it exists for.
+
+**The breakdown is not a second computation of the score.** `finalScoreOf` assembles the thirteen terms into one
+array and the total IS that array's sum, rather than a parallel expression beside it. A breakdown kept beside a
+total is two descriptions of one score, and they agree until one of them is edited — at which point the artifact
+reports a decomposition of a number it did not come from. Here the two cannot disagree, and the term order is
+the formula's own, so the floating-point sum is unchanged to the last bit.
+
+That invariant is asserted rather than trusted: **`sumScoreTerms(terms) === finalScore`, exactly, on every
+result**, in `packages/tree`. The term NAMES are additionally enumerated as an exact set, because the identity
+alone cannot see the failure that matters most — a term dropped from *both* sides still sums correctly, and only
+an exact population catches it. Mutation-verified in both directions: an emitted total nudged by `1e-9` fails the
+identity, and dropping one term from the breakdown fails the name set.
+
+### 6.2 The derivation, and its three refusals
+
+`dominantLostTerm(truthTerms, winnerTerms)` returns **the term with the largest POSITIVE truth-to-winner
+difference** — the term that decided the case in the winner's favour. Three refusals are built in rather than
+documented around:
+
+- **A term the truth LEADS on is never returned.** Only positive gaps are candidates, and the condition sits in
+  the selection rather than in a later filter, so an implementation that seeded its answer with the first term
+  would not exist. A truth can lead on a term and lose the case anyway; that term is not where it lost.
+- **Either side missing ⇒ `undefined`.** A gap needs two sides.
+- **No shared term name ⇒ `undefined`.** Two breakdowns with no term in common are descriptions of two different
+  scores, and a difference between those is not a quantity. Reported as `unattributable` rather than folded into
+  any term, for the same reason §5.3 reports `UNSTATED` as its own count.
+
+A tie resolves to the **first term in the formula's order**, never to map iteration order — a distribution whose
+ordering depends on how a `Map` happened to yield is a different table on a different engine, and an artifact
+that changes when nothing changed is one nobody can diff.
+
+### 6.3 What the name is, and what it is not
+
+**It is a lead, not a verdict.** A term can hold the largest gap for two different reasons: the winner earned
+more there, or the truth was penalised there. This function measures the *difference* and does not separate the
+two ends — so it names where to look, and the terms themselves (both on the record) are what confirm it. The
+name `dominantLostTerm` says "the largest gap", not "the cause", and the doc is the place that distinction lives.
+
+`loss` remains the head of the per-fault-type block from §5.1 and the attribution is read against it: if the
+sixteen `loss` cases and the six RE3-TT `f3` cases fail on the *same* term, that term is a weight to move; if
+they fail on *different* terms, then §5's "the weakness is the fault's" becomes a statement about two mechanisms
+rather than one, and the block splits further.

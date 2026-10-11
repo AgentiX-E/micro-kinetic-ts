@@ -92,6 +92,7 @@ export {
   computeOnsetSlopes,
   computeTemporalEarliness,
   isOnsetShape,
+  sumScoreTerms,
   toRankingWeights,
 } from './pruning/pruner.js';
 export type { OnsetShape, TreePrunerOptions } from './pruning/pruner.js';

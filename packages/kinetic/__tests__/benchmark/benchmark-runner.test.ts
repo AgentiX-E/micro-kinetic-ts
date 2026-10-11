@@ -1288,6 +1288,10 @@ describe('RCA Engine Integration', () => {
         propagationDepth: 0,
         propagationErrorBound: 0,
         viaTreeSearch: true,
+        terms: [
+          { name: 'rca_score', contribution: 0.9 },
+          { name: 'collision_gain', contribution: 0.4 },
+        ],
       },
       {
         serviceId: 'cartservice',
@@ -1299,6 +1303,12 @@ describe('RCA Engine Integration', () => {
         propagationDepth: 3,
         propagationErrorBound: 0.05,
         viaTreeSearch: false,
+        // The breakdown the producer emits alongside the total. Nothing here asserts that it ADDS UP — that is
+        // the producer's own fence — only that this record carries it through untouched.
+        terms: [
+          { name: 'selfAnomalyLog1p', contribution: 0.02 },
+          { name: 'lat', contribution: 0.0 },
+        ],
       },
     ];
     const spyEngine: IRCAEngine = {
@@ -1356,6 +1366,19 @@ describe('RCA Engine Integration', () => {
     // "the engine reported nothing" from "the engine reported zero" — the difference the census's third class
     // exists for.
     expect(hit.truthEvidence!.collisionGain).toBeUndefined();
+
+    // The truth's OWN breakdown travels with it, so a miss can say WHICH term it lost on rather than only that
+    // it lost. Copied through untouched — the identity `sum(terms) === finalScore` is the producer's invariant.
+    expect(hit.truthEvidence!.terms).toEqual([
+      { name: 'selfAnomalyLog1p', contribution: 0.02 },
+      { name: 'lat', contribution: 0.0 },
+    ]);
+    // And the WINNER's, because an attribution is a difference and needs both sides. Without this the census
+    // could say a case was deep and not what it was deep to.
+    expect(hit.top1Terms).toEqual([
+      { name: 'rca_score', contribution: 0.9 },
+      { name: 'collision_gain', contribution: 0.4 },
+    ]);
 
     // The leader's own evidence is a different result's, and the two are not conflated.
     expect(byId.get('ev-leader')!.truthEvidence!.rcaScore).toBe(0.9);

@@ -1303,6 +1303,10 @@ async function main(): Promise<void> {
           // here: the threshold that decides the split is the engine's, and a second copy of it in this file
           // would be a boundary that moves without this line moving.
           truthEvidence: ep?.truthEvidence,
+          // And the winner's breakdown, so the census can name the term the case was lost to. Both sides are
+          // recorded rather than the difference, because a difference cannot be re-derived into its parts and
+          // the parts can always be differenced.
+          top1Terms: ep?.top1Terms,
         });
       }
     }

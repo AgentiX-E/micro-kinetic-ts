@@ -128,6 +128,30 @@ export interface LossRecord {
    * and not the other would otherwise leave this record describing a shape nothing produces.
    */
   readonly truthEvidence?: TruthEvidence | undefined;
+  /**
+   * The WINNER's `finalScore` broken into its named terms, as the engine emitted them.
+   *
+   * The other half of an attribution, and the reason this record can now answer a question it could only raise
+   * before: a rank says a case was lost; the two breakdowns together say what it was lost TO. "Which term did
+   * the truth lose on" is a question about a GAP, and the gap is `Σ (winner_i − truth_i)` — so one side is a
+   * list of contributions to an unknown difference and both are needed.
+   *
+   * A literal mirror of the runner's `ScoreTerm`, fenced by test like `TruthEvidence` is.
+   */
+  readonly top1Terms?: readonly ScoreTerm[] | undefined;
+}
+
+/**
+ * One named contribution to a ranking score, weight already applied.
+ *
+ * A literal mirror of the producer's declaration — see `LossRecord.truthEvidence` for why `benchmarks` copies
+ * the shape instead of importing it, and for the fence that holds the two declarations together.
+ */
+export interface ScoreTerm {
+  /** The term's name, as the ranking formula spells it. */
+  readonly name: string;
+  /** Its contribution to the total score, weight already applied. May be negative. */
+  readonly contribution: number;
 }
 
 /**
@@ -145,6 +169,14 @@ export interface TruthEvidence {
   readonly collisionGain?: number | undefined;
   /** The truth's `finalScore` — the value the ranking sorted by. */
   readonly finalScore?: number | undefined;
+  /**
+   * The truth's `finalScore` broken into its named terms, as the engine emitted them.
+   *
+   * The side of the gap that belongs to the truth. Kept on the evidence object rather than as a sibling field
+   * because it IS evidence about the truth, and a reader asking "what did the truth score on each term" should
+   * not have to know which of two top-level fields holds it.
+   */
+  readonly terms?: readonly ScoreTerm[] | undefined;
   /** The truth's propagation depth, as the ranking reported it. */
   readonly depth: number;
   /** Whether the ranking found the truth by tree search rather than in the full graph. */
@@ -181,6 +213,50 @@ export function classifyDeepEvidence(evidence: TruthEvidence | undefined): DeepE
   const { rcaScore, rcaThreshold } = evidence;
   if (rcaScore === undefined || rcaThreshold === undefined) return 'UNSTATED';
   return rcaScore > rcaThreshold ? 'LOCAL_EVIDENCE_PRESENT' : 'NO_LOCAL_EVIDENCE';
+}
+
+/**
+ * The term the WINNER won on: the largest contribution advantage it held over the truth.
+ *
+ * ## The question this answers, and the one it refuses to
+ *
+ * `finalScore` is a sum, so the margin between two candidates is `Σ (winner_i − truth_i)`. The term with the
+ * largest POSITIVE difference is the one that decided the case in the winner's favour — the term the truth
+ * "lost on" in the only sense a ranking supports.
+ *
+ * **It is not a claim about causality, and the name does not pretend otherwise.** A term can be the largest gap
+ * for two different reasons: the winner earned more there, or the truth was penalised there. The two are not
+ * separated by this function, so it returns the NAME and the caller may report the shares — but no caller may
+ * turn it into "this term is the bug", because a gap has two ends and this measures the difference rather than
+ * either end. The field the doc points at is the terms themselves, which are both on the record.
+ *
+ * `undefined` when either side is missing, or when the two sides do not share a single term name — which would
+ * mean the record carries breakdowns of two different scores, and a gap between those is not a quantity.
+ *
+ * @param truthTerms - The truth's breakdown, when the ranking surfaced it.
+ * @param winnerTerms - The winner's breakdown.
+ * @returns The term name with the largest positive truth-to-winner gap, or `undefined`.
+ */
+export function dominantLostTerm(
+  truthTerms: readonly ScoreTerm[] | undefined,
+  winnerTerms: readonly ScoreTerm[] | undefined,
+): string | undefined {
+  if (truthTerms === undefined || winnerTerms === undefined) return undefined;
+  const winner = new Map(winnerTerms.map((t) => [t.name, t.contribution]));
+  let best: { name: string; gap: number } | undefined;
+  for (const t of truthTerms) {
+    const w = winner.get(t.name);
+    if (w === undefined) continue;
+    const gap = w - t.contribution;
+    // ONLY a positive difference is a candidate, and the condition is in the guard rather than in a later
+    // filter: a term the truth LEADS on is not a term it lost on, and an implementation that seeded `best`
+    // with the first term regardless of sign would name it whenever the truth happened to lead everywhere.
+    //
+    // Strictly greater, so ties resolve to the FIRST term in the formula's order rather than to whichever the
+    // iteration reached last: a tie broken by map order is a different answer on a different engine.
+    if (gap > 0 && (best === undefined || gap > best.gap)) best = { name: t.name, gap };
+  }
+  return best?.name;
 }
 
 /**
@@ -246,6 +322,22 @@ export interface LossRow {
    * reported rather than folded into either answer for the reason {@link DeepEvidenceClass} gives.
    */
   readonly deepEvidenceUnstated: number;
+  /**
+   * Of the deep half, which TERM the winner won on, by count.
+   *
+   * The attribution the block was missing: the truth carried local evidence, was scored, was placed deep — and
+   * this says which contribution the candidate that beat it was ahead on. Sorted by count descending and, on a
+   * tie, by term NAME rather than by insertion order: a distribution whose order depends on the iteration order
+   * of a map is a different table on a different engine, and an artifact that changes when nothing changed is
+   * one nobody can diff.
+   *
+   * Deep cases whose breakdowns are absent from the record are NOT counted here — they appear in
+   * {@link deepAttributionUnavailable} — because a case that could not be attributed is a fact about the
+   * record, and folding it into a term would read as one.
+   */
+  readonly deepLostOn: readonly { readonly term: string; readonly count: number }[];
+  /** Deep cases this module could not attribute, because the record lacks one side's breakdown. */
+  readonly deepAttributionUnavailable: number;
   /** The median candidate-pool size, so the retrieval half has a denominator. */
   readonly poolMedian: number;
 }
@@ -293,11 +385,22 @@ export function summarizeLoss(
       NO_LOCAL_EVIDENCE: 0,
       UNSTATED: 0,
     };
+    // The attribution, accumulated in the same pass for the same reason.
+    const lostOn = new Map<string, number>();
+    let deepUnattributed = 0;
+    const bump = (m: Map<string, number>, k: string): void => {
+      m.set(k, (m.get(k) ?? 0) + 1);
+    };
     for (const m of members) {
       const cls = classifyLoss(m, shallowDepth);
       counts[cls]++;
       if (cls === 'RETRIEVAL' && !m.truthInGraph) notInGraph++;
-      if (cls === 'RERANK_DEEP') deepEvidence[classifyDeepEvidence(m.truthEvidence)]++;
+      if (cls === 'RERANK_DEEP') {
+        deepEvidence[classifyDeepEvidence(m.truthEvidence)]++;
+        const term = dominantLostTerm(m.truthEvidence?.terms, m.top1Terms);
+        if (term === undefined) deepUnattributed++;
+        else bump(lostOn, term);
+      }
     }
     rows.push({
       suite,
@@ -313,6 +416,10 @@ export function summarizeLoss(
       deepNoLocalEvidence: deepEvidence.NO_LOCAL_EVIDENCE,
       deepLocalEvidencePresent: deepEvidence.LOCAL_EVIDENCE_PRESENT,
       deepEvidenceUnstated: deepEvidence.UNSTATED,
+      deepLostOn: [...lostOn.entries()]
+        .map(([term, count]) => ({ term, count }))
+        .sort((a, b) => b.count - a.count || (a.term < b.term ? -1 : 1)),
+      deepAttributionUnavailable: deepUnattributed,
       poolMedian: median(members.map((m) => m.pool)),
     });
   }
@@ -376,6 +483,8 @@ export function formatLossReport(
   let deepNo = 0;
   let deepHas = 0;
   let deepUnstated = 0;
+  const lostOnTotal = new Map<string, number>();
+  let deepUnattributedTotal = 0;
   for (const r of rows) {
     cases += r.cases;
     correct += r.correct;
@@ -387,6 +496,8 @@ export function formatLossReport(
     deepNo += r.deepNoLocalEvidence;
     deepHas += r.deepLocalEvidencePresent;
     deepUnstated += r.deepEvidenceUnstated;
+    deepUnattributedTotal += r.deepAttributionUnavailable;
+    for (const e of r.deepLostOn) lostOnTotal.set(e.term, (lostOnTotal.get(e.term) ?? 0) + e.count);
     lines.push(
       `  ${r.suite.padEnd(6)} ${r.system.padEnd(15)} ${String(r.cases).padStart(6)} ` +
         `${String(r.correct).padStart(8)} ${String(r.retrieval).padStart(10)} ` +
@@ -420,6 +531,18 @@ export function formatLossReport(
     `  of the ${deep} DEEP misses: NO local evidence above the engine's own threshold ${deepNo}, ` +
       `local evidence PRESENT and still ranked deep ${deepHas} (a ranking problem), ` +
       `undecidable ${deepUnstated} (the record lacks rca_score or its threshold)`,
+    // WHICH TERM the winner won on, over the deep half — the attribution, printed beside the split because a
+    // split says where the work is and this says what to change. Names only, and the doc states why: a gap has
+    // two ends and this measures the difference, so the name is a lead the terms themselves must confirm.
+    `  of those ${deep}: the winner's largest per-term advantage was ` +
+      (lostOnTotal.size === 0
+        ? 'not attributable — no deep case carried both breakdowns'
+        : [...lostOnTotal.entries()]
+            .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+            .slice(0, 6)
+            .map(([term, count]) => `${term} ${count}`)
+            .join(' · ')) +
+      (deepUnattributedTotal > 0 ? ` · unattributable ${deepUnattributedTotal}` : ''),
     `  accuracy ${pct(correct, cases)} CASE-LEVEL · of ${misses} misses: RETRIEVAL ${pct(retrieval, misses)} ` +
       `(no ranking change can recover these; ${notInGraph} were never a graph node and ` +
       `${retrieval - notInGraph} a node the ranking does not surface), ` +

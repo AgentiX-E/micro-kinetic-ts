@@ -107,6 +107,21 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     { signature: 'a.key < b.key', population: '`counter.entries()`, a Map' },
     { signature: 'a.key < b.key', population: '`perType.entries()`, a Map' },
   ],
+  'benchmarks/src/loss-census.ts': [
+    // Both sites sort a list built from a `Map` keyed by TERM NAME, so the tie-break's own key is unique in the
+    // list it is handed — which is the property the audit argues from and the reason the shared key (`count`)
+    // being equal, the case these sorts exist for, still cannot produce the inconsistent answer. Iteration 84
+    // added both, and the fence is what said so: a comparator that reaches the population unrecorded is exactly
+    // what this file exists to refuse.
+    {
+      signature: 'a.term < b.term',
+      population: '`deepLostOn`, one entry per term name (built from a Map, so the key is unique)',
+    },
+    {
+      signature: 'a[0] < b[0]',
+      population: '`lostOnTotal.entries()`, a Map keyed by term name (unique)',
+    },
+  ],
   'packages/kinetic/src/benchmarks/fse26-diagnose.ts': [
     { signature: 'a.label < b.label', population: '`kept` outcomes, one per metric' },
     { signature: 'a.label < b.label', population: '`withBreakdown`, one per metric' },
