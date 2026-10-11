@@ -611,3 +611,84 @@ afterwards, and the file was never re-run before the push. The fence did exactly
 omission fail rather than ship. The lesson is not "run more tests"; it is that **the gate's own subject list is a
 thing the edit changes, so the gate belongs in the pre-push set of whatever it guards, not in the set that was run
 when the file was last touched.**
+
+### 7.5 The measurement — and it quantifies the whole weighted machinery, not only the zeros
+
+Run **`38131661100`** on `3f8707f`, all 735 cases. The nine cells are **byte-identical** to the baseline (RE1
+**80.0 / 92.8 / 68.0**, RE2 **86.7 / 92.2 / 71.1**, RE3 **80.0 / 45.0 / 51.1**) and every per-cell
+retrieval / shallow / deep count is identical — so this is a payload change and the census files differ from the
+previous run's **by the added field alone**, which is why the md5 comparison that serves as the stronger check for
+an instrument-free change is the wrong check here and the per-count comparison is the right one.
+
+Over the **159 reranking misses**, the truth's side:
+
+```
+  collision    WEIGHT_ZERO 100.0%            lat     INPUT_ENTRY_ABSENT(edgeLatencyScores) 100.0%
+  failedEdge   WEIGHT_ZERO 100.0%            log     INPUT_ENTRY_ABSENT(logScores) 97.5% · VALUE_ZERO 2.5%
+  prism        WEIGHT_ZERO 100.0%            pool    VALUE_ZERO 100.0%
+  rise         WEIGHT_ZERO 100.0%            stability VALUE_ZERO 8.8%
+  source       WEIGHT_ZERO 100.0%            temporal WEIGHT_ZERO 100.0%   topo WEIGHT_ZERO 100.0%
+  trace        WEIGHT_ZERO 73.6% · INPUT_ENTRY_ABSENT(traceActivityScores) 26.4%
+```
+
+and over **all 735 cases × both sides = 1470 term instances**, which is the population that answers "is this term
+part of the ranking at all":
+
+| term | shipped weight | live | `INPUT_*` absent | `WEIGHT_ZERO` | `VALUE_ZERO` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `selfAnomalyLog1p` | (base) | **1468** | 0 | 0 | 0 |
+| **`lat`** | **0.561495** | **0** | **1468** | 0 | 0 |
+| **`log`** | **1.0** | **28** | **1436** | 0 | 4 |
+| `pool` | 0.0679 | **0** | 0 | 0 | **1468** |
+| `stability` | 0.007352 | 692 | 0 | 0 | 776 |
+| `trace` | 0 (1 on RE3) | 36 | 144 | 1288 | 0 |
+| `source`, `topo`, `prism`, `temporal`, `collision`, `rise`, `failedEdge` | **0** | 0 | 0 | **1468** | 0 |
+
+**The partition holds on the real corpus, not only in fixtures**: across all 9529 term instances every zero
+carries a cause and every non-zero term carries none (measured: `zeroed=8398 live=1131 wrong pairings=0`).
+
+#### The statement this licenses
+
+**On the RCAEval corpus the live ranking is `log1p(rankNormalizedSelfAnomaly)`, plus `0.007352 × stability`, plus
+`log` on 1.9% of candidate slots.** Everything else is either configured at weight 0 (seven terms) or has no input
+(`lat`) or is present and always zero (`pool`). That is the mechanism behind §6.4's three measurements at once:
+*why the base term is the largest positive gap in 149 of 159*, *why nine terms are `0.0000` on both sides*, and
+*why the margin is 71.5% base* — **not because the weighted signals lose, but because on this corpus they are
+almost never in the room.**
+
+#### And the `lat` half of it is a REPRODUCTION, not a discovery
+
+`latWeight = 0.561495` multiplying an empty array on every RCAEval cell is **already recorded**
+(`docs/latency-channel-views.md`, register row of the same name), with the mechanism measured there: the loader's
+**cap truncates before the post-injection window**, so no per-edge latency can be computed at all. The zero table
+reaches **the same fact from a different instrument** — the producer's own cause classification instead of the
+latency census — and that is worth more than either measurement alone: **two independent instruments agreeing on
+one fact is the strongest evidence this repository can produce for it**, and the one thing this pass ADDS is that
+the aggregate is uniform (1468 of 1468, on both sides, on every suite), so it is not a property of the cases the
+engine happens to lose.
+
+#### What is genuinely new here, and what is not
+
+- **New for the RCAEval corpus**: `logWeight = 1.0` — the only priors the engine ships enabled — has an input on
+  **28 of 1470** candidate slots (1.9%). The register's `logWeight` row is about the **FSE'26** corpus, where the
+  same signal has evidence; the two corpora differ in **which weighted evidence exists at all**, and the RCAEval
+  side's figure had not been taken.
+- **New for the RCAEval corpus**: `pool` is present and **genuinely zero** on 1468 of 1468 — a different fact from
+  `lat`'s, and it corroborates the FSE'26 owner doc's own RCAEval check (a golden 9-cell byte-identical run with
+  and without the flag), which is what an always-zero term must produce.
+- **Not new**: `lat`. Reproduced, and said so.
+
+#### The refusal this measurement forces, and the instrument it registers
+
+`INPUT_ENTRY_ABSENT` cannot separate **"the map exists, carries other services, and not this candidate"** from
+**"the map exists and is EMPTY"** — and the second is `INPUT_MAP_ABSENT`'s own definition in spirit ("the tier was
+never emitted") while not matching it in letter ("the source is missing from the graph"). **A present-but-empty map
+therefore reads as a per-candidate absence when it may be a producer that never emitted the tier at all**, and for
+`lat` that is the whole question. `MAP_EMPTY` is registered as the next term-level cause — a fourth state of the
+source, above `ENTRY_ABSENT` — and the doc states it here rather than leaving it to be re-derived.
+
+**And one thing is NOT concluded from it.** That `lat` is input-dead does not say whether supplying it would help:
+`latency-channel-views.md` has already measured that the whole-file route moves RE2 by `Δ+0.0` in the published
+convention while moving two cells in opposite directions, and that result stands. What this section adds is that
+the term is at **0, not small** — and a term at exactly 0 is the one case where an A/B cannot distinguish
+"worthless" from "unfed".
