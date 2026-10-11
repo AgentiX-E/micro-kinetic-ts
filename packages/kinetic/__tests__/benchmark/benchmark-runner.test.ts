@@ -1267,6 +1267,106 @@ describe('RCA Engine Integration', () => {
     expect(ladder.map((t) => t.depth)).toEqual([0, 1, 2]);
   });
 
+  it('records the truth’s OWN evidence, so a deep miss can say whether anything moved at its origin', async () => {
+    // `truthRank` says WHICH failure a miss is. It cannot say whether the truth was rankable at all, and the
+    // two want opposite work: a reweighting lifts a candidate that deviated and was outscored, and does nothing
+    // for one whose origin never moved. The separator is the truth's own `rca_score`, which the engine already
+    // computes, and the bar it was judged against — carried along so the boundary is the ENGINE'S and not a
+    // constant restated at the reader.
+    const container = new Container();
+    const ranked: readonly RootCauseResult[] = [
+      {
+        serviceId: 'frontend',
+        faultType: { category: 'UNKNOWN' as FaultCategory, subType: '', severity: 'info' as const },
+        confidence: 0.5,
+        finalScore: 9,
+        rank: 1,
+        evidenceMetrics: [
+          { metric: 'rca_score', value: 0.9, threshold: 0.1 },
+          { metric: 'collision_gain', value: 0.4, threshold: 0.3 },
+        ],
+        propagationDepth: 0,
+        propagationErrorBound: 0,
+        viaTreeSearch: true,
+      },
+      {
+        serviceId: 'cartservice',
+        faultType: { category: 'UNKNOWN' as FaultCategory, subType: '', severity: 'info' as const },
+        confidence: 0.4,
+        finalScore: 0.02,
+        rank: 2,
+        evidenceMetrics: [{ metric: 'rca_score', value: 0.02, threshold: 0.1 }],
+        propagationDepth: 3,
+        propagationErrorBound: 0.05,
+        viaTreeSearch: false,
+      },
+    ];
+    const spyEngine: IRCAEngine = {
+      buildFaultGraph: (callGraph) => ({
+        callGraph,
+        propagationWeights: new Float64Array(callGraph.edges.map(() => 0.5)),
+        anomalyScores: new Map([...callGraph.nodes.keys()].map((id) => [id, 0.1])),
+        anomalyOnsetTimes: new Map(),
+        detectedCycles: [],
+        totalCycleContribution: 0,
+        pruneThreshold: 0.001,
+      }),
+      analyze: async () => ranked,
+      getCycleContributionBound: () => 0,
+    };
+    container.register(DI_TOKENS.RCA_ENGINE, () => spyEngine);
+    const runner = new BenchmarkRunner(container);
+
+    const base = generator.generateRCAEvalCase('CPU', 3);
+    // Three cases against ONE ranking: a truth with NO local evidence, one a result that carries no
+    // `rca_score` at all, and one the ranking never mentions.
+    const noEvidence = {
+      ...base,
+      id: 'ev-none',
+      groundTruth: { ...base.groundTruth, serviceId: 'cartservice' },
+    };
+    const leader = {
+      ...base,
+      id: 'ev-leader',
+      groundTruth: { ...base.groundTruth, serviceId: 'frontend' },
+    };
+    const absent = {
+      ...base,
+      id: 'ev-absent',
+      groundTruth: { ...base.groundTruth, serviceId: 'recommendationservice' },
+    };
+    const result = await runner.runSuite({
+      name: 'truth-evidence',
+      cases: [noEvidence, leader, absent],
+      totalCases: 3,
+    });
+
+    const byId = new Map(result.casePredictions.map((p) => [p.caseId, p]));
+    // The value AND its threshold travel together, read from the engine's own metrics entry.
+    const hit = byId.get('ev-none')!;
+    expect(hit.truthRank).toBe(2);
+    expect(hit.truthEvidence).toBeDefined();
+    expect(hit.truthEvidence!.rcaScore).toBe(0.02);
+    expect(hit.truthEvidence!.rcaThreshold).toBe(0.1);
+    expect(hit.truthEvidence!.finalScore).toBe(0.02);
+    expect(hit.truthEvidence!.depth).toBe(3);
+    expect(hit.truthEvidence!.viaTreeSearch).toBe(false);
+    expect(hit.truthEvidence!.metricCount).toBe(1);
+    // A metric the engine did NOT record stays ABSENT rather than defaulting to zero, so a reader can tell
+    // "the engine reported nothing" from "the engine reported zero" — the difference the census's third class
+    // exists for.
+    expect(hit.truthEvidence!.collisionGain).toBeUndefined();
+
+    // The leader's own evidence is a different result's, and the two are not conflated.
+    expect(byId.get('ev-leader')!.truthEvidence!.rcaScore).toBe(0.9);
+    expect(byId.get('ev-leader')!.truthEvidence!.collisionGain).toBe(0.4);
+
+    // And a truth the ranking never surfaces has no evidence at all, because it was never scored: reporting
+    // a score for it would be inventing the measurement the census is asking for.
+    expect(byId.get('ev-absent')!.truthRank).toBeUndefined();
+    expect(byId.get('ev-absent')!.truthEvidence).toBeUndefined();
+  });
+
   it('asks the engine for the WHOLE candidate set, and widening that call moves no metric', async () => {
     // The census needs the truth's rank wherever it falls, which a five-element slice destroys. Widening the
     // call is only safe if every consumer reads a prefix or the first element, so that is measured rather than

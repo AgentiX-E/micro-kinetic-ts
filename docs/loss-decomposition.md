@@ -271,3 +271,68 @@ cannot assert its own unit. **Neither figure is wrong; quoting one as the other 
 failures are the two RE1/RE2 OnlineBoutique cases where the truth is outside the pool while still being a graph
 node — which is exactly the shape §3 refuses to name a mechanism for. They are reported as a count, and the
 refusal stands.
+
+---
+
+## 5. The DEEP half's first instrument: did anything move at the origin?
+
+§4 measured where the loss is (98.8% reranking) and which block carries it. It did not answer the question the
+block raises, and §3 records why in advance: the census knows the truth's **rank** but not its **score**, so it
+cannot tell a truth ranked 26th among comparably-moving candidates from one ranked 26th because 25 services moved
+and it did not.
+
+### 5.1 The motive, from §4's own rows
+
+Cross-tabulating the 735 rows of run `38045797356` by fault type rather than by system moves the target and makes
+the missing question unavoidable. The 58 `RERANK_DEEP` misses are **not** a TrainTicket story:
+
+| block | DEEP | median truth rank |
+| --- | --- | --- |
+| RE1-OB / RE1-TT / RE2-TT `loss` (packet loss) | 3 + 7 + 6 = **16** | 1 – 3 |
+| RE1-TT `disk`, RE2-TT `disk` | 6 + 2 = **8** | 2 |
+| RE3-TT `f3` | **6 of 10** | **26** |
+| RE3-OB `f1` | **6 of 9** | **6** |
+| RE3-TT `f1`, `f4` | 3 + 3 = **6** | 1, **26** |
+
+Two facts fall out of that table and neither was visible at cell level. **`loss` alone is 16 of the 58**, which
+matches the published per-fault-type column where RE1-OB `loss` is **44.0%** — the weakest fault type in the whole
+benchmark — so the weakness is a property of the fault, not of the system. And **RE3-TT `f3` and `f4` have a
+median truth rank of 26 in a 68-service pool**: "ranked a little low" and "placed near the bottom of the pool" are
+different mechanisms, and a median of 26 names the second.
+
+### 5.2 What is now recorded
+
+The truth's **own evidence**, read from the result the engine already produced for it and carried in the same
+record as its rank: `rcaScore` — the self-anomaly term of `finalScore(v) = log1p(selfAnomaly(v)) + Σ signalWeight ×
+signal(v)` — **together with the threshold it was judged against**, plus `collisionGain`, `finalScore`, `depth`,
+`viaTreeSearch` and the count of evidence metrics.
+
+**The threshold travels in the record, and that is the design rather than a convenience.** The boundary between
+"nothing moved at the origin" and "something moved and was still outranked" is then the **engine's own cut**, which
+cannot drift away from the record that reports it; a constant restated in the reader would move silently the moment
+the engine's changed. It also means the value and its bar are one datum: a record carrying `rcaScore` without the
+threshold it was compared against is not half an answer, it is an unusable one, which is why `TruthEvidence` keeps
+both on one object rather than as two fields of the row.
+
+**Which also settles the missing case.** A metric the engine did not record stays `undefined` rather than
+defaulting to zero — the difference between "the engine reported nothing" and "the engine reported zero" is what
+the third class exists for.
+
+### 5.3 Three classes, and the boundary is not invented
+
+| class | condition | what it means |
+| --- | --- | --- |
+| `NO_LOCAL_EVIDENCE` | `rcaScore ≤ rcaThreshold`, both recorded | the origin did not clear the engine's own bar. **A reweighting has nothing to weight** |
+| `LOCAL_EVIDENCE_PRESENT` | `rcaScore > rcaThreshold` | the origin deviated and was still placed deep. **A ranking problem** |
+| `UNSTATED` | either value absent | this split **cannot decide**, reported as its own count |
+
+`NO_LOCAL_EVIDENCE` is not called a data defect. The engine's bar is what it requires to count something, and a
+truth below it may be a fault whose signature is absent from the metric tier, a fault whose signature arrives
+after the detection window, or a formulation question about the self-anomaly term — the record does not separate
+those and the doc does not name one. What the class DOES settle is the work: **no reweighting of a candidate
+whose self-anomaly term did not clear the bar will lift it, because there is nothing there to weight.** That is a
+statement about where the remaining 58 cases can and cannot be won, and it is the first time the repository can
+make it.
+
+`UNSTATED` is a class rather than a default for the reason §3 gives: filing a row under either answer because a
+value is missing is an instrument naming a mechanism it cannot see.

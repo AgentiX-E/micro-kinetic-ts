@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
+  classifyDeepEvidence,
   classifyLoss,
   DEFAULT_SHALLOW_DEPTH,
   formatLossReport,
@@ -10,7 +15,9 @@ import {
   type RankedService,
   splitCell,
   summarizeLoss,
+  type TruthEvidence,
 } from '../src/loss-census.js';
+import { stripComments } from './helpers/source-text.js';
 
 /** A ladder entry, with the sort key defaulted to something monotone. */
 const entry = (
@@ -283,8 +290,10 @@ describe('formatLossReport — the reading is the split, not the accuracy', () =
     const group = lines.find((l) => l.includes('SockShop'))!;
     const total = lines.find((l) => l.includes('TOTAL'))!;
     // One engine error, one verdict of each: correct 1, every miss class 0, ERR 1, and the median of the
-    // two pools (10 and 0) is 5.
-    expect(group).toMatch(/SockShop\s+2\s+1\s+0\s+0\s+0\s+0\s+1\s+5\.0$/);
+    // two pools (10 and 0) is 5 — then the deep half's evidence split, which is 0/0/0 because this fixture
+    // has no deep misses at all. Pinned to the END of the row because that is the property: a column after
+    // `ERR` must not push it out of its own position.
+    expect(group).toMatch(/SockShop\s+2\s+1\s+0\s+0\s+0\s+0\s+1\s+5\.0\s+0\s+0\s+0$/);
     expect(total).toMatch(/TOTAL\s+2\s+1\s+0\s+0\s+0\s+0\s+1$/);
     // The reading line must account for ALL misses: a line that reports RETRIEVAL and RERANKING only would
     // read 0% + 0% of one miss, which hides the engine failure rather than reporting it.
@@ -310,5 +319,134 @@ describe('formatLossReport — the reading is the split, not the accuracy', () =
     const total = lines.find((l) => l.includes('TOTAL'))!;
     // The group row's first numeric column starts at the same offset as the total's.
     expect(group.indexOf('   4')).toBe(total.indexOf('   4'));
+  });
+});
+
+describe('classifyDeepEvidence — the engine owns the threshold, and an unstated row is its own answer', () => {
+  const ev = (over: Partial<TruthEvidence> = {}): TruthEvidence => ({
+    rcaScore: 0.5,
+    rcaThreshold: 0.1,
+    depth: 1,
+    viaTreeSearch: true,
+    metricCount: 2,
+    ...over,
+  });
+
+  it('calls a truth above the engine threshold LOCAL_EVIDENCE_PRESENT and one at or below NO_LOCAL_EVIDENCE', () => {
+    // The boundary is the engine's own, carried in the record rather than restated here: `rcaThreshold` on
+    // the fixture is what decides, so the test would move if the engine's cut moved, which is the property a
+    // re-derived constant could not have.
+    expect(classifyDeepEvidence(ev({ rcaScore: 0.5, rcaThreshold: 0.1 }))).toBe(
+      'LOCAL_EVIDENCE_PRESENT',
+    );
+    expect(classifyDeepEvidence(ev({ rcaScore: 0.1001, rcaThreshold: 0.1 }))).toBe(
+      'LOCAL_EVIDENCE_PRESENT',
+    );
+    // Strictly greater, so a truth exactly AT the bar is not called evidence: a bar is what the engine
+    // requires to COUNT something, and something equal to it is not above it.
+    expect(classifyDeepEvidence(ev({ rcaScore: 0.1, rcaThreshold: 0.1 }))).toBe(
+      'NO_LOCAL_EVIDENCE',
+    );
+    expect(classifyDeepEvidence(ev({ rcaScore: 0.0, rcaThreshold: 0.1 }))).toBe(
+      'NO_LOCAL_EVIDENCE',
+    );
+    // A DIFFERENT threshold moves the answer, which is the whole reason it travels in the record.
+    expect(classifyDeepEvidence(ev({ rcaScore: 0.5, rcaThreshold: 0.9 }))).toBe(
+      'NO_LOCAL_EVIDENCE',
+    );
+  });
+
+  it('reports UNSTATED rather than either answer, in every way a row can fail to say', () => {
+    // Three arms, because each is a different missing fact and none of them is an answer. Filing a row under
+    // "no local evidence" because its score is absent would be naming a mechanism the instrument cannot see.
+    expect(classifyDeepEvidence(undefined)).toBe('UNSTATED');
+    expect(classifyDeepEvidence(ev({ rcaScore: undefined }))).toBe('UNSTATED');
+    expect(classifyDeepEvidence(ev({ rcaThreshold: undefined }))).toBe('UNSTATED');
+    // And ZERO is a value rather than an absence: a truth the engine scored at exactly zero DID clear nothing,
+    // which is an answer — the difference between 0 and `undefined` is the difference this class exists for.
+    expect(classifyDeepEvidence(ev({ rcaScore: 0, rcaThreshold: 0.1 }))).toBe('NO_LOCAL_EVIDENCE');
+  });
+
+  it('counts the deep half by the same rule the classifier states, in one pass', () => {
+    const rows = summarizeLoss(
+      [
+        // DEEP, no local evidence above the bar.
+        record({ caseId: 'd1', truthRank: 9, truthEvidence: ev({ rcaScore: 0.02 }) }),
+        // DEEP, cleared the bar: a ranking problem.
+        record({ caseId: 'd2', truthRank: 9, truthEvidence: ev({ rcaScore: 0.8 }) }),
+        // DEEP with no evidence recorded at all.
+        record({ caseId: 'd3', truthRank: 9 }),
+        // Not deep: must NOT be counted anywhere in the split, or the split is of all misses wearing the
+        // name of the deep half.
+        record({ caseId: 's1', truthRank: 3, truthEvidence: ev({ rcaScore: 0.02 }) }),
+        record({ caseId: 'ok', correct: true, truthRank: 1 }),
+      ],
+      5,
+    );
+    const row = rows[0]!;
+    expect(row.rerankDeep).toBe(3);
+    expect(row.deepNoLocalEvidence).toBe(1);
+    expect(row.deepLocalEvidencePresent).toBe(1);
+    expect(row.deepEvidenceUnstated).toBe(1);
+    // Exhaustive: the three classes partition the deep half, so a fourth class added later cannot be silently
+    // uncounted.
+    expect(row.deepNoLocalEvidence + row.deepLocalEvidencePresent + row.deepEvidenceUnstated).toBe(
+      row.rerankDeep,
+    );
+  });
+
+  it('prints the split and the sentence it exists for, without inventing a boundary', () => {
+    const rows = summarizeLoss(
+      [
+        record({ caseId: 'd1', truthRank: 40, truthEvidence: ev({ rcaScore: 0.02 }) }),
+        record({ caseId: 'd2', truthRank: 41, truthEvidence: ev({ rcaScore: 0.8 }) }),
+      ],
+      5,
+    );
+    const text = formatLossReport(rows, 5).join('\n');
+    expect(text).toContain("NO local evidence above the engine's own threshold 1");
+    expect(text).toContain('local evidence PRESENT and still ranked deep 1');
+    expect(text).toContain('undecidable 0');
+    expect(text).toContain('noGain');
+    expect(text).toContain('hasGain');
+    expect(text).toContain('unstated');
+  });
+});
+
+describe('the TruthEvidence mirror — two declarations, one shape', () => {
+  /**
+   * `benchmarks` does not depend on `@agentix-e/micro-kinetic`, so this record mirrors the runner's interface
+   * by LITERAL rather than importing it. Two declarations of one shape agree until one of them is edited, and
+   * the failure is silent in the worse direction: a field renamed in the runner and not here would leave this
+   * record describing a shape nothing produces, and every row would carry `undefined` under a name that reads
+   * as measured. So the agreement is fenced rather than assumed.
+   */
+  const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+  const SOURCES = {
+    runner: resolve(REPO, 'packages/kinetic/src/benchmarks/runners/benchmark-runner.ts'),
+    census: resolve(REPO, 'benchmarks/src/loss-census.ts'),
+  };
+
+  /** The field names of an `interface TruthEvidence { ... }` block, in declaration order. */
+  const fieldsOf = (text: string): string[] => {
+    const block = /export interface TruthEvidence \{([\s\S]*?)\n\}/.exec(stripComments(text));
+    expect(block, 'TruthEvidence must be declared in both files').not.toBeNull();
+    return [...block![1]!.matchAll(/^ {2}readonly ([A-Za-z][A-Za-z0-9]*)\??:/gm)].map((m) => m[1]!);
+  };
+
+  it('declares the same fields, in the same order, on both sides', () => {
+    const runner = fieldsOf(readFileSync(SOURCES.runner, 'utf8'));
+    const census = fieldsOf(readFileSync(SOURCES.census, 'utf8'));
+    // Non-vacuity before the comparison: an extraction that matched nothing would make this two empty lists.
+    expect(runner.length).toBeGreaterThan(5);
+    expect(census).toEqual(runner);
+  });
+
+  it('carries the truth evidence through the runner into the census row, by the same name', () => {
+    // The join between the two files is the FIELD name, and it is not derivable from either declaration. If
+    // the runner stopped filling it, or the census stopped reading it, the split above would read zero
+    // everywhere and look like a finding rather than like a disconnection.
+    expect(readFileSync(SOURCES.runner, 'utf8')).toContain('truthEvidence: placement.evidence,');
+    expect(readFileSync(SOURCES.census, 'utf8')).toContain('classifyDeepEvidence(m.truthEvidence)');
   });
 });

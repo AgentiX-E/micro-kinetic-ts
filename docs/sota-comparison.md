@@ -61,11 +61,13 @@ additive pooling scores **78.91%** against our **78.75%**. So the standing is a 
 matters** and a lead of ≈1.16× on the published number, and the `+10.8 pp` row must never be quoted without the
 row beneath it.
 
-### 0a. ABOVE US, AND NOT COMPARABLE — the four references that must be named
+### 0a. ABOVE US, AND NOT COMPARABLE — the five references that must be named
 
 **A number we cannot beat must be named, or the standing reads as a claim about the whole field.** Each of these
 is above us or beside us on some figure, and **none** is comparable to a service Top-1 on the 735 (verified
-2026-10-09 / 2026-10-10; the detail is in the internal `SOTA_LANDSCAPE_VERIFICATION.md` §1.4):
+2026-10-09 / 2026-10-10 / 2026-10-11; the detail is in the internal `SOTA_LANDSCAPE_VERIFICATION.md` §1.4). **The
+fifth entry arrived on 2026-10-11 and is the first whose SHAPE matches one of our populations exactly while its
+abstract does not confirm it — read its entry before quoting any gap it implies.**
 
 1. **A vendor's self-reported 89% top-1** on RCAEval — NOFire AI, on its own guide and its own benchmark, with
    no per-case results, and the page itself says to rerun it on your own incidents.
@@ -99,6 +101,33 @@ is above us or beside us on some figure, and **none** is comparable to a service
    Its claim that microservice retrieval is *"nearly solved at 98–100%"* is now **reproduced on our corpus by our
    own census**: the truth is in the ranked pool on **99.73% / 99.63% / 100.00%** of RE1 / RE2 / RE3, and our
    loss is **98.8% reranking** (`docs/loss-decomposition.md` §4).
+5. **`Rethinking Tool Design for Agentic RCA: A Controlled Empirical Study`** (`arXiv:2610.05009`, Yu Luo,
+   Rongchen Gao, Zhenhui Zhou, Changchang Liu, Yuliang You, Yongqian Sun, Shenglin Zhang, Qiuai Fu, Shijie Wang,
+   **Dan Pei**; submitted 2026-10-04; **Huawei + Tsinghua**) — **`top-1` localization 85.4%** for its `L0`
+   no-predefined-tools reference and **82.8%** for its `L3` diagnostic-tool layer, over **375 failure cases from
+   three microservice systems** with `Qwen3.7-Plus`, and a further four-model comparison on a shared subset.
+
+   **Filed as a CANDIDATE ABOVE US WHOSE POPULATION IS NOT VERIFIED, and the distinction matters more here than
+   anywhere else on this list.** Two things are true and only one of them is settled:
+
+   - **The shape matches our RE1 exactly.** `375 = 3 × 125` is RE1's signature (RE2 is 270, RE3 is 90, FSE'26 is
+     1430), and the metric is `top-1` rather than `Avg@5` — so if the cohort is RCAEval's RE1, this would be the
+     **first reference to exceed our 80.27% on a population we can name**, by **5.1pp**.
+   - **The abstract does not say so.** It names neither RCAEval nor a system, and the full text was not reachable
+     in this pass. **A 5.1pp gap asserted on an unverified cohort is exactly the corpus-mismatch defect this
+     document exists to prevent** — so the number is recorded and the population is marked unverified, not assumed
+     to match.
+
+   **And it is not reproducible from its own links.** An independent index records *"No code link found · No
+   weights link found · No dataset link found"*, so this entry sits in the same class as the vendor's 89% for
+   runnability, differing only in that it is peer-reviewable and gives a count.
+
+   **What makes it worth naming anyway, beyond the number**: its central finding is that **higher-level diagnostic
+   tools REDUCE localization accuracy** (L3 82.8% against L0 85.4%) while improving fault-type identification and
+   halving the time. That is an **independent corroboration of this repository's own ledger pattern** — *every tool
+   wired as a SCORE measures negative; every credited gain is STRUCTURAL* — arriving from a group with no
+   connection to us, on the same benchmark family. **Two independent measurements of "more machinery, lower
+   top-1" is the strongest evidence either has.**
 
 ### 0b. BELOW US, AND COMPARABLE — the one reference that shares our metric AND our population
 

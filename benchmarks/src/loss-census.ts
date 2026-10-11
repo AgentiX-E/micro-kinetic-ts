@@ -115,6 +115,72 @@ export interface LossRecord {
    * outside of — `truthInGraph` would be a statement about a graph that was never built.
    */
   readonly errored?: boolean | undefined;
+  /**
+   * The truth's OWN evidence, as the engine recorded it, or absent when the ranking never surfaced it.
+   *
+   * The field that lets a `RERANK_DEEP` miss say whether the origin deviated AT ALL. A rank cannot: a truth
+   * ranked 26th of 68 because 25 services moved and it did not is a signal problem, and one ranked 26th among
+   * comparably-moving candidates is a ranking problem — and only the second is reachable by a ranking change.
+   *
+   * **Mirrored by LITERAL from `packages/kinetic`'s `TruthEvidence`**, because `benchmarks` does not depend on
+   * that package and a cross-package import typechecks-fails (the vitest alias resolves it for tests only).
+   * The agreement of the two declarations is fenced by test rather than assumed; a field renamed on one side
+   * and not the other would otherwise leave this record describing a shape nothing produces.
+   */
+  readonly truthEvidence?: TruthEvidence | undefined;
+}
+
+/**
+ * The ground truth's own score and the evidence the engine recorded for it, in the engine's own terms.
+ *
+ * A literal mirror of `packages/kinetic`'s interface of the same name — see `LossRecord.truthEvidence` for why
+ * it is copied rather than imported, and for the fence that holds the two declarations together.
+ */
+export interface TruthEvidence {
+  /** The truth's `rca_score`: the self-anomaly term of its `finalScore`. */
+  readonly rcaScore?: number | undefined;
+  /** The threshold `rca_score` was judged against, AS THE ENGINE RECORDED IT. */
+  readonly rcaThreshold?: number | undefined;
+  /** The truth's collision contribution, when the collision term produced one. */
+  readonly collisionGain?: number | undefined;
+  /** The truth's `finalScore` — the value the ranking sorted by. */
+  readonly finalScore?: number | undefined;
+  /** The truth's propagation depth, as the ranking reported it. */
+  readonly depth: number;
+  /** Whether the ranking found the truth by tree search rather than in the full graph. */
+  readonly viaTreeSearch: boolean;
+  /** How many evidence metrics the engine recorded for the truth. */
+  readonly metricCount: number;
+}
+
+/**
+ * Which of the two problems a `RERANK_DEEP` miss is, decided by the ENGINE'S OWN threshold.
+ *
+ * `RERANK_DEEP` says the truth was in the pool and placed beyond the shallow depth. It does not say whether the
+ * origin's telemetry moved, and the two cases want opposite work: a fully-saturated recall problem wants the
+ * ranking fixed, and an origin that never deviated wants the signal found — no reweighting of a candidate
+ * whose self-anomaly term did not clear the engine's own bar will lift it, because there is nothing there to
+ * weight.
+ *
+ * The boundary is `rcaScore > rcaThreshold`, where **both values are the engine's**: the threshold travels in
+ * the record rather than being restated here, so this module cannot silently disagree with the cut the engine
+ * applied. `UNSTATED` is a class rather than a default — a row whose engine produced no `rca_score`, or no
+ * threshold with it, is one this split CANNOT decide, and filing it under either answer would be the defect
+ * this repository keeps recording: naming a mechanism the instrument cannot see.
+ */
+export type DeepEvidenceClass = 'LOCAL_EVIDENCE_PRESENT' | 'NO_LOCAL_EVIDENCE' | 'UNSTATED';
+
+/**
+ * Decide a deep miss's evidence class, from the truth's own recorded score and threshold.
+ *
+ * @param evidence - The truth's evidence, or `undefined` when the ranking never surfaced it.
+ * @returns The class. `UNSTATED` whenever the engine did not record the value or its threshold.
+ */
+export function classifyDeepEvidence(evidence: TruthEvidence | undefined): DeepEvidenceClass {
+  if (evidence === undefined) return 'UNSTATED';
+  const { rcaScore, rcaThreshold } = evidence;
+  if (rcaScore === undefined || rcaThreshold === undefined) return 'UNSTATED';
+  return rcaScore > rcaThreshold ? 'LOCAL_EVIDENCE_PRESENT' : 'NO_LOCAL_EVIDENCE';
 }
 
 /**
@@ -164,6 +230,22 @@ export interface LossRow {
   readonly rerankShallow: number;
   /** Misses whose truth was in the pool and placed deeper than the shallow depth. */
   readonly rerankDeep: number;
+  /**
+   * Of the deep half, how many had NO local evidence above the engine's own threshold.
+   *
+   * The origin's self-anomaly did not clear the bar the engine judged it against, so it was ranked deep among
+   * candidates that did — a signal problem, and not one a reweighting recovers.
+   */
+  readonly deepNoLocalEvidence: number;
+  /** Of the deep half, how many DID clear the bar and were still placed deep: a ranking problem. */
+  readonly deepLocalEvidencePresent: number;
+  /**
+   * Of the deep half, how many this split cannot decide.
+   *
+   * Non-zero means the engine did not record `rca_score` or the threshold it was judged against, and it is
+   * reported rather than folded into either answer for the reason {@link DeepEvidenceClass} gives.
+   */
+  readonly deepEvidenceUnstated: number;
   /** The median candidate-pool size, so the retrieval half has a denominator. */
   readonly poolMedian: number;
 }
@@ -204,9 +286,18 @@ export function summarizeLoss(
       RERANK_DEEP: 0,
     };
     let notInGraph = 0;
+    // The deep half's evidence split, accumulated in the SAME pass as the class counts: a second walk of
+    // `members` would be a second answer to "which rows are DEEP", and the two agree until one is edited.
+    const deepEvidence: Record<DeepEvidenceClass, number> = {
+      LOCAL_EVIDENCE_PRESENT: 0,
+      NO_LOCAL_EVIDENCE: 0,
+      UNSTATED: 0,
+    };
     for (const m of members) {
-      counts[classifyLoss(m, shallowDepth)]++;
-      if (classifyLoss(m, shallowDepth) === 'RETRIEVAL' && !m.truthInGraph) notInGraph++;
+      const cls = classifyLoss(m, shallowDepth);
+      counts[cls]++;
+      if (cls === 'RETRIEVAL' && !m.truthInGraph) notInGraph++;
+      if (cls === 'RERANK_DEEP') deepEvidence[classifyDeepEvidence(m.truthEvidence)]++;
     }
     rows.push({
       suite,
@@ -219,6 +310,9 @@ export function summarizeLoss(
       retrievalNotRanked: counts.RETRIEVAL - notInGraph,
       rerankShallow: counts.RERANK_SHALLOW,
       rerankDeep: counts.RERANK_DEEP,
+      deepNoLocalEvidence: deepEvidence.NO_LOCAL_EVIDENCE,
+      deepLocalEvidencePresent: deepEvidence.LOCAL_EVIDENCE_PRESENT,
+      deepEvidenceUnstated: deepEvidence.UNSTATED,
       poolMedian: median(members.map((m) => m.pool)),
     });
   }
@@ -269,7 +363,8 @@ export function formatLossReport(
     `  loss decomposition (a miss at rank <= ${shallowDepth} is RERANK_SHALLOW; beyond it, RERANK_DEEP)`,
     `  ${'suite'.padEnd(6)} ${'system'.padEnd(15)} ${'cases'.padStart(6)} ${'correct'.padStart(8)} ` +
       `${'RETRIEVAL'.padStart(10)} ${'shallow'.padStart(8)} ${'deep'.padStart(6)} ` +
-      `${'notG'.padStart(5)} ${'ERR'.padStart(5)} ${'pool'.padStart(6)}`,
+      `${'notG'.padStart(5)} ${'ERR'.padStart(5)} ${'pool'.padStart(6)}   ` +
+      `deep: ${'noGain'.padStart(6)} ${'hasGain'.padStart(7)} ${'unstated'.padStart(8)}`,
   ];
   let cases = 0;
   let correct = 0;
@@ -278,6 +373,9 @@ export function formatLossReport(
   let shallow = 0;
   let deep = 0;
   let notInGraph = 0;
+  let deepNo = 0;
+  let deepHas = 0;
+  let deepUnstated = 0;
   for (const r of rows) {
     cases += r.cases;
     correct += r.correct;
@@ -286,12 +384,17 @@ export function formatLossReport(
     shallow += r.rerankShallow;
     deep += r.rerankDeep;
     notInGraph += r.retrievalNotInGraph;
+    deepNo += r.deepNoLocalEvidence;
+    deepHas += r.deepLocalEvidencePresent;
+    deepUnstated += r.deepEvidenceUnstated;
     lines.push(
       `  ${r.suite.padEnd(6)} ${r.system.padEnd(15)} ${String(r.cases).padStart(6)} ` +
         `${String(r.correct).padStart(8)} ${String(r.retrieval).padStart(10)} ` +
         `${String(r.rerankShallow).padStart(8)} ${String(r.rerankDeep).padStart(6)} ` +
         `${String(r.retrievalNotInGraph).padStart(5)} ${String(r.engineError).padStart(5)} ` +
-        `${r.poolMedian.toFixed(1).padStart(6)}`,
+        `${r.poolMedian.toFixed(1).padStart(6)}   ` +
+        `${String(r.deepNoLocalEvidence).padStart(11)} ${String(r.deepLocalEvidencePresent).padStart(7)} ` +
+        `${String(r.deepEvidenceUnstated).padStart(8)}`,
     );
   }
   const misses = cases - correct;
@@ -312,6 +415,11 @@ export function formatLossReport(
     '  "case-level" weights every case equally. The published cell AVERAGE is the unweighted mean of the',
     '  fault-type accuracies and differs from this on RE3 (53.33% case-level vs 58.69% per fault type);',
     '  see `docs/accuracy-aggregation.md`, and read the SPLIT below against either.',
+    // The deep half split, and the sentence it exists for: a deep miss whose origin never cleared the
+    // engine's OWN threshold is not reachable by reweighting, and the two blocks want opposite work.
+    `  of the ${deep} DEEP misses: NO local evidence above the engine's own threshold ${deepNo}, ` +
+      `local evidence PRESENT and still ranked deep ${deepHas} (a ranking problem), ` +
+      `undecidable ${deepUnstated} (the record lacks rca_score or its threshold)`,
     `  accuracy ${pct(correct, cases)} CASE-LEVEL · of ${misses} misses: RETRIEVAL ${pct(retrieval, misses)} ` +
       `(no ranking change can recover these; ${notInGraph} were never a graph node and ` +
       `${retrieval - notInGraph} a node the ranking does not surface), ` +

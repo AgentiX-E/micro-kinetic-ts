@@ -232,6 +232,81 @@ export interface CasePrediction {
    * outside of: reporting it as a truth absent from the pool would attribute an engine failure to the data.
    */
   readonly errored?: boolean;
+  /**
+   * The ground truth's OWN evidence, as the engine recorded it — present only when the truth appears in the
+   * ranking, because a truth the ranking never surfaces has no score of its own to report.
+   *
+   * ## Why this is here rather than inferred
+   *
+   * `truthRank` says WHICH FAILURE a miss is (retrieval or reranking). It cannot say whether the truth was
+   * rankable at all: a truth ranked 26th of 68 and a truth ranked 26th because nothing moved at its origin
+   * are the same rank and completely different problems, and only one of them is a ranking problem. The
+   * field that separates them is the truth's own local evidence, and the engine already computes it —
+   * `rca_score`, the self-anomaly term of `finalScore(v) = log1p(selfAnomaly(v)) + Σ signalWeight × signal(v)`,
+   * with the threshold it was judged against.
+   *
+   * **Read from the producer, not recomputed.** The threshold travels with the value so the boundary between
+   * "no local evidence" and "local evidence, ranked deep" is the ENGINE'S OWN and not a constant invented
+   * here: a re-derived copy of a threshold is the defect this repository keeps recording, and it would let a
+   * change to the engine's own cut silently move a count that claims to be about it.
+   */
+  readonly truthEvidence?: TruthEvidence | undefined;
+}
+
+/**
+ * The ground truth's own score and the evidence the engine recorded for it, in the engine's own terms.
+ *
+ * Every field is copied from the truth's {@link RootCauseResult}: `rcaScore` and `rcaThreshold` out of its
+ * `evidenceMetrics` (where `rca_score` carries the threshold it was judged against), `collisionGain` when the
+ * collision term contributed, and the depth and search route the ranking reported. Nothing is recomputed and
+ * nothing is defaulted — an absent metric stays absent, so "the engine did not report it" is distinguishable
+ * from "the engine reported zero", which is the whole reason the split below can be trusted.
+ */
+export interface TruthEvidence {
+  /** The truth's `rca_score`: the self-anomaly term of its `finalScore`. */
+  readonly rcaScore?: number | undefined;
+  /** The threshold `rca_score` was judged against, AS THE ENGINE RECORDED IT. */
+  readonly rcaThreshold?: number | undefined;
+  /** The truth's collision contribution, when the collision term produced one. */
+  readonly collisionGain?: number | undefined;
+  /** The truth's `finalScore` — the value the ranking sorted by — when the pruner produced one. */
+  readonly finalScore?: number | undefined;
+  /** The truth's propagation depth, as the ranking reported it. */
+  readonly depth: number;
+  /** Whether the ranking found the truth by tree search rather than in the full graph. */
+  readonly viaTreeSearch: boolean;
+  /** How many evidence metrics the engine recorded for the truth. Zero is a fact, not a missing measurement. */
+  readonly metricCount: number;
+}
+
+/**
+ * Extract the ground truth's own evidence from the ranking it appears in.
+ *
+ * **The precondition is real rather than defensive, and it is stated here because the obvious guards are arms no
+ * input can reach.** Its only caller has already established `at >= 0` by finding the truth with `findIndex`, and
+ * that same search makes `ranking[at]` a valid element — so an `at < 0` branch and a `ranking[at] === undefined`
+ * branch would both be dead code, which the coverage gate then reports as uncovered arms (the lesson `median()` in
+ * `benchmarks/src/loss-census.ts` records). The index assertion is therefore the whole guard, and it is the same
+ * one `median()` uses on a sorted array whose non-emptiness its caller established.
+ *
+ * @param ranking - The engine's full ranked output.
+ * @param at - The truth's 0-based index in `ranking`. MUST be `>= 0`, i.e. the truth IS in the ranking.
+ * @returns The evidence recorded for the truth at that index.
+ */
+function truthEvidenceIn(ranking: readonly RootCauseResult[], at: number): TruthEvidence {
+  const hit = ranking[at]!;
+  const metric = (name: string): number | undefined =>
+    hit.evidenceMetrics.find((m) => m.metric === name)?.value;
+  const threshold = hit.evidenceMetrics.find((m) => m.metric === 'rca_score')?.threshold;
+  return {
+    rcaScore: metric('rca_score'),
+    rcaThreshold: threshold,
+    collisionGain: metric('collision_gain'),
+    finalScore: hit.finalScore,
+    depth: hit.propagationDepth,
+    viaTreeSearch: hit.viaTreeSearch,
+    metricCount: hit.evidenceMetrics.length,
+  };
 }
 
 /**
@@ -502,6 +577,8 @@ export class BenchmarkRunner {
         // Per-case top-1 record for fusion analysis (success path).
         const caseTruth = benchCase.groundTruth.serviceId;
         const predTop1 = results[0]?.serviceId;
+        // One search of the full ranking for both the truth's rank and its own evidence.
+        const placement = truthPlacementIn(results, caseTruth);
         casePredictionRecords.push({
           caseId: benchCase.id,
           truth: caseTruth,
@@ -513,8 +590,13 @@ export class BenchmarkRunner {
           // `findIndex` over the WHOLE ranked list, so a truth placed below the recorded top-K is still
           // ranked rather than reported as absent — the two are different failures and the census is what
           // tells them apart. `-1` becomes `undefined`, which the type distinguishes from rank 1.
-          truthRank: truthRankIn(results, caseTruth),
+          truthRank: placement.rank,
           pool: results.length,
+          // The truth's OWN evidence, so a miss can say whether the origin deviated at all. A rank cannot:
+          // rank 26 of 68 chosen because the other 25 moved and this one did not is a different problem
+          // from rank 26 of 68 chosen between comparably-moving candidates, and only the second is a
+          // ranking failure. Absent when the truth is not ranked, because then it has no score of its own.
+          truthEvidence: placement.evidence,
         });
 
         // ── Diagnostic snapshot for failing cases ──────────────────
@@ -1170,24 +1252,29 @@ function formatFaultType(ft: FaultType): string {
 }
 
 /**
- * The ground truth's 1-based rank in a full ranking, or `undefined` when it is absent from it.
+ * Where the ground truth sits in a full ranking, and what the engine recorded for it there.
  *
- * `findIndex` rather than a search of the recorded top-K prefix: the difference between a truth at rank 6
- * and one that never appears is the difference between a reranking failure and a retrieval one, and a
- * prefix collapses the two. `undefined` rather than `0` or `-1` for absence, so a caller cannot treat
- * "absent" as a rank — the engine's ranks start at 1 and a sentinel in that domain is a rank that does not
- * exist.
+ * ONE search for two answers, deliberately. `rank` and `evidence` are both facts about the same element, and
+ * a second `findIndex` for the second one would be a second implementation of "where is the truth" — the exact
+ * shape this repository keeps recording, where two derivations of one quantity agree until one of them is
+ * changed. Returning them together makes disagreement impossible rather than unlikely.
+ *
+ * `findIndex` over the recorded top-K PREFIX is not used: the difference between a truth at rank 6 and one
+ * that never appears is the difference between a reranking failure and a retrieval one, and a prefix collapses
+ * the two. `undefined` rather than `0` or `-1` for absence, so a caller cannot treat "absent" as a rank — the
+ * engine's ranks start at 1 and a sentinel in that domain is a rank that does not exist.
  *
  * @param ranking - The engine's full ranked output.
  * @param truth - The ground-truth service id.
- * @returns The 1-based rank, or `undefined`.
+ * @returns The 1-based rank and the truth's own evidence, both absent when the truth is not ranked.
  */
-function truthRankIn(
-  ranking: readonly { readonly serviceId: string }[],
+function truthPlacementIn(
+  ranking: readonly RootCauseResult[],
   truth: string,
-): number | undefined {
+): { rank?: number | undefined; evidence?: TruthEvidence | undefined } {
   const at = ranking.findIndex((r) => r.serviceId === truth);
-  return at < 0 ? undefined : at + 1;
+  if (at < 0) return {};
+  return { rank: at + 1, evidence: truthEvidenceIn(ranking, at) };
 }
 
 /**

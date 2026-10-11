@@ -1298,6 +1298,11 @@ async function main(): Promise<void> {
           truthInGraph: c.callGraph.nodes.has(c.groundTruth.serviceId),
           truthRank: ep?.truthRank,
           errored: ep?.errored,
+          // The truth's own evidence, carried so a DEEP miss can be split by whether anything moved at the
+          // origin. Read from the runner's record of the truth's own `RootCauseResult` rather than recomputed
+          // here: the threshold that decides the split is the engine's, and a second copy of it in this file
+          // would be a boundary that moves without this line moving.
+          truthEvidence: ep?.truthEvidence,
         });
       }
     }
