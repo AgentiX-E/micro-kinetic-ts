@@ -61,7 +61,7 @@ additive pooling scores **78.91%** against our **78.75%**. So the standing is a 
 matters** and a lead of ≈1.16× on the published number, and the `+10.8 pp` row must never be quoted without the
 row beneath it.
 
-### 0a. ABOVE US, AND NOT COMPARABLE — the five references that must be named
+### 0a. ABOVE US, AND NOT COMPARABLE — the six references that must be named
 
 **A number we cannot beat must be named, or the standing reads as a claim about the whole field.** Each of these
 is above us or beside us on some figure, and **none** is comparable to a service Top-1 on the 735 (verified
@@ -127,7 +127,24 @@ abstract does not confirm it — read its entry before quoting any gap it implie
    halving the time. That is an **independent corroboration of this repository's own ledger pattern** — *every tool
    wired as a SCORE measures negative; every credited gain is STRUCTURAL* — arriving from a group with no
    connection to us, on the same benchmark family. **Two independent measurements of "more machinery, lower
-   top-1" is the strongest evidence either has.**
+   top-1" is the strongest evidence either has.** A third-party reading of the paper text (2026-10-11) adds that
+   it **reports its numbers on NAMED benchmarks** while finding **no code, weights or dataset link** — so the
+   population is *nameable from the body* even though the abstract omits it, and it is still **not reproducible
+   from what the authors shipped.** No gap is quoted from it either way.
+
+6. **E4** — *Agentic RCA for Internet-Scale Services Using Constrained Creativity* (**`arXiv:2610.08622`**,
+   submitted 2026-10-09). An agentic troubleshooter that emits **loop-free data-flow programs in a restricted,
+   high-level DSL** rather than free-form code, and reports **"up to 62% better accuracy compared to
+   state-of-the-art solutions"** on *"a mix of synthetic and real-world workloads"*, with **up to 12× reduced
+   cost**.
+
+   **It is named and no gap is quoted, because the claim has no denominator.** "62% better" is a **relative**
+   figure against an unnamed baseline on an unnamed mix of workloads — not a percentage of anything we can count,
+   not a top-1, and not on a population we can name. Nameable for the same reason the fifth entry is: it is
+   *above us by the authors' own claim* and it is silent about what it is above. **Its design point is the one
+   worth borrowing**: restricting an agent to a **verifiable operator language instead of arbitrary code** is the
+   same instinct as this repository's preference for an instrument that is a pure function, and it is the second
+   independent arrival at *"more expressive machinery, lower accuracy"* on this list.
 
 ### 0b. BELOW US, AND COMPARABLE — the one reference that shares our metric AND our population
 
@@ -165,6 +182,25 @@ their per-case tables are theirs. But unlike §0a it is **checkable** — the co
 than left as a citation. Registered as the head of the reproducible-baseline item in `docs/closed-axes-register.md`.
 
 ---
+
+### 0c. A NEW PUBLIC BENCHMARK — small, vendor-authored, and REPRODUCIBLE
+
+**Project Arena**, released 2026-10-08 by **Edge Delta** (with an evaluation by GPT-6-Astra and a comparison
+against Grafana's native AI): a Kubernetes deployment of the **OpenTelemetry Demo** with **21 injected fault
+scenarios**, scored by a fixed rubric, with **the scenario scripts, the answer keys and the scoring code released
+as open source** (`edgedelta/project-arena`).
+
+**It is recorded here for three reasons and excluded from our numbers for two.** Recorded: it is **public and
+reproducible**, which the vendor's own 89% is not; it is a **second** independently published instrument for this
+problem, which matters because the repository's largest unexecuted comparison is *running someone else's harness*;
+and its headline result — **11 of 12** shared scenarios localized correctly by the vendor against **9 of 12** by
+the comparator — is **vendor-authored with the vendor competing**, which is exactly the population caveat §0a
+applies to a *number*.
+
+Excluded: **21 scenarios is not a population we can compare a 68-service Top-1 to** (our smallest cell is 90 and
+the corpus is 735), and its unit is a **whole incident report scored by a model**, not a service ranked first. It
+is a candidate instrument and not a candidate number, and it is named so that "the field has no public benchmark"
+cannot be said of this repository's own standing.
 
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 
