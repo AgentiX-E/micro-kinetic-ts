@@ -309,7 +309,12 @@ export interface TruthEvidence {
  * and the agreement of the two declarations is fenced by test rather than assumed.
  */
 export type TermZeroCause =
-  'WEIGHT_ZERO' | 'INPUT_MAP_ABSENT' | 'INPUT_ENTRY_ABSENT' | 'MASKED' | 'VALUE_ZERO';
+  | 'WEIGHT_ZERO'
+  | 'INPUT_MAP_ABSENT'
+  | 'INPUT_MAP_EMPTY'
+  | 'INPUT_ENTRY_ABSENT'
+  | 'MASKED'
+  | 'VALUE_ZERO';
 
 /**
  * One named contribution to a ranking score, already multiplied by its weight.
@@ -325,7 +330,7 @@ export interface ScoreTerm {
   readonly contribution: number;
   /** Present only when `contribution === 0`, naming the mechanism that made it zero. */
   readonly cause?: TermZeroCause;
-  /** For the two `INPUT_*` causes: the OPTIONAL source that was absent, so the field is named. */
+  /** For every `INPUT_*` cause: the OPTIONAL source that was absent, so the field is named. */
   readonly source?: string;
   /** For `MASKED`: the gate that forced the zero. */
   readonly mask?: string;

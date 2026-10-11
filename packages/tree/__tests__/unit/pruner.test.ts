@@ -2300,22 +2300,27 @@ describe('the score breakdown — the total IS its terms', () => {
   });
 });
 
-describe('classifyTermZero — the five mechanisms, and the order they are tested in', () => {
+describe('classifyTermZero — the six mechanisms, and the order they are tested in', () => {
   it('names a zero WEIGHT first, because it is the only cause that licenses no inference', () => {
     // The order is the design rather than a preference: a zero weight forces the zero on its own, so reporting
     // an absence instead would send a reader to the graph for a fact that lives in the configuration — and
     // reporting an ENTRY absence for a source that is not there at all would send them to a map that does not
-    // exist. Every combination collapses to WEIGHT_ZERO.
+    // exist. Every combination collapses to WEIGHT_ZERO, including the three source states.
     expect(classifyTermZero(0, 'PRESENT', false)).toBe('WEIGHT_ZERO');
     expect(classifyTermZero(0, 'MAP_ABSENT', false)).toBe('WEIGHT_ZERO');
+    expect(classifyTermZero(0, 'MAP_EMPTY', false)).toBe('WEIGHT_ZERO');
     expect(classifyTermZero(0, 'ENTRY_ABSENT', false)).toBe('WEIGHT_ZERO');
     expect(classifyTermZero(0, 'PRESENT', true)).toBe('WEIGHT_ZERO');
   });
 
-  it('separates a missing MAP from a missing ENTRY, at the level the absence happened', () => {
-    // One field's producer never ran against one candidate that was never measured. Same field, different work,
-    // and a record that merged them could not be split later without another run.
+  it('separates the three levels an absence can happen at', () => {
+    // "The producer never ran" against "the producer ran and emitted nothing" against "the producer emitted a
+    // tier and this candidate is not in it". Same field, three different pieces of work, and a record that
+    // merged any two of them could not be split later without another run — which is why the EMPTY tier is
+    // reported as its own cause rather than as an entry absence: an entry absence asserts the map carries
+    // OTHER candidates, and an empty map carries none.
     expect(classifyTermZero(0.5, 'MAP_ABSENT', false)).toBe('INPUT_MAP_ABSENT');
+    expect(classifyTermZero(0.5, 'MAP_EMPTY', false)).toBe('INPUT_MAP_EMPTY');
     expect(classifyTermZero(0.5, 'ENTRY_ABSENT', false)).toBe('INPUT_ENTRY_ABSENT');
   });
 
@@ -2399,18 +2404,31 @@ describe('the cause a zero term carries — and the ones it cannot carry', () =>
       return pruner.buildFaultGraph(callGraph, makeMetrics({ A: [1, 1, 9, 9], B: [1, 1, 2, 2] }));
     })();
     const pruner = new TreePruner({ defaultTopK: 4, traceWeight: 1 });
-    // `traceActivityScores` is removed rather than emptied: an absent map and an empty one are the same thing
-    // to the LOOKUP and different things to the record, which is the distinction this test is about.
+    // `traceActivityScores` is removed rather than emptied: an absent map, an EMPTY one and a non-empty one
+    // that simply does not carry this candidate are the same thing to the LOOKUP and three different things to
+    // the record, which is the distinction this test is about.
     const stripped: typeof graph = { ...graph, traceActivityScores: undefined };
     const t = pruner.analyze(stripped, 2)[0]!.terms!.find((x) => x.name === 'trace')!;
     expect(t.contribution).toBe(0);
     expect(t.cause).toBe('INPUT_MAP_ABSENT');
     expect(t.source).toBe('traceActivityScores');
-    // And an EMPTY map is an entry absence, not a map absence: the difference is visible only here.
+    // An EMPTY map is a producer that RAN and had nothing, which is a fact about the whole tier rather than
+    // about this candidate. Filing it as an entry absence would assert that the map carries other candidates —
+    // a statement an empty map contradicts, and one that sends the reader to the per-candidate measurement
+    // when the missing thing is the tier itself.
     const emptied: typeof graph = { ...graph, traceActivityScores: new Map() };
     const e = pruner.analyze(emptied, 2)[0]!.terms!.find((x) => x.name === 'trace')!;
-    expect(e.cause).toBe('INPUT_ENTRY_ABSENT');
+    expect(e.cause).toBe('INPUT_MAP_EMPTY');
     expect(e.source).toBe('traceActivityScores');
+    // And a NON-EMPTY map that does not carry this candidate is the only thing `INPUT_ENTRY_ABSENT` means: the
+    // tier was emitted, it carries other services, and this one is absent from it. Without this arm the new
+    // member would have replaced the old one instead of joining it.
+    const partial: typeof graph = { ...graph, traceActivityScores: new Map([['B', 1]]) };
+    const a = pruner.analyze(partial, 2).find((r) => r.serviceId === 'A')!;
+    const p = a.terms!.find((x) => x.name === 'trace')!;
+    expect(p.contribution).toBe(0);
+    expect(p.cause).toBe('INPUT_ENTRY_ABSENT');
+    expect(p.source).toBe('traceActivityScores');
   });
 
   it('reports a MASKED zero when the gate declined a value that was not zero', () => {

@@ -549,6 +549,12 @@ it later needs.
 live. A cause beside a non-zero contribution would invite a reader to treat a term that decided a case as a term
 that did not.
 
+**§8 supersedes the COUNT and not the argument.** The two absence levels above are three, and the sixth member is
+`INPUT_MAP_EMPTY` — "the map is present and holds nothing" — because "the graph does not carry this field" and
+"this candidate has no entry" do not exhaust the ways a source can fail to carry one (§8.1). The paragraph above
+is kept as written because it is the argument §8 extends: it is exactly the reasoning that should have produced
+the third level and did not.
+
 ### 7.2 One assembly, and the order of its tests
 
 The classification is decided **inside the producer**, in the same place the contribution is computed, from the
@@ -692,3 +698,77 @@ source, above `ENTRY_ABSENT` — and the doc states it here rather than leaving 
 convention while moving two cells in opposite directions, and that result stands. What this section adds is that
 the term is at **0, not small** — and a term at exactly 0 is the one case where an A/B cannot distinguish
 "worthless" from "unfed".
+
+## 8. An EMPTY tier is not a per-candidate absence — closing §7.5's own refusal
+
+### 8.1 The defect, in the artifact's own words
+
+§7.5 registered the fourth source state and deliberately left the code alone; this section is the change. The
+defect was not a missing feature. It was a **mislabelled answer**, and the repository had already written the
+contradiction down without reading it back.
+
+`presenceOf(map, id)` answered the absence at one of two levels, and the level it answered was chosen by
+`map.has(id)` — which is `false` for **every** candidate exactly when the map is **empty**. So a producer that
+ran and emitted nothing was recorded as a candidate that had not been measured, and those are opposite claims
+about where the work is:
+
+| the map | `map.has(id)` | §7 recorded | what it actually means |
+| --- | --- | --- | --- |
+| absent (`undefined`) | `false` | `INPUT_MAP_ABSENT` | the producer never ran — an **UPSTREAM** fact |
+| present, `size === 0` | `false` for every candidate | `INPUT_ENTRY_ABSENT` | **the producer ran and had nothing to say** — a fact about the **TIER** |
+| present, `size > 0`, no entry for `id` | `false` | `INPUT_ENTRY_ABSENT` | this candidate was not measured for that field — a **PER-CASE** fact |
+
+The middle row is the one wrong in **both** directions. It is not evidence about the candidate, and it is not a
+missing tier — and `INPUT_ENTRY_ABSENT` is the single answer that **asserts** the map carries other services,
+which an empty map contradicts.
+
+**The test that carried the wrong answer said so in a comment while asserting it.** `pruner.test.ts` emptied a
+signal map, expected `INPUT_ENTRY_ABSENT`, and explained that "an absent map and an empty one are the same thing
+to the LOOKUP and different things to the record". The first clause is true and *is* the bug — `has` cannot see
+the difference — but the second clause was false in exactly the place it mattered: the record gave the empty map
+the one cause that claims the map is populated.
+
+### 8.2 The change, and why no number moves
+
+`TermSourcePresence` gains **`MAP_EMPTY`** between `MAP_ABSENT` and `ENTRY_ABSENT`, `TermZeroCause` gains
+**`INPUT_MAP_EMPTY`** in the same position, and `presenceOf` now tests the levels **coarsest first**:
+
+```
+if (map === undefined) return 'MAP_ABSENT';      // the producer never ran
+if (map.size === 0)    return 'MAP_EMPTY';       // the producer ran and emitted nothing
+return map.has(id) ? 'PRESENT' : 'ENTRY_ABSENT'; // the producer emitted a tier without this candidate
+```
+
+The order is the design for the same reason §7.2's is: `has` answers `false` for every candidate on an empty
+map, so testing it first is precisely the reading that destroys the distinction. The three levels then follow in
+the order of how much they narrow: the map, the map's emptiness, the candidate's entry.
+
+**No number can move, and that is a CONSTRUCTION argument rather than a measurement — labelled as the weaker
+claim, as this repository requires.** `presence` reaches only `classifyTermZero`, which writes only `cause`; a
+term's `contribution` is `weight × value` and does not read the presence at all. So the change is
+**instrument-only**: every score, every rank and every per-cell count are the same bit patterns, the payload
+grows one field by design, and the md5 comparison — the stronger check in §5 and §7.5 for an instrument-FREE
+change — is the **wrong** check here for exactly the reason §7.5 gives. The run that confirms it is owed and is
+recorded in §8.4.
+
+### 8.3 The class, not the instance
+
+Two things were repaired at the level of the **class** rather than at the site that broke, because the site is
+one of a family that will grow again:
+
+1. **The name travels with the family, not with an enumeration of its members.** `buildTerm` attached `source`
+   under `cause === 'INPUT_MAP_ABSENT' || cause === 'INPUT_ENTRY_ABSENT'`, and `summarizeTermZeroes` repeated the
+   same enumeration on its own side of the package boundary. A fourth level added to the union would then have
+   been filed by **both** sides under `''` — printing an empty parenthesis that reads as "a term with no detail"
+   rather than as a mis-read, on the side that reads it, while satisfying any fence that enumerated two causes.
+   Both sides now read the cause's own **`INPUT_` prefix**, which the union documents as its convention ("this
+   cause names the OPTIONAL source it read in `ScoreTerm.source`"), so a new level carries its name by *being
+   named like the others*. The convention is pinned by **literal on both sides** — `benchmarks` does not depend
+   on `@agentix-e/micro-kinetic`, and the two halves of this one join live in packages that never meet.
+
+2. **The cause family is DERIVED from the source states, not listed.** A second fence computes, from the two
+   unions' own member lists: every non-`PRESENT` member of `TermSourcePresence` has **exactly one** `TermZeroCause`
+   whose text is `INPUT_` + the state's own name, **in the same order**. A state renamed without its cause
+   following it fails; a state added without a cause fails; and because the check is computed from the unions
+   rather than from a printed list it cannot go stale the way a list does.
+

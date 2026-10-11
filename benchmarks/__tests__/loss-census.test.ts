@@ -491,6 +491,7 @@ describe('the mirrored declarations — three copies of one shape, and one pair'
     expect(core).toEqual([
       'WEIGHT_ZERO',
       'INPUT_MAP_ABSENT',
+      'INPUT_MAP_EMPTY',
       'INPUT_ENTRY_ABSENT',
       'MASKED',
       'VALUE_ZERO',
@@ -499,18 +500,41 @@ describe('the mirrored declarations — three copies of one shape, and one pair'
     expect(census).toEqual(core);
   });
 
+  it('maps every source state that is not PRESENT onto a source-bearing cause', () => {
+    // A second join, inside the producer's own file, and the one the whole feature rests on: a source state
+    // with no cause to report it would make an absence indistinguishable from `VALUE_ZERO`, which is the
+    // failure the cause field exists to prevent. Derived from the two unions rather than enumerated, so a
+    // FOURTH source state cannot be added without its cause and a state cannot be renamed without its own
+    // cause following it.
+    const core = readFileSync(SOURCES.core, 'utf8');
+    const presences = membersOf(core, 'TermSourcePresence');
+    expect(presences).toEqual(['PRESENT', 'MAP_ABSENT', 'MAP_EMPTY', 'ENTRY_ABSENT']);
+    const absences = presences.filter((p) => p !== 'PRESENT');
+    // The `INPUT_` prefix is the convention that a cause names the OPTIONAL source it read, and the census
+    // reads `source` for exactly the members carrying it.
+    expect(membersOf(core, 'TermZeroCause').filter((c) => c.startsWith('INPUT_'))).toEqual(
+      absences.map((p) => `INPUT_${p}`),
+    );
+  });
+
   it('attaches the name each cause requires, on the side that produces it', () => {
-    // The census reads `source` for the two absences and `mask` for the decline, and it states that as a
-    // PRECONDITION rather than defaulting it — because a `?? ''` there would be a guard no input can reach,
+    // The census reads `source` for every source-bearing cause and `mask` for the decline, and it states that as
+    // a PRECONDITION rather than defaulting it — because a `?? ''` there would be a guard no input can reach,
     // which the coverage gate reports as an untaken branch. The guarantee therefore has to hold at the
     // producer, and a producer that stopped attaching one would make every row of that cause print
     // `undefined` where a field name belongs.
+    //
+    // Both sides are held to the PREFIX rather than to an enumeration of the causes, so the family's third
+    // member could not be added to one side only: an enumerated read of two causes would have printed an empty
+    // parenthesis for a third, on the side that reads it, while satisfying an enumerated fence.
     const pruner = readFileSync(SOURCES.pruner, 'utf8');
-    expect(pruner).toContain("cause === 'INPUT_MAP_ABSENT' || cause === 'INPUT_ENTRY_ABSENT'");
+    const census = readFileSync(SOURCES.census, 'utf8');
+    expect(pruner).toContain("cause.startsWith('INPUT_')");
+    expect(census).toContain("cause.startsWith('INPUT_')");
     expect(pruner).toContain("cause === 'MASKED' && facts.mask !== undefined");
     // And the census's read of them is the other half of the same join, held by literal for the same reason.
-    expect(readFileSync(SOURCES.census, 'utf8')).toContain('? t.source!');
-    expect(readFileSync(SOURCES.census, 'utf8')).toContain('? t.mask!');
+    expect(census).toContain('? t.source!');
+    expect(census).toContain('? t.mask!');
   });
 
   it('carries the truth evidence through the runner into the census row, by the same name', () => {
@@ -823,9 +847,10 @@ describe('compareTermZeroRows — the report order, asserted arm by arm', () => 
 
 describe('the zero table over the census — a masked decline is its own row', () => {
   it('groups a MASKED cause by the GATE, and a source-bearing cause by the FIELD', () => {
-    // The two `INPUT_*` causes and `MASKED` all name something, and the census reads the name from a different
+    // The `INPUT_*` causes and `MASKED` all name something, and the census reads the name from a different
     // field for each: `source` for the absences, `mask` for the decline. Reading the wrong one would print an
-    // empty parenthesis and look like a term with no detail rather than like a mis-read.
+    // empty parenthesis and look like a term with no detail rather than like a mis-read — and a third absence
+    // would be the case where an ENUMERATED read of the cause silently produced `''` for it.
     const summary = summarizeTermZeroes([
       record({
         caseId: 'a',
@@ -837,20 +862,22 @@ describe('the zero table over the census — a masked decline is its own row', (
           terms: [
             { name: 'rise', contribution: 0, cause: 'MASKED', mask: 'logicExceptionGate' },
             { name: 'topo', contribution: 0, cause: 'INPUT_ENTRY_ABSENT', source: 'topoScores' },
+            { name: 'lat', contribution: 0, cause: 'INPUT_MAP_EMPTY', source: 'edgeLatencyScores' },
           ],
         },
       }),
     ]);
     expect(summary.rows).toEqual([
+      { term: 'lat', cause: 'INPUT_MAP_EMPTY', detail: 'edgeLatencyScores', count: 1 },
       { term: 'rise', cause: 'MASKED', detail: 'logicExceptionGate', count: 1 },
       { term: 'topo', cause: 'INPUT_ENTRY_ABSENT', detail: 'topoScores', count: 1 },
     ]);
-    // And all five members are reachable through the table, so none of them is a value the union carries and
-    // the report cannot print.
+    // And every member is reachable through the table, so none of them is a value the union carries and the
+    // report cannot print.
     const printed = new Set(summary.rows.map((r) => r.cause));
     printed.add('WEIGHT_ZERO');
     printed.add('INPUT_MAP_ABSENT');
     printed.add('VALUE_ZERO');
-    expect(printed.size).toBe(5);
+    expect(printed.size).toBe(6);
   });
 });

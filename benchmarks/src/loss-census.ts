@@ -144,14 +144,20 @@ export interface LossRecord {
 /**
  * WHY a term contributed exactly zero — one value per mechanism the ranking formula actually has.
  *
- * The five are the point of recording one: a zero produced by any of them is the SAME NUMBER and a different
+ * The six are the point of recording one: a zero produced by any of them is the SAME NUMBER and a different
  * problem, and a table of contributions cannot separate them because a difference between two zeros is zero.
+ *
+ * The `INPUT_` prefix is the union's own convention and means "this cause names the OPTIONAL source it read in
+ * `ScoreTerm.source`", which is what lets this module read the name by PREFIX rather than by enumerating the
+ * family — see `summarizeTermZeroes`.
  */
 export type TermZeroCause =
   /** The term's configured weight is 0, so the zero is a CONFIGURATION fact and licenses no corpus inference. */
   | 'WEIGHT_ZERO'
   /** The whole OPTIONAL source the term reads is ABSENT from the graph. */
   | 'INPUT_MAP_ABSENT'
+  /** The OPTIONAL source is present and carries NO candidates at all: a producer that ran and emitted nothing. */
+  | 'INPUT_MAP_EMPTY'
   /** The OPTIONAL source is present but carries no entry for this candidate. */
   | 'INPUT_ENTRY_ABSENT'
   /** The weight and the input are present, and a gate in the formula overrode a non-zero value. */
@@ -172,7 +178,7 @@ export interface ScoreTerm {
   readonly contribution: number;
   /** Present only when `contribution === 0`, naming the mechanism that made it zero. */
   readonly cause?: TermZeroCause;
-  /** For the two `INPUT_*` causes: the OPTIONAL source that was absent, so the field is named. */
+  /** For every `INPUT_*` cause: the OPTIONAL source that was absent, so the field is named. */
   readonly source?: string;
   /** For `MASKED`: the gate that forced the zero. */
   readonly mask?: string;
@@ -579,7 +585,7 @@ export function formatLossReport(
 /**
  * How the zero terms came about, one row per (term, cause, named detail).
  *
- * A term's zero has three possible mechanisms and a table of contributions cannot separate them, because a
+ * A term's zero has six possible mechanisms and a table of contributions cannot separate them, because a
  * difference between two zeros is zero. This is that separation.
  */
 export interface TermZeroRow {
@@ -587,7 +593,11 @@ export interface TermZeroRow {
   readonly term: string;
   /** The mechanism that produced the zero. */
   readonly cause: TermZeroCause;
-  /** For the two `INPUT_*` causes the absent source, for `MASKED` the gate; `''` for the others. */
+  /**
+   * For every `INPUT_*` cause the absent source, for `MASKED` the gate; `''` for the others.
+   *
+   * Determined by the cause's PREFIX rather than by enumerating the family: see `summarizeTermZeroes`.
+   */
   readonly detail: string;
   /** How many term instances in the read population carried exactly this (term, cause, detail). */
   readonly count: number;
@@ -612,8 +622,9 @@ export interface TermZeroSummary {
  * re-derived so "a miss" has one definition in this repository.
  *
  * The truth's side is the default and the winner's is available, because the two answers differ for the causes
- * that are facts about the corpus (`INPUT_MAP_ABSENT`, `INPUT_ENTRY_ABSENT`, `VALUE_ZERO`) and coincide for the
- * one that is a fact about the configuration (`WEIGHT_ZERO`, which no candidate can escape).
+ * that are facts about the corpus (`INPUT_MAP_ABSENT`, `INPUT_MAP_EMPTY`, `INPUT_ENTRY_ABSENT`, `VALUE_ZERO`)
+ * and coincide for the one that is a fact about the configuration (`WEIGHT_ZERO`, which no candidate can
+ * escape).
  *
  * @param records - The census rows.
  * @param opts - `shallowDepth` as `classifyLoss` takes it, and which side's breakdown to read.
@@ -649,19 +660,20 @@ export function summarizeTermZeroes(
       // not filed under one.
       const cause = t.cause;
       if (cause === undefined) continue;
-      // The name a cause carries: the absent FIELD for the two absences, the GATE for the decline, and nothing
-      // for the two that name nothing.
+      // The name a cause carries: the absent FIELD for the source-bearing family, the GATE for the decline, and
+      // nothing for the two that name nothing.
       //
-      // The two `!` are a stated precondition rather than a hope — the producer sets `source` on every
-      // `INPUT_*` cause and `mask` on every `MASKED` one (`buildTerm` in `packages/tree`) — and a `?? ''` in
-      // their place would be a guard no input can reach. The coverage gate reports such a guard as an untaken
-      // branch, and a report would print an empty parenthesis rather than the mismatch it actually is.
-      const detail =
-        cause === 'INPUT_MAP_ABSENT' || cause === 'INPUT_ENTRY_ABSENT'
-          ? t.source!
-          : cause === 'MASKED'
-            ? t.mask!
-            : '';
+      // The family is read by its `INPUT_` PREFIX rather than by enumerating its members, because the members
+      // are three levels of one absence and a fourth would be a legitimate addition: an enumerated read here
+      // would file every row of a new member under `''`, printing an empty parenthesis in a report that looks
+      // like a term with no detail rather than like a mis-read. The producer guarantees the name, and the
+      // convention is pinned on BOTH sides by `loss-census.test.ts`.
+      //
+      // The `!` is a stated precondition rather than a hope — the producer sets `source` on every `INPUT_*`
+      // cause and `mask` on every `MASKED` one (`buildTerm` in `packages/tree`) — and a `?? ''` in its place
+      // would be a guard no input can reach. The coverage gate reports such a guard as an untaken branch, and a
+      // report would print an empty parenthesis rather than the mismatch it actually is.
+      const detail = cause.startsWith('INPUT_') ? t.source! : cause === 'MASKED' ? t.mask! : '';
       const key = `${t.name}\u0000${cause}\u0000${detail}`;
       const found = tally.get(key);
       if (found === undefined) tally.set(key, { term: t.name, cause, detail, count: 1 });

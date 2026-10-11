@@ -104,13 +104,14 @@ export function sumScoreTerms(terms: readonly ScoreTerm[]): number {
  * The ORDER of the tests is the design, and it is an order of how SHARP the answer is rather than of
  * likelihood: a zero weight forces the zero on its own and licenses **no** inference about the corpus, so it is
  * reported even when the input is also absent. Answering an `INPUT_*` there would send a reader to the graph for
- * a fact that lives in the configuration — and answering `INPUT_ENTRY_ABSENT` for a source that is not there at
- * all would send them to a map that does not exist.
+ * a fact that lives in the configuration — and answering an ENTRY absence for a source that is not there at
+ * all would send them to a map that does not exist. The three source states then follow coarsest first, because
+ * each one narrows what the reader should go and look at: the map, the map's emptiness, the candidate's entry.
  *
  * @param weight - The configured weight the contribution was multiplied by.
  * @param presence - Whether the OPTIONAL source carried this candidate, and if not, at which level it did not.
  * @param masked - Whether a gate in the formula overrode a present, non-zero value.
- * @returns The cause, among the five the formula can produce.
+ * @returns The cause, among the six the formula can produce.
  */
 export function classifyTermZero(
   weight: number,
@@ -119,6 +120,7 @@ export function classifyTermZero(
 ): TermZeroCause {
   if (weight === 0) return 'WEIGHT_ZERO';
   if (presence === 'MAP_ABSENT') return 'INPUT_MAP_ABSENT';
+  if (presence === 'MAP_EMPTY') return 'INPUT_MAP_EMPTY';
   if (presence === 'ENTRY_ABSENT') return 'INPUT_ENTRY_ABSENT';
   if (masked) return 'MASKED';
   return 'VALUE_ZERO';
@@ -164,9 +166,11 @@ function buildTerm(
     name,
     contribution,
     cause,
-    ...(cause === 'INPUT_MAP_ABSENT' || cause === 'INPUT_ENTRY_ABSENT'
-      ? { source: facts.source }
-      : {}),
+    // The `INPUT_` prefix is the union's own convention for "this cause names the OPTIONAL source it read", so
+    // the name travels with the whole FAMILY rather than with an enumeration of its members: a fourth absence
+    // level would carry its source by being named like the others, and an enumerated condition here would print
+    // an empty parenthesis on the reader's side instead.
+    ...(cause.startsWith('INPUT_') ? { source: facts.source } : {}),
     ...(cause === 'MASKED' && facts.mask !== undefined ? { mask: facts.mask } : {}),
   };
 }
@@ -1772,13 +1776,22 @@ function performTreeRCA(
       // how a term comes to report a cause for a lookup that did not decide it.
       //
       // `presenceOf` answers at the LEVEL the absence happened, which is why it takes the map itself: a term
-      // reading `logScores?.get(id)` loses `logScores` and a term reading `onsetSlopes.get(id)` loses an entry,
-      // and collapsing the two would report the second for the first.
+      // reading `logScores?.get(id)` loses `logScores`, a term reading a PRESENT-but-EMPTY map loses the whole
+      // tier, and a term reading a populated map loses an entry — and collapsing any two of those would report
+      // one for another.
+      //
+      // The order is the level order, coarsest first: the map is missing, the map holds nothing, the map does
+      // not hold this candidate. The EMPTY tier is tested before `has` because an empty map answers `false` to
+      // `has` for every candidate, which is exactly the reading that would mislabel a producer that ran and
+      // emitted nothing as a per-candidate measurement that is missing.
       const presenceOf = <V>(
         map: ReadonlyMap<ServiceId, V> | undefined,
         id: ServiceId,
-      ): TermSourcePresence =>
-        map === undefined ? 'MAP_ABSENT' : map.has(id) ? 'PRESENT' : 'ENTRY_ABSENT';
+      ): TermSourcePresence => {
+        if (map === undefined) return 'MAP_ABSENT';
+        if (map.size === 0) return 'MAP_EMPTY';
+        return map.has(id) ? 'PRESENT' : 'ENTRY_ABSENT';
+      };
       const onsetEntry = onsetSlopes.get(id);
       const collisionEntry = ratioContrib.get(id);
       const topoEntry = topoScores?.get(id);

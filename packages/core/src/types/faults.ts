@@ -110,13 +110,19 @@ export interface RootCauseResult {
 /**
  * WHY a term contributed exactly zero — one value per mechanism the ranking formula actually has.
  *
- * The five are the point of recording one: a zero produced by any of them is the SAME NUMBER and a different
+ * The six are the point of recording one: a zero produced by any of them is the SAME NUMBER and a different
  * problem, and a table of contributions cannot separate them because a difference between two zeros is zero.
  *
- * The two `INPUT_*` members are deliberately NOT merged. "The graph does not carry this field at all" and "the
- * field is there and this candidate has no entry in it" send a reader to the same FIELD but to different ends of
- * it — an upstream producer that never emitted the tier, against a per-candidate measurement that is missing —
- * and a record that merges them cannot be split later without another run.
+ * The three `INPUT_*` members are deliberately NOT merged, because an absence happens at one of three LEVELS
+ * and each level implies different work. "The graph does not carry this field at all" means an upstream
+ * producer that never ran; "the field is there and holds NOTHING" means a producer that ran and had nothing to
+ * say; "the field is there and this candidate has no entry in it" means a per-candidate measurement that is
+ * missing. The middle one is the case that a two-way split gets wrong in both directions — it is not evidence
+ * about the candidate, and it is not a missing tier — and a record that merges it with either cannot be split
+ * later without another run.
+ *
+ * The `INPUT_` prefix is the union's own convention and means "this cause names the OPTIONAL source it read in
+ * `ScoreTerm.source`", so a member of the family cannot be added without the name travelling with it.
  */
 export type TermZeroCause =
   /**
@@ -128,6 +134,13 @@ export type TermZeroCause =
   | 'WEIGHT_ZERO'
   /** The weight is non-zero and the whole OPTIONAL source this term reads is ABSENT from the graph. */
   | 'INPUT_MAP_ABSENT'
+  /**
+   * The weight is non-zero, the OPTIONAL source is present, and it carries NO candidates at all.
+   *
+   * The producer ran and emitted an empty tier, which is a statement about the tier rather than about this
+   * candidate: unlike `INPUT_ENTRY_ABSENT` it does NOT assert that the map carries other services.
+   */
+  | 'INPUT_MAP_EMPTY'
   /** The weight is non-zero and the OPTIONAL source is present but carries no entry for this candidate. */
   | 'INPUT_ENTRY_ABSENT'
   /**
@@ -147,9 +160,11 @@ export type TermZeroCause =
 /**
  * Whether a term's OPTIONAL source carried the candidate it was asked about.
  *
- * Three states rather than a boolean, because "absent" is two different facts about two different places.
+ * FOUR states rather than a boolean, because "absent" is three different facts about two different places —
+ * the graph, the tier, and the pair of the two. The order is the order of the levels, coarsest first: the
+ * source is missing, the source is empty, the source does not carry this candidate.
  */
-export type TermSourcePresence = 'PRESENT' | 'MAP_ABSENT' | 'ENTRY_ABSENT';
+export type TermSourcePresence = 'PRESENT' | 'MAP_ABSENT' | 'MAP_EMPTY' | 'ENTRY_ABSENT';
 
 /**
  * One named contribution to a ranking score, already multiplied by its weight.
@@ -170,7 +185,7 @@ export interface ScoreTerm {
    * contribution would invite a reader to treat a term that decided something as a term that did not.
    */
   readonly cause?: TermZeroCause;
-  /** For the two `INPUT_*` causes: the name of the OPTIONAL source, so the field is named. */
+  /** For every `INPUT_*` cause: the name of the OPTIONAL source, so the field is named. */
   readonly source?: string;
   /** For `MASKED`: the name of the gate that forced the zero, so the override is named. */
   readonly mask?: string;
