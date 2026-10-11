@@ -591,3 +591,23 @@ which reads as "this mechanism does not occur" rather than as a mismatch.
 
 This is the iteration-82 population law again, one layer out: **the authority is the declaration that the others
 copy, and a fence that omits it is a fence over the wrong pair.**
+
+### 7.4 The extraction introduced comparators, and the population census said so
+
+CI `38131661017` failed `test (kinetic)` on the first push of this iteration, and the failure was
+`comparator-population.test.ts` — **three derived-but-unrecorded sites**. Extracting the sort into a named
+`compareTermZeroRows` did not remove its three `? -1 : 1` comparisons from the population; it moved them into a
+function, where the census found them.
+
+**And the argument for recording them is STRONGER than the one the inline sorts needed.** All three sit behind an
+inequality guard — `if (a.term !== b.term) return a.term < b.term ? -1 : 1;` — so on the path where the tie-break
+runs the two operands are **never equal**. The audit's rule is that this shape is inconsistent exactly on pairs
+whose keys are equal; a guarded site cannot be handed such a pair, not because its list happens to be unique but
+because **the branch that would need it to be is not taken**. The record now says that, per site.
+
+**The local process defect is the one already written down here** — *a gate that reads the working tree cannot run
+concurrently with the edits it guards*. The census was green when it was last run, `compareTermZeroRows` was added
+afterwards, and the file was never re-run before the push. The fence did exactly what it exists to do: it made the
+omission fail rather than ship. The lesson is not "run more tests"; it is that **the gate's own subject list is a
+thing the edit changes, so the gate belongs in the pre-push set of whatever it guards, not in the set that was run
+when the file was last touched.**

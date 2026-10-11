@@ -108,11 +108,9 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     { signature: 'a.key < b.key', population: '`perType.entries()`, a Map' },
   ],
   'benchmarks/src/loss-census.ts': [
-    // Both sites sort a list built from a `Map` keyed by TERM NAME, so the tie-break's own key is unique in the
-    // list it is handed — which is the property the audit argues from and the reason the shared key (`count`)
-    // being equal, the case these sorts exist for, still cannot produce the inconsistent answer. Iteration 84
-    // added both, and the fence is what said so: a comparator that reaches the population unrecorded is exactly
-    // what this file exists to refuse.
+    // The two inline sorts. Both sort a list built from a `Map` keyed by TERM NAME, so the tie-break's own key
+    // is unique in the list it is handed — which is the property the audit argues from and the reason the shared
+    // key (`count`) being equal, the case these sorts exist for, still cannot produce the inconsistent answer.
     {
       signature: 'a.term < b.term',
       population: '`deepLostOn`, one entry per term name (built from a Map, so the key is unique)',
@@ -120,6 +118,26 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     {
       signature: 'a[0] < b[0]',
       population: '`lostOnTotal.entries()`, a Map keyed by term name (unique)',
+    },
+    // And `compareTermZeroRows`, which is the same comparison ONE STEP FURTHER OUT: the three sites below are
+    // exported and named rather than left inline, and each sits behind an INEQUALITY GUARD (`if (a.term !==
+    // b.term)`) rather than merely on a list with a unique key. That is a strictly stronger property, and it is
+    // the one to record: on the path where the tie-break runs, the two operands are never equal, so the shape
+    // CANNOT answer `1` in both directions — not because its list happens to be unique, but because the branch
+    // that would need it to is not taken. The first of the three carries the same signature as the inline sort
+    // above and is a DIFFERENT site; multiplicity is the point of a per-signature record.
+    {
+      signature: 'a.term < b.term',
+      population:
+        '`summarizeTermZeroes` rows, guarded by `a.term !== b.term` — never equal on that path',
+    },
+    {
+      signature: 'a.cause < b.cause',
+      population: 'the same rows, guarded by `a.cause !== b.cause` — never equal on that path',
+    },
+    {
+      signature: 'a.detail < b.detail',
+      population: 'the same rows, guarded by `a.detail !== b.detail` — never equal on that path',
     },
   ],
   'packages/kinetic/src/benchmarks/fse26-diagnose.ts': [
