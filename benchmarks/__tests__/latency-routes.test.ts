@@ -40,6 +40,8 @@ import {
   selectLatencyView,
 } from '../src/rcaeval-corpus.js';
 
+import { batteryRows } from './helpers/ablation-battery.js';
+
 import type {
   BenchmarkCase,
   BenchmarkTraceSpan,
@@ -364,6 +366,58 @@ describe('the corpus owns the views, and the unit contract is fenced', () => {
     // The control carries BOTH the corpus change and `latWeight = 0`, which is what makes it a control.
     expect(battery).toMatch(
       /overrides: \{ latWeight: 0 \},\s*\n\s*latencyView: 'whole-file',\s*\n\s*label: 'LAT WHOLE FILE \+ LAT OFF'/,
+    );
+  });
+
+  it('holds the whole 2x2 over {corpus, floor}, of which this battery was missing one cell', () => {
+    // The channel's two knobs are varied by two groups that never met: the weight/floor group varies
+    // `latWeight` and `latMinRise` on the PUBLISHED corpus, and the corpus group varies which derivation the
+    // array comes from. Their cross product has four cells and three existed — shipped x floor on (the
+    // baseline), shipped x floor off, whole-file x floor on — and the fourth is the only row that can separate
+    // "the supplied channel is INERT" from "the supplied channel is being read through the floor".
+    //
+    // The four cells are DERIVED from the rows rather than listed, so this fence fails when a cell goes missing
+    // and stays true when the group grows: a third corpus or a second floor does not have to be enumerated
+    // here, and a cell cannot be hidden by re-wording a label.
+    //
+    // `capped` is deliberately NOT required to have a second cell, and it is a construction argument rather
+    // than a measurement: §7.1's census reads `CAP TRUNCATES` on every trace-bearing cell, so the capped view
+    // holds no pair on this corpus and a `capped x floor off` row would multiply an empty array and add its
+    // runtime to CI to report `Δ+0.0`.
+    const battery = read('src/run-ablation.ts');
+    const rows = batteryRows(battery);
+    // Non-vacuity: an extraction that found nothing would satisfy nothing below while reporting no failure.
+    expect(rows.length).toBeGreaterThan(20);
+    const cells = [
+      ...new Set(
+        rows.filter((r) => r.latWeight !== '0').map((r) => `${r.corpus} \u0000 ${r.floor}`),
+      ),
+    ];
+    for (const corpus of ['shipped', 'whole-file']) {
+      for (const floor of ['default', '1']) {
+        expect(cells, `the ${corpus} corpus with floor=${floor} must be a row`).toContain(
+          `${corpus} \u0000 ${floor}`,
+        );
+      }
+    }
+    // And the row that varies BOTH axes names both. A label that named one of them would read as a single-axis
+    // row, and its movement would be attributed to whichever axis the label did mention.
+    const crossed = rows.find((r) => r.corpus === 'whole-file' && r.floor === '1');
+    expect(crossed?.label).toContain('WHOLE FILE');
+    expect(crossed?.label).toContain('NO FLOOR');
+    // The same requirement one level down, in the block that prints the verdicts: a crossed row's zero is only
+    // attributable if BOTH of its axes are named there, and the corpus axis is the one that has to be appended
+    // by hand — the term axis comes for free out of the configuration-line diff, so a block that dropped the
+    // append would still print a row, with one axis, and read as a single-knob result.
+    expect(battery).toContain(
+      'const axes = variesCorpus ? [...changed, `corpus:edgeLatency(${run.latencyView})`] : changed;',
+    );
+    // And the workflow's own comment is held to the battery's size, DERIVED here. A comment that counts a
+    // growing list is wrong more often than it is right — this repository writes that sentence elsewhere about
+    // its own weight families — and THIS one had already drifted: it stated 33 configs while the array grew to
+    // 34. The count is a copy of a fact the array owns, and a copy needs a guard.
+    expect(read('../.github/workflows/benchmark-rcaeval.yml')).toContain(
+      `is **${rows.length} configs**`,
     );
   });
 });

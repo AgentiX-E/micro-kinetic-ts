@@ -752,10 +752,12 @@ jobs:
     if: needs.rcaeval-re1.result == 'success'
     runs-on: ubuntu-latest
     # `timeout-minutes` is a WORKING-versus-STUCK bound, not a target, and the corpus work moved the real cost
-    # past it: `ablation-re2` measured **53.6 min** on run `37838593082` against a bound of 60 (it was ~14 min
-    # before the curves were augmented from traces), and the battery grew from 30 to 33 configs when the
-    # latency-channel rows were added — a projection of ~59. A bound a WORKING job can hit classifies a healthy
-    # run as STUCK, which costs more than a longer wait; `golden_run_landing.py` reads this number.
+    # past it: `ablation-re2` measured **53.6 min** on run `37838593082` at 150 cases and **77.8 min** on run
+    # `38145565230` at RE2's full 270 (it was ~14 min before the curves were augmented from traces). The battery
+    # is **34 configs**: 30, then 33 when the latency-channel rows were added, then 34 when the crossed cell
+    # (`LAT WHOLE FILE + NO FLOOR`) joined them — one row is ~1/33 of a run, which is why the added row moved no
+    # bound. A bound a WORKING job can hit classifies a healthy run as STUCK, which costs more than a longer
+    # wait; `golden_run_landing.py` reads this number.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -800,9 +802,9 @@ jobs:
     if: needs.rcaeval-re2.result == 'success'
     runs-on: ubuntu-latest
     # The binding job, and it moved again when the corpus did. Measured at **150 cases** (the capped corpus):
-    # 54.3 min on run `37858643162`. The corpus is now RE2's full 270, i.e. 1.8x the case-runs, which projects
-    # ~98 min — so a bound of 90 would have been exceeded by work that is not stuck. See `ablation-re1` for why
-    # the bound moves rather than the battery shrinking.
+    # 54.3 min on run `37858643162`. At RE2's full 270 it is **77.8 min** on run `38145565230`, so the earlier
+    # ~98 projection was conservative by 20 min and a bound of 90 would still have been exceeded by work that is
+    # not stuck. See `ablation-re1` for why the bound moves rather than the battery shrinking.
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -849,7 +851,8 @@ jobs:
     needs: rcaeval-re3
     if: needs.rcaeval-re3.result == 'success'
     runs-on: ubuntu-latest
-    # 32.4 min of 60 measured on run `37838593082`. See `ablation-re1` for why the bound moved.
+    # **30.7 min of 90** — 32.4 min at 30 configs on run `37838593082`, 30.7 min at 33 on run `38145565230`.
+    # See `ablation-re1` for why the bound moved.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4

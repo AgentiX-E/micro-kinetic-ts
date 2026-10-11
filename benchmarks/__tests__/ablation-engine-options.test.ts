@@ -59,6 +59,7 @@ import { PRUNER_OPTION_MEMBERS, TOPOLOGY_MEMBERS, namedOn } from './helpers/engi
 // The stripper lives in `helpers/` rather than here: this fence found the defect it guards against, and the
 // sibling fence in `accuracy-aggregation` needs the same reader. Two copies of a stripper are two answers to
 // "what does this file say" — the shape both fences exist to catch, one level up.
+import { batteryRows } from './helpers/ablation-battery.js';
 import { stripComments } from './helpers/source-text.js';
 
 /** Every flag off — the configuration the artifact used to label `BASELINE (all OFF)`. */
@@ -323,41 +324,44 @@ describe('the battery really carries the propagation-channel rows', () => {
     expect(formatAblationConfigLine(ALL_OFF)).toContain(`latWeight=${DEFAULT_LAT_WEIGHT}`);
   });
 
-  it('holds the flags IDENTICAL across the three rows, so a difference is the weight', () => {
-    // The rows spread the same twelve booleans from one named constant. A row that differed in a flag would
-    // attribute that flag's effect to a weight, which is the one thing a numeric ablation must not do.
+  it('holds the flags IDENTICAL across the numeric rows, so a difference is the weight', () => {
+    // The rows spread a NAMED constant. A row that differed in a flag would attribute that flag's effect to a
+    // weight, which is the one thing a numeric ablation must not do.
     //
     // THIS TEST USED TO COUNT THE SPREAD GLOBALLY and expect three. Iteration 73 added a second numeric group
-    // — the two priors the battery had never varied — and made the global count six, which is a correct
-    // failure of an assertion whose encoding had stopped describing the group it names. The property is
-    // per-group, and the group is identified by its overrides:
-    for (const override of [
-      'latWeight: 0',
-      'latMinRise: 1',
-      'latWeight: 0, latMinRise: 1',
-      'poolMetricPenaltyWeight: 0',
-      'stabilityWeight: 0',
-      'poolMetricPenaltyWeight: 0, stabilityWeight: 0',
-    ]) {
-      // THE PAIR, adjacent and in order, so the assertion is about the row rather than about the file. A
-      // plain `toContain(override)` is satisfied by a row whose flags DIFFER — which is the one thing a
-      // numeric ablation must not do, because it would attribute that flag's effect to the weight. Two named
-      // constants (`PRISM_ONLY_FLAGS`, `PRODUCTION_PRISM_FLAGS`) legitimately spread `ALL_OFF_FLAGS` and set
-      // flags, so the assertion cannot be about the spread in general; it has to be about these six rows.
-      const escaped = override.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      expect(
-        RUNNER,
-        `the row overriding ${override} must spread the all-off flags immediately before it`,
-      ).toMatch(
-        new RegExp(`flags: \\{ \\.\\.\\.ALL_OFF_FLAGS \\},\\s*overrides: \\{ ${escaped} \\}`),
+    // and made the global count six, which is a correct failure of an assertion whose encoding had stopped
+    // describing the group it names. The property is per-GROUP, and the group is identified by its overrides:
+    //
+    // **Iteration 88 found the encoding wrong in the other direction.** It was written as an adjacent
+    // `flags: { ... }, overrides: { ... }` pair, and the corpus rows name `latencyView` in the gap between the
+    // two — so those three rows were matched by their predecessors' patterns and released from the assertion
+    // entirely, and the row added in 88 would have been released the same way. The property is per-ROW, so it is
+    // asked of each row's own literal rather than of an adjacency in the file.
+    const rows = batteryRows(RUNNER);
+    // Non-vacuity: an extraction that found nothing would satisfy the loop below by never entering it.
+    expect(rows.length).toBeGreaterThan(20);
+    const knobRows = rows.filter((row) => row.overrides !== undefined);
+    expect(knobRows.length, 'rows that vary a knob').toBeGreaterThan(5);
+    for (const row of knobRows) {
+      // A NAMED constant, so what the row differs in is enumerable from the file rather than retyped at the row.
+      expect(row.flags, `${row.label} must spread a named flag constant`).toMatch(
+        /^\{ \.\.\.[A-Z_]+FLAGS/,
       );
     }
-    // And the population is pinned WITH its composition named, so a tenth row forces a decision instead of
-    // silently joining a group whose flags nobody re-checked: three for the propagation channel's 2x2, three
-    // for the two priors, and three for the corpus rows that rank on another view of `edgeLatency` — which
-    // change the INPUT rather than a weight, and must therefore hold the engine's flags identical for the same
-    // reason the six above do.
-    expect(RUNNER.split('flags: { ...ALL_OFF_FLAGS }').length - 1, '9 numeric rows').toBe(9);
+    // And the rows varying a NUMBER start from the all-off set, so the movement cannot be a flag's. The split is
+    // by what the row VARIES and not by which group it sits in: `prismPooling` is a form selector rather than a
+    // number, and its two rows name the PRISM constants.
+    for (const row of knobRows.filter((r) => !/prismPooling/.test(r.overrides!))) {
+      expect(row.flags, `${row.label}: a numeric row must spread ALL_OFF_FLAGS`).toBe(
+        '{ ...ALL_OFF_FLAGS }',
+      );
+    }
+    // And the population is pinned WITH its composition named, so a row forces a decision instead of silently
+    // joining a group whose flags nobody re-checked: three for the propagation channel's weight x floor 2x2,
+    // three for the corpus rows that rank on another view of `edgeLatency` — which change the INPUT rather than
+    // a weight, and must therefore hold the engine's flags identical for the same reason the six above do — and
+    // one for the CROSSED cell of the 2x2 over {corpus, floor}, which names its view AND its floor.
+    expect(RUNNER.split('flags: { ...ALL_OFF_FLAGS }').length - 1, '10 numeric rows').toBe(10);
     expect(RUNNER, 'and it is defined once').toContain('const ALL_OFF_FLAGS: FeatureFlags = {');
   });
 

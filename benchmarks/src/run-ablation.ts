@@ -766,6 +766,27 @@ const CONFIGS: Array<{
     label: 'LAT WHOLE FILE (corpus edgeLatency=whole-file)',
   },
   {
+    // THE FOURTH CELL OF THE 2x2, and the one `latency-channel-views.md` §7.4 named as owed: the supplied
+    // corpus read WITHOUT the floor.
+    //
+    // The two groups above never met. The weight/floor group varies its two knobs on the PUBLISHED corpus
+    // (`LAT NO FLOOR`), and the corpus group changes only which derivation the array comes from (`LAT WHOLE
+    // FILE`), so the cross product had three of its four cells — shipped x floor on, shipped x floor off,
+    // whole-file x floor on — and the missing one is the only row that separates two readings of the same
+    // zero. `LAT WHOLE FILE` returning `Δ+0.0` on RE3 is consistent with BOTH "the supplied channel is inert
+    // there" and "the channel is supplied and the floor masks every rise it has"; the floor removes rises
+    // STRICTLY between 1 and `latMinRise = 10.3`, which on a per-edge ratio is the whole of the interesting
+    // range. `1` is the value `computeEdgeLatencyScores` documents as identical to the pre-floor term, so it
+    // is the channel's own reference point rather than a number chosen here.
+    //
+    // It varies TWO axes, which is why the label names both: a label naming only the corpus would invite the
+    // movement (or its absence) to be read as a statement about the corpus alone.
+    flags: { ...ALL_OFF_FLAGS },
+    latencyView: 'whole-file',
+    overrides: { latMinRise: 1 },
+    label: 'LAT WHOLE FILE + NO FLOOR (latMinRise=1)',
+  },
+  {
     // The published input with only the unit repaired: the cap kept. Separates "the cap starves the
     // channel" from "the unit defect emptied it" by holding everything else identical.
     flags: { ...ALL_OFF_FLAGS },
