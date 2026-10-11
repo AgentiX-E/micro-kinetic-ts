@@ -336,3 +336,48 @@ make it.
 
 `UNSTATED` is a class rather than a default for the reason §3 gives: filing a row under either answer because a
 value is missing is an instrument naming a mechanism it cannot see.
+
+### 5.4 The measurement — and it refutes the hypothesis this section was built to test
+
+Run **`38107549281`** on the revision that carries the field. All 735 rows, read through this module's own
+`summarizeLoss` / `classifyDeepEvidence`:
+
+```
+  of the 58 DEEP misses: NO local evidence above the engine's own threshold  2,
+                         local evidence PRESENT and still ranked deep       56 (a ranking problem),
+                         undecidable                                        0
+```
+
+**The instrument was built to find out whether the deep block is a signal problem. It is not.** 56 of the 58 —
+**96.6%** — had a `rcaScore` **above the engine's own threshold** and were still placed beyond rank 5. The
+"nothing moved at the origin, so no reweighting can lift it" reading that §5.3 was written to make room for
+covers **2 cases**, and both sit inside `loss` groups (RE1 SockShop and RE3 OnlineBoutique), not in the
+TrainTicket blocks the median rank of 26 was expected to explain.
+
+**So the whole remaining loss is reachable by ordering alone.** §4's sentence was that 98.8% of the loss is
+reranking and 1.2% is retrieval; the deeper cut is that the reranking half is **itself 96.6% orderable evidence**
+rather than a mixture of signal and ordering. Nothing in the 735 requires a new signal, a new metric tier or a new
+formulation of the self-anomaly term before it can be won — which is a materially stronger statement than the one
+§4 could make, and it is stronger in the direction that makes the remaining work cheaper rather than harder.
+
+**The shape of the empty class is worth recording too.** `UNSTATED` is **0**: every deep row carried both a
+`rcaScore` and the threshold it was judged against. §5.3 kept that class rather than folding it into either answer
+because the record might not always say, and the measurement says it always did on this corpus — **a guard that was
+needed in advance, is empty here, and would be the thing that kept a future row out of a false answer.** It stays.
+
+**And the nine cells are unchanged.** RE1 **80.0 / 92.8 / 68.0**, RE2 **86.7 / 92.2 / 71.1**, RE3 **80.0 / 45.0 /
+51.1**, and the per-cell retrieval / shallow / deep counts are identical to the run before it (RE1-OB 1/19/5, RE1-TT
+0/26/14, RE2-TT 0/12/14, RE3-TT 0/1/14, …). The census file itself is **larger by the added field and equal in
+every count**, which is the correct signature for an instrument-only change: the payload grew, the ranking did not
+move.
+
+### 5.5 What the split changes about where to work
+
+- **The two `NO_LOCAL_EVIDENCE` cases are the only ones in the 735 for which a reweighting is provably idle**, and
+  they are worth a look precisely because they are two: a bar that two `loss` cases fall below is either the right
+  bar or a bar that is wrong for that fault's signature, and two cases cannot settle which.
+- **The 56 `LOCAL_EVIDENCE_PRESENT` cases are an ordering problem with the evidence already in hand**, and the
+  per-fault-type head of that block is unchanged from §5.1: `loss` 16, `disk` 8, RE3-TT `f3` 6 at a mean rank of
+  26, RE3-OB `f1` 6. **A truth with local evidence at rank 26 of 68 is a candidate the ranker scored and did not
+  prefer**, so the question for these blocks is which term it lost on — a question the next instrument must carry,
+  because `finalScore` alone sums the terms and cannot say which one dominated.
