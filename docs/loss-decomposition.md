@@ -772,3 +772,53 @@ one of a family that will grow again:
    following it fails; a state added without a cause fails; and because the check is computed from the unions
    rather than from a printed list it cannot go stale the way a list does.
 
+### 8.4 The measurement — and the fourth state answers §7.5's own question
+
+Run **`38145565230`** on **`4f2b7df`**, all 735 cases. **All nine cells are byte-identical to the baseline** —
+RE1 **80.0 / 92.8 / 68.0**, RE2 **86.7 / 92.2 / 71.1**, RE3 **80.0 / 45.0 / 51.1** — and **every per-cell
+retrieval / shallow / deep count is identical**, checked by `diff` over each suite's own table rather than by
+comparing the three averages. The loss split is unchanged to the case (**161 misses = RETRIEVAL 2 + SHALLOW 101 +
+DEEP 58 + ENGINE ERROR 0**) and the deep half's evidence split is still **56 `LOCAL_EVIDENCE_PRESENT` /
+2 `NO_LOCAL_EVIDENCE`**. So §8.2's construction argument is a measurement as well as an argument.
+
+**The partition holds over BOTH sides for the first time**: across 735 cases × 2 sides × 13 terms = **19084** term
+instances (two cases carry no breakdown on one side), **`live = 2224`, `zeroed = 16860`, `WRONG PAIRINGS = 0`** —
+every zero carries a cause and every live term carries none. §7.5 measured one side; this is the stronger form and
+it is what the grown payload now supports.
+
+**And the fourth state answered the question it was built for.** The same table, read twice:
+
+| term | it.86 read | it.87 reads |
+| --- | --- | --- |
+| `lat` (weight 0.561495) | `INPUT_ENTRY_ABSENT(edgeLatencyScores)` **100%** | `INPUT_MAP_EMPTY(edgeLatencyScores)` **100%** |
+| `log` (weight 1.0) | `INPUT_ENTRY_ABSENT(logScores)` 97.5% · `VALUE_ZERO` 2.5% | `INPUT_MAP_EMPTY(logScores)` **97.5%** · `VALUE_ZERO` 2.5% |
+| `trace` | `INPUT_ENTRY_ABSENT(traceActivityScores)` 26.4% | `INPUT_MAP_EMPTY` **22.6%** · `INPUT_ENTRY_ABSENT` **3.8%** |
+
+`edgeLatencyScores` was never a map carrying other services: on **1468 of 1468** instances it is **present and
+EMPTY**. The tier's producer ran and emitted nothing — `INPUT_MAP_ABSENT`'s reading in spirit, "the tier was never
+emitted", now carried by a cause that says so instead of by one that asserts the map is populated. §7.5 called
+this "the whole question" for `lat`, and it is closed: **not a per-candidate measurement that is missing, but a
+whole tier that is empty**, on both sides, in every suite.
+
+The `trace` cell is the one that was never uniform, and it splits: **22.6% empty tier + 3.8% genuinely
+per-candidate**. 86% of what the previous run read as "this candidate was not measured" was the tier carrying
+nothing at all. **`ENTRY_ABSENT` also survives on the real corpus — 6 instances — which is why the state was added
+to the union rather than substituted for the one it was confused with.**
+
+### 8.5 What it does NOT conclude
+
+- **It does not say `lat` is worthless.** The emptiness is a statement about the TIER. Whether supplying it would
+  help is the question `latency-channel-views.md` already measured at `Δ+0.0` whole-file with two cells moving in
+  opposite directions, and that stands unchanged. What changes is **where the work is**: no longer "why is this
+  candidate missing from the map" — a per-candidate question with a per-candidate answer — but "why is the tier
+  empty", which is a question for the loader, and §4's own reading (the cap truncates before the post-injection
+  window) is where it points.
+- **It does not generalise the reading past this corpus.** The census above is `RCAEval`'s: `logScores` is empty on
+  1436 of 1468 slots here, while the register's `logWeight` row is about FSE'26, where the same signal HAS
+  evidence. Two corpora, two answers about which weighted evidence exists at all, and only one of them has been
+  read this way.
+- **It does not make the three levels equally likely.** On this corpus the empty tier is the common case for every
+  source that is not configured off, which is itself the finding: a source that was never populated looks exactly
+  like a candidate that was never measured, until a state is added to tell them apart — and it took a fourth
+  member of the union to see that.
+
