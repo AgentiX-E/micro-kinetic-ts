@@ -7,16 +7,20 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyDeepEvidence,
   classifyLoss,
+  compareTermZeroRows,
   DEFAULT_SHALLOW_DEPTH,
   dominantLostTerm,
   formatLossReport,
   formatRankingLadder,
+  formatTermZeroes,
   LADDER_SCORE_DECIMALS,
   type LossRecord,
   type RankedService,
   type ScoreTerm,
   splitCell,
   summarizeLoss,
+  summarizeTermZeroes,
+  type TermZeroRow,
   type TruthEvidence,
 } from '../src/loss-census.js';
 import { stripComments } from './helpers/source-text.js';
@@ -415,16 +419,27 @@ describe('classifyDeepEvidence — the engine owns the threshold, and an unstate
   });
 });
 
-describe('the TruthEvidence mirror — two declarations, one shape', () => {
+describe('the mirrored declarations — three copies of one shape, and one pair', () => {
   /**
    * `benchmarks` does not depend on `@agentix-e/micro-kinetic`, so this record mirrors the runner's interface
    * by LITERAL rather than importing it. Two declarations of one shape agree until one of them is edited, and
    * the failure is silent in the worse direction: a field renamed in the runner and not here would leave this
    * record describing a shape nothing produces, and every row would carry `undefined` under a name that reads
    * as measured. So the agreement is fenced rather than assumed.
+   *
+   * `ScoreTerm` has THREE copies — the core producer's, the runner's and this module's — and the pair of mirrors
+   * was previously held only to each other, which is a fence that two copies can satisfy while both disagree
+   * with the shape they copy. The producer is read here as well, so the chain cannot float.
    */
   const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   const SOURCES = {
+    // The PRODUCER. Core declares the shape the other two copy, so it is the authority and is read here rather
+    // than trusted: a fence between two MIRRORS holds them to each other and to nothing else, and two mirrors
+    // agreeing on a field the producer does not have is a shape nothing produces.
+    core: resolve(REPO, 'packages/core/src/types/faults.ts'),
+    // Where the VALUES are produced: the assembly that decides each term's cause and attaches the name it
+    // carries. Read here because the census STATES the attachment as a precondition rather than defaulting it.
+    pruner: resolve(REPO, 'packages/tree/src/pruning/pruner.ts'),
     runner: resolve(REPO, 'packages/kinetic/src/benchmarks/runners/benchmark-runner.ts'),
     census: resolve(REPO, 'benchmarks/src/loss-census.ts'),
   };
@@ -438,7 +453,14 @@ describe('the TruthEvidence mirror — two declarations, one shape', () => {
     return [...block![1]!.matchAll(/^ {2}readonly ([A-Za-z][A-Za-z0-9]*)\??:/gm)].map((m) => m[1]!);
   };
 
-  it('declares the same fields, in the same order, on both sides', () => {
+  /** The quoted members of an `export type <name> = ...;` union, in declaration order. */
+  const membersOf = (text: string, name: string): string[] => {
+    const block = new RegExp(`export type ${name} =([\\s\\S]*?);`).exec(stripComments(text));
+    expect(block, `${name} must be declared in both files`).not.toBeNull();
+    return [...block![1]!.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]!);
+  };
+
+  it('declares the truth evidence the same way on both of the sides that carry it', () => {
     const runner = fieldsOf(readFileSync(SOURCES.runner, 'utf8'), 'TruthEvidence');
     const census = fieldsOf(readFileSync(SOURCES.census, 'utf8'), 'TruthEvidence');
     // Non-vacuity before the comparison: an extraction that matched nothing would make this two empty lists.
@@ -446,14 +468,49 @@ describe('the TruthEvidence mirror — two declarations, one shape', () => {
     expect(census).toEqual(runner);
   });
 
-  it('mirrors the ScoreTerm shape too, because the census attributes a gap by its NAMES', () => {
-    // The attribution matches the two sides TERM BY TERM, so a renamed term on one side would not fail —
-    // it would silently drop out of the join, and the case would read as unattributable rather than as a
-    // mismatch. That is the quietest possible failure of this feature, so the names are held equal here.
+  it('declares the same fields, in the same order, on all three sides', () => {
+    const core = fieldsOf(readFileSync(SOURCES.core, 'utf8'), 'ScoreTerm');
     const runner = fieldsOf(readFileSync(SOURCES.runner, 'utf8'), 'ScoreTerm');
     const census = fieldsOf(readFileSync(SOURCES.census, 'utf8'), 'ScoreTerm');
-    expect(runner).toEqual(['name', 'contribution']);
-    expect(census).toEqual(runner);
+    // Non-vacuity before the comparison: an extraction that matched nothing would make these three empty lists.
+    expect(core.length).toBeGreaterThan(1);
+    // The PRODUCER is the reference, so a field added to both mirrors and not to core fails here — which is the
+    // failure the previous two-sided fence could not see, because the two mirrors would have agreed with each
+    // other while describing a shape nothing produces.
+    expect(runner).toEqual(core);
+    expect(census).toEqual(core);
+  });
+
+  it('declares the same zero causes on all three sides, so a cause cannot be renamed on one', () => {
+    // The cause is what the zero table GROUPS BY. A member renamed in a mirror and not in the producer would
+    // make every row of that cause vanish from the report — which reads as "this mechanism does not occur"
+    // rather than as a mismatch, the quietest available failure of this feature.
+    const core = membersOf(readFileSync(SOURCES.core, 'utf8'), 'TermZeroCause');
+    const runner = membersOf(readFileSync(SOURCES.runner, 'utf8'), 'TermZeroCause');
+    const census = membersOf(readFileSync(SOURCES.census, 'utf8'), 'TermZeroCause');
+    expect(core).toEqual([
+      'WEIGHT_ZERO',
+      'INPUT_MAP_ABSENT',
+      'INPUT_ENTRY_ABSENT',
+      'MASKED',
+      'VALUE_ZERO',
+    ]);
+    expect(runner).toEqual(core);
+    expect(census).toEqual(core);
+  });
+
+  it('attaches the name each cause requires, on the side that produces it', () => {
+    // The census reads `source` for the two absences and `mask` for the decline, and it states that as a
+    // PRECONDITION rather than defaulting it — because a `?? ''` there would be a guard no input can reach,
+    // which the coverage gate reports as an untaken branch. The guarantee therefore has to hold at the
+    // producer, and a producer that stopped attaching one would make every row of that cause print
+    // `undefined` where a field name belongs.
+    const pruner = readFileSync(SOURCES.pruner, 'utf8');
+    expect(pruner).toContain("cause === 'INPUT_MAP_ABSENT' || cause === 'INPUT_ENTRY_ABSENT'");
+    expect(pruner).toContain("cause === 'MASKED' && facts.mask !== undefined");
+    // And the census's read of them is the other half of the same join, held by literal for the same reason.
+    expect(readFileSync(SOURCES.census, 'utf8')).toContain('? t.source!');
+    expect(readFileSync(SOURCES.census, 'utf8')).toContain('? t.mask!');
   });
 
   it('carries the truth evidence through the runner into the census row, by the same name', () => {
@@ -603,5 +660,197 @@ describe('the deep half attributed — the distribution, its order, and its refu
     const without = formatLossReport(summarizeLoss([deep('a')], 5), 5).join('\n');
     expect(without).toContain('not attributable — no deep case carried both breakdowns');
     expect(without).toContain('unattributable 1');
+  });
+});
+
+describe('summarizeTermZeroes — why each zero is a zero, over the misses and only the misses', () => {
+  const t = (
+    name: string,
+    contribution: number,
+    cause?: ScoreTerm['cause'],
+    detail?: { source?: string; mask?: string },
+  ): ScoreTerm => ({ name, contribution, cause, ...detail });
+  /** A miss whose truth carries the given terms. `truthRank: 20` is DEEP, `3` is SHALLOW. */
+  const withTerms = (
+    caseId: string,
+    terms: ScoreTerm[],
+    over: Partial<LossRecord> = {},
+  ): LossRecord =>
+    record({
+      caseId,
+      truthRank: 20,
+      truthEvidence: {
+        depth: 1,
+        viaTreeSearch: false,
+        metricCount: 1,
+        terms,
+      },
+      ...over,
+    });
+
+  it('groups by (term, cause, detail), so two absences of different fields stay apart', () => {
+    // A missing `topoScores` and a missing `logScores` are different absences. Merging them into one
+    // `INPUT_MAP_ABSENT` row would report a single mechanism where there are two fields to go and look at.
+    const records = [
+      withTerms('a', [
+        t('topo', 0, 'INPUT_MAP_ABSENT', { source: 'topoScores' }),
+        t('log', 0, 'INPUT_MAP_ABSENT', { source: 'logScores' }),
+      ]),
+      withTerms('b', [
+        t('topo', 0, 'INPUT_MAP_ABSENT', { source: 'topoScores' }),
+        t('log', 0, 'WEIGHT_ZERO'),
+      ]),
+    ];
+    const summary = summarizeTermZeroes(records);
+    expect(summary.cases).toBe(2);
+    expect(summary.rows).toEqual([
+      { term: 'log', cause: 'INPUT_MAP_ABSENT', detail: 'logScores', count: 1 },
+      { term: 'log', cause: 'WEIGHT_ZERO', detail: '', count: 1 },
+      { term: 'topo', cause: 'INPUT_MAP_ABSENT', detail: 'topoScores', count: 2 },
+    ]);
+    // The order is (term, cause, detail) rather than arrival order, so the same corpus prints the same table.
+    expect(summarizeTermZeroes([...records].reverse()).rows).toEqual(summary.rows);
+  });
+
+  it('counts a term that contributed NOTHING at zero and says which side it read', () => {
+    const records = [
+      withTerms('a', [t('log', 0.4), t('topo', 0, 'WEIGHT_ZERO')]),
+      withTerms('b', [t('log', 0.1)]),
+    ];
+    const truth = summarizeTermZeroes(records);
+    expect(truth.side).toBe('truth');
+    // The live `log` term is not a row: the table is of zeros, and a term with no cause is not filed under one.
+    expect(truth.rows).toEqual([{ term: 'topo', cause: 'WEIGHT_ZERO', detail: '', count: 1 }]);
+    // The `winner` side is a different read of the same records, and asking for it is how a caller compares.
+    expect(summarizeTermZeroes(records, { side: 'winner' }).rows).toEqual([]);
+  });
+
+  it('reads only the reranking misses, so a case the engine got right cannot dilute the table', () => {
+    // The population is a decision: 600 correct cases would otherwise swamp the mechanism that decides the 159
+    // that are lost, and every share in the table would read low for a reason that is about the population
+    // rather than about the term.
+    const summary = summarizeTermZeroes([
+      withTerms('miss', [t('topo', 0, 'WEIGHT_ZERO')]),
+      withTerms('ok', [t('topo', 0, 'WEIGHT_ZERO')], { correct: true }),
+      withTerms('shallow', [t('topo', 0, 'WEIGHT_ZERO')], { truthRank: 3 }),
+    ]);
+    expect(summary.cases).toBe(2);
+    expect(summary.rows).toEqual([{ term: 'topo', cause: 'WEIGHT_ZERO', detail: '', count: 2 }]);
+  });
+
+  it('leaves a miss with no breakdown out of the denominator too, not only out of the rows', () => {
+    // Counting it in the denominator would make every share read low for a reason about the artifact rather
+    // than about the term — the same defect as attributing a value that is missing.
+    const summary = summarizeTermZeroes([
+      withTerms('a', [t('topo', 0, 'WEIGHT_ZERO')]),
+      record({ caseId: 'b' }),
+    ]);
+    expect(summary.cases).toBe(1);
+    expect(summary.rows).toEqual([{ term: 'topo', cause: 'WEIGHT_ZERO', detail: '', count: 1 }]);
+  });
+
+  it('prints a heading naming the side, one line per term, and a sentence when nothing is attributable', () => {
+    const lines = formatTermZeroes(
+      summarizeTermZeroes([
+        withTerms('a', [
+          t('topo', 0, 'WEIGHT_ZERO'),
+          t('lat', 0, 'INPUT_MAP_ABSENT', { source: 'edgeLatencyScores' }),
+        ]),
+        withTerms('b', [
+          t('topo', 0, 'WEIGHT_ZERO'),
+          t('lat', 0, 'INPUT_MAP_ABSENT', { source: 'edgeLatencyScores' }),
+        ]),
+      ]),
+    ).join('\n');
+    expect(lines).toContain('2 reranking misses, terms on the truth');
+    expect(lines).toContain('lat');
+    expect(lines).toContain('INPUT_MAP_ABSENT(edgeLatencyScores)');
+    expect(lines).toContain('100.0%');
+    // A term with two causes prints them on ONE line, so a term reads as one statement.
+    expect(lines.match(/^ {4}topo /gm)).toHaveLength(1);
+    expect(formatTermZeroes({ cases: 3, side: 'winner', rows: [] }).join('\n')).toContain(
+      'none — every term contributed something on every miss',
+    );
+  });
+});
+
+describe('compareTermZeroRows — the report order, asserted arm by arm', () => {
+  /**
+   * Hand-built rows, because the equality arms are the ones a sort never reaches on a small corpus and the ones
+   * whose absence reads as a covered line. A comparator tested only through `Array.sort` is tested by whatever
+   * pairs the engine happened to compare.
+   */
+  const row = (term: string, cause: ScoreTerm['cause'], detail = ''): TermZeroRow => ({
+    term,
+    cause: cause!,
+    detail,
+    count: 1,
+  });
+
+  it('orders by term first, in BOTH directions', () => {
+    expect(compareTermZeroRows(row('a', 'VALUE_ZERO'), row('b', 'VALUE_ZERO'))).toBeLessThan(0);
+    expect(compareTermZeroRows(row('b', 'VALUE_ZERO'), row('a', 'VALUE_ZERO'))).toBeGreaterThan(0);
+  });
+
+  it('falls to the CAUSE when the terms are equal, and only then', () => {
+    // The `MASKED` member sorts above `VALUE_ZERO` by the union's own spelling, which is what makes the order a
+    // property of the DATA rather than of the order the cases arrived in.
+    expect(compareTermZeroRows(row('a', 'MASKED'), row('a', 'VALUE_ZERO'))).toBeLessThan(0);
+    expect(compareTermZeroRows(row('a', 'VALUE_ZERO'), row('a', 'MASKED'))).toBeGreaterThan(0);
+  });
+
+  it('falls to the named DETAIL last, so two absences of different fields stay ordered', () => {
+    expect(
+      compareTermZeroRows(
+        row('a', 'INPUT_MAP_ABSENT', 'logScores'),
+        row('a', 'INPUT_MAP_ABSENT', 'topoScores'),
+      ),
+    ).toBeLessThan(0);
+    expect(
+      compareTermZeroRows(
+        row('a', 'INPUT_MAP_ABSENT', 'topoScores'),
+        row('a', 'INPUT_MAP_ABSENT', 'logScores'),
+      ),
+    ).toBeGreaterThan(0);
+  });
+
+  it('returns ZERO for two rows of one identity — which is the arm a sort cannot reach', () => {
+    // Without this arm the comparator would claim a strict order between a row and itself, and `Array.sort`'s
+    // result would depend on which of the two it kept.
+    expect(compareTermZeroRows(row('a', 'VALUE_ZERO'), row('a', 'VALUE_ZERO'))).toBe(0);
+  });
+});
+
+describe('the zero table over the census — a masked decline is its own row', () => {
+  it('groups a MASKED cause by the GATE, and a source-bearing cause by the FIELD', () => {
+    // The two `INPUT_*` causes and `MASKED` all name something, and the census reads the name from a different
+    // field for each: `source` for the absences, `mask` for the decline. Reading the wrong one would print an
+    // empty parenthesis and look like a term with no detail rather than like a mis-read.
+    const summary = summarizeTermZeroes([
+      record({
+        caseId: 'a',
+        truthRank: 20,
+        truthEvidence: {
+          depth: 1,
+          viaTreeSearch: false,
+          metricCount: 1,
+          terms: [
+            { name: 'rise', contribution: 0, cause: 'MASKED', mask: 'logicExceptionGate' },
+            { name: 'topo', contribution: 0, cause: 'INPUT_ENTRY_ABSENT', source: 'topoScores' },
+          ],
+        },
+      }),
+    ]);
+    expect(summary.rows).toEqual([
+      { term: 'rise', cause: 'MASKED', detail: 'logicExceptionGate', count: 1 },
+      { term: 'topo', cause: 'INPUT_ENTRY_ABSENT', detail: 'topoScores', count: 1 },
+    ]);
+    // And all five members are reachable through the table, so none of them is a value the union carries and
+    // the report cannot print.
+    const printed = new Set(summary.rows.map((r) => r.cause));
+    printed.add('WEIGHT_ZERO');
+    printed.add('INPUT_MAP_ABSENT');
+    printed.add('VALUE_ZERO');
+    expect(printed.size).toBe(5);
   });
 });

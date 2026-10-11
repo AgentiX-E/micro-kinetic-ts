@@ -75,7 +75,9 @@ import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse
 import {
   formatLossReport,
   formatRankingLadder,
+  formatTermZeroes,
   summarizeLoss,
+  summarizeTermZeroes,
   type LossRecord,
 } from './loss-census.js';
 import { parseRCAEvalArgs } from './rcaeval-cli.js';
@@ -1351,6 +1353,10 @@ async function main(): Promise<void> {
     );
     console.log('════════════════════════════════════════════════════════════');
     for (const line of formatLossReport(rows)) console.log(line);
+    // The separation §6.5 refuses to make from a contributions table: a zero is the same number whether the
+    // weight is zero, the graph field is missing, or the evidence is absent, and only the producer knows
+    // which. Printed for the truth's side, because the loss is about the truth.
+    for (const line of formatTermZeroes(summarizeTermZeroes(lossRecords))) console.log(line);
   }
 
   // ── Fusion-ceiling report ──

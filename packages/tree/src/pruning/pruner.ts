@@ -51,6 +51,8 @@ import {
   type ServiceCallGraph,
   type ServiceId,
   type ServiceNode,
+  type TermSourcePresence,
+  type TermZeroCause,
   type TreeNodeScore,
 } from '@agentix-e/micro-kinetic-core';
 
@@ -94,6 +96,79 @@ export function sumScoreTerms(terms: readonly ScoreTerm[]): number {
   let total = 0;
   for (const term of terms) total += term.contribution;
   return total;
+}
+
+/**
+ * Name the mechanism that made a contribution zero.
+ *
+ * The ORDER of the tests is the design, and it is an order of how SHARP the answer is rather than of
+ * likelihood: a zero weight forces the zero on its own and licenses **no** inference about the corpus, so it is
+ * reported even when the input is also absent. Answering an `INPUT_*` there would send a reader to the graph for
+ * a fact that lives in the configuration — and answering `INPUT_ENTRY_ABSENT` for a source that is not there at
+ * all would send them to a map that does not exist.
+ *
+ * @param weight - The configured weight the contribution was multiplied by.
+ * @param presence - Whether the OPTIONAL source carried this candidate, and if not, at which level it did not.
+ * @param masked - Whether a gate in the formula overrode a present, non-zero value.
+ * @returns The cause, among the five the formula can produce.
+ */
+export function classifyTermZero(
+  weight: number,
+  presence: TermSourcePresence,
+  masked: boolean,
+): TermZeroCause {
+  if (weight === 0) return 'WEIGHT_ZERO';
+  if (presence === 'MAP_ABSENT') return 'INPUT_MAP_ABSENT';
+  if (presence === 'ENTRY_ABSENT') return 'INPUT_ENTRY_ABSENT';
+  if (masked) return 'MASKED';
+  return 'VALUE_ZERO';
+}
+
+/**
+ * Build one ranking term, recording WHY it is zero when it is.
+ *
+ * The cause is decided HERE rather than by a consumer, because it is a function of facts this assembly is
+ * already holding — the configured weight, whether the optional source carried the candidate and at which
+ * level, and whether a gate overrode it. A consumer holding only a total would have to re-derive all of them
+ * from a number, which is the same defect as restating a threshold at the reader instead of carrying it.
+ *
+ * `contribution` is computed from the SAME two values the previous inline expression used, so the sum is
+ * unchanged to the last bit — including the two terms whose weight is negative, where `(-w) * v` and
+ * `-(w * v)` are the same double.
+ *
+ * @param name - The term's name, as the formula spells it.
+ * @param weight - The configured weight, already signed as the formula signs it.
+ * @param value - The value the formula multiplies, with any neutral substitution ALREADY applied — so a gated
+ *   term passes its gated value and the gate is not re-derived here.
+ * @param facts - Whether and at which level the source carried the candidate, the source's name, and the
+ *   gate's name when one overrode a present input.
+ * @returns The term, with `cause` present if and only if the contribution is exactly zero.
+ */
+function buildTerm(
+  name: string,
+  weight: number,
+  value: number,
+  facts: {
+    readonly presence: TermSourcePresence;
+    readonly source: string;
+    readonly masked?: boolean;
+    readonly mask?: string;
+  },
+): ScoreTerm {
+  const contribution = weight * value;
+  // `!== 0` rather than a truthiness test: a contribution of `-0` is a zero and must be attributed, and
+  // `NaN !== 0` keeps a broken term visible as a broken term instead of filing it under a cause.
+  if (contribution !== 0) return { name, contribution };
+  const cause = classifyTermZero(weight, facts.presence, facts.masked ?? false);
+  return {
+    name,
+    contribution,
+    cause,
+    ...(cause === 'INPUT_MAP_ABSENT' || cause === 'INPUT_ENTRY_ABSENT'
+      ? { source: facts.source }
+      : {}),
+    ...(cause === 'MASKED' && facts.mask !== undefined ? { mask: facts.mask } : {}),
+  };
 }
 
 /**
@@ -1634,51 +1709,44 @@ function performTreeRCA(
   for (const [id, ce] of collisionEnergy ?? []) {
     ratioContrib.set(id, ce.ratioContrib);
   }
-  const riseWeight = options.riseWeight;
   // Gate the collapse half of the rise signal by the log signal: a RISE is
   // always rewarded; a COLLAPSE is penalised only when the service emitted NO
-  // logic exception (silent symptom), never when it did (source crash).
-  const riseTerm = (id: ServiceId): number =>
-    riseWeight * gatedRiseContribution(riseScores?.get(id) ?? 0.5, (logScores?.get(id) ?? 0) > 0);
+  // logic exception (silent symptom), never when it did (source crash). The gate
+  // is applied where the term is BUILT rather than through a per-term helper,
+  // because the term has to be classified as `MASKED` when the gate is what made
+  // it zero — and a helper computing the value would take that fact with it.
+  const riseWeight = options.riseWeight;
   // The trace-activity signal rewards the unique significant span-count riser
-  // (silent-source signature). It is a pure {0,1} indicator per service, so
-  // the term is simply the weight applied to whichever service was flagged.
+  // (silent-source signature). It is a pure {0,1} indicator per service, so the
+  // term is simply the weight applied to whichever service was flagged.
   const traceWeight = options.traceWeight;
-  const traceTerm = (id: ServiceId): number => traceWeight * (traceActivityScores?.get(id) ?? 0);
   // The PRISM graph-free signal rewards the node anomalous in BOTH its internal
   // (cpu/mem/disk/socket) and external (latency/error/throughput) channels —
   // the internal/external asymmetry of PRISM. `prismScore` is the max-normalised
   // PRISM M-score in [0, 1], so the term is simply the weight applied to the
   // service's normalised score (0 when the signal is absent/neutral).
   const prismWeight = options.prismWeight;
-  const prismTerm = (id: ServiceId): number => prismWeight * (prismScores?.get(id) ?? 0);
   // The failed-edge-direction signal rewards the CALLEE of post-injection failed
-  // calls — the service whose interface was failing — which is the inverse of
-  // the log signal's credit to the emitter. Non-negative by construction
+  // calls — the service whose interface was failing — which is the inverse of the
+  // log signal's credit to the emitter. Non-negative by construction
   // (`computeFailedEdgeScores` clamps each edge's net at zero), so this term can
   // only ever reward.
   const failedEdgeWeight = options.failedEdgeWeight;
-  const failedEdgeTerm = (id: ServiceId): number =>
-    failedEdgeWeight * (failedEdgeScores?.get(id) ?? 0);
   // The continuous counterpart of the term above, and the only term whose
   // magnitude comes from a DURATION rather than a count: it exists exactly where
   // the counts are zero. `edgeLatencyScores` is absent (not empty) when the case
   // carried no per-edge measurements, so a case without the field scores exactly
   // as it did before this term existed.
   const latWeight = options.latWeight;
-  const latTerm = (id: ServiceId): number => latWeight * (edgeLatencyScores?.get(id) ?? 0);
   // The DB-connection-pool penalty, and the only NEGATIVE term here whose sign is
   // not already inside the signal (the collision term's `ratioContrib` is defined
   // as a penalty; this indicator is 1 = pool-dominant, so the minus is the term's).
   // An absent map and an entry of 0 mean the same thing to it — no evidence —
   // which is why the lookup may fall back: only a measured dominance is punished.
   const poolPenaltyWeight = options.poolMetricPenaltyWeight;
-  const poolTerm = (id: ServiceId): number => -poolPenaltyWeight * (poolMetricScores?.get(id) ?? 0);
   // The decisive-stability term. Its map is ABSENT for a service the engine could not decompose,
   // which is why the lookup keeps a neutral fallback: `undefined` is not a measured bonus of zero.
   const stabilityWeight = options.stabilityWeight;
-  const stabilityTerm = (id: ServiceId): number =>
-    stabilityWeight * (stabilityScores?.get(id) ?? 0);
   // `sourceScores` is populated for every node in `allNodes` (see its
   // construction loop above), and `scoredNodes` is a subset of `allNodes`, so
   // its lookup never falls back. The `onsetSlopes`, `topoScores`,
@@ -1699,23 +1767,104 @@ function performTreeRCA(
   const termsOf = (id: ServiceId): readonly ScoreTerm[] => {
     let t = termCache.get(id);
     if (t === undefined) {
+      // Every OPTIONAL source is read ONCE per candidate, so the value the contribution uses and the presence
+      // the cause is classified from are the same lookup. Reading a map twice to ask "did it carry this id" is
+      // how a term comes to report a cause for a lookup that did not decide it.
+      //
+      // `presenceOf` answers at the LEVEL the absence happened, which is why it takes the map itself: a term
+      // reading `logScores?.get(id)` loses `logScores` and a term reading `onsetSlopes.get(id)` loses an entry,
+      // and collapsing the two would report the second for the first.
+      const presenceOf = <V>(
+        map: ReadonlyMap<ServiceId, V> | undefined,
+        id: ServiceId,
+      ): TermSourcePresence =>
+        map === undefined ? 'MAP_ABSENT' : map.has(id) ? 'PRESENT' : 'ENTRY_ABSENT';
+      const onsetEntry = onsetSlopes.get(id);
+      const collisionEntry = ratioContrib.get(id);
+      const topoEntry = topoScores?.get(id);
+      const logEntry = logScores?.get(id);
+      const riseEntry = riseScores?.get(id);
+      const traceEntry = traceActivityScores?.get(id);
+      const prismEntry = prismScores?.get(id);
+      const failedEdgeEntry = failedEdgeScores?.get(id);
+      const latEntry = edgeLatencyScores?.get(id);
+      const poolEntry = poolMetricScores?.get(id);
+      const stabilityEntry = stabilityScores?.get(id);
+      const riseHasLogic = (logEntry ?? 0) > 0;
+      // The direction the map carried, or the NEUTRAL 0.5 the formula substitutes. Read once so the value and
+      // the ungated value it is compared against cannot come from two different lookups.
+      const riseRaw = riseEntry ?? 0.5;
+      const riseValue = gatedRiseContribution(riseRaw, riseHasLogic);
       t = [
         // `log1p`, not `log`: rank-normalized self anomalies live in [0, 1], the top service maps to exactly
         // 1.0, and `log(1.0) === 0` would collapse the base term to zero for the STRONGEST signal while
         // `log(0) === -Infinity` would destroy a zero-anomaly service.
-        { name: 'selfAnomalyLog1p', contribution: Math.log1p(selfScores.get(id)!) },
-        { name: 'source', contribution: weights.sourceWeight * sourceScores.get(id)! },
-        { name: 'temporal', contribution: weights.temporalWeight * (onsetSlopes.get(id) ?? 0) },
-        { name: 'collision', contribution: -weights.collisionWeight * (ratioContrib.get(id) ?? 0) },
-        { name: 'topo', contribution: weights.topoWeight * (topoScores?.get(id) ?? 0) },
-        { name: 'log', contribution: weights.logWeight * (logScores?.get(id) ?? 0) },
-        { name: 'rise', contribution: riseTerm(id) },
-        { name: 'trace', contribution: traceTerm(id) },
-        { name: 'prism', contribution: prismTerm(id) },
-        { name: 'failedEdge', contribution: failedEdgeTerm(id) },
-        { name: 'lat', contribution: latTerm(id) },
-        { name: 'pool', contribution: poolTerm(id) },
-        { name: 'stability', contribution: stabilityTerm(id) },
+        //
+        // It has no configurable weight (the 1 is the formula's own) and no optional source, so its zero is
+        // always a genuinely zero anomaly: `WEIGHT_ZERO` is unreachable by construction and the two absence
+        // causes are declared impossible because `selfScores` carries every scored node.
+        buildTerm('selfAnomalyLog1p', 1, Math.log1p(selfScores.get(id)!), {
+          presence: 'PRESENT',
+          source: 'selfScores',
+        }),
+        buildTerm('source', weights.sourceWeight, sourceScores.get(id)!, {
+          presence: 'PRESENT',
+          source: 'sourceScores',
+        }),
+        buildTerm('temporal', weights.temporalWeight, onsetEntry ?? 0, {
+          presence: presenceOf(onsetSlopes, id),
+          source: 'onsetSlopes',
+        }),
+        buildTerm('collision', -weights.collisionWeight, collisionEntry ?? 0, {
+          presence: presenceOf(collisionEnergy, id),
+          source: 'collisionEnergy',
+        }),
+        buildTerm('topo', weights.topoWeight, topoEntry ?? 0, {
+          presence: presenceOf(topoScores, id),
+          source: 'topoScores',
+        }),
+        buildTerm('log', weights.logWeight, logEntry ?? 0, {
+          presence: presenceOf(logScores, id),
+          source: 'logScores',
+        }),
+        // The only term with a gate INSIDE the score rather than in the map's construction: a collapse is
+        // penalised only when the service emitted no logic exception, so a present, non-zero direction can
+        // still contribute zero.
+        //
+        // `masked` is ONE comparison rather than a chain of guards — the gate applied exactly when the value it
+        // produced differs from the one it was handed. That is the same statement the chain was making, and it
+        // is the only form in which the flag cannot be true for a reason the cause cannot see: the gate's only
+        // possible effect is to turn a non-zero collapse into 0, so a difference IS the gate firing.
+        buildTerm('rise', riseWeight, riseValue, {
+          presence: presenceOf(riseScores, id),
+          source: 'riseScores',
+          masked: riseValue !== 2 * (riseRaw - 0.5),
+          mask: 'logicExceptionGate',
+        }),
+        buildTerm('trace', traceWeight, traceEntry ?? 0, {
+          presence: presenceOf(traceActivityScores, id),
+          source: 'traceActivityScores',
+        }),
+        buildTerm('prism', prismWeight, prismEntry ?? 0, {
+          presence: presenceOf(prismScores, id),
+          source: 'prismScores',
+        }),
+        buildTerm('failedEdge', failedEdgeWeight, failedEdgeEntry ?? 0, {
+          presence: presenceOf(failedEdgeScores, id),
+          source: 'failedEdgeScores',
+        }),
+        buildTerm('lat', latWeight, latEntry ?? 0, {
+          presence: presenceOf(edgeLatencyScores, id),
+          source: 'edgeLatencyScores',
+        }),
+        buildTerm('pool', -poolPenaltyWeight, poolEntry ?? 0, {
+          presence: presenceOf(poolMetricScores, id),
+          source: 'poolMetricScores',
+        }),
+        buildTerm('stability', stabilityWeight, stabilityEntry ?? 0, {
+          presence: presenceOf(stabilityScores, id),
+          source: 'stabilityScores',
+        }),
       ];
       termCache.set(id, t);
     }

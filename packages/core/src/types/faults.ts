@@ -108,6 +108,50 @@ export interface RootCauseResult {
 }
 
 /**
+ * WHY a term contributed exactly zero — one value per mechanism the ranking formula actually has.
+ *
+ * The five are the point of recording one: a zero produced by any of them is the SAME NUMBER and a different
+ * problem, and a table of contributions cannot separate them because a difference between two zeros is zero.
+ *
+ * The two `INPUT_*` members are deliberately NOT merged. "The graph does not carry this field at all" and "the
+ * field is there and this candidate has no entry in it" send a reader to the same FIELD but to different ends of
+ * it — an upstream producer that never emitted the tier, against a per-candidate measurement that is missing —
+ * and a record that merges them cannot be split later without another run.
+ */
+export type TermZeroCause =
+  /**
+   * The term's configured weight is exactly 0.
+   *
+   * The contribution is 0 whatever the corpus says, so **nothing about the corpus can be inferred from it** —
+   * this is a CONFIGURATION fact, and the work it implies is to a configuration rather than to the data.
+   */
+  | 'WEIGHT_ZERO'
+  /** The weight is non-zero and the whole OPTIONAL source this term reads is ABSENT from the graph. */
+  | 'INPUT_MAP_ABSENT'
+  /** The weight is non-zero and the OPTIONAL source is present but carries no entry for this candidate. */
+  | 'INPUT_ENTRY_ABSENT'
+  /**
+   * The weight and the input are both present, and a MASK inside the formula forced the contribution to 0.
+   *
+   * The named `mask` says which gate, and the value it overrode was NOT zero — so unlike `VALUE_ZERO` this is
+   * evidence that arrived and was declined.
+   */
+  | 'MASKED'
+  /**
+   * The weight and the input are both present and no mask applies, so the value read is exactly 0.
+   *
+   * An absence of evidence for this term on this candidate.
+   */
+  | 'VALUE_ZERO';
+
+/**
+ * Whether a term's OPTIONAL source carried the candidate it was asked about.
+ *
+ * Three states rather than a boolean, because "absent" is two different facts about two different places.
+ */
+export type TermSourcePresence = 'PRESENT' | 'MAP_ABSENT' | 'ENTRY_ABSENT';
+
+/**
  * One named contribution to a ranking score, already multiplied by its weight.
  *
  * The name is the formula's own word for the term, so a consumer can group, compare and report contributions
@@ -119,6 +163,17 @@ export interface ScoreTerm {
   readonly name: string;
   /** Its contribution to the total score, weight already applied. May be negative. */
   readonly contribution: number;
+  /**
+   * Present ONLY when `contribution === 0`, and then naming the mechanism that made it zero.
+   *
+   * Its ABSENCE is therefore information too: it says the term was live. Reporting a cause beside a non-zero
+   * contribution would invite a reader to treat a term that decided something as a term that did not.
+   */
+  readonly cause?: TermZeroCause;
+  /** For the two `INPUT_*` causes: the name of the OPTIONAL source, so the field is named. */
+  readonly source?: string;
+  /** For `MASKED`: the name of the gate that forced the zero, so the override is named. */
+  readonly mask?: string;
 }
 
 /** Options for RCA engine configuration. */

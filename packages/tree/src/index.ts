@@ -89,6 +89,7 @@ export {
   DEFAULT_TEMPORAL_WEIGHT,
   ONSET_SHAPES,
   TreePruner,
+  classifyTermZero,
   computeOnsetSlopes,
   computeTemporalEarliness,
   isOnsetShape,

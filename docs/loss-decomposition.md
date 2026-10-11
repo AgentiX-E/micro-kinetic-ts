@@ -508,3 +508,86 @@ while ours contributes nothing is a difference in what the two architectures let
 in tuning. Caution: `topo` contributes `0.0000` to every miss here while the ledger measures it at
 **−42.4 / −37.8 / −3.1** when enabled, and those are consistent only if `topo` moves cases that are not these —
 which is a statement about which cases a term decides, and is why §6.5 refuses to call a zero an absence.
+
+---
+
+## 7. Why a term is zero — the three causes §6.5 refused to guess between
+
+§6.4 measured that the reranking loss is decided by `selfAnomalyLog1p` and that **nine of the twelve weighted
+terms are exactly `0.0000` on both sides of every miss**. §6.5 stated, before anything else, that this record
+**cannot** say why: a zero has three causes — the weight is zero in the shipped configuration, the OPTIONAL input
+map is absent from the graph, or the value read is genuinely zero — and **a difference between two zeros is zero**,
+so the table cannot separate them. It registered the separation as the next instrument. This section is that
+instrument.
+
+### 7.1 What is now recorded
+
+`ScoreTerm` gains a `cause`, present **only** when the contribution is exactly zero:
+
+```
+finalscore(v) = Σ term_i        term_i = { name, contribution, cause?, source?, mask? }
+```
+
+Five mechanisms, one value each:
+
+| cause | what it means | what it implies |
+| --- | --- | --- |
+| `WEIGHT_ZERO` | the term's configured weight is exactly 0 | a **CONFIGURATION** fact. Nothing about the corpus can be inferred, and the table must not be read as one |
+| `INPUT_MAP_ABSENT` | the weight is non-zero and the whole OPTIONAL source is missing from the graph | the graph was built without that tier — an UPSTREAM fact |
+| `INPUT_ENTRY_ABSENT` | the source is present and carries no entry for this candidate | this candidate was not measured for that field — a PER-CASE fact |
+| `MASKED` | weight and input are present, and a gate in the formula overrode a non-zero value | evidence ARRIVED and was DECLINED |
+| `VALUE_ZERO` | weight and input are present, no gate applies, and the value is 0 | an absence of EVIDENCE for this term on this candidate |
+
+**The two `INPUT_*` members are deliberately not merged, and the reason is the one §6.5 gave for its own
+refusal.** "The graph does not carry this field at all" and "the field is there and this candidate has no entry"
+send a reader to the same FIELD and to different ENDS of it: an upstream producer that never emitted the tier,
+against a per-candidate measurement that is missing. A record that merged them could not be split afterwards
+without another run, which is precisely the cost this repository keeps paying for recording one fact fewer than
+it later needs.
+
+**And `cause` is absent when the term contributed something.** That absence is information: it says the term was
+live. A cause beside a non-zero contribution would invite a reader to treat a term that decided a case as a term
+that did not.
+
+### 7.2 One assembly, and the order of its tests
+
+The classification is decided **inside the producer**, in the same place the contribution is computed, from the
+same two lookups — a `classifyTermZero(weight, presence, masked)` beside `sumScoreTerms`, and a `buildTerm` that
+all thirteen terms now pass through. It is not a function a consumer could apply to a total: the facts it needs
+(which weight was configured, whether the map existed, whether the entry existed, whether a gate fired) are not
+recoverable from the number.
+
+**The order of the tests is the design.** A zero weight is reported first, even when the input is also absent,
+because it forces the zero on its own and licenses **no** inference about the corpus — a reader sent to the graph
+would be sent for a fact that lives in the configuration. A missing **map** is reported before a missing
+**entry**, because reporting an entry absence for a source that is not there at all sends a reader to a map that
+does not exist.
+
+**`MASKED` exists because one term has a gate inside the score.** `rise` applies
+`gatedRiseContribution(dir(v), hasLogicException(v))`: a collapse is penalised only when the service emitted no
+logic exception, so a present, non-zero direction can still contribute zero. The flag is set exactly when the
+gate **changed** the value, which separates a declined value from a direction that was neutral to begin with. No
+other term masks at scoring time — `lat`'s floor is applied when its map is BUILT, so a sub-floor rise is an
+entry that is not there rather than a value that was declined, and it is recorded as such.
+
+**The seven per-term helper closures were removed rather than kept beside the new call sites.** They were the only
+callers of their own expressions, so leaving them would have been dead code that the coverage gate reports — and
+the one that carried real logic (the rise gate) moved into the assembly with its reason, because the term that
+applies a gate is the only one that can say the gate is what zeroed it.
+
+**The sum is unchanged to the last bit.** Each `contribution` is computed as `weight × value` from the same two
+values the inline expression used, including the two negative terms where `(-w) × v` and `−(w × v)` are the same
+double, so the identity `sumScoreTerms(terms) === finalScore` still holds exactly — asserted, not assumed.
+
+### 7.3 Why the mirror fence had to grow a third file
+
+`ScoreTerm` is declared **three times**: in `packages/core` (the producer), in the runner (a literal mirror) and
+in this module (a literal mirror of the mirror). The fence held the **two mirrors** to each other, and a fence
+between two copies holds them to each other and **to nothing else** — two mirrors can agree on a field the
+producer does not have, and the shape they describe is then a shape nothing produces. The fence now reads the
+**producer** first and holds both mirrors to it, and a second fence holds the `TermZeroCause` members equal across
+all three, because a cause renamed on one side would make every row of that cause **vanish from the report** —
+which reads as "this mechanism does not occur" rather than as a mismatch.
+
+This is the iteration-82 population law again, one layer out: **the authority is the declaration that the others
+copy, and a fence that omits it is a fence over the wrong pair.**

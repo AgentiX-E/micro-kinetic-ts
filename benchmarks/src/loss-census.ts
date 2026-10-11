@@ -142,6 +142,24 @@ export interface LossRecord {
 }
 
 /**
+ * WHY a term contributed exactly zero — one value per mechanism the ranking formula actually has.
+ *
+ * The five are the point of recording one: a zero produced by any of them is the SAME NUMBER and a different
+ * problem, and a table of contributions cannot separate them because a difference between two zeros is zero.
+ */
+export type TermZeroCause =
+  /** The term's configured weight is 0, so the zero is a CONFIGURATION fact and licenses no corpus inference. */
+  | 'WEIGHT_ZERO'
+  /** The whole OPTIONAL source the term reads is ABSENT from the graph. */
+  | 'INPUT_MAP_ABSENT'
+  /** The OPTIONAL source is present but carries no entry for this candidate. */
+  | 'INPUT_ENTRY_ABSENT'
+  /** The weight and the input are present, and a gate in the formula overrode a non-zero value. */
+  | 'MASKED'
+  /** The weight and the input are present, no gate applies, and the value read is exactly 0. */
+  | 'VALUE_ZERO';
+
+/**
  * One named contribution to a ranking score, weight already applied.
  *
  * A literal mirror of the producer's declaration — see `LossRecord.truthEvidence` for why `benchmarks` copies
@@ -152,6 +170,12 @@ export interface ScoreTerm {
   readonly name: string;
   /** Its contribution to the total score, weight already applied. May be negative. */
   readonly contribution: number;
+  /** Present only when `contribution === 0`, naming the mechanism that made it zero. */
+  readonly cause?: TermZeroCause;
+  /** For the two `INPUT_*` causes: the OPTIONAL source that was absent, so the field is named. */
+  readonly source?: string;
+  /** For `MASKED`: the gate that forced the zero. */
+  readonly mask?: string;
 }
 
 /**
@@ -549,5 +573,152 @@ export function formatLossReport(
       `RERANKING ${pct(shallow + deep, misses)} (shallow ${pct(shallow, misses)}, deep ${pct(deep, misses)}), ` +
       `ENGINE ERROR ${pct(engineError, misses)}`,
   );
+  return lines;
+}
+
+/**
+ * How the zero terms came about, one row per (term, cause, named detail).
+ *
+ * A term's zero has three possible mechanisms and a table of contributions cannot separate them, because a
+ * difference between two zeros is zero. This is that separation.
+ */
+export interface TermZeroRow {
+  /** The term's name, as the ranking formula spells it. */
+  readonly term: string;
+  /** The mechanism that produced the zero. */
+  readonly cause: TermZeroCause;
+  /** For the two `INPUT_*` causes the absent source, for `MASKED` the gate; `''` for the others. */
+  readonly detail: string;
+  /** How many term instances in the read population carried exactly this (term, cause, detail). */
+  readonly count: number;
+}
+
+/** The zero-term table and the population it was read from. */
+export interface TermZeroSummary {
+  /** How many reranking misses carried a breakdown on the requested side — the table's denominator. */
+  readonly cases: number;
+  /** Which side's breakdown was read, carried so the report cannot print a heading for the other one. */
+  readonly side: 'truth' | 'winner';
+  /** One row per distinct (term, cause, detail). */
+  readonly rows: readonly TermZeroRow[];
+}
+
+/**
+ * Count WHY each zero term is zero, over the reranking misses of the records given.
+ *
+ * The population is the reranking misses and not every case, and that is a decision rather than a filter: a
+ * term that is zero on a case the engine already got right is not a loss, and including it would let 600
+ * correct cases dilute the mechanism that decides the 159 that are lost. `LossClass` is asked rather than
+ * re-derived so "a miss" has one definition in this repository.
+ *
+ * The truth's side is the default and the winner's is available, because the two answers differ for the causes
+ * that are facts about the corpus (`INPUT_MAP_ABSENT`, `INPUT_ENTRY_ABSENT`, `VALUE_ZERO`) and coincide for the
+ * one that is a fact about the configuration (`WEIGHT_ZERO`, which no candidate can escape).
+ *
+ * @param records - The census rows.
+ * @param opts - `shallowDepth` as `classifyLoss` takes it, and which side's breakdown to read.
+ * @returns The denominator and one row per distinct (term, cause, detail), in a stable order.
+ */
+export function summarizeTermZeroes(
+  records: readonly LossRecord[],
+  opts: {
+    readonly shallowDepth?: number;
+    readonly side?: 'truth' | 'winner';
+  } = {},
+): TermZeroSummary {
+  const depth = opts.shallowDepth ?? DEFAULT_SHALLOW_DEPTH;
+  const side = opts.side ?? 'truth';
+  // Keyed by the row's whole identity, so two causes of the same term are two rows and two DETAILS of one
+  // cause are also two — a missing `topoScores` and a missing `logScores` are different absences.
+  const tally = new Map<
+    string,
+    { term: string; cause: TermZeroCause; detail: string; count: number }
+  >();
+  let cases = 0;
+  for (const r of records) {
+    const cls = classifyLoss(r, depth);
+    if (cls !== 'RERANK_SHALLOW' && cls !== 'RERANK_DEEP') continue;
+    const terms = side === 'truth' ? r.truthEvidence?.terms : r.top1Terms;
+    // A miss with no breakdown on this side contributes to NEITHER the denominator nor a row. Counting it in
+    // the denominator would make every row's share read low for a reason that is about the artifact rather
+    // than about the term.
+    if (terms === undefined) continue;
+    cases += 1;
+    for (const t of terms) {
+      // A term that contributed something has no cause, and the table is OF zeros: a term with no cause is
+      // not filed under one.
+      const cause = t.cause;
+      if (cause === undefined) continue;
+      // The name a cause carries: the absent FIELD for the two absences, the GATE for the decline, and nothing
+      // for the two that name nothing.
+      //
+      // The two `!` are a stated precondition rather than a hope — the producer sets `source` on every
+      // `INPUT_*` cause and `mask` on every `MASKED` one (`buildTerm` in `packages/tree`) — and a `?? ''` in
+      // their place would be a guard no input can reach. The coverage gate reports such a guard as an untaken
+      // branch, and a report would print an empty parenthesis rather than the mismatch it actually is.
+      const detail =
+        cause === 'INPUT_MAP_ABSENT' || cause === 'INPUT_ENTRY_ABSENT'
+          ? t.source!
+          : cause === 'MASKED'
+            ? t.mask!
+            : '';
+      const key = `${t.name}\u0000${cause}\u0000${detail}`;
+      const found = tally.get(key);
+      if (found === undefined) tally.set(key, { term: t.name, cause, detail, count: 1 });
+      else found.count += 1;
+    }
+  }
+  const rows = [...tally.values()].sort(compareTermZeroRows);
+  return { cases, side, rows };
+}
+
+/**
+ * The order the zero-term rows are reported in: term, then cause, then the named detail.
+ *
+ * Exported and named rather than left inline in the sort, for the reason this repository extracts reports as
+ * pure functions: **a comparator whose arms are reachable only through `Array.sort` is a comparator nobody
+ * checks** — the arms that happen to be taken depend on the engine's sort implementation and on the arrival
+ * order of the rows, so a missing arm reads as covered on one engine and as untaken on another. Tested
+ * directly, every arm is asserted, including the two equality arms that only a hand-built pair can reach.
+ *
+ * @param a - One row.
+ * @param b - Another row.
+ * @returns Negative, positive or zero, as `Array.prototype.sort` expects.
+ */
+export function compareTermZeroRows(a: TermZeroRow, b: TermZeroRow): number {
+  if (a.term !== b.term) return a.term < b.term ? -1 : 1;
+  if (a.cause !== b.cause) return a.cause < b.cause ? -1 : 1;
+  if (a.detail !== b.detail) return a.detail < b.detail ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Render the zero-term table, grouped by term so a term's causes read together.
+ *
+ * @param summary - The output of {@link summarizeTermZeroes}.
+ * @returns The report lines, in the same shape as the other census reports.
+ */
+export function formatTermZeroes(summary: TermZeroSummary): readonly string[] {
+  const lines = [
+    `  why the zero terms are zero — ${summary.cases} reranking misses, terms on the ${summary.side}'s side`,
+  ];
+  let term = '';
+  let parts: string[] = [];
+  const flush = (): void => {
+    if (term === '') return;
+    lines.push(`    ${term.padEnd(18)} ${parts.join(' · ')}`);
+  };
+  for (const r of summary.rows) {
+    if (r.term !== term) {
+      flush();
+      term = r.term;
+      parts = [];
+    }
+    const label = r.detail === '' ? r.cause : `${r.cause}(${r.detail})`;
+    parts.push(`${label} ${pct(r.count, summary.cases)}`);
+  }
+  flush();
+  if (summary.rows.length === 0)
+    lines.push('    none — every term contributed something on every miss');
   return lines;
 }

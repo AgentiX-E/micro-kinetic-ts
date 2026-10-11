@@ -7,6 +7,7 @@ import type {
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
 import {
+  classifyTermZero,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -2296,5 +2297,251 @@ describe('the score breakdown — the total IS its terms', () => {
       'pool',
       'stability',
     ]);
+  });
+});
+
+describe('classifyTermZero — the five mechanisms, and the order they are tested in', () => {
+  it('names a zero WEIGHT first, because it is the only cause that licenses no inference', () => {
+    // The order is the design rather than a preference: a zero weight forces the zero on its own, so reporting
+    // an absence instead would send a reader to the graph for a fact that lives in the configuration — and
+    // reporting an ENTRY absence for a source that is not there at all would send them to a map that does not
+    // exist. Every combination collapses to WEIGHT_ZERO.
+    expect(classifyTermZero(0, 'PRESENT', false)).toBe('WEIGHT_ZERO');
+    expect(classifyTermZero(0, 'MAP_ABSENT', false)).toBe('WEIGHT_ZERO');
+    expect(classifyTermZero(0, 'ENTRY_ABSENT', false)).toBe('WEIGHT_ZERO');
+    expect(classifyTermZero(0, 'PRESENT', true)).toBe('WEIGHT_ZERO');
+  });
+
+  it('separates a missing MAP from a missing ENTRY, at the level the absence happened', () => {
+    // One field's producer never ran against one candidate that was never measured. Same field, different work,
+    // and a record that merged them could not be split later without another run.
+    expect(classifyTermZero(0.5, 'MAP_ABSENT', false)).toBe('INPUT_MAP_ABSENT');
+    expect(classifyTermZero(0.5, 'ENTRY_ABSENT', false)).toBe('INPUT_ENTRY_ABSENT');
+  });
+
+  it('names a gate separately, because a masked zero had a non-zero value behind it', () => {
+    // `MASKED` is not `VALUE_ZERO` with a different label: the input was present and non-zero and the formula
+    // declined it, which is a fact about the formula rather than about the evidence.
+    expect(classifyTermZero(0.5, 'PRESENT', true)).toBe('MASKED');
+    expect(classifyTermZero(0.5, 'PRESENT', false)).toBe('VALUE_ZERO');
+  });
+});
+
+describe('the cause a zero term carries — and the ones it cannot carry', () => {
+  /** A four-node chain with several weight families live, so more than one cause kind appears. */
+  const build = (over: Partial<ConstructorParameters<typeof TreePruner>[0]> = {}) => {
+    const pruner = new TreePruner({
+      defaultTopK: 4,
+      logWeight: 0.4,
+      topoWeight: 0.2,
+      ...over,
+    });
+    const callGraph = makeCallGraph(
+      ['A', 'B', 'C', 'D'],
+      [
+        ['A', 'B'],
+        ['B', 'C'],
+        ['A', 'D'],
+      ],
+    );
+    const metrics = makeMetrics({
+      A: [10, 11, 10, 100, 140],
+      B: [10, 11, 12, 60, 70],
+      C: [10, 10, 11, 40, 42],
+      D: [10, 10, 10, 10, 11],
+    });
+    return pruner.analyze(pruner.buildFaultGraph(callGraph, metrics), 4);
+  };
+  const term = (name: string, results = build()) =>
+    results[0]!.terms!.find((t) => t.name === name)!;
+
+  it('carries a cause if and only if the contribution is zero, on every term of every result', () => {
+    // The partition, asserted rather than assumed: a cause on a live term would invite a reader to treat a term
+    // that decided something as a term that did not, and a zero WITHOUT one is precisely the case this whole
+    // field exists to eliminate.
+    const results = build();
+    let zeros = 0;
+    for (const r of results) {
+      for (const t of r.terms!) {
+        if (t.contribution === 0) {
+          expect(t.cause, `${t.name} is zero and must say why`).toBeDefined();
+          zeros += 1;
+        } else {
+          expect(
+            t.cause,
+            `${t.name} contributed ${t.contribution} and must not claim a cause`,
+          ).toBeUndefined();
+          expect(t.source).toBeUndefined();
+          expect(t.mask).toBeUndefined();
+        }
+      }
+    }
+    // Non-vacuity: a graph where nothing is zero would satisfy the loop by never entering either branch.
+    expect(zeros).toBeGreaterThan(0);
+  });
+
+  it('reports WEIGHT_ZERO for a term whose configured weight is 0, whatever the graph holds', () => {
+    // `topoWeight` is 0 here and the graph DOES carry `topoScores` (the builder computes them), so the zero is
+    // a configuration fact and is reported as one even though an absence would have been a plausible story.
+    const t = term('topo', build({ topoWeight: 0 }));
+    expect(t.contribution).toBe(0);
+    expect(t.cause).toBe('WEIGHT_ZERO');
+    // And it names no source: the field a reader would go and look at is not the reason.
+    expect(t.source).toBeUndefined();
+  });
+
+  it('reports the LEVEL of the absence, and names the field', () => {
+    // With a non-zero weight and no injected map, the term reads `topoScores` and the whole map is missing —
+    // which is `INPUT_MAP_ABSENT`, not an entry absence and not a zero weight.
+    const graph = (() => {
+      const pruner = new TreePruner({ defaultTopK: 4, traceWeight: 1 });
+      const callGraph = makeCallGraph(['A', 'B'], [['A', 'B']]);
+      return pruner.buildFaultGraph(callGraph, makeMetrics({ A: [1, 1, 9, 9], B: [1, 1, 2, 2] }));
+    })();
+    const pruner = new TreePruner({ defaultTopK: 4, traceWeight: 1 });
+    // `traceActivityScores` is removed rather than emptied: an absent map and an empty one are the same thing
+    // to the LOOKUP and different things to the record, which is the distinction this test is about.
+    const stripped: typeof graph = { ...graph, traceActivityScores: undefined };
+    const t = pruner.analyze(stripped, 2)[0]!.terms!.find((x) => x.name === 'trace')!;
+    expect(t.contribution).toBe(0);
+    expect(t.cause).toBe('INPUT_MAP_ABSENT');
+    expect(t.source).toBe('traceActivityScores');
+    // And an EMPTY map is an entry absence, not a map absence: the difference is visible only here.
+    const emptied: typeof graph = { ...graph, traceActivityScores: new Map() };
+    const e = pruner.analyze(emptied, 2)[0]!.terms!.find((x) => x.name === 'trace')!;
+    expect(e.cause).toBe('INPUT_ENTRY_ABSENT');
+    expect(e.source).toBe('traceActivityScores');
+  });
+
+  it('reports a MASKED zero when the gate declined a value that was not zero', () => {
+    // `rise` is the only term gated INSIDE the score: a collapse is penalised only when the service emitted no
+    // logic exception. Injected directly because the gate is a property of the formula's composition rather
+    // than of the graph builder, and this test is about the RECORD the composition produces.
+    const pruner = new TreePruner({ defaultTopK: 3, riseWeight: 0.6, logWeight: 0.4 });
+    const graph = pruner.buildFaultGraph(
+      makeCallGraph(['A', 'B'], [['A', 'B']]),
+      // Both nodes deviate, so A is a SCORED candidate: a flat series would leave it out of the ranking
+      // entirely and the test would be asking about a term on a result that does not exist.
+      makeMetrics({ A: [10, 10, 10, 10, 20], B: [10, 10, 10, 10, 12] }),
+    );
+    const injected: typeof graph = {
+      ...graph,
+      // A direction BELOW the neutral 0.5 is a collapse; the log signal fires on the same service, which is
+      // exactly the condition the gate turns on.
+      riseScores: new Map([
+        ['A', 0.2],
+        ['B', 0.9],
+      ]),
+      logScores: new Map([
+        ['A', 5],
+        ['B', 0],
+      ]),
+    };
+    const t = pruner
+      .analyze(injected, 2)
+      .find((r) => r.serviceId === 'A')!
+      .terms!.find((x) => x.name === 'rise')!;
+    expect(t.contribution).toBe(0);
+    expect(t.cause).toBe('MASKED');
+    expect(t.mask).toBe('logicExceptionGate');
+    // The value behind the mask was NOT zero: `2 × (0.2 − 0.5) = −0.6`. A record that called this `VALUE_ZERO`
+    // would be describing evidence that never existed.
+    expect(2 * (0.2 - 0.5)).not.toBe(0);
+  });
+
+  it('reports VALUE_ZERO for a source that is present and carries a genuine zero', () => {
+    const pruner = new TreePruner({ defaultTopK: 3, prismWeight: 0.5 });
+    const graph = pruner.buildFaultGraph(
+      makeCallGraph(['A', 'B'], [['A', 'B']]),
+      makeMetrics({ A: [1, 1, 9, 9], B: [1, 1, 2, 2] }),
+    );
+    const injected: typeof graph = {
+      ...graph,
+      prismScores: new Map([
+        ['A', 0],
+        ['B', 0.7],
+      ]),
+    };
+    const results = pruner.analyze(injected, 2);
+    const a = results.find((r) => r.serviceId === 'A')!.terms!.find((x) => x.name === 'prism')!;
+    expect(a.contribution).toBe(0);
+    expect(a.cause).toBe('VALUE_ZERO');
+    expect(a.source).toBeUndefined();
+    // The other side of the same map is live, which is what makes this a value and not a field absence.
+    const b = results.find((r) => r.serviceId === 'B')!.terms!.find((x) => x.name === 'prism')!;
+    expect(b.contribution).toBe(0.5 * 0.7);
+    expect(b.cause).toBeUndefined();
+  });
+
+  it('never reports an absence on the base term, so its zero can only be a real one', () => {
+    // `selfAnomalyLog1p` has no configurable weight and its source carries every scored node, so two of the
+    // five causes are unreachable by construction — asserted so that a later edit making one of them reachable
+    // fails here rather than silently filing a base-term zero under a configuration or a graph fact.
+    const pruner = new TreePruner({ defaultTopK: 3 });
+    const graph = pruner.buildFaultGraph(
+      makeCallGraph(['A', 'B'], [['A', 'B']]),
+      makeMetrics({
+        A: [0, 0, 0, 0, 0],
+        B: [1, 1, 9, 9, 9],
+      }),
+    );
+    const base = pruner
+      .analyze(graph, 3)
+      .map((r) => r.terms!.find((t) => t.name === 'selfAnomalyLog1p')!);
+    expect(base.length).toBeGreaterThan(0);
+    for (const t of base) {
+      expect(t.cause === 'INPUT_MAP_ABSENT' || t.cause === 'INPUT_ENTRY_ABSENT').toBe(false);
+      expect(t.cause === 'WEIGHT_ZERO').toBe(false);
+    }
+  });
+});
+
+describe('the gated term — a decline, a neutral direction and a missing map are three answers', () => {
+  /** A two-node graph whose `rise` and `log` sources are injected, so the gate's inputs are exact. */
+  const withRise = (
+    rise: ReadonlyMap<string, number> | undefined,
+    logs: ReadonlyMap<string, number>,
+  ) => {
+    const pruner = new TreePruner({ defaultTopK: 2, riseWeight: 0.5, logWeight: 0.4 });
+    const graph = pruner.buildFaultGraph(
+      makeCallGraph(['A', 'B'], [['A', 'B']]),
+      makeMetrics({ A: [10, 10, 10, 10, 20], B: [10, 10, 10, 10, 12] }),
+    );
+    return pruner
+      .analyze({ ...graph, riseScores: rise, logScores: logs }, 2)
+      .find((r) => r.serviceId === 'A')!
+      .terms!.find((t) => t.name === 'rise')!;
+  };
+
+  it('separates a DECLINED value from a NEUTRAL one, which the gate alone cannot do', () => {
+    // Both contribute zero and only one of them is the gate's doing. The directions differ — a collapse the
+    // gate declined against the exactly-neutral 0.5 — and reporting the second as `MASKED` would describe a
+    // value the engine never had.
+    const declined = withRise(new Map([['A', 0.2]]), new Map([['A', 5]]));
+    expect(declined).toMatchObject({
+      contribution: 0,
+      cause: 'MASKED',
+      mask: 'logicExceptionGate',
+    });
+    const neutral = withRise(new Map([['A', 0.5]]), new Map([['A', 5]]));
+    expect(neutral.contribution).toBe(0);
+    expect(neutral.cause).toBe('VALUE_ZERO');
+    expect(neutral.mask).toBeUndefined();
+  });
+
+  it('reports a missing MAP even though the formula substitutes a neutral direction for it', () => {
+    // The substitution keeps the RANKING identical to a case with no rise field, and it must not keep the
+    // RECORD identical: "the field is absent" and "the field is present and neutral" are different facts about
+    // the case, and only the first one is about the data tier.
+    const absent = withRise(undefined, new Map([['A', 5]]));
+    expect(absent.contribution).toBe(0);
+    expect(absent.cause).toBe('INPUT_MAP_ABSENT');
+    expect(absent.source).toBe('riseScores');
+  });
+
+  it('leaves a RISE live, with no cause at all', () => {
+    const risen = withRise(new Map([['A', 0.9]]), new Map([['A', 0]]));
+    expect(risen.contribution).toBe(0.5 * 2 * (0.9 - 0.5));
+    expect(risen.cause).toBeUndefined();
   });
 });

@@ -302,6 +302,16 @@ export interface TruthEvidence {
 }
 
 /**
+ * WHY a term contributed exactly zero — one value per mechanism the ranking formula actually has.
+ *
+ * A literal mirror of the core package's union of the same name, for the reason {@link TruthEvidence} gives
+ * about the shape it is nested in: this project does not depend on the core package, so the members are copied
+ * and the agreement of the two declarations is fenced by test rather than assumed.
+ */
+export type TermZeroCause =
+  'WEIGHT_ZERO' | 'INPUT_MAP_ABSENT' | 'INPUT_ENTRY_ABSENT' | 'MASKED' | 'VALUE_ZERO';
+
+/**
  * One named contribution to a ranking score, already multiplied by its weight.
  *
  * A literal mirror of the core package's `ScoreTerm`, for the reason {@link TruthEvidence} gives about the shape
@@ -313,6 +323,12 @@ export interface ScoreTerm {
   readonly name: string;
   /** Its contribution to the total score, weight already applied. May be negative. */
   readonly contribution: number;
+  /** Present only when `contribution === 0`, naming the mechanism that made it zero. */
+  readonly cause?: TermZeroCause;
+  /** For the two `INPUT_*` causes: the OPTIONAL source that was absent, so the field is named. */
+  readonly source?: string;
+  /** For `MASKED`: the gate that forced the zero. */
+  readonly mask?: string;
 }
 
 /**

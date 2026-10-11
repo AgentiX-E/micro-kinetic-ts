@@ -1304,10 +1304,17 @@ describe('RCA Engine Integration', () => {
         propagationErrorBound: 0.05,
         viaTreeSearch: false,
         // The breakdown the producer emits alongside the total. Nothing here asserts that it ADDS UP — that is
-        // the producer's own fence — only that this record carries it through untouched.
+        // the producer's own fence — only that this record carries it through untouched, CAUSE AND ALL: the
+        // zero's mechanism is the whole reason the field exists, and a reader that dropped it would leave every
+        // row reporting a zero with no way to tell a zero weight from an absent field.
         terms: [
           { name: 'selfAnomalyLog1p', contribution: 0.02 },
-          { name: 'lat', contribution: 0.0 },
+          {
+            name: 'lat',
+            contribution: 0.0,
+            cause: 'INPUT_MAP_ABSENT',
+            source: 'edgeLatencyScores',
+          },
         ],
       },
     ];
@@ -1371,7 +1378,7 @@ describe('RCA Engine Integration', () => {
     // it lost. Copied through untouched — the identity `sum(terms) === finalScore` is the producer's invariant.
     expect(hit.truthEvidence!.terms).toEqual([
       { name: 'selfAnomalyLog1p', contribution: 0.02 },
-      { name: 'lat', contribution: 0.0 },
+      { name: 'lat', contribution: 0.0, cause: 'INPUT_MAP_ABSENT', source: 'edgeLatencyScores' },
     ]);
     // And the WINNER's, because an attribution is a difference and needs both sides. Without this the census
     // could say a case was deep and not what it was deep to.
