@@ -65,9 +65,12 @@ row beneath it.
 
 **A number we cannot beat must be named, or the standing reads as a claim about the whole field.** Each of these
 is above us or beside us on some figure, and **none** is comparable to a service Top-1 on the 735 (verified
-2026-10-09 / 2026-10-10 / 2026-10-11; the detail is in the internal `SOTA_LANDSCAPE_VERIFICATION.md` §1.4). **The
+2026-10-09 / 2026-10-10 / 2026-10-11 / 2026-10-12; the detail is in the internal
+`SOTA_LANDSCAPE_VERIFICATION.md` §1.4 / §1.7). **The
 fifth entry arrived on 2026-10-11 and is the first whose SHAPE matches one of our populations exactly while its
-abstract does not confirm it — read its entry before quoting any gap it implies.**
+abstract does not confirm it — read its entry before quoting any gap it implies.** And **§0d holds the reference
+that belongs in neither list**: a 2026-10-12 find whose number is BELOW ours while its population is a mixture
+nobody can compare to, which is a third class rather than a seventh member of this one.
 
 1. **A vendor's self-reported 89% top-1** on RCAEval — NOFire AI, on its own guide and its own benchmark, with
    no per-case results, and the page itself says to rerun it on your own incidents.
@@ -201,6 +204,41 @@ Excluded: **21 scenarios is not a population we can compare a 68-service Top-1 t
 the corpus is 735), and its unit is a **whole incident report scored by a model**, not a service ranked first. It
 is a candidate instrument and not a candidate number, and it is named so that "the field has no public benchmark"
 cannot be said of this repository's own standing.
+
+### 0d. A CONCURRENT REFERENCE THAT IS NEITHER ABOVE NOR BELOW US — and the harness it reports
+
+**OpsHarness**, *From General Agents to RCA Experts: A Self-Evolving Harness for Root Cause Analysis*
+(**`arXiv:2608.25661`**, Huang et al.; surfaced 2026-08-26 on HF Daily Papers; found by this iteration's survey
+on 2026-10-12). **59.0% top-1 accuracy**, reported as **+63.4%** over a bare general agent and **4.02×** over
+baseline RCA agents, *"across two public benchmarks and an industrial deployment"*.
+
+**It is filed here, and not in either list above, because it is the first reference this document cannot place on
+EITHER side of our own number.** A 59.0% is **below** our 78.75%, so §0a's contract ("a number we cannot beat must
+be named") does not reach it. But it is not §0b's kind either — §0b is *below us **and comparable***, which
+requires a metric and a population, and this one names **three populations in one sentence** and **no
+per-population figure**: two benchmarks it does not name and an industrial deployment nobody else can run. A
+59.0% against our 78.75% would therefore be a cross-population comparison of exactly the kind §0a exists to
+prevent — and the direction of the error is not even known, since one of the two unnamed benchmarks could be
+RCAEval and its per-benchmark number could be above or below ours.
+
+**So no gap is quoted in either direction, and the standing is unchanged.** What is recorded is the **technique**,
+because it is the most directly borrowable thing on this list:
+
+> *"During evolution, OpsHarness contrasts successful and failed trajectories, converts their evidence into atomic
+> proposals, and admits updates only through a dual-gate verification process designed to prevent overfitting and
+> regression."*
+
+That is **the shape of this repository's own kill criterion** — a change is admitted only if it moves the target
+AND regresses nothing (`RCAEval golden 9-cell byte-identical` **and** `FSE'26 zero regressed fault types`) —
+arrived at independently, by a group with no connection to us, and reported as the mechanism that makes
+accumulating experience *safe* rather than as a filter bolted on afterwards. Two independent arrivals at one gate
+is the strongest evidence either has, exactly as §0a's fifth entry is for *"more machinery, lower top-1"*.
+
+The paper's other claim is the one worth acting on: it finds that a **general-purpose agent now often beats a
+purpose-built RCA agent**, so the remaining gap lives in the **harness** rather than the model. This repository's
+`SelfLearn` feature is the same idea (accumulate case-specific experience across runs) and the register records
+that it has never been wired; the borrowable part is not its loop but its **admission gate**, which the kill
+criterion already is.
 
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 

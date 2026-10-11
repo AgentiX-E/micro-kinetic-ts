@@ -240,6 +240,76 @@ RE3 (`LAT WHOLE FILE + NO FLOOR`), and on RE2 the channel's worth is a per-syste
 OnlineBoutique loses 2.3 pp when fed, TrainTicket gains 2.2. Whether that is a re-baseline worth taking is a
 decision on those two numbers, not on the 1.9 that is gone.
 
+> **Read §7.5 with this.** The owed row was added in iteration 88 and MEASURED, and the answer is that the floor
+> does mask the supplied channel — as an **interaction** no single-axis row could have shown.
+
+### 7.5 The missing fourth cell — and the interaction only it could read (run `38157023328` on `47cc5e4`)
+
+§7.4 named one row as owed: `LAT WHOLE FILE + NO FLOOR`. The battery's propagation-channel rows are **two groups
+that never met** — the weight × floor 2×2 on the PUBLISHED corpus, and the corpus rows that vary only which
+derivation `edgeLatency` comes from — and their cross product over `{corpus, floor}` held **three of its four
+cells**. Iteration 88 adds the fourth. It is not a duplicate of either neighbour, and the measurement below is the
+reason: it is the only row that can read an **interaction**.
+
+**RE1 is the control, and every one of its cells is `Δ+0.0`.** The suite carries **no `traces.csv` at all** — the
+census reads `STARVED … the capped list holds no spans at all` — so none of the four cells can move, and none does.
+That is what makes the RE3 column below a statement about the term rather than about the battery.
+
+**RE3 — the suite §7.4 named** (the battery runs every row with **all twelve feature flags OFF**, so these are the
+term's numbers and **not** the published cells):
+
+| row | `{corpus × floor}` | RE3-OB | RE3-SS | RE3-TT | mean |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `BASELINE` | shipped × default | 72.2 | 46.1 | 3.6 | — |
+| `LAT NO FLOOR` | shipped × **no floor** | **+0.0** | +0.0 | **+0.0** | +0.0 |
+| `LAT WHOLE FILE` | **whole-file** × default | **+0.0** | +0.0 | **+0.0** | +0.0 |
+| **`LAT WHOLE FILE + NO FLOOR`** | **whole-file × no floor** | **−16.7** | +0.0 | **+13.6** | **−1.0** |
+| `LAT WHOLE FILE + LAT OFF` | whole-file × default, `latWeight = 0` | +0.0 | +0.0 | +0.0 | +0.0 |
+| `LAT CAPPED` | capped × default | +0.0 | +0.0 | +0.0 | +0.0 |
+
+**The movement is an INTERACTION, and that is the whole finding.**
+
+- **The floor alone moves nothing** (`LAT NO FLOOR`, Δ+0.0) — and it cannot: on the shipped corpus the array it
+  would unmask is **empty**, which is §7.1's `CAP TRUNCATES`.
+- **The supplied input alone moves nothing** (`LAT WHOLE FILE`, Δ+0.0) — it.74's `INERT` verdict, reproduced
+  exactly on the full 270-case corpus.
+- **Together they move two cells and nothing else.**
+
+So **§7.4's `INERT` was an artefact of the floor.** The channel is not inert on RE3; it is masked, and neither
+axis predicts the movement on its own — which is precisely why an incomplete cross product is a **defect rather
+than an untidiness**, and why this row could not be inferred from any of the three that existed.
+
+**And the movement is a RE-ORDERING, not a level shift.** Per fault type, against the baseline:
+
+| system | fault types that moved |
+| --- | --- |
+| RE3-OB | `f3` 83.3 → **33.3** · `f4` 66.7 → **16.7** · `f5` 100.0 → 83.3 · `f1` 11.1 → **44.4** |
+| RE3-TT | `f2` 0.0 → **14.3** · `f3` 0.0 → **40.0** |
+| RE3-SS | *nothing* — the suite can never hold a latency pair (census `STARVED`) |
+
+Two systems pull in **opposite directions** and the published convention — a mean over fault types — then absorbs
+them into `−1.0`. **The mean is not the finding; the ±15 pp per-cell swing is.** RE3-TT gains 13.6 pp on the cell
+that is the weakest of the published nine, and RE3-OB gives up 16.7.
+
+**The 2×2 is its own control and it is now complete.** A fifth cell (`latWeight = 0` on the whole-file corpus with
+no floor) would be `Δ+0.0` **by construction** — a zero weight makes the input irrelevant — so it is not owed and
+its absence is not a hole. What the four cells do say, together, is that the movement belongs to the term and to
+nothing else about the corpus or the flags.
+
+**RE2 is OWED, and it is in flight rather than unmeasured.** `ablation-re2` was still executing `Run ablation —
+RE2 only` when this was written (same run, `38157023328`; the job's own bound is 180 min and its measured cost was
+77.8 min). §7.4 already established that RE2's whole-file reading is a **per-system** question (OnlineBoutique
+−2.3, TrainTicket +2.2 on the corrected corpus), so the fourth cell's RE2 answer is expected to be a second
+interaction rather than a mean. It is recorded as owing rather than assumed, and the row that produces it is in
+the battery permanently.
+
+**What this does NOT decide.** Every row above ran with all twelve feature flags OFF, so **no number here says the
+published nine cells would move by these amounts** — what is established is that the term is **LIVE** on a corpus
+where it was read as inert, and the **direction** of its movement per cell. Whether the published corpus should be
+re-based onto the whole-file derivation, and whether `latMinRise = 10.3` should be lowered, is a decision on
+**those two cells and not on the `−1.0` mean**, and it is now cheap: the four cells exist permanently and a fence
+holds them there (`benchmarks/__tests__/latency-routes.test.ts` derives the 2×2 from the battery's own text).
+
 ## 8. Fences
 
 - `benchmarks/__tests__/corpus-owner.test.ts` — a real case directory, the real loader, the real owner: the
