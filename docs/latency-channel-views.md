@@ -398,6 +398,75 @@ is empty, so a push passes no flag at all. This section is an instrument change,
 the **byte-identical nine cells**. What it buys is that §7.5's decision — which of the two RE3 cells to accept, and
 whether the corpus or the floor is the axis to move — is at last measurable on the half that judges it.
 
+### 7.7 The decision, measured in the PUBLISHED configuration (run `38202128465` on `9e427fc`)
+
+§7.6 closed the two axes; this is the first time the crossed cell could be measured on **the half that judges**.
+Dispatched with `lat_min_rise=1` and `latency_view=whole-file` and **everything else published**, so the artifact's
+`signals:` line differs from the published one in exactly one field and carries
+`corpus: latencyView=whole-file`.
+
+**The attribution comes first, and it is the census this iteration added** — the golden half can now say what the
+chosen view HELD, and every zero in the tables below has a cause rather than an excuse:
+
+| group | cases | capped spans (pre / post) | `whole-file` rows | reported verdict |
+| --- | ---: | --- | ---: | --- |
+| RE1 OB / SS / TT | 375 | 0 (0 / 0) | **0** | no `traces.csv` at all — the control |
+| RE2 OnlineBoutique | 90 | 900 000 (900 000 / 0) | **1 080** | `CAP TRUNCATES` |
+| RE2 SockShop | 90 | 0 (0 / 0) | **0** | `STARVED` |
+| RE2 TrainTicket | 90 | 900 000 (890 062 / 9 938) | **6 781** | `CAP TRUNCATES`, `comparable 1` |
+| RE3 OnlineBoutique | 30 | 300 000 (300 000 / 0) | **356** | `CAP TRUNCATES` |
+| RE3 SockShop | 30 | 0 (0 / 0) | **0** | `STARVED` |
+| RE3 TrainTicket | 30 | 300 000 (300 000 / 0) | **2 006** | `CAP TRUNCATES` |
+
+**The nine cells, candidate against published** (the published column is the it.75 re-baseline, unchanged since):
+
+| suite | system | published | candidate | Δ | gained | lost | **net cases** |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| RE1 | OB / SS / TT | 80.0 / 92.8 / 68.0 | **identical** | **+0.0** | 0 | 0 | **0** |
+| RE2 | OnlineBoutique | 86.7 | **76.7** | **−10.0** | 7 | 16 | **−9** |
+| RE2 | SockShop | 92.2 | 92.2 | +0.0 | 0 | 0 | 0 |
+| RE2 | TrainTicket | 71.1 | **80.0** | **+8.9** | 16 | 8 | **+8** |
+| RE3 | OnlineBoutique | 80.0 | **67.8** | **−12.2** | 2 | 5 | **−3** |
+| RE3 | SockShop | 45.0 | 45.0 | +0.0 | 0 | 0 | 0 |
+| RE3 | TrainTicket | **51.1** | **76.0** | **+24.9** | 8 | **0** | **+8** |
+| **735** | | | | | **33** | **29** | **+4** |
+
+**And the `lat` term is finally LIVE**: its contribution is non-zero on **0 of 90** RE3 cases in the published run and
+on **24 of 90** here, and on **0 of 180** RE2 OB+TT cases in the published run and on **179 of 180** here. The one
+place the Deng-Yu mathematics enters the ranking reads its input for the first time — which is what §7.6 was for.
+
+**Four things this measurement settles, and one it does not.**
+
+1. **The movement is a RE-ORDERING with a system-dependent SIGN, and the sign is consistent across four independent
+   measurements.** OnlineBoutique loses and TrainTicket gains in the published configuration (RE2 −10.0 / +8.9,
+   RE3 −12.2 / +24.9), in the all-flags-off battery (§7.5), and in §7.4's per-system reading. SockShop never moves
+   in any of them — and the census is why: it carries **0** spans in every suite, so the axis cannot reach it.
+2. **The percentage is not the size of the effect; the case count is.** A `−12.2 pp` cell is **3 cases**; a
+   `+24.9 pp` cell is **8**. The whole benchmark moves **33 cases up and 29 down — a net of +4 out of 735
+   (`+0.54 pp`)**. Read as percentages the candidate looks like three dramatic cells; read as cases it is a
+   reshuffle that buys 33 with 29. **The nine cells are the published unit, so a reader is entitled to the
+   percentages — and this table is why they must never be read without the counts beside them.**
+3. **Ten of the eleven TrainTicket movements are gains: RE3-TT gains 8 with ZERO losses and RE2-TT gains 16 against
+   8.** That is the one clean signal in the table, and it is the strongest routing evidence this repository has:
+   the same knob that costs OnlineBoutique 9 cases buys TrainTicket 16, in two suites, with the channel live on
+   essentially every case of both.
+4. **RE1 is an exact control**: 375 cases, `whole-file` **0** rows, and **not one cell moves**. That is what makes
+   the rest of the table a statement about the term rather than about the flags.
+
+**And what it does not do: it does not ship.** Four of the nine published cells move, two of them **down**
+(`RE2-OB −10.0`, `RE3-OB −12.2`), and the net is `+4` cases. The kill criterion's first clause is the nine cells
+**byte-identical**, and this repository has rejected `+0.14`, `+0.28`, `+0.49` and `+5.8` pp alike when a headline
+gain came with a regression — a `+0.54 pp` net that costs 29 correct cases to buy 33 is not a gain, it is a
+reshuffle with a twelve-point hole in it. **So the verdict is REJECTED as an unconditional default**, recorded with
+its numbers rather than argued away.
+
+**What it becomes instead is a ROUTING problem with a measured target.** The polarity is the feature: `whole-file` +
+no floor is *worth +8 and +16 cases on TrainTicket with 0 losses on RE3*, and *costs 9 and 3 on OnlineBoutique*. The
+register already carries one routing candidate (`engine-margin < 0.5671`, `+11.11 pp` on RE3) built on a per-case
+feature rather than on a system name, and the successor to this section is the same kind of object: a feature that
+separates the two regimes — and the two regimes are now measurable per case, with the `lat` term's own contribution
+recorded on every one of them.
+
 ## 8. Fences
 
 - `benchmarks/__tests__/corpus-owner.test.ts` — a real case directory, the real loader, the real owner: the
@@ -410,7 +479,12 @@ whether the corpus or the floor is the axis to move — is at last measurable on
   than as a constant, the census is printed, the whole union is accepted by the union's own guard, the artifact's
   `corpus:` line is rendered from the one string the banner prints, and all four knobs are forwarded from dispatch
   inputs into **every** golden invocation — counted against the invocations the workflow actually has, so a job
-  added without them fails here instead of running at the shipped value under a dispatch's name.
+  added without them fails here instead of running at the shipped value under a dispatch's name. It also holds the
+  **reporting** of the census on the deciding half: the threading in the order it travels (the assembler's own
+  `latencyRoute`, read at the call site, carried by both functions that handle a case, aggregated by the owner's
+  summariser), the **shared renderer** across the two runners, the absence of a second spelling, and that the value
+  is reported rather than merely typed — a census computed and never printed is the state §7.7's attribution was
+  written against.
 - `benchmarks/__tests__/cli-argument-rejection.test.ts` — the **reach** fence, which is the direction nothing
   asked: every other flag→effect assertion starts from a flag, and this one starts from the **option** and asks
   whether any branch of the chain writes it. Both sides are derived (the chain's own spans; the options the
