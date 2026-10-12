@@ -51,15 +51,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (rel: string): string => readFileSync(resolve(HERE, '..', rel), 'utf8');
 
 /** One retained ERROR row, with the two classification flags the loader sets. */
-const row = (service: string, extra: { logic?: boolean; http?: boolean } = {}): FaultLogEntry =>
+const row = (
+  service: string,
+  extra: { logic?: boolean; http?: boolean; level?: string } = {},
+): FaultLogEntry =>
   ({
     timestamp: 1_700_000_000_000,
-    level: 'ERROR',
+    level: extra.level ?? 'ERROR',
     service,
-    message: 'm',
     isLogicException: extra.logic ?? false,
     isHttpException: extra.http ?? false,
-  }) as FaultLogEntry;
+  }) as unknown as FaultLogEntry;
 
 describe('the log channel: four ways to read zero, and the gate that decides three', () => {
   it('counts each level, so a zero is attributable rather than merely reported', () => {
@@ -119,18 +121,14 @@ describe('the log channel: four ways to read zero, and the gate that decides thr
       retained: 0,
       admitted: 0,
     });
-    const info = [
-      { timestamp: 1, level: 'INFO', service: 'a', message: 'm', isLogicException: true },
-    ] as FaultLogEntry[];
+    const info = [row('a', { logic: true, level: 'INFO' })];
     expect(deriveLogRoute(info, new Set(['a']), 'count', 4)).toMatchObject({
       rowsRead: 4,
       retained: 0,
       admitted: 0,
     });
     // FATAL is retained and admitted exactly as ERROR is — the bar is two levels, not one.
-    const fatal = [
-      { timestamp: 1, level: 'FATAL', service: 'a', message: 'm', isLogicException: true },
-    ] as FaultLogEntry[];
+    const fatal = [row('a', { logic: true, level: 'FATAL' })];
     expect(deriveLogRoute(fatal, new Set(['a']), 'count', 1)).toMatchObject({
       retained: 1,
       admitted: 1,
