@@ -84,3 +84,88 @@ distinguishes the two, and conflating them would make the guard fire on the flag
   configured — the shipped configuration IS the engine's defaults" was **false when it was written** and is
   true only for the axes that are actually shipped-valued. This iteration repairs it for this axis; the rest
   is not audited, and that is stated there as the residue.
+
+## 6. The axis's POPULATION, measured — and it became a value
+
+§5 registered the threshold as *"a separate axis… unchanged and deliberately so"*, and §2 explained that the flag
+is **inert below 20 nodes** as the reason no tree-suite assertion could catch the default defect. Neither drew the
+consequence for the CORPUS, and this section is that: **a flag that is inert below a node count is inert on every
+case below it, and on this benchmark most cases are below it.**
+
+### 6.1 The free read, and it is a partition
+
+From the loss census of the published run (`38240322295`, all 735 cases), the pool — the graph the ranker chooses
+from, which is the node count the guard tests — splits the corpus:
+
+| pool | cases | which cells | accuracy |
+| --- | ---: | --- | ---: |
+| **≤ 20** (the flag is NOT read) | **487** | RE1 OnlineBoutique 125 · RE1 SockShop 125 · RE2 OnlineBoutique 90 · RE2 SockShop 90 · RE3 OnlineBoutique **28** · RE3 SockShop **29** | **83.98%** |
+| **> 20** (the flag IS read) | **248** | RE1 TrainTicket 125 · RE2 TrainTicket 90 · RE3 TrainTicket 30 · RE3 OnlineBoutique **2** · RE3 SockShop **1** | **66.53%** |
+
+The rates are in the CENSUS's convention, which `docs/loss-decomposition.md` §4.3 owns and names: every case
+weighted equally, against the one recorded truth — this corpus's case-level accuracy is **78.10%**, not the
+published per-fault-type average `78.75%`. Quoting one as the other is the error that section exists to prevent, and
+the same applies here.
+
+### 6.2 Four statements, and the fourth is a refusal
+
+1. **The split is the SYSTEMS, not a property of the cases.** TrainTicket is 63–69 services; OnlineBoutique and
+   SockShop are 3–15. So a *per-fault-type* A/B of `rankNormalization` cannot be run at all — the axis is a
+   per-system question, and on six of the nine cells the answer is fixed by construction before the flag is
+   consulted.
+2. **The register's `rankNormalization ON — never revert` verdict has never been testable on 66.3% of the corpus.**
+   Not "was tested and held": the value is not read there, so no run made through this engine can have measured it
+   on those 487 cases — including the 3.6% → 51.1% TrainTicket recovery that is the verdict's whole evidence.
+3. **And the split is inhomogeneous WITHIN two cells.** Three of RE3's 60 cases are at or above the line
+   (`re3ob_adservice_f3_2` and `_f3_3` at 28 nodes, `re3ss_carts_f1_3` at 26) while their 57 cell-mates are below
+   it. That is the failure the constant's own docblock names — *"a below-threshold vector's values are a different
+   quantity, not a differently-scaled one"* — arriving inside a single cell, so those three cases are scored on a
+   different quantity from the ones they are reported beside.
+4. **The 17.5pp difference between the two rows is NOT the axis's effect, and this document does not claim it is.**
+   The populations differ in system, fault mix, fault-to-service ratio and graph size at once, so the only thing
+   the table establishes is **membership** — which cases the flag can reach — and that is exactly what it is used
+   for below. A reader who took 83.98% against 66.53% as the flag's value would be reading a confound, and this
+   sentence is here so that reading is not available.
+
+### 6.3 What became a value
+
+`TopologyFaultGraphConfig` gains **`anomalyNormalizeNodeThreshold`**, defaulting to the exported constant; the
+step-1b guard reads the config field rather than the constant. The option is threaded the way the axis's flag is:
+`RCAEvalTopologyOptions` and the FSE'26 topology object carry it, both CLIs parse
+`--anomaly-normalize-threshold` through one shared `parseNodeCount`, both workflows expose
+`anomaly_normalize_threshold`, and both configuration lines name it.
+
+**The lines name it unconditionally, and the rule is the one `fse26-report.ts` already records**: a field may be
+omitted while it holds its default **only if that default is zero**. This one's default is 20, so an
+omitted-when-default rule would render the shipped run and a run that rescaled every graph **byte-identically**.
+The consequence for acceptance follows from the same rule and is stated rather than discovered: **the `signals:`
+and `Config:` lines grow by one field by design, so the acceptance for this change is the nine CELLS plus the new
+field's value — never the line's bytes.**
+
+`parseNodeCount` refuses a fraction and **keeps `0`**: a node count is a cardinality, so `4.5` is not a coarser box,
+and `0` is the widest population the axis has rather than an absent value — the trap `--pool-penalty 0` was
+repaired for, one flag over.
+
+### 6.4 The residues this leaves, named
+
+- **`benchmarks/src/fse26-term-oracle.ts` still models the engine at the constant.** It re-derives a run from a
+  DUMP, and every dump in existence was produced at the shipped count, so its `rawCases` / `rescaledCases` split is
+  correct for all of them and would be wrong for a non-default dump — which must now be told to it. Stated rather
+  than threaded, because the oracle has one construction site whose configuration comes from the dump's own header.
+- **`summarizePopulation` takes the count as a parameter and carries it on the summary**, so the rendered line
+  states the population it used instead of the engine's default. This one IS threaded, because it feeds the
+  held-out split design: a summary taken at the default while the run used another count would size the split for
+  a population the run did not have.
+
+### 6.5 The prediction, and the candidate
+
+A run at `--anomaly-normalize-threshold 0` rescales **every** graph. Its nine cells must therefore be identical to
+the published ones on the 248 cases already above the line, and can differ **only** on the 487 that were raw — so a
+difference anywhere else is evidence that something other than this option moved, which is what makes the dispatch a
+measurement rather than a hope. It is also the axis's first read: whether an ordering principle that recovers two
+thirds of TrainTicket transfers to twelve-service graphs, where the raw deviation is already well-scaled.
+
+**And one external reference is re-confirmed rather than new.** `arXiv:2609.27069` — the controlled RCAEval audit,
+already on this repository's record in `docs/sota-comparison.md` §3, `docs/benchmark-corpus-completeness.md` and
+`docs/loss-decomposition.md` §1, with `scripts/audit_input_schema.py` built from its second finding — was checked
+before anything in this section was written, which is the grep-before-building rule this repository pays for.

@@ -327,6 +327,45 @@ flippable by another one**. That is the general form of the rule this repository
 artifact must carry the configuration that produced it** — and it is why a cell whose corpus is inferred counts as a
 cell measured under an unnamed rule.
 
+### 0g. A THIRD PUBLIC BENCHMARK — and the one whose unit is not a ranked service list
+
+**Alibaba Cloud's `RCA Benchmark`**, released open source as *"the industry's first open source root cause analysis
+benchmark system for Agentic Ops"*: an e-commerce microservice architecture on Kubernetes with **40+ business
+services and call chains up to 7 layers deep**, real-simulation rather than synthetic, exposing **seven categories
+of observation data** (metrics, logs, traces, alerts, resource topology, Kubernetes events, profiling).
+
+**It is recorded for one reason above the others: it is a POPULATION rather than a demonstration.** **200+
+compliance samples** over **40+ failure types in 6 categories**, injected through four channels, gated by a
+four-layer admission check, classified into four difficulty levels (L1–L4, with L2–L3 the stated focus), and
+reserved non-public samples held back to prevent contamination. §0c's Project Arena has 21 scenarios and its own
+author calls it a rubric over one incident report; this one has a corpus. So *"the field has no public benchmark"*
+is now unavailable in a second, stronger sense.
+
+**And it cannot be placed on our leaderboard in either direction, because its unit is not our unit.** Its ground
+truth is **four-layered** — failure type, normalized entity, causal propagation chain, key evidence edge zone — and
+its score is a **weighted composite over root-cause identification, boundary demarcation and procedure at 40 / 30 /
+30**, with *"nearly 70% of scores [resting] on deterministic quantization computation based on failure type
+topology semantics distance and entity topology distance"*. That is a **different scoring FRAME**, not a different
+metric of the same quantity: 78.75% Top-1 over a labelled service list and a composite over an
+identification/boundary/procedure triple share no denominator, so no gap can be quoted and the direction of any
+error is unknown. It joins §0d's OpsHarness in the file that exists for exactly this case.
+
+**What is worth acting on is its `boundary demarcation` and `causal propagation chain` layers, and they are the
+first external instrument that would reward the thing this repository measures but does not claim.** The `collision`
+term, the trace-topology signal and the loss census's victim-versus-source attribution are all attempts to get the
+*propagation boundary* right; a benchmark that scores it at 30% of the total is the first one where that work has a
+published denominator. Recorded as a **candidate instrument** — reproducing it is a separate decision with its own
+cost — and it also names the gap in OUR corpus: RCAEval's label is a **list of acceptable roots** with no
+propagation chain and no evidence-edge zone, so no result published on RCAEval, ours included, can be scored on
+either of those two layers.
+
+**One reference was checked before this section was written and is a CONFIRMATION rather than a find.**
+`arXiv:2609.27069` — Buljić's controlled audit of RCAEval, surfaced again by this iteration's survey — is already on
+this repository's record in **§3** of this document, in `docs/benchmark-corpus-completeness.md`, in
+`docs/loss-decomposition.md` §1, and as `scripts/audit_input_schema.py`, which was built from its second finding
+(*"a non-uniform column schema that silently zeroes telemetry for 250 of 375 RE1 cases"*). The survey found it, the
+grep found it first, and nothing was re-derived. **Standing unchanged.**
+
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |
