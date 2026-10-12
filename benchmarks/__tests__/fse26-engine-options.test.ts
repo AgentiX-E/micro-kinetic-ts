@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -172,6 +173,10 @@ describe('buildFse26EngineOptions', () => {
 
     expect(engine.topology).toEqual({
       rankNormalization: false,
+      // The axis's POPULATION, and it travels with the boolean rather than beside it: the two are read as
+      // one configuration, because a reader holding only `rankNormalization: false` cannot tell which cases
+      // the flag could have acted on.
+      anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
       metricRiseCeiling: 20,
       metricFleetBaseline: true,
     });

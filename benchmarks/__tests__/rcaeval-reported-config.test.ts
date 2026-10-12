@@ -44,6 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_WEIGHT,
@@ -435,12 +436,68 @@ describe('the RCAEval configuration line carries the configuration that produced
     // It is also the control that fails when a SHIPPED WEIGHT moves without the artifact being
     // re-read — which is the intended behaviour, because the published numbers are read through this
     // line and a weight that changes silently changes what they mean.
+    //
+    // …and it is the control that fails when the runner begins FORWARDING a field it never forwarded,
+    // which is what happened here: `anomalyNormalizeNodeThreshold` is the second half of the
+    // `rankNormalization` axis (the boolean picks WHICH rescale, this picks WHETHER one runs at all), so
+    // an artifact that named the boolean and not the count could not say which cases the boolean reached.
+    // It is printed unconditionally, on the latency weight's rule — the shipped value is 20, not 0, so an
+    // omitted-when-default field would render this line byte-identically for the shipped run and for a run
+    // that rescaled every graph. **The acceptance is the nine cells plus the FIELD, never this string**: the
+    // line gained one field by design and the cells must be unmoved, which is checked on the run rather
+    // than argued here.
     expect(formatSignalLine(shipped)).toBe(
       'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
         'collapseDiscount=0 traceWeight=0 prismWeight=0 prismPooling=additive ' +
-        'rankNormalization=true suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
+        'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
+        'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
         'temporalWeight=0 onsetShape=earliness',
     );
+  });
+
+  it('dispatches the rank-normalization axis’ POPULATION, and keeps zero a setting', () => {
+    // The boolean above was already dispatchable; the count that decides which cases it can reach was not,
+    // and the consequence is the reason this fence exists: on this corpus 487 of the 735 cases are below the
+    // shipped count, so `rankNormalization` is not read there and the register's verdict about it has never
+    // been testable on two thirds of the benchmark. A reach assertion, because a value that is printed on
+    // every artifact and forwarded to the engine yet cannot be set is it.89's defect one axis over.
+    // The count is declared in the parser and forwarded by the runner, so the two files are read together —
+    // the same reason the ownership block reads both, one describe further up.
+    const axis = code(readFileSync(RUNNER_PATH, 'utf8')) + code(readFileSync(CLI_PATH, 'utf8'));
+    expect(axis).toMatch(/anomalyNormalizeNodeThreshold:\s*ANOMALY_NORMALIZE_NODE_THRESHOLD\b/);
+    // No numeric literal: a literal here is a second owner of the engine's default and the line would then
+    // describe a population the engine did not use.
+    expect(axis).not.toMatch(/anomalyNormalizeNodeThreshold:\s*[-\d]/);
+    // It reaches the engine through the SECOND constructor argument, where the graph builder reads it —
+    // the argument whose membership is checked against `TopologyFaultGraphConfig` below.
+    expect(shippedEngine.topology.anomalyNormalizeNodeThreshold).toBe(
+      ANOMALY_NORMALIZE_NODE_THRESHOLD,
+    );
+    // `0` is a SETTING rather than an absent value: it is the count at which the rescale applies to every
+    // graph, i.e. the widest population the axis has. `Number('')` is 0, so the two must be distinguished
+    // by the whitespace rule rather than by truthiness — the same trap `--pool-penalty 0` was repaired for.
+    expect(
+      parseRCAEvalArgs(['--anomaly-normalize-threshold', '0']).anomalyNormalizeNodeThreshold,
+    ).toBe(0);
+    expect(
+      parseRCAEvalArgs(['--anomaly-normalize-threshold', '1']).anomalyNormalizeNodeThreshold,
+    ).toBe(1);
+    // …and a malformed one reproduces the published population rather than inventing one.
+    expect(
+      parseRCAEvalArgs(['--anomaly-normalize-threshold', '']).anomalyNormalizeNodeThreshold,
+    ).toBe(ANOMALY_NORMALIZE_NODE_THRESHOLD);
+    expect(
+      parseRCAEvalArgs(['--anomaly-normalize-threshold', 'many']).anomalyNormalizeNodeThreshold,
+    ).toBe(ANOMALY_NORMALIZE_NODE_THRESHOLD);
+    // The workflow can state it, which is what makes the axis reachable from a dispatch at all. Read from the
+    // workflow rather than from a remembered flag list: an input nobody forwards is the same hole as an
+    // option nobody can set, one level up.
+    const workflow = readFileSync(
+      resolve(REPO_ROOT, '.github/workflows/benchmark-rcaeval.yml'),
+      'utf8',
+    );
+    expect(workflow).toMatch(/^\s+anomaly_normalize_threshold:$/m);
+    expect(workflow).toMatch(/RANKING_ARG\+=\("?--anomaly-normalize-threshold/);
   });
 });

@@ -76,6 +76,16 @@ export interface RCAEvalSignalOptions {
 export interface RCAEvalTopologyOptions {
   readonly collapseDiscount: number;
   readonly rankNormalization: boolean;
+  /**
+   * The node count at or above which `rankNormalization` runs at all.
+   *
+   * In this list rather than in `signals`, and not because it is a switch: it is an argument to
+   * {@link TopologyFaultGraphConfig}, which is this object's subject — the fault graph's own construction. A
+   * value that decided the population of a *ranking term* would belong above; this one decides which graphs
+   * the graph BUILDER rescales, so a reader looking for which cases a mechanism reached finds it beside the
+   * mechanism's flag.
+   */
+  readonly anomalyNormalizeNodeThreshold: number;
   readonly suppressIdleTransients: boolean;
   readonly suppressNearZeroBaselineRise: boolean;
 }
@@ -138,6 +148,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
     topology: {
       collapseDiscount: opts.collapseDiscount,
       rankNormalization: opts.rankNormalization,
+      anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
       suppressIdleTransients: opts.suppressIdleTransients,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
     },
@@ -174,6 +185,7 @@ export function formatSignalLine(opts: CliOptions): string {
     `collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} ` +
     `prismWeight=${opts.prismWeight} prismPooling=${opts.prismPooling} ` +
     `rankNormalization=${opts.rankNormalization} ` +
+    `anomalyNormalizeNodeThreshold=${opts.anomalyNormalizeNodeThreshold} ` +
     `suppressIdleTransients=${opts.suppressIdleTransients} ` +
     `suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`

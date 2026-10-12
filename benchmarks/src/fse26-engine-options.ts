@@ -134,6 +134,10 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
     topology: {
       // Load-bearing on Train Ticket's large topologies.
       rankNormalization: opts.rankNormalization,
+      // …and the node count that decides which topologies count as large. Named on the artifact for the same
+      // reason: this corpus is the large-graph one, so the flag above acts on nearly every case here, and a
+      // reader cannot tell that from the boolean alone.
+      anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
       // Ablation switches; both are bit-identical to the shipped scoring when
       // they are at their defaults.
       metricRiseCeiling: opts.metricRiseCeiling,

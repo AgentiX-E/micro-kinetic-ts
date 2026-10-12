@@ -33,6 +33,11 @@ on:
         required: false
         default: ''
         type: string
+      anomaly_normalize_threshold:
+        description: "The node count at or above which rank normalisation runs at all (empty = the runner default, the SHIPPED 20). The flag above picks WHICH rescale; this picks WHETHER one runs, and it is therefore the axis's POPULATION: on this corpus 487 of the 735 cases are below the shipped count (OnlineBoutique and SockShop, ≤ 15 nodes) and 248 are at or above it (TrainTicket, 63–69), so the flag is not read on two thirds of the benchmark and the register's verdict about it has never been testable there. Set it to 0 to rescale every graph, or to 1 to include the few RE3 cases whose graph is larger than their cell-mates'"
+        required: false
+        default: ''
+        type: string
       lat_weight:
         description: "Weight on the per-edge latency term (empty = the runner default, which is the SHIPPED 0.561495, the largest weight in the ranking). This flag existed on the FSE'26 runner all along and had NO arm on this one, so the golden half of the kill criterion could not move the term at all — while every artifact's configuration line printed the value as though a dispatch had chosen it. A candidate measurable on one instrument and judged on another has an undecidable other half"
         required: false
@@ -208,6 +213,12 @@ jobs:
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANKING_ARG+=(--no-rank-normalization)
           fi
+          #   The axis's second half. It travels with the boolean for the reason the latency pair travels
+          #   together: the boolean alone cannot say which cases it acted on, so a dispatch able to name
+          #   only the flag could not measure the population, and the two are read as one configuration.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -309,6 +320,12 @@ jobs:
           fi
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANKING_ARG+=(--no-rank-normalization)
+          fi
+          #   The axis's second half. It travels with the boolean for the reason the latency pair travels
+          #   together: the boolean alone cannot say which cases it acted on, so a dispatch able to name
+          #   only the flag could not measure the population, and the two are read as one configuration.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -437,6 +454,12 @@ jobs:
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANKING_ARG+=(--no-rank-normalization)
           fi
+          #   The axis's second half. It travels with the boolean for the reason the latency pair travels
+          #   together: the boolean alone cannot say which cases it acted on, so a dispatch able to name
+          #   only the flag could not measure the population, and the two are read as one configuration.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -547,6 +570,12 @@ jobs:
           fi
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANKING_ARG+=(--no-rank-normalization)
+          fi
+          #   The axis's second half. It travels with the boolean for the reason the latency pair travels
+          #   together: the boolean alone cannot say which cases it acted on, so a dispatch able to name
+          #   only the flag could not measure the population, and the two are read as one configuration.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -677,6 +706,12 @@ jobs:
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANKING_ARG+=(--no-rank-normalization)
           fi
+          #   The axis's second half. It travels with the boolean for the reason the latency pair travels
+          #   together: the boolean alone cannot say which cases it acted on, so a dispatch able to name
+          #   only the flag could not measure the population, and the two are read as one configuration.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -779,6 +814,12 @@ jobs:
           fi
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANKING_ARG+=(--no-rank-normalization)
+          fi
+          #   The axis's second half. It travels with the boolean for the reason the latency pair travels
+          #   together: the boolean alone cannot say which cases it acted on, so a dispatch able to name
+          #   only the flag could not measure the population, and the two are read as one configuration.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -883,6 +924,12 @@ jobs:
           fi
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANKING_ARG+=(--no-rank-normalization)
+          fi
+          #   The axis's second half. It travels with the boolean for the reason the latency pair travels
+          #   together: the boolean alone cannot say which cases it acted on, so a dispatch able to name
+          #   only the flag could not measure the population, and the two are read as one configuration.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its

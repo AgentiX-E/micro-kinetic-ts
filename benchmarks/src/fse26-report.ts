@@ -41,6 +41,16 @@ export interface FSE26RunConfig {
   readonly logSignalMode: string;
   /** Whether ranking scores are rank-normalised before fusion. */
   readonly rankNormalization: boolean;
+  /**
+   * The node count at or above which `rankNormalization` runs at all — the flag's POPULATION.
+   *
+   * A separate field because the boolean cannot describe itself: two runs that both print
+   * `rankNormalization=true` differ completely if one rescaled every graph and the other only the graphs
+   * with 20+ services, and the register's verdict about this axis is a verdict about a population that has
+   * never been varied. Printed unconditionally, on the latency weight's rule — this default is non-zero, so
+   * an omitted-when-default field would render the shipped run and its ablation byte-identically.
+   */
+  readonly anomalyNormalizeNodeThreshold: number;
   /** Metric names dropped for this run (empty = no ablation). */
   readonly dropMetrics: readonly string[];
   /**
@@ -291,6 +301,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   let line =
     `Config: logWeight=${config.logWeight} logMode=${config.logSignalMode} ` +
     `rankNormalization=${config.rankNormalization}`;
+  // Unconditional, on the latency weight's rule: this default is NON-zero (20), so an
+  // omitted-when-default field would render a byte-identical line for the shipped run and for a run that
+  // rescaled every graph. It is also the field that says WHICH CASES the boolean above could act on, so
+  // omitting it would leave the line unable to distinguish the two populations the axis is about.
+  line += ` anomalyNormalizeNodeThreshold=${config.anomalyNormalizeNodeThreshold}`;
   if (config.dropMetrics.length > 0) {
     line += ` dropMetrics=[${config.dropMetrics.join(', ')}]`;
   }

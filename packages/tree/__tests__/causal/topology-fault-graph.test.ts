@@ -2877,3 +2877,82 @@ describe('buildTopologyFaultGraph — Fleet-Relative Metric Baseline', () => {
     expect([...result.anomalyScores.entries()].sort((a, b) => b[1] - a[1])[0]![0]).toBe('svc-a');
   });
 });
+
+/**
+ * The node-count threshold is the axis's POPULATION, and it has an owner.
+ *
+ * `rankNormalization` decides WHICH rescale a large topology gets; `ANOMALY_NORMALIZE_NODE_THRESHOLD` decides
+ * WHETHER one happens at all. That second decision is the one nobody could vary, and it is why the shipped
+ * setting is unread on most of the benchmark: measured over the 735 RCAEval cases, the two sides of the
+ * threshold are exactly OnlineBoutique + SockShop (487 cases, all ≤ 15 nodes) and TrainTicket (248 cases,
+ * 63–69 nodes) — so on two thirds of the corpus the flag is not consulted and no run can ever have tested it.
+ *
+ * These assertions make the threshold an OPTION rather than a constant a run cannot leave, and they pin the
+ * fact that motivated it: below the threshold NEITHER rescale runs.
+ */
+describe('the anomaly-normalization node threshold', () => {
+  /** `n` services in a chain, one spike, and a distinct deviation per service. */
+  const spiked = (
+    n: number,
+  ): { graph: ServiceCallGraph; metrics: ReturnType<typeof makeMetrics> } => {
+    const ids = Array.from({ length: n }, (_, i) => `svc-${i}`);
+    const edges = Array.from({ length: n - 1 }, (_, i) => ({ from: ids[i]!, to: ids[i + 1]! }));
+    // Distinct flat baselines, so no two services tie and the rank grid is unambiguous.
+    const metricsArr: [string, ReturnType<typeof makeTimeSeries>[]][] = ids.map((id, i) => [
+      id,
+      [
+        makeTimeSeries(
+          'cpu',
+          i === 0
+            ? [10, 12, 11, 10, 13, 900, 950, 980, 1000, 990, 1005, 995]
+            : Array.from({ length: 12 }, (_, k) => 10 + i * 0.1 + (k % 2) * 0.05),
+        ),
+      ],
+    ]);
+    return { graph: makeCallGraph(ids, edges), metrics: makeMetrics(metricsArr) };
+  };
+
+  /** The rank grid the rescale produces: for `n` distinct values, `{k / (n - 1)}`. */
+  const grid = (n: number): number[] => Array.from({ length: n }, (_, k) => k / (n - 1));
+
+  it('honours a threshold above the node count, so the anomalies stay RAW', () => {
+    const { graph, metrics } = spiked(20);
+    const raw = [
+      ...buildTopologyFaultGraph(graph, metrics, {
+        anomalyNormalizeNodeThreshold: 21,
+      }).anomalyScores.values(),
+    ];
+    // No rescale ran, so the values are deviations whose maximum is NOT the rank top. Under EITHER rescale
+    // the maximum is exactly 1; a raw deviation of a 1000-on-10 spike is far above it.
+    expect(Math.max(...raw)).toBeGreaterThan(1);
+    const atDefault = [...buildTopologyFaultGraph(graph, metrics, {}).anomalyScores.values()];
+    // …and at the engine's own threshold the SAME case is rank-normalized, which is what makes the option the
+    // thing that moved it rather than the fixture.
+    expect(atDefault.every((v) => v >= 0 && v <= 1)).toBe(true);
+    expect(Math.max(...atDefault)).toBeCloseTo(1, 9);
+  });
+
+  it('is the ONLY trigger: below it, `rankNormalization` is not read at all', () => {
+    // This is the corpus fact as a property. A five-service topology is below the default threshold, so the
+    // flag has no reachable effect — the claim that no run can have tested it there.
+    const { graph, metrics } = spiked(5);
+    const on = buildTopologyFaultGraph(graph, metrics, { rankNormalization: true });
+    const off = buildTopologyFaultGraph(graph, metrics, { rankNormalization: false });
+    expect([...off.anomalyScores.entries()].sort()).toEqual([...on.anomalyScores.entries()].sort());
+  });
+
+  it('defaults to the engine constant, and the boundary is that constant’s own', () => {
+    // `>=`, so a graph EXACTLY at the threshold is normalized and one node smaller is not. Pinned against the
+    // constant rather than against 20, so changing the constant cannot leave this asserting a stale boundary.
+    const at = spiked(ANOMALY_NORMALIZE_NODE_THRESHOLD);
+    const atValues = [...buildTopologyFaultGraph(at.graph, at.metrics).anomalyScores.values()];
+    expect([...atValues].sort((a, b) => a - b)).toEqual(grid(ANOMALY_NORMALIZE_NODE_THRESHOLD));
+    const below = spiked(ANOMALY_NORMALIZE_NODE_THRESHOLD - 1);
+    const belowValues = [
+      ...buildTopologyFaultGraph(below.graph, below.metrics).anomalyScores.values(),
+    ];
+    expect([...belowValues].sort((a, b) => a - b)).not.toEqual(
+      grid(ANOMALY_NORMALIZE_NODE_THRESHOLD - 1),
+    );
+  });
+});

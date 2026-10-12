@@ -80,3 +80,27 @@ export function parseFieldDecimals(raw: string, shipped: number): number {
   if (!Number.isInteger(value) || value < 0 || value > MAX_FIELD_DECIMALS) return shipped;
   return value;
 }
+
+/**
+ * Parse one node count from a flag's raw value.
+ *
+ * A CARDINALITY rather than a quantity, which is the whole difference from {@link parseWeight} and the reason
+ * this is not that function: a node count is compared with `>=` against a graph's size, so a fraction selects
+ * no population at all. Refused rather than rounded, for {@link parseFieldDecimals}' reason — rounding picks
+ * one of two legal populations and reports it as the one the dispatch named.
+ *
+ * **`0` is KEPT, and for the opposite reason the empty string falls back.** `Number('')` is `0`, so an empty
+ * flag must reproduce the shipped configuration; but an explicit `0` is the setting at which the rescale
+ * applies to EVERY graph, i.e. the widest population the axis has, and a parse that treated it as absent would
+ * make that setting unreachable through the CLI — the defect `--pool-penalty 0` was repaired for.
+ *
+ * @param raw - The flag value as written on the command line.
+ * @param shipped - The count the runner would have used had the flag been absent.
+ * @returns `raw` when it is a non-negative integer; `shipped` otherwise.
+ */
+export function parseNodeCount(raw: string, shipped: number): number {
+  if (raw.trim() === '') return shipped;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) return shipped;
+  return value;
+}

@@ -728,6 +728,7 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   rise_ceiling: 'runner',
   fleet_baseline: 'runner',
   no_rank_normalization: 'runner',
+  anomaly_normalize_threshold: 'runner',
   drop_metrics: 'runner',
   failed_edge_weight: 'runner',
   failed_edge_mode: 'runner',

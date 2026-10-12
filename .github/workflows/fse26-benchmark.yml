@@ -47,6 +47,10 @@ on:
         description: 'Set to anything non-empty to rank the services by score instead of normalising each to its rank (empty = the runner default). rankNormalization confines the metric term to [0,1], which is the reason the log term can outvote it'
         required: false
         default: ''
+      anomaly_normalize_threshold:
+        description: 'The node count at or above which rank normalisation runs at all (empty = the runner default, the shipped 20). The flag above picks WHICH rescale; this picks WHETHER one runs, and it is therefore the axis population: on RCAEval 487 of 735 cases sit below the shipped count, so the flag is unread on two thirds of that corpus, while this corpus is the large-graph one where it acts nearly everywhere. Set it to 0 to rescale every graph'
+        required: false
+        default: ''
       drop_metrics:
         description: 'Comma-separated metric labels to strip from every case before scoring (empty = no ablation). Applied at load time, so the engine is unchanged'
         required: false
@@ -232,6 +236,11 @@ jobs:
           RANK_NORM_ARG=()
           if [ -n "${{ inputs.no_rank_normalization }}" ]; then
             RANK_NORM_ARG=(--no-rank-normalization)
+          fi
+          # The axis's second half, in the same array as the boolean: a dispatch that could state the flag
+          # and not the population could not measure which cases the flag reached.
+          if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
+            RANK_NORM_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
           DROP_METRICS_ARG=()
           if [ -n "${{ inputs.drop_metrics }}" ]; then

@@ -146,6 +146,7 @@ async function main(): Promise<void> {
     logWeight: opts.logWeight,
     logSignalMode: opts.logMode,
     rankNormalization: opts.rankNormalization,
+    anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
     dropMetrics: opts.dropMetrics,
     metricRiseCeiling: opts.metricRiseCeiling,
     metricFleetBaseline: opts.metricFleetBaseline,

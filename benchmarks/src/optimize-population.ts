@@ -55,7 +55,15 @@ export interface PopulationSummary {
   readonly bySuite: Readonly<Record<string, number>>;
   readonly byFault: Readonly<Record<string, number>>;
   /**
-   * The cases at or above {@link ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes — the only ones on which the
+   * The node count `acting` was counted against — the run's own, not the engine's default.
+   *
+   * Carried on the summary so the rendered line states the population it used. A renderer that read the
+   * constant instead would describe the shipped population on a summary taken at any other count, and the
+   * line is the only place that number appears.
+   */
+  readonly threshold: number;
+  /**
+   * The cases at or above {@link PopulationSummary.threshold} nodes — the only ones on which the
    * rank-normalization flag can act. A run with `acting.count === 0` reports numbers that are entirely
    * independent of that axis, whatever the flag says.
    */
@@ -94,7 +102,10 @@ export function parseStratum(stratum: string): {
  * @param cases - The cases, with their node counts.
  * @returns The summary. Every partition sums to `total`.
  */
-export function summarizePopulation(cases: readonly PopulationCase[]): PopulationSummary {
+export function summarizePopulation(
+  cases: readonly PopulationCase[],
+  threshold: number = ANOMALY_NORMALIZE_NODE_THRESHOLD,
+): PopulationSummary {
   const bump = (into: Record<string, number>, key: string): void => {
     into[key] = (into[key] ?? 0) + 1;
   };
@@ -111,7 +122,12 @@ export function summarizePopulation(cases: readonly PopulationCase[]): Populatio
     bump(byFault, fault);
     // `>=`, matching the engine's own guard: a graph exactly at the threshold IS normalized, and an
     // off-by-one here would misreport the one case a reader is most likely to check.
-    if (c.nodes >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
+    //
+    // The threshold is a PARAMETER rather than the constant, because this count is a decision input: the
+    // held-out split is chosen against `acting`, so a summary taken at the default while the run used some
+    // other count would size the split for a population the run did not have. The default is the engine's
+    // shipped count, so a caller summarizing a default-configuration corpus still gets the shipped answer.
+    if (c.nodes >= threshold) {
       acting += 1;
       bump(actingBySystem, system);
     }
@@ -121,6 +137,7 @@ export function summarizePopulation(cases: readonly PopulationCase[]): Populatio
     bySystem,
     bySuite,
     byFault,
+    threshold,
     acting: { count: acting, bySystem: actingBySystem },
   };
 }
@@ -541,9 +558,11 @@ export function formatPopulation(summary: PopulationSummary, label: string): str
       summary.byFault,
       summary.total,
     )}`,
-    // The decisive line: on how much of this corpus the shipped rank-normalization value can act at all.
+    // The decisive line: on how much of this corpus the run's rank-normalization value can act at all. The
+    // count is read from the SUMMARY rather than from the engine's constant — a summary taken at another
+    // count would otherwise render the shipped population beside numbers counted against the run's.
     `population[${label}]: rankNormalization acts on ${summary.acting.count}/${summary.total} cases ` +
-      `(nodes >= ${ANOMALY_NORMALIZE_NODE_THRESHOLD})` +
+      `(nodes >= ${summary.threshold})` +
       (summary.acting.count === 0
         ? ' — this corpus cannot distinguish the flag from its opposite'
         : ` | acting system: ${render(summary.acting.bySystem, summary.acting.count)}`),

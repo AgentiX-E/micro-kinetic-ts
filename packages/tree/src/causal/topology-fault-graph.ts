@@ -195,6 +195,22 @@ export interface TopologyFaultGraphConfig {
    */
   readonly rankNormalization: boolean;
   /**
+   * The node count at or above which a case's anomalies are rescaled at all.
+   *
+   * **The axis's population, and until this field existed it was not an option.** `rankNormalization` picks
+   * WHICH rescale; this picks WHETHER any runs, and it is the second decision that decides how much of a
+   * benchmark the first one can act on. Measured over the 735 RCAEval cases, the two sides are exactly the
+   * small systems and the large one — 487 cases (OnlineBoutique ≤ 12 nodes, SockShop ≤ 15) below, 248
+   * (TrainTicket 63–69) at or above — so the register's `rankNormalization ON — never revert` verdict has
+   * never been testable on two thirds of the corpus, because the flag is not read there at all.
+   *
+   * It is a field rather than a constant for the reason `rankNormalization` is: a value that decides which
+   * cases a mechanism acts on cannot be varied, no run can measure the mechanism's population, and the
+   * register ends up holding a verdict about a population nobody chose. Default:
+   * {@link ANOMALY_NORMALIZE_NODE_THRESHOLD}, which is the shipped behaviour.
+   */
+  readonly anomalyNormalizeNodeThreshold: number;
+  /**
    * Whether to extend the transient-spike guard to an IDLE-start transient:
    * a metric that starts at ~0 (head ≤ max × 0.001), has a transient excursion
    * (permanence < 0.3) and settles at a NON-zero tail (tail > max × 0.001).
@@ -286,6 +302,30 @@ export interface TopologyFaultGraphConfig {
 }
 
 /**
+ * Above this many nodes, and only above it, the anomaly scores a case is RANKED on are rescaled (step 1b of
+ * {@link buildTopologyFaultGraph}). The engine's default for
+ * {@link TopologyFaultGraphConfig.anomalyNormalizeNodeThreshold}.
+ *
+ * Exported because it is the one number that lets a reader INTERPRET a score the engine reported — the
+ * difference between "self-anomaly 1.000 is the case maximum by construction" and "1.000 is a raw deviation
+ * that happened to be the largest". A consumer holding a per-service anomaly vector and its node count cannot
+ * tell those apart without it, and the failure is silent: a below-threshold vector's values are a different
+ * quantity, not a differently-scaled one, so a reader that assumes the rescale has the engine's ORDER (any
+ * rescale here is strictly monotone) and NOT its gaps.
+ *
+ * The two clauses of the condition are separate axes and both are load-bearing: the flag
+ * {@link TopologyFaultGraphConfig.rankNormalization} picks WHICH rescale, this threshold decides WHETHER one
+ * happens at all. Neither can be inferred from the other — **and the second one is the axis's POPULATION.**
+ * Measured over the 735 RCAEval cases, the two sides are exactly the small systems and the large one: 487
+ * cases below it (OnlineBoutique ≤ 12 nodes, SockShop ≤ 15) and 248 at or above (TrainTicket 63–69). So the
+ * register's `rankNormalization ON — never revert` verdict has never been testable on two thirds of the
+ * corpus, because below this line **the flag is not read at all**. That is why this value became
+ * {@link TopologyFaultGraphConfig.anomalyNormalizeNodeThreshold} rather than staying a constant no run could
+ * leave, and why the default here remains the shipped 20.
+ */
+export const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
+
+/**
  * Whether the engine rank-normalizes anomaly scores above the node threshold, when the caller says nothing.
  *
  * **This is the SHIPPED value, and it is the value every published number was measured with.** It was a
@@ -321,6 +361,7 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
   collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
   rankNormalization: DEFAULT_RANK_NORMALIZATION, // the shipped value, named once
+  anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD, // the shipped population, named once
   suppressIdleTransients: false, // non-zero-baseline transient guard only (shipped)
   suppressNearZeroBaselineRise: false, // near-zero-baseline rise suppression (opt-in)
   metricRiseCeiling: 0, // unbounded relative rise (shipped behaviour)
@@ -445,24 +486,6 @@ export function rankNormalizeScores(
   }
   return result;
 }
-
-/**
- * Above this many nodes, and only above it, the anomaly scores a case is RANKED on are
- * rescaled (step 1b of {@link buildTopologyFaultGraph}).
- *
- * Exported because it is the one number that lets a reader INTERPRET a score the engine
- * reported — the difference between "self-anomaly 1.000 is the case maximum by construction"
- * and "1.000 is a raw deviation that happened to be the largest". A consumer holding a
- * per-service anomaly vector and its node count cannot tell those apart without it, and the
- * failure is silent: a below-threshold vector's values are a different quantity, not a
- * differently-scaled one, so a reader that assumes the rescale has the engine's ORDER (any
- * rescale here is strictly monotone) and NOT its gaps.
- *
- * The two clauses of the condition are separate axes and both are load-bearing: the flag
- * {@link TopologyFaultGraphConfig.rankNormalization} picks WHICH rescale, this threshold
- * decides WHETHER one happens at all. Neither can be inferred from the other.
- */
-export const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
 
 /**
  * Build a topology-preserving fault graph from a service call graph and metrics.
@@ -616,12 +639,13 @@ export function buildTopologyFaultGraph(
   // normalization rescales them to [0, 1], making the root cause stand
   // out against the noise floor.
   //
-  // We only apply this on graphs with ≥ {@link ANOMALY_NORMALIZE_NODE_THRESHOLD} nodes so
+  // We only apply this on graphs with ≥ `cfg.anomalyNormalizeNodeThreshold` nodes so
   // that small, well-studied topologies (OnlineBoutique 12–14, SockShop 12–14) retain
   // their existing calibrated scoring. The threshold is deliberately conservative — any
-  // system large enough to need this has well over 20 services — and it is exported
-  // rather than inlined so a reader of a score can tell WHICH side of it the run was on.
-  if (callGraph.nodes.size >= ANOMALY_NORMALIZE_NODE_THRESHOLD) {
+  // system large enough to need this has well over 20 services — and it is a CONFIG FIELD
+  // rather than the constant it was, so a run can vary the population; the constant is its
+  // default and a reader of a score can still tell WHICH side of it the run was on.
+  if (callGraph.nodes.size >= cfg.anomalyNormalizeNodeThreshold) {
     if (cfg.rankNormalization) {
       // Rank normalization: robust to a single outlier, semantics-agnostic.
       const ranked = rankNormalizeScores(anomalyScores);

@@ -16,6 +16,10 @@
 
 import { describe, expect, it } from 'vitest';
 
+// The threshold's default, READ from its owner rather than restated: a test that hard-coded 20 would keep
+// passing after the engine's default moved, and the line it guards would then describe a run nobody made.
+import { ANOMALY_NORMALIZE_NODE_THRESHOLD } from '../../packages/tree/src/index.js';
+
 import type { FSE26RunConfig } from '../src/fse26-report.js';
 import {
   buildFSE26Report,
@@ -33,6 +37,7 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     logWeight: 1,
     logSignalMode: 'logicHttp',
     rankNormalization: true,
+    anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     dropMetrics: [],
     metricRiseCeiling: 0,
     metricFleetBaseline: false,
@@ -139,8 +144,13 @@ describe('FSE26 report — the two renderings agree', () => {
     // shipped run and `--temporal-weight 0` byte-identically the day the weight flips,
     // which is the defect the line exists to prevent. A SHAPE has no default-0 to be
     // omitted against at all.
+    // …and the rank-normalization axis' second half travels with the boolean, printed unconditionally on the
+    // latency weight's rule: its shipped value is 20 rather than 0, so the pair "the flag acted / the flag
+    // could not be consulted" is exactly what the two fields together say, and an omitted one would leave the
+    // line unable to distinguish the two populations.
     expect(shipped).toBe(
-      'Config: logWeight=1 logMode=logicHttp rankNormalization=true latWeight=0 ' +
+      'Config: logWeight=1 logMode=logicHttp rankNormalization=true ' +
+        `anomalyNormalizeNodeThreshold=${ANOMALY_NORMALIZE_NODE_THRESHOLD} latWeight=0 ` +
         'poolMetricPenaltyWeight=0 stabilityWeight=0 temporalWeight=0 onsetShape=earliness',
     );
     expect(formatFSE26ConfigLine(makeConfig({ failedEdgeWeight: 1 }))).toContain(

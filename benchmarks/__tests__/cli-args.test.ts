@@ -18,7 +18,7 @@ import {
   MAX_FIELD_DECIMALS,
   SERVICE_FIELD_DECIMALS,
 } from '../../packages/kinetic/src/benchmarks/index.js';
-import { parseFieldDecimals, parseWeight } from '../src/cli-args.js';
+import { parseFieldDecimals, parseNodeCount, parseWeight } from '../src/cli-args.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH_SRC = resolve(HERE, '../src');
@@ -164,6 +164,40 @@ describe('parseFieldDecimals', () => {
       const source = readFileSync(resolve(BENCH_SRC, file), 'utf8');
       expect(source, `${file} defines its own parseFieldDecimals`).not.toMatch(
         /function parseFieldDecimals\s*\(/,
+      );
+    }
+  });
+});
+
+describe('parseNodeCount', () => {
+  it('accepts a non-negative integer, and KEEPS zero', () => {
+    // `0` is not "the empty flag" for this one: it is the value that makes the rescale apply to every graph,
+    // which is the ablation this flag exists to allow. A parse that treated 0 as a fallback would make the
+    // axis's widest setting unreachable, the same defect `--pool-penalty 0` was fixed for.
+    expect(parseNodeCount('0', 20)).toBe(0);
+    expect(parseNodeCount('1', 20)).toBe(1);
+    expect(parseNodeCount('20', 20)).toBe(20);
+    expect(parseNodeCount('1000000', 20)).toBe(1000000);
+  });
+
+  it('falls back to the shipped value for a malformed one', () => {
+    // A node count is a CARDINALITY, so `4.5` is not a coarser box — it is a value the guard cannot be read
+    // against. Refused rather than rounded, for `parseFieldDecimals`' reason: rounding picks one of two legal
+    // populations and reports it as the dispatched one.
+    expect(parseNodeCount('', 20)).toBe(20);
+    expect(parseNodeCount('   ', 20)).toBe(20);
+    expect(parseNodeCount('4.5', 20)).toBe(20);
+    expect(parseNodeCount('-1', 20)).toBe(20);
+    expect(parseNodeCount('abc', 20)).toBe(20);
+    expect(parseNodeCount('NaN', 20)).toBe(20);
+    expect(parseNodeCount('Infinity', 20)).toBe(20);
+  });
+
+  it('is defined once, in the shared module', () => {
+    for (const file of ['fse26-cli.ts', 'rcaeval-cli.ts', 'run-rcaeval.ts']) {
+      const source = readFileSync(resolve(BENCH_SRC, file), 'utf8');
+      expect(source, `${file} defines its own parseNodeCount`).not.toMatch(
+        /function parseNodeCount\s*\(/,
       );
     }
   });

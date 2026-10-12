@@ -235,6 +235,15 @@ const KNOBS: Readonly<
     fse26: 'no_rank_normalization',
     rcaeval: 'no_rank_normalization',
   },
+  anomalyNormalizeNodeThreshold: {
+    // The axis's POPULATION, one row down from its flag. Its owner is the audit that already registered
+    // it as an un-covered separate axis ("below it, NEITHER rescale runs"), which is exactly the sentence
+    // this row turns into a dispatchable value.
+    flag: '--anomaly-normalize-threshold',
+    owner: 'rank-normalization-default-audit.md',
+    fse26: 'anomaly_normalize_threshold',
+    rcaeval: 'anomaly_normalize_threshold',
+  },
   metricRiseCeiling: {
     flag: '--rise-ceiling',
     owner: 'fse26-metric-competition-verdict.md',
@@ -360,7 +369,7 @@ const KNOBS: Readonly<
 /**
  * The knobs whose option name is NOT derivable from their flag.
  *
- * Four, by three different mechanisms, and only the first two were found by hand — the
+ * Five, by three different mechanisms, and only the first two were found by hand — the
  * guard found the rest:
  *
  * 1. a `metric` prefix: `--rise-ceiling` -> `metricRiseCeiling`,
@@ -369,11 +378,20 @@ const KNOBS: Readonly<
  * 3. a NEGATED pole: `rankNormalization` is reached by `--no-rank-normalization`, because
  *    the FSE'26 parser exposes only the negated switch (the RCAEval runner has both poles).
  *
- * Both of the first two are measured and rejected, and both are invisible to a search for
+ * The fifth is a fourth mechanism and the smallest of them: the flag says what the value
+ * does (`--anomaly-normalize-threshold`) while the field says what it counts
+ * (`anomalyNormalizeNodeThreshold`), so one word separates them. The engine's field is the
+ * one that survives, because a reader meeting the value in `TopologyFaultGraphConfig` needs
+ * to know it is a NODE count rather than a score, and the flag is the shorter spelling a
+ * dispatcher types. Recorded rather than renamed for the reason every other entry is: the
+ * rename would move a shipped field to satisfy a matcher.
+ *
+ * All four mechanisms are measured and rejected, and all of them are invisible to a search for
  * their input name — the trap this census exists to close. Recorded as an exact set, so a
  * NEW non-derivable name fails here and has to be added deliberately.
  */
 const NON_DERIVABLE_OPTIONS: readonly string[] = [
+  'anomalyNormalizeNodeThreshold',
   'metricFleetBaseline',
   'metricRiseCeiling',
   'poolMetricPenaltyWeight',
@@ -411,8 +429,20 @@ const NON_DERIVABLE_OPTIONS: readonly string[] = [
  * published cell on their own and two of them together, so a half that can vary one of the two
  * cannot measure the effect either has. The axis itself (`latencyView`) is operational rather than
  * a knob, so it has a reason in {@link OPERATIONAL_OPTIONS} instead of a row here.
+ *
+ * ## `anomalyNormalizeNodeThreshold`, and why the flag alone was not the axis (iteration 94)
+ *
+ * `rankNormalization` was already dispatchable on both halves, and that turned out to describe the
+ * axis without deciding it: the engine reads the flag only at or above
+ * `ANOMALY_NORMALIZE_NODE_THRESHOLD` nodes, and on the golden corpus those two sides are exactly the
+ * small systems (487 of 735 cases, all ≤ 15 nodes) and the large one (248, 63–69). So a reader of the
+ * register's `rankNormalization ON — never revert` verdict had one boolean and no way to say which
+ * cases it had acted on, and the half it could not vary was the larger one. The count became a field
+ * on `TopologyFaultGraphConfig` and an input on both workflows, which is what puts it in this list:
+ * **a flag whose population is fixed is a flag measurable on the population somebody else chose.**
  */
 const DISPATCHABLE_ON_BOTH: readonly string[] = [
+  'anomalyNormalizeNodeThreshold',
   'latMinRise',
   'latWeight',
   'logSignalMode',

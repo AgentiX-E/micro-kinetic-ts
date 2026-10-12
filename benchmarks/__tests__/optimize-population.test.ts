@@ -117,6 +117,23 @@ describe('the corpus summary partitions what it counts', () => {
     );
   });
 
+  it('summarizes against the run’s own count, not the engine’s default, when one is given', () => {
+    // The threshold became an engine OPTION, so a run can now rescale a population the shipped count does
+    // not describe. This summary is a DECISION input — the held-out split is sized against `acting` — so a
+    // summary taken at the default while the run used another count would size the split for a population
+    // the run did not have. The rendered line therefore reads the count from the summary, which is the only
+    // place the number appears.
+    const atZero = summarizePopulation(CORPUS, 0);
+    expect(atZero.acting.count).toBe(CORPUS.length);
+    expect(atZero.threshold).toBe(0);
+    expect(formatPopulation(atZero, 'corpus').join('\n')).toContain('(nodes >= 0)');
+    // …and the default still reproduces the shipped answer, so nothing moves for an unconfigured run.
+    expect(summarizePopulation(CORPUS).threshold).toBe(ANOMALY_NORMALIZE_NODE_THRESHOLD);
+    expect(formatPopulation(summarizePopulation(CORPUS), 'corpus').join('\n')).toContain(
+      `(nodes >= ${ANOMALY_NORMALIZE_NODE_THRESHOLD})`,
+    );
+  });
+
   it('says so when the flag could not have acted at all', () => {
     // The case that matters most: a corpus entirely below the threshold reports numbers that are independent
     // of the axis, whatever the flag says. Saying "0/6 acting" is weaker than saying what that costs, so the

@@ -60,13 +60,14 @@ import {
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 import type { LogSignalMode, PrismPooling } from '../../packages/tree/src/index.js';
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
   isLogSignalMode,
   isPrismPooling,
 } from '../../packages/tree/src/index.js';
 
-import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
+import { hasValue, parseFieldDecimals, parseNodeCount, parseWeight } from './cli-args.js';
 // The view union, from the module that OWNS the three views. A `type` import would leave the guard
 // unimported, and a guard restated here would be a second answer to "is this a view" — the defect
 // `--prism-pooling` was repaired for, moved to the third vocabulary on this surface.
@@ -247,11 +248,21 @@ export interface CliOptions {
    */
   collapseDiscount: number;
   /**
-   * Rank-based anomaly-score normalization on large topologies (≥ 20 nodes).
-   * Robust to a single near-zero-baseline outlier that would otherwise stretch
-   * the min-max range. Opt-in; default false.
+   * Rank-based anomaly-score normalization on large topologies. Robust to a
+   * single near-zero-baseline outlier that would otherwise stretch the min-max
+   * range. SHIPPED ON (`DEFAULT_RANK_NORMALIZATION`) — the register keeps the axis on, and this
+   * comment said "Opt-in; default false" after both had stopped being true.
    */
   rankNormalization: boolean;
+  /**
+   * The node count at or above which the rescale runs at all — `rankNormalization`'s POPULATION.
+   *
+   * Separate from the flag because it decides WHICH cases the flag can act on, and on this corpus that is
+   * most of them: 487 of the 735 cases are below the shipped 20 (OnlineBoutique and SockShop), so the flag
+   * is not read there and no run can have measured it. Dispatchable so the population stops being a
+   * constant, and printing it so an artifact says which population it describes.
+   */
+  anomalyNormalizeNodeThreshold: number;
   /**
    * Extend the transient-spike guard to idle-start transients: a metric that
    * starts at ~0, has a transient excursion, and settles at a NON-zero tail.
@@ -361,6 +372,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // Read from the engine's owner rather than restated: this parser and the FSE'26 one both carried a
     // literal `true` while the engine's own default was `false`, which is three owners of one shipped value.
     rankNormalization: DEFAULT_RANK_NORMALIZATION,
+    // …and the population it acts on, from the same owner, for the same reason. Named on the artifact even
+    // when it holds its default: this one decides which CASES the flag above can reach, so an omitted value
+    // would leave a reader unable to tell a run that measured the flag from one that never consulted it.
+    anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
     fusionCeiling: '',
@@ -496,6 +511,14 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.rankNormalization = true;
     } else if (args[i] === '--no-rank-normalization') {
       opts.rankNormalization = false;
+    } else if (args[i] === '--anomaly-normalize-threshold' && hasValue(args, i + 1)) {
+      // Through `parseNodeCount`, whose docblock carries why `0` is kept and a fraction is refused. The
+      // fallback is the shipped count, so a malformed dispatch reproduces a published population rather
+      // than inventing one — and `0` is the widest setting this flag has, not an absent value.
+      opts.anomalyNormalizeNodeThreshold = parseNodeCount(
+        args[++i]!,
+        ANOMALY_NORMALIZE_NODE_THRESHOLD,
+      );
     } else if (args[i] === '--suppress-idle-transients') {
       opts.suppressIdleTransients = true;
     } else if (args[i] === '--no-suppress-idle-transients') {

@@ -34,6 +34,7 @@ import { join } from 'node:path';
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_WEIGHT,
@@ -47,7 +48,7 @@ import {
   type OnsetShape,
 } from '../../packages/tree/src/index.js';
 
-import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
+import { hasValue, parseFieldDecimals, parseNodeCount, parseWeight } from './cli-args.js';
 
 /**
  * The log-signal mode the benchmark reports.
@@ -104,6 +105,15 @@ export interface Fse26CliOptions {
   readonly logMode: LogSignalMode;
   /** Rank-based anomaly-score normalization on large topologies (≥ 20 nodes). */
   readonly rankNormalization: boolean;
+  /**
+   * The node count at or above which `rankNormalization` runs at all.
+   *
+   * The other half of the axis, and the half that decides its population. On RCAEval the two sides are
+   * exactly the small systems (487 cases) and the large one (248); on FSE'26 the corpus is large-graph, so
+   * this flag's default is what makes the flag above act nearly everywhere. Dispatchable so a run can say
+   * which of those two corpora it is describing.
+   */
+  readonly anomalyNormalizeNodeThreshold: number;
   /** Emit a JSON result document to this path (empty = none). */
   readonly output: string;
   /** Fault types to dump a per-service signal diagnostic for (empty = none). */
@@ -279,6 +289,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     logWeight: DEFAULT_LOG_WEIGHT,
     logMode: DEFAULT_FSE26_LOG_MODE as LogSignalMode,
     rankNormalization: DEFAULT_RANK_NORMALIZATION,
+    anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     output: '',
     diagnose: [] as string[],
     diagnoseLimit: 3,
@@ -311,7 +322,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const mode = argv[++i]!;
       opts.logMode = isLogSignalMode(mode) ? mode : DEFAULT_FSE26_LOG_MODE;
     } else if (arg === '--no-rank-normalization') opts.rankNormalization = false;
-    else if (arg === '--output' && hasValue(argv, i + 1)) opts.output = argv[++i]!;
+    else if (arg === '--anomaly-normalize-threshold' && hasValue(argv, i + 1)) {
+      // The same parser and the same fallback as the golden CLI: two runners parsing one flag with two rules
+      // is the defect `cli-args.ts` exists to prevent, and `0` is a legal setting rather than an absent one.
+      opts.anomalyNormalizeNodeThreshold = parseNodeCount(
+        argv[++i]!,
+        ANOMALY_NORMALIZE_NODE_THRESHOLD,
+      );
+    } else if (arg === '--output' && hasValue(argv, i + 1)) opts.output = argv[++i]!;
     else if (arg === '--diagnose' && hasValue(argv, i + 1)) opts.diagnose = csv(argv[++i]!);
     else if (arg === '--diagnose-limit' && hasValue(argv, i + 1))
       opts.diagnoseLimit = parseInt(argv[++i]!, 10) || 0;
