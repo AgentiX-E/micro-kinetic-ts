@@ -68,6 +68,9 @@ import { assembleRCAEvalCase, formatCorpusLine, type LatencySource } from './rca
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
+// The mode union, from the package that OWNS it — the same guard the CLI accepts its flag with and the same
+// function the log census asks about admission, so one value means one thing along the whole chain.
+import type { LogSignalMode } from '../../packages/tree/src/index.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 // The latency-route census, from the module that owns the three views — and the SAME renderer the battery
 // prints with, so the two artifacts' corpus lines are comparable across runs rather than merely similar. One
@@ -81,6 +84,16 @@ import {
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
+// The log-route census, from the module that owns it. `logWeight` is 1.0 and its map was empty on 719 of 735
+// cases while the corpus supplied logs on all 360 RE2 and RE3 cases, and the four mechanisms that produce one
+// empty map differ in everything a fix would depend on.
+import {
+  deriveLogRoute,
+  formatLogRoutes,
+  summarizeLogRoutes,
+  type LogRouteCensus,
+  type LogRouteEntry,
+} from './log-route.js';
 import {
   formatLossReport,
   formatRankingLadder,
@@ -375,6 +388,16 @@ interface LoadStats {
    * derived FROM this map, and this map is the only collection that holds the entries.
    */
   latencyRouteByCaseId: ReadonlyMap<string, LatencyRouteEntry>;
+  /**
+   * The log channel's four levels over this group's cases, from this module's own summariser.
+   *
+   * `logWeight` is 1.0 and its input was an empty map on 719 of the run's 735 cases, while the same artifact
+   * reports that the corpus supplied logs on all 270 RE2 and all 90 RE3 cases. `INPUT_MAP_EMPTY` cannot say which
+   * of four mechanisms produced that, and this is the line that can: how many rows were read, how many the owner
+   * retained, how many the MODE's gate admits, and how many of those name a graph node. Reported by
+   * {@link reportLogRoutes} with the owner's own renderer.
+   */
+  logRoutes: LogRouteCensus;
   /** Log-loading diagnostics (RE2/RE3): whether logs flow to the engine. */
   logStats: {
     /** Cases carrying at least one log entry. */
@@ -498,6 +521,16 @@ async function loadCases(
   loader: RCAEvalLoader,
   maxCases: number,
   latencyFrom: LatencySource,
+  /**
+   * The run's log mode, needed HERE rather than at the print site.
+   *
+   * The log census asks the same Level-1 gate the scorer does, and that gate is a function of the mode — so a
+   * census computed after the run would have to re-derive which mode it ran under, which is the defect
+   * `cli-argument-rejection-audit.md` records in the value direction. It sits beside `latencyFrom` because the two
+   * are both the run's INPUT configuration: one names which view of `edgeLatency` the corpus carries, the other
+   * which rows the log term admits.
+   */
+  logSignalMode: LogSignalMode,
   semanticConfig?: SemanticEnhancerConfig,
   computeTraceActivity = false,
 ): Promise<LoadStats> {
@@ -539,6 +572,15 @@ async function loadCases(
    * printed counts and the per-case rows are the same population by construction rather than by agreement.
    */
   const latencyRouteByCaseId = new Map<string, LatencyRouteEntry>();
+  /**
+   * The log channel's population, one entry per assembled case.
+   *
+   * An ARRAY rather than the latency census's keyed map, and the difference is not an inconsistency: the latency
+   * entries are keyed because the loss census joins on `caseId` to carry each case's own supply, while the log
+   * census is read as a POPULATION — its question is "which of the four mechanisms emptied the tier on this
+   * system", which is a property of the set. A key nothing looks up would be a second index to keep true.
+   */
+  const logRouteEntries: LogRouteEntry[] = [];
 
   for (const meta of selected) {
     try {
@@ -547,6 +589,17 @@ async function loadCases(
       // …and it is keyed here, in the same iteration that appends the case to `loaded`, which is what makes the
       // lookup at the loss-census row total: every case in `cases` was pushed after its entry was set.
       latencyRouteByCaseId.set(benchCase.id, latencyRoute);
+      // The log census, taken on the case the ENGINE receives — `benchCase.logs` is the retained array, and the
+      // node set is the case's own graph, so a row whose service the graph does not contain is counted as OFF
+      // GRAPH rather than silently dropped.
+      logRouteEntries.push(
+        deriveLogRoute(
+          benchCase.logs,
+          new Set(benchCase.callGraph.nodes.keys()),
+          logSignalMode,
+          logRowsRead,
+        ),
+      );
       if (benchCase.traceActivity) traceActivityCases++;
 
       // Collect semantic stats from diagnostic labels on the call graph
@@ -654,6 +707,7 @@ async function loadCases(
     traceActivityCases,
     latencyRoutes: summarizeLatencyRoutes([...latencyRouteByCaseId.values()]),
     latencyRouteByCaseId,
+    logRoutes: summarizeLogRoutes(logRouteEntries),
     traceStats: {
       total: traceCount,
       pruned: prunedCount,
@@ -942,6 +996,19 @@ function reportLatencyRoutes(systemName: string, stats: LoadStats): void {
 }
 
 /**
+ * Report the log channel's four levels, from the module that owns them.
+ *
+ * Beside {@link reportLatencyRoutes} rather than inside {@link reportLogDiagnostics}, because the two answer
+ * different questions about the same rows: the diagnostics count what the LOADER produced, and this counts what
+ * the MODE admits and the GRAPH can address. A run whose `[log]` line reads `30/30 cases with logs, 41401
+ * ERROR/FATAL entries` and whose `log-routes` line reads `admitted 0` has a gate for a mechanism; one that reads
+ * `in-graph 0` has a mapping problem instead.
+ */
+function reportLogRoutes(systemName: string, stats: LoadStats): void {
+  for (const line of formatLogRoutes(stats.logRoutes, systemName)) console.log(line);
+}
+
+/**
  * Log log-loading diagnostics: whether logs reach the engine, how many
  * ERROR/FATAL entries the severity derivation produced, and a sample of the
  * first log line (timestamp/level/service/message) to eyeball the raw format.
@@ -1216,6 +1283,9 @@ async function main(): Promise<void> {
       loader,
       caseLimit,
       opts.latencyView,
+      // The mode the run RAN under, read from the parsed options at the one site that hands the loader its
+      // configuration, so the census cannot count a different gate than the scorer applied.
+      opts.logSignalMode,
       semanticConfig,
       opts.traceWeight > 0,
     );
@@ -1252,6 +1322,13 @@ async function main(): Promise<void> {
     // ── Log-loading diagnostics ───────────────────────────
     reportLogDiagnostics(systemName, suiteName, stats);
     reportDeepestExceptionDiagnostics(systemName, suiteName, stats);
+
+    // ── The log channel's own census, beside its diagnostics ──
+    // The diagnostics above count what the LOADER produced; this counts what the MODE admits and what the GRAPH
+    // can address. `logWeight` is 1.0 — the largest weight in the ranking — and `INPUT_MAP_EMPTY` cannot say
+    // which of the four mechanisms emptied its map, so a run that prints the first without the second reports a
+    // zero it cannot attribute.
+    reportLogRoutes(systemName, stats);
 
     // ── PRISM graph-free baseline (for the fusion ceiling + routing probe) ──
     // PRISM runs on the SAME loaded BenchmarkCase metrics (timestamps in ms,

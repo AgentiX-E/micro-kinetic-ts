@@ -349,6 +349,33 @@ export function computeHttpEmitterDominance(
  *   {@link DEFAULT_HTTP_DOMINANCE_THRESHOLD}.
  * @returns Per-service log score in [0, 1]; empty when no signal.
  */
+/**
+ * Level 1 of the log gate: whether a mode's SOURCE-SIGNATURE filter admits one row.
+ *
+ * Exported as a pure function of `(mode, log)` so the rule has ONE owner. The scorer below calls it, and so does
+ * the benchmark census that attributes an empty log TIER (`benchmarks/src/log-route.ts`), because "the tier is
+ * empty" has four mechanisms and the second of them is exactly this function returning false for every row. A
+ * census that re-spelled the rule — "admit it if `isLogicException`" — would be a second answer to a question
+ * this repository has already had answered twice in the same shape (`--log-signal-mode` accepting two of the six
+ * modes; the latency views spelled at three call sites), and it would be free to drift from the scorer.
+ *
+ * `count` admits self-caused logic exceptions. `logicHttp`, `logicHttpJoint` and `logicHttpDominant` admit logic
+ * exceptions PLUS framework HTTP exceptions — both are source signatures. `all` admits every ERROR/FATAL row, so
+ * a source that floods a propagated HTTP error still scores.
+ *
+ * @param mode - The scoring mode, whose filter this is.
+ * @param log - One log row.
+ * @returns Whether level 1 admits the row. Level 2 may still withdraw an HTTP row — see `computeLogScores`.
+ */
+export function logLineAdmittedByMode(mode: LogSignalMode, log: FaultLogEntry): boolean {
+  if (mode === 'all') return true;
+  if (log.isLogicException === true) return true;
+  if (log.isHttpException === true) {
+    return mode === 'logicHttp' || mode === 'logicHttpJoint' || mode === 'logicHttpDominant';
+  }
+  return false;
+}
+
 export function computeLogScores(
   logs: readonly FaultLogEntry[] | undefined,
   nodeIds: ReadonlySet<ServiceId>,
@@ -388,19 +415,11 @@ export function computeLogScores(
   // scale of the signal; level 2 is the mode's DIRECTION gate and it may only
   // withdraw a line level 1 already admitted.
   //
-  // Level 1 — source signatures. `count` admits self-caused logic exceptions.
-  // `logicHttp`, `logicHttpJoint` and `logicHttpDominant` admit logic exceptions
-  // PLUS framework HTTP exceptions (both are source signatures). `all` admits
-  // every ERROR/FATAL line so a source that floods a propagated HTTP error still
-  // scores.
-  const isSourceSignature = (log: FaultLogEntry): boolean => {
-    if (mode === 'all') return true;
-    if (log.isLogicException === true) return true;
-    if (log.isHttpException === true) {
-      return mode === 'logicHttp' || mode === 'logicHttpJoint' || mode === 'logicHttpDominant';
-    }
-    return false;
-  };
+  // Level 1 is `logLineAdmittedByMode` above — a module-level export rather than
+  // a closure here, because the benchmark census that attributes an empty log
+  // tier must read the SAME rule; the split into levels is why its counts can
+  // say "retained but not admitted" as a state distinct from "not addressable".
+  //
   // Level 2 — direction. `logicHttpJoint` withdraws the framework-HTTP half for a
   // service whose callee is MORE anomalous (that callee is the source, so the
   // emitter is a victim); `logicHttpDominant` withdraws it ENTIRELY when the
@@ -434,7 +453,7 @@ export function computeLogScores(
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
     if (!nodeIds.has(log.service)) continue;
     if (injectTimeMs > 0 && log.timestamp < injectTimeMs) continue;
-    if (!isSourceSignature(log)) continue;
+    if (!logLineAdmittedByMode(mode, log)) continue;
     admitted.set(log.service, (admitted.get(log.service) ?? 0) + 1);
     if (isSuppressed(log)) continue;
     counts.set(log.service, (counts.get(log.service) ?? 0) + 1);

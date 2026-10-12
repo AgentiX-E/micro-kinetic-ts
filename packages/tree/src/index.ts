@@ -117,6 +117,10 @@ export {
   computeTraceActivityScores,
   gatedRiseContribution,
   isLogSignalMode,
+  // Level 1 of the log gate, exported because the census that attributes an EMPTY log tier has to read the same
+  // rule the scorer does: "retained but not admitted" is a mechanism, and a census spelling its own version of
+  // the admission test would be free to disagree with the map it is trying to explain.
+  logLineAdmittedByMode,
 } from './pruning/ranking-signals.js';
 export type {
   FailedEdgeMode,

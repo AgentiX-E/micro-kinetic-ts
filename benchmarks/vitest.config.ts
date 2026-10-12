@@ -105,6 +105,11 @@ export default defineConfig({
         // it — the allow-list's own hole, a fourth time, and now closed by `corpus-owner.test.ts`, which
         // assembles a real case directory and reads the three views back.
         'src/rcaeval-corpus.ts',
+        // Added with the module: the LOG channel's four levels, and the gate that decides three of them.
+        // `logWeight` is 1.0 and its map was empty on 719 of 735 cases against a corpus that supplied logs on all
+        // 360 RE2 and RE3 cases, so this module carries the attribution for the largest weight in the ranking —
+        // and it reads its admission rule from `packages/tree` rather than spelling one of its own.
+        'src/log-route.ts',
         // Added with the modules: the held-out validator for the routing frontier and the readback that prints it.
         // Both were imported by `router-validation.test.ts` and absent from this list, so a module with 20 tests
         // sat outside the denominator and its own coverage was never measured or required — the allow-list's own
