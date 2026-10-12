@@ -190,9 +190,9 @@ describe('the retained rows\u2019 own taxonomy, because "the gate admits none" h
     const stale = summarizeLogRoutes([deriveLogRoute(disagreeing, new Set(['a']), 'count', 2)]);
     expect(logChannelVerdict(stale)).toContain('STALE FLAGS');
     expect(logChannelVerdict(stale)).toContain('DEFECT');
-    expect(logChannelVerdict(summarizeLogRoutes([deriveLogRoute(agreeing, new Set(['a']), 'count', 1)]))).not.toContain(
-      'STALE FLAGS',
-    );
+    expect(
+      logChannelVerdict(summarizeLogRoutes([deriveLogRoute(agreeing, new Set(['a']), 'count', 1)])),
+    ).not.toContain('STALE FLAGS');
   });
 });
 
