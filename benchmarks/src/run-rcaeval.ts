@@ -364,6 +364,17 @@ interface LoadStats {
    * that supplied rows from one that supplied none — the two are the same nine cells and different causes.
    */
   latencyRoutes: LatencyRouteCensus;
+  /**
+   * The SAME population, addressable by the case it describes.
+   *
+   * The census above is the population reduced to counts, and a sum cannot name its own rows: a reader of the
+   * artifact can see that RE3 TrainTicket supplied 2006 rows and cannot ask which of its thirty cases carried
+   * them. The channel's remaining question is a ROUTING one — whether a case wants the whole-file view or the
+   * published composition — and its unit is the case, so the supply is kept beside the summary rather than
+   * discarded one line after it is computed. The two cannot disagree about which cases exist: the summary is
+   * derived FROM this map, and this map is the only collection that holds the entries.
+   */
+  latencyRouteByCaseId: ReadonlyMap<string, LatencyRouteEntry>;
   /** Log-loading diagnostics (RE2/RE3): whether logs flow to the engine. */
   logStats: {
     /** Cases carrying at least one log entry. */
@@ -519,14 +530,23 @@ async function loadCases(
     failedTraceEdges?: BenchmarkCase['failedTraceEdges'];
     metricKeys: ReadonlySet<string>;
   }> = [];
-  /** The latency-route census's population, one entry per case, in the loader's own record order. */
-  const latencyRouteEntries: LatencyRouteEntry[] = [];
+  /**
+   * The latency-route census's population, one entry per case, KEYED BY THE CASE.
+   *
+   * A map rather than an array because the census is documented per case and read per case: the loss-census row
+   * below takes its own case's entry, and an array indexed by the loader's iteration order would be a second
+   * order the two artifacts have to agree about. It is also the ONE collection the summariser reads, so the
+   * printed counts and the per-case rows are the same population by construction rather than by agreement.
+   */
+  const latencyRouteByCaseId = new Map<string, LatencyRouteEntry>();
 
   for (const meta of selected) {
     try {
       const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter, logRowsRead, latencyRoute } =
         await loadSingleCase(meta, loader, latencyFrom, semanticConfig, computeTraceActivity);
-      latencyRouteEntries.push(latencyRoute);
+      // …and it is keyed here, in the same iteration that appends the case to `loaded`, which is what makes the
+      // lookup at the loss-census row total: every case in `cases` was pushed after its entry was set.
+      latencyRouteByCaseId.set(benchCase.id, latencyRoute);
       if (benchCase.traceActivity) traceActivityCases++;
 
       // Collect semantic stats from diagnostic labels on the call graph
@@ -632,7 +652,8 @@ async function loadCases(
     errors,
     errorSamples,
     traceActivityCases,
-    latencyRoutes: summarizeLatencyRoutes(latencyRouteEntries),
+    latencyRoutes: summarizeLatencyRoutes([...latencyRouteByCaseId.values()]),
+    latencyRouteByCaseId,
     traceStats: {
       total: traceCount,
       pruned: prunedCount,
@@ -1384,6 +1405,11 @@ async function main(): Promise<void> {
           // recorded rather than the difference, because a difference cannot be re-derived into its parts and
           // the parts can always be differenced.
           top1Terms: ep?.top1Terms,
+          // …and what the latency CHANNEL's corpus supplied for THIS case, taken from the census's own map rather
+          // than re-spelled here. The lookup is total: `cases` is `loaded`, and every element of it was pushed
+          // after the line that set its entry, so there is no arm to write for an absent supply — and an absent
+          // supply would mean the corpus owner never ran, which its own type cannot express.
+          latencySupply: stats.latencyRouteByCaseId.get(c.id)!,
         });
       }
     }

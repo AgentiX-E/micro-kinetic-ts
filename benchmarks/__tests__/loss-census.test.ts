@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import type { LatencyRouteEntry } from '../src/directional-evidence.js';
 import {
   classifyDeepEvidence,
   classifyLoss,
@@ -25,6 +26,23 @@ import {
 } from '../src/loss-census.js';
 import { stripComments } from './helpers/source-text.js';
 
+/**
+ * A supply of nothing, which is this file's cell's REAL value rather than a neutral placeholder.
+ *
+ * The factory below builds an `RE1:SockShop` record, and RE1's systems carry no `traces.csv` at all — the
+ * census reads `capped spans 0 (pre 0 / post 0) | rows: shipped 0 | capped 0 | whole-file 0` for all three of
+ * them. So a zeroed supply here is the case's own measurement, which is what makes it usable as a default.
+ */
+const NO_SUPPLY: LatencyRouteEntry = {
+  anchorPresent: true,
+  capSpans: 0,
+  capPre: 0,
+  capPost: 0,
+  shippedRows: 0,
+  cappedRows: 0,
+  wholeFileRows: 0,
+};
+
 /** A ladder entry, with the sort key defaulted to something monotone. */
 const entry = (
   serviceId: string,
@@ -42,6 +60,7 @@ const record = (over: Partial<LossRecord> = {}): LossRecord => ({
   pool: 10,
   truthInGraph: true,
   truthRank: 2,
+  latencySupply: NO_SUPPLY,
   ...over,
 });
 

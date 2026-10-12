@@ -23,6 +23,8 @@
  * @module benchmarks/loss-census
  */
 
+import type { LatencyRouteEntry } from './directional-evidence.js';
+
 /**
  * One entry of a ranked candidate list, as the diagnostic carries it.
  *
@@ -139,6 +141,26 @@ export interface LossRecord {
    * A literal mirror of the runner's `ScoreTerm`, fenced by test like `TruthEvidence` is.
    */
   readonly top1Terms?: readonly ScoreTerm[] | undefined;
+  /**
+   * What the LATENCY CHANNEL's corpus supplied for THIS case, as the corpus owner wrote it.
+   *
+   * The census counts the channel by (suite, system) — which is the unit a percentage is reported in and not
+   * the unit a decision is made in. The channel's own measurement (`docs/latency-channel-views.md`) closed it as
+   * an unconditional default and left a ROUTING question whose population is the case: on the run that supplied
+   * the whole-file view, RE3 TrainTicket gained 8 cases and lost none while RE3 OnlineBoutique lost 5 and gained
+   * 2, so the two cells want opposite configurations and the difference is not a system's name.
+   *
+   * REQUIRED rather than optional: every record is built from a case the corpus owner assembled, so an absent
+   * supply would mean the instrument did not run — and an optional field would file "this case carried no
+   * spans" and "nobody recorded what it carried" as the same record, which reads a missing measurement as a
+   * measured zero. The three row counts are the CORPUS's, not the run's: `wholeFileRows` stays populated on a
+   * run whose own view is `shipped`, which is what lets an artifact say *the corpus could supply this and the
+   * configuration declines to read it*.
+   *
+   * The OWNER's type rather than a mirror of it. `TruthEvidence` above is mirrored because `benchmarks` does not
+   * depend on `packages/kinetic`; inside one package a second declaration of one shape is an owner with none.
+   */
+  readonly latencySupply: LatencyRouteEntry;
 }
 
 /**

@@ -514,7 +514,9 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
     expect(golden).toMatch(/const \{[^}]*\blatencyRoute\b[^}]*\}/);
     expect(golden).toMatch(/latencyRoute: assembled\.latencyRoute/);
     expect(golden).toMatch(/latencyRoutes: LatencyRouteCensus/);
-    expect(golden).toMatch(/latencyRoutes: summarizeLatencyRoutes\(latencyRouteEntries\)/);
+    expect(golden).toMatch(
+      /latencyRoutes: summarizeLatencyRoutes\(\[\.\.\.latencyRouteByCaseId\.values\(\)\]\)/,
+    );
     // ONE renderer for two artifacts: the same function the battery prints with, so the two artifacts' corpus
     // lines are COMPARABLE across runs rather than merely similar — the property that makes a candidate measured
     // on one instrument readable on the other.
@@ -564,5 +566,63 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
     // Non-vacuity: the counting above would also be satisfied by a flag forwarded into an array no command
     // line spreads, so the spreads are counted too — and the population is the invocations themselves.
     expect(workflow.split('"${RANKING_ARG[@]}"').length - 1).toBe(invocations);
+  });
+});
+
+/**
+ * The census counts SYSTEMS, and the decision the channel created is made per CASE.
+ *
+ * Iteration 89 gave the corpus an axis and iteration 90 measured where it decides; that measurement closed the
+ * channel as an unconditional default and left a ROUTING question behind — RE3 TrainTicket gains 8 cases and
+ * loses none while RE3 OnlineBoutique loses 5 and gains 2, so some cases want the view and some want the
+ * published composition. Every artifact this repository produces aggregates the channel over a system, and a
+ * system-level count cannot answer a per-case question: a run can say "RE3 TrainTicket supplied 2006 rows" and
+ * cannot say which of its thirty cases was helped. `latencyRoute` is computed per case by the corpus owner and
+ * reduced on the spot, so the supply exists and is thrown away one line later.
+ *
+ * **The two fences below are one contract seen twice**: the row a reader sums out of the artifact must be the
+ * row the census printed, and the supply must be the owner's value rather than a second spelling of it.
+ */
+describe('the census aggregates by system, and the channel’s decision is made per case', () => {
+  it('threads the case’s own supply into every loss-census row, from the census’s ONE population', () => {
+    const golden = read('src/run-rcaeval.ts');
+    // ONE population. The map is what the owner's summariser reads, so the rows the census PRINTS and the rows
+    // a reader sums out of the artifact cannot be two different populations that happen to agree.
+    expect(golden).toMatch(/latencyRouteByCaseId\.set\(benchCase\.id, latencyRoute\)/);
+    expect(golden).toMatch(/summarizeLatencyRoutes\(\[\.\.\.latencyRouteByCaseId\.values\(\)\]\)/);
+    // …and it is not ALSO kept in an array the summariser reads instead. Two collections holding one population
+    // is the second owner this repository's own law forbids: they can disagree, and the disagreement is silent.
+    expect(golden).not.toMatch(/latencyRouteEntries/);
+    // The row takes the entry the OWNER produced rather than re-spelling its seven fields. A second spelling is
+    // a second answer, and `wholeFileRows` is the field a hand-built literal would most naturally drop: it is a
+    // CORPUS fact, so it must survive a run whose own view is `shipped` and whose three view row counts are
+    // otherwise all zero. Without it an artifact cannot say "the corpus could supply this and the configuration
+    // declines to read it" — which is the statement the routing question is made of.
+    expect(golden).toMatch(/latencySupply: stats\.latencyRouteByCaseId\.get\(c\.id\)/);
+    expect(golden).not.toMatch(/\bwholeFileRows:/);
+    expect(golden).not.toMatch(/\bcapPre:/);
+    // …and the lookup is total only because the ENTRY IS SET BEFORE THE CASE IS APPENDED, which is the
+    // invariant the row relies on instead of an arm. Asserted by ORDER rather than trusted, because the failure
+    // is silent in the worst way: a case appended before its entry is set would make the lookup `undefined`, and
+    // `JSON.stringify` DROPS an undefined property — so the artifact would lose the field for exactly the cases
+    // the instrument failed on, and every reader would see a well-formed file.
+    expect(golden.indexOf('latencyRouteByCaseId.set(benchCase.id, latencyRoute)')).toBeLessThan(
+      golden.indexOf('loaded.push(benchCase)'),
+    );
+  });
+
+  it('declares the supply as REQUIRED, and imports the owner’s type rather than mirroring it', () => {
+    // Optional would make "this case carried no spans" and "nobody recorded what it carried" the same record,
+    // which is the collapse of the levels of ABSENCE this repository names in its own laws — and the collapse
+    // is in the direction that reads a missing instrument as a measured zero.
+    const census = read('src/loss-census.ts');
+    expect(census).toMatch(/readonly latencySupply: LatencyRouteEntry;/);
+    expect(census).not.toMatch(/latencySupply\?/);
+    // A MIRROR is the right convention ACROSS packages — `TruthEvidence` is declared twice because `benchmarks`
+    // does not depend on `packages/kinetic` — and it is the wrong one inside a package, where it would be a
+    // second declaration of one shape that no fence could hold to the first.
+    expect(census).toMatch(
+      /import type \{[^}]*\bLatencyRouteEntry\b[^}]*\} from '\.\/directional-evidence\.js'/,
+    );
   });
 });
