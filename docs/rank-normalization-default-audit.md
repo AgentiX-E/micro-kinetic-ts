@@ -169,3 +169,47 @@ thirds of TrainTicket transfers to twelve-service graphs, where the raw deviatio
 already on this repository's record in `docs/sota-comparison.md` §3, `docs/benchmark-corpus-completeness.md` and
 `docs/loss-decomposition.md` §1, with `scripts/audit_input_schema.py` built from its second finding — was checked
 before anything in this section was written, which is the grep-before-building rule this repository pays for.
+
+### 6.6 The candidate, measured — the axis' widest setting changes NO outcome, and the reason is structural
+
+Run **`38275480566`** on `7847599` (`--anomaly-normalize-threshold 0`), against the run that landed the option
+(`38275372681` on `7847599` — the SAME revision, so the only difference between the two is this input). The
+candidate's own artifact states `anomalyNormalizeNodeThreshold=0`.
+
+**All nine cells are IDENTICAL, and so is every per-fault-type row inside them.** Per case, from the two loss
+censuses:
+
+| suite | outcomes identical | differ | what the difference is |
+| --- | ---: | ---: | --- |
+| RE1 | 374 / 375 | **1** | same wrong top-1 (`checkoutservice`), truth's rank `None` -> `10` |
+| RE2 | 269 / 270 | **1** | same wrong top-1 (`frontend`), truth's rank `None` -> `10` |
+| RE3 | 90 / 90 | **0** | — |
+
+**So rescaling every graph — 487 cases that were previously RAW — moved no top-1 on any of the 735 cases, and the
+only two movements are a truth gaining a REPORTED rank it did not have while remaining a miss.**
+
+**And the mechanism is not a surprise, it is a property of the axis.** Both of `rankNormalization`'s poles are
+**strictly monotone transformations of the same anomaly vector** — uniform rank and min-max are both order-preserving
+— and the base term is strictly monotone in that vector too. So the flag **cannot reorder the base term at all**; the
+only channel it has is the base term's SPACING, which matters only where a weighted term has to cross its gaps. On
+TrainTicket, where the base term's raw span is compressed by one outlier and `traceWeight=1` is in play, that
+spacing was worth 3.6% -> 51.1%. On the 487 raw cases it was worth nothing measured.
+
+**Three consequences, and the third answers §6.6 of `docs/loss-decomposition.md` with a REFUSAL.**
+
+1. **My own §6.5 prediction is sharpened rather than confirmed.** I predicted the cells must be identical on the 248
+   cases already above the line and may differ only on the 487. Measured: identical **everywhere**, so the predicted
+   difference domain was empty. Stated because a prediction that is not read back is not a prediction.
+2. **The axis' negative is stronger than "untested".** It is not that nobody measured the flag on two thirds of the
+   corpus; it is that the widest setting **cannot** change those cases by reordering anything, and this run shows it
+   does not. The register row's "never testable" is now "tested, and a no-op on 733 of 735 outcomes".
+3. **`loss-decomposition.md` §6.6 named `rankNormalizeScores` as "the one mechanism that CAN" move the base term
+   that decides 71.5% of the margin. That is now REFUTED for this knob**: it cannot move the ordering, because both
+   its poles preserve it. What CAN move the base term is a **base term that is not a monotone function of the
+   anomaly** — a magnitude-shaped reading, or an explicit mixture of rank and magnitude — and that is a different
+   change from flipping a boolean. The axis is closed with a measurement, and the pointer is redirected rather than
+   removed.
+
+**The nine cells unchanged is the acceptance the option's own section 6.3 demanded, and it holds on all three
+suites** — which is the second half of the "cells plus field, never the line's bytes" criterion, now read from the
+candidate's artifact rather than argued from the default.
