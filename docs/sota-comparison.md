@@ -282,13 +282,21 @@ benchmark itself**:
   the three suites; the two are different metrics (Avg@5 against Top-1) and different rankers, so **neither number
   replaces the other** — but the paper states from outside the rule this repository already applies: **a
   benchmark's floor must be measured, and the uniform-random one is not it.**
-- *"a non-uniform column schema [that] silently zeroes telemetry for most RE1 cases"*. This one is a **LEAD and not
-  a finding about us** — a lead is not evidence until held out. Our loader reads the converted `metrics.json`
-  rather than the published CSV columns, which is exactly the kind of transformation that could absorb or
-  reproduce a schema defect, and **nothing in this repository has ever tested it**. Recorded as owed: *does our
-  RE1 corpus carry telemetry on most cases, and does the answer depend on the column set?* It is answerable from
-  artifacts already produced (`--loss-census` carries a per-case metric count and the input-coverage census
-  carries the channel counts), which is why it is a task and not a worry.
+- *"a non-uniform column schema that silently zeroes telemetry for **250 of 375** RE1 cases"* (its Table 3 supplies
+  the mechanism: a raw frame of **51 columns** on Online Boutique against **421–439** and **1180–1446** on the other
+  two, so a reader assuming one schema reads nothing for two systems; 250 is exactly 125 + 125). **This one is
+  CHECKED, and REFUTED for the corpus this repository ranks on.** The correction matters more than the finding did:
+  the first revision of this section called it *"a LEAD and not a finding about us"* and claimed **"nothing in this
+  repository has ever tested it"**, and that sentence was **false** — the instrument is
+  `scripts/audit_input_schema.py`, it is a **hard gate** in `cache-datasets.yml` (`--fail-on-degenerate`, whose
+  failure also skips the benchmark trigger), and its census reads **735 of 735 cases with non-zero telemetry, 0
+  degenerate — RE1 included, 375 of 375**.
+  The mechanism is per-FILE and that is the whole answer: our bridge detects the LONG shape
+  (`service/timestamp/value/metric_name`) and the WIDE shape (`timestamp` + `service::metric`) **from each file's
+  own columns**, so no case inherits another system's schema. See `benchmark-corpus-completeness.md` §8 — added in
+  iteration 80-81, with the gate in `4173f84` and the refutation in `4def96a`. **The paper's claim is not refuted by
+  this**: it is true of the raw frames read under one assumed schema, which is what its own Table 3 measures. What
+  is refuted is that it reaches a number published here.
 
 **What this does not change.** Both items are corroboration and caveat about the *field* and the *benchmark*;
 neither reports a number on our population that we cannot beat. The standing in §0a–§0c is unchanged, and no cell
