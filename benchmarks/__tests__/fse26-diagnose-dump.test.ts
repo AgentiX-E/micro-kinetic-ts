@@ -128,13 +128,21 @@ describe('DiagnoseDump — one file per invocation, however many groups it cover
     // accumulator's own refusal is the real defence — this fails earlier, with a name.
     const source = readFileSync(new URL('../src/run-rcaeval.ts', import.meta.url), 'utf-8');
 
-    expect(source).toContain('new DiagnoseDump(opts.diagnoseDump, formatSignalLine(opts))');
+    expect(source).toContain('new DiagnoseDump(opts.diagnoseDump, configuration)');
     expect(source).not.toMatch(/writeFileSync\(\s*opts\.diagnoseDump/);
     expect(source.match(/\.write\(\)/g) ?? []).toHaveLength(1);
     expect(source.indexOf('.write()')).toBeGreaterThan(
       source.indexOf('for (const [groupKey, metas] of groups) {'),
     );
-    // And the header is the banner's own line, so the two cannot state different modes.
-    expect(source.match(/formatSignalLine\(opts\)/g) ?? []).toHaveLength(2);
+    // And the header is the banner's own string — ONE expression, two consumers, which is what the count of
+    // two `formatSignalLine(opts)` calls here used to approximate. The second line of that string is the
+    // CORPUS the run ranked on, which is not an engine option and therefore cannot live on the signals line:
+    // an artifact whose signals line matched the shipped one while its corpus did not would be two
+    // measurements filed under one configuration.
+    expect(source.match(/formatSignalLine\(opts\)/g) ?? []).toHaveLength(1);
+    expect(source).toMatch(
+      /const configuration = `\$\{formatSignalLine\(opts\)\}\\n\$\{formatCorpusLine\(opts\.latencyView\)\}`/,
+    );
+    expect(source).toContain('console.log(configuration);');
   });
 });

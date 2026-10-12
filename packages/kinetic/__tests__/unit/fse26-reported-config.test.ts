@@ -867,6 +867,15 @@ describe('RCAEval workflow descriptions agree with the code they describe', () =
     stability_weight: DEFAULT_STABILITY_WEIGHT,
     log_weight: DEFAULT_LOG_WEIGHT,
     temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
+    // The latency trio, registered when their inputs were added. All three ship NON-ZERO, which is
+    // the fact that made their absence from this half expensive rather than merely untidy: the
+    // artifact printed each of them while no branch of the parser wrote any of them, so the
+    // description's own number and the run's configuration could disagree about the largest weight
+    // in the ranking with nothing in the pipeline to notice. `lat_min_rise` is a floor rather than a
+    // weight and is registered for the same reason: it is printed, and it decides the mask.
+    lat_weight: DEFAULT_LAT_WEIGHT,
+    lat_min_rise: DEFAULT_LAT_MIN_RISE,
+    pool_penalty: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   };
 
   it('names the shipped value of every input whose description quotes one', () => {

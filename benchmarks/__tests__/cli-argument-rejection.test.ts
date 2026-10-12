@@ -47,8 +47,18 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  DEFAULT_LAT_MIN_RISE,
+  DEFAULT_LAT_WEIGHT,
+  DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  LOG_SIGNAL_MODES,
+  ONSET_SHAPES,
+  PRISM_POOLINGS,
+} from '../../packages/tree/src/index.js';
+
 import { parseFSE26Args } from '../src/fse26-cli.js';
 import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
+import { buildRCAEvalEngineOptions } from '../src/rcaeval-engine-options.js';
 
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 
@@ -56,6 +66,19 @@ const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../..');
 interface AcceptedFlag {
   readonly flag: string;
   readonly takesValue: boolean;
+}
+
+/**
+ * One accepted flag, its arity, and the option its OWN branch assigns.
+ *
+ * `writes` is a second reading of the same span the arity comes from, and it is what lets a fence ask a
+ * question the accepted set cannot: not "is this flag tested" but "is this OPTION settable". Until that
+ * question was asked, a field could be declared, defaulted from the engine's own constant, printed on the
+ * artifact's configuration line, and have **no branch at all** — which is the state `latWeight`,
+ * `latMinRise` and `poolMetricPenaltyWeight` were in, the three that dominate the shipped ranking.
+ */
+interface AcceptedBranch extends AcceptedFlag {
+  readonly writes: readonly string[];
 }
 
 /**
@@ -68,9 +91,9 @@ interface AcceptedFlag {
  *
  * @param source - The parser module's text.
  * @param argvName - The local name of the argument vector (`argv`, `args`).
- * @returns Every accepted flag, in chain order.
+ * @returns Every accepted flag, in chain order, with the fields its branch assigns.
  */
-function acceptedFlags(source: string, argvName: string): AcceptedFlag[] {
+function acceptedBranches(source: string, argvName: string): AcceptedBranch[] {
   const branch = new RegExp(
     `${argvName}\\[i\\]\\s*===\\s*'(--[a-z-]+)'|arg\\s*===\\s*'(--[a-z-]+)'`,
     'g',
@@ -79,8 +102,20 @@ function acceptedFlags(source: string, argvName: string): AcceptedFlag[] {
   for (const m of source.matchAll(branch)) starts.push({ flag: (m[1] ?? m[2])!, at: m.index });
   return starts.map((start, i) => {
     const span = source.slice(start.at, starts[i + 1]?.at ?? source.length);
-    return { flag: start.flag, takesValue: span.includes('++i') };
+    return {
+      flag: start.flag,
+      takesValue: span.includes('++i'),
+      writes: [...span.matchAll(/opts\.(\w+)\s*=/g)].map((m) => m[1]!),
+    };
   });
+}
+
+/** The same list without the field reading, for the assertions that are about the flag alone. */
+function acceptedFlags(source: string, argvName: string): AcceptedFlag[] {
+  return acceptedBranches(source, argvName).map((one) => ({
+    flag: one.flag,
+    takesValue: one.takesValue,
+  }));
 }
 
 const fse26Source = readFileSync(resolve(repoRoot, 'benchmarks/src/fse26-cli.ts'), 'utf8');
@@ -274,5 +309,120 @@ describe('a knob stated twice, with two different values, is refused', () => {
     // repetition — and the shipped default must still be what a bare command line gets.
     expect(parseRCAEvalArgs(['--log-signal-mode', 'all']).logSignalMode).toBe('all');
     expect(parseRCAEvalArgs([]).logSignalMode).toBe('count');
+  });
+});
+
+/**
+ * The other direction of the same question, and the one nothing asked.
+ *
+ * Every fence above starts from a flag and asks what it does. This starts from the OPTION and asks whether
+ * any flag reaches it — the direction in which three fields were invisible. `latWeight = 0.561495`,
+ * `latMinRise = 10.3` and `poolMetricPenaltyWeight = 0.0679` were declared in `CliOptions`, defaulted from
+ * the engine's own constants, forwarded to the engine's constructor, and printed on every golden artifact's
+ * configuration line — and **no branch of the chain wrote any of them**, so no invocation, dispatch or
+ * otherwise, could move them. The artifact therefore asserted a configuration no command line can state,
+ * which is the failure the configuration line itself exists to prevent, one level down.
+ *
+ * ## Why this is the GOLDEN half's fence and not a shared one
+ *
+ * The two runners reach the engine through different shapes, and the difference decides what "reachable"
+ * even means. `buildFse26EngineOptions` **maps**: its parser holds `logMode` and the engine takes
+ * `logSignalMode`, so "a branch writes it" is false there for a field that is perfectly reachable — measured,
+ * not assumed: applying this reading to `fse26-cli.ts` reports `logSignalMode` while `--log-mode` sets it.
+ * `buildRCAEvalEngineOptions` **copies**, one-for-one under the same names, so on this half "the engine
+ * receives it" and "the parser must be able to write it" are the same statement. The premise is asserted
+ * below rather than trusted, because the day the copy becomes a mapping this fence stops being the right
+ * question — and a fence that keeps answering the wrong question is worse than none.
+ */
+describe('every option the golden runner forwards can be set from the command line', () => {
+  const shipped = parseRCAEvalArgs([]);
+  const engine = buildRCAEvalEngineOptions(shipped);
+  /** Every option this runner hands the engine, across BOTH of its constructor arguments. */
+  const forwarded = [...Object.keys(engine.signals), ...Object.keys(engine.topology)];
+  const branches = acceptedBranches(rcaevalSource, 'args');
+
+  it('declares them under the parser’s own names, which is what makes the reading valid', () => {
+    // A key the parser has never heard of would be a mapping — and would make the structural assertion
+    // below unprovable rather than false, which is the difference between a red test and a wrong one.
+    const parsed = new Set(Object.keys(shipped));
+    expect(forwarded.filter((key) => !parsed.has(key))).toEqual([]);
+    expect(forwarded.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it('writes every one of them from some branch of the chain', () => {
+    const unreachable = forwarded.filter(
+      (key) => !branches.some((one) => one.writes.includes(key)),
+    );
+    expect(unreachable).toEqual([]);
+    // Non-vacuity in the other direction. The chain is WIDER than the engine's option list — it also carries
+    // the data directory, the filters, the artifact paths and the switches — so a span reading that returned
+    // everything would satisfy the line above while classifying nothing.
+    expect(branches.length).toBeGreaterThan(forwarded.length);
+    const written = new Set(branches.flatMap((one) => one.writes));
+    expect(written.size).toBeGreaterThan(forwarded.length);
+  });
+
+  it('MOVES every one of them, at that flag’s own arity', () => {
+    // The structural reading says an arm exists; this says the arm reaches the option. An arm that assigned
+    // the shipped default, or one shadowed by a later condition, passes there and fails here. The probes are
+    // the ENGINE's own vocabularies rather than a list this file maintains: a mode flag takes a member of its
+    // union, so a new member extends the probe set by existing, and the numeric pair `0`/`1` covers every
+    // weight — `1` because the floor refuses anything below it, `0` because a non-zero default is otherwise
+    // only reachable downwards.
+    const probes = [
+      '0',
+      '1',
+      ...ONSET_SHAPES,
+      ...Object.keys(LOG_SIGNAL_MODES),
+      ...Object.keys(PRISM_POOLINGS),
+    ];
+    const moved = new Set<string>();
+    for (const branch of branches) {
+      for (const probe of branch.takesValue ? probes : ['']) {
+        const argv = branch.takesValue ? [branch.flag, probe] : [branch.flag];
+        let parsed: ReturnType<typeof parseRCAEvalArgs>;
+        try {
+          parsed = parseRCAEvalArgs(argv);
+        } catch {
+          // A flag that refuses this probe states it in the file's other assertions; what is being asked here
+          // is only whether SOME accepted invocation moves each option.
+          continue;
+        }
+        for (const key of forwarded) {
+          const before = (shipped as unknown as Record<string, unknown>)[key];
+          const after = (parsed as unknown as Record<string, unknown>)[key];
+          if (after !== before) moved.add(key);
+        }
+      }
+    }
+    expect(forwarded.filter((key) => !moved.has(key))).toEqual([]);
+  });
+
+  it('keeps the three that were unreachable reachable, with their own domains', () => {
+    // Asserted by name as well as by set difference, because these three are the defect rather than an
+    // instance of it: the failure should say so in the message instead of leaving a reader to diff two sets.
+    expect(parseRCAEvalArgs(['--lat-weight', '0']).latWeight).toBe(0);
+    expect(parseRCAEvalArgs(['--lat-weight', '1']).latWeight).toBe(1);
+    expect(parseRCAEvalArgs(['--lat-min-rise', '1']).latMinRise).toBe(1);
+    expect(parseRCAEvalArgs(['--lat-min-rise', '5.5']).latMinRise).toBe(5.5);
+    expect(parseRCAEvalArgs(['--pool-penalty', '0']).poolMetricPenaltyWeight).toBe(0);
+    // A typo reproduces a PUBLISHED configuration rather than selecting an ablation — the rule every other
+    // weight flag on this surface obeys, and here it is not a courtesy: each of the three ships non-zero, so
+    // zero is a measured configuration (`--lat-weight 0` is the latency term switched off).
+    expect(parseRCAEvalArgs(['--lat-weight', 'nonsense']).latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(parseRCAEvalArgs(['--pool-penalty', '']).poolMetricPenaltyWeight).toBe(
+      DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+    );
+    expect(parseRCAEvalArgs(['--lat-min-rise', 'nonsense']).latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    // …and the floor's domain, which is the one arm a shared `parseWeight` would get wrong: a floor below 1
+    // suppresses nothing, so accepting it would report a configuration the operator believes changed
+    // something. The rule is the FSE'26 runner's, so one value means one thing in both workflows.
+    expect(parseRCAEvalArgs(['--lat-min-rise', '0']).latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    expect(parseRCAEvalArgs(['--lat-min-rise', '0.5']).latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    expect(parseRCAEvalArgs(['--lat-min-rise', '-3']).latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    // The shipped values themselves, so the fallbacks above are the engine's and not this file's.
+    expect(shipped.latWeight).toBe(DEFAULT_LAT_WEIGHT);
+    expect(shipped.latMinRise).toBe(DEFAULT_LAT_MIN_RISE);
+    expect(shipped.poolMetricPenaltyWeight).toBe(DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
   });
 });

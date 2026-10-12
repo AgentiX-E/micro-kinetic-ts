@@ -64,7 +64,7 @@ import { meanOverFaultTypes } from '../../packages/kinetic/src/benchmarks/runner
 // The corpus assembly — the augmentation, the two direction-carrying inputs and the span activity — now
 // lives in one owner, because this path and the study's had assembled it differently (this one pruned the
 // graph from traces and the study never did).
-import { assembleRCAEvalCase } from './rcaeval-corpus.js';
+import { assembleRCAEvalCase, formatCorpusLine, type LatencySource } from './rcaeval-corpus.js';
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
@@ -378,6 +378,7 @@ interface LoadStats {
 async function loadSingleCase(
   meta: CaseMeta,
   loader: RCAEvalLoader,
+  latencyFrom: LatencySource,
   semanticConfig?: SemanticEnhancerConfig,
   computeTraceActivity = false,
 ): Promise<{
@@ -409,16 +410,21 @@ async function loadSingleCase(
 
   // The corpus, assembled by the ONE owner both this path and the study's call. `augmentFromTraces` is the
   // shipped value, stated rather than implied, because this path IS the published corpus and the option is
-  // what makes that a decision instead of an omission. `latencyFrom` is stated for the same reason: which
-  // view of `edgeLatency` a run ranks on is a CORPUS property, and an omitted option would leave the cells
-  // describable only by inference. `shipped` is the composed view the nine published cells were measured
-  // with — and iteration 74 measured WHY its array is empty: the capped span list is truncated before the
-  // injection window, so no edge has a post-side mean (the unit defect the same expression also carries is
-  // real and MASKED by that cap). See `docs/latency-channel-views.md`.
+  // what makes that a decision instead of an omission.
+  //
+  // `latencyFrom` is now the PARSED option rather than a literal `'shipped'`, and the literal was the defect:
+  // the shipped view's `edgeLatency` is an empty array on every corpus (the capped span list is truncated
+  // before the injection window, and the unit defect the same expression carries is masked by that cap), so
+  // the largest weight in the ranking multiplied nothing in every published cell — and the one axis that can
+  // supply it was reachable from the ABLATION runner only, whose numbers are the all-flags-off battery rather
+  // than the nine cells the kill criterion judges. A candidate measurable on one instrument and judged on
+  // another has an undecidable other half. The parser's default is the shipped view, so the published cells
+  // are reproduced by a bare dispatch; what changed is that they can now be MOVED. See
+  // `docs/latency-channel-views.md`.
   const assembled = await assembleRCAEvalCase(loader, rawCase, meta, callGraph, suiteName, {
     augmentFromTraces: true,
     traceActivity: computeTraceActivity,
-    latencyFrom: 'shipped',
+    latencyFrom,
   });
 
   // Free trace data after augmentation — prevents OOM on RE2 (270+ cases each with 100K+ trace spans). The
@@ -450,6 +456,7 @@ async function loadCases(
   metas: CaseMeta[],
   loader: RCAEvalLoader,
   maxCases: number,
+  latencyFrom: LatencySource,
   semanticConfig?: SemanticEnhancerConfig,
   computeTraceActivity = false,
 ): Promise<LoadStats> {
@@ -486,7 +493,7 @@ async function loadCases(
   for (const meta of selected) {
     try {
       const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter, logRowsRead } =
-        await loadSingleCase(meta, loader, semanticConfig, computeTraceActivity);
+        await loadSingleCase(meta, loader, latencyFrom, semanticConfig, computeTraceActivity);
       if (benchCase.traceActivity) traceActivityCases++;
 
       // Collect semantic stats from diagnostic labels on the call graph
@@ -1013,7 +1020,13 @@ async function main(): Promise<void> {
   // the same two fields and left the signals line free to omit them. They are on the signals line
   // now, once, beside every other forwarded option.
   console.log(`injectTime: ${injectMode}`);
-  console.log(formatSignalLine(opts));
+  // The run's configuration, as ONE string, so the banner and the dump cannot state different ones: the
+  // signals line names the options the engine's constructor receives, and the corpus line names the view the
+  // INPUT was assembled in — which is not an engine option and therefore cannot live on that line, but is
+  // just as able to move a published cell. Two lines, one owner, printed here and written into the dump's
+  // header verbatim (`DiagnoseDump` takes it as one string for the same reason).
+  const configuration = `${formatSignalLine(opts)}\n${formatCorpusLine(opts.latencyView)}`;
+  console.log(configuration);
 
   const allCases = discoverAllCases(opts.dataDir);
   console.log(`Cases discovered: ${allCases.length}`);
@@ -1120,14 +1133,19 @@ async function main(): Promise<void> {
   // once per group, so each system truncated the last one's and the artifact held a third of the
   // run while the console printed the same count three times.
   const diagnoseDump =
-    opts.diagnoseDump === ''
-      ? undefined
-      : new DiagnoseDump(opts.diagnoseDump, formatSignalLine(opts));
+    opts.diagnoseDump === '' ? undefined : new DiagnoseDump(opts.diagnoseDump, configuration);
 
   for (const [groupKey, metas] of groups) {
     const [systemName, suiteName] = groupKey.split(':') as [string, string];
     const caseLimit = opts.maxCases > 0 ? Math.min(opts.maxCases, metas.length) : 0;
-    const stats = await loadCases(metas, loader, caseLimit, semanticConfig, opts.traceWeight > 0);
+    const stats = await loadCases(
+      metas,
+      loader,
+      caseLimit,
+      opts.latencyView,
+      semanticConfig,
+      opts.traceWeight > 0,
+    );
 
     // ── Report load errors with comprehensive diagnostics ──
     reportLoadErrors(systemName, suiteName, stats);

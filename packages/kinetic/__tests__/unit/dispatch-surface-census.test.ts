@@ -192,6 +192,11 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
   diagnoseDecimals: 'sets the dump render precision; a property of the ARTIFACT',
   lossCensus: 'writes the per-case loss census; an output path',
   dropMetrics: 'load-time ablation of the INPUT, applied before the engine runs',
+  latencyView:
+    'selects which view of `edgeLatency` the CORPUS carries; a property of the INPUT rather than a term ' +
+    'in the ranking — the knob it feeds is `latWeight`, which has a row of its own. It is the axis of the ' +
+    'floor interaction (`docs/latency-channel-views.md` §7.5): the floor and the corpus move no published ' +
+    'cell alone and two of them together, so an instrument able to vary one of the two measures neither',
 };
 
 /**
@@ -264,19 +269,19 @@ const KNOBS: Readonly<
     flag: '--lat-weight',
     owner: 'fse26-latency-term-verdict.md',
     fse26: 'lat_weight',
-    rcaeval: null,
+    rcaeval: 'lat_weight',
   },
   latMinRise: {
     flag: '--lat-min-rise',
     owner: 'fse26-latency-term-verdict.md',
     fse26: 'lat_min_rise',
-    rcaeval: null,
+    rcaeval: 'lat_min_rise',
   },
   poolMetricPenaltyWeight: {
     flag: '--pool-penalty',
     owner: 'fse26-pool-penalty-verdict.md',
     fse26: 'pool_penalty',
-    rcaeval: null,
+    rcaeval: 'pool_penalty',
   },
   stabilityWeight: {
     flag: '--stability-weight',
@@ -392,11 +397,28 @@ const NON_DERIVABLE_OPTIONS: readonly string[] = [
  *
  * It is also the member that exposes a second join this table was missing, which
  * {@link AXIS_OF_OPTION} records: the two runners spell one engine axis twice.
+ *
+ * ## The latency trio, and what their arrival changed (iteration 89)
+ *
+ * `latWeight`, `latMinRise` and `poolMetricPenaltyWeight` were the three rows whose `rcaeval` was
+ * `null` while the artifact PRINTED all three — the runner declared them, defaulted them from the
+ * engine's own constants, forwarded them and named them on every configuration line, and no branch
+ * of its parser wrote any of them. So the golden half of the kill criterion could not move the
+ * largest weight in the ranking, and the line asserted a configuration no dispatch could state.
+ *
+ * They are the members whose `rcaeval` became non-null together, and the reason they had to is the
+ * INTERACTION §7.5 of `docs/latency-channel-views.md` measures: the floor and the corpus move no
+ * published cell on their own and two of them together, so a half that can vary one of the two
+ * cannot measure the effect either has. The axis itself (`latencyView`) is operational rather than
+ * a knob, so it has a reason in {@link OPERATIONAL_OPTIONS} instead of a row here.
  */
 const DISPATCHABLE_ON_BOTH: readonly string[] = [
+  'latMinRise',
+  'latWeight',
   'logSignalMode',
   'logWeight',
   'onsetShape',
+  'poolMetricPenaltyWeight',
   'rankNormalization',
   'stabilityWeight',
   'temporalWeight',

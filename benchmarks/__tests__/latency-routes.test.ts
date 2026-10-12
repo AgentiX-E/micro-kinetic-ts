@@ -32,13 +32,19 @@ import {
   type LatencyRouteCensus,
   type LatencyRouteEntry,
 } from '../src/directional-evidence.js';
+import { parseFSE26Args } from '../src/fse26-cli.js';
+import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 import {
   applyLatencyView,
   countCapSides,
   DEFAULT_LATENCY_SOURCE,
   deriveLatencyViews,
+  formatCorpusLine,
+  isLatencySource,
+  LATENCY_SOURCES,
   selectLatencyView,
 } from '../src/rcaeval-corpus.js';
+import { formatSignalLine } from '../src/rcaeval-engine-options.js';
 
 import { batteryRows } from './helpers/ablation-battery.js';
 
@@ -335,14 +341,24 @@ describe('the corpus owns the views, and the unit contract is fenced', () => {
     expect(owner).toContain('export function applyLatencyView(');
   });
 
-  it('states the view at every call site, so which corpus a run ranked on is never an omission', () => {
+  it('states the view at every call site, and on the deciding half states it from the OPTION', () => {
     // The `prismPooling` law one level up: an option a caller can name and a call site omits is an open axis.
-    // The golden's line is the one that matters most, because it is what the nine cells ARE.
     for (const runner of ['src/run-rcaeval.ts', 'src/run-optimize.ts', 'src/run-ablation.ts']) {
       expect(read(runner), `${runner} must state its corpus's latency view`).toMatch(
-        /latencyFrom: (?:'shipped'|DEFAULT_LATENCY_SOURCE)/,
+        /latencyFrom(?:,|: )/,
       );
     }
+    // …and the golden's is not a CONSTANT. A literal `'shipped'` there made the corpus an undisplaceable pin:
+    // `latWeight` — the largest weight in the ranking — multiplies `edgeLatency`, the shipped view's array is
+    // empty on every corpus, and the one axis that can supply it was reachable from the ablation runner only,
+    // whose numbers are the all-flags-off battery rather than the nine cells the kill criterion judges. The
+    // property is therefore the REACH, and it is asserted as the path rather than as the spelling: the parsed
+    // option, threaded through both functions that carry it to the assembler.
+    const golden = read('src/run-rcaeval.ts');
+    expect(golden).not.toMatch(/latencyFrom: '/);
+    expect(golden).toMatch(/latencyFrom,/);
+    expect(golden).toMatch(/loadCases\([\s\S]{0,80}?opts\.latencyView,/);
+    expect(golden).toMatch(/loadSingleCase\(meta, loader, latencyFrom,/);
   });
 
   it('prints the census and the corpus line, so no row ranks on an inferred corpus', () => {
@@ -419,5 +435,105 @@ describe('the corpus owns the views, and the unit contract is fenced', () => {
     expect(read('../.github/workflows/benchmark-rcaeval.yml')).toContain(
       `is **${rows.length} configs**`,
     );
+  });
+});
+
+/**
+ * The corpus axis, on the half that decides.
+ *
+ * Iteration 88 established the interaction: the floor and the supplied corpus each move nothing alone and move
+ * two published cells together, so an instrument that can vary one of the two cannot measure the effect either
+ * of them has. The ablation battery could vary both, but its numbers are the all-flags-off configuration while
+ * the kill criterion is judged on the nine cells of the published one — a candidate measurable on one
+ * instrument and judged on another has an undecidable other half, which is the sentence the `log_weight`
+ * dispatch input already carries about the REJECTED temporal candidate.
+ *
+ * So this block fences the two things that make the decision measurable: the view is a DISPATCHABLE option on
+ * the golden half, and every artifact NAMES the corpus it ranked on.
+ */
+describe('the corpus axis is named and dispatchable, which is what the floor decision needs', () => {
+  const golden = read('src/run-rcaeval.ts');
+  const owner = read('src/rcaeval-corpus.ts');
+  const cli = read('src/rcaeval-cli.ts');
+  const workflow = read('../.github/workflows/benchmark-rcaeval.yml');
+
+  it('accepts the whole union by the union’s own guard, and defaults to the published view', () => {
+    expect(parseRCAEvalArgs([]).latencyView).toBe(DEFAULT_LATENCY_SOURCE);
+    expect(DEFAULT_LATENCY_SOURCE).toBe('shipped');
+    // Every member, from the union's own table rather than a pair this file spells: a hand-written pair is
+    // exactly what `--log-signal-mode` accepted while four of its six modes ran as `count`.
+    const members = Object.keys(LATENCY_SOURCES);
+    expect(members.length).toBeGreaterThanOrEqual(3);
+    for (const view of members) {
+      expect(parseRCAEvalArgs(['--latency-view', view]).latencyView, view).toBe(view);
+      expect(isLatencySource(view), view).toBe(true);
+    }
+    // The guard is the TABLE's and not the prototype chain's — `toString` is a token a dispatch can really
+    // send, and an `in` test would accept it. An unusable value reproduces the published corpus.
+    for (const token of ['toString', 'constructor', '__proto__', 'nope', 'WHOLE-FILE', '']) {
+      expect(parseRCAEvalArgs(['--latency-view', token]).latencyView, token).toBe(
+        DEFAULT_LATENCY_SOURCE,
+      );
+      expect(isLatencySource(token), token).toBe(false);
+    }
+    // …and the parser consults that guard rather than re-deciding, which is what keeps one answer to one
+    // question.
+    expect(cli).toContain('isLatencySource(view) ? view : DEFAULT_LATENCY_SOURCE');
+    expect(owner).toContain('export function isLatencySource(');
+  });
+
+  it('writes the view into the artifact, from the ONE string the banner also prints', () => {
+    // An artifact that ranked on another corpus without saying so is two measurements filed under one
+    // configuration — the failure the signals line exists to prevent, at the level the signals line cannot see.
+    // The banner and the dump take one string, so they cannot disagree about it.
+    expect(owner).toContain('export function formatCorpusLine(');
+    expect(formatCorpusLine('whole-file')).toBe('corpus: latencyView=whole-file');
+    expect(formatCorpusLine(DEFAULT_LATENCY_SOURCE)).toBe('corpus: latencyView=shipped');
+    expect(golden).toContain('formatCorpusLine(opts.latencyView)');
+    expect(golden).toContain('console.log(configuration);');
+    expect(golden).toContain('new DiagnoseDump(opts.diagnoseDump, configuration)');
+    // …and the view is NOT smuggled onto the signals line, whose membership is held in BOTH directions to the
+    // options the engine's constructor receives. A corpus knob printed there would be a name the line invents.
+    expect(formatSignalLine(parseRCAEvalArgs(['--latency-view', 'whole-file']))).toBe(
+      formatSignalLine(parseRCAEvalArgs([])),
+    );
+  });
+
+  it('forwards all four knobs from dispatch inputs into EVERY golden invocation', () => {
+    // A knob with a flag and no input is still one only a commit can turn: "a pin whose replacement is
+    // unreachable is still a pin", which is this repository's own sentence about `--temporal-weight`.
+    const invocations = workflow.split('run-rcaeval.ts').length - 1;
+    expect(invocations).toBeGreaterThanOrEqual(7);
+
+    /** How many invocations forward `flag` from its `input`, out of the named array. */
+    const forwarded = (array: string, flag: string, input: string): number =>
+      [
+        ...workflow.matchAll(
+          new RegExp(`${array}\\+=\\(${flag} "\\$\\{\\{ inputs\\.${input} \\}\\}"\\)`, 'g'),
+        ),
+      ].length;
+
+    // The three the TWO runners share, in the array whose own comment states that they are shared. Their
+    // spellings are the FSE'26 runner's, so one value means one thing in both workflows.
+    for (const [input, flag] of [
+      ['lat_weight', '--lat-weight'],
+      ['lat_min_rise', '--lat-min-rise'],
+      ['pool_penalty', '--pool-penalty'],
+    ] as const) {
+      expect(workflow, `${input} must be a dispatch input`).toContain(`      ${input}:`);
+      expect(forwarded('RANKING_ARG', flag, input), `${flag} at every invocation`).toBe(
+        invocations,
+      );
+    }
+    // The corpus view is NOT part of that shared vocabulary, so it travels in its own array — and the
+    // separation is asserted rather than trusted: `run-fse26.ts` reads no spans at all, so on that half the
+    // flag would be a knob with no reader, which is a guard no input can reach.
+    expect(workflow).toContain('      latency_view:');
+    expect(forwarded('CORPUS_ARG', '--latency-view', 'latency_view')).toBe(invocations);
+    expect(workflow.split('"${CORPUS_ARG[@]}"').length - 1).toBe(invocations);
+    expect(() => parseFSE26Args(['--latency-view', 'whole-file'])).toThrow(/--latency-view/);
+    // Non-vacuity: the counting above would also be satisfied by a flag forwarded into an array no command
+    // line spreads, so the spreads are counted too — and the population is the invocations themselves.
+    expect(workflow.split('"${RANKING_ARG[@]}"').length - 1).toBe(invocations);
   });
 });

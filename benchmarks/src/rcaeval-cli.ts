@@ -67,6 +67,10 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import { hasValue, parseFieldDecimals, parseWeight } from './cli-args.js';
+// The view union, from the module that OWNS the three views. A `type` import would leave the guard
+// unimported, and a guard restated here would be a second answer to "is this a view" — the defect
+// `--prism-pooling` was repaired for, moved to the third vocabulary on this surface.
+import { DEFAULT_LATENCY_SOURCE, isLatencySource, type LatencySource } from './rcaeval-corpus.js';
 
 /**
  * The log-signal mode this runner ships when no mode was asked for.
@@ -96,6 +100,22 @@ export interface CliOptions {
   system: string;
   /** Filter to specific suite: 're1', 're2', 're3', or 'all' */
   suite: string;
+  /**
+   * Which view of `edgeLatency` the corpus carries — i.e. which corpus the engine ranks on.
+   *
+   * A CORPUS property rather than a ranking one (`rcaeval-corpus.ts`'s own classification), which is why it
+   * is NOT on the engine's option objects and why the configuration line does not name it: that line's
+   * membership is held, in both directions, to the options the engine's constructor receives.
+   *
+   * It is on THIS surface for the reason the `--prism-pooling` flag was enrolled: the shipped view's
+   * `edgeLatency` is an empty array, so `latWeight` — the largest weight in the ranking — multiplies nothing
+   * in every published cell, and the axis that could supply it was reachable only from the ablation runner,
+   * whose numbers are the all-flags-off battery rather than the nine cells the kill criterion judges. A
+   * candidate measurable on one instrument and judged on another has an undecidable other half.
+   *
+   * The default is the SHIPPED view, so a bare dispatch reproduces the published cells exactly.
+   */
+  latencyView: LatencySource;
   /**
    * Disable the fault injection time signal (dataset-decoupled mode). When
    * set, the runner does NOT forward inject_time to the engine, so the
@@ -308,6 +328,10 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     maxCases: 0,
     system: 'all',
     suite: 'all',
+    // From the corpus owner, so this runner cannot describe a corpus the assembler does not have: the three
+    // views are its union, and a literal here would be a second owner of the value the published nine cells
+    // were measured with. Inert on RE1, which carries no spans in any view.
+    latencyView: DEFAULT_LATENCY_SOURCE,
     noInjectTime: false,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
@@ -380,7 +404,47 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
     } else if (args[i] === '--stability-weight' && hasValue(args, i + 1))
       opts.stabilityWeight = parseWeight(args[++i]!, DEFAULT_STABILITY_WEIGHT);
-    else if (args[i] === '--collision-weight' && hasValue(args, i + 1))
+    // ── The three the artifact NAMED before any command line could set them ──
+    //
+    // All three are declared in `CliOptions`, defaulted from the engine's own constants, forwarded to the
+    // engine's constructor and printed on every artifact's configuration line — and none of them had a
+    // branch here, so the line asserted a configuration no invocation could state. The golden half of the
+    // kill criterion is read from that line, which is why this is a defect and not an omission: a candidate
+    // that moves the largest weight in the ranking had an undecidable other half, exactly as the `logWeight`
+    // dispatch input records about the REJECTED temporal candidate.
+    //
+    // Each mirrors the FSE'26 runner's arm for the same flag, SPELLING INCLUDED, so one value means one
+    // thing in both workflows — the rule the `no_rank_normalization` input states for its own pole.
+    else if (args[i] === '--lat-weight' && hasValue(args, i + 1))
+      // Falls back to the SHIPPED weight, not to 0: `--lat-weight 0` is a MEASURED configuration (the
+      // latency term switched off), so a typo must reproduce the published one rather than run that
+      // experiment under the published configuration's name.
+      opts.latWeight = parseWeight(args[++i]!, DEFAULT_LAT_WEIGHT);
+    else if (args[i] === '--lat-min-rise' && hasValue(args, i + 1)) {
+      // The floor is the ONE weight-like value whose domain is not `parseWeight`'s: below 1 it suppresses
+      // nothing, so accepting `0` would report a configuration the operator believes changed something.
+      const rise = Number(args[++i]!);
+      opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : DEFAULT_LAT_MIN_RISE;
+    } else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
+      // Through `parseWeight` rather than an inline parse, for the empty-value reason: `--pool-penalty 0`
+      // is the ablation, so a blank flag must select the shipped 0.0679 rather than it.
+      opts.poolMetricPenaltyWeight = parseWeight(args[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);
+    // ── The corpus axis, which is not an engine option at all ──
+    else if (args[i] === '--latency-view' && hasValue(args, i + 1)) {
+      // `edgeLatency` is the input `latWeight` multiplies, and WHICH of the three views supplies it is a
+      // property of the CORPUS rather than of the ranking — `rcaeval-corpus.ts`'s own words. It is offered
+      // here because the floor and the corpus are an INTERACTION: neither axis moves a published cell on its
+      // own, and only their cross product moves one at all, so an instrument that can vary one of the two
+      // cannot measure the effect either of them has. The published cells' view stays the default, so a
+      // bare dispatch reproduces them.
+      //
+      // The whole union, by the union's own guard rather than a hand-written pair — the repair
+      // `--prism-pooling` carries, applied to the third two-and-three-member vocabulary on this surface. An
+      // unusable value falls back to the SHIPPED view, like every other mode flag here: a typo must
+      // reproduce a published corpus rather than invent one.
+      const view = args[++i]!;
+      opts.latencyView = isLatencySource(view) ? view : DEFAULT_LATENCY_SOURCE;
+    } else if (args[i] === '--collision-weight' && hasValue(args, i + 1))
       opts.collisionWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--topo-weight' && hasValue(args, i + 1))
       opts.topoWeight = parseWeight(args[++i]!, 0);

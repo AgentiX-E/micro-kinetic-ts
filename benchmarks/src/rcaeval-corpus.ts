@@ -115,6 +115,53 @@ export type LatencySource = 'shipped' | 'capped' | 'whole-file';
  */
 export const DEFAULT_LATENCY_SOURCE: LatencySource = 'shipped';
 
+/**
+ * The union's members, as the option surface's own guard reads them.
+ *
+ * A `Record` beside the union for the reason `PRISM_POOLINGS` is one: the union is a TYPE, so nothing at
+ * runtime can enumerate it, and a parser that hard-codes the members it happens to test is how
+ * `--log-signal-mode` came to accept two members of a six-member union while printing a confident number
+ * for the other four. Nothing in this module reads this table — its reader is the CLI's guard — which is
+ * the same relationship `LOGSIGNAL_MODES` has with the runner that consults it.
+ */
+export const LATENCY_SOURCES: Readonly<Record<LatencySource, true>> = {
+  shipped: true,
+  capped: true,
+  'whole-file': true,
+};
+
+/**
+ * Whether a raw argument names a view.
+ *
+ * `hasOwnProperty.call` rather than `in`: a `Record` is an object, so the prototype chain makes
+ * `toString`, `constructor` and `__proto__` reachable and `in` would accept all three — and `toString`
+ * is a token a dispatch can really send. Mirrors `isPrismPooling`, the guard this union's option is
+ * spelled after.
+ */
+export function isLatencySource(value: string): value is LatencySource {
+  return Object.prototype.hasOwnProperty.call(LATENCY_SOURCES, value);
+}
+
+/**
+ * The corpus line: which view the run ranked on, as the artifact states it.
+ *
+ * A SEPARATE line from the signals line, and on the other side of the engine's boundary: that line's
+ * membership is held in both directions to the options the engine's constructor receives, and this is not one
+ * of them — it changes the INPUT rather than a weight. Rendering it here, in the module that owns the three
+ * views, is what stops it being a second spelling: the values it can print are exactly the union's members.
+ *
+ * It exists because the alternative is an artifact that cannot be attributed. Two runs whose `signals:` lines
+ * are byte-identical would have ranked on two different corpora, and the nine cells they printed would be
+ * two different measurements filed under one configuration — which is the failure the signals line itself was
+ * created to prevent, at the level the signals line cannot see.
+ *
+ * @param latencyFrom - The view the assembled cases carry.
+ * @returns The line, without indentation.
+ */
+export function formatCorpusLine(latencyFrom: LatencySource): string {
+  return `corpus: latencyView=${latencyFrom}`;
+}
+
 /** The three views, as arrays, for one case. Every view is `[]` when the case carried no spans. */
 export interface LatencyViews {
   readonly shipped: readonly FaultEdgeLatency[];

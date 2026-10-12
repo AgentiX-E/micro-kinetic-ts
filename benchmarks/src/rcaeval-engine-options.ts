@@ -98,6 +98,7 @@ export const NON_ENGINE_OPTION_KEYS: readonly string[] = [
   'maxCases',
   'system',
   'suite',
+  'latencyView',
   'noInjectTime',
   'fusionCeiling',
   'routingProbe',
