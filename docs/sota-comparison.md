@@ -285,6 +285,48 @@ unchanged; no cell moved; and the two corrections above are corrections of THIS 
 than of the record they cite — §0a entry 4 and entry 3 both already carried the facts, which is the point of
 recording it here.
 
+### 0f. Two 2026 references ON our benchmark family that the 2026-10-12 second survey added
+
+Both were checked against §0a before being recorded here, and **neither appears anywhere in either repository** —
+which is the rule §0e's correction cost: grep the file for a reference BEFORE recording a survey's find as new.
+
+**1. `TA-RCD` — a topology-guided metric-selection method evaluated on the PUBLIC RCAEval benchmark.** D. R.
+Mathews, M. Verma, P. Aggarwal, J. Lakshmi (v1 2025-09-05, **v2 2026-10-09**): *Efficient Fault Localization in a
+Cloud Stack Using End-to-End Application Service Topology.* On RCAEval it claims **metric-level `AC@5` +18% and
+`Avg@5` +19%** over the strongest baseline, and in a controlled testbed `AC@5` at least 2× and `AC@3` at least 4×
+over standard RCD.
+
+- **It reports no Top-1.** Its metrics are `AC@5` / `AC@3` / `Avg@5` — the framework's own convention rather than
+  ours — so **no gap over us can be read from it**, and it is the *second* reference on this list whose headline is
+  a Top-5 convention (§0a entry 3 is the first). A Top-5 metric cannot see a reranking defect at all, and this
+  repository's loss is **98.8% reranking**, which is why its gains concentrate at `K ≥ 3` and ours cannot.
+- **Its mechanism is the nearest published relative of the register's open discriminator**: a per-case signal
+  SELECTION chosen from topology rather than from the ranking's own values. That is a different class of feature
+  from the one whose free read closed the latency channel's routing question
+  (`latency-channel-views.md` §7.9), and it is the natural place to look next.
+
+**2. `EviRCA` — the two-stage architecture, on OpenRCA, with a large margin.** *arXiv:2609.19825*, *Decoupling
+Evidence Extraction from Reasoning for Microservice Root-Cause Analysis*: on **OpenRCA** (Bank 136 / Telecom 51 /
+Market 148 = **335 cases**) it reports **Correct 43.9% / Partial 56.2%** with `deepseek-v4-pro` (40.6 / 54.4 with
+`qwen3.7-plus`) against **RCA-Agent 13.1 / 20.8** and **Oracle Sampling 14.6 / 22.1**.
+
+- **A different benchmark, a different metric and a different population**, so it is not a gap over us either — but
+  it is a **fourth independent arrival at this repository's architecture** (*stage one puts the evidence on the
+  table, stage two discriminates among distractors* is our retriever plus reranker; *evidence extraction versus
+  reasoning* is our retrieval-versus-reranking split), and it names **GALA** and its `SURE-Score`, which §0a already
+  carries — so the two are one lineage rather than two references.
+- **Its stage-two failure mode is the one §7.9 of the latency document has just measured on ourselves**: it reports
+  the correct cause being demoted below *collateral* signals — an elevated co-located neighbour, an earlier
+  transient, a downstream rule — which is the same victim-versus-source pattern our loss census attributes.
+
+**Neither moves a cell, a rank or a standing**, and §0a's six entries are unchanged. The entry that does bear on us
+is methodological and comes from outside this family: a 2026-08 preprint, *There Is No Neutral Harness: Modern LLM
+Leaderboards Are Manufactured by Config-Fragile Items*, measured that **the same weights on the same 3 679 items
+score 31% and 89% under two equally defensible evaluation configurations, with 85% of a model's correct answers
+flippable by another one**. That is the general form of the rule this repository already enforces on itself — **an
+artifact must carry the configuration that produced it** — and it is why a cell whose corpus is inferred counts as a
+cell measured under an unnamed rule.
+
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |

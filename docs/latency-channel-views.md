@@ -467,6 +467,97 @@ feature rather than on a system name, and the successor to this section is the s
 separates the two regimes — and the two regimes are now measurable per case, with the `lat` term's own contribution
 recorded on every one of them.
 
+### 7.8 The corpus axis's THIRD member cannot be reached, and the two mechanisms compose
+
+The union declares three members. §7.5 took the cross product over the corpus axis with **two** levels — `shipped`
+and `whole-file` — and §7.7 measured the crossed cell in the published configuration with the same two. **The middle
+member, `capped`, has never been ranked on, and the census iteration 90 gave the golden half now says why: it cannot
+be.** Every number below is that census, read from the two runs of §7.7 rather than from a new one.
+
+| group | cases | capped spans | pre / post | `cap all-before` | `rows: capped` | `rows: whole-file` |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| RE1 OB / SS / TT | 375 | 0 | 0 / 0 | 0 | **0** | 0 |
+| RE2 OnlineBoutique | 90 | 900 000 | 900 000 / 0 | **90** | **0** | 1 080 |
+| RE2 SockShop | 90 | 0 | 0 / 0 | 0 | **0** | 0 |
+| RE2 TrainTicket | 90 | 900 000 | 890 062 / **9 938** | **89** | **0** | 6 781 |
+| RE3 OnlineBoutique | 30 | 300 000 | 300 000 / 0 | **30** | **0** | 356 |
+| RE3 SockShop | 30 | 0 | 0 / 0 | 0 | **0** | 0 |
+| RE3 TrainTicket | 30 | 300 000 | 300 000 / 0 | **30** | **0** | 2 006 |
+
+1. **`rows: capped` is `0` in all nine systems, and the cap's landing side is the mechanism.** On every case that
+   carries spans, the capped list lies ENTIRELY before the anchor (`cap all-before` = 90/90, 89/90, 30/30, 30/30),
+   and `capPost` is `0` in three of the four systems that have spans at all. The span count is exactly the cap —
+   `900 000 / 90` and `300 000 / 30` are both `10 000` — so the prefix is full and still ends before the window.
+2. **The two mechanisms COMPOSE, so the unit repair alone restores nothing.** §7.4 framed the unit defect and the
+   truncating cap as two independent explanations of one empty array, and for the `shipped` view they are. For the
+   `capped` view they are not independent in effect: repairing the UNIT leaves the array empty anyway, because the
+   cap removed the post side before the derivation ran. The only view that can hold both sides is the streaming
+   pass — which is what the header table claims, and what the two row-count columns now measure.
+3. **RE2 TrainTicket is the corpus's single comparable case, and it is still empty.** One case holds both sides
+   (`comparable 1`) and contributes **0** rows, because no EDGE in it straddles the anchor — a case-level split and
+   an edge-level split are different questions. The verdict arms are ordered so that `CAP TRUNCATES` decides first
+   on a population where 89 of 90 cases are all-before; that arm is correct here, and what it does not cover is
+   exactly this: one case is comparable and no route emitted a row for it.
+
+**What this costs and what it buys.** It costs a measurement nobody can take — a "minimal repair" that keeps the
+published cap and fixes only the unit does not exist as a cell, so the corpus axis is effectively **two-valued** on
+RCAEval and the third member is a name rather than a configuration. It buys the register's own law in the direction
+that matters: *a cross product missing a cell is not a smaller experiment*, and here the missing cell is missing
+because the corpus cannot reach it, which is a fact to state once rather than derive a fourth time.
+
+### 7.9 The routing question, asked of the artifacts already produced — and CLOSED, with a mechanism
+
+§7.7 left a routing problem and named the object it needed. The register's standard for that object is exact —
+*"a candidate here must name the context feature and show it separates, on a free read, before any run"* — so the
+read comes first, and it costs nothing: **both runs' loss censuses record, per case, every term's contribution to
+the rank-1 candidate**, and the `lat` term is fed on one side and not the other. The population is the 62 cases the
+channel MOVED, and the candidate feature is the `lat` term's own contribution to rank-1, which is label-free — a
+function of the engine's input and its scoring, not of the answer.
+
+| group | n | `lat` on rank-1 | value exactly the weight `0.561495` |
+| --- | ---: | --- | ---: |
+| RE1 (the control) | **0** moved | — | — |
+| FIXED (published wrong → candidate right) | **33** | median **0.561495** | **33 / 33** |
+| BROKEN (published right → candidate wrong) | **29** | median **0.561495** | **29 / 29** |
+| the candidate run as a whole | 735 | fed on **203** | saturated on **179 / 203** |
+
+**The feature does not separate, and it cannot.** The term contributes its FULL weight on rank-1 in all 62
+outcome-changing cases — identical medians, identical values — because rank normalisation places the top candidate
+at the maximum of the term's range whatever the term's input was. So no threshold on *"how much did the latency
+term contribute"* can exist: **the cases the channel fixes and the cases it breaks produce the same number.** That
+is a closure with a mechanism rather than a failed search, and it is the sharpest form the term's own saturation
+has taken: the weight is large (`0.561495`), it is live, and it is unreadable.
+
+**What is therefore left, and what it is not.** The sign is a property of the POPULATION — TrainTicket wants the
+view and OnlineBoutique does not, in RE2 and in RE3, consistently across four independent measurements — and the
+per-case features the artifact carries do not encode it. That is the obstacle the register names for every other
+candidate (*conflict between cases*), reached once more, and it rules out a whole family rather than one threshold:
+**a saturated term cannot be read to decide whether to trust it**, so a router built on any term that saturates is
+barred by the same argument. What remains is a feature from OUTSIDE the ranking — what the corpus SUPPLIED
+(`wholeFileRows` per case), which is why §7.10 threads that supply into the loss census so a per-case
+supply × outcome join needs no third run — or a context this repository does not yet read.
+
+### 7.10 The census counted systems, and the decision is made per case
+
+The instrument that measures this channel aggregates by (suite, system), which is the unit an accuracy is reported
+in and not the unit a decision is made in. A run could say *"RE3 TrainTicket supplied 2 006 rows"* and could not
+say **which of its thirty cases carried them** — and §7.9's question is per case by construction. So the corpus
+owner's per-case entry, which the runner computed and reduced to counts on the spot, is now **kept beside the
+summary and keyed by the case it describes**, and every loss-census row carries its own case's supply.
+
+**Three properties, and each is fenced rather than asserted**: the map is the ONE collection the summariser reads,
+so the printed counts and the artifact's rows are one population rather than two that happen to agree; the row
+takes the owner's entry rather than re-spelling its seven fields, because a second spelling is a second answer; and
+the entry is set **before** the case is appended, which is what makes the lookup total and what the fence asserts by
+ORDER — a case appended first would make the lookup `undefined`, and `JSON.stringify` DROPS an undefined property,
+so the artifact would lose the field for exactly the cases the instrument failed on while still reading as a
+well-formed file.
+
+**What the field is for, and the one thing it already says.** The three row counts are the CORPUS's, not the run's:
+`wholeFileRows` stays populated on a run whose own view is `shipped` and whose other two counts are zero. That is
+what lets the published artifact state *the corpus could supply this and the configuration declines to read it* —
+the sentence §7.9's next step needs, and one no system-level count can make.
+
 ## 8. Fences
 
 - `benchmarks/__tests__/corpus-owner.test.ts` — a real case directory, the real loader, the real owner: the
@@ -484,7 +575,15 @@ recorded on every one of them.
   `latencyRoute`, read at the call site, carried by both functions that handle a case, aggregated by the owner's
   summariser), the **shared renderer** across the two runners, the absence of a second spelling, and that the value
   is reported rather than merely typed — a census computed and never printed is the state §7.7's attribution was
-  written against.
+  written against. **§7.10 adds the census's own population**: the entry is keyed by the case it describes, the
+  summariser reads that map and nothing else, the loss-census row takes the entry rather than re-spelling its
+  fields (`wholeFileRows:` and `capPre:` may not appear in the runner at all), the record's field is REQUIRED, and
+  the type is the owner's rather than a mirror — which is the right convention across packages and the wrong one
+  inside one.
+- `benchmarks/__tests__/loss-census.test.ts` — the record the census writes, including the two directions that
+  make `latencySupply` a CONTRACT rather than a field: it is required, so "this case carried no spans" and "nobody
+  recorded what it carried" cannot be the same record; and the fixture's default is RE1 SockShop's real zeroed
+  supply rather than a neutral placeholder, because that cell genuinely has no `traces.csv`.
 - `benchmarks/__tests__/cli-argument-rejection.test.ts` — the **reach** fence, which is the direction nothing
   asked: every other flag→effect assertion starts from a flag, and this one starts from the **option** and asks
   whether any branch of the chain writes it. Both sides are derived (the chain's own spans; the options the
