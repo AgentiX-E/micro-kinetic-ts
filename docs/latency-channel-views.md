@@ -296,19 +296,107 @@ no floor) would be `Δ+0.0` **by construction** — a zero weight makes the inpu
 its absence is not a hole. What the four cells do say, together, is that the movement belongs to the term and to
 nothing else about the corpus or the flags.
 
-**RE2 is OWED, and it is in flight rather than unmeasured.** `ablation-re2` was still executing `Run ablation —
-RE2 only` when this was written (same run, `38157023328`; the job's own bound is 180 min and its measured cost was
-77.8 min). §7.4 already established that RE2's whole-file reading is a **per-system** question (OnlineBoutique
-−2.3, TrainTicket +2.2 on the corrected corpus), so the fourth cell's RE2 answer is expected to be a second
-interaction rather than a mean. It is recorded as owing rather than assumed, and the row that produces it is in
-the battery permanently.
+**RE2's fourth cell landed, and it is a second interaction of the same polarity** (`ablation-re2` completed in the
+same run; the bound that had to move for it is in the workflow). RE2 carries traces, so unlike RE1 none of its four
+cells is forced to zero:
 
-**What this does NOT decide.** Every row above ran with all twelve feature flags OFF, so **no number here says the
-published nine cells would move by these amounts** — what is established is that the term is **LIVE** on a corpus
-where it was read as inert, and the **direction** of its movement per cell. Whether the published corpus should be
-re-based onto the whole-file derivation, and whether `latMinRise = 10.3` should be lowered, is a decision on
-**those two cells and not on the `−1.0` mean**, and it is now cheap: the four cells exist permanently and a fence
-holds them there (`benchmarks/__tests__/latency-routes.test.ts` derives the 2×2 from the battery's own text).
+| row | `{corpus × floor}` | RE2-OB | RE2-SS | RE2-TT | mean |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `BASELINE` | shipped × default | 86.7 | 93.3 | 71.1 | — |
+| `LAT NO FLOOR` | shipped × **no floor** | **+0.0** | +0.0 | **+0.0** | +0.0 |
+| `LAT WHOLE FILE` | **whole-file** × default | **−2.2** | +0.0 | **+2.2** | **+0.0** |
+| **`LAT WHOLE FILE + NO FLOOR`** | **whole-file × no floor** | **−10.0** | +0.0 | **+10.0** | **+0.0** |
+| `LAT WHOLE FILE + LAT OFF` | whole-file × default, `latWeight = 0` | +0.0 | +0.0 | +0.0 | +0.0 |
+| `LAT CAPPED` | capped × default | +0.0 | +0.0 | +0.0 | +0.0 |
+
+Three things RE2 adds, and the first is about the CONVENTION rather than about the term.
+
+- **The mean is `+0.0` in ALL FOUR cells.** On RE3 it was `−1.0` in the crossed cell alone, so a reader could still
+  have seen that something moved. Here a configuration that moves a published cell by **10 pp** has a mean of
+  exactly zero, in every cell, including the two that move. The summary statistic is not merely uninformative at
+  this resolution: it is **identically zero for both of the cells that are not**. That is the strongest available
+  argument for reading the nine cells and never the fold.
+- **The floor alone is inert here too** (`LAT NO FLOOR`, Δ+0.0) — the same mechanism, since RE2's shipped array is
+  empty for the same reason — and the **corpus alone is NOT inert**: `LAT WHOLE FILE` moves two cells by ±2.2,
+  where on RE3 the same row read Δ+0.0. So the floor's role differs by suite: on RE2 the interaction **amplifies**
+  a movement the corpus already makes alone (×4.5), while on RE3 the corpus alone is genuinely inert and the floor
+  is what **reveals** the channel.
+- **The polarity is the same in both suites** — OnlineBoutique loses, TrainTicket gains, SockShop is untouched in
+  both — which is what makes it a property of the term rather than of one corpus. The per-fault-type reading is
+  sharper on RE2 than on RE3: against the baseline, RE2-OB `delay` **80.0 → 40.0** and `mem` 100.0 → 80.0, while
+  RE2-TT `loss` **40.0 → 73.3**, `socket` 80.0 → 93.3 and `cpu`/`disk` +6.7 each. The single-axis row moves RE2-OB
+  `delay` by −13.3 and RE2-TT `delay`/`mem` by +6.7 each, so the crossed cell is the same re-ordering with the
+  mask lifted rather than a different one.
+
+**The 2×2 is its own control and it is now complete on all three suites.** A fifth cell (`latWeight = 0` on the
+whole-file corpus with no floor) would be `Δ+0.0` **by construction** — a zero weight makes the input irrelevant —
+so it is not owed and its absence is not a hole. What the four cells do say, together, is that the movement
+belongs to the term and to nothing else about the corpus or the flags.
+
+### 7.6 The half that DECIDES could not state the knob it had to state (iteration 89, on `47cc5e4`)
+
+**What §7.5 does NOT decide, and why it could not.** Every row above ran in the ablation battery, whose
+configuration is **all twelve feature flags OFF** — not the published one. So no number in §7.5 says the nine
+published cells would move by those amounts: what is established is that the term is **LIVE** on a corpus where it
+was read as inert, and the **direction** of its movement per cell. Whether the published corpus should be re-based
+onto the whole-file derivation, and whether `latMinRise = 10.3` should be lowered, is a decision on **those cells
+and not on a mean** — and it needs both axes measured **in the published configuration**. This section is about why
+that was impossible, and what was done about it.
+
+**The measurement, and the defect it found.** Read mechanically out of the two files — 27 branches of the golden
+argument chain, against the 17 options `buildRCAEvalEngineOptions` hands the engine:
+
+| engine option | shipped value | written by |
+| --- | ---: | --- |
+| 14 others | *(each non-empty)* | one branch each |
+| `latWeight` | **0.561495** | **— no branch at all** |
+| `latMinRise` | **10.3** | **— no branch at all** |
+| `poolMetricPenaltyWeight` | **0.0679** | **— no branch at all** |
+
+All three were declared in `CliOptions`, defaulted from the **engine's own constants**, forwarded to the engine's
+constructor and named on **every** golden artifact's `signals:` line — while **no arm of the parser wrote any of
+them**. So the artifact asserted a configuration no invocation, dispatch or otherwise, could state, and the largest
+weight in the ranking multiplied an array the golden half could not displace. The FSE'26 runner had all three arms
+all along, so **the same knob was reachable in one workflow and not in the other** — the one direction the
+`no_rank_normalization` input's own description says must not happen.
+
+**The corpus axis was a literal, and that is the half that matters.** The golden call site passed
+`latencyFrom: 'shipped'` — stated rather than omitted, with a reason, but not displaceable. Since `latWeight`
+multiplies `edgeLatency` and the shipped view's array is **empty** (§7.1), the golden half could vary **neither**
+axis of §7.5's interaction — and an interaction is invisible to each of its axes alone. A candidate measurable on
+one instrument and judged on another has an undecidable other half, which is the sentence the `log_weight`
+dispatch input already carries about the REJECTED temporal candidate.
+
+**Why the golden half and not the FSE'26 one — measured, not assumed.** The two runners reach the engine through
+different shapes, and the difference decides what "unreachable" even means. `buildFse26EngineOptions` **maps**: its
+parser holds `logMode` while the engine takes `logSignalMode`, so "no branch writes it" is false there for a field
+that is perfectly reachable. The golden's builder **copies**, one-for-one under the same names — which is what let
+three fields ship, print and stay unreachable, and what makes the reach fence the right question on this half and a
+false-positive generator on the other.
+
+**What was corrected, and why each piece is one.** Four knobs and one line:
+
+- `--lat-weight`, `--lat-min-rise`, `--pool-penalty` — the **FSE'26 runner's own spellings and semantics**, so that
+  one value means one thing in both workflows. The floor keeps its own domain (floored at 1) rather than sharing
+  `parseWeight`'s, because a floor below 1 suppresses nothing and would report a configuration the operator
+  believes changed something.
+- `--latency-view` — the corpus axis, accepted **by the union's own guard** (`isLatencySource`, declared beside the
+  union it reads, which is the repair `--prism-pooling` carries) so all three views are expressible from a
+  dispatch. The default is the SHIPPED view, so a bare dispatch reproduces the published cells.
+- A **`corpus:` line** in the banner and in the diagnose dump's header, from one string, because the `signals:`
+  line cannot carry it: that line's membership is held **in both directions** to the options the engine's
+  constructor receives, and the view is a property of the INPUT rather than a term. Two runs whose `signals:` lines
+  are byte-identical and whose corpora are not would be two measurements filed under one configuration.
+
+**The gap was already recorded, which is the part worth keeping.** `dispatch-surface-census.test.ts` holds a table
+whose `rcaeval` column was `null` for exactly these three rows — the register's inventory of open axes — so this
+iteration **closed three rows of a census rather than discovering a fact**. That is the right relationship between
+a census and a repair: the census made the absence legible enough to be scheduled.
+
+**The nine cells are untouched, by construction.** Every new default is the shipped value and every workflow input
+is empty, so a push passes no flag at all. This section is an instrument change, and its acceptance criterion is
+the **byte-identical nine cells**. What it buys is that §7.5's decision — which of the two RE3 cells to accept, and
+whether the corpus or the floor is the axis to move — is at last measurable on the half that judges it.
 
 ## 8. Fences
 
@@ -318,7 +406,27 @@ holds them there (`benchmarks/__tests__/latency-routes.test.ts` derives the 2×2
   reach (no traces, no anchor, no augmentation, a suite that is not RE3).
 - `benchmarks/__tests__/latency-routes.test.ts` — every verdict arm, the summariser, the selection, and the
   source-shape assertions: the published expression is kept verbatim as a recorded value, the capped view passes
-  the loader's value through unscaled, all three call sites state their view, and the census is printed.
+  the loader's value through unscaled, the deciding call site states its view **from the parsed option** rather
+  than as a constant, the census is printed, the whole union is accepted by the union's own guard, the artifact's
+  `corpus:` line is rendered from the one string the banner prints, and all four knobs are forwarded from dispatch
+  inputs into **every** golden invocation — counted against the invocations the workflow actually has, so a job
+  added without them fails here instead of running at the shipped value under a dispatch's name.
+- `benchmarks/__tests__/cli-argument-rejection.test.ts` — the **reach** fence, which is the direction nothing
+  asked: every other flag→effect assertion starts from a flag, and this one starts from the **option** and asks
+  whether any branch of the chain writes it. Both sides are derived (the chain's own spans; the options the
+  engine's constructor receives), and the property is asserted twice — structurally, and behaviourally by moving
+  each option with probes taken from the **engine's own vocabularies** rather than from a list this file keeps.
+  A companion assertion pins the premise that makes the reading valid on this half: the builder **copies** rather
+  than maps.
+- `packages/kinetic/__tests__/unit/dispatch-surface-census.test.ts` — the three names of every knob (input, flag,
+  engine option) and their owners. Its `rcaeval` column carried `null` for `latWeight`, `latMinRise` and
+  `poolMetricPenaltyWeight`; the census now records them as dispatchable on both halves, which grows
+  `DISPATCHABLE_ON_BOTH` from six axes to nine, and `latencyView` is classified as **operational** — a property of
+  the input rather than a term — so it belongs in that reason table and not in the knob table.
+- `packages/kinetic/__tests__/unit/fse26-reported-config.test.ts` — the workflow descriptions that quote a runner
+  default. The three new inputs quote one each, and all three ship **non-zero**, which is what made their absence
+  from this half expensive: the description's number and the run's configuration could disagree about the largest
+  weight in the ranking with nothing in the pipeline to notice.
 - `benchmarks/__tests__/coverage-scope.test.ts` — `rcaeval-corpus.ts` was imported by a test as SOURCE TEXT and
   by nothing as code, so every number in this repository went through a module outside the coverage denominator.
   It is in the allow-list now.

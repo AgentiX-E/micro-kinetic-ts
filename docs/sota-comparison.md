@@ -240,6 +240,60 @@ purpose-built RCA agent**, so the remaining gap lives in the **harness** rather 
 that it has never been wired; the borrowable part is not its loop but its **admission gate**, which the kill
 criterion already is.
 
+### 0e. TWO CONCURRENT 2026 RESULTS THAT NAME OUR OWN ARCHITECTURE — one corroborating, one a caveat on the benchmark
+
+Found by the 2026-10-12 survey. **Neither moves our standing, and both change what this document may claim**, so
+both are recorded before the leaderboard rather than after it.
+
+**1. A benchmark-wide audit that reaches our loss decomposition from outside.** A preprint circulated 2026-09-30,
+accepted to the **NeurIPS 2026 Evaluations & Datasets Track**, argues that *"the standard top-k accuracy metric can
+obscure whether a method retrieves the correct cause or simply ranks it poorly"*, across **four benchmark suites**,
+and measures the two halves separately: on complex faults *"statistical baselines mis-rank the true cause **79–100%**
+of the time"*, while on benchmarks *"where the fault manifests strongly at its origin, retrieval is nearly solved at
+**98–100%**"*. Its proposed pipeline is a **multi-signal retriever plus an LLM reranker**, *"with no causal graph or
+labelled data needed"*, which *"matches or beats the best baseline's top-1 accuracy on all six benchmark suites, by
+as much as 12 percentage points"*, and leads by **7–18 points** on every benchmark when *"a short system-description
+document"* is supplied and all methods rank the same candidate set.
+
+**The shape of that claim is our own, reached independently.** This repository's loss decomposition reads **98.8%
+reranking / 1.2% retrieval**, with **96.6% of the deep misses having had local evidence** — i.e. ORDERING ALONE —
+and the architecture it justifies is a two-stage retriever plus a reranker. A third party auditing four suites
+reports the same decomposition, the same conclusion that the graph is not where the remaining accuracy lives, and
+the same two-stage remedy. **That is corroboration of the diagnosis, which is worth more to us than a number.**
+
+**It is still not a number we can place.** Its figures are **relative to baselines**, not to us, and the search
+reached the announcement rather than the paper: no arXiv identifier and **no absolute top-1 was extracted**, so the
+"12 points" and the "7–18 points" are margins whose base is unnamed. Quoting either against our 78.75% would be a
+cross-population comparison with an unknown sign, which is what §0a exists to prevent. **Its one borrowable
+mechanism is not the pipeline but the input**: a **short system-description document** moves a reranker by 7–18
+points with the candidate set held FIXED — i.e. the gain is in the CONTEXT the ranker reads, not in the retrieval.
+This repository's reranker reads the raw signals and has no system-description channel at all, which makes that a
+cheap, falsifiable candidate rather than a slogan.
+
+**2. A controlled audit of RCAEval that reports a floor we do not publish in the same conventions.** A 2026 study
+(indexed as **`arXiv:2609.27069`**, *"Does Graph Structure Earn Its Place in Microservice Root-Cause Analysis? A
+Controlled Study on RCAEval, and What the Benchmark Was Really Measuring"*) reports two properties of **the
+benchmark itself**:
+
+- *"RCAEval injects faults into only five services per system while exposing 12 to 70 in telemetry"*, and *"the
+  headline metric is Avg@5: a ranker reading no telemetry at all places the true culprit in the top five on
+  **99.7%** of held-out incidents, scoring Avg@5 **0.488**"* — so *"that prior, not the uniform-random 0.137, is
+  the honest in-distribution floor"*. Our own prior-only floor is published as **5.56 / 16.67 / 16.67% AC@1** on
+  the three suites; the two are different metrics (Avg@5 against Top-1) and different rankers, so **neither number
+  replaces the other** — but the paper states from outside the rule this repository already applies: **a
+  benchmark's floor must be measured, and the uniform-random one is not it.**
+- *"a non-uniform column schema [that] silently zeroes telemetry for most RE1 cases"*. This one is a **LEAD and not
+  a finding about us** — a lead is not evidence until held out. Our loader reads the converted `metrics.json`
+  rather than the published CSV columns, which is exactly the kind of transformation that could absorb or
+  reproduce a schema defect, and **nothing in this repository has ever tested it**. Recorded as owed: *does our
+  RE1 corpus carry telemetry on most cases, and does the answer depend on the column set?* It is answerable from
+  artifacts already produced (`--loss-census` carries a per-case metric count and the input-coverage census
+  carries the channel counts), which is why it is a task and not a worry.
+
+**What this does not change.** Both items are corroboration and caveat about the *field* and the *benchmark*;
+neither reports a number on our population that we cannot beat. The standing in §0a–§0c is unchanged, and no cell
+moved.
+
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |
