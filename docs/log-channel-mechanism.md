@@ -123,6 +123,31 @@ hypothesis: that document's falsification is about _whether an LLM could recover
 exception_, and statement 3 above sharpens _why_ the whitelist misses — which is an argument about the whitelist's
 SCOPE, not about a classifier's capability. The LLM axis stays closed on its own measurement.
 
+### The population that had never been classified: RE2, 270 cases
+
+**RE2 is where 180 of the 210 gate-blind cases live, and it had never been classified.** The same run:
+
+| suite | system | retained | admitted | logic | propagated | unclassified | none | flag-disagreements |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| RE1 | OB / SS / TT | **0** | 0 | 0 | 0 | 0 | 0 | **0** |
+| RE2 | OnlineBoutique | 9 228 | **0** | **0** | 0 | 140 | **9 088** | **0** |
+| RE2 | SockShop | 134 903 | **2** | **2** | 0 | 131 269 | 3 632 | **0** |
+| RE2 | TrainTicket | 2 331 | **0** | **0** | 14 | 1 269 | 1 048 | **0** |
+
+**And the mechanism is not the same one the RE3 half showed.** On RE3 the refusals were dominated by
+`unclassified` — a class name matching neither whitelist. On **RE2 OnlineBoutique, 9 088 of its 9 228 retained rows
+(98.5%) carry NO class name at all**, and it admits zero. RE2's ERROR/FATAL lines are application messages
+(`failed to retrieve ads`) rather than exception-bearing stack lines, which is what a resource fault looks like:
+the source is throttled, nothing throws, and the victims log a business failure.
+
+**Across the whole 735-case corpus the picture is one sentence:** of **243 278** retained rows the gate admits
+**11 132 (4.6%)** — exactly the `logic` rows, since `admitted === logic` on every system — while the **propagated
+rule the docblock names fires on 82 rows (0.03%)**. The refusals are **`none` (no class name) 46%** and
+**`unclassified` (an unrecognised class name) 42%**. So the gate is not refusing propagated wrappers: it is
+refusing everything that is not a whitelisted logic exception, and the named rule is almost never the one that
+fires. Which means the open question about this channel is now about the **whitelist's SCOPE** — and the 46% that
+carry no class name at all are not a scope question but a corpus answer: those logs contain nothing to classify.
+
 ## Fences
 
 - `benchmarks/__tests__/log-routes.test.ts` — every arm, the four levels, the `undefined`-and-empty totality, FATAL
