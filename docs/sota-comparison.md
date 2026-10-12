@@ -94,7 +94,11 @@ nobody can compare to, which is a third class rather than a seventh member of th
    **the framework's 15 baselines** by up to **+12 pp top@1** with no causal graph and no labelled data, and by
    **+7 to +18 pp** when the true cause is guaranteed in the pool and a system-description document is supplied.
    **Its baseline cohort is the framework's 15, not this engine** — so it is above us on *a* top-1 and comparable
-   to *none* of ours. **Two things verified 2026-10-10 that sharpen it in opposite directions.** Its code is
+   to *none* of ours. **And its headline margin is not on our benchmark family at all**: the survey of 2026-10-12
+   reached the paper's own data description, which audits **RCAEval** (microservices) alongside **WADI / SWaT /
+   HVAC** (cyber-physical systems) and states that retrieval is *"nearly solved"* in microservices while the
+   *"retrieval ceiling"* in the CPS systems caps a magnitude-only retriever at **35–64%** — so the `+12 pp` it is
+   most quoted for is a **CPS** margin, and its RCAEval contribution is the decomposition, not a gap over us. **Two things verified 2026-10-10 that sharpen it in opposite directions.** Its code is
    public (`github.com/cruiseresearchgroup/DecompRCA`), so the comparison is available to run. And an
    **independent review** of the paper records that the abstract's `+12`-point margins sit on **14 / 36 / 48
    scenarios with error bars from `n=3` run-to-run spread rather than scenario-level intervals** — WADI's +12 pp
@@ -240,67 +244,46 @@ purpose-built RCA agent**, so the remaining gap lives in the **harness** rather 
 that it has never been wired; the borrowable part is not its loop but its **admission gate**, which the kill
 criterion already is.
 
-### 0e. TWO CONCURRENT 2026 RESULTS THAT NAME OUR OWN ARCHITECTURE — one corroborating, one a caveat on the benchmark
+### 0e. THE SURVEY'S OWN CATCH — one new reference, and the two sentences this section used to repeat
 
-Found by the 2026-10-12 survey. **Neither moves our standing, and both change what this document may claim**, so
-both are recorded before the leaderboard rather than after it.
+**A "new" reference that is already on the list is an inventory failure, not a discovery.** The 2026-10-12 survey
+reached the paper in §0a entry 4 — the NeurIPS 2026 Evaluations & Datasets decomposition — a **second time**, from a
+press summary that carries neither its **arXiv identifier**, nor its authors (**Luan Pham** among them, the author
+of RCAEval *and* of PRISM), nor the fact that its code is public at `github.com/cruiseresearchgroup/DecompRCA`. All
+three were already in entry 4, which is the entry that calls it "the most dangerous of the four" for exactly those
+reasons. The same survey also re-opened the **RE1 column-schema allegation as "owed"**, which entry 3 records as
+**refuted here** (`benchmark-corpus-completeness.md` §8: a hard gate, `--fail-on-degenerate`, reading **375 of 375**
+RE1 cases with non-zero telemetry). **Both sentences are corrected rather than quietly dropped**, because a
+claim-bearing sentence that names a check as owed **schedules finished work** — it was this document's next plan
+item — and a sentence that announces an existing reference hides the detail the existing entry already carried.
 
-**1. A benchmark-wide audit that reaches our loss decomposition from outside.** A preprint circulated 2026-09-30,
-accepted to the **NeurIPS 2026 Evaluations & Datasets Track**, argues that *"the standard top-k accuracy metric can
-obscure whether a method retrieves the correct cause or simply ranks it poorly"*, across **four benchmark suites**,
-and measures the two halves separately: on complex faults *"statistical baselines mis-rank the true cause **79–100%**
-of the time"*, while on benchmarks *"where the fault manifests strongly at its origin, retrieval is nearly solved at
-**98–100%**"*. Its proposed pipeline is a **multi-signal retriever plus an LLM reranker**, *"with no causal graph or
-labelled data needed"*, which *"matches or beats the best baseline's top-1 accuracy on all six benchmark suites, by
-as much as 12 percentage points"*, and leads by **7–18 points** on every benchmark when *"a short system-description
-document"* is supplied and all methods rank the same candidate set.
+**What the survey genuinely added: `PAVE` / OpenRCA 2.0** (**`arXiv:2606.27154`**, Aoyang Fang et al. — the same
+group as `arXiv:2510.04711`, the FSE'26 propagation benchmark this repository leads by **+16 pp**). 500 instances
+carrying **step-wise causal** annotations, the first cross-system RCA benchmark of that shape. Across **11 frontier
+LLMs**: recovering the exact root-cause set succeeds on **20.7%** of cases on average; relaxed, an agent identifies
+at least one correct root-cause service in **76.0%** of cases but grounds that service in a **verified propagation
+path** in only **61.5%** — the failure they name *"ungrounded diagnosis"*.
 
-**The shape of that claim is our own, reached independently.** This repository's loss decomposition reads **98.8%
-reranking / 1.2% retrieval**, with **96.6% of the deep misses having had local evidence** — i.e. ORDERING ALONE —
-and the architecture it justifies is a two-stage retriever plus a reranker. A third party auditing four suites
-reports the same decomposition, the same conclusion that the graph is not where the remaining accuracy lives, and
-the same two-stage remedy. **That is corroboration of the diagnosis, which is worth more to us than a number.**
+**That is this repository's loss decomposition, measured by another instrument on another population.** Our census
+reads **96.6% of the deep misses as having had local evidence** — ORDERING ALONE, with the truth inside the ranked
+pool on **99.73 / 99.63 / 100.00%** of the three suites — and `PAVE`'s 76.0% against 61.5% is that same gap stated
+as *"found the service, did not place it"*. **No gap is quoted from it**: its metric is exact-set recovery over a
+step-wise annotation, its population is 500 instances of a corpus that is not ours, and its 20.7% is **below** our
+78.75% in any case. It is named for what it corroborates, and for a second reason — it is the **third independent
+arrival this month** at *"the failure is in placing the cause, not in finding it"*, alongside §0a entry 4's
+decomposition and our own census. Three arrivals from three groups, with three instruments, is the strongest form
+this claim has had.
 
-**It is still not a number we can place.** Its figures are **relative to baselines**, not to us, and the search
-reached the announcement rather than the paper: no arXiv identifier and **no absolute top-1 was extracted**, so the
-"12 points" and the "7–18 points" are margins whose base is unnamed. Quoting either against our 78.75% would be a
-cross-population comparison with an unknown sign, which is what §0a exists to prevent. **Its one borrowable
-mechanism is not the pipeline but the input**: a **short system-description document** moves a reranker by 7–18
-points with the candidate set held FIXED — i.e. the gain is in the CONTEXT the ranker reads, not in the retrieval.
-This repository's reranker reads the raw signals and has no system-description channel at all, which makes that a
-cheap, falsifiable candidate rather than a slogan.
+**The one mechanism worth carrying forward is not the pipeline but the INPUT**, and it is §0a entry 4's own: a
+**short system-description document** moves that reranker by **7–18 points with the candidate set held FIXED**, so
+the gain is in the CONTEXT the ranker reads rather than in the retrieval. This repository's reranker reads the raw
+signals and has **no system-description channel at all**, which makes that a cheap, falsifiable candidate rather
+than a slogan.
 
-**2. A controlled audit of RCAEval that reports a floor we do not publish in the same conventions.** A 2026 study
-(indexed as **`arXiv:2609.27069`**, *"Does Graph Structure Earn Its Place in Microservice Root-Cause Analysis? A
-Controlled Study on RCAEval, and What the Benchmark Was Really Measuring"*) reports two properties of **the
-benchmark itself**:
-
-- *"RCAEval injects faults into only five services per system while exposing 12 to 70 in telemetry"*, and *"the
-  headline metric is Avg@5: a ranker reading no telemetry at all places the true culprit in the top five on
-  **99.7%** of held-out incidents, scoring Avg@5 **0.488**"* — so *"that prior, not the uniform-random 0.137, is
-  the honest in-distribution floor"*. Our own prior-only floor is published as **5.56 / 16.67 / 16.67% AC@1** on
-  the three suites; the two are different metrics (Avg@5 against Top-1) and different rankers, so **neither number
-  replaces the other** — but the paper states from outside the rule this repository already applies: **a
-  benchmark's floor must be measured, and the uniform-random one is not it.**
-- *"a non-uniform column schema that silently zeroes telemetry for **250 of 375** RE1 cases"* (its Table 3 supplies
-  the mechanism: a raw frame of **51 columns** on Online Boutique against **421–439** and **1180–1446** on the other
-  two, so a reader assuming one schema reads nothing for two systems; 250 is exactly 125 + 125). **This one is
-  CHECKED, and REFUTED for the corpus this repository ranks on.** The correction matters more than the finding did:
-  the first revision of this section called it *"a LEAD and not a finding about us"* and claimed **"nothing in this
-  repository has ever tested it"**, and that sentence was **false** — the instrument is
-  `scripts/audit_input_schema.py`, it is a **hard gate** in `cache-datasets.yml` (`--fail-on-degenerate`, whose
-  failure also skips the benchmark trigger), and its census reads **735 of 735 cases with non-zero telemetry, 0
-  degenerate — RE1 included, 375 of 375**.
-  The mechanism is per-FILE and that is the whole answer: our bridge detects the LONG shape
-  (`service/timestamp/value/metric_name`) and the WIDE shape (`timestamp` + `service::metric`) **from each file's
-  own columns**, so no case inherits another system's schema. See `benchmark-corpus-completeness.md` §8 — added in
-  iteration 80-81, with the gate in `4173f84` and the refutation in `4def96a`. **The paper's claim is not refuted by
-  this**: it is true of the raw frames read under one assumed schema, which is what its own Table 3 measures. What
-  is refuted is that it reaches a number published here.
-
-**What this does not change.** Both items are corroboration and caveat about the *field* and the *benchmark*;
-neither reports a number on our population that we cannot beat. The standing in §0a–§0c is unchanged, and no cell
-moved.
+**What this does not change.** §0a's six entries, §0b's one comparable reference and §0d's third class are
+unchanged; no cell moved; and the two corrections above are corrections of THIS document's earlier revision rather
+than of the record they cite — §0a entry 4 and entry 3 both already carried the facts, which is the point of
+recording it here.
 
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 
