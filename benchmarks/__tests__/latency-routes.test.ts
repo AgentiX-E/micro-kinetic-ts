@@ -499,6 +499,35 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
     );
   });
 
+  it('reports the census on the DECIDING half too, from the owner’s own renderer', () => {
+    // Iteration 89 gave the golden half the corpus AXIS; it still could not say what the chosen view HELD.
+    // `AssembledRCAEvalCase.latencyRoute` was returned by the assembler and dropped by this runner, so a run with
+    // `--latency-view whole-file` printed `corpus: latencyView=whole-file` beside an unchanged ranking — which is
+    // exactly what a view that was SUPPLIED and INERT looks like. Two configurations with the same cells and
+    // different causes are the failure this whole document exists to separate, and here it was in the half that
+    // DECIDES: the floor/corpus decision cannot be taken on a run whose corpus cannot be shown to have carried
+    // anything. A diagnostic must be a function of what the producer wrote, and the producer wrote the rows.
+    const golden = read('src/run-rcaeval.ts');
+    const battery = read('src/run-ablation.ts');
+    // The threading, in the order it travels: the assembler's own field, read at the call site, carried by both
+    // functions that handle a case, and aggregated by the owner's summariser.
+    expect(golden).toMatch(/const \{[^}]*\blatencyRoute\b[^}]*\}/);
+    expect(golden).toMatch(/latencyRoute: assembled\.latencyRoute/);
+    expect(golden).toMatch(/latencyRoutes: LatencyRouteCensus/);
+    expect(golden).toMatch(/latencyRoutes: summarizeLatencyRoutes\(latencyRouteEntries\)/);
+    // ONE renderer for two artifacts: the same function the battery prints with, so the two artifacts' corpus
+    // lines are COMPARABLE across runs rather than merely similar — the property that makes a candidate measured
+    // on one instrument readable on the other.
+    expect(golden).toContain('formatLatencyRoutes(stats.latencyRoutes');
+    expect(battery).toContain('formatLatencyRoutes(bundle.latencyRoutes');
+    // …and the runner does not re-render them. A second spelling is a second answer, and the verdict arms
+    // (`STARVED` / `CAP TRUNCATES`) are the renderer's to choose.
+    expect(golden).not.toContain('latency-routes[');
+    // And it is REPORTED, not merely typed: a value that is computed and never printed is precisely the state
+    // this fence was written against, and the artifact is what carries the attribution.
+    expect(golden).toMatch(/reportLatencyRoutes\(systemName, stats\)/);
+  });
+
   it('forwards all four knobs from dispatch inputs into EVERY golden invocation', () => {
     // A knob with a flag and no input is still one only a commit can turn: "a pin whose replacement is
     // unreachable is still a pin", which is this repository's own sentence about `--temporal-weight`.

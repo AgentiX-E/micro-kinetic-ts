@@ -69,6 +69,15 @@ import { assembleRCAEvalCase, formatCorpusLine, type LatencySource } from './rca
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
 import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
+// The latency-route census, from the module that owns the three views — and the SAME renderer the battery
+// prints with, so the two artifacts' corpus lines are comparable across runs rather than merely similar. One
+// renderer over two artifacts is what makes a candidate measured on one of them readable on the other.
+import {
+  formatLatencyRoutes,
+  summarizeLatencyRoutes,
+  type LatencyRouteCensus,
+  type LatencyRouteEntry,
+} from './directional-evidence.js';
 import { DiagnoseDump, formatDiagnoseDumpLine } from './fse26-diagnose-dump.js';
 import { renderDiagnosedCase } from './fse26-diagnose-sink.js';
 import { formatFailedEdgeCoverageLine, summariseFailedEdgeCoverage } from './fse26-report.js';
@@ -346,6 +355,15 @@ interface LoadStats {
     llmResolved: number;
     exactMatched: number;
   };
+  /**
+   * The latency-route census over this group's cases, from the owner's own summariser.
+   *
+   * Reported by {@link reportLatencyRoutes} with the owner's own renderer. It exists because the corpus is an
+   * AXIS of this runner since iteration 89: a run can rank on the `shipped`, `capped` or `whole-file` view, and
+   * an artifact that named the choice without counting what the chosen view HELD could not distinguish a corpus
+   * that supplied rows from one that supplied none — the two are the same nine cells and different causes.
+   */
+  latencyRoutes: LatencyRouteCensus;
   /** Log-loading diagnostics (RE2/RE3): whether logs flow to the engine. */
   logStats: {
     /** Cases carrying at least one log entry. */
@@ -389,6 +407,17 @@ async function loadSingleCase(
   edgesAfter: number;
   /** Log rows the loader read, before the owner's retention filter. See `assembleRCAEvalCase`. */
   logRowsRead: number;
+  /**
+   * This case's contribution to the latency-route census.
+   *
+   * Returned rather than dropped, and that is a defect being repaired rather than a field being added: the
+   * assembler computes it on every case, the BATTERY reports it, and this path — the one whose cells are
+   * published and whose corpus axis iteration 89 made dispatchable — threw it away. The consequence was not
+   * cosmetic: a run with `--latency-view whole-file` printed `corpus: latencyView=whole-file` beside an
+   * unchanged ranking, which is EXACTLY what a view that was supplied and INERT looks like, so the
+   * floor/corpus decision could not be taken on an artifact that could not show its corpus carried anything.
+   */
+  latencyRoute: LatencyRouteEntry;
 }> {
   const rawCase = loader.loadCase(meta.dirPath);
   const serviceIds = Object.keys(rawCase.metrics);
@@ -439,6 +468,7 @@ async function loadSingleCase(
     edgesBefore: assembled.edgesBefore,
     edgesAfter: assembled.edgesAfter,
     logRowsRead: assembled.logRowsRead,
+    latencyRoute: assembled.latencyRoute,
   };
 }
 
@@ -489,11 +519,14 @@ async function loadCases(
     failedTraceEdges?: BenchmarkCase['failedTraceEdges'];
     metricKeys: ReadonlySet<string>;
   }> = [];
+  /** The latency-route census's population, one entry per case, in the loader's own record order. */
+  const latencyRouteEntries: LatencyRouteEntry[] = [];
 
   for (const meta of selected) {
     try {
-      const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter, logRowsRead } =
+      const { benchCase, traceUsed, pruned, edgesBefore, edgesAfter, logRowsRead, latencyRoute } =
         await loadSingleCase(meta, loader, latencyFrom, semanticConfig, computeTraceActivity);
+      latencyRouteEntries.push(latencyRoute);
       if (benchCase.traceActivity) traceActivityCases++;
 
       // Collect semantic stats from diagnostic labels on the call graph
@@ -599,6 +632,7 @@ async function loadCases(
     errors,
     errorSamples,
     traceActivityCases,
+    latencyRoutes: summarizeLatencyRoutes(latencyRouteEntries),
     traceStats: {
       total: traceCount,
       pruned: prunedCount,
@@ -866,6 +900,24 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
   } else if (stats.cases.length > 0) {
     console.log(`  [trace] No trace data available for ${stats.cases.length} cases`);
   }
+}
+
+/**
+ * Report the latency-route census: whether the corpus the run ranked on carried a latency channel at all.
+ *
+ * The lines are the OWNER's, printed verbatim rather than re-indented into this report's style, because the
+ * battery prints the same lines from the same function and the two artifacts are read against each other: a
+ * candidate measured in the battery is compared with the published cells, and the comparison is only possible
+ * while both say "which view, how many rows, which verdict" in the same words. Re-rendering here would be the
+ * second spelling of one fact — and the verdict arms (`STARVED`, `CAP TRUNCATES`) are the renderer's to choose,
+ * not this runner's.
+ *
+ * It runs beside {@link reportTraceDiagnostics} because the three views come out of the same spans: that
+ * function reports what the pruning did to the GRAPH, and this one reports what the assembly did to the
+ * CHANNEL.
+ */
+function reportLatencyRoutes(systemName: string, stats: LoadStats): void {
+  for (const line of formatLatencyRoutes(stats.latencyRoutes, systemName)) console.log(line);
 }
 
 /**
@@ -1170,6 +1222,11 @@ async function main(): Promise<void> {
 
     // ── Trace pruning diagnostics ─────────────────────────
     reportTraceDiagnostics(systemName, suiteName, stats);
+
+    // ── The latency channel's own census ──────────────────
+    // Which of the three views this run ranked on carried rows, and the verdict those counts earn. Without it a
+    // run on the `whole-file` corpus and a run on one that supplied nothing print the same cells.
+    reportLatencyRoutes(systemName, stats);
 
     // ── Log-loading diagnostics ───────────────────────────
     reportLogDiagnostics(systemName, suiteName, stats);
