@@ -53,12 +53,17 @@ const read = (rel: string): string => readFileSync(resolve(HERE, '..', rel), 'ut
 /** One retained ERROR row, with the two classification flags the loader sets. */
 const row = (
   service: string,
-  extra: { logic?: boolean; http?: boolean; level?: string } = {},
+  extra: { logic?: boolean; http?: boolean; level?: string; message?: string } = {},
 ): FaultLogEntry =>
   ({
     timestamp: 1_700_000_000_000,
     level: extra.level ?? 'ERROR',
     service,
+    // A helper that built an INCONSISTENT row would make every arm using it test a state this pipeline cannot
+    // produce: `isLogicException` is defined as the taxonomy's `logic`, so the default text follows the flag.
+    // The disagreement arm below builds its rows by hand for exactly that reason.
+    message:
+      extra.message ?? (extra.logic === true ? 'java.lang.NullPointerException: default' : 'm'),
     isLogicException: extra.logic ?? false,
     isHttpException: extra.http ?? false,
   }) as unknown as FaultLogEntry;
@@ -152,6 +157,45 @@ describe('the log channel: four ways to read zero, and the gate that decides thr
   });
 });
 
+describe('the retained rows\u2019 own taxonomy, because "the gate admits none" has two causes', () => {
+  it('counts the four kinds with the LOADER\u2019s classifier, so a bucket is not a second opinion', () => {
+    // The distinction this exists for: a gate that refuses TRANSPORT noise is doing its job, and one that refuses
+    // a whitelist-missed logic exception is a bug. `docs/re3-log-ceiling.md` measured the taxonomy on RE3's 90
+    // cases and falsified the LLM-headroom hypothesis there; RE2's 270 cases have never been classified, and they
+    // are where 180 of the 210 gate-blind cases live.
+    const logs = [
+      row('a', { logic: true, message: 'java.lang.NullPointerException: Cannot invoke ...' }),
+      row('a', { message: 'java.lang.NumberFormatException: For input string: ""' }),
+      row('b', { message: 'java.net.ConnectException: Connection refused' }),
+      row('b', { message: 'order create failed, retrying' }),
+    ];
+    const e = deriveLogRoute(logs, new Set(['a', 'b']), 'count', 4);
+    expect(e.retainedByKind).toEqual({ logic: 1, propagated: 1, unclassified: 1, none: 1 });
+    // Only the logic row is admitted by `count`, which is what makes the taxonomy an EXPLANATION of the zero
+    // rather than a second count of it.
+    expect(e.admitted).toBe(1);
+  });
+
+  it('detects a stored flag that disagrees with the taxonomy — the pipeline defect this can catch', () => {
+    // `isLogicException` is DEFINED as the taxonomy's `logic`, so a disagreement means the flag was written by
+    // something other than the classifier that reads it — a stale cache, a second mapping, a widened field.
+    const agreeing = [row('a', { logic: true, message: 'NullPointerException' })];
+    expect(deriveLogRoute(agreeing, new Set(['a']), 'count', 1).flagDisagreements).toBe(0);
+    const disagreeing = [
+      row('a', { logic: true, message: 'java.lang.NumberFormatException: For input string: ""' }),
+      row('a', { logic: false, message: 'java.lang.NullPointerException' }),
+    ];
+    expect(deriveLogRoute(disagreeing, new Set(['a']), 'count', 2).flagDisagreements).toBe(2);
+    // …and the verdict puts it ABOVE every corpus explanation, because no corpus can cause it.
+    const stale = summarizeLogRoutes([deriveLogRoute(disagreeing, new Set(['a']), 'count', 2)]);
+    expect(logChannelVerdict(stale)).toContain('STALE FLAGS');
+    expect(logChannelVerdict(stale)).toContain('DEFECT');
+    expect(logChannelVerdict(summarizeLogRoutes([deriveLogRoute(agreeing, new Set(['a']), 'count', 1)]))).not.toContain(
+      'STALE FLAGS',
+    );
+  });
+});
+
 describe('the log-route census, and the verdict its counts earn', () => {
   it('aggregates every level and names the mechanism, with exclusive strength-ordered arms', () => {
     const c = (over: Partial<LogRouteCensus> = {}): LogRouteCensus => ({
@@ -165,6 +209,8 @@ describe('the log-route census, and the verdict its counts earn', () => {
       casesRetaining: 1,
       casesAdmitting: 1,
       casesAdmittingInGraph: 1,
+      retainedByKind: { logic: 1, propagated: 0, unclassified: 0, none: 0 },
+      flagDisagreements: 0,
       ...over,
     });
     // Arm 1: nothing was read at all — RE1's systems carry no `logs.csv`.

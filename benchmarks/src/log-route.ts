@@ -34,9 +34,29 @@
 
 import type { FaultLogEntry } from '../../packages/core/src/interfaces/rca-engine.js';
 import {
+  classifyExceptionKind,
+  type ExceptionKind,
+} from '../../packages/kinetic/src/benchmarks/loaders/rcaeval-loader.js';
+import {
   logLineAdmittedByMode,
   type LogSignalMode,
 } from '../../packages/tree/src/pruning/ranking-signals.js';
+
+/**
+ * The four exception kinds, as the zeroed accumulator's key set.
+ *
+ * Exhaustive over {@link ExceptionKind}: a kind added to the loader's union fails to compile here rather than being
+ * silently under-counted — the guard this repository uses for every closed vocabulary.
+ */
+const EXCEPTION_KINDS: Readonly<Record<ExceptionKind, true>> = {
+  logic: true,
+  propagated: true,
+  unclassified: true,
+  none: true,
+};
+
+/** A retained row as this module needs it: the engine's fields, plus the TEXT the taxonomy reads. */
+export type LogRow = FaultLogEntry & { readonly message?: string | undefined };
 
 /** One case's contribution to the log-route census. Computed by the caller that holds the case's rows. */
 export interface LogRouteEntry {
@@ -57,6 +77,24 @@ export interface LogRouteEntry {
    * an empty map if every one of them belongs to a service the ranking never scores.
    */
   readonly emitters: number;
+  /**
+   * The exception SEMANTICS of the retained rows, from the loader's own `classifyExceptionKind`.
+   *
+   * The distinction a bare `admitted 0` cannot make: a gate that refuses TRANSPORT noise is doing exactly what its
+   * docblock says, and one that refuses a whitelist-missed LOGIC exception is a bug. `re3-log-ceiling.md` measured
+   * this taxonomy on RE3's 90 cases; RE2's 270 — where 180 of the 210 gate-blind cases live — had never been
+   * classified, and this is the field that classifies them by the LOADER's rule rather than by a second one
+   * written here.
+   */
+  readonly retainedByKind: Readonly<Record<ExceptionKind, number>>;
+  /**
+   * Retained rows whose stored `isLogicException` flag DISAGREES with the taxonomy.
+   *
+   * `isLogicException` is DEFINED as the taxonomy's `logic`, so agreement is an invariant of the pipeline rather
+   * than a coincidence, and a non-zero count means the flag was written by something other than the classifier
+   * that reads it. The verdict names it as a DEFECT, above every corpus explanation, because that is what it is.
+   */
+  readonly flagDisagreements: number;
 }
 
 /** The log channel's four levels over one population. */
@@ -75,6 +113,10 @@ export interface LogRouteCensus {
   readonly casesAdmitting: number;
   /** Cases whose mode admitted at least one row naming a graph node. */
   readonly casesAdmittingInGraph: number;
+  /** The retained rows' exception semantics, summed over the population. */
+  readonly retainedByKind: Readonly<Record<ExceptionKind, number>>;
+  /** Retained rows whose stored flag disagrees with the taxonomy — a pipeline DEFECT when non-zero. */
+  readonly flagDisagreements: number;
 }
 
 /**
@@ -90,7 +132,7 @@ export interface LogRouteCensus {
  * @returns The four levels.
  */
 export function deriveLogRoute(
-  logs: readonly FaultLogEntry[] | undefined,
+  logs: readonly LogRow[] | undefined,
   nodeIds: ReadonlySet<string>,
   mode: LogSignalMode,
   rowsRead: number,
@@ -98,9 +140,23 @@ export function deriveLogRoute(
   const rows = logs ?? [];
   let admitted = 0;
   let admittedInGraph = 0;
+  let retained = 0;
+  let flagDisagreements = 0;
   const emitters = new Set<string>();
+  const retainedByKind: Record<ExceptionKind, number> = {
+    logic: 0,
+    propagated: 0,
+    unclassified: 0,
+    none: 0,
+  };
   for (const log of rows) {
     if (log.level !== 'ERROR' && log.level !== 'FATAL') continue;
+    retained += 1;
+    // The taxonomy, from the LOADER's classifier — the same function its own `isLogicException` flag is built
+    // from, so the two cannot describe different rules.
+    const kind = classifyExceptionKind(log.message ?? '');
+    retainedByKind[kind] += 1;
+    if ((log.isLogicException === true) !== (kind === 'logic')) flagDisagreements += 1;
     if (!logLineAdmittedByMode(mode, log)) continue;
     admitted += 1;
     if (!nodeIds.has(log.service)) continue;
@@ -110,10 +166,12 @@ export function deriveLogRoute(
   return {
     mode,
     rowsRead,
-    retained: rows.filter((l) => l.level === 'ERROR' || l.level === 'FATAL').length,
+    retained,
     admitted,
     admittedInGraph,
     emitters: emitters.size,
+    retainedByKind,
+    flagDisagreements,
   };
 }
 
@@ -131,6 +189,13 @@ export function summarizeLogRoutes(entries: readonly LogRouteEntry[]): LogRouteC
   let retained = 0;
   let admitted = 0;
   let admittedInGraph = 0;
+  let flagDisagreements = 0;
+  const retainedByKind: Record<ExceptionKind, number> = {
+    logic: 0,
+    propagated: 0,
+    unclassified: 0,
+    none: 0,
+  };
   const emitters = new Set<string>();
   let casesRetaining = 0;
   let casesAdmitting = 0;
@@ -141,6 +206,10 @@ export function summarizeLogRoutes(entries: readonly LogRouteEntry[]): LogRouteC
     retained += e.retained;
     admitted += e.admitted;
     admittedInGraph += e.admittedInGraph;
+    flagDisagreements += e.flagDisagreements;
+    for (const kind of Object.keys(EXCEPTION_KINDS) as ExceptionKind[]) {
+      retainedByKind[kind] += e.retainedByKind[kind];
+    }
     emitters.add(`${e.mode}:${e.emitters}`);
     if (e.retained > 0) casesRetaining += 1;
     if (e.admitted > 0) casesAdmitting += 1;
@@ -160,6 +229,8 @@ export function summarizeLogRoutes(entries: readonly LogRouteEntry[]): LogRouteC
     casesRetaining,
     casesAdmitting,
     casesAdmittingInGraph,
+    retainedByKind,
+    flagDisagreements,
   };
 }
 
@@ -175,6 +246,15 @@ export function summarizeLogRoutes(entries: readonly LogRouteEntry[]): LogRouteC
  * @returns One line. It names a MECHANISM; restating the zero is what the arms exist to avoid.
  */
 export function logChannelVerdict(c: LogRouteCensus): string {
+  // A DEFECT outranks every corpus explanation, because no corpus can cause it: the flag the gate reads is
+  // defined as the taxonomy's `logic`, so a disagreement cannot be measured into existence by a fault class.
+  if (c.flagDisagreements > 0) {
+    return (
+      `STALE FLAGS — ${c.flagDisagreements} of ${c.retained} retained rows carry an \`isLogicException\` flag that ` +
+      `DISAGREES with \`classifyExceptionKind\` on their own text; the gate is reading a flag nothing in this ` +
+      `pipeline produced, which is a DEFECT rather than a property of the corpus`
+    );
+  }
   if (c.cases > 0 && c.casesWithoutRows === c.cases) {
     return (
       `STARVED — none of the ${c.cases} cases has a log file at all, so no mode could read one ` +
@@ -188,9 +268,13 @@ export function logChannelVerdict(c: LogRouteCensus): string {
     );
   }
   if (c.admitted === 0) {
+    // The COMPOSITION is the finding, not the zero: a gate refusing transport noise is doing its job, and one
+    // refusing a whitelist-missed logic exception is a bug — and the two are the same number without this.
+    const k = c.retainedByKind;
+    const composed = `composed of ${k.propagated} propagated / ${k.unclassified} unclassified / ${k.none} with no class name`;
     return (
       `GATE BLIND — ${c.retained} rows retained in ${c.casesRetaining}/${c.cases} cases and the mode's ` +
-      `source-signature gate admits NONE of them; the tier is empty by the GATE, not by the corpus`
+      `source-signature gate admits NONE of them — ${composed}; the tier is empty by the GATE, not by the corpus`
     );
   }
   if (c.admittedInGraph === 0) {
@@ -199,10 +283,13 @@ export function logChannelVerdict(c: LogRouteCensus): string {
       `can receive the score`
     );
   }
+  // The residue carries a RATE as well as a count, because two rows out of 134 903 and five thousand out of
+  // forty-one thousand are different mechanisms for any decision and a bare count reads them identically.
+  const pct = ((100 * c.admittedInGraph) / c.retained).toFixed(2);
   return (
-    `LIVE — ${c.admittedInGraph} rows admitted into the graph in ${c.casesAdmittingInGraph}/${c.cases} cases ` +
-    `over ${c.cases} cases (the map is populated wherever this fires, so an INPUT_MAP_EMPTY beside it contradicts ` +
-    `a measured input)`
+    `LIVE — ${c.admittedInGraph} rows admitted into the graph (${pct}% of ${c.retained} retained) in ` +
+    `${c.casesAdmittingInGraph}/${c.cases} cases (the map is populated wherever this fires, so an ` +
+    `INPUT_MAP_EMPTY beside it contradicts a measured input)`
   );
 }
 
@@ -217,7 +304,10 @@ export function formatLogRoutes(c: LogRouteCensus, label: string): string[] {
   return [
     `log-routes[${label}]: ${c.cases} cases | no log file ${c.casesWithoutRows} | ` +
       `read ${c.rowsRead} | retained ${c.retained} | admitted ${c.admitted} | in-graph ${c.admittedInGraph} | ` +
-      `cases: retaining ${c.casesRetaining} | admitting ${c.casesAdmitting} | admitting-in-graph ${c.casesAdmittingInGraph}`,
+      `cases: retaining ${c.casesRetaining} | admitting ${c.casesAdmitting} | admitting-in-graph ${c.casesAdmittingInGraph} | ` +
+      `kinds: logic ${c.retainedByKind.logic} | propagated ${c.retainedByKind.propagated} | ` +
+      `unclassified ${c.retainedByKind.unclassified} | none ${c.retainedByKind.none} | ` +
+      `flag-disagreements ${c.flagDisagreements}`,
     `  VERDICT: ${logChannelVerdict(c)}`,
   ];
 }
