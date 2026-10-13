@@ -27,10 +27,13 @@
  * @module benchmarks/directional-evidence
  */
 
+// The ONE order convention. `localeCompare` answers from ICU and the active locale — machine state — and
+// every sequence here is either a case POPULATION or a sequence a reader diffs.
 import type {
   FaultEdgeLatency,
   FaultFailedEdge,
 } from '../../packages/core/src/interfaces/rca-engine.js';
+import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 import { DEFAULT_SEPARATOR_CRITERION, separationPValue } from './fse26-separator.js';
 
 /**
@@ -171,13 +174,13 @@ export function readDirectionalEvidence(input: DirectionalCaseInput): Directiona
 
   const services: ServiceEvidence[] = [...perService.entries()]
     .map(([service, e]) => ({ service, failedMass: e.failedMass, latencyRise: e.latencyRise }))
-    .sort((a, b) => a.service.localeCompare(b.service));
+    .sort((a, b) => compareCasePaths(a.service, b.service));
 
   // Deterministic tops: by value, then by name, so two runs of one corpus agree and a diff is about a change.
   const topBy = (pick: (s: ServiceEvidence) => number): string | undefined => {
     const ranked = [...services]
       .filter((s) => pick(s) > 0)
-      .sort((a, b) => pick(b) - pick(a) || a.service.localeCompare(b.service));
+      .sort((a, b) => pick(b) - pick(a) || compareCasePaths(a.service, b.service));
     return ranked[0]?.service;
   };
 
@@ -303,7 +306,7 @@ export function formatDirectionalEvidence(readings: readonly DirectionalReading[
   }
   const untraced = [...byStratum.entries()]
     .filter(([, e]) => e.traced === 0)
-    .sort(([a], [b]) => a.localeCompare(b));
+    .sort(([a], [b]) => compareCasePaths(a, b));
   if (untraced.length > 0) {
     lines.push(
       `evidence: ${untraced.length} of ${byStratum.size} strata have NO traces at all — ` +
@@ -397,7 +400,7 @@ export function toEngineDirectionalInputs(
   }
 
   const ordered = [...edges.values()].sort(
-    (a, b) => a.caller.localeCompare(b.caller) || a.callee.localeCompare(b.callee),
+    (a, b) => compareCasePaths(a.caller, b.caller) || compareCasePaths(a.callee, b.callee),
   );
 
   return {

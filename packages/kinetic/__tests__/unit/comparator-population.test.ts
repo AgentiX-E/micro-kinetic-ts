@@ -59,8 +59,18 @@ const ROOTS: readonly string[] = ['packages/tree/src', 'packages/kinetic/src', '
 /** The tie-break shape, written as the census writes it — with `\s`, which matches a newline. */
 const TIE_BREAK = /\?\s*-1\s*:\s*1/g;
 
-/** The comparison a tie-break applies to: `a.<something> <|>|- b.<something>`. */
-const COMPARISON = /a[.[][\w$.[\]]*\s*(?:<|>|-)\s*b[.[]/g;
+/**
+ * The comparison a tie-break applies to: `a.<something> <|>|- b.<something>`.
+ *
+ * And the BARE form, `a <|> b` — the parameters themselves. It is a second alternative rather than a widening
+ * of the first because it is a different shape with a different consequence: a comparator on field keys cannot
+ * see that two keys are equal, while one on the parameters themselves can, which is why
+ * `packages/kinetic/src/benchmarks/case-order.ts`'s `compareCasePaths` is the one entry in this table whose
+ * tie-break is unreachable. The `-` arm is deliberately absent from the bare form: `a - b` is a subtraction in
+ * this codebase (it appears in `signatureOf`'s own docblock as an example), and matching arithmetic as a
+ * comparison would put a site in the population with a signature nobody could check.
+ */
+const COMPARISON = /(?:a[.[][\w$.[\]]*\s*(?:<|>|-)\s*b[.[]|\ba\s*(?:<|>)\s*b\b)/g;
 
 /** One recorded comparator: the signature a line move cannot change, and why its sort list is unique. */
 interface RecordedComparator {
@@ -106,6 +116,18 @@ const RECORDED: Readonly<Record<string, readonly RecordedComparator[]>> = {
     { signature: 'a.key < b.key', population: '`keys`, a `new Set` of family names' },
     { signature: 'a.key < b.key', population: '`counter.entries()`, a Map' },
     { signature: 'a.key < b.key', population: '`perType.entries()`, a Map' },
+  ],
+  'packages/kinetic/src/benchmarks/case-order.ts': [
+    // The ONE comparator here whose tie-break cannot be reached, and the reason it is the exception: its keys
+    // ARE its parameters, and its first arm answers `0` for equal ones. Every other row in this table sorts on a
+    // FIELD, so two entries can share a key and the two-arm `? -1 : 1` then claims an order between them — the
+    // inconsistency this census exists to price. Here the sort's own comparison is the whole question, so the
+    // `population` field records the opposite property rather than a list.
+    {
+      signature: 'a < b',
+      population:
+        'any two paths — the keys ARE the parameters, and `a === b` answers 0, so the tie-break is unreachable',
+    },
   ],
   'benchmarks/src/loss-census.ts': [
     // The two inline sorts. Both sort a list built from a `Map` keyed by TERM NAME, so the tie-break's own key
@@ -271,7 +293,9 @@ describe('the `? -1 : 1` comparator population is derived, not remembered', () =
     for (const [file, rows] of Object.entries(RECORDED)) {
       expect(rows.length, `${file} must hold at least one comparator`).toBeGreaterThan(0);
       for (const row of rows) {
-        expect(row.signature, `${file} signature`).toMatch(/^a[.[]/);
+        // `a.` / `a[` for a comparator on a FIELD key, or `a ` for one on the parameters themselves — the two
+        // shapes `COMPARISON` derives, so this assertion and the reader agree about what a signature IS.
+        expect(row.signature, `${file} signature`).toMatch(/^a(?:[.[]|\s)/);
         expect(row.population.length, `${file} / ${row.signature} population`).toBeGreaterThan(8);
       }
     }

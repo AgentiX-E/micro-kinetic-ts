@@ -27,9 +27,12 @@
  * @module scripts/dump-loss-metrics
  */
 
+// The ONE order convention. `localeCompare` answers from ICU and the active locale — machine state — and
+// every sequence here is either a case POPULATION or a sequence a reader diffs.
 import { readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { compareCasePaths } from '../packages/kinetic/src/benchmarks/case-order.js';
 
 import { RCAEvalLoader } from '../packages/kinetic/src/benchmarks/loaders/rcaeval-loader.js';
 
@@ -261,7 +264,7 @@ function main(): void {
       if (e.isDirectory() && !e.name.startsWith('.')) queue.push(join(cur, e.name));
     }
   }
-  cases.sort((a, b) => a.name.localeCompare(b.name));
+  cases.sort((a, b) => compareCasePaths(a.name, b.name));
 
   console.log(`Dumping ${cases.length} ${opts.faultType} cases (limit ${opts.limit})`);
   console.log('='.repeat(100));

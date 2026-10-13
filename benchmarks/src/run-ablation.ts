@@ -19,10 +19,13 @@
  * @module benchmarks/run-ablation
  */
 
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+// The ONE order convention. `localeCompare` answers from ICU and the active locale — machine state — and
+// every sequence here is either a case POPULATION or a sequence a reader diffs.
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 
 import {
   Container,
@@ -65,6 +68,9 @@ import {
   type AblationEngineOverrides,
   type AblationFeatureFlags,
 } from './ablation-engine-options.js';
+// The corpus traversal's ORDER, from its one owner. This runner caps its corpus (`metas.slice(0, maxCases)`)
+// and `benchmark-prism-sweep.yml` still runs RE2 with `--max-cases 50`, so the walk decides a PUBLISHED set.
+import { discoverCaseMetas } from './case-corpus-walk.js';
 // The corpus assembly, SHARED with the golden path — this study used to rank on the unpruned graph while
 // the published cells ranked on the pruned one.
 import {
@@ -990,30 +996,21 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
   };
 }
 
+/**
+ * Every readable case under `dataDir`, in the corpus's CANONICAL order.
+ *
+ * The traversal and its order live in `case-corpus-walk.ts`; this is the composition. It matters here for the
+ * same reason it matters in `run-rcaeval.ts` and one more: the battery caps its corpus (`metas.slice(0,
+ * maxCases)`), and `benchmark-prism-sweep.yml` still runs RE2 with `--max-cases 50`. An unsorted walk made that
+ * run's 50 cases a property of the filesystem, so the sweep's RE2 window — the frontier document's largest
+ * number — was measured on a subset that two machines could choose differently.
+ *
+ * @param dataDir - The corpus root.
+ * @returns Parsed cases, canonical, with directories `parseCaseDir` cannot read dropped.
+ */
 function discoverAllCases(dataDir: string): CaseMeta[] {
   if (!existsSync(dataDir)) return [];
-  const cases: CaseMeta[] = [];
-  const queue = [dataDir];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    try {
-      const entries = readdirSync(current, { withFileTypes: true });
-      const hasMetrics = entries.some((e) => e.isFile() && e.name === 'metrics.json');
-      if (hasMetrics) {
-        const meta = parseCaseDir(current);
-        if (meta) cases.push(meta);
-        continue;
-      }
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          queue.push(join(current, entry.name));
-        }
-      }
-    } catch {
-      /* skip */
-    }
-  }
-  return cases;
+  return discoverCaseMetas({ root: dataDir, marker: 'metrics.json', parse: parseCaseDir });
 }
 
 // ── Main ──────────────────────────────────────────────────
@@ -1329,7 +1326,7 @@ async function main(): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    const cellList = [...cells.values()].sort((a, b) => a.key.localeCompare(b.key));
+    const cellList = [...cells.values()].sort((a, b) => compareCasePaths(a.key, b.key));
     const analysis = analyzePrismSweep(PRISM_SWEEP_AXIS, cellList);
 
     // ── Per-cell AC@1 table ──

@@ -20,6 +20,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createInterface } from 'node:readline';
 
+// The order convention, from its one owner in this package: `loadSuite` sorts a suite's case directories, and
+// that order decides which cases a capped run ranks.
+import { compareCasePaths } from '../case-order.js';
+
 import type {
   CallEdge,
   FaultEdgeLatency,
@@ -603,7 +607,11 @@ export class RCAEvalLoader {
     const entries = fs.readdirSync(suitePath, { withFileTypes: true });
     const caseDirs = entries
       .filter((e) => e.isDirectory())
-      .sort((a, b) => a.name.localeCompare(b.name));
+      // The ONE order convention (code units), not `localeCompare`: a suite's case order decides which
+      // cases a capped run ranks, and `localeCompare` answers from ICU and the active locale, which are
+      // properties of the MACHINE. This file already hand-rolls a code-unit comparator for its edge list,
+      // with that reason written beside it — this is the same convention, named once.
+      .sort((a, b) => compareCasePaths(a.name, b.name));
 
     const cases = caseDirs.map((dir) => this.loadCase(path.join(suitePath, dir.name)));
 

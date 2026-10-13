@@ -65,6 +65,11 @@ import { meanOverFaultTypes } from '../../packages/kinetic/src/benchmarks/runner
 // lives in one owner, because this path and the study's had assembled it differently (this one pruned the
 // graph from traces and the study never did).
 import { assembleRCAEvalCase, formatCorpusLine, type LatencySource } from './rcaeval-corpus.js';
+// The corpus traversal's ORDER, from its one owner: `readdirSync` order is unspecified, and this runner caps
+// the corpus with `metas.slice(0, maxCases)`, so an unsorted walk made a capped run's population a property of
+// the filesystem. See the module's docblock.
+import { inCaseOrder } from '../../packages/kinetic/src/benchmarks/case-order.js';
+import { discoverCaseMetas } from './case-corpus-walk.js';
 
 import { NumpyTsMatrixOps } from '../../packages/tree/src/math/numpy-provider.js';
 import { TreePruner } from '../../packages/tree/src/pruning/pruner.js';
@@ -265,36 +270,26 @@ function parseCaseDir(dirPath: string): CaseMeta | null {
 
 // ── Case Discovery ────────────────────────────────────────
 
+/**
+ * Every readable case under `dataDir`, in the corpus's CANONICAL order.
+ *
+ * The traversal and its order live in `case-corpus-walk.ts`, and this function is the composition — walk, then
+ * parse — because the ORDER is load-bearing here and not merely tidy: `runSuiteForSystem` caps the corpus with
+ * `metas.slice(0, maxCases)`, so an unsorted walk made a capped run's population a property of the filesystem.
+ * `readdirSync`'s order is unspecified; this file was one of only two traversals in the repository that
+ * returned it raw, and the other was `run-ablation.ts`'s — i.e. exactly the two whose sliced population is
+ * published. The siblings (`run-fse26.ts`, `run-optimize.ts`, `scripts/run-prism.ts`, the four dump scripts)
+ * all canonicalised, which is how the class survived: it looked like a convention.
+ *
+ * @param dataDir - The corpus root.
+ * @returns Parsed cases, canonical, with directories `parseCaseDir` cannot read dropped.
+ */
 function discoverAllCases(dataDir: string): CaseMeta[] {
   if (!existsSync(dataDir)) {
     console.error(`Data directory not found: ${dataDir}`);
     return [];
   }
-
-  const cases: CaseMeta[] = [];
-  const queue = [dataDir];
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    try {
-      const entries = readdirSync(current, { withFileTypes: true });
-      const hasMetrics = entries.some((e) => e.isFile() && e.name === 'metrics.json');
-      if (hasMetrics) {
-        const meta = parseCaseDir(current);
-        if (meta) cases.push(meta);
-        continue;
-      }
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          queue.push(join(current, entry.name));
-        }
-      }
-    } catch {
-      /* skip inaccessible directories */
-    }
-  }
-
-  return cases;
+  return discoverCaseMetas({ root: dataDir, marker: 'metrics.json', parse: parseCaseDir });
 }
 
 /**
@@ -337,10 +332,12 @@ function discoverAllDirectoriesWithMetrics(dataDir: string): {
     }
   }
 
+  // Canonical, so this diagnostic's two lists are a function of the corpus rather than of the filesystem: a
+  // report a reader diffs between runs is only a report if its order is stable. Same convention as the walk's.
   return {
     totalWithMetrics: matched.length + unmatched.length,
-    matched,
-    unmatched,
+    matched: inCaseOrder(matched, (rel) => rel),
+    unmatched: inCaseOrder(unmatched, (rel) => rel),
   };
 }
 

@@ -28,6 +28,7 @@ import type {
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 import type {
   EdgeProvenance,
   ProvenancedCallEdge,
@@ -218,9 +219,11 @@ function collectServiceIds(configDir: string, system: string): string[] {
   try {
     if (!existsSync(configDir)) return [];
 
-    const files = readdirSync(configDir).filter(
-      (f: string) => f.endsWith('.yaml') || f.endsWith('.yml'),
-    );
+    // Canonical order, so the service list this returns is a function of the config directory rather than of
+    // the filesystem — the same convention the corpus walk uses, from the same owner.
+    const files = readdirSync(configDir)
+      .filter((f: string) => f.endsWith('.yaml') || f.endsWith('.yml'))
+      .sort(compareCasePaths);
 
     for (const file of files) {
       const content = readFileSync(join(configDir, file), 'utf-8');

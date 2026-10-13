@@ -7,6 +7,15 @@
  * @module benchmarks
  */
 
+// ── The order convention ──────────────────────────────────
+
+// One convention for every sequence a run's POPULATION or a rendered artifact's STABILITY depends on.
+// `localeCompare` answers from ICU and the active locale, so an order built with it is a property of the
+// machine — and the case that made this a module is `rcaeval-loader.ts`, which sorted a SUITE's case
+// directories with `localeCompare` and its edge list with `<`, in one file, with the reason for `<` written
+// beside it. See `case-order.ts`.
+export { compareCasePaths, inCaseOrder } from './case-order.js';
+
 // ── Loaders ───────────────────────────────────────────────
 
 export { AIOps2025Loader } from './loaders/aiops2025-loader.js';

@@ -31,9 +31,12 @@
  * @module scripts/dump-bothwrong-evidence
  */
 
+// The ONE order convention. `localeCompare` answers from ICU and the active locale — machine state — and
+// every sequence here is either a case POPULATION or a sequence a reader diffs.
 import { readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { compareCasePaths } from '../packages/kinetic/src/benchmarks/case-order.js';
 
 import {
   classifyExceptionKind,
@@ -251,7 +254,7 @@ function main(): void {
   }
   const wanted = opts.cases.length > 0 ? new Set(opts.cases) : undefined;
   const cases = (wanted ? allCases.filter((c) => wanted.has(c.name)) : allCases).sort((a, b) =>
-    a.name.localeCompare(b.name),
+    compareCasePaths(a.name, b.name),
   );
 
   console.log(`Dumping evidence for ${cases.length} cases (limit ${opts.limit})`);
@@ -320,7 +323,7 @@ function main(): void {
         `    ${s.svc}::${s.metric} dev=${s.dev.toFixed(3)} ${s.isDrop ? 'DROP' : 'RISE'}${mark}`,
       );
     }
-    const excs = Array.from(excBySvc.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    const excs = Array.from(excBySvc.entries()).sort((a, b) => compareCasePaths(a[0], b[0]));
     console.log(
       `  deepest exceptions: ${excs.length > 0 ? excs.map(([s, e]) => `${s}:${e.cls}(${e.kind})`).join(', ') : '(none)'}`,
     );

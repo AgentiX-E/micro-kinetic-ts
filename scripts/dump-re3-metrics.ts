@@ -24,6 +24,7 @@ import { readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
+import { compareCasePaths } from '../packages/kinetic/src/benchmarks/case-order.js';
 import { RCAEvalLoader } from '../packages/kinetic/src/benchmarks/loaders/rcaeval-loader.js';
 
 interface CliOptions {
@@ -268,7 +269,9 @@ function main(): void {
       if (e.isDirectory() && !e.name.startsWith('.')) queue.push(join(cur, e.name));
     }
   }
-  cases.sort((a, b) => a.name.localeCompare(b.name));
+  // Code units, not collation: a dump is diffed between runs and filesystems, so its order must be a
+  // property of the data. See `packages/kinetic/src/benchmarks/case-order.ts`.
+  cases.sort((a, b) => compareCasePaths(a.name, b.name));
 
   console.log(`Dumping ${cases.length} cases (system=${opts.system}, suite=${opts.suite})`);
   console.log('='.repeat(100));

@@ -33,6 +33,9 @@
 // Every other benchmarks module follows this convention (`config-space.js`, `integration.js`,
 // `optimizer.js`); `run-optimize.ts` uses the barrel only for a TYPE, which is erased at runtime. The first
 // version of this file imported the barrel, passed locally — where resolution differs — and failed in CI.
+// The ONE order convention. `localeCompare` answers from ICU and the active locale — machine state — and
+// every sequence here is either a case POPULATION or a sequence a reader diffs.
+import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 import {
   minimumStratumSizeForHeldOutCoverage,
   requiredCasesForHeldOutCoverage,
@@ -183,7 +186,7 @@ export function summarizeSplitCapability(
     .filter(([, size]) => minimum === -1 || size < minimum)
     .map(([stratum, size]) => ({ stratum, size }))
     // Ascending size, then by name: a reader sees the scarcest strata first and two runs render identically.
-    .sort((a, b) => a.size - b.size || a.stratum.localeCompare(b.stratum));
+    .sort((a, b) => a.size - b.size || compareCasePaths(a.stratum, b.stratum));
   return { minimum, strata: sizes.size, belowMinimum: below };
 }
 
@@ -259,7 +262,7 @@ export function summarizeDatasetStrata(
   const belowMinimum = [...sizes.entries()]
     .filter(([, size]) => minimum === -1 || size < minimum)
     .map(([stratum, size]) => ({ stratum, size }))
-    .sort((a, b) => a.size - b.size || a.stratum.localeCompare(b.stratum));
+    .sort((a, b) => a.size - b.size || compareCasePaths(a.stratum, b.stratum));
   return { total: dirs.length, strata: sizes.size, minimum, belowMinimum };
 }
 
@@ -367,7 +370,7 @@ export function formatOverlayCounts(overlay: SplitOverlay, config: string): stri
  */
 export function formatCaseManifest(split: string, verdicts: readonly CaseVerdict[]): string[] {
   return [...verdicts]
-    .sort((a, b) => a.caseId.localeCompare(b.caseId) || a.stratum.localeCompare(b.stratum))
+    .sort((a, b) => compareCasePaths(a.caseId, b.caseId) || compareCasePaths(a.stratum, b.stratum))
     .map((v) => `overlay-case ${split} ${v.caseId} ${v.stratum} ${v.outcome}`);
 }
 
@@ -390,7 +393,7 @@ export function formatStratumRollup(split: string, verdicts: readonly CaseVerdic
     byStratum.set(v.stratum, entry);
   }
   return [...byStratum.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => compareCasePaths(a, b))
     .map(([stratum, e]) => `overlay-stratum ${split} ${stratum} ${e.hits}/${e.total}`);
 }
 
@@ -549,7 +552,7 @@ export function formatSplitCapability(
 export function formatPopulation(summary: PopulationSummary, label: string): string[] {
   const render = (counts: Readonly<Record<string, number>>, total: number): string =>
     Object.entries(counts)
-      .sort(([a], [b]) => a.localeCompare(b))
+      .sort(([a], [b]) => compareCasePaths(a, b))
       .map(([k, v]) => `${k}=${v} (${((v / total) * 100).toFixed(1)}%)`)
       .join(' ');
   return [

@@ -40,6 +40,7 @@ import { readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
+import { compareCasePaths } from '../packages/kinetic/src/benchmarks/case-order.js';
 import {
   RCAEvalLoader,
   classifyExceptionKind,
@@ -192,7 +193,9 @@ function main(): void {
       if (e.isDirectory() && !e.name.startsWith('.')) queue.push(join(cur, e.name));
     }
   }
-  cases.sort((a, b) => a.name.localeCompare(b.name));
+  // Code units, not collation, for the reason `dump-re3-metrics.ts` states: a dumped sequence is compared
+  // across machines, so its order cannot be an ICU answer.
+  cases.sort((a, b) => compareCasePaths(a.name, b.name));
 
   console.log(`Dumping ${cases.length} cases (system=${opts.system}, suite=${opts.suite})`);
   console.log('='.repeat(100));
@@ -247,7 +250,7 @@ function main(): void {
   console.log('\n' + '='.repeat(100));
   console.log('VERDICT HISTOGRAM (across all dumped cases):');
   for (const [verdict, count] of [...verdictHistogram.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
+    compareCasePaths(a[0], b[0]),
   )) {
     console.log(`  ${verdict.padEnd(12)} ${count}`);
   }

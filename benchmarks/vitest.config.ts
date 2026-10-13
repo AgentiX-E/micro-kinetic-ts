@@ -120,6 +120,13 @@ export default defineConfig({
         'src/router-validation.ts',
         'src/validate-routing-frontier.ts',
         'src/loss-census.ts',
+        // Added with the module: the corpus traversal and the ORDER it returns, which is a property of the
+        // CORPUS and must not be a property of the filesystem. Two runners' `discoverAllCases` used to return
+        // `readdirSync` order while every sibling canonicalised — and the two that did not are the ones whose
+        // `slice(0, maxCases)` decides a published case set. It is imported by `case-corpus-walk.test.ts`, so
+        // leaving it out of this list would be the allow-list's own hole a seventh time;
+        // `__tests__/coverage-scope.test.ts` diffs the list against what the tests import, in both directions.
+        'src/case-corpus-walk.ts',
       ],
       exclude: ['__tests__/integration/**'],
       // The repository's 95% bar, every dimension. Reaching it took more than

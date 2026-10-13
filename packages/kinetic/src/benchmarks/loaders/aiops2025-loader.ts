@@ -24,6 +24,7 @@ import type {
   ServiceNode,
   TimeSeries,
 } from '@agentix-e/micro-kinetic-core';
+import { compareCasePaths } from '../case-order.js';
 
 import type {
   AIOps2025Case,
@@ -94,7 +95,11 @@ export class AIOps2025Loader {
     const entries = fs.readdirSync(suitePath, { withFileTypes: true });
     const caseDirs = entries
       .filter((e) => e.isDirectory() && !e.name.startsWith('_') && !e.name.startsWith('.'))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      // The ONE order convention (code units), not `localeCompare`: this is a SUITE's case order, so it
+      // has to be a property of the corpus rather than of the machine's ICU/locale. The RCAEval loader
+      // — the sibling this class was found in — sorted its edge list by `<` and its case list by
+      // collation, in one file, with the reason for `<` written beside it.
+      .sort((a, b) => compareCasePaths(a.name, b.name));
 
     const cases = caseDirs.map((dir) => this.loadCase(path.join(suitePath, dir.name)));
 
@@ -181,7 +186,13 @@ export class AIOps2025Loader {
     // Try Parquet-based metrics directory
     const metricsDir = path.join(casePath, 'metrics');
     if (fs.existsSync(metricsDir) && fs.statSync(metricsDir).isDirectory()) {
-      const files = fs.readdirSync(metricsDir).filter((f) => f.endsWith('.json'));
+      // Canonical, because these become a `Map`'s insertion order and a Map's order is observable: a
+      // per-service series list that follows the filesystem would make this case's own key order a property
+      // of the machine. Same convention as the suite listing above.
+      const files = fs
+        .readdirSync(metricsDir)
+        .filter((f) => f.endsWith('.json'))
+        .sort(compareCasePaths);
       for (const file of files) {
         try {
           const serviceName = file.replace('.json', '');
