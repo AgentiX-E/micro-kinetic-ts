@@ -54,6 +54,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TRACE_WEIGHT,
   isOnsetShape,
 } from '../../packages/tree/src/pruning/pruner.js';
 
@@ -469,7 +470,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // configuration this runner never described and never recorded.
       opts.logWeight = parseWeight(args[++i]!, DEFAULT_LOG_WEIGHT);
     else if (args[i] === '--trace-weight' && hasValue(args, i + 1))
-      opts.traceWeight = parseWeight(args[++i]!, 0);
+      opts.traceWeight = parseWeight(args[++i]!, DEFAULT_TRACE_WEIGHT);
     else if (args[i] === '--prism-weight' && hasValue(args, i + 1))
       opts.prismWeight = parseWeight(args[++i]!, 0);
     else if (args[i] === '--prism-pooling' && hasValue(args, i + 1)) {

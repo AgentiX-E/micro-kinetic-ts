@@ -42,6 +42,7 @@ import {
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TRACE_WEIGHT,
 } from '../../../../packages/tree/src/index.js';
 // The PRODUCER's constant, from the module that calls `toFixed`, imported for the same reason.
 import { SERVICE_FIELD_DECIMALS } from '../../../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
@@ -877,6 +878,13 @@ describe('RCAEval workflow descriptions agree with the code they describe', () =
     stability_weight: DEFAULT_STABILITY_WEIGHT,
     log_weight: DEFAULT_LOG_WEIGHT,
     temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
+    // Registered in iteration 97, when `traceWeight` finally got a name. It was the LAST input in this
+    // workflow whose default could not be stated as a NUMBER — the guard's own detection requires a digit, and
+    // there was no constant to read one from, because the value was a bare literal in four places (the
+    // engine's default and each parser's field default and fallback). The description now quotes `0` and names
+    // the RE3 pin's `1` beside it, which is the pair a dispatcher has to know: the runner's default is one
+    // value and the job's pin is another.
+    trace_weight: DEFAULT_TRACE_WEIGHT,
     // The latency trio, registered when their inputs were added. All three ship NON-ZERO, which is
     // the fact that made their absence from this half expensive rather than merely untidy: the
     // artifact printed each of them while no branch of the parser wrote any of them, so the

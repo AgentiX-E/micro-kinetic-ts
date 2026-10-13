@@ -44,6 +44,7 @@ import {
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TRACE_WEIGHT,
   isLogSignalMode,
   isOnsetShape,
   isPrismPooling,
@@ -498,7 +499,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     } else if (arg === '--trace-weight' && hasValue(argv, i + 1))
       // The shipped 0, through the shared parser: the golden half's rule for this same flag, which is what
       // makes the two halves' fallbacks equal rather than merely both "sensible".
-      opts.traceWeight = parseWeight(argv[++i]!, 0);
+      opts.traceWeight = parseWeight(argv[++i]!, DEFAULT_TRACE_WEIGHT);
     else if (arg === '--topo-weight' && hasValue(argv, i + 1))
       opts.topoWeight = parseWeight(argv[++i]!, 0);
     else if (arg === '--collision-weight' && hasValue(argv, i + 1))

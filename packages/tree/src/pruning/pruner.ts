@@ -828,6 +828,31 @@ export const DEFAULT_LOG_WEIGHT = 1.0;
  */
 export const DEFAULT_LOG_SIGNAL_MODE: LogSignalMode = 'count';
 
+/**
+ * Weight on the trace-activity prior, the THIRD instance of the class {@link DEFAULT_LOG_WEIGHT} was
+ * extracted for and the one `docs/dispatch-surface-audit.md`'s Finding 6 recorded as its residue.
+ *
+ * It shipped as a bare literal in **four** places — the engine's own `DEFAULT_TREE_PRUNER_OPTIONS`, each
+ * parser's field default, and each parser's `parseWeight` fallback — none of which was a name, so there was
+ * nothing for a guard to compare the value against. The consequence was concrete rather than tidy: the RCAEval
+ * workflow's `trace_weight` description could not state its default as a NUMBER, because a description that
+ * quotes a number has to name the constant it came from, and there was none. Its description stated the default
+ * in words instead, which is honest and uncheckable.
+ *
+ * **`0` is the engine's shipped value and the one the golden RE3 job OVERRIDES.** That job pins `1` on its own
+ * command line — a workflow-side value this module cannot own, because it is a per-invocation configuration
+ * rather than the engine's default — so a reader holding only this constant cannot tell which of the two a run
+ * used. `formatSignalLine` prints the value the run actually resolved to, which is what makes the two
+ * distinguishable on an artifact; the constant answers the other question, "what does the engine ship".
+ *
+ * Measured on the golden corpus, and the reason the value matters beyond bookkeeping: the trace term is BINARY
+ * (`0` or `1`, no magnitude) while the base term's adjacent-rank gap on rank-normalised TrainTicket is
+ * `0.0083` at 68 nodes, so the term can override ~100 rank positions, and on the 735 cases it moved a deciding
+ * gap ten times — **never in the truth's favour**. See `docs/rank-collapse-falsified.md` for the scale argument
+ * and the RE3 pin's own evidence.
+ */
+export const DEFAULT_TRACE_WEIGHT = 0.0;
+
 const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
   decayAlpha: 0.8,
@@ -843,7 +868,7 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
   riseWeight: 0.0,
-  traceWeight: 0.0,
+  traceWeight: DEFAULT_TRACE_WEIGHT,
   prismWeight: 0.0,
   prismPooling: DEFAULT_PRISM_POOLING,
   failedEdgeWeight: 0.0,

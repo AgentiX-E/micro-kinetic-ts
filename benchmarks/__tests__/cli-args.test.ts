@@ -18,7 +18,11 @@ import {
   MAX_FIELD_DECIMALS,
   SERVICE_FIELD_DECIMALS,
 } from '../../packages/kinetic/src/benchmarks/index.js';
+import { DEFAULT_TRACE_WEIGHT } from '../../packages/tree/src/index.js';
+
 import { parseFieldDecimals, parseNodeCount, parseWeight } from '../src/cli-args.js';
+import { parseFSE26Args } from '../src/fse26-cli.js';
+import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BENCH_SRC = resolve(HERE, '../src');
@@ -200,5 +204,56 @@ describe('parseNodeCount', () => {
         /function parseNodeCount\s*\(/,
       );
     }
+  });
+});
+
+/**
+ * The third instance of the class {@link DEFAULT_LOG_WEIGHT} was extracted for.
+ *
+ * `traceWeight` shipped as a bare numeric literal in BOTH parsers — `parseWeight(argv[++i]!, 0)` and
+ * `parseWeight(args[++i]!, 0)` — with the RE3 job pinning a bare `1` in the workflow beside them, so the
+ * shipped value had THREE owners and none of them was a name. `docs/dispatch-surface-audit.md`'s Finding 6
+ * recorded it as the residue: the workflow-description guard requires every input claiming a runner default to
+ * name a constant it can check, and this one could not, so its description had to state the default in words.
+ *
+ * The assertions below are the two directions that closing it needs. The first is behaviour — both runners fall
+ * back to the owner. The second is SOURCE, and it is the one that catches a regression: a parser that reads the
+ * constant while a second literal survives beside it would satisfy every behavioural check, because only one of
+ * the two is ever exercised by an empty argv.
+ */
+describe('the trace weight has one owner, and both runners read it', () => {
+  it('is the value an empty argv resolves to on BOTH halves', () => {
+    expect(parseFSE26Args([]).traceWeight).toBe(DEFAULT_TRACE_WEIGHT);
+    expect(parseRCAEvalArgs([]).traceWeight).toBe(DEFAULT_TRACE_WEIGHT);
+  });
+
+  it('is read from the owner in each parser, with no surviving literal fallback', () => {
+    for (const file of ['rcaeval-cli.ts', 'fse26-cli.ts']) {
+      const source = readFileSync(resolve(BENCH_SRC, file), 'utf8');
+      expect(source, `${file} does not import DEFAULT_TRACE_WEIGHT`).toContain(
+        'DEFAULT_TRACE_WEIGHT',
+      );
+      // The branch's own text, from its flag to the next branch, so a literal elsewhere in the file cannot
+      // satisfy or fail this check by accident.
+      const at = source.indexOf("'--trace-weight'");
+      expect(at, `${file} has no --trace-weight branch`).toBeGreaterThanOrEqual(0);
+      const rest = source.slice(at + 1);
+      const next = rest.indexOf("=== '--");
+      const branch = rest.slice(0, next < 0 ? 220 : next);
+      expect(branch, `${file} does not read the owner: ${branch.trim()}`).toContain(
+        'DEFAULT_TRACE_WEIGHT',
+      );
+      // A bare numeric fallback is the shape that was there. `parseWeight(x, 0)` is the literal.
+      expect(branch, `${file} still holds a literal fallback: ${branch.trim()}`).not.toMatch(
+        /parseWeight\([^;]*,\s*\d/,
+      );
+    }
+  });
+
+  it('is ZERO, because that is the value the shipped configuration states', () => {
+    // Not a tautology: the constant exists so a reader can tell the shipped value from the RE3 JOB'S PIN,
+    // which is a workflow-side `1` and cannot be read from here. Fixing the number in a test means a change to
+    // it is a deliberate edit to this line rather than a silent move of the published configuration.
+    expect(DEFAULT_TRACE_WEIGHT).toBe(0);
   });
 });
