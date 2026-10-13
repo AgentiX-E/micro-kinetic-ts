@@ -425,9 +425,49 @@ did not move the intersection at all, which is exactly what its boundary argumen
   is why that one is printed unconditionally. `prismPooling` is the ninth case and is nested under
   `prismWeight`, on `failedEdgeMode`'s rule, because a pooling combined with a zero weight is not part of the
   configuration.
-- The workflow gains eight inputs, and the input-ownership table in `packages/kinetic` gains eight rows.
+- The workflow gains ONE input for the eight, and the input-ownership table in `packages/kinetic` gains one row.
+  **It had to be one, and the reason is a HARD GITHUB LIMIT rather than a preference** — see the next section,
+  which is a defect this iteration introduced and then had to repair.
 - **No engine source moved at all.** The options were already carried and already printed on the golden half;
   this iteration is the FSE'26 half catching up to a surface the golden half already had.
+
+### The defect this iteration created, and the budget nothing was counting
+
+**Eight named inputs took `fse26-benchmark.yml` from 22 inputs to 30, and a `workflow_dispatch` accepts at most
+25.** Past 25 the file is not large, it is **INVALID**, and the two consequences were both immediate and both
+loud:
+
+- the **push-triggered validation run failed** (`38349525722` / `38349501764`) — the workflow could not be
+  loaded at all, so this was not a red benchmark but a red *file*;
+- and `POST .../dispatches` was refused with **`HTTP 422: you may only define up to 25 inputs for a
+  workflow_dispatch event`**, which is how the iteration's own candidate dispatch discovered it.
+
+**Every one of the eight was a real knob the surface was missing, and the count was still fatal.** That is the
+class of defect this document exists for, arriving from a direction it had not covered: not a flag reaching no
+option and not an option reaching no dispatch, but **a surface reaching a platform's budget** — and *nothing
+counted it*. The census could see every knob, every flag and every dispatch, and had no number at all for how
+many inputs a workflow is allowed.
+
+**The repair is one input carrying all eight**, with two properties that keep the reach auditable rather than
+merely legal:
+
+1. **The step's `case` block spells every one of the eight flags in CODE**, so `reaches()` still reads the reach
+   out of the workflow rather than trusting a table. An unrecognised `name=` **exits non-zero** instead of being
+   dropped, because a silently ignored knob is a run whose configuration line reports something nobody asked for.
+2. **The census gains `SHARED_INPUTS`, naming which flags each shared input can emit, and checks every claim
+   against the workflow's own text before crediting it.** A shared input is the one shape that could hide a
+   dispatch from the `KNOBS` table — `declared()` skips it by name — so the expansion is derived and verified
+   rather than assumed.
+
+**And the budget is now a fence.** `dispatch-surface-census.test.ts` gains a block that reads **every** workflow
+in `.github/workflows` and asserts each `workflow_dispatch` declares **at most 25** inputs, plus the two
+benchmark workflows' exact counts so a change to either is a deliberate edit. It is asserted over every file
+because the limit is a property of the EVENT rather than of a file — and because the golden half is at **21**,
+which is four under and therefore the next surface to be extended.
+
+**`ranking_knobs` therefore records a platform constraint, not a design.** The eight knobs remain eight axes,
+eight `KNOBS` rows and eight members of `DISPATCHABLE_ON_BOTH`; only the wiring through which a dispatch states
+them is shared, and the grammar is documented on the input itself.
 
 ### The fences, and the one that is the whole point
 
