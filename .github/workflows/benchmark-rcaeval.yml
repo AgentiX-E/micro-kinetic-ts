@@ -38,6 +38,46 @@ on:
         required: false
         default: ''
         type: string
+      trace_weight:
+        description: "Weight on the trace-activity term (empty = the runner's own default: this term is DISABLED on every suite except RE3, where this step pins it ON inside the guard below — so a dispatch that sets this input wins, and no state states the flag twice). It is one of only TWO weighted terms reliably fed on this corpus, it is BINARY (exactly 0 or exactly 1, with no magnitude), and a per-case read of the 159 reranking misses found it pushing for the WRONG service on all 6 occasions it moved the deciding gap. NOTE: this input's shipped value has NO owning constant — it is a bare literal in the parser and a bare `1` in the RE3 pin — which is the second instance of the class `DEFAULT_LOG_WEIGHT` was created for, and why this description states the default in words rather than in a number the description guard cannot check"
+        required: false
+        default: ''
+        type: string
+      topo_weight:
+        description: "Weight on the topology source-likelihood term (empty = the runner default, the SHIPPED 0 = disabled). Measured at −42.4 / −37.8 / −3.1 cases when enabled, i.e. NEGATIVE on every suite, which is why it ships off — and until this input existed the golden half could not re-test that, so the register's row rested on one measurement that no dispatch could reproduce"
+        required: false
+        default: ''
+        type: string
+      collision_weight:
+        description: "Weight on the collision-energy term — the Deng-Yu-inspired Q(f,f) aggregation (empty = the runner default, the SHIPPED 0 = disabled). The cause family it reads was measured at 19084 instances ALL `WEIGHT_ZERO`, so its contribution to every miss in the published configuration is exactly 0.0000; this input is what lets a dispatch make it non-zero and read what it does"
+        required: false
+        default: ''
+        type: string
+      prism_weight:
+        description: "Weight on the PRISM-derived term (empty = the runner default, the SHIPPED 0 = disabled). PRISM is the competitor this project leads by +10.8pp on the published convention, and `prismWeight=0` is a recorded never-revert fact — so a non-zero dispatch here re-tests a recorded rejection instead of leaving it as one measurement on one instrument"
+        required: false
+        default: ''
+        type: string
+      prism_pooling:
+        description: "The COMBINATION function the prism term pools its per-service contributions with (`additive` = the runner default and the shipped primitive). The pooling was implemented in the primitive and selectable by the standalone evaluator, while no ENGINE configuration could name it until the call site was repaired — and this input is the second half of that repair, because an option a dispatch cannot state is the same hole one level up"
+        required: false
+        default: ''
+        type: string
+      collapse_discount:
+        description: "The discount applied to a DROP relative to an equivalent rise (empty = the runner default, the SHIPPED 0 = symmetric). It is a MASK rather than a compression — it drops only discounts strictly between 0 and the value — so a masked setting and an inert one can print the same Δ, and only a dispatch can separate them"
+        required: false
+        default: ''
+        type: string
+      suppress_idle_transients:
+        description: "Set to anything non-empty to extend the transient-spike guard to IDLE-START transients: a metric that starts at ~0, has a transient excursion, and settles at a NON-zero tail (empty = the runner default, false = the shipped scoring). The term's own docblock names its target — the near-zero-baseline spike that outranks a genuine permanent drop on ts-route-service in RE3 — and a per-case read of the misses locates five of the ten cases a binary weight-1.0 term decided against the truth in exactly that service family"
+        required: false
+        default: ''
+        type: string
+      suppress_near_zero_baseline_rise:
+        description: "Set to anything non-empty to suppress a rise measured against a near-zero baseline (empty = the runner default, false = the shipped scoring). The companion of the switch above and the same shape of hole: an engine option that ships off, is named on every configuration line, and that no dispatch could turn on"
+        required: false
+        default: ''
+        type: string
       lat_weight:
         description: "Weight on the per-edge latency term (empty = the runner default, which is the SHIPPED 0.561495, the largest weight in the ranking). This flag existed on the FSE'26 runner all along and had NO arm on this one, so the golden half of the kill criterion could not move the term at all — while every artifact's configuration line printed the value as though a dispatch had chosen it. A candidate measurable on one instrument and judged on another has an undecidable other half"
         required: false
@@ -219,6 +259,40 @@ jobs:
           if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
             RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
+          #   The terms and switches the GOLDEN CLI always accepted, the engine options always carried and
+          #   the configuration line always NAMED — and that no dispatch could state. `UNDISPATCHABLE_ON_RCAEVAL`
+          #   in the dispatch-surface census is the register's inventory of exactly those, and this block is
+          #   what empties it: an option that is printed, forwarded and unreachable makes every artifact assert
+          #   a configuration nobody can ask for, and the kill criterion is an AND over two benchmarks, so a
+          #   knob only the FSE'26 half can vary has an undecidable golden half.
+          #
+          #   All eight are empty by default, so a PUSH passes no flag at all and the nine cells stay
+          #   byte-identical — and the `signals:` line already prints every one of them, so it does not move
+          #   either. That is what makes this block's acceptance exact rather than argued.
+          if [ -n "${{ inputs.trace_weight }}" ]; then
+            RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_weight }}" ]; then
+            RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.collision_weight }}" ]; then
+            RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_weight }}" ]; then
+            RANKING_ARG+=(--prism-weight "${{ inputs.prism_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_pooling }}" ]; then
+            RANKING_ARG+=(--prism-pooling "${{ inputs.prism_pooling }}")
+          fi
+          if [ -n "${{ inputs.collapse_discount }}" ]; then
+            RANKING_ARG+=(--collapse-discount "${{ inputs.collapse_discount }}")
+          fi
+          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
+            RANKING_ARG+=(--suppress-idle-transients)
+          fi
+          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
+            RANKING_ARG+=(--suppress-near-zero-baseline-rise)
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -326,6 +400,40 @@ jobs:
           #   only the flag could not measure the population, and the two are read as one configuration.
           if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
             RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
+          fi
+          #   The terms and switches the GOLDEN CLI always accepted, the engine options always carried and
+          #   the configuration line always NAMED — and that no dispatch could state. `UNDISPATCHABLE_ON_RCAEVAL`
+          #   in the dispatch-surface census is the register's inventory of exactly those, and this block is
+          #   what empties it: an option that is printed, forwarded and unreachable makes every artifact assert
+          #   a configuration nobody can ask for, and the kill criterion is an AND over two benchmarks, so a
+          #   knob only the FSE'26 half can vary has an undecidable golden half.
+          #
+          #   All eight are empty by default, so a PUSH passes no flag at all and the nine cells stay
+          #   byte-identical — and the `signals:` line already prints every one of them, so it does not move
+          #   either. That is what makes this block's acceptance exact rather than argued.
+          if [ -n "${{ inputs.trace_weight }}" ]; then
+            RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_weight }}" ]; then
+            RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.collision_weight }}" ]; then
+            RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_weight }}" ]; then
+            RANKING_ARG+=(--prism-weight "${{ inputs.prism_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_pooling }}" ]; then
+            RANKING_ARG+=(--prism-pooling "${{ inputs.prism_pooling }}")
+          fi
+          if [ -n "${{ inputs.collapse_discount }}" ]; then
+            RANKING_ARG+=(--collapse-discount "${{ inputs.collapse_discount }}")
+          fi
+          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
+            RANKING_ARG+=(--suppress-idle-transients)
+          fi
+          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
+            RANKING_ARG+=(--suppress-near-zero-baseline-rise)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -460,6 +568,40 @@ jobs:
           if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
             RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
+          #   The terms and switches the GOLDEN CLI always accepted, the engine options always carried and
+          #   the configuration line always NAMED — and that no dispatch could state. `UNDISPATCHABLE_ON_RCAEVAL`
+          #   in the dispatch-surface census is the register's inventory of exactly those, and this block is
+          #   what empties it: an option that is printed, forwarded and unreachable makes every artifact assert
+          #   a configuration nobody can ask for, and the kill criterion is an AND over two benchmarks, so a
+          #   knob only the FSE'26 half can vary has an undecidable golden half.
+          #
+          #   All eight are empty by default, so a PUSH passes no flag at all and the nine cells stay
+          #   byte-identical — and the `signals:` line already prints every one of them, so it does not move
+          #   either. That is what makes this block's acceptance exact rather than argued.
+          if [ -n "${{ inputs.trace_weight }}" ]; then
+            RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_weight }}" ]; then
+            RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.collision_weight }}" ]; then
+            RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_weight }}" ]; then
+            RANKING_ARG+=(--prism-weight "${{ inputs.prism_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_pooling }}" ]; then
+            RANKING_ARG+=(--prism-pooling "${{ inputs.prism_pooling }}")
+          fi
+          if [ -n "${{ inputs.collapse_discount }}" ]; then
+            RANKING_ARG+=(--collapse-discount "${{ inputs.collapse_discount }}")
+          fi
+          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
+            RANKING_ARG+=(--suppress-idle-transients)
+          fi
+          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
+            RANKING_ARG+=(--suppress-near-zero-baseline-rise)
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -576,6 +718,40 @@ jobs:
           #   only the flag could not measure the population, and the two are read as one configuration.
           if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
             RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
+          fi
+          #   The terms and switches the GOLDEN CLI always accepted, the engine options always carried and
+          #   the configuration line always NAMED — and that no dispatch could state. `UNDISPATCHABLE_ON_RCAEVAL`
+          #   in the dispatch-surface census is the register's inventory of exactly those, and this block is
+          #   what empties it: an option that is printed, forwarded and unreachable makes every artifact assert
+          #   a configuration nobody can ask for, and the kill criterion is an AND over two benchmarks, so a
+          #   knob only the FSE'26 half can vary has an undecidable golden half.
+          #
+          #   All eight are empty by default, so a PUSH passes no flag at all and the nine cells stay
+          #   byte-identical — and the `signals:` line already prints every one of them, so it does not move
+          #   either. That is what makes this block's acceptance exact rather than argued.
+          if [ -n "${{ inputs.trace_weight }}" ]; then
+            RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_weight }}" ]; then
+            RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.collision_weight }}" ]; then
+            RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_weight }}" ]; then
+            RANKING_ARG+=(--prism-weight "${{ inputs.prism_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_pooling }}" ]; then
+            RANKING_ARG+=(--prism-pooling "${{ inputs.prism_pooling }}")
+          fi
+          if [ -n "${{ inputs.collapse_discount }}" ]; then
+            RANKING_ARG+=(--collapse-discount "${{ inputs.collapse_discount }}")
+          fi
+          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
+            RANKING_ARG+=(--suppress-idle-transients)
+          fi
+          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
+            RANKING_ARG+=(--suppress-near-zero-baseline-rise)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -712,6 +888,46 @@ jobs:
           if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
             RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
           fi
+          #   The terms and switches the GOLDEN CLI always accepted, the engine options always carried and
+          #   the configuration line always NAMED — and that no dispatch could state. `UNDISPATCHABLE_ON_RCAEVAL`
+          #   in the dispatch-surface census is the register's inventory of exactly those, and this block is
+          #   what empties it: an option that is printed, forwarded and unreachable makes every artifact assert
+          #   a configuration nobody can ask for, and the kill criterion is an AND over two benchmarks, so a
+          #   knob only the FSE'26 half can vary has an undecidable golden half.
+          #
+          #   All eight are empty by default, so a PUSH passes no flag at all and the nine cells stay
+          #   byte-identical — and the `signals:` line already prints every one of them, so it does not move
+          #   either. That is what makes this block's acceptance exact rather than argued.
+          if [ -n "${{ inputs.trace_weight }}" ]; then
+            RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
+          else
+            #   This step's own pin, moved inside the guard. An input and a command-line literal naming the
+            #   same flag is a step that states one knob TWICE, and the dispatch-surface census forbids it
+            #   because the meaning would then depend on the parser's tie-break — the hazard the block above
+            #   records for `--log-signal-mode`. One statement per state, and a dispatch wins over the pin.
+            RANKING_ARG+=(--trace-weight 1)
+          fi
+          if [ -n "${{ inputs.topo_weight }}" ]; then
+            RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.collision_weight }}" ]; then
+            RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_weight }}" ]; then
+            RANKING_ARG+=(--prism-weight "${{ inputs.prism_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_pooling }}" ]; then
+            RANKING_ARG+=(--prism-pooling "${{ inputs.prism_pooling }}")
+          fi
+          if [ -n "${{ inputs.collapse_discount }}" ]; then
+            RANKING_ARG+=(--collapse-discount "${{ inputs.collapse_discount }}")
+          fi
+          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
+            RANKING_ARG+=(--suppress-idle-transients)
+          fi
+          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
+            RANKING_ARG+=(--suppress-near-zero-baseline-rise)
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -751,7 +967,7 @@ jobs:
           # The loss census is allocated unconditionally, unlike the opt-in diagnose dump: the split it
           # reports is a claim about the run the accuracy came from, so it is produced by every run.
           CENSUS_ARG=(--loss-census rcaeval-loss-census-re3.jsonl)
-          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 --trace-weight 1 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
+          pnpm exec tsx benchmarks/src/run-rcaeval.ts --suite re3 "${STABILITY_ARG[@]}" "${RANKING_ARG[@]}" "${CORPUS_ARG[@]}" "${DIAGNOSE_ARG[@]}" "${CENSUS_ARG[@]}" 2>&1 | tee rcaeval-re3-results.txt
       - name: Upload RE3 results
         if: always()
         uses: actions/upload-artifact@v4
@@ -820,6 +1036,40 @@ jobs:
           #   only the flag could not measure the population, and the two are read as one configuration.
           if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
             RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
+          fi
+          #   The terms and switches the GOLDEN CLI always accepted, the engine options always carried and
+          #   the configuration line always NAMED — and that no dispatch could state. `UNDISPATCHABLE_ON_RCAEVAL`
+          #   in the dispatch-surface census is the register's inventory of exactly those, and this block is
+          #   what empties it: an option that is printed, forwarded and unreachable makes every artifact assert
+          #   a configuration nobody can ask for, and the kill criterion is an AND over two benchmarks, so a
+          #   knob only the FSE'26 half can vary has an undecidable golden half.
+          #
+          #   All eight are empty by default, so a PUSH passes no flag at all and the nine cells stay
+          #   byte-identical — and the `signals:` line already prints every one of them, so it does not move
+          #   either. That is what makes this block's acceptance exact rather than argued.
+          if [ -n "${{ inputs.trace_weight }}" ]; then
+            RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_weight }}" ]; then
+            RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.collision_weight }}" ]; then
+            RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_weight }}" ]; then
+            RANKING_ARG+=(--prism-weight "${{ inputs.prism_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_pooling }}" ]; then
+            RANKING_ARG+=(--prism-pooling "${{ inputs.prism_pooling }}")
+          fi
+          if [ -n "${{ inputs.collapse_discount }}" ]; then
+            RANKING_ARG+=(--collapse-discount "${{ inputs.collapse_discount }}")
+          fi
+          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
+            RANKING_ARG+=(--suppress-idle-transients)
+          fi
+          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
+            RANKING_ARG+=(--suppress-near-zero-baseline-rise)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -930,6 +1180,40 @@ jobs:
           #   only the flag could not measure the population, and the two are read as one configuration.
           if [ -n "${{ inputs.anomaly_normalize_threshold }}" ]; then
             RANKING_ARG+=(--anomaly-normalize-threshold "${{ inputs.anomaly_normalize_threshold }}")
+          fi
+          #   The terms and switches the GOLDEN CLI always accepted, the engine options always carried and
+          #   the configuration line always NAMED — and that no dispatch could state. `UNDISPATCHABLE_ON_RCAEVAL`
+          #   in the dispatch-surface census is the register's inventory of exactly those, and this block is
+          #   what empties it: an option that is printed, forwarded and unreachable makes every artifact assert
+          #   a configuration nobody can ask for, and the kill criterion is an AND over two benchmarks, so a
+          #   knob only the FSE'26 half can vary has an undecidable golden half.
+          #
+          #   All eight are empty by default, so a PUSH passes no flag at all and the nine cells stay
+          #   byte-identical — and the `signals:` line already prints every one of them, so it does not move
+          #   either. That is what makes this block's acceptance exact rather than argued.
+          if [ -n "${{ inputs.trace_weight }}" ]; then
+            RANKING_ARG+=(--trace-weight "${{ inputs.trace_weight }}")
+          fi
+          if [ -n "${{ inputs.topo_weight }}" ]; then
+            RANKING_ARG+=(--topo-weight "${{ inputs.topo_weight }}")
+          fi
+          if [ -n "${{ inputs.collision_weight }}" ]; then
+            RANKING_ARG+=(--collision-weight "${{ inputs.collision_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_weight }}" ]; then
+            RANKING_ARG+=(--prism-weight "${{ inputs.prism_weight }}")
+          fi
+          if [ -n "${{ inputs.prism_pooling }}" ]; then
+            RANKING_ARG+=(--prism-pooling "${{ inputs.prism_pooling }}")
+          fi
+          if [ -n "${{ inputs.collapse_discount }}" ]; then
+            RANKING_ARG+=(--collapse-discount "${{ inputs.collapse_discount }}")
+          fi
+          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
+            RANKING_ARG+=(--suppress-idle-transients)
+          fi
+          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
+            RANKING_ARG+=(--suppress-near-zero-baseline-rise)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its

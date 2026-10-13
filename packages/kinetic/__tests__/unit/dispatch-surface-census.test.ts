@@ -314,49 +314,49 @@ const KNOBS: Readonly<
     flag: '--collision-weight',
     owner: 're3-fault-ceiling.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'collision_weight',
   },
   topoWeight: {
     flag: '--topo-weight',
     owner: 'fse26-metric-competition-verdict.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'topo_weight',
   },
   traceWeight: {
     flag: '--trace-weight',
     owner: 'rank-collapse-falsified.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'trace_weight',
   },
   prismWeight: {
     flag: '--prism-weight',
     owner: 'fusion-routing-verdict.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'prism_weight',
   },
   prismPooling: {
     flag: '--prism-pooling',
     owner: 'prism-pooling-axis.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'prism_pooling',
   },
   collapseDiscount: {
     flag: '--collapse-discount',
     owner: COMMENT_ONLY,
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'collapse_discount',
   },
   suppressIdleTransients: {
     flag: '--suppress-idle-transients',
     owner: 'near-zero-rise-suppression-falsified.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'suppress_idle_transients',
   },
   suppressNearZeroBaselineRise: {
     flag: '--suppress-near-zero-baseline-rise',
     owner: 'near-zero-rise-suppression-falsified.md',
     fse26: null,
-    rcaeval: null,
+    rcaeval: 'suppress_near_zero_baseline_rise',
   },
   fusionCeiling: {
     flag: '--fusion-ceiling',
@@ -499,20 +499,35 @@ function axisOf(option: string): string {
  * evaluator, while **no engine configuration could select it at all** — the call site omitted
  * the argument. An option the runner accepts and the engine could not act on is the same
  * shape as an option the workflow cannot reach, and both are open axes.
+ *
+ * ## The set emptied from 12 to 4, and every departure is named (iteration 95)
+ *
+ * Eight members left it — `--trace-weight`, `--topo-weight`, `--collision-weight`, `--prism-weight`,
+ * `--prism-pooling`, `--collapse-discount` and the two suppression switches — and each had the SAME
+ * shape, which is the one this set exists to expose: **an engine option the golden CLI accepted, the
+ * runner carried into `RCAEvalSignalOptions` or `RCAEvalTopologyOptions`, the configuration line NAMED
+ * on every artifact, and no dispatch could state.** The line asserted a configuration nobody could ask
+ * for, and because the kill criterion is an AND over two benchmarks, a knob only the FSE'26 half could
+ * vary had an undecidable golden half — the same hole `latWeight`, `latMinRise` and `poolMetricPenaltyWeight`
+ * were repaired for one iteration earlier, found by the same census.
+ *
+ * The four that remain are NOT of that shape, and their reasons are beside them: an output path that is
+ * not a ranking knob, a positive pole whose axis is reachable through its negation, and two negated poles
+ * that can only restate a default of false. **A set that shrinks without a note is a set nobody can audit**,
+ * so the departures are listed here rather than dropped.
  */
 const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
-  '--collapse-discount',
-  '--collision-weight',
   '--fusion-ceiling',
+  // The POSITIVE pole. The axis itself IS dispatchable — through `no_rank_normalization`, the negated switch —
+  // and exposing only that pole is what the FSE'26 parser does too, so one value means one thing in both
+  // workflows. This member therefore records a flag the runner accepts and the workflow cannot spell, not an
+  // axis a dispatch cannot reach.
+  '--rank-normalization',
+  // The NEGATED poles of two switches whose shipped default IS false, so each restates the default and opens no
+  // state the positive pole does not. Both positive poles are inputs as of this iteration, so the switches are
+  // reachable in the only state that differs from the shipped one.
   '--no-suppress-idle-transients',
   '--no-suppress-near-zero-baseline-rise',
-  '--prism-pooling',
-  '--prism-weight',
-  '--rank-normalization',
-  '--suppress-idle-transients',
-  '--suppress-near-zero-baseline-rise',
-  '--topo-weight',
-  '--trace-weight',
 ];
 
 /**
@@ -804,7 +819,21 @@ describe('the dispatch surface has one owner per knob', () => {
     const fse26Axes = new Set(rowsOn('fse26'));
     const rcaevalAxes = new Set(rowsOn('rcaeval'));
     expect(fse26Axes.size).toBeGreaterThan(both.length);
-    expect([...rcaevalAxes].sort()).toEqual([...both].sort());
+    // Each half REACHES the intersection, and it may reach more — so the assertion is a SUBSET in both
+    // directions rather than an equality with either side. **The equality this used to assert stopped being
+    // true in iteration 95 and the change is recorded rather than asserted away**: the golden half now reaches
+    // EIGHT axes the FSE'26 half cannot (`traceWeight`, `topoWeight`, `collisionWeight`, `prismWeight`,
+    // `prismPooling`, `collapseDiscount` and the two suppression switches) because **the FSE'26 CLI does not
+    // accept those flags at all** — they are golden-only surfaces, not knobs added without an owner. The
+    // property the old equality was protecting is OWNERSHIP, which the loop below checks directly.
+    for (const axis of both) {
+      expect(fse26Axes.has(axis), `${axis} must be FSE'26-reachable`).toBe(true);
+      expect(rcaevalAxes.has(axis), `${axis} must be golden-reachable`).toBe(true);
+    }
+    const allAxes = Object.keys(KNOBS).map(axisOf);
+    for (const axis of rcaevalAxes) {
+      expect(allAxes.includes(axis), `${axis} is golden-reachable with no row`).toBe(true);
+    }
     // Non-vacuity for the join itself: the map must name a pair that BOTH tables actually hold,
     // or it would be a comment wearing a data structure's clothes. Without this, an alias that
     // named nothing would leave the intersection computed over rows and still pass.
@@ -888,10 +917,15 @@ describe('the dispatch surface has one owner per knob', () => {
         .map(([option]) => option);
     expect(new Set(declared(rcaevalInputs, rcaevalFlags))).toEqual(new Set(recorded('rcaeval')));
     expect(new Set(declared(fse26Inputs, fse26Flags))).toEqual(new Set(recorded('fse26')));
-    // Non-vacuity both ways: each workflow must declare something, and the sets must be unequal
-    // because RCAEval still exposes fewer knobs than FSE'26 does.
+    // Non-vacuity both ways: each workflow must declare something, and the two are NOT interchangeable.
     expect(declared(rcaevalInputs, rcaevalFlags).length).toBeGreaterThan(1);
-    expect(declared(fse26Inputs, fse26Flags).length).toBeGreaterThan(
+    expect(declared(fse26Inputs, fse26Flags).length).toBeGreaterThan(1);
+    // **The direction of that inequality reversed in iteration 95, and it is stated with its reason rather
+    // than left as a floor that happened to hold.** It used to read "RCAEval still exposes fewer knobs than
+    // FSE'26 does"; the golden half now exposes MORE (18 against 15) because the eight axes above were given
+    // inputs here and the FSE'26 CLI has no matching flags. Neither ordering is the invariant — what matters
+    // is that the two sides are different surfaces, and that the difference is the one the tables record.
+    expect(declared(fse26Inputs, fse26Flags).length).not.toBe(
       declared(rcaevalInputs, rcaevalFlags).length,
     );
   });
@@ -905,7 +939,13 @@ describe('the dispatch surface has one owner per knob', () => {
       })
       .sort();
     expect(unreachable).toEqual([...UNDISPATCHABLE_ON_RCAEVAL].sort());
-    expect(unreachable.length).toBeGreaterThan(10);
+    // A non-vacuity floor that no longer measures what it did. It read `> 10` because the set held twelve
+    // members; iteration 95 emptied it to four by giving eight of them workflow inputs, and a floor pinned to
+    // the old count would have made the emptying look like a REGRESSION. What still has to hold is that the
+    // set is a strict subset of the accepted flags — i.e. that some axis is genuinely still unreachable, so
+    // this section is not asserting over an empty question — and that is what is checked now.
+    expect(unreachable.length).toBeLessThan([...rcaevalFlags.keys()].length);
+    expect(unreachable.length).toBeGreaterThan(0);
   });
 
   it('reaches every artifact-shaping flag a runner accepts, or names the exception', () => {
