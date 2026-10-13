@@ -24,7 +24,7 @@ export interface FSE26Anchor {
 }
 
 import type { FaultFailedEdge } from '../../packages/core/src/index.js';
-import type { OnsetShape } from '../../packages/tree/src/index.js';
+import type { OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 
 /**
  * Everything that determines the reported numbers.
@@ -111,6 +111,30 @@ export interface FSE26RunConfig {
   readonly temporalWeight: number;
   /** Which shape the prior reads the onsets in; inert while the weight is 0. */
   readonly onsetShape: OnsetShape;
+  /**
+   * The eight knobs the mirror of iteration 96 made dispatchable on this half.
+   *
+   * They are on this interface because the kill criterion's two halves live on two benchmarks, and an
+   * option the engine carries while the artifact cannot name it is a run whose configuration nobody can
+   * state — the defect `docs/dispatch-surface-audit.md`'s Findings 3 and 5 record, arriving from the other
+   * direction. The line prints each on its own `omit when it holds its default` rule, and that rule is
+   * SAFE for all eight because every default here is zero or false: an omission is then readable as the
+   * default both before and after any change to it.
+   */
+  readonly traceWeight: number;
+  readonly topoWeight: number;
+  readonly collisionWeight: number;
+  readonly prismWeight: number;
+  /**
+   * The pooling the PRISM term fuses with. Printed only alongside a non-zero `prismWeight`, on the rule
+   * `failedEdgeMode` already follows: the pooling is INERT at a zero weight, so two runs that differ only
+   * in a value the engine multiplies by zero are the same configuration and printing both would report a
+   * difference that does not exist.
+   */
+  readonly prismPooling: PrismPooling;
+  readonly collapseDiscount: number;
+  readonly suppressIdleTransients: boolean;
+  readonly suppressNearZeroBaselineRise: boolean;
 }
 
 /** One fault type's cell in the summary. */
@@ -360,6 +384,39 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   // field would render the shipped run and its ablation byte-identically.
   line += ` temporalWeight=${config.temporalWeight}`;
   line += ` onsetShape=${config.onsetShape}`;
+  // The eight the mirror made reachable on this half, each on the `omit when it holds its default` rule
+  // every weight above follows — which is sound here for the reason it is unsound for `latWeight`: all
+  // eight defaults are zero or false, so an omission reads as the default rather than as a value nobody
+  // chose. A knob whose shipped value is NON-zero may not use this rule (see the latency weight above),
+  // and none of these is.
+  if (config.traceWeight !== 0) {
+    line += ` traceWeight=${config.traceWeight}`;
+  }
+  if (config.topoWeight !== 0) {
+    line += ` topoWeight=${config.topoWeight}`;
+  }
+  if (config.collisionWeight !== 0) {
+    line += ` collisionWeight=${config.collisionWeight}`;
+  }
+  if (config.prismWeight !== 0) {
+    line += ` prismWeight=${config.prismWeight}`;
+    // Nested under the weight, on `failedEdgeMode`'s rule: a pooling combined with a zero weight is not
+    // part of the configuration, so printing it would report a difference the engine cannot have.
+    if (config.prismPooling !== 'additive') {
+      line += ` prismPooling=${config.prismPooling}`;
+    }
+  }
+  if (config.collapseDiscount !== 0) {
+    line += ` collapseDiscount=${config.collapseDiscount}`;
+  }
+  // The two switched guards. A flipped switch is a different ranking and has to say so; the shipped pole
+  // says nothing, which is what makes the shipped line byte-identical to the published one.
+  if (config.suppressIdleTransients) {
+    line += ' suppressIdleTransients=true';
+  }
+  if (config.suppressNearZeroBaselineRise) {
+    line += ' suppressNearZeroBaselineRise=true';
+  }
   return line;
 }
 

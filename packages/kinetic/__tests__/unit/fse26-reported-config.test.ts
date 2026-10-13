@@ -739,6 +739,18 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   stability_weight: 'runner',
   temporal_weight: 'runner',
   onset_shape: 'runner',
+  // The eight the mirror added (iteration 96). Every one is `runner` rather than `workflow`: each input
+  // passes straight through to a flag the FSE'26 parser accepts, and from there to an engine option the
+  // cross-runner equivalence fence in `fse26-cli.test.ts` compares against the golden half's. None selects
+  // a dataset or filters a converter's output, which is what `workflow` is reserved for.
+  trace_weight: 'runner',
+  topo_weight: 'runner',
+  collision_weight: 'runner',
+  prism_weight: 'runner',
+  prism_pooling: 'runner',
+  collapse_discount: 'runner',
+  suppress_idle_transients: 'runner',
+  suppress_near_zero_baseline_rise: 'runner',
 };
 
 /**

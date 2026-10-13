@@ -23,6 +23,7 @@ import type {
   FailedEdgeMode,
   LogSignalMode,
   OnsetShape,
+  PrismPooling,
   TopologyFaultGraphConfig,
 } from '../../packages/tree/src/index.js';
 
@@ -81,6 +82,20 @@ export interface Fse26SignalOptions {
    * `runner`-owned and can be flipped without a second measured configuration.
    */
   readonly onsetShape: OnsetShape;
+  /**
+   * The five knobs the mirror of iteration 96 added, all required for the reason every field above is:
+   * a PARTIAL passed through here would be a silent no-op if a key were ever misspelled, which is the
+   * defect this file exists for.
+   *
+   * They are grouped rather than each carrying its own measurement, because their measurements live on the
+   * surfaces the census sends a reader to (`KNOBS`' `owner` field per knob), and a second copy of a number
+   * here is how this repo published one 24.2pp off the best-measured value.
+   */
+  readonly traceWeight: number;
+  readonly topoWeight: number;
+  readonly collisionWeight: number;
+  readonly prismWeight: number;
+  readonly prismPooling: PrismPooling;
 }
 
 /** The two constructor arguments, named so a test can assert both. */
@@ -130,6 +145,15 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       stabilityWeight: opts.stabilityWeight,
       temporalWeight: opts.temporalWeight,
       onsetShape: opts.onsetShape,
+      // The five the golden half could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
+      // registered the mirror. They belong in THIS object and not in `topology` below for the reason that
+      // document's own split records: these are consumed by the pruner's first constructor argument, and a
+      // value placed in the wrong object is a silent no-op rather than an error.
+      traceWeight: opts.traceWeight,
+      topoWeight: opts.topoWeight,
+      collisionWeight: opts.collisionWeight,
+      prismWeight: opts.prismWeight,
+      prismPooling: opts.prismPooling,
     },
     topology: {
       // Load-bearing on Train Ticket's large topologies.
@@ -142,6 +166,14 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       // they are at their defaults.
       metricRiseCeiling: opts.metricRiseCeiling,
       metricFleetBaseline: opts.metricFleetBaseline,
+      // …and the three that belong to the FAULT GRAPH rather than to the ranking fusion: the drop-half
+      // discount and the two suppression switches. They are forwarded unconditionally rather than
+      // omitted-when-default, which is this object's difference from the rendered line: the line may omit a
+      // default because its own rule makes the omission readable, while a PARTIAL here with a key left out
+      // would be a silent revert to the engine's default with nothing failing.
+      collapseDiscount: opts.collapseDiscount,
+      suppressIdleTransients: opts.suppressIdleTransients,
+      suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
     },
   };
 }

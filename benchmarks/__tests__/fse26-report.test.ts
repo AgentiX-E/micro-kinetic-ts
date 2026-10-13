@@ -50,6 +50,16 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     stabilityWeight: 0,
     temporalWeight: 0,
     onsetShape: 'earliness',
+    // The eight the mirror made reachable on this half, all at their SHIPPED values — which is what makes
+    // this fixture the published configuration rather than a configuration nobody ran.
+    traceWeight: 0,
+    topoWeight: 0,
+    collisionWeight: 0,
+    prismWeight: 0,
+    prismPooling: 'additive',
+    collapseDiscount: 0,
+    suppressIdleTransients: false,
+    suppressNearZeroBaselineRise: false,
     ...overrides,
   };
 }
@@ -422,5 +432,57 @@ describe('summariseFailedEdgeCoverage', () => {
     expect(line).toBe(
       'Data:   failed edges in 12/1422 cases (30 records, 7 in-graph, net 41 failures)',
     );
+  });
+
+  it('names each of the EIGHT the mirror added when it leaves its default, and only then', () => {
+    // The shipped line above is the negative half — nothing printed. This is the positive half, and it is
+    // the one that matters more: a line that printed NONE of the eight would satisfy every assertion up
+    // there, so the omission rule is only fenced once both directions are asserted.
+    //
+    // Each row is a field, the value a dispatch would send, and the token the line must gain. The shipped
+    // value is checked first in the same loop, so a field that printed unconditionally would fail here
+    // rather than pass the negative half by accident.
+    const rows: readonly { patch: Partial<FSE26RunConfig>; token: string; shipped: string }[] = [
+      { patch: { traceWeight: 1 }, token: 'traceWeight=1', shipped: 'traceWeight' },
+      { patch: { topoWeight: 0.25 }, token: 'topoWeight=0.25', shipped: 'topoWeight' },
+      { patch: { collisionWeight: 0.5 }, token: 'collisionWeight=0.5', shipped: 'collisionWeight' },
+      { patch: { prismWeight: 0.125 }, token: 'prismWeight=0.125', shipped: 'prismWeight' },
+      {
+        patch: { collapseDiscount: 0.4 },
+        token: 'collapseDiscount=0.4',
+        shipped: 'collapseDiscount',
+      },
+      {
+        patch: { suppressIdleTransients: true },
+        token: 'suppressIdleTransients=true',
+        shipped: 'suppressIdleTransients',
+      },
+      {
+        patch: { suppressNearZeroBaselineRise: true },
+        token: 'suppressNearZeroBaselineRise=true',
+        shipped: 'suppressNearZeroBaselineRise',
+      },
+    ];
+    for (const { patch, token, shipped } of rows) {
+      expect(
+        formatFSE26ConfigLine(makeConfig()),
+        `${shipped} printed at its shipped value`,
+      ).not.toContain(shipped);
+      expect(formatFSE26ConfigLine(makeConfig(patch)), `${token} missing`).toContain(token);
+    }
+    // `prismPooling` is the eighth and the one that is NOT a plain omit-when-default field, because the
+    // pooling is INERT at a zero weight: printing it there would report a difference the engine cannot
+    // have. So it is nested under the weight, exactly as `failedEdgeMode` is nested under its own — and
+    // asserting that nesting is the point, because "omitted when default" and "omitted when inert" are
+    // different rules and only one of them is right for a value the engine multiplies by zero.
+    expect(formatFSE26ConfigLine(makeConfig({ prismPooling: 'conjunctive' }))).not.toContain(
+      'prismPooling',
+    );
+    expect(
+      formatFSE26ConfigLine(makeConfig({ prismWeight: 0.125, prismPooling: 'conjunctive' })),
+    ).toContain('prismPooling=conjunctive');
+    // …and the shipped pooling stays off even once the weight is on, so an ablation of the pooling alone
+    // is visible while the shipped pairing keeps the line it always had.
+    expect(formatFSE26ConfigLine(makeConfig({ prismWeight: 0.125 }))).not.toContain('prismPooling');
   });
 });

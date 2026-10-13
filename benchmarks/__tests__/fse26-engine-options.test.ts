@@ -18,6 +18,7 @@ import {
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
 } from '../../packages/tree/src/index.js';
@@ -43,6 +44,16 @@ describe('buildFse26EngineOptions', () => {
       stabilityWeight: DEFAULT_STABILITY_WEIGHT,
       temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
       onsetShape: DEFAULT_ONSET_SHAPE,
+      // The five the mirror of iteration 96 added, each asserted here rather than left to the
+      // "accounts for EVERY parsed option" test below: that test proves an option is not SILENTLY dropped,
+      // and this one proves it lands in the RIGHT object. A value forwarded into `topology` when the pruner
+      // reads it from `signals` is accounted for and still a no-op, which is the defect
+      // `rcaeval-engine-options.ts` records having been built to prevent.
+      traceWeight: 0,
+      topoWeight: 0,
+      collisionWeight: 0,
+      prismWeight: 0,
+      prismPooling: DEFAULT_PRISM_POOLING,
     });
   });
 
@@ -179,6 +190,12 @@ describe('buildFse26EngineOptions', () => {
       anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
       metricRiseCeiling: 20,
       metricFleetBaseline: true,
+      // …and the three the mirror added to THIS object, on the split's own rule: these are arguments to the
+      // fault-graph builder rather than to the ranking fusion, so `collapseDiscount` and the two suppression
+      // switches belong beside `rankNormalization` and not beside the weights.
+      collapseDiscount: 0,
+      suppressIdleTransients: false,
+      suppressNearZeroBaselineRise: false,
     });
   });
 

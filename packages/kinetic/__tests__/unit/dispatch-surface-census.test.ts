@@ -313,49 +313,49 @@ const KNOBS: Readonly<
   collisionWeight: {
     flag: '--collision-weight',
     owner: 're3-fault-ceiling.md',
-    fse26: null,
+    fse26: 'collision_weight',
     rcaeval: 'collision_weight',
   },
   topoWeight: {
     flag: '--topo-weight',
     owner: 'fse26-metric-competition-verdict.md',
-    fse26: null,
+    fse26: 'topo_weight',
     rcaeval: 'topo_weight',
   },
   traceWeight: {
     flag: '--trace-weight',
     owner: 'rank-collapse-falsified.md',
-    fse26: null,
+    fse26: 'trace_weight',
     rcaeval: 'trace_weight',
   },
   prismWeight: {
     flag: '--prism-weight',
     owner: 'fusion-routing-verdict.md',
-    fse26: null,
+    fse26: 'prism_weight',
     rcaeval: 'prism_weight',
   },
   prismPooling: {
     flag: '--prism-pooling',
     owner: 'prism-pooling-axis.md',
-    fse26: null,
+    fse26: 'prism_pooling',
     rcaeval: 'prism_pooling',
   },
   collapseDiscount: {
     flag: '--collapse-discount',
     owner: COMMENT_ONLY,
-    fse26: null,
+    fse26: 'collapse_discount',
     rcaeval: 'collapse_discount',
   },
   suppressIdleTransients: {
     flag: '--suppress-idle-transients',
     owner: 'near-zero-rise-suppression-falsified.md',
-    fse26: null,
+    fse26: 'suppress_idle_transients',
     rcaeval: 'suppress_idle_transients',
   },
   suppressNearZeroBaselineRise: {
     flag: '--suppress-near-zero-baseline-rise',
     owner: 'near-zero-rise-suppression-falsified.md',
-    fse26: null,
+    fse26: 'suppress_near_zero_baseline_rise',
     rcaeval: 'suppress_near_zero_baseline_rise',
   },
   fusionCeiling: {
@@ -440,18 +440,42 @@ const NON_DERIVABLE_OPTIONS: readonly string[] = [
  * cases it had acted on, and the half it could not vary was the larger one. The count became a field
  * on `TopologyFaultGraphConfig` and an input on both workflows, which is what puts it in this list:
  * **a flag whose population is fixed is a flag measurable on the population somebody else chose.**
+ *
+ * ## And the mirror, which took it from ten to eighteen (iteration 96)
+ *
+ * `docs/dispatch-surface-audit.md`'s Finding 6 found eight knobs the GOLDEN parser accepted, the runner
+ * carried, `formatSignalLine` named on every artifact — and no dispatch could state. It closed them on the
+ * golden side and registered the mirror as a task, because its own boundary argument was that *adding an
+ * RCAEval-only knob grows the surface without growing the set of answerable questions, because the FSE'26
+ * half would still be unreachable*. **This table is that argument's instrument**: the eight rows above all
+ * carried `fse26: null`, so they were absent from this list BY CONSTRUCTION — the intersection is computed
+ * over rows, so a knob one half cannot dispatch cannot appear however many inputs the other half adds.
+ *
+ * The eight arrived by the same route as the latency trio did: a measured golden-side effect that could not
+ * ship because its other half was unstatable. `suppressIdleTransients` was dispatched as the iteration-95
+ * candidate and came back at **+3 net cases across two cells**, with three DISK cases lost on TrainTicket —
+ * a net gain with one regressed fault type, which is exactly the shape the criterion's second half exists
+ * to catch. Its FSE'26 half was undecidable, and this is what made it decidable.
  */
 const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'anomalyNormalizeNodeThreshold',
+  'collapseDiscount',
+  'collisionWeight',
   'latMinRise',
   'latWeight',
   'logSignalMode',
   'logWeight',
   'onsetShape',
   'poolMetricPenaltyWeight',
+  'prismPooling',
+  'prismWeight',
   'rankNormalization',
   'stabilityWeight',
+  'suppressIdleTransients',
+  'suppressNearZeroBaselineRise',
   'temporalWeight',
+  'topoWeight',
+  'traceWeight',
 ];
 
 /**

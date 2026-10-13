@@ -159,6 +159,17 @@ async function main(): Promise<void> {
     stabilityWeight: opts.stabilityWeight,
     temporalWeight: opts.temporalWeight,
     onsetShape: opts.onsetShape,
+    // The eight the mirror made reachable on this half. Carried on the config rather than left to the
+    // line's default so that the JSON artifact records them too: the line may OMIT a default, and a
+    // reader of the JSON must not have to know that an absent key means the shipped value.
+    traceWeight: opts.traceWeight,
+    topoWeight: opts.topoWeight,
+    collisionWeight: opts.collisionWeight,
+    prismWeight: opts.prismWeight,
+    prismPooling: opts.prismPooling,
+    collapseDiscount: opts.collapseDiscount,
+    suppressIdleTransients: opts.suppressIdleTransients,
+    suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
   };
 
   // Production ranking config: the log signal is shipped enabled (benchmark

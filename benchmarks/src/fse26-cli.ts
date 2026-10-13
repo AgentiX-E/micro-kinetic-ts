@@ -40,12 +40,15 @@ import {
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
   isLogSignalMode,
   isOnsetShape,
+  isPrismPooling,
   type OnsetShape,
+  type PrismPooling,
 } from '../../packages/tree/src/index.js';
 
 import { hasValue, parseFieldDecimals, parseNodeCount, parseWeight } from './cli-args.js';
@@ -236,6 +239,85 @@ export interface Fse26CliOptions {
    * chosen. `docs/fse26-onset-verdict.md` carries the measured menu.
    */
   readonly onsetShape: OnsetShape;
+  /**
+   * Weight on the trace-activity term — whether a service appears in the failed-call traces.
+   *
+   * One of the eight knobs `docs/dispatch-surface-audit.md`'s Finding 6 found by the third seam: the
+   * golden runner accepted the flag, carried it into `RCAEvalSignalOptions` and NAMED it on every
+   * artifact, while no dispatch could state it. The audit document's own boundary argument is why the
+   * mirror had to exist rather than the input alone — *adding an RCAEval-only knob grows the surface
+   * without growing the set of answerable questions, because the FSE'26 half would still be
+   * unreachable* — and the kill criterion is an AND over the two halves.
+   *
+   * `0` is the shipped value, so this follows the line's `omit when default` rule. It is BINARY on the
+   * golden corpus (exactly `0` or exactly `1`, with no magnitude) and it pushed for the WRONG service on
+   * all six occasions it moved a deciding gap there, which is why the default stayed at 0.
+   */
+  readonly traceWeight: number;
+  /**
+   * Weight on the trace-topology signal. `0` = off, the shipped value.
+   *
+   * Its `metricFleetBaseline` sibling is the ONE measured change on this surface that reorders the metric
+   * axis, and it was rejected at **+0.49pp with six regressed fault types** — so this knob's role is to be
+   * ABLATABLE rather than to be turned on, which is exactly what a reachable zero gives.
+   */
+  readonly topoWeight: number;
+  /**
+   * Weight on the collision (co-occurrence) term. `0` = off, the shipped value.
+   *
+   * The Deng-Yu collision source is the term's name; its contribution on the golden corpus is `0.0000` on
+   * every case BECAUSE this weight is 0, which is the difference between `WEIGHT_ZERO` and a term that
+   * measured nothing. Making the weight reachable is what lets that be read rather than assumed.
+   */
+  readonly collisionWeight: number;
+  /**
+   * Weight on the PRISM external-signal term. `0` = off, the shipped value.
+   *
+   * Zero by measurement, not by omission: `prismWeight`'s row records the fusion rejected at the shipped
+   * pooling, and the pooling below is the second half of that axis.
+   */
+  readonly prismWeight: number;
+  /**
+   * Which pooling the PRISM term fuses with.
+   *
+   * Inert while `prismWeight` is 0, which is why it could be enrolled and screened before the weight was
+   * decided — the same relationship `onsetShape` has to `temporalWeight` above. Read from
+   * {@link DEFAULT_PRISM_POOLING} rather than restated, and validated by the union's own guard, so the
+   * accepted set cannot be a subset of the vocabulary (the defect `--log-mode` was repaired for, one
+   * vocabulary over).
+   */
+  readonly prismPooling: PrismPooling;
+  /**
+   * Discount applied to the DROP half of a metric's direction-aware deviation. `0` = off, the shipped
+   * value.
+   *
+   * This knob's only record is a code comment — the census classifies it `comment-only` — and its
+   * measurement lives on `computeMetricDirection` in `packages/tree/src/pruning/ranking-signals.ts`,
+   * citing "benchmark #226/227". A reachable flag is a precondition for promoting that record into a
+   * document; it is not the promotion itself.
+   */
+  readonly collapseDiscount: number;
+  /**
+   * Whether a metric that was IDLE before the fault and only became active during it is discarded as an
+   * artifact of its near-zero baseline.
+   *
+   * `false` is the shipped value, and the pair of switches is NOT symmetric: its sibling below is a
+   * measured no-op, while this one was unmeasured until it was dispatched as the iteration-95 candidate.
+   * `docs/near-zero-rise-suppression-falsified.md` asserted the two were consistent without measuring
+   * this one, and the dispatch is what replaced that assertion with a number.
+   */
+  readonly suppressIdleTransients: boolean;
+  /**
+   * Whether a metric whose baseline is at or below the `0.001` epsilon is skipped, because its relative
+   * RISE is undefined. `false` is the shipped value.
+   *
+   * A measured no-op on the golden corpus: the guard never fires, because the production top-1's own
+   * baseline ranges from `0.008` to `8.3e7` and none is at or below the epsilon. Reachable here so the
+   * no-op can be re-read on THIS corpus rather than assumed to transfer — the correction
+   * `docs/near-zero-rise-suppression-falsified.md` records is precisely that a raw-deviation reading of a
+   * case is not a reading of the ranking.
+   */
+  readonly suppressNearZeroBaselineRise: boolean;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -306,6 +388,17 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     stabilityWeight: DEFAULT_STABILITY_WEIGHT,
     temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
     onsetShape: DEFAULT_ONSET_SHAPE,
+    // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
+    // registered the mirror. Every default is the SHIPPED value rather than a plausible one, which is the
+    // rule the whole default block follows: a flag nobody passes must reproduce a published configuration.
+    traceWeight: 0,
+    topoWeight: 0,
+    collisionWeight: 0,
+    prismWeight: 0,
+    prismPooling: DEFAULT_PRISM_POOLING,
+    collapseDiscount: 0,
+    suppressIdleTransients: false,
+    suppressNearZeroBaselineRise: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -402,7 +495,35 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // than invent one.
       const shape = argv[++i]!;
       opts.onsetShape = isOnsetShape(shape) ? shape : DEFAULT_ONSET_SHAPE;
-    } else {
+    } else if (arg === '--trace-weight' && hasValue(argv, i + 1))
+      // The shipped 0, through the shared parser: the golden half's rule for this same flag, which is what
+      // makes the two halves' fallbacks equal rather than merely both "sensible".
+      opts.traceWeight = parseWeight(argv[++i]!, 0);
+    else if (arg === '--topo-weight' && hasValue(argv, i + 1))
+      opts.topoWeight = parseWeight(argv[++i]!, 0);
+    else if (arg === '--collision-weight' && hasValue(argv, i + 1))
+      opts.collisionWeight = parseWeight(argv[++i]!, 0);
+    else if (arg === '--prism-weight' && hasValue(argv, i + 1))
+      opts.prismWeight = parseWeight(argv[++i]!, 0);
+    else if (arg === '--prism-pooling' && hasValue(argv, i + 1)) {
+      // The whole vocabulary, by the union's own guard — not a hand-written pair. The golden parser records
+      // why: only one of the two poolings was ever reachable from the engine, so the flag would have been
+      // given a SUBSET, and a test asserts the accepted set is the union rather than a subset of it.
+      const pooling = argv[++i]!;
+      opts.prismPooling = isPrismPooling(pooling) ? pooling : DEFAULT_PRISM_POOLING;
+    } else if (arg === '--collapse-discount' && hasValue(argv, i + 1)) {
+      // The golden parser's own arithmetic rather than `parseWeight`: this knob is a FRACTION, and it
+      // CLAMPS to `[0, 1]` rather than falling back, so a value outside the range is a legal dispatch
+      // pinned to the nearest legal one instead of a silent default. An unreadable value still falls back
+      // to the shipped 0, which is the only configuration a typo may reproduce.
+      const discount = parseFloat(argv[++i]!);
+      opts.collapseDiscount = Number.isFinite(discount) ? Math.min(1, Math.max(0, discount)) : 0;
+    } else if (arg === '--suppress-idle-transients') opts.suppressIdleTransients = true;
+    else if (arg === '--no-suppress-idle-transients') opts.suppressIdleTransients = false;
+    else if (arg === '--suppress-near-zero-baseline-rise') opts.suppressNearZeroBaselineRise = true;
+    else if (arg === '--no-suppress-near-zero-baseline-rise')
+      opts.suppressNearZeroBaselineRise = false;
+    else {
       throw new Error(
         `unrecognised argument ${arg} — either this runner does not accept it, ` +
           'or the flag before it is missing its value',

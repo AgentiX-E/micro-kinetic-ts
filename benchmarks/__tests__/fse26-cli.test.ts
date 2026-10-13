@@ -24,6 +24,9 @@ import {
 } from '../../packages/tree/src/index.js';
 
 import { DEFAULT_FSE26_LOG_MODE, isLogSignalMode, parseFSE26Args } from '../src/fse26-cli.js';
+import { buildFse26EngineOptions } from '../src/fse26-engine-options.js';
+import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
+import { buildRCAEvalEngineOptions } from '../src/rcaeval-engine-options.js';
 
 /**
  * Every member of the union, spelled out.
@@ -390,5 +393,173 @@ describe('parseFSE26Args — other flags', () => {
     expect(() => parseFSE26Args(['--log-weight', '--log-mode', 'count'])).toThrow(/--log-weight/);
     // The intent, in the form that honours it.
     expect(parseFSE26Args(['--log-weight', '0.5', '--log-mode', 'count']).logMode).toBe('count');
+  });
+});
+
+/**
+ * The eight ranking knobs only the GOLDEN half could state, and what this fence is.
+ *
+ * `docs/dispatch-surface-audit.md`'s Finding 6 found them by the third seam: options the engine carried,
+ * the artifact NAMED, and no dispatch could state. Its own boundary argument then said the consequence out
+ * loud — *adding an RCAEval-only knob grows the surface without growing the set of answerable questions,
+ * because the FSE'26 half would still be unreachable* — and registered the mirror as a task. This is the
+ * fence for it.
+ *
+ * The assertions are deliberately a CROSS-RUNNER EQUIVALENCE rather than eight shapes and eight defaults.
+ * A per-flag assertion would pass while the two runners disagreed, and disagreement is the defect the
+ * audit document's boundary argument is about: the kill criterion is an AND over the two benchmarks, so a
+ * value that means one thing on one half and another on the other makes the intersection meaningless even
+ * when both halves are individually reachable. So each row is fed to BOTH parsers and the ENGINE-level
+ * values are compared, and the malformed rows are compared too — a fallback that differs is the same
+ * defect wearing a valid value's clothes.
+ */
+
+/**
+ * One knob, its flag, and where the value lands on the ENGINE.
+ *
+ * `bucket` rather than a single path because the two engine arguments are separate objects and the split is
+ * load-bearing: `collapseDiscount` and the two suppression switches are arguments to the fault-graph
+ * builder, not to the ranking fusion, and a value placed in the wrong object is exactly the silent no-op
+ * `rcaeval-engine-options.ts` records having been built to prevent.
+ */
+const MIRRORED_KNOBS: readonly {
+  option: string;
+  flag: string;
+  value: string;
+  bucket: 'signals' | 'topology';
+  expected: string | number | boolean;
+}[] = [
+  { option: 'traceWeight', flag: '--trace-weight', value: '1', bucket: 'signals', expected: 1 },
+  { option: 'topoWeight', flag: '--topo-weight', value: '0.25', bucket: 'signals', expected: 0.25 },
+  {
+    option: 'collisionWeight',
+    flag: '--collision-weight',
+    value: '0.5',
+    bucket: 'signals',
+    expected: 0.5,
+  },
+  {
+    option: 'prismWeight',
+    flag: '--prism-weight',
+    value: '0.125',
+    bucket: 'signals',
+    expected: 0.125,
+  },
+  {
+    option: 'prismPooling',
+    flag: '--prism-pooling',
+    value: 'conjunctive',
+    bucket: 'signals',
+    expected: 'conjunctive',
+  },
+  {
+    option: 'collapseDiscount',
+    flag: '--collapse-discount',
+    value: '0.4',
+    bucket: 'topology',
+    expected: 0.4,
+  },
+  {
+    option: 'suppressIdleTransients',
+    flag: '--suppress-idle-transients',
+    value: '',
+    bucket: 'topology',
+    expected: true,
+  },
+  {
+    option: 'suppressNearZeroBaselineRise',
+    flag: '--suppress-near-zero-baseline-rise',
+    value: '',
+    bucket: 'topology',
+    expected: true,
+  },
+];
+
+/** The engine-level value of one knob, read from whichever argument owns it. */
+function engineValue(
+  engine: { signals: object; topology: object },
+  row: (typeof MIRRORED_KNOBS)[number],
+) {
+  const bucket = row.bucket === 'signals' ? engine.signals : engine.topology;
+  return (bucket as Record<string, unknown>)[row.option];
+}
+
+/** The argv a row dispatches, with the value appended only when the flag takes one. */
+function argvOf(row: (typeof MIRRORED_KNOBS)[number], value = row.value): string[] {
+  return value === '' ? [row.flag] : [row.flag, value];
+}
+
+describe("the FSE'26 half reaches the eight knobs the golden half could state alone", () => {
+  it('accepts each one, and lands it on the engine in the argument that owns it', () => {
+    // The failure this replaces is loud rather than quiet on this runner — an unrecognised flag is a
+    // THROWN stray token, not a silent default — so the red state is an exception rather than a wrong
+    // number. Both are asserted, because "it parsed" and "it reached the engine" are different claims and
+    // the second is the one the audit document's Finding 6 is about.
+    for (const row of MIRRORED_KNOBS) {
+      const parsed = parseFSE26Args(argvOf(row));
+      expect(
+        (parsed as unknown as Record<string, unknown>)[row.option],
+        `${row.option} not parsed`,
+      ).toEqual(row.expected);
+      const engine = buildFse26EngineOptions(parsed);
+      expect(engineValue(engine, row), `${row.option} did not reach the engine`).toEqual(
+        row.expected,
+      );
+    }
+  });
+
+  it('agrees with the golden runner on EVERY row, at the engine', () => {
+    // The equivalence the boundary argument needs. Comparing the two ENGINE objects rather than the two
+    // parse results is deliberate: the option names are not all the same on the two surfaces, so two
+    // parsers can agree field-by-field and still disagree about what the engine receives.
+    for (const row of MIRRORED_KNOBS) {
+      const mine = engineValue(buildFse26EngineOptions(parseFSE26Args(argvOf(row))), row);
+      const golden = engineValue(buildRCAEvalEngineOptions(parseRCAEvalArgs(argvOf(row))), row);
+      expect(mine, `${row.option}: the two runners disagree`).toEqual(golden);
+      expect(golden, `${row.option}: the golden runner does not land it either`).toEqual(
+        row.expected,
+      );
+    }
+  });
+
+  it('falls back the SAME way as the golden runner on a malformed value', () => {
+    // A fallback is a second statement of the default, so it is a place the two halves can silently part.
+    // The value-taking rows get a value neither parser can read; the two switches take none, so their
+    // only malformed form is the NEGATED pole, which every runner here spells as its own flag.
+    const negatives: readonly {
+      row: (typeof MIRRORED_KNOBS)[number];
+      bad: string;
+      negated: string;
+    }[] = [
+      { row: MIRRORED_KNOBS[0]!, bad: '1O', negated: '--no-trace-weight' },
+      { row: MIRRORED_KNOBS[1]!, bad: '-1', negated: '--no-topo-weight' },
+      { row: MIRRORED_KNOBS[2]!, bad: 'abc', negated: '--no-collision-weight' },
+      { row: MIRRORED_KNOBS[3]!, bad: '', negated: '--no-prism-weight' },
+      { row: MIRRORED_KNOBS[4]!, bad: 'not-a-pooling', negated: '--no-prism-pooling' },
+      { row: MIRRORED_KNOBS[5]!, bad: 'Infinity', negated: '--no-collapse-discount' },
+    ];
+    for (const { row, bad } of negatives) {
+      const mine = engineValue(buildFse26EngineOptions(parseFSE26Args([row.flag, bad])), row);
+      const golden = engineValue(buildRCAEvalEngineOptions(parseRCAEvalArgs([row.flag, bad])), row);
+      expect(mine, `${row.option}: the runners disagree about a malformed '${bad}'`).toEqual(
+        golden,
+      );
+    }
+    // And the switches' shipped pole, which is the value a run that says nothing is measured at.
+    for (const row of MIRRORED_KNOBS.slice(6)) {
+      const mine = engineValue(buildFse26EngineOptions(parseFSE26Args([])), row);
+      const golden = engineValue(buildRCAEvalEngineOptions(parseRCAEvalArgs([])), row);
+      expect(mine, `${row.option}: shipped default`).toEqual(false);
+      expect(golden, `${row.option}: the golden half's shipped default`).toEqual(false);
+    }
+  });
+
+  it('still REFUSES a flag it does not handle, so the reach above is not a loosened parser', () => {
+    // The mirror adds eight branches to a chain whose default arm throws. A fence that only counted
+    // accepted flags would be satisfied by a parser that accepted everything, so the refusal is asserted
+    // in the same block as the acceptance.
+    for (const row of MIRRORED_KNOBS) {
+      expect(() => parseFSE26Args([`--not${row.flag}`]), `--not${row.flag} was accepted`).toThrow();
+    }
   });
 });
