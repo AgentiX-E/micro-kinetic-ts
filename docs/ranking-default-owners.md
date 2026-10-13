@@ -169,3 +169,34 @@ harness — is outside it, and the two tables' union is checked for one key owne
 on) but not for a reader that hard-codes a value without declaring it as a default. The description guard's
 population is the `empty =` clause, so a description stating its default with no such clause is outside it:
 `shard_tag` and `ranking_knobs` are today's two, and both are named in the test rather than left implied.
+
+## Acceptance, VERIFIED on the run this iteration's source triggered
+
+Run **`38384459815`** (Benchmark — RCAEval Full Dataset, `62f8dbf`, **conclusion `success`**). Nine cells,
+read from the AVERAGE column of each suite's own table:
+
+| suite | OnlineBoutique | SockShop | TrainTicket | recorded |
+| --- | ---: | ---: | ---: | --- |
+| RE1 | **80.0%** | **92.8%** | **68.0%** | 80.0 / 92.8 / 68.0 |
+| RE2 | **86.7%** | **92.2%** | **71.1%** | 86.7 / 92.2 / 71.1 |
+| RE3 | **80.0%** | **45.0%** | **51.1%** | 80.0 / 45.0 / 51.1 |
+
+**Nine of nine byte-identical**, and so is the whole `signals:` line in all three suites — the full shipped
+configuration, with the RE3 job's own `--trace-weight 1` pin the only token that differs between the halves
+(`stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 logWeight=1 logSignalMode=count latWeight=0.561495
+latMinRise=10.3 poolMetricPenaltyWeight=0.0679 collapseDiscount=0 traceWeight=0 prismWeight=0
+prismPooling=additive rankNormalization=true anomalyNormalizeNodeThreshold=20 suppressIdleTransients=false
+suppressNearZeroBaselineRise=false temporalWeight=0 onsetShape=earliness`). That is the acceptance this
+iteration claimed **by construction**, and it is now measured rather than argued.
+
+**Two supporting readings came back with it, and both reproduce a recorded mechanism rather than merely
+passing**: RE1's `log-routes` reads `read 0` on all three systems — the exact control `docs/log-channel-mechanism.md`
+names for the log gate — and RE3-TrainTicket reads `VERDICT: GATE BLIND — 12313 rows retained in 30/30 cases and
+the mode's source-signature gate admits NONE of them — composed of 68 propagated / …`, which is it.92/93's gate
+finding on the same numbers.
+
+**And one correction to the reporting of this run**, recorded because it is this project's own recurring class:
+the first pass over the RE1 and RE3 tables read the **first percentage** it saw in the AC@1 row and reported
+`83.3%` for RE3-OnlineBoutique against a recorded `80.0%` — a false discrepancy. The AVERAGE column is the
+**last** one, and `83.3%` is a per-fault-type column. The artifact makes this avoidable: every table carries
+its own header row, and the header is the thing to read before the number.
