@@ -1084,6 +1084,38 @@ export function computeTraceActivityScores(
 export type FailedEdgeMode = 'sum' | 'mean';
 
 /**
+ * The shipped aggregation of {@link FailedEdgeMode}, which is `'sum'`.
+ *
+ * This is the strongest member of the class `docs/ranking-default-owners.md` records, and it is the one whose
+ * owner was in the WRONG PACKAGE. `'sum'` was declared in **four** files — this module's own function default
+ * (below), the engine's defaults table, the FSE'26 runner's option object (where it was exported as
+ * `DEFAULT_FAILED_EDGE_MODE`, a name in the package that does not own the value), and the workflow's
+ * `failed_edge_mode` description — so a reader could reach a name for it and still not reach the owner.
+ *
+ * `'mean'` divides a callee's net failures by its contributing edges, which is the aggregation that makes the
+ * signal comparable across fan-in; the axis is measured and closed (`fse26-failed-edge-verdict.md`: the
+ * direction signal gains +5.8pp but regresses two fault types, and the weight is SOLVED rather than swept —
+ * the 62 cases it fixes need `w ≥ 0.580` while the 5 it breaks tolerate `w ≤ 0.261`, so no weight exists).
+ * The mode is a property of the SIGNAL rather than of its weight, and the shipped value is the one every
+ * measurement was taken with.
+ */
+export const DEFAULT_FAILED_EDGE_MODE: FailedEdgeMode = 'sum';
+
+/**
+ * The shipped floor of {@link computeFailedEdgeScores}, which is `1`.
+ *
+ * Declared here rather than beside the weight because this module is where the floor is DEFAULTED (the
+ * function's own parameter) and `pruner.ts` already imports FROM this module — a constant placed in
+ * `pruner.ts` could only be read back through a cycle. It was a bare `1` here AND in the engine's defaults
+ * table AND in the FSE'26 runner's option object AND in that runner's malformed-argument fallback: four sites,
+ * which is the `docs/ranking-default-owners.md` class at its worst.
+ *
+ * One is the floor the signal shipped with rather than a round number: a single failed call is not a pattern
+ * (see the function's own note), so the floor exists to require repetition, and `1` is its minimum.
+ */
+export const DEFAULT_FAILED_EDGE_MIN_RECORDS = 1;
+
+/**
  * Failed-edge-DIRECTION signal: the callee of a failed call is the candidate,
  * the caller is only where the error was reported.
  *
@@ -1150,8 +1182,8 @@ export type FailedEdgeMode = 'sum' | 'mean';
 export function computeFailedEdgeScores(
   edges: ReadonlyArray<FaultFailedEdge> | undefined,
   nodeIds: ReadonlySet<ServiceId>,
-  mode: FailedEdgeMode = 'sum',
-  minRecords = 1,
+  mode: FailedEdgeMode = DEFAULT_FAILED_EDGE_MODE,
+  minRecords = DEFAULT_FAILED_EDGE_MIN_RECORDS,
 ): Map<ServiceId, number> {
   const scores = new Map<ServiceId, number>();
   if (!edges || edges.length === 0 || nodeIds.size === 0) return scores;

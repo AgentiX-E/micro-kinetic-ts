@@ -232,6 +232,17 @@ export interface FSE26DiagnosticInput {
 export const SERVICE_FIELD_DECIMALS = 3;
 
 /**
+ * How many diagnostic blocks per matching fault type a run renders, when the caller says nothing.
+ *
+ * The other declared parameter of the same instrument, and it had no owner for the same reason
+ * {@link SERVICE_FIELD_DECIMALS} does: it is quoted by the FSE'26 workflow's `diagnose_limit` description
+ * ("empty = the runner default, which is 3; 0 = unlimited") and by the runner's own option object, so the
+ * number lived in two files with nothing to compare them against. `0` is NOT this value's sibling but its
+ * opposite, which is why the runner's parse branch reads it separately: `0` means UNLIMITED.
+ */
+export const DEFAULT_DIAGNOSE_LIMIT = 3;
+
+/**
  * The finest precision the renderer can express — `Number.prototype.toFixed`'s own upper bound.
  *
  * A FACT ABOUT THE RENDERER rather than a policy about how fine a dump should be, and it is exported

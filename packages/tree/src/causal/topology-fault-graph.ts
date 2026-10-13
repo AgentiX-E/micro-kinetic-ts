@@ -329,7 +329,8 @@ export const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
  * Whether the engine rank-normalizes anomaly scores above the node threshold, when the caller says nothing.
  *
  * **This is the SHIPPED value, and it is the value every published number was measured with.** It was a
- * literal `false` in {@link DEFAULT_CONFIG} until this constant existed, described in the field's own doc as
+ * literal `false` in the defaults table (then `DEFAULT_CONFIG`) until this constant existed, described in
+ * the field's own doc as
  * "shipped behaviour" — while the golden and FSE'26 runners each declared `true` as an independent literal
  * default of their own, and the register keeps the axis ON ("rankNormalizeScores ON — never revert"). Two
  * consequences followed, and both are recorded in `docs/rank-normalization-default-audit.md`:
@@ -345,7 +346,70 @@ export const ANOMALY_NORMALIZE_NODE_THRESHOLD = 20;
  */
 export const DEFAULT_RANK_NORMALIZATION = true;
 
-const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
+/**
+ * The shipped defaults of the three topology knobs that had **no name** — the other half of the census
+ * `docs/ranking-default-owners.md` records, and the same class as `DEFAULT_LOG_WEIGHT`.
+ *
+ * Each of the three declared its shipped value as a bare literal in {@link DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG}
+ * AND in both parsers' option objects, while the workflows' input descriptions quoted the number — so
+ * nothing could compare the sites. All three are `0`/`false`, i.e. an OFF value, which is why the class
+ * survived: an off value that is never measured is never corrected, and a drift between two OFF values is
+ * invisible until somebody enables one of them.
+ *
+ * @see DEFAULT_COLLAPSE_DISCOUNT for what the first of them decides.
+ */
+export const DEFAULT_COLLAPSE_DISCOUNT = 0;
+
+/**
+ * The shipped value of {@link TopologyFaultGraphConfig.suppressIdleTransients}, which is `false`.
+ *
+ * Opt-in and measured: `suppressIdleTransients` was measured on the golden corpus (`38329682118` against
+ * the same revision at `38329642349`) and REJECTED — OnlineBoutique RE1 80.0 → 80.8 and TrainTicket RE2
+ * 71.1 → 73.3, but the three cases it lost are ALL TrainTicket `disk`, and enabling it takes that cell
+ * from 73.3 to 53.3. The failure is systematic and the missing discriminator is a metric's OWNER rather
+ * than its shape; `docs/near-zero-rise-suppression-falsified.md` owns the record.
+ */
+export const DEFAULT_SUPPRESS_IDLE_TRANSIENTS = false;
+
+/**
+ * The shipped value of {@link TopologyFaultGraphConfig.suppressNearZeroBaselineRise}, which is `false`.
+ *
+ * A measured NO-OP kept as an opt-in probe: run `34227145755` is bit-identical to the golden on all nine
+ * cells, because the production top-1's baseline across all 35 RE3 cases spans `0.008` to `8.3e7` and none
+ * is `≤ 0.001`, so the guard never fires. It documents a leak that only surfaces with rank normalisation
+ * OFF — which is a property of the SHAPE of this default rather than of a number, and is exactly what a
+ * bare `false` cannot carry.
+ */
+export const DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE = false;
+
+/**
+ * The shipped value of {@link TopologyFaultGraphConfig.metricRiseCeiling}, which is `0` = unbounded.
+ *
+ * Named because the FSE'26 workflow exposes it as `rise_ceiling` and its description states the shipped
+ * value in WORDS ("unbounded") rather than as a token — so the name is what lets the description guard
+ * record why that row cannot be checked numerically instead of leaving it invisible.
+ */
+export const DEFAULT_METRIC_RISE_CEILING = 0;
+
+/**
+ * The shipped value of {@link TopologyFaultGraphConfig.metricFleetBaseline}, which is `false`.
+ *
+ * `false` is a REJECTION with a number on it: `metricFleetBaseline` was measured on FSE'26 at **+0.49pp
+ * with 6 regressed fault types**, so the shared kill criterion's second half fails and there is no
+ * shippable state behind the flag. Named for the same reason as its sibling above.
+ */
+export const DEFAULT_METRIC_FLEET_BASELINE = false;
+
+/**
+ * The topology graph's own defaults table, exported for the reason {@link DEFAULT_RANK_NORMALIZATION} is:
+ * a caller that cannot read the engine's table holds a second opinion about what the engine ships.
+ *
+ * It was module-private `DEFAULT_CONFIG` — a name generic enough that exporting it under that spelling
+ * would have made the package's public surface ambiguous — and the privacy is the root cause of the
+ * unnamed-zero class this file's constants close. The census asserts, over THIS object, that every entry
+ * whose default is also declared in another file is declared by name.
+ */
+export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   minDataPoints: 3,
   temporalBonus: 0.15,
   defaultWeight: 0.05,
@@ -359,13 +423,13 @@ const DEFAULT_CONFIG: TopologyFaultGraphConfig = {
     expectedDirectLatency: 1.0,
   },
   injectTimeMs: 0, // unknown — temporal anchor disabled by default
-  collapseDiscount: 0, // symmetric rise/drop (shipped behaviour)
+  collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT, // symmetric rise/drop (shipped behaviour)
   rankNormalization: DEFAULT_RANK_NORMALIZATION, // the shipped value, named once
   anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD, // the shipped population, named once
-  suppressIdleTransients: false, // non-zero-baseline transient guard only (shipped)
-  suppressNearZeroBaselineRise: false, // near-zero-baseline rise suppression (opt-in)
-  metricRiseCeiling: 0, // unbounded relative rise (shipped behaviour)
-  metricFleetBaseline: false, // absolute per-metric score (shipped behaviour)
+  suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS, // non-zero-baseline transient guard only (shipped)
+  suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE, // near-zero-baseline rise suppression (opt-in)
+  metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING, // unbounded relative rise (shipped behaviour)
+  metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE, // absolute per-metric score (shipped behaviour)
 };
 
 /**
@@ -506,7 +570,7 @@ export function buildTopologyFaultGraph(
   metrics: ReadonlyMap<ServiceId, readonly TimeSeries[]>,
   config?: Partial<TopologyFaultGraphConfig>,
 ): TopologyFaultGraphResult {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const cfg = { ...DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG, ...config };
 
   // ── Adaptive decayAlpha based on topology size ──────────
   // Larger graphs need lower decay to prevent child contributions

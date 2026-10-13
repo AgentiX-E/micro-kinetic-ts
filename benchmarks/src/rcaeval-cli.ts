@@ -46,14 +46,17 @@ import { join } from 'node:path';
 
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
+  DEFAULT_COLLISION_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   isOnsetShape,
 } from '../../packages/tree/src/pruning/pruner.js';
@@ -62,8 +65,11 @@ import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/fs
 import type { LogSignalMode, PrismPooling } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
+  DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+  DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   isLogSignalMode,
   isPrismPooling,
 } from '../../packages/tree/src/index.js';
@@ -73,21 +79,6 @@ import { hasValue, parseFieldDecimals, parseNodeCount, parseWeight } from './cli
 // unimported, and a guard restated here would be a second answer to "is this a view" — the defect
 // `--prism-pooling` was repaired for, moved to the third vocabulary on this surface.
 import { DEFAULT_LATENCY_SOURCE, isLatencySource, type LatencySource } from './rcaeval-corpus.js';
-
-/**
- * The log-signal mode this runner ships when no mode was asked for.
- *
- * `count` gates on self-caused logic exceptions only, which is the mode the RCAEval suites
- * have been run with all along — so it is the published default, and the value a dispatch
- * gets when it names something that is not a mode.
- *
- * Read from {@link DEFAULT_LOG_SIGNAL_MODE} rather than restated: this runner needs the value in
- * two places (the default for a bare dispatch, and the fallback for a mode the guard rejects), so
- * a local literal here would be a second owner of a value the ENGINE already ships — and the two
- * would agree until the day they did not, which is the failure mode that once published a headline
- * 24.2pp below the best-measured one.
- */
-export const DEFAULT_RCAEVAL_LOG_SIGNAL_MODE: LogSignalMode = DEFAULT_LOG_SIGNAL_MODE;
 
 /**
  * Every option the RCAEval runner reads off its command line.
@@ -206,7 +197,7 @@ export interface CliOptions {
    * defect `fse26-cli.ts` records having closed on its own side ("a list of names cannot be
    * checked against a union"), left open here; the parse now consults the shared
    * `isLogSignalMode`, and an unrecognised token still falls back to
-   * {@link DEFAULT_RCAEVAL_LOG_SIGNAL_MODE} rather than inventing a configuration.
+   * {@link DEFAULT_LOG_SIGNAL_MODE} rather than inventing a configuration.
    */
   logSignalMode: LogSignalMode;
   /**
@@ -354,13 +345,22 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     latWeight: DEFAULT_LAT_WEIGHT,
     latMinRise: DEFAULT_LAT_MIN_RISE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
-    collisionWeight: 0,
-    topoWeight: 0,
+    collisionWeight: DEFAULT_COLLISION_WEIGHT,
+    topoWeight: DEFAULT_TOPO_WEIGHT,
     logWeight: DEFAULT_LOG_WEIGHT,
-    logSignalMode: DEFAULT_RCAEVAL_LOG_SIGNAL_MODE,
-    collapseDiscount: 0,
-    traceWeight: 0,
-    prismWeight: 0,
+    // From the ENGINE's owner, not from a local copy of it: this runner needs the value in two places (the
+    // default a bare dispatch resolves to, and the fallback for a mode the guard rejects), and it used to
+    // carry a local alias for that — `DEFAULT_RCAEVAL_LOG_SIGNAL_MODE`, one line of `= DEFAULT_LOG_SIGNAL_MODE`
+    // and a second NAME for one value. The census reads a name by resolving it, so an alias is not an owner;
+    // the alias is gone and both sites read this one.
+    logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
+    collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
+    // Named rather than a literal, and this site is WHY the census exists: `traceWeight` had a constant and
+    // a guarded description while the field default the no-flag path resolves to still wrote `0`. The
+    // fallback below and this default are two answers to one question, and a guard that reads only the
+    // fallback cannot see them disagree. See `docs/ranking-default-owners.md`.
+    traceWeight: DEFAULT_TRACE_WEIGHT,
+    prismWeight: DEFAULT_PRISM_WEIGHT,
     // From the owner, not a literal: the engine's own constructor default is the same constant, so this
     // runner cannot describe a pooling the engine does not ship. Inert at `prismWeight = 0`.
     prismPooling: DEFAULT_PRISM_POOLING,
@@ -377,8 +377,8 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // when it holds its default: this one decides which CASES the flag above can reach, so an omitted value
     // would leave a reader unable to tell a run that measured the flag from one that never consulted it.
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
-    suppressIdleTransients: false,
-    suppressNearZeroBaselineRise: false,
+    suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+    suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
     fusionCeiling: '',
     routingProbe: '',
     diagnoseDump: '',
@@ -461,9 +461,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       const view = args[++i]!;
       opts.latencyView = isLatencySource(view) ? view : DEFAULT_LATENCY_SOURCE;
     } else if (args[i] === '--collision-weight' && hasValue(args, i + 1))
-      opts.collisionWeight = parseWeight(args[++i]!, 0);
+      opts.collisionWeight = parseWeight(args[++i]!, DEFAULT_COLLISION_WEIGHT);
     else if (args[i] === '--topo-weight' && hasValue(args, i + 1))
-      opts.topoWeight = parseWeight(args[++i]!, 0);
+      opts.topoWeight = parseWeight(args[++i]!, DEFAULT_TOPO_WEIGHT);
     else if (args[i] === '--log-weight' && hasValue(args, i + 1))
       // Falls back to the field's own default (1.0), NOT to 0: an inline
       // `parseFloat(x) || 0` read an empty flag as "the log signal off", which is a
@@ -472,7 +472,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     else if (args[i] === '--trace-weight' && hasValue(args, i + 1))
       opts.traceWeight = parseWeight(args[++i]!, DEFAULT_TRACE_WEIGHT);
     else if (args[i] === '--prism-weight' && hasValue(args, i + 1))
-      opts.prismWeight = parseWeight(args[++i]!, 0);
+      opts.prismWeight = parseWeight(args[++i]!, DEFAULT_PRISM_WEIGHT);
     else if (args[i] === '--prism-pooling' && hasValue(args, i + 1)) {
       // The whole vocabulary, by the union's own guard — the `--log-signal-mode` repair applied to the
       // other two-member vocabulary on this surface rather than a second hand-written pair. A test asserts
@@ -495,7 +495,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // CONTRADICTS: two statements whose modes differ cannot both be honoured, and honouring the
       // later one silently is how a command line that pins its own mode ends up measured at another.
       // Two statements of the SAME mode are one request written twice and stay accepted.
-      const mode = isLogSignalMode(raw) ? raw : DEFAULT_RCAEVAL_LOG_SIGNAL_MODE;
+      const mode = isLogSignalMode(raw) ? raw : DEFAULT_LOG_SIGNAL_MODE;
       if (statedLogSignalMode !== undefined && statedLogSignalMode.mode !== mode) {
         throw new Error(
           `--log-signal-mode is stated twice with different values: '${statedLogSignalMode.raw}' ` +

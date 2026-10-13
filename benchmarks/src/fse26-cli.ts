@@ -31,19 +31,31 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { DEFAULT_DIAGNOSE_LIMIT } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 import { SERVICE_FIELD_DECIMALS } from '../../packages/kinetic/src/benchmarks/index.js';
 import type { FailedEdgeMode, LogSignalMode } from '../../packages/tree/src/index.js';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_COLLAPSE_DISCOUNT,
+  DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_FAILED_EDGE_MIN_RECORDS,
+  DEFAULT_FAILED_EDGE_MODE,
+  DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_WEIGHT,
+  DEFAULT_METRIC_FLEET_BASELINE,
+  DEFAULT_METRIC_RISE_CEILING,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
   DEFAULT_PRISM_POOLING,
+  DEFAULT_PRISM_WEIGHT,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
+  DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+  DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
   isLogSignalMode,
   isOnsetShape,
@@ -86,14 +98,6 @@ export { isLogSignalMode };
 
 /** The aggregation modes the failed-edge signal has been measured with. */
 export const FAILED_EDGE_MODES = { sum: true, mean: true } as const;
-
-/**
- * The shipped aggregation: the one the +5.8pp ablation measured.
- *
- * Widened to {@link FailedEdgeMode} on purpose — `as const` would narrow it to
- * the literal `'sum'`, which then cannot hold a parsed `'mean'`.
- */
-export const DEFAULT_FAILED_EDGE_MODE: FailedEdgeMode = 'sum';
 
 /** Whether a raw argument names a failed-edge aggregation mode. */
 export function isFailedEdgeMode(value: string): value is FailedEdgeMode {
@@ -375,14 +379,14 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     output: '',
     diagnose: [] as string[],
-    diagnoseLimit: 3,
+    diagnoseLimit: DEFAULT_DIAGNOSE_LIMIT,
     diagnoseDecimals: SERVICE_FIELD_DECIMALS,
     dropMetrics: [] as string[],
-    metricRiseCeiling: 0,
-    metricFleetBaseline: false,
-    failedEdgeWeight: 0,
+    metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING,
+    metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE,
+    failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
     failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
-    failedEdgeMinRecords: 1,
+    failedEdgeMinRecords: DEFAULT_FAILED_EDGE_MIN_RECORDS,
     latWeight: DEFAULT_LAT_WEIGHT,
     latMinRise: DEFAULT_LAT_MIN_RISE,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -392,14 +396,16 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     // The eight the golden runner could state alone until `docs/dispatch-surface-audit.md`'s Finding 6
     // registered the mirror. Every default is the SHIPPED value rather than a plausible one, which is the
     // rule the whole default block follows: a flag nobody passes must reproduce a published configuration.
-    traceWeight: 0,
-    topoWeight: 0,
-    collisionWeight: 0,
-    prismWeight: 0,
+    // Named rather than literal since iteration 98: a literal here and the constant in the fallbacks below
+    // are two answers to one question, and only a census over BOTH sites can see them disagree.
+    traceWeight: DEFAULT_TRACE_WEIGHT,
+    topoWeight: DEFAULT_TOPO_WEIGHT,
+    collisionWeight: DEFAULT_COLLISION_WEIGHT,
+    prismWeight: DEFAULT_PRISM_WEIGHT,
     prismPooling: DEFAULT_PRISM_POOLING,
-    collapseDiscount: 0,
-    suppressIdleTransients: false,
-    suppressNearZeroBaselineRise: false,
+    collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
+    suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+    suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -442,7 +448,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // falls back to the SHIPPED configuration, which can only reproduce
       // published numbers rather than invent an unmeasured one.
       const ceiling = Number(argv[++i]!);
-      opts.metricRiseCeiling = Number.isFinite(ceiling) && ceiling > 0 ? ceiling : 0;
+      opts.metricRiseCeiling =
+        Number.isFinite(ceiling) && ceiling > 0 ? ceiling : DEFAULT_METRIC_RISE_CEILING;
     } else if (arg === '--fleet-baseline') opts.metricFleetBaseline = true;
     else if (arg === '--failed-edge-min-records' && hasValue(argv, i + 1)) {
       // Strict, and it falls back to the SHIPPED floor of 1 — a floor of 0 would
@@ -450,7 +457,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // anyone asked for. A non-integer is rejected for the same reason the
       // other numeric switches reject trailing garbage.
       const floor = Number(argv[++i]!);
-      opts.failedEdgeMinRecords = Number.isInteger(floor) && floor >= 1 ? floor : 1;
+      opts.failedEdgeMinRecords =
+        Number.isInteger(floor) && floor >= 1 ? floor : DEFAULT_FAILED_EDGE_MIN_RECORDS;
     } else if (arg === '--failed-edge-mode' && hasValue(argv, i + 1)) {
       // Falling back to the SHIPPED mode on an unknown value, like the log mode:
       // a typo must reproduce a published configuration, never invent one.
@@ -461,7 +469,8 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // safe fallback: the SHIPPED weight is 0 (the signal is off), so a typo
       // reproduces a published configuration instead of inventing one.
       const weight = Number(argv[++i]!);
-      opts.failedEdgeWeight = Number.isFinite(weight) && weight >= 0 ? weight : 0;
+      opts.failedEdgeWeight =
+        Number.isFinite(weight) && weight >= 0 ? weight : DEFAULT_FAILED_EDGE_WEIGHT;
     } else if (arg === '--lat-weight' && hasValue(argv, i + 1)) {
       // Same rule and the same fallback as `--log-weight`: the SHIPPED weight, NOT
       // 0. Zero is a *different measured* configuration — the 47.33% ablation — so
@@ -501,11 +510,11 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // makes the two halves' fallbacks equal rather than merely both "sensible".
       opts.traceWeight = parseWeight(argv[++i]!, DEFAULT_TRACE_WEIGHT);
     else if (arg === '--topo-weight' && hasValue(argv, i + 1))
-      opts.topoWeight = parseWeight(argv[++i]!, 0);
+      opts.topoWeight = parseWeight(argv[++i]!, DEFAULT_TOPO_WEIGHT);
     else if (arg === '--collision-weight' && hasValue(argv, i + 1))
-      opts.collisionWeight = parseWeight(argv[++i]!, 0);
+      opts.collisionWeight = parseWeight(argv[++i]!, DEFAULT_COLLISION_WEIGHT);
     else if (arg === '--prism-weight' && hasValue(argv, i + 1))
-      opts.prismWeight = parseWeight(argv[++i]!, 0);
+      opts.prismWeight = parseWeight(argv[++i]!, DEFAULT_PRISM_WEIGHT);
     else if (arg === '--prism-pooling' && hasValue(argv, i + 1)) {
       // The whole vocabulary, by the union's own guard — not a hand-written pair. The golden parser records
       // why: only one of the two poolings was ever reachable from the engine, so the flag would have been

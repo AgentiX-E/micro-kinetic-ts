@@ -5,6 +5,12 @@ coverage/
 tsup.config.bundled_*.mjs
 *.tsbuildinfo
 .cache/
+
+# The push harness's cache: the request bodies it has already sent for a revision, so a retry can reuse
+# the bytes rather than rebuild them. Local state by construction — its contents are a function of what
+# this machine has already pushed and name no artifact of the repository — and it was UNTRACKED until
+# iteration 98 staged it by accident with a pathspec that excluded `docs` and nothing else.
+.bench-cache/
 benchmark-results/
 artifacts/
 *.log

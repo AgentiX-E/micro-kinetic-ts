@@ -62,6 +62,19 @@ export { ANOMALY_NORMALIZE_NODE_THRESHOLD } from './causal/topology-fault-graph.
 // while the engine's default was `false`, so three owners of one shipped value could drift — and a caller
 // who passed no topology argument ran a configuration the published numbers were not measured under.
 export { DEFAULT_RANK_NORMALIZATION } from './causal/topology-fault-graph.js';
+// The three topology knobs that were bare literals in this package's defaults table AND in both parsers'
+// option objects — eighteen declaration sites, zero names — plus the two whose workflow descriptions can
+// only state their shipped value in WORDS. `docs/ranking-default-owners.md` is the census that found them,
+// and `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` is what keeps the list from growing
+// back one instance at a time.
+export {
+  DEFAULT_COLLAPSE_DISCOUNT,
+  DEFAULT_METRIC_FLEET_BASELINE,
+  DEFAULT_METRIC_RISE_CEILING,
+  DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+  DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+  DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
+} from './causal/topology-fault-graph.js';
 // The topology config is part of the public surface: `TreePruner` takes a
 // `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a
 // consumer that wants to name the object it builds — rather than infer it — needs
@@ -79,15 +92,21 @@ export { CollisionContributionAnalyzer, buildEdgeWeightMap } from './pruning/con
 export type { DecayParams, EdgeWeightMap } from './pruning/contribution.js';
 
 export {
+  DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_WEIGHT,
+  DEFAULT_RISE_WEIGHT,
   DEFAULT_STABILITY_WEIGHT,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
+  DEFAULT_TREE_PRUNER_OPTIONS,
   ONSET_SHAPES,
   TreePruner,
   classifyTermZero,
@@ -100,6 +119,8 @@ export {
 export type { OnsetShape, TreePrunerOptions } from './pruning/pruner.js';
 
 export {
+  DEFAULT_FAILED_EDGE_MIN_RECORDS,
+  DEFAULT_FAILED_EDGE_MODE,
   DEFAULT_HTTP_DOMINANCE_THRESHOLD,
   DEFAULT_TRACE_ACTIVITY_OPTIONS,
   LOG_SIGNAL_MODES,

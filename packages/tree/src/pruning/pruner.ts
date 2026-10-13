@@ -64,6 +64,8 @@ import { CollisionContributionAnalyzer, buildEdgeWeightMap } from './contributio
 import { computePrismScores } from './prism-signal.js';
 import type { FailedEdgeMode, LogSignalMode } from './ranking-signals.js';
 import {
+  DEFAULT_FAILED_EDGE_MIN_RECORDS,
+  DEFAULT_FAILED_EDGE_MODE,
   computeDeepestExceptions,
   computeEdgeLatencyScores,
   computeFailedEdgeScores,
@@ -823,14 +825,26 @@ export const DEFAULT_LOG_WEIGHT = 1.0;
  * beside it with nothing to compare the two against. Naming it once means a caller cannot describe a
  * configuration the engine does not ship — which is the same guarantee every other shipped default has.
  *
- * The two callers that need it are `DEFAULT_RCAEVAL_LOG_SIGNAL_MODE` (the golden half's fallback) and the
- * ablation runner's configuration line, whose artifact names the mode this run used.
+ * The two callers that need it are the RCAEval half's own field default and its rejected-mode fallback —
+ * which used to reach it through a local alias, `DEFAULT_RCAEVAL_LOG_SIGNAL_MODE`, whose single line was
+ * `= DEFAULT_LOG_SIGNAL_MODE`. The alias is gone as of iteration 98: a second NAME for one value is what
+ * `docs/ranking-default-owners.md` refuses, because the census resolves a name and an alias resolves to
+ * another name rather than to the owner — and the ablation runner's configuration line reads this constant
+ * directly.
  */
 export const DEFAULT_LOG_SIGNAL_MODE: LogSignalMode = 'count';
 
 /**
  * Weight on the trace-activity prior, the THIRD instance of the class {@link DEFAULT_LOG_WEIGHT} was
  * extracted for and the one `docs/dispatch-surface-audit.md`'s Finding 6 recorded as its residue.
+ *
+ * **That count is history, not an inventory.** Nothing may be inferred from "third": the census in
+ * `docs/ranking-default-owners.md` reverted to the tree as it stood before iteration 98 and found the class
+ * still had nineteen declaration sites over twelve knobs — six of them with no name at all, and two of them
+ * in THIS constant's own four owners, because the field default each parser resolves the no-flag path to was
+ * left as a bare `0` while the fallback and the workflow description were moved onto the name. A comment that
+ * counts a growing list is a copy the list does not own (the register's law 16), so the inventory lives in
+ * `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` and this sentence points at it.
  *
  * It shipped as a bare literal in **four** places — the engine's own `DEFAULT_TREE_PRUNER_OPTIONS`, each
  * parser's field default, and each parser's `parseWeight` fallback — none of which was a name, so there was
@@ -853,7 +867,80 @@ export const DEFAULT_LOG_SIGNAL_MODE: LogSignalMode = 'count';
  */
 export const DEFAULT_TRACE_WEIGHT = 0.0;
 
-const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
+/**
+ * The shipped defaults of the ranking knobs that had **no name**, and the reason they now have one.
+ *
+ * `DEFAULT_LOG_WEIGHT`, `DEFAULT_LOG_SIGNAL_MODE` and `DEFAULT_TRACE_WEIGHT` were extracted one at a
+ * time, each after an incident, and each extraction was a HAND-FIX of the instance someone had noticed.
+ * The class was recorded in prose — `DEFAULT_TRACE_WEIGHT`'s own docblock calls itself "the THIRD instance
+ * of the class" — so the count was a copy of a list the list did not own, which is the shape
+ * `docs/closed-axes-register.md` names as law 16. Six members were still unnamed when the count was
+ * written, and `docs/ranking-default-owners.md` is the census that found them: `topoWeight`,
+ * `collisionWeight`, `prismWeight`, `collapseDiscount`, `suppressIdleTransients` and
+ * `suppressNearZeroBaselineRise` each declared their shipped value as a bare literal in the engine's own
+ * defaults table AND in both parsers' option objects — **eighteen declaration sites, zero names** — while
+ * both workflows' input descriptions quoted the number.
+ *
+ * The names below are what makes the value comparable. Nothing about the ENGINE changes with them: every
+ * literal they replace already held the same number, so the acceptance is exact rather than argued (nine
+ * golden cells and the whole `signals:` line byte-identical), and what the names buy is that the census in
+ * `packages/kinetic/__tests__/unit/ranking-default-owners.test.ts` can now require EVERY knob declared in
+ * more than one file to be declared by name.
+ */
+export const DEFAULT_TOPO_WEIGHT = 0.0;
+
+/**
+ * @see DEFAULT_TOPO_WEIGHT — the class these names close.
+ *
+ * The collision term is the Deng-Yu-inspired `Q(f,f)` aggregation, and 0 is a REJECTION rather than an
+ * absence: the term is `WEIGHT_ZERO` on all 19084 RCAEval term instances, which is a configuration fact
+ * and licenses no inference about the corpus. Recorded so a reader of the constant cannot mistake the
+ * shipped value for an unmeasured one.
+ */
+export const DEFAULT_COLLISION_WEIGHT = 0.0;
+
+/**
+ * @see DEFAULT_TOPO_WEIGHT — the class these names close.
+ *
+ * The PRISM-derived term. 0 is a recorded never-revert fact on this corpus, and the workflow description
+ * says so; the name exists so that claim has an owner to be checked against.
+ */
+export const DEFAULT_PRISM_WEIGHT = 0.0;
+
+/**
+ * @see DEFAULT_TOPO_WEIGHT — the class these names close.
+ *
+ * The rise half of the direction-aware deviation. One declaring site rather than three, and it is named
+ * for a different reason: its neighbours in this table are named, and an unnamed zero sitting between
+ * named zeros is the shape a reader fills in by assuming it is one of them.
+ */
+export const DEFAULT_RISE_WEIGHT = 0.0;
+
+/**
+ * @see DEFAULT_TOPO_WEIGHT — the class these names close.
+ *
+ * The failed-edge-direction signal, rejected with no admissible weight (the 62 cases it fixes need
+ * `w ≥ 0.580` while the 5 it breaks tolerate `w ≤ 0.261`). Named because the FSE'26 workflow exposes it
+ * as an input and the description guard quotes its default as a NUMBER.
+ */
+export const DEFAULT_FAILED_EDGE_WEIGHT = 0.0;
+
+/**
+ * The engine's own defaults table, exported so that a caller cannot hold a second opinion about what the
+ * engine ships.
+ *
+ * It was `const` (module-private) until iteration 98, and that privacy is the ROOT CAUSE of the class
+ * above rather than an incidental fact: each parser needs the shipped value for its own field default and
+ * for the fallback it takes on a malformed argument, and a private table leaves it no way to read one —
+ * so it wrote the number again. Making the table readable is what lets the census assert the property
+ * over the PRODUCER instead of over a parser's source text, and the parsers are now required to read
+ * either a named constant or this table, never a literal.
+ *
+ * Read-only by convention: the engine merges it (`{ ...DEFAULT_TREE_PRUNER_OPTIONS, ...options }`) rather
+ * than mutating it, and the census asserts that every entry whose value also appears in another file is
+ * declared by NAME rather than here as a literal.
+ */
+export const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   ...DEFAULT_RCA_OPTIONS,
   decayAlpha: 0.8,
   decayBeta: 0.3,
@@ -863,17 +950,17 @@ const DEFAULT_TREE_PRUNER_OPTIONS: TreePrunerOptions = {
   sourceWeight: 0.0,
   temporalWeight: DEFAULT_TEMPORAL_WEIGHT,
   onsetShape: DEFAULT_ONSET_SHAPE,
-  collisionWeight: 0.0,
-  topoWeight: 0.0,
+  collisionWeight: DEFAULT_COLLISION_WEIGHT,
+  topoWeight: DEFAULT_TOPO_WEIGHT,
   logWeight: DEFAULT_LOG_WEIGHT,
   logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
-  riseWeight: 0.0,
+  riseWeight: DEFAULT_RISE_WEIGHT,
   traceWeight: DEFAULT_TRACE_WEIGHT,
-  prismWeight: 0.0,
+  prismWeight: DEFAULT_PRISM_WEIGHT,
   prismPooling: DEFAULT_PRISM_POOLING,
-  failedEdgeWeight: 0.0,
-  failedEdgeMode: 'sum',
-  failedEdgeMinRecords: 1,
+  failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
+  failedEdgeMode: DEFAULT_FAILED_EDGE_MODE,
+  failedEdgeMinRecords: DEFAULT_FAILED_EDGE_MIN_RECORDS,
   latWeight: DEFAULT_LAT_WEIGHT,
   latMinRise: DEFAULT_LAT_MIN_RISE,
   poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,

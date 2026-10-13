@@ -35,17 +35,37 @@ import { describe, expect, it } from 'vitest';
 // document disagreeing with the code, so a copy of the value here would be a third
 // opinion and could itself drift.
 import {
+  ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_COLLAPSE_DISCOUNT,
+  DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_FAILED_EDGE_MIN_RECORDS,
+  DEFAULT_FAILED_EDGE_MODE,
+  DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
+  DEFAULT_LOG_SIGNAL_MODE,
   DEFAULT_LOG_WEIGHT,
   DEFAULT_ONSET_SHAPE,
   DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
+  DEFAULT_PRISM_WEIGHT,
+  DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
+  DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
+  DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_TEMPORAL_WEIGHT,
+  DEFAULT_TOPO_WEIGHT,
   DEFAULT_TRACE_WEIGHT,
 } from '../../../../packages/tree/src/index.js';
-// The PRODUCER's constant, from the module that calls `toFixed`, imported for the same reason.
-import { SERVICE_FIELD_DECIMALS } from '../../../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
+// The PRODUCER's constants, from the modules that own them, imported for the same reason. The FSE'26
+// workflow's `log_mode` and `diagnose_limit` had NO owner at all until iteration 98, which is why their
+// descriptions were the two whose defaults could not be checked.
+import { DEFAULT_FSE26_LOG_MODE } from '../../../../benchmarks/src/fse26-cli.js';
+import {
+  DEFAULT_DIAGNOSE_LIMIT,
+  SERVICE_FIELD_DECIMALS,
+} from '../../../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
+// The corpus view's owner, so a description cannot advertise a view the corpus does not carry.
+import { DEFAULT_LATENCY_SOURCE } from '../../../../benchmarks/src/rcaeval-corpus.js';
 
 // packages/kinetic/__tests__/unit/ → four levels up is the repository root.
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
@@ -772,175 +792,253 @@ function readInputDescription(yml: string, input: string): string | undefined {
   return undefined;
 }
 
-describe('FSE26 workflow descriptions agree with the code they describe', () => {
-  /**
-   * Inputs whose description states the RUNNER's shipped value, and the constant it
-   * has to match.
-   *
-   * A description is documentation that a dispatcher reads instead of the code, and it
-   * can drift the same way a hardcoded default can — silently, because a run succeeds
-   * whoever is right. This one HAD drifted: `pool_penalty` said "empty = … 0 = INERT"
-   * for a whole session after 0.0679 shipped, so a reader who wanted the shipped
-   * configuration would have believed they had to pass a value, and the value they
-   * would have passed was the ablation. The description is read as TEXT on purpose:
-   * the defect is a disagreement between two files, which no runtime path can see.
-   */
-  const DESCRIBES_SHIPPED: Readonly<Record<string, number>> = {
-    // The largest term in the ranking, and the last one to get an owner: this entry used to be a
-    // bare `1`, because the engine's default was a bare `1.0` in four files. The guard could only
-    // be satisfied by a fifth copy until `DEFAULT_LOG_WEIGHT` existed.
-    log_weight: DEFAULT_LOG_WEIGHT,
-    failed_edge_weight: 0,
-    failed_edge_min_records: 1,
-    lat_weight: DEFAULT_LAT_WEIGHT,
-    lat_min_rise: DEFAULT_LAT_MIN_RISE,
-    pool_penalty: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
-    // The runner default is 0 and the CANDIDATE is 0.030170: a description naming the candidate
-    // would satisfy a substring test for a shipped `0`, which is why the guard compares NUMERIC
-    // TOKENS and this table records the value the runner actually falls back to.
-    stability_weight: DEFAULT_STABILITY_WEIGHT,
-    temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
-    diagnose_limit: 3,
-    // The dump's render precision. Registered when the input was added, and the entry is what makes
-    // the description's "3" a CLAIM rather than a remark: `SERVICE_FIELD_DECIMALS` is the owner, so a
-    // reader of the workflow and a reader of the producer cannot end up with two precisions — which
-    // is the failure this whole family of guards exists for, since a dump declares its own and a
-    // reader derives the error bar from the declaration.
-    diagnose_decimals: SERVICE_FIELD_DECIMALS,
-  };
+/**
+ * The text a description states its default in — from `empty =` to the end of that clause — or `undefined`.
+ *
+ * This is the window the token is looked for in, and it exists because the WHOLE description is unsound for
+ * every STRING-valued option: such a description necessarily lists the option's own vocabulary, so a
+ * whole-text containment test cannot tell a `token =` DEFINITION from the default. The first version of this
+ * guard looked in the whole description and reported `log_mode` as satisfied by its pre-98 text — which read
+ * "empty = the runner default, which is the best-measured mode; count = …, **logicHttp** = …" and named the
+ * shipped mode only as one of five choices. That is `toContain('0')` matching `0.030170`, one regime over.
+ *
+ * The clause ends at the first `;` or `)` after the `=`, whichever comes first. Rows whose description names
+ * its default OUTSIDE the clause are declared in {@link NAMED_OUTSIDE_THE_CLAUSE} with the reason.
+ *
+ * @param description - The input's description, as read from the YAML.
+ * @returns The clause's text, or `undefined` when the description states no default.
+ */
+export function claimClause(description: string): string | undefined {
+  const at = /\(empty\s*=/i.exec(description);
+  if (!at) return undefined;
+  const from = description.indexOf('=', at.index) + 1;
+  const stops = [description.indexOf(';', from), description.indexOf(')', from)].filter(
+    (i) => i >= 0,
+  );
+  return description.slice(from, stops.length > 0 ? Math.min(...stops) : undefined).trim();
+}
 
-  it('names the shipped value of every input whose description quotes one', () => {
+/**
+ * Rows whose description names its default OUTSIDE the claim clause, and why.
+ *
+ * A `Record` rather than a list so each admission carries its reason, and the direction is deliberate: the
+ * tight window is the DEFAULT and the loose one must be asked for, so a new row cannot widen the check by
+ * accident — which is how the phrase-based population above lost four rows.
+ */
+const NAMED_OUTSIDE_THE_CLAUSE: Readonly<Record<string, string>> = {
+  failed_edge_mode:
+    'the FSE\'26 description names the shipped `sum` BEFORE the clause — "…signal: sum (empty = the runner default) or mean…" — as the first of the two members the flag chooses between',
+  latency_view:
+    'the RCAEval description names the shipped view before the clause — the corpus "carries — shipped (empty = the runner default …)" — as the list the flag chooses from',
+};
+
+/**
+ * Assert a description names `token`.
+ *
+ * Numbers are compared as NUMERIC TOKENS and everything else inside {@link claimClause} — the two-regime rule
+ * this file has always carried (`toContain('0')` is satisfied by a description naming `0.030170`, so a numeric
+ * claim has to be compared as a NUMBER) extended to the string regime, where the hazard is the option's own
+ * vocabulary rather than a longer decimal.
+ *
+ * @param description - The input's description, as read from the YAML.
+ * @param input - The input's name, for the failure message.
+ * @param token - The token the owner's value renders to.
+ */
+function assertNames(description: string, input: string, token: string): void {
+  const asNumber = Number(token);
+  if (token !== '' && Number.isFinite(asNumber)) {
+    const numbers = [...description.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+    expect(numbers, `${input} must name the shipped ${token}: ${description}`).toContain(asNumber);
+    return;
+  }
+  const window =
+    NAMED_OUTSIDE_THE_CLAUSE[input] === undefined ? (claimClause(description) ?? '') : description;
+  expect(
+    window,
+    `${input} must name the shipped '${token}' in its claim: ${description}`,
+  ).toContain(token);
+}
+
+/**
+ * Whether an input's description STATES the runner's default.
+ *
+ * The predicate used to be a PHRASE — `/runner default, which is (?!empty)[^)]*\d/` — and a phrase makes a
+ * population by accident. Four inputs state the same claim as "empty = the runner default, the SHIPPED 0":
+ * `topo_weight`, `collision_weight`, `prism_weight` and `collapse_discount` were therefore OUTSIDE the
+ * fence whose entire purpose is to make the table below honest, which is why none of them was ever
+ * registered — and why `trace_weight`'s comment could call itself "the LAST input in this workflow whose
+ * default could not be stated as a NUMBER" while four rows beside it were in exactly that state.
+ *
+ * The claim is now read from the workflow's own CONVENTION for stating a default: the `empty =` clause. That
+ * is still a phrase, and the honest statement of the limit is that a description stating its default with no
+ * `empty =` clause at all is outside this population — `shard_tag` (no runner counterpart) and
+ * `ranking_knobs` (a name=value list whose defaults are the engine's own) are the two.
+ */
+const CLAIMS_A_DEFAULT = /\(empty\s*=/i;
+
+/**
+ * The TOKEN an input's description must name, per input that states one.
+ *
+ * A token rather than a value, because a description is prose and its vocabulary is the RUNNER's, not the
+ * value's: `no_rank_normalization`'s default is `true` and its description says `ON`; the two suppression
+ * switches default to `false` and their descriptions say `false`. Every token that CAN be derived from an
+ * owner is (`String(DEFAULT_LAT_WEIGHT)`), so a constant can move and this table follows; the two that are
+ * words rather than renderings of the value (`ON` for a `true` boolean) say so where they are declared.
+ *
+ * The check reads NUMERIC TOKENS when the token is a number, and a substring otherwise, which keeps the
+ * `toContain('0')` hazard below: a description naming `0.030170` satisfies a substring test for a shipped
+ * `0`, and the moment a value reverts to 0 the check stops checking.
+ */
+const DESCRIBES_SHIPPED: Readonly<Record<string, string>> = {
+  // ── the FSE'26 half ────────────────────────────────────────────────────────────────────────────────
+  // The largest term in the ranking, and the last one to get an owner: this entry used to be a bare `1`,
+  // because the engine's default was a bare `1.0` in four files. The guard could only be satisfied by a
+  // fifth copy until `DEFAULT_LOG_WEIGHT` existed.
+  log_weight: String(DEFAULT_LOG_WEIGHT),
+  // Named as of iteration 98, and this row is why: the description said "the best-measured mode" — the
+  // input whose drift once cost 24.2pp was the one whose default no guard could check.
+  log_mode: DEFAULT_FSE26_LOG_MODE,
+  diagnose_limit: String(DEFAULT_DIAGNOSE_LIMIT),
+  // The dump's render precision. Registered when the input was added, and the entry is what makes the
+  // description's "3" a CLAIM rather than a remark: `SERVICE_FIELD_DECIMALS` is the owner, so a reader of
+  // the workflow and a reader of the producer cannot end up with two precisions.
+  diagnose_decimals: String(SERVICE_FIELD_DECIMALS),
+  // Named as of iteration 98. The golden half's description of this same input has always said "ON"; this
+  // one said "(empty = the runner default)." — one input, two descriptions, one of them checkable.
+  no_rank_normalization: DEFAULT_RANK_NORMALIZATION ? 'ON' : 'OFF',
+  anomaly_normalize_threshold: String(ANOMALY_NORMALIZE_NODE_THRESHOLD),
+  failed_edge_weight: String(DEFAULT_FAILED_EDGE_WEIGHT),
+  failed_edge_mode: DEFAULT_FAILED_EDGE_MODE,
+  failed_edge_min_records: String(DEFAULT_FAILED_EDGE_MIN_RECORDS),
+  lat_weight: String(DEFAULT_LAT_WEIGHT),
+  lat_min_rise: String(DEFAULT_LAT_MIN_RISE),
+  pool_penalty: String(DEFAULT_POOL_METRIC_PENALTY_WEIGHT),
+  // The runner default is 0 and the CANDIDATE is 0.030170: a description naming the candidate
+  // would satisfy a substring test for a shipped `0`, which is why the guard compares NUMERIC
+  // TOKENS and this table records the value the runner actually falls back to.
+  stability_weight: String(DEFAULT_STABILITY_WEIGHT),
+  temporal_weight: String(DEFAULT_TEMPORAL_WEIGHT),
+  onset_shape: DEFAULT_ONSET_SHAPE,
+
+  // ── the golden half ─────────────────────────────────────────────────────────────────────────────────
+  // `stability_weight` was this workflow's first input, and it is described the way the FSE'26 workflow's
+  // are — "empty = the runner default, which is 0.007352" — because that is what a dispatcher reads.
+  // Registered in iteration 97, when `traceWeight` finally got a name: its description could not state its
+  // default as a NUMBER while the value was a bare literal in four places.
+  trace_weight: String(DEFAULT_TRACE_WEIGHT),
+  // The latency trio, registered when their inputs were added. All three ship NON-ZERO, which is the fact
+  // that made their absence from this half expensive: the artifact printed each of them while no branch of
+  // the parser wrote any of them. `lat_min_rise` is a floor rather than a weight and is registered for the
+  // same reason: it is printed, and it decides the mask.
+  topo_weight: String(DEFAULT_TOPO_WEIGHT),
+  collision_weight: String(DEFAULT_COLLISION_WEIGHT),
+  prism_weight: String(DEFAULT_PRISM_WEIGHT),
+  collapse_discount: String(DEFAULT_COLLAPSE_DISCOUNT),
+  // The two suppression switches. `false` is the token because `false` is what their descriptions say —
+  // the shipped value spelled out, rather than the word "off" the FSE'26 half uses for the same idea.
+  suppress_idle_transients: String(DEFAULT_SUPPRESS_IDLE_TRANSIENTS),
+  suppress_near_zero_baseline_rise: String(DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE),
+  log_signal_mode: DEFAULT_LOG_SIGNAL_MODE,
+  // The corpus view. Registered with the four above, and read from the module that OWNS the view union, so
+  // a description cannot advertise a view the corpus does not carry.
+  latency_view: DEFAULT_LATENCY_SOURCE,
+};
+
+/**
+ * Inputs whose description states the runner's default in WORDS, and why no token can be checked.
+ *
+ * A `Record` rather than a list so each exemption carries its reason: "the description states a default that
+ * has no token" and "the description states no default" are the same shape in a set, and confusing them is
+ * how the four rows above were lost. Every entry is a place a future reader should look, not a place to
+ * stop looking.
+ */
+const DESCRIBES_IN_WORDS: Readonly<Record<string, string>> = {
+  diagnose_dump:
+    'the default is the EMPTY STRING, and its description says "empty = off" — a substring test for "" passes on everything, which is a check that checks nothing',
+  categories:
+    'the default is an EMPTY LIST (no filter); the "7" the description names is a fact about the catalogue, not about the runner',
+  max_cases:
+    'the default is 0 = unlimited, and the description says "all downloaded" — a property of the corpus rather than of the runner',
+  diagnose: 'the default is an EMPTY LIST, and the description says "(empty = none)"',
+  rise_ceiling:
+    'the default is the SENTINEL 0, whose meaning ("unbounded") is what the description states; a numeric check would pass on a `0` inside any other number',
+  drop_metrics: 'the default is an EMPTY LIST, and the description says "(empty = no ablation)"',
+  fleet_baseline:
+    "the default is the boolean measured and REJECTED at +0.49pp with 6 regressed fault types, and the description states the flag's effect rather than its shipped state",
+};
+
+/**
+ * Assert that every input stating a default either names it or is classified as stating it in words.
+ *
+ * The population is PER WORKFLOW, which is why the union table is filtered rather than compared: the two
+ * workflows declare different inputs, and comparing the whole table against one workflow's set would report
+ * every golden-half row as a defect of the FSE'26 half. The filter is also the direction that matters — a
+ * row registered for an input THIS workflow declares but which states no default fails here, so the table
+ * cannot grow past the claim it answers.
+ *
+ * @param yml - The workflow's raw text.
+ * @param registered - The token table, covering both workflows.
+ * @param inWords - The in-words classification, covering both workflows.
+ */
+function assertClaimsCovered(
+  yml: string,
+  registered: Readonly<Record<string, string>>,
+  inWords: Readonly<Record<string, string>>,
+): void {
+  const declared = new Set(readInputNames(yml));
+  const claimed = [...declared].filter((name) => {
+    const description = readInputDescription(yml, name) ?? '';
+    return CLAIMS_A_DEFAULT.test(description);
+  });
+  expect(claimed.length).toBeGreaterThan(0);
+  const mine = [...Object.keys(registered), ...Object.keys(inWords)].filter((name) =>
+    declared.has(name),
+  );
+  expect(mine.sort()).toEqual(claimed.sort());
+}
+
+describe('workflow descriptions agree with the code they describe', () => {
+  it('names the shipped value of every input whose description states one (FSE26)', () => {
     const yml = readFileSync(WORKFLOW_PATH, 'utf8');
-    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED)) {
+    for (const [input, token] of Object.entries(DESCRIBES_SHIPPED)) {
       const description = readInputDescription(yml, input);
-      expect(description, `${input} has no description to check`).toBeDefined();
-      // Compared as NUMBERS, not as substrings. `toContain('0')` succeeds against a
-      // description that names `0.036552`, so the moment a value reverts to 0 the check
-      // stops checking and a description still advertising the rejected candidate passes —
-      // which is precisely the state this file was in an hour ago. Every numeric token is
-      // read out and compared numerically, which also tolerates `1.0` for a shipped `1`.
-      const numbers = [...description!.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
-      expect(numbers, `${input} must name the shipped ${shipped}: ${description}`).toContain(
-        shipped,
-      );
+      if (description === undefined) continue;
+      assertNames(description, input, token);
     }
   });
 
-  /**
-   * Inputs whose description states a STRING-valued runner default, and the constant it must name.
-   *
-   * The numeric table above cannot see this class at all: its detection regex requires a digit, so a
-   * description advertising `earliest-only` — the REJECTED shape — would satisfy every assertion in
-   * this file while the constant says `earliness`. The check here is POSITIVE (a registered entry
-   * must name its constant), which is the direction the register's own precedent came from: the
-   * `pool_penalty` description read "0 = INERT" for a session after 0.0679 shipped, i.e. a KNOWN
-   * claim drifting rather than an unknown one arriving. A NEW string claim is still undetected, and
-   * that limit is recorded in `docs/dispatch-surface-audit.md` rather than implied by silence.
-   */
-  const DESCRIBES_SHIPPED_STRING: Readonly<Record<string, string>> = {
-    onset_shape: DEFAULT_ONSET_SHAPE,
-  };
-
-  it('names the shipped STRING default of every input whose description quotes one', () => {
-    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
-    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED_STRING)) {
-      const description = readInputDescription(yml, input) ?? '';
-      expect(description, `${input} has no description to check`).not.toBe('');
-      expect(description, `${input} must name the shipped '${shipped}'`).toContain(shipped);
-    }
-  });
-
-  it('covers every runner-owned input whose description quotes a value', () => {
-    // The table above is hand-registered, so this keeps it honest: an input claiming
-    // "the runner default, which is <something with a digit>" must be in the table or
-    // fail the suite. Without it, the next measured constant gets a stale description
-    // and nothing notices — which is exactly how `pool_penalty` read "0 = INERT" for a
-    // session after 0.0679 shipped.
-    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
-    const claiming = readInputNames(yml).filter((name) => {
-      const description = readInputDescription(yml, name) ?? '';
-      return /runner default, which is (?!empty)[^)]*\d/.test(description);
-    });
-    expect(claiming.sort()).toEqual(Object.keys(DESCRIBES_SHIPPED).sort());
-  });
-});
-
-describe('RCAEval workflow descriptions agree with the code they describe', () => {
-  /**
-   * Inputs whose description states the RUNNER's shipped value, and the constant it has to match.
-   *
-   * `stability_weight` is the first input this workflow has ever had, and it is described the way
-   * the FSE'26 workflow's are — "empty = the runner default, which is 0" — because that is what a
-   * dispatcher reads. The value is read from the engine's own constant for the reason the whole
-   * file exists: a copy here would be a third opinion about what the runner falls back to.
-   */
-  const DESCRIBES_SHIPPED: Readonly<Record<string, number>> = {
-    stability_weight: DEFAULT_STABILITY_WEIGHT,
-    log_weight: DEFAULT_LOG_WEIGHT,
-    temporal_weight: DEFAULT_TEMPORAL_WEIGHT,
-    // Registered in iteration 97, when `traceWeight` finally got a name. It was the LAST input in this
-    // workflow whose default could not be stated as a NUMBER — the guard's own detection requires a digit, and
-    // there was no constant to read one from, because the value was a bare literal in four places (the
-    // engine's default and each parser's field default and fallback). The description now quotes `0` and names
-    // the RE3 pin's `1` beside it, which is the pair a dispatcher has to know: the runner's default is one
-    // value and the job's pin is another.
-    trace_weight: DEFAULT_TRACE_WEIGHT,
-    // The latency trio, registered when their inputs were added. All three ship NON-ZERO, which is
-    // the fact that made their absence from this half expensive rather than merely untidy: the
-    // artifact printed each of them while no branch of the parser wrote any of them, so the
-    // description's own number and the run's configuration could disagree about the largest weight
-    // in the ranking with nothing in the pipeline to notice. `lat_min_rise` is a floor rather than a
-    // weight and is registered for the same reason: it is printed, and it decides the mask.
-    lat_weight: DEFAULT_LAT_WEIGHT,
-    lat_min_rise: DEFAULT_LAT_MIN_RISE,
-    pool_penalty: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
-  };
-
-  it('names the shipped value of every input whose description quotes one', () => {
+  it('names the shipped value of every input whose description states one (RCAEval)', () => {
     const yml = readFileSync(RCAEVAL_WORKFLOW_PATH, 'utf8');
-    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED)) {
+    for (const [input, token] of Object.entries(DESCRIBES_SHIPPED)) {
       const description = readInputDescription(yml, input);
-      expect(description, `${input} has no description to check`).toBeDefined();
-      // Numeric TOKENS, not substrings: `toContain('0')` is satisfied by a description naming
-      // `0.03017`, which is exactly the drift this guards against.
-      const numbers = [...description!.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
-      expect(numbers, `${input} must name the shipped ${shipped}: ${description}`).toContain(
-        shipped,
-      );
+      if (description === undefined) continue;
+      assertNames(description, input, token);
     }
   });
 
-  /**
-   * Inputs whose description states a STRING-valued runner default, and the constant it must name.
-   *
-   * The numeric table above cannot see this class at all: its detection regex requires a digit, so a
-   * description advertising `earliest-only` — the REJECTED shape — would satisfy every assertion in
-   * this file while the constant says `earliness`. The check here is POSITIVE (a registered entry
-   * must name its constant), which is the direction the register's own precedent came from: the
-   * `pool_penalty` description read "0 = INERT" for a session after 0.0679 shipped, i.e. a KNOWN
-   * claim drifting rather than an unknown one arriving. A NEW string claim is still undetected, and
-   * that limit is recorded in `docs/dispatch-surface-audit.md` rather than implied by silence.
-   */
-  const DESCRIBES_SHIPPED_STRING: Readonly<Record<string, string>> = {
-    onset_shape: DEFAULT_ONSET_SHAPE,
-  };
-
-  it('names the shipped STRING default of every input whose description quotes one', () => {
-    const yml = readFileSync(WORKFLOW_PATH, 'utf8');
-    for (const [input, shipped] of Object.entries(DESCRIBES_SHIPPED_STRING)) {
-      const description = readInputDescription(yml, input) ?? '';
-      expect(description, `${input} has no description to check`).not.toBe('');
-      expect(description, `${input} must name the shipped '${shipped}'`).toContain(shipped);
-    }
+  it('covers every input that states a default, in BOTH workflows', () => {
+    // The population guard, and the one the phrase made blind. Every input whose description states a
+    // default must be either registered (its token is checkable) or classified (with the reason it is not),
+    // so a NEW claim cannot arrive unclassified — the limit this file used to record in prose.
+    assertClaimsCovered(readFileSync(WORKFLOW_PATH, 'utf8'), DESCRIBES_SHIPPED, DESCRIBES_IN_WORDS);
+    assertClaimsCovered(
+      readFileSync(RCAEVAL_WORKFLOW_PATH, 'utf8'),
+      DESCRIBES_SHIPPED,
+      DESCRIBES_IN_WORDS,
+    );
   });
 
-  it('covers every input whose description claims a runner default', () => {
-    const yml = readFileSync(RCAEVAL_WORKFLOW_PATH, 'utf8');
-    const claiming = readInputNames(yml).filter((name) => {
-      const description = readInputDescription(yml, name) ?? '';
-      return /runner default, which is (?!empty)[^)]*\d/.test(description);
-    });
-    expect(claiming.sort()).toEqual(Object.keys(DESCRIBES_SHIPPED).sort());
+  it('registers no input that either workflow does not declare', () => {
+    // The other direction, and the one a table that grows by hand fails: an entry for an input that exists
+    // in neither workflow is a row nothing checks, and it reads as a measurement that was taken.
+    const declared = new Set([
+      ...readInputNames(readFileSync(WORKFLOW_PATH, 'utf8')),
+      ...readInputNames(readFileSync(RCAEVAL_WORKFLOW_PATH, 'utf8')),
+    ]);
+    const stale = [...Object.keys(DESCRIBES_SHIPPED), ...Object.keys(DESCRIBES_IN_WORDS)].filter(
+      (name) => !declared.has(name),
+    );
+    expect(stale).toEqual([]);
   });
 
   it('leaves the runner-owned default EMPTY, so the runner is the sole owner', () => {

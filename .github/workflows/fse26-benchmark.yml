@@ -20,7 +20,7 @@ on:
         required: false
         default: ''
       log_mode:
-        description: 'Log-signal scoring mode (empty = the runner default, which is the best-measured mode; count = logic-exception, logicHttp = logic + framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP, logicHttpDominant = logic + concentration-gated framework HTTP, all = every error)'
+        description: 'Log-signal scoring mode (empty = the runner default, which is logicHttp, the best-measured mode; count = logic-exception, logicHttp = logic + framework HTTP, logicHttpJoint = logic + topology-gated framework HTTP, logicHttpDominant = logic + concentration-gated framework HTTP, all = every error). The value is named because this is the input whose drift once cost 24.2pp, and "the best-measured mode" is a phrase no guard can check against the runner''s own constant'
         required: false
         default: ''
       diagnose:
@@ -44,7 +44,7 @@ on:
         required: false
         default: ''
       no_rank_normalization:
-        description: 'Set to anything non-empty to rank the services by score instead of normalising each to its rank (empty = the runner default). rankNormalization confines the metric term to [0,1], which is the reason the log term can outvote it'
+        description: 'Set to anything non-empty to rank the services by score instead of normalising each to its rank (empty = the runner default, which is ON). rankNormalization confines the metric term to [0,1], which is the reason the log term can outvote it. The golden half''s description of this same input has always named the ON; this one stated it in words, so one input had two descriptions and only one of them could be checked'
         required: false
         default: ''
       anomaly_normalize_threshold:
