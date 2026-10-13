@@ -172,3 +172,104 @@ reads **`DEFAULT_TRACE_WEIGHT`**, exported from `packages/tree` beside `DEFAULT_
 `DEFAULT_LOG_SIGNAL_MODE`, so the golden workflow's description can state its default as a NUMBER and the
 description guard can check it. That closes the last item in the audit document's Finding 6, and it is the third
 instance of the class: a value with several owners and no name.
+
+---
+
+## 2026-10-13b — the candidate MEASURED: the pin is CONFIRMED, it is STRONGER than its own record, and this section's own free read is REFUTED by 14 cases
+
+Run **`38355382952`** on `4703c94` (`--trace-weight 0` on every suite) against **`38355329215`** on the same
+revision for RE1/RE2 and against it for RE3 — one dispatch, one input, and the artifacts say which.
+
+**The prediction above held EXACTLY.** RE1 and RE2 are **byte-identical** in both the nine-cell rows and the whole
+`signals:` line, which is what they must be because every suite but RE3 already runs `traceWeight = 0`. RE3's
+`signals:` line differs in **exactly one token**:
+
+```
+< traceWeight=1
+> traceWeight=0
+```
+
+**And RE3 moves enormously:**
+
+| RE3 cell | `traceWeight=1` (shipped) | `traceWeight=0` (candidate) | delta |
+| --- | ---: | ---: | ---: |
+| OnlineBoutique | 80.0% | **83.3%** | **+3.3** |
+| SockShop | 45.0% | 45.0% | 0 |
+| **TrainTicket** | **51.1%** | **3.6%** | **-47.5** |
+
+Per case on RE3's 90: **FIXED 1, BROKEN 14, net -13.** Pooled, `53.3% -> 38.9%` (**-14.4pp**), and the
+per-cell census reads `RE3-TrainTicket 15/30 -> 1/30`.
+
+### The mechanism, and it is one service
+
+**All fourteen broken cases are `ts-auth-service`** — the same truth, across **every** fault type (`f1`, `f2`,
+`f3`, `f4`) and every repetition, scattering to **eleven different wrong services** when the term goes off:
+
+```
+truth&winner ts-auth-service -> ts-seat-service            x2
+truth&winner ts-auth-service -> ts-assurance-service       x2
+truth&winner ts-auth-service -> ts-travel-service          x2
+truth&winner ts-auth-service -> ts-consign-price-service   x1
+truth&winner ts-auth-service -> ts-food-mongo              x1
+truth&winner ts-auth-service -> ts-food-map-service        x1
+truth&winner ts-auth-service -> ts-payment-service         x1
+truth&winner ts-auth-service -> ts-basic-service           x1
+truth&winner ts-auth-service -> ts-consign-price-mongo     x1
+truth&winner ts-auth-service -> ts-preserve-other-service  x1
+truth&winner ts-auth-service -> ts-assurance-mongo         x1
+```
+
+One case, read at term level, is the whole story:
+
+```
+traceWeight=1  top1 = ts-auth-service           trace=1  base=0.5315
+traceWeight=0  top1 = ts-consign-price-service  trace=0  base=0.6931
+```
+
+**The base term put the truth at 0.5315 while another service sat at the grid maximum 0.6931** — so the binary
+trace term, worth `1.0` against TrainTicket's `0.0083`-step rank grid, is the **only** thing holding the
+`ts-auth-service` cluster at rank 1. Its `+47.5pp` on that cell is not a marginal contribution; it is the entire
+cell.
+
+### And this REFUTES this document's own free read, in the way the free read said it might
+
+The section above established that `traceWeight = 0` **fixes 2 of the 735 cases** and that no miss requires
+`traceWeight > 0`, and it stated the limit explicitly:
+
+> **the two-candidate view proves REACHABILITY, not SAFETY** … the RUNNER-UP is not in the census, so "fixes 2"
+> is sound and "breaks nothing" is not.
+
+**The run is the answer, and the limitation bit by 14 cases.** The reason is structural and now checkable rather
+than asserted: for each of those 14 cases the truth **IS** the top-1 at the shipped setting, so `top1Terms` and
+`truthEvidence.terms` are the same service and the census reports **no term delta at all** — the artifact that
+produced "fixes 2" is *constitutionally blind* to exactly the cases the change breaks, because they are the cases
+it currently gets right. **A free read that can only see misses cannot price the term that is holding the
+correct answers up.**
+
+This is the register's own law arriving with a number attached: *a count of cases a change could affect carries no
+information about the cases it does*, and here the information it could not carry was worth **−47.5pp on a
+published cell**.
+
+### And the pin's record UNDERSTATED it
+
+The pin's evidence was `re3` (trace 1, anchor off) = 48 against `re3-noinject`/`re3-novelty` (**trace 0 AND
+`noInjectTime` on**) = 37 — a **-11**. This iteration's clean control, with the anchor in the same state on both
+sides, measures **48 -> 35**, a **-13**.
+
+**So the confound was real and made the term look WEAKER than it is.** The recorded comparison mixed two
+variables, and the mixed comparison landed at the same conclusion by accident. `traceWeight = 1` on RE3 is
+therefore **confirmed for the first time by an unconfounded measurement, and it is worth more than its own record
+claims.**
+
+### Disposition
+
+**The pin stands.** `traceWeight = 0` is rejected as a golden configuration — a `-14.4pp` pooled regression with
+14 broken cases is not a candidate at any threshold — and this time it is rejected on a clean measurement rather
+than a confounded one.
+
+**And the routing target is now sharper than it was.** The term is worth **+14 cases on RE3-TrainTicket** and
+**-1 on RE3-OnlineBoutique** (the one fixed case is `re3ob_emailservice_f4_1`). So the axis is not "is this
+weight right" but **which cases should be allowed to read a binary signal**, and the answer's shape is one
+cluster: `ts-auth-service`. A per-case discriminator that recognises that cluster — or a formulation that lets a
+metric-side signal reach rank 1 without a `±1` term overriding a 68-step grid — would keep the 14 and release the
+1.
