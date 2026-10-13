@@ -89,3 +89,38 @@ that failed, but by an artefact that is not there. What remains, in order:
    decomposition** (`arXiv:2609.36686`'s instrument, already saturated here) and its **multi-signal retriever**
    — magnitude, **earliest onset**, **discrete state-change** — of which the third is the one this repository
    has never wired as a retrieval signal.
+
+## And the defect this iteration created, recorded rather than quietly repaired
+
+The iteration shipped as two commits — the fence, then this document. **The revision in between cannot pass
+its own test suite**, and `Release` on it failed:
+
+```
+FAIL packages/kinetic/__tests__/unit/competitor-artefact-availability.test.ts
+Error: ENOENT: no such file or directory, open '.../docs/competitor-artefact-availability.md'
+```
+
+**A suite is part of what a commit MEANS**, so a document a suite reads is part of the commit too — and
+nothing had declared that relationship, so nothing could see it. Three separate things were wrong, and only
+the first is about that commit:
+
+1. **The commit was not self-consistent.** `git bisect` over the range would land on a revision whose suite
+   fails for a reason its own diff cannot explain.
+2. **The dependency was implicit.** The only statement that this fence needs this document was the
+   `readFileSync` call itself.
+3. **The failure was unnamed.** A bare `ENOENT` reads as a broken environment — which is why it took a log
+   fetch to diagnose instead of one line of output.
+
+**The repairs, and what each one is worth.** `packages/kinetic/__tests__/unit/support/repo-file.ts` reads a
+prerequisite and, when it is absent, throws a message that names the file, the rule, and the fix — verified by
+moving this document away and reading the failure. And
+`packages/kinetic/__tests__/unit/test-prerequisite-census.test.ts` **derives every repository path the suites
+resolve** and asserts each exists, so a deleted document fails the gate that owns it rather than the suite that
+happened to read it; it matches BOTH call shapes, because routing a read through the helper would otherwise
+move it out of the census's own population — a suite that stopped being counted because it started failing
+more clearly.
+
+**What it does not fix, stated rather than implied**: no test can see git history, so nothing here can assert
+that a document and its reader landed in the same commit. That ordering is a commit discipline, and it is now
+written where the failure happens instead of being assumed. **The rule: a document a suite reads is committed
+with the suite that reads it.**
