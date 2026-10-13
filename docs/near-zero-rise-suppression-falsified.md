@@ -131,3 +131,48 @@ that is `0` often enough to fire. **Two switches, two mechanisms, one shared sha
    half was unstatable — `fse26-cli.ts` did not accept `--suppress-idle-transients` at all — so a golden-side
    improvement had an undecidable other half. That is `dispatch-surface-audit.md`'s boundary argument arriving
    as a number rather than as a principle.
+
+### The FSE'26 half, measured — the mirror's whole purpose, and the answer is a REJECTION on both halves
+
+The golden measurement above could not ship while the other half of the kill criterion was unstatable, and
+`fse26-cli.ts` did not accept `--suppress-idle-transients` at all. The mirror of iteration 96 closed that, and
+this is the first measurement of the switch on the FSE'26 corpus. Run **`38350021040`** on `e8d9375`, whose own
+`Config:` line reads `... suppressIdleTransients=true` — **the field the mirror made statable**, against the
+control **`35411806524`** (the last full run at the shipped configuration, whose line has no such field):
+
+| metric | control | candidate | delta |
+| --- | ---: | ---: | ---: |
+| **Top@1** | 757 / 1422 = **53.2%** | 760 / 1422 = **53.4%** | **+3 cases** |
+| Top@3 | 66.5% | **66.2%** | **-0.3pp** |
+| Top@5 | 70.4% | **70.1%** | **-0.3pp** |
+
+Per fault type, over the same 25 types and the same populations:
+
+| | count | types |
+| --- | ---: | --- |
+| unchanged | 19 | — |
+| **gained** | **4** | `HTTPResponseAbort` +2 · `HTTPRequestReplaceMethod` +1 · `HTTPResponseReplaceCode` +1 · `NetworkCorrupt` +1 |
+| **regressed** | **2** | `ContainerKill` 6/89 → 5/89 (−1) · `JVMMemoryStress` 12/171 → 11/171 (−1) |
+
+**So the kill criterion's FSE'26 half fails, and it fails on the second condition**: there is a gain — `+3`
+cases — and **two regressed fault types**. `docs/closed-axes-register.md`'s `metricFleetBaseline` row is the
+precedent: `+0.49pp with 6 regressed fault types` was rejected as a **net** gain for exactly this reason, and
+this candidate is `+3 cases with 2`.
+
+**And the widening metric falls while the narrow one rises**, which is the part worth keeping beyond this
+switch. Top@1 gains three cases while Top@3 and Top@5 each lose about four: the guard is moving services **out**
+of the ranked neighbourhood as often as it moves the truth **in**. A change that helps the top of the list and
+hurts the list is a change whose head is a coincidence of the tail — and the three metrics are printed together
+precisely so a reader cannot take the first one alone.
+
+**Both halves of the criterion are now measured, and both refuse it:**
+
+| half | measured | verdict |
+| --- | --- | --- |
+| golden 9-cell | RE1-OnlineBoutique +0.8, RE2-TrainTicket +2.2, seven cells unchanged, **RE2-TT `disk` 73.3% → 53.3%** | **fails** — a regressed fault type |
+| FSE'26 | Top@1 757 → 760, **Top@3 and Top@5 down**, **`ContainerKill` and `JVMMemoryStress` down** | **fails** — a regressed fault type |
+
+**The default therefore stays `false`, and it now stays `false` for a reason that was read rather than assumed on
+each side.** That is what the mirror bought: before it, the golden measurement had an undecidable other half and
+the honest statement was "not shippable, unknown on FSE'26". The honest statement now is "**rejected on both**",
+which is a decision rather than a deferral.
