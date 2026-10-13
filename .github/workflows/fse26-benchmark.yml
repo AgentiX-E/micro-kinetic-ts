@@ -51,36 +51,8 @@ on:
         description: 'The node count at or above which rank normalisation runs at all (empty = the runner default, the shipped 20). The flag above picks WHICH rescale; this picks WHETHER one runs, and it is therefore the axis population: on RCAEval 487 of 735 cases sit below the shipped count, so the flag is unread on two thirds of that corpus, while this corpus is the large-graph one where it acts nearly everywhere. Set it to 0 to rescale every graph'
         required: false
         default: ''
-      trace_weight:
-        description: 'Weight on the trace-activity term (empty = the runner default, which is OFF). Binary on the golden corpus -- exactly 0 or exactly 1, no magnitude -- and it pushed for the WRONG service on all six occasions it moved a deciding gap there, which is why the shipped value is 0. Reachable here so the golden half''s record is re-testable on THIS corpus rather than assumed to transfer'
-        required: false
-        default: ''
-      topo_weight:
-        description: 'Weight on the trace-topology signal (empty = the runner default, which is OFF). Its metric-side sibling is the only measured change on that axis that reorders two services, and it was rejected at +0.49pp with six regressed fault types -- so this knob exists to be ABLATABLE rather than turned on'
-        required: false
-        default: ''
-      collision_weight:
-        description: 'Weight on the collision (co-occurrence) term, the Deng-Yu collision source (empty = the runner default, which is OFF). Its contribution is exactly 0.0000 on every case of the golden corpus BECAUSE this weight is 0, so a non-zero dispatch is what converts a WEIGHT_ZERO reading into a measurement'
-        required: false
-        default: ''
-      prism_weight:
-        description: 'Weight on the PRISM external-signal term (empty = the runner default, which is OFF). Zero by measurement rather than by omission: the fusion was rejected at the shipped pooling'
-        required: false
-        default: ''
-      prism_pooling:
-        description: 'Which pooling the PRISM term fuses with -- additive or conjunctive (empty = the runner default). Inert while prism_weight is 0, which is why it could be enrolled and screened before the weight was decided'
-        required: false
-        default: ''
-      collapse_discount:
-        description: 'Discount applied to the DROP half of a metric''s direction-aware deviation (empty = the runner default, which is OFF). A fraction, CLAMPED to [0, 1] rather than falling back. This knob''s only record is a code comment citing benchmark #226/227, so a reachable flag is the precondition for promoting that record into a document'
-        required: false
-        default: ''
-      suppress_idle_transients:
-        description: 'Set to anything non-empty to discard a metric that was IDLE before the fault and only became active during it (empty = the runner default). NOT the same switch as the one below: that one is a measured no-op, while this one is the iteration-95 candidate, measured on the golden corpus at +3 net cases across two cells with three DISK cases lost on TrainTicket'
-        required: false
-        default: ''
-      suppress_near_zero_baseline_rise:
-        description: 'Set to anything non-empty to skip a metric whose baseline is at or below the 0.001 epsilon, whose relative RISE is undefined (empty = the runner default). A measured no-op on the golden corpus -- the guard never fires there, because the production top-1''s own baseline ranges from 0.008 to 8.3e7. Reachable here so the no-op can be re-read on THIS corpus rather than assumed to transfer'
+      ranking_knobs:
+        description: 'Comma-separated name=value pairs for the eight ranking knobs that a dispatch could not state until iteration 96. They are ONE input rather than eight because of a HARD GITHUB LIMIT, not a preference: a workflow_dispatch accepts at most 25 inputs, naming them one per input took this workflow to 30, and the workflow file was therefore INVALID - the push-triggered validation run failed and the dispatch was refused with HTTP 422. Accepted names: trace_weight, topo_weight, collision_weight, prism_weight, prism_pooling, collapse_discount, suppress_idle_transients, suppress_near_zero_baseline_rise. The two suppression switches take 1 to switch ON and 0 to switch OFF (emitting the runner''s own negated pole); every other name takes its value verbatim, and a malformed VALUE falls back to the runner''s shipped value on the CLI''s own rule rather than inventing a configuration. Example: suppress_idle_transients=1,trace_weight=1. An unrecognised NAME fails the step rather than being dropped, because a silently ignored knob is a run that reports a configuration nobody asked for'
         required: false
         default: ''
       drop_metrics:
@@ -314,39 +286,65 @@ jobs:
           if [ -n "${{ inputs.onset_shape }}" ]; then
             ONSET_SHAPE_ARG=(--onset-shape "${{ inputs.onset_shape }}")
           fi
-          TRACE_ARG=()
-          if [ -n "${{ inputs.trace_weight }}" ]; then
-            TRACE_ARG=(--trace-weight "${{ inputs.trace_weight }}")
-          fi
-          TOPO_ARG=()
-          if [ -n "${{ inputs.topo_weight }}" ]; then
-            TOPO_ARG=(--topo-weight "${{ inputs.topo_weight }}")
-          fi
-          COLLISION_ARG=()
-          if [ -n "${{ inputs.collision_weight }}" ]; then
-            COLLISION_ARG=(--collision-weight "${{ inputs.collision_weight }}")
-          fi
-          PRISM_ARG=()
-          if [ -n "${{ inputs.prism_weight }}" ]; then
-            PRISM_ARG=(--prism-weight "${{ inputs.prism_weight }}")
-          fi
-          PRISM_POOLING_ARG=()
-          if [ -n "${{ inputs.prism_pooling }}" ]; then
-            PRISM_POOLING_ARG=(--prism-pooling "${{ inputs.prism_pooling }}")
-          fi
-          COLLAPSE_ARG=()
-          if [ -n "${{ inputs.collapse_discount }}" ]; then
-            COLLAPSE_ARG=(--collapse-discount "${{ inputs.collapse_discount }}")
-          fi
-          # The two suppression switches are SWITCHES, not value flags: their only pole is the positive
-          # one, because a runner that ships `false` has no state the negation opens.
-          IDLE_TRANSIENT_ARG=()
-          if [ -n "${{ inputs.suppress_idle_transients }}" ]; then
-            IDLE_TRANSIENT_ARG=(--suppress-idle-transients)
-          fi
-          NEAR_ZERO_RISE_ARG=()
-          if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
-            NEAR_ZERO_RISE_ARG=(--suppress-near-zero-baseline-rise)
+          # The eight knobs, through ONE input. The allow-list BELOW is the point rather than the parsing:
+          # every flag is spelled here in code, so the dispatch-surface census still reads a reach rather than
+          # a promise, and an unrecognised NAME exits non-zero instead of being dropped - a silently ignored
+          # knob is a run whose configuration line reports something nobody asked for.
+          KNOB_ARGS=()
+          if [ -n "${{ inputs.ranking_knobs }}" ]; then
+            IFS=',' read -ra KNOB_PAIRS <<< "${{ inputs.ranking_knobs }}"
+            for pair in "${KNOB_PAIRS[@]}"; do
+              pair="$(printf '%s' "$pair" | tr -d '[:space:]')"
+              if [ -z "$pair" ]; then
+                continue
+              fi
+              name="${pair%%=*}"
+              value="${pair#*=}"
+              case "$name" in
+                trace_weight)
+                  KNOB_ARGS+=(--trace-weight "$value")
+                  ;;
+                topo_weight)
+                  KNOB_ARGS+=(--topo-weight "$value")
+                  ;;
+                collision_weight)
+                  KNOB_ARGS+=(--collision-weight "$value")
+                  ;;
+                prism_weight)
+                  KNOB_ARGS+=(--prism-weight "$value")
+                  ;;
+                prism_pooling)
+                  KNOB_ARGS+=(--prism-pooling "$value")
+                  ;;
+                collapse_discount)
+                  KNOB_ARGS+=(--collapse-discount "$value")
+                  ;;
+                suppress_idle_transients)
+                  if [ "$value" = "1" ]; then
+                    KNOB_ARGS+=(--suppress-idle-transients)
+                  elif [ "$value" = "0" ]; then
+                    KNOB_ARGS+=(--no-suppress-idle-transients)
+                  else
+                    echo "::error::ranking_knobs: suppress_idle_transients takes 1 or 0, got '$value'"
+                    exit 1
+                  fi
+                  ;;
+                suppress_near_zero_baseline_rise)
+                  if [ "$value" = "1" ]; then
+                    KNOB_ARGS+=(--suppress-near-zero-baseline-rise)
+                  elif [ "$value" = "0" ]; then
+                    KNOB_ARGS+=(--no-suppress-near-zero-baseline-rise)
+                  else
+                    echo "::error::ranking_knobs: suppress_near_zero_baseline_rise takes 1 or 0, got '$value'"
+                    exit 1
+                  fi
+                  ;;
+                *)
+                  echo "::error::ranking_knobs: unknown name '$name'"
+                  exit 1
+                  ;;
+              esac
+            done
           fi
           pnpm exec tsx benchmarks/src/run-fse26.ts \
             --data-dir "$HOME/rcabench/json" \
@@ -363,14 +361,7 @@ jobs:
             "${STABILITY_ARG[@]}" \
             "${TEMPORAL_ARG[@]}" \
             "${ONSET_SHAPE_ARG[@]}" \
-            "${TRACE_ARG[@]}" \
-            "${TOPO_ARG[@]}" \
-            "${COLLISION_ARG[@]}" \
-            "${PRISM_ARG[@]}" \
-            "${PRISM_POOLING_ARG[@]}" \
-            "${COLLAPSE_ARG[@]}" \
-            "${IDLE_TRANSIENT_ARG[@]}" \
-            "${NEAR_ZERO_RISE_ARG[@]}" \
+            "${KNOB_ARGS[@]}" \
             "${RISE_CEILING_ARG[@]}" \
             "${FLEET_BASELINE_ARG[@]}" \
             "${MAX_CASES_ARG[@]}" \

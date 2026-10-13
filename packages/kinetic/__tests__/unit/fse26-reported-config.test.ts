@@ -743,14 +743,11 @@ const INPUT_OWNER: Readonly<Record<string, 'runner' | 'workflow'>> = {
   // passes straight through to a flag the FSE'26 parser accepts, and from there to an engine option the
   // cross-runner equivalence fence in `fse26-cli.test.ts` compares against the golden half's. None selects
   // a dataset or filters a converter's output, which is what `workflow` is reserved for.
-  trace_weight: 'runner',
-  topo_weight: 'runner',
-  collision_weight: 'runner',
-  prism_weight: 'runner',
-  prism_pooling: 'runner',
-  collapse_discount: 'runner',
-  suppress_idle_transients: 'runner',
-  suppress_near_zero_baseline_rise: 'runner',
+  // The eight are carried by ONE input, because a `workflow_dispatch` accepts at most 25 and naming them
+  // individually took the workflow to 30 - a file GitHub refuses rather than merely disallows. Classified
+  // `runner` because every one of the eight reaches a runner flag; the input itself binds no single flag by
+  // name, which is why the reach is asserted in the dispatch-surface census's `case`-block reading instead.
+  ranking_knobs: 'runner',
 };
 
 /**

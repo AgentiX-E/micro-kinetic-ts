@@ -66,6 +66,12 @@ const RCAEVAL_CLI = resolve(repoRoot, 'benchmarks/src/rcaeval-cli.ts');
 const RCAEVAL_ENGINE_OPTIONS = resolve(repoRoot, 'benchmarks/src/rcaeval-engine-options.ts');
 const FSE26_WORKFLOW = resolve(repoRoot, '.github/workflows/fse26-benchmark.yml');
 const RCAEVAL_WORKFLOW = resolve(repoRoot, '.github/workflows/benchmark-rcaeval.yml');
+/**
+ * The whole workflow directory, because GitHub's input budget is a property of the EVENT rather than of a
+ * file: the count guard below has to be able to see every workflow, including the ones this census has no
+ * other reason to open.
+ */
+const WORKFLOW_DIR = resolve(repoRoot, '.github/workflows');
 
 /** The sentinel owners, each asserted to be an exact set below rather than a habit. */
 const COMMENT_ONLY = 'comment-only';
@@ -145,6 +151,17 @@ function reaches(flag: string, text: string): boolean {
  */
 const OPERATIONAL_INPUTS: Readonly<Record<string, string>> = {
   shard_tag: 'selects the rcabench-data release; consumed by the download step',
+  // The eight knobs of iteration 96, carried as ONE input. It binds no flag by NAME - its value is a
+  // `name=value` list that a `case` block in the workflow maps onto the eight flags - so the derivation
+  // that reads an input's name cannot see the binding, and the reach is asserted the other way instead:
+  // `reaches()` reads each of the eight flags out of that block's CODE. It is one input rather than eight
+  // because **a `workflow_dispatch` accepts at most 25 inputs**: naming them individually took this
+  // workflow to 30, which made the WORKFLOW FILE INVALID - the push-triggered validation run failed and the
+  // dispatch was refused `HTTP 422: you may only define up to 25 inputs`. The count is now fenced below,
+  // because the failure this records is that NOTHING COUNTED THEM until GitHub refused them.
+  ranking_knobs:
+    'carries the eight iteration-96 knobs as a name=value list; the flags it can emit are spelled in the ' +
+    "step's own case block, which is where the reach is read from",
   categories: 'filters the converter output; consumed by the shard step',
 };
 
@@ -208,6 +225,34 @@ const OPERATIONAL_OPTIONS: Readonly<Record<string, string>> = {
  * bookkeeping: the kill criterion is an AND over the two benchmarks, so a knob that only
  * one side can dispatch has an undecidable other half.
  */
+/**
+ * Inputs that carry MORE THAN ONE flag, and the flags each is able to emit.
+ *
+ * `ranking_knobs` is the first, and it exists because of a HARD GITHUB LIMIT rather than a preference: a
+ * `workflow_dispatch` accepts at most 25 `inputs`, naming the eight knobs one per input took the FSE'26
+ * workflow to 30, and past 25 the file is not large but INVALID - the push-triggered validation run failed
+ * and `POST .../dispatches` was refused with `HTTP 422`. The count is fenced in the block at the end of this
+ * file; this table is the other half, because a shared input is the one shape that could hide a dispatch
+ * from the table above.
+ *
+ * **The flags listed here are CLAIMS, and the guard checks each against the workflow's own code** with
+ * `reaches()` before crediting it - so a `case` arm deleted from the workflow fails the guard rather than
+ * quietly shrinking the dispatch set, which is the failure mode
+ * `records every dispatch a workflow actually has` was written for.
+ */
+const SHARED_INPUTS: Readonly<Record<string, readonly string[]>> = {
+  ranking_knobs: [
+    '--trace-weight',
+    '--topo-weight',
+    '--collision-weight',
+    '--prism-weight',
+    '--prism-pooling',
+    '--collapse-discount',
+    '--suppress-idle-transients',
+    '--suppress-near-zero-baseline-rise',
+  ],
+};
+
 const KNOBS: Readonly<
   Record<string, { flag: string; owner: string; fse26: string | null; rcaeval: string | null }>
 > = {
@@ -313,49 +358,49 @@ const KNOBS: Readonly<
   collisionWeight: {
     flag: '--collision-weight',
     owner: 're3-fault-ceiling.md',
-    fse26: 'collision_weight',
+    fse26: 'ranking_knobs',
     rcaeval: 'collision_weight',
   },
   topoWeight: {
     flag: '--topo-weight',
     owner: 'fse26-metric-competition-verdict.md',
-    fse26: 'topo_weight',
+    fse26: 'ranking_knobs',
     rcaeval: 'topo_weight',
   },
   traceWeight: {
     flag: '--trace-weight',
     owner: 'rank-collapse-falsified.md',
-    fse26: 'trace_weight',
+    fse26: 'ranking_knobs',
     rcaeval: 'trace_weight',
   },
   prismWeight: {
     flag: '--prism-weight',
     owner: 'fusion-routing-verdict.md',
-    fse26: 'prism_weight',
+    fse26: 'ranking_knobs',
     rcaeval: 'prism_weight',
   },
   prismPooling: {
     flag: '--prism-pooling',
     owner: 'prism-pooling-axis.md',
-    fse26: 'prism_pooling',
+    fse26: 'ranking_knobs',
     rcaeval: 'prism_pooling',
   },
   collapseDiscount: {
     flag: '--collapse-discount',
     owner: COMMENT_ONLY,
-    fse26: 'collapse_discount',
+    fse26: 'ranking_knobs',
     rcaeval: 'collapse_discount',
   },
   suppressIdleTransients: {
     flag: '--suppress-idle-transients',
     owner: 'near-zero-rise-suppression-falsified.md',
-    fse26: 'suppress_idle_transients',
+    fse26: 'ranking_knobs',
     rcaeval: 'suppress_idle_transients',
   },
   suppressNearZeroBaselineRise: {
     flag: '--suppress-near-zero-baseline-rise',
     owner: 'near-zero-rise-suppression-falsified.md',
-    fse26: 'suppress_near_zero_baseline_rise',
+    fse26: 'ranking_knobs',
     rcaeval: 'suppress_near_zero_baseline_rise',
   },
   fusionCeiling: {
@@ -928,10 +973,29 @@ describe('the dispatch surface has one owner per knob', () => {
     // passes all of them. Measured, not hypothesised: four inputs were added to the RCAEval workflow
     // and the guard stayed green, because the intersection it checks is computed from this table
     // rather than from the workflows.
-    const declared = (inputs: readonly string[], accepted: Map<string, string>): string[] =>
+    const declared = (
+      inputs: readonly string[],
+      accepted: Map<string, string>,
+      yml: string,
+    ): string[] =>
       inputs
-        .filter((name) => !(name in OPERATIONAL_INPUTS))
-        .map((name) => accepted.get(flagOfInput(name)))
+        .flatMap((name) => {
+          // A SHARED input emits several flags, and each one it claims is checked against the workflow's own
+          // code before it is credited - otherwise this table would be a third place to assert a reach that
+          // does not exist, which is what the block above it exists to prevent.
+          const shared = SHARED_INPUTS[name];
+          if (shared !== undefined) {
+            return shared.map((flag) => {
+              expect(
+                reaches(flag, yml),
+                `${name} claims ${flag} but the workflow cannot reach it`,
+              ).toBe(true);
+              return accepted.get(flag);
+            });
+          }
+          if (name in OPERATIONAL_INPUTS) return [];
+          return [accepted.get(flagOfInput(name))];
+        })
         .filter(
           (option): option is string => option !== undefined && !(option in OPERATIONAL_OPTIONS),
         );
@@ -939,18 +1003,24 @@ describe('the dispatch surface has one owner per knob', () => {
       Object.entries(KNOBS)
         .filter(([, knob]) => knob[side] !== null)
         .map(([option]) => option);
-    expect(new Set(declared(rcaevalInputs, rcaevalFlags))).toEqual(new Set(recorded('rcaeval')));
-    expect(new Set(declared(fse26Inputs, fse26Flags))).toEqual(new Set(recorded('fse26')));
+    const fse26Yml = readFileSync(FSE26_WORKFLOW, 'utf8');
+    const rcaevalYml = readFileSync(RCAEVAL_WORKFLOW, 'utf8');
+    expect(new Set(declared(rcaevalInputs, rcaevalFlags, rcaevalYml))).toEqual(
+      new Set(recorded('rcaeval')),
+    );
+    expect(new Set(declared(fse26Inputs, fse26Flags, fse26Yml))).toEqual(
+      new Set(recorded('fse26')),
+    );
     // Non-vacuity both ways: each workflow must declare something, and the two are NOT interchangeable.
-    expect(declared(rcaevalInputs, rcaevalFlags).length).toBeGreaterThan(1);
-    expect(declared(fse26Inputs, fse26Flags).length).toBeGreaterThan(1);
+    expect(declared(rcaevalInputs, rcaevalFlags, rcaevalYml).length).toBeGreaterThan(1);
+    expect(declared(fse26Inputs, fse26Flags, fse26Yml).length).toBeGreaterThan(1);
     // **The direction of that inequality reversed in iteration 95, and it is stated with its reason rather
     // than left as a floor that happened to hold.** It used to read "RCAEval still exposes fewer knobs than
     // FSE'26 does"; the golden half now exposes MORE (18 against 15) because the eight axes above were given
     // inputs here and the FSE'26 CLI has no matching flags. Neither ordering is the invariant — what matters
     // is that the two sides are different surfaces, and that the difference is the one the tables record.
-    expect(declared(fse26Inputs, fse26Flags).length).not.toBe(
-      declared(rcaevalInputs, rcaevalFlags).length,
+    expect(declared(fse26Inputs, fse26Flags, fse26Yml).length).not.toBe(
+      declared(rcaevalInputs, rcaevalFlags, rcaevalYml).length,
     );
   });
 
@@ -1118,5 +1188,55 @@ describe('the dispatch surface has one owner per knob', () => {
       ...runBlocks(readFileSync(FSE26_WORKFLOW, 'utf8')),
     ].filter((block) => block.expanded.some((n) => (block.arrays.get(n)?.size ?? 0) > 0));
     expect(withArrayFlags.length).toBeGreaterThan(4);
+  });
+
+  describe('every workflow respects the dispatch surface GitHub actually allows', () => {
+    /**
+     * GitHub's own limit, and the number this suite exists to keep in view.
+     *
+     * A `workflow_dispatch` accepts **at most 25 `inputs`**. Past that the workflow file is not merely large,
+     * it is INVALID: the push-triggered validation run fails and `POST .../dispatches` is refused with
+     * `HTTP 422: you may only define up to 25 inputs for a workflow_dispatch event`.
+     *
+     * **Nothing counted them until GitHub refused them.** Iteration 96 added eight named inputs to
+     * `fse26-benchmark.yml` - every one of them a real knob the surface was missing - and took it from 22 to
+     * 30. The eight were correct and the count was fatal, which is the class of defect this file is for: not a
+     * wrong value, a missing BUDGET. The fix was to carry the eight through one input, and this is the guard
+     * that makes the budget a fact rather than a memory.
+     *
+     * It is asserted over every workflow rather than the one that broke, because the limit is a property of
+     * the event and not of a file, and because the RCAEval half is already at 21 - five under.
+     */
+    const GITHUB_DISPATCH_INPUT_LIMIT = 25;
+
+    const workflows = readdirSync(WORKFLOW_DIR)
+      .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+      .sort();
+
+    it('declares at most the 25 inputs a workflow_dispatch accepts, and declares them on EVERY file', () => {
+      expect(
+        workflows.length,
+        'no workflows found; the directory constant is wrong',
+      ).toBeGreaterThan(10);
+      for (const name of workflows) {
+        const yml = readFileSync(resolve(WORKFLOW_DIR, name), 'utf8');
+        if (!yml.includes('workflow_dispatch')) continue;
+        const count = inputNames(yml).length;
+        expect(
+          count,
+          `${name} declares ${count} inputs; GitHub allows ${GITHUB_DISPATCH_INPUT_LIMIT}`,
+        ).toBeLessThanOrEqual(GITHUB_DISPATCH_INPUT_LIMIT);
+      }
+    });
+
+    it('has the two benchmark workflows sized so the budget is visible, not merely satisfied', () => {
+      // A report rather than an assertion, pinned as exact counts so a change to either is a deliberate edit
+      // and not a drift. `benchmark-rcaeval` is the one to watch: it is the larger surface and it is the half
+      // a new knob is most likely to be added to first.
+      expect(inputNames(readFileSync(FSE26_WORKFLOW, 'utf8'))).toHaveLength(23);
+      expect(inputNames(readFileSync(RCAEVAL_WORKFLOW, 'utf8')).length).toBeLessThanOrEqual(
+        GITHUB_DISPATCH_INPUT_LIMIT,
+      );
+    });
   });
 });
