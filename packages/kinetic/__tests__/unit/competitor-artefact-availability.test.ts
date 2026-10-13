@@ -38,15 +38,14 @@
  * reports the wrong rows; at sentence granularity it reports exactly the two real ones.
  */
 
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { readRepoFile } from './support/repo-file.js';
+
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
-const COMPARISON = resolve(repoRoot, 'docs/sota-comparison.md');
-const INVENTORY = resolve(repoRoot, 'docs/competitor-artefact-availability.md');
 
 /**
  * The three unambiguous artefact grammars, plus the backticked `OWNER/REPO` shorthand.
@@ -165,8 +164,10 @@ export function inventoryRows(text: string): InventoryRow[] {
   return rows;
 }
 
-const comparison = readFileSync(COMPARISON, 'utf8');
-const inventory = readFileSync(INVENTORY, 'utf8');
+// Read through the prerequisite helper: the document this fence is about is part of what this commit
+// MEANS, and a missing one must say so rather than raise a bare `ENOENT` (see `support/repo-file.ts`).
+const comparison = readRepoFile(repoRoot, 'docs/sota-comparison.md');
+const inventory = readRepoFile(repoRoot, 'docs/competitor-artefact-availability.md');
 const rows = inventoryRows(inventory);
 const verdictOf = new Map<string, string>();
 for (const row of rows) for (const t of row.tokens) verdictOf.set(t, row.verdict);
