@@ -507,3 +507,26 @@ that motivated this whole mirror then measured the sibling at **+3 net cases acr
 switches are not consistent after all. **A reachability gap is not only a missing knob; it is a missing
 MEASUREMENT, and the golden half had been carrying a claim about a switch it could not vary.**
 
+
+## Finding 8 — the eight knobs Finding 6 wired had no OWNER for their defaults (iteration 98)
+
+Finding 6's own theme was the join between a value and the thing that carries it, and it left a seam this
+document did not look at: **reachability of a KNOB is not ownership of its DEFAULT.** The eight knobs the
+mirror wired carried their shipped values as bare literals in the engine's own defaults table and in both
+parsers' option objects — eighteen declaration sites, zero names — so the workflow inputs that expose them
+could not state their default as a NUMBER and said `the SHIPPED 0 = disabled` instead.
+
+That is the same defect Finding 6 named one level up, and it is worth stating in this document's own terms
+because it is why the mirror's own descriptions read the way they do: `topo_weight`, `collision_weight`,
+`prism_weight` and `collapse_discount` had no constant to read a number from, and the population guard that
+exists to keep the description table honest was keyed on the PHRASE `runner default, which is ...` — so a
+description saying `the runner default, the SHIPPED 0` was outside the population and none of the four was
+ever registered.
+
+`docs/ranking-default-owners.md` is the census and the closure: twelve named owners, both defaults tables
+exported, the description guard's population moved onto the claim (`the `empty =` clause`) with **15
+registered rows becoming 41**, and the containment check moved onto the CLAIM CLAUSE because a
+whole-description substring test is unsound for every string-valued option — it passed on `log_mode`'s
+pre-98 text by matching a vocabulary entry. **Nineteen declaration sites over twelve knobs** is the count the
+census reports on the pre-98 tree, and it is the number this document could not have supplied from its own
+table, because the table is keyed by the flag and this defect lives in the default.
