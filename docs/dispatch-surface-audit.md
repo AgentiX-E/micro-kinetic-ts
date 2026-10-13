@@ -320,3 +320,78 @@ walked straight through it. Measured, not argued: the mutation `prismPooling: 'a
 `DEFAULT_PRISM_POOLING` **SURVIVED** the unmodified loop and is killed by the corrected one
 (`<knob>:\s*DEFAULT_[A-Z0-9_]+`), which subsumes the numeric arm because a numeric literal cannot be
 `DEFAULT_<NAME>`. *A proxy that was true of every member of a population is not a rule about the population.*
+
+## Finding 6 — the golden half's own accepted flags, and the boundary argument this document already made (iteration 95)
+
+**The third direction, and it is neither of the two above.** Findings 1–5 close three seams: a knob that reaches
+no option, an option whose owner document is missing, and an artifact-shaping flag no workflow can reach. This one
+is a **RANKING** knob the golden parser accepts, the runner carries into `RCAEvalSignalOptions` or
+`RCAEvalTopologyOptions`, **the configuration line names on every artifact** — and no dispatch could state.
+Measured: **eight of them.**
+
+| knob | flag | before | after |
+| --- | --- | --- | --- |
+| `traceWeight` | `--trace-weight` | workflow could not state it | `trace_weight` |
+| `topoWeight` | `--topo-weight` | " | `topo_weight` |
+| `collisionWeight` | `--collision-weight` | " | `collision_weight` |
+| `prismWeight` | `--prism-weight` | " | `prism_weight` |
+| `prismPooling` | `--prism-pooling` | " | `prism_pooling` |
+| `collapseDiscount` | `--collapse-discount` | " | `collapse_discount` |
+| `suppressIdleTransients` | `--suppress-idle-transients` | " | `suppress_idle_transients` |
+| `suppressNearZeroBaselineRise` | `--suppress-near-zero-baseline-rise` | " | `suppress_near_zero_baseline_rise` |
+
+`UNDISPATCHABLE_ON_RCAEVAL` therefore goes from **twelve to four**, and the four that remain are not of this shape:
+`--fusion-ceiling` (an output path, Finding 4), `--rank-normalization` (the POSITIVE pole whose axis IS reachable
+through its negation, the same single-pole convention the FSE'26 parser uses), and the two NEGATED poles of switches
+whose shipped default is `false`, so each can only restate the default.
+
+### The boundary argument, answered rather than ignored
+
+**This document already argued against this change**, and the argument is worth restating in its own words: the
+four inputs added by Finding 2 *"are exactly the knobs BOTH runners accept: adding an RCAEval-only knob
+(`--collision-weight`, `--trace-weight`, `--prism-weight`, …) would grow the surface without growing the set of
+answerable questions, because the FSE'26 half would still be unreachable."*
+
+**That is still true, and it is not the ground this change rests on.** The kill criterion's AND is untouched: with
+the FSE'26 half unable to state these eight, dispatching them answers nothing about the criterion. What the change
+repairs is the **artifact integrity** defect Findings 3 and 5 already own — an option the runner accepts, the engine
+carries, and the line NAMES makes every artifact assert a configuration nobody can ask for. The distinction is that
+Findings 3 and 5 are about flags reaching no *option*; this one is about options reaching no *dispatch*, and the
+line is the same lie in both directions.
+
+The boundary argument's consequence is therefore recorded as a **task rather than a prohibition**: the mirror is to
+give `fse26-cli.ts` the same eight flags and forward them, which is what turns eight goldens-only arms into eight
+decidable axes. Until that happens the eight inputs here are **not** a claim about the criterion, and this paragraph
+exists so the next reader cannot mistake them for one.
+
+### One defect found while wiring it, and it is this document's own theme
+
+`trace_weight`'s shipped value **has no owning constant**. It is a bare literal in `rcaeval-cli.ts` and a bare `1`
+in the RE3 job's pin, so the workflow-description guard — which requires every input claiming a runner default to
+name a constant that can be checked — **refused the claim**, and the description had to state the default in words
+instead. That is the **second instance** of the class `DEFAULT_LOG_WEIGHT` was created for, found by the same guard
+one iteration later, and it is registered here rather than worked around: the runner's default is `0` and the RE3
+pin is a per-invocation configuration, so the two want one constant and one guard-side `else` — which is also how
+the pin stopped being stated twice.
+
+### Three fences that had encoded the old symmetry, each updated with its reason
+
+1. **"the golden half reaches exactly the intersection"** was an equality. It is now a **subset in both
+   directions** plus an ownership check, because the golden half reaches 18 axes against the FSE'26 half's 15 —
+   **the direction of the asymmetry reversed** — and the property the equality was protecting is that no axis is
+   reachable without a `KNOBS` row.
+2. **"RCAEval still exposes fewer knobs than FSE'26 does"** was a non-vacuity floor on an inequality. Both sides
+   are non-empty and the two counts differ; *which* is larger is now a recorded fact rather than a premise.
+3. **`unreachable.length > 10`** was a floor pinned to the twelve members. A floor left at the old count would have
+   made the emptying look like a **regression**, so it is replaced by the property that still has to hold: the set
+   is non-empty and is a strict subset of the accepted flags. **A set that shrinks without a note is a set nobody
+   can audit**, and its own docblock already said so.
+
+### And the pin this change would have created
+
+The RE3 job **pinned** `--trace-weight 1` on its command line while `RANKING_ARG` can now set the same flag. The
+census's own rule — *"a step that states one knob twice has a meaning that depends on the parser's tie-break"* — is
+why it fires, and it is the hazard this document records for `--log-signal-mode`. The pin moved **inside the
+guard** (`else RANKING_ARG+=(--trace-weight 1)`), so one statement per state, the dispatch wins, and the RE3
+default is unchanged.
+
