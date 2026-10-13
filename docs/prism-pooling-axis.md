@@ -2,9 +2,13 @@
 
 **Status:** axis enrolled and dispatchable. `TreePrunerOptions.prismPooling` (`--prism-pooling`) selects which
 of PRISM's two combination functions the fused `prismScore` is built with, the value is stated on the reported
-configuration line, and the ablation battery carries the two rows that measure it. It is **open** rather than
-closed: the pooling has never been measured inside the engine, only by the standalone evaluator, and the global
-flip is not a gain.
+configuration line, and the ablation battery carries the two rows that measure it — **and those rows have been run**.
+It is **open** rather than closed, but not for the reason this line used to give: it read *"the pooling has never been
+measured inside the engine, only by the standalone evaluator"*, and that stopped being true at iteration 73 —
+`ABLATION_FINDINGS.md` v4's own heading is *"the PRISM pooling axis, measured INSIDE the engine for the first time"*
+(run `37736529560`), and `prism-pooling-frontier.md` has since taken the whole cross product. What is open is the
+DISCRIMINATOR: the pooled signal is worth **+29.0 pp on RE3** against additive's +16.2 and **−3.5 pp on RE1**, so a
+global flip is unsupportable in either direction and the axis belongs to a per-context rule.
 
 ## 1. The axis
 
@@ -90,7 +94,7 @@ been taken with it.
 | runner | `--prism-pooling`, parsed against `isPrismPooling` rather than a hand-written pair, falling back to the shipped pooling on an unusable value like every other mode flag |
 | artifact | `prismPooling=<value>` on the reported configuration line and on the ablation artifact's line |
 | study | `AblationWeightOverrides` became `AblationEngineOverrides` (the first member that is not a number), and the battery carries the two pooling rows as the **additive rows' siblings** — the flags spread from the named `PRISM_ONLY_FLAGS` / `PRODUCTION_PRISM_FLAGS` constants, one override apart |
-| register | a `dispatch-surface-census` KNOBS row, owner this document; `--prism-pooling` recorded in `UNDISPATCHABLE_ON_RCAEVAL` |
+| register | a `dispatch-surface-census` KNOBS row, owner this document; `--prism-pooling` **dispatchable from the golden half** as of iteration 95 (`prism_pooling`), and NOT in `UNDISPATCHABLE_ON_RCAEVAL` |
 
 The sibling construction is what makes the delta attributable: a row that retyped twelve booleans would
 attribute a flag's effect to the pooling, which is the one thing a single-knob ablation must not do.
@@ -107,10 +111,14 @@ It does **not** claim a gain. The direction §2 points at is a per-context choic
 global gain. What the enrolment buys is the ability to ask the question on the register's own ablation
 reference for the first time.
 
-**And it is not yet decidable on both halves of the criterion.** `--prism-pooling` is accepted by the RCAEval
-runner and reachable from no workflow, which is why it is recorded in `UNDISPATCHABLE_ON_RCAEVAL`: a candidate
-that ships a per-context pooling rule would need a `prism_pooling` dispatch input before its golden half could
-be measured.
+**Both halves of the criterion are decidable, and have been since iteration 95.** This paragraph used to say the
+opposite — that `--prism-pooling` was *"reachable from no workflow"* and therefore *"recorded in
+`UNDISPATCHABLE_ON_RCAEVAL`"*, so a per-context rule's golden half would be unmeasurable — and **every clause of it
+was false**: `prism_pooling` is an input of `benchmark-rcaeval.yml`, all seven of its suites pass `--prism-pooling`,
+and the flag is a member of no such set. Corrected in iteration 100. The sentence is kept with its correction
+because it is the exact shape `docs/competitor-artefact-availability.md` records one surface over: **a document
+asserting a property of the CODE that no fence derives from the code** — here a flag's reach, where there it was an
+artefact's availability and in iteration 98 a default's owner.
 
 **The frontier it belongs to has now been re-taken.** The weight sweep that closed the fusion direction
 (`docs/fusion-routing-verdict.md`) swept `prismWeight` alone, which was the only dimension it could sweep —
