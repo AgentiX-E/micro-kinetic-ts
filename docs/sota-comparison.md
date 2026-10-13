@@ -404,6 +404,53 @@ this repository's record in **§3** of this document, in `docs/benchmark-corpus-
 (*"a non-uniform column schema that silently zeroes telemetry for 250 of 375 RE1 cases"*). The survey found it, the
 grep found it first, and nothing was re-derived. **Standing unchanged.**
 
+### 0h. An INDUSTRY architecture with no number — and the one mechanism it names that this repository has already measured against
+
+**Atlassian's automated RCA framework**, published through the **CNCF** as *"Automating root cause analysis at
+scale: multi-signal correlation for cloud-native incident response"* (2026-08-24). Not on this repository's
+record until now, and it is filed as a **third class of reference**: neither a competitor with a number nor a
+benchmark, but a **published production architecture** whose design choices are nameable and checkable against
+ours.
+
+**It reports no accuracy at all**, so nothing is quotable and no gap exists in either direction. What it does
+report is a pipeline:
+
+1. **Scope the search by topology** — an OpenTelemetry-derived service map, built from span parent/child
+   relationships, restricts the incident to the call-path subgraph (hundreds of services → tens). *Our
+   equivalent is the fault graph's own node set, and it is why the pool size is a per-case quantity.*
+2. **Detect per signal, then NORMALISE.** Metrics (RED: rate/error/duration) via MAD and percentile bands;
+   traces via structural anomalies (unexpected exceptions, novel propagation patterns, span latency spikes);
+   logs via **embedding-based clustering** for novel error clusters. Then *"each detector emits the same event
+   schema, so the correlation engine can reason across signals without caring which detector produced them."*
+   **This is the step this repository's register shows is where the ranking is lost.** Our 159 reranking misses
+   are decided by terms whose contributions are in different UNITS — `selfAnomalyLog1p` on a rank grid of
+   `0.0083` steps at 68 nodes, against `trace`/`log` contributing exactly `{0, 1}`. A normalised event schema is
+   the discipline that keeps that from happening, and it is the one thing in this architecture that is directly
+   actionable for us rather than merely comparable.
+3. **Temporal correlation** — a sliding window (typically ±5 min) with an **exponential-decay temporal cohesion
+   score**, so tightly clustered anomalies outrank dispersed ones, plus **sequence fingerprinting** to collapse
+   repeated failure chains into one bundle with a replay count. *Our `temporal` term is this idea at weight `0`,
+   and `docs/fse26-onset-verdict.md` closed every onset shape with **no admissible weight on either shape** —
+   so the temporal axis is not a gap in our implementation but a measured non-lever on our corpus.*
+4. **Direction by graph traversal** — start at the **sink node** (highest anomaly severity) and walk UPSTREAM
+   with bounded BFS, scoring each candidate path by anomaly severity, dependency strength and **temporal
+   distance from the sink**; *"if Service A depends on Service B, and B's anomaly appears earlier in time, B is
+   more likely to be the origin."* **This is the mechanism our record refutes on this benchmark family, and it
+   was refuted by measurement rather than taste**: `docs/fse26-separator-verdict.md` pairs the two populations
+   and finds the graph's direction **separates per population and REVERSES between them** — source → winner in
+   49 of 65 decisive replace-code pairs (AUC 0.732, stable in all five folds) against winner → source in 8–32
+   for network partition and 0–19 for network loss. A global direction bonus cannot exist, which is why
+   `failedEdgeWeight = 0` was already closed at 2 regressed fault types. Atlassian's construction is the same
+   class of signal, stated as an architecture rather than as a weight.
+
+**Why it is worth recording anyway.** Two reasons, and neither is a number. It is the **first industry-authored,
+foundation-published statement of the same pipeline shape** this repository implements term by term, and it says
+out loud what our own artifacts measure: that the hard part is not detection but **making heterogeneous signals
+comparable** — a point it makes by normalising, and we make by measuring that our terms' scales differ by two
+orders of magnitude. And its **source is not a paper**: it is a CNCF post with no code, no dataset and no
+accuracy, so it joins §0c's Project Arena and §0g's Alibaba benchmark in the file's *"publicly stated, not
+reproducible as a number"* class rather than in any table.
+
 ## 1. Our result (run `37872246084`; RE1 and RE3 unchanged, RE2 re-measured on its full 270 cases)
 
 | suite | OnlineBoutique | SockShop | TrainTicket | suite avg |

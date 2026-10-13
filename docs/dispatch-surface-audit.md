@@ -374,6 +374,14 @@ one iteration later, and it is registered here rather than worked around: the ru
 pin is a per-invocation configuration, so the two want one constant and one guard-side `else` — which is also how
 the pin stopped being stated twice.
 
+**Closed in iteration 97.** `DEFAULT_TRACE_WEIGHT` now lives in `packages/tree` beside
+`DEFAULT_LOG_WEIGHT` and `DEFAULT_LOG_SIGNAL_MODE`, and the value had **four** owners rather than three: the
+engine's own `DEFAULT_TREE_PRUNER_OPTIONS` held a bare `0.0` as well as each parser's field default and
+`parseWeight` fallback. All four read the constant now, so the golden workflow's `trace_weight` description
+states its default as a NUMBER and the description guard checks it — the two things the words-only
+description could not do. `docs/rank-collapse-falsified.md` carries the measurement that explains why the
+value matters beyond bookkeeping.
+
 ### Three fences that had encoded the old symmetry, each updated with its reason
 
 1. **"the golden half reaches exactly the intersection"** was an equality. It is now a **subset in both
