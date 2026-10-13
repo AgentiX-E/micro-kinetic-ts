@@ -100,8 +100,8 @@ is unverified — and unlike the fifth it is peer-reviewed and reports on a suit
    reached the paper's own data description, which audits **RCAEval** (microservices) alongside **WADI / SWaT /
    HVAC** (cyber-physical systems) and states that retrieval is *"nearly solved"* in microservices while the
    *"retrieval ceiling"* in the CPS systems caps a magnitude-only retriever at **35–64%** — so the `+12 pp` it is
-   most quoted for is a **CPS** margin, and its RCAEval contribution is the decomposition, not a gap over us. **Two things verified 2026-10-10 that sharpen it in opposite directions.** Its code is
-   public (`github.com/cruiseresearchgroup/DecompRCA`), so the comparison is available to run. And an
+   most quoted for is a **CPS** margin, and its RCAEval contribution is the decomposition, not a gap over us. **Two things verified 2026-10-10 that sharpen it in opposite directions, and a third that closes the plan this
+   entry used to imply.** Its own abstract says the code is available at `github.com/cruiseresearchgroup/DecompRCA`, and **that URL does not resolve** — GitHub returns 404 for it and a repository search returns nothing — so this deficit cannot be closed by running it (`docs/competitor-artefact-availability.md`). And an
    **independent review** of the paper records that the abstract's `+12`-point margins sit on **14 / 36 / 48
    scenarios with error bars from `n=3` run-to-run spread rather than scenario-level intervals** — WADI's +12 pp
    is about **1.7 scenarios** — so the headline margin is fragile where the *decomposition* is not.
@@ -186,9 +186,9 @@ systems the top-1 is largely decided by the anomaly's **marginal position**, not
 side of us adds.
 
 **What it is not.** It is still cross-paper: their harness, their pre-processing, their graph construction and
-their per-case tables are theirs. But unlike §0a it is **checkable** — the code, the reproduction commands and the
-`examples/results/` case tables are public, so this is a comparison that can be turned into a measurement rather
-than left as a citation. Registered as the head of the reproducible-baseline item in `docs/closed-axes-register.md`.
+their per-case tables are theirs. But unlike §0a it is **checkable** — `edgedelta/project-arena` ships the
+scenario scripts, the answer keys and the scoring code under MIT, so this is a comparison that can be turned into a measurement rather than left as a citation. Registered as the head of the reproducible-baseline item in
+`docs/closed-axes-register.md`.
 
 ---
 
@@ -214,8 +214,8 @@ than left as a citation. Registered as the head of the reproducible-baseline ite
      read as an absence of a TT number. That reading was wrong.
 
    **What follows, and what does not.** No gap is claimed either way until two things happen: **confirm the case
-   set from the paper's own dataset section, and run their code on ours** — which is the standing
-   reproducible-baseline item, and this entry is its strongest motivation. What *is* claimable, because it needs
+   set from the paper's own dataset section, and find an artefact that carries the method** — the only GALA
+   artefact is `github.com/EvanTian233/GALA-for-RCA`, and its README withholds the implementation — so this entry is a motivation for the standing reproducible-baseline item rather than a plan inside it. What *is* claimable, because it needs
    no case-level identity: the published `AC@1` of the strongest external number on the `§2b` slice moves from
    RCLAgent's `56.67%` to **`74.44%`**, so our lead there is **`+12.2 pp` against `74.44%`, not `+30.0 pp`
    against `56.67%`** — and the `GALA 42.22%` row in `§2b` is the **prior** paper (`arXiv:2508.12472`) and must
@@ -223,7 +223,9 @@ than left as a citation. Registered as the head of the reproducible-baseline ite
 
    **Why it is not in `§0b`.** `§0b` admits exactly one reference — RCA-DCM — and its admission test is that the
    population is **verified from the source's own text**, not inferred from a count. GALA+ clears the metric and
-   the size and not the case set, so it sits here with the number recorded and the comparison left runnable.
+   the size and not the case set, so it sits here with the number recorded and the comparison **not runnable**:
+`github.com/EvanTian233/GALA-for-RCA` resolves and is MIT, and its README withholds the implementation under its
+industrial partner's agreement.
    **§2b-ii carries the full treatment**, including the third-party referee reading that disputes the metric's
    interpretation and the one part of the method that is worth borrowing.
 
@@ -287,7 +289,8 @@ criterion already is.
 **A "new" reference that is already on the list is an inventory failure, not a discovery.** The 2026-10-12 survey
 reached the paper in §0a entry 4 — the NeurIPS 2026 Evaluations & Datasets decomposition — a **second time**, from a
 press summary that carries neither its **arXiv identifier**, nor its authors (**Luan Pham** among them, the author
-of RCAEval *and* of PRISM), nor the fact that its code is public at `github.com/cruiseresearchgroup/DecompRCA`. All
+of RCAEval *and* of PRISM), nor that its own statement points at a code URL — `github.com/cruiseresearchgroup/DecompRCA`
+— which **does not resolve**. All
 three were already in entry 4, which is the entry that calls it "the most dangerous of the four" for exactly those
 reasons. The same survey also re-opened the **RE1 column-schema allegation as "owed"**, which entry 3 records as
 **refuted here** (`benchmark-corpus-completeness.md` §8: a hard gate, `--fail-on-degenerate`, reading **375 of 375**
@@ -531,8 +534,11 @@ same population size and the same suite name.
 not a head-to-head: the head-to-head in `§0a` is `78.91 vs 78.75` over the *identical 735 cases*, and nothing
 here establishes that GALA+'s 90 TrainTicket cases are the same 90 as ours. Two things must happen before the
 `−2.2pp` is treated as a measured deficit rather than a named risk: **confirm the case set from the paper's own
-dataset section, and run their code on ours** — the five reproducible references have all been reproducible
-and none has been run, which is the open `§0a` item this finding makes more valuable rather than less.
+dataset section, and obtain an artefact that carries the method** — `docs/competitor-artefact-availability.md`
+inventories every reference this document names, and the two that would decide this cell —
+`github.com/EvanTian233/GALA-for-RCA` and `github.com/cruiseresearchgroup/DecompRCA` — are respectively
+withheld and unresolvable, so the comparison cannot be run in either direction and the deficit stays a named
+risk rather than becoming a measurement.
 
 **A third-party reading is recorded with it, because it bears on the metric.** A published referee report on
 this paper (`pith.science`, T0 AI review, 2026-08-14) accepts the architecture and the ablations and disputes
