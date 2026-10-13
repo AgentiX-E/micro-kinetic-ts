@@ -61,7 +61,7 @@ additive pooling scores **78.91%** against our **78.75%**. So the standing is a 
 matters** and a lead of ≈1.16× on the published number, and the `+10.8 pp` row must never be quoted without the
 row beneath it.
 
-### 0a. ABOVE US, AND NOT COMPARABLE — the six references that must be named
+### 0a. ABOVE US, AND NOT COMPARABLE — the seven references that must be named
 
 **A number we cannot beat must be named, or the standing reads as a claim about the whole field.** Each of these
 is above us or beside us on some figure, and **none** is comparable to a service Top-1 on the 735 (verified
@@ -70,7 +70,9 @@ is above us or beside us on some figure, and **none** is comparable to a service
 fifth entry arrived on 2026-10-11 and is the first whose SHAPE matches one of our populations exactly while its
 abstract does not confirm it — read its entry before quoting any gap it implies.** And **§0d holds the reference
 that belongs in neither list**: a 2026-10-12 find whose number is BELOW ours while its population is a mixture
-nobody can compare to, which is a third class rather than a seventh member of this one.
+nobody can compare to, which is a third class rather than an eighth member of this one. **The seventh entry
+arrived on 2026-10-13 and is the SECOND whose shape matches one of our populations exactly while the case set
+is unverified — and unlike the fifth it is peer-reviewed and reports on a suite we run.**
 
 1. **A vendor's self-reported 89% top-1** on RCAEval — NOFire AI, on its own guide and its own benchmark, with
    no per-case results, and the page itself says to rerun it on your own incidents.
@@ -189,6 +191,42 @@ their per-case tables are theirs. But unlike §0a it is **checkable** — the co
 than left as a citation. Registered as the head of the reproducible-baseline item in `docs/closed-axes-register.md`.
 
 ---
+
+7. **GALA+** (`arXiv:2608.08968`, Tian, Liu, Chong, Huang, Li, **Hans-Arno Jacobsen**; University of Toronto;
+   **Proceedings of ASE '26**, the 41st IEEE/ACM International Conference on Automated Software Engineering) —
+   **`AC@1` 74.44% on OnlineBoutique and 73.33% on TrainTicket**, with `AC@3` 98.89% and 85.56%.
+
+   **Filed as a CANDIDATE ABOVE US ON RE2-TRAINTICKET WHOSE CASE SET IS NOT VERIFIED, and the reasons are entry
+   5's, sharpened by everything this one does give us.** Four things are true and only three are settled:
+
+   - **The metric matches.** `AC@1` is a top-1 over acceptable roots — the same quantity as ours, unlike the
+     `Avg@5` that the three references above this one report.
+   - **The suite and the population SIZE match.** `98.89% = 89/90` and `85.56% = 77/90` fix both populations at
+     **90 cases**, which is RCAEval RE2's own signature (`6 fault types × 15`) on exactly the two systems
+     `§2b` already compares. The paper names both systems.
+   - **The case-level identity does not follow.** Nothing in the abstract or the numbers establishes that its 90
+     TrainTicket cases are *the same* 90 as ours, and this document's head-to-head standard is the *identical
+     corpus* (`§0a`'s own `78.91 vs 78.75` over the 735). So the deficit below is a **named risk, not a
+     measurement**.
+   - **And it is above us on that cell.** `73.33% (66/90)` against our published `71.1% (64/90)` is **−2.2 pp**,
+     and it is the **first published competitor number on any TrainTicket cell in this document** — `§2b` is
+     titled *"where all LLM agents report"* and carried only OnlineBoutique, which made the absence of a TT row
+     read as an absence of a TT number. That reading was wrong.
+
+   **What follows, and what does not.** No gap is claimed either way until two things happen: **confirm the case
+   set from the paper's own dataset section, and run their code on ours** — which is the standing
+   reproducible-baseline item, and this entry is its strongest motivation. What *is* claimable, because it needs
+   no case-level identity: the published `AC@1` of the strongest external number on the `§2b` slice moves from
+   RCLAgent's `56.67%` to **`74.44%`**, so our lead there is **`+12.2 pp` against `74.44%`, not `+30.0 pp`
+   against `56.67%`** — and the `GALA 42.22%` row in `§2b` is the **prior** paper (`arXiv:2508.12472`) and must
+   not be quoted as this method's.
+
+   **Why it is not in `§0b`.** `§0b` admits exactly one reference — RCA-DCM — and its admission test is that the
+   population is **verified from the source's own text**, not inferred from a count. GALA+ clears the metric and
+   the size and not the case set, so it sits here with the number recorded and the comparison left runnable.
+   **§2b-ii carries the full treatment**, including the third-party referee reading that disputes the metric's
+   interpretation and the one part of the method that is worth borrowing.
+
 
 ### 0c. A NEW PUBLIC BENCHMARK — small, vendor-authored, and REPRODUCIBLE
 
@@ -407,6 +445,64 @@ Two cohorts must be reported separately, because they are measured on different 
 | mABC | 39.98% | LLM multi-agent | arXiv:2404.12135 |
 | RCAgent | 25.32% | LLM ReAct + tools | arXiv:2310.16340 |
 | OpenRCA | ~15% | LLM | ICLR'25 |
+
+### 2b-ii. GALA+ (ASE'26) — a reference we had CITATION-only, and the first published number on RE2-TrainTicket
+
+`arXiv:2608.08968`, **GALA+**, the ASE'26 successor to the `arXiv:2508.12472` entry in the table above. It was
+already in `sota-roadmap-2026.md`'s reference list — **and nowhere else**, so the number it reports had never
+been read. It has now been read, and it changes two standings.
+
+| population | GALA+ AC@1 | GALA+ AC@3 | ours (published) | Δ | ours (it.95 candidate) | Δ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| OnlineBoutique RE2 (90 cases) | 74.44% | 98.89% | **86.7%** | **+12.2pp** | 86.7% | +12.2pp |
+| **TrainTicket RE2 (90 cases)** | **73.33%** | 85.56% | 71.1% | **−2.2pp** | **73.3%** | **0.0pp** |
+
+**The population is 90 cases on both systems, and that is read off GALA+'s own AC@3 rather than assumed**:
+`98.89% = 89/90` and `85.56% = 77/90`. RCAEval's RE2 is 90 cases per system (6 fault types × 15), which is the
+same population size and the same suite name.
+
+**Three consequences, and the second is the one to act on.**
+
+1. **On RE2-OnlineBoutique we still lead, and by less than before.** GALA+ at 74.44% displaces RCLAgent
+   (56.67%) as the strongest published external number on that slice — and it also sits above VerifyRCA's 72%,
+   which `§0c` had recorded as the only comparable reference. Our lead there goes from being measured against
+   56.67% to being measured against 74.44%: **+12.2pp, not +30.0pp.** The old table's `GALA 42.22%` row is the
+   PRIOR paper's number and must not be quoted as this method's.
+2. **On RE2-TrainTicket we were BEHIND, and this is the first published competitor number on any TrainTicket
+   cell in this document.** §2b is titled *"where all LLM agents report"* and carries only OnlineBoutique; the
+   implicit reading was that no competitor reports TrainTicket. That reading was wrong. GALA+ reports **73.33%
+   (66/90)** against our published **71.1% (64/90)** — a **two-case deficit**, and the deficit is on the one
+   system where our own register says the ranking signal is starved of trace and log evidence.
+3. **And the iteration-95 candidate closes it exactly.** `suppress_idle_transients=1` takes RE2-TrainTicket to
+   **73.3% (66/90)** — `66/90 = 73.333%` against GALA+'s `73.33%`, i.e. **level**, and not by rounding: the same
+   `66 of 90`. The same dispatch costs one regressed fault type there (`disk 73.3% → 53.3%`) while gaining
+   `cpu +20.0`, `mem +6.7`, `socket +6.7`, so it is a routing candidate rather than a default — but the fact
+   that a gated candidate is worth exactly the margin to a published ASE'26 method makes the routing question
+   the one that now decides a standing, not a preference.
+
+**What is NOT claimed, and the repository's own standard is why.** This is a **paper-versus-paper** comparison,
+not a head-to-head: the head-to-head in `§0a` is `78.91 vs 78.75` over the *identical 735 cases*, and nothing
+here establishes that GALA+'s 90 TrainTicket cases are the same 90 as ours. Two things must happen before the
+`−2.2pp` is treated as a measured deficit rather than a named risk: **confirm the case set from the paper's own
+dataset section, and run their code on ours** — the five reproducible references have all been reproducible
+and none has been run, which is the open `§0a` item this finding makes more valuable rather than less.
+
+**A third-party reading is recorded with it, because it bears on the metric.** A published referee report on
+this paper (`pith.science`, T0 AI review, 2026-08-14) accepts the architecture and the ablations and disputes
+the headline: *"its headline accuracy claim overstates diagnosis quality because the ranking metric ignores
+failure-mode match"*. That is the same distinction our own `§0d` draws about composite scoring — a Top-1 over a
+labelled service list is not a diagnosis — and it means the `73.33%` is a Top-1 number, comparable to ours as a
+Top-1 and to nothing else.
+
+**And what is borrowable regardless of the standing.** `STRIX` scores each service on three named dimensions —
+`ϕ₁(v) = p99(v)/p50(v)` (instability), `ϕ₂(v) = PageRank(v)·(1+in(v))/(1+out(v))` (centrality), and
+`ϕ₃(v) = TotalLatency(v)·max(0, 1 − max_u AvgLatency(u)/AvgLatency(v))` (impact) — fused by reciprocal-rank
+fusion with `ε = 60`. Two of the three are **exactly the kind of term this repository has measured and rejected**
+(`ϕ₂` is an ancestry/centrality signal and `ϕ₁` a p99/p50 instability ratio), which is worth recording rather
+than assuming: the paper's own ablations are what make its claim, and its scorer is not a new mechanism for us.
+Its **graph-guided investigation** — parallel investigators bounded to predecessors and successors with a
+`θ = 0.6` confidence gate and `O(kΔ)` worst-case work — is the part that is genuinely different in kind, and it
+is the same territory as our Phase III agentic work rather than a term to add.
 
 ### 2c. Single-system / other slices (not directly comparable to 78.8%)
 

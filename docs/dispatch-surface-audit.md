@@ -395,3 +395,67 @@ why it fires, and it is the hazard this document records for `--log-signal-mode`
 guard** (`else RANKING_ARG+=(--trace-weight 1)`), so one statement per state, the dispatch wins, and the RE3
 default is unchanged.
 
+## Finding 7 — the mirror landed, and the intersection went from ten to eighteen (iteration 96)
+
+Finding 6 closed the eight knobs on the GOLDEN side and registered the mirror as a task, because its own
+boundary argument was that *adding an RCAEval-only knob grows the surface without growing the set of answerable
+questions, because the FSE'26 half would still be unreachable.* This is that task done, and the argument's
+instrument is now the thing it grew.
+
+| | before | after |
+| --- | ---: | ---: |
+| knobs the golden half can dispatch | 18 | 18 |
+| knobs the FSE'26 half can dispatch | 15 | **15 + 8** |
+| **knobs BOTH can dispatch** (the criterion's decidable set) | **10** | **18** |
+| `UNDISPATCHABLE_ON_RCAEVAL` | 4 | 4 |
+
+The intersection is computed over the `KNOBS` rows, and the eight rows carried `fse26: null` — so they were
+absent from it **by construction**, and no number of golden-side inputs could have put them there. That is the
+join this census exists to expose, arriving one level up: Finding 6 closed eight options-to-*dispatch* seams and
+did not move the intersection at all, which is exactly what its boundary argument predicted.
+
+### What changed, and what deliberately did not
+
+- `fse26-cli.ts` accepts the eight flags and assigns the same option names the golden parser does, **except**
+  where the engine's own field is the name — which is the whole point of the cross-runner fence.
+- `fse26-engine-options.ts` forwards five into `signals` and three into `topology`, on the split's own rule: a
+  value placed in the wrong argument is accounted for and still a no-op.
+- `fse26-report.ts` names each on the line's `omit when it holds its default` rule, which is **sound for all
+  eight because every default here is zero or false** — the property the latency weight does not have and which
+  is why that one is printed unconditionally. `prismPooling` is the ninth case and is nested under
+  `prismWeight`, on `failedEdgeMode`'s rule, because a pooling combined with a zero weight is not part of the
+  configuration.
+- The workflow gains eight inputs, and the input-ownership table in `packages/kinetic` gains eight rows.
+- **No engine source moved at all.** The options were already carried and already printed on the golden half;
+  this iteration is the FSE'26 half catching up to a surface the golden half already had.
+
+### The fences, and the one that is the whole point
+
+Three fences pin it, and the middle one is stronger than a per-flag test could be:
+
+1. `benchmarks/__tests__/fse26-cli.test.ts` gains a **cross-runner equivalence**: each of the eight is fed to
+   BOTH parsers and the **ENGINE-level** values are compared, valid AND malformed. Comparing engine values
+   rather than parse results is deliberate — the two surfaces do not use the same option names everywhere, so
+   two parsers can agree field-by-field and still disagree about what the engine receives, and a disagreement
+   is what makes the intersection meaningless even when both halves are individually reachable.
+2. The same block asserts the parser still **REFUSES** a flag it does not handle, because a fence that only
+   counted accepted flags would be satisfied by a parser that accepted everything.
+3. `benchmarks/__tests__/fse26-report.test.ts` gains the POSITIVE half of the line's rule — each of the eight
+   appears when it leaves its default, and not before. The shipped line's byte-identity is the negative half
+   and a line that printed none of them would satisfy it, so the rule is only fenced with both directions.
+
+### And the golden half is untouched, which is the acceptance
+
+Every new input defaults to empty, so a push passes no flag at all, and the eight defaults ARE the shipped
+values. **The acceptance is therefore the nine golden cells plus the `signals:` line** — both byte-identical,
+verified on the run the source commit triggered — which is the same criterion Finding 6 used and for the same
+reason: the surface grew, so the line's bytes may not.
+
+### One more thing this iteration found, and it is not about the surface
+
+`docs/near-zero-rise-suppression-falsified.md` closed its sibling's verdict with *"consistent with
+`suppressIdleTransients`"* — an inference from a shared guard shape that had never been tested. The dispatch
+that motivated this whole mirror then measured the sibling at **+3 net cases across two cells**, so the two
+switches are not consistent after all. **A reachability gap is not only a missing knob; it is a missing
+MEASUREMENT, and the golden half had been carrying a claim about a switch it could not vary.**
+
