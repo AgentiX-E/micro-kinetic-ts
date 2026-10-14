@@ -64,8 +64,8 @@ one it was short of, and the project page added here, are both recorded rather t
 | `arXiv:2510.22613` | **OTHER** | `DynaCausal` — mixed public benchmarks, **not RCAEval-only**, so no population of ours is a subset of it | 2026-10-13, §2c of `sota-comparison.md` |
 | `arXiv:2607.28545` | **OTHER** | ORCA-bench — a fault-propagation-aware benchmark with its own agents' 25.3% Medium figure | 2026-10-13, §3 of `sota-comparison.md` |
 | `edgedelta/project-arena` | **OTHER** | **21 injected scenarios** on OTel Demo under Kubernetes — a candidate INSTRUMENT, not a candidate number | 2026-10-13, GitHub API + the vendor's own page |
-| `arXiv:2606.05636` | **UNVERIFIED** | `StableRCA`, *"77% Top-1 on SockShop"*. A system is named and a case set is not: SockShop is 125 under RE1 and 90 under RE2, and `77` is neither figure's complement. **Resolution artefact: the paper's own full text** — not the abstract or any index of it | 2026-10-14, §2c of `sota-comparison.md` |
-| `arXiv:2608.25661` | **UNVERIFIED** | `OpsHarness`, *"59.0% top-1 across two public benchmarks and an industrial deployment"* — three populations in one sentence and no per-population figure, so one of the two unnamed benchmarks could be ours with a figure on either side. **Resolution artefact: the paper's own full text** | 2026-10-14, §0d of `sota-comparison.md` |
+| `arXiv:2606.05636` | **OTHER** | `StableRCA`'s **77%** is Top-1 on **Sock-Shop `[soc, 2022]`** — a standalone corpus its own text lists **separately from RCAEval**, among *"five datasets across retail services, microservices, manufacturing, and physical systems"* (ProRCA, Sock-Shop, RCAEval, CausalMan, CausalChambers). **It is not RE1-SS** and its own text states no case count, so `77%` is not a number of ours and no gap may be read against our 92.8% | 2026-10-14, arXiv HTML full text |
+| `arXiv:2608.25661` | **OTHER** | `OpsHarness`'s **59.0%** is *"top-1 accuracy on average across **four backbones**"* over **OpenRCA**, **RCAEval** *and* an industrial deployment. **RCAEval IS in the mix** — so our corpus is a COMPONENT of the figure and the figure is still not ours: a cross-backbone average over three populations with no per-population number. Below our 78.75% in any case | 2026-10-14, arXiv HTML full text |
 | `arXiv:2610.08622` | **UNVERIFIED** | `E4`, *"a mix of synthetic and real-world workloads"* — no benchmark, no case set, and a **relative** `62%` against an unnamed baseline. **Resolution artefact: the paper's own full text** | 2026-10-14, §0a entry 6 of `sota-comparison.md` |
 
 ## What the verdicts change, stated rather than implied
@@ -76,8 +76,16 @@ That is recorded in `sota-comparison.md` §0's standing table, and the two figur
 error bar — **its `L0`-against-`L3` ordering is under one standard deviation**, so the gap is quotable and the
 ordering inside it is not.
 
-**Two rows stay unquotable, and now for a nameable reason.** `StableRCA`'s and `OpsHarness`'s populations cannot
-be placed, so no gap is read in either direction — which was already true and is now a ROW rather than a habit.
+**Two of the rows this inventory was created with are no longer unquotable, and both resolved to `OTHER`.** The
+2026-10-14 pass read them from the papers' own full texts: **`StableRCA`'s 77% is on a Sock-Shop corpus its own
+text lists separately from RCAEval** — so it was never our RE1-SS number — and **`OpsHarness`'s 59.0% is an
+average across four backbones over OpenRCA, RCAEval and an industrial deployment**, so RCAEval is a component of
+its figure and the figure is still not ours. Reading them changed no standing; it changed *"we have not read
+this"* into *"we read it and it is not ours"*, which is the distinction this inventory exists to hold.
+
+**And the three rows that remain `UNVERIFIED` are the §2b cohort** — `RCLAgent`, `RCAgent` and `mABC` — each of
+which carries a number our own table asserts and no document of ours ever read. They are the inventory's next
+readings.
 
 **And the inventory is what makes the difference legible.** Before it, the difference between *"we have not read
 this"* and *"we read it and it is not ours"* lived in whichever sentence a reader happened to open. Both are
@@ -87,7 +95,7 @@ negative and only one of them is a finding.
 
 - **It is not an availability inventory.** Whether an artefact RESOLVES, and what it carries, is owned by
   `docs/competitor-artefact-availability.md` — the same 24 tokens, the other question.
-- **It does not resolve the two `UNVERIFIED` rows it still holds.** Each names the artefact that would, and
+- **It does not resolve the three `UNVERIFIED` rows it still holds.** Each names the artefact that would, and
   reading them is work this document schedules rather than performs.
 - **It does not fence the references' AFFILIATIONS.** The fifth entry's institution was stated in five places
   under two different attributions, and it is corrected in all five as part of this iteration — but no rule here

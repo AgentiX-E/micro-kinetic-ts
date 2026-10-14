@@ -299,10 +299,13 @@ baseline RCA agents, *"across two public benchmarks and an industrial deployment
 EITHER side of our own number.** A 59.0% is **below** our 78.75%, so §0a's contract ("a number we cannot beat must
 be named") does not reach it. But it is not §0b's kind either — §0b is *below us **and comparable***, which
 requires a metric and a population, and this one names **three populations in one sentence** and **no
-per-population figure**: two benchmarks it does not name and an industrial deployment nobody else can run. A
-59.0% against our 78.75% would therefore be a cross-population comparison of exactly the kind §0a exists to
-prevent — and the direction of the error is not even known, since one of the two unnamed benchmarks could be
-RCAEval and its per-benchmark number could be above or below ours.
+per-population figure**: the two benchmarks are now READ from its own text — **OpenRCA and RCAEval** — plus an
+industrial deployment nobody else can run, and the 59.0% is an average **across four backbones**. So **one of the
+three populations is ours and the figure is still not**: 59.0% against our 78.75% would be a cross-population
+comparison of exactly the kind §0a exists to prevent, and the direction of the error is not knowable from an
+average over four models. **The 2026-10-14 pass replaced this entry's own sentence** — *"two benchmarks it does not
+name … one of the two unnamed benchmarks could be RCAEval"* — with the names and the fact, which is a correction
+of our prose rather than of theirs, and `docs/sota-populations.md` now carries the row.
 
 **So no gap is quoted in either direction, and the standing is unchanged.** What is recorded is the **technique**,
 because it is the most directly borrowable thing on this list:
@@ -609,7 +612,7 @@ is the same territory as our Phase III agentic work rather than a term to add.
 
 | method | result | slice | source |
 |--------|--------|-------|--------|
-| StableRCA | 77% Top-1 | SockShop | arXiv:2606.05636 |
+| StableRCA | 77% Top-1 | **Sock-Shop `[soc, 2022]` — a corpus its own text lists SEPARATELY from RCAEval**, and not RE1-SS; no case count is stated, so no gap can be read against our 92.8% | arXiv:2606.05636 |
 | MARLIN | 61.1% PR@1 | OnlineBoutique | sota2.com, Mar 2026 |
 | DynaCausal | avg AC@1 0.63 | mixed public benchmarks (not RCAEval-only) | arXiv:2510.22613 |
 

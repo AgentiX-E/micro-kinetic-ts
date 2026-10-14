@@ -823,7 +823,89 @@ Before reading any number, check that the input was counted:
   verdict is dead when only one of the two numbers is. Name the type whenever a field name repeats.
 
 
+## The laws — the rules this repository's documents cite BY NUMBER, and where each one was measured
+
+**This section is the owner.** The laws below are cited by number across the repository — `pruner.ts`'s own docblock
+says *"`docs/closed-axes-register.md` names as law 16"* — and until iteration 102 **nothing in either repository
+defined a single one of them**, so a reader who followed a citation reached a dead end.
+
+**Measured on 2026-10-14, before this section existed:**
+
+| the measurement | the number |
+| --- | --- |
+| distinct law numbers CITED in the external repository | **7** — `7`, `10`, `16`, `18`, `21`, `30`, `37` |
+| files citing a law, production source included | **10** — `pruner.ts`, five fences, five documents |
+| laws whose own text occurred ANYWHERE in either repository | **22 of 37** |
+| laws that existed only outside both repositories | **15** |
+| laws whose originating iteration was recorded | **20 of 37** |
+
+**And the defect is not hypothetical — it materialised.** The list lived in a session working index, and iteration
+101's own compression of that index silently dropped eight of the thirty-seven. **A list whose only copy is a
+session file is not a record**; it is a draft that has not been lost *yet*. The 17 laws whose origin no document
+records are named in the section below, because an absence with no name is the thing law 3 is about.
+
+**Why the numbers are load-bearing and may not be renumbered.** They are cited in prose that outlives the list —
+the register's own row on the corpus order records that law 30 was *"written in iteration 99 and fulfilled by
+iteration 100's own repair"*, and the fence that cites it is a different file. **A gap or a reordering silently
+retro-targets every later citation**, so the table is asserted to be dense, unique and in order by
+`packages/kinetic/__tests__/unit/engineering-laws.test.ts`, which also asserts that every cited number is defined
+and that the text of every CITED law is pinned here verbatim.
+
+| # | the law | measured by |
+| --- | --- | --- |
+| 1 | **A saturated term cannot be read to decide whether to trust it** — a router's feature must VARY over the population it decides about. | `it.91` |
+| 2 | **A cause family's NAME travels with the family** — read the prefix, and DERIVE the mapping from the unions. | `UNRECORDED` |
+| 3 | **An absence has THREE levels** — a missing map, an empty tier, and a missing entry; a boolean lookup collapses the middle one. | `UNRECORDED` |
+| 4 | **A partition with two owners has no convention** — fix the class, and fence it in both directions. | `UNRECORDED` |
+| 5 | **A percentage cannot assert its own unit** — a threshold must travel with the value it judges. | `UNRECORDED` |
+| 6 | **A guard no input can reach is dead code**, and the coverage gate reports it. | `UNRECORDED` |
+| 7 | **A fence between two copies holds them to each other and to nothing else.** | `UNRECORDED` |
+| 8 | **A mutation is reverted from a source that predates it** — by `git checkout`, md5-verified. | `UNRECORDED` |
+| 9 | **A boundary must be the producer's own value** — and a comparator's arms must be exportable and hand-asserted. | `UNRECORDED` |
+| 10 | **A paper's own artefact statement is the authority on whether its artefact is public.** | `UNRECORDED` |
+| 11 | **A diagnostic must be a function of what the producer wrote.** | `UNRECORDED` |
+| 12 | **A union is not a population.** | `UNRECORDED` |
+| 13 | **A construction argument is the weaker claim** — a lead is not evidence until it is held out. | `UNRECORDED` |
+| 14 | **A corpus-wide frontier cannot settle a per-suite question** — and a conclusion may not rest on a sample. | `UNRECORDED` |
+| 15 | **A cross product missing a cell is not a smaller experiment** — an INTERACTION is invisible to both axes, so completeness is asserted by DERIVING the cells from the rows. | `UNRECORDED` |
+| 16 | **A fence written as an adjacency releases every row that names anything in the gap** — assert a row's property of the row's own literal; and a comment that COUNTS a growing list is a copy the list owns. | `UNRECORDED` |
+| 17 | **A listing lags the ref it describes** — an immediately-empty listing is not a missing push event, and a redundant dispatch can cancel the run the push created. | `UNRECORDED` |
+| 18 | **A fence's population is its subject** — reach must be asked FROM the option and not from the flag; a builder that COPIES exposes its surface and one that MAPS does not. | `UNRECORDED` |
+| 19 | **A fence whose population is a PHRASE can only see rows that use the phrase.** | `it.98` |
+| 20 | **A closure that names its own N owners and fixes N−1 of them is a closure whose count was never recomputed.** | `it.98` |
+| 21 | **A whole-description containment test is UNSOUND when the description necessarily lists the union** — check the CLAIM clause. | `it.98` |
+| 22 | **An alias resolves to another NAME, not to an owner.** | `it.98` |
+| 23 | **A pathspec that excludes one directory reaches everything else.** | `it.98` |
+| 24 | **A statement that an artefact is public is not evidence that its URL resolves.** | `it.99` |
+| 25 | **A repository that resolves is not an artefact that carries the method.** | `it.99` |
+| 26 | **A fence at paragraph granularity cannot see a claim inside a list.** | `it.99` |
+| 27 | **A suite is part of what a commit MEANS** — a document a suite reads lands in the SAME commit. | `it.99` |
+| 28 | **A cancelled run and a passing run look the same in a summary line.** | `it.99` |
+| 29 | **A fence that reads source text sees the text that documents it.** | `it.99` |
+| 30 | **Routing a read through a clearer failure can move it out of its own census.** | `it.99`, confirmed `it.100` |
+| 31 | **A convention thirteen of fifteen sites follow looks like a convention rather than a defect.** | `it.100` |
+| 32 | **A census's block-finder must walk OUTWARD past control flow.** | `it.100` |
+| 33 | **Blanking a literal without preserving its NEWLINES shifts a census's own line numbers.** | `it.100` |
+| 34 | **An assertion satisfied by a MUTANT asserts nothing** — a green census is evidence only if a red one is reachable. | `it.100` |
+| 35 | **A tool wired as NOTHING measures zero for a reason no ablation row can distinguish from inertness.** | `it.100` |
+| 36 | **An unconditional rule about citations can hide the citation that would expose the thing it governs.** | `it.100` |
+| 37 | **The artefact that states a paper's population is its own full text or its own project page** — a search of its abstract cannot settle it. | `it.101` |
+| 38 | **A method this repository cites by number and does not define is a DRAFT, not a record** — fifteen of the laws above existed only outside both repositories, and one iteration's own compression then dropped eight of them. This section is the owner, and it is also why the rule is a law rather than a note. | `it.102` |
+
+**What this table does NOT carry, stated rather than implied.** It does not carry the measurement behind each law.
+Most of them are one line because the measurement is a document — `it.98`'s laws are `ranking-default-owners.md`,
+`it.99`'s are the artefact inventory, `it.100`'s are the corpus-order record, `it.101`'s is the population
+inventory. A law whose origin reads `UNRECORDED` is a rule this repository obeys and cannot date, and **naming
+those is work, not a caveat**: they are listed by number in the next section.
+
 ## What is left
+
+**Seventeen of the thirty-seven laws have no recorded origin, and recovering each is named work**: laws `2`, `3`,
+`4`, `5`, `6`, `7`, `8`, `9`, `10`, `11`, `12`, `13`, `14`, `15`, `16`, `17` and `18` were written before this
+register started tagging an origin, so **which iteration measured each one is not recorded anywhere** — and that
+is the same absence in a different costume as the eight that a session's own compression dropped. A law whose
+measurement cannot be found is a law that cannot be re-derived, only obeyed.
+
 
 `docs/fse26-httpnet-miss-verdict.md` and `docs/fse26-stock-attribution.md` agree
 that the metric layer is the larger of the remaining mechanisms, and
