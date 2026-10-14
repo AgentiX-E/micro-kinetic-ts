@@ -46,13 +46,18 @@ absolute score can be read against the floor a random ranker would reach on the 
 | **RCAEval, all 735 cases** | service Top-1 | **78.75%** | PRISM **78.91%** — *our own reimplementation, identical harness* | **−0.16 pp = 1 case of 735** | controlled head-to-head (§3) |
 | **RCAEval RE2-OB (90 cases)** | AC@1 | **86.7%** | RCLAgent **56.67%** (arXiv:2605.14866) | **+30.0 pp** | cross-paper (§2b) |
 | **FSE'26 RCABench** | Top@1 | **53.23%** (757/1422) | field avg **21%**, best **37%** (arXiv:2510.04711) | **+16 pp over the best** | cross-paper, and the benchmark is a *different* fault set — see the caveat below |
-| **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **92.8% / 80.0%** | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771) | **+3.8 / +2.0 pp** | cross-paper, but **the same 125-case populations and the same metric** — the closest like-for-like that exists, and it is BELOW us (§0b) |
+| **RCAEval RE1-SS / RE1-OB (125 + 125)** | service Top-1 | **92.8% / 80.0%** | RCA-DCM **0.89 / 0.78** (arXiv:2609.36771) | **+3.8 / +2.0 pp** | cross-paper, but **the same 125-case populations and the same metric** — a like-for-like comparison, and it is BELOW us (§0b) |
+| **RCAEval RE1 (375 cases)** | service Top-1 | **80.27%** | `arXiv:2610.05009` **85.4% (`L0`) / 82.8% (`L3`)** | **−5.13 / −2.53 pp** | cross-paper, **the same 375-case population and the same metric, resolved 2026-10-14** (§0a entry 5) — and the **first reference ABOVE us on a population we can name** |
 
-**Ranking: first on all three published evaluations, and level with the best controlled competitor.** The
+**Ranking: first on RCAEval's 735 overall and on FSE'26, level with the best controlled competitor on the
+harness, and SECOND on RE1 — a cell we had never been second on, because the population of the reference that
+took it was filed unverified for three iterations.** The
 project leads the pre-LLM causal cohort by a wide margin on RCAEval overall (BARO 19%, with its
 often-quoted 0.69 being a Train-Ticket RE2 Avg@5 rather than an overall Top-1) and the LLM-agent cohort by
 20–40 pp. On our own harness — the only comparison with no cross-paper confound — we are **0.16 pp, i.e. one
-case, behind** PRISM's additive pooling, not ahead.
+case, behind** PRISM's additive pooling, not ahead. And on RE1 we are behind a single-run LLM-agent figure whose
+`L0`-against-`L3` ranking does not survive its own error bar (§0a entry 5): **the gap is real, quoted, and 2.7 SD
+wide; the ordering inside it is not established.**
 
 **What this ranking is NOT.** Every `68%` figure above is **cross-paper**: its dataset, its harness, its case
 sets, its metric implementation. The controlled re-run exists (`docs/prism-head-to-head.md`, run `34246577708`)
@@ -61,18 +66,29 @@ additive pooling scores **78.91%** against our **78.75%**. So the standing is a 
 matters** and a lead of ≈1.16× on the published number, and the `+10.8 pp` row must never be quoted without the
 row beneath it.
 
-### 0a. ABOVE US, AND NOT COMPARABLE — the seven references that must be named
+### 0a. ABOVE US AND NOT COMPARABLE — the references that must be named, and whose population this section does not own
 
 **A number we cannot beat must be named, or the standing reads as a claim about the whole field.** Each of these
 is above us or beside us on some figure, and **none** is comparable to a service Top-1 on the 735 (verified
-2026-10-09 / 2026-10-10 / 2026-10-11 / 2026-10-12; the detail is in the internal
-`SOTA_LANDSCAPE_VERIFICATION.md` §1.4 / §1.7). **The
-fifth entry arrived on 2026-10-11 and is the first whose SHAPE matches one of our populations exactly while its
-abstract does not confirm it — read its entry before quoting any gap it implies.** And **§0d holds the reference
-that belongs in neither list**: a 2026-10-12 find whose number is BELOW ours while its population is a mixture
-nobody can compare to, which is a third class rather than an eighth member of this one. **The seventh entry
-arrived on 2026-10-13 and is the SECOND whose shape matches one of our populations exactly while the case set
-is unverified — and unlike the fifth it is peer-reviewed and reports on a suite we run.**
+2026-10-09 / 2026-10-10 / 2026-10-11 / 2026-10-12 / 2026-10-14; the detail is in the internal
+`SOTA_LANDSCAPE_VERIFICATION.md` §1.4 / §1.7).
+
+**Which population each one reports on is owned by `docs/sota-populations.md`, and this section no longer restates
+it.** That is iteration 101's repair, and the fifth entry is what forced it: for three iterations it was filed as
+*"CANDIDATE ABOVE US WHOSE POPULATION IS NOT VERIFIED"* while its number sat in the standing table and in
+`SOTA_LANDSCAPE_VERIFICATION.md` §1.16, and the two artefacts that settle a population — the paper's own full text
+and its own project page — were never read, because two searches had reached its **abstract** and the population
+is in neither the abstract nor any index of it. **A shape match is not a population**: `375 = 3 × 125` was RE1's
+signature and the metric was `top-1` rather than `Avg@5`, and that is the strongest thing a case COUNT and a
+metric NAME can establish between them. The reading is done now and the entry says what it found.
+
+**And the entry the 2026-10-13 note called *"the seventh"* is not an item of this list at all — it is
+`arXiv:2608.08968` (GALA+, ASE'26), which §2b-ii owns.** It was described here by an ORDINAL rather than by its
+own name, and an ordinal is a count by another spelling — the heading's count disagreed with the list, and both
+disagreed with two later sections. The ordinal is replaced by the reference, and the list is now the only place
+its own length is stated. And **§0d** holds the reference that belongs in neither list: a 2026-10-12
+find whose number is BELOW ours while its population is a mixture nobody can compare to, which is a third class
+rather than another member of this one.
 
 1. **A vendor's self-reported 89% top-1** on RCAEval — NOFire AI, on its own guide and its own benchmark, with
    no per-case results, and the page itself says to rerun it on your own incidents.
@@ -80,7 +96,9 @@ is unverified — and unlike the fifth it is peer-reviewed and reports on a suit
 3. **PSC-GRCA** (`arXiv:2609.27069`, Buljić, University of Zenica) — **`Avg@5` 0.915** against 0.864 for a
    capacity-matched MLP and 0.862 for a no-neighbour control, with ablations locating the gain in the **prior**.
    A different metric (`Avg@5`), and its own benchmark audit is the source of the RE1 column-schema allegation
-   this repository refutes in `docs/benchmark-corpus-completeness.md` §8. **Two qualifiers its abstract does not
+   this repository refutes in `docs/benchmark-corpus-completeness.md` §8. **NOT OUR POPULATION** — its `0.915` is
+   a six-fixed-fold split of this benchmark read under `Avg@5`, not our 375-case RE1 read under Top-1; the row,
+   and what it rests on, are in `docs/sota-populations.md`. **Two qualifiers its abstract does not
    carry, verified 2026-10-10 from the paper's own tables: 0.915 is the six-fixed-fold IN-DISTRIBUTION mean and
    the CROSS-SYSTEM number is 0.747** — and its prior-only arm, the term its ablations credit, scores **0.488
    in-distribution against 0.079 across systems**. So the figure we have been naming is the in-distribution one.
@@ -95,8 +113,10 @@ is unverified — and unlike the fifth it is peer-reviewed and reports on a suit
    pipeline (multi-signal retrieval, then an LLM reranker with optional domain knowledge) matching or beating
    **the framework's 15 baselines** by up to **+12 pp top@1** with no causal graph and no labelled data, and by
    **+7 to +18 pp** when the true cause is guaranteed in the pool and a system-description document is supplied.
-   **Its baseline cohort is the framework's 15, not this engine** — so it is above us on *a* top-1 and comparable
-   to *none* of ours. **And its headline margin is not on our benchmark family at all**: the survey of 2026-10-12
+   **Its baseline cohort is the framework's 15, not this engine** — so `arXiv:2609.36686` is above us on *a*
+   top-1 and comparable to *none* of ours. **NOT OUR POPULATION** — it reports on RCAEval *and* on WADI / SWaT /
+   HVAC, and the `+12 pp` it is most quoted for is a **CPS** margin; what is comparable is the decomposition, not
+   a gap. The row is in `docs/sota-populations.md`. **And its headline margin is not on our benchmark family at all**: the survey of 2026-10-12
    reached the paper's own data description, which audits **RCAEval** (microservices) alongside **WADI / SWaT /
    HVAC** (cyber-physical systems) and states that retrieval is *"nearly solved"* in microservices while the
    *"retrieval ceiling"* in the CPS systems caps a magnitude-only retriever at **35–64%** — so the `+12 pp` it is
@@ -112,34 +132,49 @@ is unverified — and unlike the fifth it is peer-reviewed and reports on a suit
    loss is **98.8% reranking** (`docs/loss-decomposition.md` §4).
 5. **`Rethinking Tool Design for Agentic RCA: A Controlled Empirical Study`** (`arXiv:2610.05009`, Yu Luo,
    Rongchen Gao, Zhenhui Zhou, Changchang Liu, Yuliang You, Yongqian Sun, Shenglin Zhang, Qiuai Fu, Shijie Wang,
-   **Dan Pei**; submitted 2026-10-04; **Huawei + Tsinghua**) — **`top-1` localization 85.4%** for its `L0`
-   no-predefined-tools reference and **82.8%** for its `L3` diagnostic-tool layer, over **375 failure cases from
-   three microservice systems** with `Qwen3.7-Plus`, and a further four-model comparison on a shared subset.
+   **Dan Pei**; submitted 2026-10-04; **Nankai + Huawei + Tsinghua**) — **`top-1` localization 85.4%** for its
+   `L0` no-predefined-tools reference and **82.8%** for its `L3` diagnostic-tool layer, over **375 failure cases
+   from three microservice systems** with `Qwen3.7-Plus`, and a further four-model comparison on a shared subset.
 
-   **Filed as a CANDIDATE ABOVE US WHOSE POPULATION IS NOT VERIFIED, and the distinction matters more here than
-   anywhere else on this list.** Two things are true and only one of them is settled:
+   **ITS POPULATION IS RESOLVED AS OF 2026-10-14, AND IT IS OURS.** The paper's own full text evaluates *"the
+   three RCAEval diagnostic environments"* and its own project page —
+   `luoyu100.github.io/projects/toolrca/project` — names *"RCAEval RE1 failure cases (375)"*. So `375 = 3 × 125`
+   is RCAEval's **RE1** (OnlineBoutique, SockShop, TrainTicket), the metric is service `top-1`, and
+   **`arXiv:2610.05009` is the first reference to exceed our RE1 80.27% on a population we can name — by 5.13pp
+   at `L0` (85.4 against 80.27) and by 2.53pp at `L3` (82.8 against 80.27).** The gap is quoted here rather than
+   left conditional, and the two numbers must travel together for the reason the next paragraph measures.
 
-   - **The shape matches our RE1 exactly.** `375 = 3 × 125` is RE1's signature (RE2 is 270, RE3 is 90, FSE'26 is
-     1430), and the metric is `top-1` rather than `Avg@5` — so if the cohort is RCAEval's RE1, this would be the
-     **first reference to exceed our 80.27% on a population we can name**, by **5.1pp**.
-   - **The abstract does not say so.** It names neither RCAEval nor a system, and the full text was not reachable
-     in this pass. **A 5.1pp gap asserted on an unverified cohort is exactly the corpus-mismatch defect this
-     document exists to prevent** — so the number is recorded and the population is marked unverified, not assumed
-     to match.
+   **And the gap's own error bar, because a single-run figure above us is a claim about us.** Every effectiveness
+   number in the paper is one run with no interval, over 375 cases. At `p ≈ 0.83` the binomial standard deviation
+   is **1.9pp** and the difference between two configurations is **2.7pp** — so the paper's own `L0`-against-`L3`
+   separation (2.6pp) is **under one standard deviation**, its own trajectory counts concede that `L1+L3` against
+   `L3` is a **three-case swing**, and an independent review's arithmetic reproduces all three (recomputed here
+   2026-10-14). Our 5.13pp is **2.7 SD** and therefore outside that noise. The two figures are also not the same
+   instrument: its `L0` is an LLM agent writing and running Python against the case data, ours is a deterministic
+   engine over the same case set.
 
-   **And it is not reproducible from its own links.** An independent index records *"No code link found · No
-   weights link found · No dataset link found"*, so this entry sits in the same class as the vendor's 89% for
-   runnability, differing only in that it is peer-reviewable and gives a count.
+   **What the resolution cost, and the law it produced.** Two earlier passes searched this paper and reported
+   *"the same abstract"*, and a third-party reading recorded that its numbers are *"on NAMED benchmarks"* with the
+   population *"nameable from the body"* — so the record wrote down that the answer was one read away and did not
+   take the read. The register's law 10 says **a paper's own artefact statement is the authority on whether its
+   artefact is public**; the corollary carried here is the same one iteration 99 found for artefacts, one surface
+   over, and it is now a law: **the artefact that states a paper's population is its own full text or its own
+   project page, and a search of its abstract cannot settle it.**
 
-   **What makes it worth naming anyway, beyond the number**: its central finding is that **higher-level diagnostic
-   tools REDUCE localization accuracy** (L3 82.8% against L0 85.4%) while improving fault-type identification and
-   halving the time. That is an **independent corroboration of this repository's own ledger pattern** — *every tool
-   wired as a SCORE measures negative; every credited gain is STRUCTURAL* — arriving from a group with no
+   **And it is not reproducible from its own links, which is now read rather than quoted.** The authors' own
+   project page **resolves** and carries **no code, no weights, no dataset link and no per-case results** — only
+   the arXiv link and six figures — so the record's negative claim stands, now by the authors' own page rather
+   than by an independent index of it. The hosting shape that made this readable is a `github.io` page, and it
+   sat outside the artefact grammar until this iteration: **an inventory cannot judge an artefact its grammar
+   cannot see**, which is how a method-less artefact stayed outside the population that prices method-less
+   artefacts.
+
+   **What makes it worth naming beyond the number**: its central finding is that **higher-level diagnostic tools
+   REDUCE localization accuracy** (L3 82.8% against L0 85.4%) while improving fault-type identification and
+   halving the time. That is an **independent corroboration of this repository's own ledger pattern** — *every
+   tool wired as a SCORE measures negative; every credited gain is STRUCTURAL* — arriving from a group with no
    connection to us, on the same benchmark family. **Two independent measurements of "more machinery, lower
-   top-1" is the strongest evidence either has.** A third-party reading of the paper text (2026-10-11) adds that
-   it **reports its numbers on NAMED benchmarks** while finding **no code, weights or dataset link** — so the
-   population is *nameable from the body* even though the abstract omits it, and it is still **not reproducible
-   from what the authors shipped.** No gap is quoted from it either way.
+   top-1" is the strongest evidence either has.**
 
 6. **E4** — *Agentic RCA for Internet-Scale Services Using Constrained Creativity* (**`arXiv:2610.08622`**,
    submitted 2026-10-09). An agentic troubleshooter that emits **loop-free data-flow programs in a restricted,
@@ -147,9 +182,13 @@ is unverified — and unlike the fifth it is peer-reviewed and reports on a suit
    state-of-the-art solutions"** on *"a mix of synthetic and real-world workloads"*, with **up to 12× reduced
    cost**.
 
-   **It is named and no gap is quoted, because the claim has no denominator.** "62% better" is a **relative**
+   **It is named and no gap is quoted, because the claim has no denominator.** **POPULATION UNVERIFIED** — its
+   *"a mix of synthetic and real-world workloads"* names neither a benchmark nor a case set, and no artefact
+   states one, so this row waits on the paper's own full text rather than on a search of its abstract
+   (`docs/sota-populations.md`). "62% better" is a **relative**
    figure against an unnamed baseline on an unnamed mix of workloads — not a percentage of anything we can count,
-   not a top-1, and not on a population we can name. Nameable for the same reason the fifth entry is: it is
+   not a top-1, and not on a population we can name. Nameable for the same reason the fifth entry was until
+   2026-10-14: it is
    *above us by the authors' own claim* and it is silent about what it is above. **Its design point is the one
    worth borrowing**: restricting an agent to a **verifiable operator language instead of arbitrary code** is the
    same instinct as this repository's preference for an instrument that is a pure function, and it is the second
@@ -321,7 +360,7 @@ the gain is in the CONTEXT the ranker reads rather than in the retrieval. This r
 signals and has **no system-description channel at all**, which makes that a cheap, falsifiable candidate rather
 than a slogan.
 
-**What this does not change.** §0a's six entries, §0b's one comparable reference and §0d's third class are
+**What this does not change.** §0a's entries, §0b's one comparable reference and §0d's third class are
 unchanged; no cell moved; and the two corrections above are corrections of THIS document's earlier revision rather
 than of the record they cite — §0a entry 4 and entry 3 both already carried the facts, which is the point of
 recording it here.
@@ -360,7 +399,7 @@ Market 148 = **335 cases**) it reports **Correct 43.9% / Partial 56.2%** with `d
   the correct cause being demoted below *collateral* signals — an elevated co-located neighbour, an earlier
   transient, a downstream rule — which is the same victim-versus-source pattern our loss census attributes.
 
-**Neither moves a cell, a rank or a standing**, and §0a's six entries are unchanged. The entry that does bear on us
+**Neither moves a cell, a rank or a standing**, and §0a's entries are unchanged. The entry that does bear on us
 is methodological and comes from outside this family: a 2026-08 preprint, *There Is No Neutral Harness: Modern LLM
 Leaderboards Are Manufactured by Config-Fragile Items*, measured that **the same weights on the same 3 679 items
 score 31% and 89% under two equally defensible evaluation configurations, with 85% of a model's correct answers
@@ -495,6 +534,15 @@ Two cohorts must be reported separately, because they are measured on different 
 | mABC | 39.98% | LLM multi-agent | arXiv:2404.12135 |
 | RCAgent | 25.32% | LLM ReAct + tools | arXiv:2310.16340 |
 | OpenRCA | ~15% | LLM | ICLR'25 |
+
+> **Three of the rows above carry a population this table ASSERTS and our record never read** — `RCLAgent`,
+> `RCAgent` and `mABC` are `UNVERIFIED` in `docs/sota-populations.md`, the document that now owns this question.
+> The heading's *"where all LLM agents report"* is this table's own claim, and for those three an independent
+> 2026 baseline table places `RCAgent` and `mABC` on **AIOPS-2022 and a private production dataset** instead —
+> so the figure here is either a re-measurement by another group on our population or a different corpus, and the
+> two must not be confused. `GALA`'s row *is* read: its own text evidences the 90-case RE2-OB population. **No
+> number in this table changes**; what changes is that a reader can now tell which of them rest on a reading and
+> which on our own heading.
 
 ### 2b-ii. GALA+ (ASE'26) — a reference we had CITATION-only, and the first published number on RE2-TrainTicket
 

@@ -19,9 +19,11 @@ run. Three of the five defects are exactly that collapse, at three different dep
 
 ## The inventory
 
-Every artefact token `sota-comparison.md` names — an `arXiv:` identifier, a `github.com/OWNER/REPO` URL, a
-`10.…/zenodo.…` DOI, or a backticked `OWNER/REPO` that is not a path into this repository. The population is
-**22 tokens**, and the fence in
+Every artefact token `sota-comparison.md` names — an `arXiv:` identifier, a `github.com/OWNER/REPO` URL, an
+`OWNER.github.io/…` project page, a `10.…/zenodo.…` DOI, or a backticked `OWNER/REPO` that is not a path into
+this repository. The population is **24 tokens as of 2026-10-14** (the prose here said 22 while the tree it
+described named 23 — one short of itself, and then one short again when the project page below was added), and
+the fence in
 `packages/kinetic/__tests__/unit/competitor-artefact-availability.test.ts` requires every one of them to have
 exactly one row here.
 
@@ -36,7 +38,8 @@ exactly one row here.
 | `github.com/Musfiqshohan/RCA-DCM` | **RESOLVES-WITH-METHOD, NO LICENCE** | RCA-DCM. 200; Python; `dcm/`, `examples/`, `run_sink_graph.py`, `score_sink.py`, and `baselines/RCAEval` vendored. `license` reads **`None`** — the artefact is readable and gives no grant of rights | 2026-10-13, GitHub API |
 | `arXiv:2609.36771` | **RESOLVES-WITH-METHOD, NO LICENCE** | RCA-DCM — the same artefact as above | 2026-10-13, GitHub API |
 | `edgedelta/project-arena` | **RESOLVES-WITH-METHOD** | Project Arena (Edge Delta, 2026-10-08). 200, MIT, `master`, pushed 2026-10-02 | 2026-10-13, GitHub API |
-| `arXiv:2610.05009` | **NO-ARTEFACT** | Huawei + Tsinghua tool-design study. Our record already states it ships no code, weights or dataset link — a NEGATIVE claim, and it stands | 2026-10-11 and 2026-10-13, paper text |
+| `arXiv:2610.05009` | **NO-ARTEFACT** | Nankai + Huawei + Tsinghua tool-design study. Its own project page **resolves** and carries **no** code, no weights, no dataset link and no per-case results — only the arXiv link and six figures. The record's claim is a NEGATIVE one and it survives being read from the authors' own page rather than from an index of it | 2026-10-14, arXiv HTML full text + the authors' own project page |
+| `luoyu100.github.io/projects/toolrca/project` | **RESOLVES-WITHOUT-METHOD, NO LICENCE** | The project page of the row above. It resolves and holds an abstract, the study design, six figures and a BibTeX block — **no method, no data and no per-case results**. It is also the defect that added this grammar: a `github.io` page matched none of the four alternatives, so the one hosting shape a method-less artefact uses sat outside the population of an inventory whose subject is method-less artefacts | 2026-10-14, arXiv HTML header + project page |
 | `arXiv:2601.21359` `arXiv:2310.16340` `arXiv:2404.12135` `arXiv:2510.04711` `arXiv:2510.22613` `arXiv:2605.14866` `arXiv:2606.05636` `arXiv:2606.27154` `arXiv:2607.28545` `arXiv:2608.25661` `arXiv:2609.19825` `arXiv:2609.27069` `arXiv:2610.08622` | **NO-CLAIM** | Our record makes **no availability claim** about these. `NO-CLAIM` is a fact about this document, not about the paper: it means nothing here was read and nothing here may be inferred | 2026-10-13, record makes no availability claim |
 
 ## The five defects

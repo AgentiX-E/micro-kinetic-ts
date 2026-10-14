@@ -43,45 +43,30 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { artefactTokens, sentences } from './support/artefact-grammar.js';
 import { readRepoFile } from './support/repo-file.js';
 
 const repoRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../');
 
 /**
- * The three unambiguous artefact grammars, plus the backticked `OWNER/REPO` shorthand.
- *
- * The shorthand needs the exclusion below or it reports our own repository's paths: `sota-comparison.md`
- * backticks `docs/benchmark-corpus-completeness.md` and `scripts/audit_input_schema.py`, and a rule that read
- * those as artifacts would report six rows that are ours.
+ * The grammar, the population it derives from, and the sentence splitter live in
+ * `./support/artefact-grammar.ts`, because TWO fences now read the same population — this one asks whether an
+ * artefact RESOLVES, and `sota-population-claims.test.ts` asks which POPULATION a reference reports on. A
+ * copy per fence would hold them to each other and to nothing else (register law 7), so the population is
+ * derived once. This cross-reference is the whole statement of that relationship.
  */
-const ARTEFACT_TOKEN =
-  /arXiv:\d{4}\.\d{4,5}|github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+|10\.\d{4,}\/zenodo\.\d+|`([a-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]+)`/g;
-
-/** This repository's own top-level directories: a backticked path into one of these is not an artefact. */
-const OWN_PATH_PREFIXES = [
-  'docs/',
-  'scripts/',
-  'packages/',
-  'benchmarks/',
-  'integration-tests/',
-  '.github/',
-];
 
 /**
- * Every artefact token in `text`, in first-appearance order.
+ * A sentence that CITES the rule rather than making a claim about an artefact — it names the law it quotes.
  *
- * @param text - Markdown source.
- * @returns The distinct tokens, bare (no backticks).
+ * The vocabulary's own phrase appears inside the RULE (`… the authority on whether its artefact is public`), so
+ * a document that quotes law 10 is indistinguishable from one that claims an artefact is public unless the
+ * citation is recognised — the register's law 21 arriving in this fence: a containment test over a PHRASE is
+ * unsound when the phrase necessarily appears in the definition of the thing being tested. Applied only to the
+ * direction that requires the sentence to NAME an artefact, so a sentence citing the law while naming a
+ * non-runnable token is still reported: the exemption is for a restatement, not for an excuse.
  */
-export function artefactTokens(text: string): string[] {
-  const found: string[] = [];
-  for (const m of text.matchAll(ARTEFACT_TOKEN)) {
-    const token = m[1] ?? m[0];
-    if (m[1] !== undefined && OWN_PATH_PREFIXES.some((p) => token.startsWith(p))) continue;
-    if (!found.includes(token)) found.push(token);
-  }
-  return found;
-}
+const CITES_THE_RULE = /\blaw \d+\b/i;
 
 /** The closed verdict union, and whether a member means a comparison can actually be run. */
 export const VERDICTS = [
@@ -110,23 +95,6 @@ export function isRunnable(verdict: Verdict): boolean {
  */
 const AVAILABILITY_CLAIM =
   /is public\b|are public\b|available to run|can be run|left runnable|can become a measurement|can be turned into a measurement|run their code on ours/i;
-
-/**
- * The sentences of a markdown document, with hard wrapping flattened first.
- *
- * Flattening is required, not cosmetic: the document is wrapped at ~100 columns, so the claim and the token
- * it is about land on different LINES — which is exactly why the defect survived a line-oriented reading.
- *
- * @param text - Markdown source.
- * @returns The sentences, whitespace-normalised.
- */
-export function sentences(text: string): string[] {
-  return text
-    .replace(/\s+/g, ' ')
-    .split(/(?<=[.;])\s+(?=[A-Z*`"“])/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
 
 /** One row of the inventory: the tokens it covers, and the verdict. */
 export interface InventoryRow {
@@ -216,10 +184,28 @@ describe('a claim that a comparison can be run names an artefact that can be', (
   it('reports no availability claim that names no artefact at all', () => {
     // The other direction, and the one that had never been stated: `…and run their code on ours` plans work
     // against an artefact the document does not name, so a reader cannot act on it and no row can be wrong.
+    // A sentence that quotes the rule itself is excluded, because its subject is the definition rather than an
+    // artefact — and that exclusion is asserted below rather than trusted.
     const offenders = sentences(comparison)
-      .filter((s) => AVAILABILITY_CLAIM.test(s) && artefactTokens(s).length === 0)
+      .filter((s) => AVAILABILITY_CLAIM.test(s) && !CITES_THE_RULE.test(s))
+      .filter((s) => artefactTokens(s).length === 0)
       .map((s) => s.slice(0, 160));
     expect(offenders).toEqual([]);
+  });
+
+  it('excuses a restatement of the rule, and still reports a claim that cites it', () => {
+    // Both directions of the exclusion, so it cannot become a hole: a sentence quoting law 10 and naming no
+    // artefact is the definition restated, and the same sentence with a non-runnable artefact in it is the
+    // defect the fence exists for.
+    const quoted =
+      "The register's law 10 says a paper's own artefact statement is the authority on whether its artefact is public.";
+    expect(CITES_THE_RULE.test(quoted)).toBe(true);
+    expect(AVAILABILITY_CLAIM.test(quoted)).toBe(true);
+    expect(artefactTokens(quoted)).toEqual([]);
+    const claiming =
+      'Per law 10 its code is public (`github.com/cruiseresearchgroup/DecompRCA`), so it is available to run.';
+    expect(CITES_THE_RULE.test(claiming)).toBe(true);
+    expect(artefactTokens(claiming)).toEqual(['github.com/cruiseresearchgroup/DecompRCA']);
   });
 });
 
@@ -234,6 +220,21 @@ describe('the census reads the source it claims to read', () => {
     expect(tokens).not.toContain('docs/benchmark-corpus-completeness.md');
     expect(artefactTokens('see `edgedelta/project-arena` and `docs/x.md`')).toEqual([
       'edgedelta/project-arena',
+    ]);
+  });
+
+  it('sees the one hosting shape a method-less artefact uses', () => {
+    // A project page is where a paper that ships NOTHING puts its figures, and it matched none of the four
+    // grammars — so the inventory could not judge it. `arXiv:2610.05009` is the case that made it matter: its
+    // own header prints a `github.io` page, the page resolves and carries no code, weights, dataset or
+    // per-case results, and the population could say none of that because it could not see the token.
+    expect(
+      artefactTokens('see luoyu100.github.io/projects/toolrca/project for the figures'),
+    ).toEqual(['luoyu100.github.io/projects/toolrca/project']);
+    // Backticked too, and the shorthand must not swallow it: `` `a/b` `` closes on the backtick, and this
+    // token has a third segment after the second slash, so the shorthand cannot match it at all.
+    expect(artefactTokens('`luoyu100.github.io/projects/toolrca/project`')).toEqual([
+      'luoyu100.github.io/projects/toolrca/project',
     ]);
   });
 
