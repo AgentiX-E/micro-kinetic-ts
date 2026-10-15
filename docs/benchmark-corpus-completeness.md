@@ -541,9 +541,9 @@ Three readings follow, and all three are new to this record:
    the corpus, not about the term.
 2. **On RE1 — 375 cases, the cell where this project is SECOND and the cell its published 80.27% is computed on —
    ALL FOUR signal terms are starved.** RE1's number is therefore produced by the metric channel and the
-   never-ablated priors **alone**: it is a different instrument from the one that produces RE3's cells, and the
-   reference above us on RE1 reads all three RCAEval environments with tooling. This is now a stated property of
-   our own published number rather than something a reader had to reconstruct.
+   never-ablated priors **alone**: it is a different instrument from the one that produces RE3's cells. This is now
+   a stated property of our own published number rather than something a reader had to reconstruct. **Why it is
+   starved is settled in §8.9 below, and it is the dataset's own contract.**
 3. **`traceWeight` is measured on 60 of 735 cases** (RE3-OB and RE3-TT) — which is consistent with, and explains,
    the largest structural lever this record has: RE3-TT falls 51.1 → 3.6 when `traceWeight = 0`. The term can only
    move a suite that carries span activity, and only two cells do.
@@ -561,4 +561,37 @@ overrides for exactly that reason (`coverage: { ...summarizeInputCoverage(cases)
 need what one already has.**
 
 **New law 40: a census given only what survived cannot report why the rest did not.**
+
+### 8.9 Law 40's question, answered: RE1 is metrics-only by the DATASET's contract, and the level was destroyed one layer above where it is produced
+
+**The CI run left one question open — whether RE1's empty log channel is the corpus or our reader — and it is
+answerable from the source, which makes leaving it open a choice rather than a limit.**
+
+`rcaeval-loader.ts` declares the contract in its own header, line 5: *"RCAEval is the primary AIOps benchmark dataset
+with 735 cases across 3 suites (**RE1: metrics-only**, RE2: metrics+logs+traces, RE3: full multimodal)"*, and line 11
+marks `logs.csv` as *"(RE2/RE3 only; no level column …)"*. **RE1 carries metrics and nothing else, so every channel
+it starves is starved because the dataset does not ship it.**
+
+**And the loader already held that fact in a form a program could read.** `loadCase` calls `tryLoadLogs` and
+`tryLoadTraces` **unconditionally and defensively** — *"if optional files are missing or malformed, the case is still
+loaded with degraded data"* — so on RE1 both return `undefined` because **the file could not be read**, which is
+exactly what the `FILE-ABSENT` level names. **The level is determined at the loader layer.**
+
+**It is destroyed one layer above.** `toBenchmarkCase` writes `traces: undefined` **deliberately** — *"Traces are
+consumed during topology augmentation (prior to this call) … Set to undefined so GC can reclaim after augmentation"*
+— so by the time the census receives a `BenchmarkCase`, `undefined` means **either** "the file was absent" **or**
+"the value was released on purpose", and nothing on that object distinguishes them. **That is law 40 stated as a
+mechanism: the evidence of an absence is destroyed by the data path before the census that must report it runs, and
+the party that still holds it is `loadCase`, not `toBenchmarkCase`.**
+
+**The consequence is about the standing, and it is the opposite of the direction this document first took.** RE1's
+80.27% is a **metrics-only measurement by the dataset's own design** — not our choice, and not a limitation more
+reading could lift. **So the reference above us at 85.4% / 82.8% is measured on the same single channel**, and the
+5.13 pp is a **METHOD** gap on an identical input rather than an input gap. That is the more urgent reading, and it
+removes the most comfortable explanation for the one cell where a named reference leads.
+
+**And a sentence written earlier in §8.8 was corrected in place for exactly that reason.** It read that *"the
+reference above us on RE1 reads all three RCAEval environments with tooling"* — true of the paper in general and
+false of RE1, where there is nothing else to read. It is replaced rather than quietly dropped, because the shape it
+had — **an inference about a competitor's INPUT drawn from its METHOD** — is the class this document exists to catch.
 
