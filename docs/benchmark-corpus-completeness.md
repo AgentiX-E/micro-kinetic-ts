@@ -499,3 +499,66 @@ own rank spacing: in each, the number was produced by the instrument rather than
 **And it is law 3 one level down.** The census's `UNREPORTED` is the MIDDLE absence — the channel is empty and the
 reason is not recorded — which is neither *"the file is absent"* nor *"the values are zero"*. A boolean lookup
 would collapse it into one of those two, and the two have different fixes.
+
+### 8.8 The CI run turned the prediction into an OBSERVATION — and printed a fact no local run could
+
+**The ablation battery ran on the revision that changed this census and printed its line for all nine cells**
+(`benchmark-rcaeval.yml` run `38728053527`, revision `4acf174`, all twelve jobs green). Section 8 *predicted* that
+the measured metric count equals `cases`; the run confirms it exactly:
+
+| suite | system | cases | metrics non-zero | logs readable | spans | spanActivity | failedEdges | latency |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| RE1 | OnlineBoutique | 125 | **125/125** | 0/125 | 0/125 | 0/125 | 0/125 | 0/125 |
+| RE1 | SockShop | 125 | **125/125** | 0/125 | 0/125 | 0/125 | 0/125 | 0/125 |
+| RE1 | TrainTicket | 125 | **125/125** | 0/125 | 0/125 | 0/125 | 0/125 | 0/125 |
+| RE2 | OnlineBoutique | 90 | **90/90** | 21/90 | 90/90 | 0/90 | 0/90 | 0/90 |
+| RE2 | SockShop | 90 | **90/90** | 90/90 | 0/90 | 0/90 | 0/90 | 0/90 |
+| RE2 | TrainTicket | 90 | **90/90** | 40/90 | 90/90 | 0/90 | 0/90 | 0/90 |
+| RE3 | OnlineBoutique | 30 | **30/30** | 30/30 | 30/30 | 30/30 | 15/30 | 0/30 |
+| RE3 | SockShop | 30 | **30/30** | 30/30 | 0/30 | 0/30 | 0/30 | 0/30 |
+| RE3 | TrainTicket | 30 | **30/30** | 30/30 | 30/30 | 30/30 | 0/30 | 0/30 |
+
+**735 of 735 cases carry non-zero telemetry, and no cell prints an `absent[metrics]` line at all** — so
+`ALL-ZERO` and `COLUMN-ABSENT`, the level the competing allegation names, occur **zero times** on the corpus this
+engine reads. The refutation is now an observation carrying a workflow id, taken on the same revision by the
+workflow that produced the number.
+
+**And the same run printed the second half, which no local run could: the census names the STARVED channels**, i.e.
+terms whose input is absent and on which a 0.0 says nothing about the term:
+
+| cell | STARVED terms |
+| --- | --- |
+| RE1-OB / SS / TT (125 each) | `logWeight`, `traceWeight`, `topoWeight`, `latWeight` |
+| RE2-OB, RE2-TT | `traceWeight`, `latWeight` |
+| RE2-SS | `traceWeight`, `topoWeight`, `latWeight` |
+| RE3-OB, RE3-TT | `latWeight` |
+| RE3-SS | `traceWeight`, `topoWeight`, `latWeight` |
+
+Three readings follow, and all three are new to this record:
+
+1. **`latWeight` is STARVED on all nine cells** — the latency channel is empty (`0 edges`) everywhere, so the
+   latency term has never been measurable in this instrument on any suite. A 0.0 on its row is a statement about
+   the corpus, not about the term.
+2. **On RE1 — 375 cases, the cell where this project is SECOND and the cell its published 80.27% is computed on —
+   ALL FOUR signal terms are starved.** RE1's number is therefore produced by the metric channel and the
+   never-ablated priors **alone**: it is a different instrument from the one that produces RE3's cells, and the
+   reference above us on RE1 reads all three RCAEval environments with tooling. This is now a stated property of
+   our own published number rather than something a reader had to reconstruct.
+3. **`traceWeight` is measured on 60 of 735 cases** (RE3-OB and RE3-TT) — which is consistent with, and explains,
+   the largest structural lever this record has: RE3-TT falls 51.1 → 3.6 when `traceWeight = 0`. The term can only
+   move a suite that carries span activity, and only two cells do.
+
+**And the census could not say WHY.** Every one of those lines is followed by `absent[...]: UNREPORTED on N/M
+cases`, because the four non-metric channels are handed a bare array. **On RE1 that is the difference between a
+property of the corpus and a property of our own code**, and the loader's own source shows at least one of the
+reasons is deliberate rather than physical: `rcaeval-loader.ts` writes `traces: undefined` beside a comment saying
+*"Traces are consumed during topology augmentation (prior to this call) … Set to undefined so GC can reclaim after
+augmentation."* **So reading `undefined` as "the artifact is absent" would be a FALSE statement.** The level
+vocabulary may not guess, and `UNREPORTED` is the honest answer **until the party that still holds the evidence
+supplies it** — which is a design statement rather than a repair: this census has one field the CALLER already
+overrides for exactly that reason (`coverage: { ...summarizeInputCoverage(cases), casesWithSpans }`,
+`run-ablation.ts:1254`, because the span count is known to the augmentation and not to the census). **Four channels
+need what one already has.**
+
+**New law 40: a census given only what survived cannot report why the rest did not.**
+
