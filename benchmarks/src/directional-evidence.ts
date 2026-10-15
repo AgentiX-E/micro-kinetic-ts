@@ -532,6 +532,20 @@ export function formatDirectionalCoverage(coverage: DirectionalCoverage, label: 
 export type SignalChannel = 'metrics' | 'logs' | 'spans' | 'spanActivity' | 'latency';
 
 /**
+ * The channels in a FIXED order, so a census's absence rows come out in the same sequence every run.
+ *
+ * Owned here rather than taken from `Object.keys` at each site: an order that is a property of insertion is an
+ * order a diff cannot read, and two runs of the same corpus must print the same lines.
+ */
+export const CHANNEL_ORDER: readonly SignalChannel[] = [
+  'metrics',
+  'logs',
+  'spans',
+  'spanActivity',
+  'latency',
+];
+
+/**
  * Which channel each ablated term reads.
  *
  * Owned here rather than at the report site, because the verdict `readZero` computes is a function of this
@@ -554,6 +568,101 @@ export const TERM_CHANNELS: Readonly<Record<string, SignalChannel>> = {
   riseWeight: 'metrics',
   prismWeight: 'metrics',
 };
+
+/**
+ * WHY a channel holds nothing — the absence's own LEVEL, read from the producer's artifact.
+ *
+ * ## The defect this exists for
+ *
+ * The census above could say that a channel is empty and nothing else, and its `metrics` arm did not even say
+ * that: `channelCases` returned `coverage.cases`, with the comment *"every RCAEval case has metrics"*. **A count
+ * that is a CONSTRUCTION where a measurement is asserted** — and the case object it was handed carries
+ * `metrics: MetricMap` all along, so the one channel every never-ablated prior acts on was the one channel the
+ * census never looked at.
+ *
+ * That is not a bookkeeping gap, because it is the channel a competitor's published allegation is about:
+ * `arXiv:2609.27069` claims a *"non-uniform column schema that silently zeroes telemetry for 250 of 375 RE1
+ * cases"*, and `docs/benchmark-corpus-completeness.md` §8 refutes it on the converted corpus. **Those two are
+ * different MECHANISMS with the same signature in a count** — an allegation of `COLUMN-ABSENT` against a finding
+ * of `ALL-ZERO`/`FILE-ABSENT` — and an instrument that reports one bare zero for both cannot tell a reader which
+ * one it measured. So the levels exist, and `ALL-ZERO` is the degenerate class §8 already defines: telemetry
+ * present in name and silently zero in value.
+ *
+ * `UNREPORTED` is a level and not a failure. The channels below `metrics` are handed a bare array, so the census
+ * genuinely cannot say why one is empty — **and "the reason is not recorded" is a different statement from "the
+ * file is absent"**, which is the register's law 3: an absence has three levels and a boolean lookup collapses
+ * the middle one.
+ */
+export type AbsenceLevel =
+  /** The channel carried a non-zero reading, so nothing is absent. */
+  | 'READ'
+  /** The producer's artifact for this channel is not in the case directory at all. */
+  | 'FILE-ABSENT'
+  /** The artifact is there and holds no data point. */
+  | 'NO-POINTS'
+  /** Points are there and this channel's columns are not among them — the SCHEMA mechanism. */
+  | 'COLUMN-ABSENT'
+  /** Points and columns are there and every value is zero — the DEGENERATE class. */
+  | 'ALL-ZERO'
+  /** Points, columns and non-zero values are there, and the retention filter kept none of them. */
+  | 'NO-KEPT-ROW'
+  /** The producer does not say, and the census must not guess. */
+  | 'UNREPORTED';
+
+/** The closed union, in the order a reader meets it: covered first, then the levels of absence. */
+export const ABSENCE_LEVELS: readonly AbsenceLevel[] = [
+  'READ',
+  'FILE-ABSENT',
+  'NO-POINTS',
+  'COLUMN-ABSENT',
+  'ALL-ZERO',
+  'NO-KEPT-ROW',
+  'UNREPORTED',
+];
+
+/** What the producer recorded about one channel of one case. A missing record is `UNREPORTED`, not a guess. */
+export interface ChannelEvidence {
+  /** Whether the artifact the channel is read from exists. */
+  readonly present: boolean;
+  /** Data rows the artifact held, before any retention filter. */
+  readonly rows: number;
+  /** Whether this channel's columns were among the artifact's own schema. */
+  readonly columns: boolean;
+  /** Non-zero readings among `rows`. */
+  readonly nonzero: number;
+}
+
+/**
+ * The level of one channel's absence, from the count the census kept and what the producer recorded.
+ *
+ * A pure function of the two, and ordered so that the COUNT always wins: a channel that yielded a kept reading
+ * reads `READ` whatever the evidence says, so a recorded level can never contradict the measurement. That
+ * ordering is the whole reason this is a function rather than a field — a field could be set to `READ` on an
+ * empty channel, and nothing would notice.
+ *
+ * @param covered - Cases that kept a reading of this channel.
+ * @param evidence - What the producer recorded, or `undefined` when it recorded nothing.
+ * @returns The level.
+ */
+export function readAbsenceLevel(
+  covered: number,
+  evidence: ChannelEvidence | undefined,
+): AbsenceLevel {
+  if (covered > 0) return 'READ';
+  if (evidence === undefined) return 'UNREPORTED';
+  if (!evidence.present) return 'FILE-ABSENT';
+  if (evidence.rows === 0) return 'NO-POINTS';
+  if (!evidence.columns) return 'COLUMN-ABSENT';
+  if (evidence.nonzero === 0) return 'ALL-ZERO';
+  return 'NO-KEPT-ROW';
+}
+
+/** One channel's absence level and how many cases of the population are at it. */
+export interface AbsenceRow {
+  readonly channel: SignalChannel;
+  readonly level: AbsenceLevel;
+  readonly cases: number;
+}
 
 /** Per-population counts of the cases that carry each channel's input. */
 export interface InputCoverage {
@@ -579,16 +688,70 @@ export interface InputCoverage {
   readonly casesWithFailedEdges: number;
   readonly casesWithLatency: number;
   readonly latencyEdges: number;
+  /**
+   * Cases whose metrics map held at least one point, and cases whose telemetry was not ALL ZERO.
+   *
+   * **The second is the one the metric channel is counted at**, and it is measured from the case objects rather
+   * than assumed from their number: a case whose telemetry is present in name and zero in value is a case the
+   * metric-derived terms cannot read, and counting it as covered is the defect this pair replaces.
+   */
+  readonly casesWithMetrics: number;
+  readonly casesWithNonZeroMetrics: number;
+  /** Every channel's absence levels with a non-zero count. An empty array is a population with no absence. */
+  readonly absence: readonly AbsenceRow[];
+}
+
+/** What a case's metrics map must expose for the census to MEASURE it: a length and a value per index. */
+export interface MetricSeriesLike {
+  readonly values?: { readonly length: number; readonly [index: number]: number } | undefined;
+}
+
+/** One case's metric channel, as a reading rather than a claim. */
+export interface MetricReading {
+  readonly points: number;
+  readonly nonzero: number;
+}
+
+/**
+ * Read one case's metric telemetry.
+ *
+ * The whole of the metric channel's coverage, and it is a function of the data: `points` counts the values the
+ * map holds and `nonzero` counts those that are not zero. A `NaN` is not a reading — the engine cannot rank on it
+ * and it is not a zero either — so it counts as a point and not as non-zero, which puts a case of pure `NaN`
+ * telemetry at `ALL-ZERO` rather than at `READ`.
+ *
+ * @param metrics - The case's map, or `undefined` when the case carries none.
+ * @returns The counts.
+ */
+export function readMetricTelemetry(
+  metrics: ReadonlyMap<string, readonly MetricSeriesLike[]> | undefined,
+): MetricReading {
+  let points = 0;
+  let nonzero = 0;
+  if (metrics === undefined) return { points, nonzero };
+  for (const series of metrics.values()) {
+    for (const s of series) {
+      const values = s.values;
+      if (values === undefined) continue;
+      points += values.length;
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i];
+        if (v !== undefined && Number.isFinite(v) && v !== 0) nonzero++;
+      }
+    }
+  }
+  return { points, nonzero };
 }
 
 /**
  * Count the cases that carry each channel's input.
  *
- * The metric channel is deliberately `cases` — every RCAEval case has metrics, which is why the two
- * never-ablated priors act on it and are the only levers a suite with no logs and no traces has.
+ * The metric channel is **MEASURED from the cases' own `metrics` map** — see `AbsenceLevel` for the defect that
+ * replaces. The other four are counted from the arrays they are handed, and their absence is `UNREPORTED`
+ * because a bare array cannot say why it is empty.
  *
  * @param cases - The assembled cases of one population (a system, or a suite).
- * @returns The counts. A zero here is a STATEMENT about the corpus, not about a term.
+ * @returns The counts, and every non-empty absence level. A zero count here is a STATEMENT about the corpus.
  */
 export function summarizeInputCoverage(
   cases: ReadonlyArray<{
@@ -597,6 +760,7 @@ export function summarizeInputCoverage(
     readonly traceActivity?: ReadonlyMap<string, unknown> | undefined;
     readonly failedTraceEdges?: ReadonlyArray<unknown> | undefined;
     readonly edgeLatency?: ReadonlyArray<unknown> | undefined;
+    readonly metrics?: ReadonlyMap<string, readonly MetricSeriesLike[]> | undefined;
   }>,
 ): InputCoverage {
   let casesWithReadableLogs = 0;
@@ -606,19 +770,61 @@ export function summarizeInputCoverage(
   let casesWithFailedEdges = 0;
   let casesWithLatency = 0;
   let latencyEdges = 0;
+  let casesWithMetrics = 0;
+  let casesWithNonZeroMetrics = 0;
+  /** Cases per (channel, level), which is what a census over a POPULATION can carry. */
+  const absenceCounts = new Map<string, number>();
+  const bump = (channel: SignalChannel, level: AbsenceLevel): void => {
+    if (level === 'READ') return;
+    const key = `${channel}\u0000${level}`;
+    absenceCounts.set(key, (absenceCounts.get(key) ?? 0) + 1);
+  };
   for (const c of cases) {
     const logs = c.logs?.length ?? 0;
     if (logs > 0) {
       casesWithReadableLogs++;
       logEntries += logs;
     }
-    if ((c.traces?.length ?? 0) > 0) casesWithSpans++;
-    if ((c.traceActivity?.size ?? 0) > 0) casesWithSpanActivity++;
-    if ((c.failedTraceEdges?.length ?? 0) > 0) casesWithFailedEdges++;
+    const traces = c.traces?.length ?? 0;
+    if (traces > 0) casesWithSpans++;
+    const spanActivity = c.traceActivity?.size ?? 0;
+    if (spanActivity > 0) casesWithSpanActivity++;
+    const failed = c.failedTraceEdges?.length ?? 0;
+    if (failed > 0) casesWithFailedEdges++;
     const latency = c.edgeLatency?.length ?? 0;
     if (latency > 0) {
       casesWithLatency++;
       latencyEdges += latency;
+    }
+    const telemetry = readMetricTelemetry(c.metrics);
+    if (telemetry.points > 0) casesWithMetrics++;
+    if (telemetry.nonzero > 0) casesWithNonZeroMetrics++;
+    // **The level is computed PER CASE**, because a population can hold cases at different levels at once — an
+    // all-zero case beside an absent one is two levels and not one, and the first version of this loop assigned
+    // the population a single level and then dropped every case the level did not describe. The accounting
+    // invariant in the fence is what found it.
+    bump(
+      'metrics',
+      readAbsenceLevel(telemetry.nonzero, {
+        present: c.metrics !== undefined,
+        rows: telemetry.points,
+        columns: telemetry.points > 0,
+        nonzero: telemetry.nonzero,
+      }),
+    );
+    // The other four are handed a bare array, so an empty one has NO recorded reason and reads `UNREPORTED`:
+    // "the reason is not recorded" and "the file is absent" are different statements.
+    bump('logs', readAbsenceLevel(logs > 0 ? 1 : 0, undefined));
+    bump('spans', readAbsenceLevel(traces > 0 ? 1 : 0, undefined));
+    bump('spanActivity', readAbsenceLevel(spanActivity > 0 ? 1 : 0, undefined));
+    bump('latency', readAbsenceLevel(latency > 0 ? 1 : 0, undefined));
+  }
+  const absence: AbsenceRow[] = [];
+  for (const channel of CHANNEL_ORDER) {
+    for (const level of ABSENCE_LEVELS) {
+      if (level === 'READ') continue;
+      const n = absenceCounts.get(`${channel}\u0000${level}`) ?? 0;
+      if (n > 0) absence.push({ channel, level, cases: n });
     }
   }
   return {
@@ -630,20 +836,27 @@ export function summarizeInputCoverage(
     casesWithFailedEdges,
     casesWithLatency,
     latencyEdges,
+    casesWithMetrics,
+    casesWithNonZeroMetrics,
+    absence,
   };
 }
 
 /**
  * How many cases carry a channel's input.
  *
+ * **Measured for every channel including `metrics`.** That arm used to return `coverage.cases`, so a population
+ * of silently-zeroed telemetry would have read as fully covered — the one channel whose coverage a competitor's
+ * published allegation is about, answered by construction instead of by reading.
+ *
  * @param coverage - The counts.
  * @param channel - Which channel.
- * @returns The case count, or the population size for `metrics`, which every case has.
+ * @returns The measured case count.
  */
 export function channelCases(coverage: InputCoverage, channel: SignalChannel): number {
   switch (channel) {
     case 'metrics':
-      return coverage.cases;
+      return coverage.casesWithNonZeroMetrics;
     case 'logs':
       return coverage.casesWithReadableLogs;
     case 'spans':
@@ -674,7 +887,12 @@ export function readZero(
 }
 
 /**
- * Render the census as lines that name every starved channel and the terms it makes unmeasurable.
+ * Render the census as lines that name every starved channel, WHY it is starved, and the terms it makes
+ * unmeasurable.
+ *
+ * The absence block is not decoration: **a bare zero cannot distinguish an allegation of `COLUMN-ABSENT` from a
+ * finding of `ALL-ZERO`**, and those two are the difference between a broken converter and a corpus that carries
+ * nothing on that channel. A level nobody is at is not printed, so the block is a reading rather than a schema.
  *
  * @param coverage - The counts.
  * @param label - What the population was (a system name, a suite).
@@ -683,6 +901,8 @@ export function readZero(
 export function formatInputCoverage(coverage: InputCoverage, label: string): string[] {
   const lines = [
     `input-coverage[${label}]: ${coverage.cases} cases | ` +
+      `metrics ${coverage.casesWithNonZeroMetrics}/${coverage.cases} non-zero ` +
+      `(${coverage.casesWithMetrics} with points) | ` +
       `logs ${coverage.casesWithReadableLogs}/${coverage.cases} readable ` +
       `(${coverage.logEntries} entries) | ` +
       `spans ${coverage.casesWithSpans}/${coverage.cases} | ` +
@@ -699,6 +919,9 @@ export function formatInputCoverage(coverage: InputCoverage, label: string): str
       : `  STARVED channels ⇒ UNMEASURABLE terms: ${starved.join(', ')}` +
           ` — a 0.0 on any of them says nothing about the term`,
   );
+  for (const row of coverage.absence) {
+    lines.push(`  absent[${row.channel}]: ${row.level} on ${row.cases}/${coverage.cases} cases`);
+  }
   return lines;
 }
 

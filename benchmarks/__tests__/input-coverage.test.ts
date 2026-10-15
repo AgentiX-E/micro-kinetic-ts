@@ -31,11 +31,15 @@ import {
   type AblationFeatureFlags,
 } from '../src/ablation-engine-options.js';
 import {
+  ABSENCE_LEVELS,
   channelCases,
   formatInputCoverage,
+  readAbsenceLevel,
   readZero,
   summarizeInputCoverage,
   TERM_CHANNELS,
+  type AbsenceLevel,
+  type ChannelEvidence,
   type SignalChannel,
 } from '../src/directional-evidence.js';
 
@@ -49,6 +53,15 @@ const withChannels = (spec: {
   spanActivity?: number;
   failed?: number;
   latency?: number;
+  /**
+   * The case's metric telemetry, as the VALUES it holds.
+   *
+   * `[1, 2]` is two non-zero readings, `[0, 0]` is telemetry present in name and silently zero in value,
+   * `[]` is a map with no point at all, and OMITTING it is a case that carries no metrics map. Those four are
+   * the four levels of the metric channel's absence, and they are spelled as values because the census reads
+   * values — a fixture that supplied a pre-counted summary could not distinguish them.
+   */
+  metrics?: number[];
 }): Parameters<typeof summarizeInputCoverage>[0][number] => {
   // `Array.from({ length: n })` rather than `new Array(n).fill()`: the census reads `length` and `size`, so the
   // entries are placeholders — and the longer form is the one the lint rule accepts, which keeps the gate at
@@ -61,19 +74,33 @@ const withChannels = (spec: {
     traceActivity: spec.spanActivity ? new Map([['svc', {}]]) : undefined,
     failedTraceEdges: entries(spec.failed),
     edgeLatency: entries(spec.latency),
+    metrics:
+      spec.metrics === undefined
+        ? undefined
+        : new Map([['svc', [{ values: new Float64Array(spec.metrics) }]]]),
   };
 };
 
+/** Every case's metric channel, for the tests that need a population that is not degenerate. */
+const LIVE_TELEMETRY = [1, 2, 3];
+
 describe('the input census', () => {
-  it('counts every channel, and counts metrics as the population itself', () => {
+  it('MEASURES the metric channel instead of assuming it', () => {
+    // **The defect this test replaces.** The arm used to return `coverage.cases`, with the comment "every
+    // RCAEval case has metrics" — a CONSTRUCTION where a measurement was asserted, on the one channel every
+    // never-ablated prior acts on and the one a competitor's published allegation is about. The count is now the
+    // cases whose telemetry holds a non-zero value.
     const coverage = summarizeInputCoverage([
-      withChannels({ logs: 3, traces: 10, spanActivity: 2, failed: 1, latency: 4 }),
-      withChannels({ logs: 0, traces: 5, latency: 2 }),
-      // A case with nothing but metrics: the only channel every RCAEval case has, which is why the two
-      // never-ablated priors are the sole levers on a suite whose other channels are empty.
-      withChannels({}),
+      withChannels({ logs: 3, traces: 10, spanActivity: 2, failed: 1, latency: 4, metrics: [1] }),
+      withChannels({ logs: 0, traces: 5, latency: 2, metrics: [0, 4] }),
+      // The case the old arm counted as covered: telemetry present in NAME and zero in value.
+      withChannels({ metrics: [0, 0, 0] }),
     ]);
     expect(coverage.cases).toBe(3);
+    expect(coverage.casesWithMetrics).toBe(3);
+    expect(coverage.casesWithNonZeroMetrics).toBe(2);
+    // The construction would have said 3. This is the whole change.
+    expect(channelCases(coverage, 'metrics')).toBe(2);
     expect(coverage.casesWithReadableLogs).toBe(1);
     expect(coverage.logEntries).toBe(3);
     expect(coverage.casesWithSpans).toBe(2);
@@ -81,8 +108,144 @@ describe('the input census', () => {
     expect(coverage.casesWithFailedEdges).toBe(1);
     expect(coverage.casesWithLatency).toBe(2);
     expect(coverage.latencyEdges).toBe(6);
-    expect(channelCases(coverage, 'metrics')).toBe(3);
     expect(channelCases(coverage, 'logs')).toBe(1);
+  });
+
+  it('separates the SCHEMA mechanism from the DEGENERATE class, which is why the levels exist', () => {
+    // Two populations that a bare zero cannot tell apart, differing ONLY in what the producer recorded.
+    const columnAbsent = readAbsenceLevel(0, {
+      present: true,
+      rows: 40,
+      columns: false,
+      nonzero: 40,
+    });
+    const allZero = readAbsenceLevel(0, { present: true, rows: 40, columns: true, nonzero: 0 });
+    const fileAbsent = readAbsenceLevel(0, { present: false, rows: 0, columns: false, nonzero: 0 });
+    expect([columnAbsent, allZero, fileAbsent]).toEqual([
+      'COLUMN-ABSENT',
+      'ALL-ZERO',
+      'FILE-ABSENT',
+    ]);
+    expect(new Set([columnAbsent, allZero, fileAbsent]).size).toBe(3);
+    // `COLUMN-ABSENT` is `arXiv:2609.27069`'s mechanism — a schema that silently zeroes telemetry for 250 of
+    // 375 RE1 cases — and `ALL-ZERO` is the degenerate class `benchmark-corpus-completeness.md` §8 defines.
+    // An instrument printing one zero for both cannot say which it measured.
+    // Every level in the union is REACHABLE, or the union is a decoration.
+    const reached = new Set<AbsenceLevel>([
+      readAbsenceLevel(4, undefined),
+      fileAbsent,
+      readAbsenceLevel(0, { present: true, rows: 0, columns: true, nonzero: 0 }),
+      columnAbsent,
+      allZero,
+      readAbsenceLevel(0, { present: true, rows: 40, columns: true, nonzero: 40 }),
+      readAbsenceLevel(0, undefined),
+    ]);
+    expect([...reached].sort()).toEqual([...ABSENCE_LEVELS].sort());
+  });
+
+  it('lets the COUNT win over the evidence, so a recorded level cannot contradict it', () => {
+    // The reason the level is a FUNCTION of the count and the evidence rather than a field: a field could be set
+    // to `READ` on an empty channel and nothing would notice. `at` names, for every level, an evidence that
+    // WOULD produce it at zero coverage — so the loop below pins both directions of the mapping at once.
+    const at = (level: AbsenceLevel): ChannelEvidence | undefined => {
+      switch (level) {
+        case 'READ':
+          return undefined;
+        case 'FILE-ABSENT':
+          return { present: false, rows: 0, columns: false, nonzero: 0 };
+        case 'NO-POINTS':
+          return { present: true, rows: 0, columns: true, nonzero: 0 };
+        case 'COLUMN-ABSENT':
+          return { present: true, rows: 9, columns: false, nonzero: 9 };
+        case 'ALL-ZERO':
+          return { present: true, rows: 9, columns: true, nonzero: 0 };
+        case 'NO-KEPT-ROW':
+          return { present: true, rows: 9, columns: true, nonzero: 9 };
+        case 'UNREPORTED':
+          return undefined;
+      }
+    };
+    for (const level of ABSENCE_LEVELS) {
+      // `READ` is a covered channel and not a level of absence, so it has no evidence that reproduces it at zero.
+      if (level !== 'READ') {
+        expect(readAbsenceLevel(0, at(level)), `${level} at zero coverage`).toBe(level);
+      }
+      // **And one kept reading overrides every one of them**, which is the direction a field could not hold.
+      expect(readAbsenceLevel(1, at(level)), `${level}: the count wins`).toBe('READ');
+    }
+    // And an unrecorded reason is a LEVEL, not a failure: "the reason is not recorded" and "the file is absent"
+    // are different statements, which is law 3's middle level.
+    expect(readAbsenceLevel(0, undefined)).toBe('UNREPORTED');
+  });
+
+  it('reads the metric levels off the case objects themselves, PER CASE', () => {
+    const coverage = summarizeInputCoverage([
+      withChannels({ metrics: [0, 1] }),
+      withChannels({ metrics: [0, 0] }),
+      withChannels({ metrics: [] }),
+      withChannels({}),
+    ]);
+    expect(coverage.cases).toBe(4);
+    // `with points` counts points, so the EMPTY map is not one: it is a level of its own, and a population could
+    // hold it beside the others only because the level is computed per case.
+    expect(coverage.casesWithMetrics).toBe(2);
+    expect(coverage.casesWithNonZeroMetrics).toBe(1);
+    // Three DIFFERENT levels in one population, which the first version of the census could not express: it
+    // assigned the whole population one level and dropped every case that level did not describe. The order is
+    // the union's own, so two runs of one corpus print the same lines.
+    const levels = coverage.absence.filter((a) => a.channel === 'metrics');
+    expect(levels.map((a) => [a.level, a.cases])).toEqual([
+      ['FILE-ABSENT', 1],
+      ['NO-POINTS', 1],
+      ['ALL-ZERO', 1],
+    ]);
+    const lines = formatInputCoverage(coverage, 'RE1');
+    expect(lines[0]).toContain('metrics 1/4 non-zero');
+    expect(lines[0]).toContain('(2 with points)');
+    expect(lines.some((l) => l.includes('absent[metrics]: ALL-ZERO on 1/4 cases'))).toBe(true);
+    expect(lines.some((l) => l.includes('absent[metrics]: FILE-ABSENT on 1/4 cases'))).toBe(true);
+  });
+
+  it('reads a series with no value array, and a NaN is a point that is not a reading', () => {
+    // Two shapes a real `MetricMap` can hold and a census must not crash on or over-count.
+    const coverage = summarizeInputCoverage([
+      // A series whose `values` is absent: it contributes no point at all, and it is NOT a zero.
+      { metrics: new Map([['svc', [{}]]]) },
+      // A `NaN` counts as a point — the engine cannot rank on it — and NOT as an observation, so a case of pure
+      // NaN telemetry is `ALL-ZERO` rather than `READ`. Calling it covered would claim a reading that is not one.
+      { metrics: new Map([['svc', [{ values: new Float64Array([Number.NaN, Number.NaN]) }]]]) },
+      { metrics: new Map([['svc', [{ values: new Float64Array([0, 0, 7]) }]]]) },
+    ]);
+    expect(coverage.casesWithMetrics).toBe(2);
+    expect(coverage.casesWithNonZeroMetrics).toBe(1);
+    // The valueless series is `NO-POINTS` — a map with nothing in it, which is not a zero — and the NaN case is
+    // `ALL-ZERO`, in the union's own order.
+    const levels = coverage.absence.filter((a) => a.channel === 'metrics');
+    expect(levels.map((a) => [a.level, a.cases])).toEqual([
+      ['NO-POINTS', 1],
+      ['ALL-ZERO', 1],
+    ]);
+  });
+
+  it('accounts for every case at every channel, so a count cannot be a construction', () => {
+    // The invariant that generalises the defect: a channel's covered count plus its absence count is the
+    // population. A count that is a construction would break this the moment a case disagreed with it.
+    const coverage = summarizeInputCoverage([
+      withChannels({ logs: 2, traces: 1, spanActivity: 1, failed: 1, latency: 1, metrics: [5] }),
+      withChannels({ metrics: [0] }),
+      withChannels({}),
+    ]);
+    const channels: SignalChannel[] = ['metrics', 'logs', 'spans', 'spanActivity', 'latency'];
+    for (const channel of channels) {
+      const absence = coverage.absence
+        .filter((a) => a.channel === channel)
+        .reduce((n, a) => n + a.cases, 0);
+      expect(channelCases(coverage, channel) + absence, `${channel}`).toBe(coverage.cases);
+    }
+    // And the metric channel's two counts are ordered, which a construction cannot be wrong about but a
+    // measurement can: points without a single non-zero value is `ALL-ZERO`, never covered.
+    expect(coverage.casesWithNonZeroMetrics).toBeLessThanOrEqual(coverage.casesWithMetrics);
+    expect(coverage.casesWithMetrics).toBeLessThanOrEqual(coverage.cases);
   });
 
   it('says WHICH log quantity the count is, because another instrument counts another one', () => {
@@ -126,8 +289,15 @@ describe('the input census', () => {
 
     // A suite like RE2: both channels populated, so the same terms are measured rather than excused.
     const covered = summarizeInputCoverage([
-      withChannels({ logs: 4, traces: 30, spanActivity: 2, failed: 1, latency: 3 }),
-      withChannels({ logs: 4, traces: 30, spanActivity: 2, latency: 3 }),
+      withChannels({
+        logs: 4,
+        traces: 30,
+        spanActivity: 2,
+        failed: 1,
+        latency: 3,
+        metrics: LIVE_TELEMETRY,
+      }),
+      withChannels({ logs: 4, traces: 30, spanActivity: 2, latency: 3, metrics: LIVE_TELEMETRY }),
     ]);
     const coveredLines = formatInputCoverage(covered, 'RE2');
     expect(coveredLines[0]).toContain('logs 2/2');

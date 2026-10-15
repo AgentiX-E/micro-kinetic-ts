@@ -399,3 +399,103 @@ the WEAKER claim, and here it is now the secondary one: the run exists, it is gr
 the baseline exactly. **"It cannot have changed the number" and "the number did not change" are different
 sentences, and only the second one is a measurement.** The first is what a report falls back on when it has not
 run anything, so it must be labelled as such at the moment it is used, not upgraded afterwards.
+
+### 8.5 The census's `metrics` arm was a CONSTRUCTION — found by asking §8's own question of the LEDGER
+
+**Iteration 103 asked the census that decides STARVED from INERT the same question §8 asks of the corpus, and the
+census failed it.** `channelCases(coverage, 'metrics')` returned `coverage.cases`, with the comment *"every
+RCAEval case has metrics"* — and the cases it was handed are `BenchmarkCase[]`, which has carried
+`metrics: MetricMap` all along. **A count that is a construction where a measurement is asserted**, on the one
+channel every never-ablated prior acts on and the one a competitor's published claim is about.
+
+**The mechanism is why it matters, not the bookkeeping.** `arXiv:2609.27069`'s allegation and this document's
+refutation have the **same signature in a count**:
+
+| | the mechanism | what a bare zero says |
+| --- | --- | --- |
+| the allegation | a **non-uniform column schema** silently zeroes telemetry for 250 of 375 RE1 cases | nothing |
+| §8's finding | 735/735 cases carry non-zero telemetry, 0 degenerate | nothing |
+
+A reader given one zero for both cannot tell which was measured, and the fixes are different: one is a converter
+defect, the other is a corpus that carries nothing on that channel. **So the census now reports the LEVEL of
+every absence, per case**, and the level is a pure function of the count and what the producer recorded:
+
+| level | the producer's own fact |
+| --- | --- |
+| `READ` | a non-zero reading was kept — nothing is absent |
+| `FILE-ABSENT` | the artifact the channel is read from is not in the case directory |
+| `NO-POINTS` | the artifact is there and holds no data point |
+| `COLUMN-ABSENT` | points are there and this channel's columns are not among them — **the allegation's mechanism** |
+| `ALL-ZERO` | points and columns are there and every value is zero — **the degeneracy class §1 and §8 define** |
+| `NO-KEPT-ROW` | non-zero values are there and the retention filter kept none of them |
+| `UNREPORTED` | the producer does not say, and the census must not guess |
+
+**`reached > 0` always wins.** The level is a FUNCTION of the count and the evidence rather than a field, so a
+recorded reason can never contradict the measurement — a field could be set to `READ` on an empty channel and
+nothing would notice, which is why the fence asserts that direction directly.
+
+**And `channelCases('metrics')` is now the count of cases whose telemetry is NOT all zero** — measured from the
+cases. §8's number predicts it equals `cases` on our corpus; the census now MEASURES that equality instead of
+implying it, and a corpus where it did not hold would print `absent[metrics]: ALL-ZERO on N cases` rather than
+reporting full coverage. **The two never-ablated priors act on that channel, so the difference is not cosmetic:
+it is the difference between "the metric layer was measured and did not move" and "the metric layer was assumed
+and nothing was read".**
+
+### 8.5.1 What the allegation actually says, read from its own section 7 on 2026-10-15
+
+**Verified rather than paraphrased, because the level vocabulary has to name the claim's real mechanism.** The
+paper's abstract states the property as *"a non-uniform column schema that silently zeroes telemetry for most RE1
+cases"*, and its own §7 supplies what that means: **the raw frame width VARIES BY SYSTEM** — *"Online Boutique
+51-60, Sock Shop 421-439, Train Ticket 1180-1446"* — with the footnote that *"column counts are for one case per
+system, since raw frame width varies"*. Its own Table 3 is the demonstration: BARO, RCAEval's reference
+implementation, scores **0.880 Avg@5 on Online Boutique** (51 columns, curated RED metrics) against **0.557 on
+Sock Shop** (438, raw cAdvisor) and **0.277 on Train Ticket** (1242, raw cAdvisor).
+
+**So the mechanism the allegation names is SCHEMA VARIANCE ACROSS SYSTEMS** — a reader that assumes one system's
+columns reads nothing for the other two — and it is therefore `COLUMN-ABSENT` in the vocabulary above, not
+`ALL-ZERO` and not `FILE-ABSENT`. **Our converter answers exactly that mechanism and says why**: it detects the
+LONG and WIDE shapes **from each file's own columns**, so no case inherits another's schema (§8), and the audit
+reads 375 of 375 RE1 cases with non-zero telemetry. **The two claims are about the same level and disagree about
+whether it occurs**, which is the one thing a bare zero could not have told a reader.
+
+**And the same section withdraws a claim of its own, which is a fact about competitor completeness rather than
+about our numbers.** Its portable artifact reads RE1 only — *"the localization loader in this artifact
+(`kintsugi/data/localization.py`) reads RE1 only, and an earlier PSC run labelled RE2 was scored on RE1 folds. **We
+withdraw that result and make no PSC claim on RE2** until the model is ported."* Our record never compared with it
+on RE2, so no number moves; what changes is that the reference's own RE2 status is now named rather than left for
+a reader of the abstract to infer.
+
+**Two further numbers from the same table, recorded because the row is now more than a single headline**: the
+paper's **`Max-deviation` heuristic reaches 0.797 `Avg@5` on RE1** (0.877 on Online Boutique, 0.888 on Sock Shop,
+0.627 on Train Ticket), and its `0.915` sits inside a seed spread it reports itself — *"eight independent
+stratified seeds span 0.914 to 0.928 (mean 0.921)"*. Both are on `Avg@5`, a metric we do not headline, so **no gap
+is read in either direction**; they are recorded because a row that carries one number and not its spread is the
+shape this whole document exists to prevent.
+
+### 8.6 The defect the first version of the levels had, and the invariant that found it
+
+The first version assigned each **population** one level: it computed the level from the population's own counts
+and then reported `cases.length - covered` at it. **A population can hold cases at several levels at once** — an
+all-zero case beside an absent one is two levels and not one — so the version dropped every case its single level
+did not describe. The fence's own accounting invariant found it on the first run, in two places:
+
+```
+→ expected 2 to be 3                          # `with points` counts points, so an empty map is not one
+→ metrics: expected 1 to be 3                  # covered + absent must equal the population, PER CHANNEL
+```
+
+The second is the one worth keeping: **a census's counts must partition its population**, and a summary that
+assigns one level to a mixed population cannot. The repair moves the level computation inside the per-case loop
+and counts cases per (channel, level).
+
+### 8.7 The law
+
+**A COUNT THAT IS A CONSTRUCTION IS NOT A MEASUREMENT.** It is §7's law and the register's law 12 in a new place:
+a summary may not return a quantity it did not read, and the tell is that the quantity is exactly the population —
+**a number that can never disagree with the thing it describes**. It joins the same family as the artifact whose
+header described the defect instead of the corpus (§5.3) and the metric term whose ceiling was a property of its
+own rank spacing: in each, the number was produced by the instrument rather than by the world.
+
+**And it is law 3 one level down.** The census's `UNREPORTED` is the MIDDLE absence — the channel is empty and the
+reason is not recorded — which is neither *"the file is absent"* nor *"the values are zero"*. A boolean lookup
+would collapse it into one of those two, and the two have different fixes.
