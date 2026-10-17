@@ -1,0 +1,19 @@
+# The Parquet -> JSON bridge's RUNTIME dependencies: the library that reads the Parquet and writes
+# the JSON/CSV that every RCAEval benchmark -- including the golden nine-cell -- is read from.
+#
+# This file is part of `scripts/rcaeval_provenance.py`'s digest, so editing a pin changes the
+# artifact's cache key and therefore invalidates the cached conversion. That is the point: pandas'
+# dtype and null handling decide the numbers the bridge writes, so a reader bump is a new artifact,
+# not a re-use of the old one.
+#
+# It exists because the pin had no owner. `cache-datasets.yml` installed `pandas pyarrow` inline and
+# unpinned, so the artifact's producer was recorded NOWHERE -- not in the cache key (the constant
+# `RCAEvalJSON`), not in the workflow, not in the data. Measured 2026-09-25: the 39 GB artifact the
+# golden nine-cell is read from was produced on 2026-08-08 by the versions the unpinned install
+# resolved to THAT day -- pandas 3.0.5 / pyarrow 25.0.0 -- and eleven schedule and push runs after
+# it hit the cache and converted nothing, including the commit that fixed the bridge.
+#
+# `requirements-fse26-dev.txt` pulls this file in rather than repeating these two lines, so the pin
+# has one owner and the gate that measures the bridge measures it against the versions that run it.
+pandas==3.0.6
+pyarrow==25.0.1

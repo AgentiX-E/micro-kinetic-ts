@@ -1,0 +1,2420 @@
+/**
+ * Unit tests for RCAEvalLoader.
+ *
+ * Tests parseDirectoryName edge cases, defensive loading of RE2/RE3 data,
+ * graceful degradation when files are missing, and the full loadCase flow.
+ *
+ * @module __tests__/unit/loaders/rcaeval-loader.test
+ */
+
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import {
+  RCAEvalLoader,
+  classifyExceptionKind,
+  classifyLogLevel,
+  countDirectionalInputs,
+  countFailedTraceEdges,
+  countTraceActivityByService,
+  extractDeepestExceptionClass,
+  extractExceptionNames,
+  extractSpringBootLevel,
+  isHttpExceptionMessage,
+  isLogicExceptionMessage,
+  isPropagatedExceptionMessage,
+  isStackTraceMessage,
+  normalizeSpanStatus,
+} from '../../../src/benchmarks/loaders/rcaeval-loader.js';
+
+// ── Helpers ───────────────────────────────────────────────
+
+function createTempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'rcaeval-test-'));
+}
+
+function writeJson(filePath: string, data: unknown): void {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+function createCaseDir(
+  baseDir: string,
+  dirName: string,
+  options: {
+    metrics?: Record<string, Array<{ timestamp: number; value: number; metric_name: string }>>;
+    injectTime?: number;
+    groundTruth?: Record<string, unknown>;
+    logs?: string;
+    traces?: string;
+  } = {},
+): string {
+  const casePath = path.join(baseDir, dirName);
+  fs.mkdirSync(casePath, { recursive: true });
+
+  if (options.metrics) {
+    writeJson(path.join(casePath, 'metrics.json'), options.metrics);
+  }
+
+  if (options.injectTime !== undefined) {
+    fs.writeFileSync(path.join(casePath, 'inject_time.txt'), String(options.injectTime));
+  }
+
+  if (options.groundTruth) {
+    writeJson(path.join(casePath, 'ground_truth.json'), options.groundTruth);
+  }
+
+  if (options.logs) {
+    fs.writeFileSync(path.join(casePath, 'logs.csv'), options.logs);
+  }
+
+  if (options.traces) {
+    fs.writeFileSync(path.join(casePath, 'traces.csv'), options.traces);
+  }
+
+  return casePath;
+}
+
+// ── Tests ─────────────────────────────────────────────────
+
+describe('classifyLogLevel', () => {
+  it('returns the explicit level when a recognised level column value is present', () => {
+    expect(classifyLogLevel('ERROR', '')).toBe('ERROR');
+    expect(classifyLogLevel('FATAL', '')).toBe('FATAL');
+    expect(classifyLogLevel('WARN', '')).toBe('WARN');
+    expect(classifyLogLevel('INFO', 'anything')).toBe('INFO');
+  });
+
+  it('derives FATAL from stack-trace / panic keywords in the message', () => {
+    expect(classifyLogLevel('', 'Traceback (most recent call last)')).toBe('FATAL');
+    expect(classifyLogLevel('', 'kernel panic at 0xdeadbeef')).toBe('FATAL');
+  });
+
+  it('derives ERROR from error/exception/failure keywords in the message', () => {
+    expect(classifyLogLevel('', 'NullPointerException: null reference')).toBe('ERROR');
+    expect(classifyLogLevel('', 'request failed with status 500')).toBe('ERROR');
+    expect(classifyLogLevel('', 'an unexpected error occurred')).toBe('ERROR');
+  });
+
+  it('derives WARN from warning keywords', () => {
+    expect(classifyLogLevel('', 'deprecation warning: use v2')).toBe('WARN');
+  });
+
+  it('defaults to INFO for benign messages', () => {
+    expect(classifyLogLevel('', 'request completed in 12ms')).toBe('INFO');
+    expect(classifyLogLevel('', 'cart GetCart called')).toBe('INFO');
+  });
+
+  it('prefers the Spring Boot preamble level over body keywords', () => {
+    // The message body mentions "errorLogger"/"errorChannel" (benign), but the
+    // preamble says INFO — the level must come from the preamble, not the body.
+    const msg =
+      '2024-12-07 17:19:30.573  INFO 1 --- [Thread-5] o.s.i.endpoint.EventDrivenConsumer : Removing {logging-channel-adapter:_org.springframework.integration.errorLogger} as a subscriber to the errorChannel channel';
+    expect(classifyLogLevel('', msg)).toBe('INFO');
+  });
+
+  it('returns ERROR for a Spring Boot preamble ERROR line', () => {
+    const msg =
+      '2024-12-07 17:20:09.351 ERROR 1 --- [io-12031-exec-5] o.a.c.c.C.[.[.[/].[dispatcherServlet] : Servlet.service() for servlet';
+    expect(classifyLogLevel('', msg)).toBe('ERROR');
+  });
+
+  it('returns WARN for a Spring Boot preamble WARN line', () => {
+    const msg = '2024-12-07 17:20:09.351  WARN 1 --- [main] c.f.App : deprecated config';
+    expect(classifyLogLevel('', msg)).toBe('WARN');
+  });
+});
+
+describe('extractSpringBootLevel', () => {
+  it('extracts the level token from a logback preamble', () => {
+    expect(extractSpringBootLevel('2024-12-07 17:19:30.573  INFO 1 --- [t] l : m')).toBe('INFO');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 ERROR 1 --- [t] l : m')).toBe('ERROR');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351  WARN 1 --- [t] l : m')).toBe('WARN');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 DEBUG 1 --- [t] l : m')).toBe('DEBUG');
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 FATAL 1 --- [t] l : m')).toBe('FATAL');
+  });
+
+  it('handles comma-separated milliseconds and one-digit hours', () => {
+    expect(extractSpringBootLevel('2024-12-07 7:20:09,351  INFO 1 --- [t] l : m')).toBe('INFO');
+  });
+
+  it('returns undefined when the message has no Spring Boot preamble', () => {
+    expect(extractSpringBootLevel('NullPointerException: null reference')).toBeUndefined();
+    expect(
+      extractSpringBootLevel('org.springframework.web.client.HttpServerErrorException: 503'),
+    ).toBeUndefined();
+    expect(extractSpringBootLevel('')).toBeUndefined();
+    // TRACE is below DEBUG and intentionally not captured.
+    expect(extractSpringBootLevel('2024-12-07 17:20:09.351 TRACE 1 --- [t] l : m')).toBeUndefined();
+  });
+});
+
+describe('isStackTraceMessage', () => {
+  it('detects stack-trace and exception signatures (code-level fault markers)', () => {
+    expect(isStackTraceMessage('at com.foo.Bar.baz(Bar.java:42)')).toBe(true);
+    expect(isStackTraceMessage('File "/app/main.py", line 42, in handle')).toBe(true);
+    expect(isStackTraceMessage('Traceback (most recent call last):')).toBe(true);
+    // JavaScript stack frame (Node.js): `at Object.handler (/app/server.js:42:13)`
+    expect(isStackTraceMessage('at Object.handler (/app/server.js:42:13)')).toBe(true);
+    // Exception class names are the RE3 code-level signal (benchmark #218:
+    // RE3 logs carry exception NAMES, not structural frames — the broad gate
+    // is what drives the TT RE3 +16.7 lift).
+    expect(isStackTraceMessage('NullPointerException: null reference')).toBe(true);
+    expect(isStackTraceMessage('Caused by: java.lang.NullPointerException')).toBe(true);
+    expect(isStackTraceMessage('RedisConnectionFailureException: connection refused')).toBe(true);
+    expect(isStackTraceMessage('java.net.SocketTimeoutException: Read timed out')).toBe(true);
+  });
+
+  it('rejects resource/network cascade messages (no stack trace)', () => {
+    expect(isStackTraceMessage('connection refused')).toBe(false);
+    expect(isStackTraceMessage('upstream connect error or disconnect/reset')).toBe(false);
+    expect(isStackTraceMessage('request timeout after 5000ms')).toBe(false);
+    expect(isStackTraceMessage('conversion request successful')).toBe(false);
+  });
+});
+
+describe('extractExceptionNames', () => {
+  it('extracts distinct exception/error type names in order of appearance', () => {
+    const msg = 'NullPointerException then SocketTimeoutException then NullPointerException again';
+    expect(extractExceptionNames(msg)).toEqual(['NullPointerException', 'SocketTimeoutException']);
+  });
+
+  it('reduces qualified names to their simple class name', () => {
+    expect(extractExceptionNames('java.lang.NullPointerException: null')).toEqual([
+      'NullPointerException',
+    ]);
+    expect(extractExceptionNames('org.springframework.dao.QueryTimeoutException: timeout')).toEqual(
+      ['QueryTimeoutException'],
+    );
+  });
+
+  it('captures Error / Timeout / Failure suffixes too', () => {
+    expect(extractExceptionNames('OutOfMemoryError at runtime')).toEqual(['OutOfMemoryError']);
+    expect(extractExceptionNames('Read timed out')).toEqual([]);
+    expect(extractExceptionNames('SocketTimeout: read')).toEqual(['SocketTimeout']);
+  });
+
+  it('returns an empty array when no exception type is present', () => {
+    expect(extractExceptionNames('connection refused')).toEqual([]);
+    expect(extractExceptionNames('request completed in 12ms')).toEqual([]);
+  });
+});
+
+describe('isLogicExceptionMessage', () => {
+  it('detects self-caused logic exceptions (code-level fault signatures)', () => {
+    expect(isLogicExceptionMessage('java.lang.NullPointerException: null')).toBe(true);
+    expect(isLogicExceptionMessage('IllegalArgumentException: invalid argument')).toBe(true);
+    expect(isLogicExceptionMessage('ConcurrentModificationException at runtime')).toBe(true);
+    expect(isLogicExceptionMessage('JsonMappingException: cannot deserialize')).toBe(true);
+    expect(isLogicExceptionMessage("AttributeError: 'NoneType' object has no attribute")).toBe(
+      true,
+    );
+    expect(isLogicExceptionMessage("TypeError: cannot read property 'foo' of undefined")).toBe(
+      true,
+    );
+    expect(isLogicExceptionMessage('ArrayIndexOutOfBoundsException: index 5')).toBe(true);
+  });
+
+  it('rejects token-validation failures as PROPAGATED symptoms (downstream auth consumer)', () => {
+    // A downstream service validating an INVALID token the silent auth source
+    // returned throws MalformedJwtException/TokenException — a wrong-value
+    // (F1 incorrect param / F4 wrong return) symptom, NOT a self-caused bug.
+    expect(isLogicExceptionMessage('MalformedJwtException: invalid token')).toBe(false);
+    expect(isLogicExceptionMessage('TokenException: token verification failed')).toBe(false);
+    expect(isLogicExceptionMessage('InvalidBearerTokenException: Malformed JWT')).toBe(false);
+  });
+
+  it('rejects connectivity/IO exceptions (propagated cascade signatures)', () => {
+    expect(isLogicExceptionMessage('RedisConnectionFailureException: connection refused')).toBe(
+      false,
+    );
+    expect(isLogicExceptionMessage('java.net.SocketTimeoutException: Read timed out')).toBe(false);
+    expect(isLogicExceptionMessage('UnknownHostException: host not found')).toBe(false);
+    expect(isLogicExceptionMessage('MongoSocketReadException: read error')).toBe(false);
+    expect(isLogicExceptionMessage('AmqpIOException: broken pipe')).toBe(false);
+    expect(isLogicExceptionMessage('EOFException: unexpected end of stream')).toBe(false);
+  });
+
+  it('rejects non-exception and generic messages', () => {
+    expect(isLogicExceptionMessage('connection refused')).toBe(false);
+    expect(isLogicExceptionMessage('request completed in 12ms')).toBe(false);
+    expect(isLogicExceptionMessage('ProcessingException: unexpected')).toBe(false);
+  });
+
+  it('rejects PROPAGATED empty-value parse failures (silent wrong-value symptoms)', () => {
+    // A downstream wrapper parsing an EMPTY value the silent source emitted
+    // throws IllegalArgumentException/NumberFormatException — these are
+    // symptoms of a wrong-value fault, NOT self-caused programming errors.
+    expect(isLogicExceptionMessage('IllegalArgumentException: Invalid UUID string: ')).toBe(false);
+    expect(isLogicExceptionMessage('IllegalArgumentException: Invalid UUID string: ""')).toBe(
+      false,
+    );
+    expect(isLogicExceptionMessage('NumberFormatException: For input string: ""')).toBe(false);
+    expect(isLogicExceptionMessage('NumberFormatException: For input string: ')).toBe(false);
+    expect(isLogicExceptionMessage('Cannot parse empty string')).toBe(false);
+  });
+
+  it('rejects empty-value parse failures with a trailing stack trace or Spring suffix', () => {
+    // Real RCAEval data: the empty UUID is NOT followed by end-of-string. The
+    // wrapper's IllegalArgumentException carries either a Java stack trace
+    // (`\n\tat ...`) or Spring's `] with root cause` wrapper. The `$` anchor
+    // must NOT be the discriminator — the EMPTY PAYLOAD is.
+    expect(
+      isLogicExceptionMessage(
+        'java.lang.IllegalArgumentException: Invalid UUID string: \n\tat java.util.UUID.fromString(UUID.java:194)',
+      ),
+    ).toBe(false);
+    expect(
+      isLogicExceptionMessage(
+        'nested exception is java.lang.IllegalArgumentException: Invalid UUID string: ] with root cause',
+      ),
+    ).toBe(false);
+    expect(
+      isLogicExceptionMessage(
+        'java.lang.NumberFormatException: For input string: ""\n\tat java.lang.Long.parseLong(Long.java:776)',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('isHttpExceptionMessage', () => {
+  it('flags Spring Web framework HTTP exceptions', () => {
+    expect(
+      isHttpExceptionMessage('org.springframework.web.client.HttpClientErrorException: 404'),
+    ).toBe(true);
+    expect(
+      isHttpExceptionMessage('org.springframework.web.client.HttpServerErrorException: 500'),
+    ).toBe(true);
+    expect(
+      isHttpExceptionMessage('org.springframework.web.client.ResourceAccessException: timeout'),
+    ).toBe(true);
+    expect(isHttpExceptionMessage('HttpClientErrorException: 400 Bad Request')).toBe(true);
+    expect(isHttpExceptionMessage('HttpServerErrorException: 500 Internal Server Error')).toBe(
+      true,
+    );
+    expect(isHttpExceptionMessage('UnknownHttpStatusCodeException: 599')).toBe(true);
+  });
+
+  it('does NOT flag logic exceptions, connectivity, business, or AMQP text', () => {
+    // Logic exceptions stay in the isLogicException bucket.
+    expect(isHttpExceptionMessage('java.lang.NullPointerException: null')).toBe(false);
+    expect(isHttpExceptionMessage('IllegalArgumentException: invalid argument')).toBe(false);
+    // Connectivity exceptions are the VICTIM signature — not framework HTTP.
+    expect(isHttpExceptionMessage('java.net.SocketTimeoutException: Read timed out')).toBe(false);
+    expect(isHttpExceptionMessage('UnknownHostException: host not found')).toBe(false);
+    expect(isHttpExceptionMessage('RedisConnectionFailureException: connection refused')).toBe(
+      false,
+    );
+    // Business / AMQP text has no exception class at all.
+    expect(isHttpExceptionMessage('[create][Order Create Fail][Order already exists]')).toBe(false);
+    expect(isHttpExceptionMessage('Failed to check/redeclare auto-delete queue(s).')).toBe(false);
+    // The Servlet.service wrapper alone (without the nested HTTP class) is not a hit.
+    expect(isHttpExceptionMessage('Servlet.service() threw exception')).toBe(false);
+  });
+
+  it('recognises the full Servlet.service + nested exception signature', () => {
+    const message =
+      'Servlet.service() for servlet [dispatcherServlet] threw exception ' +
+      '[Request processing failed; nested exception is ' +
+      'org.springframework.web.client.HttpServerErrorException: 500]';
+    expect(isHttpExceptionMessage(message)).toBe(true);
+  });
+});
+
+describe('isPropagatedExceptionMessage', () => {
+  it('flags empty-value parse failures as propagated symptoms', () => {
+    expect(isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: ')).toBe(
+      true,
+    );
+    expect(isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: ""')).toBe(
+      true,
+    );
+    expect(isPropagatedExceptionMessage('NumberFormatException: For input string: ""')).toBe(true);
+    expect(isPropagatedExceptionMessage('NumberFormatException: For input string: ')).toBe(true);
+    expect(isPropagatedExceptionMessage('Cannot parse empty string')).toBe(true);
+  });
+
+  it('flags empty-value parse failures followed by a stack trace or Spring suffix', () => {
+    expect(
+      isPropagatedExceptionMessage(
+        'java.lang.IllegalArgumentException: Invalid UUID string: \n\tat java.util.UUID.fromString(UUID.java:194)',
+      ),
+    ).toBe(true);
+    expect(
+      isPropagatedExceptionMessage(
+        'nested exception is java.lang.IllegalArgumentException: Invalid UUID string: ] with root cause',
+      ),
+    ).toBe(true);
+    expect(
+      isPropagatedExceptionMessage(
+        'java.lang.NumberFormatException: For input string: ""\n\tat java.lang.Long.parseLong(Long.java:776)',
+      ),
+    ).toBe(true);
+  });
+
+  it('does NOT flag genuine self-caused logic errors as propagated', () => {
+    expect(isPropagatedExceptionMessage('IllegalArgumentException: invalid argument')).toBe(false);
+    expect(isPropagatedExceptionMessage('java.lang.NullPointerException: null')).toBe(false);
+    expect(isPropagatedExceptionMessage('NumberFormatException: For input string: "42a"')).toBe(
+      false,
+    );
+    expect(
+      isPropagatedExceptionMessage('IllegalArgumentException: Invalid UUID string: abc-123'),
+    ).toBe(false);
+  });
+});
+
+describe('classifyExceptionKind', () => {
+  it('classifies self-caused logic exceptions as "logic"', () => {
+    expect(classifyExceptionKind('java.lang.NullPointerException: null')).toBe('logic');
+    expect(classifyExceptionKind('IllegalArgumentException: invalid argument')).toBe('logic');
+    expect(classifyExceptionKind('ConcurrentModificationException at runtime')).toBe('logic');
+    expect(classifyExceptionKind("TypeError: cannot read property 'foo' of undefined")).toBe(
+      'logic',
+    );
+  });
+
+  it('classifies empty-payload parse failures as "propagated" (beats the logic whitelist)', () => {
+    expect(classifyExceptionKind('IllegalArgumentException: Invalid UUID string: ')).toBe(
+      'propagated',
+    );
+    expect(classifyExceptionKind('NumberFormatException: For input string: ""')).toBe('propagated');
+    expect(classifyExceptionKind('Cannot parse empty string')).toBe('propagated');
+  });
+
+  it('classifies out-of-whitelist exception names as "unclassified" (the semantic gap)', () => {
+    // Connectivity / IO exceptions are correctly ignored by the whitelist but
+    // are NOT empty-payload parse failures, so they land in the gap bucket.
+    expect(classifyExceptionKind('java.net.SocketTimeoutException: Read timed out')).toBe(
+      'unclassified',
+    );
+    expect(classifyExceptionKind('RedisConnectionFailureException: connection refused')).toBe(
+      'unclassified',
+    );
+    // Token-validation failures are downstream wrapper symptoms.
+    expect(classifyExceptionKind('MalformedJwtException: invalid token')).toBe('unclassified');
+    // A genuinely-missed logic exception (not in the whitelist) also lands here
+    // — this is the LLM-recoverable headroom the bucket is meant to reveal.
+    expect(classifyExceptionKind('ProcessingException: unexpected')).toBe('unclassified');
+  });
+
+  it('classifies messages with no exception class as "none"', () => {
+    expect(classifyExceptionKind('connection refused')).toBe('none');
+    expect(classifyExceptionKind('request completed in 12ms')).toBe('none');
+    expect(classifyExceptionKind('INFO 200 GET /health')).toBe('none');
+  });
+
+  it('is consistent with isLogicExceptionMessage and isPropagatedExceptionMessage', () => {
+    const samples = [
+      'NullPointerException: null',
+      'Invalid UUID string: ',
+      'SocketTimeoutException: read timed out',
+      'just a plain line',
+      'MalformedJwtException: bad',
+      'JsonMappingException: cannot deserialize',
+    ];
+    for (const msg of samples) {
+      const kind = classifyExceptionKind(msg);
+      expect(kind === 'logic').toBe(isLogicExceptionMessage(msg));
+      expect(kind === 'propagated').toBe(isPropagatedExceptionMessage(msg));
+    }
+  });
+});
+
+describe('extractDeepestExceptionClass', () => {
+  it('returns the leading exception when there is no Caused by chain', () => {
+    expect(extractDeepestExceptionClass('java.lang.NullPointerException: null ref')).toBe(
+      'NullPointerException',
+    );
+    expect(extractDeepestExceptionClass('IllegalArgumentException: invalid argument')).toBe(
+      'IllegalArgumentException',
+    );
+  });
+
+  it('returns the DEEPEST (last) exception in a Caused by chain', () => {
+    // Spring wraps an upstream 5xx in HttpServerErrorException; the root cause
+    // is the deepest clause.
+    const msg =
+      'HttpServerErrorException: 500 Internal Server Error Caused by: java.lang.IllegalArgumentException: bad value';
+    expect(extractDeepestExceptionClass(msg)).toBe('IllegalArgumentException');
+  });
+
+  it('picks the LAST Caused by clause when the chain has multiple links', () => {
+    const msg =
+      'org.foo.WrapperException: wrapped Caused by: org.foo.MidException: mid Caused by: java.net.ConnectException: refused';
+    expect(extractDeepestExceptionClass(msg)).toBe('ConnectException');
+  });
+
+  it('strips package qualifiers to the simple class name', () => {
+    expect(
+      extractDeepestExceptionClass('org.springframework.dao.QueryTimeoutException: timeout'),
+    ).toBe('QueryTimeoutException');
+  });
+
+  it('recognises Error and Throwable suffixes', () => {
+    expect(extractDeepestExceptionClass('java.lang.OutOfMemoryError: heap space')).toBe(
+      'OutOfMemoryError',
+    );
+    expect(extractDeepestExceptionClass('Caused by: java.lang.AssertionError: fail')).toBe(
+      'AssertionError',
+    );
+  });
+
+  it('returns undefined when no exception class is present', () => {
+    expect(extractDeepestExceptionClass('connection refused')).toBeUndefined();
+    expect(extractDeepestExceptionClass('request completed in 12ms')).toBeUndefined();
+    expect(extractDeepestExceptionClass('')).toBeUndefined();
+  });
+});
+
+describe('RCAEvalLoader', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    // Clean up temp dir
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  // ── parseDirectoryName (via loadCase) ──────────────────
+
+  describe('parseDirectoryName (via loadCase)', () => {
+    it('should parse standard RE1 case dir name', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_adservice_cpu_1', {
+        metrics: { adservice: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'adservice', root_cause_metric: 'cpu' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.benchmark).toBe('re1ob');
+      expect(result.service).toBe('adservice');
+      expect(result.fault).toBe('cpu');
+      expect(result.instance).toBe(1);
+    });
+
+    it('should parse RE2 case dir name (OnlineBoutique system)', () => {
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.benchmark).toBe('re2ob');
+      expect(result.service).toBe('cartservice');
+      expect(result.fault).toBe('cpu');
+      expect(result.instance).toBe(1);
+    });
+
+    it('should parse RE3 case dir name (TrainTicket system)', () => {
+      const casePath = createCaseDir(tempDir, 're3tt_ts-travel-service_cpu_1', {
+        metrics: {
+          'ts-travel-service': [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }],
+        },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'ts-travel-service', root_cause_metric: 'cpu' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.benchmark).toBe('re3tt');
+      expect(result.service).toBe('ts-travel-service');
+      expect(result.fault).toBe('cpu');
+      expect(result.instance).toBe(1);
+    });
+
+    it('should parse RE2 SockShop case', () => {
+      const casePath = createCaseDir(tempDir, 're2ss_carts_cpu_3', {
+        metrics: { carts: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+        groundTruth: { root_cause_service: 'carts', root_cause_metric: 'cpu' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.benchmark).toBe('re2ss');
+      expect(result.service).toBe('carts');
+      expect(result.fault).toBe('cpu');
+      expect(result.instance).toBe(3);
+    });
+
+    it('should parse RE3 SockShop case (re3ss_*)', () => {
+      const casePath = createCaseDir(tempDir, 're3ss_orders_delay_2', {
+        metrics: { orders: [{ timestamp: 1000, value: 100, metric_name: 'latency_ms' }] },
+        injectTime: 100,
+        groundTruth: { root_cause_service: 'orders', root_cause_metric: 'delay' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.benchmark).toBe('re3ss');
+      expect(result.service).toBe('orders');
+      expect(result.fault).toBe('delay');
+      expect(result.instance).toBe(2);
+    });
+
+    it('should parse RE3 OnlineBoutique case (re3ob_*)', () => {
+      const casePath = createCaseDir(tempDir, 're3ob_checkoutservice_mem_1', {
+        metrics: { checkoutservice: [{ timestamp: 1000, value: 80, metric_name: 'mem_usage' }] },
+        injectTime: 1000,
+        groundTruth: { root_cause_service: 'checkoutservice', root_cause_metric: 'mem' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.benchmark).toBe('re3ob');
+      expect(result.service).toBe('checkoutservice');
+      expect(result.fault).toBe('mem');
+      expect(result.instance).toBe(1);
+    });
+
+    it('should parse RE1 TrainTicket case (re1tt_*)', () => {
+      const casePath = createCaseDir(tempDir, 're1tt_ts-ui_delay_1', {
+        metrics: { 'ts-ui': [{ timestamp: 1000, value: 100, metric_name: 'response_time_ms' }] },
+        injectTime: 100,
+        groundTruth: { root_cause_service: 'ts-ui', root_cause_metric: 'delay' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.benchmark).toBe('re1tt');
+      expect(result.service).toBe('ts-ui');
+      expect(result.fault).toBe('delay');
+      expect(result.instance).toBe(1);
+    });
+
+    it('should handle fault type "network"', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_frontend_network_1', {
+        metrics: { frontend: [{ timestamp: 1000, value: 100, metric_name: 'network_errors' }] },
+        injectTime: 100,
+        groundTruth: { root_cause_service: 'frontend', root_cause_metric: 'network' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.fault).toBe('network');
+    });
+
+    it('should handle fault type "error"', () => {
+      const casePath = createCaseDir(tempDir, 're2ob_paymentservice_error_1', {
+        metrics: { paymentservice: [{ timestamp: 1000, value: 1, metric_name: 'error_rate' }] },
+        injectTime: 100,
+        groundTruth: { root_cause_service: 'paymentservice', root_cause_metric: 'error' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.fault).toBe('error');
+    });
+
+    it('should parse dir names where service has underscores', () => {
+      // Service name: front_end (simulated with actual dir name)
+      const casePath = createCaseDir(tempDir, 're1ob_front_end_cpu_1', {
+        metrics: { front_end: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'front_end', root_cause_metric: 'cpu' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.service).toBe('front_end');
+      expect(result.fault).toBe('cpu');
+      expect(result.instance).toBe(1);
+    });
+
+    it('should throw on invalid dir name (too few parts)', () => {
+      const casePath = path.join(tempDir, 'bad_name');
+      fs.mkdirSync(casePath, { recursive: true });
+      writeJson(path.join(casePath, 'metrics.json'), {
+        svc: [{ timestamp: 1, value: 1, metric_name: 'x' }],
+      });
+      fs.writeFileSync(path.join(casePath, 'inject_time.txt'), '100');
+
+      expect(() => loader.loadCase(casePath)).toThrow(/Invalid RCAEval directory name/);
+    });
+
+    it('should handle numeric-only instance suffix', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_svc_cpu_42', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.instance).toBe(42);
+    });
+  });
+
+  // ── Defensive Loading ───────────────────────────────────
+
+  describe('defensive loading', () => {
+    it('should load case without inject_time.txt (defaults to 0)', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_svc_cpu_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        // NO injectTime — omitted intentionally
+        groundTruth: { root_cause_service: 'svc', root_cause_metric: 'cpu' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.injectTime).toBe(0);
+    });
+
+    it('should load case without ground_truth.json (falls back to dir name)', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_adservice_cpu_1', {
+        metrics: { adservice: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+        // NO groundTruth — falls back to dir name extraction
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.groundTruth.serviceId).toBe('adservice');
+      expect(result.groundTruth.faultType).toBe('cpu');
+    });
+
+    it('should load case without logs.csv (logs=undefined, but case still loads)', () => {
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_delay_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 100, metric_name: 'latency_ms' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'delay' },
+        // NO logs — RE2 case without logs.csv should still load
+      });
+      const result = loader.loadCase(casePath);
+      expect(result).toBeDefined();
+      expect(result.logs).toBeUndefined();
+      expect(result.benchmark).toBe('re2ob');
+    });
+
+    it('should load case without traces.csv (traces=undefined, but case still loads)', () => {
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_delay_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 100, metric_name: 'latency_ms' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'delay' },
+        // NO traces — RE2 case without traces.csv should still load
+      });
+      const result = loader.loadCase(casePath);
+      expect(result).toBeDefined();
+      expect(result.traces).toBeUndefined();
+    });
+
+    it('should load full RE2 case with metrics+logs+traces', () => {
+      const logsContent = [
+        'timestamp,service,message,level',
+        '1000,cartservice,Request started,INFO',
+        '1005,cartservice,Cart add failed,ERROR',
+        '1010,checkoutservice,Checkout timeout,WARN',
+      ].join('\n');
+
+      const tracesContent = [
+        'trace_id,service,duration,status,parent_span',
+        'trace001,cartservice,150,OK,',
+        'trace001,checkoutservice,2000,ERROR,trace001.1',
+        'trace002,cartservice,120,OK,',
+      ].join('\n');
+
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: {
+          cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }],
+          checkoutservice: [{ timestamp: 1000, value: 30, metric_name: 'cpu_usage' }],
+        },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+        logs: logsContent,
+        traces: tracesContent,
+      });
+
+      const result = loader.loadCase(casePath);
+      expect(result).toBeDefined();
+      expect(result.logs).toBeDefined();
+      expect(result.logs!.length).toBe(3);
+      expect(result.logs![1]!.level).toBe('ERROR');
+      expect(result.traces).toBeDefined();
+      expect(result.traces!.length).toBe(3);
+      expect(result.traces![1]!.status).toBe('ERROR');
+      expect(result.traces![1]!.service).toBe('checkoutservice');
+    });
+
+    it('parses the ACTUAL camelCase traces.csv columns', () => {
+      // RCAEval traces.csv uses Jaeger camelCase with an uppercase ID suffix
+      // (traceID/spanID/parentSpanID) and a statusCode column, NOT the
+      // snake_case trace_id/status the legacy parser assumed.
+      const tracesContent = [
+        'time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode',
+        '1000,t1,s1,cartservice,GetCart,GetCart,,1000000,1000,150,200',
+        '1001,t1,s2,checkoutservice,Checkout,Checkout,s1,1001000,1001,2000,500',
+        '1002,t2,s3,cartservice,GetCart,GetCart,,1002000,1002,120,200',
+      ].join('\n');
+
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+        traces: tracesContent,
+      });
+
+      const result = loader.loadCase(casePath);
+      // serviceName and statusCode are detected via header aliases.
+      expect(result.traces).toBeDefined();
+      expect(result.traces![1]!.service).toBe('checkoutservice');
+      expect(result.traces![1]!.status).toBe('ERROR');
+      expect(loader.lastTraceHeader).toBe(
+        'time,traceID,spanID,serviceName,methodName,operationName,parentSpanID,startTimeMillis,startTime,duration,statusCode',
+      );
+    });
+
+    it('loads traces independently via loadTraces (no metrics re-read)', () => {
+      const tracesContent = [
+        'trace_id,service,duration,status,parent_span',
+        'trace001,cartservice,150,OK,',
+        'trace001,checkoutservice,2000,ERROR,trace001.1',
+      ].join('\n');
+
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+        traces: tracesContent,
+      });
+
+      const traces = loader.loadTraces(casePath);
+      expect(traces).toBeDefined();
+      expect(traces!.length).toBe(2);
+      expect(traces![1]!.status).toBe('ERROR');
+
+      // Missing traces.csv → undefined
+      const noTracePath = createCaseDir(tempDir, 're2ob_svc_mem_2', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+      });
+      expect(loader.loadTraces(noTracePath)).toBeUndefined();
+    });
+
+    it('caps loadTraces at maxSpans', () => {
+      const lines = ['trace_id,service,duration,status,parent_span'];
+      for (let i = 0; i < 50; i++) {
+        lines.push(`trace${i},svc${i},${100 + i},OK,`);
+      }
+      const tracesContent = lines.join('\n');
+
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        groundTruth: { root_cause_service: 'cartservice', root_cause_metric: 'cpu' },
+        traces: tracesContent,
+      });
+
+      // Default cap is 10000 → loads all 50
+      expect(loader.loadTraces(casePath)!.length).toBe(50);
+      // Explicit cap → loads only the first 5
+      expect(loader.loadTraces(casePath, 5)!.length).toBe(5);
+    });
+
+    it('should handle malformed logs.csv gracefully', () => {
+      const badLogs = 'garbage,nonsense,data\nmore,bad,stuff';
+
+      const casePath = createCaseDir(tempDir, 're2ob_svc_cpu_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+        logs: badLogs,
+      });
+
+      // Should not throw — logs should be undefined (defensive)
+      const result = loader.loadCase(casePath);
+      expect(result).toBeDefined();
+      // The CSV parser produces rows but with wrong column names
+      // As long as no exception is thrown, defensive loading works
+    });
+
+    it('should handle malformed traces.csv gracefully', () => {
+      const badTraces = 'junk,header,line\n1,2,3,4,5';
+
+      const casePath = createCaseDir(tempDir, 're2ob_svc_cpu_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+        traces: badTraces,
+      });
+
+      // Should not throw — traces may be parsed with defaults, or undefined on error
+      const result = loader.loadCase(casePath);
+      expect(result).toBeDefined();
+    });
+
+    it('should handle nonexistent optional files without error', () => {
+      const casePath = createCaseDir(tempDir, 're3tt_svc_disk_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 100, metric_name: 'disk_iops' }] },
+        injectTime: 100,
+      });
+
+      // RE3 case with no logs.csv and no traces.csv — still loads
+      const result = loader.loadCase(casePath);
+      expect(result).toBeDefined();
+      expect(result.logs).toBeUndefined();
+      expect(result.traces).toBeUndefined();
+    });
+  });
+
+  // ── loadMetricsJson ────────────────────────────────────
+
+  describe('loadMetricsJson', () => {
+    it('should load multi-service metrics', () => {
+      const metrics = {
+        adservice: [
+          { timestamp: 1000, value: 50.5, metric_name: 'cpu_usage' },
+          { timestamp: 2000, value: 55.0, metric_name: 'cpu_usage' },
+        ],
+        cartservice: [{ timestamp: 1000, value: 30.0, metric_name: 'mem_usage' }],
+      };
+
+      const casePath = createCaseDir(tempDir, 're1ob_svc_cpu_1', {
+        metrics,
+        injectTime: 100,
+      });
+
+      const result = loader.loadCase(casePath);
+      expect(result.metrics).toBeDefined();
+      expect(Object.keys(result.metrics)).toHaveLength(2);
+      expect(result.metrics['adservice']).toBeDefined();
+      expect(result.metrics['adservice']!.length).toBe(2);
+      expect(result.metrics['adservice']![0]!.value).toBe(50.5);
+      expect(result.metrics['adservice']![0]!.metric_name).toBe('cpu_usage');
+    });
+
+    it('should throw when metrics.json is missing', () => {
+      const casePath = path.join(tempDir, 're1ob_svc_cpu_1');
+      fs.mkdirSync(casePath, { recursive: true });
+      fs.writeFileSync(path.join(casePath, 'inject_time.txt'), '100');
+
+      expect(() => loader.loadCase(casePath)).toThrow(/Metrics file not found/);
+    });
+  });
+
+  // ── getGroundTruth ─────────────────────────────────────
+
+  describe('getGroundTruth', () => {
+    it('should load ground truth from JSON file', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_adservice_cpu_1', {
+        metrics: { adservice: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+        groundTruth: { root_cause_service: 'adservice', root_cause_metric: 'cpu_saturation' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.groundTruth.serviceId).toBe('adservice');
+      expect(result.groundTruth.faultType).toBe('cpu_saturation');
+    });
+
+    it('should extract ground truth from dir name when no JSON exists', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_cartservice_mem_3', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'mem_usage' }] },
+        injectTime: 500,
+        // NO groundTruth JSON
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.groundTruth.serviceId).toBe('cartservice');
+      expect(result.groundTruth.faultType).toBe('mem');
+    });
+
+    it('should support rootCauseService and rootCauseMetric key variants', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_svc_cpu_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+        groundTruth: { rootCauseService: 'svc-alt', rootCauseMetric: 'disk_full' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.groundTruth.serviceId).toBe('svc-alt');
+      expect(result.groundTruth.faultType).toBe('disk_full');
+    });
+
+    it('should support "service" key as fallback for serviceId', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_svc_cpu_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+        groundTruth: { service: 'fallback-svc' },
+      });
+      const result = loader.loadCase(casePath);
+      expect(result.groundTruth.serviceId).toBe('fallback-svc');
+    });
+  });
+
+  // ── toBenchmarkCase ────────────────────────────────────
+
+  describe('toBenchmarkCase', () => {
+    it('should convert RCAEvalCase to BenchmarkCase', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_adservice_cpu_1', {
+        metrics: {
+          adservice: [
+            { timestamp: 1000, value: 50, metric_name: 'cpu_usage' },
+            { timestamp: 2000, value: 80, metric_name: 'cpu_usage' },
+          ],
+          cartservice: [{ timestamp: 1000, value: 30, metric_name: 'cpu_usage' }],
+        },
+        injectTime: 1640000000,
+        groundTruth: { root_cause_service: 'adservice', root_cause_metric: 'cpu' },
+      });
+
+      const rawCase = loader.loadCase(casePath);
+      const callGraph = {
+        nodes: new Map([
+          ['adservice', { id: 'adservice', name: 'adservice', namespace: 're1ob', labels: {} }],
+          [
+            'cartservice',
+            { id: 'cartservice', name: 'cartservice', namespace: 're1ob', labels: {} },
+          ],
+        ]),
+        edges: [
+          {
+            from: 'adservice',
+            to: 'cartservice',
+            type: 'REST' as const,
+            callRate: 100,
+            p99Latency: 50,
+            errorRate: 0.01,
+          },
+        ],
+        systemLoad: 0.5,
+      };
+
+      const benchCase = loader.toBenchmarkCase(rawCase, callGraph, 'rcaeval-re1');
+
+      expect(benchCase.id).toBe('rcaeval-re1_re1ob_adservice_cpu_1');
+      expect(benchCase.datasetName).toBe('rcaeval-re1');
+      expect(benchCase.callGraph).toBe(callGraph);
+      expect(benchCase.metrics.size).toBe(2);
+      expect(benchCase.injectTime).toBe(1640000000 * 1000); // seconds → ms
+      expect(benchCase.groundTruth.serviceId).toBe('adservice');
+    });
+
+    it('should handle rcaeval-re2 dataset name', () => {
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_mem_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'mem_usage' }] },
+        injectTime: 100,
+      });
+
+      const rawCase = loader.loadCase(casePath);
+      const graph = {
+        nodes: new Map([
+          [
+            'cartservice',
+            { id: 'cartservice', name: 'cartservice', namespace: 're2ob', labels: {} },
+          ],
+        ]),
+        edges: [],
+        systemLoad: 0.5,
+      };
+
+      const benchCase = loader.toBenchmarkCase(rawCase, graph, 'rcaeval-re2');
+      expect(benchCase.datasetName).toBe('rcaeval-re2');
+    });
+
+    it('should handle rcaeval-re3 dataset name', () => {
+      const casePath = createCaseDir(tempDir, 're3tt_svc_disk_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 100, metric_name: 'disk_io' }] },
+        injectTime: 100,
+      });
+
+      const rawCase = loader.loadCase(casePath);
+      const graph = {
+        nodes: new Map([['svc', { id: 'svc', name: 'svc', namespace: 're3tt', labels: {} }]]),
+        edges: [],
+        systemLoad: 0.5,
+      };
+
+      const benchCase = loader.toBenchmarkCase(rawCase, graph, 'rcaeval-re3');
+      expect(benchCase.datasetName).toBe('rcaeval-re3');
+    });
+  });
+
+  // ── loadSuite ──────────────────────────────────────────
+
+  describe('loadSuite', () => {
+    it('should load all cases from a suite directory', () => {
+      const suitePath = path.join(tempDir, 'RE1');
+      fs.mkdirSync(suitePath, { recursive: true });
+
+      createCaseDir(suitePath, 're1ob_adservice_cpu_1', {
+        metrics: { adservice: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+      });
+      createCaseDir(suitePath, 're1ob_cartservice_mem_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'mem_usage' }] },
+        injectTime: 200,
+      });
+      createCaseDir(suitePath, 're1ob_checkoutservice_delay_1', {
+        metrics: { checkoutservice: [{ timestamp: 1000, value: 100, metric_name: 'latency_ms' }] },
+        injectTime: 300,
+      });
+
+      const suite = loader.loadSuite(suitePath, 'RE1');
+      expect(suite.suiteName).toBe('RE1');
+      expect(suite.totalCases).toBe(3);
+      expect(suite.cases.length).toBe(3);
+      // Should be sorted alphabetically
+      expect(suite.cases[0]!.service).toBe('adservice');
+      expect(suite.cases[1]!.service).toBe('cartservice');
+      expect(suite.cases[2]!.service).toBe('checkoutservice');
+    });
+
+    it('should handle empty suite directory', () => {
+      const suitePath = path.join(tempDir, 'EMPTY');
+      fs.mkdirSync(suitePath, { recursive: true });
+
+      const suite = loader.loadSuite(suitePath, 'RE1');
+      expect(suite.totalCases).toBe(0);
+      expect(suite.cases.length).toBe(0);
+    });
+
+    it('should handle mixed RE2/RE3 multi-modal cases', () => {
+      const suitePath = path.join(tempDir, 'RE2');
+      fs.mkdirSync(suitePath, { recursive: true });
+
+      createCaseDir(suitePath, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        logs: 'timestamp,service,message,level\n1000,cartservice,Test log,INFO',
+        traces: 'trace_id,service,duration,status,parent_span\ntrace001,cartservice,150,OK,',
+      });
+
+      const suite = loader.loadSuite(suitePath, 'RE2');
+      expect(suite.totalCases).toBe(1);
+      expect(suite.cases[0]!.logs).toBeDefined();
+      expect(suite.cases[0]!.traces).toBeDefined();
+    });
+
+    it('should convert log timestamps from seconds to milliseconds', () => {
+      // Regression: the log signal's post-injection filter compares a log's
+      // timestamp against the ms-scaled injectTime. The loader must convert
+      // logs.csv timestamps (Unix seconds) to ms, matching the metric and
+      // injectTime conversions, otherwise every log line predates the
+      // ms-scaled injectTime and the log signal silently degrades to no data.
+      const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        logs: 'timestamp,service,message,level\n1000,cartservice,Boom,ERROR',
+      });
+
+      const rawCase = loader.loadCase(casePath);
+
+      expect(rawCase.logs).toBeDefined();
+      expect(rawCase.logs![0]!.timestamp).toBe(1000 * 1000);
+      // InjectTime stays in seconds on the raw case (converted later in
+      // toBenchmarkCase), while the log timestamp is already in ms.
+      expect(rawCase.injectTime).toBe(500);
+    });
+
+    it('derives the log level from the message when no level column exists', () => {
+      // RCAEval logs.csv has only `timestamp, service, message` (paper §3.4) —
+      // no level/severity column. The loader must derive severity from the
+      // message text so the log signal can count post-injection error volume.
+      const casePath = createCaseDir(tempDir, 're3ob_cartservice_f1_1', {
+        metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+        injectTime: 500,
+        logs: [
+          'timestamp,service,message',
+          '1000,cartservice,NullPointerException at com.cartservice.Checkout.checkout(Checkout.java:42)',
+          '1001,cartservice,request completed',
+        ].join('\n'),
+      });
+
+      const rawCase = loader.loadCase(casePath);
+
+      expect(rawCase.logs).toBeDefined();
+      expect(rawCase.logs![0]!.level).toBe('ERROR');
+      expect(rawCase.logs![1]!.level).toBe('INFO');
+      // The stack-trace and logic-exception signatures must be derived from the
+      // message text too, so the log signal can count self-caused logic errors
+      // (code-level evidence) and ignore connectivity cascade noise.
+      expect(rawCase.logs![0]!.isStackTrace).toBe(true);
+      expect(rawCase.logs![0]!.isLogicException).toBe(true);
+      expect(rawCase.logs![1]!.isStackTrace).toBe(false);
+      expect(rawCase.logs![1]!.isLogicException).toBe(false);
+    });
+
+    it('extracts the deepest Caused-by exception for ERROR lines only', () => {
+      const casePath = createCaseDir(tempDir, 're3tt_ts-auth-service_f1_1', {
+        metrics: {
+          'ts-auth-service': [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }],
+        },
+        injectTime: 500,
+        logs: [
+          'timestamp,service,message',
+          '1000,ts-auth-service,HttpServerErrorException: 500 Caused by: java.lang.IllegalArgumentException: bad token',
+          '1001,ts-auth-service,request completed',
+        ].join('\n'),
+      });
+
+      const rawCase = loader.loadCase(casePath);
+
+      expect(rawCase.logs![0]!.level).toBe('ERROR');
+      expect(rawCase.logs![0]!.deepestExceptionClass).toBe('IllegalArgumentException');
+      // INFO lines carry no root-cause exception → undefined (and are skipped
+      // by the extractor to avoid a regex pass over non-error volume).
+      expect(rawCase.logs![1]!.level).toBe('INFO');
+      expect(rawCase.logs![1]!.deepestExceptionClass).toBeUndefined();
+    });
+  });
+
+  // ── toBenchmarkSuite ────────────────────────────────────
+
+  describe('toBenchmarkSuite', () => {
+    it('should convert RE1 suite to unified format', () => {
+      const casePath = createCaseDir(tempDir, 're1ob_svc_cpu_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+      });
+
+      const rawCase = loader.loadCase(casePath);
+      const suite = {
+        suiteName: 'RE1' as const,
+        cases: [rawCase],
+        totalCases: 1,
+      };
+
+      const callGraphs = {
+        re1ob: {
+          nodes: new Map([['svc', { id: 'svc', name: 'svc', namespace: 're1ob', labels: {} }]]),
+          edges: [],
+          systemLoad: 0.5,
+        },
+      };
+
+      const benchSuite = loader.toBenchmarkSuite(suite, callGraphs);
+      expect(benchSuite.name).toBe('rcaeval-re1');
+      expect(benchSuite.totalCases).toBe(1);
+    });
+
+    it('should convert RE2 suite to unified format', () => {
+      const casePath = createCaseDir(tempDir, 're2ob_svc_cpu_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 50, metric_name: 'cpu_usage' }] },
+        injectTime: 100,
+      });
+
+      const rawCase = loader.loadCase(casePath);
+      const suite = {
+        suiteName: 'RE2' as const,
+        cases: [rawCase],
+        totalCases: 1,
+      };
+
+      const callGraphs = {
+        re2ob: {
+          nodes: new Map([['svc', { id: 'svc', name: 'svc', namespace: 're2ob', labels: {} }]]),
+          edges: [],
+          systemLoad: 0.5,
+        },
+      };
+
+      const benchSuite = loader.toBenchmarkSuite(suite, callGraphs);
+      expect(benchSuite.name).toBe('rcaeval-re2');
+    });
+
+    it('should convert RE3 suite to unified format', () => {
+      const casePath = createCaseDir(tempDir, 're3tt_svc_disk_1', {
+        metrics: { svc: [{ timestamp: 1000, value: 100, metric_name: 'disk_io' }] },
+        injectTime: 100,
+      });
+
+      const rawCase = loader.loadCase(casePath);
+      const suite = {
+        suiteName: 'RE3' as const,
+        cases: [rawCase],
+        totalCases: 1,
+      };
+
+      const callGraphs = {
+        re3tt: {
+          nodes: new Map([['svc', { id: 'svc', name: 'svc', namespace: 're3tt', labels: {} }]]),
+          edges: [],
+          systemLoad: 0.5,
+        },
+      };
+
+      const benchSuite = loader.toBenchmarkSuite(suite, callGraphs);
+      expect(benchSuite.name).toBe('rcaeval-re3');
+    });
+  });
+});
+
+describe('trace start-time normalization', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('reads the startTimeMillis column directly as milliseconds (no ×1000)', () => {
+    const tracesContent = [
+      'traceId,spanId,serviceName,startTimeMillis,startTime,duration',
+      't1,s1,svc-a,1700000000000,1700000000000000,100',
+      't2,s2,svc-b,1700000001000,1700000001000000,200',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces).toBeDefined();
+    // startTimeMillis is already ms; the µs startTime column must be ignored.
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+    expect(result.traces![1]!.startTime).toBe(1700000001000);
+  });
+
+  it('divides a microsecond startTime fallback by 1000', () => {
+    const tracesContent = [
+      'traceId,spanId,serviceName,startTime,duration',
+      't1,s1,svc-a,1700000000000000,100',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+  });
+});
+
+describe('log timestamp normalization', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('converts nanosecond timestamps to ms and keeps seconds→ms', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      logs: [
+        'timestamp,service,message,level',
+        '1700000000000000000,cartservice,ns event,INFO',
+        '1000,cartservice,second event,INFO',
+      ].join('\n'),
+    });
+
+    const result = loader.loadCase(casePath);
+    // Nanoseconds (~1.7e18) → milliseconds (~1.7e12).
+    expect(result.logs![0]!.timestamp).toBe(1700000000000);
+    // Seconds stay on the existing ×1000 path.
+    expect(result.logs![1]!.timestamp).toBe(1000 * 1000);
+  });
+});
+
+describe('countTraceActivityByService', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('counts pre/post spans per service at the injection boundary', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,startTimeMillis,duration',
+        't1,s1,svc-a,500,10',
+        't2,s2,svc-a,1500,10',
+        't3,s3,svc-b,800,10',
+        't4,s4,svc-b,1000,10',
+        't5,s5,svc-b,2000,10',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1000);
+    expect(counts.size).toBe(2);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+    expect(counts.get('svc-b')).toEqual({ pre: 1, post: 2 });
+  });
+
+  it('returns an empty map when the traces file is missing', async () => {
+    const counts = await countTraceActivityByService(path.join(tempDir, 'missing.csv'), 1000);
+    expect(counts.size).toBe(0);
+  });
+
+  it('resolves a microsecond startTime column through the streaming path', async () => {
+    // The streaming counter must divide the Jaeger `startTime` microseconds by
+    // 1000 (1_000_000 us = 1000 ms), so a span at 1.5 s straddles the
+    // injection boundary correctly.
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,startTime,duration',
+        't1,s1,svc-a,1000000,10',
+        't2,s2,svc-a,2000000,10',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1500);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+  });
+
+  it('resolves a nanosecond bare timestamp column through the streaming path', async () => {
+    // A bare `timestamp` column above 1e15 is nanoseconds and is divided by
+    // 1e6: 1.4e18 ns → 1.4e12 ms (pre), 1.6e18 ns → 1.6e12 ms (post) against
+    // an injection time of 1.5e12 ms.
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,timestamp',
+        't1,s1,svc-a,1400000000000000000',
+        't2,s2,svc-a,1600000000000000000',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1500000000000);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+  });
+});
+
+describe('normalizeSpanStatus', () => {
+  it('maps explicit error markers to ERROR', () => {
+    expect(normalizeSpanStatus('ERROR')).toBe('ERROR');
+    expect(normalizeSpanStatus('error')).toBe('ERROR');
+    expect(normalizeSpanStatus('failed')).toBe('ERROR');
+    expect(normalizeSpanStatus('true')).toBe('ERROR');
+    expect(normalizeSpanStatus('1')).toBe('ERROR');
+  });
+
+  it('maps HTTP 4xx/5xx response codes to ERROR', () => {
+    expect(normalizeSpanStatus('500')).toBe('ERROR');
+    expect(normalizeSpanStatus('404')).toBe('ERROR');
+    expect(normalizeSpanStatus('503')).toBe('ERROR');
+  });
+
+  it('maps ok / 2xx / absent values to OK', () => {
+    expect(normalizeSpanStatus(undefined)).toBe('OK');
+    expect(normalizeSpanStatus('')).toBe('OK');
+    expect(normalizeSpanStatus('OK')).toBe('OK');
+    expect(normalizeSpanStatus('200')).toBe('OK');
+    expect(normalizeSpanStatus('302')).toBe('OK');
+  });
+});
+
+// ── Remaining private paths ───────────────────────────────
+//
+// The blocks above exercise the public surface. These pin the private branches
+// that the earlier tests reached only through their happy path: the snake_case
+// and millisecond start-time fallbacks, the directory-name fallback parser and
+// its two throws, the metrics-file validation guards, the unit inference
+// default, the synthesised call graph used when a benchmark ships no topology,
+// and the four `catch` blocks that turn an unreadable file into a benign
+// `undefined` / `0` instead of crashing a suite load.
+
+describe('rcaeval start-time fallbacks', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('divides a snake_case start_time column by 1000', () => {
+    const tracesContent = [
+      'traceId,spanId,serviceName,start_time,duration',
+      't1,s1,svc-a,1700000000000000,100',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+  });
+
+  it('treats a bare timestamp column below 1e15 as milliseconds', () => {
+    // 1.7e12 is already ms; only a value above 1e15 is re-scaled from ns.
+    const tracesContent = [
+      'traceId,spanId,serviceName,timestamp,duration',
+      't1,s1,svc-a,1700000000000,100',
+    ].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    const result = loader.loadCase(casePath);
+    expect(result.traces![0]!.startTime).toBe(1700000000000);
+  });
+
+  it('defaults to 0 when every start-time column is absent', () => {
+    const tracesContent = ['traceId,spanId,serviceName,duration', 't1,s1,svc-a,100'].join('\n');
+
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 80, metric_name: 'cpu_usage' }] },
+      injectTime: 500,
+      traces: tracesContent,
+    });
+
+    expect(loader.loadCase(casePath).traces![0]!.startTime).toBe(0);
+  });
+
+  it('reads the snake_case start_time column through the streaming counter too', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'traceId,spanId,serviceName,start_time',
+        't1,s1,svc-a,1700000000000000',
+        't2,s2,svc-a,1700000002000000',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1700000001000);
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 1 });
+  });
+
+  it('buckets every span under "unknown" when there is no service column', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      ['startTimeMillis,duration', '1700000000000,100', '1700000002000,100'].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1700000001000);
+    expect(counts.get('unknown')).toEqual({ pre: 1, post: 1 });
+  });
+
+  it('skips blank lines, maps an empty service cell to "unknown", and survives short rows', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(
+      tracesPath,
+      [
+        'service,startTime,duration',
+        'svc-a,1700000000000000,100',
+        '',
+        ',1700000000000000,100',
+        'x',
+      ].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1700000001000);
+    // The blank line contributes nothing; the empty service cell is attributed
+    // to "unknown"; the short row has no start-time cell and defaults to 0.
+    expect(counts.get('svc-a')).toEqual({ pre: 1, post: 0 });
+    expect(counts.get('unknown')).toEqual({ pre: 1, post: 0 });
+    expect(counts.get('x')).toEqual({ pre: 1, post: 0 });
+    expect(counts.size).toBe(3);
+  });
+});
+
+describe('rcaeval directory-name fallback', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('splits a non-canonical name whose benchmark segment contains underscores', () => {
+    // Uppercase service/fault defeat the canonical regex, so the underscore
+    // splitter runs: benchmark='RE2', service='OnlineBoutique', fault='CPUStress'.
+    const casePath = createCaseDir(tempDir, 'RE2_OnlineBoutique_CPUStress_1', {
+      metrics: { OnlineBoutique: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+    });
+
+    const gt = loader.loadCase(casePath).groundTruth;
+    expect(gt.serviceId).toBe('OnlineBoutique');
+    expect(gt.faultType).toBe('CPUStress');
+  });
+
+  it('throws when the instance suffix is not a number', () => {
+    const casePath = path.join(tempDir, 're2_re_ss_cpu_abc');
+    fs.mkdirSync(casePath, { recursive: true });
+    writeJson(path.join(casePath, 'metrics.json'), {
+      svc: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+    });
+
+    expect(() => loader.loadCase(casePath)).toThrow(/Instance is not a number/);
+  });
+
+  it('throws when the name has too few underscore-separated parts', () => {
+    const casePath = path.join(tempDir, 're2ob');
+    fs.mkdirSync(casePath, { recursive: true });
+    writeJson(path.join(casePath, 'metrics.json'), {
+      svc: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+    });
+
+    expect(() => loader.loadCase(casePath)).toThrow(/Invalid RCAEval directory name/);
+  });
+});
+
+describe('rcaeval ground-truth fallbacks', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('falls back to "unknown" when the JSON carries no fault field and no dir name', () => {
+    // The one-argument overload is public and has no parsed directory name to
+    // fall back on, so a ground-truth file without a fault field must yield
+    // 'unknown' rather than an empty string.
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+      groundTruth: { root_cause_service: 'svc-a' },
+    });
+
+    const gt = loader.getGroundTruth(casePath);
+    expect(gt.serviceId).toBe('svc-a');
+    expect(gt.faultType).toBe('unknown');
+  });
+
+  it('falls back to the directory name when ground_truth.json is malformed', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.writeFileSync(path.join(casePath, 'ground_truth.json'), '{ not json');
+
+    const gt = loader.loadCase(casePath).groundTruth;
+    expect(gt.serviceId).toBe('cartservice');
+    expect(gt.faultType).toBe('cpu');
+  });
+});
+
+describe('rcaeval metrics-file validation', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  function caseWithRawMetrics(name: string, raw: string): string {
+    const casePath = path.join(tempDir, name);
+    fs.mkdirSync(casePath, { recursive: true });
+    fs.writeFileSync(path.join(casePath, 'metrics.json'), raw);
+    return casePath;
+  }
+
+  it('rejects an empty object', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '{}');
+    expect(() => loader.loadCase(casePath)).toThrow(/empty or has unexpected format/);
+  });
+
+  it('rejects an array-shaped document', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '[1,2,3]');
+    expect(() => loader.loadCase(casePath)).toThrow(/empty or has unexpected format/);
+  });
+
+  it('rejects a document whose every service has an empty series list', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '{"svc-a":[]}');
+    expect(() => loader.loadCase(casePath)).toThrow(/no valid service entries/);
+  });
+
+  it('reports malformed JSON as invalid JSON rather than a raw SyntaxError', () => {
+    const casePath = caseWithRawMetrics('re2ob_cartservice_cpu_1', '{oops');
+    expect(() => loader.loadCase(casePath)).toThrow(/is not valid JSON/);
+  });
+});
+
+describe('rcaeval unit inference', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  const emptyGraph = { nodes: new Map(), edges: [], systemLoad: 0 };
+
+  it('falls back to "count" for a metric name with no known keyword', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1000, value: 7, metric_name: 'requests_total' }] },
+    });
+
+    const unified = loader.toBenchmarkCase(loader.loadCase(casePath), emptyGraph, 'rcaeval-re2');
+    expect(unified.metrics.get('cartservice')![0]!.unit).toBe('count');
+  });
+
+  it('names the unit for the recognised keyword families', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: {
+        cartservice: [
+          { timestamp: 1, value: 1, metric_name: 'cpu_usage' },
+          { timestamp: 1, value: 1, metric_name: 'memory_used' },
+          { timestamp: 1, value: 1, metric_name: 'disk_io' },
+          { timestamp: 1, value: 1, metric_name: 'latency_p99' },
+          { timestamp: 1, value: 1, metric_name: 'error_rate' },
+        ],
+      },
+    });
+
+    const unified = loader.toBenchmarkCase(loader.loadCase(casePath), emptyGraph, 'rcaeval-re2');
+    expect(unified.metrics.get('cartservice')!.map((s) => s.unit)).toEqual([
+      'percent',
+      'bytes',
+      'iops',
+      'ms',
+      'rate',
+    ]);
+  });
+});
+
+describe('rcaeval synthesised call graph', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  it('chains services into a call graph when the benchmark ships no topology', () => {
+    createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: {
+        a: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+        b: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+        c: [{ timestamp: 1, value: 1, metric_name: 'cpu' }],
+      },
+    });
+
+    const suite = loader.loadSuite(tempDir, 'RE2');
+    // No call graph is supplied for 're2ob', so the fallback must chain a→b→c.
+    const unified = loader.toBenchmarkSuite(suite, {});
+    const graph = unified.cases[0]!.callGraph;
+
+    expect([...graph.nodes.keys()].sort()).toEqual(['a', 'b', 'c']);
+    expect(graph.edges.map((e) => `${e.from}->${e.to}`)).toEqual(['a->b', 'b->c']);
+    expect(graph.systemLoad).toBe(0.5);
+  });
+
+  it('produces a node with no edges for a single-service case', () => {
+    createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { solo: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+
+    const suite = loader.loadSuite(tempDir, 'RE2');
+    const unified = loader.toBenchmarkSuite(suite, {});
+    const graph = unified.cases[0]!.callGraph;
+
+    expect([...graph.nodes.keys()]).toEqual(['solo']);
+    expect(graph.edges).toEqual([]);
+  });
+
+  it('prefers a supplied call graph over the fallback', () => {
+    createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { a: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+
+    const suite = loader.loadSuite(tempDir, 'RE2');
+    const supplied = {
+      nodes: new Map([['a', { id: 'a', name: 'a', namespace: 'X', labels: {} }]]),
+      edges: [],
+      systemLoad: 0.9,
+    };
+    const unified = loader.toBenchmarkSuite(suite, { re2ob: supplied });
+
+    expect(unified.cases[0]!.callGraph.systemLoad).toBe(0.9);
+  });
+});
+
+describe('rcaeval defensive degradation', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /**
+   * A directory named `logs.csv`/`traces.csv` passes `existsSync` and then fails
+   * the read (EISDIR) — the same shape as an unreadable or half-written file,
+   * without having to fight the filesystem for permissions that CI runs as root.
+   */
+  it('survives a logs.csv that exists but cannot be read', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.mkdirSync(path.join(casePath, 'logs.csv'));
+
+    expect(loader.loadCase(casePath).logs).toBeUndefined();
+  });
+
+  it('survives a traces.csv that exists but cannot be read', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.mkdirSync(path.join(casePath, 'traces.csv'));
+
+    expect(loader.loadCase(casePath).traces).toBeUndefined();
+    expect(loader.loadTraces(casePath)).toBeUndefined();
+  });
+
+  it('returns the counts accumulated before a mid-stream read failure', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.mkdirSync(tracesPath);
+
+    // The file "exists" per existsSync, then the stream errors: the counter must
+    // surface an empty map rather than rejecting.
+    await expect(countTraceActivityByService(tracesPath, 1000)).resolves.toEqual(new Map());
+  });
+
+  it('defaults the inject time to 0 when the file is not a number', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.writeFileSync(path.join(casePath, 'inject_time.txt'), 'not-a-timestamp');
+
+    expect(loader.loadCase(casePath).injectTime).toBe(0);
+  });
+
+  it('defaults the inject time to 0 when the file exists but cannot be read', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+    fs.mkdirSync(path.join(casePath, 'inject_time.txt'));
+
+    expect(loader.loadCase(casePath).injectTime).toBe(0);
+  });
+});
+
+describe('rcaeval absent-column handling', () => {
+  let loader: RCAEvalLoader;
+  let tempDir: string;
+
+  beforeEach(() => {
+    loader = new RCAEvalLoader();
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /**
+   * A CSV is located by header alias, not by position, so a file carrying none
+   * of the expected columns must degrade to an empty message / INFO / 0ms /
+   * "unknown" instead of reading arbitrary cells as if they were the right ones.
+   */
+  it('degrades a logs.csv that carries none of the expected columns', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      logs: ['alpha,beta', '1,2'].join('\n'),
+    });
+
+    const logs = loader.loadCase(casePath).logs!;
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.message).toBe('');
+    expect(logs[0]!.level).toBe('INFO');
+    expect(logs[0]!.timestamp).toBe(0);
+    expect(logs[0]!.service).toBe('unknown');
+  });
+
+  it('treats a header-only logs.csv as no logs at all', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      logs: 'timestamp,service,message',
+    });
+
+    expect(loader.loadCase(casePath).logs).toBeUndefined();
+  });
+
+  it('pads a ragged log row with empty strings rather than undefined', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      logs: ['timestamp,service,message', '1700000000,svc-a'].join('\n'),
+    });
+
+    const logs = loader.loadCase(casePath).logs!;
+    expect(logs[0]!.service).toBe('svc-a');
+    expect(logs[0]!.message).toBe('');
+  });
+
+  it('treats a header-only traces.csv as no traces at all', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      traces: 'traceId,spanId,serviceName,duration',
+    });
+
+    expect(loader.loadCase(casePath).traces).toBeUndefined();
+  });
+
+  it('attributes a serviceless traces.csv to "unknown"', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+      traces: ['traceId,spanId,duration', 't1,s1,100'].join('\n'),
+    });
+
+    expect(loader.loadCase(casePath).traces![0]!.service).toBe('unknown');
+  });
+
+  it('resolves the directory name itself when getGroundTruth is called without one', () => {
+    const casePath = createCaseDir(tempDir, 're2ob_cartservice_cpu_1', {
+      metrics: { cartservice: [{ timestamp: 1, value: 1, metric_name: 'cpu' }] },
+    });
+
+    // No ground_truth.json and no parsed name: the loader must parse the basename.
+    const gt = loader.getGroundTruth(casePath);
+    expect(gt.serviceId).toBe('cartservice');
+    expect(gt.faultType).toBe('cpu');
+  });
+
+  it('maps a row shorter than the service column to "unknown"', async () => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    // `service` is the SECOND column, so a one-cell row has no service cell.
+    fs.writeFileSync(
+      tracesPath,
+      ['duration,service,timestamp', '100,svc-a,1700000002000', '200'].join('\n'),
+    );
+
+    const counts = await countTraceActivityByService(tracesPath, 1000);
+    expect(counts.get('svc-a')).toEqual({ pre: 0, post: 1 });
+    expect(counts.get('unknown')).toEqual({ pre: 1, post: 0 });
+  });
+});
+
+describe('countFailedTraceEdges', () => {
+  // The failed-edge-DIRECTION signal exists because a fault's interface evidence is emitted by its
+  // VICTIMS: they are the ones whose calls fail, so "who emitted the errors" cannot say who is
+  // causal. What can is WHOM those failing calls were against — and the derivation is the whole of
+  // that argument, so each rule below is one arm of it.
+  //
+  // This path produced NO rows at all until this iteration: `rcaeval-loader.ts` built spans with
+  // the service, parent and status of every call and never joined them, so every RCAEval artifact
+  // rendered `failedEdge=0.000 failedEdgeRecords=0` for all 41,426 services — a dead channel that
+  // reports the same headline as a signal with no effect, which is the register's own first
+  // invariant. The FSE'26 benchmark derives the same rows from the same corpus (in
+  // `scripts/fse26_convert.py`) and the strongest cell its separator census ever found rests on
+  // them, so the two halves of the kill criterion disagreed about whether the evidence existed.
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /** Jaeger's own column names, which is what RCAEval writes. */
+  const HEADER = 'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status';
+
+  const write = (rows: readonly string[]): string => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(tracesPath, rows.join('\n'));
+    return tracesPath;
+  };
+
+  /** A client span (no parent) by `caller`, and a server span (child of it) by `callee`. */
+  const call = (
+    caller: string,
+    callee: string,
+    spanId: string,
+    atMs: number,
+    status: string,
+  ): string[] => [
+    `t1,${spanId}c,,${caller},${atMs},OK`,
+    `t1,${spanId}s,${spanId}c,${callee},${atMs + 1},${status}`,
+  ];
+
+  it('charges a failed call to its CALLEE, not to the service that reported the error', () => {
+    // The direction rule, and the only thing this signal is for. `svc-b`'s call failed at the
+    // interface `svc-a` was calling, so the row must name `svc-b` as the callee — a row keyed on
+    // the emitter would be the log signal again, which is the signal this one exists to invert.
+    const tracesPath = write([HEADER, ...call('svc-a', 'svc-b', 's1', 1100, '500')]);
+
+    return countFailedTraceEdges(tracesPath, 1000).then((edges) => {
+      expect(edges).toEqual([{ caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 }]);
+    });
+  });
+
+  it('emits only an edge that failed AFTER the injection', async () => {
+    // An edge that was already failing beforehand is a property of the DEPLOYMENT rather than
+    // evidence about the fault, and emitting it would implicate the same callee in every case —
+    // so the pre-injection failures are counted (`baseline`) but never create a row on their own.
+    const tracesPath = write([HEADER, ...call('svc-a', 'svc-b', 's1', 200, '500')]);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([]);
+  });
+
+  it('splits ONE edge into failed and baseline at the boundary', async () => {
+    // Both halves on the same pair: the rule above must not be implemented by dropping the
+    // pre-injection call entirely, because `computeFailedEdgeScores` reads the DIFFERENCE.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-b', 's1', 200, '500'),
+      ...call('svc-a', 'svc-b', 's2', 1200, '500'),
+    ]);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([
+      { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 1 },
+    ]);
+  });
+
+  it('resolves a parent that appears AFTER its child', async () => {
+    // The arm that makes this one streaming pass instead of an ordering assumption. A derivation
+    // that only recognised a parent already seen would silently under-count on any file whose rows
+    // are not parent-first — and a silent under-count is indistinguishable from a quiet fault.
+    const tracesPath = write([HEADER, 't1,s1s,s1c,svc-b,1201,500', 't1,s1c,,svc-a,1100,OK']);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([
+      { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+    ]);
+  });
+
+  it('invents nothing when the parent span is not in the file', async () => {
+    // A truncated or sampled trace has children without parents. The caller is genuinely unknown
+    // there, and a row guessing at it would put a direction into the ranking that no datum states.
+    const tracesPath = write([HEADER, 't1,s1s,absent,svc-b,1100,500']);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([]);
+  });
+
+  it('counts nothing when the artifact carries no status column', async () => {
+    // The same degradation the FSE'26 converter records for the same column: without a status
+    // every span is OK, so the file cannot say a call failed and the honest answer is no rows.
+    const tracesPath = write([
+      'traceId,spanId,parentSpanId,serviceName,startTimeMillis',
+      't1,c1,,svc-a,1100',
+      't1,s1,c1,svc-b,1101',
+    ]);
+
+    expect(await countFailedTraceEdges(tracesPath, 1000)).toEqual([]);
+  });
+
+  it('returns no rows for a missing file rather than throwing', async () => {
+    expect(await countFailedTraceEdges(path.join(tempDir, 'missing.csv'), 1000)).toEqual([]);
+  });
+
+  it('sorts by caller then callee, so identical traces produce identical rows', async () => {
+    // Determinism is a contract, not a convenience: the rows are rendered into an artifact that
+    // other tools diff, and a grouping whose order depends on file order would make two builds of
+    // one datapack differ in bytes.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-b', 'svc-c', 's1', 1100, '500'),
+      ...call('svc-a', 'svc-b', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-b', 'svc-b>svc-c']);
+  });
+
+  // The four arms below were written for COVERAGE and are not decoration: iteration 43 added this
+  // derivation, its eight arms passed, and the KINETIC project's own coverage gate read
+  // `rcaeval-loader.ts` at **98.89 / 95** (uncovered `1263,1291-1296`) against **100 / 97.92** before
+  // it — while the acceptance recorded 100 / 99.44, which is the number the PREVIOUS commit's job
+  // printed. So the arms the fixtures did not reach are the reason a regression was invisible, and
+  // each test below names the arm it exists for.
+  it('orders the larger caller LAST, which is the arm the ascending fixture cannot reach', async () => {
+    // `sort` asks the comparator `(later, earlier)`, so a two-row array asks it ONCE, as
+    // `(row[1], row[0])`. The determinism test above inserts `svc-b` first and therefore fires only
+    // the `-1` arm. Inserting the smaller caller first fires `a.caller > b.caller`, and `1` is a
+    // different branch from `-1` — one that no amount of ascending input can exercise.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-z', 's1', 1100, '500'),
+      ...call('svc-b', 'svc-a', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-z', 'svc-b>svc-a']);
+  });
+
+  it('orders two callees of ONE caller in both directions', async () => {
+    // The `a.caller !== b.caller` test is false here, so the comparator falls through to the CALLEE
+    // arms — reachable only when one caller emitted two failing edges, which no single-call fixture
+    // can produce. Both directions are asserted because the two are separate branches.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-z', 's1', 1100, '500'),
+      ...call('svc-a', 'svc-m', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-m', 'svc-a>svc-z']);
+  });
+
+  it('orders the same two callees when the file lists them the OTHER way round', async () => {
+    // The third arm of the same fall-through, and it is a separate branch: inserting `svc-m` first
+    // makes `sort` ask `('svc-z' row, 'svc-m' row)`, so `a.callee > b.callee` answers instead of
+    // `a.callee < b.callee`. The OUTPUT is identical either way — that is the contract this arm
+    // proves, because a comparator whose two directions disagree would sort differently here.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-m', 's1', 1100, '500'),
+      ...call('svc-a', 'svc-z', 's2', 1100, '500'),
+    ]);
+
+    expect(
+      (await countFailedTraceEdges(tracesPath, 1000)).map((e) => `${e.caller}>${e.callee}`),
+    ).toEqual(['svc-a>svc-m', 'svc-a>svc-z']);
+  });
+
+  it('returns what it accumulated when the READ fails, rather than throwing', async () => {
+    // A real input, not a mock: `existsSync` is true for a DIRECTORY, so the guard passes and the
+    // read stream then fails (EISDIR) inside the `try`. A caller that passes a directory is a
+    // plausible mistake, and the contract — stated where the `catch {}` is — is that the function
+    // returns what it accumulated. `[]` is what it accumulated here, and the point of the arm is
+    // that the failure is SWALLOWED rather than propagated out of a benchmark case's load.
+    await expect(countFailedTraceEdges(tempDir, 1000)).resolves.toEqual([]);
+  });
+});
+
+describe('countDirectionalInputs', () => {
+  // The one streaming pass that feeds BOTH direction-carrying inputs. The failing-call half is guarded
+  // above under `countFailedTraceEdges`, which is now a view of this; what is new is the LATENCY half, the
+  // input the shipped `latWeight = 0.561495` reads and which no RCAEval path had ever carried. Every rule
+  // below is an arm of that derivation, and the arms are where a signal quietly stops meaning anything.
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      /* ok */
+    }
+  });
+
+  /** Jaeger's own columns PLUS `duration`, which is the column the latency half exists to read. */
+  const HEADER = 'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status,duration';
+
+  const write = (rows: readonly string[]): string => {
+    const tracesPath = path.join(tempDir, 'traces.csv');
+    fs.writeFileSync(tracesPath, rows.join('\n'));
+    return tracesPath;
+  };
+
+  /**
+   * `caller`'s client span and `callee`'s server span, both at `atMs`, the server taking `ms`.
+   *
+   * The duration is put on BOTH rows deliberately: the derivation must read the CHILD's, and a fixture that
+   * gave the parent a different number is what makes that observable.
+   */
+  const call = (
+    caller: string,
+    callee: string,
+    spanId: string,
+    atMs: number,
+    ms: number,
+    status = 'OK',
+  ): string[] => [
+    `t1,${spanId}c,,${caller},${atMs},OK,${ms * 100}`,
+    `t1,${spanId}s,${spanId}c,${callee},${atMs},${status},${ms}`,
+  ];
+
+  it("credits the CALLEE, and averages the CHILD span's duration on each side of the injection", () => {
+    // Two calls before the injection at 10 and 20, one after at 100: the means are the arithmetic mean of
+    // the child's durations, not the parent's (which the fixture sets 100x larger on purpose). The callee is
+    // the edge's endpoint because that is the direction `computeEdgeLatencyScores` credits.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-b', 's1', 100, 10),
+      ...call('svc-a', 'svc-b', 's2', 200, 20),
+      ...call('svc-a', 'svc-b', 's3', 1100, 100),
+    ]);
+
+    return countDirectionalInputs(tracesPath, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', preMeanMs: 15, postMeanMs: 100 },
+      ]);
+      // No call failed, so the failed-edge half stays empty. That is the point of the latency half
+      // existing: it is defined exactly where the counts are zero.
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('omits an edge whose baseline is missing, rather than reporting a rise against zero', () => {
+    // An edge that first appears AFTER the injection has no pre-injection mean. Reporting `preMeanMs: 0`
+    // would invite the ranking to read an infinite rise, which is a far stronger claim than "not measured".
+    const inFlight = write([HEADER, ...call('front', 'orders', 's1', 2000, 50)]);
+    return countDirectionalInputs(inFlight, 1000).then(({ edgeLatency }) => {
+      expect(edgeLatency).toEqual([]);
+    });
+  });
+
+  it('omits an edge that exists only BEFORE the injection from both arrays', () => {
+    // The mirror case. It is also the edge whose pre-existing failures are the deployment's, so the
+    // failed-edge half must not create a row for it either.
+    const preOnly = write([HEADER, ...call('front', 'orders', 's1', 200, 50, 'ERROR')]);
+    return countDirectionalInputs(preOnly, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('reports the failed counts and the durations for the SAME edge in one result', () => {
+    // The two halves must describe one relation. A file where the only failing edge is also the only slow
+    // edge is the case that would expose a derivation that built them from different joins.
+    const tracesPath = write([HEADER, ...call('svc-a', 'svc-b', 's1', 1100, 500, 'ERROR')]);
+    return countDirectionalInputs(tracesPath, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(failedTraceEdges).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+      ]);
+      // A failing call is excluded from the latency halves here only because it IS its own side: the
+      // injection split applies to durations exactly as it does to counts, so there is no pre side.
+      expect(edgeLatency).toEqual([]);
+    });
+  });
+
+  it('reads the duration column by alias, and yields NO latency rows when it is absent', () => {
+    // The failure mode this guards is the reason the channel was dead for six iterations: a column the
+    // function cannot find is not an error it reports, it is a channel that silently reports nothing. The
+    // failed-edge half must survive the same file, so the two halves are shown to be independent.
+    const noDuration = write([
+      'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status',
+      't1,s1c,,svc-a,100,OK',
+      't1,s1s,s1c,svc-b,100,OK',
+      't1,s2c,,svc-a,1100,OK',
+      't1,s2s,s2c,svc-b,1100,ERROR',
+    ]);
+    return countDirectionalInputs(noDuration, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+      ]);
+    });
+  });
+
+  it('keeps a self-edge, and defers the decision to drop it to the consumer', () => {
+    // `computeEdgeLatencyScores` skips a self-edge; the failed-edge score does not. Dropping it here would
+    // hide a real span from one consumer to spare the other a filter, so it is kept and named.
+    const selfEdge = write([
+      HEADER,
+      ...call('svc-a', 'svc-a', 's1', 500, 10),
+      ...call('svc-a', 'svc-a', 's2', 1500, 90),
+    ]);
+    return countDirectionalInputs(selfEdge, 1000).then(({ edgeLatency }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'svc-a', preMeanMs: 10, postMeanMs: 90 },
+      ]);
+    });
+  });
+
+  it('is what `countFailedTraceEdges` returns, which is now a view rather than a second derivation', () => {
+    // The delegation, pinned on OUTPUT rather than on the source text: the 135 assertions above already
+    // state what the failed-edge rows must be, so equality here is what proves the shared pass reproduces
+    // them. It also pins the `failed > 0` selection, which is the rule the published artifact carries.
+    const tracesPath = write([
+      HEADER,
+      ...call('svc-a', 'svc-b', 's1', 200, 10, 'ERROR'), // baseline only — must not create a row
+      ...call('svc-a', 'svc-b', 's2', 1100, 10, 'ERROR'),
+      ...call('svc-a', 'svc-c', 's3', 1200, 10),
+    ]);
+    return Promise.all([
+      countFailedTraceEdges(tracesPath, 1000),
+      countDirectionalInputs(tracesPath, 1000),
+    ]).then(([view, both]) => {
+      expect(view).toEqual(both.failedTraceEdges);
+      expect(view).toEqual([{ caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 1 }]);
+    });
+  });
+
+  it('survives the file shapes a real export produces: blank lines, an absent column, an empty cell', () => {
+    // Every one of these is an arm of the reader rather than of the derivation, and an arm nobody exercises
+    // is an arm nobody has seen work. The rows are otherwise identical to the first test's, so the assertions
+    // say that the SHAPE of the file changed the answer in exactly the ways stated and in no other way.
+    const messy = write([
+      HEADER,
+      '',
+      ...call('svc-a', 'svc-b', 's1', 100, 10),
+      '   ',
+      ...call('svc-a', 'svc-b', 's2', 1100, 100),
+      '',
+    ]);
+    return countDirectionalInputs(messy, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', preMeanMs: 10, postMeanMs: 100 },
+      ]);
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('reads a row whose SERVICE cell is empty as `unknown` rather than dropping it', () => {
+    // `toBenchmarkCase` has always attributed such a span to `unknown`, and the alternative — dropping the
+    // row — would lose a call the trace records, which is worse than recording it against an unnamed service.
+    const headerless = write([
+      'traceId,spanId,parentSpanId,startTimeMillis,status,duration',
+      't1,s1c,,100,OK,100',
+      't1,s1s,s1c,100,ERROR,10',
+      't1,s2c,,1100,OK,100',
+      't1,s2s,s2c,1100,OK,100',
+    ]);
+    return countDirectionalInputs(headerless, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      // The only failure in the file is BEFORE the injection, so it is a baseline and creates no row.
+      expect(failedTraceEdges).toEqual([]);
+      // And the duration half reads the same rows, so the two derivations cannot disagree about a file whose
+      // service column is missing.
+      expect(edgeLatency).toEqual([
+        { caller: 'unknown', callee: 'unknown', preMeanMs: 10, postMeanMs: 100 },
+      ]);
+    });
+  });
+
+  it('ignores a duration it cannot parse instead of letting NaN into a mean', () => {
+    // A real export writes an empty `duration` for a span it could not time. `parseFloat('')` is NaN, and one
+    // NaN in a sum would make every mean for that edge NaN — which propagates into `Math.max` and poisons the
+    // whole case's ranking. The span is skipped for the DURATION half only; its failure still counts.
+    const badDuration = write([
+      HEADER,
+      't1,s1c,,svc-a,100,OK,',
+      't1,s1s,s1c,svc-b,100,OK,',
+      ...call('svc-a', 'svc-b', 's2', 1100, 100, 'ERROR'),
+    ]);
+    return countDirectionalInputs(badDuration, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      // The unparseable span contributes nothing to either side, so there is no baseline and no latency row.
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([
+        { caller: 'svc-a', callee: 'svc-b', failed: 1, baseline: 0 },
+      ]);
+    });
+  });
+
+  it('falls back to no edges at all when the file has neither an id nor a parent column', () => {
+    // The TWO defensive arms of the reader, on the file shape that takes both: a CSV an export produced
+    // without the columns this derivation needs. The honest answer is an empty result — not a crash, and not
+    // an edge invented from the columns that happen to be present.
+    const noIds = write([
+      'traceId,serviceName,startTimeMillis,status,duration',
+      't1,svc-a,100,OK,10',
+      't1,svc-b,1100,OK,100',
+    ]);
+    return countDirectionalInputs(noIds, 1000).then(({ edgeLatency, failedTraceEdges }) => {
+      expect(edgeLatency).toEqual([]);
+      expect(failedTraceEdges).toEqual([]);
+    });
+  });
+
+  it('reads an empty SERVICE cell as `unknown`, and still forms the edge', () => {
+    // The other fallback: the column is there and the cell is blank. `toBenchmarkCase` has always named such
+    // a span `unknown`, and a derivation that instead dropped the row would lose a call the trace records.
+    const blankService = write([
+      'traceId,spanId,parentSpanId,serviceName,startTimeMillis,status,duration',
+      't1,s1c,,svc-a,100,OK,100',
+      't1,s1s,s1c,,100,OK,10',
+      't1,s2c,,svc-a,1100,OK,100',
+      't1,s2s,s2c,,1100,OK,100',
+    ]);
+    return countDirectionalInputs(blankService, 1000).then(({ edgeLatency }) => {
+      expect(edgeLatency).toEqual([
+        { caller: 'svc-a', callee: 'unknown', preMeanMs: 10, postMeanMs: 100 },
+      ]);
+    });
+  });
+
+  it('reads the file ONCE, which is why the two inputs share a function', () => {
+    // Two derivations would read every file twice, and this module's own doc measures the price: RCAEval
+    // TrainTicket traces exceed a million spans per case, so a second read costs more I/O than the whole
+    // golden run. Asserted on the SOURCE, because a second read is invisible in the output.
+    const source = fs.readFileSync(
+      path.join(__dirname, '../../../src/benchmarks/loaders/rcaeval-loader.ts'),
+      'utf8',
+    );
+    const shared = source.slice(
+      source.indexOf('export async function countDirectionalInputs('),
+      source.indexOf('export interface DirectionalInputs'),
+    );
+    expect(shared.split('createInterface(').length - 1, 'one reader in the shared pass').toBe(1);
+    expect(shared.split('createReadStream(').length - 1, 'one stream').toBe(1);
+    const view = source.slice(
+      source.indexOf('export async function countFailedTraceEdges('),
+      source.indexOf('export async function countDirectionalInputs('),
+    );
+    expect(view, 'and the view opens no reader of its own').not.toContain('createInterface(');
+  });
+});
