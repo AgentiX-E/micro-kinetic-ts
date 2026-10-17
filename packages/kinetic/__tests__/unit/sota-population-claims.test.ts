@@ -320,4 +320,21 @@ describe('the census reads the source it claims to read', () => {
     expect(Object.keys(VERDICT_MARKER).sort()).toEqual(['OTHER', 'UNVERIFIED']);
     expect(POPULATION_VERDICTS).toContain('OURS');
   });
+
+  it('names every UNVERIFIED row in the paragraph that says which are left, and no others', () => {
+    // That paragraph restated a COUNT and named two of the three rows the table marked — the register's law 16
+    // (a count restated in a place that cannot derive it) arriving in prose, and iteration 104's own record
+    // repeated the wrong number before this assertion existed. The enumeration is now held to the table in BOTH
+    // directions, so neither a row added nor a row resolved can leave the sentence behind.
+    const unverified = [
+      ...new Set(rows.filter((r) => r.verdict === 'UNVERIFIED').flatMap((r) => r.tokens)),
+    ].sort();
+    expect(unverified.length, 'the table marks no row UNVERIFIED').toBeGreaterThan(0);
+    const anchor = '**And the rows that remain `UNVERIFIED`**';
+    const at = inventory.indexOf(anchor);
+    expect(at, `the paragraph that says which rows are left is gone: ${anchor}`).toBeGreaterThan(0);
+    const paragraph = inventory.slice(at, inventory.indexOf('\n\n', at));
+    expect(paragraph.length, 'the paragraph is empty').toBeGreaterThan(0);
+    expect(artefactTokens(paragraph).sort()).toEqual(unverified);
+  });
 });

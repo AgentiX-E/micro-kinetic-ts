@@ -596,6 +596,15 @@ export const TERM_CHANNELS: Readonly<Record<string, SignalChannel>> = {
 export type AbsenceLevel =
   /** The channel carried a non-zero reading, so nothing is absent. */
   | 'READ'
+  /**
+   * The view this population RANKED ON holds no rows while another view of the same channel holds some.
+   *
+   * A level of its own because it is a different statement from every arm below it: the artifact is present,
+   * points exist, columns exist, values are non-zero — and the derivation the engine was handed discards all of
+   * it. Nothing about "the input never arrived" is true, and nothing about the term being inert is established
+   * either. Read off a CROSS-VIEW comparison, which is why it sits above the single-view arms.
+   */
+  | 'RANKED-VIEW-EMPTY'
   /** The producer's artifact for this channel is not in the case directory at all. */
   | 'FILE-ABSENT'
   /** The artifact is there and holds no data point. */
@@ -612,6 +621,7 @@ export type AbsenceLevel =
 /** The closed union, in the order a reader meets it: covered first, then the levels of absence. */
 export const ABSENCE_LEVELS: readonly AbsenceLevel[] = [
   'READ',
+  'RANKED-VIEW-EMPTY',
   'FILE-ABSENT',
   'NO-POINTS',
   'COLUMN-ABSENT',
@@ -619,6 +629,17 @@ export const ABSENCE_LEVELS: readonly AbsenceLevel[] = [
   'NO-KEPT-ROW',
   'UNREPORTED',
 ];
+
+/**
+ * Rows per view, as the ASSEMBLY counted them — the record law 40 requires its holder to supply.
+ *
+ * Keyed by the view's own name rather than by an index, because the census prints these and a reader has to be
+ * able to match them to the line the corpus owner already prints (`Corpus: edgeLatency from <view>`). The type
+ * is structural on purpose: the view union is owned by `rcaeval-corpus.ts` and that module imports THIS one, so
+ * naming it here would be a cycle — and the owner passes a total `Record` over its own union, which is where the
+ * compile-time guarantee belongs.
+ */
+export type RowsByView = Readonly<Record<string, number>>;
 
 /** What the producer recorded about one channel of one case. A missing record is `UNREPORTED`, not a guess. */
 export interface ChannelEvidence {
@@ -630,6 +651,35 @@ export interface ChannelEvidence {
   readonly columns: boolean;
   /** Non-zero readings among `rows`. */
   readonly nonzero: number;
+  /**
+   * Whether this channel carries VALUES that can be zero, as opposed to ROWS that either survived or did not.
+   *
+   * **`ALL-ZERO` is a statement about values, and only the metric channel has any.** Every other channel is a
+   * row channel: `logs.csv` holds log lines, `traces.csv` holds spans, and a latency edge is either measured on
+   * both sides of the injection or it is not. Attaching a record to such a channel without this flag would have
+   * labelled it `ALL-ZERO` — telling a reader the readings were all zero — when the truth is that none
+   * SURVIVED retention. Same count, different owner, different fix.
+   *
+   * Optional, and `undefined` means `true`, so every evidence literal written before this flag existed keeps the
+   * meaning it was written with.
+   */
+  readonly carriesValues?: boolean | undefined;
+  /**
+   * Rows each view of this channel holds, when the channel HAS views — supplied by the assembly, which computes
+   * all of them in one pass.
+   *
+   * Optional rather than required: a channel with one derivation has no views to compare, and requiring an empty
+   * object would make "no views" indistinguishable from "views I did not measure" at the type level.
+   */
+  readonly rowsByView?: RowsByView | undefined;
+  /**
+   * Which view the assembled cases carry — the view every configuration that does not re-install another one
+   * ranks on.
+   *
+   * Paired with `rowsByView`, because a count of views without knowing WHICH was used cannot say whether the
+   * empty one is the one the engine read.
+   */
+  readonly rankedView?: string | undefined;
 }
 
 /**
@@ -639,6 +689,13 @@ export interface ChannelEvidence {
  * reads `READ` whatever the evidence says, so a recorded level can never contradict the measurement. That
  * ordering is the whole reason this is a function rather than a field — a field could be set to `READ` on an
  * empty channel, and nothing would notice.
+ *
+ * The `RANKED-VIEW-EMPTY` arm sits immediately below `UNREPORTED` and above every single-view arm, and both
+ * halves of that placement are claims. Above them, because it is read off a CROSS-VIEW comparison: when another
+ * view holds rows, "the artifact held no points" is not merely a weaker reading, it is a FALSE one — the points
+ * exist and the selected derivation discards them. Below `UNREPORTED`, because it needs a record to exist at
+ * all. It is guarded on both fields, so a caller that supplies no views falls through to exactly the arms that
+ * were there before it.
  *
  * @param covered - Cases that kept a reading of this channel.
  * @param evidence - What the producer recorded, or `undefined` when it recorded nothing.
@@ -650,9 +707,20 @@ export function readAbsenceLevel(
 ): AbsenceLevel {
   if (covered > 0) return 'READ';
   if (evidence === undefined) return 'UNREPORTED';
+  const ranked = evidence.rankedView;
+  const byView = evidence.rowsByView;
+  if (ranked !== undefined && byView !== undefined && byView[ranked] === 0) {
+    const best = Math.max(0, ...Object.values(byView));
+    if (best > 0) return 'RANKED-VIEW-EMPTY';
+  }
   if (!evidence.present) return 'FILE-ABSENT';
   if (evidence.rows === 0) return 'NO-POINTS';
   if (!evidence.columns) return 'COLUMN-ABSENT';
+  // `ALL-ZERO` is a statement about VALUES, and only a value channel has any: a row channel whose producer read
+  // rows and whose retention kept none is `NO-KEPT-ROW`. Without this arm the first record ever attached to the
+  // latency channel would have printed `ALL-ZERO` — "the readings are all zero" — when the truth was that none
+  // survived, which is the misreport this vocabulary exists to prevent, one level over.
+  if (evidence.carriesValues === false) return 'NO-KEPT-ROW';
   if (evidence.nonzero === 0) return 'ALL-ZERO';
   return 'NO-KEPT-ROW';
 }
@@ -699,6 +767,14 @@ export interface InputCoverage {
   readonly casesWithNonZeroMetrics: number;
   /** Every channel's absence levels with a non-zero count. An empty array is a population with no absence. */
   readonly absence: readonly AbsenceRow[];
+  /**
+   * The channel records this census was GIVEN, echoed back so the formatter prints what the census read.
+   *
+   * Kept on the result rather than handed to the formatter as a second argument, because a formatter that could
+   * receive different records than the census consulted is a formatter whose line can describe a corpus the
+   * census never saw — the same reason `TERM_CHANNELS` is owned by the module that computes the verdict from it.
+   */
+  readonly records: ChannelRecords;
 }
 
 /** What a case's metrics map must expose for the census to MEASURE it: a length and a value per index. */
@@ -743,14 +819,38 @@ export function readMetricTelemetry(
   return { points, nonzero };
 }
 
+/** What the ASSEMBLY knows about one channel that the assembled cases cannot express. */
+export interface ChannelRecord {
+  /** Rows the producer READ, before any retention filter. Omitted when its holder did not count them. */
+  readonly rowsRead?: number | undefined;
+  /** Rows each view holds, when the channel has views. */
+  readonly rowsByView?: RowsByView | undefined;
+  /** Which view the assembled cases carry. */
+  readonly rankedView?: string | undefined;
+}
+
+/**
+ * The records, keyed by channel. A channel left out reads `UNREPORTED`, which is the honest level rather than a
+ * gap: the census may not guess at a reason its holder did not supply.
+ */
+export type ChannelRecords = Partial<Record<SignalChannel, ChannelRecord>>;
+
 /**
  * Count the cases that carry each channel's input.
  *
  * The metric channel is **MEASURED from the cases' own `metrics` map** — see `AbsenceLevel` for the defect that
- * replaces. The other four are counted from the arrays they are handed, and their absence is `UNREPORTED`
- * because a bare array cannot say why it is empty.
+ * replaces. The other four are counted from the arrays they are handed, so a bare array's emptiness has no
+ * recorded reason and reads `UNREPORTED`.
+ *
+ * **`records` is that reason, and it is optional for a reason of its own.** The parties that hold it are the
+ * assembly and the loader, one layer above the cases this function receives, and iteration 104 found the
+ * consequence of not asking: the artifact printed `absent[latency]: UNREPORTED on 90/90 cases` on one line and
+ * `rows: shipped 0 | capped 0 | whole-file 1080` on the next, because a second census in the same run HAD the
+ * record and this one had not been given it. A census may not state a limit its own artifact disproves — the
+ * register's law 40: the evidence of an absence must be supplied by whoever still holds it.
  *
  * @param cases - The assembled cases of one population (a system, or a suite).
+ * @param records - What each channel's holder recorded, or nothing when it recorded nothing.
  * @returns The counts, and every non-empty absence level. A zero count here is a STATEMENT about the corpus.
  */
 export function summarizeInputCoverage(
@@ -762,7 +862,33 @@ export function summarizeInputCoverage(
     readonly edgeLatency?: ReadonlyArray<unknown> | undefined;
     readonly metrics?: ReadonlyMap<string, readonly MetricSeriesLike[]> | undefined;
   }>,
+  records?: ChannelRecords,
 ): InputCoverage {
+  /** The evidence a channel's holder supplied, or `undefined` when it supplied none. */
+  const evidenceFor = (channel: SignalChannel, keptTotal: number): ChannelEvidence | undefined => {
+    const rec = records?.[channel];
+    if (rec === undefined) return undefined;
+    // The rows the ENGINE received, which is the ranked view's count whenever the channel has views — so the
+    // level is read off the same array `channelCases` counts, and the two cannot disagree.
+    const ranked = rec.rowsByView;
+    const rows =
+      ranked !== undefined && rec.rankedView !== undefined
+        ? (ranked[rec.rankedView] ?? 0)
+        : (rec.rowsRead ?? 0);
+    return {
+      present: true,
+      rows,
+      columns: true,
+      nonzero: keptTotal,
+      // **Every channel that reaches this helper is a ROW channel, by construction**: the metric arm builds its
+      // own evidence from the case's `metrics` map, which is where a value channel's rows and readings live. So
+      // the flag is `false` rather than `channel === 'metrics'`, which would be a comparison no input can make
+      // — a guard the coverage gate reports as dead code, and one that reads as if it protected something.
+      carriesValues: false,
+      rowsByView: ranked,
+      rankedView: rec.rankedView,
+    };
+  };
   let casesWithReadableLogs = 0;
   let logEntries = 0;
   let casesWithSpans = 0;
@@ -812,12 +938,20 @@ export function summarizeInputCoverage(
         nonzero: telemetry.nonzero,
       }),
     );
-    // The other four are handed a bare array, so an empty one has NO recorded reason and reads `UNREPORTED`:
-    // "the reason is not recorded" and "the file is absent" are different statements.
-    bump('logs', readAbsenceLevel(logs > 0 ? 1 : 0, undefined));
-    bump('spans', readAbsenceLevel(traces > 0 ? 1 : 0, undefined));
-    bump('spanActivity', readAbsenceLevel(spanActivity > 0 ? 1 : 0, undefined));
-    bump('latency', readAbsenceLevel(latency > 0 ? 1 : 0, undefined));
+    // The other four are counted from the arrays they are handed. **Their RECORD is asked for rather than
+    // assumed to be absent**: with one, an empty array becomes a named level (`RANKED-VIEW-EMPTY` when another
+    // view holds rows, `NO-POINTS` when none does); without one it stays `UNREPORTED`, which is "the reason is
+    // not recorded" and is a different statement from "the file is absent".
+    bump('logs', readAbsenceLevel(logs > 0 ? 1 : 0, evidenceFor('logs', logEntries)));
+    bump('spans', readAbsenceLevel(traces > 0 ? 1 : 0, evidenceFor('spans', casesWithSpans)));
+    bump(
+      'spanActivity',
+      readAbsenceLevel(
+        spanActivity > 0 ? 1 : 0,
+        evidenceFor('spanActivity', casesWithSpanActivity),
+      ),
+    );
+    bump('latency', readAbsenceLevel(latency > 0 ? 1 : 0, evidenceFor('latency', latencyEdges)));
   }
   const absence: AbsenceRow[] = [];
   for (const channel of CHANNEL_ORDER) {
@@ -839,6 +973,7 @@ export function summarizeInputCoverage(
     casesWithMetrics,
     casesWithNonZeroMetrics,
     absence,
+    records: records ?? {},
   };
 }
 
@@ -899,6 +1034,25 @@ export function readZero(
  * @returns Lines, without trailing newlines.
  */
 export function formatInputCoverage(coverage: InputCoverage, label: string): string[] {
+  /**
+   * Rows per view, for a channel whose holder supplied them.
+   *
+   * Sorted by CODE UNIT rather than left in the caller's insertion order, for the reason `CHANNEL_ORDER` gives
+   * one table up: an order that is a property of insertion is an order a diff cannot read, and the views are
+   * passed as a plain record whose literal order is the CALLER's declaration rather than a contract.
+   */
+  const viewFragment = (channel: SignalChannel): string => {
+    const rec = coverage.records[channel];
+    const byView = rec?.rowsByView;
+    const ranked = rec?.rankedView;
+    if (byView === undefined || ranked === undefined) return '';
+    // `Object.keys` already returns a fresh array, so the copy the spread was making is redundant — and the
+    // `.sort()` below mutates nothing the caller can see.
+    const parts = Object.keys(byView)
+      .sort()
+      .map((v) => `${v}${v === ranked ? '(ranked)' : ''} ${byView[v] ?? 0}`);
+    return ` [${parts.join(' | ')}]`;
+  };
   const lines = [
     `input-coverage[${label}]: ${coverage.cases} cases | ` +
       `metrics ${coverage.casesWithNonZeroMetrics}/${coverage.cases} non-zero ` +
@@ -908,17 +1062,42 @@ export function formatInputCoverage(coverage: InputCoverage, label: string): str
       `spans ${coverage.casesWithSpans}/${coverage.cases} | ` +
       `spanActivity ${coverage.casesWithSpanActivity}/${coverage.cases} | ` +
       `failedEdges ${coverage.casesWithFailedEdges}/${coverage.cases} | ` +
-      `latency ${coverage.casesWithLatency}/${coverage.cases} (${coverage.latencyEdges} edges)`,
+      `latency ${coverage.casesWithLatency}/${coverage.cases} (${coverage.latencyEdges} edges)` +
+      viewFragment('latency'),
   ];
   const starved = (Object.keys(TERM_CHANNELS) as string[]).filter(
     (term) => channelCases(coverage, TERM_CHANNELS[term]!) === 0,
   );
-  lines.push(
-    starved.length === 0
-      ? `  every ablated term has its input here — a 0.0 below is INERT, not starved`
-      : `  STARVED channels ⇒ UNMEASURABLE terms: ${starved.join(', ')}` +
-          ` — a 0.0 on any of them says nothing about the term`,
-  );
+  /**
+   * Whether a starved term's channel is empty **only on the view this population ranked on**.
+   *
+   * The split exists because those two zeros mean opposite things. A channel with no input on ANY view cannot
+   * measure its term, and a 0.0 there is silence. A channel whose input exists in another view measures its term
+   * perfectly well — the engine was simply handed the derivation that discards it — so a 0.0 there is not the
+   * term's verdict and the movement a study would see belongs to a CORPUS change rather than to the term.
+   */
+  const rankedViewEmpty = (term: string): boolean => {
+    const channel = TERM_CHANNELS[term]!;
+    return coverage.absence.some((a) => a.channel === channel && a.level === 'RANKED-VIEW-EMPTY');
+  };
+  const unmeasurable = starved.filter((t) => !rankedViewEmpty(t));
+  const unfed = starved.filter(rankedViewEmpty);
+  if (unmeasurable.length === 0 && unfed.length === 0) {
+    lines.push(`  every ablated term has its input here — a 0.0 below is INERT, not starved`);
+  }
+  if (unmeasurable.length > 0) {
+    lines.push(
+      `  STARVED channels ⇒ UNMEASURABLE terms: ${unmeasurable.join(', ')}` +
+        ` — a 0.0 on any of them says nothing about the term`,
+    );
+  }
+  if (unfed.length > 0) {
+    lines.push(
+      `  UNFED ON THE RANKED VIEW ⇒ MEASURABLE-ELSEWHERE terms: ${unfed.join(', ')}` +
+        ` — the input exists in another view, so a 0.0 here is NOT the term's verdict and the move is a` +
+        ` corpus change (see the latency-routes line)`,
+    );
+  }
   for (const row of coverage.absence) {
     lines.push(`  absent[${row.channel}]: ${row.level} on ${row.cases}/${coverage.cases} cases`);
   }
@@ -927,9 +1106,13 @@ export function formatInputCoverage(coverage: InputCoverage, label: string): str
 
 // ── The latency-route census: three derivations of ONE quantity, and where each of them dies ──
 //
-// `input-coverage` above can say that `latency` holds nothing, and that is all it can say: STARVED names the
-// term's verdict but not the mechanism, and `latWeight` is read by three DIFFERENT derivations of the same
-// array. Iteration 73 left the sharpest question in the register open on exactly that ambiguity — RE3
+// `input-coverage` above used to be able to say only that `latency` holds nothing, and iteration 104 repaired
+// the reason: the census had not been GIVEN the three views the assembly computes, so it printed `UNREPORTED`
+// one line above this census's `rows: shipped 0 | capped 0 | whole-file 1080`. It now reads `RANKED-VIEW-EMPTY`
+// and names the terms as measurable-elsewhere, which is the channel-level verdict. **What remains uniquely here
+// is the MECHANISM**: which of the three derivations died and by which of the four causes, and no channel-level
+// count can say that — a zero has three ways to be produced and they differ in everything else. Iteration 73
+// left the sharpest question in the register open on exactly that ambiguity — RE3
 // OnlineBoutique reads `failedEdges 15/30` while `latency 0/30`, from one file, in the same cases — and the
 // candidate mechanisms predict the SAME zero while differing in everything else:
 //

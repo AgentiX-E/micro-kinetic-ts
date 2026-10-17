@@ -1247,12 +1247,31 @@ async function main(): Promise<void> {
     // Computed here, while the cases still exist: the caller releases them after each system, and a census
     // taken from an empty array would report every channel starved — the very mistake this instrument exists
     // to prevent.
+    //
+    // The latency record is handed to the CENSUS as well as to the route line, because the two describe one
+    // channel and iteration 104 found them contradicting each other four lines apart: `input-coverage` printed
+    // `absent[latency]: UNREPORTED` while `latency-routes` printed `rows: shipped 0 | capped 0 | whole-file
+    // 1080`. The route counts were one line away from the census that needed them — law 40, which requires the
+    // evidence of an absence to come from whoever still holds it.
+    const latencyRoutes = summarizeLatencyRoutes(latencyRouteEntries);
+    // Total over the owner's own union, so a view added to `LatencySource` without a row count here is a compile
+    // error at the one place the record is built rather than a view that silently reads zero.
+    const latencyRowsByView: Record<LatencySource, number> = {
+      shipped: latencyRoutes.shippedRows,
+      capped: latencyRoutes.cappedRows,
+      'whole-file': latencyRoutes.wholeFileRows,
+    };
     return {
       systemName,
       cases,
       caseDirMap,
-      coverage: { ...summarizeInputCoverage(cases), casesWithSpans },
-      latencyRoutes: summarizeLatencyRoutes(latencyRouteEntries),
+      coverage: {
+        ...summarizeInputCoverage(cases, {
+          latency: { rowsByView: latencyRowsByView, rankedView: DEFAULT_LATENCY_SOURCE },
+        }),
+        casesWithSpans,
+      },
+      latencyRoutes,
       latencyViews: latencyViewsById,
     };
   }

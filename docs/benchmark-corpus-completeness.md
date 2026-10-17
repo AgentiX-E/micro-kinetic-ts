@@ -595,3 +595,88 @@ reference above us on RE1 reads all three RCAEval environments with tooling"* �
 false of RE1, where there is nothing else to read. It is replaced rather than quietly dropped, because the shape it
 had — **an inference about a competitor's INPUT drawn from its METHOD** — is the class this document exists to catch.
 
+### 8.10 The census was GIVEN the record — law 40 enrolled, and the level that names the mechanism
+
+**Iteration 103 wrote law 40 from an observation; iteration 104 is the enrolment that obeys it.** The rule reads: *a
+census given only what SURVIVED cannot report why the rest did not — the evidence of an absence must be supplied by
+whoever still holds it.* What it was written against is a single artifact printing two adjacent lines that
+contradict each other (`38728053527`, RE2-OnlineBoutique):
+
+```
+input-coverage[OnlineBoutique]: 90 cases | metrics 90/90 non-zero (90 with points) | logs 21/90 readable ...
+  latency 0/90 (0 edges)
+  absent[latency]: UNREPORTED on 90/90 cases
+latency-routes[OnlineBoutique]: 90 cases | ... | rows: shipped 0 | capped 0 | whole-file 1080
+```
+
+**The reason was on the line below, in the same artifact, from the same run, computed by a census in the same
+process** — and the first census said it did not know it. `latency-channel-views.md` §7 is that reason at length,
+and the counts it prints are the record.
+
+**Three changes, and each is a claim.**
+
+| the change | the claim it makes |
+| --- | --- |
+| `summarizeInputCoverage(cases, records)` accepts what each channel's HOLDER recorded | a census may not state a limit its own artifact disproves |
+| the vocabulary gains `RANKED-VIEW-EMPTY` | a channel that is empty on the ranked view while another view holds rows is a THIRD kind of zero — the input arrived and the derivation the engine was handed discarded it, which establishes nothing about the term in either direction |
+| the STARVED line splits into `UNMEASURABLE` and `MEASURABLE-ELSEWHERE` | those two zeros mean opposite things, and a reader told only *"a 0.0 on it says nothing about the term"* cannot act on either |
+
+**`RANKED-VIEW-EMPTY` is ordered above every single-view arm and below `UNREPORTED`**, and both halves are claims.
+Above, because it is read off a CROSS-VIEW comparison: when another view holds rows, *"the artifact held no points"*
+is not a weaker reading but a **false** one. Below, because it needs a record to exist at all. It is guarded on both
+of its fields, so a caller that supplies no views falls through to exactly the arms that were there before it —
+which is what makes the change additive rather than a re-reading of every existing level.
+
+**And the record is echoed on the result** (`InputCoverage.records`) so the formatter prints what the census
+consulted, rather than being handed a second copy that could describe a corpus the census never saw.
+
+**The holder it asks is the one that already had the answer.** For the latency channel the record is the route
+census's own three row counts, passed at `run-ablation.ts`'s assembly site, four lines above the `latencyRoutes`
+summarisation that produced them — `{ rowsByView: latencyRowsByView, rankedView: DEFAULT_LATENCY_SOURCE }`, built as
+a `Record` total over the owner's `LatencySource` union so a view added there without a count here is a compile
+error rather than a view that silently reads zero.
+
+**What it does NOT change, and the fence asserts it directly.** A record explains an ABSENCE; it does not create a
+reading. `channelCases(coverage, 'latency')` and `latencyEdges` are unchanged by a record whose ranked view is
+empty, and the level is a FUNCTION of the count first — so a covered channel still reads `READ` whatever a record
+says about it. No number in §8.8, no row of §7.5's interaction and none of the nine cells moves.
+
+### 8.11 The coverage standard found a MISREPORT, not just an uncovered line
+
+**The gate requires ≥95 % on every dimension, and `directional-evidence.ts` had been 100 / 100 / 100 / 100 at
+iteration 103. Iteration 104's change took it to 99.82 / 98.89 with one uncovered line** — the arm of `evidenceFor`
+that reads a record carrying `rowsRead` and no views. **Closing it required writing the assertion the arm exists for,
+and writing that assertion is what found the defect**: the level that arm would have produced was wrong.
+
+**`ALL-ZERO` is a statement about VALUES**, and it was reached by comparing `nonzero === 0`. For the metric channel
+`nonzero` is what its name says. **For every other channel `nonzero` is the count that SURVIVED retention**, and a
+row channel has no values to be zero at all — a log line is kept or dropped, a span is a span, a latency edge is
+measured on both sides of the injection or it is not. So the first record ever attached to the latency channel or the
+log channel would have printed
+
+```
+absent[logs]: ALL-ZERO on ...        # "the readings are all zero"
+```
+
+when the truth was that the file yielded forty rows and retention kept none. **Same count, different owner,
+different fix** — which is the defect the level vocabulary exists to prevent, one level over and inside it.
+
+**The repair is a flag, and where it is set is itself a claim.** `ChannelEvidence.carriesValues` is optional and
+`undefined` means `true`, so every evidence literal written before it keeps the meaning it was written with. The
+single-arm helper `evidenceFor` sets it to **`false`**, and *not* to `channel === 'metrics'`: **the metric arm builds
+its own evidence from the case's `metrics` map**, so no input reaches the helper with `channel === 'metrics'` — a
+comparison no input can make is a branch the coverage gate reports as dead code, and one that reads as if it
+protected something (law 6).
+
+**The semantics are pinned BEFORE the wire exists**, which is the point: the log channel's record is the next
+iteration's work (`assembleRCAEvalCase` returns `logRowsRead` and the ablation loop drops it), and a wrong level
+attached to a real record is worse than no record at all. The fence now asserts four things about a record that
+counts rows and names no view:
+
+| the record | the level | why |
+| --- | --- | --- |
+| `{ logs: { rowsRead: 40 } }` | `NO-KEPT-ROW` | the file yielded rows and the retention kept none |
+| `{ logs: {} }` | `NO-POINTS` | the artifact is there and holds no row at all |
+| `{ metrics: { rowsRead: 2 } }` on an all-zero case | `ALL-ZERO` | the value channel with the SAME shape, so the arm is scoped rather than rewritten |
+| any record | the count is unchanged | a record explains an absence; it never creates a reading |
+

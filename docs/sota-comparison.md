@@ -535,11 +535,14 @@ Two cohorts must be reported separately, because they are measured on different 
 | RCLAgent (Claude-3.5-Sonnet) | 52.31% | LLM multi-agent recursion-of-thought | arXiv:2605.14866 |
 | GALA | 42.22% (45.59% R@1) | LLM agentic ReAct | arXiv:2508.12472 |
 | mABC | 39.98% | LLM multi-agent | arXiv:2404.12135 |
-| RCAgent | 25.32% | LLM ReAct + tools | arXiv:2310.16340 |
+| RCAgent | 25.32% **— NOT OUR POPULATION, and not the paper's own figure** | LLM ReAct + tools | arXiv:2310.16340 |
 | OpenRCA | ~15% | LLM | ICLR'25 |
 
 > **Three of the rows above carry a population this table ASSERTS and our record never read** — `RCLAgent`,
-> `RCAgent` and `mABC` are `UNVERIFIED` in `docs/sota-populations.md`, the document that now owns this question.
+> `mABC` is `UNVERIFIED` in `docs/sota-populations.md`, the document that now owns this question, and `RCAgent`
+> is `OTHER` as of 2026-10-15: its own full text evaluates **161 Flink jobs from Alibaba Cloud's internal platform**
+> and reports **semantic scores (METEOR / BLEURT / EmbScore), no top-1 percentage at all**, so the `25.32%` above is
+> not its figure — and its inputs are unavailable.
 > The heading's *"where all LLM agents report"* is this table's own claim, and for those three an independent
 > 2026 baseline table places `RCAgent` and `mABC` on **AIOPS-2022 and a private production dataset** instead —
 > so the figure here is either a re-measurement by another group on our population or a different corpus, and the

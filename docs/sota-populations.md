@@ -49,7 +49,7 @@ one it was short of, and the project page added here, are both recorded rather t
 | `github.com/Musfiqshohan/RCA-DCM` | **OURS** | the artefact of the row above; its README states the two systems' shared five-fault composition, which is what fixes 125 | 2026-10-13, GitHub API + README |
 | `arXiv:2601.21359` | **OURS** | **RCAEval all 735 cases**, service Top-1 — the benchmark author's own method | 2026-10-13, paper text; and our reimplementation on the identical 735 (`prism-head-to-head.md`) |
 | `arXiv:2605.14866` | **UNVERIFIED** | `RCLAgent`, listed in our §2b table at `AC@1 56.67%` / `52.31%` on RE2-OnlineBoutique. **Our only basis is our own table** — the paper was never read for its population, and it also reports AIOPS-2022 (`65.15%`) and an augmented TrainTicket, so more than one population is in play. **Resolution artefact: the paper's own full text** | 2026-10-14, §2b of `sota-comparison.md` — which is the claim, not the reading |
-| `arXiv:2310.16340` | **UNVERIFIED** | `RCAgent`, the same shape as the row above: our §2b table places it on RE2-OB at `25.32%`, and **an independent 2026 baseline table places it on AIOPS-2022 (`22.10%` / `24.80%`) and a private production dataset instead.** The two readings disagree and neither is the paper's own statement of its population. **Resolution artefact: the paper's own full text** | 2026-10-14, §2b of `sota-comparison.md` + an independent 2026 baseline table |
+| `arXiv:2310.16340` | **OTHER** | **RESOLVED 2026-10-15 from the paper's own full text, and the resolution is stronger than `OTHER`.** `RCAgent`'s evaluation population is **161 anomalous jobs from Alibaba Cloud's Flink real-time compute platform** — 15 616 anomalous jobs collected over one month, filtered to ~5 000 non-trivial, then reduced to the offline set of 161 under a class-balance constraint (*"no more than two jobs have identical root causes"*). **And its metrics are SEMANTIC SCORES** — METEOR, EmbScore, BLEURT, BARTScore and two GPT-4 judgements — so it **reports no top-1 localization percentage at all**. Its inputs are Alibaba-internal (SLS logs at three levels, an advisor-service history database, code repositories) and the paper publishes no artefact. **So the `25.32%` our §2b carries cannot be this paper's figure**: it is either a third party's re-measurement or another corpus, and the independent 2026 baseline table's placement on AIOPS-2022 is a THIRD attribution again. | 2026-10-15, arXiv HTML full text |
 | `arXiv:2404.12135` | **UNVERIFIED** | `mABC`, the same shape again: our §2b table places it on RE2-OB at `39.98%`, and the same independent table places it on AIOPS-2022 (`34.19%`) and a private production dataset. **Resolution artefact: the paper's own full text** | 2026-10-14, §2b of `sota-comparison.md` + an independent 2026 baseline table |
 | `arXiv:2508.12472` | **OURS** | RE2-OnlineBoutique, **90 injected-fault scenarios**, `AC@1` / `Avg@3` / `Avg@5` — its own text: *"We choose the RE2-OnlineBoutique (OB) dataset from the RCAEval benchmark"*, and the 90 is read off its own *"each service–fault combination was executed in three independent rounds, yielding 90 distinct incidents"* | 2026-10-14, arXiv HTML full text |
 | `arXiv:2608.08968` | **OURS** | **RE2, 90 cases per system** — the population is read off its own `AC@3` (`98.89% = 89/90`, `85.56% = 77/90`) and its own text, which also names a third corpus (`AegisLab`, 100 sampled cases) that carries **no** figure of ours | 2026-10-14, arXiv HTML full text |
@@ -83,9 +83,14 @@ average across four backbones over OpenRCA, RCAEval and an industrial deployment
 its figure and the figure is still not ours. Reading them changed no standing; it changed *"we have not read
 this"* into *"we read it and it is not ours"*, which is the distinction this inventory exists to hold.
 
-**And the three rows that remain `UNVERIFIED` are the §2b cohort** — `RCLAgent`, `RCAgent` and `mABC` — each of
-which carries a number our own table asserts and no document of ours ever read. They are the inventory's next
-readings.
+**And the rows that remain `UNVERIFIED`** are `arXiv:2605.14866` (`RCLAgent`) and `arXiv:2404.12135` (`mABC`) —
+the §2b cohort, after `RCAgent` was placed by its own full text on 2026-10-15, each carrying a number our own table
+asserts and no document of ours ever read — **plus `arXiv:2610.08622` (`E4`)**, whose population is *"a mix of
+synthetic and real-world workloads"*. **This sentence used to name two of them and open with "the rows that remain",
+which was false against the table twenty lines above**: a count had been restated in prose, which is the register's
+law 16 one document over. The enumeration is now held to the table **by the fence** — the test derives the
+`UNVERIFIED` set from the table and compares it to the references this paragraph names, in both directions — rather
+than by care. The three are the inventory's next readings.
 
 **And the inventory is what makes the difference legible.** Before it, the difference between *"we have not read
 this"* and *"we read it and it is not ours"* lived in whichever sentence a reader happened to open. Both are

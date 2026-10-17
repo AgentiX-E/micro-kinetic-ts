@@ -39,7 +39,9 @@ import {
   summarizeInputCoverage,
   TERM_CHANNELS,
   type AbsenceLevel,
+  type AbsenceRow,
   type ChannelEvidence,
+  type ChannelRecords,
   type SignalChannel,
 } from '../src/directional-evidence.js';
 
@@ -131,9 +133,21 @@ describe('the input census', () => {
     // 375 RE1 cases — and `ALL-ZERO` is the degenerate class `benchmark-corpus-completeness.md` §8 defines.
     // An instrument printing one zero for both cannot say which it measured.
     // Every level in the union is REACHABLE, or the union is a decoration.
+    //
+    // **This enumeration is why the union may not grow quietly**: iteration 104 added `RANKED-VIEW-EMPTY` and
+    // this assertion failed until the new arm had an evidence that reaches it. A level no input can produce is a
+    // level a reader will never meet, and the register's law 6 is the same statement about a guard.
     const reached = new Set<AbsenceLevel>([
       readAbsenceLevel(4, undefined),
       fileAbsent,
+      readAbsenceLevel(0, {
+        present: true,
+        rows: 0,
+        columns: true,
+        nonzero: 0,
+        rowsByView: { shipped: 0, 'whole-file': 9 },
+        rankedView: 'shipped',
+      }),
       readAbsenceLevel(0, { present: true, rows: 0, columns: true, nonzero: 0 }),
       columnAbsent,
       allZero,
@@ -153,6 +167,17 @@ describe('the input census', () => {
           return undefined;
         case 'FILE-ABSENT':
           return { present: false, rows: 0, columns: false, nonzero: 0 };
+        case 'RANKED-VIEW-EMPTY':
+          // Needs BOTH fields: a view count without knowing which view was used cannot make the claim, and the
+          // arm is guarded on both for that reason.
+          return {
+            present: true,
+            rows: 0,
+            columns: true,
+            nonzero: 0,
+            rowsByView: { shipped: 0, 'whole-file': 9 },
+            rankedView: 'shipped',
+          };
         case 'NO-POINTS':
           return { present: true, rows: 0, columns: true, nonzero: 0 };
         case 'COLUMN-ABSENT':
@@ -364,8 +389,18 @@ describe('the input census', () => {
       /const \{ benchCase, traceUsed, latencyViews, latencyRoute \} = await assembleRCAEvalCase\(/,
     );
     expect(runner, 'and counts it').toContain('if (traceUsed) casesWithSpans++;');
-    expect(runner, 'and overrides the retained-array count with it').toContain(
-      'coverage: { ...summarizeInputCoverage(cases), casesWithSpans }',
+    // The override is still the assertion's subject, and iteration 104 changed the call it sits in: the census
+    // now also RECEIVES the latency record the assembly computed, so the string grew while the property did not.
+    expect(runner, 'and overrides the retained-array count with it').toMatch(
+      /coverage: \{\s*\.\.\.summarizeInputCoverage\(cases, \{[\s\S]{0,200}?\}\),\s*casesWithSpans,\s*\}/,
+    );
+    // And the record it passes is the latency route census's own row counts, so the two instruments that
+    // describe one channel cannot disagree — the contradiction this iteration repaired.
+    expect(runner, 'and passes the latency record').toContain(
+      'latency: { rowsByView: latencyRowsByView, rankedView: DEFAULT_LATENCY_SOURCE }',
+    );
+    expect(runner, 'whose counts come from the route census').toMatch(
+      /const latencyRoutes = summarizeLatencyRoutes\(latencyRouteEntries\);/,
     );
   });
 });
@@ -432,5 +467,120 @@ describe('the rows the battery had never varied', () => {
         formatAblationConfigLine(ALL_OFF, { poolMetricPenaltyWeight: 0, stabilityWeight: 0 }),
       ),
     ).toEqual(['poolMetricPenaltyWeight', 'stabilityWeight']);
+  });
+
+  it('reports UNREPORTED without a record, and RANKED-VIEW-EMPTY with one — the defect as a red', () => {
+    // The state iteration 103 shipped: the census was handed the arrays and nothing else, so an empty latency
+    // channel read `UNREPORTED` on 90/90 cases while the `latency-routes` census four lines below printed
+    // `rows: shipped 0 | capped 0 | whole-file 1080`. A census may not state a limit its own artifact disproves.
+    const bare: ChannelEvidence = { present: true, rows: 0, columns: true, nonzero: 0 };
+    expect(readAbsenceLevel(0, bare)).toBe('NO-POINTS');
+    expect(readAbsenceLevel(0, undefined)).toBe('UNREPORTED');
+    // The same channel, with the three views its holder computes in one pass.
+    const withViews: ChannelEvidence = {
+      ...bare,
+      rowsByView: { shipped: 0, capped: 0, 'whole-file': 1080 },
+      rankedView: 'shipped',
+    };
+    expect(readAbsenceLevel(0, withViews)).toBe('RANKED-VIEW-EMPTY');
+    // The level is a claim ONLY about the ranked view: name the view that HOLDS the rows and the arm does not
+    // fire, because there is nothing left to explain — and with the count still zero the level falls through to
+    // the single-view arms, which is the count-wins invariant this function is built on.
+    expect(readAbsenceLevel(0, { ...withViews, rankedView: 'whole-file' })).toBe('NO-POINTS');
+    // A count that kept a reading still wins over any record — the ordering the function exists for.
+    expect(readAbsenceLevel(3, withViews)).toBe('READ');
+    // And a record with views but no ranked view cannot make the claim, so it falls through to the file arms.
+    expect(
+      readAbsenceLevel(0, { ...bare, rowsByView: { shipped: 0, capped: 0, 'whole-file': 1080 } }),
+    ).toBe('NO-POINTS');
+    // The union is ordered: the cross-view arm sits above the single-view ones it outranks.
+    expect(ABSENCE_LEVELS.indexOf('RANKED-VIEW-EMPTY')).toBeLessThan(
+      ABSENCE_LEVELS.indexOf('FILE-ABSENT'),
+    );
+  });
+
+  it('reads a record that counts ROWS and names no view — the log channel pinned before its wire', () => {
+    // `assembleRCAEvalCase` returns `logRowsRead` and the ablation loop DROPS it, so the log channel's
+    // `NO-POINTS` against `NO-KEPT-ROW` is undecidable today. The record carries the fix, and its semantics are
+    // pinned BEFORE the wire exists, because a wrong level is worse than none: writing this test is what found
+    // that `ALL-ZERO` — a statement about VALUES — would have been printed for a channel of ROWS, telling a
+    // reader the readings were all zero when the truth is that none survived.
+    const cases = [withChannels({ logs: 0 }), withChannels({ logs: 0 })];
+    const levelOf = (records: ChannelRecords): AbsenceRow | undefined =>
+      summarizeInputCoverage(cases, records).absence.find((a) => a.channel === 'logs');
+    // The file yielded 40 rows and retention kept none: the level names the RETENTION, not the readings.
+    expect(levelOf({ logs: { rowsRead: 40 } })).toEqual({
+      channel: 'logs',
+      level: 'NO-KEPT-ROW',
+      cases: 2,
+    });
+    // A record whose holder counted nothing is `NO-POINTS`: the artifact is there and holds no row at all.
+    expect(levelOf({ logs: {} })).toEqual({ channel: 'logs', level: 'NO-POINTS', cases: 2 });
+    // The VALUE channel with the same shape still reads `ALL-ZERO`, so the arm above is scoped to row channels
+    // rather than rewriting the level every channel already used.
+    expect(
+      summarizeInputCoverage([withChannels({ metrics: [0, 0] })], {
+        metrics: { rowsRead: 2 },
+      }).absence.find((a) => a.channel === 'metrics'),
+    ).toEqual({ channel: 'metrics', level: 'ALL-ZERO', cases: 1 });
+    // And a record never creates a reading: the count it explains is unchanged by it.
+    expect(summarizeInputCoverage(cases, { logs: { rowsRead: 40 } }).casesWithReadableLogs).toBe(0);
+  });
+
+  it('splits the STARVED line into UNMEASURABLE and MEASURABLE-ELSEWHERE, which is a reading', () => {
+    // RE2-OnlineBoutique's measured shape: metrics present, spans present, no span activity, no latency on the
+    // ranked view — and 1080 latency rows in the view that reads the whole file.
+    const cases = [
+      withChannels({ logs: 4, traces: 30, metrics: [1, 2] }),
+      withChannels({ logs: 4, traces: 30, metrics: [1, 2] }),
+    ];
+    const record = {
+      latency: {
+        rowsByView: { shipped: 0, capped: 0, 'whole-file': 1080 },
+        rankedView: 'shipped',
+      },
+    };
+    const withRecord = summarizeInputCoverage(cases, record);
+    const levels = withRecord.absence.filter((a) => a.channel === 'latency');
+    expect(levels.map((a) => [a.level, a.cases])).toEqual([['RANKED-VIEW-EMPTY', 2]]);
+    // The COUNT is unchanged by a record — a record explains an absence, it does not create a reading.
+    expect(channelCases(withRecord, 'latency')).toBe(0);
+    expect(withRecord.latencyEdges).toBe(0);
+    const lines = formatInputCoverage(withRecord, 'OnlineBoutique');
+    // The view counts ride on the same line as the channel they explain, ranked view marked.
+    expect(lines[0]).toContain('[capped 0 | shipped(ranked) 0 | whole-file 1080]');
+    // `latWeight` is NOT unmeasurable here: the input exists and the ranked derivation discards it.
+    expect(lines.some((l) => l.includes('MEASURABLE-ELSEWHERE terms: latWeight'))).toBe(true);
+    expect(lines.some((l) => l.includes('UNMEASURABLE terms') && l.includes('latWeight'))).toBe(
+      false,
+    );
+    // The trace terms ARE unmeasurable in this population — no span activity anywhere, so the same line says so.
+    expect(lines.some((l) => l.includes('UNMEASURABLE terms') && l.includes('traceWeight'))).toBe(
+      true,
+    );
+    // WITHOUT the record the same population reports the old, weaker statement — which is what makes the split
+    // attributable to the record rather than to the wording.
+    const without = formatInputCoverage(summarizeInputCoverage(cases), 'OnlineBoutique');
+    expect(without.some((l) => l.includes('MEASURABLE-ELSEWHERE'))).toBe(false);
+    expect(without.some((l) => l.includes('UNREPORTED on 2/2 cases'))).toBe(true);
+  });
+
+  it('reads a channel empty on EVERY view as unmeasurable, so the split is not a wording', () => {
+    // RE1's measured shape: no traces and no logs at all, so the whole-file view is empty too. The same code
+    // path must then say the term is unmeasurable rather than measurable-elsewhere.
+    const cases = [withChannels({ metrics: [1, 2] }), withChannels({ metrics: [1, 2] })];
+    const coverage = summarizeInputCoverage(cases, {
+      latency: { rowsByView: { shipped: 0, capped: 0, 'whole-file': 0 }, rankedView: 'shipped' },
+    });
+    const lines = formatInputCoverage(coverage, 'RE1');
+    expect(lines.some((l) => l.includes('MEASURABLE-ELSEWHERE'))).toBe(false);
+    const unmeasurable = lines.find((l) => l.includes('UNMEASURABLE terms'));
+    expect(unmeasurable).toBeDefined();
+    // All four signal terms, because RE1 ships metrics and nothing else BY THE DATASET's contract.
+    for (const term of ['logWeight', 'traceWeight', 'topoWeight', 'latWeight']) {
+      expect(unmeasurable).toContain(term);
+    }
+    // The view fragment is still printed — the counts are what let a reader see the views are all zero.
+    expect(lines[0]).toContain('[capped 0 | shipped(ranked) 0 | whole-file 0]');
   });
 });

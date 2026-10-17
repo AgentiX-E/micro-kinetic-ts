@@ -558,6 +558,33 @@ well-formed file.
 what lets the published artifact state *the corpus could supply this and the configuration declines to read it* —
 the sentence §7.9's next step needs, and one no system-level count can make.
 
+### 7.11 The artifact re-derived §7.5, and the cause is a defect rather than a reader's mistake
+
+**Iteration 104 read this run's ablation artifacts — the four latency-corpus rows of `38728053527` — and concluded
+it had found something: the channel moves RE3-OnlineBoutique 72.2 → 55.6 (−16.6 pp) and RE3-TrainTicket 3.6 → 17.1
+(+13.5 pp), with `LAT WHOLE FILE + LAT OFF` returning to baseline.** §7.5 records exactly that, from iteration 88,
+as **−16.7** and **+13.6**, with RE2's table beside it. The conclusion was not wrong; it was **already owned**, and
+the 0.1 pp is the rounding of the same two measurements.
+
+**The cause is nameable and it is this repository's own class.** The artifact carries the ROWS and their deltas
+(`LAT WHOLE FILE + NO FLOOR (latMinRise=1)   55.6%   46.1%   17.1%   ...   Δ-1.0%`) and carries **no reference to
+the document that interprets them**, so a reader who arrives at the artifact has the measurement and not its
+reading. The rows' own docblock in `run-ablation.ts` cites this document by section — *"the one
+`latency-channel-views.md` §7.4 named as owed"* — and **nothing the artifact PRINTS does**, which is the wrong way
+round: an artifact is where a reader arrives and a docblock is where they do not.
+
+**What is owed is therefore a pointer rather than another measurement**, and it is the law this iteration enrolled
+one document over: *the evidence of an absence must be supplied by whoever still holds it.* Here the thing held is
+the **interpretation**, and its holder is a document the artifact does not name. Recorded as the next step rather
+than repaired in this revision, because a citation added to a printed row changes what every consuming artifact says
+and belongs with a measurement of its own.
+
+**And the enrolment this section does record.** The input census now receives this document's route counts as its
+record (§8.10 of `benchmark-corpus-completeness.md`), so the two censuses can no longer disagree about one channel —
+and this document's §5 census keeps what remains uniquely its own: **the MECHANISM** (which of the three derivations
+died, and by which of the four causes), which no channel-level count can express.
+
+
 ## 8. Fences
 
 - `benchmarks/__tests__/corpus-owner.test.ts` — a real case directory, the real loader, the real owner: the
