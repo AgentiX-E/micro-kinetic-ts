@@ -605,6 +605,20 @@ export type AbsenceLevel =
    * either. Read off a CROSS-VIEW comparison, which is why it sits above the single-view arms.
    */
   | 'RANKED-VIEW-EMPTY'
+  /**
+   * Rows exist in another view but NONE of them is USABLE, so no derivation of this channel could measure it.
+   *
+   * The arm that earns this level is the one iteration 105's own artifact forced: real runs printed
+   * `UNFED ON THE RANKED VIEW ⇒ MEASURABLE-ELSEWHERE terms: latWeight` beside `rows: shipped 0 | capped 0 |
+   * whole-file 6781` and, ONE LINE LOWER, `comparable 1`. The view was not the obstacle — the corpus holds
+   * 6 781 latency rows and exactly one case whose cap lands on both sides of the injection anchor — so
+   * "the input exists in another view, therefore a 0.0 is a corpus change" was BACKWARDS: a 0.0 there IS the
+   * term's verdict, and the cause is the anchor rather than the derivation.
+   *
+   * Placed above `RANKED-VIEW-EMPTY` because it is the more specific statement: it needs the same row counts AND
+   * a usability count, and it says the cross-view comparison came out NEGATIVE.
+   */
+  | 'NO-COMPARABLE-PAIR'
   /** The producer's artifact for this channel is not in the case directory at all. */
   | 'FILE-ABSENT'
   /** The artifact is there and holds no data point. */
@@ -621,6 +635,7 @@ export type AbsenceLevel =
 /** The closed union, in the order a reader meets it: covered first, then the levels of absence. */
 export const ABSENCE_LEVELS: readonly AbsenceLevel[] = [
   'READ',
+  'NO-COMPARABLE-PAIR',
   'RANKED-VIEW-EMPTY',
   'FILE-ABSENT',
   'NO-POINTS',
@@ -664,6 +679,12 @@ export interface ChannelEvidence {
    * meaning it was written with.
    */
   readonly carriesValues?: boolean | undefined;
+  /**
+   * Cases the holder judged USABLE, when it counted them. `undefined` means it did not — and then the cross-view
+   * arm may not fire, because "rows exist elsewhere" and "some of them can be read" are different claims and only
+   * the second one makes the view the obstacle.
+   */
+  readonly usable?: number | undefined;
   /**
    * Rows each view of this channel holds, when the channel HAS views — supplied by the assembly, which computes
    * all of them in one pass.
@@ -711,7 +732,13 @@ export function readAbsenceLevel(
   const byView = evidence.rowsByView;
   if (ranked !== undefined && byView !== undefined && byView[ranked] === 0) {
     const best = Math.max(0, ...Object.values(byView));
-    if (best > 0) return 'RANKED-VIEW-EMPTY';
+    // **ROWS SOMEWHERE ELSE ARE NOT INPUT SOMEWHERE ELSE.** The comparison is a finding only when some of those
+    // rows is USABLE; a holder that kept rows but did not count usability has not made the comparison at all, and
+    // an arm that answered anyway is what printed `MEASURABLE-ELSEWHERE` beside `whole-file 6781 | comparable 1`.
+    if (best > 0) {
+      if (evidence.usable === undefined) return 'UNREPORTED';
+      return evidence.usable > 0 ? 'RANKED-VIEW-EMPTY' : 'NO-COMPARABLE-PAIR';
+    }
   }
   if (!evidence.present) return 'FILE-ABSENT';
   if (evidence.rows === 0) return 'NO-POINTS';
@@ -730,6 +757,14 @@ export interface AbsenceRow {
   readonly channel: SignalChannel;
   readonly level: AbsenceLevel;
   readonly cases: number;
+  /**
+   * Cases the HOLDER judged usable, when it counted them.
+   *
+   * Carried on the row because the level is computed from a POPULATION-level record while the row prints a
+   * per-case count: `RANKED-VIEW-EMPTY on 90/90 cases` with `usable: 1` is a different statement from the same
+   * line with `usable: 90`, and only the second one means the view is the obstacle for the whole population.
+   */
+  readonly usable?: number | undefined;
 }
 
 /** Per-population counts of the cases that carry each channel's input. */
@@ -827,6 +862,18 @@ export interface ChannelRecord {
   readonly rowsByView?: RowsByView | undefined;
   /** Which view the assembled cases carry. */
   readonly rankedView?: string | undefined;
+  /**
+   * Cases the holder judged USABLE — for the latency channel, the ones whose cap lands on both sides of the
+   * injection anchor, which is the only shape a before/after comparison can be read from.
+   *
+   * **Rows are not usability, and the gap is three orders of magnitude on a real corpus**: RE2-TrainTicket holds
+   * `whole-file 6781` latency rows with `comparable 1`. A cross-view comparison guarded on ROWS therefore calls a
+   * channel measurable on one case out of ninety.
+   *
+   * Omitted when the holder did not count it — and then the cross-view arm may not fire at all, because "rows
+   * exist elsewhere" without "and some are usable" supports neither answer.
+   */
+  readonly usable?: number | undefined;
 }
 
 /**
@@ -885,6 +932,7 @@ export function summarizeInputCoverage(
       // the flag is `false` rather than `channel === 'metrics'`, which would be a comparison no input can make
       // — a guard the coverage gate reports as dead code, and one that reads as if it protected something.
       carriesValues: false,
+      usable: rec.usable,
       rowsByView: ranked,
       rankedView: rec.rankedView,
     };
@@ -958,7 +1006,9 @@ export function summarizeInputCoverage(
     for (const level of ABSENCE_LEVELS) {
       if (level === 'READ') continue;
       const n = absenceCounts.get(`${channel}\u0000${level}`) ?? 0;
-      if (n > 0) absence.push({ channel, level, cases: n });
+      // The usability count rides with the row for the reason law 40 gives: it is the holder's, and no other
+      // party can reconstruct it.
+      if (n > 0) absence.push({ channel, level, cases: n, usable: records?.[channel]?.usable });
     }
   }
   return {
@@ -1080,10 +1130,29 @@ export function formatInputCoverage(coverage: InputCoverage, label: string): str
     const channel = TERM_CHANNELS[term]!;
     return coverage.absence.some((a) => a.channel === channel && a.level === 'RANKED-VIEW-EMPTY');
   };
-  const unmeasurable = starved.filter((t) => !rankedViewEmpty(t));
+  /**
+   * A term whose channel holds rows that CANNOT be paired across the anchor.
+   *
+   * Its own bucket rather than `unmeasurable`'s, because the sentence a reader needs is different: not "the input
+   * never arrived" but "the input arrived and this corpus cannot compare it", which points at the anchor window
+   * rather than at the term or at the view.
+   */
+  const noPair = (term: string): boolean => {
+    const channel = TERM_CHANNELS[term]!;
+    return coverage.absence.some((a) => a.channel === channel && a.level === 'NO-COMPARABLE-PAIR');
+  };
+  const unmeasurable = starved.filter((t) => !rankedViewEmpty(t) && !noPair(t));
   const unfed = starved.filter(rankedViewEmpty);
-  if (unmeasurable.length === 0 && unfed.length === 0) {
+  const unpaired = starved.filter(noPair);
+  if (unmeasurable.length === 0 && unfed.length === 0 && unpaired.length === 0) {
     lines.push(`  every ablated term has its input here — a 0.0 below is INERT, not starved`);
+  }
+  if (unpaired.length > 0) {
+    lines.push(
+      `  NO COMPARABLE PAIR ⇒ UNMEASURABLE terms: ${unpaired.join(', ')}` +
+        ` — rows exist and none is pairable across the anchor, so a 0.0 here IS the term's verdict and the cause` +
+        ` is the corpus window rather than the view`,
+    );
   }
   if (unmeasurable.length > 0) {
     lines.push(
@@ -1099,7 +1168,14 @@ export function formatInputCoverage(coverage: InputCoverage, label: string): str
     );
   }
   for (const row of coverage.absence) {
-    lines.push(`  absent[${row.channel}]: ${row.level} on ${row.cases}/${coverage.cases} cases`);
+    // `N usable` is printed only when the holder counted it and it is FEWER than the cases at this level: printing
+    // it unconditionally would repeat `on 90/90 cases (90 usable)`, and printing it when it is absent would be a
+    // zero nobody measured.
+    const usable =
+      row.usable !== undefined && row.usable < row.cases ? ` (${row.usable} usable)` : '';
+    lines.push(
+      `  absent[${row.channel}]: ${row.level} on ${row.cases}/${coverage.cases} cases${usable}`,
+    );
   }
   return lines;
 }

@@ -147,6 +147,19 @@ describe('the input census', () => {
         nonzero: 0,
         rowsByView: { shipped: 0, 'whole-file': 9 },
         rankedView: 'shipped',
+        usable: 9,
+      }),
+      // `NO-COMPARABLE-PAIR` — the same rows with NO usable case. Iteration 105 added this level because a real
+      // run printed `MEASURABLE-ELSEWHERE` beside `whole-file 6781 | comparable 1`, i.e. it called a channel
+      // measurable elsewhere on the strength of rows that cannot be paired across the injection anchor.
+      readAbsenceLevel(0, {
+        present: true,
+        rows: 0,
+        columns: true,
+        nonzero: 0,
+        rowsByView: { shipped: 0, 'whole-file': 9 },
+        rankedView: 'shipped',
+        usable: 0,
       }),
       readAbsenceLevel(0, { present: true, rows: 0, columns: true, nonzero: 0 }),
       columnAbsent,
@@ -168,8 +181,8 @@ describe('the input census', () => {
         case 'FILE-ABSENT':
           return { present: false, rows: 0, columns: false, nonzero: 0 };
         case 'RANKED-VIEW-EMPTY':
-          // Needs BOTH fields: a view count without knowing which view was used cannot make the claim, and the
-          // arm is guarded on both for that reason.
+          // Needs all THREE fields: a view count without knowing which view was used cannot make the claim, and
+          // rows elsewhere without a usable count cannot either — which is what iteration 105's artifact showed.
           return {
             present: true,
             rows: 0,
@@ -177,6 +190,17 @@ describe('the input census', () => {
             nonzero: 0,
             rowsByView: { shipped: 0, 'whole-file': 9 },
             rankedView: 'shipped',
+            usable: 9,
+          };
+        case 'NO-COMPARABLE-PAIR':
+          return {
+            present: true,
+            rows: 0,
+            columns: true,
+            nonzero: 0,
+            rowsByView: { shipped: 0, 'whole-file': 6781 },
+            rankedView: 'shipped',
+            usable: 0,
           };
         case 'NO-POINTS':
           return { present: true, rows: 0, columns: true, nonzero: 0 };
@@ -391,14 +415,25 @@ describe('the input census', () => {
     expect(runner, 'and counts it').toContain('if (traceUsed) casesWithSpans++;');
     // The override is still the assertion's subject, and iteration 104 changed the call it sits in: the census
     // now also RECEIVES the latency record the assembly computed, so the string grew while the property did not.
+    // The bound is 900 rather than 200 because the record passed here carries a comment block that explains the
+    // three fields — the PROPERTY is unchanged (the census takes the cases, and `casesWithSpans` still overrides
+    // the retained-array count after it), and widening the window is what keeps the assertion about the property.
     expect(runner, 'and overrides the retained-array count with it').toMatch(
-      /coverage: \{\s*\.\.\.summarizeInputCoverage\(cases, \{[\s\S]{0,200}?\}\),\s*casesWithSpans,\s*\}/,
+      /coverage: \{\s*\.\.\.summarizeInputCoverage\(cases, \{[\s\S]{0,900}?\}\),\s*casesWithSpans,\s*\}/,
     );
     // And the record it passes is the latency route census's own row counts, so the two instruments that
     // describe one channel cannot disagree — the contradiction this iteration repaired.
-    expect(runner, 'and passes the latency record').toContain(
-      'latency: { rowsByView: latencyRowsByView, rankedView: DEFAULT_LATENCY_SOURCE }',
-    );
+    // Asserted as three FACTS rather than as one adjacency: the record carries the rows, the view it ranked on,
+    // and the usability count. A window over the source (which this assertion used to be) has to grow every time
+    // somebody comments the record, and a bound that tracks the formatting is a bound that fails on a comment —
+    // the property is that each field is passed, not that they are 200 characters apart.
+    for (const field of [
+      'rowsByView: latencyRowsByView',
+      'rankedView: DEFAULT_LATENCY_SOURCE',
+      'usable: latencyRoutes.casesCapComparable',
+    ]) {
+      expect(runner, `the latency record must carry ${field}`).toContain(field);
+    }
     expect(runner, 'whose counts come from the route census').toMatch(
       /const latencyRoutes = summarizeLatencyRoutes\(latencyRouteEntries\);/,
     );
@@ -482,18 +517,28 @@ describe('the rows the battery had never varied', () => {
       rowsByView: { shipped: 0, capped: 0, 'whole-file': 1080 },
       rankedView: 'shipped',
     };
-    expect(readAbsenceLevel(0, withViews)).toBe('RANKED-VIEW-EMPTY');
+    // Rows elsewhere are not INPUT elsewhere: with no usability count the comparison has not been made, and the
+    // arm may not answer. This is the assertion iteration 105's own artifact earned — see the next block.
+    expect(readAbsenceLevel(0, withViews)).toBe('UNREPORTED');
+    expect(readAbsenceLevel(0, { ...withViews, usable: 0 })).toBe('NO-COMPARABLE-PAIR');
+    expect(readAbsenceLevel(0, { ...withViews, usable: 1080 })).toBe('RANKED-VIEW-EMPTY');
     // The level is a claim ONLY about the ranked view: name the view that HOLDS the rows and the arm does not
     // fire, because there is nothing left to explain — and with the count still zero the level falls through to
     // the single-view arms, which is the count-wins invariant this function is built on.
-    expect(readAbsenceLevel(0, { ...withViews, rankedView: 'whole-file' })).toBe('NO-POINTS');
+    expect(readAbsenceLevel(0, { ...withViews, usable: 9, rankedView: 'whole-file' })).toBe(
+      'NO-POINTS',
+    );
     // A count that kept a reading still wins over any record — the ordering the function exists for.
     expect(readAbsenceLevel(3, withViews)).toBe('READ');
     // And a record with views but no ranked view cannot make the claim, so it falls through to the file arms.
     expect(
       readAbsenceLevel(0, { ...bare, rowsByView: { shipped: 0, capped: 0, 'whole-file': 1080 } }),
     ).toBe('NO-POINTS');
-    // The union is ordered: the cross-view arm sits above the single-view ones it outranks.
+    // The union is ordered: the cross-view arms sit above the single-view ones they outrank, and the MORE
+    // specific of the two — rows exist and none is usable — sits above the one that blames the view.
+    expect(ABSENCE_LEVELS.indexOf('NO-COMPARABLE-PAIR')).toBeLessThan(
+      ABSENCE_LEVELS.indexOf('RANKED-VIEW-EMPTY'),
+    );
     expect(ABSENCE_LEVELS.indexOf('RANKED-VIEW-EMPTY')).toBeLessThan(
       ABSENCE_LEVELS.indexOf('FILE-ABSENT'),
     );
@@ -538,6 +583,7 @@ describe('the rows the battery had never varied', () => {
       latency: {
         rowsByView: { shipped: 0, capped: 0, 'whole-file': 1080 },
         rankedView: 'shipped',
+        usable: 90,
       },
     };
     const withRecord = summarizeInputCoverage(cases, record);
@@ -557,6 +603,39 @@ describe('the rows the battery had never varied', () => {
     // The trace terms ARE unmeasurable in this population — no span activity anywhere, so the same line says so.
     expect(lines.some((l) => l.includes('UNMEASURABLE terms') && l.includes('traceWeight'))).toBe(
       true,
+    );
+    // **And the third bucket, which a real run earned.** The same rows with ZERO usable cases is not
+    // "measurable elsewhere": the corpus holds the rows and none of them can be paired across the anchor, so a
+    // 0.0 there IS the term's verdict. Iteration 105's artifact printed `MEASURABLE-ELSEWHERE` beside
+    // `whole-file 6781 | comparable 1`, and this is the assertion that would have caught it.
+    const unpaired = summarizeInputCoverage(cases, { latency: { ...record.latency, usable: 0 } });
+    expect(
+      unpaired.absence.filter((a) => a.channel === 'latency').map((a) => [a.level, a.cases]),
+    ).toEqual([['NO-COMPARABLE-PAIR', 2]]);
+    const unpairedLines = formatInputCoverage(unpaired, 'OnlineBoutique');
+    expect(
+      unpairedLines.some((l) => l.includes('NO COMPARABLE PAIR') && l.includes('latWeight')),
+    ).toBe(true);
+    expect(unpairedLines.some((l) => l.includes('MEASURABLE-ELSEWHERE'))).toBe(false);
+    // Two claims about one channel may not both be made: the pair bucket and the STARVED bucket are exclusive.
+    // Asserted against the BUCKET'S OWN PREFIX, because the pair line also reads `… ⇒ UNMEASURABLE terms: latWeight`
+    // and a bare `includes('UNMEASURABLE terms')` is satisfied by it — the register's law 21 arriving in this
+    // assertion the first time it was written.
+    expect(
+      unpairedLines.some((l) => l.startsWith('  STARVED channels') && l.includes('latWeight')),
+    ).toBe(false);
+    // And the row carries the USABILITY count, because the level is computed from a population-level record while
+    // the row prints a per-case count: `(1 usable)` under `on 2/2 cases` is the RE2-TrainTicket shape — one case the
+    // view really does discard, eighty-nine it could not have read either way.
+    expect(
+      formatInputCoverage(
+        summarizeInputCoverage(cases, { latency: { ...record.latency, usable: 1 } }),
+        'TrainTicket',
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('RANKED-VIEW-EMPTY on 2/2 cases (1 usable)'),
+      ]),
     );
     // WITHOUT the record the same population reports the old, weaker statement — which is what makes the split
     // attributable to the record rather than to the wording.

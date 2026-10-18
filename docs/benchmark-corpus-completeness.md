@@ -680,3 +680,59 @@ counts rows and names no view:
 | `{ metrics: { rowsRead: 2 } }` on an all-zero case | `ALL-ZERO` | the value channel with the SAME shape, so the arm is scoped rather than rewritten |
 | any record | the count is unchanged | a record explains an absence; it never creates a reading |
 
+### 8.12 The label said "measurable elsewhere" and the next line said `comparable 1`
+
+**Iteration 104's cross-view arm was graded on ROWS, and a real run graded it down.** `benchmark-rcaeval.yml` run
+`39029064203` (revision `67dad7b`, all ten jobs green) printed, for `latWeight`:
+
+```
+UNFED ON THE RANKED VIEW ⇒ MEASURABLE-ELSEWHERE terms: latWeight — the input exists in another view, so a 0.0
+here is NOT the term's verdict and the move is a corpus change
+latency-routes[...]: ... comparable 1 | rows: shipped 0 | capped 0 | whole-file 6781
+```
+
+**One screen, two lines, opposite claims.** The first says the input exists and the zero is therefore not the term's
+verdict. The second says **one case out of ninety** has a cap landing on both sides of the injection anchor — the only
+shape a before/after comparison can be read from — while 6 781 latency rows sit in the whole-file view. **Rows are not
+usability**, and on this corpus they differ by three orders of magnitude.
+
+**That is the defect §8.10 fixed, reproduced by §8.10's own repair**: a census may not state a claim its own
+artifact disproves. It was found by reading the artifact a green run produced, not by reading the code.
+
+**The nine cells, measured** (`whole-file` rows / `comparable` cases, and the level iteration 104 printed):
+
+| cell | whole-file | comparable | printed then | prints now |
+| --- | ---: | ---: | --- | --- |
+| RE1-OnlineBoutique / SockShop / TrainTicket | 0 | 0 | `NO-POINTS` | `NO-POINTS` |
+| RE2-OnlineBoutique | 1080 | **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR` |
+| RE2-SockShop | 0 | 0 | `NO-POINTS` | `NO-POINTS` |
+| RE2-TrainTicket | 6781 | **1** | `MEASURABLE-ELSEWHERE` | `RANKED-VIEW-EMPTY on 90/90 cases (1 usable)` — one case IS usable, so the view really does discard it |
+| RE3-OnlineBoutique | 356 | **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR` |
+| RE3-SockShop | 0 | 0 | `NO-POINTS` | `NO-POINTS` |
+| RE3-TrainTicket | 2006 | **0** | `MEASURABLE-ELSEWHERE` | `NO-COMPARABLE-PAIR` |
+
+**And it corrects a sentence of iteration 103's own acceptance.** That record said `latWeight` "has never been
+measurable anywhere in this instrument, on any suite", on the strength of the STARVED list. **RE2-TrainTicket has one
+case whose cap lands on both sides**, so the honest statement is **measurable on at most one of this corpus's 735
+cases** — not zero, and not "elsewhere" either.
+
+**The repair is a usability count and a level.**
+
+- `ChannelRecord.usable` — cases the holder judged usable, which the route census already computes as
+  `casesCapComparable`. Omitted ⇒ **the cross-view arm may not fire at all**, because "rows exist elsewhere" without
+  "and some of them can be read" supports neither answer; the level then falls back to `UNREPORTED`, which is the
+  truthful statement about a holder that kept rows and never counted usability.
+- `NO-COMPARABLE-PAIR` — unanticipated rows exist and none is usable. Placed **above** `RANKED-VIEW-EMPTY` in the
+  union, because it is the more specific claim (it needs the same counts *and* a usability count) and it reports that
+  the cross-view comparison came out **negative**.
+- The STARVED line gains a **third** bucket, `NO COMPARABLE PAIR ⇒ UNMEASURABLE terms`, because the sentence a reader
+  needs is neither "the input never arrived" nor "the view discarded it" but **"the input arrived and this corpus
+  cannot compare it"**, which points at the anchor window.
+- The level ROW carries the usability count, printed as `(N usable)` when it is fewer than the cases at that level.
+  Without it the artifact said `RANKED-VIEW-EMPTY on 90/90 cases` about a population where **one** case was usable —
+  the same over-statement one layer up, and the last place the label could still outrun the measurement.
+
+**What it does not change, and the fence asserts it directly.** `channelCases` and `latencyEdges` are untouched by
+either level: a record explains an ABSENCE, and the levels disagree about the reason rather than about the count. No
+cell of §8.8 moved, no row of §7.5's interaction moved, and the FSE'26 number is untouched.
+

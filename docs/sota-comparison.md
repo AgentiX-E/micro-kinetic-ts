@@ -534,7 +534,7 @@ Two cohorts must be reported separately, because they are measured on different 
 | RCLAgent (Qwen-3.6-Plus) | 56.67% | LLM multi-agent recursion-of-thought | arXiv:2605.14866 |
 | RCLAgent (Claude-3.5-Sonnet) | 52.31% | LLM multi-agent recursion-of-thought | arXiv:2605.14866 |
 | GALA | 42.22% (45.59% R@1) | LLM agentic ReAct | arXiv:2508.12472 |
-| mABC | 39.98% | LLM multi-agent | arXiv:2404.12135 |
+| mABC | 39.98% **— NOT OUR POPULATION, and not the paper's own figure** | LLM multi-agent | arXiv:2404.12135 |
 | RCAgent | 25.32% **— NOT OUR POPULATION, and not the paper's own figure** | LLM ReAct + tools | arXiv:2310.16340 |
 | OpenRCA | ~15% | LLM | ICLR'25 |
 
@@ -625,7 +625,7 @@ is the same territory as our Phase III agentic work rather than a term to add.
 
 **Headline (defensible):** On RCAEval overall Top-1, Micro-Kinetic (**78.8%**) leads the published field — ahead of
 the benchmark author's own PRISM (**68%**) by ~11 pp (**~1.16×**), and ahead of every LLM agent by 20–40 pp
-(RCLAgent 56.67% RE2-OB, GALA 42%, mABC 40%). It is also **orders of magnitude cheaper and faster** than the LLM
+(RCLAgent 56.67% RE2-OB, GALA 42% — and `mABC`'s `40%`, which is **another group's re-measurement on AIOPS-2022 rather than that paper's own figure**, since its metric is RA/PA with a four-root-cause cap; see §2b and `docs/sota-populations.md`). It is also **orders of magnitude cheaper and faster** than the LLM
 cohort (deterministic, sub-second, zero API cost vs LLM agents at seconds-to-hours). Against the **same harness**,
 however, we are level with PRISM rather than ahead — see gap 1.
 

@@ -1267,7 +1267,15 @@ async function main(): Promise<void> {
       caseDirMap,
       coverage: {
         ...summarizeInputCoverage(cases, {
-          latency: { rowsByView: latencyRowsByView, rankedView: DEFAULT_LATENCY_SOURCE },
+          latency: {
+            rowsByView: latencyRowsByView,
+            rankedView: DEFAULT_LATENCY_SOURCE,
+            // **Rows the route census counted, and the cases it judged USABLE — two numbers, because on this very
+            // corpus they differ by three orders of magnitude** (RE2-TrainTicket: `whole-file 6781`, `comparable 1`).
+            // Without the second, the census called the channel measurable elsewhere on the strength of rows that
+            // cannot be paired across the anchor.
+            usable: latencyRoutes.casesCapComparable,
+          },
         }),
         casesWithSpans,
       },

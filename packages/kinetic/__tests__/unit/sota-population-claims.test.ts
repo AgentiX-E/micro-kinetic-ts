@@ -210,7 +210,13 @@ describe('a verdict about a population is a reading, never a restatement', () =>
       .map((row) => row.tokens[0]!);
     expect(offenders).toEqual([]);
     // …and the rule is not vacuous: the inventory holds rows of this kind today.
-    expect(rows.filter((row) => row.verdict === 'UNVERIFIED').length).toBeGreaterThanOrEqual(3);
+    //
+    // **The floor is 2 and not 3, and that is the point.** It read 3, which was the count on the day it was
+    // written — so resolving a row made the FENCE fail, and a floor that tracks the current size turns progress
+    // into a red. Two is the smallest number for which the rule is not vacuous (one row is a sample of one), and
+    // it is a floor rather than a target: the count may fall to it, and the day it would fall BELOW is the day
+    // the inventory stopped holding rows of this kind at all, which is what this assertion is for.
+    expect(rows.filter((row) => row.verdict === 'UNVERIFIED').length).toBeGreaterThanOrEqual(2);
   });
 
   it('requires an OURS verdict to rest on an external reading, not on our own document', () => {
