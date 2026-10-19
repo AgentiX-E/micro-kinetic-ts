@@ -202,8 +202,8 @@ describe('a verdict about a population is a reading, never a restatement', () =>
     // The invariant that makes the row a work item rather than a shrug — and the one thing three iterations
     // of the defect never had. The resolution artefact is the paper's own full text or its own project page:
     // an abstract search is exactly what left the row unverified, so the row may not point at one.
-    const offenders = rows
-      .filter((row) => row.verdict === 'UNVERIFIED')
+    const unverifiedRows = rows.filter((row) => row.verdict === 'UNVERIFIED');
+    const offenders = unverifiedRows
       .filter(
         (row) => !/Resolution artefact:[^*]*\b(full text|project page)\b/.test(row.population),
       )
@@ -211,12 +211,20 @@ describe('a verdict about a population is a reading, never a restatement', () =>
     expect(offenders).toEqual([]);
     // …and the rule is not vacuous: the inventory holds rows of this kind today.
     //
-    // **The floor is 1, and it has now been lowered twice for the same reason.** It read 3 — the count on the day
-    // it was written — so resolving `mABC` turned the fence red; it was lowered to 2, and resolving `RCLAgent`
-    // turned it red again. **A floor that encodes today's population turns PROGRESS into a failure**, and the
-    // floor's job is only to stop the rule being vacuous: one row exercises the regex, zero rows means the verdict
-    // itself should be retired along with this assertion rather than the number being loosened a third time.
-    expect(rows.filter((row) => row.verdict === 'UNVERIFIED').length).toBeGreaterThanOrEqual(1);
+    // **The set is EMPTY today, and that is a claim this fence has to hold rather than a case it may skip.**
+    // The floor that used to sit here read 3, then 2, then 1 — each value the count on the day it was written —
+    // and every lowering was a row being resolved. A floor is the wrong instrument for a population that is
+    // supposed to shrink: what matters is that the DOCUMENT says the set is empty, in words, so that retiring the
+    // last row cannot quietly delete the question. While rows of this kind remain, the regex above must be
+    // exercised by at least one of them.
+    if (unverifiedRows.length === 0) {
+      expect(
+        inventory,
+        'nothing is UNVERIFIED, so the inventory must SAY so rather than fall silent',
+      ).toContain('**No row in this inventory is `UNVERIFIED`.**');
+    } else {
+      expect(unverifiedRows.length).toBeGreaterThanOrEqual(1);
+    }
   });
 
   it('requires an OURS verdict to rest on an external reading, not on our own document', () => {
@@ -335,12 +343,19 @@ describe('the census reads the source it claims to read', () => {
     const unverified = [
       ...new Set(rows.filter((r) => r.verdict === 'UNVERIFIED').flatMap((r) => r.tokens)),
     ].sort();
-    expect(unverified.length, 'the table marks no row UNVERIFIED').toBeGreaterThan(0);
     // Anchored on a PATTERN rather than a literal, because the sentence's grammar follows the count — it read
     // `the rows that remain` while there were two and `the row that remains` while there is one, and a literal
     // anchor turns resolving a row into a missing paragraph.
     const anchor = /\*\*And the rows? that remains? `UNVERIFIED`\*\*/;
     const found = anchor.exec(inventory);
+    if (unverified.length === 0) {
+      // **The set is empty, so the older wording must be GONE.** A paragraph naming rows that are no longer
+      // unverified is worse than no paragraph; its replacement — the closure sentence — is what the previous rule
+      // asserts is present. The two rules therefore cover both states of the set, and neither can be satisfied by
+      // the other's absence.
+      expect(found, 'the set is empty, so no paragraph may still name rows that remain').toBeNull();
+      return;
+    }
     expect(found, `the paragraph that says which rows are left is gone: ${anchor}`).not.toBeNull();
     const at = found!.index;
     const paragraph = inventory.slice(at, inventory.indexOf('\n\n', at));

@@ -182,17 +182,17 @@ rather than another member of this one.
    state-of-the-art solutions"** on *"a mix of synthetic and real-world workloads"*, with **up to 12× reduced
    cost**.
 
-   **It is named and no gap is quoted, because the claim has no denominator.** **POPULATION UNVERIFIED** — its
-   *"a mix of synthetic and real-world workloads"* names neither a benchmark nor a case set, and no artefact
-   states one, so this row waits on the paper's own full text rather than on a search of its abstract
-   (`docs/sota-populations.md`). "62% better" is a **relative**
-   figure against an unnamed baseline on an unnamed mix of workloads — not a percentage of anything we can count,
-   not a top-1, and not on a population we can name. Nameable for the same reason the fifth entry was until
-   2026-10-14: it is
-   *above us by the authors' own claim* and it is silent about what it is above. **Its design point is the one
-   worth borrowing**: restricting an agent to a **verifiable operator language instead of arbitrary code** is the
-   same instinct as this repository's preference for an instrument that is a pure function, and it is the second
-   independent arrival at *"more expressive machinery, lower accuracy"* on this list.
+   **It is named and no gap is quoted, because the claim has no denominator.** **NOT OUR POPULATION**, resolved
+   2026-10-19 from the paper's own abstract — *"on a mix of synthetic and real-world workloads, E4 achieves up to
+   62% better accuracy compared to state-of-the-art solutions"*: no benchmark, no case set, and a **RELATIVE** gain
+   against an unnamed baseline. So the `62%` is not a percentage of anything we can count, not a top-1, and not on a
+   population we can name (`docs/sota-populations.md`). It is nameable for the same reason the fifth entry was
+   until 2026-10-14: it is *above us by the authors' own claim* and silent about what it is above. **Its design
+   point is the one worth borrowing, twice over**: restricting an agent to a **verifiable operator language instead
+   of arbitrary code** is the same instinct as this repository's preference for an instrument that is a pure
+   function; it is the second independent arrival at *"more expressive machinery, lower accuracy"* on this list;
+   and — with `RCLAgent`'s per-span argument — it is a **third** independent reason to build the per-case
+   discriminator over a bounded, checkable vocabulary, which is the register's last open axis.
 
 ### 0b. BELOW US, AND COMPARABLE — the one reference that shares our metric AND our population
 

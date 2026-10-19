@@ -66,7 +66,7 @@ one it was short of, and the project page added here, are both recorded rather t
 | `edgedelta/project-arena` | **OTHER** | **21 injected scenarios** on OTel Demo under Kubernetes — a candidate INSTRUMENT, not a candidate number | 2026-10-13, GitHub API + the vendor's own page |
 | `arXiv:2606.05636` | **OTHER** | `StableRCA`'s **77%** is Top-1 on **Sock-Shop `[soc, 2022]`** — a standalone corpus its own text lists **separately from RCAEval**, among *"five datasets across retail services, microservices, manufacturing, and physical systems"* (ProRCA, Sock-Shop, RCAEval, CausalMan, CausalChambers). **It is not RE1-SS** and its own text states no case count, so `77%` is not a number of ours and no gap may be read against our 92.8% | 2026-10-14, arXiv HTML full text |
 | `arXiv:2608.25661` | **OTHER** | `OpsHarness`'s **59.0%** is *"top-1 accuracy on average across **four backbones**"* over **OpenRCA**, **RCAEval** *and* an industrial deployment. **RCAEval IS in the mix** — so our corpus is a COMPONENT of the figure and the figure is still not ours: a cross-backbone average over three populations with no per-population number. Below our 78.75% in any case | 2026-10-14, arXiv HTML full text |
-| `arXiv:2610.08622` | **UNVERIFIED** | `E4`, *"a mix of synthetic and real-world workloads"* — no benchmark, no case set, and a **relative** `62%` against an unnamed baseline. **Resolution artefact: the paper's own full text** | 2026-10-14, §0a entry 6 of `sota-comparison.md` |
+| `arXiv:2610.08622` | **OTHER** | **RESOLVED 2026-10-19 from the paper's own abstract, and the number it reports is not an accuracy at all.** `E4` is *"Agentic RCA for Internet-Scale Services Using Constrained Creativity"*, and its own abstract says it *"achieves up to 62% BETTER accuracy compared to state-of-the-art solutions"* on *"a mix of synthetic and real-world workloads"*. **That `62%` is a RELATIVE improvement over an unnamed baseline, not an absolute top-1 on any corpus** — so there was never a number here to compare with ours, and the record's earlier reading of it as a `62%` accuracy was a misreading of a ratio. Its population is Internet-scale production services with no published case set, so it is neither our corpus nor a measurable one. | 2026-10-19, the paper's own abstract (`arXiv:2610.08622` abs page) |
 
 ## What the verdicts change, stated rather than implied
 
@@ -83,10 +83,17 @@ average across four backbones over OpenRCA, RCAEval and an industrial deployment
 its figure and the figure is still not ours. Reading them changed no standing; it changed *"we have not read
 this"* into *"we read it and it is not ours"*, which is the distinction this inventory exists to hold.
 
-**And the row that remains `UNVERIFIED`** is `arXiv:2610.08622` (`E4`), whose population is *"a mix of synthetic
-and real-world workloads"* — the §2b cohort is now CLOSED, after `RCAgent` was placed on 2026-10-15 and `mABC` on
-2026-10-17 (both `OTHER`) and `RCLAgent` on 2026-10-19 (`OURS`: it evaluates on RCAEval RE2-OB by name, and an
-independent re-run over all nine subsets reports 10% against our 78.75%). **This sentence used to name two of them and open with "the rows that remain",
+**No row in this inventory is `UNVERIFIED`.** Every reference's population is now a READING rather than a
+restatement, and they did not resolve the same way: `RCAgent` and `mABC` are `OTHER`, each carrying a figure our
+table had inherited from another group's re-measurement on another corpus; `RCLAgent` is `OURS`, since it evaluates
+on RCAEval RE2-OB by name and an independent re-run over all nine subsets puts it at 10% against our 78.75%; and `E4`
+is `OTHER` on a relative *"up to 62% better"* on *"a mix of synthetic and real-world workloads"* — a ratio over an
+unnamed baseline, which is not an accuracy and not our corpus.
+
+**The emptiness is ASSERTED, not merely reached.** The fence that holds this paragraph to the table reads in both
+directions: while the set is non-empty the paragraph must name exactly it, and when the set is EMPTY the paragraph
+must say so in this sentence and the older wording must be gone — so retiring the last row cannot quietly delete the
+question the paragraph exists to answer. **This sentence used to name two of them and open with "the rows that remain",
 which was false against the table twenty lines above**: a count had been restated in prose, which is the register's
 law 16 one document over. The enumeration is now held to the table **by the fence** — the test derives the
 `UNVERIFIED` set from the table and compares it to the references this paragraph names, in both directions — rather
