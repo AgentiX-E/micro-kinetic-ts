@@ -64,6 +64,7 @@ export default defineConfig({
         'src/fse26-diagnose-analyze.ts',
         'src/fse26-term-oracle.ts',
         'src/fse26-discriminator.ts',
+        'src/fse26-formulation.ts',
         // Added with the module: the separator screen is the register's own precondition
         // ("show it separates, on a free read") turned into code.
         'src/fse26-separator.ts',

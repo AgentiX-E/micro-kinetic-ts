@@ -41,6 +41,7 @@ import {
   formatDiscriminatorReport,
   termPreservingMenu,
 } from './fse26-discriminator.js';
+import { formatFormulationReport, formulationScreens } from './fse26-formulation.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
   formatSeparatorCensus,
@@ -8155,7 +8156,12 @@ function analyzeSectionText(
         discriminatorScreen(caseOutcomes(cases, options, termPreservingMenu(options))),
         'term-preserving reweightings',
       );
-      return `${shipped}\n\n${bounded}`;
+      // **The formula axis, printed where the chooser question is answered**, because it is the answer to what the
+      // two screens above leave: both work by picking a configuration, and the measurement says the populations do
+      // not want a different CONFIGURATION — they want a different BLEND. This arm changes HOW the terms combine
+      // (within-case rank instead of raw magnitude), applies it to every case, and fits nothing.
+      const formulation = formatFormulationReport(formulationScreens(cases, options));
+      return `${shipped}\n\n${bounded}\n\n${formulation}`;
     }
     case 'cvScreen': {
       // The same configuration object as the family and onset screens, because it is the same

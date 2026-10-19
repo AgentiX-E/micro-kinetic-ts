@@ -218,6 +218,58 @@ npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
 # "Discriminator screen [term-preserving reweightings] ... ANY configuration gets 802"
 ```
 
+## 10. The formula axis, first measurement: the SCALE is not the missing blend (iteration 110)
+
+Section 9 left one question and named it: if the populations want different BLENDS rather than different
+configurations, what has to change? The cheapest answer to test is the **scale** each term is read on, because
+"these two populations want different weights" is a statement about magnitude — a log score of 3 is decisive in one
+case and unremarkable in another, and a latency slope's scale varies by system, so a fixed weight is a compromise
+between two scales rather than a statement about either.
+
+**So four formulations were measured, each a single rule applied to every case with nothing fitted** (a formula is
+judged once, over the whole corpus — there is no fold to hold out). Every form keeps every term and every weight;
+what changes is which terms are read by their **within-case rank** instead of their value:
+
+| form | base | log | latency | correct /1422 | net | fixed / broken |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| shipped (reference) | magnitude | value | slope | **756** | — | — |
+| `all ranks` | rank | rank | rank | 499 | **−257** | 36 / 293 |
+| `base magnitude` | **magnitude** | rank | rank | 520 | **−236** | 32 / 268 |
+| `log rank only` | magnitude | **rank** | slope | 509 | **−247** | 36 / 283 |
+| `latency rank only` | magnitude | value | **rank** | 743 | **−13** | 1 / 14 |
+
+**None is a candidate, and the pattern is the finding.**
+
+1. **The base term's magnitude IS the evidence.** Replacing `log1p(selfAnomaly)` with its rank costs 236–257 cases.
+   `log1p` already tames the growth; what it preserves — how many times the noise scale a service departs by — is
+   exactly what the anomaly term is for. A rank throws that away and keeps only "who is first", which the blend
+   then cannot distinguish from "who is barely first".
+2. **The log term is the same story, and worse per unit of change**: `log rank only` alone costs 247. Its magnitude
+   encodes how much evidence a service's log lines carry, and a rank keeps only the ordering.
+3. **The latency term is the one that nearly survives a rank reading** — −13 with **1 fixed and 14 broken**. That is
+   the only form within 2% of the shipped number, and it is informative in the opposite direction from the
+   hypothesis: the latency term's magnitude carries almost nothing the ranking does not already carry, so
+   **rescaling it cannot be the lever** either. Its 14 losses are not a scale artefact; they are the term's own
+   ordering disagreeing with the blend's.
+
+**Conclusion: the conflict is not in the SCALE of any term.** Four changes of scale — the whole family the
+"different blends" hypothesis most naturally suggests — are all net negative, three of them catastrophically. **The
+missing blend must come from a different COMPOSITION** (a term, an operator, or a gate on the signals that exist),
+not from re-reading the three terms on another scale.
+
+**And one number from section 4 is now doubly confirmed**: `lat only` (which sets `logWeight = 0`) reaches 119 cases
+the shipped blend misses, while `latency rank only` (same term, rank scale, log term KEPT) reaches **one**. The
+headroom genuinely lives in the log term's ABSENCE for those cases, which is why every term-preserving change has
+failed to touch it in either direction.
+
+**Reproduce**
+
+```bash
+npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
+  --dump artifacts/r34928980425/fse26-results.txt --log-weight 1 --discriminator
+# prints the four-point screen, then [term-preserving reweightings], then the formulation table
+```
+
 ## 8. Reproduce
 
 ```bash
