@@ -68,7 +68,7 @@ Held-out results, 5 folds, at the shipped configuration:
 
 | config | fixes / breaks if applied to every case | held-out net | held-out split | rule chosen on every fold |
 | --- | --- | --- | --- | --- |
-| `lat only` | 119 / 462 | **+13** | **25 / 11** | `predictedIsTop >= 1` |
+| `lat only` | 119 / 462 | **+13** | **25 / 12** | `predictedIsTop >= 1` |
 | `log only` | 2 / 88 | 0 | 0 / 0 | none |
 | `metric only` | 58 / 590 | −2 | — | `poolCoverage >= 0.3137` on one fold |
 
@@ -89,7 +89,7 @@ serves the fixable cases also destroys four times as many".
 
 ## 5. Why it cannot ship
 
-1. **The second half of the criterion fails outright.** 11 held-out losses are 11 regressed
+1. **The second half of the criterion fails outright.** 12 held-out losses are 12 regressed
    cases; the criterion is zero regressed fault types, and no threshold on any declared
    feature removes them — the feature moves the net, not the wall. Every one of the eight
    features was searched per fold, so this is "no declared feature separates them", not "the
@@ -116,7 +116,39 @@ bar: a per-case discriminator must
 A proposal that cannot state its held-out split against these numbers has not engaged the
 measurement, exactly as the register demands of any candidate.
 
-## 7. Reproduce
+## 7. Re-taken 2026-10-19 (iteration 108) — the shipped row's split was the pre-pool's
+
+**The shipped row above read `25 / 11` and could not have been right, because the same row says `+13`.** The
+held-out net IS `fixed − broken`, so `25 / 11` is a net of `+14`; the row's own arithmetic disproves its own split.
+Two runs of the reproduce command below, 2026-10-19, both print
+
+```
+lat only         119     462     13      25/12          13   predictedIsTop >= 1.0000
+best held-out: lat only net +13 (fixed 25, broken 12) → 769/1422
+```
+
+at the shipped configuration, and at the pre-pool one
+
+```
+lat only         119     469     14      25/11          14   predictedIsTop >= 1.0000
+best held-out: lat only net +14 (fixed 25, broken 11) → 764/1422
+```
+
+**So `25 / 11` is the PRE-POOL measurement and `25 / 12` is the shipped one**, and the §4 table — whose every
+other column on that row is shipped-configuration data (`119 / 462` is the shipped fix/break) — had one cell
+carried over from the neighbouring measurement. The correction is one case, and it moves §5's load-bearing count.
+
+**Why it drifted:** the instrument was revised twice after this verdict was written (`16c7cfa`, `79923eb`), and the
+verdict's numbers were never re-taken. That is the same class as every other defect this record keeps finding — a
+claim whose truth moves with the code, written down as a constant — arriving in the one document that states the
+BAR for the axis. The net (+13 / +14) and the ceilings (756 / 878, 750 / 871) are reproducible and unchanged.
+
+**And the arithmetic is now a fence**: `benchmarks/__tests__/fse26-discriminator-verdict.test.ts` parses every row
+of the §4 table and asserts `net == held-out fixed − held-out broken`, so a row that mixes two measurements fails a
+test instead of waiting for a reader to add the numbers up. It asserts the INVARIANT rather than today's values, so
+re-taking a measurement never breaks it.
+
+## 8. Reproduce
 
 ```bash
 # the validation: the census's own 750 and 871, from the discriminator's instrument

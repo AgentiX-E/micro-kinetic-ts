@@ -943,12 +943,19 @@ but the per-case discriminator below.
 
 **The per-case discriminator is measured too** (`fse26-discriminator-verdict.md`): about 11%
 of its 122-case headroom is learnable from one inference-time feature, and the rule that
-learns it trades 25 wins for 11 losses out of sample, so it fails the criterion's second half
+learns it trades 25 wins for **12** losses out of sample — the `11` in circulation was the PRE-POOL split, re-taken
+in iteration 108 on the instrument it belongs to — so it fails the criterion's second half
 outright and its mechanism (removing a term per case) would move the first half's golden. The
 lever stays open as EVIDENCE with a stated bar — **+14 held out, zero held-out losses, and no
 term removed** — and closed as a shippable change. What is genuinely left is therefore not a
 weight, a family or a chooser among these four configurations: it is a signal that does not
 exist in the dump yet.
+
+**And the bar's own arithmetic is now a fence** (iteration 108): the verdict's shipped row carried `+13` beside a
+`25 / 11` split, which is a net of `+14` — the row disproved itself by one, in the document that fixes what a
+candidate must clear. `benchmarks/__tests__/fse26-discriminator-verdict.test.ts` parses every row and asserts
+`net == held-out fixed − held-out broken`, so a row mixing two measurements fails a test rather than waiting for a
+reader to add it up; it asserts the INVARIANT, so a re-taken measurement never breaks it.
 
 **That signal has now been measured, and it resolved into three rows.** The engine computes
 an injection-anchored onset delay per service (`postInjectOnsetDelays`), and the dump
