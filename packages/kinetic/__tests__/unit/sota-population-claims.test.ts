@@ -211,12 +211,12 @@ describe('a verdict about a population is a reading, never a restatement', () =>
     expect(offenders).toEqual([]);
     // …and the rule is not vacuous: the inventory holds rows of this kind today.
     //
-    // **The floor is 2 and not 3, and that is the point.** It read 3, which was the count on the day it was
-    // written — so resolving a row made the FENCE fail, and a floor that tracks the current size turns progress
-    // into a red. Two is the smallest number for which the rule is not vacuous (one row is a sample of one), and
-    // it is a floor rather than a target: the count may fall to it, and the day it would fall BELOW is the day
-    // the inventory stopped holding rows of this kind at all, which is what this assertion is for.
-    expect(rows.filter((row) => row.verdict === 'UNVERIFIED').length).toBeGreaterThanOrEqual(2);
+    // **The floor is 1, and it has now been lowered twice for the same reason.** It read 3 — the count on the day
+    // it was written — so resolving `mABC` turned the fence red; it was lowered to 2, and resolving `RCLAgent`
+    // turned it red again. **A floor that encodes today's population turns PROGRESS into a failure**, and the
+    // floor's job is only to stop the rule being vacuous: one row exercises the regex, zero rows means the verdict
+    // itself should be retired along with this assertion rather than the number being loosened a third time.
+    expect(rows.filter((row) => row.verdict === 'UNVERIFIED').length).toBeGreaterThanOrEqual(1);
   });
 
   it('requires an OURS verdict to rest on an external reading, not on our own document', () => {
@@ -336,9 +336,13 @@ describe('the census reads the source it claims to read', () => {
       ...new Set(rows.filter((r) => r.verdict === 'UNVERIFIED').flatMap((r) => r.tokens)),
     ].sort();
     expect(unverified.length, 'the table marks no row UNVERIFIED').toBeGreaterThan(0);
-    const anchor = '**And the rows that remain `UNVERIFIED`**';
-    const at = inventory.indexOf(anchor);
-    expect(at, `the paragraph that says which rows are left is gone: ${anchor}`).toBeGreaterThan(0);
+    // Anchored on a PATTERN rather than a literal, because the sentence's grammar follows the count — it read
+    // `the rows that remain` while there were two and `the row that remains` while there is one, and a literal
+    // anchor turns resolving a row into a missing paragraph.
+    const anchor = /\*\*And the rows? that remains? `UNVERIFIED`\*\*/;
+    const found = anchor.exec(inventory);
+    expect(found, `the paragraph that says which rows are left is gone: ${anchor}`).not.toBeNull();
+    const at = found!.index;
     const paragraph = inventory.slice(at, inventory.indexOf('\n\n', at));
     expect(paragraph.length, 'the paragraph is empty').toBeGreaterThan(0);
     expect(artefactTokens(paragraph).sort()).toEqual(unverified);

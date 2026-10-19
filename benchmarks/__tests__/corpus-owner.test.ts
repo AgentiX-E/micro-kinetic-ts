@@ -284,6 +284,36 @@ describe('the corpus owner, on a real case directory', () => {
     // …and the pre-filter count survives, because a diagnostic that said "N cases with logs" from the
     // retained array would be reporting a different fact about the corpus.
     expect(assembled.logRowsRead).toBe(5);
+    // **And the count is now ON THE CASE, which is where the input census reads it.** `logRowsRead` was returned
+    // in the result and the ablation loop destructured four fields and dropped it, so the census printed
+    // `UNREPORTED` over 69 of RE2-OnlineBoutique's 90 cases while this number was in hand. See §8.13.
+    expect(assembled.benchCase.logsReadRows).toBe(5);
+  });
+
+  it('does NOT put a read count on a case that has no log payload', async () => {
+    // The load-bearing half of the same change, and it is asserted BEHAVIOURALLY rather than by reading the
+    // writer's source: a mutation that moved `logsReadRows: logRowsRead` outside the payload branch **survived**
+    // a source-window assertion, because a regex that finds the writer within 600 characters of the guard finds
+    // it in the wrong branch just as happily. This test fails on that mutation and the source assertion could
+    // not.
+    //
+    // The distinction it protects: `logsReadRows: 0` on a payload-less case would tell the census the artefact
+    // was READ and held nothing, when the truth is that nothing records WHY there is no payload — absent file
+    // and failed parse have different owners.
+    const dir = createCaseDir(tempDir, 'rcaeval-re2_b_cpu_2', {
+      metrics: METRICS,
+      injectTime: ANCHOR_S,
+    });
+    const assembled = await assemble(dir, {
+      suite: 'RE2',
+      suiteName: 'rcaeval-re2',
+      augmentFromTraces: false,
+      traceActivity: false,
+      latencyFrom: 'shipped',
+    });
+    expect(assembled.benchCase.logs).toBeUndefined();
+    expect(assembled.benchCase.logsReadRows).toBeUndefined();
+    expect(assembled.logRowsRead).toBe(0);
   });
 
   it('is a SAFE filter, because every consumer rejects non-error rows before reading anything', () => {

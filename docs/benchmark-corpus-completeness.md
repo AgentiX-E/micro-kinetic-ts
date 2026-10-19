@@ -736,3 +736,48 @@ cases** — not zero, and not "elsewhere" either.
 either level: a record explains an ABSENCE, and the levels disagree about the reason rather than about the count. No
 cell of §8.8 moved, no row of §7.5's interaction moved, and the FSE'26 number is untouched.
 
+### 8.13 The last `UNREPORTED` — and it was a granularity error, not a missing measurement
+
+**Every run since §8.10 has printed, on RE2-OnlineBoutique, two facts on adjacent lines that a reader cannot
+reconcile:**
+
+```
+input-coverage[OnlineBoutique]: 90 cases | ... | logs 21/90 readable (9228 entries) | ...
+  absent[logs]: UNREPORTED on 69/90 cases
+```
+
+The first line says **21 of 90 cases kept a readable log row**, so the other **69 kept none** — and the second line
+says the census does not know why. **It knew**: `assembleRCAEvalCase` measures `logRowsRead` before its retention
+filter and returns it in its result, and the ablation loop destructured four fields and never took that one.
+
+**The evidence was not missing. Its granularity was.** A population-level record cannot answer this question,
+because the question is *which* case held rows: `logs: []` reads identically whether the file was empty or every row
+was filtered out. §8.10's record is one number per channel per population and that is exactly the wrong shape here,
+so the fix is not another field on `ChannelRecord` — it is **the count on the case it describes**.
+
+**`BenchmarkCase.logsReadRows`** now carries it, written by the assembly **inside the branch that has a payload**:
+
+| the case | the level | why |
+| --- | --- | --- |
+| `logs: []`, `logsReadRows: 40` | `NO-KEPT-ROW` | the file held rows and the severity derivation kept none |
+| `logs: []`, `logsReadRows: 0` | `NO-POINTS` | the file was read and held nothing |
+| `logs: undefined`, no `logsReadRows` | `UNREPORTED` | the loader produced no payload; **why** is recorded nowhere, and absent-file and failed-parse are different owners |
+
+**That third row is the load-bearing one.** A writer that attached `logsReadRows: 0` to a case with no payload would
+convert "the reason is unrecorded" into "the file was read and was empty" — a claim nobody made. The branch is why
+the fence asserts the writer's position, not only its presence.
+
+**And the level is per case**, so one population may hold all three at once: the test constructs a two-case corpus
+whose log channel reads `NO-KEPT-ROW` on one and `NO-POINTS` on the other, and a three-case corpus that reads one of
+each. A population-level level could not have said any of it.
+
+**One refinement of law 40 falls out of this and is worth stating.** The law says the evidence of an absence must be
+supplied by whoever still holds it. This iteration adds the missing half: **at the granularity the absence occurs
+at**. The assembly held the count and still could not serve the census, because it handed over a per-case fact and
+the census reads per-case.
+
+**And one cosmetic defect from §8.12's own output is closed here.** `(N usable)` was printed on every level, so six
+of nine cells read `NO-POINTS ... (0 usable)` — inviting a reader to conclude usability had been measured and
+failed, when nothing had arrived to measure. The count is now scoped to the two **cross-view** levels, which are the
+only ones whose claim is about usability.
+

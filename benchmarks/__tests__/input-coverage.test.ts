@@ -51,6 +51,13 @@ const read = (rel: string): string => readFileSync(resolve(HERE, '..', rel), 'ut
 /** A case with exactly the channels a test wants it to have. */
 const withChannels = (spec: {
   logs?: number;
+  /**
+   * Rows the case's log artefact held BEFORE retention, when the test wants the case to say so.
+   *
+   * Omitted is the loader-produced-no-payload case, which the census must read as `UNREPORTED` — the reason is
+   * recorded nowhere.
+   */
+  logsRead?: number;
   traces?: number;
   spanActivity?: number;
   failed?: number;
@@ -72,6 +79,7 @@ const withChannels = (spec: {
     n ? Array.from({ length: n }, () => ({})) : undefined;
   return {
     logs: entries(spec.logs),
+    logsReadRows: spec.logsRead,
     traces: entries(spec.traces),
     traceActivity: spec.spanActivity ? new Map([['svc', {}]]) : undefined,
     failedTraceEdges: entries(spec.failed),
@@ -400,6 +408,22 @@ describe('the input census', () => {
     expect(runner, 'the unreadable token is gone').not.toContain('UNKNOWN-CHANNEL');
   });
 
+  it('puts the pre-retention log count ON THE CASE, so the census can tell the two zeros apart', () => {
+    // `assembleRCAEvalCase` measured `logRowsRead` and returned it in its result; the ablation loop destructured
+    // four fields and dropped this one. It is now written onto the case it describes, which is where the census
+    // reads it — the holder is one level down and this is the assertion that keeps it there.
+    const source = read('src/rcaeval-corpus.ts');
+    expect(source, 'the assembly writes the count onto the case').toContain(
+      'logsReadRows: logRowsRead,',
+    );
+    // **The position is NOT asserted here, and that is a decision with a red behind it.** A regex that finds the
+    // writer within N characters of the guard finds it in the WRONG branch just as happily: the mutation that
+    // moved `logsReadRows` onto the payload-less branch **survived** exactly such an assertion. The position is
+    // therefore held by `corpus-owner.test.ts` → *"does NOT put a read count on a case that has no log payload"*,
+    // which drives the real assembly over a real directory and fails on that mutation (`expected +0 to be
+    // undefined`). A fence that cannot be made red is not a fence.
+  });
+
   it('counts spans from the ASSEMBLY, not from what the case retains', () => {
     // The census's own worst defect, found by reading its first output: it reported `spans 0/30` on RE3 — a
     // corpus whose graph WAS augmented from traces — and declared `topoWeight` unmeasurable there, because the
@@ -572,6 +596,38 @@ describe('the rows the battery had never varied', () => {
     expect(summarizeInputCoverage(cases, { logs: { rowsRead: 40 } }).casesWithReadableLogs).toBe(0);
   });
 
+  it('reads the log channel from the CASE, because a population count cannot say which case held rows', () => {
+    // `logs: []` reads identically whether the file was empty or every row was filtered out, so the census printed
+    // `UNREPORTED` on 69 of RE2-OnlineBoutique's 90 cases while the assembly had measured `logRowsRead` and put it
+    // in a result field the loop dropped. The evidence is now ON THE CASE, and this pins the three states.
+    const levels = (cases: ReadonlyArray<Parameters<typeof summarizeInputCoverage>[0][number]>) =>
+      summarizeInputCoverage(cases)
+        .absence.filter((a) => a.channel === 'logs')
+        .map((a) => [a.level, a.cases]);
+    // The file held forty rows and retention kept none: the level names the RETENTION.
+    expect(levels([withChannels({ logs: 0, logsRead: 40 })])).toEqual([['NO-KEPT-ROW', 1]]);
+    // The file held nothing at all: `NO-POINTS`, which is a different owner and a different fix.
+    expect(levels([withChannels({ logs: 0, logsRead: 0 })])).toEqual([['NO-POINTS', 1]]);
+    // And a case whose loader produced no payload at all stays `UNREPORTED`, because the reason is recorded nowhere.
+    expect(levels([withChannels({ logs: 0 })])).toEqual([['UNREPORTED', 1]]);
+    // A POPULATION is allowed to hold all three at once, which is the point of the level being per case.
+    expect(
+      levels([
+        withChannels({ logs: 0, logsRead: 40 }),
+        withChannels({ logs: 0, logsRead: 0 }),
+        withChannels({ logs: 0 }),
+      ]),
+    ).toEqual([
+      ['NO-POINTS', 1],
+      ['NO-KEPT-ROW', 1],
+      ['UNREPORTED', 1],
+    ]);
+    // The readable count is untouched by any of it: a level explains an absence and never invents a reading.
+    expect(
+      summarizeInputCoverage([withChannels({ logs: 3, logsRead: 40 })]).casesWithReadableLogs,
+    ).toBe(1);
+  });
+
   it('splits the STARVED line into UNMEASURABLE and MEASURABLE-ELSEWHERE, which is a reading', () => {
     // RE2-OnlineBoutique's measured shape: metrics present, spans present, no span activity, no latency on the
     // ranked view — and 1080 latency rows in the view that reads the whole file.
@@ -637,6 +693,21 @@ describe('the rows the battery had never varied', () => {
         expect.stringContaining('RANKED-VIEW-EMPTY on 2/2 cases (1 usable)'),
       ]),
     );
+    // **And it is NOT printed where the level is not about usability.** `NO-POINTS ... (0 usable)` is the artifact
+    // iteration 105's benchmark printed on six of nine cells, telling a reader that usability had been measured and
+    // failed when nothing had arrived to measure. The count is scoped to the two cross-view levels for that reason.
+    const nothingArrived = formatInputCoverage(
+      summarizeInputCoverage(cases, {
+        latency: {
+          rowsByView: { shipped: 0, capped: 0, 'whole-file': 0 },
+          rankedView: 'shipped',
+          usable: 0,
+        },
+      }),
+      'SockShop',
+    );
+    expect(nothingArrived.some((l) => l.includes('NO-POINTS'))).toBe(true);
+    expect(nothingArrived.some((l) => l.includes('usable'))).toBe(false);
     // WITHOUT the record the same population reports the old, weaker statement — which is what makes the split
     // attributable to the record rather than to the wording.
     const without = formatInputCoverage(summarizeInputCoverage(cases), 'OnlineBoutique');

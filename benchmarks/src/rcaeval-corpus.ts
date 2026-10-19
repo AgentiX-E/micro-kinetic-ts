@@ -444,6 +444,10 @@ export async function assembleRCAEvalCase(
         : {
             ...benchCase,
             logs: benchCase.logs.filter((l) => l.level === 'ERROR' || l.level === 'FATAL'),
+            // **The count this function already measured, put on the case instead of only in its result.** It was
+            // returned as `logRowsRead` and the ablation loop dropped it, so the census could not tell a file that
+            // held nothing from one whose rows were all filtered out. Law 40's holder is right here.
+            logsReadRows: logRowsRead,
           },
     callGraph: graph,
     traceUsed,

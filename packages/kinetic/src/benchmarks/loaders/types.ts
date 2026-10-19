@@ -70,6 +70,18 @@ export interface BenchmarkCase {
   readonly groundTruth: BenchmarkGroundTruth;
   /** Optional log entries (RE2, RE3, AIOps2025). */
   readonly logs?: ReadonlyArray<BenchmarkLogEntry>;
+  /**
+   * Rows this case's log artefact yielded **before** the assembly's retention filter.
+   *
+   * Carried because the assembly measured it and then discarded it, and it is the ONLY evidence separating
+   * "the file held nothing" from "the file held rows and none survived": `logs: []` alone reads the same for
+   * both, which is why the input census printed `UNREPORTED` over 69 of RE2-OnlineBoutique's 90 cases while
+   * its own reader had the answer in hand.
+   *
+   * Absent when the loader produced no log payload at all — a third statement, whose REASON (absent file or a
+   * parse that failed) nothing records, so the census may not guess it.
+   */
+  readonly logsReadRows?: number;
   /** Optional trace spans (RE2, RE3, AIOps2025). */
   readonly traces?: ReadonlyArray<BenchmarkTraceSpan>;
   /** Optional per-service pre/post span counts (trace-activity rise signal). */

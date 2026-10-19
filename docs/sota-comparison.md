@@ -538,17 +538,21 @@ Two cohorts must be reported separately, because they are measured on different 
 | RCAgent | 25.32% **— NOT OUR POPULATION, and not the paper's own figure** | LLM ReAct + tools | arXiv:2310.16340 |
 | OpenRCA | ~15% | LLM | ICLR'25 |
 
-> **Three of the rows above carry a population this table ASSERTS and our record never read** — `RCLAgent`,
-> `mABC` is `UNVERIFIED` in `docs/sota-populations.md`, the document that now owns this question, and `RCAgent`
-> is `OTHER` as of 2026-10-15: its own full text evaluates **161 Flink jobs from Alibaba Cloud's internal platform**
-> and reports **semantic scores (METEOR / BLEURT / EmbScore), no top-1 percentage at all**, so the `25.32%` above is
-> not its figure — and its inputs are unavailable.
-> The heading's *"where all LLM agents report"* is this table's own claim, and for those three an independent
-> 2026 baseline table places `RCAgent` and `mABC` on **AIOPS-2022 and a private production dataset** instead —
-> so the figure here is either a re-measurement by another group on our population or a different corpus, and the
-> two must not be confused. `GALA`'s row *is* read: its own text evidences the 90-case RE2-OB population. **No
+> **The rows above whose populations this table ASSERTED and our record had never read are now all read, and they
+> did not resolve the same way.** `RCAgent` is `OTHER` (2026-10-15): its own full text evaluates **161 Flink jobs from
+> Alibaba Cloud's internal platform** and reports **semantic scores (METEOR / BLEURT / EmbScore), no top-1 percentage
+> at all**, so the `25.32%` above is not its figure — and its inputs are unavailable. `mABC` is `OTHER` (2026-10-17)
+> for the same shape: a **curated 900-alert TrainTicket** plus the 2020 AIOps Challenge, scored on **RA/PA with a
+> four-root-cause cap**, so the `39.98%` here is another group's re-measurement.
+> **`RCLAgent` is `OURS`** (2026-10-19) and this one resolves in our favour: its own full text and its own project
+> page both name **RCAEval RE2-OB** among its datasets, so the `56.67%` is on the population we report on and the
+> `+30.0pp` beside it is like-for-like rather than cross-corpus — with the qualification that its own headline
+> metrics are `MRR / R@1 / R@3 / R@5 / R@10` (69.73 / 73.24% MRR on AIOPS-2022 for two backbones), and that an
+> independent 2026 leaderboard re-running it over **all nine subsets** reports `10%` top-1 against PRISM's `68%`.
+> `GALA`'s row *is* read: its own text evidences the 90-case RE2-OB population. **No
 > number in this table changes**; what changes is that a reader can now tell which of them rest on a reading and
-> which on our own heading.
+> which on our own heading — and that the heading's *"where all LLM agents report"* is now a claim every row of it
+> can support on a reading.
 
 ### 2b-ii. GALA+ (ASE'26) — a reference we had CITATION-only, and the first published number on RE2-TrainTicket
 

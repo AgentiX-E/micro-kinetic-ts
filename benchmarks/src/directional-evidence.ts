@@ -903,6 +903,8 @@ export type ChannelRecords = Partial<Record<SignalChannel, ChannelRecord>>;
 export function summarizeInputCoverage(
   cases: ReadonlyArray<{
     readonly logs?: ReadonlyArray<unknown> | undefined;
+    /** Rows the case's log artefact held before retention, when the assembly recorded it (see `BenchmarkCase`). */
+    readonly logsReadRows?: number | undefined;
     readonly traces?: ReadonlyArray<unknown> | undefined;
     readonly traceActivity?: ReadonlyMap<string, unknown> | undefined;
     readonly failedTraceEdges?: ReadonlyArray<unknown> | undefined;
@@ -990,7 +992,17 @@ export function summarizeInputCoverage(
     // assumed to be absent**: with one, an empty array becomes a named level (`RANKED-VIEW-EMPTY` when another
     // view holds rows, `NO-POINTS` when none does); without one it stays `UNREPORTED`, which is "the reason is
     // not recorded" and is a different statement from "the file is absent".
-    bump('logs', readAbsenceLevel(logs > 0 ? 1 : 0, evidenceFor('logs', logEntries)));
+    // **The log channel's evidence is the CASE's own pre-retention count when it carries one**, and the population
+    // record only otherwise. That order is the whole point of the holder being one level down: a population count
+    // cannot tell which case held rows, and `logs: []` reads identically whether the file was empty or every row
+    // was filtered out. On RE2-OnlineBoutique the difference is 69 of 90 cases reading `UNREPORTED` when the answer
+    // was `NO-KEPT-ROW` all along.
+    const logRead = c.logsReadRows;
+    const logsEvidence: ChannelEvidence | undefined =
+      logRead === undefined
+        ? evidenceFor('logs', logEntries)
+        : { present: true, rows: logRead, columns: true, nonzero: logs, carriesValues: false };
+    bump('logs', readAbsenceLevel(logs > 0 ? 1 : 0, logsEvidence));
     bump('spans', readAbsenceLevel(traces > 0 ? 1 : 0, evidenceFor('spans', casesWithSpans)));
     bump(
       'spanActivity',
@@ -1171,8 +1183,15 @@ export function formatInputCoverage(coverage: InputCoverage, label: string): str
     // `N usable` is printed only when the holder counted it and it is FEWER than the cases at this level: printing
     // it unconditionally would repeat `on 90/90 cases (90 usable)`, and printing it when it is absent would be a
     // zero nobody measured.
+    // Printed only for the two CROSS-VIEW levels, because those are the only ones whose claim is about usability.
+    // On `NO-POINTS` an empty artifact makes the count uninformative, and `NO-POINTS ... (0 usable)` invites a
+    // reader to think usability was measured and failed when nothing arrived to measure. The benchmark run of
+    // iteration 105 printed exactly that on six of the nine cells.
+    const crossView = row.level === 'RANKED-VIEW-EMPTY' || row.level === 'NO-COMPARABLE-PAIR';
     const usable =
-      row.usable !== undefined && row.usable < row.cases ? ` (${row.usable} usable)` : '';
+      crossView && row.usable !== undefined && row.usable < row.cases
+        ? ` (${row.usable} usable)`
+        : '';
     lines.push(
       `  absent[${row.channel}]: ${row.level} on ${row.cases}/${coverage.cases} cases${usable}`,
     );
