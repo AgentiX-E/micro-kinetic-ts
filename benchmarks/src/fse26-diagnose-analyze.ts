@@ -39,6 +39,7 @@ import {
   caseOutcomes,
   discriminatorScreen,
   formatDiscriminatorReport,
+  termPreservingMenu,
 } from './fse26-discriminator.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
@@ -8143,7 +8144,18 @@ function analyzeSectionText(
         temporalWeight: section.temporalWeight,
         onsetShape: section.onsetShape,
       };
-      return formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
+      const shipped = formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
+      // **The second screen, and the reason it is not a second flag.** The four-point menu above has exactly one
+      // term-preserving member — `shipped` — and it is the baseline, so every alternative that menu offers wins by
+      // REMOVING a term. The bar in `fse26-discriminator-verdict.md` §6 demands a mechanism that does not, so the
+      // only shape left untested was a menu of bounded reweightings that keep every term. It is printed beside the
+      // recorded screen because the two are one question over two menus, and the ceiling moves with the menu: a
+      // reader who greps `ANY configuration gets` must be able to tell which menu produced the number.
+      const bounded = formatDiscriminatorReport(
+        discriminatorScreen(caseOutcomes(cases, options, termPreservingMenu(options))),
+        'term-preserving reweightings',
+      );
+      return `${shipped}\n\n${bounded}`;
     }
     case 'cvScreen': {
       // The same configuration object as the family and onset screens, because it is the same

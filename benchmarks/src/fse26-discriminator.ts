@@ -58,6 +58,51 @@ export function discriminatorConfigs(opts: TermOracleOptions): readonly Discrimi
 }
 
 /**
+ * The configurations that KEEP every term, by scaling one weight instead of zeroing it.
+ *
+ * **Why this exists.** The four-point menu above contains exactly one configuration that preserves all terms —
+ * `shipped` — and it IS the baseline, so a rule choosing from that menu can only ever help by REMOVING a term
+ * (`lat only` zeroes `logWeight`). That is the structural reason §6 of `fse26-discriminator-verdict.md` could not
+ * be cleared: the bar demands a mechanism that does not remove a term, and the menu offered none above the
+ * baseline. The bar was not unreachable because of the features; it was unreachable because of the MENU.
+ *
+ * Each probe here multiplies one weight by a bounded factor, so no term is removed and the formula stays the
+ * shipped one with a different emphasis. **The property is enforced, not promised**: a probe whose scaling would
+ * leave a weight at zero is dropped, because a "term-preserving" configuration with a zero weight is exactly the
+ * thing the name denies.
+ *
+ * @param opts - The shipped configuration the probes are variants of.
+ * @returns The probes, possibly empty when the shipped weights make them degenerate.
+ */
+export function boundedReweightConfigs(opts: TermOracleOptions): readonly DiscriminatorConfig[] {
+  const probes: DiscriminatorConfig[] = [
+    { name: 'lat x2', logWeight: opts.logWeight, latWeight: opts.latWeight * 2 },
+    { name: 'lat x4', logWeight: opts.logWeight, latWeight: opts.latWeight * 4 },
+    { name: 'log x0.5', logWeight: opts.logWeight * 0.5, latWeight: opts.latWeight },
+    { name: 'log x2', logWeight: opts.logWeight * 2, latWeight: opts.latWeight },
+  ];
+  // A weight of zero is a REMOVED term whatever the configuration is called, so a degenerate probe is not a probe.
+  return probes.filter((probe) => probe.logWeight > 0 && probe.latWeight > 0);
+}
+
+/**
+ * The menu the term-preserving screen hands {@link caseOutcomes}: the baseline plus every live probe.
+ *
+ * The baseline must be the FIRST member and must carry the name `shipped`, because {@link discriminatorScreen}
+ * scores every other member against a configuration of that name — a menu without it has no baseline to be better
+ * than, and the screen would report a net against nothing.
+ *
+ * @param opts - The shipped configuration.
+ * @returns `[shipped, ...probes]`.
+ */
+export function termPreservingMenu(opts: TermOracleOptions): readonly DiscriminatorConfig[] {
+  return [
+    { name: 'shipped', logWeight: opts.logWeight, latWeight: opts.latWeight },
+    ...boundedReweightConfigs(opts),
+  ];
+}
+
+/**
  * A feature a rule may threshold, with the reason it is available at inference time.
  */
 export interface DiscriminatorFeature {
@@ -514,10 +559,22 @@ export function discriminatorScreen(
   };
 }
 
-/** Render the discriminator screen. */
-export function formatDiscriminatorReport(screen: DiscriminatorScreen): string {
+/**
+ * Render the discriminator screen.
+ *
+ * @param screen - The screen to render.
+ * @param label - Names the MENU, when a run screens more than the shipped one. Omitted, the heading is what every
+ *   artifact already carries — a second block in the same output is otherwise indistinguishable from the first by
+ *   anybody grepping the artifact, which is how a reader would mistake the term-preserving ceiling for the
+ *   four-point one.
+ */
+export function formatDiscriminatorReport(screen: DiscriminatorScreen, label?: string): string {
   const lines: string[] = [];
-  lines.push('Discriminator screen (can a feature pick the configuration per case?):');
+  lines.push(
+    label === undefined
+      ? 'Discriminator screen (can a feature pick the configuration per case?):'
+      : `Discriminator screen [${label}] (can a feature pick the configuration per case?):`,
+  );
   lines.push(
     `  cases ${screen.cases}; shipped gets ${screen.baselineCorrect}; ` +
       `ANY configuration gets ${screen.oracleCeiling} (the oracle)`,

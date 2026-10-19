@@ -148,6 +148,76 @@ of the §4 table and asserts `net == held-out fixed − held-out broken`, so a r
 test instead of waiting for a reader to add the numbers up. It asserts the INVARIANT rather than today's values, so
 re-taking a measurement never breaks it.
 
+## 9. The menu was the obstacle, and it is now measured (iteration 109)
+
+**The bar in §6 has a clause nobody had tested: "a mechanism that does not remove a term".** The four-point menu
+cannot satisfy it — `lat only` zeroes `logWeight`, `log only` zeroes `latWeight`, `metric only` zeroes both — so its
+ONLY term-preserving member is `shipped`, which IS the baseline. **A rule choosing from that menu can therefore only
+ever help by removing a term.** The bar was not unreachable because of the features; it was unreachable because of
+the MENU.
+
+**So the menu now has a second screen.** `--discriminator` prints two blocks: the recorded four-point screen, whose
+numbers are unchanged, and a **term-preserving** one whose configurations scale a weight instead of zeroing it
+(`lat x2`, `lat x4`, `log x0.5`, `log x2`, all with both weights positive). The constructor FILTERS rather than
+promises: a probe whose scaling would leave a weight at zero is not offered, and when the shipped formula already
+has a zero weight the probe menu is **empty**.
+
+### The measurement, on the same dump and the same folds
+
+```
+Discriminator screen [term-preserving reweightings]
+  cases 1422; shipped gets 756; ANY configuration gets 802 (the oracle)
+  config          fixed  broken  held-out        in-sample   rule
+                                  net    +/-
+  lat x2            17     234     -2        0/2           1   poolCoverage >= 0.2157
+  lat x4            34     251     -2        0/2           1   metricTopGap >= 0.0500
+  log x0.5          21     234     -3        0/3           0   none
+  log x2             6      11     -5        1/6           3   latCoverage <= 0.5294
+  no rule beats the baseline out of sample
+```
+
+**Every term-preserving reweighting is net NEGATIVE**, and **none** comes close to the bar's `+14`. Two losses,
+two losses, three, six — against 0, 0, 0 and 1 fixes. **The clause was not merely unmet by a small margin; the
+direction is wrong.**
+
+### And that is the sharpest statement this axis has produced
+
+| menu | ceiling | headroom over the 756 baseline |
+| --- | ---: | ---: |
+| four-point (`lat only` / `log only` / `metric only` / `shipped`) | **878** | **122** |
+| term-preserving reweightings | **802** | **46** |
+
+**The 122-case headroom is reachable only by removing a term.** A menu that keeps every term can reach at most 46
+of it — **38% of the prize** — and no declared feature converts even that at a positive net.
+
+**Therefore the conflict is not a DECISION problem.** If a per-case chooser had been the answer, the term-preserving
+menu would have shown a positive net somewhere: a bounded reweighting steers the same formula without deleting
+anything, which is exactly the "steer, do not switch" shape the bar asked for, and it loses on every fold for every
+probe. **What remains is a FORMULA problem**: the shipped blend itself has to change so that ONE formula serves both
+populations, because the two populations do not want different configurations of the same blend — they want
+different blends, and no per-case rule can supply a blend the menu does not contain.
+
+**That is a different axis, and it is the one the register should now carry.** The evidence for it is the same table:
+the ceiling moves with the menu (878 → 802), so the headroom is a property of the FORMULATIONS considered, not of the
+chooser.
+
+### What this does not change
+
+- **Every recorded number is unchanged.** The four-point screen still prints 756 / 878 and `+13` with `25 / 12`; the
+  second screen is additive and labelled, so a reader grepping `ANY configuration gets` can tell which menu produced
+  the number.
+- **The oracle is still 122 cases away from a perfect chooser over the four-point menu.** This iteration does not
+  move any cell of the nine, any ablation row, or the FSE'26 aggregate.
+
+### Reproduce the second screen
+
+```bash
+npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
+  --dump artifacts/r34928980425/fse26-results.txt --log-weight 1 --discriminator
+# prints the four-point screen, then
+# "Discriminator screen [term-preserving reweightings] ... ANY configuration gets 802"
+```
+
 ## 8. Reproduce
 
 ```bash

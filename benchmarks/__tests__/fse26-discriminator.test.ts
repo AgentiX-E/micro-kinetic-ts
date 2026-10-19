@@ -20,6 +20,7 @@ import { parseDiagnosticDump } from '../src/fse26-diagnose-analyze.js';
 import type { CaseOutcome } from '../src/fse26-discriminator.js';
 import {
   DISCRIMINATOR_FEATURES,
+  boundedReweightConfigs,
   caseOutcomes,
   configDeltas,
   discriminatorConfigs,
@@ -28,6 +29,7 @@ import {
   fitStump,
   foldOf,
   formatDiscriminatorReport,
+  termPreservingMenu,
 } from '../src/fse26-discriminator.js';
 import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 
@@ -597,5 +599,71 @@ describe('a feature the case cannot answer is not a zero', () => {
     // while the spread needs every member, and one undetermined member makes it a lower bound wearing the
     // spread's name. That is the whole rule, visible in one fixture.
     expect(one!.features.metricTopGap).toBeCloseTo(0.15, 10);
+  });
+});
+
+describe('the term-preserving menu', () => {
+  it('keeps EVERY term, which is the property its name is a claim about', () => {
+    // The four-point menu's only term-preserving member is `shipped`, the baseline itself, so every alternative it
+    // offers wins by REMOVING a term — which is why the verdict's bar (a mechanism that does not remove a term)
+    // could not be cleared from that menu by any rule. These probes scale one weight and zero none.
+    const probes = boundedReweightConfigs(OPTS);
+    expect(probes.length).toBeGreaterThanOrEqual(2);
+    for (const probe of probes) {
+      expect(probe.logWeight, `${probe.name} must keep the log term`).toBeGreaterThan(0);
+      expect(probe.latWeight, `${probe.name} must keep the latency term`).toBeGreaterThan(0);
+    }
+  });
+
+  it('contains no restatement of the baseline, by name or by value', () => {
+    const probes = boundedReweightConfigs(OPTS);
+    const shipped = discriminatorConfigs(OPTS).find((c) => c.name === 'shipped');
+    expect(shipped).toBeDefined();
+    for (const probe of probes) {
+      expect(probe.name).not.toBe('shipped');
+      // A probe numerically equal to the baseline is a configuration that CLAIMS to be an alternative and is not.
+      const sameWeights =
+        probe.logWeight === shipped!.logWeight && probe.latWeight === shipped!.latWeight;
+      expect(sameWeights, `${probe.name} restates the shipped weights`).toBe(false);
+    }
+    expect(new Set(probes.map((p) => p.name)).size, 'names identify the probes').toBe(
+      probes.length,
+    );
+  });
+
+  it('drops a probe whose scaling would zero a weight, because a zero is a removed term', () => {
+    // `latWeight: 0` is a legal shipped weight (the latency term off), and `lat x2` of it is still zero. A menu
+    // that called that "term-preserving" would be the same defect the verdict is about, wearing a new name.
+    const off: TermOracleOptions = { ...OPTS, latWeight: 0 };
+    // **The menu is EMPTY, and that is the honest answer rather than a bug.** Every probe inherits the weight it
+    // does not scale, so when the shipped formula already has a zero weight, every probe carries that zero:
+    // `lat x2` doubles zero, and `log x2` keeps `latWeight: 0`. There is no reweighting of a formula that is
+    // already missing a term which preserves all of them — so nothing is offered, and the screen has one member.
+    // This assertion is the reason the constructor filters instead of promising.
+    expect(boundedReweightConfigs(off)).toEqual([]);
+    expect(termPreservingMenu(off).map((c) => c.name)).toEqual(['shipped']);
+  });
+
+  it('puts the baseline FIRST and names it `shipped`, which is what the screen scores against', () => {
+    // `discriminatorScreen` measures every other member against a configuration called `shipped`; a menu without
+    // that name has no baseline to be better than and would report a net against nothing.
+    const menu = termPreservingMenu(OPTS);
+    expect(menu[0]!.name).toBe('shipped');
+    expect(menu.map((c) => c.name)).toEqual([
+      'shipped',
+      ...boundedReweightConfigs(OPTS).map((c) => c.name),
+    ]);
+  });
+
+  it('names the menu in the report, so two blocks in one artifact cannot be confused', () => {
+    const labelled = formatDiscriminatorReport(
+      discriminatorScreen([]),
+      'term-preserving reweightings',
+    );
+    expect(labelled).toContain('Discriminator screen [term-preserving reweightings]');
+    // And omitted, the heading is byte-for-byte the one every recorded artifact already carries.
+    expect(formatDiscriminatorReport(discriminatorScreen([]))).toContain(
+      'Discriminator screen (can a feature pick the configuration per case?):',
+    );
   });
 });

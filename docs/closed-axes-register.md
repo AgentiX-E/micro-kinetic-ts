@@ -955,7 +955,7 @@ exist in the dump yet.
 `25 / 11` split, which is a net of `+14` — the row disproved itself by one, in the document that fixes what a
 candidate must clear. `benchmarks/__tests__/fse26-discriminator-verdict.test.ts` parses every row and asserts
 `net == held-out fixed − held-out broken`, so a row mixing two measurements fails a test rather than waiting for a
-reader to add it up; it asserts the INVARIANT, so a re-taken measurement never breaks it.
+reader to add it up; it asserts the INVARIANT, so a re-taken measurement never breaks it. **And the last clause of the bar is now measured too** (it.109): the four-point menu's only term-preserving member is `shipped` itself, so a second screen of **bounded reweightings** was run (`lat x2`, `lat x4`, `log x0.5`, `log x2`, every weight positive) — **every probe is net NEGATIVE out of sample (−2, −2, −3, −5, with 2–6 losses against 0–1 fixes)** and its ceiling is **802** against the term-removing menu's **878**. **The 122-case headroom is reachable only by REMOVING a term; a menu that keeps every term reaches 46 of it and no declared feature converts even that.** So the conflict is not a DECISION problem — a per-case chooser cannot supply a blend the menu does not contain — **it is a FORMULA problem: one blend has to serve both populations.** That, and not the chooser, is the axis this register should now carry.
 
 **That signal has now been measured, and it resolved into three rows.** The engine computes
 an injection-anchored onset delay per service (`postInjectOnsetDelays`), and the dump
