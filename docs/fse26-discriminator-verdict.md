@@ -396,6 +396,48 @@ Engine agreement [reconstructing at logWeight 1, latWeight 0.561495, poolWeight 
 baseline is either the engine's ranking or it is not, and a middle category is where a six-case discrepancy goes to be
 forgotten — which is precisely what happened to it for four iterations.
 
+## 13. The re-take at the configuration that REPRODUCES the run
+
+Section 12 established that the five families were measured against a reconstruction that disagrees with the run on
+103 cases, and that `--pool-penalty 0` makes the reconstruction exact (**1422/1422**). Here is the same five-family
+table at that configuration, beside the numbers sections 4–11 published. **Both columns are on one page because the
+comparison is the finding**, not a correction to be quietly folded in.
+
+| what | at `poolWeight` 0.0679 (published) | at `poolWeight` 0 (**reproduces the run**) |
+| --- | ---: | ---: |
+| shipped blend right (any-root) | 756 | **750** |
+| four-point menu ceiling | 878 | **871** |
+| best rule, four-point menu (`lat only`) | +13, split 25 / 12 | **+14, split 25 / 11** |
+| term-preserving menu ceiling | 802 | **798** |
+| `all ranks` | 499 (−257) | 499 (**−251**) |
+| `base magnitude` | 520 (−236) | 520 (**−230**) |
+| `log rank only` | 509 (−247) | 509 (**−241**) |
+| `latency rank only` | 743 (−13, 1 / 14) | 743 (**−7, 2 / 9**) |
+| `log only`, fixes / breaks if applied everywhere | 2 / 88 | **0 / 77** |
+| composition `max` | 671 (−85, 20 / 105) | 676 (**−74, 19 / 93**) |
+| composition `lse` | 742 (−14, 6 / 20) | 748 (**−2, 6 / 8**) |
+| composition `sum` (coherence) | 756, 0 / 0 | **750, 0 / 0** |
+
+**Every sign is unchanged and every ordering is unchanged.** That is the important half: the five families' verdicts
+were not artifacts of the mismatched baseline. The chooser still trades cases (`+14` with **eleven** losses, and its
+term-preserving arm still negative), the scale family still costs 230–251 for the base and the log term, and the
+composition family still loses — `max` badly, `lse` marginally.
+
+**The second half is what the wrong baseline had been hiding**: at the blend the engine actually computed, the gap
+between the shipped sum and the alternatives is **much narrower**. `lse` falls from −14 to **−2** with a **6 / 8**
+split, and `latency rank only` from −13 to **−7** with **2 / 9**. Two cases of net difference is within the noise of a
+1422-case corpus, and it changes the character of the conclusion: the alternatives are not refuted by a wide margin,
+they are **barely refuted** — and the refutation rests on the split (8 and 9 losses respectively) rather than on the
+net.
+
+**And `log only` now fixes NOTHING** (0 fixes, 77 breaks) where the published table said 2 — so there is no case in the
+corpus where the log term alone names a root the blend misses, which removes the last reason to consider reading the
+log term differently.
+
+**What this does not change**: the target. The engine gets 750 of 1422 under this rule (757 under the published
+first-label rule), the four-point ceiling is 871, and the headroom is therefore **121 cases** — one fewer than the
+published 122, and still reachable only by removing a term (section 9).
+
 ## 8. Reproduce
 
 ```bash
