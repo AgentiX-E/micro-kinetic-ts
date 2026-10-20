@@ -44,6 +44,7 @@ import {
 } from './fse26-discriminator.js';
 import { engineAgreement, formatAgreementReport } from './fse26-engine-agreement.js';
 import { formatFormulationReport, formulationScreens } from './fse26-formulation.js';
+import { directionReport, formatDirectionReport } from './fse26-fourth-term.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
   formatSeparatorCensus,
@@ -8120,7 +8121,11 @@ export function formatDiscriminatorSection(
     engineAgreement(cases, options),
     `reconstructing at logWeight ${options.logWeight}, latWeight ${options.latWeight}, poolWeight ${options.poolWeight}`,
   );
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}`;
+  // **The only degree of freedom left in the blend: the SET of terms.** Three families are closed and the
+  // composition family showed the arithmetic is additive, so the candidate is a new TERM rather than a new
+  // reading or a new combination — measured against the run-reproducing baseline, split printed beside the net.
+  const direction = formatDirectionReport(directionReport(cases, options));
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}`;
 }
 
 function analyzeSectionText(

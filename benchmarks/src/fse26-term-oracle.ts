@@ -162,6 +162,20 @@ export interface TermOracleOptions {
    * rather than a factor.
    */
   readonly onsetShape: OnsetShape;
+  /**
+   * The run's failed-edge-direction prior — a SIXTH term, and **the only one whose shipped weight is ZERO**.
+   *
+   * Optional where the two weights above are required, and the asymmetry is deliberate: `poolWeight` and
+   * `temporalWeight` ship ON, so omitting either describes an engine that does not exist, which is why they are
+   * required. **This one ships OFF** (`DEFAULT_FAILED_EDGE_WEIGHT = 0.0`), so an absent field IS the shipped
+   * configuration — and requiring it would force every fixture in this repository to restate a zero that means
+   * "the signal this benchmark does not carry".
+   *
+   * It is a term rather than an engine switch because its own verdict measured it as a SWITCH (+5.8pp, rejected on
+   * two narrow regressions) and left the question the blend needs answered: does the direction it carries beat the
+   * blend the engine actually computes, at the baseline that reproduces that run?
+   */
+  readonly failedEdgeWeight?: number;
 }
 
 /**
@@ -891,6 +905,15 @@ export interface ScoreTerms {
   readonly temporal: number;
   /** `poolWeight` when the service's dominant metric belongs to the pool; SUBTRACTED in the sum. */
   readonly pool: number;
+  /**
+   * `failedEdgeWeight · failedEdgeScore`: the DIRECTION of a fault, which no other term carries.
+   *
+   * The log signal credits whichever service EMITS an error, which on a propagation-carrying fault is a victim
+   * reporting its broken dependency; this one credits the service the error was emitted ABOUT. Zero whenever the
+   * weight is zero, which is the shipped configuration — so a `sum` over these terms reproduces the engine exactly
+   * at weight 0, and that is the coherence check the screen starts from.
+   */
+  readonly failedEdge: number;
 }
 
 /**
@@ -940,6 +963,10 @@ export function scoreTerms(
       latency: opts.latWeight * (latSlopes.get(service.serviceId) ?? 0),
       temporal: opts.temporalWeight * onset.get(service.serviceId)!,
       pool: isPoolDominantLabel(service.dominantMetric) ? opts.poolWeight : 0,
+      // An unmeasured direction contributes nothing rather than making the score undetermined: the engine's own
+      // `failedEdgeScore` is absent on 200 of the 1422 cases (no edge carried a measured rise), and treating that
+      // as "no score" would delete those cases from every screen instead of reading the term as silent.
+      failedEdge: (opts.failedEdgeWeight ?? 0) * (service.failedEdgeScore ?? 0),
     });
   }
   return terms;
@@ -959,7 +986,9 @@ export function blendScores(
     const one = terms.get(service.serviceId);
     scores.set(
       service.serviceId,
-      one === undefined ? undefined : one.metric + one.log! + one.latency + one.temporal - one.pool,
+      one === undefined
+        ? undefined
+        : one.metric + one.log! + one.latency + one.temporal + one.failedEdge - one.pool,
     );
   }
   return scores;

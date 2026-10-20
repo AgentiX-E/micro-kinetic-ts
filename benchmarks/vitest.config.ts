@@ -67,6 +67,7 @@ export default defineConfig({
         'src/fse26-formulation.ts',
         'src/fse26-composition.ts',
         'src/fse26-engine-agreement.ts',
+        'src/fse26-fourth-term.ts',
         // Added with the module: the separator screen is the register's own precondition
         // ("show it separates, on a free read") turned into code.
         'src/fse26-separator.ts',

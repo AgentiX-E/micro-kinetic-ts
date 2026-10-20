@@ -450,6 +450,56 @@ log term differently.
 first-label rule), the four-point ceiling is 871, and the headroom is therefore **121 cases** — one fewer than the
 published 122, and still reachable only by removing a term (section 9).
 
+## 14. The fourth term: the first family that GAINS, and it gains 105 cases (iteration 114)
+
+Sections 9–11 closed choosing, re-reading and re-combining the three terms. That left one degree of freedom: **the set
+of terms.** The candidate is the failed-edge **direction** — the callee of failed calls, the one signal the log term
+cannot express because the log term credits whoever EMITS an error, which on a propagation fault is a victim.
+
+It was already measured as an engine **switch** (+5.8pp on its own run, rejected on two narrow regressions). This is a
+different question, and it is the first one in this record with a large positive answer:
+
+| weight | what it claims | right /1422 | net | fixed / broken |
+| ---: | --- | ---: | ---: | ---: |
+| 0 | the engine's own blend (the baseline) | **750** | +0 | 0 / 0 |
+| 0.25 | a nudge: the direction breaks near-ties only | 763 | **+13** | 19 / 6 |
+| 0.5 | half the log term's strength | 790 | **+40** | 53 / 13 |
+| 1 | as strong as the log term | 810 | **+60** | 86 / 26 |
+| 2 | able to dominate a moderate anomaly gap | 848 | **+98** | 144 / 46 |
+| **3** | **the measured maximum** | **855** | **+105** | 155 / 50 |
+| 4 | 852 — declining, which is what makes 3 a maximum | 852 | +102 | 156 / 54 |
+
+**855 of 1422 is 60.13%, against 750 (52.74%) and against the four-point menu's whole ceiling of 871 (61.25%).** One
+term at one weight closes **105 of the 121 remaining cases** and leaves **16**.
+
+**The turning point is the finding, not the maximum.** A single term whose weight can be raised without limit would be
+a gate — "any candidate a failed call pointed at beats every candidate without one" — and a gate would show a
+monotone rise with no optimum. This one peaks at 3 and declines through 852, 835, 827 at 4, 6, 20, so the term is
+**trading** direction against anomaly rather than overriding it. That is why the arm menu now reaches past the
+maximum: a menu that stopped at 2 would have reported a monotone rise and left a reader unable to tell a term from a
+gate.
+
+### Three things it does not license, stated before anyone reads the 855
+
+1. **The weight is FIT on this corpus.** `3` was read off the same 1422 cases the net is computed on, so it is a
+   measurement of potential, not a candidate. The bar the chooser failed applies unchanged — **beat the baseline with
+   ZERO losses** — and this arm **trades**: 155 fixed against **50 broken**. A weight chosen out-of-sample is
+   iteration 115's first task, and the decline either side of 3 is what makes that protocol worth running rather than
+   a formality.
+2. **It is a reconstruction number.** The engine ships `DEFAULT_FAILED_EDGE_WEIGHT = 0`, so 855 describes a
+   configuration nothing has run. Shipping it means flipping that default, and the pruner's own docblock states the
+   condition: ablated and read back net-positive with **zero regression on the RCAEval golden nine-cell** *and*
+   **zero regressed FSE'26 fault types**. Neither has been run for weight 3.
+3. **The direction is silent on 200 of the 1422 cases** — no edge carried a measured rise — so the gain comes from the
+   1222 that carry it, and the per-fault-type split of the 50 losses is not yet taken.
+
+### What is now measurable that was not
+
+The screen is `benchmarks/src/fse26-fourth-term.ts`, and it prints the **baseline agreement first**: at weight 0 the
+direction is inert, so that arm IS the engine's blend and the report says whether it reproduces the run before any net
+is read (law 41). The five-family table, the corrected baseline and this fourth term now share one instrument and one
+discipline: **a rule over the whole corpus, nothing fitted, the split printed beside the net.**
+
 ## 8. Reproduce
 
 ```bash

@@ -98,7 +98,11 @@ export function composedScore(terms: ScoreTerms, composition: Composition): numb
       : composition === 'max'
         ? Math.max(...evidence)
         : logSumExp(evidence);
-  return combined + terms.temporal - terms.pool;
+  // The direction term joins AFTER the evidence is combined, on the same rule the temporal prior follows and for a
+  // sharper version of the same reason: it is not a sixth opinion about how anomalous the service is, it is a fact
+  // about WHICH END of a failed call the fault is at. Inside a `max` it would compete with the anomaly terms it is
+  // meant to correct.
+  return combined + terms.temporal + terms.failedEdge - terms.pool;
 }
 
 /**
