@@ -328,6 +328,74 @@ npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
 # four blocks: the four-point screen, [term-preserving reweightings], the formulation table, the composition table
 ```
 
+## 12. The baseline was a RECONSTRUCTION, and it did not reproduce the run (iteration 112)
+
+Sections 4–11 all compare a candidate against "the shipped blend" and print its total as `shipped gets 756`. **That
+total is the reconstruction's, and the reconstruction does not reproduce the run it was reading.** Measured on
+`artifacts/r34928980425/fse26-results.txt`, rank-1 against the dump's own recorded order:
+
+| configuration | agreement with the recorded rank-1 | right (any-root rule) |
+| --- | ---: | ---: |
+| the current engine defaults (`poolWeight` 0.0679) | **1319 / 1422 (92.76%)** | 756 |
+| `poolWeight` 0 | **1422 / 1422 (100.00%)** | 750 |
+
+**Two facts, and the second is the one that had to be stated.**
+
+1. **The dump predates part of the current configuration.** Its `Config:` line is 96 characters long and carries
+   `logWeight logMode rankNormalization latWeight latMinRise` — and **no `poolMetricPenaltyWeight`, no
+   `stabilityWeight`, no `temporalWeight`, no `onsetShape`**, every one of which the CURRENT formatter prints
+   unconditionally. A run that had those fields would have printed them. So the reconstruction has been applying a
+   penalty to a run that never carried it, and that single term moves rank-1 on 103 cases.
+2. **"Shipped gets 756" was never the engine's number.** The engine's own recorded rank-1 is right on **750** cases
+   under the same hit rule, and the six-case difference is exactly the pool penalty's effect.
+
+### Three metrics were in circulation under one word
+
+| what | rule | value |
+| --- | --- | ---: |
+| the published FSE'26 headline | **first** ground-truth label (`run-fse26.ts`) | 757 / 1422 = 53.23% |
+| the engine's recorded rank-1, as this record measures it | **any** acceptable root | **750** |
+| the reconstruction these screens compare against | any acceptable root | **756** |
+
+They differ for two independent reasons — the hit rule and the reconstruction — and every document in this series
+quoted one of them as "shipped". **None of the three is wrong; the mistake was using one word for three numbers.**
+
+### What stands, and what does not
+
+- **The relative comparisons stand.** Every arm in sections 9–11 was measured against the SAME reconstruction, so
+  "`max` costs 85 cases", "`lse` costs 14", "`latency rank only` costs 13", "no term-preserving reweighting is
+  positive" are statements about that blend and are unaffected by it being 6 cases better than the engine.
+- **The absolute totals do not.** `shipped gets 756` must not be read as the engine's accuracy; the engine's is 750
+  under this rule and 757 under the published one.
+- **What it does not license is a re-run of the four screens.** A reconstruction that is exact (`poolWeight` 0) exists
+  and is one flag away: at that configuration the four screens re-take cleanly, and it.113 should re-take them rather
+  than argue from the mismatched baseline.
+
+### The instrument that makes this unrepeatable
+
+`fse26-engine-agreement.ts` compares the reconstruction against the dump's recorded ranking and prints, **above** the
+screens it qualifies:
+
+```
+Engine agreement [reconstructing at logWeight 1, latWeight 0.561495, poolWeight 0.0679]:
+  reconstruction reproduces the recorded rank-1 on 1319/1422 cases (92.76%) — DIFFERS
+  right under the any-root rule: recorded 750, reconstruction 756
+  the difference is a configuration the dump does not carry: every screen below compares against the
+  RECONSTRUCTION, so their relative comparisons stand and their absolute totals are not the engine's
+```
+
+and at `--pool-penalty 0`:
+
+```
+Engine agreement [reconstructing at logWeight 1, latWeight 0.561495, poolWeight 0]:
+  reconstruction reproduces the recorded rank-1 on 1422/1422 cases (100.00%) — REPRODUCES
+  right under the any-root rule: recorded 750, reconstruction 750
+```
+
+**The verdict has exactly two outcomes**, `reproduces` only at total agreement. There is no "mostly reproduces": a
+baseline is either the engine's ranking or it is not, and a middle category is where a six-case discrepancy goes to be
+forgotten — which is precisely what happened to it for four iterations.
+
 ## 8. Reproduce
 
 ```bash

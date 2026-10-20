@@ -42,6 +42,7 @@ import {
   formatDiscriminatorReport,
   termPreservingMenu,
 } from './fse26-discriminator.js';
+import { engineAgreement, formatAgreementReport } from './fse26-engine-agreement.js';
 import { formatFormulationReport, formulationScreens } from './fse26-formulation.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
@@ -8166,7 +8167,14 @@ function analyzeSectionText(
       // is READ; this is the other half of "different blends" — the same terms, combined differently. Its `sum` arm
       // must reproduce the shipped total, and the report says so rather than leaving it to the reader.
       const composition = formatCompositionReport(compositionScreens(cases, options));
-      return `${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}`;
+      // **The qualifier, printed FIRST.** Every block below compares against a RECONSTRUCTION of the shipped blend;
+      // `engineAgreement` says whether that reconstruction reproduces the run at all, so a reader cannot mistake the
+      // reconstruction's total for the engine's — which is exactly what four iterations of these reports did.
+      const agreement = formatAgreementReport(
+        engineAgreement(cases, options),
+        `reconstructing at logWeight ${options.logWeight}, latWeight ${options.latWeight}, poolWeight ${options.poolWeight}`,
+      );
+      return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}`;
     }
     case 'cvScreen': {
       // The same configuration object as the family and onset screens, because it is the same
