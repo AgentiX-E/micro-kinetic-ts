@@ -64,6 +64,9 @@ fields.
 
 ## 4. What is learnable
 
+> **Baseline, read this first (law 41, iteration 112).** Every table below was taken at `poolWeight` 0.0679, the engine's compiled default, and that reconstruction **disagrees with the run's recorded rank-1 on 103 of 1422 cases** — its `shipped` totals are the RECONSTRUCTION's, not the engine's. **§13 re-takes all of them at the configuration that reproduces the run** (`poolWeight 0`, 1422/1422) and is the authoritative table; the signs and orderings are identical, the margins are narrower. `log1p(selfAnomaly) + log + lat` alone reproduces the run exactly.
+
+
 Held-out results, 5 folds, at the shipped configuration:
 
 | config | fixes / breaks if applied to every case | held-out net | held-out split | rule chosen on every fold |
@@ -150,6 +153,9 @@ re-taking a measurement never breaks it.
 
 ## 9. The menu was the obstacle, and it is now measured (iteration 109)
 
+> **Baseline, read this first (law 41, iteration 112).** Every table below was taken at `poolWeight` 0.0679, the engine's compiled default, and that reconstruction **disagrees with the run's recorded rank-1 on 103 of 1422 cases** — its `shipped` totals are the RECONSTRUCTION's, not the engine's. **§13 re-takes all of them at the configuration that reproduces the run** (`poolWeight 0`, 1422/1422) and is the authoritative table; the signs and orderings are identical, the margins are narrower. `log1p(selfAnomaly) + log + lat` alone reproduces the run exactly.
+
+
 **The bar in §6 has a clause nobody had tested: "a mechanism that does not remove a term".** The four-point menu
 cannot satisfy it — `lat only` zeroes `logWeight`, `log only` zeroes `latWeight`, `metric only` zeroes both — so its
 ONLY term-preserving member is `shipped`, which IS the baseline. **A rule choosing from that menu can therefore only
@@ -220,6 +226,9 @@ npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
 
 ## 10. The formula axis, first measurement: the SCALE is not the missing blend (iteration 110)
 
+> **Baseline, read this first (law 41, iteration 112).** Every table below was taken at `poolWeight` 0.0679, the engine's compiled default, and that reconstruction **disagrees with the run's recorded rank-1 on 103 of 1422 cases** — its `shipped` totals are the RECONSTRUCTION's, not the engine's. **§13 re-takes all of them at the configuration that reproduces the run** (`poolWeight 0`, 1422/1422) and is the authoritative table; the signs and orderings are identical, the margins are narrower. `log1p(selfAnomaly) + log + lat` alone reproduces the run exactly.
+
+
 Section 9 left one question and named it: if the populations want different BLENDS rather than different
 configurations, what has to change? The cheapest answer to test is the **scale** each term is read on, because
 "these two populations want different weights" is a statement about magnitude — a log score of 3 is decisive in one
@@ -271,6 +280,9 @@ npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
 ```
 
 ## 11. The composition axis: evidence is ADDITIVE, and three families are now closed (iteration 111)
+
+> **Baseline, read this first (law 41, iteration 112).** Every table below was taken at `poolWeight` 0.0679, the engine's compiled default, and that reconstruction **disagrees with the run's recorded rank-1 on 103 of 1422 cases** — its `shipped` totals are the RECONSTRUCTION's, not the engine's. **§13 re-takes all of them at the configuration that reproduces the run** (`poolWeight 0`, 1422/1422) and is the authoritative table; the signs and orderings are identical, the margins are narrower. `log1p(selfAnomaly) + log + lat` alone reproduces the run exactly.
+
 
 Section 10 closed the question of how a term is READ. This closes the other half of "different blends": **how the same
 three terms are COMBINED.** The shipped blend adds them, so a service mildly unusual on all three beats one decisive on

@@ -8074,6 +8074,55 @@ export interface AnalyzeSibling {
  *   configuration into the report needs.
  * @returns The section text.
  */
+/**
+ * The discriminator section: five blocks that answer one question, in an order that is load-bearing.
+ *
+ * Extracted from the CLI switch so the ORDER can be asserted, and the order is what law 41 is about: **the engine
+ * agreement prints FIRST**, because every block below compares a candidate against a RECONSTRUCTION of the shipped
+ * blend, and a reader who greets `shipped gets 756` before being told the reconstruction disagrees with the run on 103
+ * cases has already been misled. Four iterations of these reports were.
+ *
+ * The blocks, in order: the reconstruction's agreement with the recorded ranking (the qualifier), the four-point
+ * chooser screen, the term-preserving menu, the formulation (scale) table, and the composition table.
+ *
+ * @param cases - The parsed dump.
+ * @param options - The configuration to reconstruct at, already resolved from the section.
+ * @returns The section's text, qualifier first.
+ */
+export function formatDiscriminatorSection(
+  cases: readonly DiagnosedCase[],
+  options: TermOracleOptions,
+): string {
+  const shipped = formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
+  // **The second screen, and the reason it is not a second flag.** The four-point menu above has exactly one
+  // term-preserving member — `shipped` — and it is the baseline, so every alternative that menu offers wins by
+  // REMOVING a term. The bar in `fse26-discriminator-verdict.md` §6 demands a mechanism that does not, so the
+  // only shape left untested was a menu of bounded reweightings that keep every term. It is printed beside the
+  // recorded screen because the two are one question over two menus, and the ceiling moves with the menu: a
+  // reader who greps `ANY configuration gets` must be able to tell which menu produced the number.
+  const bounded = formatDiscriminatorReport(
+    discriminatorScreen(caseOutcomes(cases, options, termPreservingMenu(options))),
+    'term-preserving reweightings',
+  );
+  // **The formula axis, printed where the chooser question is answered**, because it is the answer to what the
+  // two screens above leave: both work by picking a configuration, and the measurement says the populations do
+  // not want a different CONFIGURATION — they want a different BLEND. This arm changes HOW the terms combine
+  // (within-case rank instead of raw magnitude), applies it to every case, and fits nothing.
+  const formulation = formatFormulationReport(formulationScreens(cases, options));
+  // **The composition arm, beside the two chooser screens and the scale screen.** Iteration 110 closed how a term
+  // is READ; this is the other half of "different blends" — the same terms, combined differently. Its `sum` arm
+  // must reproduce the shipped total, and the report says so rather than leaving it to the reader.
+  const composition = formatCompositionReport(compositionScreens(cases, options));
+  // **The qualifier, printed FIRST.** Every block below compares against a RECONSTRUCTION of the shipped blend;
+  // `engineAgreement` says whether that reconstruction reproduces the run at all, so a reader cannot mistake the
+  // reconstruction's total for the engine's — which is exactly what four iterations of these reports did.
+  const agreement = formatAgreementReport(
+    engineAgreement(cases, options),
+    `reconstructing at logWeight ${options.logWeight}, latWeight ${options.latWeight}, poolWeight ${options.poolWeight}`,
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}`;
+}
+
 function analyzeSectionText(
   cases: readonly DiagnosedCase[],
   section: AnalyzeSection,
@@ -8135,8 +8184,9 @@ function analyzeSectionText(
       );
     }
     case 'discriminator': {
-      // The screen fits and cross-validates its own rules, so it needs the whole
-      // configuration as well — one owner, as everywhere else in this report.
+      // The screen fits and cross-validates its own rules, so it needs the whole configuration as well — one owner,
+      // as everywhere else in this report. The BLOCK ORDER lives in `formatDiscriminatorSection`, where law 41's
+      // qualifier-first requirement is asserted rather than described.
       const options: TermOracleOptions = {
         logWeight: section.logWeight,
         latWeight: section.latWeight,
@@ -8147,34 +8197,7 @@ function analyzeSectionText(
         temporalWeight: section.temporalWeight,
         onsetShape: section.onsetShape,
       };
-      const shipped = formatDiscriminatorReport(discriminatorScreen(caseOutcomes(cases, options)));
-      // **The second screen, and the reason it is not a second flag.** The four-point menu above has exactly one
-      // term-preserving member — `shipped` — and it is the baseline, so every alternative that menu offers wins by
-      // REMOVING a term. The bar in `fse26-discriminator-verdict.md` §6 demands a mechanism that does not, so the
-      // only shape left untested was a menu of bounded reweightings that keep every term. It is printed beside the
-      // recorded screen because the two are one question over two menus, and the ceiling moves with the menu: a
-      // reader who greps `ANY configuration gets` must be able to tell which menu produced the number.
-      const bounded = formatDiscriminatorReport(
-        discriminatorScreen(caseOutcomes(cases, options, termPreservingMenu(options))),
-        'term-preserving reweightings',
-      );
-      // **The formula axis, printed where the chooser question is answered**, because it is the answer to what the
-      // two screens above leave: both work by picking a configuration, and the measurement says the populations do
-      // not want a different CONFIGURATION — they want a different BLEND. This arm changes HOW the terms combine
-      // (within-case rank instead of raw magnitude), applies it to every case, and fits nothing.
-      const formulation = formatFormulationReport(formulationScreens(cases, options));
-      // **The composition arm, beside the two chooser screens and the scale screen.** Iteration 110 closed how a term
-      // is READ; this is the other half of "different blends" — the same terms, combined differently. Its `sum` arm
-      // must reproduce the shipped total, and the report says so rather than leaving it to the reader.
-      const composition = formatCompositionReport(compositionScreens(cases, options));
-      // **The qualifier, printed FIRST.** Every block below compares against a RECONSTRUCTION of the shipped blend;
-      // `engineAgreement` says whether that reconstruction reproduces the run at all, so a reader cannot mistake the
-      // reconstruction's total for the engine's — which is exactly what four iterations of these reports did.
-      const agreement = formatAgreementReport(
-        engineAgreement(cases, options),
-        `reconstructing at logWeight ${options.logWeight}, latWeight ${options.latWeight}, poolWeight ${options.poolWeight}`,
-      );
-      return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}`;
+      return formatDiscriminatorSection(cases, options);
     }
     case 'cvScreen': {
       // The same configuration object as the family and onset screens, because it is the same

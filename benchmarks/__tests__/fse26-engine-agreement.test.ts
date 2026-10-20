@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DiagnosedCase, DiagnosedService } from '../src/fse26-diagnose-analyze.js';
+import { formatDiscriminatorSection } from '../src/fse26-diagnose-analyze.js';
 import {
   agreementVerdict,
   engineAgreement,
@@ -138,6 +139,35 @@ describe('engineAgreement', () => {
     );
     expect(report.cases).toBe(0);
     expect(report.agreed).toBe(0);
+  });
+});
+
+describe('law 41 — the agreement prints FIRST', () => {
+  // The law: "a reconstruction's total may not be reported as the engine's until it reproduces the engine's recorded
+  // ranking — and the agreement is printed BESIDE the number, never below it." This asserts the WIRING, not the
+  // formatter: the section's own block order, which is the half a formatter test cannot see.
+  it('puts the qualifier above every screen, and names what a disagreement costs', () => {
+    const cases = [kase({ services: services(), groundTruth: ['b'], prediction: ['a'] })];
+    const text = formatDiscriminatorSection(cases, OPTS);
+    expect(text.split('\n')[0]).toMatch(/^Engine agreement \[/);
+    expect(text).toContain('DIFFERS');
+    expect(text).toContain('not the engine');
+    // Every screen sits BELOW it. A block that slipped above the qualifier is the defect the law exists to prevent.
+    for (const heading of [
+      'Discriminator screen (',
+      'Discriminator screen [term-preserving reweightings]',
+      'Formulation screen (',
+      'Composition screen (',
+    ]) {
+      expect(text.indexOf('Engine agreement')).toBeLessThan(text.indexOf(heading));
+    }
+  });
+
+  it('and prints no disclaimer when the reconstruction reproduces the run', () => {
+    const cases = [kase({ services: services(), groundTruth: ['b'], prediction: ['b'] })];
+    const text = formatDiscriminatorSection(cases, OPTS);
+    expect(text).toContain('REPRODUCES');
+    expect(text).not.toContain('not the engine');
   });
 });
 
