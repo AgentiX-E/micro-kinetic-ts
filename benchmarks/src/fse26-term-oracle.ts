@@ -865,12 +865,53 @@ export function onsetSlopes(
  * @param latSlopes - The case's latency term, from {@link latencySlopes}.
  * @returns Every candidate's score; total, so a lookup asserts rather than defaulting.
  */
-export function blendScores(
+/**
+ * The terms the shipped score composes, per service — each with the sign it carries in the sum.
+ *
+ * **This exists so that a different COMPOSITION does not have to re-spell the terms.** The register's last axis is
+ * closed to changing how a term is READ (iteration 110: four scales, all net negative) and open on how the terms are
+ * COMBINED; a module that experimented with `max` or `log-sum-exp` by re-deriving `log1p`, the log slope and the
+ * latency slope would be a second implementation of the very quantity being measured, which is the defect class this
+ * module exists to find. So the decomposition is stated ONCE here, {@link blendScores} is expressed through it, and a
+ * composition experiment reads it.
+ *
+ * The pool term carries a MINUS. It is not evidence for a service; it is a demotion for carrying a metric that
+ * belongs to the pool rather than to itself, and a composition must keep it outside whatever combines the evidence —
+ * see `fse26-composition.ts` for why a `max` that let it inside would let a pool-dominant service escape the penalty
+ * by being large on one channel, which is exactly what the penalty exists to prevent.
+ */
+export interface ScoreTerms {
+  /** `log1p(selfAnomaly)`: the row's own deviation, always measured. */
+  readonly metric: number;
+  /** `logWeight · log slope`; `undefined` when the dump did not measure the log score. */
+  readonly log: number | undefined;
+  /** `latWeight · latency slope`. */
+  readonly latency: number;
+  /** `temporalWeight · onset slope`. */
+  readonly temporal: number;
+  /** `poolWeight` when the service's dominant metric belongs to the pool; SUBTRACTED in the sum. */
+  readonly pool: number;
+}
+
+/**
+ * Every term of the shipped score, per service, or `undefined` where the configuration cannot score it.
+ *
+ * `undefined` rather than a number when a term the CONFIGURATION READS is unmeasured: `0` would say "the term
+ * credited this service nothing" where the truth is "the dump never measured it". A term switched OFF by its weight
+ * (`logWeight === 0`) cannot make the score undetermined, which is why the test is per-configured-coefficient.
+ *
+ * @param kase - One parsed case.
+ * @param opts - The configuration to reconstruct at.
+ * @param logSource - Which log term to use.
+ * @param latSlopes - The case's latency term, from {@link latencySlopes}.
+ * @returns Every candidate's terms; total over the case's services.
+ */
+export function scoreTerms(
   kase: DiagnosedCase,
   opts: TermOracleOptions,
   logSource: LogTermSource,
   latSlopes: ReadonlyMap<string, number>,
-): Map<string, number | undefined> {
+): Map<string, ScoreTerms | undefined> {
   const log =
     logSource === 'recorded'
       ? new Map(
@@ -879,23 +920,9 @@ export function blendScores(
             .map((s) => [s.serviceId, s.logScore!]),
         )
       : logSlopesForMode(kase.services, logSource, opts.dominance, kase.edges);
-  // TOTAL over the case's services, like the latency term below and for the same reason:
-  // the map is built from `kase.services`, so a lookup cannot miss and an `?? 0` on it
-  // could never fire — and if it ever did it would fabricate a slope of zero, i.e. a term
-  // that silently stopped voting.
   const onset = onsetSlopes(kase, opts.onsetShape);
-  const scores = new Map<string, number | undefined>();
+  const terms = new Map<string, ScoreTerms | undefined>();
   for (const service of kase.services) {
-    // A score exists only where the dump measured every term the CONFIGURATION READS.
-    //
-    // Not "every term in the formula": the temporal term is multiplied by `temporalWeight`, so at weight 0 it
-    // adds nothing and cannot make a score undetermined, and the same holds for the log weight below. The
-    // test is therefore per-configured-coefficient, and it is what makes this call answerable at all under a
-    // configuration that switches a term off.
-    //
-    // `0` is not the answer for an unmeasured term. `logWeight * (log.get(id) ?? 0)` would read "the log term
-    // credited this service nothing" where the truth is "the dump never measured it", and the metric term's
-    // `log1p` of an undetermined value is not a large number or a small one — it is not a number.
     const metric = service.selfAnomaly === undefined ? undefined : Math.log1p(service.selfAnomaly);
     const logTerm =
       opts.logWeight === 0
@@ -904,16 +931,35 @@ export function blendScores(
           ? undefined
           : opts.logWeight * (log.get(service.serviceId) ?? 0);
     if (metric === undefined || logTerm === undefined) {
-      scores.set(service.serviceId, undefined);
+      terms.set(service.serviceId, undefined);
       continue;
     }
+    terms.set(service.serviceId, {
+      metric,
+      log: logTerm,
+      latency: opts.latWeight * (latSlopes.get(service.serviceId) ?? 0),
+      temporal: opts.temporalWeight * onset.get(service.serviceId)!,
+      pool: isPoolDominantLabel(service.dominantMetric) ? opts.poolWeight : 0,
+    });
+  }
+  return terms;
+}
+
+export function blendScores(
+  kase: DiagnosedCase,
+  opts: TermOracleOptions,
+  logSource: LogTermSource,
+  latSlopes: ReadonlyMap<string, number>,
+): Map<string, number | undefined> {
+  // **The sum, expressed THROUGH the decomposition.** The terms and their signs have one owner ({@link scoreTerms});
+  // this function only decides that they add. A composition change reads the same terms and adds differently.
+  const terms = scoreTerms(kase, opts, logSource, latSlopes);
+  const scores = new Map<string, number | undefined>();
+  for (const service of kase.services) {
+    const one = terms.get(service.serviceId);
     scores.set(
       service.serviceId,
-      metric +
-        logTerm +
-        opts.latWeight * (latSlopes.get(service.serviceId) ?? 0) +
-        opts.temporalWeight * onset.get(service.serviceId)! -
-        (isPoolDominantLabel(service.dominantMetric) ? opts.poolWeight : 0),
+      one === undefined ? undefined : one.metric + one.log! + one.latency + one.temporal - one.pool,
     );
   }
   return scores;

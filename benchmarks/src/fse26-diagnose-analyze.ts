@@ -35,6 +35,7 @@ import type { OnsetShape } from '../../packages/tree/src/index.js';
 
 import { ONSET_FIELD_HALF_QUANTUM } from '../../packages/kinetic/src/benchmarks/fse26-diagnose.js';
 
+import { compositionScreens, formatCompositionReport } from './fse26-composition.js';
 import {
   caseOutcomes,
   discriminatorScreen,
@@ -8161,7 +8162,11 @@ function analyzeSectionText(
       // not want a different CONFIGURATION — they want a different BLEND. This arm changes HOW the terms combine
       // (within-case rank instead of raw magnitude), applies it to every case, and fits nothing.
       const formulation = formatFormulationReport(formulationScreens(cases, options));
-      return `${shipped}\n\n${bounded}\n\n${formulation}`;
+      // **The composition arm, beside the two chooser screens and the scale screen.** Iteration 110 closed how a term
+      // is READ; this is the other half of "different blends" — the same terms, combined differently. Its `sum` arm
+      // must reproduce the shipped total, and the report says so rather than leaving it to the reader.
+      const composition = formatCompositionReport(compositionScreens(cases, options));
+      return `${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}`;
     }
     case 'cvScreen': {
       // The same configuration object as the family and onset screens, because it is the same

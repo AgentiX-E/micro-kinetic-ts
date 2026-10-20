@@ -270,6 +270,64 @@ npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
 # prints the four-point screen, then [term-preserving reweightings], then the formulation table
 ```
 
+## 11. The composition axis: evidence is ADDITIVE, and three families are now closed (iteration 111)
+
+Section 10 closed the question of how a term is READ. This closes the other half of "different blends": **how the same
+three terms are COMBINED.** The shipped blend adds them, so a service mildly unusual on all three beats one decisive on
+one; `max` and `lse` are the two standard alternatives, and `max` is exactly the shape that would explain the conflict
+the chooser measurement found — the cases that want the log term switched OFF may be the ones where ONE channel is
+decisive, and switching it off is a crude way to stop it diluting the others.
+
+Three arms, each one rule over all 1422 cases with nothing fitted. **The terms are not re-spelled**: every arm composes
+`ScoreTerms`, the single decomposition the shipped score is now built from, so no arm can differ from another by a
+re-derived slope. **The pool penalty stays outside the combination** in all three arms — it is a demotion, not
+evidence, and inside a `max` it could be escaped by being large on one channel, which is what the penalty exists to
+prevent.
+
+| arm | claim | correct /1422 | net | fixed / broken |
+| --- | --- | ---: | ---: | ---: |
+| `sum` | evidence is ADDITIVE | **756** | +0 | 0 / 0 — **coherence OK** |
+| `max` | the strongest channel decides | 671 | **−85** | 20 / 105 |
+| `lse` | a soft maximum (temperature 1) | 742 | **−14** | 6 / 20 |
+
+**The `sum` arm is the instrument's own validation**: it is the shipped arithmetic rebuilt through a different path
+(`scoreTerms` + sum versus `blendScores`), and it reproduces **756** exactly with nothing fixed and nothing broken. A
+composition experiment whose baseline does not reproduce the number it is compared against is measuring its own defect;
+this one's does.
+
+**The measurement says evidence is additive, and that is not a null result.** `max` costs **85 cases** (20 fixed, 105
+broken): **dilution was not the problem.** A service that is mildly unusual on three channels genuinely beats one that
+is decisive on a single channel, because a single channel's extreme is often noise — which is the same reading the log
+term's own magnitude gave in section 10. `lse` lands at 742, between the two and much closer to the sum: the blend is
+*nearly* additive, and the 14 cases it loses are the price of softening a sum that was already right.
+
+### Three families closed, and what that implies
+
+| family | what was tried | best result |
+| --- | --- | --- |
+| **chooser** (it.108–109) | per-case configuration from a four-point menu, then from a term-preserving menu | +13 net with 12 losses; **zero losses never reached**; term-preserving arms all negative |
+| **scale** (it.110) | each term read by within-case rank instead of magnitude | best −13 (`latency rank only`); base/log rank readings cost 236–257 |
+| **composition** (it.111) | the same terms combined by `max` or `lse` instead of a sum | best −14 (`lse`); `max` −85 |
+
+**Nothing that changes the READING of the three terms, and nothing that changes their COMBINATION, beats the shipped
+blend.** That is now measured in five distinct families of change, and it leaves exactly one degree of freedom in the
+blend: **the SET of terms.** The remaining 115–122 cases cannot be reached by choosing, re-reading or re-combining the
+three signals that exist — they require evidence the blend does not currently carry.
+
+**The next candidate is therefore a NEW TERM**, and the record already names the one with a measured channel behind it:
+the failed-edge channel (`failed-edge-channel-audit.md`, `fse26-failed-edge-verdict.md`). It must be measured in the
+same form this axis has used throughout: one rule over all 1422 cases, nothing fitted, the split printed beside the
+net, and — because it adds a term rather than changing one — a **coherence check that the shipped total is unchanged
+when the new term's weight is zero.**
+
+**Reproduce**
+
+```bash
+npx tsx benchmarks/src/analyze-fse26-diagnose.ts \
+  --dump artifacts/r34928980425/fse26-results.txt --log-weight 1 --discriminator
+# four blocks: the four-point screen, [term-preserving reweightings], the formulation table, the composition table
+```
+
 ## 8. Reproduce
 
 ```bash
