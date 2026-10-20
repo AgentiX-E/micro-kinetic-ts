@@ -74,7 +74,7 @@ function kase(o: Partial<DiagnosedCase> & Pick<DiagnosedCase, 'services'>): Diag
 
 /** Terms stated by hand, so a test is about the COMPOSITION and nothing else. */
 function terms(o: Partial<ScoreTerms> = {}): ScoreTerms {
-  return { metric: 0, log: 0, latency: 0, temporal: 0, pool: 0, ...o };
+  return { metric: 0, log: 0, latency: 0, temporal: 0, pool: 0, failedEdge: 0, ...o };
 }
 
 describe('composedScore', () => {
