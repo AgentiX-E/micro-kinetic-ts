@@ -97,7 +97,14 @@ export function scoreProxy(
   const precision = admitted === 0 ? 0 : truePositives / admitted;
   const recall = positives === 0 ? 0 : truePositives / positives;
   const baseRate = rows.length === 0 ? 0 : positives / rows.length;
-  return { proxy, admitted, precision, recall, baseRate, informative: admitted > 0 && precision > baseRate };
+  return {
+    proxy,
+    admitted,
+    precision,
+    recall,
+    baseRate,
+    informative: admitted > 0 && precision > baseRate,
+  };
 }
 
 /** The audit's answer. */
