@@ -57,6 +57,7 @@ import {
   formatHoldoutReport,
   holdoutDirectionReport,
 } from './fse26-fourth-term.js';
+import { formatProxyAudit, proxyAudit, proxyRows } from './fse26-proxy-audit.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
   formatSeparatorCensus,
@@ -8171,7 +8172,13 @@ export function formatDiscriminatorSection(
     feasibleClassSet(classSetCandidates(cases, options, BEST_DIRECTION_WEIGHT)),
     engineAgreement(cases, options),
   );
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}`;
+  // **The audit that decides whether ANY of the class work can ship.** The gate keys on `faultType`, which is the
+  // dump's injected label; the engine never sees it. So the number the class screen reports is an oracle's, and this
+  // block asks the only question that makes it deployable: is the class recoverable from evidence? Measured against
+  // the base rate, because a proxy that does not beat "admit everything" carries no information however plausible its
+  // mechanism reads.
+  const proxies = formatProxyAudit(proxyAudit(proxyRows(cases)), engineAgreement(cases, options));
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}`;
 }
 
 function analyzeSectionText(

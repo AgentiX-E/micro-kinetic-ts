@@ -686,6 +686,55 @@ agreement (law 41), what was **refused and by how much**, and the feasible maxim
 was drawn from. The enumeration is two rankings per case, not sixty-four: a case's hit under any subset is one of two
 numbers, so 64 candidates are arithmetic over those columns.
 
+## 18. The class gate cannot ship: `faultType` is the LABEL, and no observable recovers it (iteration 118)
+
+Sections 16 and 17 measured a class gate that reports **819 (+69) with zero regressed types**, and section 17 called it
+the feasible maximum. Both are correct as measurements. **Neither is deployable, and this section says why in one line:**
+`classifyFaultType` is keyed on `case.faultType`, which arrives in the dump's `DIAG` header as the **injected label**.
+The engine never sees it. **A gate keyed on the answer is an oracle**, and "flip the default behind the gate" was never
+implementable as stated.
+
+### The question that decides it, and its answer
+
+If the class cannot be read, can it be **inferred**? That is measurable, and it has a bar: a proxy must beat the
+**base rate** — admitting every case. A proxy that cannot beat "admit everything" carries no information about the class
+however plausible its mechanism reads.
+
+| proxy | admitted | precision | recall | beats the 17.9% bar |
+| --- | ---: | ---: | ---: | --- |
+| `failedEdgeRecords >= 1` | 1222 | 13.6% | 65.4% | **no** |
+| `failedEdgeRecords >= 5` | 410 | 13.7% | 22.0% | **no** |
+| `http share >= 0.9` | 865 | 16.1% | 54.7% | **no** |
+
+**Every proxy scores BELOW the base rate.** Two independent statistics, one conclusion:
+
+- the count of retained failed calls has the same distribution in every class (`q50` of **1–3** across all six);
+- the exception-kind share is **~1.00 in every class**, because every injected fault surfaces as an HTTP-level error —
+  so "HTTP rather than logic" does not separate a link fault from a code fault at all.
+
+**The +69 is an upper bound on what a class-aware gate COULD contribute, not a gain the engine can collect.** The
+deployable value of `DEFAULT_FAILED_EDGE_WEIGHT` remains **0**, and it stays 0.
+
+### What this changes in the record
+
+1. **Section 16's "first arm to pass the criterion"** is a statement about a diagnostic, not a shippable arm. The
+   criterion was met; the arm was never deployable. Both facts are now written where a reader will meet them together.
+2. **Section 17's feasible maximum** is the best a label-keyed gate can do — and the label is unavailable, so the
+   feasible maximum over *deployable* gates is the empty set.
+3. **The next lever is not a model but a DATUM.** The one signal that would identify a link fault — the per-edge failure
+   KIND (connect-timeout, refused, reset, HTTP 5xx, exception class) — is **discarded when the dump is written**. The
+   corpus retains counts, not kinds, which is why every proxy is anti-informative. **That is a corpus-completeness gap,
+   and it is the honest target of the next iteration**: retain the kind, then re-run this audit, which is already built
+   to answer the question the moment the data can.
+
+### The instrument
+
+`benchmarks/src/fse26-proxy-audit.ts` — `proxyRows` (observables only, no label on the input side), `scoreProxy`
+(precision, recall and the base rate beside them, with `informative` requiring a strict improvement over admitting
+everything), `proxyAudit` (the three proxies this corpus supports), `formatProxyAudit` (agreement first, then the bar,
+then the verdict: **ORACLE** or **DEPLOYABLE**). It is wired as the eighth block of the discriminator section, so the
+verdict prints every time the screens are run rather than living in a paragraph.
+
 ## 8. Reproduce
 
 ```bash
