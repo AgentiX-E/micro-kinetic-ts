@@ -45,7 +45,11 @@ import {
 import { engineAgreement, formatAgreementReport } from './fse26-engine-agreement.js';
 import { formatFormulationReport, formulationScreens } from './fse26-formulation.js';
 import {
+  classGatedReport,
+  DIRECTION_ARMS,
+  directionApplies,
   directionReport,
+  formatClassGateReport,
   formatDirectionReport,
   formatHoldoutReport,
   holdoutDirectionReport,
@@ -8095,6 +8099,16 @@ export interface AnalyzeSibling {
  * @param options - The configuration to reconstruct at, already resolved from the section.
  * @returns The section's text, qualifier first.
  */
+/**
+ * The direction weight the class gate runs at.
+ *
+ * `3` is the measured maximum of the ungated curve (section 14) and it is stable across the held-out folds (section 15).
+ * **Inside the network class the weight is inert above 3** — the term's score is max-normalised, so once it exceeds the
+ * anomaly gap it settles the case, and the measured table is identical at 3 and 4. Keeping the number the curve chose,
+ * rather than a fresh one for the gate, is what keeps this to ONE fitted quantity instead of two.
+ */
+export const BEST_DIRECTION_WEIGHT = 3;
+
 export function formatDiscriminatorSection(
   cases: readonly DiagnosedCase[],
   options: TermOracleOptions,
@@ -8134,7 +8148,18 @@ export function formatDiscriminatorSection(
   // reason is in the number itself: `3` was read off the same cases its gain was measured on. This block chooses
   // the weight on four folds and reports the fifth, with the stability of the choice beside it.
   const holdout = formatHoldoutReport(holdoutDirectionReport(cases, options));
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}`;
+  // **The third family's answer, and the first arm in this record to pass the engine's own acceptance criterion.** The
+  // direction term is admitted only where the fault IS the link, one derived class set with no threshold and no
+  // per-type switch; the zero-regression claim beside it is measured, not asserted, and the same gate is applied under
+  // the held-out protocol below it so the arm is not called out-of-sample on the strength of its weight alone.
+  const gated = formatClassGateReport(
+    classGatedReport(cases, options, BEST_DIRECTION_WEIGHT),
+    engineAgreement(cases, options),
+  );
+  const gatedHoldout = formatHoldoutReport(
+    holdoutDirectionReport(cases, options, DIRECTION_ARMS, 5, directionApplies),
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}`;
 }
 
 function analyzeSectionText(

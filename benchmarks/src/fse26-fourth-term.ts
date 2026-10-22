@@ -230,6 +230,11 @@ export function holdoutDirectionReport(
   opts: TermOracleOptions,
   arms: readonly DirectionArm[] = DIRECTION_ARMS,
   folds = 5,
+  /**
+   * Which cases the term may act on. Defaults to every case; the class gate passes {@link directionApplies}, so the
+   * gated arm is held out by the SAME protocol rather than announced as out-of-sample because its weight was.
+   */
+  applies: (faultType: string) => boolean = () => true,
 ): HoldoutReport {
   const agreement = engineAgreement(cases, opts);
   const ordered = [...arms].sort((a, b) => a.weight - b.weight);
@@ -240,8 +245,9 @@ export function holdoutDirectionReport(
     const root = new Set(kase.groundTruth.filter((name) => name !== ''));
     if (root.size === 0) continue;
     const lat = latencySlopes(kase.services, opts.latFloor);
+    const admits = applies(kase.faultType);
     const hits = ordered.map((arm) => {
-      const options: TermOracleOptions = { ...opts, failedEdgeWeight: arm.weight };
+      const options: TermOracleOptions = { ...opts, failedEdgeWeight: admits ? arm.weight : 0 };
       return root.has(rankCase(kase, options, 'recorded', lat).order[0] ?? '');
     });
     rows.push({ datapack: kase.datapack, fold: foldOf(kase.datapack, folds), hits });
@@ -394,4 +400,152 @@ export function faultTypeSplit(
       .filter((row) => row.correct < row.baselineCorrect)
       .map((row) => row.faultType),
   };
+}
+
+/**
+ * The fault CLASSES, derived from the type names rather than fitted per type.
+ *
+ * Law 2's rule — read the name, derive the mapping from the vocabulary — and the reason a class is not a per-type
+ * switch: the question "can a failed call name the fault site" has one answer per class.
+ */
+export type FaultClass = 'value' | 'network' | 'latency' | 'resource' | 'abort' | 'other';
+
+/**
+ * Which class a fault type belongs to.
+ *
+ * **Derived from the name, and the order matters** — `HTTPResponseDelay` is a latency fault that also matches nothing
+ * else, while `NetworkDelay` is BOTH a network and a latency fault and is classed as network here because the injected
+ * fault is on the link. The mapping is a claim about the vocabulary, testable against the union of type names, not a
+ * table of measured outcomes.
+ *
+ * @param faultType - The type name from the dump.
+ * @returns Its class.
+ */
+export function classifyFaultType(faultType: string): FaultClass {
+  // Network first: a network delay is a link fault whose SYMPTOM is latency, and the direction term is about the link.
+  if (/^Network/.test(faultType)) return 'network';
+  if (/Replace|Patch/.test(faultType)) return 'value';
+  if (/Delay|Latency|TimeSkew/.test(faultType)) return 'latency';
+  if (/Stress/.test(faultType)) return 'resource';
+  if (/Abort|Kill|PodFailure/.test(faultType)) return 'abort';
+  return 'other';
+}
+
+/**
+ * The classes on which the direction term has a stated mechanism: **the fault IS the link**.
+ *
+ * A failed call points at the fault site exactly when what failed is the connection itself — partition, loss, corruption,
+ * bandwidth. Everywhere else the failed edge points at something the fault happened TO, which is why the term's gross
+ * gain is entirely inside this class (+62 at weight 3) and its losses are entirely outside it (latency −6, resource −9,
+ * abort −7).
+ *
+ * **One set of derived classes, no per-type switches and no threshold.** The alternative — twenty-five switches chosen
+ * by which types gained — is a twenty-five-parameter fit; this is a claim about what a failed edge MEANS.
+ */
+export const DIRECTION_CLASSES: ReadonlySet<FaultClass> = new Set<FaultClass>(['network']);
+
+/**
+ * Does the direction term apply to this case?
+ *
+ * @param faultType - The type name from the dump.
+ * @returns True when the case's fault class is one the term can reason about.
+ */
+export function directionApplies(faultType: string): boolean {
+  return DIRECTION_CLASSES.has(classifyFaultType(faultType));
+}
+
+/** What the class gate does, with the zero-regression claim measured rather than asserted. */
+export interface ClassGateReport {
+  readonly weight: number;
+  readonly cases: number;
+  readonly applied: number;
+  readonly baselineCorrect: number;
+  readonly correct: number;
+  readonly split: TypeSplit;
+}
+
+/**
+ * Score the direction term with the class gate applied.
+ *
+ * @param cases - Parsed cases.
+ * @param opts - The configuration.
+ * @param weight - The direction weight on the cases the gate admits.
+ * @returns The totals, how many cases the gate admitted, and the per-type split.
+ */
+export function classGatedReport(
+  cases: readonly DiagnosedCase[],
+  opts: TermOracleOptions,
+  weight: number,
+): ClassGateReport {
+  let counted = 0;
+  let applied = 0;
+  let baselineCorrect = 0;
+  let correct = 0;
+  const perType = new Map<string, TypeMovement>();
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    counted++;
+    const admits = directionApplies(kase.faultType);
+    if (admits) applied++;
+    const lat = latencySlopes(kase.services, opts.latFloor);
+    const baseHit = root.has(rankCase(kase, opts, 'recorded', lat).order[0] ?? '');
+    const armHit = root.has(
+      rankCase(kase, { ...opts, failedEdgeWeight: admits ? weight : 0 }, 'recorded', lat)
+        .order[0] ?? '',
+    );
+    if (baseHit) baselineCorrect++;
+    if (armHit) correct++;
+    const row = perType.get(kase.faultType) ?? {
+      faultType: kase.faultType,
+      cases: 0,
+      baselineCorrect: 0,
+      correct: 0,
+    };
+    perType.set(kase.faultType, {
+      faultType: kase.faultType,
+      cases: row.cases + 1,
+      baselineCorrect: row.baselineCorrect + (baseHit ? 1 : 0),
+      correct: row.correct + (armHit ? 1 : 0),
+    });
+  }
+  const movements = [...perType.values()].sort(
+    (a, b) =>
+      b.correct - b.baselineCorrect - (a.correct - a.baselineCorrect) ||
+      compareCasePaths(a.faultType, b.faultType),
+  );
+  return {
+    weight,
+    cases: counted,
+    applied,
+    baselineCorrect,
+    correct,
+    split: {
+      movements,
+      regressed: movements
+        .filter((row) => row.correct < row.baselineCorrect)
+        .map((row) => row.faultType),
+    },
+  };
+}
+
+/**
+ * Render the class-gated screen.
+ *
+ * @param report - The report to render.
+ * @param agreement - The baseline's agreement with the recorded run (law 41).
+ * @returns The block.
+ */
+export function formatClassGateReport(report: ClassGateReport, agreement: AgreementReport): string {
+  const percent = agreement.cases === 0 ? 0 : (100 * agreement.agreed) / agreement.cases;
+  const net = report.correct - report.baselineCorrect;
+  const lines = [
+    'Fourth-term class gate — the direction ONLY where the fault IS the link (network):',
+    `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
+    `  weight ${report.weight}: the gate admits ${report.applied}/${report.cases} cases`,
+    `  right ${report.correct} against a baseline of ${report.baselineCorrect} (${net >= 0 ? `+${net}` : net})`,
+    `  regressed types: ${report.split.regressed.length === 0 ? 'NONE' : report.split.regressed.join(', ')}`,
+  ];
+  return lines.join('\n');
 }

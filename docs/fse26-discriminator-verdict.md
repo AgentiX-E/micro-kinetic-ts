@@ -572,6 +572,72 @@ the term only where the failed-edge coverage is decisive (one callee dominates) 
 switches, which would be a twenty-five-parameter fit wearing a mechanism's clothes. One parameter, a stated mechanism,
 and the same held-out protocol.
 
+## 16. The class gate: the first arm in this record to PASS the acceptance criterion (iteration 116)
+
+Section 15 refused the direction term because **8 of 25 fault types regressed**. This is the arm that closes it, and it
+was found by asking what the term MEANS rather than by fitting a switch per type.
+
+### Three predicates were tried and refuted first
+
+| predicate | what it promised | why it failed |
+| --- | --- | --- |
+| failed-edge **dominance** (`top/total >= d`) | a confident direction is a trustworthy one | never reaches zero regressions; **`JVMMemoryStress` regresses at every level (−8/−9)** because its failed edges are dominated exactly like the cases the term helps |
+| **latency signature** (`latEdges`/`latRise` defined) | suppress where the fault is latency | **saturated — defined on every service of every case**, so the predicate is the constant `true` and "suppress where latency is measured" suppresses everywhere (net 0). Law 1 |
+| **confidence gap** (`log1p(anomaly)` top1 − top2) | suppress where the blend is already sure | **saturated again** — the anomaly is RANK-NORMALISED, so the gap is **0.010 at q10 AND at q90**; a constant cannot decide |
+
+### What the split says when it is read by CLASS rather than by type
+
+| class | cases | base → w3 | Δ |
+| --- | ---: | ---: | ---: |
+| value (`Replace*`, `Patch*`) | 515 | 372 → 430 | **+58** |
+| **network** (`Network*`) | **254** | 127 → **189** | **+62** |
+| latency (`*Delay`, `*Latency`, `TimeSkew`) | 188 | 111 → 105 | −6 |
+| resource (`*Stress`) | 173 | 12 → 3 | **−9** |
+| abort (`*Abort`, `*Kill`, `PodFailure`) | 227 | 86 → 79 | −7 |
+| other | 65 | 42 → 49 | +7 |
+
+**The gross gain of the ungated term is ENTIRELY inside the network class (+62 of +62 of it), and its losses are entirely
+outside it.** That is a mechanism, not a pattern: a failed call names the fault site exactly when what failed IS the
+connection — partition, loss, corruption, bandwidth — and everywhere else the failed edge points at something the fault
+happened TO.
+
+### The gate, measured
+
+**The direction term applies only to the network class** — one derived class set, no threshold, no per-type switch:
+
+```
+  weight 3: the gate admits 254/1422 cases
+  right 812 against a baseline of 750 (+62)
+  regressed types: NONE
+```
+
+**812 of 1422 is 57.1%, against 52.7% — +4.4pp — and zero regressed fault types.** That is the engine's own acceptance
+condition for flipping the default, met for the first time in this record.
+
+### And held out, with the SAME gate
+
+| fold | chosen | held-out | baseline | net | fixed / broken |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 3 | 147 / 278 | 133 | **+14** | 14 / 0 |
+| 1 | 3 | 159 / 274 | 145 | **+14** | 14 / 0 |
+| 2 | 3 | 185 / 310 | 170 | **+15** | 16 / 1 |
+| 3 | 3 | 162 / 300 | 155 | **+7** | 8 / 1 |
+| 4 | 3 | 159 / 260 | 147 | **+12** | 12 / 0 |
+| **all** | **3 every fold** | **812** | **750** | **+62** | **64 / 2** |
+
+**Every fold net-positive, the same weight in every fold, 64 cases fixed against 2 broken** — and the two breaks do not
+regress a TYPE, which is the criterion's unit. The gate is applied INSIDE the protocol (the fold split decides the
+weight, the gate decides the cases), so the arm is not called out-of-sample on the strength of its weight alone.
+
+### One thing this does not yet license
+
+**The class set was chosen after the per-class table was seen.** The mechanism was stated before it (section 15: delay,
+abort and memory are latency-or-resource faults whose failed edge points at a dependency that is not the fault site), and
+the class is derived from the type NAMES rather than fitted per type — but a reader is entitled to ask what a DIFFERENT
+class set would have done. **Iteration 117 holds the class choice out too**: with six classes there are 64 candidate sets,
+the fold splits are already built, and the question "would the protocol have found `network` on four folds" is answerable
+in one pass. Until that runs, this arm is a CANDIDATE that passes the criterion, not a shipped default.
+
 ## 8. Reproduce
 
 ```bash

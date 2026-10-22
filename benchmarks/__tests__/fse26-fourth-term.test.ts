@@ -12,10 +12,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { DiagnosedCase, DiagnosedService } from '../src/fse26-diagnose-analyze.js';
 import { foldOf } from '../src/fse26-discriminator.js';
+import { engineAgreement as engineAgreementForTest } from '../src/fse26-engine-agreement.js';
 import {
+  classGatedReport,
+  classifyFaultType,
   DIRECTION_ARMS,
+  directionApplies,
   directionReport,
   faultTypeSplit,
+  formatClassGateReport,
   formatDirectionReport,
   formatHoldoutReport,
   HOLDOUT_BAR,
@@ -427,5 +432,209 @@ describe('faultTypeSplit — the unit the engine\u2019s acceptance criterion is 
     const split = faultTypeSplit(cases, OPTS, 0);
     expect(split.regressed).toEqual([]);
     for (const row of split.movements) expect(row.correct).toBe(row.baselineCorrect);
+  });
+});
+
+describe('classifyFaultType — the class is DERIVED from the name, not fitted per type', () => {
+  it('maps every type in the dumped union to exactly one class', () => {
+    // The population is the vocabulary the corpus actually uses, so a NEW type name cannot slip in unclassified — it
+    // lands in `other`, which is a class the gate does not admit and therefore a visible decision rather than a silent
+    // default.
+    const types = [
+      'HTTPResponseReplaceCode',
+      'HTTPRequestReplaceMethod',
+      'HTTPResponseReplaceBody',
+      'HTTPResponsePatchBody',
+      'HTTPRequestReplacePath',
+      'NetworkPartition',
+      'NetworkLoss',
+      'NetworkCorrupt',
+      'NetworkBandwidth',
+      'NetworkDelay',
+      'HTTPResponseDelay',
+      'HTTPRequestDelay',
+      'JVMLatency',
+      'JVMMySQLLatency',
+      'TimeSkew',
+      'JVMMemoryStress',
+      'JVMCPUStress',
+      'HTTPRequestAbort',
+      'HTTPResponseAbort',
+      'ContainerKill',
+      'PodKill',
+      'PodFailure',
+      'JVMException',
+      'JVMReturn',
+      'DNSRandom',
+    ];
+    const seen = new Map(types.map((type) => [type, classifyFaultType(type)]));
+    expect(new Set(seen.values())).toEqual(
+      new Set(['value', 'network', 'latency', 'resource', 'abort', 'other']),
+    );
+    // Network FIRST: a network delay is a LINK fault whose symptom is latency, and the direction term is about the link.
+    expect(seen.get('NetworkDelay')).toBe('network');
+    expect(seen.get('HTTPResponseDelay')).toBe('latency');
+    expect(seen.get('JVMMemoryStress')).toBe('resource');
+    expect(seen.get('HTTPRequestAbort')).toBe('abort');
+    expect(seen.get('HTTPResponseReplaceCode')).toBe('value');
+    expect(seen.get('JVMException')).toBe('other');
+  });
+
+  it('admits the network class and NOT the class whose losses the measurement found', () => {
+    expect(directionApplies('NetworkPartition')).toBe(true);
+    // Every class the ungated term lost on is refused, which is what makes the gate a mechanism rather than a fit.
+    for (const harmful of [
+      'HTTPRequestDelay',
+      'JVMMemoryStress',
+      'HTTPRequestAbort',
+      'HTTPResponsePatchBody',
+    ]) {
+      expect(directionApplies(harmful)).toBe(false);
+    }
+  });
+});
+
+describe('classGatedReport', () => {
+  it('applies the term only to the admitted class, so the refused class cannot move', () => {
+    const cases = [
+      kase({
+        datapack: 'n1',
+        faultType: 'NetworkPartition',
+        services: services(),
+        groundTruth: ['source'],
+      }),
+      kase({
+        datapack: 'd1',
+        faultType: 'HTTPRequestDelay',
+        services: services(),
+        groundTruth: ['source'],
+      }),
+    ];
+    const report = classGatedReport(cases, OPTS, 3);
+    expect(report.cases).toBe(2);
+    expect(report.applied).toBe(1);
+    // The network case is fixed by the direction; the delay case is untouched, so it stays wrong — which is the point:
+    // the refused class is not "handled", it is left exactly as the engine had it.
+    expect(report.baselineCorrect).toBe(0);
+    expect(report.correct).toBe(1);
+    expect(report.split.regressed).toEqual([]);
+  });
+
+  it('reports a regression when the admitted class is the one it hurts', () => {
+    const cases = [
+      kase({
+        datapack: 'n1',
+        faultType: 'NetworkLoss',
+        services: services(),
+        groundTruth: ['symptom'],
+      }),
+    ];
+    const report = classGatedReport(cases, OPTS, 3);
+    expect(report.baselineCorrect).toBe(1);
+    expect(report.correct).toBe(0);
+    expect(report.split.regressed).toEqual(['NetworkLoss']);
+  });
+
+  it('counts a case with a root but NO services, and renders a zero population without dividing by it', () => {
+    // The `?? ''` fallbacks on both orderings fire on a case that names a root and has nothing to rank.
+    const report = classGatedReport(
+      [kase({ datapack: 'n1', faultType: 'NetworkLoss', services: [], groundTruth: ['ghost'] })],
+      OPTS,
+      3,
+    );
+    expect(report.cases).toBe(1);
+    expect(report.correct).toBe(0);
+    expect(
+      formatClassGateReport(report, {
+        cases: 0,
+        agreed: 0,
+        recordedRight: 0,
+        rebuiltRight: 0,
+        recordedNotListed: 0,
+      }),
+    ).toContain('0/0');
+  });
+
+  it('renders a NEGATIVE net and a NAMED regression, which is the arm that hurts', () => {
+    // The admitted class is exactly the one this corpus punishes: the gate admits it and the term breaks it, so the net
+    // is −1 and the report must name the type rather than print `NONE`.
+    const cases = [
+      kase({
+        datapack: 'n1',
+        faultType: 'NetworkLoss',
+        services: services(),
+        groundTruth: ['symptom'],
+        prediction: ['symptom'],
+      }),
+    ];
+    const text = formatClassGateReport(
+      classGatedReport(cases, OPTS, 3),
+      engineAgreementForTest(cases, OPTS),
+    );
+    expect(text).toContain('(-1)');
+    expect(text).toContain('regressed types: NetworkLoss');
+  });
+
+  it('breaks a same-movement tie with the repository comparator, not a second spelling of string order', () => {
+    // Two admitted types that move by the SAME amount: only then does the comparator run, and it must run through
+    // `compareCasePaths` — a `localeCompare` here would be the census fence's defect, and the ordering would be a
+    // second owner of the convention.
+    const cases = [
+      kase({
+        datapack: 'a1',
+        faultType: 'NetworkLoss',
+        services: services(),
+        groundTruth: ['source'],
+      }),
+      kase({
+        datapack: 'a2',
+        faultType: 'NetworkPartition',
+        services: services(),
+        groundTruth: ['source'],
+      }),
+    ];
+    const report = classGatedReport(cases, OPTS, 3);
+    expect(report.split.movements.map((row) => row.faultType)).toEqual([
+      'NetworkLoss',
+      'NetworkPartition',
+    ]);
+    for (const row of report.split.movements) expect(row.correct - row.baselineCorrect).toBe(1);
+  });
+
+  it('is INERT at weight 0, which is the coherence check every arm in this record starts from', () => {
+    const cases = [
+      kase({
+        datapack: 'n1',
+        faultType: 'NetworkLoss',
+        services: services(),
+        groundTruth: ['source'],
+      }),
+    ];
+    const report = classGatedReport(cases, OPTS, 0);
+    expect(report.correct).toBe(report.baselineCorrect);
+    expect(report.split.regressed).toEqual([]);
+  });
+});
+
+describe('formatClassGateReport', () => {
+  it('prints the agreement, the admitted count, the net and the regressed types — in that order', () => {
+    const cases = [
+      kase({
+        datapack: 'n1',
+        faultType: 'NetworkLoss',
+        services: services(),
+        groundTruth: ['source'],
+        prediction: ['symptom'],
+      }),
+    ];
+    const text = formatClassGateReport(
+      classGatedReport(cases, OPTS, 3),
+      engineAgreementForTest(cases, OPTS),
+    );
+    const lines = text.split('\n');
+    expect(lines[0]).toContain('class gate');
+    expect(lines[1]).toContain('baseline agreement');
+    expect(text).toContain('admits 1/1');
+    expect(text).toContain('regressed types: NONE');
   });
 });
