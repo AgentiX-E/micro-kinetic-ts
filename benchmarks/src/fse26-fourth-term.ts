@@ -566,7 +566,7 @@ function candidateClassSets(): readonly (readonly FaultClass[])[] {
   for (let mask = 0; mask < 1 << CLASS_ORDER.length; mask++) {
     out.push(CLASS_ORDER.filter((_, index) => (mask & (1 << index)) !== 0));
   }
-  return out.sort((a, b) => a.length - b.length || a.join(',').localeCompare(b.join(',')));
+  return out.sort((a, b) => a.length - b.length || compareCasePaths(a.join(','), b.join(',')));
 }
 
 /** One candidate class set, scored over the whole corpus with its regressed types. */
@@ -633,11 +633,14 @@ export function classSetCandidates(
         .map(([type]) => type),
     });
   }
+  // The repository comparator, not a second spelling of string order. This is the third time this defect has been
+  // written into a new module (`it.110`, `it.116`, and here) — the census fence names `compareCasePaths` as the only
+  // owner of the convention, and the fix is to call it, not to re-implement it.
   return out.sort(
     (a, b) =>
       b.total - a.total ||
       a.set.length - b.set.length ||
-      a.set.join('+').localeCompare(b.set.join('+')),
+      compareCasePaths(a.set.join('+'), b.set.join('+')),
   );
 }
 
