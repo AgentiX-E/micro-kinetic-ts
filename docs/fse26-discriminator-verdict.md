@@ -500,6 +500,78 @@ direction is inert, so that arm IS the engine's blend and the report says whethe
 is read (law 41). The five-family table, the corrected baseline and this fourth term now share one instrument and one
 discipline: **a rule over the whole corpus, nothing fitted, the split printed beside the net.**
 
+## 15. The fourth term, held out: the weight is STABLE, the gain is real, and the kill criterion REFUSES it
+
+Section 14 measured 855 (+105) at weight 3 and said, before anyone read the number, that `3` was **fit on the corpus it
+was scored on**. This is the protocol that answers that, and it is the same fold assignment the discriminator uses
+(`foldOf`, five folds by datapack hash) rather than a second split of one corpus.
+
+**The weight is chosen on four folds and read on the fifth**, per fold:
+
+| fold | chosen on the other four | held-out right | baseline | net | fixed / broken |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | **3** | 167 / 278 | 133 | **+34** | 40 / 6 |
+| 1 | **3** | 165 / 274 | 145 | **+20** | 25 / 5 |
+| 2 | **3** | 193 / 310 | 170 | **+23** | 37 / 14 |
+| 3 | **3** | 167 / 300 | 155 | **+12** | 25 / 13 |
+| 4 | **3** | 163 / 260 | 147 | **+16** | 28 / 12 |
+| **all** | **3 in every fold** | **855** | **750** | **+105** | 155 / 50 |
+
+**Every fold chose the same weight, and every fold was net-positive on cases it never saw.** The held-out total
+reproduces section 14's in-sample total exactly, which is the strongest form this measurement can take: **the +105 is
+not a fitted artifact.** The tie-break is toward the SMALLER weight — a larger one trades more cases — so a fold that
+was indifferent between two weights would have chosen the safer one, and none was indifferent.
+
+### And then the acceptance criterion in its OWN unit refuses it
+
+The pruner's docblock states the condition for flipping the default: net-positive with **zero regressed FSE'26 fault
+types**. Fifty broken CASES is not that unit, so the split was taken by type at weight 3:
+
+| fault type | baseline | weight 3 | Δ |
+| --- | ---: | ---: | ---: |
+| HTTPResponseReplaceCode | 159 | **218** | **+59** |
+| NetworkPartition | 48 | **70** | +22 |
+| NetworkBandwidth | 13 | **31** | +18 |
+| NetworkLoss | 23 | **35** | +12 |
+| NetworkCorrupt | 24 | **34** | +10 |
+| JVMException | 30 | **37** | +7 |
+| … | | | |
+| HTTPResponseDelay | 52 | 51 | −1 |
+| HTTPResponseReplaceBody | 45 | 44 | −1 |
+| HTTPRequestReplacePath | 38 | 36 | −2 |
+| HTTPResponseAbort | 34 | 32 | −2 |
+| HTTPResponsePatchBody | 3 | **0** | **−3** |
+| HTTPRequestAbort | 47 | 42 | −5 |
+| HTTPRequestDelay | 54 | 48 | −6 |
+| JVMMemoryStress | 12 | **3** | **−9** |
+
+**Eight of twenty-five types regress, and no weight in the menu reaches zero:**
+
+| weight | net | types regressed | worst type |
+| ---: | ---: | ---: | --- |
+| 0.25 | +13 | **2** | HTTPRequestDelay −2 |
+| 0.5 | +40 | 5 | JVMMemoryStress −4 |
+| 1 | +60 | 6 | JVMMemoryStress −8 |
+| 1.5 | +85 | 6 | JVMMemoryStress −9 |
+| 2 | +98 | 7 | JVMMemoryStress −9 |
+| **3** | **+105** | **8** | JVMMemoryStress −9 |
+
+**So the default does not flip.** The gain is large, out-of-sample, and stable, and it is **rejected on the engine's own
+terms** by a margin that no weight in the menu closes — even a quarter-strength term breaks `HTTPRequestDelay`. This is
+the standing rule applied to our own best result: a regression is not bought with a net, however large.
+
+### What the split says the next candidate must be
+
+The gain is **structural, not diffuse**: `HTTPResponseReplaceCode` alone is **+59** of the +105, and the network family
+adds another **+62** between four types. The losses are the **delay / abort / memory** family — faults whose failed
+edges point at a dependency that is *not* the fault site, because the fault is a latency or resource condition rather
+than a failed call.
+
+That is a mechanism, and it names the one thing worth trying next: **a gate on the direction's own evidence** — apply
+the term only where the failed-edge coverage is decisive (one callee dominates) — rather than twenty-five per-type
+switches, which would be a twenty-five-parameter fit wearing a mechanism's clothes. One parameter, a stated mechanism,
+and the same held-out protocol.
+
 ## 8. Reproduce
 
 ```bash

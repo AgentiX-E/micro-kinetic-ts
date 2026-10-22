@@ -33,7 +33,9 @@
  * @module benchmarks/fse26-fourth-term
  */
 
+import { compareCasePaths } from '../../packages/kinetic/src/benchmarks/case-order.js';
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
+import { foldOf } from './fse26-discriminator.js';
 import {
   agreementVerdict,
   engineAgreement,
@@ -173,4 +175,223 @@ export function formatDirectionReport(report: DirectionReport): string {
       'before it may be called a candidate',
   );
   return lines.join('\n');
+}
+
+/** The bar the held-out weight must clear, stated before the measurement. */
+export const HOLDOUT_BAR =
+  'the SAME weight must be chosen on every fold, AND the held-out total must be net-positive with the per-fold split ' +
+  'printed — a weight that moves between folds is evidence that the maximum is noise, not that the term is one';
+
+/** What one fold's training folds chose, and what that choice did on the fold it never saw. */
+export interface FoldChoice {
+  readonly fold: number;
+  /** The weight chosen on the OTHER folds. */
+  readonly chosenWeight: number;
+  readonly heldOutCases: number;
+  readonly heldOutCorrect: number;
+  /** The zero arm on the SAME held-out cases, so the net is a difference from the engine's own blend. */
+  readonly baselineCorrect: number;
+  readonly fixed: readonly string[];
+  readonly broken: readonly string[];
+}
+
+/** The cross-validated verdict on the direction term's weight. */
+export interface HoldoutReport {
+  readonly agreement: AgreementReport;
+  readonly folds: readonly FoldChoice[];
+  /** One weight per fold, in fold order — the STABILITY the bar is about. */
+  readonly chosen: readonly number[];
+  readonly heldOutCorrect: number;
+  readonly heldOutBaseline: number;
+  readonly heldOutCases: number;
+}
+
+/**
+ * Choose the direction weight on four folds and measure it on the fifth.
+ *
+ * **Why this exists**: `3` was read off the same 1422 cases its gain was computed on. That is a fit, and the only thing
+ * that distinguishes a fitted weight from a real one is whether it survives cases it was not chosen on. The
+ * discriminator already answers this question for a MENU of rules via {@link foldOf}, and this reuses the same fold
+ * assignment rather than inventing a second one — two splits of one corpus is the defect class this record keeps
+ * finding.
+ *
+ * **The tie-break is toward the SMALLER weight**, and it is not arbitrary: a larger weight trades more cases (the
+ * measured split widens monotonically with it), so when two weights fit the training folds equally well, the one that
+ * trades less is the safer choice on the fold nobody has seen.
+ *
+ * @param cases - Parsed cases.
+ * @param opts - The configuration; its `failedEdgeWeight` is overridden per arm.
+ * @param arms - The weights to choose among; defaults to {@link DIRECTION_ARMS}.
+ * @param folds - How many folds; 5 by default, matching the discriminator.
+ * @returns The agreement, the per-fold verdicts, and the totals.
+ */
+export function holdoutDirectionReport(
+  cases: readonly DiagnosedCase[],
+  opts: TermOracleOptions,
+  arms: readonly DirectionArm[] = DIRECTION_ARMS,
+  folds = 5,
+): HoldoutReport {
+  const agreement = engineAgreement(cases, opts);
+  const ordered = [...arms].sort((a, b) => a.weight - b.weight);
+  // One traversal per arm, over every case, recorded per (case, arm). The fold split is then a grouping rather than
+  // five re-scorings, so the arms cannot drift between the fold they were chosen on and the fold they are read on.
+  const rows: { datapack: string; fold: number; hits: boolean[] }[] = [];
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    const lat = latencySlopes(kase.services, opts.latFloor);
+    const hits = ordered.map((arm) => {
+      const options: TermOracleOptions = { ...opts, failedEdgeWeight: arm.weight };
+      return root.has(rankCase(kase, options, 'recorded', lat).order[0] ?? '');
+    });
+    rows.push({ datapack: kase.datapack, fold: foldOf(kase.datapack, folds), hits });
+  }
+  const baselineIndex = ordered.findIndex((arm) => arm.weight === 0);
+  const choices: FoldChoice[] = [];
+  for (let fold = 0; fold < folds; fold++) {
+    const training = rows.filter((row) => row.fold !== fold);
+    const testing = rows.filter((row) => row.fold === fold);
+    let best = 0;
+    let bestScore = -1;
+    ordered.forEach((_, index) => {
+      const score = training.reduce((sum, row) => sum + (row.hits[index] ? 1 : 0), 0);
+      // Strictly greater, walking the arms in ASCENDING weight order: a tie keeps the smaller weight.
+      if (score > bestScore) {
+        bestScore = score;
+        best = index;
+      }
+    });
+    const heldOutCorrect = testing.reduce((sum, row) => sum + (row.hits[best] ? 1 : 0), 0);
+    const baseCorrect =
+      baselineIndex < 0
+        ? 0
+        : testing.reduce((sum, row) => sum + (row.hits[baselineIndex] ? 1 : 0), 0);
+    const fixed: string[] = [];
+    const broken: string[] = [];
+    for (const row of testing) {
+      const hit = row.hits[best]!;
+      const base = baselineIndex < 0 ? false : row.hits[baselineIndex]!;
+      if (!base && hit) fixed.push(row.datapack);
+      if (base && !hit) broken.push(row.datapack);
+    }
+    choices.push({
+      fold,
+      chosenWeight: ordered[best]!.weight,
+      heldOutCases: testing.length,
+      heldOutCorrect,
+      baselineCorrect: baseCorrect,
+      fixed,
+      broken,
+    });
+  }
+  return {
+    agreement,
+    folds: choices,
+    chosen: choices.map((choice) => choice.chosenWeight),
+    heldOutCorrect: choices.reduce((sum, choice) => sum + choice.heldOutCorrect, 0),
+    heldOutBaseline: choices.reduce((sum, choice) => sum + choice.baselineCorrect, 0),
+    heldOutCases: choices.reduce((sum, choice) => sum + choice.heldOutCases, 0),
+  };
+}
+
+/**
+ * Render the held-out report.
+ *
+ * @param report - The report to render.
+ * @returns The block, agreement first and the bar last.
+ */
+export function formatHoldoutReport(report: HoldoutReport): string {
+  const percent =
+    report.agreement.cases === 0 ? 0 : (100 * report.agreement.agreed) / report.agreement.cases;
+  const distinct = new Set(report.chosen);
+  const net = report.heldOutCorrect - report.heldOutBaseline;
+  const stable = distinct.size === 1;
+  const lines = [
+    'Fourth-term held-out: the direction weight, chosen on four folds and read on the fifth:',
+    `  baseline agreement with the recorded run: ${report.agreement.agreed}/${report.agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(report.agreement)}`,
+    '  fold  chosen   held-out   baseline   net   fixed / broken',
+  ];
+  for (const choice of report.folds) {
+    const foldNet = choice.heldOutCorrect - choice.baselineCorrect;
+    lines.push(
+      `  ${String(choice.fold).padEnd(6)}${String(choice.chosenWeight).padEnd(9)}` +
+        `${String(`${choice.heldOutCorrect}/${choice.heldOutCases}`).padEnd(11)}` +
+        `${String(choice.baselineCorrect).padEnd(11)}` +
+        `${String(foldNet >= 0 ? `+${foldNet}` : foldNet).padEnd(6)}` +
+        `${choice.fixed.length} / ${choice.broken.length}`,
+    );
+  }
+  lines.push(
+    `  held-out total ${report.heldOutCorrect} against a baseline of ${report.heldOutBaseline} ` +
+      `(${net >= 0 ? `+${net}` : net} over ${report.heldOutCases} cases); weights chosen ${report.chosen.join(', ')}`,
+    `  verdict: ${stable ? 'STABLE' : 'UNSTABLE'} weight across folds — ${HOLDOUT_BAR}`,
+  );
+  return lines.join('\n');
+}
+
+/** One fault type's movement, which is the unit the engine's own acceptance criterion is stated in. */
+export interface TypeMovement {
+  readonly faultType: string;
+  readonly cases: number;
+  readonly baselineCorrect: number;
+  readonly correct: number;
+}
+
+/** The per-fault-type split, and the types that got WORSE — the kill criterion's actual unit. */
+export interface TypeSplit {
+  readonly movements: readonly TypeMovement[];
+  /** Types the arm makes strictly worse. The pruner's acceptance is ZERO of these, not zero cases. */
+  readonly regressed: readonly string[];
+}
+
+/**
+ * Split one weight's movement by FAULT TYPE.
+ *
+ * **This is the unit the acceptance criterion is stated in, and the split by case is not it.** The pruner's own
+ * docblock requires "net-positive with zero regression on the kill criterion (RCAEval golden 9-cell byte-identical AND
+ * FSE'26 **zero regressed fault types**)" — so fifty broken CASES is not a rejection if every type they belong to also
+ * gains. Measuring cases alone cannot answer the question the gate asks, which is why this exists beside the case
+ * split rather than instead of it.
+ *
+ * @param cases - Parsed cases.
+ * @param opts - The configuration.
+ * @param weight - The direction weight to split.
+ * @returns The per-type rows and the types that regressed.
+ */
+export function faultTypeSplit(
+  cases: readonly DiagnosedCase[],
+  opts: TermOracleOptions,
+  weight: number,
+): TypeSplit {
+  const options: TermOracleOptions = { ...opts, failedEdgeWeight: weight };
+  const byType = new Map<string, { cases: number; baselineCorrect: number; correct: number }>();
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    const lat = latencySlopes(kase.services, opts.latFloor);
+    const base = root.has(rankCase(kase, opts, 'recorded', lat).order[0] ?? '');
+    const hit = root.has(rankCase(kase, options, 'recorded', lat).order[0] ?? '');
+    const row = byType.get(kase.faultType) ?? { cases: 0, baselineCorrect: 0, correct: 0 };
+    row.cases += 1;
+    if (base) row.baselineCorrect += 1;
+    if (hit) row.correct += 1;
+    byType.set(kase.faultType, row);
+  }
+  const movements = [...byType.entries()]
+    .map(([faultType, row]) => ({ faultType, ...row }))
+    // The tie-break calls the repository's comparator rather than spelling the string order a second time. The census
+    // fence names `compareCasePaths` as its only owner, and a `localeCompare` here is exactly the defect iteration 110
+    // committed in another module — this time the fence caught it before the commit, not after.
+    .sort(
+      (a, b) =>
+        b.correct - b.baselineCorrect - (a.correct - a.baselineCorrect) ||
+        compareCasePaths(a.faultType, b.faultType),
+    );
+  return {
+    movements,
+    regressed: movements
+      .filter((row) => row.correct < row.baselineCorrect)
+      .map((row) => row.faultType),
+  };
 }

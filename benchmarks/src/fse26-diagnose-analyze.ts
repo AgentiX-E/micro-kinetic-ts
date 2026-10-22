@@ -44,7 +44,12 @@ import {
 } from './fse26-discriminator.js';
 import { engineAgreement, formatAgreementReport } from './fse26-engine-agreement.js';
 import { formatFormulationReport, formulationScreens } from './fse26-formulation.js';
-import { directionReport, formatDirectionReport } from './fse26-fourth-term.js';
+import {
+  directionReport,
+  formatDirectionReport,
+  formatHoldoutReport,
+  holdoutDirectionReport,
+} from './fse26-fourth-term.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
   formatSeparatorCensus,
@@ -8125,7 +8130,11 @@ export function formatDiscriminatorSection(
   // composition family showed the arithmetic is additive, so the candidate is a new TERM rather than a new
   // reading or a new combination — measured against the run-reproducing baseline, split printed beside the net.
   const direction = formatDirectionReport(directionReport(cases, options));
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}`;
+  // **The only arm whose number was positive is also the only one that needed a held-out protocol**, and the
+  // reason is in the number itself: `3` was read off the same cases its gain was measured on. This block chooses
+  // the weight on four folds and reports the fifth, with the stability of the choice beside it.
+  const holdout = formatHoldoutReport(holdoutDirectionReport(cases, options));
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}`;
 }
 
 function analyzeSectionText(

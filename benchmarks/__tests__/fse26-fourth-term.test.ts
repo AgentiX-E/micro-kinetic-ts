@@ -11,10 +11,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DiagnosedCase, DiagnosedService } from '../src/fse26-diagnose-analyze.js';
+import { foldOf } from '../src/fse26-discriminator.js';
 import {
   DIRECTION_ARMS,
   directionReport,
+  faultTypeSplit,
   formatDirectionReport,
+  formatHoldoutReport,
+  HOLDOUT_BAR,
+  holdoutDirectionReport,
 } from '../src/fse26-fourth-term.js';
 import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 import { latencySlopes, rankCase } from '../src/fse26-term-oracle.js';
@@ -277,5 +282,150 @@ describe('formatDirectionReport', () => {
     expect(weights).toEqual([...weights].sort((a, b) => a - b));
     expect(weights).toContain(3);
     expect(weights).toContain(4);
+  });
+});
+
+describe('holdoutDirectionReport — the weight chosen on four folds, read on the fifth', () => {
+  /** A corpus wide enough to fill five folds: `datapack` drives the fold, so the ids are spread deliberately. */
+  const corpus = (truth: 'source' | 'symptom'): DiagnosedCase[] =>
+    ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'].map((datapack) =>
+      kase({ datapack, services: services(), groundTruth: [truth], prediction: ['symptom'] }),
+    );
+
+  it('chooses on the training folds and reports the fold it never saw', () => {
+    // The direction is worth +1 case per fold here: at weight 3 the callee wins, so a `source` corpus is fixed and a
+    // `symptom` corpus is broken. Every fold must therefore be net-positive on the `source` corpus.
+    const report = holdoutDirectionReport(corpus('source'), OPTS, DIRECTION_ARMS, 5);
+    expect(report.folds).toHaveLength(5);
+    expect(report.heldOutCases).toBe(10);
+    // Every fold chose a non-zero weight on its training cases, and each is net-positive on its held-out ones.
+    for (const choice of report.folds) {
+      expect(choice.chosenWeight).toBeGreaterThan(0);
+      expect(choice.heldOutCorrect).toBeGreaterThan(choice.baselineCorrect);
+    }
+    expect(report.chosen.every((weight) => weight === report.chosen[0])).toBe(true);
+    expect(report.heldOutCorrect).toBeGreaterThan(report.heldOutBaseline);
+  });
+
+  it('prints UNSTABLE when the folds want different weights', () => {
+    // The truth is set BY FOLD: folds 0, 1 and 2 reward the direction, folds 3 and 4 punish it. Holding out a
+    // punishing fold leaves three rewarding folds in training and one punishing one, so it chooses 3; holding out
+    // fold 0 leaves two and two, and the tie-break takes 0. Two different weights is exactly what the verdict reports.
+    const ids = Array.from({ length: 50 }, (_, index) => `mixpack-${index}`);
+    const cases = ids.map((datapack) =>
+      kase({
+        datapack,
+        services: services(),
+        groundTruth: [foldOf(datapack, 5) <= 2 ? 'source' : 'symptom'],
+        prediction: ['symptom'],
+      }),
+    );
+    const report = holdoutDirectionReport(cases, OPTS, DIRECTION_ARMS, 5);
+    expect(new Set(report.chosen).size).toBeGreaterThan(1);
+    expect(formatHoldoutReport(report)).toContain('UNSTABLE weight across folds');
+  });
+
+  it('renders a corpus that names no root, without dividing by zero', () => {
+    const report = holdoutDirectionReport(
+      [kase({ datapack: 'empty', services: services(), groundTruth: [] })],
+      OPTS,
+      DIRECTION_ARMS,
+      5,
+    );
+    expect(report.agreement.cases).toBe(0);
+    expect(formatHoldoutReport(report)).toContain('0/0');
+    expect(formatHoldoutReport(report)).not.toContain('NaN');
+  });
+
+  it('prints a NEGATIVE fold net, which is the fold a chosen weight loses', () => {
+    // The corpus is built BY FOLD using the real split: every case in fold 0 has the direction reversed, and every case
+    // elsewhere is one the direction fixes. The four training folds then choose weight 3 (it wins everywhere they can
+    // see), and fold 0 is where that choice is wrong — the shape a per-fold net has to be able to show as a minus.
+    const ids = Array.from({ length: 30 }, (_, index) => `foldpack-${index}`);
+    const cases = ids.map((datapack) =>
+      kase({
+        datapack,
+        services: services(),
+        groundTruth: [foldOf(datapack, 5) === 0 ? 'symptom' : 'source'],
+        prediction: ['symptom'],
+      }),
+    );
+    const report = holdoutDirectionReport(cases, OPTS, DIRECTION_ARMS, 5);
+    const first = report.folds.find((fold) => fold.fold === 0)!;
+    expect(first.chosenWeight).toBeGreaterThan(0);
+    expect(first.heldOutCorrect).toBeLessThan(first.baselineCorrect);
+    expect(formatHoldoutReport(report)).toContain('-');
+  });
+
+  it('answers 0 for a baseline it was not given, in the held-out protocol too', () => {
+    // A menu without a zero arm has no arm to read the baseline from, and the alternative to answering 0 is a lookup
+    // on `undefined` that takes the whole report down. The held-out net then reads as the distance from zero.
+    const report = holdoutDirectionReport(corpus('source'), OPTS, [{ weight: 3, claim: 'on' }], 5);
+    for (const choice of report.folds) expect(choice.baselineCorrect).toBe(0);
+    expect(report.heldOutBaseline).toBe(0);
+    expect(report.heldOutCorrect).toBe(10);
+    // With no baseline, nothing can be "broken" — there is no arm to have been right where this one was wrong.
+    for (const choice of report.folds) expect(choice.broken).toEqual([]);
+  });
+
+  it('states the bar it is judged by, and says STABLE or UNSTABLE from the choices themselves', () => {
+    const stable = formatHoldoutReport(
+      holdoutDirectionReport(corpus('source'), OPTS, DIRECTION_ARMS, 5),
+    );
+    expect(stable).toContain('STABLE weight across folds');
+    expect(stable).toContain(HOLDOUT_BAR);
+    // The agreement is printed FIRST, because law 41 applies to a held-out report exactly as it does to a full one.
+    expect(stable.split('\n')[1]).toContain('baseline agreement');
+  });
+
+  it('chooses ZERO when the direction would break every case, which is the protocol working', () => {
+    // Measured, not assumed: on a corpus where the callee is never the truth, weight 0 scores best on the training
+    // folds, so every fold chooses 0 and the held-out projection is "no change" rather than a loss. A cross-validation
+    // that could pick a harmful arm here would be choosing on the wrong side of the split.
+    const report = holdoutDirectionReport(corpus('symptom'), OPTS, DIRECTION_ARMS, 5);
+    expect(report.chosen).toEqual([0, 0, 0, 0, 0]);
+    expect(report.heldOutCorrect).toBe(report.heldOutBaseline);
+    // The per-fold split is still printed, so a net built out of regressions cannot hide inside a total.
+    expect(formatHoldoutReport(report)).toMatch(/\d+ \/ \d+/);
+    expect(formatHoldoutReport(report)).toContain('STABLE weight across folds');
+  });
+});
+
+describe('faultTypeSplit — the unit the engine\u2019s acceptance criterion is stated in', () => {
+  it('reports the types that got WORSE, which is what a case count cannot say', () => {
+    const cases = [
+      kase({ datapack: 'a1', faultType: 'gainer', services: services(), groundTruth: ['source'] }),
+      kase({ datapack: 'a2', faultType: 'gainer', services: services(), groundTruth: ['source'] }),
+      kase({ datapack: 'b1', faultType: 'loser', services: services(), groundTruth: ['symptom'] }),
+    ];
+    const split = faultTypeSplit(cases, OPTS, 3);
+    const byType = new Map(split.movements.map((row) => [row.faultType, row]));
+    expect(byType.get('gainer')).toMatchObject({ cases: 2, baselineCorrect: 0, correct: 2 });
+    expect(byType.get('loser')).toMatchObject({ cases: 1, baselineCorrect: 1, correct: 0 });
+    // A net of +1 case that regressed a TYPE is exactly the shape the kill criterion rejects.
+    expect(split.regressed).toEqual(['loser']);
+  });
+
+  it('skips a case that names no root, and counts one with a root but no services as unwinnable', () => {
+    // Both populations the other screens already handle: a case with no root is not part of any population here, and a
+    // case with a root but no ranked service is counted (depressing the type equally) rather than dropped.
+    const cases = [
+      kase({ datapack: 'n1', faultType: 'noRoot', services: services(), groundTruth: [] }),
+      kase({ datapack: 'n2', faultType: 'noServices', services: [], groundTruth: ['ghost'] }),
+    ];
+    const split = faultTypeSplit(cases, OPTS, 3);
+    expect(split.movements.map((row) => row.faultType)).toEqual(['noServices']);
+    expect(split.movements[0]).toMatchObject({ cases: 1, baselineCorrect: 0, correct: 0 });
+    expect(split.regressed).toEqual([]);
+  });
+
+  it('reports no regression at weight 0, because the arm IS the baseline there', () => {
+    const cases = [
+      kase({ datapack: 'a1', faultType: 'x', services: services(), groundTruth: ['source'] }),
+      kase({ datapack: 'b1', faultType: 'y', services: services(), groundTruth: ['symptom'] }),
+    ];
+    const split = faultTypeSplit(cases, OPTS, 0);
+    expect(split.regressed).toEqual([]);
+    for (const row of split.movements) expect(row.correct).toBe(row.baselineCorrect);
   });
 });
