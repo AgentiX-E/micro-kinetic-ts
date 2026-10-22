@@ -46,11 +46,14 @@ import { engineAgreement, formatAgreementReport } from './fse26-engine-agreement
 import { formatFormulationReport, formulationScreens } from './fse26-formulation.js';
 import {
   classGatedReport,
+  classSetCandidates,
   DIRECTION_ARMS,
   directionApplies,
   directionReport,
+  feasibleClassSet,
   formatClassGateReport,
   formatDirectionReport,
+  formatFeasibleClassSet,
   formatHoldoutReport,
   holdoutDirectionReport,
 } from './fse26-fourth-term.js';
@@ -8159,7 +8162,16 @@ export function formatDiscriminatorSection(
   const gatedHoldout = formatHoldoutReport(
     holdoutDirectionReport(cases, options, DIRECTION_ARMS, 5, directionApplies),
   );
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}`;
+  // **The class set itself, held to the criterion as a FEASIBILITY test over all 64 sets.** Section 15's refusal and
+  // section 16's gate both asked "which classes", and the answer differs depending on whether the engine's
+  // zero-regression condition is applied before or after the choice: the unconstrained maximum is
+  // `value+network+other` at +127 with three regressed types, and the best set that regresses nothing is
+  // `network+other`. The screen prints both, because a reader is entitled to know what was refused and by how much.
+  const classSets = formatFeasibleClassSet(
+    feasibleClassSet(classSetCandidates(cases, options, BEST_DIRECTION_WEIGHT)),
+    engineAgreement(cases, options),
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}`;
 }
 
 function analyzeSectionText(

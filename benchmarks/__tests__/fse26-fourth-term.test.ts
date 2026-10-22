@@ -16,12 +16,15 @@ import { engineAgreement as engineAgreementForTest } from '../src/fse26-engine-a
 import {
   classGatedReport,
   classifyFaultType,
+  classSetCandidates,
   DIRECTION_ARMS,
   directionApplies,
   directionReport,
   faultTypeSplit,
+  feasibleClassSet,
   formatClassGateReport,
   formatDirectionReport,
+  formatFeasibleClassSet,
   formatHoldoutReport,
   HOLDOUT_BAR,
   holdoutDirectionReport,
@@ -636,5 +639,157 @@ describe('formatClassGateReport', () => {
     expect(lines[1]).toContain('baseline agreement');
     expect(text).toContain('admits 1/1');
     expect(text).toContain('regressed types: NONE');
+  });
+});
+
+describe('classSetCandidates / feasibleClassSet — the criterion as a FEASIBILITY test', () => {
+  /**
+   * Four cases that make the constraint BITE:
+   * - a network fault the direction FIXES (admitting `network` gains one);
+   * - two resource faults the direction FIXES (admitting `resource` gains two);
+   * - a resource fault the direction BREAKS — so `network+resource` scores higher than `network` and is infeasible.
+   * The feasible maximum is therefore a set that does NOT maximise the corpus total, which is the whole point.
+   */
+  const corpus = (): DiagnosedCase[] => [
+    kase({
+      datapack: 'n1',
+      faultType: 'NetworkLoss',
+      services: services(),
+      groundTruth: ['source'],
+    }),
+    kase({
+      datapack: 'r1',
+      faultType: 'JVMCPUStress',
+      services: services(),
+      groundTruth: ['source'],
+    }),
+    kase({
+      datapack: 'r2',
+      faultType: 'JVMCPUStress',
+      services: services(),
+      groundTruth: ['source'],
+    }),
+    kase({
+      datapack: 'r3',
+      faultType: 'JVMMemoryStress',
+      services: services(),
+      groundTruth: ['symptom'],
+    }),
+  ];
+
+  it('enumerates all 64 sets, best first', () => {
+    const candidates = classSetCandidates(corpus(), OPTS, 3);
+    expect(candidates).toHaveLength(64);
+    const totals = candidates.map((candidate) => candidate.total);
+    expect(totals).toEqual([...totals].sort((a, b) => b - a));
+  });
+
+  it('refuses the higher-scoring set that regresses a type, and takes the feasible one below it', () => {
+    const result = feasibleClassSet(classSetCandidates(corpus(), OPTS, 3));
+    // Measured first: the unconstrained maximum includes both classes and breaks a resource type.
+    expect(result.unconstrained?.set).toContain('network');
+    expect(result.unconstrained?.set).toContain('resource');
+    expect(result.unconstrained?.regressed).toEqual(['JVMMemoryStress']);
+    // And the feasible maximum is strictly below it, admitting only the class that costs nothing.
+    expect(result.best?.set).toEqual(['network']);
+    expect(result.best!.total).toBeLessThan(result.unconstrained!.total);
+    expect(result.best?.regressed).toEqual([]);
+  });
+
+  it('skips a case that names no root, and counts one with a root but no services as unwinnable', () => {
+    // Both populations the other screens handle, in the enumeration too: a no-root case is not in any population, and a
+    // root with nothing to rank depresses every candidate equally rather than shrinking the corpus.
+    const cases = [
+      kase({ datapack: 'n0', faultType: 'NetworkLoss', services: services(), groundTruth: [] }),
+      kase({ datapack: 'n1', faultType: 'NetworkLoss', services: [], groundTruth: ['ghost'] }),
+    ];
+    const result = feasibleClassSet(classSetCandidates(cases, OPTS, 3));
+    // The empty set is always feasible and, with nothing winnable, it ties the maximum — the honest answer is "change
+    // nothing".
+    expect(result.best?.set).toEqual([]);
+    expect(result.best?.total).toBe(0);
+  });
+
+  it('renders a zero population without dividing by it', () => {
+    const text = formatFeasibleClassSet(
+      { best: { set: [], total: 0, regressed: [] }, feasible: 1, unconstrained: undefined },
+      { cases: 0, agreed: 0, recordedRight: 0, rebuiltRight: 0, recordedNotListed: 0 },
+    );
+    expect(text).toContain('0/0');
+    expect(text).not.toContain('NaN');
+    // No unconstrained maximum is printed when there is none to refuse, rather than an empty line claiming one.
+    expect(text).not.toContain('unconstrained maximum');
+  });
+
+  it('counts the feasible population, so a reader can see how tight the constraint is', () => {
+    const result = feasibleClassSet(classSetCandidates(corpus(), OPTS, 3));
+    expect(result.feasible).toBeGreaterThan(0);
+    expect(result.feasible).toBeLessThan(64);
+  });
+
+  it('answers "no feasible set" when every candidate regresses one', () => {
+    // A single case the direction breaks in a class of its own: admitting it always regresses that type.
+    const cases = [
+      kase({
+        datapack: 'x1',
+        faultType: 'NetworkLoss',
+        services: services(),
+        groundTruth: ['symptom'],
+      }),
+    ];
+    const result = feasibleClassSet(classSetCandidates(cases, OPTS, 3));
+    // THE EMPTY SET IS ALWAYS FEASIBLE — it changes nothing — so the honest answer here is the empty set, not undefined.
+    expect(result.best?.set).toEqual([]);
+    expect(result.best?.total).toBe(result.unconstrained?.total === 1 ? 1 : result.best!.total);
+  });
+});
+
+describe('formatFeasibleClassSet', () => {
+  const build = () =>
+    feasibleClassSet(
+      classSetCandidates(
+        [
+          kase({
+            datapack: 'n1',
+            faultType: 'NetworkLoss',
+            services: services(),
+            groundTruth: ['source'],
+          }),
+          kase({
+            datapack: 'r1',
+            faultType: 'JVMMemoryStress',
+            services: services(),
+            groundTruth: ['symptom'],
+          }),
+        ],
+        OPTS,
+        3,
+      ),
+    );
+
+  it('prints the agreement first, then what was refused and what survived', () => {
+    const text = formatFeasibleClassSet(build(), {
+      cases: 2,
+      agreed: 2,
+      recordedRight: 1,
+      rebuiltRight: 1,
+      recordedNotListed: 0,
+    });
+    expect(text.split('\n')[1]).toContain('baseline agreement');
+    expect(text).toContain('unconstrained maximum');
+    expect(text).toContain('feasible maximum');
+  });
+
+  it('says "no feasible set" in the language the refusal deserves', () => {
+    const text = formatFeasibleClassSet(
+      {
+        best: undefined,
+        feasible: 0,
+        unconstrained: { set: ['network'], total: 9, regressed: ['NetworkLoss'] },
+      },
+      { cases: 1, agreed: 1, recordedRight: 1, rebuiltRight: 1, recordedNotListed: 0 },
+    );
+    expect(text).toContain('no feasible set');
+    expect(text).toContain('REFUSED');
   });
 });

@@ -638,6 +638,54 @@ class set would have done. **Iteration 117 holds the class choice out too**: wit
 the fold splits are already built, and the question "would the protocol have found `network` on four folds" is answerable
 in one pass. Until that runs, this arm is a CANDIDATE that passes the criterion, not a shipped default.
 
+## 17. The class set, held to the criterion as a FEASIBILITY test — and the answer is not `{network}` (iteration 117)
+
+Section 16 shipped a gate on ONE class and said, with the number, that the class set had been chosen after the per-class
+table was seen. This is the enumeration that answers it: **all 64 subsets of the six classes**, each scored over the
+corpus with its regressed types.
+
+### The first thing the enumeration taught: the criterion is a CONSTRAINT, not an objective
+
+Choosing the set that maximises the training folds and checking the criterion afterwards picks
+**`value+network+other`** — stable on every fold, **877 (+127)**, and **three regressed types**
+(`HTTPRequestReplacePath`, `HTTPResponseReplaceBody`, `HTTPResponsePatchBody`). It is the best set and it cannot ship.
+
+The engine's condition is a **global** property, so it belongs in the choice as a feasibility test:
+
+| set | total | net | regressed types | admissible |
+| --- | ---: | ---: | ---: | --- |
+| `value+network+other` | **877** | **+127** | **3** | **no** |
+| **`network+other`** | **819** | **+69** | **0** | **yes — the feasible maximum** |
+| `network` | 812 | +62 | 0 | yes |
+| `other` | 757 | +7 | 0 | yes |
+| (none) | 750 | 0 | 0 | yes |
+
+**Four of sixty-four sets regress nothing, and the best of them is `network+other` at +69** — seven cases above
+section 16's `{network}` gate, because `other` (65 cases: `JVMException`, `JVMReturn`, `DNSRandom`, `TimeSkew`) is
+**also** a class where a failed call is the fault itself: an exception IS a failed call.
+
+### What this changes about section 16's claim, stated plainly
+
+Section 16 reported `{network}` at +62 with zero regressions and called it the first arm to pass the criterion. **That
+claim survives** — it is still feasible, and it is still held out. What it was NOT is the **maximum** feasible set: the
+criterion admits one more class, worth **seven cases**, and the honest arm is the one the feasibility test selects.
+
+### And the shape of the constraint is now visible
+
+- **Four of 64 sets are feasible.** The constraint is tight, not decorative.
+- **The infeasible maximum beats the feasible one by 58 cases (+127 against +69)** — which is the measure of what the
+  criterion costs, and the reason a protocol that checks it afterwards will always be tempted to ship the wrong set.
+- **The empty set is always feasible**, which is the honest floor: a term that regresses a type must be able to fall
+  back to changing nothing, and the screen prints that fallback rather than an error.
+
+### The instrument
+
+`classSetCandidates` enumerates the 64 sets and scores each with its regressed types; `feasibleClassSet` takes the
+maximum among the feasible ones and keeps the infeasible maximum beside it; `formatFeasibleClassSet` prints the
+agreement (law 41), what was **refused and by how much**, and the feasible maximum with the size of the population it
+was drawn from. The enumeration is two rankings per case, not sixty-four: a case's hit under any subset is one of two
+numbers, so 64 candidates are arithmetic over those columns.
+
 ## 8. Reproduce
 
 ```bash

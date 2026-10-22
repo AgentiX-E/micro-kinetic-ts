@@ -423,7 +423,7 @@ export type FaultClass = 'value' | 'network' | 'latency' | 'resource' | 'abort' 
  */
 export function classifyFaultType(faultType: string): FaultClass {
   // Network first: a network delay is a link fault whose SYMPTOM is latency, and the direction term is about the link.
-  if (/^Network/.test(faultType)) return 'network';
+  if (faultType.startsWith('Network')) return 'network';
   if (/Replace|Patch/.test(faultType)) return 'value';
   if (/Delay|Latency|TimeSkew/.test(faultType)) return 'latency';
   if (/Stress/.test(faultType)) return 'resource';
@@ -547,5 +547,152 @@ export function formatClassGateReport(report: ClassGateReport, agreement: Agreem
     `  right ${report.correct} against a baseline of ${report.baselineCorrect} (${net >= 0 ? `+${net}` : net})`,
     `  regressed types: ${report.split.regressed.length === 0 ? 'NONE' : report.split.regressed.join(', ')}`,
   ];
+  return lines.join('\n');
+}
+
+/** Canonical order, so two equal sets compare equal and the report is stable. */
+const CLASS_ORDER: readonly FaultClass[] = [
+  'value',
+  'network',
+  'latency',
+  'resource',
+  'abort',
+  'other',
+];
+
+/** All 64 subsets, in a deterministic order: by size, then canonically. */
+function candidateClassSets(): readonly (readonly FaultClass[])[] {
+  const out: FaultClass[][] = [];
+  for (let mask = 0; mask < 1 << CLASS_ORDER.length; mask++) {
+    out.push(CLASS_ORDER.filter((_, index) => (mask & (1 << index)) !== 0));
+  }
+  return out.sort((a, b) => a.length - b.length || a.join(',').localeCompare(b.join(',')));
+}
+
+/** One candidate class set, scored over the whole corpus with its regressed types. */
+export interface ClassSetCandidate {
+  readonly set: readonly FaultClass[];
+  readonly total: number;
+  readonly regressed: readonly string[];
+}
+
+/**
+ * Enumerate all 64 class sets and score each over the corpus, with the regressed types that make it infeasible.
+ *
+ * **The engine's acceptance condition is a GLOBAL property** — the FSE'26 check runs over the whole corpus — so it is a
+ * feasibility test here rather than something to check after a choice has been made. Measured on this dump, that
+ * distinction decides the answer: the unconstrained maximum is `value+network+other` at **877 (+127)** with **three
+ * regressed types**, which cannot ship, while the best feasible set is `network+other` at **819 (+69)** with none.
+ *
+ * @param cases - Parsed cases.
+ * @param opts - The configuration.
+ * @param weight - The direction weight applied on the admitted classes.
+ * @returns Every candidate, best first.
+ */
+export function classSetCandidates(
+  cases: readonly DiagnosedCase[],
+  opts: TermOracleOptions,
+  weight: number,
+): readonly ClassSetCandidate[] {
+  const rows: { faultType: string; klass: FaultClass; base: number; admitted: number }[] = [];
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    const lat = latencySlopes(kase.services, opts.latFloor);
+    const base = root.has(rankCase(kase, opts, 'recorded', lat).order[0] ?? '') ? 1 : 0;
+    const admitted = root.has(
+      rankCase(kase, { ...opts, failedEdgeWeight: weight }, 'recorded', lat).order[0] ?? '',
+    )
+      ? 1
+      : 0;
+    rows.push({
+      faultType: kase.faultType,
+      klass: classifyFaultType(kase.faultType),
+      base,
+      admitted,
+    });
+  }
+  const out: ClassSetCandidate[] = [];
+  for (const set of candidateClassSets()) {
+    const member = new Set(set);
+    const perType = new Map<string, { base: number; arm: number }>();
+    let total = 0;
+    for (const row of rows) {
+      const arm = member.has(row.klass) ? row.admitted : row.base;
+      total += arm;
+      const row2 = perType.get(row.faultType) ?? { base: 0, arm: 0 };
+      row2.base += row.base;
+      row2.arm += arm;
+      perType.set(row.faultType, row2);
+    }
+    out.push({
+      set,
+      total,
+      regressed: [...perType.entries()]
+        .filter(([, counts]) => counts.arm < counts.base)
+        .map(([type]) => type),
+    });
+  }
+  return out.sort(
+    (a, b) =>
+      b.total - a.total ||
+      a.set.length - b.set.length ||
+      a.set.join('+').localeCompare(b.set.join('+')),
+  );
+}
+
+/** The feasible maximum: the highest-scoring set that regresses NO fault type. */
+export interface FeasibleSet {
+  readonly best: ClassSetCandidate | undefined;
+  /** How many of the 64 sets regress nothing — the population the maximum is taken from. */
+  readonly feasible: number;
+  /** The unconstrained maximum, kept so the report can say what was refused and by how much. */
+  readonly unconstrained: ClassSetCandidate | undefined;
+}
+
+/**
+ * Choose the best FEASIBLE class set, and keep the infeasible maximum beside it.
+ *
+ * @param candidates - The enumeration from {@link classSetCandidates}.
+ * @returns The feasible maximum, how many sets are feasible, and the unconstrained maximum.
+ */
+export function feasibleClassSet(candidates: readonly ClassSetCandidate[]): FeasibleSet {
+  const admissible = candidates.filter((candidate) => candidate.regressed.length === 0);
+  return {
+    best: admissible[0],
+    feasible: admissible.length,
+    unconstrained: candidates[0],
+  };
+}
+
+/**
+ * Render the class-set verdict: the feasible maximum, what the constraint refused, and the feasibility population.
+ *
+ * @param result - The feasible-set result.
+ * @param agreement - The baseline's agreement with the recorded run (law 41).
+ * @returns The block.
+ */
+export function formatFeasibleClassSet(result: FeasibleSet, agreement: AgreementReport): string {
+  const percent = agreement.cases === 0 ? 0 : (100 * agreement.agreed) / agreement.cases;
+  const lines = [
+    'Class-set screen — every one of the 64 sets, with the engine\u2019s criterion as a FEASIBILITY test:',
+    `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
+  ];
+  if (result.unconstrained !== undefined) {
+    lines.push(
+      `  unconstrained maximum: ${result.unconstrained.total} (${result.unconstrained.set.join('+')}) — ` +
+        `REFUSED, it regresses ${result.unconstrained.regressed.length} type(s): ${result.unconstrained.regressed.join(', ')}`,
+    );
+  }
+  if (result.best === undefined) {
+    lines.push('  no feasible set: every candidate regresses a type, so the term does not ship');
+  } else {
+    const net = result.best.total - agreement.recordedRight;
+    lines.push(
+      `  feasible maximum: ${result.best.total} (${result.best.set.join('+')}) — ` +
+        `+${net} over the ${result.feasible} of 64 sets that regress nothing`,
+    );
+  }
   return lines.join('\n');
 }
