@@ -57,7 +57,15 @@ import {
   formatHoldoutReport,
   holdoutDirectionReport,
 } from './fse26-fourth-term.js';
-import { formatProxyAudit, proxyAudit, proxyRows } from './fse26-proxy-audit.js';
+import {
+  datumLocus,
+  deployableGateReport,
+  formatDatumLocus,
+  formatDeployableGate,
+  formatProxyAudit,
+  proxyAudit,
+  proxyRows,
+} from './fse26-proxy-audit.js';
 import {
   DEFAULT_SEPARATOR_CRITERION,
   formatSeparatorCensus,
@@ -8178,7 +8186,17 @@ export function formatDiscriminatorSection(
   // the base rate, because a proxy that does not beat "admit everything" carries no information however plausible its
   // mechanism reads.
   const proxies = formatProxyAudit(proxyAudit(proxyRows(cases)), engineAgreement(cases, options));
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}`;
+  // The audit says no proxy clears the bar; this says WHY, from the rendered data rather than from prose, and it
+  // changes the day a field carrying a failure kind appears anywhere the dump can reach.
+  const locus = formatDatumLocus(datumLocus(cases), engineAgreement(cases, options));
+  // **The first deployable gate in this record that profits.** The proxy audit found one statistic that beats the
+  // base rate without reading the label — the rank-1 service's dominant metric — and this is what the direction term
+  // does behind it: above the ungated term's own total, with the regressed types cut from eight to two.
+  const deployable = formatDeployableGate(
+    deployableGateReport(cases, options, BEST_DIRECTION_WEIGHT),
+    engineAgreement(cases, options),
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}`;
 }
 
 function analyzeSectionText(

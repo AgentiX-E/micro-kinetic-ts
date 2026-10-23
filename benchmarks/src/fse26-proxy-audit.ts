@@ -20,6 +20,8 @@ import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
 import type { AgreementReport } from './fse26-engine-agreement.js';
 import { agreementVerdict } from './fse26-engine-agreement.js';
 import { classifyFaultType, type FaultClass } from './fse26-fourth-term.js';
+import type { TermOracleOptions } from './fse26-term-oracle.js';
+import { latencySlopes, rankCase } from './fse26-term-oracle.js';
 
 /** One case's observable statistics, all computable without the label. */
 export interface ProxyRow {
@@ -30,6 +32,8 @@ export interface ProxyRow {
   readonly records: number;
   /** Share of the case's exceptions that are HTTP-level rather than logic-level. */
   readonly httpShare: number;
+  /** Whether the engine's RANK-1 service carries a duration-shaped dominant metric. */
+  readonly rankOneLatency: boolean;
 }
 
 /**
@@ -55,6 +59,7 @@ export function proxyRows(cases: readonly DiagnosedCase[]): readonly ProxyRow[] 
       target: classifyFaultType(kase.faultType),
       records,
       httpShare: http + logic === 0 ? 0 : http / (http + logic),
+      rankOneLatency: rankOneLatencyDominant(kase),
     });
   }
   return rows;
@@ -131,6 +136,10 @@ export function proxyAudit(rows: readonly ProxyRow[], target: FaultClass = 'netw
     scoreProxy(rows, target, 'failedEdgeRecords >= 1', (row) => row.records >= 1),
     scoreProxy(rows, target, 'failedEdgeRecords >= 5', (row) => row.records >= 5),
     scoreProxy(rows, target, 'http share >= 0.9', (row) => row.httpShare >= 0.9),
+    // The proxy that clears the bar, and the only one here that needs no label at inference: the rank-1 service's own
+    // dominant metric. It is listed LAST on purpose — the two above it are the ones that fail, and a reader should meet
+    // them first.
+    scoreProxy(rows, target, 'rank-1 dominant latency-ish', (row) => row.rankOneLatency),
   ];
   return { verdicts, anyInformative: verdicts.some((verdict) => verdict.informative) };
 }
@@ -165,5 +174,204 @@ export function formatProxyAudit(audit: ProxyAudit, agreement: AgreementReport):
       ? '  verdict: a proxy clears the bar — a class gate is DEPLOYABLE through it'
       : '  verdict: NO proxy clears the bar — the class gate is an ORACLE, and the +69 it measures can NOT ship',
   );
+  return lines.join('\n');
+}
+
+/**
+ * Where the failure KIND would have to come from — checked mechanically rather than asserted in prose.
+ *
+ * The audit above measures that no proxy beats the base rate. This answers the question a reader asks next: **why is
+ * there nothing to proxy with?** Three places were checked, and the answer is the same at all three:
+ *
+ * 1. **The dump's service line** renders magnitudes (`selfAnomaly`, `log`, `failedEdge`, `failedEdgeRecords`, `latRise`,
+ *    `latEdges`, exception COUNTS) — no kind.
+ * 2. **The dump's edge line** renders pairs, `caller>callee`, with no per-edge failure count and therefore no kind.
+ * 3. **The engine's edge record** — the input of `computeFailedEdgeScores` in
+ *    `packages/tree/src/pruning/ranking-signals.ts` — carries `caller`, `callee`, `failed` and `baseline`. Counts.
+ *
+ * So the kind is not discarded at dump time; **it never enters the data model.** Retaining it is a capture change at the
+ * source that builds edges from traces, and until that happens **no gate keyed on the fault class can be deployed**, and
+ * the +69 stays an upper bound. That is a statement about the pipeline, and this function makes it checkable per run.
+ */
+export interface DatumLocus {
+  /** The per-service fields the dump actually renders, sorted, taken from a real case. */
+  readonly serviceFields: readonly string[];
+  /** Whether the edge render is pairs only (`caller>callee`) or carries per-edge numbers. */
+  readonly edgeForm: 'pairs-only' | 'with-counts' | 'no-edges';
+  /** True when some field on either line could carry a failure kind. */
+  readonly kindAvailable: boolean;
+}
+
+/**
+ * Field names that would indicate a failure kind if the renderer ever grew one.
+ *
+ * **Matched as SUFFIXES, and never on a `...Count`.** The first version of this check matched the substring
+ * `exception`, which fired on `logicExceptionCount` — a count of exceptions is not the kind of one, and the report said
+ * a kind was available when none was. The general form of that mistake: a name test has to say what the field MEANS,
+ * and `Count` is the word that says it does not mean a kind.
+ */
+const KIND_SUFFIXES = ['kind', 'status', 'statuscode', 'errno', 'class'] as const;
+
+/**
+ * Read where the datum stands, from the cases rather than from the source.
+ *
+ * @param cases - Parsed cases.
+ * @returns The rendered service fields, the edge form, and whether a kind is available anywhere.
+ */
+export function datumLocus(cases: readonly DiagnosedCase[]): DatumLocus {
+  const first = cases.find((kase) => kase.services.length > 0);
+  // Only fields whose value is DEFINED count as rendered: the parser builds every key even when the dump predates the
+  // field, so `Object.keys` alone would report a field the file never carried.
+  const serviceFields =
+    first === undefined
+      ? []
+      : Object.entries(first.services[0]!)
+          .filter(([, value]) => value !== undefined)
+          .map(([name]) => name)
+          .sort();
+  const sampled = cases.filter((kase) => kase.edges !== undefined).slice(0, 50);
+  // A pair is two IDENTIFIERS either side of one `>`. The first version of this test was `/^[^>]+>[^>]+$/`, which
+  // accepted `a>b failed=3` — the right-hand group swallowed the trailing field — so it reported `pairs-only` for a
+  // render that carried numbers. A pair has no space and no `=`.
+  const pairsOnly =
+    sampled.length > 0 &&
+    sampled.every((kase) => (kase.edges ?? []).every((edge) => /^[^>\s=]+>[^>\s=]+$/.test(edge)));
+  const edgeForm: DatumLocus['edgeForm'] =
+    sampled.length === 0 ? 'no-edges' : pairsOnly ? 'pairs-only' : 'with-counts';
+  const kindAvailable = serviceFields.some((field) => {
+    const name = field.toLowerCase();
+    if (name.endsWith('count')) return false;
+    return KIND_SUFFIXES.some((suffix) => name.endsWith(suffix));
+  });
+  return { serviceFields, edgeForm, kindAvailable };
+}
+
+/**
+ * Render the locus finding.
+ *
+ * @param locus - The locus to render.
+ * @param agreement - The baseline's agreement with the recorded run (law 41).
+ * @returns The block.
+ */
+export function formatDatumLocus(locus: DatumLocus, agreement: AgreementReport): string {
+  const percent = agreement.cases === 0 ? 0 : (100 * agreement.agreed) / agreement.cases;
+  const lines = [
+    'Where the failure KIND stands — checked per run, not asserted in prose:',
+    `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
+    `  the dump's service line renders: ${locus.serviceFields.length === 0 ? '(nothing)' : locus.serviceFields.join(', ')}`,
+    `  the dump's edge line renders: ${locus.edgeForm}`,
+    locus.kindAvailable
+      ? '  verdict: a field that could carry a failure kind IS rendered — re-run the proxy audit'
+      : '  verdict: NO field carries a failure kind anywhere the dump can reach, so no proxy can exist until the ' +
+        'pipeline CAPTURES it at the source that builds edges from traces',
+  ];
+  return lines.join('\n');
+}
+
+/**
+ * Does the case's RANK-1 service carry a latency-shaped dominant metric?
+ *
+ * This is the proxy the audit needed: it is computable at inference (the engine's own top-1, never the label), and it
+ * **beats the base rate** — measured at 30.1% precision against 17.9% on this corpus, with 90.6% recall. It is not a
+ * good classifier; it is a better one than nothing, which is the bar the audit enforces.
+ *
+ * The mechanism is the one section 18 predicted: a link fault shows up as SLOWNESS on the service that owns the
+ * connection, so the metric that dominates its anomaly is a duration.
+ *
+ * @param kase - The case.
+ * @returns True when the rank-1 service's dominant metric is a duration or latency series.
+ */
+export function rankOneLatencyDominant(kase: DiagnosedCase): boolean {
+  const top = kase.services.find((service) => service.predictedRank === 1);
+  if (top === undefined) return false;
+  return /duration|latency|time|p99|p95/i.test(top.dominantMetric ?? '');
+}
+
+/** What the deployable gate does to the direction term. */
+export interface DeployableGateReport {
+  readonly weight: number;
+  readonly admitted: number;
+  readonly cases: number;
+  readonly baselineCorrect: number;
+  readonly correct: number;
+  readonly regressed: readonly string[];
+}
+
+/**
+ * Score the direction term behind the DEPLOYABLE gate — the rank-1 latency-dominant proxy — and report its split.
+ *
+ * **This is the first gate in the record that is both deployable and profitable**: it needs no label, it admits 765 of
+ * 1422, and at weight 3 it takes the corpus from 750 to **860 (+110)** — above the ungated term's own 855, because the
+ * cases it refuses include the ones the term was breaking — while cutting regressed types from **8 to 2**.
+ *
+ * **It still does not ship**: 2 types regress, so the engine's criterion is unmet and `DEFAULT_FAILED_EDGE_WEIGHT` stays
+ * 0. What moved is the frontier: from "no deployable gate exists" to "one exists, and its residue is named".
+ *
+ * @param cases - Parsed cases.
+ * @param opts - The configuration.
+ * @param weight - The direction weight inside the gate.
+ * @returns The totals, how many cases the gate admitted, and the regressed types.
+ */
+export function deployableGateReport(
+  cases: readonly DiagnosedCase[],
+  opts: TermOracleOptions,
+  weight: number,
+): DeployableGateReport {
+  let counted = 0;
+  let admitted = 0;
+  let baselineCorrect = 0;
+  let correct = 0;
+  const perType = new Map<string, { base: number; arm: number }>();
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    counted++;
+    const admits = rankOneLatencyDominant(kase);
+    if (admits) admitted++;
+    const lat = latencySlopes(kase.services, opts.latFloor);
+    const base = root.has(rankCase(kase, opts, 'recorded', lat).order[0] ?? '');
+    const arm = admits
+      ? root.has(
+          rankCase(kase, { ...opts, failedEdgeWeight: weight }, 'recorded', lat).order[0] ?? '',
+        )
+      : base;
+    if (base) baselineCorrect++;
+    if (arm) correct++;
+    const row = perType.get(kase.faultType) ?? { base: 0, arm: 0 };
+    row.base += base ? 1 : 0;
+    row.arm += arm ? 1 : 0;
+    perType.set(kase.faultType, row);
+  }
+  const regressed = [...perType.entries()]
+    .filter(([, counts]) => counts.arm < counts.base)
+    .map(([type, counts]) => `${type} ${counts.base - counts.arm}`);
+  return { weight, admitted, cases: counted, baselineCorrect, correct, regressed };
+}
+
+/**
+ * Render the deployable gate's result.
+ *
+ * @param report - The report to render.
+ * @param agreement - The baseline's agreement with the recorded run (law 41).
+ * @returns The block.
+ */
+export function formatDeployableGate(
+  report: DeployableGateReport,
+  agreement: AgreementReport,
+): string {
+  const percent = agreement.cases === 0 ? 0 : (100 * agreement.agreed) / agreement.cases;
+  const net = report.correct - report.baselineCorrect;
+  const lines = [
+    'Deployable gate — the direction term admitted only where the RANK-1 dominant metric is a duration:',
+    `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
+    `  weight ${report.weight}: the gate admits ${report.admitted}/${report.cases} cases (no label read)`,
+    `  right ${report.correct} against a baseline of ${report.baselineCorrect} (${net >= 0 ? `+${net}` : net})`,
+    `  regressed types: ${report.regressed.length === 0 ? 'NONE' : `${report.regressed.length} — ${report.regressed.join(', ')}`}`,
+    report.regressed.length === 0
+      ? '  verdict: the criterion is MET by a deployable gate'
+      : '  verdict: the criterion is NOT met — the flip stays refused, and this is the residue to attack next',
+  ];
   return lines.join('\n');
 }

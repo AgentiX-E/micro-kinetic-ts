@@ -735,6 +735,61 @@ everything), `proxyAudit` (the three proxies this corpus supports), `formatProxy
 then the verdict: **ORACLE** or **DEPLOYABLE**). It is wired as the eighth block of the discriminator section, so the
 verdict prints every time the screens are run rather than living in a paragraph.
 
+## 19. A DEPLOYABLE gate exists after all — and it beats the label-keyed one (iteration 119)
+
+Section 18 closed the class gate because `faultType` is the label and no proxy beat the base rate. **That second half
+was wrong**, and the corpus said so: a statistic nobody had looked at clears the bar, and it needs no label at all.
+
+### The proxy that clears it
+
+**The dominant metric of the engine's own rank-1 service.** If the metric that dominates that service's anomaly is a
+**duration** series, the case is disproportionately likely to be a link fault — which is exactly the mechanism section
+18 stated and then failed to find a measurement for.
+
+| proxy | admitted | precision | recall | beats the 17.9% bar |
+| --- | ---: | ---: | ---: | --- |
+| `failedEdgeRecords >= 1` | 1222 | 13.6% | 65.4% | no |
+| `failedEdgeRecords >= 5` | 410 | 13.7% | 22.0% | no |
+| `http share >= 0.9` | 865 | 16.1% | 54.7% | no |
+| **rank-1 dominant latency-ish** | **765** | **30.1%** | **90.6%** | **YES** |
+
+It is not a good classifier — 30.1% precision is one true link fault in three — but it is **better than admitting
+everything**, which is the only bar that separates a proxy from a gesture.
+
+### What the direction term does behind it
+
+```
+  weight 3: the gate admits 765/1422 cases (no label read)
+  right 860 against a baseline of 750 (+110)
+  regressed types: 2 — JVMMemoryStress 3, HTTPRequestDelay 5
+```
+
+**860 (+110) is more than the ungated term's own 855 (+105)**, because the cases the gate refuses include the ones the
+term was breaking, and **more than the label-keyed feasible maximum's 819 (+69)** — the deployable gate **beats** the
+oracle's best by 41 cases while cutting regressed types from **8 to 2**.
+
+**And it still does not ship.** Two types regress, so the engine's criterion is unmet and `DEFAULT_FAILED_EDGE_WEIGHT`
+stays 0. What moved is the frontier: from "no deployable gate exists" to "one exists, it profits, and its residue is two
+named types with exact counts".
+
+### The residue, and why the kind will not rescue it
+
+The two survivors are `JVMMemoryStress` (−3) and `HTTPRequestDelay` (−5). Both are faults where a slow or refused CALL
+is a symptom rather than the fault, and the metric that dominates is a duration in **both** — so the proxy that admits
+the link faults admits these too, and no name-based refinement separates them.
+
+`fse26-proxy-audit.ts` now also reports **where the failure KIND stands**, read off the rendered dump rather than
+asserted: the dump's service line carries magnitudes and exception COUNTS, its edge line carries `caller>callee` pairs
+with no per-edge numbers, and the engine's edge record carries `failed`/`baseline` counts. **No field anywhere the dump
+can reach carries a kind**, so the residue cannot be closed by a kind-based proxy either. That check is re-evaluated on
+every run and its verdict changes by itself the day a field appears.
+
+### The instruments
+
+`rankOneLatencyDominant` (the proxy, no label read), `proxyAudit` (now four proxies, with the deployable one listed
+last), `datumLocus` / `formatDatumLocus` (where the kind stands, mechanically), `deployableGateReport` /
+`formatDeployableGate` (the gated arm with its residue named). All three blocks print in the discriminator section.
+
 ## 8. Reproduce
 
 ```bash

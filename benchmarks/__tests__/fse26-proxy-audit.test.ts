@@ -13,7 +13,18 @@ import { describe, expect, it } from 'vitest';
 
 import type { DiagnosedCase, DiagnosedService } from '../src/fse26-diagnose-analyze.js';
 import type { ProxyRow } from '../src/fse26-proxy-audit.js';
-import { formatProxyAudit, proxyAudit, proxyRows, scoreProxy } from '../src/fse26-proxy-audit.js';
+import {
+  datumLocus,
+  deployableGateReport,
+  formatDatumLocus,
+  formatDeployableGate,
+  formatProxyAudit,
+  proxyAudit,
+  proxyRows,
+  rankOneLatencyDominant,
+  scoreProxy,
+} from '../src/fse26-proxy-audit.js';
+import type { TermOracleOptions } from '../src/fse26-term-oracle.js';
 
 function svc(o: Partial<DiagnosedService> & Pick<DiagnosedService, 'serviceId'>): DiagnosedService {
   return {
@@ -53,10 +64,23 @@ function kase(o: Partial<DiagnosedCase> & Pick<DiagnosedCase, 'services'>): Diag
   };
 }
 
+/** The oracle configuration every screen in this file runs under. */
+const OPTS: TermOracleOptions = {
+  logWeight: 1,
+  latWeight: 0.561495,
+  latFloor: 10.3,
+  dominance: 0.5,
+  dominanceGrid: [],
+  poolWeight: 0,
+  temporalWeight: 0,
+  onsetShape: 'earliness',
+};
+
 const row = (o: Partial<ProxyRow> & Pick<ProxyRow, 'target'>): ProxyRow => ({
   datapack: 'd',
   records: 0,
   httpShare: 0,
+  rankOneLatency: false,
   ...o,
 });
 
@@ -145,14 +169,37 @@ describe('scoreProxy', () => {
 });
 
 describe('proxyAudit', () => {
-  it('runs the three proxies and reports that none clears the bar on a corpus where none can', () => {
+  it('runs every proxy and reports that none clears the bar on a corpus where none can', () => {
+    // `rankOneLatency: false` everywhere is the point: with the dominant proxy silent, the three counting proxies all
+    // score at or below the base rate, and the audit must say so rather than finding a proxy that is not there.
     const rows = [
       row({ target: 'network', records: 5, httpShare: 1 }),
       row({ target: 'value', records: 5, httpShare: 1 }),
     ];
     const audit = proxyAudit(rows);
-    expect(audit.verdicts).toHaveLength(3);
+    expect(audit.verdicts).toHaveLength(4);
     expect(audit.anyInformative).toBe(false);
+  });
+
+  it('finds the dominant-metric proxy informative when it separates, which is the deployable one', () => {
+    // Two of three cases are network and only those carry the duration-shaped dominant metric: precision 1.0 against a
+    // base rate of 0.667, so the audit reports DEPLOYABLE — the state this corpus is in.
+    const rows = [
+      row({ target: 'network', rankOneLatency: true }),
+      row({ target: 'network' }),
+      row({ target: 'value' }),
+    ];
+    const audit = proxyAudit(rows);
+    expect(audit.anyInformative).toBe(true);
+    expect(
+      formatProxyAudit(audit, {
+        cases: 3,
+        agreed: 3,
+        recordedRight: 2,
+        rebuiltRight: 2,
+        recordedNotListed: 0,
+      }),
+    ).toContain('DEPLOYABLE');
   });
 
   it('reports a clearing proxy when one genuinely separates the class', () => {
@@ -225,5 +272,274 @@ describe('formatProxyAudit', () => {
     });
     expect(text).toContain('0/0');
     expect(text).not.toContain('NaN');
+  });
+});
+
+describe('rankOneLatencyDominant — the only proxy in this record that needs no label', () => {
+  it('reads the dominant metric of the RANK-1 service, not the ground truth', () => {
+    // The GT service has a CPU metric and the rank-1 service a duration one. A proxy that read the GT would answer
+    // false here; the engine can only see the rank, so the answer must follow the RANK.
+    const kase0 = kase({
+      groundTruth: ['a'],
+      services: [
+        svc({
+          serviceId: 'a',
+          isGroundTruth: true,
+          predictedRank: 2,
+          dominantMetric: 'container_cpu_usage',
+        }),
+        svc({
+          serviceId: 'b',
+          predictedRank: 1,
+          dominantMetric: 'http_request_duration_p99_seconds',
+        }),
+      ],
+    });
+    expect(rankOneLatencyDominant(kase0)).toBe(true);
+  });
+
+  it('answers false when nothing is ranked, and for a non-duration dominant metric', () => {
+    expect(rankOneLatencyDominant(kase({ services: [svc({ serviceId: 'a' })] }))).toBe(false);
+    const errorish = kase({
+      services: [svc({ serviceId: 'a', predictedRank: 1, dominantMetric: 'http_error_rate' })],
+    });
+    expect(rankOneLatencyDominant(errorish)).toBe(false);
+  });
+});
+
+describe('deployableGateReport', () => {
+  it('applies the term only to admitted cases, and names the residue', () => {
+    // Admitted: a duration-dominant rank-1 with `source` as truth, which the direction fixes.
+    // Refused: a resource-dominant case the direction would have broken — it must stay untouched.
+    const cases = [
+      kase({
+        datapack: 'g1',
+        faultType: 'NetworkLoss',
+        groundTruth: ['source'],
+        services: [svc({ serviceId: 'source', predictedRank: 1, dominantMetric: 'duration_p99' })],
+      }),
+      kase({
+        datapack: 'g2',
+        faultType: 'JVMMemoryStress',
+        groundTruth: ['symptom'],
+        services: [svc({ serviceId: 'symptom', predictedRank: 1, dominantMetric: 'memory_usage' })],
+      }),
+    ];
+    const report = deployableGateReport(cases, OPTS, 3);
+    expect(report.cases).toBe(2);
+    expect(report.admitted).toBe(1);
+    // Measured, not assumed: with one service per case the baseline ranking is already right in BOTH, so this fixture
+    // cannot show a fix — and it must not pretend to. What it does show is the property the gate is judged on: the
+    // refused case contributed its baseline unchanged, so nothing regressed.
+    expect(report.correct).toBe(report.baselineCorrect);
+    expect(report.regressed).toEqual([]);
+  });
+
+  it('skips a case with no root, refuses one with no rank-1, and renders a zero population', () => {
+    // Three populations in one fixture: no root (not counted at all), no rank-1 (the gate refuses, so the case keeps
+    // its baseline), and the empty-agreement render which must not divide by zero.
+    const cases = [
+      kase({
+        datapack: 'z0',
+        services: [svc({ serviceId: 'a', predictedRank: 1 })],
+        groundTruth: [],
+      }),
+      kase({
+        datapack: 'z1',
+        faultType: 'NetworkLoss',
+        groundTruth: ['source'],
+        services: [svc({ serviceId: 'source' })],
+      }),
+    ];
+    const report = deployableGateReport(cases, OPTS, 3);
+    expect(report.cases).toBe(1);
+    expect(report.admitted).toBe(0);
+    expect(report.correct).toBe(report.baselineCorrect);
+    const text = formatDeployableGate(report, {
+      cases: 0,
+      agreed: 0,
+      recordedRight: 0,
+      rebuiltRight: 0,
+      recordedNotListed: 0,
+    });
+    expect(text).toContain('0/0');
+    expect(text).not.toContain('NaN');
+  });
+
+  it('reports a NEGATIVE net when the gate admits a case the term breaks', () => {
+    // The gate is a bet, and a bet can lose. A duration-dominant rank-1 whose truth is the CALLEE: admitting it lets
+    // the direction term move the answer away, so the net is negative and the report must print a minus rather than a
+    // bare `+`. This arm existed and was never exercised, which is how a formatter keeps a `>= 0` branch it never takes.
+    // Two services, so the ranking can MOVE: `symptom` wins on anomaly at weight 0 (truth), and the direction term at
+    // weight 3 hands the rank to `source` — a loss. One service cannot lose, because nothing can overtake it.
+    const cases = [
+      kase({
+        datapack: 'lose',
+        faultType: 'HTTPRequestDelay',
+        groundTruth: ['symptom'],
+        services: [
+          svc({
+            serviceId: 'symptom',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+          }),
+          svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+    ];
+    const report = deployableGateReport(cases, OPTS, 3);
+    expect(report.admitted).toBe(1);
+    expect(report.correct).toBeLessThan(report.baselineCorrect);
+    expect(report.regressed).toHaveLength(1);
+    const text = formatDeployableGate(report, {
+      cases: 1,
+      agreed: 1,
+      recordedRight: 1,
+      rebuiltRight: 1,
+      recordedNotListed: 0,
+    });
+    expect(text).toContain('(-1)');
+  });
+
+  it('counts a case whose root is in NO service, so both the base and the arm are false', () => {
+    // The third population: a case that names a root nothing in the ranked set can match. It must be COUNTED (the
+    // denominator is honest) and must contribute zero to both sides rather than being dropped.
+    const cases = [
+      kase({
+        datapack: 'ghost',
+        faultType: 'NetworkLoss',
+        groundTruth: ['ghost'],
+        services: [
+          svc({
+            serviceId: 'symptom',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+          }),
+          svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+    ];
+    const report = deployableGateReport(cases, OPTS, 3);
+    expect(report.cases).toBe(1);
+    expect(report.admitted).toBe(1);
+    expect(report.baselineCorrect).toBe(0);
+    expect(report.correct).toBe(0);
+    expect(report.regressed).toEqual([]);
+  });
+
+  it('renders the residue when the criterion is not met, and the MET verdict when it is', () => {
+    const notMet = formatDeployableGate(
+      {
+        weight: 3,
+        admitted: 1,
+        cases: 2,
+        baselineCorrect: 1,
+        correct: 2,
+        regressed: ['JVMMemoryStress 3'],
+      },
+      { cases: 2, agreed: 2, recordedRight: 1, rebuiltRight: 1, recordedNotListed: 0 },
+    );
+    expect(notMet).toContain('NOT met');
+    expect(notMet).toContain('JVMMemoryStress 3');
+    const met = formatDeployableGate(
+      { weight: 3, admitted: 1, cases: 2, baselineCorrect: 1, correct: 2, regressed: [] },
+      { cases: 2, agreed: 2, recordedRight: 1, rebuiltRight: 1, recordedNotListed: 0 },
+    );
+    expect(met).toContain('criterion is MET');
+  });
+});
+
+describe('datumLocus — where the failure KIND stands, read off the rendered data', () => {
+  it('counts only DEFINED fields, because the parser materialises every key', () => {
+    const cases = [
+      kase({
+        services: [svc({ serviceId: 'a', predictedRank: 1, dominantMetric: 'duration_p99' })],
+      }),
+    ];
+    const locus = datumLocus(cases);
+    // `metricOutcomes` and friends are `undefined` on a dump that predates them, and a key whose value is undefined was
+    // never rendered — counting it would report a field the file does not carry.
+    expect(locus.serviceFields).toContain('dominantMetric');
+    expect(locus.serviceFields).not.toContain('metricOutcomes');
+    expect(locus.serviceFields).not.toContain('decisiveOutcome');
+  });
+
+  it('reports no service fields at all when every case is empty', () => {
+    // A corpus whose cases carry no services has nothing to quote, and the report must say `(nothing)` rather than
+    // reaching into a first element that does not exist.
+    const locus = datumLocus([kase({ services: [], groundTruth: ['ghost'] })]);
+    expect(locus.serviceFields).toEqual([]);
+    expect(
+      formatDatumLocus(locus, {
+        cases: 1,
+        agreed: 1,
+        recordedRight: 0,
+        rebuiltRight: 0,
+        recordedNotListed: 0,
+      }),
+    ).toContain('(nothing)');
+  });
+
+  it('reads pairs-only, with-counts and no-edges from the edge render', () => {
+    const pairs = datumLocus([kase({ services: [svc({ serviceId: 'a' })], edges: ['a>b'] })]);
+    expect(pairs.edgeForm).toBe('pairs-only');
+    const counts = datumLocus([
+      kase({ services: [svc({ serviceId: 'a' })], edges: ['a>b failed=3'] }),
+    ]);
+    expect(counts.edgeForm).toBe('with-counts');
+    const none = datumLocus([kase({ services: [svc({ serviceId: 'a' })] })]);
+    expect(none.edgeForm).toBe('no-edges');
+  });
+
+  it('never calls an exception COUNT a kind, and does call a kind-ish suffix one', () => {
+    // The defect this pins: `logicExceptionCount` contains the substring "exception", and the first version of the
+    // check read that as "a kind is available". A count is not a kind; a name that ENDS in a kind-ish suffix is.
+    const countOnly = datumLocus([
+      kase({ services: [svc({ serviceId: 'a', logicExceptionCount: 4, httpExceptionCount: 2 })] }),
+    ]);
+    expect(countOnly.kindAvailable).toBe(false);
+    const withKind = datumLocus([
+      kase({
+        services: [
+          {
+            ...svc({ serviceId: 'a' }),
+            errorKind: 'connect-refused',
+          } as unknown as DiagnosedService,
+        ],
+      }),
+    ]);
+    expect(withKind.kindAvailable).toBe(true);
+  });
+
+  it('renders both verdicts, and an empty population without dividing by it', () => {
+    const agreement = {
+      cases: 1,
+      agreed: 1,
+      recordedRight: 1,
+      rebuiltRight: 1,
+      recordedNotListed: 0,
+    };
+    const absent = formatDatumLocus(
+      datumLocus([kase({ services: [svc({ serviceId: 'a' })] })]),
+      agreement,
+    );
+    expect(absent).toContain('NO field carries a failure kind');
+    const present = formatDatumLocus(
+      {
+        serviceFields: ['errorKind'],
+        edgeForm: 'pairs-only',
+        kindAvailable: true,
+      },
+      agreement,
+    );
+    expect(present).toContain('re-run the proxy audit');
+    const empty = formatDatumLocus(
+      { serviceFields: [], edgeForm: 'no-edges', kindAvailable: false },
+      { cases: 0, agreed: 0, recordedRight: 0, rebuiltRight: 0, recordedNotListed: 0 },
+    );
+    expect(empty).toContain('0/0');
+    expect(empty).toContain('(nothing)');
   });
 });
