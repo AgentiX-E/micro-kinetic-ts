@@ -790,6 +790,66 @@ every run and its verdict changes by itself the day a field appears.
 last), `datumLocus` / `formatDatumLocus` (where the kind stands, mechanically), `deployableGateReport` /
 `formatDeployableGate` (the gated arm with its residue named). All three blocks print in the discriminator section.
 
+## 20. The residue closes — and the criterion is met by a DEPLOYABLE gate for the first time (iteration 120)
+
+Section 19 left two types broken (`JVMMemoryStress` −3, `HTTPRequestDelay` −5) and no way to name them apart from the
+cases the gate is for. Two refinements were measured before the one that works.
+
+### The name-based refinement is refuted, with numbers
+
+| refinement | admitted | net | regressed types |
+| --- | ---: | ---: | ---: |
+| section 19 gate — `/duration|latency|time|p99|p95/` | 765 | **+110** | 2 |
+| strict — drop the `time` alternative | 593 | +77 | **3** |
+| strict AND no resource word | 593 | +77 | **3** |
+
+**Tightening the regex costs 33 cases and ADDS a regression.** The reason is visible in the metric names:
+
+- `JVMMemoryStress` → `jvm.system.cpu.load_1m` ×25, `db.client.connections.use_time.max` ×18
+- `HTTPRequestDelay` → **`http.server.request.duration` ×22**, `hubble_http_request_duration_p90_seconds` ×10
+- `NetworkLoss` → **`http.client.request.duration.max` ×20**
+- `NetworkPartition` → **`http.client.request.duration.max` ×36**
+
+The harmful types' dominant metric is **literally the same series family** as the useful ones. **No metric NAME can
+separate them**, and any rule that tries loses more than it gains.
+
+### The second observable is the MAGNITUDE, not the name
+
+| group | n | failedEdgeScore | latRise (median) | latEdges |
+| --- | ---: | ---: | ---: | ---: |
+| the two harmful types | 146 | 0.556 | **9.0** | 2 |
+| network (what the gate is for) | 230 | 0.438 | **340.9** | 1 |
+
+**A 38× separation in the rank-1 latency rise**, and none of the other observables separate anything (the failed-edge
+score runs the WRONG way: harmful cases carry more of it). The mechanism is the one the whole axis has been circling: a
+link fault makes the affected edge genuinely slow, while `JVMMemoryStress` and an injected `HTTPRequestDelay` produce a
+duration-named metric **without** a corresponding rise on the rank-1's own edges.
+
+### The arm that meets the criterion
+
+```
+  weight 3, rank-1 latRise >= 250: the gate admits 138/1422 cases (no label read)
+  right 792 against a baseline of 750 (+42)
+  regressed types: NONE
+  verdict: the criterion is MET by a deployable gate
+```
+
+**+42 with ZERO regressed fault types, reading no label** — the engine's acceptance condition, met by a deployable arm
+for the first time in this record. The threshold scan puts the first zero-regression point at 250; 300 gives the same
+regressions and two fewer cases, so 250 is the boundary.
+
+**What it costs is stated rather than hidden**: satisfying the criterion takes the gate from **+110 to +42**. The
+remaining 68 cases were profitable on average and unprofitable for two types, and the criterion refuses exactly that
+trade. **Which of the two arms to ship is a policy question, not a measurement** — and the record now holds both numbers
+side by side in the same block.
+
+### What is still NOT licensed
+
+**The floor is FITTED.** It came from scanning 60…300 over the whole corpus, which is precisely the defect iteration 117
+corrected for the class set. Before any flip, `.121` must choose the floor on four folds and read the fifth — the
+machinery is already built (`holdoutDirectionReport` takes an applicability predicate, and `admitsToGate` is one).
+**Until that runs, this is "the criterion is met by a fitted threshold", not "the default may flip".**
+
 ## 8. Reproduce
 
 ```bash

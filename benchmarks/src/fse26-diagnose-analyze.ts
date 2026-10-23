@@ -59,6 +59,7 @@ import {
 } from './fse26-fourth-term.js';
 import {
   datumLocus,
+  DEPLOYABLE_LAT_RISE_FLOOR,
   deployableGateReport,
   formatDatumLocus,
   formatDeployableGate,
@@ -8196,7 +8197,15 @@ export function formatDiscriminatorSection(
     deployableGateReport(cases, options, BEST_DIRECTION_WEIGHT),
     engineAgreement(cases, options),
   );
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}`;
+  // **The second observable, and the first arm in this record to meet the criterion at all.** The metric-only gate above
+  // leaves two types broken because their rank-1 dominant metric is literally the same series as the useful cases'; the
+  // LATENCY RISE separates them 38× (median 9.0 against 340.9), and a floor at 250 leaves zero regressions at +42. The
+  // floor is FITTED and both numbers are printed so the cost of satisfying the criterion is visible rather than argued.
+  const floored = formatDeployableGate(
+    deployableGateReport(cases, options, BEST_DIRECTION_WEIGHT, DEPLOYABLE_LAT_RISE_FLOOR),
+    engineAgreement(cases, options),
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}\n\n${floored}`;
 }
 
 function analyzeSectionText(

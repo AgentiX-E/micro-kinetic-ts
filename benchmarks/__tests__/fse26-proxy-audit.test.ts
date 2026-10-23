@@ -14,7 +14,9 @@ import { describe, expect, it } from 'vitest';
 import type { DiagnosedCase, DiagnosedService } from '../src/fse26-diagnose-analyze.js';
 import type { ProxyRow } from '../src/fse26-proxy-audit.js';
 import {
+  admitsToGate,
   datumLocus,
+  DEPLOYABLE_LAT_RISE_FLOOR,
   deployableGateReport,
   formatDatumLocus,
   formatDeployableGate,
@@ -433,6 +435,7 @@ describe('deployableGateReport', () => {
     const notMet = formatDeployableGate(
       {
         weight: 3,
+        minLatRise: 0,
         admitted: 1,
         cases: 2,
         baselineCorrect: 1,
@@ -444,7 +447,15 @@ describe('deployableGateReport', () => {
     expect(notMet).toContain('NOT met');
     expect(notMet).toContain('JVMMemoryStress 3');
     const met = formatDeployableGate(
-      { weight: 3, admitted: 1, cases: 2, baselineCorrect: 1, correct: 2, regressed: [] },
+      {
+        weight: 3,
+        minLatRise: 250,
+        admitted: 1,
+        cases: 2,
+        baselineCorrect: 1,
+        correct: 2,
+        regressed: [],
+      },
       { cases: 2, agreed: 2, recordedRight: 1, rebuiltRight: 1, recordedNotListed: 0 },
     );
     expect(met).toContain('criterion is MET');
@@ -541,5 +552,112 @@ describe('datumLocus — where the failure KIND stands, read off the rendered da
     );
     expect(empty).toContain('0/0');
     expect(empty).toContain('(nothing)');
+  });
+});
+
+describe('admitsToGate — the second observable: the rank-1 latency rise', () => {
+  const durationTop = (latRise: number): DiagnosedCase =>
+    kase({
+      services: [
+        svc({
+          serviceId: 'a',
+          predictedRank: 1,
+          dominantMetric: 'http.server.request.duration',
+          latRise,
+        }),
+      ],
+      groundTruth: ['a'],
+    });
+
+  it('refuses a case whose metric is not duration-shaped, whatever its rise', () => {
+    const notDuration = kase({
+      services: [
+        svc({
+          serviceId: 'a',
+          predictedRank: 1,
+          dominantMetric: 'jvm.system.cpu.load_1m',
+          latRise: 999,
+        }),
+      ],
+      groundTruth: ['a'],
+    });
+    expect(admitsToGate(notDuration, 0)).toBe(false);
+    expect(admitsToGate(notDuration, 250)).toBe(false);
+  });
+
+  it('admits on the metric alone when the floor is 0, and on BOTH when it is set', () => {
+    // The floor is the second observable: `9.0` is the median rise of the two types the metric-only gate kept breaking,
+    // `340.9` the median of the cases it is for. A case below the floor is refused even though its metric qualifies.
+    expect(admitsToGate(durationTop(9), 0)).toBe(true);
+    expect(admitsToGate(durationTop(9), 250)).toBe(false);
+    expect(admitsToGate(durationTop(340.9), 250)).toBe(true);
+    // Exactly at the floor passes: the rule is `>=`, and a test that only checks either side would miss a `<` slip.
+    expect(admitsToGate(durationTop(250), 250)).toBe(true);
+    expect(admitsToGate(durationTop(249.9), 250)).toBe(false);
+  });
+
+  it('treats a missing rise as 0, so a case without the field cannot pass a floor', () => {
+    const noRise = kase({
+      services: [svc({ serviceId: 'a', predictedRank: 1, dominantMetric: 'duration_p99' })],
+      groundTruth: ['a'],
+    });
+    expect(admitsToGate(noRise, 0)).toBe(true);
+    expect(admitsToGate(noRise, 1)).toBe(false);
+  });
+
+  it('reaches the criterion in the floored report on a corpus where the floor excludes the harmful case', () => {
+    // Two cases: one the term fixes with a huge rise, one it breaks with a tiny rise. The floor refuses the second, so
+    // the report shows a gain AND no regressed type — the shape the corpus has once the floor is applied.
+    const cases = [
+      kase({
+        datapack: 'fix',
+        faultType: 'NetworkLoss',
+        groundTruth: ['source'],
+        services: [
+          svc({
+            serviceId: 'symptom',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 340,
+          }),
+          svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+      kase({
+        datapack: 'harm',
+        faultType: 'HTTPRequestDelay',
+        groundTruth: ['symptom2'],
+        services: [
+          svc({
+            serviceId: 'symptom2',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 9,
+          }),
+          svc({ serviceId: 'source2', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+    ];
+    const metricOnly = deployableGateReport(cases, OPTS, 3);
+    expect(metricOnly.admitted).toBe(2);
+    expect(metricOnly.regressed).toEqual(['HTTPRequestDelay 1']);
+
+    const floored = deployableGateReport(cases, OPTS, 3, DEPLOYABLE_LAT_RISE_FLOOR);
+    expect(floored.admitted).toBe(1);
+    expect(floored.regressed).toEqual([]);
+    expect(floored.correct).toBe(floored.baselineCorrect + 1);
+    // The floor travels in the report, so two reports cannot be compared without it.
+    expect(floored.minLatRise).toBe(DEPLOYABLE_LAT_RISE_FLOOR);
+    expect(
+      formatDeployableGate(floored, {
+        cases: 2,
+        agreed: 2,
+        recordedRight: 1,
+        rebuiltRight: 1,
+        recordedNotListed: 0,
+      }),
+    ).toContain(`rank-1 latRise >= ${DEPLOYABLE_LAT_RISE_FLOOR}`);
   });
 });

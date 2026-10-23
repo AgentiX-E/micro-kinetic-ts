@@ -288,14 +288,40 @@ export function rankOneLatencyDominant(kase: DiagnosedCase): boolean {
   return /duration|latency|time|p99|p95/i.test(top.dominantMetric ?? '');
 }
 
+/**
+ * The rank-1 latency-rise floor the gate is REPORTED at, in the dump's own units.
+ *
+ * **FITTED, not derived.** A scan of 60…300 puts the first zero-regression point at 250; below it one type still breaks.
+ * It is exported so the report prints the number it ran with, and so it.121 can hold it out across folds rather than
+ * trusting a scan — a threshold chosen by looking at the whole corpus is exactly the defect iteration 117 corrected for
+ * the class set, and this one has NOT yet paid that debt.
+ */
+export const DEPLOYABLE_LAT_RISE_FLOOR = 250;
+
 /** What the deployable gate does to the direction term. */
 export interface DeployableGateReport {
   readonly weight: number;
+  /** The rank-1 latency-rise floor the report ran with, so two reports cannot be compared without it. */
+  readonly minLatRise: number;
   readonly admitted: number;
   readonly cases: number;
   readonly baselineCorrect: number;
   readonly correct: number;
   readonly regressed: readonly string[];
+}
+
+/**
+ * Does the case pass the gate — the dominant metric AND the latency-rise floor?
+ *
+ * @param kase - The case.
+ * @param minLatRise - The rank-1 rise below which the term is refused; `0` disables the floor.
+ * @returns True when the term may act on this case.
+ */
+export function admitsToGate(kase: DiagnosedCase, minLatRise: number): boolean {
+  if (!rankOneLatencyDominant(kase)) return false;
+  if (minLatRise <= 0) return true;
+  const top = kase.services.find((service) => service.predictedRank === 1);
+  return (top?.latRise ?? 0) >= minLatRise;
 }
 
 /**
@@ -317,6 +343,18 @@ export function deployableGateReport(
   cases: readonly DiagnosedCase[],
   opts: TermOracleOptions,
   weight: number,
+  /**
+   * The rank-1 latency rise below which the term is refused, in the dump's own units.
+   *
+   * `0` is iteration 119's gate: the dominant metric alone. **A floor is a SECOND observable and it is what closes the
+   * residue**: the two types the metric-only gate kept breaking have a median rank-1 rise of **9.0** while the cases
+   * the gate is FOR have **340.9** — a 38× separation that no metric NAME could give, because the harmful types' dominant
+   * metric is literally `http.server.request.duration`, the same series as the useful ones.
+   *
+   * **The number is FITTED** — a scan of 60…300 shows the criterion met from 250 up, at +42 instead of +110. A fitted
+   * threshold is not a mechanism until it is chosen on four folds and read on the fifth, which has NOT been done.
+   */
+  minLatRise = 0,
 ): DeployableGateReport {
   let counted = 0;
   let admitted = 0;
@@ -327,7 +365,7 @@ export function deployableGateReport(
     const root = new Set(kase.groundTruth.filter((name) => name !== ''));
     if (root.size === 0) continue;
     counted++;
-    const admits = rankOneLatencyDominant(kase);
+    const admits = admitsToGate(kase, minLatRise);
     if (admits) admitted++;
     const lat = latencySlopes(kase.services, opts.latFloor);
     const base = root.has(rankCase(kase, opts, 'recorded', lat).order[0] ?? '');
@@ -346,7 +384,7 @@ export function deployableGateReport(
   const regressed = [...perType.entries()]
     .filter(([, counts]) => counts.arm < counts.base)
     .map(([type, counts]) => `${type} ${counts.base - counts.arm}`);
-  return { weight, admitted, cases: counted, baselineCorrect, correct, regressed };
+  return { weight, minLatRise, admitted, cases: counted, baselineCorrect, correct, regressed };
 }
 
 /**
@@ -366,7 +404,8 @@ export function formatDeployableGate(
     'Deployable gate — the direction term admitted only where the RANK-1 dominant metric is a duration:',
     `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
       `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
-    `  weight ${report.weight}: the gate admits ${report.admitted}/${report.cases} cases (no label read)`,
+    `  weight ${report.weight}${report.minLatRise > 0 ? `, rank-1 latRise >= ${report.minLatRise}` : ''}: ` +
+      `the gate admits ${report.admitted}/${report.cases} cases (no label read)`,
     `  right ${report.correct} against a baseline of ${report.baselineCorrect} (${net >= 0 ? `+${net}` : net})`,
     `  regressed types: ${report.regressed.length === 0 ? 'NONE' : `${report.regressed.length} — ${report.regressed.join(', ')}`}`,
     report.regressed.length === 0
