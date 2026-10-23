@@ -850,6 +850,51 @@ corrected for the class set. Before any flip, `.121` must choose the floor on fo
 machinery is already built (`holdoutDirectionReport` takes an applicability predicate, and `admitsToGate` is one).
 **Until that runs, this is "the criterion is met by a fitted threshold", not "the default may flip".**
 
+## 21. The latency floor, chosen on four folds and read on the fifth (iteration 121)
+
+Section 20 met the criterion with a floor of **250** that had been **scanned over the whole corpus** — the same defect
+section 17 corrected for the class set. This is that debt paid: the chooser sees four folds, takes the floor that
+maximises their net **subject to regressing no fault type on them**, and the fifth fold is read afterwards.
+
+| fold | chosen | training net | held-out | cases | regressed types |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | **250** | 31 | **+11** | 278 | 0 |
+| 1 | **250** | 33 | **+9** | 274 | 0 |
+| 2 | **250** | 32 | **+10** | 310 | 0 |
+| 3 | **100** | 50 | +7 | 300 | **1** |
+| 4 | **250** | 36 | **+6** | 260 | 0 |
+| **all** | **4 of 5 agree** | | **+43** | **1422** | **1** |
+
+**Two separate things are being read here, and they disagree:**
+
+- **The gain is not a fitting artefact.** Held out total **+43** against the in-sample **+42** — the floor's profit
+  reproduces on folds it was not chosen on, to within one case.
+- **The choice is NOT stable.** Fold 3 prefers **100** (training net 50 — it fits its four folds better), and on the fold
+  it never saw that choice **leaks one regressed type**. So "the same floor on every fold" **fails**, 4 to 1.
+
+**And that difference is the whole finding.** A majority is not a protocol: four folds agreeing on 250 tells you the
+number is *nearly* canonical, not that a flip is licensed, because the one fold that dissents produces exactly the
+consequence the criterion forbids — a regressed fault type — on data nobody looked at. **A flip must not be taken on a
+majority**, and the formatter says so in that sentence rather than in a footnote.
+
+### Where that leaves the flip
+
+**Refused, for the third iteration running, and now for the most specific reason yet**: the arm meets the criterion on
+the corpus (zero regressions at floor 250) and reproduces its gain out of sample (+43), but the **choice** of 250 is 4/5
+rather than 5/5, and the dissenting fold shows that a different choice can regress a type on unseen data.
+
+**What would license it**: a floor rule rather than a floor number — e.g. derive the floor from a per-case quantity
+(`latRise` relative to the case's own scale, or to the rank-2 service's rise) so there is nothing to choose. That is the
+next iteration's target, and it is a better shape than any threshold: **a rule that needs no fold protocol cannot
+overfit one.**
+
+### The instrument
+
+`holdoutFloorReport` / `formatFloorHoldout`: per-fold chosen floor, the training net the choice maximised, the held-out
+net, the held-out population and the regressed-type count, with `distinct` reported so stability is read off the choices
+rather than asserted. `admitsToGate` is the applicability predicate, so the floor's protocol and the class set's use the
+same machinery.
+
 ## 8. Reproduce
 
 ```bash

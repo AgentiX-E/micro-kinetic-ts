@@ -63,7 +63,9 @@ import {
   deployableGateReport,
   formatDatumLocus,
   formatDeployableGate,
+  formatFloorHoldout,
   formatProxyAudit,
+  holdoutFloorReport,
   proxyAudit,
   proxyRows,
 } from './fse26-proxy-audit.js';
@@ -8205,7 +8207,14 @@ export function formatDiscriminatorSection(
     deployableGateReport(cases, options, BEST_DIRECTION_WEIGHT, DEPLOYABLE_LAT_RISE_FLOOR),
     engineAgreement(cases, options),
   );
-  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}\n\n${floored}`;
+  // **The floor's own out-of-sample check.** `250` was scanned over the whole corpus, which is the defect section 17
+  // corrected for the class set; this block chooses it on four folds and reads the fifth, and prints whether the choice
+  // was stable and what each fold's held-out consequence was — including when a fold prefers another floor.
+  const floorHoldout = formatFloorHoldout(
+    holdoutFloorReport(cases, options, BEST_DIRECTION_WEIGHT),
+    engineAgreement(cases, options),
+  );
+  return `${agreement}\n\n${shipped}\n\n${bounded}\n\n${formulation}\n\n${composition}\n\n${direction}\n\n${holdout}\n\n${gated}\n\n${gatedHoldout}\n\n${classSets}\n\n${proxies}\n\n${locus}\n\n${deployable}\n\n${floored}\n\n${floorHoldout}`;
 }
 
 function analyzeSectionText(

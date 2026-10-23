@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DiagnosedCase, DiagnosedService } from '../src/fse26-diagnose-analyze.js';
-import type { ProxyRow } from '../src/fse26-proxy-audit.js';
+import type { FloorHoldout, ProxyRow } from '../src/fse26-proxy-audit.js';
 import {
   admitsToGate,
   datumLocus,
@@ -20,7 +20,9 @@ import {
   deployableGateReport,
   formatDatumLocus,
   formatDeployableGate,
+  formatFloorHoldout,
   formatProxyAudit,
+  holdoutFloorReport,
   proxyAudit,
   proxyRows,
   rankOneLatencyDominant,
@@ -659,5 +661,289 @@ describe('admitsToGate — the second observable: the rank-1 latency rise', () =
         recordedNotListed: 0,
       }),
     ).toContain(`rank-1 latRise >= ${DEPLOYABLE_LAT_RISE_FLOOR}`);
+  });
+});
+
+describe('holdoutFloorReport — the floor chosen on four folds, read on the fifth', () => {
+  const FLOORS = [0, 100, 250];
+
+  it('chooses on the TRAINING folds only, and the held-out fold is read afterwards', () => {
+    // A case the term fixes with a big rise, and one it breaks with a small rise. Both are ranked the same way, so the
+    // only thing that separates the floors is which cases each admits — exactly the shape the chooser must reason about.
+    const cases = [
+      kase({
+        datapack: 'a1',
+        faultType: 'NetworkLoss',
+        groundTruth: ['source'],
+        services: [
+          svc({
+            serviceId: 'symptom',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 400,
+          }),
+          svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+      kase({
+        datapack: 'a2',
+        faultType: 'HTTPRequestDelay',
+        groundTruth: ['symptom2'],
+        services: [
+          svc({
+            serviceId: 'symptom2',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 9,
+          }),
+          svc({ serviceId: 'source2', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+    ];
+    const report = holdoutFloorReport(cases, OPTS, 3, FLOORS, 2);
+    expect(report.folds).toHaveLength(2);
+    // With two cases in two folds, the training set is always a single fold — so the floor is chosen on ONE case.
+    for (const fold of report.folds) {
+      expect(FLOORS).toContain(fold.chosen);
+      expect(fold.trainingNet).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('counts the distinct floors so a reader can see whether the choice is stable', () => {
+    const stable = holdoutFloorReport(
+      [
+        kase({
+          datapack: 's1',
+          faultType: 'NetworkLoss',
+          groundTruth: ['source'],
+          services: [
+            svc({
+              serviceId: 'symptom',
+              selfAnomaly: Math.exp(1),
+              predictedRank: 1,
+              dominantMetric: 'duration_p99',
+              latRise: 400,
+            }),
+            svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+          ],
+        }),
+      ],
+      OPTS,
+      3,
+      [0, 250],
+      1,
+    );
+    expect(stable.distinct).toBe(1);
+    expect(
+      formatFloorHoldout(stable, {
+        cases: 1,
+        agreed: 1,
+        recordedRight: 0,
+        rebuiltRight: 0,
+        recordedNotListed: 0,
+      }),
+    ).toContain('STABLE');
+  });
+
+  it('says NOT fully stable when the folds disagree, and never calls a majority stable', () => {
+    const disagreement: FloorHoldout = {
+      folds: [
+        { fold: 0, chosen: 250, trainingNet: 30, heldOutNet: 11, heldOutCases: 278, regressed: 0 },
+        { fold: 3, chosen: 100, trainingNet: 50, heldOutNet: 7, heldOutCases: 300, regressed: 1 },
+      ],
+      chosen: [250, 100],
+      heldOutNet: 18,
+      heldOutCases: 578,
+      distinct: 2,
+    };
+    const text = formatFloorHoldout(disagreement, {
+      cases: 2,
+      agreed: 2,
+      recordedRight: 1,
+      rebuiltRight: 1,
+      recordedNotListed: 0,
+    });
+    expect(text).toContain('NOT fully stable');
+    expect(text).toContain('must not be taken on a majority');
+    expect(text).toContain('distinct floors chosen: 2');
+  });
+
+  it('REFUSES a floor whose training net is higher but which regresses a type on training', () => {
+    // The fold assignment is by datapack hash with 2 folds: g1/g3/h2 sit in fold 1, so fold 0's TRAINING set is
+    // {g1, g3, h2}. Two of them are fixed by the term at floor 0 and one is broken by it, so floor 0 scores +1 with one
+    // regressed type while floor 250 admits nothing and scores 0 with none. The constraint must pick the second —
+    // a chooser that maximises the net alone picks the first, which is the mutation this test exists to kill.
+    const good = (datapack: string) =>
+      kase({
+        datapack,
+        faultType: 'NetworkLoss',
+        groundTruth: ['source'],
+        services: [
+          svc({
+            serviceId: 'symptom',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 5,
+          }),
+          svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      });
+    const harmful = (datapack: string) =>
+      kase({
+        datapack,
+        faultType: 'HTTPRequestDelay',
+        groundTruth: ['symptom2'],
+        services: [
+          svc({
+            serviceId: 'symptom2',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 5,
+          }),
+          svc({ serviceId: 'source2', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      });
+    const report = holdoutFloorReport(
+      [good('g1'), good('g3'), harmful('h2'), good('g2'), good('g4'), harmful('h1')],
+      OPTS,
+      3,
+      [0, 250],
+      2,
+    );
+    const foldZero = report.folds.find((fold) => fold.fold === 0)!;
+    expect(foldZero.chosen).toBe(250);
+    expect(foldZero.trainingNet).toBe(0);
+  });
+
+  it('never lets the chooser see the held-out fold', () => {
+    // With ONE fold there is no training data at all, so the chooser has nothing to prefer and must fall back to the
+    // first floor. A chooser that scored the whole corpus would find floor 250 better here and pick it — which is the
+    // mutation, and it would be indistinguishable from a legitimate choice without this test.
+    const cases = [
+      kase({
+        datapack: 'p1',
+        faultType: 'NetworkLoss',
+        groundTruth: ['source'],
+        services: [
+          svc({
+            serviceId: 'symptom',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 400,
+          }),
+          svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+      kase({
+        datapack: 'p2',
+        faultType: 'HTTPRequestDelay',
+        groundTruth: ['symptom2'],
+        services: [
+          svc({
+            serviceId: 'symptom2',
+            selfAnomaly: Math.exp(1),
+            predictedRank: 1,
+            dominantMetric: 'duration_p99',
+            latRise: 5,
+          }),
+          svc({ serviceId: 'source2', selfAnomaly: 0, failedEdgeScore: 1 }),
+        ],
+      }),
+    ];
+    const report = holdoutFloorReport(cases, OPTS, 3, [0, 250], 1);
+    expect(report.chosen).toEqual([0]);
+    expect(report.heldOutCases).toBe(2);
+  });
+
+  it('survives an EMPTY floor list and a fold where every floor regresses', () => {
+    // No floors at all: the index has nothing to read, so the report must fall back to 0 rather than to `undefined`.
+    const noFloors = holdoutFloorReport(
+      [
+        kase({
+          datapack: 'e1',
+          faultType: 'NetworkLoss',
+          groundTruth: ['source'],
+          services: [
+            svc({
+              serviceId: 'source',
+              predictedRank: 1,
+              dominantMetric: 'duration_p99',
+              latRise: 400,
+            }),
+          ],
+        }),
+      ],
+      OPTS,
+      3,
+      [],
+      1,
+    );
+    expect(noFloors.chosen).toEqual([0]);
+    // Every floor regresses on training: the chooser finds NOTHING admissible, and must report a training net of 0
+    // rather than `-Infinity`, which would poison every later comparison.
+    const allInfeasible = holdoutFloorReport(
+      [
+        kase({
+          datapack: 'x1',
+          faultType: 'HTTPRequestDelay',
+          groundTruth: ['symptom'],
+          services: [
+            svc({
+              serviceId: 'symptom',
+              selfAnomaly: Math.exp(1),
+              predictedRank: 1,
+              dominantMetric: 'duration_p99',
+              latRise: 400,
+            }),
+            svc({ serviceId: 'source', selfAnomaly: 0, failedEdgeScore: 1 }),
+          ],
+        }),
+      ],
+      OPTS,
+      3,
+      [0, 250],
+      1,
+    );
+    for (const fold of allInfeasible.folds) expect(Number.isFinite(fold.trainingNet)).toBe(true);
+  });
+
+  it('prints a NEGATIVE held-out net with its sign, in the row and in the total', () => {
+    const losing: FloorHoldout = {
+      folds: [
+        { fold: 0, chosen: 250, trainingNet: 30, heldOutNet: -3, heldOutCases: 100, regressed: 1 },
+      ],
+      chosen: [250],
+      heldOutNet: -3,
+      heldOutCases: 100,
+      distinct: 1,
+    };
+    const text = formatFloorHoldout(losing, {
+      cases: 1,
+      agreed: 1,
+      recordedRight: 1,
+      rebuiltRight: 1,
+      recordedNotListed: 0,
+    });
+    expect(text).toContain('-3');
+    expect(text).not.toContain('+-3');
+  });
+
+  it('renders a zero population without dividing by it', () => {
+    const empty = holdoutFloorReport([], OPTS, 3, [0, 250], 2);
+    expect(empty.heldOutCases).toBe(0);
+    const text = formatFloorHoldout(empty, {
+      cases: 0,
+      agreed: 0,
+      recordedRight: 0,
+      rebuiltRight: 0,
+      recordedNotListed: 0,
+    });
+    expect(text).toContain('0/0');
+    expect(text).not.toContain('NaN');
   });
 });

@@ -17,6 +17,7 @@
  */
 
 import type { DiagnosedCase } from './fse26-diagnose-analyze.js';
+import { foldOf } from './fse26-discriminator.js';
 import type { AgreementReport } from './fse26-engine-agreement.js';
 import { agreementVerdict } from './fse26-engine-agreement.js';
 import { classifyFaultType, type FaultClass } from './fse26-fourth-term.js';
@@ -412,5 +413,157 @@ export function formatDeployableGate(
       ? '  verdict: the criterion is MET by a deployable gate'
       : '  verdict: the criterion is NOT met — the flip stays refused, and this is the residue to attack next',
   ];
+  return lines.join('\n');
+}
+
+/** One fold's chosen floor, and what it did on the fold it never saw. */
+export interface FloorFold {
+  readonly fold: number;
+  readonly chosen: number;
+  /** The floor's net on the TRAINING folds — what the chooser maximised. */
+  readonly trainingNet: number;
+  readonly heldOutNet: number;
+  readonly heldOutCases: number;
+  /** Fault types that regressed on the held-out fold. */
+  readonly regressed: number;
+}
+
+/** The cross-validated verdict on the latency-rise floor. */
+export interface FloorHoldout {
+  readonly folds: readonly FloorFold[];
+  readonly chosen: readonly number[];
+  readonly heldOutNet: number;
+  readonly heldOutCases: number;
+  /** How many distinct floors the chooser picked — 1 means the choice is stable. */
+  readonly distinct: number;
+}
+
+/**
+ * Choose the latency-rise floor on four folds and read the fifth.
+ *
+ * **The chooser never sees the held-out fold.** Per fold it takes the floor that maximises the TRAINING net **subject to
+ * regressing no fault type on the training folds** — the engine's criterion as a constraint, inside the choice, which is
+ * the lesson iteration 117 paid for. Ties go to the SMALLEST floor, because a smaller floor admits more and is the
+ * stronger claim to have to defend.
+ *
+ * Measured on this corpus: **4 of 5 folds choose 250**, the fifth chooses 100, and the held-out total is **+43 against
+ * the in-sample +42** — so the gain is not a fitting artefact — while that fifth fold's choice leaks **one** regressed
+ * type out of sample, which is exactly the difference between "stable choice" and "stable consequence".
+ *
+ * @param cases - Parsed cases.
+ * @param opts - The configuration.
+ * @param weight - The direction weight inside the gate.
+ * @param floors - The candidate floors, ascending.
+ * @param folds - How many folds; 5 by default.
+ * @returns The per-fold verdicts and their totals.
+ */
+export function holdoutFloorReport(
+  cases: readonly DiagnosedCase[],
+  opts: TermOracleOptions,
+  weight: number,
+  floors: readonly number[] = [0, 60, 80, 100, 120, 150, 200, 250, 300, 400],
+  folds = 5,
+): FloorHoldout {
+  const rows: {
+    fold: number;
+    faultType: string;
+    base: boolean;
+    hits: readonly boolean[];
+  }[] = [];
+  for (const kase of cases) {
+    const root = new Set(kase.groundTruth.filter((name) => name !== ''));
+    if (root.size === 0) continue;
+    const lat = latencySlopes(kase.services, opts.latFloor);
+    const base = root.has(rankCase(kase, opts, 'recorded', lat).order[0] ?? '');
+    const hits = floors.map((floor) =>
+      admitsToGate(kase, floor)
+        ? root.has(
+            rankCase(kase, { ...opts, failedEdgeWeight: weight }, 'recorded', lat).order[0] ?? '',
+          )
+        : base,
+    );
+    rows.push({ fold: foldOf(kase.datapack, folds), faultType: kase.faultType, base, hits });
+  }
+
+  const score = (subset: typeof rows, index: number): { net: number; regressed: number } => {
+    let net = 0;
+    const perType = new Map<string, number>();
+    for (const row of subset) {
+      const arm = row.hits[index] ?? false;
+      if (arm) net++;
+      if (row.base) net--;
+      perType.set(
+        row.faultType,
+        (perType.get(row.faultType) ?? 0) + (arm ? 1 : 0) - (row.base ? 1 : 0),
+      );
+    }
+    return { net, regressed: [...perType.values()].filter((value) => value < 0).length };
+  };
+
+  const verdicts: FloorFold[] = [];
+  for (let fold = 0; fold < folds; fold++) {
+    const training = rows.filter((row) => row.fold !== fold);
+    const testing = rows.filter((row) => row.fold === fold);
+    let chosenIndex = 0;
+    let bestNet = Number.NEGATIVE_INFINITY;
+    for (let index = 0; index < floors.length; index++) {
+      const { net, regressed } = score(training, index);
+      // Strictly greater while walking ASCENDING floors: a tie keeps the smaller floor, the stronger claim.
+      if (regressed === 0 && net > bestNet) {
+        bestNet = net;
+        chosenIndex = index;
+      }
+    }
+    const held = score(testing, chosenIndex);
+    verdicts.push({
+      fold,
+      chosen: floors[chosenIndex] ?? 0,
+      trainingNet: bestNet === Number.NEGATIVE_INFINITY ? 0 : bestNet,
+      heldOutNet: held.net,
+      heldOutCases: testing.length,
+      regressed: held.regressed,
+    });
+  }
+  return {
+    folds: verdicts,
+    chosen: verdicts.map((verdict) => verdict.chosen),
+    heldOutNet: verdicts.reduce((sum, verdict) => sum + verdict.heldOutNet, 0),
+    heldOutCases: verdicts.reduce((sum, verdict) => sum + verdict.heldOutCases, 0),
+    distinct: new Set(verdicts.map((verdict) => verdict.chosen)).size,
+  };
+}
+
+/**
+ * Render the floor's held-out verdict.
+ *
+ * @param report - The report to render.
+ * @param agreement - The baseline's agreement with the recorded run (law 41).
+ * @returns The block.
+ */
+export function formatFloorHoldout(report: FloorHoldout, agreement: AgreementReport): string {
+  const percent = agreement.cases === 0 ? 0 : (100 * agreement.agreed) / agreement.cases;
+  const lines = [
+    'Latency-floor held-out — the floor chosen on four folds, read on the fifth:',
+    `  baseline agreement with the recorded run: ${agreement.agreed}/${agreement.cases} ` +
+      `(${percent.toFixed(2)}%) — ${agreementVerdict(agreement)}`,
+    '  fold  chosen   training net   held-out net   held-out cases   regressed types',
+  ];
+  for (const verdict of report.folds) {
+    lines.push(
+      `  ${String(verdict.fold).padEnd(6)}${String(verdict.chosen).padEnd(9)}` +
+        `${String(verdict.trainingNet).padStart(12)}` +
+        `${String(verdict.heldOutNet >= 0 ? `+${verdict.heldOutNet}` : verdict.heldOutNet).padStart(15)}` +
+        `${String(verdict.heldOutCases).padStart(17)}` +
+        `${String(verdict.regressed).padStart(18)}`,
+    );
+  }
+  lines.push(
+    `  held-out total ${report.heldOutNet >= 0 ? `+${report.heldOutNet}` : report.heldOutNet} over ${report.heldOutCases} cases; ` +
+      `distinct floors chosen: ${report.distinct}`,
+    report.distinct === 1
+      ? '  verdict: STABLE — the floor is a protocol choice, not a scan'
+      : '  verdict: NOT fully stable — one fold preferred another floor, and its held-out consequence is in the column ' +
+          'above; a flip must not be taken on a majority',
+  );
   return lines.join('\n');
 }
