@@ -81,6 +81,7 @@ import { TreeRCAEngine } from '../../packages/tree/src/rca/tree-rca.js';
 // prints with, so the two artifacts' corpus lines are comparable across runs rather than merely similar. One
 // renderer over two artifacts is what makes a candidate measured on one of them readable on the other.
 import {
+  directionGateLine,
   formatLatencyRoutes,
   summarizeLatencyRoutes,
   type LatencyRouteCensus,
@@ -107,7 +108,7 @@ import {
   summarizeTermZeroes,
   type LossRecord,
 } from './loss-census.js';
-import { parseRCAEvalArgs } from './rcaeval-cli.js';
+import { parseRCAEvalArgs, type CliOptions } from './rcaeval-cli.js';
 import {
   buildRCAEvalEngineOptions,
   formatSignalLine,
@@ -988,8 +989,21 @@ function reportTraceDiagnostics(systemName: string, suiteName: string, stats: Lo
  * function reports what the pruning did to the GRAPH, and this one reports what the assembly did to the
  * CHANNEL.
  */
-function reportLatencyRoutes(systemName: string, stats: LoadStats): void {
+function reportLatencyRoutes(systemName: string, stats: LoadStats, opts: CliOptions): void {
   for (const line of formatLatencyRoutes(stats.latencyRoutes, systemName)) console.log(line);
+  // The census says how many rows each view supplied; THIS says whether the direction term can read one. The
+  // two are one sentence and were printed as two paragraphs: a run on the shipped view supplies zero rows, so a
+  // weight above zero buys a term that cannot fire, and its cells would read identical for a reason that is not
+  // the term's safety. See `directionGateLine`.
+  const rows =
+    opts.latencyView === 'whole-file'
+      ? stats.latencyRoutes.wholeFileRows
+      : opts.latencyView === 'capped'
+        ? stats.latencyRoutes.cappedRows
+        : stats.latencyRoutes.shippedRows;
+  console.log(
+    `  ${directionGateLine(opts.failedEdgeWeight, opts.latencyView, rows, stats.latencyRoutes.cases)}`,
+  );
 }
 
 /**
@@ -1314,7 +1328,7 @@ async function main(): Promise<void> {
     // ── The latency channel's own census ──────────────────
     // Which of the three views this run ranked on carried rows, and the verdict those counts earn. Without it a
     // run on the `whole-file` corpus and a run on one that supplied nothing print the same cells.
-    reportLatencyRoutes(systemName, stats);
+    reportLatencyRoutes(systemName, stats, opts);
 
     // ── Log-loading diagnostics ───────────────────────────
     reportLogDiagnostics(systemName, suiteName, stats);

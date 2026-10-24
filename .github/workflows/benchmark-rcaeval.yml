@@ -93,6 +93,11 @@ on:
         required: false
         default: ''
         type: string
+      failed_edge_weight:
+        description: "Weight on the failed-edge DIRECTION term (empty = the runner default, which is the SHIPPED 0). The term has a MEASURED gate in the engine — +42 on FSE'26 with zero regressed fault types, `admitsFailedEdgeTerm`, ported in iteration 123 — and until this input existed NO dispatch could state a weight for the golden half of the kill criterion, so the arm's second condition was undecidable rather than unmet. READ IT BESIDE `latency_view`: the gate's second half is the rank-1 service's raw latency rise, taken from `edgeLatency`, and on the SHIPPED view that array is empty on every RCAEval cell — so a weight above zero on that view buys a term that CANNOT fire and its cells are identical for a reason that is not safety. The runner prints `direction-gate[<view>]` beside the latency census to say which of the two a run is, and a weight only means something together with `latency_view=whole-file`"
+        required: false
+        default: ''
+        type: string
       latency_view:
         description: "Which view of `edgeLatency` the corpus carries — shipped (empty = the runner default and the view the nine published cells were measured in), capped (the same cap with the start-time unit repaired), or whole-file (the only view that can hold both sides of the injection). It is a CORPUS property rather than a ranking one, so it is forwarded in its own array and the configuration line does not name it — a separate `corpus:` line does, in the banner and in the diagnose dump's header from the same string. Needed because the floor and the corpus are an INTERACTION: neither moves a published cell alone, and only their cross product moves one at all, so varying one of the two measures the effect of neither. A value the union does not contain falls back to the shipped view rather than inventing a corpus"
         required: false
@@ -301,6 +306,9 @@ jobs:
           if [ -n "${{ inputs.lat_weight }}" ]; then
             RANKING_ARG+=(--lat-weight "${{ inputs.lat_weight }}")
           fi
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            RANKING_ARG+=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
+          fi
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             RANKING_ARG+=(--lat-min-rise "${{ inputs.lat_min_rise }}")
           fi
@@ -442,6 +450,9 @@ jobs:
           #   thing in both workflows.
           if [ -n "${{ inputs.lat_weight }}" ]; then
             RANKING_ARG+=(--lat-weight "${{ inputs.lat_weight }}")
+          fi
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            RANKING_ARG+=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
           fi
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             RANKING_ARG+=(--lat-min-rise "${{ inputs.lat_min_rise }}")
@@ -610,6 +621,9 @@ jobs:
           if [ -n "${{ inputs.lat_weight }}" ]; then
             RANKING_ARG+=(--lat-weight "${{ inputs.lat_weight }}")
           fi
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            RANKING_ARG+=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
+          fi
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             RANKING_ARG+=(--lat-min-rise "${{ inputs.lat_min_rise }}")
           fi
@@ -760,6 +774,9 @@ jobs:
           #   thing in both workflows.
           if [ -n "${{ inputs.lat_weight }}" ]; then
             RANKING_ARG+=(--lat-weight "${{ inputs.lat_weight }}")
+          fi
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            RANKING_ARG+=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
           fi
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             RANKING_ARG+=(--lat-min-rise "${{ inputs.lat_min_rise }}")
@@ -936,6 +953,9 @@ jobs:
           if [ -n "${{ inputs.lat_weight }}" ]; then
             RANKING_ARG+=(--lat-weight "${{ inputs.lat_weight }}")
           fi
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            RANKING_ARG+=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
+          fi
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             RANKING_ARG+=(--lat-min-rise "${{ inputs.lat_min_rise }}")
           fi
@@ -1078,6 +1098,9 @@ jobs:
           #   thing in both workflows.
           if [ -n "${{ inputs.lat_weight }}" ]; then
             RANKING_ARG+=(--lat-weight "${{ inputs.lat_weight }}")
+          fi
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            RANKING_ARG+=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
           fi
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             RANKING_ARG+=(--lat-min-rise "${{ inputs.lat_min_rise }}")
@@ -1222,6 +1245,9 @@ jobs:
           #   thing in both workflows.
           if [ -n "${{ inputs.lat_weight }}" ]; then
             RANKING_ARG+=(--lat-weight "${{ inputs.lat_weight }}")
+          fi
+          if [ -n "${{ inputs.failed_edge_weight }}" ]; then
+            RANKING_ARG+=(--failed-edge-weight "${{ inputs.failed_edge_weight }}")
           fi
           if [ -n "${{ inputs.lat_min_rise }}" ]; then
             RANKING_ARG+=(--lat-min-rise "${{ inputs.lat_min_rise }}")

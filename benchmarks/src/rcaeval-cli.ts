@@ -47,6 +47,7 @@ import { join } from 'node:path';
 import type { OnsetShape } from '../../packages/tree/src/pruning/pruner.js';
 import {
   DEFAULT_COLLISION_WEIGHT,
+  DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_SIGNAL_MODE,
@@ -172,6 +173,21 @@ export interface CliOptions {
    * ran.
    */
   latMinRise: number;
+  /**
+   * Strength of the failed-edge DIRECTION term — the callee of a failed call is the candidate.
+   *
+   * Read from {@link DEFAULT_FAILED_EDGE_WEIGHT} (0), which is why the field looks inert, and it is here for
+   * the opposite reason: the term has a MEASURED gate in the engine (`admitsFailedEdgeTerm` — +42 on FSE'26
+   * with zero regressed fault types, ported in iteration 123), and until this field existed **no dispatch could
+   * state a weight for the golden half of the kill criterion**. The criterion is an AND over two benchmarks, so
+   * a knob one half can vary and the other cannot leaves the other half undecidable — the same seam
+   * `latWeight`, `latMinRise` and `poolMetricPenaltyWeight` were repaired for, found the same way.
+   *
+   * The term's second half reads `edgeLatency`, so a weight here is only interpretable BESIDE the corpus view:
+   * on the shipped view that array is empty on every RCAEval cell and the gate cannot fire. The runner prints
+   * `direction-gate[...]` beside the latency census for exactly that reason.
+   */
+  failedEdgeWeight: number;
   /**
    * Strength of the DB-connection-pool dominance penalty (see
    * {@link DEFAULT_POOL_METRIC_PENALTY_WEIGHT}).
@@ -344,6 +360,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     // ship, and they are threaded by `buildRCAEvalEngineOptions` so the artifact states them.
     latWeight: DEFAULT_LAT_WEIGHT,
     latMinRise: DEFAULT_LAT_MIN_RISE,
+    // The direction term's shipped weight, from the engine's own constant. 0 is what every published cell ran
+    // with, so a bare dispatch still reproduces them; a non-zero value is the measurement this runner gained.
+    failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
     poolMetricPenaltyWeight: DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
     collisionWeight: DEFAULT_COLLISION_WEIGHT,
     topoWeight: DEFAULT_TOPO_WEIGHT,
@@ -441,7 +460,12 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       // nothing, so accepting `0` would report a configuration the operator believes changed something.
       const rise = Number(args[++i]!);
       opts.latMinRise = Number.isFinite(rise) && rise >= 1 ? rise : DEFAULT_LAT_MIN_RISE;
-    } else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
+    } else if (args[i] === '--failed-edge-weight' && hasValue(args, i + 1))
+      // `parseWeight` and the SHIPPED fallback, like every weight above: `--failed-edge-weight 0` is a measured
+      // configuration (the term switched off is what the published cells ran), so a typo must reproduce the
+      // published one rather than run that experiment under its name.
+      opts.failedEdgeWeight = parseWeight(args[++i]!, DEFAULT_FAILED_EDGE_WEIGHT);
+    else if (args[i] === '--pool-penalty' && hasValue(args, i + 1))
       // Through `parseWeight` rather than an inline parse, for the empty-value reason: `--pool-penalty 0`
       // is the ablation, so a blank flag must select the shipped 0.0679 rather than it.
       opts.poolMetricPenaltyWeight = parseWeight(args[++i]!, DEFAULT_POOL_METRIC_PENALTY_WEIGHT);

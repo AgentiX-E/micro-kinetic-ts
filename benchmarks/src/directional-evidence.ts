@@ -1407,3 +1407,49 @@ export function formatLatencyRoutes(c: LatencyRouteCensus, label: string): strin
     `  VERDICT: ${latencyChannelVerdict(c)}`,
   ];
 }
+
+/**
+ * Whether the failed-edge direction term can act on the corpus this run ranked on — printed by the runner
+ * beside the latency census, because the two facts are one sentence.
+ *
+ * **Why this line exists.** The term is gated on two observables of the engine's own rank-1: a duration-shaped
+ * dominant metric, and a RAW inbound latency rise of at least the measured floor. The first is always available.
+ * The second comes from `edgeLatency`, and `latency-routes` prints how many rows each of the three corpus views
+ * supplied — on the SHIPPED view, **zero on every RCAEval cell** (`rows: shipped 0`), because that view keeps the
+ * double-scaled start time whose defect empties it. So a run with `failedEdgeWeight > 0` on that view takes a
+ * term that can never fire, and its cells are byte-identical to the weight-0 run **for a reason that has nothing
+ * to do with the term being safe**.
+ *
+ * That is the defect this line closes, and it is the register's law 34 in its most expensive form: an acceptance
+ * criterion ("the nine cells did not move") satisfied by a configuration in which the mechanism under test is
+ * inert. A reader who met the identical cells without this line would conclude the arm had been tested. It had
+ * not been tested; it had been switched off, twice — once by its weight, and once by a corpus that supplies no
+ * value for its second half.
+ *
+ * @param weight - The direction weight the run resolved to.
+ * @param view - Which corpus view supplied `edgeLatency` (the union's own spelling).
+ * @param rows - How many `edgeLatency` rows THAT view supplied over the run.
+ * @param cases - How many cases the run ranked.
+ * @returns One line, whose verdict is `OFF`, `CANNOT FIRE` or `CAN ACT`.
+ */
+export function directionGateLine(
+  weight: number,
+  view: string,
+  rows: number,
+  cases: number,
+): string {
+  const head = `direction-gate[${view}]: weight ${weight}`;
+  if (weight === 0) {
+    return `${head} — the term is OFF by configuration, so this run's cells say nothing about it`;
+  }
+  if (rows === 0) {
+    return (
+      `${head} but this view supplied 0 latency rows over ${cases} cases — the gate's SECOND half has no ` +
+      `value, so the term CANNOT fire and an unchanged cell is NOT evidence for it`
+    );
+  }
+  return (
+    `${head} on a view that supplied ${rows} latency rows over ${cases} cases — the gate CAN fire, so a ` +
+    `change, or its absence, is attributable to the term`
+  );
+}

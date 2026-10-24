@@ -305,7 +305,7 @@ const KNOBS: Readonly<
     flag: '--failed-edge-weight',
     owner: 'fse26-failed-edge-verdict.md',
     fse26: 'failed_edge_weight',
-    rcaeval: null,
+    rcaeval: 'failed_edge_weight',
   },
   failedEdgeMode: {
     flag: '--failed-edge-mode',
@@ -506,6 +506,10 @@ const DISPATCHABLE_ON_BOTH: readonly string[] = [
   'anomalyNormalizeNodeThreshold',
   'collapseDiscount',
   'collisionWeight',
+  // Iteration 124: the direction term's weight became a golden input, so the arm the FSE'26 half has been able
+  // to ask for since iteration 16 finally has BOTH halves dispatchable. Before this the criterion's AND had one
+  // side it could not be asked on, which is why the flip was undecidable rather than refused.
+  'failedEdgeWeight',
   'latMinRise',
   'latWeight',
   'logSignalMode',

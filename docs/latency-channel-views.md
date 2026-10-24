@@ -585,6 +585,31 @@ and this document's §5 census keeps what remains uniquely its own: **the MECHAN
 died, and by which of the four causes), which no channel-level count can express.
 
 
+### 7.12 The census now decides whether a SECOND mechanism can be measured at all (iteration 124)
+
+The direction term's engine-side gate reads the rank-1 service's raw inbound latency rise — the same `edgeLatency`
+these three views carry. So this document's census is no longer only about the `lat` term: **it states whether the
+direction arm can be measured on the corpus a run ranked on**, and the answer on the shipped view is no.
+
+This run's own census (`40058955974`), the numbers §24 of `fse26-discriminator-verdict.md` reads:
+
+| view | RE1 (3 cells) | RE2-OB | RE2-SS | RE2-TT | RE3-OB | RE3-SS | RE3-TT |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `shipped` | 0 | **0** | **0** | **0** | **0** | **0** | **0** |
+| `capped` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `whole-file` | 0 | **1080** | 0 | **6781** | **356** | 0 | **2006** |
+
+Two consequences, and neither is about the `lat` term:
+
+1. **A `failed_edge_weight` above zero on the published view is a no-op by construction**, because the gate's second
+   half has no value. Identical cells there are an ABSENCE, not a measurement.
+2. **The arm can only ever be judged on four of the nine cells** — and on a view whose own movement (§7.4: RE2-OB −2.3,
+   RE2-TT +2.2) must be the control. That is a property of the corpus, not of the term, and it is now printed, per run,
+   by `direction-gate[<view>]`: `OFF` / `CANNOT FIRE` / `CAN ACT`.
+
+The line lives beside this census because the two are one sentence. Reading either alone is how "the mechanism had no
+input" and "the mechanism was tested and made no difference" become the same artifact.
+
 ## 8. Fences
 
 - `benchmarks/__tests__/corpus-owner.test.ts` — a real case directory, the real loader, the real owner: the

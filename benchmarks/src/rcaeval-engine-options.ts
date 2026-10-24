@@ -48,6 +48,14 @@ export interface RCAEvalSignalOptions {
    */
   readonly latWeight: number;
   readonly latMinRise: number;
+  /**
+   * The failed-edge direction term's weight, on the same footing as the latency pair above.
+   *
+   * Required rather than optional for the reason this whole interface exists: a partial passed through would be
+   * a silent no-op, and this field spent six iterations absent — the golden half of the kill criterion could
+   * not be asked for at all.
+   */
+  readonly failedEdgeWeight: number;
   readonly poolMetricPenaltyWeight: number;
   readonly collisionWeight: number;
   readonly topoWeight: number;
@@ -136,6 +144,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       stabilityWeight: opts.stabilityWeight,
       latWeight: opts.latWeight,
       latMinRise: opts.latMinRise,
+      failedEdgeWeight: opts.failedEdgeWeight,
       poolMetricPenaltyWeight: opts.poolMetricPenaltyWeight,
       collisionWeight: opts.collisionWeight,
       topoWeight: opts.topoWeight,
@@ -182,6 +191,10 @@ export function formatSignalLine(opts: CliOptions): string {
     // The three the golden half inherited in silence until this line named them.
     `latWeight=${opts.latWeight} latMinRise=${opts.latMinRise} ` +
     `poolMetricPenaltyWeight=${opts.poolMetricPenaltyWeight} ` +
+    // The direction term, named unconditionally like the three above. It is 0 on every published cell, so an
+    // omitted-when-default rule would render the measured arm and the shipped configuration byte-identically —
+    // the defect this line exists to prevent, one term over.
+    `failedEdgeWeight=${opts.failedEdgeWeight} ` +
     `collapseDiscount=${opts.collapseDiscount} traceWeight=${opts.traceWeight} ` +
     `prismWeight=${opts.prismWeight} prismPooling=${opts.prismPooling} ` +
     `rankNormalization=${opts.rankNormalization} ` +

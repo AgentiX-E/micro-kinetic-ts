@@ -57,6 +57,7 @@ import {
   isPrismPooling,
 } from '../../packages/tree/src/index.js';
 
+import { DEFAULT_FAILED_EDGE_WEIGHT } from '../../packages/tree/src/index.js';
 import { REPORTED_CONFIG_FIELDS } from '../src/fse26-report.js';
 import { parseRCAEvalArgs } from '../src/rcaeval-cli.js';
 import {
@@ -220,6 +221,24 @@ describe('RCAEval runner configuration ownership', () => {
     expect(source).toMatch(/isOnsetShape\(shape\)\s*\?\s*shape\s*:\s*DEFAULT_ONSET_SHAPE/);
   });
 
+  it('parses the direction weight, and every unusable value reproduces the SHIPPED one', () => {
+    // BEHAVIOUR, not a source pattern: the parser is called, so a fallback that resolved to a different number
+    // than the shipped one — or a negative weight slipping through — fails here rather than in a dispatch that
+    // nobody reads the banner of.
+    expect(parseRCAEvalArgs(['--failed-edge-weight', '3']).failedEdgeWeight).toBe(3);
+    expect(parseRCAEvalArgs(['--failed-edge-weight', '0.5']).failedEdgeWeight).toBe(0.5);
+    // `0` is a MEASURED configuration (the term off is what every published cell ran), so it must survive as a
+    // setting rather than be read as "no value given".
+    expect(parseRCAEvalArgs(['--failed-edge-weight', '0']).failedEdgeWeight).toBe(0);
+    expect(parseRCAEvalArgs(['--failed-edge-weight', 'oops']).failedEdgeWeight).toBe(
+      DEFAULT_FAILED_EDGE_WEIGHT,
+    );
+    expect(parseRCAEvalArgs(['--failed-edge-weight', '-1']).failedEdgeWeight).toBe(
+      DEFAULT_FAILED_EDGE_WEIGHT,
+    );
+    expect(parseRCAEvalArgs([]).failedEdgeWeight).toBe(DEFAULT_FAILED_EDGE_WEIGHT);
+  });
+
   it('leaves no inline weight parse behind, which would fall back to zero', () => {
     // `parseFloat(x) || 0` reads an empty flag as the value zero. For `--log-weight`
     // the runner's own default is 1.0, so that path ran the log-OFF ablation under a
@@ -379,11 +398,13 @@ describe('the RCAEval configuration line carries the configuration that produced
     for (const [field, reason] of Object.entries(UNREPORTED_BY_ENGINE_RUNNERS)) {
       expect(reason.length, `${field}'s reason`).toBeGreaterThan(40);
     }
+    // Five, not six: iteration 124 forwarded `failedEdgeWeight`, so the standard no longer permits its
+    // omission and the exemption it carried is GONE rather than reworded. An exemption that outlives the
+    // reason for it is how a required field stops being required.
     expect(Object.keys(UNREPORTED_BY_ENGINE_RUNNERS).sort()).toEqual([
       'dropMetrics',
       'failedEdgeMinRecords',
       'failedEdgeMode',
-      'failedEdgeWeight',
       'metricFleetBaseline',
       'metricRiseCeiling',
     ]);
@@ -437,6 +458,12 @@ describe('the RCAEval configuration line carries the configuration that produced
     // re-read — which is the intended behaviour, because the published numbers are read through this
     // line and a weight that changes silently changes what they mean.
     //
+    // …and it moved again in iteration 124, by ONE field, when this runner began forwarding the failed-edge
+    // direction weight — the knob whose absence left the golden half of that arm's kill criterion undecidable.
+    // The value is the shipped 0, so no number can move; what changes is that a dispatch can now state it, and
+    // that an artifact can no longer describe two different direction weights with one line. As above, the
+    // acceptance is the FIELD plus the nine cells re-read on a run, never this string.
+    //
     // …and it is the control that fails when the runner begins FORWARDING a field it never forwarded,
     // which is what happened here: `anomalyNormalizeNodeThreshold` is the second half of the
     // `rankNormalization` axis (the boolean picks WHICH rescale, this picks WHETHER one runs at all), so
@@ -449,6 +476,7 @@ describe('the RCAEval configuration line carries the configuration that produced
     expect(formatSignalLine(shipped)).toBe(
       'signals: stabilityWeight=0.007352 collisionWeight=0 topoWeight=0 logWeight=1 ' +
         'logSignalMode=count latWeight=0.561495 latMinRise=10.3 poolMetricPenaltyWeight=0.0679 ' +
+        'failedEdgeWeight=0 ' +
         'collapseDiscount=0 traceWeight=0 prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
         'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +

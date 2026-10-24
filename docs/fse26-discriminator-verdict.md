@@ -1080,6 +1080,102 @@ Presenting it as the flip's evidence would be the vacuous-assertion defect this 
 **What the run DID measure freshly** is the trace term's own ablation on the same commit: RE3-TrainTicket **51.1 → 3.6**
 with `traceWeight` off, i.e. the −47.5 pp structural lever reproduced on a third independent pair of runs.
 
+## 24. The instrument, and the discovery that the acceptance criterion could not have used it (iteration 124)
+
+Section 23 refused the flip because no dispatch could state a weight for the golden half. This section builds that
+instrument — and finds, while wiring it, that the instrument as specified would have measured nothing: **the corpus the
+nine cells are ranked on supplies zero latency rows**, so a `weight 3` run there would have produced byte-identical
+cells for a reason that has nothing to do with the term being safe.
+
+### The instrument
+
+| the change | where |
+| --- | --- |
+| `--failed-edge-weight`, defaulted from `DEFAULT_FAILED_EDGE_WEIGHT`, parsed through `parseWeight` | `benchmarks/src/rcaeval-cli.ts` |
+| the field on `RCAEvalSignalOptions` + `buildRCAEvalEngineOptions`, and named on the `signals:` line | `benchmarks/src/rcaeval-engine-options.ts` |
+| a `failed_edge_weight` dispatch input, forwarded by all **seven** golden invocations | `.github/workflows/benchmark-rcaeval.yml` |
+| the census row's golden field: `rcaeval: null` → `'failed_edge_weight'`, and the both-halves set **18 → 19 axes** | `packages/kinetic/__tests__/unit/dispatch-surface-census.test.ts` |
+| `UNREPORTED_BY_ENGINE_RUNNERS` **6 → 5**: the exemption is deleted, not reworded | `benchmarks/src/reported-config.ts` |
+| the ablation artifact gains the field too, because the exemption record is shared and an exemption cannot survive one runner adopting it | `benchmarks/src/ablation-engine-options.ts` |
+
+### The discovery: the shipped view holds no rows, so the criterion was vacuous
+
+The gate's second half is the rank-1 service's RAW inbound latency rise, which comes from `edgeLatency`. The
+`latency-routes` census prints, per system, how many rows each of the three corpus views supplied — and on **this
+iteration's own run** (`40058955974`) it reads:
+
+| cell | `rows: shipped` | `rows: capped` | `rows: whole-file` | cases |
+| --- | ---: | ---: | ---: | ---: |
+| RE1-OB / RE1-SS / RE1-TT | **0** | 0 | 0 | 125 each — the dataset ships no `traces.csv` |
+| RE2-OB | **0** | 0 | **1080** | 90 |
+| RE2-SS | **0** | 0 | **0** | 90 |
+| RE2-TT | **0** | 0 | **6781** | 90 |
+| RE3-OB | **0** | 0 | **356** | 30 |
+| RE3-SS | **0** | 0 | **0** | 30 |
+| RE3-TT | **0** | 0 | **2006** | 30 |
+
+**`shipped 0` on every cell**, because that view keeps the double-scaled start time whose defect empties the array
+(`latency-channel-views.md` §7). So:
+
+1. A `failed_edge_weight=3` dispatch on the shipped view — the only view a bare dispatch reproduces — takes a term whose
+   gate **cannot fire on any case**, and its nine cells are byte-identical to the published ones **by absence**.
+   Reporting that as "the nine-cell held" would be law 34 at the level of an acceptance criterion: an assertion
+   satisfied by a configuration in which the mechanism under test is inert.
+2. **The arm is measurable on four of the nine cells, and only on a non-shipped view.** RE2-OB, RE2-TT, RE3-OB and
+   RE3-TT carry `whole-file` rows; RE1 has no spans in any view; RE2-SS and RE3-SS have none either. **A nine-cell test
+   for this term does not exist and cannot** — the honest criterion is four cells, on `whole-file`, against a
+   `whole-file × weight 0` control (which is not the published table: `whole-file` alone moves RE2-OB −2.3 and RE2-TT
+   +2.2, `latency-channel-views.md` §7.4).
+
+That second point corrects §23's sentence, and the correction is the iteration's real product: **the missing instrument
+was half the obstacle; the other half is that the instrument's natural setting is a corpus that cannot exercise the
+arm.**
+
+### The artifact now says which of the two it is
+
+`directionGateLine` (`benchmarks/src/directional-evidence.ts`), printed beside the latency census by
+`run-rcaeval.ts`, on every run and therefore on every artifact:
+
+```
+  direction-gate[shipped]: weight 0 — the term is OFF by configuration, so this run's cells say nothing about it
+  direction-gate[shipped]: weight 3 but this view supplied 0 latency rows over 90 cases — the gate's SECOND half has
+    no value, so the term CANNOT fire and an unchanged cell is NOT evidence for it
+  direction-gate[whole-file]: weight 3 on a view that supplied 6781 latency rows over 90 cases — the gate CAN fire,
+    so a change, or its absence, is attributable to the term
+```
+
+Three arms, three different claims, and the middle one is the state the record was one dispatch away from
+misreading. It also makes the weight interpretable only BESIDE the view: the same `3` is two different experiments.
+
+### Tests, and what each one would catch
+
+| the test | the failure it names |
+| --- | --- |
+| `directionGateLine` × 3 arms | a line that printed "OFF" for a weight of 3, or omitted the row count |
+| the caller selects the count from the view it resolved, asserted against the runner's source | the pairing error the corpus axis exists to prevent: reading `wholeFileRows` while ranking on `shipped` |
+| `parseRCAEvalArgs(['--failed-edge-weight', …])`, six assertions | a fallback that resolved to a number other than the shipped one, and a negative weight slipping through |
+| the dispatch test now counts **five** knobs across all seven invocations | a flag with no input, which is a knob only a commit can turn |
+| the exemption's exact key set, now five | an exemption outliving the reason for it |
+| the config line's pinned string, +1 field | the artifact and the runner diverging, and a weight moving with no artifact to read |
+
+**Coverage, measured** (`npx vitest run --coverage` in `benchmarks/`): **1387 tests, 99.94 / 99.51 / 100 / 99.94**;
+the touched `rcaeval-cli.ts` **100 / 100 / 100 / 100**, `directional-evidence.ts` **100 / 99.32 / 100 / 100**
+(both uncovered branches pre-date this iteration).
+
+### What is NOT yet printed, named rather than implied
+
+The ABLATION artifact now names `failedEdgeWeight` on every row's configuration line (the shared exemption record
+could not survive one runner adopting the field), and it prints the latency census once per system — but the two are not
+joined there: a battery row that set a non-zero weight would show the weight on its own line and the row counts on
+another, and nothing would say the two are one sentence. The join is mechanical and unbuilt; it is a named follow-up
+rather than a hole, because no battery row sets the weight today.
+
+### What is now decidable, and the ONE dispatch that decides it
+
+`failed_edge_weight=3` **with** `latency_view=whole-file`, against `failed_edge_weight=0` on the same view as the
+control — four cells, not nine. **`DEFAULT_FAILED_EDGE_WEIGHT` stays `0.0` until that reading exists**, and it is now a
+decision that can actually be taken rather than one that could only be assumed.
+
 ## 8. Reproduce
 
 ```bash

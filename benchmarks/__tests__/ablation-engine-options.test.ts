@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_SIGNAL_MODE,
@@ -153,6 +154,9 @@ describe('the ablation artifact states the configuration it ran', () => {
       ['latWeight', DEFAULT_LAT_WEIGHT],
       ['latMinRise', DEFAULT_LAT_MIN_RISE],
       ['poolMetricPenaltyWeight', DEFAULT_POOL_METRIC_PENALTY_WEIGHT],
+      // Added in iteration 124, when the field stopped being exempt: the battery's artifact must state it for the
+      // same reason the golden artifact must, and both read one exemption record.
+      ['failedEdgeWeight', DEFAULT_FAILED_EDGE_WEIGHT],
       ['stabilityWeight', DEFAULT_STABILITY_WEIGHT],
       ['temporalWeight', DEFAULT_TEMPORAL_WEIGHT],
       ['onsetShape', DEFAULT_ONSET_SHAPE],

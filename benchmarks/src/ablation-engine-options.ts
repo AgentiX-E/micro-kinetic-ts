@@ -37,6 +37,7 @@
 
 import type { LogSignalMode, OnsetShape, PrismPooling } from '../../packages/tree/src/index.js';
 import {
+  DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_LOG_SIGNAL_MODE,
@@ -110,6 +111,15 @@ export interface AblationSignalOptions {
   readonly logSignalMode: LogSignalMode;
   readonly latWeight: number;
   readonly latMinRise: number;
+  /**
+   * The failed-edge direction term's weight.
+   *
+   * Present here for the reason every field above is: the artifact must be able to state the configuration the
+   * row ran, and the register's standard requires the field on EVERY engine runner's artifact. It was exempt
+   * until iteration 124, when the golden half began forwarding it — an exemption is a statement about all the
+   * runners that share this record, so it cannot survive one of them adopting the field.
+   */
+  readonly failedEdgeWeight: number;
   readonly poolMetricPenaltyWeight: number;
   readonly stabilityWeight: number;
   readonly temporalWeight: number;
@@ -173,6 +183,15 @@ export interface AblationEngineOverrides {
   /** Overrides `latMinRise` — the floor below which a rise is masked out of that prior. */
   readonly latMinRise?: number;
   /**
+   * Overrides `failedEdgeWeight` — the failed-edge direction term.
+   *
+   * The arm's engine-side gate (`admitsFailedEdgeTerm`) reads the corpus, so a row that varies this weight is only
+   * interpretable beside the view that supplied `edgeLatency`: on the shipped view the array is empty and the term
+   * cannot fire at any weight. That is a property of this battery's rows too, and the golden half prints the
+   * verdict line (`direction-gate[...]`) that names it.
+   */
+  readonly failedEdgeWeight?: number;
+  /**
    * Overrides `poolMetricPenaltyWeight` — the pool-dominance penalty.
    *
    * The two priors below were, until iteration 73, **the only shipped terms the battery had never varied**,
@@ -221,6 +240,7 @@ export function buildAblationEngineOptions(
       // overridable one reads its override through `??`, so an explicit `0` is honoured.
       logSignalMode: DEFAULT_LOG_SIGNAL_MODE,
       latWeight: overrides.latWeight ?? DEFAULT_LAT_WEIGHT,
+      failedEdgeWeight: overrides.failedEdgeWeight ?? DEFAULT_FAILED_EDGE_WEIGHT,
       latMinRise: overrides.latMinRise ?? DEFAULT_LAT_MIN_RISE,
       poolMetricPenaltyWeight:
         overrides.poolMetricPenaltyWeight ?? DEFAULT_POOL_METRIC_PENALTY_WEIGHT,
@@ -263,6 +283,7 @@ export function formatAblationConfigLine(
     `riseWeight=${signals.riseWeight} traceWeight=${signals.traceWeight} ` +
     `prismWeight=${signals.prismWeight} prismPooling=${signals.prismPooling} latWeight=${signals.latWeight} ` +
     `latMinRise=${signals.latMinRise} poolMetricPenaltyWeight=${signals.poolMetricPenaltyWeight} ` +
+    `failedEdgeWeight=${signals.failedEdgeWeight} ` +
     `stabilityWeight=${signals.stabilityWeight} collapseDiscount=${topology.collapseDiscount} ` +
     `rankNormalization=${topology.rankNormalization} ` +
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +

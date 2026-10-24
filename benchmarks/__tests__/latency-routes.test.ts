@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  directionGateLine,
   formatLatencyRoutes,
   latencyChannelVerdict,
   summarizeLatencyRoutes,
@@ -527,10 +528,13 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
     expect(golden).not.toContain('latency-routes[');
     // And it is REPORTED, not merely typed: a value that is computed and never printed is precisely the state
     // this fence was written against, and the artifact is what carries the attribution.
-    expect(golden).toMatch(/reportLatencyRoutes\(systemName, stats\)/);
+    // …and it now RECEIVES the run's options, because the line beside the census needs the weight and the
+    // view it resolved to: a report that could count rows but not name `weight 0` / `CANNOT FIRE` would leave
+    // the two states this document exists to separate indistinguishable on the artifact.
+    expect(golden).toMatch(/reportLatencyRoutes\(systemName, stats, opts\)/);
   });
 
-  it('forwards all four knobs from dispatch inputs into EVERY golden invocation', () => {
+  it('forwards all five knobs from dispatch inputs into EVERY golden invocation', () => {
     // A knob with a flag and no input is still one only a commit can turn: "a pin whose replacement is
     // unreachable is still a pin", which is this repository's own sentence about `--temporal-weight`.
     const invocations = workflow.split('run-rcaeval.ts').length - 1;
@@ -546,10 +550,14 @@ describe('the corpus axis is named and dispatchable, which is what the floor dec
 
     // The three the TWO runners share, in the array whose own comment states that they are shared. Their
     // spellings are the FSE'26 runner's, so one value means one thing in both workflows.
+    // …plus the direction term, which joined them in iteration 124: the arm it enables is measured, and its
+    // golden half was undecidable for exactly this reason — a flag the FSE'26 workflow could pass and this one
+    // could not state at all.
     for (const [input, flag] of [
       ['lat_weight', '--lat-weight'],
       ['lat_min_rise', '--lat-min-rise'],
       ['pool_penalty', '--pool-penalty'],
+      ['failed_edge_weight', '--failed-edge-weight'],
     ] as const) {
       expect(workflow, `${input} must be a dispatch input`).toContain(`      ${input}:`);
       expect(forwarded('RANKING_ARG', flag, input), `${flag} at every invocation`).toBe(
@@ -624,5 +632,49 @@ describe('the census aggregates by system, and the channel’s decision is made 
     expect(census).toMatch(
       /import type \{[^}]*\bLatencyRouteEntry\b[^}]*\} from '\.\/directional-evidence\.js'/,
     );
+  });
+});
+
+describe('directionGateLine — can the failed-edge term act on THIS corpus?', () => {
+  // The line exists because two very different runs print the same nine cells: one where the arm was measured
+  // and found harmless, and one where the arm could not fire at all. The three arms below are the three states,
+  // and the middle one is the defect: on the SHIPPED view `edgeLatency` is empty on every RCAEval cell, so a
+  // weight above zero buys a term whose second half has no value.
+
+  it('says OFF when the weight is zero, and does not pretend the cells are evidence', () => {
+    const line = directionGateLine(0, 'shipped', 0, 90);
+    expect(line).toContain('weight 0');
+    expect(line).toContain('OFF by configuration');
+    expect(line).toContain('say nothing about it');
+  });
+
+  it('says CANNOT FIRE when the weight is set but the view supplied no rows — the vacuous case', () => {
+    // This is the reading that would otherwise pass for a measurement: `weight 3`, shipped view, and the nine
+    // cells byte-identical. The line names the mechanism — the gate's SECOND half has no value — so a reader
+    // cannot mistake "switched off twice" for "tested and safe".
+    const line = directionGateLine(3, 'shipped', 0, 90);
+    expect(line).toContain('weight 3');
+    expect(line).toContain('supplied 0 latency rows over 90 cases');
+    expect(line).toContain('CANNOT fire');
+    expect(line).toContain('NOT evidence');
+  });
+
+  it('says CAN ACT only when the view the run ranked on supplied rows', () => {
+    const line = directionGateLine(3, 'whole-file', 6781, 90);
+    expect(line).toContain('6781 latency rows over 90 cases');
+    expect(line).toContain('CAN fire');
+    expect(line).toContain('attributable');
+    // And the view is NAMED, because the same weight means two different experiments on two views.
+    expect(line).toContain('whole-file');
+    expect(directionGateLine(3, 'shipped', 6781, 90)).toContain('shipped');
+  });
+
+  it('reads the rows of the view it was given, which is why the caller passes one number not a census', () => {
+    // A census-shaped argument would let the line read `wholeFileRows` while the run ranked on `shipped` — the
+    // exact pairing error the corpus axis exists to prevent. The signature takes the count, so the caller has
+    // to select it from the view it resolved, and a test can hold the runner to that selection (below).
+    const runner = readFileSync(resolve(HERE, '../src/run-rcaeval.ts'), 'utf8');
+    expect(runner).toMatch(/opts\.latencyView === 'whole-file'[\s\S]{0,160}wholeFileRows/);
+    expect(runner).toMatch(/directionGateLine\(opts\.failedEdgeWeight, opts\.latencyView,/);
   });
 });
