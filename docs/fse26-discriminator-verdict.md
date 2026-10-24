@@ -1038,7 +1038,7 @@ section 22 answered that. The reason now is mechanical and was found by asking w
 this register repaired for `latWeight`, `latMinRise` and `poolMetricPenaltyWeight` one iteration earlier — found the same
 way, by asking whether a DISPATCH could state the value rather than whether the engine could apply it.
 
-**Therefore `DEFAULT_FAILED_EDGE_WEIGHT` stays `0.0`**, and the honest sentence is the one the table supports: the arm is
+**[Superseded by §25, which enrols the weight at 3 — this paragraph is the record of iteration 123's decision, and it is kept rather than rewritten because the reason it gave was correct at the time.]** **Therefore `DEFAULT_FAILED_EDGE_WEIGHT` stays `0.0`**, and the honest sentence is the one the table supports: the arm is
 licenced and ported, its second condition has no instrument on the surface that measures it, and a flip would be a blind
 change to nine published cells. **The next step is the instrument**: `--failed-edge-weight` on `rcaeval-cli.ts`, a
 `failed_edge_weight` input on `benchmark-rcaeval.yml` passed by all seven suites, the census row's `rcaeval` field, and
@@ -1174,7 +1174,80 @@ rather than a hole, because no battery row sets the weight today.
 
 `failed_edge_weight=3` **with** `latency_view=whole-file`, against `failed_edge_weight=0` on the same view as the
 control — four cells, not nine. **`DEFAULT_FAILED_EDGE_WEIGHT` stays `0.0` until that reading exists**, and it is now a
-decision that can actually be taken rather than one that could only be assumed.
+decision that can actually be taken rather than one that could only be assumed. **[§25 takes it — at 3, on a controlled
+FSE'26 pair, with the golden's zero shown to be structural.]**
+
+## 25. ENROLLED: the direction term ships at 3, on a controlled pair and a structural zero (iteration 125)
+
+Section 24 built the instrument and found the acceptance criterion could not use it. This section spends the licence
+that survived: a **controlled pair on FSE'26** for the gain, and a **structural argument, machine-checked**, for the cost.
+
+### The controlled pair
+
+Same corpus, same configuration, one input differing. The baseline is the run that enrolled the stability weight
+(`35416576350`, the DEFAULT path); the arm is this iteration's dispatch.
+
+| run | `failedEdgeWeight` | Top@1 | Top@3 | Top@5 | cases |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `35416576350` | 0 (absent) | 53.2% | 66.5% | 70.4% | 1422 |
+| **`40072799488`** | **3** | **56.1%** | **69.5%** | **72.0%** | 1422 |
+
+**+41 cases (757 → 798), +2.87 pp, and ZERO regressed fault types.** Per type, against the same-configuration control:
+
+| fault type | weight 0 | weight 3 | Δ |
+| --- | ---: | ---: | ---: |
+| `NetworkPartition` | 49/97 | **65/97** | **+16** |
+| `NetworkLoss` | 23/48 | **31/48** | **+8** |
+| `NetworkBandwidth` | 13/42 | **21/42** | **+8** |
+| `NetworkCorrupt` | 24/46 | **31/46** | **+7** |
+| `HTTPRequestReplaceMethod` | 127/190 | **129/190** | **+2** |
+| the other twenty types | — | — | **0** |
+
+The entire gain is the network class plus two code-replace cases, which is §16's mechanism arriving as a measurement
+rather than a hypothesis: a failed call names the fault site exactly when what failed IS the connection, and a replaced
+method is a call that failed at the interface.
+
+### The cost half, and why it is a zero rather than a measurement
+
+The RCAEval nine cells are ranked on the `shipped` corpus view, whose `edgeLatency` is **empty on every cell** — the
+run's own census prints `rows: shipped 0` for all nine, and `benchmarks/__tests__/latency-views.test.ts` asserts it of
+the assembler: the view scales an already-millisecond start time by 1000 a second time, so every span lands after the
+anchor and `toEngineDirectionalInputs` emits no row, which leaves the gate's second half with no value. The term
+therefore **cannot fire**, and no published cell can move.
+
+That is a STRUCTURAL zero, and the record states both consequences in one breath: **the flip costs the golden nothing,
+and the golden has never tested this term.** The independent control agrees — the pre-flip run at weight 0
+(`40071979011`, on the commit that built the instrument) printed the recorded nine cells unchanged, and the flip's own
+run is the confirmation that weight 3 changes nothing there.
+
+**What re-opens it**: adopting the `whole-file` view on the four trace-bearing cells (RE2-OB 1080 rows, RE2-TT 6781,
+RE3-OB 356, RE3-TT 2006). That makes the term live on 4 of the 9 cells, and the measurement would then be those four
+against a `whole-file × weight 0` control — not the published table, which that view itself moves (RE2-OB −2.3, RE2-TT
++2.2).
+
+### What shipped
+
+| the change | where |
+| --- | --- |
+| `DEFAULT_FAILED_EDGE_WEIGHT` **0 → 3**, with the pair and the structural zero in its docblock | `packages/tree/src/pruning/pruner.ts` |
+| `TreePrunerOptions.failedEdgeWeight`'s docblock rewritten — it still said "Default: 0 (opt-in) … before the default is flipped" | same file |
+| the nine-cell fixture re-pinned at the new default, its reachability proof moved to weight 0 | `rcaeval-golden-nine-cells.test.ts` |
+| both workflows' `failed_edge_weight` descriptions now quote 3 | `fse26-benchmark.yml`, `benchmark-rcaeval.yml` |
+| `shipped-declaration-census` moves the option into the ship-ON population | `packages/kinetic/__tests__/…` |
+| the optimizer's mapping table says what ships | `packages/optimize/src/integration.ts` |
+
+### And a real BUG the flip exposed
+
+`--failed-edge-weight ""` used to mean **0** — `Number('')` is 0, and the inline guard `Number.isFinite(w) && w >= 0`
+accepts it. At the old shipped value of 0 that was invisible, because the ablation WAS the shipped run. At 3 it would
+have run a term-off experiment under a dispatch that asked for the default, and the artifact would have said
+`failedEdgeWeight=0` beside a description quoting 3. The arm now goes through the shared `parseWeight` — the rule every
+other weight on that surface already used — and the existing "trailing garbage" test caught it the moment the default
+moved.
+
+**Gates**: `packages/tree` 699 tests **100 / 100 / 100 / 100**; `packages/kinetic` 1081 tests; repository **4804/4809**
+with the five exceptions being `packages/kinetic/index.test.ts` barrel-import timeouts under a 187-file parallel run on
+two cores (693 ms in isolation, and green in CI); `zsh .git/check_fences.sh` → **FENCES CLEAR**.
 
 ## 8. Reproduce
 

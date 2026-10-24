@@ -55,7 +55,8 @@ export const HELD_AT_ENGINE_DEFAULT: Readonly<Record<string, string>> = {
   prismPooling:
     'which of PRISM\u2019s two combination functions its signal uses; the search tunes the PRISM WEIGHT only, and the pooling is a per-context CHOICE rather than a weight',
   stabilityWeight: 'the decisive-stability prior, solved outside this search space',
-  failedEdgeWeight: 'ships at 0, so the direction term is off for every run this mapping builds',
+  failedEdgeWeight:
+    "ships at 3 since iteration 125 (a GATED term: +41 cases on FSE'26, zero regressed types), so every run this mapping builds carries it at the engine default and the search does not tune it",
   failedEdgeMode: 'meaningless without a weight to aggregate (see failedEdgeWeight)',
   failedEdgeMinRecords: 'meaningless without a weight to threshold (see failedEdgeWeight)',
 };

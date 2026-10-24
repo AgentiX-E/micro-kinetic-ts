@@ -455,9 +455,13 @@ export interface TreePrunerOptions extends RCAEngineOptions {
    * the log signal cannot express, and the reason this is a separate signal
    * rather than another log mode.
    *
-   * Default: 0 (opt-in). It must be ablated and read back net-positive with
-   * zero regression on the kill criterion (RCAEval golden 9-cell byte-identical
-   * AND FSE'26 zero regressed fault types) before the default is flipped.
+   * Default: 3, and the flip has both halves. The GAIN is a controlled pair on FSE'26 — Top@1 53.2% at weight 0
+   * (`35416576350`) against **56.1% at weight 3** (`40072799488`), +41 cases with **zero regressed fault types**.
+   * The COST is a structural zero rather than a measured one: the RCAEval corpus view the nine cells rank on
+   * carries no `edgeLatency` rows at all, so the gate cannot fire there and no published cell can move —
+   * `DEFAULT_FAILED_EDGE_WEIGHT`'s own docblock states the consequence, including what re-opens it.
+   *
+   * The term is GATED (`admitsFailedEdgeTerm`), so the ungated form's +105-with-two-regressions is not what ships.
    */
   readonly failedEdgeWeight: number;
   /**
@@ -918,13 +922,42 @@ export const DEFAULT_PRISM_WEIGHT = 0.0;
 export const DEFAULT_RISE_WEIGHT = 0.0;
 
 /**
- * @see DEFAULT_TOPO_WEIGHT — the class these names close.
+ * The failed-edge direction term's shipped weight — **ENROLLED at 3 in iteration 125**, and it is the only
+ * nonzero default this table has gained since the latency term.
  *
- * The failed-edge-direction signal, rejected with no admissible weight (the 62 cases it fixes need
- * `w ≥ 0.580` while the 5 it breaks tolerate `w ≤ 0.261`). Named because the FSE'26 workflow exposes it
- * as an input and the description guard quotes its default as a NUMBER.
+ * ## What licenses 3
+ *
+ * A CONTROLLED pair on FSE'26, same corpus and same configuration, one input differing:
+ *
+ * | run | weight | Top@1 | Top@3 | Top@5 |
+ * | --- | ---: | ---: | ---: | ---: |
+ * | `35416576350` (the DEFAULT path) | 0 (absent) | 53.2% | 66.5% | 70.4% |
+ * | `40072799488` (dispatch) | **3** | **56.1%** | **69.5%** | **72.0%** |
+ *
+ * **+41 cases, 757 → 798, and ZERO regressed fault types**: the entire gain is `NetworkPartition` 49 → 65,
+ * `NetworkLoss` 23 → 31, `NetworkBandwidth` 13 → 21, `NetworkCorrupt` 24 → 31 and `HTTPRequestReplaceMethod`
+ * 127 → 129, with the other twenty types byte-identical. That is the mechanism §16 of
+ * `docs/fse26-discriminator-verdict.md` states rather than a pattern: a failed call names the fault site
+ * exactly when what failed IS the connection.
+ *
+ * The term is not shipped bare — it is gated (`admitsFailedEdgeTerm`), because the UNGATED form took the same
+ * corpus to 855 with two regressed types and that arm is refused. The gate admits 131 of 1422 cases at its
+ * floor, and the arm behind it measured +42 in the benchmark reconstruction, which this run reproduced as +41.
+ *
+ * ## Why the golden half could not refuse it — and what that does NOT mean
+ *
+ * The RCAEval nine cells are ranked on a corpus view whose `edgeLatency` is EMPTY on every cell
+ * (`latency-routes` prints `rows: shipped 0` for all nine; `latency-views.test.ts` asserts it of the
+ * assembler). The gate's second half therefore has no value there and the term cannot fire, so no published
+ * cell can move — a STRUCTURAL zero rather than a measured one. Two consequences the record keeps together:
+ * the flip costs the golden nothing, and the golden has never tested this term. Adopting the `whole-file`
+ * view would make the term live on the four trace-bearing cells and **re-open** the measurement; the register
+ * holds that condition.
+ *
+ * `0` remains a MEASURED configuration (every published cell before this iteration ran it), so the ablation is
+ * one input away and the constant is what makes the two distinguishable on an artifact.
  */
-export const DEFAULT_FAILED_EDGE_WEIGHT = 0.0;
+export const DEFAULT_FAILED_EDGE_WEIGHT = 3;
 
 /**
  * The rank-1 latency rise, in the dump's own units, at which the failed-edge direction term is

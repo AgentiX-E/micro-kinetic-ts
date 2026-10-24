@@ -305,13 +305,16 @@ describe('the shipped-value declarations agree with what the constructor fills',
       'poolMetricPenaltyWeight',
       'stabilityWeight',
       'logWeight',
+      'failedEdgeWeight',
     ]) {
       expect(shipOn.has(shippedOn), `${shippedOn} is ship-ON`).toBe(true);
     }
     // And the population is not "everything": an opt-in signal at 0 must be OFF, or this guard
     // would be checking a set that cannot distinguish a shipped term from an ablation.
     expect(shipOn.has('prismWeight'), 'prismWeight ships 0').toBe(false);
-    expect(shipOn.has('failedEdgeWeight'), 'failedEdgeWeight ships 0').toBe(false);
+    // `failedEdgeWeight` moved to the SHIP-ON population in iteration 125 (default 3, +41 cases on FSE'26 with
+    // zero regressed types) and is asserted with the others above rather than here. The ablation is still one
+    // input away, which is what keeps `0` a configuration rather than a memory.
   });
 
   it('examines a non-empty population of declaration sites on the shipped surfaces', () => {

@@ -8,14 +8,17 @@
  * and by nothing in this repository.
  *
  * So this file does not measure those cells (it cannot: the corpus is 735 cases of parquet). It
- * fences the CONSEQUENCE a flip would have on them, on a fixture whose cells are computed by the
- * real engine: at the shipped default every cell reads as pinned below, and at the weight the
- * benchmark arm was measured with exactly one cell moves. **That second assertion is what makes the
- * first one evidence** — a ninth-cell table that no configuration can move would be satisfied by the
- * term doing nothing at all (law 34), which is precisely the failure mode a golden fence is prone to.
+ * fences the CONSEQUENCE of the ENGINE's shipped weight on them, on a fixture whose cells are computed
+ * by the real engine: at `new TreePruner()` every cell reads as pinned below, and at weight **0** —
+ * the configuration every published cell before iteration 125 ran — exactly one cell reads DIFFERENTLY.
+ * **That second assertion is what makes the first one evidence**: a nine-cell table that no weight can
+ * move would be satisfied by the term doing nothing at all (law 34), which is the failure mode a
+ * golden fence is prone to.
  *
- * A candidate that flips `DEFAULT_FAILED_EDGE_WEIGHT` without a nine-cell measurement therefore goes
- * red HERE, in a unit test, instead of shipping a number nobody took.
+ * The direction of the pair inverted in iteration 125, when the weight left 0. It has to: the pin
+ * follows whatever ships, and the reachability proof has to move to the OTHER pole. What it still
+ * catches is a default that changes without this table being re-read — which is the only thing a
+ * fixture can know about a corpus it does not have.
  */
 
 import type {
@@ -165,7 +168,11 @@ const PINNED: Readonly<Record<string, string>> = {
   'RE1-TT': '2/2',
   'RE2-OB': '2/2',
   'RE2-SS': '1/2',
-  'RE2-TT': '2/2',
+  // The one cell the direction term changes, now that it ships at 3: the fixture's second case there is the
+  // one the gate admits, and the term promotes its callee over the truth. On a real corpus this cell is
+  // untouchable — `rows: shipped 0` means the gate cannot fire — which is why the number here is a fixture's
+  // and not a forecast.
+  'RE2-TT': '1/2',
   'RE3-OB': '2/2',
   'RE3-SS': '1/2',
   'RE3-TT': '2/2',
@@ -179,13 +186,14 @@ describe('RCAEval golden nine cells — fenced at the shipped default', () => {
     expect(nineCells()).toEqual(PINNED);
   });
 
-  it('MOVES exactly one cell at the weight the benchmark arm was measured with', () => {
-    // Law 34: a green census is evidence only if a red one is reachable. The arm under test is the
-    // one §20/§22 measured (`weight 3`, +42, zero regressed types) — so at that weight the fixture
-    // must move, and it must move in exactly the cell the gate admits a case in. If this ever
-    // reports zero moved cells, the golden fence above has stopped asserting anything.
-    const flipped = nineCells({ failedEdgeWeight: 3 });
-    const moved = Object.keys(PINNED).filter((cell) => flipped[cell] !== PINNED[cell]);
+  it('MOVES exactly one cell at weight 0 — the pole the published cells ran', () => {
+    // Law 34: a green census is evidence only if a red one is reachable. The shipped weight is 3 since
+    // iteration 125, so the DIFFERENT pole is 0 — the configuration every published cell before that ran —
+    // and the fixture must move there, in exactly the cell the gate admits a case in. If this ever reports
+    // zero moved cells, the pin above has stopped depending on the weight and asserts nothing.
+    const off = nineCells({ failedEdgeWeight: 0 });
+    const moved = Object.keys(PINNED).filter((cell) => off[cell] !== PINNED[cell]);
     expect(moved).toEqual(['RE2-TT']);
+    expect(off['RE2-TT']).toBe('2/2');
   });
 });

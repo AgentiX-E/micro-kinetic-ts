@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
+  DEFAULT_FAILED_EDGE_WEIGHT,
   DEFAULT_LAT_MIN_RISE,
   DEFAULT_LAT_WEIGHT,
   DEFAULT_ONSET_SHAPE,
@@ -35,7 +36,9 @@ describe('buildFse26EngineOptions', () => {
     expect(engine.signals).toEqual({
       logWeight: 0.5,
       logSignalMode: 'count',
-      failedEdgeWeight: 0,
+      // Read from BASE, which is `parseFSE26Args([])` — so this is the SHIPPED default and not a literal a
+      // future flip would have to remember to edit twice.
+      failedEdgeWeight: DEFAULT_FAILED_EDGE_WEIGHT,
       failedEdgeMode: 'sum',
       failedEdgeMinRecords: 1,
       latWeight: DEFAULT_LAT_WEIGHT,
@@ -85,10 +88,11 @@ describe('buildFse26EngineOptions', () => {
     ).toBe(0.0679);
   });
 
-  it('forwards the failed-edge-direction weight, absent by default', () => {
-    // Off by default: the shipped configuration must not carry the signal until
-    // it has been ablated against the kill criterion.
-    expect(buildFse26EngineOptions(BASE).signals.failedEdgeWeight).toBe(0);
+  it('forwards the failed-edge-direction weight, ENROLLED at 3 by default', () => {
+    // Shipped at 3 since iteration 125, on a controlled pair (Top@1 53.2% -> 56.1%, +41 cases, zero regressed
+    // fault types). The forwarding is what this test is for: an option the engine receives and the config line
+    // does not state is the defect the whole `signals:` line exists to prevent.
+    expect(buildFse26EngineOptions(BASE).signals.failedEdgeWeight).toBe(3);
     expect(buildFse26EngineOptions({ ...BASE, failedEdgeWeight: 1 }).signals.failedEdgeWeight).toBe(
       1,
     );

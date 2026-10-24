@@ -163,13 +163,14 @@ export interface TermOracleOptions {
    */
   readonly onsetShape: OnsetShape;
   /**
-   * The run's failed-edge-direction prior — a SIXTH term, and **the only one whose shipped weight is ZERO**.
+   * The run's failed-edge-direction prior — the SIXTH term, and the last to be enrolled.
    *
    * Optional where the two weights above are required, and the asymmetry is deliberate: `poolWeight` and
-   * `temporalWeight` ship ON, so omitting either describes an engine that does not exist, which is why they are
-   * required. **This one ships OFF** (`DEFAULT_FAILED_EDGE_WEIGHT = 0.0`), so an absent field IS the shipped
-   * configuration — and requiring it would force every fixture in this repository to restate a zero that means
-   * "the signal this benchmark does not carry".
+   * `temporalWeight` have always shipped ON, so omitting either describes an engine that does not exist, which is
+   * why they are required. This one shipped OFF until iteration 125 and now ships at 3; it stays OPTIONAL because
+   * every reconstruction that predates the enrolment reads as the configuration it was taken under, and forcing it
+   * would make those reads describe an engine nobody ran. A dump written since then carries the value the run
+   * resolved to, so the omission is only ever the HISTORICAL case.
    *
    * It is a term rather than an engine switch because its own verdict measured it as a SWITCH (+5.8pp, rejected on
    * two narrow regressions) and left the question the blend needs answered: does the direction it carries beat the

@@ -465,12 +465,12 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       const mode = argv[++i]!;
       opts.failedEdgeMode = isFailedEdgeMode(mode) ? mode : DEFAULT_FAILED_EDGE_MODE;
     } else if (arg === '--failed-edge-weight' && hasValue(argv, i + 1)) {
-      // Same strictness as the other numeric ablation switches, and the same
-      // safe fallback: the SHIPPED weight is 0 (the signal is off), so a typo
-      // reproduces a published configuration instead of inventing one.
-      const weight = Number(argv[++i]!);
-      opts.failedEdgeWeight =
-        Number.isFinite(weight) && weight >= 0 ? weight : DEFAULT_FAILED_EDGE_WEIGHT;
+      // Through `parseWeight`, like every other weight on this surface — and it was NOT, which the flip
+      // exposed: `Number('')` is 0, so `--failed-edge-weight ""` passed the inline guard and silently selected
+      // the ABLATION. At the old shipped value of 0 that was invisible (the ablation WAS the shipped run);
+      // at 3 it would have run a term-off experiment under a dispatch that asked for the default. The shared
+      // parser refuses a blank value and returns the shipped one, which is the rule this line documents.
+      opts.failedEdgeWeight = parseWeight(argv[++i]!, DEFAULT_FAILED_EDGE_WEIGHT);
     } else if (arg === '--lat-weight' && hasValue(argv, i + 1)) {
       // Same rule and the same fallback as `--log-weight`: the SHIPPED weight, NOT
       // 0. Zero is a *different measured* configuration — the 47.33% ablation — so

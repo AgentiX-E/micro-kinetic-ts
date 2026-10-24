@@ -1558,7 +1558,9 @@ describe('TreePruner — failed-edge-direction signal', () => {
     // dominant metric and an inbound rise of 400. Both halves are the fixture's,
     // and the two tests below are what make them load-bearing rather than
     // decoration.
-    const base = new TreePruner();
+    // The term-OFF pole, stated rather than inherited: the shipped default became 3 in iteration 125, so
+    // `new TreePruner()` is no longer "without this term".
+    const base = new TreePruner({ failedEdgeWeight: 0 });
     const enabled = new TreePruner({ failedEdgeWeight: 1 });
     const before = scores(base, { failedTraceEdges, edgeLatency: inboundLatency }).byService;
     const after = scores(enabled, { failedTraceEdges, edgeLatency: inboundLatency }).byService;
@@ -1574,7 +1576,9 @@ describe('TreePruner — failed-edge-direction signal', () => {
     // the metric that won the rank-1's anomaly. A gate that admitted this would
     // be reading the injected fault CLASS rather than an observable, which is the
     // defect that kept the term out of the engine for six iterations.
-    const base = new TreePruner();
+    // The term-OFF pole, stated rather than inherited: the shipped default became 3 in iteration 125, so
+    // `new TreePruner()` is no longer "without this term".
+    const base = new TreePruner({ failedEdgeWeight: 0 });
     const enabled = new TreePruner({ failedEdgeWeight: 1 });
     const before = scores(
       base,
@@ -1597,7 +1601,9 @@ describe('TreePruner — failed-edge-direction signal', () => {
     // so the case is refused at every point a reader could plausibly reconstruct
     // the rule from — the harmful types' median rise is 9.0, an order of magnitude
     // under even the smallest floor the corpus admits.
-    const base = new TreePruner();
+    // The term-OFF pole, stated rather than inherited: the shipped default became 3 in iteration 125, so
+    // `new TreePruner()` is no longer "without this term".
+    const base = new TreePruner({ failedEdgeWeight: 0 });
     const enabled = new TreePruner({ failedEdgeWeight: 1 });
     const slow = [{ caller: GATEWAY, callee: CALLER, preMeanMs: 10, postMeanMs: 400 }];
     const before = scores(base, { failedTraceEdges, edgeLatency: slow }).byService;
@@ -1612,7 +1618,9 @@ describe('TreePruner — failed-edge-direction signal', () => {
     // all. Admitting on the target's rise would make the gate unobservable here;
     // admitting on the rank-1's is what the benchmark measured, and it is the only
     // subject that exists before the term is applied.
-    const base = new TreePruner();
+    // The term-OFF pole, stated rather than inherited: the shipped default became 3 in iteration 125, so
+    // `new TreePruner()` is no longer "without this term".
+    const base = new TreePruner({ failedEdgeWeight: 0 });
     const enabled = new TreePruner({ failedEdgeWeight: 1 });
     const before = scores(base, { failedTraceEdges, edgeLatency: inboundLatency });
     const after = scores(enabled, { failedTraceEdges, edgeLatency: inboundLatency });

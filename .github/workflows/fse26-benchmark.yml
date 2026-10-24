@@ -60,7 +60,7 @@ on:
         required: false
         default: ''
       failed_edge_weight:
-        description: 'Weight of the failed-edge-direction signal, which charges each failed call to its CALLEE (empty = the runner default, which is 0 = disabled). Non-zero is an ablation'
+        description: 'Weight of the failed-edge-direction signal, which charges each failed call to its CALLEE (empty = the runner default, which is the SHIPPED 3: a gated term worth +41 cases on this corpus with zero regressed fault types). Set it to 0 for the ablation, which is the configuration every published cell before iteration 125 ran'
         required: false
         default: ''
       failed_edge_mode:

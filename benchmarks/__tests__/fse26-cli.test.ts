@@ -176,8 +176,10 @@ describe('parseFSE26Args — other flags', () => {
     expect(parseFSE26Args(['--log-weight', '-1']).logWeight).toBe(1.0);
   });
 
-  it('parses the failed-edge weight, disabled by default', () => {
-    expect(parseFSE26Args([]).failedEdgeWeight).toBe(0);
+  it('parses the failed-edge weight, at the ENROLLED default of 3', () => {
+    // 3 since iteration 125: a controlled pair on FSE'26 took Top@1 53.2% -> 56.1% (+41 cases) with zero
+    // regressed fault types. `0` is still a configuration — every published cell before that ran it.
+    expect(parseFSE26Args([]).failedEdgeWeight).toBe(3);
     expect(parseFSE26Args(['--failed-edge-weight', '0']).failedEdgeWeight).toBe(0);
     expect(parseFSE26Args(['--failed-edge-weight', '1']).failedEdgeWeight).toBe(1);
     expect(parseFSE26Args(['--failed-edge-weight', '2.5']).failedEdgeWeight).toBe(2.5);
@@ -332,13 +334,13 @@ describe('parseFSE26Args — other flags', () => {
 
   it('rejects a failed-edge weight with trailing garbage instead of running a different one', () => {
     // Same trap as `--rise-ceiling`: `parseFloat('1O')` is 1, so a typo would
-    // silently measure a weight of 1. The fallback is the SHIPPED weight (0).
-    expect(parseFSE26Args(['--failed-edge-weight', '1O']).failedEdgeWeight).toBe(0);
-    expect(parseFSE26Args(['--failed-edge-weight', 'x']).failedEdgeWeight).toBe(0);
-    expect(parseFSE26Args(['--failed-edge-weight', '']).failedEdgeWeight).toBe(0);
+    // silently measure a weight of 1. The fallback is the SHIPPED weight (3).
+    expect(parseFSE26Args(['--failed-edge-weight', '1O']).failedEdgeWeight).toBe(3);
+    expect(parseFSE26Args(['--failed-edge-weight', 'x']).failedEdgeWeight).toBe(3);
+    expect(parseFSE26Args(['--failed-edge-weight', '']).failedEdgeWeight).toBe(3);
     // A negative weight would make the signal a penalty, which is a different
     // mechanism than the one the option documents.
-    expect(parseFSE26Args(['--failed-edge-weight', '-1']).failedEdgeWeight).toBe(0);
+    expect(parseFSE26Args(['--failed-edge-weight', '-1']).failedEdgeWeight).toBe(3);
   });
 
   it('parses the metric rise ceiling, defaulting to unbounded', () => {
