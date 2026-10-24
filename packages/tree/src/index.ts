@@ -71,9 +71,15 @@ export {
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_METRIC_FLEET_BASELINE,
   DEFAULT_METRIC_RISE_CEILING,
+  // The demand guard: an ENROLMENT, not an opt-in, and the only member of its family list is `workload`.
+  // Exported with the classifier because a caller that wants to ask "is this metric fault evidence" must
+  // ask the same function the guard asks, not a substring test of its own.
+  DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG,
+  DEMAND_METRIC_LABELS,
+  isDemandMetric,
 } from './causal/topology-fault-graph.js';
 // The topology config is part of the public surface: `TreePruner` takes a
 // `Partial<TopologyFaultGraphConfig>` as its second constructor argument, so a

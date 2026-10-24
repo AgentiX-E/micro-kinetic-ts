@@ -403,6 +403,21 @@ const KNOBS: Readonly<
     fse26: 'ranking_knobs',
     rcaeval: 'suppress_near_zero_baseline_rise',
   },
+  // The demand guard. `fse26: null` and it is a MEASURED null rather than an unbuilt mirror: this corpus
+  // carries no member of the family at all — `grep -c 'workload='` over run 34928980425's dump is **0** across
+  // 7781 service lines — so an input there would be a knob no case could vary, which is the shape
+  // `dispatch-surface-audit.md` calls a knob only a commit can turn, inverted. The FLAG exists on that runner
+  // (and is exercised by its parser test), so a future corpus that does carry the family is ablatable
+  // without a second change; what is absent is a dispatch input that could never change a number.
+  suppressDemandMetrics: {
+    // The NEGATED pole, on `rankNormalization`'s rule: the guard ships ON, so the reachable state is the one an
+    // ablation asks for, and the positive spelling restates the default. Registering the positive form would
+    // have recorded a flag the workflow cannot emit as the knob's own name.
+    flag: '--no-suppress-demand-metrics',
+    owner: 'rcaeval-local-harness.md',
+    fse26: null,
+    rcaeval: 'suppress_demand_metrics',
+  },
   fusionCeiling: {
     flag: '--fusion-ceiling',
     owner: NOT_A_RANKING_KNOB,
@@ -437,6 +452,10 @@ const KNOBS: Readonly<
  */
 const NON_DERIVABLE_OPTIONS: readonly string[] = [
   'anomalyNormalizeNodeThreshold',
+  // The third `no-` prefix: a guard that ships ON is spelled by its NEGATION, so the flag's own camel case
+  // (`noSuppressDemandMetrics`) is not the option's name. `rankNormalization` was the first, and the shape is
+  // now common enough that a reader meets it rather than deriving it.
+  'suppressDemandMetrics',
   'metricFleetBaseline',
   'metricRiseCeiling',
   'poolMetricPenaltyWeight',
@@ -601,6 +620,9 @@ const UNDISPATCHABLE_ON_RCAEVAL: readonly string[] = [
   // reachable in the only state that differs from the shipped one.
   '--no-suppress-idle-transients',
   '--no-suppress-near-zero-baseline-rise',
+  // The POSITIVE pole of the demand guard, whose shipped default is `true`: it restates the default and opens no
+  // state the negated input does not, exactly as `--rank-normalization` does three lines up.
+  '--suppress-demand-metrics',
 ];
 
 /**

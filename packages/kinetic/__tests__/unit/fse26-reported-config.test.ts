@@ -50,6 +50,7 @@ import {
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
+  DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -938,6 +939,10 @@ const DESCRIBES_SHIPPED: Readonly<Record<string, string>> = {
   // the shipped value spelled out, rather than the word "off" the FSE'26 half uses for the same idea.
   suppress_idle_transients: String(DEFAULT_SUPPRESS_IDLE_TRANSIENTS),
   suppress_near_zero_baseline_rise: String(DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE),
+  // The demand guard, declared on the GOLDEN workflow only — the map is a union and the coverage check filters
+  // it by what each workflow actually declares, so a key here is a claim about the workflow that has the input.
+  // `true` is the token because the description spells the shipped value out, as the pair above spells `false`.
+  suppress_demand_metrics: String(DEFAULT_SUPPRESS_DEMAND_METRICS),
   log_signal_mode: DEFAULT_LOG_SIGNAL_MODE,
   // The corpus view. Registered with the four above, and read from the module that OWNS the view union, so
   // a description cannot advertise a view the corpus does not carry.

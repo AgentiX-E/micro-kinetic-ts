@@ -94,7 +94,14 @@ export type MetricDiagnosticOutcome =
   | 'duty-cycled-idle'
   | 'transient-return'
   | 'near-zero-baseline-rise'
-  | 'sub-epsilon-deviation';
+  | 'sub-epsilon-deviation'
+  /**
+   * The metric counts how much work the service was HANDED (the demand family, `workload`), which is a
+   * routing outcome rather than a property of the service's behaviour. A separate member from the shape
+   * guards above on purpose: those say the metric's series is uninformative, and this says the metric is
+   * informative about the wrong thing.
+   */
+  | 'demand-not-health';
 
 /**
  * The decomposition of a metric's feature-weighted anomaly score.

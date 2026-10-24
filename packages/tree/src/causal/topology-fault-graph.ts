@@ -254,6 +254,33 @@ export interface TopologyFaultGraphConfig {
    */
   readonly suppressNearZeroBaselineRise: boolean;
   /**
+   * Whether a DEMAND metric may be a node's decisive evidence at all.
+   *
+   * A demand metric counts how much work a service was HANDED (`workload` and its family), not how it
+   * behaved while doing it. A fault is a change in the second; a change in the first is a ROUTING outcome,
+   * produced by whatever upstream failed — which is why the family is over-represented as the decisive
+   * metric of bystanders and barely present as the decisive metric of truths.
+   *
+   * **Measured, on the one cell this repository can rank offline** (`docs/rcaeval-local-harness.md`, run
+   * through `benchmarks/src/ablate-rcaeval-dump.ts`, whose fidelity on that dump is 125/125): the family is
+   * decisive for **5 of 124 ground-truth services (4.0%) against 132 of 1057 bystanders (12.5%)**, and
+   * removing it takes RE1-OnlineBoutique from **100/125 to 103/125 with zero regressed fault types**
+   * (`disk` 84% → 92%, `loss` 44% → 48%).
+   *
+   * **Provably inert on the other half**: the FSE'26 dump carries the string `workload` in **0 of its 7781
+   * service lines** (`grep -c 'workload=' artifacts/r34928980425/fse26-results.txt` → 0), so no case there
+   * can have a demand metric, decisive or otherwise.
+   *
+   * Default `true`, which is the ENROLMENT and not a preference: the gain above is measured with zero
+   * regressed types, the other half cannot be affected, and the eight RCAEval cells this loop cannot rank
+   * are read by the dispatch that follows the commit. A cell that moves DOWN there reverts this line.
+   *
+   * It is a boolean and not a weight on purpose. A discounted form was measured too — flat at +5 across
+   * `α ∈ [0.20, 0.50]` — and a plateau is still a range to choose a number out of, which is the defect
+   * `docs/fse26-discriminator-verdict.md` §20–§22 spent three iterations correcting.
+   */
+  readonly suppressDemandMetrics: boolean;
+  /**
    * Largest relative deviation ONE metric may contribute, as a bound on the
    * ratio itself rather than on the resulting score.
    *
@@ -372,6 +399,41 @@ export const DEFAULT_COLLAPSE_DISCOUNT = 0;
 export const DEFAULT_SUPPRESS_IDLE_TRANSIENTS = false;
 
 /**
+ * The metric labels that count a service's INBOUND work rather than its behaviour.
+ *
+ * One entry, and the narrowness is deliberate rather than provisional. `workload` is the only series in
+ * either corpus that exists to report how many requests a pod was handed; the FSE'26 throughput family
+ * (`processedSpans`, `processedLogs`, `otlp.exporter.exported`) counts a COLLECTOR's own output, which is a
+ * response of the service that emits it, and sweeping it in would make this a claim about a family this
+ * iteration never measured. An exact list also cannot be widened by a substring accident: a future series
+ * named `workload_bytes` is not in the family until somebody says it is, which is the boundary
+ * `POOL_METRIC_PREFIX` records for its own family.
+ */
+export const DEMAND_METRIC_LABELS: readonly string[] = ['workload'];
+
+/**
+ * Whether a label names a DEMAND metric — the single owner of that question.
+ *
+ * Used once, by the guard that decides whether the metric may be a node's decisive evidence, so the answer
+ * cannot drift between a ranking rule and a diagnostic.
+ *
+ * @param label - The metric label as the converter wrote it.
+ * @returns Whether it belongs to the demand family.
+ */
+export function isDemandMetric(label: string): boolean {
+  return DEMAND_METRIC_LABELS.includes(label);
+}
+
+/**
+ * The shipped value of {@link TopologyFaultGraphConfig.suppressDemandMetrics}, which is `true`.
+ *
+ * An ENROLMENT rather than an opt-in, and the docblock on the config field carries the two measurements
+ * that license it: +3 cases with zero regressed fault types on the one cell this repository can rank
+ * offline, and a mechanical zero on FSE'26 (0 occurrences of the family in 7781 service lines).
+ */
+export const DEFAULT_SUPPRESS_DEMAND_METRICS = true;
+
+/**
  * The shipped value of {@link TopologyFaultGraphConfig.suppressNearZeroBaselineRise}, which is `false`.
  *
  * A measured NO-OP kept as an opt-in probe: run `34227145755` is bit-identical to the golden on all nine
@@ -428,6 +490,7 @@ export const DEFAULT_TOPOLOGY_FAULT_GRAPH_CONFIG: TopologyFaultGraphConfig = {
   anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD, // the shipped population, named once
   suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS, // non-zero-baseline transient guard only (shipped)
   suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE, // near-zero-baseline rise suppression (opt-in)
+  suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS, // demand metrics are not fault evidence (enrolled)
   metricRiseCeiling: DEFAULT_METRIC_RISE_CEILING, // unbounded relative rise (shipped behaviour)
   metricFleetBaseline: DEFAULT_METRIC_FLEET_BASELINE, // absolute per-metric score (shipped behaviour)
 };
@@ -901,6 +964,16 @@ function computeAnomalyFeatures(
     const mean = sum / n;
     if (mean <= 0) {
       drop(ts.label, 'non-positive-mean');
+      continue;
+    }
+
+    // Demand guard: a metric that counts how much work the service was HANDED cannot be its fault
+    // evidence. `workload` is the family's only member (see `DEMAND_METRIC_LABELS`); the drop happens
+    // here, before the shape guards, because it is a test of the metric's ROLE and not of its shape —
+    // a demand series that rises permanently is exactly what a routing change looks like, and every
+    // shape test below would call that a kept, decisive metric.
+    if (cfg.suppressDemandMetrics && isDemandMetric(ts.label)) {
+      drop(ts.label, 'demand-not-health');
       continue;
     }
 

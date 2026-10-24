@@ -69,6 +69,7 @@ import {
   DEFAULT_COLLAPSE_DISCOUNT,
   DEFAULT_PRISM_POOLING,
   DEFAULT_RANK_NORMALIZATION,
+  DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   isLogSignalMode,
@@ -286,6 +287,17 @@ export interface CliOptions {
    */
   suppressNearZeroBaselineRise: boolean;
   /**
+   * Whether a DEMAND metric (`workload` — how much work a service was HANDED) may be a node's decisive
+   * evidence. Shipped `true` since iteration 127, on the measurement `docs/rcaeval-local-harness.md` carries:
+   * the family is decisive for 4.0% of ground truths against 12.5% of bystanders, and removing it takes
+   * RE1-OnlineBoutique 100/125 → 103/125 with zero regressed fault types.
+   *
+   * The flag exists in the NEGATIVE (`--no-suppress-demand-metrics`) for the reason `no_rank_normalization`
+   * does: the shipped pole is the one an artifact must be able to reproduce without an input, and the
+   * ablation is the value worth typing.
+   */
+  suppressDemandMetrics: boolean;
+  /**
    * When set, compute the PRISM graph-free baseline on the SAME loaded cases
    * and emit the fusion-ceiling analysis (engine vs PRISM union of correct
    * cases) as JSON to this path, in addition to the normal benchmark table.
@@ -398,6 +410,7 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
     anomalyNormalizeNodeThreshold: ANOMALY_NORMALIZE_NODE_THRESHOLD,
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+    suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
     fusionCeiling: '',
     routingProbe: '',
     diagnoseDump: '',
@@ -548,7 +561,9 @@ export function parseRCAEvalArgs(args: readonly string[]): CliOptions {
       opts.suppressIdleTransients = true;
     } else if (args[i] === '--no-suppress-idle-transients') {
       opts.suppressIdleTransients = false;
-    } else if (args[i] === '--suppress-near-zero-baseline-rise') {
+    } else if (args[i] === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;
+    else if (args[i] === '--suppress-demand-metrics') opts.suppressDemandMetrics = true;
+    else if (args[i] === '--suppress-near-zero-baseline-rise') {
       opts.suppressNearZeroBaselineRise = true;
     } else if (args[i] === '--no-suppress-near-zero-baseline-rise') {
       opts.suppressNearZeroBaselineRise = false;

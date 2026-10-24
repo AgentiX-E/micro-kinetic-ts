@@ -174,6 +174,7 @@ export function buildFse26EngineOptions(opts: Fse26CliOptions): Fse26EngineOptio
       collapseDiscount: opts.collapseDiscount,
       suppressIdleTransients: opts.suppressIdleTransients,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
+      suppressDemandMetrics: opts.suppressDemandMetrics,
     },
   };
 }

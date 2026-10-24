@@ -140,10 +140,56 @@ Because the loop is 7 seconds, three plausible mechanisms were killed before any
 | **per-family normalisation** makes the families comparable (divide each by the case's median for its family) | **87/125**, with cpu, delay and disk all regressed | **FALSE** — it lifts `mem` from 92% to 100% and destroys `delay` 88 → 52 |
 | **per-family z-score** against the case's own median/MAD | **89–90/125**, regressing four fault types | **FALSE** — same shape, same cost |
 
+## The first thing the loop shipped: the demand guard is ENROLLED, and the prediction held
+
+The screen above said `without workload` = 103/125. That number was a re-ranking of the dump, not a run of the
+engine, so the iteration that enrolled the rule had to check it the only way that counts — **by running the engine
+twice on the same corpus, with one switch between them**:
+
+| run | cpu | delay | disk | loss | mem | AVERAGE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `--no-suppress-demand-metrics` (the ablation) | 92.0 | 88.0 | 84.0 | 44.0 | 92.0 | **80.0%** |
+| shipped (the guard ON) | 92.0 | 88.0 | **92.0** | **48.0** | 92.0 | **82.4%** |
+
+**100/125 → 103/125, +3 cases, +2.4 pp, and no fault type regressed** — cell for cell what the screen predicted,
+including which two columns would move. That agreement is the loop's own validation: the tool was built to screen
+candidates cheaply, and its first candidate arrived at the engine exactly as forecast.
+
+The ablation row is also the reason the number is attributable: it is the **previously published cell**, so the
+comparison is against the configuration every earlier reading was taken under, not against a remembered figure.
+
+### What the artifact says when the guard fires
+
+The guard is a **drop with its own outcome**, not a weight and not a silent exclusion, so the dump keeps one
+derivation and a reader can tell the two kinds of discarded metric apart:
+
+```
+  checkoutservice [#1] selfAnomaly=0.686 ...
+    metrics(6): cpu,error,latency-50,latency-90,mem,workload
+    metricDrop(5): cpu:transient-return error:non-positive-mean latency-50:transient-return
+                   mem:transient-return workload:demand-not-health
+```
+
+`transient-return` says the series cannot be measured. `demand-not-health` says it can be measured and is measuring
+the wrong quantity — a routing outcome rather than the service's behaviour. A single vocabulary word would have made
+those two indistinguishable in the artifact that justifies the ranking.
+
+### The other half, stated as a proof rather than a hope
+
+The FSE'26 dump carries **no member of the family at all** — `grep -c 'workload='` over run `34928980425`'s 7781
+service lines is **0** — so the guard cannot change a case there, and the dispatch that follows the commit confirms
+an invariance rather than measuring a gain. The flag exists on that runner anyway, so a future corpus that does
+carry the family is ablatable without a second change; what the census records as `fse26: null` is a dispatch input
+that could never change a number, not a missing instrument.
+
+The eight RCAEval cells this loop cannot rank are read by that same dispatch, at the enrolled default. **A cell
+that moves down there reverts the constant** — the rule this repository applies to every enrolment.
+
 ## What this loop cannot do
 
 - **RE2 and RE3 are not in the mirror.** Their cells still cost a dispatch, and any change to the anomaly
-  competition has to be read there before it ships.
+  competition has to be read there before it ships — which is why the demand guard's enrolment carries eight
+  unread cells and a stated revert condition rather than a claim.
 - **FSE'26 must be dispatched**, per the fidelity control above: the screen refuses that dump, and its 1422 cases
   are the half where six ranking terms are live.
 - The local run's `--suite re1` discovers **one group** (`OnlineBoutique`). A reader who saw `RE1 80.0%` and took it

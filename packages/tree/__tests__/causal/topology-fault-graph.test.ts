@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ANOMALY_NORMALIZE_NODE_THRESHOLD,
   buildTopologyFaultGraph,
+  DEMAND_METRIC_LABELS,
+  isDemandMetric,
   rankNormalizeScores,
 } from '../../src/causal/topology-fault-graph.js';
 
@@ -1250,7 +1252,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         'svc-fault',
         [
           makeTimeSeries(
-            'workload',
+            'cpu',
             [
               0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
               1.4, 1.4, 1.4,
@@ -1262,7 +1264,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         'svc-collapse',
         [
           makeTimeSeries(
-            'workload',
+            'cpu',
             [
               11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 11.467,
               11.467, 11.467, 11.467, 11.467, 11.467, 11.467, 0, 0, 0, 0,
@@ -1300,7 +1302,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         'svc-fault',
         [
           makeTimeSeries(
-            'workload',
+            'cpu',
             [
               0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
               1.4, 1.4, 1.4,
@@ -1346,7 +1348,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         'svc-source',
         [
           makeTimeSeries(
-            'workload',
+            'cpu',
             [
               0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
               1.4, 1.4, 1.4,
@@ -1410,7 +1412,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
         [
           makeTimeSeries('latency-90', [0, 0, 0, 0, 14.4, 14.4, 14.4, 14.4, 0, 0, 0, 0]),
           makeTimeSeries(
-            'workload',
+            'cpu',
             [
               0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4,
               1.4, 1.4, 1.4,
@@ -1422,7 +1424,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
 
     const result = buildTopologyFaultGraph(graph, metrics);
 
-    expect(result.dominantMetrics.get('svc')?.label).toBe('workload');
+    expect(result.dominantMetrics.get('svc')?.label).toBe('cpu');
   });
 
   it('suppresses an idle-start transient spike (0 → pulse → non-zero tail) behind the flag', () => {
@@ -1484,10 +1486,7 @@ describe('buildTopologyFaultGraph — Anomaly Score Normalization', () => {
       [{ from: 'svc-fault', to: 'svc-burst' }],
     );
     const metrics = makeMetrics([
-      [
-        'svc-fault',
-        [makeTimeSeries('workload', [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4])],
-      ],
+      ['svc-fault', [makeTimeSeries('cpu', [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4])]],
       [
         'svc-burst',
         [
@@ -1907,7 +1906,7 @@ describe('buildTopologyFaultGraph — Anomaly Distribution Diagnostic Gate', () 
 
 describe('buildTopologyFaultGraph — collapseDiscount', () => {
   // A permanent rise (0.4 → 1.4): the source signature (fault = doing more work).
-  const rise = makeTimeSeries('workload', [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4, 1.4]);
+  const rise = makeTimeSeries('cpu', [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 1.4, 1.4, 1.4, 1.4]);
   // A permanent collapse (3.55 → 0.046): the traffic-loss symptom signature.
   const drop = makeTimeSeries(
     'cpu',
@@ -2954,5 +2953,93 @@ describe('the anomaly-normalization node threshold', () => {
     expect([...belowValues].sort((a, b) => a - b)).not.toEqual(
       grid(ANOMALY_NORMALIZE_NODE_THRESHOLD - 1),
     );
+  });
+});
+
+describe('buildTopologyFaultGraph — a DEMAND metric is not fault evidence', () => {
+  // `workload` counts how much work a service was HANDED. A fault changes how a service BEHAVED, so a traffic
+  // change is a routing outcome — which is why the family is over-represented as the decisive metric of
+  // bystanders (12.5%) and barely present on truths (4.0%). The guard drops it before the shape tests, so the
+  // state it removes is one every shape test below would otherwise call a kept, decisive metric: a permanent,
+  // large, monotone rise.
+  const ramp = (label: string, from: number, to: number) =>
+    makeTimeSeries(label, [...Array<number>(16).fill(from), ...Array<number>(4).fill(to)]);
+
+  it('names exactly one family, and an exact member is the whole test', () => {
+    // A substring rule would sweep `workload_bytes` into the family on the day somebody adds it, and this file
+    // is the only place that decision is visible.
+    expect(isDemandMetric('workload')).toBe(true);
+    expect(DEMAND_METRIC_LABELS).toEqual(['workload']);
+    for (const other of ['workload_bytes', 'cpu', 'mem', 'latency-90', 'processedSpans', '']) {
+      expect(isDemandMetric(other)).toBe(false);
+    }
+  });
+
+  it('drops it with its own outcome — not with a shape reason, because the metric is INFORMATIVE', () => {
+    // The distinction the outcome carries: `transient-return` and friends say the series is uninformative;
+    // `demand-not-health` says it is informative about the wrong quantity. A diagnostic that reported the
+    // first would tell a reader to look for a better window instead of a different metric.
+    const graph = makeCallGraph(['svc'], []);
+    const result = buildTopologyFaultGraph(
+      graph,
+      makeMetrics([['svc', [ramp('workload', 0.4, 30)]]]),
+    );
+
+    expect(result.anomalyScores.get('svc')).toBe(0);
+    // The OUTCOME is the evidence, not the score: `demand-not-health` is a member of the diagnosis vocabulary
+    // precisely so a reader of the artifact can tell "this series cannot be measured" from "this series is
+    // measuring the wrong quantity", and the entry is one of the two a service with one metric can produce.
+    expect(result.metricDiagnostics.get('svc')).toEqual([
+      { label: 'workload', outcome: 'demand-not-health', score: 0 },
+    ]);
+  });
+
+  it('scores the node on the evidence that is left, not on zero', () => {
+    // The invariant the enrolment rests on: the maximum is taken over the REMAINING families, so a node that
+    // also carries a resource metric is ranked on that one. A guard that zeroed the whole node would delete a
+    // candidate from the ranking for carrying an extra series.
+    const graph = makeCallGraph(['svc'], []);
+    const both = makeMetrics([['svc', [ramp('workload', 0.4, 30), ramp('cpu', 1, 3)]]]);
+    const cpuOnly = makeMetrics([['svc', [ramp('cpu', 1, 3)]]]);
+
+    const withDemand = buildTopologyFaultGraph(graph, both);
+    const without = buildTopologyFaultGraph(graph, cpuOnly);
+
+    expect(withDemand.anomalyScores.get('svc')).toBeCloseTo(without.anomalyScores.get('svc')!, 12);
+    expect(withDemand.dominantMetrics.get('svc')?.label).toBe('cpu');
+  });
+
+  it('lets a demand metric outrank a real one behind the flag, which is what the default prevents', () => {
+    // Two services, no edges: one has a 75× traffic rise, the other a 3× resource rise. Under the SHIPPED
+    // default the traffic node is not evidence at all, so the resource node wins; with the guard off the
+    // traffic node wins — the exact misordering the corpus measurement counts.
+    const graph = makeCallGraph(['svc-heavy', 'svc-real'], []);
+    const metrics = makeMetrics([
+      ['svc-heavy', [ramp('workload', 0.4, 30)]],
+      ['svc-real', [ramp('cpu', 1, 3)]],
+    ]);
+
+    const shipped = buildTopologyFaultGraph(graph, metrics);
+    const ablated = buildTopologyFaultGraph(graph, metrics, { suppressDemandMetrics: false });
+
+    expect(shipped.anomalyScores.get('svc-heavy')).toBe(0);
+    expect(shipped.anomalyScores.get('svc-real')!).toBeGreaterThan(0);
+    expect(ablated.anomalyScores.get('svc-heavy')!).toBeGreaterThan(
+      ablated.anomalyScores.get('svc-real')!,
+    );
+  });
+
+  it('leaves a service whose ONLY evidence is demand rankable at zero rather than absent', () => {
+    // A guard that removed the node would change the population a top-1 is taken over; scoring it zero keeps
+    // the population and loses only the candidate. The distinction is visible in the map, not in a comment.
+    const graph = makeCallGraph(['svc-demand', 'svc-real'], []);
+    const metrics = makeMetrics([
+      ['svc-demand', [ramp('workload', 0.4, 30)]],
+      ['svc-real', [ramp('cpu', 1, 3)]],
+    ]);
+
+    const result = buildTopologyFaultGraph(graph, metrics);
+    expect(result.anomalyScores.has('svc-demand')).toBe(true);
+    expect(result.anomalyScores.get('svc-demand')).toBe(0);
   });
 });

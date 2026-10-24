@@ -150,6 +150,7 @@ async function main(): Promise<void> {
     dropMetrics: opts.dropMetrics,
     metricRiseCeiling: opts.metricRiseCeiling,
     metricFleetBaseline: opts.metricFleetBaseline,
+    suppressDemandMetrics: opts.suppressDemandMetrics,
     failedEdgeWeight: opts.failedEdgeWeight,
     failedEdgeMode: opts.failedEdgeMode,
     failedEdgeMinRecords: opts.failedEdgeMinRecords,

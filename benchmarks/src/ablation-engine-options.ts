@@ -89,6 +89,8 @@ export interface AblationFeatureFlags {
   rankNormalization: boolean;
   /** Extend the transient guard to idle-start transients (near-zero-baseline latency spike). */
   suppressIdleTransients: boolean;
+  /** Demand metrics are not fault evidence. Held at the shipped pole by every row of this study. */
+  suppressDemandMetrics: boolean;
   /** PRISM graph-free signal: reward the node anomalous in BOTH internal and external channels. */
   prismSignal: boolean;
 }
@@ -132,6 +134,15 @@ export interface AblationTopologyOptions {
   readonly collapseDiscount: number;
   readonly rankNormalization: boolean;
   readonly suppressIdleTransients: boolean;
+  /**
+   * The demand guard, held at the shipped value by every row.
+   *
+   * It is a field rather than an omission because the artifact must state the configuration it ran: a row
+   * that left it out would describe an engine whose default nobody wrote down, which is the class of defect
+   * `docs/ablation-config-audit.md` exists for. No row VARIES it — the study's subject is Deng Yu's terms —
+   * so it appears here as a constant and on the line below as a stated one.
+   */
+  readonly suppressDemandMetrics: boolean;
 }
 
 /** The engine's two constructor arguments, named so a test can assert both. */
@@ -257,6 +268,7 @@ export function buildAblationEngineOptions(
       collapseDiscount: flags.collapseDiscount ? 1.0 : 0.0,
       rankNormalization: flags.rankNormalization,
       suppressIdleTransients: flags.suppressIdleTransients,
+      suppressDemandMetrics: flags.suppressDemandMetrics,
     },
   };
 }
@@ -287,6 +299,7 @@ export function formatAblationConfigLine(
     `stabilityWeight=${signals.stabilityWeight} collapseDiscount=${topology.collapseDiscount} ` +
     `rankNormalization=${topology.rankNormalization} ` +
     `suppressIdleTransients=${topology.suppressIdleTransients} ` +
+    `suppressDemandMetrics=${topology.suppressDemandMetrics} ` +
     `temporalWeight=${signals.temporalWeight} onsetShape=${signals.onsetShape}`
   );
 }

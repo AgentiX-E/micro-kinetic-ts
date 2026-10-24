@@ -96,6 +96,8 @@ export interface RCAEvalTopologyOptions {
   readonly anomalyNormalizeNodeThreshold: number;
   readonly suppressIdleTransients: boolean;
   readonly suppressNearZeroBaselineRise: boolean;
+  /** The demand guard — see `CliOptions.suppressDemandMetrics` for the measurement that enrolled it. */
+  readonly suppressDemandMetrics: boolean;
 }
 
 /** The engine's two constructor arguments, named so a test can assert both. */
@@ -160,6 +162,7 @@ export function buildRCAEvalEngineOptions(opts: CliOptions): RCAEvalEngineOption
       anomalyNormalizeNodeThreshold: opts.anomalyNormalizeNodeThreshold,
       suppressIdleTransients: opts.suppressIdleTransients,
       suppressNearZeroBaselineRise: opts.suppressNearZeroBaselineRise,
+      suppressDemandMetrics: opts.suppressDemandMetrics,
     },
   };
 }
@@ -201,6 +204,10 @@ export function formatSignalLine(opts: CliOptions): string {
     `anomalyNormalizeNodeThreshold=${opts.anomalyNormalizeNodeThreshold} ` +
     `suppressIdleTransients=${opts.suppressIdleTransients} ` +
     `suppressNearZeroBaselineRise=${opts.suppressNearZeroBaselineRise} ` +
+    // Named unconditionally even though it ships `true`: the ablation is `false`, and a line that printed
+    // only the non-default would render this run and its ablation identically — the defect the failed-edge
+    // weight's comment above records, one guard over.
+    `suppressDemandMetrics=${opts.suppressDemandMetrics} ` +
     `temporalWeight=${opts.temporalWeight} onsetShape=${opts.onsetShape}`
   );
 }

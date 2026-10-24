@@ -52,6 +52,7 @@ import {
   DEFAULT_PRISM_WEIGHT,
   DEFAULT_RANK_NORMALIZATION,
   DEFAULT_STABILITY_WEIGHT,
+  DEFAULT_SUPPRESS_DEMAND_METRICS,
   DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
   DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
   DEFAULT_TEMPORAL_WEIGHT,
@@ -323,6 +324,15 @@ export interface Fse26CliOptions {
    * case is not a reading of the ranking.
    */
   readonly suppressNearZeroBaselineRise: boolean;
+  /**
+   * Whether a DEMAND metric (`workload`) may be a node's decisive evidence. Shipped `true` since iteration 127.
+   *
+   * Reachable here even though this corpus carries no member of the family — `grep -c 'workload=' on run
+   * 34928980425's dump over 7781 service lines` is **0** — because a knob that only one half can state is the
+   * defect `docs/dispatch-surface-audit.md` records: the flag would be unmeasurable on the half that cannot
+   * say it, and a future corpus that DID carry the family would have no way to ablate it.
+   */
+  suppressDemandMetrics: boolean;
 }
 
 /** Split a comma-separated flag value, dropping empty entries. */
@@ -406,6 +416,7 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
     collapseDiscount: DEFAULT_COLLAPSE_DISCOUNT,
     suppressIdleTransients: DEFAULT_SUPPRESS_IDLE_TRANSIENTS,
     suppressNearZeroBaselineRise: DEFAULT_SUPPRESS_NEAR_ZERO_BASELINE_RISE,
+    suppressDemandMetrics: DEFAULT_SUPPRESS_DEMAND_METRICS,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -528,7 +539,9 @@ export function parseFSE26Args(argv: readonly string[]): Fse26CliOptions {
       // to the shipped 0, which is the only configuration a typo may reproduce.
       const discount = parseFloat(argv[++i]!);
       opts.collapseDiscount = Number.isFinite(discount) ? Math.min(1, Math.max(0, discount)) : 0;
-    } else if (arg === '--suppress-idle-transients') opts.suppressIdleTransients = true;
+    } else if (arg === '--suppress-demand-metrics') opts.suppressDemandMetrics = true;
+    else if (arg === '--no-suppress-demand-metrics') opts.suppressDemandMetrics = false;
+    else if (arg === '--suppress-idle-transients') opts.suppressIdleTransients = true;
     else if (arg === '--no-suppress-idle-transients') opts.suppressIdleTransients = false;
     else if (arg === '--suppress-near-zero-baseline-rise') opts.suppressNearZeroBaselineRise = true;
     else if (arg === '--no-suppress-near-zero-baseline-rise')

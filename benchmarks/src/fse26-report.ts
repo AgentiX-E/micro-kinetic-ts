@@ -135,6 +135,11 @@ export interface FSE26RunConfig {
   readonly collapseDiscount: number;
   readonly suppressIdleTransients: boolean;
   readonly suppressNearZeroBaselineRise: boolean;
+  /**
+   * The demand guard. Printed only at its NON-shipped pole, on this line's own rule: the shipped line stays
+   * byte-identical to the published one, so the DEFAULT here is invisible and the ablation is not.
+   */
+  readonly suppressDemandMetrics: boolean;
 }
 
 /** One fault type's cell in the summary. */
@@ -416,6 +421,11 @@ export function formatFSE26ConfigLine(config: FSE26RunConfig): string {
   }
   if (config.suppressNearZeroBaselineRise) {
     line += ' suppressNearZeroBaselineRise=true';
+  }
+  // Ships `true`, so the pole worth printing is the one an ABLATION chooses — the inverse of its neighbours
+  // above, and the reason this line's rule is "print the non-shipped value" rather than "print what is true".
+  if (!config.suppressDemandMetrics) {
+    line += ' suppressDemandMetrics=false';
   }
   return line;
 }

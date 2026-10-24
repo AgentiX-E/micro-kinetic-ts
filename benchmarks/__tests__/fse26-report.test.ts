@@ -60,6 +60,8 @@ function makeConfig(overrides: Partial<FSE26RunConfig> = {}): FSE26RunConfig {
     collapseDiscount: 0,
     suppressIdleTransients: false,
     suppressNearZeroBaselineRise: false,
+    // The demand guard's SHIPPED pole, so this fixture remains the published configuration.
+    suppressDemandMetrics: true,
     ...overrides,
   };
 }

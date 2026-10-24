@@ -78,6 +78,11 @@ on:
         required: false
         default: ''
         type: string
+      suppress_demand_metrics:
+        description: "Set to 0 to let a DEMAND metric (workload — how much work a service was HANDED) be a node's decisive evidence again (empty = the runner default, which is the SHIPPED true). The DEFAULT is the recent change and the value worth typing is the ABLATION, which is why this input is inverted relative to its two neighbours: it ships ON, on the measurement docs/rcaeval-local-harness.md carries — the family is decisive for 4.0% of ground truths against 12.5% of bystanders, and removing it takes RE1-OnlineBoutique 100/125 to 103/125 with zero regressed fault types"
+        required: false
+        default: ''
+        type: string
       lat_weight:
         description: "Weight on the per-edge latency term (empty = the runner default, which is the SHIPPED 0.561495, the largest weight in the ranking). This flag existed on the FSE'26 runner all along and had NO arm on this one, so the golden half of the kill criterion could not move the term at all — while every artifact's configuration line printed the value as though a dispatch had chosen it. A candidate measurable on one instrument and judged on another has an undecidable other half"
         required: false
@@ -298,6 +303,12 @@ jobs:
           if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
             RANKING_ARG+=(--suppress-near-zero-baseline-rise)
           fi
+          #   The demand guard ships ON, so the reachable pole is the NEGATIVE: an input that could only
+          #   switch it on would be an input that never changes anything. `0` is the ablation, spelled the way
+          #   the FSE'26 workflow's `ranking_knobs` spells its own booleans.
+          if [ "${{ inputs.suppress_demand_metrics }}" = "0" ]; then
+            RANKING_ARG+=(--no-suppress-demand-metrics)
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -442,6 +453,12 @@ jobs:
           fi
           if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
             RANKING_ARG+=(--suppress-near-zero-baseline-rise)
+          fi
+          #   The demand guard ships ON, so the reachable pole is the NEGATIVE: an input that could only
+          #   switch it on would be an input that never changes anything. `0` is the ablation, spelled the way
+          #   the FSE'26 workflow's `ranking_knobs` spells its own booleans.
+          if [ "${{ inputs.suppress_demand_metrics }}" = "0" ]; then
+            RANKING_ARG+=(--no-suppress-demand-metrics)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -613,6 +630,12 @@ jobs:
           if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
             RANKING_ARG+=(--suppress-near-zero-baseline-rise)
           fi
+          #   The demand guard ships ON, so the reachable pole is the NEGATIVE: an input that could only
+          #   switch it on would be an input that never changes anything. `0` is the ablation, spelled the way
+          #   the FSE'26 workflow's `ranking_knobs` spells its own booleans.
+          if [ "${{ inputs.suppress_demand_metrics }}" = "0" ]; then
+            RANKING_ARG+=(--no-suppress-demand-metrics)
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -766,6 +789,12 @@ jobs:
           fi
           if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
             RANKING_ARG+=(--suppress-near-zero-baseline-rise)
+          fi
+          #   The demand guard ships ON, so the reachable pole is the NEGATIVE: an input that could only
+          #   switch it on would be an input that never changes anything. `0` is the ablation, spelled the way
+          #   the FSE'26 workflow's `ranking_knobs` spells its own booleans.
+          if [ "${{ inputs.suppress_demand_metrics }}" = "0" ]; then
+            RANKING_ARG+=(--no-suppress-demand-metrics)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -945,6 +974,12 @@ jobs:
           if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
             RANKING_ARG+=(--suppress-near-zero-baseline-rise)
           fi
+          #   The demand guard ships ON, so the reachable pole is the NEGATIVE: an input that could only
+          #   switch it on would be an input that never changes anything. `0` is the ablation, spelled the way
+          #   the FSE'26 workflow's `ranking_knobs` spells its own booleans.
+          if [ "${{ inputs.suppress_demand_metrics }}" = "0" ]; then
+            RANKING_ARG+=(--no-suppress-demand-metrics)
+          fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
           #   shipped value without it, so a dispatch able to name one of the two could still not
@@ -1090,6 +1125,12 @@ jobs:
           fi
           if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
             RANKING_ARG+=(--suppress-near-zero-baseline-rise)
+          fi
+          #   The demand guard ships ON, so the reachable pole is the NEGATIVE: an input that could only
+          #   switch it on would be an input that never changes anything. `0` is the ablation, spelled the way
+          #   the FSE'26 workflow's `ranking_knobs` spells its own booleans.
+          if [ "${{ inputs.suppress_demand_metrics }}" = "0" ]; then
+            RANKING_ARG+=(--no-suppress-demand-metrics)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its
@@ -1237,6 +1278,12 @@ jobs:
           fi
           if [ -n "${{ inputs.suppress_near_zero_baseline_rise }}" ]; then
             RANKING_ARG+=(--suppress-near-zero-baseline-rise)
+          fi
+          #   The demand guard ships ON, so the reachable pole is the NEGATIVE: an input that could only
+          #   switch it on would be an input that never changes anything. `0` is the ablation, spelled the way
+          #   the FSE'26 workflow's `ranking_knobs` spells its own booleans.
+          if [ "${{ inputs.suppress_demand_metrics }}" = "0" ]; then
+            RANKING_ARG+=(--no-suppress-demand-metrics)
           fi
           #   The LATENCY PAIR travels together for the reason the mode travels with its weight: the
           #   floor is not safe on its own and the weight's zero-regression window ends far below its

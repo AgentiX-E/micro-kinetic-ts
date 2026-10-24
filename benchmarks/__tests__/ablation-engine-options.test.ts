@@ -76,6 +76,7 @@ const ALL_OFF: AblationFeatureFlags = {
   traceSignal: false,
   rankNormalization: false,
   suppressIdleTransients: false,
+  suppressDemandMetrics: true,
   prismSignal: false,
 };
 

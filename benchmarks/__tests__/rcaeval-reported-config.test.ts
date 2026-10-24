@@ -479,7 +479,7 @@ describe('the RCAEval configuration line carries the configuration that produced
         'failedEdgeWeight=3 ' +
         'collapseDiscount=0 traceWeight=0 prismWeight=0 prismPooling=additive ' +
         'rankNormalization=true anomalyNormalizeNodeThreshold=20 ' +
-        'suppressIdleTransients=false suppressNearZeroBaselineRise=false ' +
+        'suppressIdleTransients=false suppressNearZeroBaselineRise=false suppressDemandMetrics=true ' +
         'temporalWeight=0 onsetShape=earliness',
     );
   });

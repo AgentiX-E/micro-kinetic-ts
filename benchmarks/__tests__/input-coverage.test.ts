@@ -477,6 +477,7 @@ describe('the rows the battery had never varied', () => {
     traceSignal: false,
     rankNormalization: false,
     suppressIdleTransients: false,
+    suppressDemandMetrics: true,
     prismSignal: false,
   };
 
